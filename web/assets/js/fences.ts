@@ -250,8 +250,6 @@ export function refence(ids: Iterable<string>) {
   for (const id of ids) fences.delete(id);
 }
 
-/** Nothing on the old board is a fact about the new one. */
-export const forgetFences = () => fences.clear();
 
 /**
  * A batch of items has arrived on the board; ask again around any fence in it.

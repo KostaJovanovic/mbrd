@@ -226,11 +226,14 @@ async function fromEps(file: Blob): Promise<Bytes | null> {
 
   const at = le32(head, 20);
   const size = le32(head, 24);
-  if (!at || !size || size > MAX_PICTURE || at + size > file.size) return null;
+  // The bound proves the range sits whole inside the file, so a slice below reads
+  // exactly `size` bytes - which is what the old read got and length-checked.
+  if (!at || !size || size < MIN_IMAGE || size > MAX_PICTURE || at + size > file.size) return null;
 
-  const tiff = await bytes(file, at, size);
-  if (tiff.length < MIN_IMAGE) return null;
-  const found = await embeddedPreview(new Blob([tiff]));
+  // Slice, never slurp: embeddedPreview() takes a Blob precisely so it can read
+  // lazily. file.slice() is the same bytes at no cost, where reading them into a
+  // 64 MB array and wrapping that in a new Blob copied the whole preview first.
+  const found = await embeddedPreview(file.slice(at, at + size));
   return found ? new Uint8Array(await found.arrayBuffer()) : null;
 }
 
@@ -340,11 +343,14 @@ async function fromVcard(file: Blob): Promise<Bytes | null> {
   const text = new TextDecoder().decode(head);
   if (!/^BEGIN:VCARD/im.test(text)) return null;
 
-  // Unfold first: a folded line is a newline followed by one space or tab, and
-  // the bytes either side of it belong to the same value.
-  const unfolded = text.replace(/\r?\n[ \t]/g, '');
-  const line = unfolded.split(/\r?\n/).find(l => /^PHOTO[;:]/i.test(l));
-  if (!line) return null;
+  // The PHOTO line with its folded continuations, matched in place - rather than
+  // unfolding the whole card and then splitting it into an array of every line,
+  // two more full-size copies of up to VCARD_MAX to pick one line out. A folded
+  // line is a newline followed by one space or tab; only that one line is
+  // unfolded, once it is found.
+  const match = /^PHOTO[;:].*(?:\r?\n[ \t].*)*/im.exec(text);
+  if (!match) return null;
+  const line = match[0].replace(/\r?\n[ \t]/g, '');
 
   const value = line.slice(line.indexOf(':') + 1).trim();
   const base64 = /^data:image\/[a-z0-9.+-]+;base64,(.*)$/i.exec(value)?.[1]

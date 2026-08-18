@@ -30,7 +30,7 @@ import {
 } from '../state.ts';
 import { noteWords } from '../canvas/note-model.ts';
 import { displayURLReady, ensureDisplay } from '../canvas/display.ts';
-import { baseName, clamp } from '../util.ts';
+import { baseName, clamp, div, actAsButton } from '../util.ts';
 import { mobileOrder } from '../arrange/arrangements.ts';
 // Shortest-column-first, shared with the board's own masonry - see the head of
 // that file for why the two walls are one rule and two surfaces.
@@ -46,7 +46,7 @@ import {
 import { playTrack } from '../canvas/playlist-queue.ts';
 import { clock, PLAY_ICON } from '../media/transport.ts';
 import {
-  STICKER_SPRITE, STICKER_VIEWBOX, stickerShape, DEFAULT_SHAPE,
+  stickerArt, stickerShape, DEFAULT_SHAPE,
 } from '../stickers/catalogue.ts';
 import { armedSticker, disarm } from './sticker-window.ts';
 import { openViewer, canView, MARKDOWN } from './viewer.ts';
@@ -537,14 +537,7 @@ function buildTile(item: Item): Tile {
  */
 function wireOpen(t: Tile) {
   if (!OPENS.has(t.kind) || !canView(t.item.id)) return;
-  t.el.setAttribute('role', 'button');
-  t.el.tabIndex = 0;
-  t.el.addEventListener('click', () => openViewer(t.item.id));
-  t.el.addEventListener('keydown', e => {
-    if (e.key !== 'Enter' && e.key !== ' ') return;
-    e.preventDefault();
-    openViewer(t.item.id);
-  });
+  actAsButton(t.el, () => openViewer(t.item.id));
 }
 
 /** The tile kinds whose tap means "open this". See wireOpen(). */
@@ -689,13 +682,7 @@ function fillVideo(t: Tile) {
   const badge = div('feed-play');
   badge.innerHTML = PLAY_ICON;
   t.el.appendChild(badge);
-  t.el.setAttribute('role', 'button');
-  t.el.tabIndex = 0;
-  const play = () => mountVideo(t);
-  t.el.addEventListener('click', play);
-  t.el.addEventListener('keydown', e => {
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); play(); }
-  });
+  actAsButton(t.el, () => mountVideo(t));
 }
 
 /** Swap a video tile's poster for a live, registered <video>. */
@@ -764,13 +751,7 @@ function fillAudio(t: Tile) {
   // about the tiles either side of it says a sequence. The Playlist next door is
   // where the board's audio is a list, and a track started there runs on - see
   // playTrack() and the note on `fromList`.
-  t.el.setAttribute('role', 'button');
-  t.el.tabIndex = 0;
-  const go = () => playTrack(item, 'board');
-  t.el.addEventListener('click', go);
-  t.el.addEventListener('keydown', e => {
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); }
-  });
+  actAsButton(t.el, () => playTrack(item, 'board'));
 }
 
 /** A still waveform for a coverless audio tile: fixed bars, so it does not cost a
@@ -837,13 +818,7 @@ function fillLink(t: Tile) {
   card.append(name, hostEl);
   t.el.appendChild(card);
   if (u) {
-    t.el.setAttribute('role', 'link');
-    t.el.tabIndex = 0;
-    const open = () => window.open(u.href, '_blank', 'noopener');
-    t.el.addEventListener('click', open);
-    t.el.addEventListener('keydown', e => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); }
-    });
+    actAsButton(t.el, () => window.open(u.href, '_blank', 'noopener'), 'link');
   }
 }
 
@@ -1139,13 +1114,7 @@ function paintStickers() {
 
 function stickerOverlay(it: Item, host: Item) {
   const shape = stickerShape(it.meta?.shape) ? str(it.meta.shape) : DEFAULT_SHAPE;
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('class', 'sticker-art feed-sticker');
-  svg.setAttribute('viewBox', STICKER_VIEWBOX);
-  svg.setAttribute('aria-hidden', 'true');
-  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-  use.setAttribute('href', `${STICKER_SPRITE}#${shape}`);
-  svg.append(use);
+  const svg = stickerArt(shape, 'feed-sticker');
   // A tint is a number (see stickerTint), and dataset takes strings - the
   // String() is the coercion the assignment was already making on its own.
   const tint = it.meta?.tint;
@@ -1267,8 +1236,3 @@ function teardown() {
   tiles.clear();
 }
 
-function div(className: string) {
-  const el = document.createElement('div');
-  el.className = className;
-  return el;
-}

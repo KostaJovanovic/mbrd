@@ -307,6 +307,15 @@ export function exitTowards(it: Box, target: Point): Point {
 }
 
 /**
+ * A finished route: the points a line is drawn through, ends included.
+ *
+ * An object rather than the bare array because a route is the sort of answer
+ * that grows a second field - a reason it took the long way, a flag for a
+ * crossing it could not avoid - and every caller already destructures.
+ */
+export type Route = { points: Point[] };
+
+/**
  * The path a connection takes, as a list of points to draw straight lines
  * between. Always at least two, and always something: a pair with no route at
  * all still gets a line.
@@ -328,15 +337,6 @@ export function exitTowards(it: Box, target: Point): Point {
  * it looks like a connector passing under a photograph, because that is what it
  * is. A state worth marking as a failure has to look like one.
  */
-/**
- * A finished route: the points a line is drawn through, ends included.
- *
- * An object rather than the bare array because a route is the sort of answer
- * that grows a second field - a reason it took the long way, a flag for a
- * crossing it could not avoid - and every caller already destructures.
- */
-export type Route = { points: Point[] };
-
 export function routeConnection(
   from: Box, to: Box, obstacles: Box[] = [], opts: RouteOpts = {},
 ): Route {

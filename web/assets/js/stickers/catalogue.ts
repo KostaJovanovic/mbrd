@@ -48,6 +48,29 @@ export const STICKER_SPRITE = 'assets/stickers.svg';
  */
 export const STICKER_VIEWBOX = '0 0 256 256';
 
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/**
+ * The `<svg class="sticker-art">` wrapper around a sprite `<use>`, built once.
+ *
+ * The five places that draw a sticker - the board renderer, the pad, its drag
+ * ghost, a Mobile feed tile, the bin - each carried these five lines verbatim,
+ * which is exactly what the note on STICKER_VIEWBOX above warns of. The tint is
+ * left to the caller: some set it only when non-zero, some always resolve it
+ * through stickerTint(), and folding that difference in here would quietly
+ * change one of them. `extra` adds classes beside `sticker-art` (the feed tile).
+ */
+export function stickerArt(shape: string, extra = ''): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('class', extra ? `sticker-art ${extra}` : 'sticker-art');
+  svg.setAttribute('viewBox', STICKER_VIEWBOX);
+  svg.setAttribute('aria-hidden', 'true');
+  const use = document.createElementNS(SVG_NS, 'use');
+  use.setAttribute('href', `${STICKER_SPRITE}#${shape}`);
+  svg.append(use);
+  return svg;
+}
+
 /**
  * How many tints the pad comes in - see --sticker-1..8 in tokens.css.
  *

@@ -37,6 +37,7 @@ import {
   lastCommand, takeBack, removeItems,
 } from '../state.ts';
 import { nodeFor, onViewChange, screenBoxOf, viewportClientRect } from './items.ts';
+import { makeEditable } from '../util.ts';
 import { linkURL, linkDraft } from './renderers.ts';
 // The model, from the model. This module is the note *editor*; reaching through
 // the renderer for the shape both of them read was an arrow pointing the wrong
@@ -635,10 +636,7 @@ export function editNote(
   if (editing) editing.finish();
 
   node.classList.add('is-editing');
-  // plaintext-only keeps pasted markup out of a note; not every engine has it.
-  try { wrap.contentEditable = 'plaintext-only'; }
-  catch { wrap.contentEditable = 'true'; }
-  if (!wrap.isContentEditable) wrap.contentEditable = 'true';
+  makeEditable(wrap);
 
   // How much room is left, shown only while the note is being written. A limit
   // you cannot see is indistinguishable from a broken keyboard.

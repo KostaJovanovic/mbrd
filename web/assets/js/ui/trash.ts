@@ -26,7 +26,7 @@ import { noteWords } from '../canvas/note-model.ts';
 import { kindName, kindTag } from '../canvas/item-dom.ts';
 import { toast } from '../notify.ts';
 import {
-  STICKER_SPRITE, STICKER_VIEWBOX, DEFAULT_SHAPE, stickerShape, stickerTint,
+  stickerArt, DEFAULT_SHAPE, stickerShape, stickerTint,
 } from '../stickers/catalogue.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 import type { Item, TrashEntry } from '../board-model.ts';
@@ -236,16 +236,10 @@ function binRow(entry: TrashEntry) {
     // "safe because of a guard three lines up" is the arrangement the rule in
     // CLAUDE.md exists to refuse: a tree built with createElementNS has no
     // escaping to get right and cannot be got wrong by a later edit to
-    // stickerTint(). The same five lines canvas/renderers.ts's sticker() uses,
-    // which is the fifth place that builds one of these.
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('class', 'sticker-art');
-    svg.setAttribute('viewBox', STICKER_VIEWBOX);
-    svg.setAttribute('aria-hidden', 'true');
+    // stickerTint(). stickerArt() (stickers/catalogue.ts) builds the wrapper the
+    // same way for all five places that draw a sticker; only the tint differs.
+    const svg = stickerArt(shape);
     svg.dataset.tint = String(stickerTint(item.meta?.tint, shape));
-    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-    use.setAttribute('href', `${STICKER_SPRITE}#${shape}`);
-    svg.append(use);
     thumb.append(svg);
   } else if (item.type === 'gone') {
     // A tombstone, which is in the bin only while an undo of the emptying keeps

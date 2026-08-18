@@ -106,8 +106,14 @@ export function viewCommands(vp: CommandViewport, { resetAppearance, perf }: Vie
     },
     clearTagFilter: () => setTagFilter([]),
     filterCounts: () => {
-      const shown = board.items.filter(i => isContent(i) && !isFiltered(i)).length;
-      const all = board.items.filter(isContent).length;
+      // One pass counting, not two filtered arrays built only to read their
+      // lengths.
+      let shown = 0, all = 0;
+      for (const i of board.items) {
+        if (!isContent(i)) continue;
+        all++;
+        if (!isFiltered(i)) shown++;
+      }
       return { shown, all };
     },
     /**

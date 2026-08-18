@@ -48,6 +48,79 @@ export const clamp = (v: number, lo: number, hi: number) => v < lo ? lo : v > hi
 export const el = (id: string) => document.getElementById(id);
 
 /**
+ * Create an element, optionally with a class - the two lines half the UI
+ * modules had written privately, under names like `make`, `el` and `div`.
+ */
+export function makeEl<K extends keyof HTMLElementTagNameMap>(
+  tag: K, className = '',
+): HTMLElementTagNameMap[K] {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  return node;
+}
+
+/** A `<div>` with a class - the commonest makeEl(), spelled once for its callers. */
+export const div = (className = '') => makeEl('div', className);
+
+/**
+ * Make a non-button element behave as one: a role, keyboard focus, and the
+ * click / Enter-or-Space pair that a real <button> gets for free.
+ *
+ * The five tiles that needed it - feed cards that open, play or link, a playlist
+ * row - each carried the same four lines, where the keyboard half is the part
+ * quietly dropped when it is written by hand. `role` is 'link' for the one that
+ * navigates rather than acts.
+ */
+export function actAsButton(node: HTMLElement, onActivate: () => void, role = 'button') {
+  node.setAttribute('role', role);
+  node.tabIndex = 0;
+  node.addEventListener('click', onActivate);
+  node.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onActivate(); }
+  });
+}
+
+/**
+ * Turn an element into a plain-text contenteditable.
+ *
+ * `plaintext-only` keeps pasted markup out; not every engine has it, so a
+ * failure falls back to `true`, and an element that ended up editable by
+ * neither is set `true` so it is at least editable. Three sites carried this
+ * verbatim - a card's name field, a note's rich column, the board title.
+ */
+export function makeEditable(node: HTMLElement) {
+  try { node.contentEditable = 'plaintext-only'; }
+  catch { node.contentEditable = 'true'; }
+  if (!node.isContentEditable) node.contentEditable = 'true';
+}
+
+/**
+ * Select the whole contents of an editable node - a rename or a title edit does
+ * this so the first keystroke replaces the name rather than appends to it.
+ *
+ * getSelection() is typed nullable but answers null only for a document with no
+ * browsing context, which a field this is called on - focused, just typed into -
+ * is never in. Shared by a card's name, a note, and the board title.
+ */
+export function selectContents(node: Node) {
+  const range = document.createRange();
+  range.selectNodeContents(node);
+  const sel = getSelection()!;
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+/** The same, then collapsed to the end: a caret after the last character. */
+export function caretToEnd(node: Node) {
+  const range = document.createRange();
+  range.selectNodeContents(node);
+  range.collapse(false);
+  const sel = getSelection()!;
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+/**
  * The value of a CSS custom property on :root, trimmed.
  *
  * The design tokens are the app's single source of truth for colour, spacing,
@@ -80,12 +153,14 @@ export const readToken = (name: string) =>
  *
  * Every shuffle in the app wants an unbiased one and there is exactly one way
  * to write it, so it is written here rather than a fourth time: dealing the
- * tilt bag in canvas/items.js, and re-dealing the layout order in
- * main.js/rearrange.
+ * tilt bag in canvas/items.js, re-dealing the layout order in main.js/rearrange,
+ * and the shuffle queue in canvas/playlist-queue.js. `rnd` defaults to
+ * Math.random; a seeded caller (a reproducible Rearrange in arrange/) passes its
+ * own generator so the same board deals the same order twice.
  */
-export function shuffle<T>(arr: T[]): T[] {
+export function shuffle<T>(arr: T[], rnd: () => number = Math.random): T[] {
   for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(rnd() * (i + 1));
     [arr[i], arr[j]] = [arr[j], arr[i]];
   }
   return arr;

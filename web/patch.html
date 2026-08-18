@@ -192,13 +192,37 @@
          down: how many releases there are, how many commits they cover, and
          when it started. All counted from the source. -->
     <p class="pn-tally">
-      <span>17 releases</span>
-      <span>252 commits</span>
+      <span>18 releases</span>
+      <span>253 commits</span>
       <span>since 25 July 2026</span>
     </p>
   </header>
 
   <ol class="pn-list">
+<li class="pn-rel" id="r-face-up">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">22</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.231 - 0.252</p>
+      <h2 class="pn-name">Face Up</h2>
+      <p class="pn-date">16 - 18 August 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain">A release about cards that used to be blank. A great many files that dropped in as a grey rectangle with a name on it now show their own picture, and the clips that would not preview at all finally do.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Documents and design files show the thumbnail they were saved with.</strong> Word, Excel, PowerPoint, Pages, Numbers, Keynote and OpenDocument files, the older <code>.doc</code>, <code>.xls</code> and <code>.ppt</code> from before those, and Visio, Krita, Procreate, SolidWorks and 3ds Max files besides - each arrives as a recognisable picture rather than a named blank.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Programs and app packages show their own icon.</strong> A Windows <code>.exe</code> or <code>.dll</code> shows the same icon Explorer draws for it, and an Android <code>.apk</code>, an iOS <code>.ipa</code>, a Windows <code>.appx</code>, an ebook (<code>.epub</code>), a comic (<code>.cbz</code>) or a 3D-print package (<code>.3mf</code>) shows its icon or its cover.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Camera RAW and HEIC photos show a real image.</strong> The app pulls out the preview the camera tucked inside, so a folder of <code>.cr2</code>, <code>.nef</code>, <code>.arw</code>, <code>.dng</code> or <code>.heic</code> files is a wall of pictures again instead of grey cards.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Clips a browser cannot play still get the right shape and facts.</strong> AVI, WMV, FLV, MPEG and their kind now carry their true length and dimensions, so the card fits the video rather than guessing at it.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Video previews now appear on Android phones and on Firefox.</strong> A clip used to land as a blank card there, and a phone's own camera footage was the exact case that failed. The app now reads the first frame another way and shows it.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Photo-heavy boards no longer run older iPhones and iPads out of memory.</strong> The picture-shrinking that keeps a big board inside a tab's memory had quietly stopped working on Safari before 16.4, where a couple of dozen photos could crash the tab. It works there now.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The playback bar has a proper transport</strong> - a large round play/pause button at its head, and a <code>Next</code> button beside it while a playlist runs, in place of the old row of small controls.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Emptying the bin actually frees the space.</strong> A deleted file's data used to travel on inside the board and be written into every save afterwards, so a board you had cleared out still weighed as much as before. Emptying the bin now removes it for good.</li>
+    </ul>
+  </article>
+</li>
 <li class="pn-rel" id="r-every-corner">
   <div class="pn-margin" aria-hidden="true">
     <span class="pn-mark"></span>
@@ -586,7 +610,7 @@
   </ol>
 
   <footer class="pn-foot">
-    <span>mbrd 0.252 by valjdakosta</span>
+    <span>mbrd 0.253 by valjdakosta</span>
     <a href="/">Back to the board</a>
   </footer>
  </div>

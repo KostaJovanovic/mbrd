@@ -34,6 +34,7 @@
 // initStickerWindow() or a handler that runs after it.
 
 import { readPrefJSON, writePref } from '../prefs.ts';
+import { div } from '../util.ts';
 import { cue } from '../cuelume/engine.ts';
 import { bus, wouldStick, byId } from '../state.ts';
 import { defaultSize } from '../canvas/renderers.ts';
@@ -41,7 +42,7 @@ import { showStickTarget } from '../canvas/items.ts';
 import { makeWindowDrag, makeWindowResize } from './float-window.ts';
 import { registerPanel, panelShown, panelHidden } from './panel-stack.ts';
 import {
-  STICKERS, STICKER_CATEGORIES, STICKER_SPRITE, STICKER_VIEWBOX, stickerShape,
+  STICKERS, STICKER_CATEGORIES, stickerArt, stickerShape,
 } from '../stickers/catalogue.ts';
 import type { Sticker } from '../stickers/catalogue.ts';
 import type { Viewport } from '../canvas/viewport.ts';
@@ -71,6 +72,7 @@ let vp: Viewport | null = null;
 let cmds: StickerCommands | null = null;
 let win: HTMLElement | null = null;        // the window element, or null when closed
 let body: HTMLElement | null = null;       // the scrolling region inside it
+let detachGrabs: (() => void)[] = [];      // grab-listener detaches, called on close
 
 /** The category last placed from, so the next open lands where you left off. */
 let lastCategory = STICKER_CATEGORIES[0][0];
@@ -147,7 +149,7 @@ function openStickerWindow() {
   close.innerHTML = CLOSE_ICON;
   close.addEventListener('click', () => { cue('pick'); closeStickerWindow(); });
   head.append(title, spacer, close);
-  makeWindowDrag(win, head);
+  detachGrabs.push(makeWindowDrag(win, head));
 
   body = div('sticker-window-body');
   win.append(head, body);
@@ -155,7 +157,7 @@ function openStickerWindow() {
   const resize = div('sticker-window-resize');
   resize.setAttribute('aria-hidden', 'true');
   win.append(resize);
-  makeWindowResize(win, resize, { minW: 240, minH: 200 });
+  detachGrabs.push(makeWindowResize(win, resize, { minW: 240, minH: 200 }));
 
   document.body.append(win);
   renderBody();
@@ -174,6 +176,9 @@ function closeStickerWindow() {
   const el = win;
   win = null;
   body = null;
+  // Take the move/resize grab listeners off window before the element goes.
+  detachGrabs.forEach(fn => fn());
+  detachGrabs = [];
   disarm();
   el.classList.remove('is-open');
   clearTimeout(exitTimer);
@@ -316,14 +321,8 @@ function tile(entry: Sticker, inFavourites: boolean) {
  * the whole promise of the pad: the sticker you place is the one you saw.
  */
 function shapeArt(id: string, tint: number) {
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('class', 'sticker-art');
-  svg.setAttribute('viewBox', STICKER_VIEWBOX);
-  svg.setAttribute('aria-hidden', 'true');
+  const svg = stickerArt(id);
   if (tint) svg.dataset.tint = String(tint);
-  const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-  use.setAttribute('href', `${STICKER_SPRITE}#${id}`);
-  svg.append(use);
   return svg;
 }
 
@@ -508,8 +507,3 @@ function hostUnderPointer(clientX: number, clientY: number) {
   return host && byId(host.id) ? host : null;
 }
 
-function div(cls: string) {
-  const el = document.createElement('div');
-  el.className = cls;
-  return el;
-}

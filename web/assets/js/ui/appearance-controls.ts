@@ -80,6 +80,7 @@ export type LookDeps = {
   HOSTS: Record<string, string>,
   WHIMSY: readonly string[],
   ALL_SOURCES_STOP: number,
+  ALL_SOURCES_MAX: number,
   current: () => Look,
   setVar: (name: string, value: string) => void,
   setWhimsy: (level: number | string) => void,
@@ -309,7 +310,7 @@ export function syncPaletteSources() {
   const input = rangeInput('opt-palette-sources');
   const out = document.getElementById('opt-palette-sources-out');
   const n = d.sourceCount();
-  const all = n === Infinity;
+  const all = n >= d.ALL_SOURCES_MAX;
   if (input && document.activeElement !== input) {
     input.value = String(all ? d.ALL_SOURCES_STOP : n);
   }
@@ -324,7 +325,7 @@ export function wirePaletteSources() {
   const input = rangeInput('opt-palette-sources');
   if (!input) return;
   input.max = String(d.ALL_SOURCES_STOP);
-  input.value = String(d.sourceCount() === Infinity ? d.ALL_SOURCES_STOP : d.sourceCount());
+  input.value = String(d.sourceCount() >= d.ALL_SOURCES_MAX ? d.ALL_SOURCES_STOP : d.sourceCount());
   tickSlider(input);
   input.addEventListener('input', () => {
     const n = +input.value;

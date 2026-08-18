@@ -285,7 +285,7 @@ export function hostUnder(it: Stickable | null | undefined) {
 // Runtime only, and it has to be. A board that has just loaded is a board that
 // has been sitting still, however long ago it was written, so absence of a
 // record means *set* rather than settling - which is also why nothing here is
-// stored and forgetSticks() clears it with everything else.
+// stored, and why seedSticks() clears it on load along with the memo.
 //
 // No timer, either, and that is worth saying because the obvious implementation
 // has one. Nothing needs to *happen* at the ten-second mark: the two things
@@ -410,18 +410,6 @@ export function restick(ids: Iterable<string>) {
   for (const id of ids) sticks.delete(id);
 }
 
-/**
- * Nothing on the old board is a fact about the new one.
- *
- * The settle clocks go too, and that is the load-bearing half: a board being
- * opened has been sitting still however long ago it was written, so every item
- * on it is set. Leaving a stale stamp here would hand a freshly opened board
- * ten seconds in which its stickies were not pinned.
- */
-export function forgetSticks() {
-  sticks.clear();
-  settling.clear();
-}
 
 /**
  * Seed the memo from what a loaded board wrote down.
@@ -451,8 +439,7 @@ export function seedSticks() {
   // board being opened has been sitting still however long ago it was written,
   // so everything on it is *set* - a stale stamp surviving a load would hand a
   // freshly opened board ten seconds in which its stickies were not pinned.
-  // Here rather than only in forgetSticks(), because this is the function a
-  // load actually calls; that one is the whole-teardown door.
+  // Cleared here because this is the function a load actually calls.
   settling.clear();
   // Unknown rather than string: `stuckTo` out of a file is whatever the file
   // said, and this asks whether it names furniture without first insisting it

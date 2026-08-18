@@ -258,9 +258,13 @@ export function removeItems(ids: Iterable<string>, label = 'Delete') {
   // press it twice.
   const set = new Set([...ids, ...stickerCascade(ids)]);
   // Keep the original index so undo restores z-order position, not just the item.
-  const removed = board.items
-    .map((item, index) => ({ item, index }))
-    .filter(r => set.has(r.item.id));
+  // One pass that pushes only the matches, rather than a wrapper per board item
+  // and a filter after: a delete of three cards off a 20,000-card board built
+  // 20,000 throwaway objects to keep three.
+  const removed: { item: Item, index: number }[] = [];
+  board.items.forEach((item, index) => {
+    if (set.has(item.id)) removed.push({ item, index });
+  });
   if (!removed.length) return;
   // The Desktop title card does not go to the bin - it is a singleton the board
   // is meant to have, so it is hidden and offered back by its own restore button

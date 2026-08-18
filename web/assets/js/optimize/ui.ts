@@ -136,6 +136,9 @@ export async function optimizeBoard() {
   let report;
   try {
     report = await runOptimize({
+      // The plan the dialog was built from, so the run does what was promised
+      // rather than re-deriving it from a board that may have moved since.
+      plan,
       // Named as well as counted: the count says how long is left, the filename
       // says which one is taking it, and the phase says which pass it is on -
       // the two sweeps at the end are each their own pass over their own list,

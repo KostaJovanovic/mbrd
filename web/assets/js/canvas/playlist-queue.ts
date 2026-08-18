@@ -54,6 +54,7 @@ import { readPref, writePref } from '../prefs.ts';
 import { assetURL } from '../storage/assets.ts';
 import { reportPlayError } from '../media/transport.ts';
 import { toast } from '../notify.ts';
+import { shuffle } from '../util.ts';
 import {
   claimPlayer, nowPlaying, onPlayerReleased, ownerOf,
   registerPlayer, registeredPlayers, setNowPlaying,
@@ -288,12 +289,9 @@ function rebuildOrder(): void {
   const playing = current?.el === queuePlayerEl ? current.item : null;
   queueOrder = queueItems.map((_, i) => i);
   if (shuffleOn) {
-    // Fisher-Yates, but keep the current track at the front so shuffle does not
-    // jump away from what is playing.
-    for (let i = queueOrder.length - 1; i > 0; i--) {
-      const j = Math.floor(mulberryLike() * (i + 1));
-      [queueOrder[i], queueOrder[j]] = [queueOrder[j], queueOrder[i]];
-    }
+    // The shared unbiased shuffle (util.ts); the current track is pulled to the
+    // front below so it does not jump away from what is playing.
+    shuffle(queueOrder);
   }
   if (playing) {
     // SAFETY: `playing` is an item off the board and Track is the narrower shape
@@ -320,11 +318,6 @@ function rebuildOrder(): void {
     }
   }
 }
-
-// A tiny time-free source of variation for shuffle. Date.now()/Math.random are
-// available at runtime here (this is not the workflow sandbox); a plain
-// Math.random keeps the shuffle genuinely random per press.
-function mulberryLike(): number { return Math.random(); }
 
 /**
  * Start playing a specific item, if it is in the queue.
@@ -504,7 +497,11 @@ export function cycleRepeat(): void {
  */
 export function clearQueue(): void {
   const voice = queuePlayerEl;
-  if (endedBound) { endedBound.removeEventListener('ended', queueEnded); endedBound = null; }
+  if (endedBound) {
+    endedBound.removeEventListener('ended', queueEnded);
+    endedBound.removeEventListener('error', queueRefused);
+    endedBound = null;
+  }
   if (voice) voice.pause();
   if (player) { player.pause(); player.removeAttribute('src'); }
   queueItems = [];

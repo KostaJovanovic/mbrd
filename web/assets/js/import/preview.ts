@@ -228,16 +228,16 @@ async function fromTiff(file: Blob, lift = false): Promise<Blob | null> {
     // The scalar in an entry's value slot. When the value fits in four bytes it
     // sits inline; otherwise those four bytes are an offset into the file, which
     // is only chased for single values (the counts and offsets this needs).
-    const scalar = async (e: TiffEntry | undefined): Promise<number | null> => {
+    // Synchronous, and reads through the directory's own `dv`: there is no await
+    // in here, and the value always sits inside `block`, so a fresh DataView per
+    // call (this is asked six times an IFD) bought nothing.
+    const scalar = (e: TiffEntry | undefined): number | null => {
       if (!e) return null;
       const size = TYPE_BYTES[e.type] || 0;
-      if (!size || e.count !== 1) return null;
-      const read = (buf: Uint8Array, o: number) =>
-        size === 2 ? new DataView(buf.buffer, buf.byteOffset, buf.byteLength).getUint16(o, le)
-        : size === 4 ? new DataView(buf.buffer, buf.byteOffset, buf.byteLength).getUint32(o, le)
-        : buf[o];
-      if (size <= 4) return read(block, e.valueOff);
-      return null;
+      if (!size || e.count !== 1 || size > 4) return null;
+      return size === 2 ? dv.getUint16(e.valueOff, le)
+        : size === 4 ? dv.getUint32(e.valueOff, le)
+        : block[e.valueOff];
     };
 
     // Chase this directory's sub-directories and its next-IFD link. SubIFDs
@@ -255,18 +255,18 @@ async function fromTiff(file: Blob, lift = false): Promise<Blob | null> {
     const next = block.length >= entries * 12 + 4 ? dv.getUint32(entries * 12, le) : 0;
     if (next) queue.push(next);
     const sub = tags.get(0x014a);
-    if (sub && sub.count === 1) { const o = await scalar(sub); if (o) queue.push(o); }
+    if (sub && sub.count === 1) { const o = scalar(sub); if (o) queue.push(o); }
 
     // Candidate A - a JPEGInterchangeFormat / -Length pair pointing at a JPEG.
-    const jOff = await scalar(tags.get(0x0201));
-    const jLen = await scalar(tags.get(0x0202));
+    const jOff = scalar(tags.get(0x0201));
+    const jLen = scalar(tags.get(0x0202));
     if (jOff && jLen) found.push({ off: jOff, len: jLen });
 
     // Candidate B - a single JPEG-compressed strip (Compression 6 or 7).
-    const comp = await scalar(tags.get(0x0103));
+    const comp = scalar(tags.get(0x0103));
     const strip = tags.get(0x0111), bytesTag = tags.get(0x0117);
     if ((comp === 6 || comp === 7) && strip?.count === 1 && bytesTag?.count === 1) {
-      const sOff = await scalar(strip), sLen = await scalar(bytesTag);
+      const sOff = scalar(strip), sLen = scalar(bytesTag);
       if (sOff && sLen) found.push({ off: sOff, len: sLen });
     }
   }

@@ -23,6 +23,32 @@ import { clamp } from '../util.ts';
 const MARGIN = 8;
 
 /**
+ * Bind one grab's move-and-release listeners on `window`, and hand back the
+ * detach that takes them off again.
+ *
+ * They live on `window` rather than the handle for the reason each caller's own
+ * comment below gives: a captured pointer that leaves a title bar or a
+ * twenty-pixel grip still has to be heard from. What matters here is their
+ * *lifetime*. Both floating windows are rebuilt on every open, so three
+ * window-scope listeners closing over a detached element are stranded on every
+ * open/close cycle unless something takes them off. The returned detach is that
+ * something; the caller holds it and calls it on close.
+ */
+function grab(
+  onMove: (e: PointerEvent) => void,
+  onEnd: (e: PointerEvent) => void,
+): () => void {
+  addEventListener('pointermove', onMove);
+  addEventListener('pointerup', onEnd);
+  addEventListener('pointercancel', onEnd);
+  return () => {
+    removeEventListener('pointermove', onMove);
+    removeEventListener('pointerup', onEnd);
+    removeEventListener('pointercancel', onEnd);
+  };
+}
+
+/**
  * Drag a window by a handle - in practice its title bar.
  *
  * Presses on buttons inside the handle are left alone, and not merely so the
@@ -31,7 +57,7 @@ const MARGIN = 8;
  * In the player the close button was exempt and the view toggle was not, which
  * is how "Album view" came to do nothing whatsoever.
  */
-export function makeWindowDrag(win: HTMLElement, handle: HTMLElement): void {
+export function makeWindowDrag(win: HTMLElement, handle: HTMLElement): () => void {
   /** The grab: where in the window the pointer took hold, and how big it was. */
   let d: { dx: number; dy: number; w: number; h: number } | null = null;
   handle.addEventListener('pointerdown', e => {
@@ -56,20 +82,20 @@ export function makeWindowDrag(win: HTMLElement, handle: HTMLElement): void {
   // was never cleared by an `up` that also went elsewhere, and the window went
   // on following the pointer with no way to put it down. `d` is what says
   // whether a drag is running; the listeners only have to be somewhere they
-  // will hear about it.
-  addEventListener('pointermove', e => {
+  // will hear about it. grab() binds their lifetime to the detach returned
+  // below, which the caller calls on close - the window is rebuilt on every open.
+  const move = (e: PointerEvent) => {
     if (!d) return;
     win.style.left = `${clamp(e.clientX - d.dx, MARGIN, window.innerWidth - d.w - MARGIN)}px`;
     win.style.top = `${clamp(e.clientY - d.dy, MARGIN, window.innerHeight - d.h - MARGIN)}px`;
-  });
+  };
   const end = (e: PointerEvent) => {
     if (!d) return;
     d = null;
     handle.releasePointerCapture?.(e.pointerId);
     win.classList.remove('is-moving');
   };
-  addEventListener('pointerup', end);
-  addEventListener('pointercancel', end);
+  return grab(move, end);
 }
 
 /**
@@ -85,7 +111,7 @@ export function makeWindowResize(
   win: HTMLElement,
   handle: HTMLElement,
   { minW = 260, minH = 220 }: { minW?: number; minH?: number } = {},
-): void {
+): () => void {
   /** The grab: where the pointer started, and the rectangle it started from. */
   let d: { x: number; y: number; w: number; h: number; left: number; top: number } | null = null;
   handle.addEventListener('pointerdown', e => {
@@ -103,19 +129,18 @@ export function makeWindowResize(
   });
   // On the window, for the reason the move drag above gives: the grip is
   // twenty pixels square and a resize leaves it almost immediately.
-  addEventListener('pointermove', e => {
+  const move = (e: PointerEvent) => {
     if (!d) return;
     win.style.width =
       `${clamp(d.w + (e.clientX - d.x), minW, window.innerWidth - d.left - MARGIN)}px`;
     win.style.height =
       `${clamp(d.h + (e.clientY - d.y), minH, window.innerHeight - d.top - MARGIN)}px`;
-  });
+  };
   const end = (e: PointerEvent) => {
     if (!d) return;
     d = null;
     handle.releasePointerCapture?.(e.pointerId);
     win.classList.remove('is-resizing');
   };
-  addEventListener('pointerup', end);
-  addEventListener('pointercancel', end);
+  return grab(move, end);
 }

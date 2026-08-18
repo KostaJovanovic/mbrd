@@ -265,9 +265,6 @@ export const SOUND_NAMES =
   // SAFETY: as above.
   Object.keys(RECIPES) as SoundName[];
 
-export const isSoundName = (value: unknown): value is SoundName =>
-  typeof value === 'string' && own(RECIPES, value);
-
 // ---------------------------------------------------------------------------
 // The cues
 // ---------------------------------------------------------------------------

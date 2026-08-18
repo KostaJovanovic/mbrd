@@ -288,14 +288,8 @@ const px = (n: number) => Math.round(n);
  * so the slot never goes empty.
  */
 export function paintCount() {
-  // Furniture is not things, and neither is a fence. A blank board that
-  // announced "3 things" would be counting its own scaffolding, and the number
-  // is meant to answer "how much have I put here" - which on a new board is
-  // none. The hints were excluded here from the start and the Desktop title card
-  // was not, so every count on Desktop read one high and a brand-new board
-  // opened saying "1 thing"; isContent() is hasContent()'s own rule, asked from
-  // one place so a fourth type cannot drift apart from it again.
-  const n = board.items.reduce((t, i) => t + (isContent(i) ? 1 : 0), 0);
+  // The single-selection readout first, so its early return does not pay for the
+  // whole-board count below - which it never uses.
   if (selection.size === 1) {
     const it = byId([...selection][0]);
     if (it) {
@@ -305,5 +299,13 @@ export function paintCount() {
       return;
     }
   }
+  // Furniture is not things, and neither is a fence. A blank board that
+  // announced "3 things" would be counting its own scaffolding, and the number
+  // is meant to answer "how much have I put here" - which on a new board is
+  // none. The hints were excluded here from the start and the Desktop title card
+  // was not, so every count on Desktop read one high and a brand-new board
+  // opened saying "1 thing"; isContent() is hasContent()'s own rule, asked from
+  // one place so a fourth type cannot drift apart from it again.
+  const n = board.items.reduce((t, i) => t + (isContent(i) ? 1 : 0), 0);
   el('hud-count')!.textContent = n === 0 ? 'nothing yet' : n + (n === 1 ? ' thing' : ' things');
 }

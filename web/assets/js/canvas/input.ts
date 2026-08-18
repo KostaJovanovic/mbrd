@@ -1093,6 +1093,10 @@ type MoveGesture = {
   before: GeomSnap[],
   start: Point,
   origin: MoveOrigin[],
+  // The lead's start geometry, resolved once from `origin` when the drag is
+  // taken. Neither `origin` nor `lead` is reassigned after that, so the snap
+  // arithmetic reads this rather than re-finding it every frame.
+  leadOrigin: MoveOrigin,
   moved: boolean,
   driven: string[],
   // Whether this drag lands on the lattice, decided once when it is taken - the
@@ -1643,17 +1647,21 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // for ids the board still has, so the two can differ.
     if (!before.length) return null;
     const start = vp.toWorld(e.clientX, e.clientY);
+    const lead = rootOf(id);
+    // The sides come along as well as the corner: snapping puts the lead's low
+    // edges on lines, and an edge is its centre less half its size.
+    const origin = before.map(b => ({ id: b.id, x: b.x, y: b.y, w: b.w, h: b.h }));
+    const leadOrigin = origin.find(o => o.id === lead) || origin[0];
     const move = enter('move', {
       // `id` is what the pointer landed on and `lead` is what it has hold of -
       // the same thing except on a pinned item. The lift keeps `id`, because a
       // modified click peels the card you clicked; the drag arithmetic and the
       // stick preview read `lead`, because those are about the thing moving.
-      id, lead: rootOf(id), moving, before, start,
+      id, lead, moving, before, start,
       // Frozen here, like the grip's - see MoveGesture.snap.
       snap: board.settings.snap,
-      // The sides come along as well as the corner: snapping puts the lead's low
-      // edges on lines, and an edge is its centre less half its size.
-      origin: before.map(b => ({ id: b.id, x: b.x, y: b.y, w: b.w, h: b.h })),
+      origin,
+      leadOrigin,
       moved: false,
       // What the pointer has hold of, as against what it is towing. Only these
       // ask again what they are stuck to when the drag ends - a note carried
@@ -2352,7 +2360,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // pushed both its sides half a cell off instead. Edges are also what
       // snapAll() lines up when snapping is switched on, so this is the same
       // arrangement being kept rather than a second one being imposed.
-      const lead = drag.origin.find(o => o.id === drag.lead) || drag.origin[0];
+      const lead = drag.leadOrigin;
       const low = { x: lead.x + dx - lead.w / 2, y: lead.y + dy - lead.h / 2 };
       let sx = snapLowFor(low.x, drag.snap) - low.x;
       let sy = snapLowFor(low.y, drag.snap) - low.y;

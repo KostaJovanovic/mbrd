@@ -145,7 +145,7 @@ import {
   itemTags, boardTags, cleanTag,
   normalizeTour, TAGS_PER_ITEM, TAG_MAX, MIN_CROP,
 } from './board-model.ts';
-import type { Item } from './board-model.ts';
+import type { Item, MobileHeader } from './board-model.ts';
 import type { MergePlan } from './merge.ts';
 
 export { MAX_CONNECTIONS, pairKey, CONN_DIRECTIONS, CONN_STYLES };
@@ -171,7 +171,7 @@ export {
 // Stuckness, one level down - see sticky.js. Questions about geometry; the
 // mutations that act on their answers are here.
 import {
-  STICK_MIN, stuckTo, wouldStick, restick, forgetSticks, seedSticks,
+  STICK_MIN, stuckTo, wouldStick, restick, seedSticks,
   stuckPlacement, isRider, stuckFollowers, isPinned, dragRoot, hostUnder, isSticky,
   startSettling, isSettling, settlesIn, SETTLE_MS,
 } from './sticky.ts';
@@ -181,7 +181,7 @@ import {
 // there.
 import {
   isFence, fenceOf, fenceAt, fenceMembers, fenceFollowers, refence, refenceAround,
-  refenceArrivals, forgetFences, seedFences, fenceBox, nextFenceName,
+  refenceArrivals, seedFences, fenceBox, nextFenceName,
 } from './fences.ts';
 
 // The sticker catalogue - a leaf module of plain data, imported here for the
@@ -220,14 +220,14 @@ export { baseStep, snapshotGeom, applyGeom, commitGeom, placeMobileItems, mobile
 export type { GeomPatch } from './layout.ts';
 
 export {
-  STICK_MIN, stuckTo, wouldStick, restick, forgetSticks,
+  STICK_MIN, stuckTo, wouldStick, restick,
   stuckPlacement, isRider, stuckFollowers, isPinned, dragRoot, isSticky,
   startSettling, isSettling, settlesIn, SETTLE_MS,
 };
 
 export {
   isFence, fenceOf, fenceAt, fenceMembers, fenceFollowers, refence, refenceAround,
-  forgetFences, fenceBox, nextFenceName,
+  fenceBox, nextFenceName,
 };
 
 export {
@@ -1239,6 +1239,28 @@ const sameFlip = (a: unknown, b: unknown) => {
   return a.x === b.x && a.y === b.y;
 };
 
+/** Two axis maps with the same tags and values, whatever order those were written in. */
+const sameAxes = (a: Record<string, number>, b: Record<string, number>) => {
+  const ka = Object.keys(a);
+  if (ka.length !== Object.keys(b).length) return false;
+  return ka.every(tag => a[tag] === b[tag]);
+};
+
+/**
+ * Two Mobile headers are the same header.
+ *
+ * Field by field, not by serialisation, and the axes map by tag and value:
+ * normalizeMobileHeader() builds `axes` by Object.entries iteration, so two
+ * equal maps written by different palettes or read from different files can
+ * carry their tags in different orders. Compared as JSON that reads as a change,
+ * and the change would re-emit and re-dirty for nothing - the false negative
+ * ui/look.ts documents, here on the door the masthead sliders write through.
+ */
+const sameHeader = (a: MobileHeader, b: MobileHeader) =>
+  a.font === b.font && a.size === b.size && a.stretch === b.stretch
+  && a.leading === b.leading && a.weight === b.weight && a.offset === b.offset
+  && a.italic === b.italic && a.wrap === b.wrap && sameAxes(a.axes, b.axes);
+
 /**
  * The tags on a set of items, added or removed across the whole selection.
  *
@@ -1449,7 +1471,7 @@ export function setSetting(key: string, value: unknown) {
     // takes is the normalised header, and normalizeMobileHeader() is what says
     // so - the value that arrived is still whatever a panel or a file handed in.
     const header = normalizeMobileHeader(value);
-    if (JSON.stringify(board.mobileHeader) === JSON.stringify(header)) return;
+    if (sameHeader(board.mobileHeader, header)) return;
     board.mobileHeader = header;
     markDirty();
     bus.emit('settings', key);

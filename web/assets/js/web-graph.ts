@@ -45,6 +45,7 @@
 // first thing that ever looked; tests/web.test.js now covers the path.
 
 import { corners, pointInItem, distSq } from './geometry.ts';
+import { clamp } from './util.ts';
 
 /**
  * What this file works over: a card's centre, and its box where it has one.
@@ -250,8 +251,8 @@ class EdgeGrid {
     this.ch = Math.max((maxY - minY) / side, 1e-6);
   }
 
-  _col(x: number) { return clampi(Math.floor((x - this.minX) / this.cw), 0, this.gw - 1); }
-  _row(y: number) { return clampi(Math.floor((y - this.minY) / this.ch), 0, this.gh - 1); }
+  _col(x: number) { return clamp(Math.floor((x - this.minX) / this.cw), 0, this.gw - 1); }
+  _row(y: number) { return clamp(Math.floor((y - this.minY) / this.ch), 0, this.gh - 1); }
 
   add(ai: number, bi: number) {
     const i = this.ea.length;
@@ -373,8 +374,8 @@ class CardGrid {
     for (let c = 0; c < this.n; c++) this._register(c);
   }
 
-  _col(x: number) { return clampi(Math.floor((x - this.minX) / this.cw), 0, this.gw - 1); }
-  _row(y: number) { return clampi(Math.floor((y - this.minY) / this.ch), 0, this.gh - 1); }
+  _col(x: number) { return clamp(Math.floor((x - this.minX) / this.cw), 0, this.gw - 1); }
+  _row(y: number) { return clamp(Math.floor((y - this.minY) / this.ch), 0, this.gh - 1); }
 
   _register(c: number) {
     const c0 = this._col(this.bx0[c]), c1 = this._col(this.bx1[c]);
@@ -424,7 +425,6 @@ class CardGrid {
 }
 
 let mark = 0;
-const clampi = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
 
 /**
  * Do segments AB and CD cross?

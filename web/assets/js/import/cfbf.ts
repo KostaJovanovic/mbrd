@@ -85,6 +85,10 @@ export type Compound = {
   stream(name: string): Bytes | null;
   /** Every stream name in the file, in directory order. */
   names(): string[];
+  /** Stream names with the sizes the directory declares, for ranking without reading. */
+  sizes(): { name: string, size: number }[];
+  /** The first `n` bytes of a stream, reading only the sectors that far reaches. */
+  head(name: string, n: number): Bytes | null;
 };
 
 const le16 = (b: Bytes, i: number) => b[i] | (b[i + 1] << 8);
@@ -268,10 +272,17 @@ function parse(b: Bytes): Compound | null {
 
   return {
     names: () => entries.filter(e => e.type === STREAM).map(e => e.name),
+    sizes: () => entries.filter(e => e.type === STREAM).map(e => ({ name: e.name, size: e.size })),
     stream(name: string) {
       const e = entries.find(x => x.type === STREAM && x.name === name);
       if (!e || !e.size) return null;
       return e.size < cutoff ? readMini(e.start, e.size) : read(e.start, e.size);
+    },
+    head(name: string, n: number) {
+      const e = entries.find(x => x.type === STREAM && x.name === name);
+      if (!e || !e.size) return null;
+      const len = Math.min(e.size, n);
+      return e.size < cutoff ? readMini(e.start, len) : read(e.start, len);
     },
   };
 }
@@ -312,7 +323,8 @@ export function compoundPicture(doc: Compound): Bytes | null {
 /**
  * The summary property, and failing that whatever a stream simply opens with.
  *
- * Split from compoundPicture() only so the summary stream is looked up once.
+ * The caller does the SummaryInformation lookup and hands the bytes in, so this
+ * is a thin two-way fallback rather than the place that lookup is saved.
  */
 function pictureFrom(doc: Compound, summary: Bytes | null): Bytes | null {
   return fromSummary(summary) || fromCache(doc);
@@ -332,21 +344,33 @@ function pictureFrom(doc: Compound, summary: Bytes | null): Bytes | null {
  * carving. Scanning a whole compound file for anything that resembles a JPEG
  * would find the pictures inside a document's own content, and a picture from the
  * middle of a document is not a picture of it.
+ *
+ * Ranked by the size the directory already holds and sniffed largest-first, so
+ * only the head of each candidate is read until one opens with a signature - and
+ * only that winner is then read in full. This used to materialise *every* stream
+ * (each a fresh array plus a chain copy, up to MAX_FILE) to read eight bytes of
+ * each, which on a real `.doc`/`.xls` is the whole document walked to find a
+ * thumbnail that is usually not even there.
  */
 function fromCache(doc: Compound): Bytes | null {
-  let best: Bytes | null = null;
-  for (const name of doc.names()) {
-    if (name === 'Catalog') continue;
-    const bytes = doc.stream(name);
-    if (!bytes || bytes.length < 512) continue;
-    for (let at = 0; at < Math.min(64, bytes.length - 8); at++) {
-      const lead = bytes.subarray(at);
-      if (!((lead[0] === 0xFF && lead[1] === 0xD8 && lead[2] === 0xFF) || isPng(lead))) continue;
-      if (!best || lead.length > best.length) best = lead;
-      break;
+  const candidates = doc.sizes()
+    .filter(e => e.name !== 'Catalog' && e.size >= 512)
+    .sort((a, b) => b.size - a.size);
+  for (const e of candidates) {
+    const head = doc.head(e.name, 72);
+    if (!head) continue;
+    let sigAt = -1;
+    for (let at = 0; at < Math.min(64, head.length - 8); at++) {
+      const lead = head.subarray(at);
+      if ((lead[0] === 0xFF && lead[1] === 0xD8 && lead[2] === 0xFF) || isPng(lead)) { sigAt = at; break; }
     }
+    if (sigAt < 0) continue;
+    // The largest stream that opens with a picture wins; read it in full now and
+    // carve from the signature, the same bytes the old scan kept.
+    const full = doc.stream(e.name);
+    return full ? full.subarray(sigAt) : null;
   }
-  return best;
+  return null;
 }
 
 /**

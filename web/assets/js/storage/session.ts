@@ -192,9 +192,29 @@ function requestAutosave() {
  */
 function referencedHashes(data: BoardLike) {
   const out = new Set<string>();
+  // One pass over board and bin for everything an item can reference: its own
+  // asset hashes, and the originals the optimiser replaced (meta.was/wasCover).
+  // The was/wasCover half used to be a second walk over a freshly concatenated
+  // board-plus-bin array; folded in here it is the same set at one traversal.
+  //
+  // Those originals are not in itemHashes() on purpose - that one drives the
+  // *packer*, and an export carries the small copies alone. Here they are held,
+  // because this drives the sweep and the sweep would otherwise delete the very
+  // bytes an undo entry exists to put back. The bin as well as the board: a
+  // binned item that was optimised still carries meta.was, discardOriginals()
+  // never clears it and restoreItems() brings the item back live, so sweeping
+  // its original bytes stranded it permanently - every later save then reported
+  // the hash missing and the board never went clean again. Preferred over
+  // stripping was/wasCover when an item is binned, because undo across a delete
+  // closes over the old ids. See swapAssets() and discardOriginals() in state.js.
   const add = (it: unknown) => {
     if (!isRecord(it)) return;
     for (const h of itemHashes(it)) out.add(h);
+    const meta = isRecord(it.meta) ? it.meta : null;
+    const was = str(meta?.was);
+    const wasCover = str(meta?.wasCover);
+    if (was) out.add(was);
+    if (wasCover) out.add(wasCover);
   };
   for (const it of listOf(data.items)) add(it);
   for (const t of listOf(data.trash)) add(isRecord(t) ? t.item : null);
@@ -211,26 +231,6 @@ function referencedHashes(data: BoardLike) {
   // keeping *because undo does not survive a reload*. The timeline does. That
   // argument retires with it.
   for (const hash of timelineHashes(data.timeline)) out.add(hash);
-  // The files the optimiser replaced. Not in itemHashes() on purpose - that one
-  // drives the *packer*, and an export is the artifact the optimising was for,
-  // so it carries the small copies alone. Here they are held, because this drives
-  // the sweep and the sweep would otherwise delete the very bytes the undo entry
-  // exists to put back. See swapAssets() and discardOriginals() in state.js.
-  // The bin as well as the board, exactly like the walk above it. A binned item
-  // that was optimised still carries meta.was, discardOriginals() never clears
-  // it and restoreItems() brings the item back live - so sweeping its original
-  // bytes stranded it permanently: every later save then reported the hash
-  // missing, refused to call itself complete, and the board never went clean
-  // again. Preferred over stripping was/wasCover when an item is binned, because
-  // undo across a delete closes over the old ids and stripping them would break
-  // the undo the memo exists for.
-  for (const it of [...listOf(data.items), ...listOf(data.trash).map(t => (isRecord(t) ? t.item : null))]) {
-    const meta = isRecord(it) && isRecord(it.meta) ? it.meta : null;
-    const was = str(meta?.was);
-    const wasCover = str(meta?.wasCover);
-    if (was) out.add(was);
-    if (wasCover) out.add(wasCover);
-  }
   // The faces the board is set in. Not on any item and so not in itemHashes(),
   // which makes them exactly the thing the sweep below would throw away: a face
   // dropped in would be gone by the next autosave, and the board would come

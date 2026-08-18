@@ -1105,12 +1105,11 @@ const SAMPLE = 48;
 export async function samplePixels(urls: string[], limit = MAX_SOURCES) {
   const ctx = sampler();
   if (!ctx) return [];
-  // `limit` may be Infinity, which is what "every picture" arrives as. A falsy
-  // limit is still the default rather than none: 0 reaching here would be a
+  // A falsy limit is the default rather than none: 0 reaching here would be a
   // caller that has not looked the setting up, and reading nothing at all is
   // never the answer anybody wanted.
   const asked = limit || MAX_SOURCES;
-  const n = asked === Infinity ? urls.length : Math.max(1, Math.min(asked, MAX_SOURCES));
+  const n = Math.max(1, Math.min(asked, MAX_SOURCES));
   const out = [];
   for (const url of urls.slice(0, n)) {
     try {

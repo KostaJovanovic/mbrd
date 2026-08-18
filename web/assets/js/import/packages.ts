@@ -403,16 +403,26 @@ function coverPath(entries: Entries): string | null {
  * being opened and failing.
  */
 function comic(entries: Entries): Bytes | null {
-  const pages = [...entries.entries()]
-    .filter(([n, b]) => RASTER.test(n.toLowerCase()) && b.length >= MIN_IMAGE)
-    .sort((a, b) => natural(a[0], b[0]));
-  return pages.length ? pages[0][1] : null;
+  // A linear scan for the first page, not a full sort to take [0]: on a 300-page
+  // .cbz that was thousands of comparisons and the comparator re-tokenised both
+  // names on each. Each name is tokenised once here, and the running best keeps
+  // its tokens rather than being re-split against every candidate.
+  let best: { bytes: Bytes, toks: string[] } | null = null;
+  for (const [n, b] of entries.entries()) {
+    if (!RASTER.test(n.toLowerCase()) || b.length < MIN_IMAGE) continue;
+    const toks = tokenise(n);
+    if (!best || naturalToks(toks, best.toks) < 0) best = { bytes: b, toks };
+  }
+  return best ? best.bytes : null;
 }
 
-/** Compare two names with their digit runs read as numbers. */
-function natural(a: string, b: string): number {
-  const ax = a.toLowerCase().match(/\d+|\D+/g) || [];
-  const bx = b.toLowerCase().match(/\d+|\D+/g) || [];
+/** A name split into its digit and non-digit runs, lower-cased, for natural sort. */
+function tokenise(name: string): string[] {
+  return name.toLowerCase().match(/\d+|\D+/g) || [];
+}
+
+/** Compare two already-tokenised names with their digit runs read as numbers. */
+function naturalToks(ax: string[], bx: string[]): number {
   for (let i = 0; i < Math.min(ax.length, bx.length); i++) {
     const an = /^\d/.test(ax[i]);
     const bn = /^\d/.test(bx[i]);

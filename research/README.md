@@ -120,6 +120,19 @@ register and two subject documents:
   checked, and it records both rather than quietly dropping them; one of them is
   the `isDev()` trap `CLAUDE.md` already warns about.
 
+- `simplification-tasks-2026-08-18.md` — **the executable half of the document
+  above, and nothing else.** Forty-odd numbered tasks in seven commit groups,
+  each naming a file, a string to find it by, what should be there and what to
+  change it to. It exists because the audit argues its findings at length and an
+  agent working through them needs neither the argument nor the whole list in
+  its head at once. Every task carries a search anchor rather than trusting a
+  line number, because the line numbers drift as the earlier tasks land — and a
+  standing rule that a task whose code no longer matches is **abandoned rather
+  than improvised**, since a finding whose ground has moved is a finding whose
+  reasoning may not hold. The two halves will fall out of step the moment
+  anything is done to either; when they disagree, the audit is the record of what
+  was found and this is the record of what to do, and neither is the code.
+
 `patch-notes-full.md` sits at this level too and is **not open work** - it is an
 archive, and the only file here that argues nothing. It holds every release at
 the length it was first written at, internal work included, and it was split off

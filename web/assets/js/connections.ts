@@ -164,6 +164,13 @@ export function clearConnections(label = 'Remove all connections') {
   return before.length;
 }
 
+/** Two connection metas, or two plain lines, are the same styling. */
+const sameConnMeta = (a: ConnMeta | null | undefined, b: ConnMeta | null | undefined) => {
+  if (!a || !b) return !a && !b;
+  return a.dir === b.dir && a.style === b.style && a.color === b.color
+    && a.weight === b.weight && a.label === b.label;
+};
+
 /**
  * Change how one connection is drawn - its direction, line style or label.
  *
@@ -189,10 +196,9 @@ export function updateConnection(a: string, b: string, patch: ConnMeta) {
   // whatever it does not recognise, so a patch of `{ dir: 'sideways' }` came
   // out of it identical to what was already stored - and this committed an
   // "Edit connection" onto the undo stack for it and told the caller it had
-  // worked. Compared as JSON because a ConnMeta is five optional strings and
-  // connMeta() writes them in a fixed order, so two equal metas serialise the
-  // same way.
-  if (JSON.stringify(cur[2] ?? null) === JSON.stringify(meta)) return false;
+  // worked. Compared field by field rather than as JSON, so the check no longer
+  // rides on connMeta() writing its five keys in a fixed order.
+  if (sameConnMeta(cur[2] ?? null, meta)) return false;
   const before = board.connections;
   const after = board.connections.map((p, i) => (i === idx ? nextPair : p));
   commit('Edit connection', () => write(after), () => write(before));

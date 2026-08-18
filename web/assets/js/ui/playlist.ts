@@ -51,7 +51,7 @@
 import {
   board, bus, isDefaultTitle, markDirty, setAudioOrder, trackTitle,
 } from '../state.ts';
-import { clamp } from '../util.ts';
+import { clamp, div, actAsButton } from '../util.ts';
 import {
   bindScrub, clock, seekInnerHTML, sizeSeekWave, reportPlayError,
   PAUSE_ICON, PLAY_ICON,
@@ -207,6 +207,7 @@ let mobileView: View | null = null;    // the Mobile lens
 let windowEl: HTMLElement | null = null;      // the Desktop floating window, or null when closed
 let windowContent: HTMLElement | null = null; // the swappable region under the window's title bar
 let windowView: View | null = null;    // the list inside it
+let windowDetach: (() => void)[] = [];  // grab-listener detaches, called on close
 /**
  * Every transport currently built, so the events that move one move all of them.
  *
@@ -608,14 +609,9 @@ function coverImg(src: string) {
 function createRow(item: Item, view: View): Row {
   const el = div('pl-row');
   el.dataset.id = item.id;
-  el.setAttribute('role', 'button');
-  el.tabIndex = 0;
   const r: Row = { el, item };
   fillRow(r, view);
-  el.addEventListener('click', () => playTrack(r.item));
-  el.addEventListener('keydown', e => {
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); playTrack(r.item); }
-  });
+  actAsButton(el, () => playTrack(r.item));
   return r;
 }
 
@@ -649,8 +645,6 @@ function fillRow(r: Row, view: View) {
     const artist = div('pl-artist');
     artist.textContent = sub;
     main.appendChild(artist);
-  } else {
-    main.classList.add('is-single');
   }
 
   const time = div('pl-time');
@@ -991,7 +985,7 @@ function openPlayerWindow() {
   close.addEventListener('click', closePlayerWindow);
   head.append(title, spacer, toggle, close);
   // The title bar is the grab handle: drag it to move the window around the board.
-  makeWindowDrag(windowEl, head);
+  windowDetach.push(makeWindowDrag(windowEl, head));
 
   // One body, built once. It used to be swapped whole by a view toggle.
   windowContent = div('player-window-content');
@@ -1002,7 +996,7 @@ function openPlayerWindow() {
   const resize = div('player-window-resize');
   resize.setAttribute('aria-hidden', 'true');
   windowEl.appendChild(resize);
-  makeWindowResize(windowEl, resize);
+  windowDetach.push(makeWindowResize(windowEl, resize));
 
   renderWindowBody();
 
@@ -1077,6 +1071,10 @@ function closePlayerWindow() {
   // the music, any more than leaving the Mobile playlist is. The view's destroy
   // takes its transport with it, which is what puts it out of `players`.
   windowView?.destroy();
+  // Take the move/resize grab listeners off window - they close over this
+  // element, which is about to be detached and rebuilt on the next open.
+  windowDetach.forEach(fn => fn());
+  windowDetach = [];
   windowEl = null;
   windowContent = null;
   windowView = null;
@@ -1340,8 +1338,3 @@ function pwBtn(cls: string, icon: string, label: string, onClick: () => void) {
 
 export const isPlayerWindowOpen = () => !!windowEl;
 
-function div(className: string) {
-  const el = document.createElement('div');
-  el.className = className;
-  return el;
-}

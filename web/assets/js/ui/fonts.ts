@@ -635,14 +635,18 @@ async function runAddFontFiles(files: Iterable<File>) {
     )) {
       continue;
     }
-    const [hash, axes, variable] = await Promise.all([
-      addFile(file), fontAxes(file), fontIsVariable(file),
-    ]);
+    const [hash, axes] = await Promise.all([addFile(file), fontAxes(file)]);
     // Same bytes, already here. Nothing to add and nothing to say - dropping a
     // face twice is not an error, it is somebody making sure.
     if (list.some(f => f.hash === hash)) continue;
 
     const family = uniqueFamily(familyFor(file.name), list);
+    // `variable` is only ever consulted when there is no wght axis: register()
+    // reads it only then, and the store below only when there are no axes at all
+    // (the narrower case). So it is asked for only then - which spares a second
+    // parse of the whole font file for every face that carries a wght axis, which
+    // the variable ones do. A duplicate skipped above never asks for it either.
+    const variable = axes.some(a => a.tag === 'wght') ? false : await fontIsVariable(file);
     if (!(await register(hash, family, axes, variable))) {
       toast(`${file.name} is not a font this browser can read`, 'error');
       continue;

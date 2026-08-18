@@ -154,20 +154,6 @@ export interface CommandDeps {
 }
 
 /**
- * Build the command surface for this session.
- *
- * `resetAppearance` and `setWhimsy` are injected rather than imported, in the
- * same shape and for the same reason as setAssetNameLookup() and setPrompt():
- * ui/appearance.js is one of the three modules that touch a browser global at
- * import time, so importing it here would make *this* module unloadable without
- * a DOM and cost the fourth exemption in tests/imports.test.js. main.js already
- * imports it and is already exempt, so the pair comes in from there.
- *
- * @param vp    the live Viewport. Several commands are journeys rather than
- *              state changes, and those are the ones that need it.
- * @param deps  { resetAppearance, setWhimsy } from ui/appearance.js.
- */
-/**
  * The three computed layouts, by id rather than by selection.
  *
  * Split out of the commands above them so the *rule* can be run again on the
@@ -239,6 +225,20 @@ function registerLayoutOps() {
   });
 }
 
+/**
+ * Build the command surface for this session.
+ *
+ * `resetAppearance` and `setWhimsy` are injected rather than imported, in the
+ * same shape and for the same reason as setAssetNameLookup() and setPrompt():
+ * ui/appearance.js is one of the three modules that touch a browser global at
+ * import time, so importing it here would make *this* module unloadable without
+ * a DOM and cost the fourth exemption in tests/imports.test.js. main.js already
+ * imports it and is already exempt, so the pair comes in from there.
+ *
+ * @param vp    the live Viewport. Several commands are journeys rather than
+ *              state changes, and those are the ones that need it.
+ * @param deps  { resetAppearance, setWhimsy } from ui/appearance.js.
+ */
 export function createCommands(vp: CommandsViewport, { resetAppearance, setWhimsy, perf }: CommandDeps) {
   registerLayoutOps();
   /**

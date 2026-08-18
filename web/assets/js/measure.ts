@@ -102,16 +102,27 @@ export const toUnits = (mm: number, scale: unknown) => mm * clampScale(scale);
  * that updates as you drag changes width as little as possible.
  */
 export function formatMm(mm: number, system = 'metric') {
+  const { value, unit } = partsMm(mm, system);
+  return `${value} ${unit}`;
+}
+
+/**
+ * The chosen value and its unit name, kept apart rather than joined into a
+ * string. formatMm() joins them for display; formatSize() compares the `unit`
+ * fields directly, which is the whole reason this exists - recovering the unit
+ * by re-parsing an already-formatted string broke on "4 ft 3 in", whose first
+ * space is not where its unit begins.
+ */
+function partsMm(mm: number, system: string) {
   const neg = mm < 0;
-  const v = Math.abs(mm);
-  const out = system === 'imperial' ? imperial(v) : metric(v);
-  return neg ? '-' + out : out;
+  const { value, unit } = system === 'imperial' ? imperial(Math.abs(mm)) : metric(Math.abs(mm));
+  return { value: neg ? '-' + value : value, unit };
 }
 
 function metric(mm: number) {
-  if (mm < 10) return trim(mm, mm < 1 ? 2 : 1) + ' mm';
-  if (mm < 1000) return trim(mm / 10, mm < 100 ? 2 : 1) + ' cm';
-  return trim(mm / 1000, mm < 10000 ? 2 : 1) + ' m';
+  if (mm < 10) return { value: trim(mm, mm < 1 ? 2 : 1), unit: 'mm' };
+  if (mm < 1000) return { value: trim(mm / 10, mm < 100 ? 2 : 1), unit: 'cm' };
+  return { value: trim(mm / 1000, mm < 10000 ? 2 : 1), unit: 'm' };
 }
 
 /**
@@ -129,13 +140,15 @@ function imperial(mm: number) {
   // not a length anybody writes. Every threshold below reads the shown number.
   const places = mm < MM_PER_INCH ? 3 : 2;
   const shown = Number((mm / MM_PER_INCH).toFixed(places));
-  if (shown < 12) return String(shown) + ' in';
+  if (shown < 12) return { value: String(shown), unit: 'in' };
   const feet = Math.floor(shown / 12);
   const rest = Number((shown - feet * 12).toFixed(1));
   // And the remainder can round up to a full twelve on its own, for the same
   // reason and with the same answer: carry it.
-  if (rest >= 12) return (feet + 1) + ' ft';
-  return rest ? `${feet} ft ${rest} in` : `${feet} ft`;
+  if (rest >= 12) return { value: String(feet + 1), unit: 'ft' };
+  // The compound form keeps its trailing unit as the `unit` field, so two
+  // feet-and-inches lengths that share it collapse the way two centimetres do.
+  return rest ? { value: `${feet} ft ${rest}`, unit: 'in' } : { value: String(feet), unit: 'ft' };
 }
 
 /** Fixed to `places`, then stripped of the zeros that adds. */
@@ -149,15 +162,15 @@ export const formatLength = (units: number, scale: unknown, system?: string) =>
 
 /** "32 x 24 cm" - an item's real size, the pair sharing one unit name. */
 export function formatSize(w: number, h: number, scale: unknown, system?: string) {
-  const a = formatLength(w, scale, system);
-  const b = formatLength(h, scale, system);
-  const unit = a.slice(a.indexOf(' '));
+  const a = partsMm(toMm(w, scale), system ?? 'metric');
+  const b = partsMm(toMm(h, scale), system ?? 'metric');
   // Said once when both halves agree on it, which is nearly always. When they
   // do not - a 9 mm by 4 cm sliver - both keep their own rather than one being
-  // converted into a unit that reads badly for it.
-  return a.endsWith(unit) && b.endsWith(unit)
-    ? `${a.slice(0, -unit.length)} × ${b}`
-    : `${a} × ${b}`;
+  // converted into a unit that reads badly for it. Compared as unit fields, not
+  // recovered from the printed text: see partsMm().
+  return a.unit === b.unit
+    ? `${a.value} × ${b.value} ${b.unit}`
+    : `${a.value} ${a.unit} × ${b.value} ${b.unit}`;
 }
 
 /**
