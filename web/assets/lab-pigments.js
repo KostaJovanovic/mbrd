@@ -598,7 +598,7 @@ async function samplePixels(urls, limit = MAX_SOURCES) {
   const ctx = sampler();
   if (!ctx) return [];
   const asked = limit || MAX_SOURCES;
-  const n = asked === Infinity ? urls.length : Math.max(1, Math.min(asked, MAX_SOURCES));
+  const n = Math.max(1, Math.min(asked, MAX_SOURCES));
   const out = [];
   for (const url of urls.slice(0, n)) {
     try {

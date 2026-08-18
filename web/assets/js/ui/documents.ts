@@ -46,6 +46,7 @@
 // people want from a moodboard is to read the words.
 
 import { readZip } from '../storage/zip.ts';
+import { makeEl as el } from '../util.ts';
 import { lift, allow, mb, nameOf } from '../consent.ts';
 // The container walk itself, shared with import/slide.ts, which composites a
 // deck's first slide into a card. It lives down there rather than here because
@@ -161,16 +162,6 @@ export async function readDocument(blob: Blob, ext: unknown) {
 // ---------------------------------------------------------------------------
 
 const dec = new TextDecoder();
-/**
- * Generic over the tag, so a caller that asks for an 'img' is handed something
- * with a `src` on it. The three callers that build a heading name from a number
- * cast, and say why where they do it.
- */
-const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls?: string): HTMLElementTagNameMap[K] => {
-  const n = document.createElement(tag);
-  if (cls) n.className = cls;
-  return n;
-};
 
 /**
  * One entry of an archive as a parsed XML document.
@@ -208,13 +199,13 @@ function guessMime(path: string) {
 }
 
 /**
- * A table from rows of strings, with the first row as the head if asked.
+ * A table from rows of strings, with the first row as the head.
  *
  * The cells are `string | null` because that is what a DOM textContent answers
  * and what the readers hand over untouched - and because textContent is also
  * what they are written back into, which takes null as the empty cell it is.
  */
-function tableOf(rows: (string | null)[][], { head = true } = {}) {
+function tableOf(rows: (string | null)[][]) {
   const t = el('table', 'doc-table');
   let cells = 0;
   const wrap = el('div', 'doc-table-wrap');
@@ -230,12 +221,12 @@ function tableOf(rows: (string | null)[][], { head = true } = {}) {
       // That is not a truncated read, it is the tab going down. An xlsx row
       // whose <c> cells carry no `r` attribute has the same shape.
       if (cells > MAX_CELLS) break;
-      const cell = el(head && n === 0 ? 'th' : 'td');
+      const cell = el(n === 0 ? 'th' : 'td');
       cell.textContent = value;
       tr.append(cell);
       cells++;
     }
-    if (head && n === 0) {
+    if (n === 0) {
       const thead = el('thead');
       thead.append(tr);
       t.append(thead);
@@ -371,10 +362,12 @@ function wordRun(r: Element, entries: Entries, rels: Rels, urls: string[],
   mayDrawImage: () => boolean) {
   const out: Node[] = [];
   const props = childOf(r, 'rPr');
-  // The second childOf is asserted because the first conjunct just called it and
-  // got an element: the lookup is a scan of the same children for the same name.
-  const on = (what: string) => !!(props && childOf(props, what)
-    && (childOf(props, what)!.getAttribute('w:val') ?? '') !== '0');
+  // One childOf per flag, not two: the lookup is a scan of the same children for
+  // the same name, and it was run once to test and once to read the attribute.
+  const on = (what: string) => {
+    const flag = props && childOf(props, what);
+    return !!(flag && (flag.getAttribute('w:val') ?? '') !== '0');
+  };
 
   for (const child of r.children) {
     if (child.localName === 't') {

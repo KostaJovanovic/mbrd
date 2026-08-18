@@ -73,6 +73,41 @@ export const BASE_ZOOM = 1;
 
 export const MIN_ZOOM = 0.1 * BASE_ZOOM;   // 10% as printed
 export const MAX_ZOOM = 5 * BASE_ZOOM;     // 500% as printed
+
+/**
+ * How much board is kept mounted beyond the edge of the screen, to hide pop-in,
+ * in *screen* pixels - converted to world units per call, which is the whole
+ * point. It was a flat 400 world units, a margin that does not shrink as you
+ * zoom in: at 100% it held about two and a half screens of cards, at 200% five,
+ * because the visible world rectangle halves with every doubling of zoom while a
+ * world-space margin stays the size it was. The pop-in it hides happens in
+ * screen pixels, so this is the unit it should always have been in.
+ */
+const CULL_MARGIN_PX = 300;
+
+/**
+ * And a ceiling on it in world units, the number this used to be. Below about
+ * three-quarter zoom a constant screen margin is *wider* on the board than the
+ * flat 400 was and would buy nothing - the visible slice is already enormous and
+ * card chrome has been dropped - so the screen-space rule applies where it helps
+ * and the old world-space one caps it beyond that. Never worse than before, at
+ * any zoom.
+ */
+const CULL_MARGIN_MAX = 400;
+
+/**
+ * That margin in world units at the current zoom.
+ *
+ * Exported from here because canvas/items.js and canvas/web.js both cull against
+ * it: their own module-level copies had drifted apart, which is the shape of bug
+ * a duplicated line exists to produce - change one and you had to remember the
+ * other. The null guard is not defensive noise: `vp` arrives in each module's
+ * init(), and this is reachable from a repaint a subsystem can schedule before
+ * that wiring is done, at which point an unguarded read is a TypeError during
+ * boot rather than a margin.
+ */
+export const cullMargin = (vp: Viewport | null): number =>
+  Math.min(CULL_MARGIN_PX / (vp ? vp.zoom : 1), CULL_MARGIN_MAX);
 const MOBILE_SIDE_PAD = 16;
 const MOBILE_TOP_PAD = 32;
 const MOBILE_BOTTOM_PAD = 32;

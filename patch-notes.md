@@ -96,6 +96,44 @@ string from the interface.
 
 ## Releases
 
+## Face Up
+version: 0.231 - 0.252
+date: 16 - 18 August 2026
+
+- A release about cards that used to be blank. A great many files that dropped
+  in as a grey rectangle with a name on it now show their own picture, and the
+  clips that would not preview at all finally do.
+- [new] **Documents and design files show the thumbnail they were saved with.**
+  Word, Excel, PowerPoint, Pages, Numbers, Keynote and OpenDocument files, the
+  older `.doc`, `.xls` and `.ppt` from before those, and Visio, Krita,
+  Procreate, SolidWorks and 3ds Max files besides - each arrives as a
+  recognisable picture rather than a named blank.
+- [new] **Programs and app packages show their own icon.** A Windows `.exe` or
+  `.dll` shows the same icon Explorer draws for it, and an Android `.apk`, an
+  iOS `.ipa`, a Windows `.appx`, an ebook (`.epub`), a comic (`.cbz`) or a
+  3D-print package (`.3mf`) shows its icon or its cover.
+- [new] **Camera RAW and HEIC photos show a real image.** The app pulls out the
+  preview the camera tucked inside, so a folder of `.cr2`, `.nef`, `.arw`,
+  `.dng` or `.heic` files is a wall of pictures again instead of grey cards.
+- [new] **Clips a browser cannot play still get the right shape and facts.** AVI,
+  WMV, FLV, MPEG and their kind now carry their true length and dimensions, so
+  the card fits the video rather than guessing at it.
+- [fix] **Video previews now appear on Android phones and on Firefox.** A clip
+  used to land as a blank card there, and a phone's own camera footage was the
+  exact case that failed. The app now reads the first frame another way and
+  shows it.
+- [fix] **Photo-heavy boards no longer run older iPhones and iPads out of
+  memory.** The picture-shrinking that keeps a big board inside a tab's memory
+  had quietly stopped working on Safari before 16.4, where a couple of dozen
+  photos could crash the tab. It works there now.
+- [new] **The playback bar has a proper transport** - a large round play/pause
+  button at its head, and a `Next` button beside it while a playlist runs, in
+  place of the old row of small controls.
+- [fix] **Emptying the bin actually frees the space.** A deleted file's data
+  used to travel on inside the board and be written into every save afterwards,
+  so a board you had cleared out still weighed as much as before. Emptying the
+  bin now removes it for good.
+
 ## Every Corner
 version: 0.207 - 0.230
 date: 15 - 16 August 2026

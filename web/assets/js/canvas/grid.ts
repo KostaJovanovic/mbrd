@@ -610,16 +610,26 @@ function paintAxes(vp: Viewport) {
   if (x + t > 0 && x < W) { ctx.fillRect(x, 0, t, H); axisWas.x = x; }
 }
 
+/**
+ * A hidden `<canvas>` for one of the viewport's ink layers, with its id. The two
+ * ensure*() functions below differ in where they insert it and what state they
+ * reset; this is the part they shared.
+ */
+function makeInkCanvas(id: string): InkCanvas {
+  // SAFETY: the cast is the `_dpr` field, written by sizeCanvas() before any
+  // painter reads it - every painter sizes the backing store before it draws -
+  // and the field is this module's own.
+  const canvas = document.createElement('canvas') as InkCanvas;
+  canvas.id = id;
+  canvas.setAttribute('aria-hidden', 'true');
+  return canvas;
+}
+
 /** The axis layer, made if it is not there - see ensureCanvas() for why. */
 function ensureAxisCanvas(el: HTMLElement): InkCanvas {
   let canvas = el.querySelector<InkCanvas>(':scope > #axis-ink');
   if (!canvas) {
-    // SAFETY: the cast is `_dpr`, and sizeCanvas() is where it lands. Every
-    // painter sizes the backing store before it draws, so nothing reads it
-    // before then, and the field is this module's own.
-    canvas = document.createElement('canvas') as InkCanvas;
-    canvas.id = 'axis-ink';
-    canvas.setAttribute('aria-hidden', 'true');
+    canvas = makeInkCanvas('axis-ink');
     // Over the lattice and under the board, which is where index.html puts it.
     // Appending would put the rules on top of every item.
     const world = el.querySelector(':scope > #world');
@@ -933,11 +943,7 @@ function lattice(ctx: CanvasRenderingContext2D, tileCss: number, o: { x: number;
 function ensureCanvas(el: HTMLElement): InkCanvas {
   let canvas = el.querySelector<InkCanvas>(':scope > #grid-ink');
   if (!canvas) {
-    // SAFETY: as in ensureAxisCanvas() - the cast is `_dpr`, written by
-    // sizeCanvas() before any painter reads it.
-    canvas = document.createElement('canvas') as InkCanvas;
-    canvas.id = 'grid-ink';
-    canvas.setAttribute('aria-hidden', 'true');
+    canvas = makeInkCanvas('grid-ink');
     el.prepend(canvas);
     // A new element carries none of the styles the last one was written, so
     // what paintGrid() remembers writing is now a memory of a different node.

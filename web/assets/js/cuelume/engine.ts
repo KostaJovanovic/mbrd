@@ -805,15 +805,6 @@ export function cue(name: Cue, opts: CueOptions = {}): void {
     logging ? { cue: name, sound: voice.sound } : null);
 }
 
-/**
- * One voice, named outright. The bench's door and nothing else's - the app says
- * `cue()`, which is the whole point of the cue names existing.
- */
-export function playVoice(voice: Voice, volume = 1): void {
-  if (muted()) return;
-  render(recipeFor(voice), volume, 0, logging ? { cue: 'lab', sound: voice.sound } : null);
-}
-
 /** The same, for a recipe built by hand. Only web/lab-sound.html calls it. */
 export function playRecipe(recipe: SoundRecipe, volume = 1): void {
   if (muted()) return;

@@ -182,8 +182,10 @@ function openWith(el: HTMLDialogElement, o: AskSettled): Promise<Answer | string
     // outside the panel - which is what ::backdrop actually is here.
     const onClick = (e: MouseEvent) => { if (e.target === el) close('cancel'); };
 
-    // Escape, which the browser handles by firing this and closing on its own.
-    const onCancelEvent = () => { answer = 'cancel'; };
+    // Escape is left to the browser: it fires `cancel` then `close`, and this
+    // dialog answers on `close` (onClose below). `answer` is already 'cancel'
+    // on every path that reaches here, so a `cancel` listener could only
+    // re-set what it already is - hence there is none.
 
     // Enter in the field is the same press as the go button. Without it the
     // only way to answer a one-box question is to reach for the mouse, having
@@ -196,7 +198,6 @@ function openWith(el: HTMLDialogElement, o: AskSettled): Promise<Answer | string
       keep.removeEventListener('click', onKeep);
       field.removeEventListener('keydown', onKey);
       el.removeEventListener('click', onClick);
-      el.removeEventListener('cancel', onCancelEvent);
       el.removeEventListener('close', onClose);
       // A field question answers with what was typed; a button question answers
       // with which button. See the note on ask().
@@ -208,7 +209,6 @@ function openWith(el: HTMLDialogElement, o: AskSettled): Promise<Answer | string
     keep.addEventListener('click', onKeep);
     field.addEventListener('keydown', onKey);
     el.addEventListener('click', onClick);
-    el.addEventListener('cancel', onCancelEvent);
     el.addEventListener('close', onClose);
 
     el.showModal();

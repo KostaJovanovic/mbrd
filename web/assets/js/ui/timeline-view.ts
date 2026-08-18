@@ -47,7 +47,7 @@ import { bus } from '../board-store.ts';
 import { toast } from '../notify.ts';
 import { el, formatBytes } from '../util.ts';
 import { ARRANGEMENTS, MOBILE_ARRANGEMENTS } from '../arrange/arrangements.ts';
-import { openAnchored } from './menu.ts';
+import { openAnchored, icon } from './menu.ts';
 import type { MenuEntry } from './menu.ts';
 import { ask } from './dialog.ts';
 import {
@@ -588,23 +588,8 @@ function dotFor(step: Step | null, position: number, at: number, label: string) 
   return button;
 }
 
-/**
- * One <svg><use> at a symbol in the sprite.
- *
- * createElementNS, not innerHTML: an <svg> built with createElement lands in
- * the HTML namespace and renders as nothing at all, which is the failure this
- * function exists so that nobody has to rediscover.
- */
-function icon(name: string) {
-  const NS = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(NS, 'svg');
-  svg.setAttribute('class', 'ico');
-  svg.setAttribute('aria-hidden', 'true');
-  const use = document.createElementNS(NS, 'use');
-  use.setAttribute('href', `assets/icons.svg#${name}`);
-  svg.append(use);
-  return svg;
-}
+// icon() is borrowed from ui/menu.ts, which exports it for exactly this - a
+// local copy landed an <svg> in the HTML namespace and rendered nothing.
 
 // ── The sheet ──────────────────────────────────────────────────────────────
 //

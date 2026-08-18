@@ -263,11 +263,6 @@ function mediaKind({ mime, ext, type, isCover }: {
  * dialog can say which one it is on - a board of forty photographs is several
  * seconds of work and a frozen window is indistinguishable from a broken one.
  *
- * Every file is done one at a time and awaited. Running them concurrently would
- * be faster on paper and is the wrong shape here: each one holds a full decoded
- * bitmap, and eight of those at once on a board of large photographs is how you
- * find the tab's memory ceiling.
- *
  * The rewriting touches the board exactly once, at the end, in a single undoable
  * commit - see swapAssets(). Half an optimisation is not a state the board
  * should ever be observed in.
@@ -339,9 +334,15 @@ const LANES = {
 const cores = () => globalThis.navigator?.hardwareConcurrency || 4;
 
 export async function runOptimize(
-  { onProgress = () => {} }: { onProgress?: (p: Progress) => void } = {},
+  { onProgress = () => {}, plan = planOptimize() }:
+    { onProgress?: (p: Progress) => void, plan?: Plan } = {},
 ): Promise<Report> {
-  const plan = planOptimize();
+  // The plan the dialog built is passed in and reused rather than rebuilt here.
+  // planOptimize() walks the whole board, so this was that walk done twice per
+  // run; it also means the run does exactly what the dialog promised, even if the
+  // board moved between the question and the answer - which is what the user
+  // agreed to. A caller with none (a test, boardWeight's neighbours) still gets
+  // a fresh plan from the default.
 
   // The empty files, before anything else runs.
   //
@@ -457,6 +458,33 @@ export async function runOptimize(
 }
 
 /**
+ * The clips on this board with no usable still, asked properly.
+ *
+ * Two kinds, and only the first is cheap. A cover whose bytes are absent is a
+ * hash lookup. A cover whose bytes are *there and empty* - a black rectangle,
+ * written by a build that could not decode a frame and stored one anyway - is a
+ * decode, and there is no way round it: that card looks finished to every test
+ * that reads hashes, which is what let a whole board of them report "nothing
+ * left to do".
+ *
+ * So the cheap question is asked first and the decode only happens for clips
+ * that pass it. Exported because the dialog has to ask the same question before
+ * it offers the run - see optimize/ui.ts, where a wrong answer is the difference
+ * between a button that works and a toast saying the board is already done.
+ */
+export async function clipsWantingStills(): Promise<ItemView[]> {
+  const clips = cards().filter(it => it.type === 'video' && it.asset?.hash);
+  if (!clips.length) return [];
+  const { pictureIsFlat } = await import('../canvas/poster.ts');
+  const wanted: ItemView[] = [];
+  for (const it of clips) {
+    const cover = typeof it.meta?.cover === 'string' ? it.meta.cover : '';
+    const held = cover ? getAsset(cover) : null;
+    if (!held || await pictureIsFlat(held.blob)) wanted.push(it);
+  }
+  return wanted;
+}
+/**
  * Give every video on the board a still of its own first frame, if it has none.
  *
  * The same repair backfillThumbs() is, for the same reason: import makes these
@@ -490,34 +518,6 @@ export async function runOptimize(
  * cards are blank" was that running the optimiser changed nothing - which is
  * the thing that was actually wrong.
  */
-
-/**
- * The clips on this board with no usable still, asked properly.
- *
- * Two kinds, and only the first is cheap. A cover whose bytes are absent is a
- * hash lookup. A cover whose bytes are *there and empty* - a black rectangle,
- * written by a build that could not decode a frame and stored one anyway - is a
- * decode, and there is no way round it: that card looks finished to every test
- * that reads hashes, which is what let a whole board of them report "nothing
- * left to do".
- *
- * So the cheap question is asked first and the decode only happens for clips
- * that pass it. Exported because the dialog has to ask the same question before
- * it offers the run - see optimize/ui.ts, where a wrong answer is the difference
- * between a button that works and a toast saying the board is already done.
- */
-export async function clipsWantingStills(): Promise<ItemView[]> {
-  const clips = cards().filter(it => it.type === 'video' && it.asset?.hash);
-  if (!clips.length) return [];
-  const { pictureIsFlat } = await import('../canvas/poster.ts');
-  const wanted: ItemView[] = [];
-  for (const it of clips) {
-    const cover = typeof it.meta?.cover === 'string' ? it.meta.cover : '';
-    const held = cover ? getAsset(cover) : null;
-    if (!held || await pictureIsFlat(held.blob)) wanted.push(it);
-  }
-  return wanted;
-}
 async function backfillPosters(onProgress: (p: Progress) => void): Promise<number> {
   const wanted = await clipsWantingStills();
   if (!wanted.length) return 0;
@@ -595,32 +595,6 @@ async function viaFfmpeg(
 }
 
 /**
- * Give everything on the board with a picture a thumbnail, if it has not got one.
- *
- * Import makes these, so on a board built since they existed this finds
- * nothing and costs one pass over the item list. It is here for the two cases
- * that import cannot cover: a board saved before thumbnails existed, and a
- * picture whose bytes were just replaced by the optimiser above - the thumbnail
- * is keyed to the *item*, but its source is whatever the item now holds, and
- * re-encoding a photograph without re-cutting its thumbnail would leave the
- * zoomed-out view showing a copy of the old one.
- *
- * "Everything with a picture" rather than "every photograph": see thumbSource()
- * above. What changed is coverage and not aggression - a thumbnail that is
- * present and current is still left alone, because re-cutting four hundred of
- * them to produce four hundred identical files is a minute of somebody's time
- * spent on nothing.
- *
- * Runs after swapAssets(), deliberately: that is the commit that decides what
- * each item's bytes finally are, and cutting thumbnails from anything earlier
- * would be cutting them from bytes that are about to be replaced.
- *
- * Not undoable, and it does not need to be. A thumbnail is a derived copy that
- * nothing but the renderer reads; adding one changes what the board *shows* at
- * one zoom and nothing about what it *is*. The undo entry that matters - the
- * asset swap - is already closed above.
- */
-/**
  * Which bytes an item's thumbnail should be cut from, or null for one that has
  * no picture at all.
  *
@@ -652,6 +626,32 @@ function thumbSource(it: ItemView): string | null {
   return null;
 }
 
+/**
+ * Give everything on the board with a picture a thumbnail, if it has not got one.
+ *
+ * Import makes these, so on a board built since they existed this finds
+ * nothing and costs one pass over the item list. It is here for the two cases
+ * that import cannot cover: a board saved before thumbnails existed, and a
+ * picture whose bytes were just replaced by the optimiser above - the thumbnail
+ * is keyed to the *item*, but its source is whatever the item now holds, and
+ * re-encoding a photograph without re-cutting its thumbnail would leave the
+ * zoomed-out view showing a copy of the old one.
+ *
+ * "Everything with a picture" rather than "every photograph": see thumbSource()
+ * above. What changed is coverage and not aggression - a thumbnail that is
+ * present and current is still left alone, because re-cutting four hundred of
+ * them to produce four hundred identical files is a minute of somebody's time
+ * spent on nothing.
+ *
+ * Runs after swapAssets(), deliberately: that is the commit that decides what
+ * each item's bytes finally are, and cutting thumbnails from anything earlier
+ * would be cutting them from bytes that are about to be replaced.
+ *
+ * Not undoable, and it does not need to be. A thumbnail is a derived copy that
+ * nothing but the renderer reads; adding one changes what the board *shows* at
+ * one zoom and nothing about what it *is*. The undo entry that matters - the
+ * asset swap - is already closed above.
+ */
 async function backfillThumbs(
   restaged: Set<string>,
   width: Map<string, number>,
@@ -735,8 +735,15 @@ async function encodeOne(asset: AssetEntry, job: Job) {
  * header is a picture some players will not draw.
  */
 async function carried(asset: AssetEntry) {
-  const tags = await audioTags(asset.blob).catch(() => []);
-  const art = await coverArt(asset.blob).catch(() => null);
+  // Overlapped rather than one after the other: both read the same blob and are
+  // independent, so the container walk for the tags and the walk for the art run
+  // together. (They remain two walks - folding them into one would mean merging
+  // three binary-parser pairs in import/artwork.ts, which is not worth the risk
+  // for a backgrounded pass.)
+  const [tags, art] = await Promise.all([
+    audioTags(asset.blob).catch(() => []),
+    coverArt(asset.blob).catch(() => null),
+  ]);
   if (!art) return { tags };
   const small = await shrinkPicture(art, {
     maxSide: MAX_SIDE_COVER, quality: QUALITY, type: 'image/jpeg',

@@ -32,6 +32,7 @@
 // decides what is on screen. ui/sidebar.js owns the subscriptions and calls
 // paintPanel() - there is one paint, not two racing.
 import { board } from '../state.ts';
+import { makeEl as make } from '../util.ts';
 import { cue } from '../cuelume/engine.ts';
 import { isPatchPage } from '../page.ts';
 import { field, fieldStops } from './controls.ts';
@@ -86,12 +87,6 @@ const ctx = (): Ctx => ({
   mobile: board.layoutMode === 'mobile',
   patch: isPatchPage(),
 });
-
-const make = <K extends keyof HTMLElementTagNameMap>(tag: K, className = '') => {
-  const el = document.createElement(tag);
-  if (className) el.className = className;
-  return el;
-};
 
 /**
  * Build the whole panel into a sidebar shell.

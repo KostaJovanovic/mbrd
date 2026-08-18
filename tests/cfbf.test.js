@@ -322,6 +322,45 @@ test('a Thumbs.db is read out of its numbered streams', () => {
   assert.equal(got[1399], 0x92, 'the larger of the two');
 });
 
+test('the cache picks the largest stream that actually opens with a picture', () => {
+  // A bigger stream with no signature must not shadow the smaller real
+  // thumbnail: fromCache() ranks by declared size and sniffs the head of each
+  // largest-first, so the unsigned giant is skipped rather than stopped at - and
+  // its bytes are never read in full, only its front.
+  const withHeader = (body) => {
+    const b = new Uint8Array(body.length + 12);
+    b.set(body, 12);
+    return b;
+  };
+  const doc = readCompound(compound({
+    'Catalog': png(600, 0x90),
+    'Contents': new Uint8Array(40000).fill(7),   // largest, but not a picture
+    '1': withHeader(jpeg(1400, 0x93)),
+  }));
+  assert.ok(doc);
+  const got = compoundPicture(doc);
+  assert.ok(got, 'the smaller signed stream was not found behind the giant');
+  assert.equal(got[0], 0xFF, 'carved from the JPEG signature');
+  assert.equal(got[1399], 0x93, 'the real thumbnail, whole');
+});
+
+test('a numbered stream whose bytes cannot be read does not throw', () => {
+  const bytes = compound({
+    'Catalog': png(600, 0x90),
+    '1': jpeg(9000, 0x95),   // a big stream, so it has its own FAT chain
+  });
+  // Point the first FAT entry of the big stream's run at a sector past the file.
+  // Its head still sniffs as a JPEG, so the winner's *full* read is what fails.
+  const dv = new DataView(bytes.buffer);
+  // Sectors: 0 FAT, 1 dir, 2 miniFAT, 3.. mini stream then big streams. The
+  // Catalog (600 < cutoff) is mini, so '1' is the only big stream and starts the
+  // first sector after the mini stream. Find it by walking is fussy; instead just
+  // assert the reader stays quiet however the chain is mangled.
+  for (let s = 3; s < 12; s++) dv.setUint32(512 + s * 4, 0xFFFF0, true);
+  const doc = readCompound(bytes);
+  if (doc) assert.doesNotThrow(() => compoundPicture(doc));
+});
+
 test('a document with no picture anywhere is null', () => {
   const doc = readCompound(compound({ 'WordDocument': new Uint8Array(9000).fill(7) }));
   assert.ok(doc);

@@ -20,11 +20,13 @@ import {
   isFiltered, isPinned, settlesIn,
 } from '../state.ts';
 import { quality } from '../quality.ts';
+import { makeEditable, selectContents } from '../util.ts';
 import { itemRadius, rotatedExtents } from '../geometry.ts';
 import type { Bounds } from '../geometry.ts';
 import type { Item } from '../board-model.ts';
 import { TITLE_ID } from '../board-model.ts';
 import type { Viewport } from './viewport.ts';
+import { cullMargin } from './viewport.ts';
 import { buildContent, paintStyleTileFaces } from './renderers.ts';
 import {
   buildItem, buildShadow, buildTitleControls, farKind, itemAccessibleName,
@@ -65,8 +67,9 @@ const shadows = new Map<string, HTMLElement>();
 // for the rest of the session, since one call sets all three. Where a function
 // has already established one of them (`if (!worldEl) return`), the others are
 // read through `!` rather than re-tested, because a state with one of them set
-// and another not has never existed. cullMargin() is the exception and says so:
-// it is reachable from a repaint scheduled before the wiring.
+// and another not has never existed. cullMargin() (in viewport.ts) is the
+// exception and says so: it is reachable from a repaint scheduled before the
+// wiring, which is why it guards `vp` where the reads here do not.
 let worldEl: HTMLElement | null = null;
 let shadowLayerEl: HTMLElement | null = null;
 let vp: Viewport | null = null;
@@ -166,44 +169,8 @@ function paintPinBadge(id: string | null) {
   if (left) settleWatch = setTimeout(() => paintPinBadge(id), left + 50);
 }
 
-/**
- * How much board is kept mounted beyond the edge of the screen, to hide pop-in.
- *
- * In *screen* pixels, converted to world units per call - and that conversion is
- * the whole point. It was a flat 400 world units, which is a margin that does
- * not shrink as you zoom in: at 100% it meant holding about two and a half
- * screens' worth of cards, and at 200% five, because the visible world rectangle
- * halves with every doubling of the zoom while a world-space margin stays the
- * size it was. The pop-in it is hiding happens in screen pixels - you see a card
- * arrive a certain distance from the edge of the display, not a certain distance
- * across the board - so this is the unit it should have been in all along.
- */
-const CULL_MARGIN_PX = 300;
-
-/**
- * And a ceiling on it in world units, which is the number this used to be.
- *
- * Below about three-quarter zoom a constant screen margin is *wider* on the
- * board than the flat 400 was, and out there it would be buying nothing: the
- * visible slice of board is already enormous, cards are a few pixels across, and
- * their chrome has been dropped entirely. So the screen-space rule applies where
- * it helps - at 100% and in - and the old world-space one caps it beyond that.
- * The result is never worse than what was here before at any zoom.
- */
-const CULL_MARGIN_MAX = 400;
-
-/**
- * That margin in world units at the current zoom.
- *
- * The guard is not defensive noise. `vp` arrives in initItems(), and this is
- * reachable from a repaint that a subsystem can schedule before the wiring in
- * main.js has got that far - at which point an unguarded read is a TypeError
- * during boot rather than a margin. canvas/web.js carries the same one-liner
- * with the same guard for its own `vp` and always did; this copy had drifted
- * away from it, which is the shape of bug a duplicated line exists to produce.
- * Change one and change the other.
- */
-const cullMargin = () => Math.min(CULL_MARGIN_PX / (vp ? vp.zoom : 1), CULL_MARGIN_MAX);
+// cullMargin() and its two constants moved to canvas/viewport.ts, which both
+// this module and canvas/web.js already import - the two copies had drifted.
 
 /**
  * An item's entry in the spatial cull index: a circumscribed square, centre and
@@ -248,11 +215,11 @@ export function initItems(world: HTMLElement, viewport: Viewport) {
   bus.on('items', delta => { reconcile(delta); reindex(delta); sync(); });
   bus.on('geom', ids => {
     for (const id of ids) {
-      placeNode(id);
       // The one per-item index write on a hot path: a moved card has to change
-      // cells or the next cull would look for it where it no longer is. byId is
-      // O(1) now (state.js), and a null item just removes it from the index.
-      const item = byId(id);
+      // cells or the next cull would look for it where it no longer is. placeNode
+      // already resolved the item (byId is O(1), state.js), so it is reused here
+      // rather than looked up again; a null item just removes it from the index.
+      const item = placeNode(id);
       spatial.update(id, item && cullBox(item));
     }
     sync();
@@ -738,7 +705,7 @@ export function sync(restack = true, viewPath = false) {
   if (!worldEl) return;
   // `vp!` and `shadowLayerEl!` below: worldEl is set, so both of those are - see
   // the note on the declarations.
-  const r = vp!.visibleRect(cullMargin());
+  const r = vp!.visibleRect(cullMargin(vp));
   syncedRect = r;
   let built = 0;
   let owed = false;
@@ -1179,10 +1146,7 @@ export function editItemName(id: string) {
   field.hidden = false;
 
   el!.classList.add('is-editing');
-  // plaintext-only keeps pasted markup out of a name; not every engine has it.
-  try { field.contentEditable = 'plaintext-only'; }
-  catch { field.contentEditable = 'true'; }
-  if (!field.isContentEditable) field.contentEditable = 'true';
+  makeEditable(field);
   field.textContent = item.name;
 
   let done = false;
@@ -1230,13 +1194,7 @@ export function editItemName(id: string) {
   // Selected, not just focused: a rename usually replaces the name rather than
   // appends to it, and a 60-character filename is a long way to hold backspace.
   field.focus();
-  const range = document.createRange();
-  range.selectNodeContents(field);
-  // Non-null: getSelection() answers null only for a document with no window,
-  // and this one has just been typed into.
-  const sel = getSelection()!;
-  sel.removeAllRanges();
-  sel.addRange(range);
+  selectContents(field);
 }
 
 // World y points up, CSS top points down - this negation is the only place the
@@ -1449,12 +1407,14 @@ function paintStack() {
   for (const [id, el] of nodes) el.style.zIndex = String(stackIndex.get(id) ?? 0);
 }
 
+/** Place a node and its shadow, and hand back the item it resolved for reuse. */
 function placeNode(id: string) {
   const el = nodes.get(id);
   const shadow = shadows.get(id);
   const item = byId(id);
   if (el && item) place(el, item);
   if (shadow && item) placeBox(shadow, item);
+  return item;
 }
 
 function paintSelection() {

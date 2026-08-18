@@ -262,8 +262,9 @@ test('the palette compares pictures by hash, without minting an object URL', () 
     'and from the source dial - a key over every picture is a key that never settles');
   assert.ok(!body.includes('assetURL('), 'the key must not mint an object URL either');
 
-  // And the resolve that does happen is of the slice, not of the board.
-  assert.match(source, /hashes\.slice\(0, sourceCount\(\)\)\.map\(assetURL\)/);
+  // And the resolve that does happen is of the slice, not of the board - and the
+  // slice is capped at MAX_SOURCES, which is all samplePixels() will ever read.
+  assert.match(source, /hashes\.slice\(0, Math\.min\(sourceCount\(\), MAX_SOURCES\)\)\.map\(assetURL\)/);
 });
 
 // ---------------------------------------------------------------------------

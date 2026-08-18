@@ -199,7 +199,7 @@ export function initAppearance(handlers: { onChange?: () => void } = {}) {
   // value because the four sites below reassign it - a board arriving replaces
   // the whole look - and a captured reference would go stale on the first open.
   initAppearanceControls({
-    CONTROLS, HOSTS, WHIMSY, ALL_SOURCES_STOP,
+    CONTROLS, HOSTS, WHIMSY, ALL_SOURCES_STOP, ALL_SOURCES_MAX,
     current: () => current,
     setVar, setWhimsy, setPalette, goDynamic, sourceCount, dynamicOn,
   });
@@ -679,9 +679,10 @@ function pictureHashes() {
  * How many pictures the palette is read from: the board's own setting.
  *
  * Zero is the stop past the top of the dial and means every picture on the
- * board, which is Infinity here - it flows into slice() and into samplePixels()
- * as a limit that limits nothing. Anything else is held inside the sampler's
- * default ceiling, and an unset setting reads as that ceiling.
+ * board - which is ALL_SOURCES_MAX here, not Infinity; the block on that
+ * constant below argues why a number rather than "however many there are".
+ * Anything else is held inside the sampler's default ceiling, and an unset
+ * setting reads as that ceiling.
  */
 function sourceCount() {
   const n = board.paletteSources;
@@ -785,7 +786,7 @@ function autoRecolour() {
   const hashes = pictureHashes();
   if (!autoPaletteReady(hashes.length, dynamicOn())) return;
   if (sourceKey(hashes) === lastSources) return;
-  recolourFromBoard({ silent: true }).catch(() => {});
+  recolourFromBoard({ silent: true, hashes }).catch(() => {});
 }
 
 /**
@@ -801,15 +802,19 @@ function autoRecolour() {
  * per reason - `lastFailure` - so a board that genuinely has no colour in it
  * does not nag on every single edit.
  */
-async function recolourFromBoard({ silent = false } = {}) {
-  const hashes = pictureHashes();
+async function recolourFromBoard(
+  { silent = false, hashes = pictureHashes() }: { silent?: boolean, hashes?: string[] } = {},
+) {
+  // The hashes are a parameter so autoRecolour() can hand over the single walk
+  // it already made rather than have this one repeat it - the same one-pass
+  // design sourceKey()'s header states. Only a caller with none makes the walk.
   // Sliced before the URLs are resolved, not after: a picture past the count is
   // never read, and minting a blob URL for it would hold the whole board's
   // pictures open for the session to sample twelve of them.
   // The predicate is spelled out because the list is what samplePixels() takes:
   // assetURL() answers null for a hash the store has lost, and those are what
   // this drops - the same filter as before, saying which type comes out of it.
-  const urls = hashes.slice(0, sourceCount()).map(assetURL)
+  const urls = hashes.slice(0, Math.min(sourceCount(), MAX_SOURCES)).map(assetURL)
     .filter((u): u is string => !!u);
   // Recorded before the pixels are read, not after: the answer to "which
   // pictures is the palette standing on" is these, whatever they turn out to

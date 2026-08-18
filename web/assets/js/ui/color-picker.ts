@@ -262,7 +262,10 @@ function openWith(el: HTMLDialogElement, o: Required<PickOptions>) {
     const onGo = () => close(hsvToHex(h, s, v));
     const onCancel = () => close(null);
     const onClick = (e: MouseEvent) => { if (e.target === el && !dragged) close(null); };
-    const onCancelEvent = () => { answer = null; };
+    // Escape is left to the browser: it fires `cancel` then `close`, and this
+    // dialog answers on `close` (onClose below). `answer` is already null until
+    // a `close(hex)` sets it, so a `cancel` listener could only re-set the
+    // default - hence there is none.
 
     // Enter is the go button from anywhere in the panel except a button, which
     // already answers Enter by being pressed.
@@ -285,7 +288,6 @@ function openWith(el: HTMLDialogElement, o: Required<PickOptions>) {
       cancel.removeEventListener('click', onCancel);
       el.removeEventListener('click', onClick);
       el.removeEventListener('keydown', onKey);
-      el.removeEventListener('cancel', onCancelEvent);
       el.removeEventListener('close', onClose);
       resolve(answer);
     };
@@ -304,7 +306,6 @@ function openWith(el: HTMLDialogElement, o: Required<PickOptions>) {
     cancel.addEventListener('click', onCancel);
     el.addEventListener('click', onClick);
     el.addEventListener('keydown', onKey);
-    el.addEventListener('cancel', onCancelEvent);
     el.addEventListener('close', onClose);
 
     el.showModal();

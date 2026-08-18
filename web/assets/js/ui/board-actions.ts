@@ -857,10 +857,13 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
         const host = stuckTo(note);
         if (!host) { pending.delete(note.id); continue; }
         if (pending.has(host.id)) continue;         // host is a rider, not moved yet
-        // Non-null: `host` came back from stuckTo(), which only ever names an
-        // item that is on the board this instant.
-        const hostSrc = beforeById.get(host.id) || byId(host.id)!;
-        const pos = stuckPlacement(note, hostSrc, byId(host.id)!);
+        // `host` itself, not byId(host.id): stuckTo() already returned the live
+        // item, so the round trip bought nothing and only risked going out of
+        // date - the argument is on stuckTo()'s note in sticky.ts. The pre-move
+        // snapshot is preferred for the offset the author set; the live host is
+        // both the fallback and the new geometry.
+        const hostSrc = beforeById.get(host.id) || host;
+        const pos = stuckPlacement(note, hostSrc, host);
         applyGeom([{ id: note.id, x: pos.x, y: pos.y }]);
         pending.delete(note.id);
         grew = true;
@@ -879,7 +882,9 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
   // commitGeom() already states for a resize.
   const closing: string[] = [];
   if (enclosing) {
-    const box = fenceBox(null, itemBounds(items.map(i => byId(i.id)).filter(it => !!it)), step);
+    // items are already the live board items - see rearrange()'s signature - so
+    // itemBounds() takes them directly rather than round-tripping through byId.
+    const box = fenceBox(null, itemBounds(items), step);
     if (box) {
       applyGeom([{ id: enclosing.id, ...box, rot: enclosing.rot, z: enclosing.z }]);
       // Then again, with room at the top for the name. A fence's plate lies

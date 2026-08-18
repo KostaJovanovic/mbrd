@@ -186,28 +186,45 @@ export function buildTransport(
     paint();
   };
 
+  // The last whole second and duration written to the readout, so the four
+  // text/aria writes below - which change at most once a second - are not
+  // repeated on every one of sixty frames while only the fill needs to move.
+  // Both are compared against live currentTime/duration each call, so a seek or
+  // a clip change is picked up the next paint with no separate reset: paint() is
+  // the single choke point every one of those already funnels through.
+  let lastSec = -1;
+  let lastMax = -1;
   const paint = () => {
     const at = sound.duration ? clamp(sound.currentTime / sound.duration, 0, 1) : 0;
     // A clip rather than a scale, and it is the cheap way to move this one:
     // the fill has to reveal shaped ink, so it is cut rather than resized.
-    // Runs on every frame of playback.
+    // Runs on every frame of playback - the one write that has to.
     fill.style.clipPath = `inset(0 ${((1 - at) * 100).toFixed(3)}% 0 0)`;
-    // How long it is until it starts, where it is once it has. A card sitting
-    // at the top of a track has nothing to report about the playhead - it is at
-    // the beginning, which is where the playhead always is before you press
-    // anything - so every card on the board read 0:00 and the one number on it
-    // said nothing about the file. The length is what somebody scanning a board
-    // of records wants, and it is only in the way once there is a position to
-    // show instead.
-    time.textContent = clock(sound.currentTime || sound.duration || 0);
     // In seconds, with a spoken form beside it: "83" is not a position in a
     // recording, "1:23 of 4:10" is. Spelled through String() rather than handed
     // setAttribute a number and left to its own coercion, which is what this did
-    // and is the same two characters either way.
-    wave.setAttribute('aria-valuemax', String(Math.round(sound.duration || 0)));
-    wave.setAttribute('aria-valuenow', String(Math.round(sound.currentTime || 0)));
-    wave.setAttribute('aria-valuetext',
-      `${clock(sound.currentTime || 0)} of ${clock(sound.duration || 0)}`);
+    // and is the same two characters either way. Constant for the clip, so
+    // written only when the duration itself lands or changes.
+    const max = Math.round(sound.duration || 0);
+    if (max !== lastMax) {
+      lastMax = max;
+      wave.setAttribute('aria-valuemax', String(max));
+    }
+    const sec = Math.round(sound.currentTime || 0);
+    if (sec !== lastSec) {
+      lastSec = sec;
+      // How long it is until it starts, where it is once it has. A card sitting
+      // at the top of a track has nothing to report about the playhead - it is
+      // at the beginning, which is where the playhead always is before you press
+      // anything - so every card on the board read 0:00 and the one number on it
+      // said nothing about the file. The length is what somebody scanning a
+      // board of records wants, and it is only in the way once there is a
+      // position to show instead.
+      time.textContent = clock(sound.currentTime || sound.duration || 0);
+      wave.setAttribute('aria-valuenow', String(sec));
+      wave.setAttribute('aria-valuetext',
+        `${clock(sound.currentTime || 0)} of ${clock(sound.duration || 0)}`);
+    }
   };
 
   // While it plays, the fill is driven by the frame clock rather than by

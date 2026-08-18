@@ -149,7 +149,7 @@ function mobilePackStartRow(obstacles: Item[], step: number) {
  * `r1` to.
  */
 function claimBlocked(
-  occupied: Set<string>, box: Item, step: number, columns: number, spacing: number,
+  occupied: Set<number>, box: Item, step: number, columns: number, spacing: number,
 ) {
   const bounds = itemBounds([box]);
   if (!bounds) return;
@@ -163,7 +163,7 @@ function claimBlocked(
   const r1 = Math.ceil(
     MOBILE_TOP_ROWS - (bounds.y0 - inset) / step - MOBILE_PACK_EPSILON) - 1;
   for (let row = r0; row <= r1; row++) {
-    for (let col = c0; col <= c1; col++) occupied.add(`${col}:${row}`);
+    for (let col = c0; col <= c1; col++) occupied.add(row * columns + col);
   }
 }
 
@@ -182,38 +182,43 @@ export function packMobileGrid(
   items: Item[], obstacles: Item[], step: number, columns: number, spacing = 0,
   blockers: Item[] = [],
 ): Item[] {
-  const occupied = new Set<string>();
+  // Cells keyed as row * columns + col rather than `${x}:${y}`: col is always
+  // in [0, columns) at every site (the placement loop bounds it, claimBlocked
+  // clamps it), so the integer is exact and collision-free, and `columns` is one
+  // value for the whole pack. See the header below - the key half is now fixed
+  // as well as the scan half.
+  const occupied = new Set<number>();
   const startRow = mobilePackStartRow(obstacles, step);
   const inset = mobileSeam(step, spacing);
   for (const held of blockers) claimBlocked(occupied, held, step, columns, spacing);
   const open = (col: number, row: number, cols: number, rows: number) => {
     for (let y = row; y < row + rows; y++) {
       for (let x = col; x < col + cols; x++) {
-        if (occupied.has(`${x}:${y}`)) return false;
+        if (occupied.has(y * columns + x)) return false;
       }
     }
     return true;
   };
   const claim = (col: number, row: number, cols: number, rows: number) => {
     for (let y = row; y < row + rows; y++) {
-      for (let x = col; x < col + cols; x++) occupied.add(`${x}:${y}`);
+      for (let x = col; x < col + cols; x++) occupied.add(y * columns + x);
     }
   };
   /** Any free cell at all in this row - the weakest test, for the floor below. */
   const anyOpen = (row: number) => {
-    for (let x = 0; x < columns; x++) if (!occupied.has(`${x}:${row}`)) return true;
+    for (let x = 0; x < columns; x++) if (!occupied.has(row * columns + x)) return true;
     return false;
   };
 
   // The lowest row still worth looking at.
   //
   // The scan restarted at `startRow` for every item, so the pack is quadratic
-  // in the number of rows already filled, with a string-keyed Set probe per
-  // cell: on a 2,000-card Mobile board each item walks from row 0 past every
-  // occupied row times eight columns, which is tens of millions of template
-  // strings on the main thread - every time the column-count select or the
-  // spacing slider moves, and repackMobileBoard() passes no obstacles so
-  // `startRow` really is 0.
+  // in the number of rows already filled, with a Set probe per cell: on a
+  // 2,000-card Mobile board each item walks from row 0 past every occupied row
+  // times eight columns - every time the column-count select or the spacing
+  // slider moves, and repackMobileBoard() passes no obstacles so `startRow`
+  // really is 0. The floor below cuts the row walk; the integer cell key (see
+  // above) cut the per-probe template string those millions of probes each built.
   //
   // A floor rather than a cursor, because an item may still land *above* the
   // last one placed when a narrow card fits a gap a wide one left. What cannot
@@ -1164,9 +1169,12 @@ export function commitGeom(
   // fence on Mobile is a band the packer owns rather than a region anybody drew.
   const resized: Box[] = [];
   if (driven && board.layoutMode !== 'mobile') {
+    // A Set rather than driven.includes() inside the loop over `after`: the same
+    // quadratic travelling()'s header (above) warns a growing loop against.
+    const drivenSet = new Set(driven);
     for (const a of after) {
       const b = was(a);
-      if (!driven.includes(b.id) || !isFence(byId(b.id))) continue;
+      if (!drivenSet.has(b.id) || !isFence(byId(b.id))) continue;
       if (a.w === b.w && a.h === b.h) continue;
       resized.push(boxOf(b), boxOf(a));
     }
@@ -1347,14 +1355,6 @@ export function unsnapAll(snapTo?: boolean) {
 }
 
 /**
- * Write the snap flag itself - the setting half of the same act.
- *
- * The layoutSettings mirror is written with it and not left to setSetting()'s
- * tail: the two are one value kept in two places, and an undo that restored the
- * flag while leaving the mirror behind would put the lie back at the next
- * layout switch instead of at the next drag.
- */
-/**
  * One item as the two board-wide snap sweeps carry it: the box, and the memo
  * that goes with it. `pre` is whatever was on the item - the sweep moves it
  * from one place to another rather than reading it, and usableMemo() is what
@@ -1364,6 +1364,14 @@ type SnapState = {
   id: string, x: number, y: number, w: number, h: number, pre: unknown,
 };
 
+/**
+ * Write the snap flag itself - the setting half of the same act.
+ *
+ * The layoutSettings mirror is written with it and not left to setSetting()'s
+ * tail: the two are one value kept in two places, and an undo that restored the
+ * flag while leaving the mirror behind would put the lie back at the next
+ * layout switch instead of at the next drag.
+ */
 function writeSnapSetting(v: boolean) {
   board.settings.snap = v;
   board.layoutSettings[board.layoutMode] = layoutSettingsOf(board.settings);

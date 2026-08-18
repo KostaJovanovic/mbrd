@@ -144,9 +144,10 @@ export function normalizeBoard(data: unknown): Omit<Board, 'settings' | 'arrange
   // set holds is the ends that can never become valid, which is a property of
   // the item's type and cannot change.
   const joinEnds = new Set<string>();
-  for (const it of [...normalizedItems, ...trashItems]) {
-    if (isJoinEnd(it)) joinEnds.add(it.id);
-  }
+  // Two loops over the two lists rather than one over a fresh concatenation of
+  // them - the same set, without the intermediate array on the load path.
+  for (const it of normalizedItems) if (isJoinEnd(it)) joinEnds.add(it.id);
+  for (const it of trashItems) if (isJoinEnd(it)) joinEnds.add(it.id);
   const rawLayouts: Record<string, unknown> = isRecord(src.layouts) ? src.layouts : {};
   const desktopRecord = layoutRecord(rawLayouts.desktop);
   const mobileRecord = layoutRecord(rawLayouts.mobile);
@@ -529,19 +530,26 @@ export function serializeBoard() {
   const shed = (list: Geometry[]) => (ghost.size ? list.filter(g => !ghost.has(g.id)) : list);
   const desktop = shed(completeLayout('desktop'));
   const mobile = shed(completeLayout('mobile'));
-  // Every id this file will carry: the real items and the bin's. What
-  // connections are pruned against - see the note beside them below.
-  const filed = new Set([...real.map(i => i.id), ...board.trash.map(t => t.item.id)]);
-  // The same union narrowed to what a line may reach, for connections alone.
-  // Ghosts are already out of `filed` - they never reach a file at all - so what
-  // this actually removes is stickers, which the draw path has always refused
-  // and the tap path used to allow. Separate from `filed` rather than a
-  // narrowing of it because the tour may legitimately stop on a sticker: three
-  // relations, two id unions, and collapsing them would quietly delete somebody's
-  // tour stop to fix a connection bug.
-  const joinFiled = new Set(
-    [...real, ...board.trash.map(t => t.item)].filter(isJoinEnd).map(i => i.id),
-  );
+  // Every id this file will carry: the real items and the bin's - what
+  // connections are pruned against, see the note beside them below - and the
+  // same union narrowed to what a line may reach (isJoinEnd), for connections
+  // alone. Built in one pass over real ∪ bin rather than as several intermediate
+  // arrays spread into each Set.
+  //
+  // Two separate sets rather than a narrowing of one, because the tour may
+  // legitimately stop on a sticker: three relations, two id unions, and
+  // collapsing them would quietly delete somebody's tour stop to fix a
+  // connection bug. Ghosts are already out of `real` - they never reach a file
+  // at all - so what joinFiled removes on top is stickers, which the draw path
+  // has always refused and the tap path used to allow.
+  const filed = new Set<string>();
+  const joinFiled = new Set<string>();
+  const claim = (item: Item) => {
+    filed.add(item.id);
+    if (isJoinEnd(item)) joinFiled.add(item.id);
+  };
+  for (const item of real) claim(item);
+  for (const t of board.trash) claim(t.item);
   const desktopSettings = settingsFor(board.layoutSettings.desktop, board.sharedAppearance);
   const desktopById = layoutMap(desktop);
   const itemIn = (item: Item, geometry: Geometry | undefined) => {

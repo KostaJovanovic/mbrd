@@ -63,9 +63,17 @@ export function xmlPart(entries: Entries, path: string): Document | null {
   }
 }
 
-/** Every element with this local name, whatever namespace prefix it carries. */
-export const byLocal = (root: Document | Element, name: string) =>
-  [...root.getElementsByTagName('*')].filter(n => n.localName === name);
+/**
+ * Every element with this local name, whatever namespace prefix it carries.
+ *
+ * getElementsByTagNameNS('*', name) answers by local name across every
+ * namespace natively - O(matches) - where scanning getElementsByTagName('*')
+ * and filtering was O(every element in the part). Spread into an array here so
+ * the return stays the snapshot every caller already treats it as, rather than a
+ * live collection.
+ */
+export const byLocal = (root: Document | Element, name: string): Element[] =>
+  [...root.getElementsByTagNameNS('*', name)];
 
 /** The first child element with this local name, or null. */
 export const childOf = (node: Element, name: string) =>

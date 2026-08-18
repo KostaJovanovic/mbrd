@@ -95,6 +95,17 @@ function showConnections(): void {
 }
 
 /**
+ * The most cards "Connect these" will join when nothing is selected.
+ *
+ * The selection case is bounded by what somebody picked. The no-selection case
+ * is the whole board, and the spanning tree it runs is quadratic with nothing
+ * in front of it - DENSE_LIMIT gates the second pass only. This is generously
+ * past any board a person has arranged by hand and comfortably inside what the
+ * arithmetic can do without the tab going quiet.
+ */
+const CONNECT_ALL_MAX = 2000;
+
+/**
  * What may carry a line, out of some set of items.
  *
  * Furniture is out because a hint card relates to nothing - it is talking to
@@ -107,17 +118,6 @@ function showConnections(): void {
  * One predicate rather than three copies of it: both doors into the generator
  * ask the same question, and so does the tool when it reads the selection.
  */
-/**
- * The most cards "Connect these" will join when nothing is selected.
- *
- * The selection case is bounded by what somebody picked. The no-selection case
- * is the whole board, and the spanning tree it runs is quadratic with nothing
- * in front of it - DENSE_LIMIT gates the second pass only. This is generously
- * past any board a person has arranged by hand and comfortably inside what the
- * arithmetic can do without the tab going quiet.
- */
-const CONNECT_ALL_MAX = 2000;
-
 const joinable = (items: Joinable[]): Joinable[] =>
   items.filter(i => !isFurniture(i) && !isRider(i) && !isFence(i) && isJoinEnd(i));
 

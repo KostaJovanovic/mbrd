@@ -1576,7 +1576,6 @@ function fillPanel(panel: HTMLElement, entries: MenuEntry[]) {
     // focus.
     if (entry.disabled) { btn.disabled = true; btn.classList.add('is-inert'); }
     if (entry.check != null) {
-      btn.classList.add('is-toggle');
       btn.classList.toggle('is-checked', !!entry.check);
       btn.setAttribute('role', 'menuitemcheckbox');
       btn.setAttribute('aria-checked', String(!!entry.check));
@@ -1670,7 +1669,7 @@ function fillPanel(panel: HTMLElement, entries: MenuEntry[]) {
       if (entry.sub) {
         btn.addEventListener('pointerenter', e => {
           if (e.pointerType !== 'mouse') return;
-          openChild(btn, entry.sub!, panel);
+          openChild(btn, entry.sub!, panel, entry.label);
         });
       }
     } else {
@@ -1756,7 +1755,7 @@ function fadeChild() {
   childTimer = setTimeout(closeChild, CHILD_GRACE_MS);
 }
 
-function openChild(row: HTMLElement, entries: MenuEntry[], from: HTMLElement) {
+function openChild(row: HTMLElement, entries: MenuEntry[], from: HTMLElement, label?: string) {
   // Already this row's: the pointer came back inside the grace period, which is
   // the ordinary case of travelling to the panel and is not a reopen.
   if (childRow === row && child) { clearTimeout(childTimer); childTimer = 0; return; }
@@ -1764,7 +1763,10 @@ function openChild(row: HTMLElement, entries: MenuEntry[], from: HTMLElement) {
   child = document.createElement('div');
   child.id = 'ctx-child';
   child.setAttribute('role', 'menu');
-  child.setAttribute('aria-label', row.textContent?.trim() || 'More');
+  // The entry's own label, not the row's text: fillPanel() appends a <kbd>
+  // accelerator into that row, so a sub-bearing row that gained one would
+  // otherwise announce itself as its name and its shortcut run together.
+  child.setAttribute('aria-label', label || row.textContent?.trim() || 'More');
   child.tabIndex = -1;
   fillPanel(child, entries);
   child.style.visibility = 'hidden';

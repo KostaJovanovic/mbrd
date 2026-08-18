@@ -192,8 +192,20 @@ const SHELF_MAX = 24;
  * caller that wants to file without evicting can.
  */
 export async function trimLibrary(keep = SHELF_MAX) {
-  const index = await libraryIndex();          // newest first
-  const drop = index.slice(Math.max(0, keep));
-  for (const row of drop) await removeLibraryBoard(row.id);
-  return drop.length;
+  // On the `writes` chain like the two writers above, and one read/filter/write
+  // of the index rather than a removeLibraryBoard() per row - each of those
+  // re-read and rewrote the whole index, so dropping k boards was k reads and k
+  // writes where one of each will do. The payloads still go, together.
+  let dropped = 0;
+  writes = writes.then(async () => {
+    const index = await libraryIndex();          // newest first
+    const drop = index.slice(Math.max(0, keep));
+    if (!drop.length) return;
+    const gone = new Set(drop.map(e => e.id));
+    await idbDelMany(STORE, drop.map(e => e.id));
+    await writeIndex(index.filter(e => !gone.has(e.id)));
+    dropped = drop.length;
+  }, () => {}).then(() => {});
+  await writes;
+  return dropped;
 }

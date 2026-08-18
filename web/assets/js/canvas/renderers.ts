@@ -14,7 +14,7 @@ import { extOf, baseName, formatBytes, hasOwn, isRecord } from '../util.ts';
 import { shownHash, type Item, type ItemType } from '../board-model.ts';
 import { assetURL, getAsset, readText } from '../storage/assets.ts';
 import { noPreview } from '../notify.ts';
-import { byId, bus, markDirty, board, isDefaultTitle, itemCrop, setSwatchHex } from '../state.ts';
+import { byId, bus, markDirty, board, isDefaultTitle, itemCrop, setSwatchHex, baseStep } from '../state.ts';
 import { latticeBox } from '../geometry.ts';
 import {
   describeExt, formatName, PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS,
@@ -34,18 +34,17 @@ import { faceName, pixelHash } from '../style-tile.ts';
 import { normalizeNoteRich, applyNoteStyle, buildNoteLine } from './note-model.ts';
 import type { NoteRichInput } from './note-model.ts';
 import {
-  STICKER_SPRITE, STICKER_VIEWBOX, DEFAULT_SHAPE, stickerShape, stickerTint,
+  stickerArt, DEFAULT_SHAPE, stickerShape, stickerTint,
 } from '../stickers/catalogue.ts';
 
-// The façade: both moved out of this file, and every caller still asks here.
-// Written out rather than as a star re-export for the reason state.js is - a
-// name that goes missing should break loudly at the import, not quietly at
-// runtime.
+// The façade: parseNoteText and its two normalisers moved to note-model.ts, and
+// tests/renderers.test.js still asks for them here. The rest of note-model's
+// surface is imported from note-model.ts directly, so its re-export here was for
+// nobody and is gone. Written out rather than a star re-export for the reason
+// state.js is - a name that goes missing should break loudly at the import, not
+// quietly at runtime.
 export {
-  NOTE_TAGS, NOTE_ALIGNS, NOTE_VALIGNS, NOTE_FONTS, NOTE_FONT_KEYS,
-  NOTE_SIZE_MIN, NOTE_SIZE_MAX, NOTE_SIZE_STEP, NOTE_MARKER,
-  parseNoteText, normalizeNoteRich, flattenNoteRich, applyNoteStyle,
-  buildNoteLine,
+  parseNoteText, normalizeNoteRich, flattenNoteRich,
 } from './note-model.ts';
 export { videoFrame, videoDrawsBlank, pictureIsFlat } from './poster.ts';
 
@@ -1350,21 +1349,12 @@ const RENDERERS = {
    */
   sticker(item: Item) {
     const shape = stickerShape(item.meta?.shape) ? item.meta.shape : DEFAULT_SHAPE;
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('class', 'sticker-art');
+    // The wrapper (class, viewBox so the shape scales to the item's size rather
+    // than its authored one, aria-hidden) is stickerArt() in the catalogue now.
+    const svg = stickerArt(String(shape));
     // stickerTint() answers a tint number; a dataset value is a string, and
     // String() is the conversion the assignment was making unsaid.
     svg.dataset.tint = String(stickerTint(item.meta?.tint, shape));
-    // The box the paths in the sprite are drawn to. Set here rather than left
-    // to the <symbol>, so the shape scales to whatever the item has been
-    // resized to instead of arriving at its authored size.
-    svg.setAttribute('viewBox', STICKER_VIEWBOX);
-    // Decorative: the item carries an accessible name already, and the star is
-    // that name drawn. Announcing it twice reads the card out twice.
-    svg.setAttribute('aria-hidden', 'true');
-    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-    use.setAttribute('href', `${STICKER_SPRITE}#${shape}`);
-    svg.append(use);
     return svg;
   },
 
@@ -1675,7 +1665,7 @@ function adoptAspect(item: Item, nw: number, nh: number) {
   // could not be measured before it landed would quietly step off the grid a
   // moment later, in front of the person who just dropped it.
   if (board.settings.snap) {
-    const box = latticeBox({ x: live.x, y: live.y, w, h }, board.settings.gridStep > 0 ? board.settings.gridStep : 64);
+    const box = latticeBox({ x: live.x, y: live.y, w, h }, baseStep());
     w = box.w; h = box.h;
   }
 

@@ -165,9 +165,6 @@ export function makeByteBudget(limit: number = IMPORT_LIMITS.batchBytes) {
  */
 let inFlight = 0;
 
-/** For a test, or a caller that wants the shared account back at zero. */
-export const resetByteBudget = () => { inFlight = 0; };
-
 const u16be = (b: Uint8Array, o: number) => (b[o] << 8) | b[o + 1];
 const u16le = (b: Uint8Array, o: number) => b[o] | (b[o + 1] << 8);
 const u24le = (b: Uint8Array, o: number) => b[o] | (b[o + 1] << 8) | (b[o + 2] << 16);
@@ -333,7 +330,28 @@ export async function overPixelBudget(file: Blob): Promise<boolean> {
  * the same reason: a false positive here interrupts somebody about a picture
  * that was never a problem.
  */
-export async function pixelCrossing(file: Blob): Promise<Crossed | null> {
+/**
+ * The answer for each file, memoised by the file's own identity.
+ *
+ * pixelCrossing() is asked several times for the same file across one drop - at
+ * the consent gate, again at the measurement, again for a baked or preview
+ * variant - and each ask read and parsed a 128 KB header slice. A Blob is
+ * immutable, so its identity fixes its answer; the WeakMap lets both go when the
+ * file does. Different Blobs (a preview, a rasterised page) are different keys
+ * and answered on their own, which is correct.
+ */
+const crossingMemo = new WeakMap<Blob, Promise<Crossed | null>>();
+
+export function pixelCrossing(file: Blob): Promise<Crossed | null> {
+  let hit = crossingMemo.get(file);
+  if (!hit) {
+    hit = computeCrossing(file);
+    crossingMemo.set(file, hit);
+  }
+  return hit;
+}
+
+async function computeCrossing(file: Blob): Promise<Crossed | null> {
   try {
     const head = new Uint8Array(await file.slice(0, HEADER_BYTES).arrayBuffer());
     const dims = imageDimensions(head);

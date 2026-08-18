@@ -43,7 +43,7 @@
 // MOBILE_ARRANGEMENTS.
 
 import { cellInset } from '../geometry.ts';
-import { hasOwn } from '../util.ts';
+import { hasOwn, shuffle } from '../util.ts';
 // Shortest-column-first, shared with the Feed's wall - see the head of that file
 // for why the two masonries are one rule and two surfaces.
 import { packColumns } from './columns.ts';
@@ -111,8 +111,14 @@ const UNTAGGED = ' untagged';
 function firstTag(it: ArrangeItem): string {
   const raw = it.meta?.tags;
   if (!Array.isArray(raw)) return UNTAGGED;
-  const tags = raw.filter((t): t is string => typeof t === 'string' && !!t).sort();
-  return tags[0] ?? UNTAGGED;
+  // The alphabetically first tag by a linear scan, not filter().sort()[0]: the
+  // caller runs this once per item, and neither the filtered array nor the sort
+  // is needed to find one minimum.
+  let best: string | undefined;
+  for (const t of raw) {
+    if (typeof t === 'string' && t && (best === undefined || t < best)) best = t;
+  }
+  return best ?? UNTAGGED;
 }
 
 export const ARRANGEMENTS = [
@@ -400,7 +406,10 @@ const LAYOUTS: Record<string, Layout> = {
       for (let k = 0; k < SPIRAL_TRIES; k++) {
         const a = n * golden + phase + SPIRAL_SWEEP * (k / (SPIRAL_TRIES - 1) - 0.5);
         const at = slideOut({ x: Math.cos(a), y: Math.sin(a) }, box, placed);
-        const r = Math.hypot(at.x, at.y);
+        // Compared only against `near`, so the squared magnitude serves and the
+        // square root is skipped - the monotonicity argument is on distSq() in
+        // geometry.ts, and this is its from-origin case.
+        const r = at.x * at.x + at.y * at.y;
         if (r < near) { near = r; best = at; }
       }
       // The first try always sets it: a slide comes to rest at a finite distance
@@ -533,25 +542,6 @@ const LAYOUTS: Record<string, Layout> = {
 // ---------------------------------------------------------------------------
 
 /**
- * Positions for items dealt onto integer cells, on a lattice whose columns and
- * rows are each only as wide and as tall as what actually landed in them.
- *
- * `cells` is one `[col, row]` per item, parallel to `items`. Cell (0, 0) is
- * centred on the origin; the block's own extent comes back as `box` so a caller
- * that would rather centre the whole thing can.
- *
- * The uniform alternative - one cell for the board, sized from the largest item
- * on it - is what this replaces, and its failure is any board with one big
- * photograph on it: every note is given a photograph's worth of room, and what
- * you get back is a board that is mostly gap. Per column and per row, that
- * photograph widens the one column and heightens the one row it is in, and
- * nothing else on the board moves at all.
- *
- * Non-overlap comes free and exactly: two items in the same column are in
- * different rows and each sits inside its own row's height, and the other way
- * about. That is why the four layouts built on this need no separation pass.
- */
-/**
  * One block per key, blocks laid side by side in a stable order, each block
  * centred on the target line.
  *
@@ -581,7 +571,7 @@ function clustered(
   // first from the left never meant anything and is free to move.
   const rnd = variation(o);
   const order = [...groups.keys()].sort();
-  if (rnd) shuffleWith(order, rnd);
+  if (rnd) shuffle(order, rnd);
 
   // Lay every block first, so they can be spaced by the width each one
   // actually came out at rather than by a cell count times a shared cell.
@@ -619,6 +609,25 @@ function clustered(
 /** A grid solved: a centre per cell, and the rectangle the whole thing fills. */
 type Lattice = { pos: Point[], box: Extent };
 
+/**
+ * Positions for items dealt onto integer cells, on a lattice whose columns and
+ * rows are each only as wide and as tall as what actually landed in them.
+ *
+ * `cells` is one `[col, row]` per item, parallel to `items`. Cell (0, 0) is
+ * centred on the origin; the block's own extent comes back as `box` so a caller
+ * that would rather centre the whole thing can.
+ *
+ * The uniform alternative - one cell for the board, sized from the largest item
+ * on it - is what this replaces, and its failure is any board with one big
+ * photograph on it: every note is given a photograph's worth of room, and what
+ * you get back is a board that is mostly gap. Per column and per row, that
+ * photograph widens the one column and heightens the one row it is in, and
+ * nothing else on the board moves at all.
+ *
+ * Non-overlap comes free and exactly: two items in the same column are in
+ * different rows and each sits inside its own row's height, and the other way
+ * about. That is why the four layouts built on this need no separation pass.
+ */
 function lattice(
   cells: [number, number][],
   items: ArrangeItem[],
@@ -887,13 +896,19 @@ const ORDERS: Record<string, Order> = {
   // is compared last on purpose: a column of things nobody has tagged, followed
   // by the tagged ones, is the wrong way round for a feature whose whole point
   // is finding what you labelled.
-  tag: items => readingOrder(items).sort((a, b) => {
-    const ka = firstTag(a), kb = firstTag(b);
-    if (ka === kb) return 0;
-    if (ka === UNTAGGED) return 1;
-    if (kb === UNTAGGED) return -1;
-    return ka.localeCompare(kb);
-  }),
+  tag: items => {
+    // firstTag() once per item, not twice per comparison: decorate, sort on the
+    // precomputed key, undecorate. It used to be called O(n log n) times a
+    // reorder, each call filtering and sorting the item's own tag list.
+    const keyed = readingOrder(items).map(it => ({ it, key: firstTag(it) }));
+    keyed.sort((a, b) => {
+      if (a.key === b.key) return 0;
+      if (a.key === UNTAGGED) return 1;
+      if (b.key === UNTAGGED) return -1;
+      return a.key.localeCompare(b.key);
+    });
+    return keyed.map(k => k.it);
+  },
   name: items => readingOrder(items)
     .sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true })),
   // Seedless, this is the order it was handed: a drop is reproducible, and
@@ -901,7 +916,7 @@ const ORDERS: Record<string, Order> = {
   // make with variation().
   shuffle: (items, o) => {
     const rnd = variation(o);
-    return rnd ? shuffleWith([...items], rnd) : [...items];
+    return rnd ? shuffle([...items], rnd) : [...items];
   },
 };
 
@@ -981,14 +996,6 @@ function reflow(cols: number, n: number, rnd: () => number): number {
   return cols > 1 ? cols - 1 : Math.min(n, cols + 1);
 }
 
-/** Fisher-Yates, in place, from a supplied generator. */
-function shuffleWith<T>(arr: T[], rnd: () => number): T[] {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(rnd() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
-}
 
 /**
  * One ring cell, turned a quarter at a time about the centre.

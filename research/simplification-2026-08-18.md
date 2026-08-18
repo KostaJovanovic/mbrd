@@ -6,6 +6,12 @@ clearing.
 
 Written at `7661965` (v0.251), tree clean.
 
+**To carry this out, read
+[`simplification-tasks-2026-08-18.md`](simplification-tasks-2026-08-18.md)
+instead.** It is this document's findings as numbered tasks — a file, a string
+to find it by, and what to change — with the argument left here. This document
+is why; that one is what to type.
+
 **Nothing in here touches the `.mbrd` schema, a generated catalogue, or `SHELL`
 in `web/sw.js`.** Every item is an internal route to a result the app already
 produces: same bytes in, same bytes out, same files on disk. That is not a

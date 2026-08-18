@@ -904,24 +904,26 @@ function asf(head: Bytes): MediaFacts | null {
  */
 function flv(head: Bytes): MediaFacts | null {
   const out: MediaFacts = { container: 'FLV' };
-  const amf = (key: string): number => {
-    const target = key;
-    // Two bytes of length, the name, one type byte and eight of double - so the
-    // last property in the object starts exactly `11 + name` from the end, and
-    // a bound one byte tighter than this loses the height of every FLV.
-    for (let i = 13; i + 11 + target.length <= head.length; i++) {
-      if (be16(head, i) !== target.length) continue;
-      if (tag(head, i + 2, target.length) !== target) continue;
-      const t = i + 2 + target.length;
-      if (head[t] !== 0x00) continue;               // AMF0 number
-      const dv = new DataView(head.buffer, head.byteOffset + t + 1, 8);
-      return dv.getFloat64(0);
-    }
-    return 0;
-  };
-  const duration = amf('duration');
-  const width = amf('width');
-  const height = amf('height');
+  // One pass for all three properties rather than a full rescan of up to 256 KB
+  // per field. The shape is unchanged: two bytes of name length, the name, a
+  // 0x00 type byte for an AMF0 number, then eight bytes of double. First
+  // occurrence of each name wins, as the per-key scan's early return did. The
+  // per-position bound `i + 11 + len <= head.length` is the same one the old
+  // loop carried - a byte tighter loses the height of every FLV.
+  const found = new Map<string, number>();
+  for (let i = 13; i + 11 <= head.length && found.size < 3; i++) {
+    const len = be16(head, i);
+    if (len < 5 || len > 8) continue;               // duration/width/height only
+    if (i + 11 + len > head.length) continue;
+    const name = tag(head, i + 2, len);
+    if ((name !== 'duration' && name !== 'width' && name !== 'height') || found.has(name)) continue;
+    if (head[i + 2 + len] !== 0x00) continue;       // AMF0 number
+    const dv = new DataView(head.buffer, head.byteOffset + i + 2 + len + 1, 8);
+    found.set(name, dv.getFloat64(0));
+  }
+  const duration = found.get('duration') ?? 0;
+  const width = found.get('width') ?? 0;
+  const height = found.get('height') ?? 0;
   if (duration > 0) out.duration = duration;
   if (width > 0 && height > 0) { out.width = Math.round(width); out.height = Math.round(height); }
   return out;

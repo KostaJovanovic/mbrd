@@ -17,7 +17,7 @@
 // Lifted out of main.js unchanged. Reached from `cmds` (the T button, F2, a
 // double-click on the card) and from the masthead tap wired below.
 
-import { el } from '../util.ts';
+import { el, makeEditable, selectContents, caretToEnd } from '../util.ts';
 import {
   board, bus, setTitle, markDirty,
   cleanBoardTitle, cleanBoardTitleDraft, isDefaultTitle,
@@ -212,10 +212,7 @@ function editBoardName(node: HTMLElement | null) {
   // a parameter is a mutable binding and the narrowing would not follow it in.
   const field = node;
 
-  // plaintext-only keeps pasted markup out of a name; not every engine has it.
-  try { field.contentEditable = 'plaintext-only'; }
-  catch { field.contentEditable = 'true'; }
-  if (!field.isContentEditable) field.contentEditable = 'true';
+  makeEditable(field);
   // The stored name, not the shown one - they are the same string today, and
   // this is the line that keeps them the same if the masthead ever dresses it.
   field.textContent = board.title;
@@ -236,14 +233,9 @@ function editBoardName(node: HTMLElement | null) {
     const clean = cleanBoardTitleDraft(field.textContent);
     if (clean === field.textContent) return;
     field.textContent = clean;
-    const caret = document.createRange();
-    caret.selectNodeContents(field);
-    caret.collapse(false);
-    // getSelection() is null only for a document with no browsing context; this
-    // runs from an input event on a focused field, so there is one.
-    const selection = getSelection()!;
-    selection.removeAllRanges();
-    selection.addRange(caret);
+    // The caret jumped to the front when textContent was rewritten; put it back
+    // at the end so typing continues where it left off.
+    caretToEnd(field);
   };
 
   function finish() {
@@ -304,12 +296,6 @@ function editBoardName(node: HTMLElement | null) {
   requestAnimationFrame(() => {
     if (done) return;
     field.focus();
-    const range = document.createRange();
-    range.selectNodeContents(field);
-    // Null only without a browsing context, as above - the field has just been
-    // focused in this document.
-    const sel = getSelection()!;
-    sel.removeAllRanges();
-    sel.addRange(range);
+    selectContents(field);
   });
 }

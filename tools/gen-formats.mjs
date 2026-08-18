@@ -83,7 +83,7 @@ let collisions = 0;
 for (const group of groups) {
   for (const row of group.rows) {
     const index = families.length;
-    families.push({ label: row.label, category: group.key, slug: row.slug });
+    families.push({ label: row.label, category: group.key });
     for (const raw of row.exts) {
       const ext = String(raw).toLowerCase().replace(/^\./, '');
       if (!ext) continue;

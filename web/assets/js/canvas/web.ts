@@ -32,13 +32,13 @@
 // the cards are snapped to it (see axisMoved in ui/appearance.js), so a route
 // that turns anywhere else is the axis half-applied. Read here and handed to
 // the router, which may not read anything - see look().
-import { board, bus, isRider, isJoinEnd, baseStep, selection, pairKey } from '../state.ts';
+import { board, bus, byId, isRider, isJoinEnd, baseStep, selection, pairKey } from '../state.ts';
 // How a styled connection is drawn, straight off the board's own model. Named
 // from there rather than restated here, which is the whole of why it is
 // exported: ui/conn-chip.ts had grown a private copy of this and of the two
 // closed lists behind it, and two spellings of a closed list is how the list
 // stops being closed.
-import type { ConnMeta } from '../board-model.ts';
+import type { ConnMeta, Item } from '../board-model.ts';
 import { rafThrottle, readToken } from '../util.ts';
 import { polyMidpoint, polyMeetsRect, distToSegment } from '../geometry.ts';
 // Point, Box and Bounds are geometry.ts's, and they are what this file has
@@ -60,6 +60,7 @@ import { itemIdFromEvent, setConnectAim, tiltOf, onHoverItem } from './items.ts'
 // Only for the visible rect and the zoom - see the note over `vp`, which is the
 // whole of what this module wants from the view.
 import type { Viewport } from './viewport.ts';
+import { cullMargin } from './viewport.ts';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -137,19 +138,9 @@ type RouteLook = { shape: string, step?: number, clearance: number, radius: numb
 export const webVisible = (mode = board.layoutMode) =>
   mode !== 'mobile' && board.settings.web !== false;
 
-/**
- * How far outside the viewport a thread is still drawn, in *screen* px.
- *
- * The same margin items.js mounts cards with, in the same unit and for the same
- * two reasons: the pan that brings a thread on screen is the frame that would
- * otherwise have to draw it, so a margin means the work happened a frame or two
- * earlier - and a margin measured on the board rather than on the screen stops
- * meaning anything as soon as you zoom, since the visible slice of board halves
- * with every doubling while the margin does not.
- */
-const CULL_MARGIN_PX = 300;
-/** Capped in world units at the flat margin this used to be - see items.js. */
-const CULL_MARGIN_MAX = 400;
+// The cull margin (a screen-px band the thread cull keeps beyond the viewport,
+// for the frame-or-two of lead a pan needs) is cullMargin() in canvas/viewport.ts
+// now, shared with canvas/items.js - the two had drifted apart.
 
 /**
  * A thread appears and disappears by fading, which needs two things this file
@@ -519,6 +510,28 @@ function land(key: string) {
 }
 
 /**
+ * One board item as a card in this layer's coordinates.
+ *
+ * y is flipped because world y points up and this layer lays it down. The lean
+ * this card is actually drawn with - sign and all, not the tier's maximum - is
+ * folded into the rotation; the sign is why it is read per card, since the point
+ * on a card's edge a line stops at cares which way it leans. No negation on the
+ * lean where item.rot gets one: rot is world geometry, the lean is a CSS
+ * rotation already in the layer's own sense. `maxLean` is drawnTilt() lifted out
+ * so a whole-board pass reads it once; a single-item caller passes its own.
+ *
+ * Shared rather than written twice because the lean was once omitted in the
+ * single-item copy (boxOf): the connect draft was then clipped against a
+ * different rectangle from the line it turned into, so at any non-zero
+ * --tilt-max the line jumped by the lean's overhang the moment the pair landed -
+ * the exact thing aimDraft()'s edge clip exists to prevent.
+ */
+function cardOf(it: Item, maxLean: number): Card {
+  const lean = it.type === 'fence' ? 0 : tiltOf(it.id) * maxLean;
+  return { id: it.id, x: it.x, y: -it.y, w: it.w, h: it.h, rot: -(it.rot || 0) + lean };
+}
+
+/**
  * Item centres in #world's coordinates.
  *
  * World y points up and CSS y points down, so a centre that is at world
@@ -542,25 +555,11 @@ function centres(): Card[] {
   // in board-model.js, where the two reasons are. A rider is left out here
   // rather than there because being stuck is not a fact about the item.
   // How far a card may lean at this look, once for the whole pass - see
-  // drawnTilt(), and the bug the lean is read for at all.
+  // drawnTilt(), and cardOf() for the sign and the bug the lean is read for.
   const maxLean = drawnTilt();
   return board.items
     .filter(i => !isRider(i) && isJoinEnd(i))
-    .map(i => {
-      // The lean this card is actually drawn with, sign and all - not the
-      // tier's maximum. The sign is the whole reason it is read per card: an
-      // axis-aligned box does not care which way a card leans, and the point on
-      // a card's *edge* that a line should stop at cares about nothing else.
-      //
-      // No negation on the lean, where item.rot gets one: rot is world
-      // geometry, where y points up, and this layer lays y down. The lean is a
-      // CSS rotation, which is already in the layer's own sense.
-      const lean = i.type === 'fence' ? 0 : tiltOf(i.id) * maxLean;
-      return {
-        id: i.id, x: i.x, y: -i.y, w: i.w, h: i.h,
-        rot: -(i.rot || 0) + lean,
-      };
-    });
+    .map(i => cardOf(i, maxLean));
 }
 
 /**
@@ -839,7 +838,7 @@ function build() {
   // to mint eleven hundred <line> elements at once and animate every one of
   // them, almost all outside the viewport; off screen, a thread now simply is
   // or is not, and only the ones on screen get the courtesy of fading.
-  const vis = visibleBox(cullMargin());
+  const vis = visibleBox(cullMargin(vp));
   const onScreen = (seg: Seg | undefined) => !vis || !seg ||
     !(Math.max(seg.a.x, seg.b.x) < vis.x0 || Math.min(seg.a.x, seg.b.x) > vis.x1 ||
       Math.max(seg.a.y, seg.b.y) < vis.y0 || Math.min(seg.a.y, seg.b.y) > vis.y1);
@@ -894,7 +893,7 @@ function build() {
 function routePass() {
   if (!svg || !webVisible()) return;
   const where = new Map<string, Card>(centres().map(p => [p.id, p]));
-  const vis = visibleBox(cullMargin());
+  const vis = visibleBox(cullMargin(vp));
   const near = (seg: Seg) => !vis ||
     !(Math.max(seg.a.x, seg.b.x) < vis.x0 || Math.min(seg.a.x, seg.b.x) > vis.x1 ||
       Math.max(seg.a.y, seg.b.y) < vis.y0 || Math.min(seg.a.y, seg.b.y) > vis.y1);
@@ -977,9 +976,6 @@ function visibleBox(margin = 0): Bounds | null {
   return { x0: r.x0, x1: r.x1, y0: -r.y1, y1: -r.y0 };
 }
 
-/** The cull margin in world units at the current zoom. */
-const cullMargin = () => Math.min(CULL_MARGIN_PX / (vp ? vp.zoom : 1), CULL_MARGIN_MAX);
-
 /** Is `inner` wholly within `outer`? */
 const within = (inner: Bounds, outer: Bounds) =>
   inner.x0 >= outer.x0 && inner.x1 <= outer.x1 &&
@@ -1049,7 +1045,7 @@ function paint(forced = false) {
   // through as `forced` - those genuinely do change the string.
   const tight = visibleBox(0);
   if (!forced && paintedRect && tight && within(tight, paintedRect)) return;
-  paintedRect = tight ? visibleBox(cullMargin()) : null;
+  paintedRect = tight ? visibleBox(cullMargin(vp)) : null;
 
   // The box has to hold the fading threads too. One of them may be anchored to
   // an item that has just been deleted, sitting outside the box the surviving
@@ -1444,18 +1440,9 @@ export function setDraftFrom(id: string | null) {
 
 /** One item's box in this layer's coordinates - centres() for a single id. */
 function boxOf(id: string): Card | null {
-  const it = board.items.find(i => i.id === id);
+  const it = byId(id);
   if (!it || isRider(it) || !isJoinEnd(it)) return null;
-  // The drawn lean, the same way centres() folds it in. It was omitted here, so
-  // the draft was clipped against a different rectangle from the line it turns
-  // into: at any non-zero --tilt-max the line jumped by up to the lean's
-  // overhang the moment the pair landed, which is the exact thing the note in
-  // aimDraft() says the edge clip exists to prevent.
-  const lean = it.type === 'fence' ? 0 : tiltOf(it.id) * drawnTilt();
-  return {
-    id: it.id, x: it.x, y: -it.y, w: it.w, h: it.h,
-    rot: -(it.rot || 0) + lean,
-  };
+  return cardOf(it, drawnTilt());
 }
 
 /**
@@ -1481,9 +1468,12 @@ function aimDraft(e: PointerEvent) {
   // the press that followed it was refused with a toast. A ring that promises
   // something the next press declines is worse than no ring.
   const overId = itemIdFromEvent(e.target);
-  const aim = overId && overId !== draftFrom && boxOf(overId) ? overId : null;
+  // The box is built once and reused: it is both the test for whether this is a
+  // card the tool will join and the far end of the draft line.
+  const overBox = overId && overId !== draftFrom ? boxOf(overId) : null;
+  const aim = overBox ? overId : null;
   setConnectAim(aim);
-  const to = (aim && boxOf(aim)) || { id: '', x: w.x, y: -w.y, w: 1, h: 1, rot: 0 };
+  const to = overBox || { id: '', x: w.x, y: -w.y, w: 1, h: 1, rot: 0 };
   // From the edge of the picked card towards wherever the far end is, and to
   // the far card's edge when there is one - the same clip the drawn lines take,
   // so the draft is the line that would be drawn rather than an approximation

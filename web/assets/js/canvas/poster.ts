@@ -307,12 +307,19 @@ async function grab(v: HTMLVideoElement, url: string): Promise<VideoFrameShot | 
     // the head of this function for why a frame with nothing in it is never the
     // answer rather than being kept as a last resort.
   }
+  // Nothing at any seek point. One more attempt, and it is not a repetition:
+  // see running(), which is the only state in which the Android path can hand a
+  // frame over at all.
+  if (!refused) {
+    const live = await running(v).catch(() => null);
+    if (live) return live;
+  }
   // **What this browser has just proved about itself**, which is a bigger fact
   // than what it said about this clip. Every capture came back with an encoded
-  // frame in it, the canvas reads back, and every pixel at every seek point was
-  // the same colour - through both doors, the 2D one and WebGL. That is a
-  // decoder this app cannot reach, and no further clip on this board is going to
-  // go differently.
+  // frame in it, the canvas reads back, and every pixel was the same colour -
+  // through both doors, the 2D one and WebGL, parked on three seek points and
+  // then again while the clip was actually running. That is a decoder this app
+  // cannot reach, and no further clip on this board is going to go differently.
   //
   // Recorded rather than acted on here, because what to do about it costs thirty
   // megabytes and belongs to whoever is importing. See videoDrawsBlank() and
@@ -339,6 +346,46 @@ async function grab(v: HTMLVideoElement, url: string): Promise<VideoFrameShot | 
   if (refused) noPreview('clip', refused);
   else canvasBlocked();
   return null;
+}
+
+/**
+ * A frame off the clip while it is *running*, which on Android is the only
+ * moment there is one to take.
+ *
+ * The walk above parks the element on a seek, which is the cheap way and works
+ * everywhere else. On Firefox for Android it cannot work at all: frames are
+ * decoded into a SurfaceTexture, and the WebGL blit that gets round the 2D bug
+ * (canvas/gl-frame.ts) copies whatever is *currently* in that texture. A paused
+ * element that has never been composited has nothing in it, and the upload is
+ * the "Resource has no data (yet?). Uploading zeros" that A-Frame, PixiJS and
+ * Hubs all hit - which arrives here as one more flat frame.
+ *
+ * Playing it is what puts frames in the texture. Eight looks, each waiting on
+ * requestVideoFrameCallback or a frame interval, whichever comes first; capture()
+ * tries both doors on each, so the WebGL one gets a live texture to copy.
+ *
+ * Reached only after every seek point has come back flat, so a browser that
+ * works never plays anything. Muted from birth (see videoFrame), which is what
+ * allows play() without a gesture; where it is refused this answers null.
+ */
+async function running(v: HTMLVideoElement): Promise<VideoFrameShot | null> {
+  try {
+    await v.play();
+  } catch {
+    return null;
+  }
+  try {
+    for (let look = 0; look < 8; look++) {
+      await presented(v, 1);
+      const took = await capture(v);
+      if (took.shot && !took.flat) return took.shot;
+    }
+    return null;
+  } finally {
+    // videoFrame's teardown drops the source, and an element left running while
+    // its src is pulled is a decoder held open on a phone with a ration of them.
+    v.pause();
+  }
 }
 
 /**

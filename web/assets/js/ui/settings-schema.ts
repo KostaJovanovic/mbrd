@@ -66,7 +66,7 @@ import { itemBounds } from '../geometry.ts';
 import { toUnits, formatLength, paperMm, PAPERS } from '../measure.ts';
 import {
   QUALITY_LEVELS, quality, qualityLevel, setQualityLevel, setQualityOverride,
-  clearQualityOverrides, SHARPNESS_STEPS, BUILD_STEPS,
+  SHARPNESS_STEPS, BUILD_STEPS,
 } from '../quality.ts';
 import { SOUND_STOPS, cueLogOn, soundLevel, setSoundLevel } from '../cuelume/engine.ts';
 
@@ -1023,5 +1023,3 @@ export function sectionVisible(section: Section, ctx: Ctx) {
 export const sectionsFor = (tab: string, ctx: Ctx) =>
   SECTIONS.filter(s => s.tab === tab && sectionVisible(s, ctx));
 
-/** Reset every quality override, leaving the dial where it is. */
-export const resetQuality = () => clearQualityOverrides();

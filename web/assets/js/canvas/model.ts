@@ -294,8 +294,9 @@ export function buildModelCard(item: Item) {
   };
 
   // The card is sized by the board, not by its contents, so the canvas has to
-  // follow the box rather than the other way round.
-  const ro = new ResizeObserver(paint);
+  // follow the box rather than the other way round. The observer is also the
+  // box cache's one invalidation - it clears the stale rect before repainting.
+  const ro = new ResizeObserver(() => { stageBox.delete(stage); paint(); });
   ro.observe(stage);
   // Hung on the node so it can be disconnected when the card is thrown away -
   // see releaseModels(). An observer whose only reference is this closure is
@@ -793,8 +794,18 @@ function orbit(stage: HTMLCanvasElement, view: View, paint: () => void) {
 // The draw
 // ---------------------------------------------------------------------------
 
+// The stage's box and its 2d context, cached per canvas so a turn's per-frame
+// drawInto() forces neither a layout nor a context lookup. The box changes only
+// on a resize, which the ResizeObserver on the stage signals by clearing this
+// entry before it repaints (see buildModelCard); the context a plain <canvas>
+// hands back is the same object every call. Same motive as the boardInk() cache
+// below - a turn should force nothing it does not have to.
+const stageBox = new WeakMap<HTMLCanvasElement, DOMRect>();
+const stageCtx = new WeakMap<HTMLCanvasElement, CanvasRenderingContext2D>();
+
 function drawInto(stage: HTMLCanvasElement, mesh: Mesh, view: View) {
-  const box = stage.getBoundingClientRect();
+  let box = stageBox.get(stage);
+  if (!box) { box = stage.getBoundingClientRect(); stageBox.set(stage, box); }
   if (!box.width || !box.height) return;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   const w = Math.max(1, Math.min(Math.round(box.width * dpr), MAX_BUFFER));
@@ -804,12 +815,14 @@ function drawInto(stage: HTMLCanvasElement, mesh: Mesh, view: View) {
 
   // The stage is a plain <canvas> this module made and has only ever drawn 2d
   // into, so it is never the already-bound-to-something-else case.
-  const ctx = stage.getContext('2d')!;
+  let ctx = stageCtx.get(stage);
+  if (!ctx) { ctx = stage.getContext('2d')!; stageCtx.set(stage, ctx); }
   ctx.clearRect(0, 0, w, h);
   // boardInk() rather than a per-frame getComputedStyle(stage).color: the stage's
   // colour is always var(--ink-2) (see buildModelCard), which is exactly what
   // boardInk() resolves and caches, so a turn no longer forces a style recalc per
-  // frame. Same value the still path (renderStill) already uses.
+  // frame - the box and context above are cached against the same motive. Same
+  // value the still path (renderStill) already uses.
   if (!renderShared(mesh, view, w, h, boardInk())) return;
   // As in takeShot(): a true from renderShared() is the shared canvas existing.
   ctx.drawImage(glCanvas!, 0, 0, w, h, 0, 0, w, h);
