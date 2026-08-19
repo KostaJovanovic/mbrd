@@ -169,9 +169,9 @@
   canvas#chart { width: 100%; height: 150px; display: block; border-radius: 6px; background: #0000001f; }
 
   /* The mock boards. One per whimsy level, because the difference between them
-     is the thing hardest to judge from a swatch: the sheet is extracted per
-     level (Harsh alone passes plain:true) and then painted under that level's
-     own --wash and --vignette, exactly as body does in app.css. */
+     is the thing hardest to judge from a swatch: the whole palette is
+     extracted per level (each passes its own tier) and then painted under that
+     level's own --wash and --vignette, exactly as body does in app.css. */
   #mocks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
   @media (max-width: 1100px) { #mocks { grid-template-columns: 1fr; } }
   .mock { border-radius: 10px; padding: 20px; border: 1px solid var(--edge); }
@@ -252,8 +252,13 @@
     <fieldset>
       <legend>Sheet — paper and key</legend>
       <div class="row">
-        <label class="check"><input type="checkbox" id="plain"> plain end (whimsy Harsh)</label>
+        <select id="tier">
+          <option value="0">whimsy 0 — Softish (pastel)</option>
+          <option value="1" selected>whimsy 1 — Middle (the tables as measured)</option>
+          <option value="2">whimsy 2 — Harsh (bold)</option>
+        </select>
       </div>
+      <div class="dial"><span class="why">Which end of the axis the palette is dressed for. The middle is the reference: at 1 nothing below touches a pigment.</span></div>
       <div id="g-sheet"></div>
     </fieldset>
 
@@ -298,7 +303,13 @@
 <script type="module">
 // Everything colour-exact comes from the app. Only the tunable pipeline is
 // restated below, and #drift holds the restatement to the original.
-import { oklch, hex, contrast, samplePixels, extractPalette }
+// The four dressing transforms come across rather than being restated with
+// dials of their own. They are the whole of what an end of the axis means to a
+// colour, the drift box below is only honest if the bench applies them exactly,
+// and what a tier does to a pigment is tuned in pigments.ts and looked at here.
+import { oklch, hex, contrast, samplePixels, extractPalette,
+  pastel, pastelInk, bolden, boldSecond, counterTurn, toGround,
+  PASTEL_DYE, PASTEL_PAPER_DROP }
   from './assets/lab-pigments.js';
 
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
@@ -348,7 +359,7 @@ const DIALS = [
 
 const P = {};
 for (const [key, , , , , , live] of DIALS) P[key] = live;
-let useStanding = true, plain = false, vividMode = 'today';
+let useStanding = true, tier = 1, vividMode = 'today';
 
 // The shipped tables, restated. Held to the live code by #drift.
 const SHEET = {
@@ -368,6 +379,17 @@ const PIGMENT = {
   '--accent-deep': { L: 0.415, C: 0.114 },
 };
 const LEAFY = { L: 0.572, C: 0.111 };
+// The bold end's typography, restated like the tables above: fixed tones for
+// the print and the hairlines, so at Harsh the accent is the only loud thing.
+// The papers are not here - they keep the plain-end treatment the two dials in
+// the Sheet group already carry.
+const BOLD_SHEET = {
+  '--ink':    { L: 0.135, C: 0.012 },
+  '--ink-2':  { L: 0.310, C: 0.018 },
+  '--ink-3':  { L: 0.480, C: 0.022 },
+  '--rule':   { L: 0.800, C: 0.008 },
+  '--rule-2': { L: 0.640, C: 0.012 },
+};
 const PAPERS = ['--paper', '--paper-2', '--paper-3', '--paper-card', '--rule', '--rule-2'];
 const WARM_ANCHOR = 75, WARM_TURN = 20, LEAFY_SOLO_TURN = 85;
 const ANALOGOUS = 60, LEAFY_DROP = 0.07, REF_KEY = 0.62;
@@ -522,16 +544,28 @@ function rolesFor(hues) {
   };
 }
 
-/** The tables, bent by what the photographs are. */
-function temper(traits, isPlain) {
+/** The tables, bent by what the photographs are and dressed for the tier. */
+function temper(traits, t) {
   const scale = clamp(Math.sqrt(traits.vivid / P.refVivid), P.vividFloor, P.vividCeil);
   const key = clamp((traits.key - REF_KEY) * P.keyGain, -P.keyDown, P.keyUp);
   const lift = P.paperL - SHEET['--paper'].L;
-  const shift = isPlain ? P.plainPaper - SHEET['--paper'].L : key + lift;
-  const sheetScale = (isPlain ? scale * P.plainTint : scale) * P.sheetTint;
+  // The axis overrules the photographs about the paper at both ends: white at
+  // Harsh because that is what that end is, slightly deeper stock at Softish
+  // with more of the dye in it. The soft inks are not dyed at all - they are a
+  // deep chromatic colour of the sheet's own hue, which is the one thing that
+  // was still reading as black under a pastel.
+  const bold = t === 2, soft = t === 0;
+  const shift = bold ? P.plainPaper - SHEET['--paper'].L
+    : key + lift - (soft ? PASTEL_PAPER_DROP : 0);
+  const dye = bold ? scale * P.plainTint : scale;
+  const paperScale = (soft ? scale * PASTEL_DYE : dye) * P.sheetTint;
+  const inkScale = dye * P.sheetTint;
   const sheet = {}, pigment = {};
   for (const [k, { L, C }] of Object.entries(SHEET)) {
-    sheet[k] = { L: PAPERS.includes(k) ? clamp(L + shift, 0, 1) : L, C: C * sheetScale };
+    const paper = PAPERS.includes(k);
+    sheet[k] = bold && BOLD_SHEET[k] ? { ...BOLD_SHEET[k] }
+      : soft && !paper ? pastelInk({ L, C: C * scale * P.sheetTint }, k)
+      : { L: paper ? clamp(L + shift, 0, 1) : L, C: C * (paper ? paperScale : inkScale) };
   }
   for (const [k, { L, C }] of Object.entries(PIGMENT)) {
     pigment[k] = {
@@ -549,15 +583,43 @@ const mixHex = (a, b, t) => {
   return '#' + m(ar, br) + m(ag, bg) + m(ab, bb);
 };
 
-function build(roles, traits, isPlain = plain) {
-  const { sheet, pigment, leafy, scale, key } = temper(traits, isPlain);
+const DEEP_DROP = PIGMENT['--accent'].L - PIGMENT['--accent-deep'].L;
+const DEEP_TEMPER = PIGMENT['--accent-deep'].C / PIGMENT['--accent'].C;
+const deepen = ink => ({ L: Math.max(0, ink.L - DEEP_DROP), C: ink.C * DEEP_TEMPER });
+
+/** What the tier does to a pigment, at the hue it will be worn at. */
+const dressFor = t => (t === 0 ? (x => pastel(x)) : t === 2 ? bolden : (x => x));
+
+function build(roles, traits, t = tier) {
+  const { sheet, pigment, leafy, scale, key } = temper(traits, t);
+  // Dressed after the dials have said their piece, so a pastel is a pastel of
+  // *this board's* colour and a bold accent goes to its own hue's cusp.
+  const dress = dressFor(t);
   const vars = {};
   for (const [k, { L, C }] of Object.entries(sheet)) vars[k] = hex(L, C, roles.sheet);
-  for (const [k, { L, C }] of Object.entries(pigment)) {
-    vars[k] = hex(L, C, ((k === '--accent-warm' ? roles.warm : roles.accent) + 360) % 360);
+  // At the plain end the hue that won the vote takes the accent and the
+  // counter-colour becomes the second voice, nudged towards the accent's
+  // complement; the third hue, if there is one, moves along to the wash.
+  const swap = t === 2 && apart(roles.sheet, roles.accent) >= P.minSep;
+  const accentH = ((swap ? roles.sheet : roles.accent) + 360) % 360;
+  const leafyH = (((swap ? counterTurn(roles.accent, accentH) : roles.leafy)
+    ?? roles.leafy) + 360) % 360;
+  const washH = ((swap ? roles.leafy : roles.warm) + 360) % 360;
+  // Then walked back down its own wall until it can be seen on the sheet
+  // written just above, with everything else in the light register it gave up.
+  const cusped = dress(pigment['--accent'], accentH);
+  const accentInk = t === 2 ? toGround(cusped, accentH, vars['--paper']) : cusped;
+  for (const k of Object.keys(pigment)) {
+    // --accent-deep stays the accent's own darker twin at every tier, so it is
+    // derived from the dressed accent rather than dressed itself.
+    const ink = k === '--accent-warm' ? (t === 2 ? boldSecond() : dress(pigment[k], washH))
+      : k === '--accent-deep' ? deepen(accentInk) : accentInk;
+    vars[k] = hex(ink.L, ink.C, k === '--accent-warm' ? washH : accentH);
   }
-  const crowded = apart(roles.accent, roles.leafy) < ANALOGOUS;
-  vars['--leafy'] = hex(crowded ? leafy.L - LEAFY_DROP : leafy.L, leafy.C, (roles.leafy + 360) % 360);
+  const crowded = t !== 2 && apart(roles.accent, roles.leafy) < ANALOGOUS;
+  const leafyInk = t === 2 ? boldSecond() : dress(leafy, leafyH);
+  vars['--leafy'] =
+    hex(crowded ? leafyInk.L - LEAFY_DROP : leafyInk.L, leafyInk.C, leafyH);
 
   // repair: only L moves, and only downwards.
   const paper = vars['--paper'];
@@ -570,7 +632,17 @@ function build(roles, traits, isPlain = plain) {
     }
   }
   const light = mixHex(paper, '#ffffff', 0.55);
-  let { L, C } = pigment['--accent'];
+  // Neither end runs the darkening loop: it would be the axis overruling
+  // itself. A pastel that can hold a light label is not a pastel any more, and
+  // a bold accent has already come exactly as far down its wall as its *sheet*
+  // required. At both ends the label is chosen instead of forced.
+  if (t === 0 || t === 2) {
+    vars['--accent-fg'] =
+      contrast(vars['--accent'], vars['--ink']) >= contrast(vars['--accent'], light)
+        ? vars['--ink'] : light;
+    return { vars, scale, key };
+  }
+  let { L, C } = accentInk;
   for (let i = 0; i < 40 && contrast(vars['--accent'], light) < ACCENT_FLOOR; i++) {
     L = Math.max(0, L - 0.02);
     vars['--accent'] = hex(L, C, roles.accent);
@@ -578,7 +650,7 @@ function build(roles, traits, isPlain = plain) {
   }
   vars['--accent-fg'] = light;
   if (contrast(vars['--accent'], light) < ACCENT_FLOOR) {
-    vars['--accent'] = hex(pigment['--accent'].L, pigment['--accent'].C, roles.accent);
+    vars['--accent'] = hex(accentInk.L, accentInk.C, roles.accent);
     vars['--accent-fg'] = vars['--ink'];
   }
   return { vars, scale, key };
@@ -614,7 +686,7 @@ for (const [key, group, label, min, max, step, live, why] of DIALS) {
 }
 
 $('#useStanding').addEventListener('change', e => { useStanding = e.target.checked; run(); });
-$('#plain').addEventListener('change', e => { plain = e.target.checked; run(); });
+$('#tier').addEventListener('change', e => { tier = Number(e.target.value); run(); });
 $('#vividMode').addEventListener('change', e => { vividMode = e.target.value; run(); });
 
 for (const b of document.querySelectorAll('[data-preset]')) {
@@ -637,7 +709,7 @@ $('#dump').addEventListener('click', () => {
   const text = [
     `vividness reading : ${vividMode}`,
     `accent ranked by  : ${useStanding ? 'standing + facing bonus' : 'distance from the sheet'}`,
-    `plain end         : ${plain}`,
+    `whimsy tier       : ${tier} (${['Softish', 'Middle', 'Harsh'][tier]})`,
     '', ...lines,
   ].join('\n');
   navigator.clipboard?.writeText(text);
@@ -733,7 +805,7 @@ function checkDrift(chunks, vars) {
     box.textContent = 'dials off live defaults — comparison paused';
     return;
   }
-  const real = extractPalette(chunks, { plain });
+  const real = extractPalette(chunks, { tier });
   const keys = ['--paper', '--ink', '--accent', '--accent-warm', '--leafy'];
   const off = real ? keys.filter(k => real[k] !== vars[k]) : keys;
   box.style.color = off.length ? 'var(--bad)' : 'var(--ok)';
@@ -778,15 +850,16 @@ function paintContrasts(vars) {
 /**
  * The whimsy axis, as tokens.css sets it.
  *
- * `plain` is what appearance.js passes to extractPalette() - Harsh alone - so
- * the three levels do not merely decorate one sheet differently, they extract
- * different sheets. That is the half of the axis that is invisible from a
- * swatch and the reason these are drawn side by side.
+ * `tier` is what appearance.js passes to extractPalette(), and each of the
+ * three means something different to a pigment - so the levels do not merely
+ * decorate one palette differently, they extract three. That is the half of
+ * the axis invisible from a swatch and the reason these are drawn side by
+ * side: this strip is the only place all three are on screen at once.
  */
 const WHIMSY = [
-  { name: 'Softish', plain: false, wash: 2.2, vignette: 1 },
-  { name: 'Middle',  plain: false, wash: 1,   vignette: 1 },
-  { name: 'Harsh',   plain: true,  wash: 0,   vignette: 0 },
+  { name: 'Softish', tier: 0, wash: 2.2, vignette: 1 },
+  { name: 'Middle',  tier: 1, wash: 1,   vignette: 1 },
+  { name: 'Harsh',   tier: 2, wash: 0,   vignette: 0 },
 ];
 
 const rgbOf = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
@@ -804,7 +877,7 @@ function cornerOf(vars, { wash, vignette }) {
 function paintMocks(roles, board) {
   const box = $('#mocks');
   box.textContent = '';
-  const levels = WHIMSY.map(w => ({ w, vars: build(roles, board, w.plain).vars }));
+  const levels = WHIMSY.map(w => ({ w, vars: build(roles, board, w.tier).vars }));
   // Measured against Harsh, which is the level that keeps its paper white.
   const ref = lightOf(cornerOf(levels[2].vars, levels[2].w));
 

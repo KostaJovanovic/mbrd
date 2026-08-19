@@ -136,7 +136,7 @@ body::before {
 }
 .pv-back:hover {
   color: var(--accent-deep);
-  border-color: var(--accent);
+  border-color: var(--accent-text);
   /* Towards the board, which is the direction the arrow is pointing. */
   translate: -2px 0;
 }
@@ -291,19 +291,19 @@ body::before {
    pill's own colour would lose to it and only under hover, which is exactly
    the kind of thing that ships. */
 .pv-plate a, .pv-foot a {
-  color: var(--accent);
-  text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--accent-text);
+  text-decoration-color: color-mix(in srgb, var(--accent-text) 45%, transparent);
   text-underline-offset: 2px;
 }
 .pv-plate a:hover, .pv-foot a:hover { color: var(--accent-deep); }
 .pv-plate a:focus-visible, .pv-foot a:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--accent-text);
   outline-offset: 3px;
   border-radius: var(--radius-xs);
 }
 /* The pill is already a shape, so it keeps its own corner. */
 .pv-back:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--accent-text);
   outline-offset: 3px;
 }
 

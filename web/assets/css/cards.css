@@ -465,7 +465,7 @@
    what it is - a name, an address, and no body. The one part that behaves
    differently is the name, which is the anchor. */
 .card-link .card-name {
-  color: var(--accent);
+  color: var(--accent-text);
   text-decoration: underline;
   text-decoration-thickness: from-font;
   text-underline-offset: 2px;
@@ -699,7 +699,7 @@
   pointer-events: auto;   /* same bargain the anchor above makes */
   transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
 }
-.embed-go:hover { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.embed-go:hover { background: var(--accent); border-color: var(--accent-text); color: var(--accent-fg); }
 .embed-go svg { width: 11px; height: 11px; }
 /* Far out, the offer is unreadable and un-pressable, and it would be the only
    thing left saying anything on a card whose text has already stood down. */

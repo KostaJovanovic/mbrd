@@ -96,6 +96,45 @@ string from the interface.
 
 ## Releases
 
+## The Long Way Round
+version: 0.253
+date: 18 August 2026
+
+- A release with almost nothing new on it. The whole app was read through twice
+  looking for work it was doing twice over, and for the places where it had
+  learned something in one spot and never carried it to the next - then cleared
+  what that found. Most of it is meant to be invisible. What is below is the part
+  that reaches the screen.
+- [fix] **The palette's photo count reads `Every photo` again** at the top of its
+  range, where it had been printing `120 photos` instead. The app also stops
+  preparing a hundred-odd pictures it was never going to look at, every time the
+  board changes.
+- [fix] **Sizes in feet and inches now print like sizes in centimetres.** A card
+  measured `4 ft 3 in × 5 ft 2 in` reads `4 ft 3 × 5 ft 2 in`, sharing the unit
+  across the pair the way the metric ones always have.
+- [fix] **A playlist no longer carries a stray handler across a board swap**,
+  which could send it after the next track in a queue that had just been emptied.
+- [fix] **`Optimize` does what its dialog promised.** The run used to work the
+  list out a second time, from a board that could have changed since the question
+  was asked.
+- [fix] **The sticker and sound windows stop leaving something behind each time
+  they open.** Opening and closing one repeatedly cost the tab a little more
+  memory every time.
+- [faster] **Word, PowerPoint and the older `.doc` and `.xls` files find their
+  preview sooner.** A long deck especially: the app had been searching the whole
+  document for every piece it wanted, and the older formats had every stream
+  inside them unpacked just to read eight bytes from each.
+- [faster] **The Mobile layout keeps up on a large board.** Moving the column
+  count or the spacing on a board of a couple of thousand cards had been doing
+  arithmetic that grew with every row already placed.
+- [faster] **Dragging, connecting and resizing a note are lighter frame by
+  frame** - each was re-measuring things it already knew and could not have
+  changed mid-gesture. The playback bar has stopped rewriting its clock sixty
+  times a second to say the same second.
+- [faster] **Saving, autosaving and emptying the bin cost less on a big board**,
+  as does opening a comic, and switching boards no longer rewrites the library
+  once per board it drops.
+
 ## Face Up
 version: 0.231 - 0.252
 date: 16 - 18 August 2026

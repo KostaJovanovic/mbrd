@@ -200,7 +200,7 @@
 #toolbar button[aria-expanded="true"] { background: var(--paper-2); color: var(--accent-deep); }
 #toolbar svg {
   width: 17px; height: 17px;
-  color: var(--accent);
+  color: var(--accent-text);
   /* The glyph takes the reaction and not the button, for the reason #zoom-ctl
      gives: scaling the button would drag the hairlines between them about. */
   transition: transform var(--dur-base) var(--ease-back);
@@ -593,7 +593,7 @@
   clip-path: inset(0 calc((1 - var(--np-progress, 0)) * 100%) 0 0);
 }
 #nowplaying .np-line-fill-line,
-#nowplaying .np-line-fill-wave { stroke: var(--accent); }
+#nowplaying .np-line-fill-wave { stroke: var(--accent-text); }
 /* Straight at the middle and hard ends of the whimsy axis; a Material-You wave at
    the soft end, the tier that already rounds and softens everything else. */
 /* view-box, so the scroll below translates in the wave's own user units (which
@@ -685,7 +685,7 @@
 #nowplaying .np-qbtn:hover { background: var(--paper-2); color: var(--ink); }
 #nowplaying .np-qbtn svg { width: 16px; height: 16px; }
 /* An engaged shuffle or repeat reads in the accent. */
-#nowplaying .np-qbtn[aria-pressed="true"] { color: var(--accent); }
+#nowplaying .np-qbtn[aria-pressed="true"] { color: var(--accent-text); }
 /* And one of them comes and goes: Next, which is only on the bar while a list is
    what is playing (paintNext() in ui/nowplaying.js). Written here rather than
    left to the browser because `display: grid` above beats the user-agent's

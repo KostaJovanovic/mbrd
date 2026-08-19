@@ -201,10 +201,10 @@
   width: 32px;
   height: 32px;
   padding: 0;
-  border: var(--board-hairline) solid var(--accent);
+  border: var(--board-hairline) solid var(--accent-text);
   border-radius: 50%;
   background: none;
-  color: var(--accent);
+  color: var(--accent-text);
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
               transform var(--dur-base) var(--ease-back);
@@ -392,10 +392,10 @@
   width:  clamp(30px, calc(var(--half-min, 100px) * 0.42), 92px);
   height: clamp(30px, calc(var(--half-min, 100px) * 0.42), 92px);
   padding: 0;
-  border: var(--board-hairline) solid var(--accent);
+  border: var(--board-hairline) solid var(--accent-text);
   border-radius: 50%;
   background: var(--paper-card);
-  color: var(--accent);
+  color: var(--accent-text);
   cursor: pointer;
   pointer-events: auto;
   transition: opacity var(--dur-fast) var(--ease),

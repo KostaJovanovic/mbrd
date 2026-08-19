@@ -7,7 +7,7 @@
 export const PALETTE_TOKENS = [
   '--paper', '--paper-2', '--paper-3', '--paper-card',
   '--ink', '--ink-2', '--ink-3', '--rule', '--rule-2',
-  '--accent', '--accent-warm', '--accent-deep', '--leafy', '--accent-fg',
+  '--accent', '--accent-warm', '--accent-deep', '--leafy', '--accent-fg', '--accent-text',
 ];
 
 export const TYPOGRAPHY_TOKENS = ['--font-display', '--font-body'];

@@ -92,7 +92,7 @@
   color: var(--ink);
   font: inherit;
 }
-#ask-field:focus { outline: none; border-color: var(--accent); }
+#ask-field:focus { outline: none; border-color: var(--accent-text); }
 #ask-field[hidden] { display: none; }
 /* And the same box asked for a colour instead of a word. Taller than a line of
    text, because what it is showing is the answer rather than holding a caret,
@@ -145,7 +145,7 @@
 }
 .ask-row button:hover {
   background: var(--paper-2);
-  border-color: var(--accent);
+  border-color: var(--accent-text);
   color: var(--accent-deep);
   transform: translateY(var(--btn-lift)) scale(var(--btn-grow));
 }
@@ -361,7 +361,7 @@
   cursor: pointer;
 }
 .credit-face-link:hover .credit-face {
-  border-color: var(--accent);
+  border-color: var(--accent-text);
   transform: translateY(var(--btn-lift)) scale(var(--btn-grow));
 }
 /* Hovering the picture lights the name, because the name is the half of this
@@ -369,7 +369,7 @@
    at. `~` rather than a hover on the whole row: the quote is in there too, and
    passing over a sentence is not reaching for a link. */
 .credit-face-link:hover ~ .credit-who .credit-name {
-  color: var(--accent);
+  color: var(--accent-text);
   text-decoration: underline;
 }
 .credit-who { min-width: 0; }
@@ -381,7 +381,7 @@
   text-decoration: none;
   transition: color var(--dur-fast) var(--ease);
 }
-.credit-name:hover { color: var(--accent); text-decoration: underline; }
+.credit-name:hover { color: var(--accent-text); text-decoration: underline; }
 .credit-name:focus { outline: none; }
 .credit-name:focus-visible {
   outline: var(--sel-line) solid var(--select);
@@ -501,7 +501,7 @@
   text-decoration: none;
   transition: color var(--dur-fast) var(--ease);
 }
-.credits-deps a:hover { color: var(--accent); text-decoration: underline; }
+.credits-deps a:hover { color: var(--accent-text); text-decoration: underline; }
 .credits-deps a:focus { outline: none; }
 .credits-deps a:focus-visible {
   outline: var(--sel-line) solid var(--select);
@@ -587,7 +587,7 @@
   background: none;
   cursor: pointer;
 }
-#darkroom-close:hover { color: var(--accent); background: var(--paper-2); }
+#darkroom-close:hover { color: var(--accent-text); background: var(--paper-2); }
 
 /* The stage centres the plate; the plate *is* the picture. Nothing may size the
    plate independently - the frame inside it is positioned in percentages, and a
@@ -694,8 +694,8 @@
 }
 .dk-tool:hover { color: var(--ink); background: var(--paper-2); }
 .dk-tool[aria-pressed="true"] {
-  color: var(--accent);
-  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  color: var(--accent-text);
+  border-color: color-mix(in srgb, var(--accent-text) 40%, transparent);
   background: var(--paper-3);
 }
 .dk-tool .ico { width: 15px; height: 15px; }

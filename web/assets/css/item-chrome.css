@@ -271,7 +271,7 @@
      three uppercase letters read as a classification rather than as a word. */
   letter-spacing: calc(0.16em * var(--ls-scale));
   text-transform: uppercase;
-  color: var(--accent);
+  color: var(--accent-text);
   border-bottom: var(--board-hairline) solid var(--rule);
   padding-bottom: calc(var(--ix-pad) * 0.42);
   white-space: nowrap;

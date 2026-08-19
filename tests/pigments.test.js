@@ -15,6 +15,10 @@ import {
   contrast, extractPalette, hex, huesOf, oklch, paletteFor, paletteFromAccent,
   PALETTE_TOKENS,
 } from '../web/assets/js/ui/pigments.ts';
+// Straight from color.ts rather than through pigments.ts: this is the gamut
+// wall itself, which the bold end is a statement about, and pigments.ts
+// re-exports only the three functions its callers have always reached for.
+import { maxChroma } from '../web/assets/js/color.ts';
 import { TOKENS } from '../web/assets/js/ui/look.ts';
 import { safeVars } from '../web/assets/js/ui/look.ts';
 
@@ -294,11 +298,10 @@ test('dark pictures make a deeper sheet, and it is still a sheet', () => {
 
 test('the plain end of the axis gets a white sheet whatever the pictures said', () => {
   // Harsh is where the board becomes a drawing, and a drawing is made on white
-  // paper - so the axis overrules the photographs about the sheet, and only
-  // about the sheet.
+  // paper - so the axis overrules the photographs about the sheet.
   for (const traits of [{ vivid: 0.2, key: 0.2 }, { vivid: 0.03, key: 0.9 }]) {
     const scrapbook = paletteFor([30], traits);
-    const drawing = paletteFor([30], { ...traits, plain: true });
+    const drawing = paletteFor([30], { ...traits, tier: 2 });
     assert.ok(lightOf(drawing['--paper']) > 0.98,
       `paper stayed at ${lightOf(drawing['--paper']).toFixed(3)}`);
     assert.ok(chromaOf(drawing['--paper']) < chromaOf(scrapbook['--paper']),
@@ -313,9 +316,208 @@ test('the plain end of the axis gets a white sheet whatever the pictures said', 
       `accent moved from ${hueOf(scrapbook['--accent'])} to ${hueOf(drawing['--accent'])}`);
   }
   // A hand-picked colour is subject to the axis too, and is still kept exactly.
-  const picked = paletteFromAccent('#c2410c', { plain: true });
+  const picked = paletteFromAccent('#c2410c', { tier: 2 });
   assert.equal(picked['--accent'], '#c2410c');
   assert.ok(lightOf(picked['--paper']) > 0.98, `paper is ${lightOf(picked['--paper'])}`);
+});
+
+test('the ends dress the pigments and the middle stands', () => {
+  // The three tiers stopped being one palette in three shapes. Softish pulls a
+  // colour toward chalk, Harsh pushes it to the gamut wall, and the middle is
+  // the tables exactly as measured - which is the one of the three that must
+  // never move, because it is what the other two are relative to.
+  //
+  // h 145 rather than the 200 the dials above use, and the reason is the wall
+  // itself: at these lightnesses a blue-cyan's sRGB ceiling is *below* the
+  // middle's own chroma, so bold and middle clip to the same hex and the
+  // comparison would be about sRGB rather than about the axis. A green has
+  // headroom left to spend.
+  const middle = paletteFor([145]);
+  const bold = paletteFor([145], { tier: 2 });
+  const soft = paletteFor([145], { tier: 0 });
+
+  assert.ok(chromaOf(bold['--accent']) > chromaOf(middle['--accent']),
+    `bold ${chromaOf(bold['--accent']).toFixed(3)} vs middle ${chromaOf(middle['--accent']).toFixed(3)}`);
+  assert.ok(lightOf(soft['--accent']) > lightOf(middle['--accent']),
+    `soft ${lightOf(soft['--accent']).toFixed(3)} vs middle ${lightOf(middle['--accent']).toFixed(3)}`);
+  assert.ok(chromaOf(soft['--accent']) < chromaOf(middle['--accent']),
+    'the pastel accent kept its chroma');
+
+  // Saying "tier 1" and saying nothing have to be the same sentence, token for
+  // token. Every transform on the way through is identity there, and this is
+  // what says so - a dressing that leaks into the middle by a rounding is a
+  // change to the look the user asked to keep.
+  assert.deepEqual(paletteFor([145], { tier: 1 }), middle);
+  assert.deepEqual(paletteFor([145], { vivid: 0.2, key: 0.4, tier: 1 }),
+    paletteFor([145], { vivid: 0.2, key: 0.4 }));
+});
+
+test('the plain end is never a no-op, because it moves lightness', () => {
+  // This is a regression test for a measured failure, not a hypothetical. The
+  // first version of bolden() asked for chroma 0.40 at each pigment's own
+  // lightness and let hex() clip, and it changed nothing at all: the presets
+  // are already at the wall - all four ask for 0.185 and differ only in how
+  // much of it their hue can hold - so #b94900 came back #ba4900 and #008379
+  // came back itself. A tier that renders identically to the middle is not a
+  // tier, and nothing on screen says so.
+  for (let h = 0; h < 360; h += 5) {
+    const bold = paletteFor([h], { tier: 2 })['--accent'];
+    const middle = paletteFor([h])['--accent'];
+    assert.notEqual(bold, middle, `hue ${h} renders identically at both tiers`);
+    assert.ok(chromaOf(bold) >= chromaOf(middle),
+      `hue ${h} came out less coloured than the middle`);
+    // The claim underneath both of those: wherever the bold accent ends up, it
+    // is as coloured as its hue can be *there*. The middle is a table and is
+    // usually inside the wall; this end is always on it, which is what "bold"
+    // means once lightness rather than chroma is the lever.
+    const wall = maxChroma(lightOf(bold), hueOf(bold), 0.40);
+    assert.ok(chromaOf(bold) > wall * 0.99,
+      `hue ${h}: accent is at ${chromaOf(bold).toFixed(3)} where the wall is ${wall.toFixed(3)}`);
+  }
+  // And the lightness it finds is the hue's own, which is the whole point: a
+  // chartreuse holds its most colour pale and a violet holds its dark, so a
+  // single bold lightness would have to be wrong for one of them.
+  assert.equal(lightOf(paletteFor([300], { tier: 2 })['--accent']).toFixed(2), '0.55');
+  assert.equal(lightOf(paletteFor([130], { tier: 2 })['--accent']).toFixed(2), '0.90');
+});
+
+test('the plain end accent can be read where it is text and stays acid where it is a fill', () => {
+  // Cusping the accent outright was one failure and walking all of it down was
+  // the next. An olive and a teal both cusp near L 0.9, so on a near-white
+  // sheet they came out as a button with no edge and a link nobody could read;
+  // walking the whole thing down to fix that turned the Save button olive. A
+  // fill is legible by its label and its edge, a label has only its own
+  // darkness - so they are two tokens here.
+  //
+  // 3:1 on the text form, the bar for a component against its background. The
+  // label that sits *on* the fill is a separate question, answered below.
+  for (const vivid of [0.02, 0.085, 0.3]) {
+    for (let h = 0; h < 360; h += 5) {
+      const v = paletteFor([h, (h + 150) % 360], { tier: 2, vivid, key: 0.62 });
+      assert.ok(contrast(v['--accent-text'], v['--paper']) >= 3,
+        `hue ${h} at vivid ${vivid}: the text form is ${contrast(v['--accent-text'], v['--paper']).toFixed(2)} on its own sheet`);
+      // The fill kept the colour: never darker than the form that had to be
+      // legible, and on the wall wherever it sits.
+      assert.ok(lightOf(v['--accent']) >= lightOf(v['--accent-text']) - 0.001,
+        `hue ${h}: the fill was darkened to ${lightOf(v['--accent']).toFixed(2)}`);
+    }
+  }
+});
+
+test('the two accent forms are one colour at every other tier', () => {
+  // The token exists everywhere so no selector ever falls back to an unset
+  // var, and it is written out rather than left to the stylesheet's alias for
+  // the reason --accent-fg is: applying a look adds tokens and only a change of
+  // look takes them away, so a value built at Harsh would otherwise stay inline
+  // and print the next palette's labels in it.
+  for (const tier of [0, 1, undefined]) {
+    for (let h = 0; h < 360; h += 15) {
+      const v = paletteFor([h, (h + 150) % 360], tier === undefined ? null : { tier });
+      assert.equal(v['--accent-text'], v['--accent'], `tier ${tier}, hue ${h}`);
+    }
+  }
+  assert.equal(paletteFromAccent('#3355ff')['--accent-text'], '#3355ff');
+});
+
+test('the plain end sends its light register to the role that can hold it', () => {
+  // --accent-warm is a wash, a note tint and this tier's --highlight, never
+  // text and never a fill something has to be read against. Acid on white is a
+  // bounded field in the reference too. So it sits light whatever the accent
+  // did - and above the text form, which is the one that had to come down.
+  for (let h = 0; h < 360; h += 15) {
+    const v = paletteFor([h, (h + 150) % 360], { tier: 2 });
+    assert.ok(lightOf(v['--accent-text']) < 0.75,
+      `hue ${h}: the text form stayed light at ${lightOf(v['--accent-text']).toFixed(2)}`);
+    assert.ok(lightOf(v['--accent-warm']) > lightOf(v['--accent-text']),
+      `hue ${h}: the wash is not above the text form`);
+  }
+});
+
+test('the plain end leads with the colour the board is actually made of', () => {
+  // The board this exists for: five cobalt posters and one green photograph,
+  // at Harsh, coming out entirely green. Nothing had misfired - the blue won
+  // the vote and became the sheet, and this tier prints its sheet near-white,
+  // so the colour five sixths of the board was made of appeared nowhere and
+  // the minority colour owned the screen. At this tier alone the seats swap.
+  const board = [{ h: 262, standing: 5, tone: null }, { h: 127, standing: 1, tone: null }];
+  const v = paletteFor(board, { tier: 2 });
+  assert.ok(apart(hueOf(v['--accent']), 262) < 6,
+    `the accent went to ${hueOf(v['--accent']).toFixed(0)}, not to the board's own blue`);
+
+  // The counter-colour answers it, in the register the accent left - and turned
+  // at most 25 degrees towards the accent's complement, which from cobalt takes
+  // a chartreuse towards 102. Still acid, tuned to the blue beside it.
+  // 102 is 127 turned the full 25 and no further; the couple of degrees of
+  // slack is the round trip through a hex, which is three bytes wide.
+  const second = hueOf(v['--leafy']);
+  assert.ok(apart(second, 102) < 3,
+    `the second voice landed at ${second.toFixed(0)} rather than at the bounded turn`);
+  assert.ok(lightOf(v['--leafy']) > lightOf(v['--accent']),
+    'the second voice is not in the register the accent gave up');
+
+  // A third hue, if the board has one, moves to the wash rather than vanishing.
+  const three = paletteFor([...board, { h: 30, standing: 0.8, tone: null }], { tier: 2 });
+  assert.ok(apart(hueOf(three['--accent-warm']), 30) < 6,
+    `the third hue went to ${hueOf(three['--accent-warm']).toFixed(0)} instead of the wash`);
+
+  // Only at this tier: the middle keeps rolesFor()'s answer, where the winner
+  // is on sheet duty and visible doing it.
+  // Measured on the accent rather than on the paper: the middle's sheet is
+  // deliberately within a few thousandths of neutral, and the hue of a colour
+  // that faint does not survive a round trip through three bytes.
+  const mid = paletteFor(board);
+  assert.ok(apart(hueOf(mid['--accent']), 127) < 6, 'the middle stopped using the counter-colour');
+
+  // And a board of one colour is left alone at every tier: there is no second
+  // voice to find, and turning its only hue would be inventing one.
+  const one = paletteFor([200], { tier: 2 });
+  assert.ok(apart(hueOf(one['--accent']), 200) < 6, 'a one-hue board had its only hue moved');
+});
+
+test('the soft end writes in a coloured ink, not a black one', () => {
+  // The last thing still arguing with the pastel. The ink used to be the
+  // tables' near-black under a light dye - chroma 0.036, which is black with a
+  // rumour of a tint in it - printed on a chalk sheet. A scrapbook is written
+  // in a coloured pen, so the soft ink is a deep version of the sheet's own
+  // hue instead: dark plum on rose, deep pine on mint.
+  for (let h = 0; h < 360; h += 15) {
+    const soft = paletteFor([h], { tier: 0 }), middle = paletteFor([h]);
+    assert.ok(chromaOf(soft['--ink']) > 0.045,
+      `hue ${h}: the soft ink is at chroma ${chromaOf(soft['--ink']).toFixed(3)}, which reads as black`);
+    assert.ok(chromaOf(soft['--ink']) > chromaOf(middle['--ink']) * 1.8,
+      `hue ${h}: the soft ink is barely more coloured than the middle's`);
+    // And still print. The repair pass owns this and is what stops a deep
+    // chromatic ink being talked into being a mid-tone one.
+    assert.ok(contrast(soft['--ink'], soft['--paper']) >= 7,
+      `hue ${h}: ink is ${contrast(soft['--ink'], soft['--paper']).toFixed(2)} on its own paper`);
+  }
+});
+
+test('a picked colour is the accent at every tier', () => {
+  // The axis dresses what the palette *derives*; it does not overrule what
+  // somebody chose. A picker that hands back a colour other than the one in the
+  // swatch is the control lying, at whichever end of the slider the board
+  // happens to be parked on.
+  for (const tier of [0, 1, 2]) {
+    assert.equal(paletteFromAccent('#3355ff', { tier })['--accent'], '#3355ff',
+      `tier ${tier} moved the picked colour`);
+  }
+});
+
+test('a pastel accent stays pastel and takes the ink as its label', () => {
+  // The middle earns a light label by darkening the accent until white reads on
+  // it. Run that loop on a pastel and it un-pastels it by a slower route, so at
+  // this tier it does not run at all and the ink carries the label instead.
+  // Both halves matter: a light accent is the point, and it has to be legible.
+  for (const h of [30, 145, 260]) {
+    const soft = paletteFor([h], { tier: 0 });
+    assert.equal(soft['--accent-fg'], soft['--ink'],
+      `hue ${h} did not take the ink as its label`);
+    assert.ok(lightOf(soft['--accent']) > 0.7,
+      `hue ${h}: the accent was darkened to ${lightOf(soft['--accent']).toFixed(3)}`);
+    assert.ok(contrast(soft['--accent'], soft['--accent-fg']) >= 4.5,
+      `hue ${h}: the label is ${contrast(soft['--accent'], soft['--accent-fg']).toFixed(2)}`);
+  }
 });
 
 test('every hue stays legible however the pictures bend the tables', () => {

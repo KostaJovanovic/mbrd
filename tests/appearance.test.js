@@ -149,12 +149,14 @@ test('PALETTE_TOKENS covers every token a palette block sets', () => {
   assert.ok(declared.size >= 10, `only ${declared.size} tokens found - has the block shape moved?`);
   const missing = [...declared].filter(t => !PALETTE_TOKENS.includes(t)).sort();
   assert.deepEqual(missing, [], 'set by a [data-palette] block and not in PALETTE_TOKENS');
-  // The list may be wider than the blocks, and is: --accent-fg is derived from
-  // the accent and declared per whimsy tier, so it travels with a palette
-  // without being written in one.
+  // The list may be wider than the blocks, and is. Both of these are derived
+  // from the accent and declared per whimsy tier rather than per palette, so
+  // they travel with a palette without being written in one: --accent-fg is
+  // the label that sits on the accent, and --accent-text is the accent at the
+  // lightness it can be read at, which only Harsh needs a value for.
   const extra = PALETTE_TOKENS.filter(t => !declared.has(t));
-  assert.deepEqual(extra, ['--accent-fg'],
-    'PALETTE_TOKENS carries a name no palette block sets, and it is not the documented one');
+  assert.deepEqual(extra, ['--accent-fg', '--accent-text'],
+    'PALETTE_TOKENS carries a name no palette block sets, and it is not one of the documented two');
 });
 
 test('the whimsy axis owns every token only a whimsy block sets', () => {
@@ -173,6 +175,59 @@ test('the whimsy axis owns every token only a whimsy block sets', () => {
   assert.deepEqual([...AXIS_TOKENS].sort(), want,
     'AXIS_TOKENS and the [data-whimsy] blocks have drifted - a token set per tier '
     + 'and missing here goes on ignoring the slider');
+});
+
+// The combined selectors of section 3b: one palette dressed for one end of the
+// axis. Whimsy attribute first, deliberately - see the test below.
+const COMBO_BLOCKS = /:root\[data-whimsy="([02])"\]\[data-palette="([a-z0-9-]+)"\]\s*\{([\s\S]*?)\n\}/g;
+
+test('every palette is dressed at both ends of the axis', () => {
+  // Section 3b is where the whimsy axis stopped being shape-only and started
+  // dressing pigment. A bare `:root[data-whimsy="0"]` is (0,2,0) - the same
+  // specificity as `:root[data-palette="orca"]` - and it is written later in
+  // the file, so on an Orca board it wins and paints the default look's pastel
+  // over Orca's own colours. The combined selectors at (0,3,0) are what stops
+  // that, which means a palette without one at each end is not "undressed", it
+  // is wearing somebody else's palette. Nothing on screen says so.
+  const css = lookTokens().replace(/\/\*[\s\S]*?\*\//g, '');
+  const palettes = [...css.matchAll(PALETTE_BLOCKS)].map(m => m[1]);
+  assert.ok(palettes.length >= 3, `only ${palettes.length} palettes found - has the block shape moved?`);
+
+  const combos = new Map();
+  for (const m of css.matchAll(COMBO_BLOCKS)) {
+    combos.set(`${m[1]}/${m[2]}`, [...m[3].matchAll(/(--[a-z0-9-]+)\s*:/g)].map(d => d[1]));
+  }
+
+  const undressed = [];
+  for (const tier of ['0', '2']) {
+    for (const name of palettes) if (!combos.has(`${tier}/${name}`)) undressed.push(`${tier}/${name}`);
+  }
+  assert.deepEqual(undressed, [],
+    'a palette with no block at this tier renders in the default look\'s pigments there '
+    + '- regenerate with tools/gen-tier-palettes.mjs');
+
+  // And a combo may only set pigment. Anything else in one is a token the
+  // palette switch will not clear, pinned by a selector no slider can outrank.
+  for (const [key, tokens] of combos) {
+    const stray = tokens.filter(t => !PALETTE_TOKENS.includes(t)).sort();
+    assert.deepEqual(stray, [], `${key} sets something that is not a pigment`);
+  }
+});
+
+test('the combined tier-and-palette selectors are invisible to the two parity tests', () => {
+  // Both tests above read blocks by regex, and both would read a combo wrongly:
+  // PALETTE_BLOCKS would count Softish's pastel as a fifth palette's pigments,
+  // and the AXIS_TOKENS check would see palette tokens declared per tier. They
+  // are blind to 3b only because of how its selectors are written - whimsy
+  // attribute first, so PALETTE_BLOCKS's leading `:root[data-palette` cannot
+  // match, and a second attribute after the whimsy one, so WHIMSY_BLOCKS's
+  // `"\d"]` followed by `{` cannot either. That is a property of this file's
+  // formatting, not of CSS, so it is asserted rather than assumed.
+  const sample = ':root[data-whimsy="0"][data-palette="orca"] {\n  --accent: #80b6af;\n}';
+  assert.equal(sample.match(new RegExp(PALETTE_BLOCKS.source)), null,
+    'a combo block now reads as a palette block - PALETTE_TOKENS parity is counting section 3b');
+  assert.equal(sample.match(new RegExp(WHIMSY_BLOCKS.source)), null,
+    'a combo block now reads as a whimsy block - AXIS_TOKENS parity is counting section 3b');
 });
 
 test('the pre-paint anti-flash guard carries look.js\'s grammar and function allowlist', () => {

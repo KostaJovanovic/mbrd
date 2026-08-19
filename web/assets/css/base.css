@@ -394,7 +394,7 @@ body {
 .splash-thread .splash-card:nth-child(3) {
   --splash-tilt: var(--tilt-max);
   background: var(--accent);
-  border-color: var(--accent);
+  border-color: var(--accent-text);
 }
 .splash-thread .splash-card:nth-child(5) { --splash-tilt: calc(var(--tilt-max) * -0.55); }
 .splash-line {

@@ -109,6 +109,28 @@ function inGamut([r, g, b]: Triple): boolean {
 }
 
 /**
+ * The most chroma this hue can hold at this lightness and still be sRGB, up to
+ * `ceiling`.
+ *
+ * This is the bisection hex() has always done, given a name - because the wall
+ * became something a caller wants to *ask about* rather than only be clipped
+ * to. ui/pigments.js walks lightness reading this to find a hue's cusp, which
+ * is the one place a colour can be as saturated as the screen allows.
+ *
+ * Bisection rather than a loop of small steps, because the first attempt is
+ * usually in gamut already and this then costs one test.
+ */
+export function maxChroma(L: number, h: number, ceiling: number): number {
+  if (inGamut(oklchToLinear(L, ceiling, h))) return ceiling;
+  let lo = 0, hi = ceiling;
+  for (let i = 0; i < 18; i++) {
+    const mid = (lo + hi) / 2;
+    if (inGamut(oklchToLinear(L, mid, h))) lo = mid; else hi = mid;
+  }
+  return lo;
+}
+
+/**
  * OKLCh -> `#rrggbb`, kept inside sRGB by giving up chroma rather than
  * lightness.
  *
@@ -118,19 +140,9 @@ function inGamut([r, g, b]: Triple): boolean {
  * the channels instead - the obvious thing - is worse still, because it shifts
  * the hue: clamping a too-blue blue drags it towards cyan, and the palette stops
  * being the one that was chosen.
- *
- * Bisection rather than a loop of small steps, because the first attempt is
- * usually in gamut already and this then costs one test.
  */
 export function hex(L: number, C: number, h: number): string {
-  let lo = 0, hi = C;
-  if (!inGamut(oklchToLinear(L, C, h))) {
-    for (let i = 0; i < 18; i++) {
-      const mid = (lo + hi) / 2;
-      if (inGamut(oklchToLinear(L, mid, h))) lo = mid; else hi = mid;
-    }
-  } else lo = C;
-  const [r, g, b] = oklchToLinear(L, lo, h);
+  const [r, g, b] = oklchToLinear(L, maxChroma(L, h, C), h);
   return '#' + [r, g, b].map(v => toSrgb(v).toString(16).padStart(2, '0')).join('');
 }
 

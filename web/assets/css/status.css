@@ -35,7 +35,7 @@
 .field[hidden], .check[hidden], .btn-row[hidden] { display: none; }
 #drop-overlay div {
   padding: 16px 30px;
-  border: 2px dashed var(--accent);
+  border: 2px dashed var(--accent-text);
   border-radius: var(--ogee);
   background: var(--paper-card);
   box-shadow: var(--shadow-2);
@@ -135,7 +135,7 @@
   cursor: pointer;
   transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
 }
-#busy-cancel:hover { color: var(--accent); background: var(--paper-2); }
+#busy-cancel:hover { color: var(--accent-text); background: var(--paper-2); }
 #busy-cancel[hidden] { display: none; }
 
 #busy-track {

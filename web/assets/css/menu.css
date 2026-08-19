@@ -103,7 +103,7 @@
   font-style: var(--display-italic);
   letter-spacing: calc(0.14em * var(--ls-scale));
   text-transform: uppercase;
-  color: var(--accent);
+  color: var(--accent-text);
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -329,7 +329,7 @@
   justify-self: end;
   width: 13px;
   height: 13px;
-  color: var(--accent);
+  color: var(--accent-text);
   visibility: hidden;
 }
 .ctx-item.is-checked .ctx-tick { visibility: visible; }
@@ -423,7 +423,7 @@
    of the current state rather than a picture of the action, and the accent is
    the whole of what it says. */
 .ctx-item:hover .ctx-tick,
-.ctx-item:focus-visible .ctx-tick { color: var(--accent); }
+.ctx-item:focus-visible .ctx-tick { color: var(--accent-text); }
 
 .ctx-sep {
   height: 1px;
@@ -506,7 +506,7 @@
 #conn-chip .ico {
   width: 16px;
   height: 16px;
-  color: var(--accent);
+  color: var(--accent-text);
   transition: transform var(--dur-base) var(--ease-back);
 }
 #conn-chip button:hover .ico { transform: scale(var(--btn-grow)) translateY(var(--btn-lift)); }

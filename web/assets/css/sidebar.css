@@ -69,7 +69,7 @@
   left: max(16px, env(safe-area-inset-left));
 }
 #mobile-find-btn[hidden] { display: none; }
-#mobile-find-btn svg { width: 18px; height: 18px; color: var(--accent); }
+#mobile-find-btn svg { width: 18px; height: 18px; color: var(--accent-text); }
 /* The far corner, level with the menu button rather than stacked under it. This
    one comes and goes with the top of the Mobile board - paintButton() in
    ui/mobile-header.js - and a control that appears and vanishes directly below
@@ -103,7 +103,7 @@
               opacity 0.3s var(--ease),
               visibility 0s 0.3s;
 }
-#mobile-header-edit-btn svg { width: 18px; height: 18px; color: var(--accent); }
+#mobile-header-edit-btn svg { width: 18px; height: 18px; color: var(--accent-text); }
 /* Three bars that have to look like three of the same bar, which is a harder
    ask than it sounds: each one is rasterized on its own, so two bars render
    identically only if they sit at the same phase against the device pixel grid.
@@ -313,7 +313,7 @@
 #side-close svg,
 #header-close svg { width: 15px; height: 15px; display: block; }
 #side-close:hover,
-#header-close:hover { color: var(--accent); background: var(--paper-2); transform: rotate(90deg); }
+#header-close:hover { color: var(--accent-text); background: var(--paper-2); transform: rotate(90deg); }
 
 /* The tab strip. Outside .side-body, so it holds still while a tab scrolls -
    three headings that move away as you read are three headings you have to go
@@ -348,7 +348,7 @@
               border-color var(--dur-fast) var(--ease);
 }
 .side-tab:hover { color: var(--ink); }
-.side-tab.is-on { color: var(--accent); border-bottom-color: var(--accent); }
+.side-tab.is-on { color: var(--accent-text); border-bottom-color: var(--accent-text); }
 .side-tab:focus { outline: none; }
 .side-tab:focus-visible {
   outline: var(--sel-line) solid var(--select);
@@ -417,7 +417,7 @@
 .board-title:hover { border-color: var(--rule); }
 .board-title:focus {
   outline: none;
-  border-color: var(--accent);
+  border-color: var(--accent-text);
   background: var(--paper-card);
 }
 
@@ -468,7 +468,7 @@
   transition: border-color var(--dur-fast) var(--ease),
               background var(--dur-fast) var(--ease);
 }
-.field-picker:hover { border-color: var(--accent); background: var(--paper-2); }
+.field-picker:hover { border-color: var(--accent-text); background: var(--paper-2); }
 .field-picker:focus { outline: none; }
 .field-picker:focus-visible {
   outline: var(--sel-line) solid var(--select);
@@ -511,7 +511,7 @@
   transition: color var(--dur-fast) var(--ease);
 }
 .advanced > summary::-webkit-details-marker { display: none; }
-.advanced > summary:hover { color: var(--accent); }
+.advanced > summary:hover { color: var(--accent-text); }
 /* A drawn caret, so it turns with the disclosure rather than depending on a
    glyph whose ink is not centred in its line box. */
 .advanced > summary::before {
@@ -564,7 +564,7 @@
    neither at the plain end, without either end needing its own rule. */
 .btn-row button:hover {
   background: var(--paper-2);
-  border-color: var(--accent);
+  border-color: var(--accent-text);
   color: var(--accent-deep);
   transform: translateY(var(--btn-lift)) scale(var(--btn-grow));
 }
@@ -576,6 +576,20 @@
   letter-spacing: calc(0.03em * var(--ls-scale));
 }
 .btn-row button.primary:hover { background: var(--accent-deep); color: var(--accent-fg); }
+/* Bounded in ink at the plain end, and this is the one place it is not
+   optional. The fill there is the accent at its hue's cusp - the lightness
+   where the colour is loudest - and for a chartreuse or a teal that is a few
+   units off the paper, so a filled button with a border struck from its own
+   family has no outside edge at all. Every other accent-filled control in the
+   app is already bounded in --accent-text, which is that same pigment at a
+   lightness that reads; these two are the exception because their border is
+   the pressed colour rather than the read one. Ink is also simply what this
+   tier draws an edge in - see --item-border under [data-whimsy="2"]. */
+:root[data-whimsy="2"] .btn-row button.primary,
+:root[data-whimsy="2"] .btn-row button[aria-pressed="true"],
+:root[data-whimsy="2"] .btn-row button[aria-pressed="true"]:hover {
+  border-color: var(--ink);
+}
 /* A pair of buttons behaving as a radio group - Portrait / Landscape. Filled
    rather than merely outlined, because the question these answer is "which of
    these two is it", and an outline reads as a hover on the wrong one just as
@@ -673,7 +687,7 @@
   background: var(--paper);
   cursor: pointer;
 }
-.field select:hover { border-color: var(--accent); }
+.field select:hover { border-color: var(--accent-text); }
 
 /* Ruled slider: a hairline track with a terracotta lozenge riding it.
    Most sliders in the app are inside a .field. Three are not - the now-playing
@@ -815,7 +829,7 @@
   cursor: pointer;
   transition: border-color var(--dur-fast) var(--ease);
 }
-.field .pigment-swatch:hover { border-color: var(--accent); }
+.field .pigment-swatch:hover { border-color: var(--accent-text); }
 
 /* The board's own dropped faces, listed under the type control so each can be
    taken back off (ui/fonts.js). The whole block is hidden until there is one. */
@@ -857,7 +871,7 @@
   cursor: pointer;
   transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
 }
-.font-row-remove:hover { color: var(--accent); background: var(--paper-3); }
+.font-row-remove:hover { color: var(--accent-text); background: var(--paper-3); }
 .font-row-remove svg { width: 12px; height: 12px; }
 
 /* Checkboxes as inked boxes with a hand-drawn tick. */
@@ -880,7 +894,7 @@
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
 }
-.check input:hover { border-color: var(--accent); }
+.check input:hover { border-color: var(--accent-text); }
 .check input:checked {
   background-color: var(--accent);
   border-color: var(--accent-deep);
@@ -904,7 +918,7 @@
   line-height: 1.5;
   color: var(--ink-3);
 }
-.hint em { font-style: normal; color: var(--accent); }
+.hint em { font-style: normal; color: var(--accent-text); }
 
 .keys { margin: 0; padding: 0; list-style: none; font-size: var(--t-small); color: var(--ink-2); }
 .keys li {
@@ -966,7 +980,7 @@ kbd {
   cursor: pointer;
   transition: color var(--dur-fast) var(--ease);
 }
-.side-foot .by:hover { color: var(--accent); text-decoration: underline; }
+.side-foot .by:hover { color: var(--accent-text); text-decoration: underline; }
 /* Tabbed to rather than clicked: the same ring the dialog buttons, the search
    hits and the context menu use, and nothing at all for a plain click. */
 .side-foot .by:focus { outline: none; }

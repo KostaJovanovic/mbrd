@@ -28,7 +28,7 @@
  * something a board is allowed to ask for.
  */
 export const TOKENS = new Set([
-  '--accent', '--accent-deep', '--accent-fg', '--accent-warm',
+  '--accent', '--accent-deep', '--accent-fg', '--accent-text', '--accent-warm',
   '--btn-grow', '--btn-lift', '--btn-press', '--card-rule-gap',
   '--chrome-button-h', '--chrome-button-touch', '--chrome-button-w', '--cork',
   '--danger', '--density', '--display-italic', '--display-weight', '--dur-base',

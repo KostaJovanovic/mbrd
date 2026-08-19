@@ -228,16 +228,18 @@ function inGamut([r, g, b]) {
   const lo = -1e-4, hi = 1 + 1e-4;
   return r >= lo && r <= hi && g >= lo && g <= hi && b >= lo && b <= hi;
 }
+function maxChroma(L, h, ceiling) {
+  if (inGamut(oklchToLinear(L, ceiling, h))) return ceiling;
+  let lo = 0, hi = ceiling;
+  for (let i = 0; i < 18; i++) {
+    const mid = (lo + hi) / 2;
+    if (inGamut(oklchToLinear(L, mid, h))) lo = mid;
+    else hi = mid;
+  }
+  return lo;
+}
 function hex(L, C, h) {
-  let lo = 0, hi = C;
-  if (!inGamut(oklchToLinear(L, C, h))) {
-    for (let i = 0; i < 18; i++) {
-      const mid = (lo + hi) / 2;
-      if (inGamut(oklchToLinear(L, mid, h))) lo = mid;
-      else hi = mid;
-    }
-  } else lo = C;
-  const [r, g, b] = oklchToLinear(L, lo, h);
+  const [r, g, b] = oklchToLinear(L, maxChroma(L, h, C), h);
   return "#" + [r, g, b].map((v) => toSrgb(v).toString(16).padStart(2, "0")).join("");
 }
 function luminance(r, g, b) {
@@ -275,7 +277,8 @@ var PALETTE_TOKENS = [
   "--accent-warm",
   "--accent-deep",
   "--leafy",
-  "--accent-fg"
+  "--accent-fg",
+  "--accent-text"
 ];
 var TYPOGRAPHY_TOKENS = ["--font-display", "--font-body"];
 var paletteToken = /* @__PURE__ */ new Set([...PALETTE_TOKENS, ...TYPOGRAPHY_TOKENS]);
@@ -482,17 +485,83 @@ var KEY_UP = 0.01;
 var PAPERS = ["--paper", "--paper-2", "--paper-3", "--paper-card", "--rule", "--rule-2"];
 var PLAIN_PAPER = 0.985;
 var PLAIN_TINT = 0.55;
+var PASTEL_L = 0.8;
+var PASTEL_PULL = 0.75;
+var PASTEL_C_SCALE = 0.75;
+var PASTEL_C_MIN = 0.065;
+var PASTEL_C_MAX = 0.13;
+var PASTEL_DYE = 2.6;
+var PASTEL_PAPER_DROP = 8e-3;
+var PASTEL_INK_LIFT = 0.035;
+var PASTEL_INK_C_SCALE = 2.8;
+var PASTEL_INK_C_MIN = 0.06;
+var PASTEL_INK_C_MAX = 0.095;
+var BOLD_C = 0.4;
+var BOLD_CUSP_PULL = 1;
+var CUSP_LO = 0.35;
+var CUSP_HI = 0.95;
+var CUSP_STEPS = 24;
+var BOLD_GROUND = 3;
+var BOLD_STEP = 0.02;
+var BOLD_SECOND_L = 0.8;
+var BOLD_DEEP_L = 0.475;
+var COMPLEMENT_TURN = 25;
+var BOLD_SHEET = {
+  "--ink": { L: 0.135, C: 0.012 },
+  "--ink-2": { L: 0.31, C: 0.018 },
+  "--ink-3": { L: 0.48, C: 0.022 },
+  "--rule": { L: 0.8, C: 8e-3 },
+  "--rule-2": { L: 0.64, C: 0.012 }
+};
+var pastel = (t) => ({
+  L: t.L + (PASTEL_L - t.L) * PASTEL_PULL,
+  C: clamp(t.C * PASTEL_C_SCALE, PASTEL_C_MIN, PASTEL_C_MAX)
+});
+var pastelInk = (t, token) => ({
+  L: t.L + (token === "--ink" ? PASTEL_INK_LIFT : 0),
+  C: clamp(t.C * PASTEL_INK_C_SCALE, PASTEL_INK_C_MIN, PASTEL_INK_C_MAX)
+});
+function cuspL(h) {
+  let best = CUSP_LO, most = -1;
+  for (let i = 0; i <= CUSP_STEPS; i++) {
+    const L = CUSP_LO + (CUSP_HI - CUSP_LO) * (i / CUSP_STEPS);
+    const c = maxChroma(L, h, BOLD_C);
+    if (c > most) {
+      most = c;
+      best = L;
+    }
+  }
+  return best;
+}
+var bolden = (t, h) => ({ L: t.L + (cuspL(h) - t.L) * BOLD_CUSP_PULL, C: BOLD_C });
+var boldSecond = () => ({ L: BOLD_SECOND_L, C: BOLD_C });
+var boldDeep = () => ({ L: BOLD_DEEP_L, C: BOLD_C });
+var toward = (h, target, limit) => {
+  const d = (target - h + 540) % 360 - 180;
+  return h + Math.sign(d) * Math.min(Math.abs(d), limit);
+};
+function toGround(t, h, paper) {
+  let L = t.L;
+  while (L > CUSP_LO && contrast(hex(L, t.C, h), paper) < BOLD_GROUND) L -= BOLD_STEP;
+  return { L: Math.max(L, CUSP_LO), C: t.C };
+}
+function counterTurn(h, accentH) {
+  if (apart(h, accentH) < MIN_SEP) return null;
+  return (toward(h, accentH + 180, COMPLEMENT_TURN) + 360) % 360;
+}
+var asIs = (t) => t;
+var dressFor = (tier) => tier === 0 ? (t) => pastel(t) : tier === 2 ? bolden : asIs;
 function temper(traits) {
   const scale = traits?.vivid != null ? clamp(Math.sqrt(traits.vivid / REF_VIVID), VIVID_FLOOR, VIVID_CEIL) : 1;
   const key = traits?.key != null ? clamp((traits.key - REF_KEY) * KEY_GAIN, -KEY_DOWN, KEY_UP) : 0;
-  const shift = traits?.plain ? PLAIN_PAPER - SHEET["--paper"].L : key;
-  const sheetScale = traits?.plain ? scale * PLAIN_TINT : scale;
+  const bold = traits?.tier === 2, soft = traits?.tier === 0;
+  const shift = bold ? PLAIN_PAPER - SHEET["--paper"].L : key - (soft ? PASTEL_PAPER_DROP : 0);
+  const paperDye = bold ? scale * PLAIN_TINT : soft ? scale * PASTEL_DYE : scale;
+  const inkDye = bold ? scale * PLAIN_TINT : scale;
   const sheet = {}, pigment = {};
   for (const [key2, { L, C }] of Object.entries(SHEET)) {
-    sheet[key2] = {
-      L: PAPERS.includes(key2) ? clamp(L + shift, 0, 1) : L,
-      C: C * sheetScale
-    };
+    const paper = PAPERS.includes(key2);
+    sheet[key2] = bold && BOLD_SHEET[key2] ? { ...BOLD_SHEET[key2] } : soft && !paper ? pastelInk({ L, C: C * scale }, key2) : { L: paper ? clamp(L + shift, 0, 1) : L, C: C * (paper ? paperDye : inkDye) };
   }
   for (const [key2, { L, C }] of Object.entries(PIGMENT)) pigment[key2] = { L, C: C * scale };
   return { sheet, pigment, leafy: { L: LEAFY.L, C: LEAFY.C * scale } };
@@ -509,23 +578,37 @@ function paletteFor(hues, traits = null) {
 }
 function build(roles, traits) {
   const { sheet, pigment, leafy } = temper(traits);
+  const dress = dressFor(traits?.tier);
   const vars = {};
   for (const [key, { L, C }] of Object.entries(sheet)) vars[key] = hex(L, C, roles.sheet);
-  const accentInk = wearable(roles.tone?.accent) || pigment["--accent"];
-  const leafyInk = wearable(roles.tone?.leafy) || leafy;
+  const bold = traits?.tier === 2;
+  const swap = bold && apart(roles.sheet, roles.accent) >= MIN_SEP;
+  const accentH = ((swap ? roles.sheet : roles.accent) + 360) % 360;
+  const secondH = (swap ? counterTurn(roles.accent, accentH) : roles.leafy) ?? roles.leafy;
+  const leafyH = (secondH + 360) % 360;
+  const washH = ((swap ? roles.leafy : roles.warm) + 360) % 360;
+  const accentTone = swap ? roles.tone?.sheet : roles.tone?.accent;
+  const accentInk = dress(wearable(accentTone) || pigment["--accent"], accentH);
+  if (bold) {
+    const text = toGround(accentInk, accentH, vars["--paper"]);
+    vars["--accent-text"] = hex(text.L, text.C, accentH);
+  }
+  const leafyBase = wearable(roles.tone?.leafy) || leafy;
+  const leafyInk = bold ? boldSecond() : dress(leafyBase, leafyH);
   for (const [key, { L, C }] of Object.entries(pigment)) {
     if (key === "--accent-warm") {
-      vars[key] = hex(L, C, (roles.warm + 360) % 360);
+      const warm = bold ? boldSecond() : dress({ L, C }, washH);
+      vars[key] = hex(warm.L, warm.C, washH);
       continue;
     }
     const ink = key === "--accent-deep" ? deepen(accentInk) : accentInk;
-    vars[key] = hex(ink.L, ink.C, (roles.accent + 360) % 360);
+    vars[key] = hex(ink.L, ink.C, accentH);
   }
-  const crowded = apart(roles.accent, roles.leafy) < ANALOGOUS;
-  vars["--leafy"] = hex(crowded ? leafyInk.L - LEAFY_DROP : leafyInk.L, leafyInk.C, (roles.leafy + 360) % 360);
-  return repair(vars, roles, sheet, accentInk);
+  const crowded = !bold && apart(roles.accent, roles.leafy) < ANALOGOUS;
+  vars["--leafy"] = hex(crowded ? leafyInk.L - LEAFY_DROP : leafyInk.L, leafyInk.C, leafyH);
+  return repair(vars, roles, sheet, accentInk, traits?.tier);
 }
-function repair(vars, roles, sheet, accentInk) {
+function repair(vars, roles, sheet, accentInk, tier) {
   const paper = vars["--paper"];
   for (const [key, floor] of Object.entries(FLOOR)) {
     const { C: C2 } = sheet[key];
@@ -537,6 +620,10 @@ function repair(vars, roles, sheet, accentInk) {
     }
   }
   const light = mixHex(paper, "#ffffff", 0.55);
+  if (tier === 0 || tier === 2) {
+    vars["--accent-fg"] = contrast(vars["--accent"], vars["--ink"]) >= contrast(vars["--accent"], light) ? vars["--ink"] : light;
+    return alias(vars);
+  }
   const { C } = accentInk;
   let { L } = accentInk;
   for (let i = 0; i < 40 && contrast(vars["--accent"], light) < ACCENT_FLOOR; i++) {
@@ -549,9 +636,13 @@ function repair(vars, roles, sheet, accentInk) {
     vars["--accent"] = hex(accentInk.L, accentInk.C, roles.accent);
     vars["--accent-fg"] = vars["--ink"];
   }
+  return alias(vars);
+}
+function alias(vars) {
+  vars["--accent-text"] ||= vars["--accent"];
   return vars;
 }
-function paletteFromAccent(picked, { plain = false } = {}) {
+function paletteFromAccent(picked, { tier = 1 } = {}) {
   if (!/^#[0-9a-f]{6}$/i.test(picked)) return null;
   const chosen = picked.toLowerCase();
   const { C, h } = oklch(...parseHex(chosen));
@@ -559,11 +650,14 @@ function paletteFromAccent(picked, { plain = false } = {}) {
   const vars = build(
     { sheet: h, accent: h, leafy: (h + LEAFY_SOLO_TURN) % 360, warm: warmer(h) },
     // The axis applies to a colour chosen by hand exactly as it does to one
-    // read off the photographs: the sheet a pick brings with it is still the
-    // sheet, and at the plain end of the axis the sheet is white.
-    { plain }
+    // read off the photographs - the sheet and the other pigments dress for
+    // the tier - but the pick itself stands, below, at every stop: dressing
+    // the chosen colour pastel or bold would be overruling the pick, which is
+    // the mistake this function exists not to make.
+    { tier }
   );
   vars["--accent"] = chosen;
+  vars["--accent-text"] = chosen;
   const light = mixHex(vars["--paper"], "#ffffff", 0.55);
   vars["--accent-fg"] = contrast(chosen, light) >= contrast(chosen, vars["--ink"]) ? light : vars["--ink"];
   return vars;
@@ -573,14 +667,13 @@ function midHue(a, b) {
   return (a + d / 2 + 360) % 360;
 }
 function warmer(h) {
-  const d = (WARM_ANCHOR - h + 540) % 360 - 180;
-  return h + Math.sign(d) * Math.min(Math.abs(d), WARM_TURN);
+  return toward(h, WARM_ANCHOR, WARM_TURN);
 }
-function extractPalette(chunks, { plain = false } = {}) {
+function extractPalette(chunks, { tier = 1 } = {}) {
   const board = readBoard(chunks);
   const hues = peaksOf(board);
   if (!hues.length) return null;
-  return paletteFor(hues, { vivid: board.vivid, key: board.key, plain });
+  return paletteFor(hues, { vivid: board.vivid, key: board.key, tier });
 }
 function dominantColors(chunk, n = 5) {
   const peaks = peaksOf(readBoard([chunk]));
@@ -639,8 +732,16 @@ async function frameFor(url) {
 }
 export {
   MAX_SOURCES,
+  NEUTRAL_C,
   PALETTE_TOKENS,
+  PASTEL_DYE,
+  PASTEL_PAPER_DROP,
+  boldDeep,
+  boldSecond,
+  bolden,
   contrast,
+  counterTurn,
+  cuspL,
   dominantColors,
   extractPalette,
   hex,
@@ -648,5 +749,8 @@ export {
   oklch,
   paletteFor,
   paletteFromAccent,
-  samplePixels
+  pastel,
+  pastelInk,
+  samplePixels,
+  toGround
 };
