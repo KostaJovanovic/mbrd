@@ -271,7 +271,7 @@
 .viewer-md li > ul, .viewer-md li > ol { margin: 0.25em 0 0; }
 /* A task list drops the marker: the checkbox is the marker. */
 .viewer-md li.md-task { list-style: none; margin-left: -1.4em; }
-.viewer-md li.md-task input { margin-right: 0.5em; accent-color: var(--accent); }
+.viewer-md li.md-task input { margin-right: 0.5em; accent-color: var(--accent-text); }
 .viewer-md blockquote {
   margin: 0 0 1em;
   padding: 0.1em 0 0.1em 1em;

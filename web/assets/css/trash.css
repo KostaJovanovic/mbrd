@@ -90,7 +90,7 @@
    comes up to full strength, the way a physical bin tells you it is filling up
    by being visibly not empty. The icon inherits currentColor, so this carries
    the state without anything extra being drawn on top of it. */
-#bin-btn.has-things { color: var(--accent-deep); border-color: var(--accent); }
+#bin-btn.has-things { color: var(--accent-deep); border-color: var(--accent-text); }
 
 /* The autosave mark. Sits above the row, out of the flow, so it can appear and
    go without anything else on the glass moving an inch.
@@ -138,7 +138,7 @@
   visibility: visible;
   transition: opacity var(--dur-fast) var(--ease), visibility 0s;
 }
-#saved svg { width: 12px; height: 12px; color: var(--accent); }
+#saved svg { width: 12px; height: 12px; color: var(--accent-text); }
 
 /* The bin and the history pair, on one line. The bin stays flush in the corner
    and the pair grows to its right, so nothing that was already there moves. */

@@ -248,7 +248,7 @@
 .feed-tile-art.is-placeholder {
   display: grid;
   place-items: center;
-  color: color-mix(in srgb, var(--accent) 70%, var(--ink-3));
+  color: color-mix(in srgb, var(--accent-text) 70%, var(--ink-3));
 }
 .feed-tile-art.is-placeholder svg { width: 34%; height: 34%; }
 /* The still waveform on a coverless audio tile: a row of bars at fixed heights,
@@ -277,7 +277,7 @@
   place-items: center;
   border-radius: 50%;
   background: color-mix(in srgb, var(--paper) 82%, transparent);
-  color: var(--accent);
+  color: var(--accent-text);
   box-shadow: var(--shadow-1);
 }
 .feed-tile-badge svg { width: 11px; height: 11px; margin-left: 1px; }
@@ -346,7 +346,7 @@
 }
 .feed-link-host {
   font-size: var(--t-small);
-  color: var(--accent);
+  color: var(--accent-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -666,7 +666,7 @@
 .pl-cover.is-placeholder {
   display: grid;
   place-items: center;
-  color: color-mix(in srgb, var(--accent) 65%, var(--ink-3));
+  color: color-mix(in srgb, var(--accent-text) 65%, var(--ink-3));
 }
 .pl-cover.is-placeholder svg { width: 44%; height: 44%; }
 .pl-hero-text { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%; min-width: 0; }
@@ -726,7 +726,7 @@
   min-width: 172px;
   background: var(--accent);
   color: var(--accent-fg);
-  border-color: var(--accent);
+  border-color: var(--accent-text);
   box-shadow: var(--shadow-1);
 }
 .pl-play:hover { background: var(--accent-deep); }
@@ -734,8 +734,8 @@
 .pl-shuffle:hover { background: var(--paper-3); color: var(--ink); }
 .pl-shuffle.is-on {
   background: color-mix(in srgb, var(--accent) 14%, var(--paper-card));
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--accent-text);
+  color: var(--accent-text);
 }
 .pl-play:active, .pl-shuffle:active { transform: translateY(1px); }
 .pl-play .pl-ico, .pl-shuffle .pl-ico { display: inline-flex; }
@@ -788,7 +788,7 @@
    follows the row's own corner at every tier. A 2px bar drawn down the left edge
    was straight past a corner that curves 20px at the soft end, and stood outside
    the block it was marking at top and bottom. */
-.pl-row.is-playing { box-shadow: inset 2px 0 0 var(--accent); }
+.pl-row.is-playing { box-shadow: inset 2px 0 0 var(--accent-text); }
 .pl-row.is-dragging {
   background: var(--paper-card);
   box-shadow: var(--shadow-2);
@@ -813,14 +813,14 @@
   display: grid;
   place-items: center;
   background: color-mix(in srgb, var(--accent) 9%, var(--paper-2));
-  color: color-mix(in srgb, var(--ink-2) 75%, var(--accent));
+  color: color-mix(in srgb, var(--ink-2) 75%, var(--accent-text));
   font-family: var(--font-mono);
   font-size: var(--t-body);
   font-variant-numeric: tabular-nums;
 }
 .pl-art.is-placeholder::before { content: counter(pl-track); }
 .pl-row.is-playing .pl-art.is-placeholder {
-  color: var(--accent);
+  color: var(--accent-text);
   background: color-mix(in srgb, var(--accent) 14%, var(--paper-2));
 }
 .pl-main { flex: 1 1 auto; min-width: 0; }
@@ -832,7 +832,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.pl-row.is-playing .pl-title { color: var(--accent); font-weight: 600; }
+.pl-row.is-playing .pl-title { color: var(--accent-text); font-weight: 600; }
 .pl-artist {
   font-size: var(--t-small);
   color: var(--ink-3);
@@ -850,7 +850,7 @@
   color: var(--ink-3);
   font-variant-numeric: tabular-nums;
 }
-.pl-row.is-playing .pl-time { color: color-mix(in srgb, var(--accent) 70%, var(--ink-3)); }
+.pl-row.is-playing .pl-time { color: color-mix(in srgb, var(--accent-text) 70%, var(--ink-3)); }
 .pl-grip {
   flex: none;
   display: flex;
@@ -1030,9 +1030,9 @@
   border-bottom-right-radius: 2px;
   opacity: 0.55;
 }
-.player-window-resize:hover { color: var(--accent); }
+.player-window-resize:hover { color: var(--accent-text); }
 .player-window.is-resizing { cursor: nwse-resize; }
-.player-window.is-resizing .player-window-resize { color: var(--accent); }
+.player-window.is-resizing .player-window-resize { color: var(--accent-text); }
 
 /* The window's player: a real transport, not a play-all button. The now-playing
    track (cover, title, artist) over a seek line and the five controls, driving the
@@ -1059,7 +1059,7 @@
   box-shadow: var(--shadow-1);
 }
 .pw-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.pw-cover.is-placeholder { display: grid; place-items: center; color: color-mix(in srgb, var(--accent) 65%, var(--ink-3)); }
+.pw-cover.is-placeholder { display: grid; place-items: center; color: color-mix(in srgb, var(--accent-text) 65%, var(--ink-3)); }
 .pw-cover.is-placeholder svg { width: 46%; height: 46%; }
 .pw-info { flex: 1 1 auto; min-width: 0; }
 .pw-title {
@@ -1112,7 +1112,7 @@
   clip-path: inset(0 calc((1 - var(--pw-progress, 0)) * 100%) 0 0);
 }
 .pw-line-fill-line,
-.pw-line-fill-wave { stroke: var(--accent); }
+.pw-line-fill-wave { stroke: var(--accent-text); }
 /* view-box, so the scroll translates in the wave's own user units - which
    sizeSeekWave has made one-to-one with pixels - rather than in the path's
    bounding box. */
@@ -1155,7 +1155,7 @@
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 .pw-btn:hover { background: var(--paper-3); color: var(--ink); }
-.pw-btn.is-on { color: var(--accent); }
+.pw-btn.is-on { color: var(--accent-text); }
 /* Flex the glyph wrapper so the SVG is laid out as a flex item, not an inline box:
    an inline SVG rides the text baseline and its descender space nudges every icon a
    couple of pixels up, which read as the play circle sitting low against the row. */
@@ -1164,8 +1164,8 @@
 .pw-play {
   width: 44px;
   height: 44px;
-  border: var(--hairline) solid var(--accent);
-  color: var(--accent);
+  border: var(--hairline) solid var(--accent-text);
+  color: var(--accent-text);
 }
 .pw-play:hover { background: var(--accent); color: var(--accent-fg); }
 .pw-play svg { width: 18px; height: 18px; }

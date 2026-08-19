@@ -192,13 +192,38 @@
          down: how many releases there are, how many commits they cover, and
          when it started. All counted from the source. -->
     <p class="pn-tally">
-      <span>18 releases</span>
-      <span>253 commits</span>
+      <span>19 releases</span>
+      <span>254 commits</span>
       <span>since 25 July 2026</span>
     </p>
   </header>
 
   <ol class="pn-list">
+<li class="pn-rel" id="r-the-long-way-round">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">1</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.253</p>
+      <h2 class="pn-name">The Long Way Round</h2>
+      <p class="pn-date">18 August 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain">A release with almost nothing new on it. The whole app was read through twice looking for work it was doing twice over, and for the places where it had learned something in one spot and never carried it to the next - then cleared what that found. Most of it is meant to be invisible. What is below is the part that reaches the screen.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The palette's photo count reads <code>Every photo</code> again</strong> at the top of its range, where it had been printing <code>120 photos</code> instead. The app also stops preparing a hundred-odd pictures it was never going to look at, every time the board changes.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Sizes in feet and inches now print like sizes in centimetres.</strong> A card measured <code>4 ft 3 in × 5 ft 2 in</code> reads <code>4 ft 3 × 5 ft 2 in</code>, sharing the unit across the pair the way the metric ones always have.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A playlist no longer carries a stray handler across a board swap</strong>, which could send it after the next track in a queue that had just been emptied.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong><code>Optimize</code> does what its dialog promised.</strong> The run used to work the list out a second time, from a board that could have changed since the question was asked.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The sticker and sound windows stop leaving something behind each time they open.</strong> Opening and closing one repeatedly cost the tab a little more memory every time.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>Word, PowerPoint and the older <code>.doc</code> and <code>.xls</code> files find their preview sooner.</strong> A long deck especially: the app had been searching the whole document for every piece it wanted, and the older formats had every stream inside them unpacked just to read eight bytes from each.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>The Mobile layout keeps up on a large board.</strong> Moving the column count or the spacing on a board of a couple of thousand cards had been doing arithmetic that grew with every row already placed.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>Dragging, connecting and resizing a note are lighter frame by frame</strong> - each was re-measuring things it already knew and could not have changed mid-gesture. The playback bar has stopped rewriting its clock sixty times a second to say the same second.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>Saving, autosaving and emptying the bin cost less on a big board</strong>, as does opening a comic, and switching boards no longer rewrites the library once per board it drops.</li>
+    </ul>
+  </article>
+</li>
 <li class="pn-rel" id="r-face-up">
   <div class="pn-margin" aria-hidden="true">
     <span class="pn-mark"></span>
@@ -610,7 +635,7 @@
   </ol>
 
   <footer class="pn-foot">
-    <span>mbrd 0.253 by valjdakosta</span>
+    <span>mbrd 0.254 by valjdakosta</span>
     <a href="/">Back to the board</a>
   </footer>
  </div>

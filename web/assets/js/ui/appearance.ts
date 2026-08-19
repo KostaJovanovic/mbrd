@@ -352,7 +352,7 @@ function reshade() {
   // Off, with a colour somebody picked by hand: the pick stands and the sheet
   // is rebuilt around it, exactly as picking it did.
   const sheet = current.vars['--accent']
-    ? paletteFromAccent(current.vars['--accent'], { plain: current.whimsy === HARSH })
+    ? paletteFromAccent(current.vars['--accent'], { tier: current.whimsy })
     : null;
   if (!sheet) return;
   // Every pair is a token name and the colour to write.
@@ -867,7 +867,7 @@ async function recolourFromBoard(
   // the photographs, and the two failures used to arrive as one message.
   if (!pixels.length) return failed(`Could not read ${urls.length === 1 ? 'the picture' : 'any of the pictures'} on the board`);
 
-  const vars = extractPalette(pixels, { plain: current.whimsy === HARSH });
+  const vars = extractPalette(pixels, { tier: current.whimsy });
   if (!vars) return failed('No colour to take from these pictures');
   lastFailure = null;
   // The hues, not only the swatches: "is this the colour of my photographs?" is
@@ -1113,7 +1113,7 @@ function setVar(name: string, value: string) {
   // look `derived` - the machine's to overwrite. This is the opposite: it is
   // the most deliberate colour decision the panel offers.
   const sheet = name === '--accent'
-    ? paletteFromAccent(value, { plain: current.whimsy === HARSH }) : null;
+    ? paletteFromAccent(value, { tier: current.whimsy }) : null;
   // See the same loop in setPalette() for what the assertion that used to be
   // here was standing in for, and why it is not needed.
   for (const [key, hue] of Object.entries(sheet || {})) {

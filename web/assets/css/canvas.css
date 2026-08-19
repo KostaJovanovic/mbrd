@@ -821,7 +821,7 @@
 .item[data-type="title"]:hover::after,
 .item[data-type="title"].is-selected::after { pointer-events: auto; }
 .item-pen:hover,
-.item-rename:hover { background: var(--paper-2); color: var(--accent-deep); border-color: var(--accent); }
+.item-rename:hover { background: var(--paper-2); color: var(--accent-deep); border-color: var(--accent-text); }
 .item-pen svg { width: calc(16px * var(--iz, 1)); height: calc(16px * var(--iz, 1)); }
 /* Gone once the card is too small to aim at, the same rung the grips vanish on. */
 #world.zoom-tiny .item-pen,
@@ -858,7 +858,7 @@
   top: 0;
   width: 36px;
   height: 36px;
-  color: var(--accent);
+  color: var(--accent-text);
   opacity: 0.7;
   pointer-events: none;
 }
@@ -942,7 +942,7 @@
    These are on .web-styled alone. A coloured line has meta, and a line with
    meta has already left the bulk path for its own element in the decoration
    layer - the bulk path is one shared stroke and can only be one colour. */
-#web .web-c-accent { stroke: var(--accent); }
+#web .web-c-accent { stroke: var(--accent-text); }
 #web .web-c-warm   { stroke: var(--accent-warm); }
 /* --leafy, the olive pigment. This read var(--leaf) - the *control corner*, a
    length - so the declaration was invalid and dropped, and a line set to Leaf
@@ -981,7 +981,7 @@
    pointing at the line you have already marked is the commonest way to have
    both on screen at once. */
 #web .web-hover {
-  stroke: var(--accent);
+  stroke: var(--accent-text);
   stroke-width: calc(var(--web-weight) + 6px);
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -1030,7 +1030,7 @@
    reason; the accent is the same one the hover uses, because they are two
    states of one thing and not two kinds of line. */
 #web .web-active {
-  stroke: var(--accent);
+  stroke: var(--accent-text);
   stroke-width: calc(var(--web-weight) + 9px);
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -1097,7 +1097,7 @@
    a shadow - it does not affect layout, it follows the card's own radius, and
    it survives the overflow clip .item applies to everything inside itself. */
 .item[data-pick] {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--accent-text);
   outline-offset: 3px;
   border-radius: inherit;
 }
@@ -1110,7 +1110,7 @@
    survive a rebuild, and should not - a card that has been culled is not under
    the pointer. */
 .item[data-aim] {
-  outline: 1px dashed var(--accent);
+  outline: 1px dashed var(--accent-text);
   outline-offset: 3px;
   border-radius: inherit;
 }
@@ -1122,7 +1122,7 @@
    Above everything else in #web and, like the rest of it, untouchable - the
    pointer it is following must never land on it. */
 #web .web-draft {
-  stroke: var(--accent);
+  stroke: var(--accent-text);
   stroke-width: calc(var(--web-weight) + 0.6px);
   stroke-dasharray: 7 6;
   stroke-linecap: round;

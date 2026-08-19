@@ -179,6 +179,48 @@ export async function mediaAvailable(): Promise<boolean> {
 const FRAME_MAX_SIDE = 1280;
 
 /**
+ * Past this, the head of the file is sent instead of the whole of it.
+ *
+ * The core is a 32-bit wasm build: everything it touches lives in one heap that
+ * cannot pass 2 GB, and MEMFS holds an input file *whole* and *contiguous*
+ * inside it. So the bytes are paid for three times over - the ArrayBuffer read
+ * on this side, the copy MEMFS makes on that side, and every reallocation the
+ * heap performs on its way up to a size that will hold it - before a demuxer has
+ * looked at byte zero. That is what a 700 MB AVI does here: not a slow decode,
+ * an allocator walking a fragmenting heap for as long as somebody leaves the tab
+ * open. It was reported as hours.
+ *
+ * A ceiling rather than a refusal, and this is the reason the number is a switch
+ * and not a `no`. **A poster is frame one.** Every container this route exists
+ * for puts its header at the front and its first frames right behind it, so the
+ * question "what does this clip look like" is answered by the first few
+ * megabytes of it and the remaining hundreds are read for nothing. Sending the
+ * head is not a degraded answer, it is the same answer for a fraction of the
+ * memory - and where it is not (an MP4 with its `moov` parked at the end, which
+ * faststart exists to prevent), ffmpeg says so at once and the clip comes back
+ * with no poster, which is the black rectangle it was already going to be.
+ *
+ * 256 MB, well under `IMPORT_LIMITS.fileBytes`, on the same reasoning as
+ * `container-bytes` in consent.ts: the budget for one thumbnail is not the
+ * budget for the file it came out of. It clears the case this route was built
+ * for - a phone's HEVC clip is tens of megabytes, a long one low hundreds - and
+ * it is far enough below the heap's own wall that a file just over the line
+ * still leaves the decoder room to work in.
+ */
+const WHOLE_FILE_MAX = 256 * 1024 ** 2;
+
+/**
+ * How much of an oversized clip is sent in its place.
+ *
+ * Generous on purpose, because the thing being bounded is the allocation and not
+ * the search: a header plus one frame is a few megabytes even at 4K, and the
+ * only files that need more than that are ones padding the front with something
+ * unusual. 64 MB costs nothing on a heap sized for 2 GB and removes any question
+ * about whether the slice was long enough.
+ */
+const HEAD_BYTES = 64 * 1024 ** 2;
+
+/**
  * The first frame of a clip this browser cannot open, as a picture it can.
  *
  * The case is H.265. A phone shoots HEVC by default and every desktop browser
@@ -199,6 +241,14 @@ const FRAME_MAX_SIDE = 1280;
  * Null whenever anything is not right - the core is not vendored, the file is
  * not readable, the encoder is missing a format. The caller treats that as "no
  * poster", which is the black rectangle it was already going to be.
+ *
+ * **A large clip is read at the front rather than whole**, and that is the one
+ * thing here which is a limit rather than a capability. The core is a 32-bit
+ * wasm build and MEMFS holds an input file entire; a feature-length AVI handed
+ * to it is not a slow decode but an allocation that never settles. Since what
+ * this function wants is frame one, the head of the file is the whole of the
+ * answer for every container that puts its header at the front. See
+ * WHOLE_FILE_MAX.
  *
  * **And it says which, through `say`.** Every one of those used to answer null
  * without a word, which was defensible while this ran only for H.265 - a clip
@@ -246,6 +296,13 @@ export async function firstFrame(file: File, say: (msg: string) => void = () => 
 
   const ext = extOf(file.name);
   const inName = 'in' + (ext ? '.' + ext : '');
+  // What actually goes to the worker. Named off the original either way, because
+  // ffmpeg picks its demuxer off the extension and a slice of an AVI is still an
+  // AVI. See WHOLE_FILE_MAX for why a slice is the same answer and not a worse
+  // one; the slice is taken per attempt below rather than held here, for the
+  // same detachment reason the whole file is.
+  const partial = file.size > WHOLE_FILE_MAX;
+  const source = partial ? file.slice(0, HEAD_BYTES) : file;
   // Two ways of writing a still, tried in order. mjpeg is the one worth having -
   // a poster is a photograph and JPEG is a tenth the size - but a core can be
   // built without that encoder, and png is in every one of them.
@@ -263,7 +320,7 @@ export async function firstFrame(file: File, say: (msg: string) => void = () => 
     // twice is cheaper than keeping forty megabytes alive to avoid it.
     let bytes;
     try {
-      bytes = new Uint8Array(await file.arrayBuffer());
+      bytes = new Uint8Array(await source.arrayBuffer());
     } catch (err) {
       say('The clip could not be read back for the video tools - '
         + (err instanceof Error ? err.message : String(err)));
@@ -295,7 +352,14 @@ export async function firstFrame(file: File, say: (msg: string) => void = () => 
     if (res?.bytes?.byteLength) return new Blob([res.bytes], { type: attempt.type });
     last = trouble || `it wrote no ${attempt.codec} frame`;
   }
-  say('The video tools could not pull a frame from this clip - ' + last);
+  // Which end of the file was read is part of the account, not a detail. A clip
+  // over the ceiling was answered from its head, so "no frame" here can mean the
+  // picture is not at the front - an MP4 written without faststart is the case -
+  // rather than that there is no picture. Somebody reading this line is owed the
+  // difference, because the two have different remedies and only one of them is
+  // "this clip has nothing to show".
+  say('The video tools could not pull a frame from this '
+    + (partial ? `clip’s first ${Math.round(HEAD_BYTES / 1024 ** 2)} MB - ` : 'clip - ') + last);
   return null;
 }
 

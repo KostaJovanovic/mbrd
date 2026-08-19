@@ -201,7 +201,7 @@ body.is-patch::before {
 }
 .pn-back:hover {
   color: var(--accent-deep);
-  border-color: var(--accent);
+  border-color: var(--accent-text);
   /* Towards the board, which is the direction the chevron is pointing. */
   transform: translateX(-2px);
 }
@@ -346,7 +346,7 @@ body.is-patch::before {
   font-style: var(--display-italic);
   letter-spacing: calc(0.22em * var(--ls-scale));
   text-transform: uppercase;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .pn-name {
@@ -432,7 +432,7 @@ body.is-patch::before {
    sidebar.css: not italic, just the pigment. */
 .pn-notes em {
   font-style: normal;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .pn-notes code {
@@ -458,7 +458,7 @@ body.is-patch::before {
   display: inline-block;
   margin-right: 9px;
   padding: 0 6px;
-  border: var(--hairline) solid var(--accent);
+  border: var(--hairline) solid var(--accent-text);
   border-radius: var(--radius-xs);
   font-family: var(--font-display);
   font-size: var(--t-tiny);
@@ -469,7 +469,7 @@ body.is-patch::before {
      it is not the first word of it. */
   vertical-align: 0.09em;
   white-space: nowrap;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .pn-tag.is-fix {
   border-color: var(--rule-2);
@@ -488,13 +488,13 @@ body.is-patch::before {
    --------------------------------------------------------- */
 
 .pn a {
-  color: var(--accent);
-  text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  color: var(--accent-text);
+  text-decoration-color: color-mix(in srgb, var(--accent-text) 45%, transparent);
   text-underline-offset: 2px;
 }
 .pn a:hover { color: var(--accent-deep); }
 .pn a:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--accent-text);
   outline-offset: 3px;
   border-radius: var(--radius-xs);
 }
@@ -677,7 +677,7 @@ body.is-patch::before {
   letter-spacing: calc(0.16em * var(--ls-scale));
   color: var(--ink-3);
 }
-:root[data-whimsy="2"] .pn-tag.is-new { color: var(--accent); }
+:root[data-whimsy="2"] .pn-tag.is-new { color: var(--accent-text); }
 :root[data-whimsy="2"] .pn-tag.is-faster { color: var(--ink); }
 
 /* The bullets hang, so the second line of a note lines up with the first word

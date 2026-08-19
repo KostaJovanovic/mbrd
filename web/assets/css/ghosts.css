@@ -212,7 +212,7 @@
   font-weight: var(--display-weight);
   line-height: 0.95;
   letter-spacing: calc(0.04em * var(--ls-scale));
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 /* The one hint you follow rather than read: the way back, on the card a board

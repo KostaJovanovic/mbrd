@@ -175,7 +175,7 @@
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.04em;
 }
-#pick-hex:focus { outline: none; border-color: var(--accent); }
+#pick-hex:focus { outline: none; border-color: var(--accent-text); }
 
 /* Without color-mix(), for WebKit below 16.2 - section 7 of tokens.css carries
    the argument and declares the channel-form tokens. */

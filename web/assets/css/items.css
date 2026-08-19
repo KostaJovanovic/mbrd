@@ -448,7 +448,7 @@
   font-style: var(--display-italic);
   letter-spacing: calc(0.16em * var(--ls-scale));
   text-transform: uppercase;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .card-name {
   font-family: var(--font-display);

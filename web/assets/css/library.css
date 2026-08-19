@@ -42,7 +42,7 @@
 .library-spacer { flex: 1; }
 .library-new {
   padding: 6px 12px;
-  border: var(--hairline) solid var(--accent);
+  border: var(--hairline) solid var(--accent-text);
   border-radius: var(--leaf);
   background: var(--paper-card);
   color: var(--accent-deep);
@@ -90,8 +90,8 @@
   text-align: left;
   color: inherit;
 }
-.library-open:hover:not(:disabled) { border-color: var(--accent); }
-.library-card.is-current .library-open { border-color: var(--accent); cursor: default; }
+.library-open:hover:not(:disabled) { border-color: var(--accent-text); }
+.library-card.is-current .library-open { border-color: var(--accent-text); cursor: default; }
 .library-thumb {
   aspect-ratio: 4 / 3;
   background: var(--paper-2);

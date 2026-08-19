@@ -356,7 +356,7 @@
    ruled step wears a ring. Most steps are sealed, so the strip stays quiet and
    the few editable ones stand out, which is the right way round. */
 #timeline-strip .tl-step.is-ruled .tl-dot {
-  box-shadow: 0 0 0 var(--hairline) color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: 0 0 0 var(--hairline) color-mix(in srgb, var(--accent-text) 55%, transparent);
 }
 
 /* Broken: names a card that is no longer there, so it cannot run. Skipped
@@ -559,7 +559,7 @@
    strip's pip - a row is a sentence and the sentence is already the name, so
    what the mark has to say is only that this one was chosen. */
 #timeline-sheet .tl-row.is-named .tl-mark {
-  box-shadow: 0 0 0 var(--hairline) var(--accent);
+  box-shadow: 0 0 0 var(--hairline) var(--accent-text);
 }
 #timeline-sheet .tl-row.is-named .tl-said { color: var(--ink); }
 /* Broken: names a card that is no longer there, so it cannot run. Skipped

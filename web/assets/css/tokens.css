@@ -71,6 +71,18 @@
   /* What sits on top of the accent. Mixed up out of this palette's own sheet
      rather than fixed, so it is never a warm cream on a teal button. */
   --accent-fg:   color-mix(in srgb, var(--paper) 45%, #fff);
+  /* The accent when it is the thing being read rather than the thing being
+     filled: a tab label, a link, an underline, a focus ring, a hairline. Here
+     and at Softish it is simply the accent, and it is an alias rather than a
+     copy so that a board setting --accent inline moves both.
+
+     Only Harsh gives it a value of its own, and the reason is that end's
+     alone. There the accent goes to its hue's cusp - the lightness where it
+     holds the most colour there is - and an acid at L 0.9 is a fill you cannot
+     print words in. Splitting the token lets the button keep the acid, where
+     the label and the border carry the legibility, and lets the tab label take
+     the same pigment at a lightness that reads on paper. See section 3b. */
+  --accent-text: var(--accent);
   --leafy:       #66842b;  /* olive - secondary ornament */
   /* Kept unmistakably red - a destructive action should not have to be
      decoded - but pulled towards this palette's ink so it belongs to the board
@@ -107,7 +119,7 @@
      another layer of grid - they are the one statement on the board about where
      nought is, and a rule at half strength under a lattice of marks reads as the
      heaviest of the marks rather than as a different kind of thing. */
-  --grid-axis:  var(--accent);
+  --grid-axis:  var(--accent-text);
   --grid-dot:   1.7px;
 
   /* ---- the paper outline (canvas/paper.js) ----
@@ -198,7 +210,7 @@
      in [-1, 1] from canvas/items.js and multiplies it by this, so the whole
      board straightens up or scatters as the axis moves, with no JS involved. */
   --tilt-max: 1.5deg;
-  --select:      var(--accent);
+  --select:      var(--accent-text);
   --select-fill: color-mix(in srgb, var(--accent) 15%, transparent);
   /* The selection outline, and the corner brackets that thicken it. All three
      are one geometry: the bracket is drawn on exactly the path the outline
@@ -748,14 +760,23 @@
    has run. The other two are overrides on top of it, which also means the two
    ends stay honest: anything they do not restate is deliberately the middle's.
 
-   What the axis does NOT touch is the palette. All three levels are the same
-   pigments: Papyrus stays terracotta, Peacock stays teal. Harsh is a change of
-   *contrast*, not of colour - it pushes this palette's own paper and ink to
-   their extremes, mixing them out of the palette's accent so the hue survives
-   the trip. No pigment is named below: the only literals either end declares
-   are the achromatic ends of its own ramps - white, black, and the one neutral
-   stock Harsh prints its sheet on - and every colour is mixed out of a pigment
-   already chosen above.
+   The axis used to leave the palette alone: all three levels were the same
+   pigments in three shapes, and Harsh was a change of *contrast* only. It is
+   not any more. Each end now has a colour personality of its own - Softish
+   pulls every pigment toward chalk on a sheet that takes more dye, Harsh
+   pushes every pigment to the gamut wall - and the middle is what those two
+   are relative to. Papyrus is still terracotta at all three; it is a paler
+   terracotta at one end and a louder one at the other.
+
+   That dressing is not written in the two blocks below. It is in section 3b,
+   after them, because it has to outrank the palettes in section 2 and because
+   it is per palette rather than per tier. The blocks here stay what they
+   always were - shape, type, motion, elevation, ornament - plus the ramps
+   each end mixes out of the pigments 3b hands it. Harsh in particular still
+   derives its whole sheet from `var(--accent)` by color-mix, which is exactly
+   how the bold quartet reaches its own paper and ink for free. The rules that
+   decide what "pastel" and "bold" mean to a colour live in ui/pigments.js, so
+   an extracted palette and these four are dressed by the same numbers.
 
    The stops are discrete for now. The intended endgame is a board that reads
    the pictures dropped on it - their contrast and their sharpness - and parks
@@ -765,8 +786,11 @@
    ========================================================= */
 
 /* ---- 0: softish ---------------------------------------------------------
-   Shape, motion, ornament and reactivity only. No pigment: the palette is the
-   palette, and the shadows below take their colour from its ink. */
+   Shape, motion, ornament and reactivity. The pigment this end wears is in
+   3b, one block per palette, because it is the palettes dressed rather than a
+   tier's own colour - and because a block written here could not outrank
+   them. The shadows below still take their colour from whichever ink 3b has
+   left in place. */
 :root[data-whimsy="0"] {
   /* Twice the middle's, and the one line does all five: the ratios above carry
      it to 16 / 8 / 20 / 30. --leaf lands at 20px, which on a 35px control is
@@ -1074,6 +1098,260 @@
   --dur-travel: 220ms;
 }
 
+/* =========================================================
+   3b. The palettes, dressed for the ends.
+
+   Section 3 is the axis as personality; this is the axis as pigment. Every
+   block here is one of the four palettes above wearing what one end of the
+   axis does to a colour - chalk at Softish, the gamut wall at Harsh - and
+   nothing here declares anything at tier 1, which is the reference the two
+   ends are relative to and does not move.
+
+   The same transforms dress an *extracted* palette in ui/pigments.js -
+   pastel() and pastelInk() at one end, bolden() and boldSecond() at the other.
+   The four palettes written by hand upstairs are literals and nothing measures
+   them, so tools/gen-tier-palettes.mjs applies those same transforms to the
+   literals and prints this section. It was pasted once and has been tuned by
+   eye since - these are a place to start from, not an answer. Rerunning the
+   tool and pasting again overwrites the tuning, so it is a deliberate act and
+   never a build step.
+
+   ── Why every palette needs its own block at each end ──
+
+   A bare `:root[data-whimsy="0"]` is specificity (0,2,0), exactly the same as
+   `:root[data-palette="orca"]`, and it is written later in the file - so on an
+   Orca board at Softish it *wins*, and the default look's pastel paints over
+   Orca's own pigments. That is the whole reason the combined selectors below
+   exist: at (0,3,0) each palette outranks the bare block for its own board.
+   It also means a fifth palette added to section 2 without regenerating this
+   one would silently render in Papyrus's pastel at tier 0. The combo-parity
+   test in tests/appearance.test.js is what turns that into a red test rather
+   than a wrong colour nobody notices.
+
+   ── Why the two ends declare different amounts ──
+
+   Softish declares the whole sheet, because at this end the paper takes the
+   dye too - the papers carry their own hue at 2.6x the chroma on stock a
+   shade deeper, and there is no live derivation upstairs to leave alone.
+
+   The inks at that end are not dyed at all: they are a deep, genuinely
+   chromatic version of the sheet's hue - dark plum on rose, deep pine on mint.
+   A scrapbook is written in a coloured pen, and the near-black these used to
+   be was the one token still arguing with the pastel around it. Some of them
+   are physically olive or sepia rather than the hue you would name, because
+   the gamut holds no dark vivid yellow; sepia on cream is the right answer to
+   that rather than a defect.
+
+   Harsh declares the quartet and its label, and no sheet. Its block above
+   mixes --paper, --ink and both rules out of `var(--accent)`, so a boldened
+   accent reaches the sheet and the print on its own; writing paper literals
+   here would cut that derivation off and freeze the one thing that end does
+   best.
+
+   ── What "bold" turned out to have to mean ──
+
+   Pushing chroma at each pigment's own lightness did nothing at all, and that
+   is worth recording because it looks like it should work. The four palettes
+   above are *already* at the wall - section 2 says so outright, they all ask
+   for 0.185 and differ in how much of it their hue can hold - so asking for
+   more at the same lightness returned the same colour: #b94900 came back
+   #ba4900.
+
+   The lever is lightness. Every hue holds its most chroma at one particular
+   lightness, its cusp, and that is somewhere different for every hue - a
+   chartreuse cusps pale, a violet cusps dark.
+
+   Cusping the accent outright was the next thing that did not work, and it
+   failed the other way: Absinthe's olive and Orca's teal both cusp near L 0.9,
+   which on this end's near-white sheet is a button with no edge and a link
+   nobody can read. The reference was being copied the wrong way round - on
+   Marathon's *white* layouts the acid is bounded fields and the interface is
+   black and blurple, and acid carries an interface only on the black poster.
+
+   So the accent is walked back down the wall - as vivid as its hue allows at
+   every step - until it clears 3:1 against this end's own paper. A crimson
+   barely moves, which is why Tearose looks the same here before and after that
+   rule, and a chartreuse lands on a loud poster green.
+
+   ── ...but only where it is being read ──
+
+   Walking the whole accent down was the next thing that was wrong, and the
+   report was one sentence: the Save button came out olive, where did the acid
+   go. Dimmed chartreuse *is* olive. The descent is right for a label, which
+   has nothing but its own darkness to be read by, and wrong for a fill: a
+   button is legible by its label and its edge, and the reference never sets
+   acid type on white either - acid is a field with black type in it.
+
+   So the accent is two tokens here and only here. --accent keeps the cusp and
+   fills things; --accent-text is the same pigment at the lightness that reads
+   on paper, and carries labels, links, underlines, focus rings and hairlines.
+   Everywhere else the second is an alias of the first, declared once in
+   section 1, so the two other tiers render without a token of their own and
+   the middle is locked by construction rather than by care.
+
+   Tearose is the case that proves it costs nothing when it is not needed: its
+   crimson cusp already clears the sheet, so both forms compute to #fb0047 and
+   the split is invisible. It shows on the light-cusp hues - the acids, the
+   teals, the ambers - which are exactly the ones that were disappearing.
+   --accent-warm takes the light register the accent gave up, which is where it
+   belongs: washes, note tints, chips and --highlight, never text. The
+   near-black ink and the near-white sheet do the typography between them.
+
+   The anchor is the ground, not the accent, which is the part worth keeping:
+   when a dark sheet exists the accent ascends instead and the other voices
+   follow, and nothing in this section has to be re-argued.
+
+   ── Which hue is allowed to be the second loud one ──
+
+   --leafy, and at this tier it is not always its own hue. This end erases the
+   sheet family - near-white paper, near-black ink - so a board whose dominant
+   colour is not its accent has that colour represented by nothing at all,
+   while the minority colour owns the screen. Found on a real board of five
+   cobalt posters and one green photograph, which came out entirely green.
+
+   An extracted palette answers that by swapping the seats: the hue that won
+   the vote takes the accent outright, and the counter-colour becomes the
+   second voice. A palette here cannot, because its accent was chosen by a
+   person rather than won by a vote and is not ours to move out from under it.
+   So instead, where a palette has a *dominant hue to spare* - a sheet carrying
+   real colour, standing apart from its accent - that hue takes the deep
+   register and the palette's own leafy hue moves along to the wash. It may
+   turn up to 25 degrees towards the accent's complement and no further, which
+   is the one liberty taken with a hue anywhere here.
+
+   None of these four qualify, and that is the right answer rather than a gap.
+   Three of them are analogous throughout, within ten degrees of their own
+   accents. The fourth, Papyrus, is 45 degrees away on paper - and it is paper
+   at chroma 0.005, which section 2 explains at length is deliberate: these
+   sheets are held near-neutral so they do not cast the photographs pinned to
+   them. What is left of a hue drained that far is an angle, not a colour, and
+   handing the deep register to it printed a dull olive where the tier wanted
+   its loudest second voice. The generator holds a preset's paper to the same
+   chroma floor a pixel has to clear to vote at all, which an extracted hue
+   passes by construction and a literal has to be asked about.
+
+   ── Two rules for anything hand-tuned here ──
+
+   Literals only, with the sole exception of the `var(--ink)` labels. A
+   color-mix() in this section would need a companion in the `@supports not`
+   block at the foot of the file, and would drag tests/legacy-color.test.js
+   into a section that otherwise needs nothing from it.
+
+   --accent-fg is written at both ends, and for the same reason at both: the
+   middle earns a light label by darkening the accent until white reads on it,
+   and neither end will let it. Darkening a pastel un-pastels it; darkening a
+   cusped accent walks it off the one lightness where its hue holds any colour,
+   which is the mud the cusp exists to escape. So the label is chosen rather
+   than forced, and by name rather than as a literal so it follows any tuning
+   done to the ink. All four currently take the ink, which means the
+   `--accent-fg: #fff` in the Harsh block above no longer stands for any of
+   them - it is what a palette that cusped dark enough would fall back to.
+   ========================================================= */
+
+:root[data-whimsy="0"] {
+  --paper:       #faf5e8;
+  --paper-2:     #f2ecda;
+  --paper-3:     #e9e1c4;
+  --paper-card:  #fbfbf3;
+  --ink:         #482900;
+  --ink-2:       #76490e;
+  --ink-3:       #ae7b45;
+  --rule:        #dcd4ba;
+  --rule-2:      #beb48c;
+  --accent:      #e8906a;
+  --accent-warm: #eba95e;
+  --accent-deep: #af6f54;
+  --leafy:       #9db677;
+  --accent-fg:   var(--ink);
+}
+
+:root[data-whimsy="0"][data-palette="absinthe"] {
+  --paper:       #f5f7ea;
+  --paper-2:     #ecefda;
+  --paper-3:     #dfe4c7;
+  --paper-card:  #fbfbf5;
+  --ink:         #203408;
+  --ink-2:       #41591d;
+  --ink-3:       #708d4e;
+  --rule:        #d3d8bd;
+  --rule-2:      #b1b891;
+  --accent:      #a2b36c;
+  --accent-warm: #c2bd5f;
+  --accent-deep: #7b8855;
+  --leafy:       #c8a673;
+  --accent-fg:   var(--ink);
+}
+
+:root[data-whimsy="0"][data-palette="tearose"] {
+  --paper:       #fff3f1;
+  --paper-2:     #fee7e2;
+  --paper-3:     #f8d7d2;
+  --paper-card:  #fff8f8;
+  --ink:         #572729;
+  --ink-2:       #874548;
+  --ink-3:       #c17678;
+  --rule:        #ebccc7;
+  --rule-2:      #d4a6a2;
+  --accent:      #f18689;
+  --accent-warm: #fe9791;
+  --accent-deep: #b86668;
+  --leafy:       #a5b472;
+  --accent-fg:   var(--ink);
+}
+
+:root[data-whimsy="0"][data-palette="orca"] {
+  --paper:       #eafaf7;
+  --paper-2:     #daf2ef;
+  --paper-3:     #c4e9e2;
+  --paper-card:  #f6fbfb;
+  --ink:         #002b2a;
+  --ink-2:       #005150;
+  --ink-3:       #108985;
+  --rule:        #baddd8;
+  --rule-2:      #8cc0b6;
+  --accent:      #73b9b0;
+  --accent-warm: #dfaf61;
+  --accent-deep: #5a8c86;
+  --leafy:       #c3a875;
+  --accent-fg:   var(--ink);
+}
+
+:root[data-whimsy="2"] {
+  --accent:      #ff6909;
+  --accent-warm: #ffa838;
+  --accent-deep: #c24c00;
+  --leafy:       #9dd300;
+  --accent-fg:   var(--ink);
+  --accent-text: #ed6000;
+}
+
+:root[data-whimsy="2"][data-palette="absinthe"] {
+  --accent:      #d5fa00;
+  --accent-warm: #ccc300;
+  --accent-deep: #accc00;
+  --leafy:       #faad00;
+  --accent-fg:   var(--ink);
+  --accent-text: #839a00;
+}
+
+:root[data-whimsy="2"][data-palette="tearose"] {
+  --accent:      #fb0047;
+  --accent-warm: #ffa099;
+  --accent-deep: #b60031;
+  --leafy:       #b1cd00;
+  --accent-fg:   var(--ink);
+  --accent-text: #fb0047;
+}
+
+:root[data-whimsy="2"][data-palette="orca"] {
+  --accent:      #0fffed;
+  --accent-warm: #f7ae00;
+  --accent-deep: #00cec1;
+  --leafy:       #f0b200;
+  --accent-fg:   var(--ink);
+  --accent-text: #00a296;
+}
+
 /* ---------------------------------------------------------------------------
    Quality
 
@@ -1207,10 +1485,14 @@
     --accent-warm-c: 232 145 0;
     --accent-deep-c: 127 47 0;
     --leafy-c:       102 132 43;
-    /* Derived above and derived here: --select is --accent, and --accent-fg is
-       45% of the sheet into white. The second is a blend, but a blend of two
-       things that are both known at author time in this tier, so it is the one
-       that does not need the script. */
+    /* Derived above and derived here: --select is --accent-text, and
+       --accent-fg is 45% of the sheet into white. The second is a blend, but a
+       blend of two things that are both known at author time in this tier, so
+       it is the one that does not need the script.
+
+       --accent-text is the accent itself at every tier but Harsh, and Harsh
+       declares it as a literal rather than a mix - so these channel forms are
+       right as they stand and this section needs no companion for it. */
     --select-c:      185 73 0;
     --accent-fg-c:   253 252 250;
   }
