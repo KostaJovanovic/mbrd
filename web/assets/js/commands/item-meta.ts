@@ -42,7 +42,7 @@ import {
 } from '../state.ts';
 import { extOf } from '../util.ts';
 import { ask } from '../ui/dialog.ts';
-import { defaultUpAxis, meshKind } from '../mesh.ts';
+import { defaultUpAxis, meshKind, upAxisIsGuessed } from '../mesh.ts';
 import { stickerTint } from '../stickers/catalogue.ts';
 import { addFile, derivedFile, getAsset } from '../storage/assets.ts';
 import { pickCover } from '../import/drop.ts';
@@ -356,13 +356,15 @@ export function itemMetaCommands() {
     editPicture: (id: string) => openDarkroom(id),
 
     // Only models, and only the formats where the answer is not already written
-    // down: glTF fixes Y-up in its spec, so offering to argue with it would be
-    // offering to break it.
+    // down - which is mesh.ts's question to answer and not this file's. glTF
+    // fixes Y-up in its spec and FBX and Collada each carry the axis in the
+    // document, so all three are left alone; the rest are a guess about who
+    // writes the format, and a guess is a thing somebody should be able to
+    // overrule.
     canFlipUpAxis: (id: string) => {
       const it = byId(id);
       if (it?.type !== 'model') return false;
-      const kind = meshKind(getAsset(it.asset?.hash)?.name || it.name || '');
-      return kind === 'obj' || kind === 'stl';
+      return upAxisIsGuessed(meshKind(getAsset(it.asset?.hash)?.name || it.name || ''));
     },
     flipUpAxis: (id: string) => {
       const it = byId(id);
