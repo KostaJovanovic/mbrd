@@ -71,11 +71,20 @@ and the waiting strip split in two — see `notify.ts` below, which is the
 interesting half.
 
 `measure.ts`,
-`mesh.ts`, `arrange/arrangements.ts`, `import/budget.ts` and `canvas/spatial.ts`
+`mesh.ts` (and `mesh/`), `arrange/arrangements.ts`, `import/budget.ts` and
+`canvas/spatial.ts`
 are pure — no DOM, no `state` import — and are meant to stay that way.
 `mesh.ts` sits at the top level rather than under `canvas/` for exactly that
 reason: it is struct reading, and only `canvas/model.ts` turns its output into
-pixels. `web-graph.ts` and `web-route.ts` are there for the same reason — the
+pixels. It is now a door in front of eleven readers rather than one file holding
+three: `mesh.ts` keeps `meshKind()`, `parseMesh()`, the up-axis question and the
+original STL / OBJ / glTF readers, and `mesh/` holds the rest one format to a
+module over a shared floor (`mesh/shared.ts`), a synchronous DEFLATE and ZIP
+reader (`mesh/zip.ts`), a DOM-free XML scanner (`mesh/xml.ts`) and a CAD
+tessellator (`mesh/brep.ts`). The graph is one way and shallow — `mesh.ts`
+imports `mesh/*`, and `mesh/*` imports `mesh/shared.ts` and `consent.ts` and
+nothing else — and **every reader under it is synchronous end to end**, which is
+what the per-parse ceilings and the `lift` retry contract both rest on. `web-graph.ts` and `web-route.ts` are there for the same reason — the
 spanning tree and the orthogonal router are arithmetic over points and boxes,
 and only `canvas/web.ts` draws what they decide. The router's
 obstacles are handed in, which is what keeps it down here rather than reaching
@@ -169,7 +178,11 @@ files instead of quietly at runtime.
 
 ### Nothing is a dependency
 
-`storage/zip.ts` inflates its own entries, `mesh.ts` reads STL/OBJ/GLB by hand,
+`storage/zip.ts` inflates its own entries, `mesh.ts` and `mesh/` read eleven 3D
+formats by hand — including a DEFLATE decoder of their own, because a `.3mf` is a
+ZIP and `parseMesh()` has to stay synchronous, and a boundary-representation
+tessellator, because a `.step` contains surfaces rather than triangles and the
+alternative was twelve megabytes of OpenCASCADE —
 `import/artwork.ts` walks ID3v2 / MP4 atoms / FLAC blocks itself,
 `optimize/opus.ts` wraps WebCodecs' bare Opus packets in an Ogg container it
 writes by hand, `ui/markdown.ts` is its own CommonMark-and-GFM parser,

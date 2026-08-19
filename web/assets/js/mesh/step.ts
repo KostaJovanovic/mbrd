@@ -337,8 +337,8 @@ function build(db: Db): Mesh {
  * cheaper than it sounds next to the tessellation that follows.
  */
 function modelSize(db: Db) {
-  let lo = [Infinity, Infinity, Infinity];
-  let hi = [-Infinity, -Infinity, -Infinity];
+  const lo = [Infinity, Infinity, Infinity];
+  const hi = [-Infinity, -Infinity, -Infinity];
   for (const e of db.values()) {
     if (e.type !== 'CARTESIAN_POINT') continue;
     const c = e.args[1];
@@ -363,6 +363,19 @@ function point(db: Db, v: Val): Vec | null {
   const c = e.args[1];
   if (!isList(c) || c.length < 2) return null;
   return [num(c[0]), num(c[1]), num(c[2])];
+}
+
+/** A list of point references, with the ones that resolved to nothing dropped.
+ *  A dangling reference in a vertex list is a broken file and the rest of the
+ *  loop is still worth having. */
+function points(db: Db, v: Val): Vec[] {
+  if (!isList(v)) return [];
+  const out: Vec[] = [];
+  for (const item of v) {
+    const p = point(db, item);
+    if (p) out.push(p);
+  }
+  return out;
 }
 
 function direction(db: Db, v: Val): Vec | null {
@@ -517,8 +530,7 @@ function curveOf(db: Db, v: Val, scaleHint: number): CurveInfo | null {
       return f ? { curve: ellipseCurve(f, num(e.args[2]), num(e.args[3])), domain: [0, Math.PI * 2] } : null;
     }
     case 'POLYLINE': {
-      const pts = isList(e.args[1]) ? e.args[1].map(p => point(db, p)) : [];
-      const ok = pts.filter(Boolean) as Vec[];
+      const ok = points(db, e.args[1]);
       return ok.length >= 2 ? { curve: polylineCurve(ok), domain: [0, ok.length - 1] } : null;
     }
     // A composite or trimmed curve is followed to what it is made of. Its own
@@ -633,11 +645,7 @@ function readLoop(db: Db, v: Val, scaleHint: number): Vec[] {
   const loop = at(db, v);
   if (!loop) return [];
 
-  if (isType(loop, 'POLY_LOOP')) {
-    const list = loop.args[1];
-    if (!isList(list)) return [];
-    return list.map(p => point(db, p)).filter(Boolean) as Vec[];
-  }
+  if (isType(loop, 'POLY_LOOP')) return points(db, loop.args[1]);
   if (!isType(loop, 'EDGE_LOOP')) return [];
 
   const edges = loop.args[1];
@@ -879,10 +887,15 @@ function styleColours(db: Db) {
     const args = partArgs(e, 'STYLED_ITEM') || e.args;
     const rgb = findColour(db, args[1], 0, new Set());
     if (!rgb) continue;
-    const item = at(db, args[2]);
+    const target = args[2];
+    if (!isRef(target)) continue;
+    const item = db.get(target.ref);
     if (!item) continue;
+    // A styled item may name the face itself or the solid it belongs to, and
+    // both are ordinary. The first is one face; the second is every face under
+    // it.
     const faces = isType(item, 'ADVANCED_FACE') || isType(item, 'FACE_SURFACE')
-      ? [(args[2] as Ref).ref]
+      ? [target.ref]
       : facesUnder(db, item);
     for (const face of faces) if (!out.has(face)) out.set(face, rgb);
   }

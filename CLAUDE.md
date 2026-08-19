@@ -92,6 +92,12 @@ included — `tests/sw.test.js` reads that list by pulling out single-quoted run
   **Never a second menu implementation.**
 - **A file type** → a branch in `classify()` plus an entry in `RENDERERS`, both
   in `canvas/renderers.ts`.
+- **A 3D format** → a module under `mesh/`, an entry in `KINDS` and one in
+  `PARSERS`, all reachable from `mesh.ts`. `classify()` needs no edit: it asks
+  `meshKind()`. **Every reader must be synchronous** — the per-parse ceilings in
+  `mesh/shared.ts` and the `lift` retry in `canvas/model.ts` both rest on there
+  being no `await` under `parseMesh()`, which is why `mesh/zip.ts` inflates by
+  hand instead of using `DecompressionStream`.
 - **A thing the viewer can show** → one entry in `VIEWS` (`ui/viewer.ts`). Its
   teardown is load-bearing: a mounted `<video>` keeps its decoder, blob URLs are
   this module's to revoke, a parsed PDF holds the whole file.
@@ -143,10 +149,10 @@ Two traps in that list, both found the hard way:
 ## Safety rules
 
 - **The hand-written binary readers parse files the app did not write** —
-  `storage/zip.ts`, `mesh.ts`, `import/artwork.ts`, `import/preview.ts`,
-  `import/document.ts`, `import/containers.ts`, `optimize/opus.ts`. All
-  bounds-check before allocating. A change near them wants a test that feeds it
-  something broken.
+  `storage/zip.ts`, `mesh.ts` and everything under `mesh/`, `import/artwork.ts`,
+  `import/preview.ts`, `import/document.ts`, `import/containers.ts`,
+  `optimize/opus.ts`. All bounds-check before allocating. A change near them
+  wants a test that feeds it something broken.
 - **Those readers throw two different things and the difference is load-bearing.**
   `Oversize` (`consent.ts`) means "this is larger than the number somebody wrote
   down" — a question, carried up to whoever owns the file, and lifted with a
