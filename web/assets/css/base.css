@@ -106,6 +106,30 @@ html, body {
   font-family: var(--font-display);
 }
 
+/* The app's name wherever it is said in running text - on a button, in a
+   dialog, at the foot of the changelog. ui/wordmark.ts is what puts the span
+   there; see its header for why the name being set in the sentence's own face
+   was a real misreading rather than a tidiness complaint.
+
+   The face and the weight, and deliberately *not* the tracking. The sidebar
+   mark carries 0.14em, which is right for a name standing alone at 30px and
+   wrong inside a 15px sentence - at that size it stops reading as a word and
+   starts reading as a logo somebody pasted mid-paragraph. So this is the mark's
+   voice at conversational volume: same face, same weight, ordinary spacing.
+
+   Inherits its size rather than setting one, which is what keeps it usable in
+   all three places at once - a button, a dialog body and a footer are three
+   different sizes and the name should be each of them. */
+.wm {
+  font-family: var(--font-display);
+  font-weight: var(--display-weight);
+}
+/* The same override the sidebar mark takes, and for the same reason - see the
+   note on :root[data-display-sans] .wordmark in sidebar.css, which explains why
+   900 is a question about the axis rather than a number. A sans has nothing to
+   give a name except weight. */
+:root[data-display-sans] .wm { font-weight: 900; }
+
 /* Present but not drawn: read aloud, found by a crawler, and out of the flow.
 
    Not display:none and not visibility:hidden - both of those take the text out

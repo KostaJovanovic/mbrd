@@ -15,10 +15,24 @@
 // The armed state is the exception, and it is worth being honest that it is
 // one. mbrd has never had a mode: every gesture in the app means the same thing
 // whatever came before it, and "why is clicking not selecting?" is a question
-// nobody has ever had to ask. Three things exist to keep it that way - the
-// button says so with aria-pressed, Escape always gets out, and the tool stays
-// armed after a pair so connecting five things is one trip to the toolbar
-// rather than five. Whether that is enough is a thing to watch in real use.
+// nobody has ever had to ask. Four things exist to keep it that way - the
+// button says so with aria-pressed, the board says so with a cursor of its own,
+// Escape always gets out, and **a completed pair puts the tool down by itself**.
+//
+// That last one used to be the opposite, and the reversal is the whole of what
+// changed here. Staying armed made connecting five things one trip to the
+// toolbar, which is a real saving for the person who came to draw five lines -
+// and it was the loudest complaint the first tester outside this machine had
+// (see research/tester-feedback-2026-08-21.md). They drew one line, carried on
+// clicking, and could not work out why the board had stopped selecting. The
+// saving was for the rarer half and the confusion was for everyone: a mode you
+// have to remember you are in is a mode that gets left on.
+//
+// The run of joins is not gone, it moved onto a modifier: **hold Shift while
+// making the pair and the tool stays armed**. That is the same bargain the rest
+// of the app strikes with Shift - press means the ordinary thing, Shift means
+// "and again" - and it puts the cost on the person doing the unusual thing
+// rather than on the person doing it once.
 //
 // `cmds` is handed in by initToolbar() rather than imported, for the reason
 // ui/hud.js states: commands.js imports *this* module (Escape closes the
@@ -150,10 +164,17 @@ let pick: string | null = null;
  *   anything, a card no line can    refuse it, and *keep the pick*
  *   reach
  *
- * What it never does is disarm. Staying armed after a pair is what makes
- * connecting five things one trip to the toolbar, and clicking empty canvas is
- * "not that one" rather than "stop" - Escape and the button are the two ways to
- * stop, and both of them are unmistakable.
+ * The one press that ends the mode is the one that finishes a pair, and only
+ * that one. Clicking empty canvas is "not that one" rather than "stop", and a
+ * refusal is a slip of the hand - neither is somebody saying they are finished,
+ * so neither disarms. Escape and the button remain the two ways to put the tool
+ * down with nothing drawn, and both are unmistakable.
+ *
+ * `sticky` is Shift held on the press that completes the pair: the run of joins,
+ * kept as a modifier rather than as the default. It is read here rather than in
+ * the caller so that "what this press means" stays one function - a caller that
+ * decided about disarming itself would be a second copy of these five cases,
+ * and the two would disagree the first time a case was added.
  *
  * `joinable` is the fifth case and the reason this function grew a parameter
  * rather than an import. It stays pure: the caller answers "may this id be an
@@ -171,32 +192,41 @@ let pick: string | null = null;
  */
 /**
  * What one press of the connect tool decides: which card is now held, which pair
- * is finished, and whether the press was turned down.
+ * is finished, whether the press was turned down, and whether the tool is now
+ * done.
  *
- * Named because five returns build it and the three fields are not independent -
- * a `connect` and a `pick` together would be a state nothing draws, and a
- * `refused` with a fresh `pick` would say the tool both declined and advanced.
- * Reading them off one type is what makes the five lines below comparable.
+ * Named because five returns build it and the four fields are not independent -
+ * a `connect` and a `pick` together would be a state nothing draws, a `refused`
+ * with a fresh `pick` would say the tool both declined and advanced, and
+ * `disarm` without a `connect` would be the mode ending on a press that did
+ * nothing. Reading them off one type is what makes the five lines below
+ * comparable.
  */
 export type ConnectStep = {
   pick: string | null;
   connect: [string, string] | null;
   refused: boolean;
+  disarm: boolean;
 };
 
 export function connectStep(
   from: string | null,
   id: string | null,
   joinable = true,
+  sticky = false,
 ): ConnectStep {
-  if (!id) return { pick: null, connect: null, refused: false };
+  if (!id) return { pick: null, connect: null, refused: false, disarm: false };
   // Before every other case, including `from === id`: a sticker you picked by
   // mistake cannot have been picked in the first place, so there is no
   // "pressing it again to change your mind" to honour.
-  if (!joinable) return { pick: from, connect: null, refused: true };
-  if (!from) return { pick: id, connect: null, refused: false };
-  if (from === id) return { pick: null, connect: null, refused: false };
-  return { pick: null, connect: [from, id], refused: false };
+  if (!joinable) return { pick: from, connect: null, refused: true, disarm: false };
+  if (!from) return { pick: id, connect: null, refused: false, disarm: false };
+  if (from === id) return { pick: null, connect: null, refused: false, disarm: false };
+  // The only line that ends the mode, and it ends it for the pair being *made*
+  // as well as for the pair being unmade: toggleConnection() reads the same
+  // press both ways, and somebody parting two cards has finished the same
+  // sentence somebody joining them has.
+  return { pick: null, connect: [from, id], refused: false, disarm: !sticky };
 }
 
 /**
@@ -234,13 +264,23 @@ function setPick(id: string | null): void {
  * Returns whether the connector took the press. False is the answer on every
  * ordinary board and on every press of an unarmed one, which is what keeps this
  * to a single boolean read on the pointer path in canvas/input.js.
+ *
+ * `sticky` is that press's Shift key, handed in rather than read here: this
+ * module has no event, and the pointer path already has the one that matters.
+ * Shift is free to mean this while the tool is armed - the connector claims the
+ * whole press before the selection branch ever sees it, so the additive-select
+ * reading of Shift cannot be the one somebody got instead.
  */
-export function connectTap(id: string | null): boolean {
+export function connectTap(id: string | null, sticky = false): boolean {
   if (!armed) return false;
-  const next = connectStep(pick, id, !id || canJoin(id));
+  const next = connectStep(pick, id, !id || canJoin(id), sticky);
   setPick(next.pick);
   if (next.refused) toast('A sticker is already a remark about the card under it');
   if (next.connect) toggleConnection(next.connect[0], next.connect[1]);
+  // After the line is drawn, not before: setArmed() clears the pick and takes
+  // the draft line down, and doing that first would leave toggleConnection()
+  // committing a pair the board had already stopped showing an end for.
+  if (next.disarm) setArmed(false);
   // True even when the tap was refused, and deliberately: the press was the
   // connector's, it has been answered, and falling through into selection would
   // put the sticker in the selection as a consolation prize for a gesture that

@@ -20,6 +20,7 @@ import { deviceRatio, onTouch, mobilePerfFlags } from './viewport.ts';
 import type { Viewport } from './viewport.ts';
 import { MM_PER_INCH, PX_PER_INCH } from '../measure.ts';
 import { viewShift } from '../geometry.ts';
+import { wrap } from '../util.ts';
 
 /** The screen-space box the lattice is drawn in - see inkBox(). */
 type InkBox = {
@@ -340,11 +341,23 @@ export function paintGrid(vp: Viewport) {
   // A mark is a list of image layers rather than one, because the dot's major
   // and minor lattices each want their own. Every layer of a mark shares its
   // lattice's tile and origin, so they are pushed together.
+  // Wrapped into the tile on the way out, the same way #grain's offset is - see
+  // wrap() in util.ts for the reason, which is a limit in the browser rather
+  // than in the arithmetic here. The short version: `o` is the world origin in
+  // screen coordinates, so panning a long way makes it enormous, and a
+  // `background-position` that large stops being held exactly. Each of the
+  // eight layers has its own tile and so loses a different amount, which is why
+  // the failure is not the lattice sliding - it is the lattice coming apart,
+  // dots at uneven spacings with pairs of them landing on each other.
+  //
+  // Nothing about the picture changes: a tiled background repeats every `size`,
+  // so this asks for the offset it was already asking for.
   const push = (layers: string[], size: number, px: number, py: number) => {
+    const x = wrap(px, size), y = wrap(py, size);
     for (const img of layers) {
       images.push(img);
       sizes.push(`${size}px ${size}px`);
-      positions.push(`${px.toFixed(1)}px ${py.toFixed(1)}px`);
+      positions.push(`${x.toFixed(1)}px ${y.toFixed(1)}px`);
     }
   };
 

@@ -843,7 +843,15 @@ async function recolourFromBoard(
     if (dropPigments()) {
       persist();
       syncControls();
-      return failed('No pictures left - back to the chosen palette');
+      // Said in terms of what the person did, not of what this module noticed.
+      // It used to read "No pictures left - back to the chosen palette", and the
+      // first tester outside this machine deleted a board's pictures and got a
+      // remark about colour: they had done one thing and the app had answered
+      // about another. The fact was correct and the sentence started in the
+      // wrong place. This one starts where they were - the pictures they just
+      // removed - and the colour follows from it, which is the actual causal
+      // order and also the order the board changes in front of them.
+      return failed('The colours came from those pictures - back to your palette');
     }
     // Empty or picture-less board with no derived palette to shed: a fresh
     // board's resting state, not a fault. The automatic run (on load and on

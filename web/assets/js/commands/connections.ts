@@ -146,8 +146,9 @@ function joinAll(pool: Joinable[], label = 'Join cards'): number {
 
 export function connectionCommands() {
   return {
-    // The one tool on the bar that is a mode. Pressing it arms; pressing it
-    // again, or Escape, puts it down. What a press on the board then means is
+    // The one tool on the bar that is a mode. Pressing it arms; a completed
+    // pair, pressing it again, or Escape puts it down. What a press on the board
+    // then means is
     // ui/toolbar.js's connectStep(), and canvas/input.js asks through the two
     // below rather than importing a ui/ module it has no business importing -
     // the same seam the title card's pen and the whimsy dial already use.
@@ -169,16 +170,22 @@ export function connectionCommands() {
       // one selected is half a pair, so it becomes the picked end and the next
       // card you press completes it.
       //
-      // Armed either way, and that is the point of doing it here rather than in
-      // a separate command: what follows the join is more joining, on the same
-      // board, with the same tool already in your hand.
+      // The set case never arms, and that is the one-shot rule read at this
+      // door: the press asked a whole question and got a whole answer, so
+      // leaving a mode standing afterwards would be the tool waiting for an
+      // instruction nobody has. The single-card case arms, because half a pair
+      // is a question still open.
       const picked = joinable(board.items.filter((i: Joinable) => selection.has(i.id)));
-      setArmed(true, picked.length === 1 ? picked[0].id : null);
       showConnections();
       if (picked.length > 1) { joinAll(picked); return; }
+      setArmed(true, picked.length === 1 ? picked[0].id : null);
+      // Shift is said here, at the moment of arming, and nowhere else. It is the
+      // only line in the app that teaches it, and a hint printed after each join
+      // instead would be a toast per line for the one gesture that is meant to
+      // be quick.
       toast(picked.length
-        ? 'Now pick the card to join that one to'
-        : 'Pick two cards to join them. Same two again to part them.');
+        ? 'Now pick the card to join that one to. Hold Shift to keep joining.'
+        : 'Pick two cards to join them, or the same two again to part them. Hold Shift to keep joining.');
     },
     connectArmed,
     connectTap,

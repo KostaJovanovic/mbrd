@@ -44,6 +44,41 @@ import { reportCaught } from './errors.ts';
 
 export const clamp = (v: number, lo: number, hi: number) => v < lo ? lo : v > hi ? hi : v;
 
+/**
+ * Positive remainder. `-3 % 512` is -3 in JavaScript, and a tile has no -3.
+ *
+ * Here rather than privately in the two files that want it, because both are
+ * tiled background layers - canvas/grain.ts and canvas/grid.ts - and what they
+ * are both working around is the same fact about the browser rather than a
+ * coincidence of arithmetic. `background-position` is resolved to a LayoutUnit,
+ * a 32-bit fixed-point number that runs out a little past 33 million CSS px,
+ * and the board is infinite: pan far enough and an unwrapped offset stops
+ * landing where it was asked to. Reducing into the tile first is exact, not a
+ * mitigation - a tiled background is periodic in its own size, so `n` and
+ * `wrap(n, tile)` are the same picture, one of them written in numbers the
+ * browser can still hold.
+ *
+ * Branched rather than the `((n % tile) + tile) % tile` one-liner this started
+ * as, for a reason a test found: that form puts *every* input through an
+ * addition and a second remainder, the ones already in range included, and the
+ * round trip does not always come back. `wrap(39.9, 40)` returned
+ * 39.900000000000006. Harmless at the one decimal place the callers write, but
+ * there is no reason to disturb a number that was already the answer.
+ */
+export function wrap(n: number, tile: number) {
+  const r = n % tile;
+  // Taken first because `%` hands back -0 for every negative whole multiple of
+  // the tile - which is the origin itself, the one offset most worth getting
+  // right. -0 is not a position: it is 0 that prints a minus sign and fails a
+  // strict comparison against the 0 the tile above it produced.
+  if (r === 0) return 0;
+  if (r > 0) return r;
+  // A very small negative remainder can round up to exactly `tile`, and a tile
+  // has no `tile` any more than it has a -3: that is the 0 of the next one.
+  const up = r + tile;
+  return up < tile ? up : 0;
+}
+
 /** The element with this id, or null. Every module wants this and no other. */
 export const el = (id: string) => document.getElementById(id);
 

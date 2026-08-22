@@ -38,6 +38,7 @@
 import { deviceRatio } from './viewport.ts';
 import type { Viewport } from './viewport.ts';
 import { sheetBox } from './mobile-frame.ts';
+import { wrap } from '../util.ts';
 
 /**
  * The tile's side in *world* units - its on-screen size at 100%.
@@ -47,9 +48,6 @@ import { sheetBox } from './mobile-frame.ts';
  * agree to the extent that a boot with script broken should not look wrong.
  */
 const TILE = 512;
-
-/** Positive remainder. `-3 % 512` is -3 in JavaScript, and a tile has no -3. */
-const wrap = (n: number, tile: number) => ((n % tile) + tile) % tile;
 
 /**
  * Where the stock stops being stock.

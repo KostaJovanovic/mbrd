@@ -542,6 +542,11 @@ export function setGrips(el: HTMLElement, want: boolean): void {
   // There is nothing to gain by resizing one and a stretched hint looks broken.
   // Grips are the only way into a resize - canvas/input.js reaches it through
   // `.grip` and nothing else - so withholding them here is the whole lock.
+  //
+  // Two kinds and no more, because they are the two this element can answer on
+  // its own. A pinned sticky has no grips either, and that one is decided by the
+  // caller: it is a fact about two items and a ten-second clock, neither of
+  // which is written on the node. See paintGrips() in canvas/items.ts.
   if (el.dataset.type === 'title' || el.dataset.type === 'ghost') want = false;
   if (!!el.dataset.grips === want) return;
   if (!want) {

@@ -65,6 +65,7 @@ const JS_BUILT = {
   'ctx-child': 'the hover submenu flown out beside a fold - the menu node again, once',
   'ctx-menu': 'the right-click menu - every menu in the app is this one node',
   'exit-layer': 'the overlay an exit animation is drawn on, above everything',
+  'far-lands': 'the card at the edge of the board, placed once if anybody gets there',
   'fence-ghost': 'the preview rectangle drawn while a fence is being placed',
   'fence-prompt': 'the name-this-fence prompt',
   // Off the table, and the removal is the point: it was one hardcoded id on a

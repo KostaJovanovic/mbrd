@@ -50,6 +50,7 @@ import type { Point, Box, Bounds } from '../geometry.ts';
 // and deliberately not in this file for the same reason web-graph.js is not:
 // the algorithm is the half that can be tested without a browser.
 import { routeConnection, pathData, blockOf, exitTowards, CLEARANCE } from '../web-route.ts';
+import type { Slot } from '../web-route.ts';
 // Which cards are near enough to be in the way. The index is kept current by
 // canvas/items.js on every add, remove and move.
 import { queryRect } from './spatial.ts';
@@ -96,6 +97,12 @@ type Seg = {
   routed?: boolean,
   meta?: ConnMeta | null,
   ends?: Ends,
+  // Which of the lines meeting each end's card this one is, as `index/count` -
+  // see fanOut(). Held on the seg rather than recomputed at draw time because it
+  // is what the route was found with: a seg whose slot has changed is a seg
+  // whose stored points are the answer to a different question, and routePass()
+  // reads these to notice.
+  slot?: string,
 };
 
 /** A seg with a look of its own: what decoLayer draws, and the bulk path never. */
@@ -221,6 +228,28 @@ let focusPath: SVGPathElement | null = null;
 let focusIds: Set<string> | null = null;
 /** The cards the pointer is resting on, which focus when nothing is selected. */
 let hoverIds: Set<string> | null = null;
+/**
+ * The focus that has just ended, kept drawn for as long as the board takes to
+ * come back up - and the whole of the fix for a flash.
+ *
+ * The lift is two things at once: the bulk path drops to 0.18, and the focused
+ * lines are drawn again over it at full strength. Letting go used to undo those
+ * two at different speeds. The copy is an attribute, so it vanished on the
+ * frame; the dimming is a CSS transition, so the board underneath took
+ * `--dur-fast` to climb back. For that tenth of a second the card's own lines -
+ * the only ones that had been at full strength - were the *dimmest* things on
+ * screen, and then rose with everything else. A line that goes dark and comes
+ * back is a flash, and it was on exactly the lines the gesture was about.
+ *
+ * So the copy is held until the board has caught up with it. Held as the id
+ * set rather than as the `d` string, because a card can be dragged during those
+ * few frames and a frozen string would be a line detached from its cards.
+ * Clearing it at the end is invisible by construction: by then the bulk path is
+ * at full strength and the copy is the same geometry at the same weight.
+ */
+let heldFocus: Set<string> | null = null;
+let lastFocus: Set<string> | null = null;
+let holdTimer = 0;
 // The line in flight: the connector tool has one end and the pointer has the
 // other. See setDraftFrom - it is the whole of the tool's feedback, and until
 // it existed the only thing a picked card said was that it had been picked.
@@ -321,6 +350,28 @@ const ROUTE_SETTLE_MS = 110;
  * first, so what is left straight is what nobody is looking at.
  */
 const ROUTE_BUDGET = 200;
+
+/**
+ * How far past its own two ends a route looks for lines to avoid lying on.
+ *
+ * A route may go a long way round, so the box its ends make is not the box it
+ * ends up in - but a line it will *coincide* with has to be running the same
+ * corridor, and a corridor a whole card-width outside both ends is one this
+ * route has no reason to be in. Generous enough to catch the fan around a
+ * shared card, which is where coincidence actually happens.
+ */
+const AVOID_MARGIN = 240;
+
+/**
+ * How many of them one route is charged against.
+ *
+ * The cost of the search grows with this, once per lattice edge, so it is a
+ * ceiling on the one thing in the router that scales with the number of
+ * connections rather than with the number of cards. Eight is more than the
+ * lines that can plausibly share one corridor, and a board that has more is a
+ * board where the ninth was going to be drawn on top of something regardless.
+ */
+const AVOID_LIMIT = 8;
 
 let routeTimer = 0;
 const scheduleRoute = () => {
@@ -641,8 +692,17 @@ function release() {
   leanDeg = null;
   focusIds = null;
   hoverIds = null;
+  // The hold goes with them. A board arriving is not a focus ending, so there is
+  // nothing to cover, and a timer left running would fire into the next board.
+  if (holdTimer) { clearTimeout(holdTimer); holdTimer = 0; }
+  heldFocus = null;
+  lastFocus = null;
   if (focusPath) focusPath.setAttribute('d', '');
   if (svg) svg.classList.remove('is-focused');
+  // Off the root as well as off the `<svg>`. release() runs on a board load, and
+  // a flag left standing there would open the next board with its axes already
+  // faded and nothing on screen lit to explain why.
+  document.documentElement.classList.remove('web-lifted');
   if (activePath) activePath.setAttribute('d', '');
   if (draftPath) draftPath.setAttribute('d', '');
   if (path) path.setAttribute('d', '');
@@ -875,6 +935,114 @@ function build() {
 }
 
 /**
+ * Which of the lines meeting a card's face each connection is.
+ *
+ * Every line into a card used to arrive at the middle of the face it came in
+ * by. That is exactly right for the only line meeting a card and exactly wrong
+ * for the fifth: five routes that begin at one point run the same corridor away
+ * from it, and coincident lines do not read as five lines, they read as one
+ * that is somehow heavier. Spread across the face, a fan reads as a fan.
+ *
+ * The face is worked out here rather than asked for, and it is the same
+ * arithmetic anchorsFor() does - the dominant axis, and ties sideways. The
+ * router may escalate to a different face when the chosen one is sealed, and a
+ * route that did that has lost its slot. That is fine and rare: a line that had
+ * to leave by the far side of its own card was not one of a tidy fan anyway.
+ *
+ * Sorted by where the far end sits along the spread axis, which is what keeps
+ * the fan from crossing itself at the card it leaves.
+ */
+type Fan = { from: Slot, to: Slot, sig: string };
+
+function fanOut(): Map<string, Fan> {
+  // card id and face -> the lines leaving it that way, in no order yet.
+  const faces = new Map<string, { key: string, end: 'a' | 'b' }[]>();
+  const faceOf = (from: Card, to: Card) => {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    return Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'x+' : 'x-') : (dy >= 0 ? 'y+' : 'y-');
+  };
+  const push = (id: string, face: string, key: string, end: 'a' | 'b') => {
+    const at = `${id}|${face}`;
+    const list = faces.get(at);
+    if (list) list.push({ key, end });
+    else faces.set(at, [{ key, end }]);
+  };
+  for (const [key, seg] of lastSeg) {
+    push(seg.a.id, faceOf(seg.a, seg.b), key, 'a');
+    push(seg.b.id, faceOf(seg.b, seg.a), key, 'b');
+  }
+
+  const out = new Map<string, Fan>();
+  const slotOf = (key: string, end: 'a' | 'b'): Slot =>
+    (end === 'a' ? out.get(key)?.from : out.get(key)?.to) || { index: 0, count: 1 };
+  for (const [at, list] of faces) {
+    const sideways = at.endsWith('x+') || at.endsWith('x-');
+    // The far end's position along the axis the fan spreads across: a route
+    // leaving a side is placed by how high the card it goes to sits, one leaving
+    // the top or bottom by how far along it sits.
+    const along = ({ key, end }: { key: string, end: 'a' | 'b' }) => {
+      const seg = lastSeg.get(key)!;
+      const far = end === 'a' ? seg.b : seg.a;
+      return sideways ? far.y : far.x;
+    };
+    list.sort((p, q) => along(p) - along(q));
+    list.forEach(({ key, end }, index) => {
+      const slot = { index, count: list.length };
+      const from = end === 'a' ? slot : slotOf(key, 'a');
+      const to = end === 'b' ? slot : slotOf(key, 'b');
+      out.set(key, { from, to, sig: `${from.index}/${from.count}:${to.index}/${to.count}` });
+    });
+  }
+  // A slot that has changed since a line was routed is a line whose stored
+  // points answer a question nobody is asking any more - a card that gained a
+  // second connection moves the first one, and the first one is not otherwise
+  // going anywhere. Owed here rather than in build(), which watches the two end
+  // boxes and would see nothing move.
+  for (const [key, seg] of lastSeg) {
+    if (seg.slot !== out.get(key)?.sig) seg.routed = false;
+  }
+  return out;
+}
+
+/**
+ * The lines already drawn near this one, for the router to be charged for
+ * running along.
+ *
+ * Routed ones only, and never this one. A straight stand-in is where a line is
+ * *not* - it is what a card being dragged trails until the hand comes off - so
+ * treating one as an obstacle to avoid would push this route away from a place
+ * nothing is about to occupy.
+ *
+ * Order-dependent by construction and left that way. A line routed earlier in
+ * this pass is in here and a line routed later is not, so two lines that would
+ * coincide are separated by whichever of them is settled second. The alternative
+ * is rerouting the whole board whenever anything moves, which is the rule this
+ * module exists to keep.
+ */
+function linesNear(self: string, seg: Seg): Point[][] {
+  const x0 = Math.min(seg.a.x, seg.b.x) - AVOID_MARGIN;
+  const x1 = Math.max(seg.a.x, seg.b.x) + AVOID_MARGIN;
+  const y0 = Math.min(seg.a.y, seg.b.y) - AVOID_MARGIN;
+  const y1 = Math.max(seg.a.y, seg.b.y) + AVOID_MARGIN;
+  const out: Point[][] = [];
+  for (const [key, other] of lastSeg) {
+    if (key === self || !other.routed || other.points.length < 2) continue;
+    let lo = Infinity, hi = -Infinity, top = Infinity, bottom = -Infinity;
+    for (const p of other.points) {
+      if (p.x < lo) lo = p.x;
+      if (p.x > hi) hi = p.x;
+      if (p.y < top) top = p.y;
+      if (p.y > bottom) bottom = p.y;
+    }
+    if (hi < x0 || lo > x1 || bottom < y0 || top > y1) continue;
+    out.push(other.points);
+    if (out.length >= AVOID_LIMIT) break;
+  }
+  return out;
+}
+
+/**
  * Work out where every line actually runs, once things have stopped moving.
  *
  * On-screen first and then the rest, so a budget that bites leaves straight
@@ -889,6 +1057,13 @@ function build() {
  * hundred cards. The index answers with a *superset* - it is a grid of cells
  * and a cell shared with the query is enough - which is exactly right here,
  * since the router does its own precise work against the boxes it is handed.
+ *
+ * Two things this pass knows that the router cannot, and hands down. Which of
+ * the lines meeting a card's face each one is, so a fan of five arrives spread
+ * across the face rather than all at its middle (fanOut); and which lines are
+ * already drawn nearby, so a route can be charged for lying along one. Both are
+ * facts about *more than one connection*, which is the whole of why they are
+ * settled here - web-route.js sees a single route and is told.
  */
 function routePass() {
   if (!svg || !webVisible()) return;
@@ -897,6 +1072,11 @@ function routePass() {
   const near = (seg: Seg) => !vis ||
     !(Math.max(seg.a.x, seg.b.x) < vis.x0 || Math.min(seg.a.x, seg.b.x) > vis.x1 ||
       Math.max(seg.a.y, seg.b.y) < vis.y0 || Math.min(seg.a.y, seg.b.y) > vis.y1);
+
+  // Before anything is owed, because this is one of the things that owes it: a
+  // card that gained a second line changes where the first one lands, and the
+  // first one is not otherwise moving.
+  const slots = fanOut();
 
   const owed = [...lastSeg.entries()].filter(([, seg]) => !seg.routed);
   // On screen first. A stable partition rather than a sort: the order within
@@ -909,14 +1089,21 @@ function routePass() {
   // otherwise leave a board carrying two shapes at once.
   const opts = look();
   let spent = 0;
-  for (const [, seg] of order) {
+  for (const [key, seg] of order) {
     if (spent++ >= ROUTE_BUDGET) break;
     // seg.a and seg.b already carry the id and the box - centres() puts both on
     // every point - so there is nothing to look up here.
     const { a, b } = seg;
-    const routed = routeConnection(a, b, obstaclesBetween(a, b, where, opts.clearance), opts);
+    const fan = slots.get(key);
+    const routed = routeConnection(a, b, obstaclesBetween(a, b, where, opts.clearance), {
+      ...opts,
+      fromSlot: fan?.from,
+      toSlot: fan?.to,
+      avoid: linesNear(key, seg),
+    });
     seg.points = routed.points;
     seg.routed = true;
+    seg.slot = fan?.sig;
     for (const p of seg.points) stretchBox(p);
   }
   // Forced: the geometry changed without the *set* of lines changing, which is
@@ -1098,6 +1285,16 @@ function paint(forced = false) {
   // with a solid twin under it.
   const r = cornerRadius();
   const lit = focusSet();
+  // What is drawn into the lifted copy, which is the live focus or the one that
+  // has just ended - see heldFocus. What decides whether the *board* is dimmed
+  // is `lit` alone, further down: the hold is the copy outliving the dimming by
+  // a transition, so a hold that also held the class would hold the whole lift
+  // and end where it started.
+  // Before `shown` is read, not after: the paint that notices the focus has
+  // ended is the same paint that has to draw the copy anyway, and a hold opened
+  // afterwards would be one frame too late - which is the frame the flash was.
+  holdFocus(lit);
+  const shown = lit || heldFocus;
   let d = '';
   let focusD = '';
   // Whether the selection lit *anything* on screen, styled lines included.
@@ -1111,8 +1308,11 @@ function paint(forced = false) {
     const seg = lastSeg.get(key);
     if (!seg) continue;
     if (vis && !polyMeetsRect(seg.points, vis)) continue;
-    const isLit = !!(lit && seg.ends && (lit.has(seg.ends.a) || lit.has(seg.ends.b)));
-    if (isLit) litAny = true;
+    const isLit = !!(shown && seg.ends && (shown.has(seg.ends.a) || shown.has(seg.ends.b)));
+    // Counted off the live focus, never off the held one. `shown` is `lit`
+    // whenever there is a `lit`, so this is the same count it always was - and
+    // during a hold it is zero, which is the board being told to come back up.
+    if (isLit && lit) litAny = true;
     // Styled lines are drawn in decoLayer, never the bulk stroke - a dash or an
     // arrow is per-line and this path is one shared `d`. drawDecorations marks
     // the lit ones with .web-lit, which is how they stay at full strength.
@@ -1130,6 +1330,20 @@ function paint(forced = false) {
   // Only when something was actually lit. A selected card with no lines of its
   // own, or none on screen, would otherwise dim the whole board to say nothing.
   svg.classList.toggle('is-focused', litAny);
+  // And the same word on the root, for the one thing that is dimmed with the
+  // other lines and is not one of them: the world axes. They are a canvas in
+  // screen space (canvas/grid.js), outside this `<svg>` and outside #world, so
+  // no selector from here reaches them - the flag goes on the root element and
+  // the stylesheets take it from there, the same arrangement data-snap and
+  // .is-connecting already have.
+  //
+  // Why they are in this at all: the axes are two full-length ruled lines, and
+  // while a card's own threads are lifted out of a board that has been dropped
+  // to 0.18 they are the only lines left at full strength - so the picture that
+  // is meant to say "these are this card's" has two rules through it that are
+  // nobody's. Dimming the drawn lines and leaving the drawn-on grid is the lift
+  // half-applied.
+  document.documentElement.classList.toggle('web-lifted', litAny);
 
   // The box's origin moves whenever the outermost end does, so every fading
   // line is repositioned each frame as well - they are relative to a corner
@@ -1367,6 +1581,51 @@ function focusSet(): Set<string> | null {
     return focusIds;
   }
   return hoverIds;
+}
+
+/**
+ * Open, keep or close the hold on a focus that has just ended - see heldFocus.
+ *
+ * Called once a paint, with whatever the live focus is. A focus arriving cancels
+ * any hold outright rather than letting it run out: the copy is about to be
+ * drawn from the live set anyway, and a timer left standing would clear it under
+ * a lift that was in the middle of happening.
+ */
+function holdFocus(lit: Set<string> | null): void {
+  if (lit) {
+    if (holdTimer) { clearTimeout(holdTimer); holdTimer = 0; }
+    heldFocus = null;
+    lastFocus = lit;
+    return;
+  }
+  if (!lastFocus || holdTimer) return;
+  heldFocus = lastFocus;
+  lastFocus = null;
+  holdTimer = setTimeout(() => {
+    holdTimer = 0;
+    heldFocus = null;
+    requestPaint();
+  }, liftMs());
+}
+
+/**
+ * How long the board takes to come back up, read off the token the transition
+ * is written in.
+ *
+ * Read rather than written down twice, because `--dur-fast` is not one number:
+ * the whimsy axis moves it, and reduced motion takes it to a hundredth of a
+ * millisecond. A constant here would hold the copy for a tenth of a second on
+ * exactly the setting that asked for no animation at all - which is a lifted
+ * line sitting over an already-lifted board, visible as nothing at all, but a
+ * timer running for a transition that never happened.
+ *
+ * getComputedStyle is a style flush, so this is read when a hold opens and
+ * never per frame - see readToken's own note.
+ */
+function liftMs(): number {
+  const raw = readToken('--dur-fast');
+  const n = parseFloat(raw) || 0;
+  return raw.endsWith('ms') ? n : n * 1000;
 }
 
 /** Redraw the mark over the active line, or clear it. */

@@ -37,6 +37,7 @@ import {
   board, historyDepth, historyState, historyWeight, timelineSteps,
 } from '../state.ts';
 import { ask } from '../ui/dialog.ts';
+import { hasContent } from '../onboarding.ts';
 import {
   boardSafety, exportBoard, lastSaveFailure, newBoard, openBoard,
   saveBlob, shareBoard, storageReport,
@@ -126,6 +127,44 @@ async function askHistory(): Promise<boolean> {
   return answer === 'keep';
 }
 
+/**
+ * Say so before writing a file with nothing in it, and let it through anyway.
+ *
+ * A board with no content packs and writes perfectly happily - the format does
+ * not require anything to be on the paper - so the failure here is silent by
+ * construction: you get a `.mbrd`, it is the right size for what it holds, and
+ * you find out it was empty when you open it somewhere else. A tester hit this
+ * and the complaint was not that it failed, it was that it did not say.
+ *
+ * A question and not a refusal, because an empty board is a real thing to want
+ * to keep. The title, the palette, the grid and every layout setting are in
+ * that file, and a board saved with nothing on it is how you carry a look to
+ * the next one. Refusing would be the app deciding it knows better about the
+ * one case where it plainly does not.
+ *
+ * hasContent() rather than `board.items.length`, and that is the whole of the
+ * emptiness test: it is the same rule the onboarding hints ask, so a board
+ * holding nothing but fences and the hint ghosts counts as the empty board it
+ * looks like. See onboarding.ts, where it is argued.
+ *
+ * The short-circuit is load-bearing. ask() answers 'cancel' with no document -
+ * a test, a headless run - so reaching it unconditionally would make every
+ * export refuse there. A board with anything on it never gets that far.
+ */
+async function confirmEmptyExport(): Promise<boolean> {
+  if (hasContent()) return true;
+  const answer = await ask({
+    title: 'There is nothing on this board',
+    body: 'The file will still carry the board’s name, its palette and its '
+      + 'layout settings, so this is a reasonable way to keep a look for a '
+      + 'board you have not made yet. It just will not have anything on it.',
+    go: 'Export anyway',
+    cancel: 'Cancel',
+    danger: false,
+  });
+  return answer === 'go';
+}
+
 export function fileCommands() {
   return {
     new: () => newBoard(),
@@ -193,8 +232,31 @@ export function fileCommands() {
       const { bytes, count } = assetBytes();
       const { planOptimize, describeSaving } = await import('../optimize/optimize.ts');
       const plan = planOptimize();
-      toast(`${count} files, ${formatBytes(bytes)} in this browser. `
-        + `${plan.total} could be made smaller, ${plan.done} already are.`);
+      // Built rather than interpolated straight, because the obvious sentence
+      // was wrong twice and a tester caught it by asking what it meant.
+      //
+      // `plan.total` is *bytes*, and `plan.done` is a *count*, and this row used
+      // to print both bare and side by side - "50528374 could be made smaller, 3
+      // already are", two units in one sentence with neither of them named.
+      // `plan.total` is also not the thing the sentence claimed: it is
+      // everything not already done, video included, and video is bucketed into
+      // plan.skipped precisely because it is never encoded. So the number that
+      // answers "what could be made smaller" is the picture and sound jobs, and
+      // nothing else in the plan is that number.
+      //
+      // The empty cases are spelled out for the same reason. This is the row a
+      // person opens when they want to know whether optimising is worth it, and
+      // "0 could be made smaller, 0 already are" is a shrug where the answer
+      // should be plainly no.
+      const jobs = [...plan.pictures, ...plan.sounds];
+      const shrinkable = jobs.reduce((n, job) => n + job.size, 0);
+      const verdict = jobs.length
+        ? `${jobs.length} could be made smaller - ${formatBytes(shrinkable)} as they stand.`
+        : plan.done ? 'Nothing left to shrink.'
+          : 'Nothing here can be made smaller.';
+      const already = plan.done ? ` ${plan.done} already optimised.` : '';
+      const left = plan.skipped.length ? ` ${plan.skipped.length} left alone.` : '';
+      toast(`${count} files, ${formatBytes(bytes)} in this browser. ${verdict}${already}${left}`);
       console.info('[mbrd] board weight:', { files: count, bytes, plan, saving: describeSaving });
     },
     /** How deep the undo stack is, and what it is holding on to. */
@@ -209,13 +271,22 @@ export function fileCommands() {
     // Neither of these asks about the history any more: a file you write to your
     // own disk keeps everything, because an export without its history opens as
     // a board with no past and nothing can put that back. See askHistory().
-    export: () => exportBoard(),
-    exportAs: () => exportBoard({ pickNew: true }),
+    // Both ask first if there is nothing to write - see confirmEmptyExport(),
+    // and note that a board with anything on it never reaches the dialog.
+    export: async () => { if (await confirmEmptyExport()) await exportBoard(); },
+    exportAs: async () => { if (await confirmEmptyExport()) await exportBoard({ pickNew: true }); },
     // The mobile face of Export: the same packed .mbrd, handed to the OS share
     // sheet instead of a download folder a phone has no good way to reach. Falls
     // back to Export where files cannot be shared - see shareBoard(), which
     // carries the answer below into that fallback.
-    share: async () => shareBoard({ history: await askHistory() }),
+    // The emptiness question comes first, ahead of the history one: there is no
+    // sense asking what to put in a file somebody is about to decide not to
+    // write. An empty board has no history to ask about anyway, so in practice
+    // this is one dialog rather than two.
+    share: async () => {
+      if (!await confirmEmptyExport()) return;
+      await shareBoard({ history: await askHistory() });
+    },
     // A picture of the board, for showing rather than reopening. A moodboard
     // exists to be presented, and until these two the only thing that left mbrd
     // was a .mbrd only mbrd can read. The board is composited onto a canvas

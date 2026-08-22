@@ -15,6 +15,7 @@
 // own name. Like toast(), it reaches for `document` only inside a function, so
 // storage.js can import it and stay loadable without a browser.
 
+import { setMarked } from './wordmark.ts';
 import { cue } from '../cuelume/engine.ts';
 import { onTouch } from '../canvas/viewport.ts';
 
@@ -132,12 +133,16 @@ function openWith(el: HTMLDialogElement, o: AskSettled): Promise<Answer | string
   // above say the same about the elements that need no tag.
   const field = document.getElementById('ask-field') as HTMLInputElement;
 
-  title.textContent = o.title;
-  body.textContent = o.body;
+  // setMarked() rather than textContent, on all five: it is textContent with
+  // the app's name set in the app's face - see ui/wordmark.ts. Every string a
+  // dialog can show goes through these lines, so a message written later is
+  // covered by having been shown rather than by somebody remembering.
+  setMarked(title, o.title);
+  setMarked(body, o.body);
   body.hidden = !o.body;
-  go.textContent = o.go;
-  cancel.textContent = o.cancel;
-  keep.textContent = o.keep;
+  setMarked(go, o.go);
+  setMarked(cancel, o.cancel);
+  setMarked(keep, o.keep);
   // The third way is optional, and a button with no words in it is still a
   // button you can tab to and press.
   keep.hidden = !o.keep;

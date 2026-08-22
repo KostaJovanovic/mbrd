@@ -156,6 +156,18 @@ function drawFence(rect: Band | null): void {
     name: nextFenceName(),
     x: box.x, y: box.y, w: box.w, h: box.h,
     z: Math.min(0, ...under.map(i => i.z || 0)) - 1,
+    // Anchored from the moment it appears, for the reason isLocked() names as
+    // the case a lock exists for: a fence is a region somebody is arranging
+    // *inside*, so every press meant for the cards on top of it would otherwise
+    // land on the fence underneath them and drag the whole region. Anchored, it
+    // pans the board like the bare board it is standing in for.
+    //
+    // What that costs is the resize gesture - dragging a corner out over three
+    // more cards, which is the one way to say "and these too" (see the header of
+    // fences.js). Unanchor from the fence's own menu to get it back. Membership
+    // is measured rather than stored, so nothing about it is frozen by this:
+    // drag a card in or out and it is in or out, anchored fence or not.
+    meta: { locked: true },
   }], 'Add a fence');
   if (!fence) return;
   select([fence.id]);

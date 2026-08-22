@@ -37,6 +37,7 @@ import { cue } from '../cuelume/engine.ts';
 import { isPatchPage } from '../page.ts';
 import { field, fieldStops } from './controls.ts';
 import { tickSlider } from './controls.ts';
+import { setMarked } from './wordmark.ts';
 import {
   TABS, SECTIONS, controlVisible, controlEnabled, sectionVisible,
 } from './settings-schema.ts';
@@ -532,7 +533,10 @@ function buildButtons(c: ButtonsControl) {
     // command name, which is a second index over a table that has no key.
     if (b.closesPanel) btn.dataset.closesPanel = b.closesPanel === true ? '' : b.closesPanel;
     if (b.ariaPressed != null) btn.setAttribute('aria-pressed', b.ariaPressed);
-    btn.textContent = b.label;
+    // The app's name in the app's face, if this label says it - "Reload mbrd"
+    // is the button that started this. See ui/wordmark.ts; for a label with no
+    // occurrence in it this is textContent by another name.
+    setMarked(btn, b.label);
     row.append(btn);
     nodes.push(btn);
   }

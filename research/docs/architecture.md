@@ -756,7 +756,17 @@ Three modules divide the work:
   routed to. A lattice too large to search sheds its furthest obstacles until it
   fits rather than abandoning the route.
 
-  And when all four find nothing, **the answer is still not a diagonal**. It is
+  **And then it concedes the face.** Every rung above runs on the pair of faces
+  the dominant axis picked — `anchorsFor()` — and that choice is made before
+  anything has looked at the board, so a card parked flat against one of those
+  two faces used to fail the whole ladder while three open sides sat there. That
+  was the common way a line ended up drawn behind something. There are four
+  anchors per end now, ranked, and the fifteen other pairs are tried when the
+  ladder is spent: the cheap two-bend L on all of them, then the lattice search
+  on as many as `MAX_FACE_SEARCHES` allows, because by then each search is a real
+  cost.
+
+  And when even that finds nothing, **the answer is still not a diagonal**. It is
   the plain two-bend elbow, drawn through whatever is left in the way. A line
   corner to corner scores across every card between the two ends at an angle
   nothing else on the board is drawn at, and it reads as damage; an elbow that
@@ -767,6 +777,49 @@ Three modules divide the work:
   carries no failure flag, and the dimmed dashed fallback style, its second bulk
   path in `canvas/web.ts` and the `.web-fallback` rule are all gone with it — a
   state worth marking as a failure has to look like one.
+
+  What is worth knowing is how nearly unreachable that last resort now is:
+  sixteen ways out, at no clearance at all, every one of them shut. That is a
+  card lying on top of one of the two ends — a route that is not passing it but
+  arriving under it — or a lattice that had to shed the card doing the blocking.
+  Nothing else on a board the lattice can hold.
+
+  **Two margins, not one.** `CLEARANCE` is the room the search keeps off a card
+  and `PULL_CLEARANCE` is what the taut string is pulled against, and they were
+  the same number while they wanted opposite things: the search wants a generous
+  margin, which is the air between a line and a photograph, and `pull()` drops a
+  turn only when it can see through the blocks it tests, so fattening them for
+  the search's sake left every taut line carrying bends it did not need. Split,
+  each says what it means — find the corridor generously, pull the string
+  through it tightly. Raising the clearance (14 → 22, with 32 the ceiling before
+  two margins close the gap between neighbours a grid step apart) therefore buys
+  air without buying stiffness.
+
+  **Lines still cross freely and no longer lie on top of each other.** Only
+  cards are obstacles — a crossing costs nothing and never will, since that is
+  what every diagram in existence does. What reads as damage is *coincidence*:
+  two routes running the same corridor do not read as two lines, they read as
+  one that is somehow heavier, and the second one is invisible work. So a
+  lattice edge lying along a line already drawn simply costs more to travel
+  (`OVERLAP_COST`, charged by the length of the overlap, so the price does not
+  depend on how finely the neighbourhood happens to be latticed). Nothing is
+  refused, so no route is ever lost to it. The lines to avoid arrive through
+  `opts.avoid` from `canvas/web.ts`, which is the half that knows there is more
+  than one line, and it is order-dependent by construction: a line settled
+  earlier in the pass is avoided and one settled later is not. The alternative
+  is rerouting the whole board whenever anything moves, which is the rule that
+  module exists to keep.
+
+  **And the fan at a shared face is spread across it.** Every line into a card
+  used to arrive at the *midpoint* of the face it came in by — right for the
+  only line meeting a card, wrong for the fifth, since five routes beginning at
+  one point run one corridor away from it. `routePass()` groups the segs by card
+  and face, sorts each group by where its far end sits along the spread axis so
+  the fan does not cross itself, and hands each route its slot; `anchorsFor()`
+  places the endpoint at `(index + 1) / (count + 1)` across two thirds of the
+  face. A slot that changes is a route that is owed again — a card that gains a
+  second connection moves the first one, and the first one is not otherwise
+  going anywhere, so `build()`'s watch on the two end boxes would see nothing.
 
   **The shape of a route answers the whimsy axis**, through `opts.shape` — the
   router reads nothing, so `canvas/web.ts` hands it down. At Harsh the obstacle
@@ -899,6 +952,18 @@ does the rest. Whether anything lit is counted over *every* line on screen and
 not off the bulk path's string: a styled line is its own element in the
 decoration layer, so a card whose connections all carried a colour used to light
 an empty string and dim nothing.
+
+**The world axes go back with the rest of the lines.** They were the one thing
+left at full strength while forty threads dropped to 0.18 — not by decision but
+because `#axis-ink` is a canvas in screen space outside `#world`, and no
+selector aimed at `#web` reaches it. So a board that dimmed everything to show
+you three lines kept two full rules ruled straight through the picture. The
+answer is a `web-lifted` flag written on the root element on the same line as
+`is-focused`, which is the arrangement `data-snap` and `.is-connecting` already
+use and the only one available across two stacking contexts. To 0.4 rather than
+to the threads' 0.18: the axes are what the whole board is positioned against,
+and somebody looking at one card's connections has not stopped needing to know
+where the origin is.
 
 **Dangling is tolerated, not prevented.** A connection whose item is gone is
 simply not drawn, which is why delete, undo, trash and restore need no
