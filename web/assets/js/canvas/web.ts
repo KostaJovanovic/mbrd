@@ -32,7 +32,9 @@
 // the cards are snapped to it (see axisMoved in ui/appearance.js), so a route
 // that turns anywhere else is the axis half-applied. Read here and handed to
 // the router, which may not read anything - see look().
-import { board, bus, byId, isRider, isJoinEnd, baseStep, selection, pairKey } from '../state.ts';
+import {
+  board, bus, byId, isRider, isJoinEnd, baseStep, selection, pairKey, stuckFollowers,
+} from '../state.ts';
 // How a styled connection is drawn, straight off the board's own model. Named
 // from there rather than restated here, which is the whole of why it is
 // exported: ui/conn-chip.ts had grown a private copy of this and of the two
@@ -57,7 +59,9 @@ import { queryRect } from './spatial.ts';
 // The card under the pointer, and the mark that says the draft is aimed at it.
 // Both live in items.js because that module owns the card's DOM - a mark
 // written from here would be undone by the next rebuild of that node.
-import { itemIdFromEvent, setConnectAim, tiltOf, onHoverItem } from './items.ts';
+import {
+  itemIdFromEvent, setConnectAim, setBoardLift, tiltOf, onHoverItem,
+} from './items.ts';
 // Only for the visible rect and the zoom - see the note over `vp`, which is the
 // whole of what this module wants from the view.
 import type { Viewport } from './viewport.ts';
@@ -697,6 +701,9 @@ function release() {
   if (holdTimer) { clearTimeout(holdTimer); holdTimer = 0; }
   heldFocus = null;
   lastFocus = null;
+  // The board's step back is written on item nodes and on the root rather than
+  // into this `<svg>`, so nothing here takes it down on its own.
+  setBoardLift(null);
   if (focusPath) focusPath.setAttribute('d', '');
   if (svg) svg.classList.remove('is-focused');
   // Off the root as well as off the `<svg>`. release() runs on a board load, and
@@ -1304,6 +1311,13 @@ function paint(forced = false) {
   // an empty string, which read as nothing to focus - and the board did not dim
   // at all for exactly the cards somebody had bothered to mark up.
   let litAny = false;
+  // The far ends, collected while the lit lines are being found because that is
+  // where the pairing already is - and only when the pointer is what lit them.
+  // A selection already marks its own cards with a ring and grips, and corner
+  // marks on the cards *around* one would read as "these are selected too";
+  // under the pointer nothing else is marked, so they read as what they are.
+  const byPointer = !selection.size;
+  let joined: Set<string> | null = null;
   for (const key of settled) {
     const seg = lastSeg.get(key);
     if (!seg) continue;
@@ -1312,7 +1326,18 @@ function paint(forced = false) {
     // Counted off the live focus, never off the held one. `shown` is `lit`
     // whenever there is a `lit`, so this is the same count it always was - and
     // during a hold it is zero, which is the board being told to come back up.
-    if (isLit && lit) litAny = true;
+    if (isLit && lit) {
+      litAny = true;
+      // Before the styled-line `continue` below, so a card reached by a line
+      // that carries a colour or an arrow is marked like any other. Both ends
+      // are tested rather than one: a pair is unordered, and which of the two
+      // is under the pointer is not a thing this loop knows.
+      if (byPointer && seg.ends) {
+        joined ||= new Set();
+        if (lit.has(seg.ends.a)) joined.add(seg.ends.b);
+        if (lit.has(seg.ends.b)) joined.add(seg.ends.a);
+      }
+    }
     // Styled lines are drawn in decoLayer, never the bulk stroke - a dash or an
     // arrow is per-line and this path is one shared `d`. drawDecorations marks
     // the lit ones with .web-lit, which is how they stay at full strength.
@@ -1344,6 +1369,16 @@ function paint(forced = false) {
   // nobody's. Dimming the drawn lines and leaving the drawn-on grid is the lift
   // half-applied.
   document.documentElement.classList.toggle('web-lifted', litAny);
+  // And the board behind them steps back: the card under the pointer, the cards
+  // its lines reach, and whatever is stuck to any of them. A sticker is a remark
+  // about the card it sits on, so dimming one over a card that stayed lit would
+  // take the pile apart - stuckFollowers() is the same walk a drag uses to
+  // decide what comes along.
+  //
+  // Guarded on there being a far end at all. A card with no lines has nothing
+  // for the board to step back *from*, and dimming forty cards to say so would
+  // be the pointer resting somewhere reading as an announcement.
+  setBoardLift(joined?.size && lit ? withRiders(lit, joined) : null);
 
   // The box's origin moves whenever the outermost end does, so every fading
   // line is repositioned each frame as well - they are relative to a corner
@@ -1581,6 +1616,41 @@ function focusSet(): Set<string> | null {
     return focusIds;
   }
   return hoverIds;
+}
+
+/**
+ * The two sets, joined, with everything stuck to any of them added.
+ *
+ * The riders are what makes this a function rather than a spread. A sticker is a
+ * remark about the card under it and a note is pinned to what it annotates, so a
+ * pile reads as one object - and a pile with the photograph lit and the sticker
+ * on top of it dimmed reads as the photograph having been taken apart.
+ * `stuckFollowers()` is transitive and is the same walk a drag uses to decide
+ * what comes along, which is the right question asked once rather than a second
+ * rule about piles that could disagree with it.
+ *
+ * Memoised on the two sets, because that walk filters every item on the board
+ * and this is called from the paint. Hover is dropped while a gesture runs, so
+ * a pan never reaches here - but a zoom does, with the pointer resting on a
+ * card, and the answer is the same on every frame of it. `board:load` and
+ * `items` drop the memo: what is stuck to what is measured, not stored, and a
+ * note dragged off its host changes it without changing either set.
+ */
+let riderMemo: { key: string, out: Set<string> } | null = null;
+bus.on('items', () => { riderMemo = null; });
+bus.on('board:load', () => { riderMemo = null; });
+
+function withRiders(a: Set<string>, b: Set<string>): Set<string> {
+  const ids = [...a, ...b];
+  // Sorted, so the key names the set rather than the order the paint happened
+  // to walk it in - `settled` is a Set and its order is insertion order, which
+  // a rebuild can change without anything about the board having changed.
+  const key = ids.sort().join(',');
+  if (riderMemo?.key === key) return riderMemo.out;
+  const out = new Set(ids);
+  for (const id of stuckFollowers(out)) out.add(id);
+  riderMemo = { key, out };
+  return out;
 }
 
 /**

@@ -51,6 +51,30 @@
   // carried rather than checked - it was not checked before either, so this
   // loses nothing. When the last .js under web/assets/js is gone, both flags
   // come out and this comment goes with them.
+  //
+  // Three files are on that list today: import/tiff-worker.js and
+  // optimize/media-worker.js, which are classic workers and reach for
+  // importScripts, and version.js, which save.bat stamps by regex.
+  //
+  // ── The browser's globals, and no others ──
+  //
+  // `types: []` is an empty list on purpose, not an omission waiting to be
+  // filled. Without it tsc discovers `@types/*` automatically, walking
+  // node_modules upwards from this directory - so a stray `@types/node` in a
+  // home folder, or in any parent somebody once ran `npm i` in, silently joins
+  // the compilation of a browser-only app. Nothing under web/assets/js imports
+  // a Node builtin or touches `process`; the browser's own environment is
+  // `lib` above, and this is what makes that line the whole of it.
+  //
+  // What it looked like before the list was closed: `setTimeout` resolved to
+  // Node's overload, which answers a `Timeout` object where the DOM answers a
+  // number, and 29 modules that keep a handle in a `number` field went red at
+  // once - every one of them correct. A check that depends on what is
+  // installed two directories above the repository is not a check, and CI,
+  // which installs cleanly, would never have reproduced any of it.
+  //
+  // Nothing needs adding here for the tests: they are .js, outside `include`
+  // below, and run under Node with no typechecking at all.
   "compilerOptions": {
     "strict": true,
     "erasableSyntaxOnly": true,
@@ -63,6 +87,7 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": [],
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },

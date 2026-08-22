@@ -412,6 +412,56 @@ export function setConnectAim(id: string | null | undefined) {
 }
 
 /**
+ * The cards a hovered card's lines actually involve - it, their far ends, and
+ * whatever is stuck to any of them. Everything else on the paper steps back.
+ *
+ * The threads already do this among themselves: hovering a card drops every line
+ * that is not its own, and the cards behind them carried on at full strength -
+ * so a picture that was meant to say "this and these three" was three lit lines
+ * over forty photographs. The board is the loudest thing on the board.
+ *
+ * A gentle step rather than the threads' 0.18. A line at 0.18 is a hairline
+ * going quiet; a photograph at 0.18 is gone, and the board would flicker between
+ * two documents as the pointer crossed it. Enough to separate, not enough to
+ * hide - the number and the argument are in items.css.
+ *
+ * Written as one class on the root and an attribute on the few that stay,
+ * rather than a class on every card that goes. paintFilter() takes the other
+ * shape and is right to: a filter changes when somebody ticks a tag, where this
+ * changes every time the pointer crosses a card, and a loop over every mounted
+ * node at that rate is the cost this avoids. What the browser has to
+ * re-evaluate is the same either way; what it is handed is two writes rather
+ * than two hundred.
+ *
+ * The twins in #item-shadows get the same attribute, because a dimmed card with
+ * a full-strength shadow under it is a card floating over its own outline.
+ */
+let liftedIds: Set<string> = new Set();
+
+export function setBoardLift(ids: Set<string> | null | undefined): void {
+  const next = ids?.size ? ids : null;
+  if (liftedIds.size === (next?.size || 0)) {
+    let same = true;
+    if (next) for (const id of next) if (!liftedIds.has(id)) { same = false; break; }
+    if (same) return;
+  }
+  for (const id of liftedIds) {
+    if (next?.has(id)) continue;
+    nodeFor(id)?.removeAttribute('data-lit');
+    shadows.get(id)?.removeAttribute('data-lit');
+  }
+  if (next) {
+    for (const id of next) {
+      if (liftedIds.has(id)) continue;
+      nodeFor(id)?.setAttribute('data-lit', '');
+      shadows.get(id)?.setAttribute('data-lit', '');
+    }
+  }
+  liftedIds = next ? new Set(next) : new Set();
+  document.documentElement.classList.toggle('board-lifted', !!next);
+}
+
+/**
  * How far this card leans, as the fraction of `--tilt-max` it was dealt.
  *
  * Read off the live node, because that is the only place the number exists: the

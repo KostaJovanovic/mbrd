@@ -99,14 +99,27 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      # tsc --noEmit under strict, over the whole tree. Nothing is compiled here
-      # and no TypeScript ships: esbuild builds the bundle, tsc only checks.
+      # tsc --noEmit under strict, over every .ts under web/assets/js - which is
+      # what tsconfig.json's `include` says and is not the whole repository.
+      # Nothing is compiled here and no TypeScript ships: esbuild builds the
+      # bundle, tsc only checks.
       #
-      # Modules still carrying // @ts-nocheck are skipped, which is migration
-      # debt rather than a hole - tests/ts-debt.test.js holds the count with a
-      # ceiling that may only fall, and that test runs in the step above. So a
-      # green run here means everything not on that list is clean under strict,
-      # and the step above is what stops the list quietly growing.
+      # Outside it: tools/ (the generators are .mjs, and the vendored anti-slop
+      # plugin is TypeScript the lint config ignores too), and the three .js
+      # files left under web/assets/js - the two classic workers, which need
+      # importScripts, and version.js, which save.bat stamps. The parse leg
+      # below reads all of them, so nothing here is unread, only untyped.
+      #
+      # No module carries // @ts-nocheck: the migration counted to zero and
+      # tests/ts-debt.test.js, which runs in the step above, is now a plain
+      # guard that fails if a pragma comes back. So a green run here means the
+      # app's TypeScript is clean under strict with nothing excused.
+      #
+      # This step is also the one that has to answer the same here as on a
+      # contributor's machine, which is what tsconfig's `types: []` is for - see
+      # its header. Without it a stray @types/node above the checkout joins the
+      # compilation, and a browser-only app fails on setTimeout's return type
+      # locally while CI, which installs cleanly, stays green.
       - name: Typecheck
         run: npm run typecheck
 

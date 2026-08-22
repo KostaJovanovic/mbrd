@@ -79,14 +79,32 @@ the blame that makes this codebase's module headers worth having.
 
 `npm run typecheck` is the answer to the one thing hand-written JavaScript
 genuinely lacks, and it is no longer answered with JSDoc: the app is TypeScript,
-`tsconfig.json` runs tsc `--noEmit` under **strict** over the whole tree, and
-esbuild - not tsc - builds what ships.
+`tsconfig.json` runs tsc `--noEmit` under **strict** over every `.ts` under
+`web/assets/js`, and esbuild - not tsc - builds what ships.
+
+What that does not cover, and why none of it is a hole. `tools/` is outside
+`include` - the generators are `.mjs` and the vendored lint plugin is TypeScript
+that `.oxlintrc.json` ignores as well. So are the three `.js` files still under
+`web/assets/js`: the two classic workers, `import/tiff-worker.js` and
+`optimize/media-worker.js`, which reach for `importScripts` and are staying JS
+for that reason, and `version.js`, which `save.bat` stamps by regex. `checkJs`
+is off, so those three are carried rather than checked - they were not checked
+before either. CI's fifth leg parses every one of them, which is the floor under
+the part tsc does not read.
+
+`tsconfig.json` also sets `"types": []`, and that is the browser environment
+being stated rather than left to the machine. tsc discovers `@types/*` by
+walking node_modules upwards from the project, so an `@types/node` sitting in a
+home directory joins the compilation of an app that never leaves a tab: every
+`setTimeout` handle kept in a `number` stops typechecking, on one clone and not
+another, and never in CI.
 
 Every module is annotated. The rename moved 104 files in one step and the ones
 still untyped carried `// @ts-nocheck` behind a ceiling that could only fall;
 the ceiling reached zero, and `tests/ts-debt.test.js` is now a plain guard that
-fails if a pragma comes back. So a green typecheck means the whole tree is clean
-under strict, with nothing excused. It earned its keep immediately: it found
+fails if a pragma comes back. So a green typecheck means every module tsc reads
+is clean under strict, with nothing excused inside that set. It earned its keep
+immediately: it found
 `web-graph.ts` calling two `geometry.ts` helpers it had never imported, which
 threw out of `threads()` and stopped the relationship web drawing.
 

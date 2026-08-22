@@ -724,6 +724,49 @@
    legible while you move it. */
 .item.is-filtered.is-selected { opacity: 0.75; }
 
+/* ── The board behind a card whose lines you are following ────────────────
+   Hovering a card lifts its threads out of the board (canvas/web.js), and the
+   board itself carried on at full strength - three lit lines over forty
+   photographs, and the loudest thing on a board is the board. So everything the
+   lines do not involve steps back with them.
+
+   This is the whole of how the far ends are said, and for a while it was not.
+   They wore corner marks as well - the selection's, masked out of the ring and
+   drawn in the thread's colour - on the argument that a dimmed board says which
+   cards without saying which *bounds*. It turned out to be one statement made
+   twice: a card standing at full strength among faded ones is already
+   unmistakably picked out, and the marks on top of that were a second voice
+   saying the same thing in the selection's accent. Gone, and this rule is what
+   is left.
+
+   What stays is the card under the pointer, the cards its lines reach, and
+   whatever is stuck to any of those - see setBoardLift() in canvas/items.js,
+   which is also why this is written as one class on the root and an attribute
+   on the few that stay rather than a class on every card that goes.
+
+   0.6, not the threads' 0.18. A hairline at 0.18 is a line going quiet; a
+   photograph at 0.18 is a photograph that is gone, and a board that emptied
+   and refilled as the pointer crossed it would be two documents flickering
+   rather than one you are reading. Enough to separate, not enough to hide -
+   you can still see what you are not looking at, which is the whole reason the
+   things are laid out in front of you at once.
+
+   Selection is deliberately not a trigger. It has its own language already -
+   a ring and eight grips - and a board that dimmed on every marquee sweep
+   would be shouting during the one gesture that crosses the most cards.
+
+   :not(.is-filtered) because a filtered card is *already* at 0.16 and this rule
+   outweighs that one on specificity: without the guard, stepping the board back
+   would bring every card a tag filter had put away most of the way out again.
+   Two dims, and the older and stronger statement wins.
+
+   No `transition` here, for the reason the filter rule two lines up gives:
+   opacity is an entry in the lists on .item above and on .item-shadow in
+   canvas.css, and a shorthand written at this point would replace them. Both
+   already fade. */
+:root.board-lifted .item:not([data-lit]):not(.is-filtered),
+:root.board-lifted .item-shadow:not([data-lit]):not(.is-filtered) { opacity: 0.6; }
+
 /* ── A cut-out: the picture without the card ──────────────────────────────
 
    A logo, a leaf, an arrow saved with a transparent background was cut out so
