@@ -953,6 +953,45 @@ not off the bulk path's string: a styled line is its own element in the
 decoration layer, so a card whose connections all carried a colour used to light
 an empty string and dim nothing.
 
+**And the board behind them steps back.** The threads dimmed among themselves
+while the cards carried on at full strength, so a lift meant to say "this and
+these three" was three lit lines over forty photographs — and the loudest thing
+on a board is the board. `setBoardLift()` (`canvas/items.ts`) puts everything the
+lines do not involve to **0.6**: not the threads' 0.18, because a hairline at
+0.18 is a line going quiet and a photograph at 0.18 is gone, and a board that
+emptied and refilled as the pointer crossed it would be two documents flickering
+rather than one. What stays lit is the hovered card, the cards its lines reach,
+and `stuckFollowers()` of both — a sticker is a remark about the card under it,
+and dimming one over a lit host takes the pile apart. Written as one class on
+the root plus `data-lit` on the few that stay, not a class on every card that
+goes: `paintFilter()` takes the other shape and is right to, since a filter
+changes when somebody ticks a tag and this changes every time the pointer
+crosses a card. Guarded `:not(.is-filtered)`, or stepping the board back would
+bring every card a tag filter had put away most of the way out again. Pointer
+only: a selection has its own language already — a ring and eight grips — and a
+board that dimmed on every marquee sweep would be shouting during the one
+gesture that crosses the most cards.
+
+The far ends briefly wore **corner marks** as well — the selection's, masked out
+of `.item::before` and drawn in `--web-line` — on the argument that a dimmed
+board says which cards without saying which bounds. They came out again: a card
+standing at full strength among faded ones is already unmistakably picked out,
+and the marks were a second voice saying the same thing in the selection's
+accent. The dim is the whole of how a far end is said.
+
+**Letting go holds the lifted copy for one transition.** The lift is two things
+undone at two speeds: the copy is an attribute and vanished on the frame, the
+dimming is a CSS transition and took `--dur-fast` to climb back — so for that
+tenth of a second the card's own lines were the *dimmest* on screen and then
+rose with everything else. A flash, on exactly the lines the gesture was about.
+`heldFocus` keeps the ended focus drawn until the board has caught up with it,
+as the id set rather than as the `d` string, since a card can be dragged during
+those few frames. Clearing it at the end is invisible by construction: the bulk
+path is at full strength by then and the copy is the same geometry at the same
+weight. The hold's length is read off `--dur-fast` rather than written down —
+the whimsy axis moves it, and reduced motion takes it to a hundredth of a
+millisecond.
+
 **The world axes go back with the rest of the lines.** They were the one thing
 left at full strength while forty threads dropped to 0.18 — not by decision but
 because `#axis-ink` is a canvas in screen space outside `#world`, and no

@@ -40,7 +40,7 @@ never does:
 npm run dev         # esbuild watch → web/assets/app.js; edit, then refresh
 npm run build       # minified bundle + both lab bundles — this is what ships
 npm run lint        # oxlint, correctness only — adding a formatter is a regression
-npm run typecheck   # tsc --noEmit, strict, whole tree
+npm run typecheck   # tsc --noEmit, strict, every .ts under web/assets/js
 npm run dev:lab     # watch build for web/lab.html, the pigment lab
 npm run dev:sound   # watch build for web/lab-sound.html, the sound lab
 save.bat            # version stamps → build → commit → optionally push
@@ -76,6 +76,23 @@ tools. The build leg catches what `npm test` cannot: an unresolvable import, or
 a dynamic import naming something that moved. The parse leg catches syntax
 errors in modules no test imports — most of `ui/` and `canvas/` — but only after
 the push, so `node --check` and `python -m py_compile` locally are faster.
+
+**The typecheck leg does not reach everything, and the parse leg is why that is
+survivable.** `include` is `web/assets/js/**/*.ts` and nothing else, so
+`tools/` — the generators, and the vendored `anti-slop` plugin, which
+`.oxlintrc.json` also ignores — is outside it, as are the three `.js` files left
+under `web/assets/js`: `import/tiff-worker.js` and `optimize/media-worker.js`,
+which are classic workers and need `importScripts`, and `version.js`, which
+`save.bat` stamps. Every one of those is *parsed* by the fifth leg. Nothing is
+typechecked twice and nothing is silently excused — but "green typecheck" means
+the app's TypeScript, not the repository.
+
+**`tsconfig.json` closes its ambient types (`"types": []`) and that line is not
+optional.** tsc discovers `@types/*` by walking node_modules *upwards*, so an
+`@types/node` in a home directory joins the compilation of a browser-only app
+and every `setTimeout` handle stored in a `number` goes red. It reproduces on
+one machine and never in CI. Deleting the line makes the check depend on what is
+installed two directories above the repository.
 
 There is **no browser-driven suite**. Pan and zoom, drag and marquee, save →
 refresh → recover, and a clean boot console are checked by launching the app and
