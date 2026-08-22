@@ -61,10 +61,28 @@ function resolveSpec(mod, spec) {
   // because that is what lets Node run the suite with nothing installed
   // (tsconfig.json says why). The append below is the extensionless case,
   // which should not occur and is kept so a stray one resolves rather than
-  // vanishing from the graph unnoticed.
-  if (!/\.(js|ts)$/.test(target)) target += '.js';
+  // vanishing from the graph unnoticed. `.mjs` counts as an extension too: it
+  // is what a vendored ES module carries, and appending to one produced a
+  // target that could never exist.
+  if (!/\.(js|mjs|ts)$/.test(target)) target += '.js';
   return target;
 }
+
+/**
+ * Whether a resolved target is a module of this app at all.
+ *
+ * A specifier that climbs out of web/assets/js names something vendored -
+ * canvas/matte-worker.js imports ONNX Runtime out of web/assets/vendor, which is
+ * somebody else's library sitting in this repository rather than a module of
+ * this one. It has no layer, it cannot participate in a cycle here, and holding
+ * it to a naming convention would be holding upstream to one.
+ *
+ * Excluded from the graph rather than added to it, and the exclusion is narrow -
+ * only paths that leave the tree. What checks those files instead is
+ * tests/matte-vendor.test.js and tests/pdf-vendor.test.js, which is where a
+ * vendored library's presence, pin and licence belong.
+ */
+const ours = target => !target.startsWith('vendor/') && !target.startsWith('../');
 
 /** Static import specifiers in one module, resolved to module-relative paths. */
 function importsOf(mod) {
@@ -107,8 +125,8 @@ function dynamicImportsOf(mod) {
 const edges = [];
 const dynamicEdges = [];
 for (const mod of modules) {
-  for (const target of importsOf(mod)) edges.push([mod, target]);
-  for (const target of dynamicImportsOf(mod)) dynamicEdges.push([mod, target]);
+  for (const target of importsOf(mod).filter(ours)) edges.push([mod, target]);
+  for (const target of dynamicImportsOf(mod).filter(ours)) dynamicEdges.push([mod, target]);
 }
 
 test('every import resolves to a module that exists', () => {

@@ -15,7 +15,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { orbitView } from '../web/assets/js/canvas/model.ts';
+import { frameDistance, halfHeightAt, orbitView } from '../web/assets/js/canvas/model.ts';
 
 /** Column-major 4x4 -> the three basis vectors the matrix's rotation holds. */
 function basis(m) {
@@ -142,5 +142,69 @@ test('yaw turns the model about the vertical, not about the camera', () => {
     const p = apply(orbitView([0, 0, 0], 5, yaw, 0), [0, 2, 0]);
     assert.ok(Math.abs(p[0]) < 1e-4, `the top of the model slid sideways to ${p[0]}`);
     assert.ok(p[1] > 1.9, `the top of the model is at height ${p[1]}`);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// The framing, and why the still is square
+// ---------------------------------------------------------------------------
+//
+// A model card shows one of two things: a WebGL canvas while you are turning it,
+// and a WebP photograph the rest of the time. They are two renders of one scene
+// and they have to land on the same pixels, or the model changes size the moment
+// you let go - which is exactly what it did.
+//
+// The still is drawn into the stage's box by `object-fit: contain`, and the
+// stage is not the card: it is the card less its padding, less the filename,
+// less the gap above it. So the two boxes are different shapes, and the framing
+// rule is sensitive to shape. What follows is the arithmetic that makes them
+// agree anyway.
+
+const near = (a, b, msg, eps) => assert.ok(Math.abs(a - b) < eps, `${msg}: ${a} vs ${b}`);
+
+/** The sphere's diameter in pixels, for a radius-1 sphere framed in w x h. */
+const span = (w, h) => h / halfHeightAt(frameDistance(1, w, h));
+
+test('the framing puts the sphere on the narrow axis, whatever the shape', () => {
+  // The whole property in one line. Everything below is a consequence of it.
+  for (const [w, h] of [[400, 400], [800, 300], [300, 800], [222, 197], [1024, 1024]]) {
+    near(span(w, h), Math.min(w, h) / 1.12, `${w}x${h}`, 1e-9);
+  }
+});
+
+test('a square still lands exactly where the live canvas would draw it', () => {
+  // takeShot() renders SHOT_MAX x SHOT_MAX and the card scales it with
+  // object-fit: contain. This is the assertion that pairing is exact - and it is
+  // exact for *every* stage shape, which is what a matched-aspect still was not.
+  const SHOT = 450;
+  const contain = (bw, bh, iw, ih) => Math.min(bw / iw, bh / ih);
+  for (const [bw, bh] of [[222, 197], [222, 257], [382, 217], [242, 357], [302, 277], [100, 700]]) {
+    const still = span(SHOT, SHOT) * contain(bw, bh, SHOT, SHOT);
+    near(still, span(bw, bh), `a ${bw}x${bh} stage`, 1e-9);
+  }
+});
+
+test('a still shaped like the card does not, which is the bug this replaced', () => {
+  // Kept as a test rather than a comment: it is the reason the square is not an
+  // arbitrary choice, and someone restoring "the card's own proportions" for the
+  // obvious-sounding reason would otherwise find nothing red.
+  const SHOT = 450;
+  // A card taller than it is wide, whose stage is wider than it is tall once the
+  // filename comes off - which is the ordinary case, not a contrived one.
+  const [cw, ch] = [240, 300];
+  const [bw, bh] = [222, 257];
+  const iw = Math.round(SHOT * (cw / ch)), ih = SHOT;
+  const matched = span(iw, ih) * Math.min(bw / iw, bh / ih);
+  assert.ok(Math.abs(matched / span(bw, bh) - 1) > 0.05,
+    'a card-shaped still now agrees with the live canvas - if that is a real fix, '
+    + 'this test is the thing to delete, not the square');
+});
+
+test('the sphere never leaves the frame, which is what the margin buys', () => {
+  // FIT_MARGIN is air, and the air has to be air. A sphere wider than the box is
+  // a model clipped at the edge, and on a bounding sphere that is a corner of the
+  // part cut off.
+  for (const [w, h] of [[400, 400], [800, 300], [300, 800], [222, 197]]) {
+    assert.ok(span(w, h) < Math.min(w, h), `${w}x${h} clips`);
   }
 });

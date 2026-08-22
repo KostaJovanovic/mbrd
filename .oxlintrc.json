@@ -147,7 +147,8 @@
       "files": [
         "web/sw.js",
         "web/assets/js/optimize/media-worker.js",
-        "web/assets/js/import/tiff-worker.js"
+        "web/assets/js/import/tiff-worker.js",
+        "web/assets/js/mesh/occt-worker.js"
       ],
       "env": {
         "worker": true,

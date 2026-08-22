@@ -49,7 +49,7 @@
 // same reason there is one renderer at all: two would disagree.
 
 import { readToken } from '../util.ts';
-import { board, adjustFilter, itemCrop, itemFlip } from '../state.ts';
+import { board, adjustFilter, itemCrop, itemFlip, itemRotate, itemMatte } from '../state.ts';
 import { itemBounds } from '../geometry.ts';
 import { assetURL, getAsset } from '../storage/assets.ts';
 import { paperMm, toUnits } from '../measure.ts';
@@ -62,6 +62,8 @@ import type { RouteOpts } from '../web-route.ts';
 // but a major every fifth mark in a PNG and every fourth on screen would be two
 // different grids.
 import { boardGridStep, MAJOR, MAJOR_WEIGHT, harshGrid } from '../canvas/grid.ts';
+import { cutout } from '../canvas/matte.ts';
+import { surface } from '../canvas/surface.ts';
 import { fitMode } from '../canvas/renderers.ts';
 import { noteWords } from '../canvas/note-model.ts';
 import { tiltOf } from '../canvas/items.ts';
@@ -578,6 +580,8 @@ function paintNote({ ctx, it, w, h, look, scale }: Paint) {
  *
  *   meta.crop     the source rectangle, through itemCrop()
  *   meta.flip     which way round it is hung, through itemFlip()
+ *   meta.rotate   the quarter turn, through itemRotate()
+ *   meta.matte    the background removal, through prepare() below
  *   meta.adjust   the grade, through adjustFilter() - the *same string* the card
  *                 puts on --item-filter, which is why that builder moved down to
  *                 board-model.ts
@@ -586,7 +590,11 @@ function paintNote({ ctx, it, w, h, look, scale }: Paint) {
  */
 async function paintMedia({ ctx, it, w, h, look, scale }: Paint) {
   const hash = pixelHash(it);
-  const img = hash ? await loadImage(assetURL(hash)) : null;
+  const raw = hash ? await loadImage(assetURL(hash)) : null;
+  // The picture to draw, and the rectangle of it to take. Normally the file and
+  // its crop; on a matted card a knocked-out copy of that rectangle, already cut
+  // out, whose whole area is the region. See prepare().
+  const img = raw && await prepare(it, raw);
   if (img) {
     // A cut-out is drawn without its rounded clip as well as without its card.
     // The clip is a corner radius on the *box*, and the box is the thing a
@@ -614,9 +622,18 @@ async function paintMedia({ ctx, it, w, h, look, scale }: Paint) {
     // centred on the origin and so mirrors about the card's own middle.
     const flip = itemFlip(it);
     if (flip) ctx.scale(flip.x ? -1 : 1, flip.y ? -1 : 1);
+    // The quarter turn, inside the mirror and outside the fit - which is the
+    // order the three compose in everywhere else: the crop cuts the source, the
+    // turn turns what is left, and the mirror turns that. The box handed to
+    // drawFitted is swapped for a quarter turn so that what lands after the
+    // rotation is the card's own w x h; 180 needs no swap, which is the whole of
+    // why `quarter` is not just `!!rot`.
+    const rot = itemRotate(it);
+    if (rot) ctx.rotate(rot * Math.PI / 180);
+    const quarter = rot === 90 || rot === 270;
     const filter = look.detail === 'full' ? adjustFilter(it) : null;
     if (filter) ctx.filter = filter;
-    drawFitted(ctx, img, it, w, h);
+    drawFitted(ctx, img, it, quarter ? h : w, quarter ? w : h);
     if (filter) ctx.filter = 'none';
     ctx.restore();
     if (look.detail === 'full') captionBar(ctx, it, w, h, look, scale);
@@ -701,21 +718,91 @@ function captionBar(
   ctx.restore();
 }
 
+/** A picture ready to draw: the source, its size, and whether the crop is spent. */
+type Ready = {
+  src: CanvasImageSource, iw: number, ih: number, cropped: boolean,
+};
+
 /**
- * Draw `img` into the w x h box centred on the origin, through the item's crop
- * and its object-fit.
+ * The long edge a cut-out picture is masked at, for the export.
+ *
+ * Not the display copy's ceiling: this is the export, which is the one path in
+ * the app where the point is resolution the screen never had.
+ *
+ * It bounds the *canvas the mask is composited onto*, not the work the model
+ * does - the model reads a 320x320 square whatever it is given (see SIDE in
+ * canvas/matte.ts), so this costs one scaled draw rather than more inference.
+ * What it buys is the edge: a mask stretched from 320 to 2048 is as soft as that
+ * arithmetic allows, and stretching it to 6000 would only make the softness
+ * bigger without making it better.
+ */
+const MATTE_EXPORT_MAX = 2048;
+
+/**
+ * The picture as it should be drawn, with the background taken out if it is.
+ *
+ * The common case is the file itself and its crop, unchanged - `cropped: false`
+ * means drawFitted still has the rectangle to apply. A matted card is the one
+ * case that cannot work that way: the removal is pixels, so the pixels have to
+ * exist somewhere, and they are made here on a surface of their own.
+ *
+ * **The model runs on the cropped region, not on the whole file**, and that is
+ * the thing to get right rather than the obvious optimisation. A saliency model
+ * answers "what is this a picture of" about whatever it is shown, so running it
+ * on the full frame and cropping afterwards asks it about a photograph the
+ * person is not looking at - and on a tight crop the two answers are routinely
+ * different subjects. Cropping first makes the export and the card the same
+ * picture, which is the whole contract of this function.
+ *
+ * The turn is not applied here and does not need to be: paintMedia() rotates the
+ * context, so the mask travels with the pixels it was computed from. It is the
+ * one difference from canvas/display.ts, which turns before it cuts because it
+ * is baking a bitmap rather than driving a transform - and the model's answer is
+ * near enough orientation-stable that the two agree.
+ *
+ * Falls back to the untouched picture whenever any step declines - no surface,
+ * no WebGL, a runtime that would not load. An export with the background still
+ * on it is a worse picture than the card; a missing card is worse than both.
+ */
+async function prepare(it: Item, img: HTMLImageElement): Promise<Ready | null> {
+  const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+  if (!iw || !ih) return null;
+  const plain: Ready = { src: img, iw, ih, cropped: false };
+  if (!itemMatte(it)) return plain;
+  const crop = itemCrop(it);
+  const sx = crop ? Math.round(crop.x * iw) : 0;
+  const sy = crop ? Math.round(crop.y * ih) : 0;
+  const sw = Math.max(1, crop ? Math.round(crop.w * iw) : iw);
+  const sh = Math.max(1, crop ? Math.round(crop.h * ih) : ih);
+  const scale = Math.min(1, MATTE_EXPORT_MAX / Math.max(sw, sh));
+  const w = Math.max(1, Math.round(sw * scale));
+  const h = Math.max(1, Math.round(sh * scale));
+  const face = surface(w, h);
+  if (!face) return plain;
+  face.ctx.drawImage(img, sx, sy, sw, sh, 0, 0, w, h);
+  if (!await cutout(face, w, h)) return plain;
+  return { src: face.canvas, iw: w, ih: h, cropped: true };
+}
+
+/**
+ * Draw a prepared picture into the w x h box centred on the origin, through the
+ * item's crop and its object-fit.
  *
  * The crop is a rectangle in *source* fractions (itemCrop), so it selects the
  * region before the fit decides how that region meets the card. That order is
  * the one the app uses: canvas/display.ts bakes the crop into the display copy
  * and object-fit then works on what is left.
+ *
+ * `cropped` on the picture is what says the rectangle has already been taken -
+ * a matted card arrives here as a canvas that *is* the crop, and applying it a
+ * second time would cut a crop out of a crop.
  */
 function drawFitted(
-  ctx: CanvasRenderingContext2D, img: HTMLImageElement, it: Item, w: number, h: number,
+  ctx: CanvasRenderingContext2D, img: Ready, it: Item, w: number, h: number,
 ) {
-  const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+  const { src, iw, ih } = img;
   if (!iw || !ih) return;
-  const crop = itemCrop(it);
+  const crop = img.cropped ? null : itemCrop(it);
   const sx0 = crop ? crop.x * iw : 0;
   const sy0 = crop ? crop.y * ih : 0;
   const sw0 = crop ? crop.w * iw : iw;
@@ -724,13 +811,13 @@ function drawFitted(
   if (fitMode(it) === 'contain') {
     const s = Math.min(w / sw0, h / sh0);
     const dw = sw0 * s, dh = sh0 * s;
-    ctx.drawImage(img, sx0, sy0, sw0, sh0, -dw / 2, -dh / 2, dw, dh);
+    ctx.drawImage(src, sx0, sy0, sw0, sh0, -dw / 2, -dh / 2, dw, dh);
     return;
   }
   // Cover: fill the card and take the overflow off the middle of the crop.
   const s = Math.max(w / sw0, h / sh0);
   const sw = w / s, sh = h / s;
-  ctx.drawImage(img, sx0 + (sw0 - sw) / 2, sy0 + (sh0 - sh) / 2, sw, sh, -w / 2, -h / 2, w, h);
+  ctx.drawImage(src, sx0 + (sw0 - sw) / 2, sy0 + (sh0 - sh) / 2, sw, sh, -w / 2, -h / 2, w, h);
 }
 
 /**

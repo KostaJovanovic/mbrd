@@ -1031,6 +1031,71 @@ export function flipTransform(it: unknown): string | null {
   return f ? `scale(${f.x ? -1 : 1}, ${f.y ? -1 : 1})` : null;
 }
 
+/**
+ * Which quarter turn a picture is hung at, or null for the way it arrived.
+ *
+ * 90, 180 or 270, clockwise. Not an arbitrary angle: an arbitrary angle is
+ * *straightening*, which needs the crop held inside the rotated bounds and is a
+ * different feature with a different control. This is the one somebody means
+ * when a phone wrote the photograph on its side.
+ *
+ * **Baked into the display copy, unlike the mirror.** itemFlip() above argues at
+ * length that a mirror stays a compositor transform because it costs nothing at
+ * any size - and the reason that argument does not carry here is one word:
+ * a quarter turn *swaps the box*. A CSS-transformed card would have the picture
+ * turned and its layout box, its object-fit arithmetic, the aspect it adopts on
+ * load and its far-zoom twin all still the shape of the untouched file. So the
+ * turn goes where the crop goes (canvas/display.ts), and every one of those
+ * carries on working without knowing this exists. It costs one WebP per turn of
+ * a picture, held for the session, which is what a crop costs.
+ *
+ * **The turn is applied after the crop and before the mirror**, and the order is
+ * load-bearing: `meta.crop` stays four fractions of the *source*, so a reader
+ * that carries `meta.rotate` through without understanding it still cuts the
+ * right slice out of the right photograph. See paint() in ui/darkroom.ts, which
+ * maps between the two coordinate spaces in exactly two places.
+ *
+ * Null for 0 and for anything that is not one of the three, so a picture turned
+ * back to where it started carries no key - the rule itemCrop() applies to a
+ * full frame, itemAdjust() to a neutral grade and itemFlip() to an unmirrored
+ * picture. Rounded to the nearest quarter rather than refused outright, since
+ * `270.0000001` out of somebody's file plainly means three quarters.
+ */
+export function itemRotate(it: unknown): 90 | 180 | 270 | null {
+  if (!isRecord(it) || !isRecord(it.meta)) return null;
+  const n = Number(it.meta.rotate);
+  if (!Number.isFinite(n)) return null;
+  // Modulo after rounding, and the second `+ 360` is for a negative: a turn
+  // written as -90 is three quarters, and `-90 % 360` is -90 in JavaScript.
+  const q = ((Math.round(n / 90) * 90) % 360 + 360) % 360;
+  return q === 90 || q === 180 || q === 270 ? q : null;
+}
+
+/**
+ * Whether this picture is shown with its background taken out.
+ *
+ * A flag and nothing else. The cut itself is canvas/matte.ts - a salient-object
+ * model that decides which pixels are the subject - and there is no setting on
+ * it, because there is no number a person could turn that would help. It was a
+ * flood-fill tolerance for one version and that dial is gone with the fill: a
+ * knob that only chooses which way a bad technique fails is worse than no knob,
+ * and the model has nothing of the kind to expose.
+ *
+ * **Baked into the display copy**, for the reason itemRotate() above is and one
+ * more: there is no CSS that does this. A mask is pixels, so pixels are where it
+ * has to happen, and the copy is where this app already keeps derived pixels.
+ *
+ * Truthiness rather than `=== true`, the same reading itemFlip() and isLocked()
+ * give their flags: this comes out of somebody else's file, and `"matte": 1`
+ * plainly means cut out. False - rather than null - because it is a boolean and
+ * every caller uses it as one; the *key* is still absent when it is off, which
+ * is patchMeta()'s job rather than this one's.
+ */
+export function itemMatte(it: unknown): boolean {
+  if (!isRecord(it) || !isRecord(it.meta)) return false;
+  return !!it.meta.matte;
+}
+
 /** The longest a single tag may be, and the most one item may carry. */
 export const TAG_MAX = 24;
 export const TAGS_PER_ITEM = 12;

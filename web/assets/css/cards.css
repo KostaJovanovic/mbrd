@@ -613,7 +613,33 @@
    dragging it turns the model rather than moving the item. Everything around
    it - the padding, the name - still drags the card, which is the same bargain
    the audio scrubber and the link anchor make. */
-.card-model { gap: 6px; }
+/* Tighter than a card of type, and that is the difference between a plate and a
+   mount. The 15/16 in items.css is set for a card whose contents are *lines* -
+   a filename, a duration, a URL - where the margin is what stops the text
+   reading as though it had been printed off the edge. A model is a picture, and
+   the picture is already inset twice before this padding is reached: it is
+   fitted to its bounding *sphere*, which for anything longer than it is wide
+   leaves air on the long axis, and FIT_MARGIN in canvas/model.ts adds more so a
+   cube seen corner-on cannot clip. Stacking a plate's margin on top of those
+   two was three insets doing one job, and what it drew was a small part in the
+   middle of a large card.
+
+   **Struck from the rule rather than typed in as a number.** The inner rule is
+   printed at --card-rule-gap from the edge, and that dial moves with the whimsy
+   tier - 5px in the middle and 8px at the ornate end. A flat 8 here would have
+   been a comfortable margin on most boards and the model sitting exactly *on*
+   the line at the top of the dial, which is the kind of thing that is only ever
+   found in a screenshot. Four pixels of air inside the rule is the whole rule:
+   the drawing clears the line by the same amount whatever the tier says.
+
+   The name keeps the horizontal margin it always had - it is still a line of
+   type and still wants to sit inside the rule rather than under its ends. */
+.card-model {
+  gap: 6px;
+  --card-pad-y: calc(var(--card-rule-gap) + 4px);
+  --card-pad-x: calc(var(--card-rule-gap) + 4px);
+}
+.card-model .card-name { padding-inline: 6px; }
 .model-stage {
   flex: 1;
   min-height: 0;
@@ -673,6 +699,35 @@
 /* Far out, a turned model is a grey smudge and the canvas is the most
    expensive thing on the card. Same rung as every other detail (viewport.js). */
 #world.zoom-far .model-stage { visibility: hidden; }
+
+/* "No card" on a model - the third reading of the promise the cut-out and the
+   sticky make, which is that the paper goes and what was on it stays. Here the
+   part stays: same size, same place, same view, standing on the board.
+
+   Said here rather than beside the [data-bare] rules in items.css for the reason
+   the sticky's are said next to the sticky's - what has to be cancelled is
+   written here and nowhere else, and `.item[data-bare]` and
+   `.item[data-type="model"]` have the same weight, so a cancel in the other file
+   would win or lose on which sheet the <link> order loaded last.
+
+   The padding goes with it, and that is not the same decision as the one above.
+   On a card the margin is the mount; with no card there is nothing to be
+   mounted on, and a part floating a few pixels inside an invisible box is a
+   part that does not line up with the box you are dragging. Bare means the
+   drawing fills the item, so what you grab is what you see.
+
+   The caption goes too, on the cut-out's terms exactly - see the note beside
+   `.item[data-bare] .item-bar` in items.css. "No card" has to mean no card, and
+   a filename on a hairline strip is the one edge of a frame that never left.
+   The still is the same picture as the stage, so both are covered by one rule
+   and neither needs to know which is showing. */
+.item[data-type="model"][data-bare] .card {
+  background: none;
+  box-shadow: none;
+  padding: 0;
+}
+.item[data-type="model"][data-bare] .card::after { content: none; }
+.item[data-type="model"][data-bare] .card-name { display: none; }
 
 /* ---- The links that can become players (canvas/embed.js) -----------------
    The button is a standing offer, not a state: nothing has been requested from

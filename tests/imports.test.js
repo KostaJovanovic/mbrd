@@ -21,10 +21,15 @@ import { JS, walk } from './helpers.js';
  * they are exempt from the import loop below and they are what the parse test
  * at the foot of this file reads.
  */
-const CLASSIC_WORKERS = ['optimize/media-worker.js', 'import/tiff-worker.js'];
+const CLASSIC_WORKERS = [
+  'optimize/media-worker.js', 'import/tiff-worker.js', 'mesh/occt-worker.js',
+];
+
+/** Workers that are ES modules but are still workers, and so still not units. */
+const MODULE_WORKERS = ['canvas/matte-worker.js'];
 
 /**
- * The four documented exceptions, none of which is a unit.
+ * The six documented exceptions, none of which is a unit.
  *
  *   main.js                     constructs the Viewport against real elements
  *   ui/appearance.js            holds :root and the theme-colour <meta> at
@@ -39,11 +44,30 @@ const CLASSIC_WORKERS = ['optimize/media-worker.js', 'import/tiff-worker.js'];
  *                               itself to `self.UTIF` and reads `self.pako`
  *                               back out, which is importScripts' contract and
  *                               not a module's.
+ *   canvas/matte-worker.js      the fifth, and the argument is not the same as
+ *                               the two above - it *is* an ES module, spawned
+ *                               with `{ type: 'module' }`, because ONNX
+ *                               Runtime's wasm entry is one. What exempts it is
+ *                               the other half of those entries: a worker's
+ *                               whole contract is that it installs
+ *                               `self.onmessage` at the top level and answers
+ *                               messages. There is no init*() shape that would
+ *                               fix it, because there is nobody on this side to
+ *                               call one. It reaches no DOM and holds no
+ *                               element; it reads `self`, which is the thing it
+ *                               is. The parse test at the foot of this file is
+ *                               what covers it instead.
+ *   mesh/occt-worker.js         the sixth, and a classic one on the first two's
+ *                               terms exactly: occt-import-js is an Emscripten
+ *                               UMD bundle that defines a global factory and
+ *                               resolves its own .wasm beside itself, which is
+ *                               importScripts' contract. It runs the CAD kernel
+ *                               for STEP and IGES - see mesh/occt.ts.
  *
  * Anything else appearing here is a regression, not a new exception.
  */
 const DOM_ENTRY_POINTS = new Set([
-  'main.ts', 'ui/appearance.ts', ...CLASSIC_WORKERS,
+  'main.ts', 'ui/appearance.ts', ...CLASSIC_WORKERS, ...MODULE_WORKERS,
 ]);
 
 const modules = walk(JS, ['.js', '.ts'], JS)
@@ -58,8 +82,8 @@ test('every module is listed as testable or as a DOM entry point', () => {
   // Without this, the way to get an import-time `document` past this file is to
   // add a fourth name here - a one-line edit that reads like housekeeping and
   // silently exempts a module from the thing that makes the suite possible.
-  assert.equal(DOM_ENTRY_POINTS.size, 4,
-    'there are four documented DOM entry points; a fifth needs the argument '
+  assert.equal(DOM_ENTRY_POINTS.size, 6,
+    'there are six documented DOM entry points; a seventh needs the argument '
     + 'for it written into the comment above, not just the name added');
 });
 
@@ -117,8 +141,8 @@ for (const mod of modules) {
 }
 
 test('the workers parse, though nothing can import them', async () => {
-  // Both are skipped by the loop above because a classic worker cannot be
-  // imported at all, and both are excluded from the bundle - so until this the
+  // All three are skipped by the loop above because a classic worker cannot be
+  // imported at all, and all are excluded from the bundle - so until this the
   // only thing that ever looked at their syntax was CI's parse leg, which
   // reports after the push and after the deploy has started. Parsing them here
   // costs a millisecond and moves that to `npm test`.

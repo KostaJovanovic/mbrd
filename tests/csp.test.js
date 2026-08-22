@@ -421,13 +421,17 @@ test("base-uri is 'self' and not 'none', for the reason index.html gives", () =>
 // ---------------------------------------------------------------------------
 
 /**
- * The two workers allowed to run without the site policy, each derived from the
- * code that names it rather than written out here.
+ * The four workers allowed to run without the site policy, each derived from
+ * the code that names it rather than written out here.
  *
- * Two rather than one since the pdf.js worker was added: it carries an Emscripten
- * OpenJPEG build and compiles it with new WebAssembly.Module, which the policy
- * forbids - so every PDF holding a JPEG 2000 image came back as a grey card while
- * ordinary ones rendered. See the note beside the rule in web/_headers.
+ * Two of them carry somebody else's wasm and compile it with something the
+ * policy forbids: pdf.js's worker holds an Emscripten OpenJPEG build, so every
+ * PDF with a JPEG 2000 image came back as a grey card while ordinary ones
+ * rendered. Two are ours - canvas/matte-worker.js runs the background remover's
+ * model on ONNX Runtime's wasm backend, and mesh/occt-worker.js runs the CAD
+ * kernel that turns a STEP or IGES file into triangles. Both need the same
+ * capability for the same reason. See the notes beside each rule in
+ * web/_headers.
  *
  * Derived, because a URL written as a string in one file and as a path in another
  * with nothing between them is exactly the pair that drifts. A rename would leave
@@ -444,14 +448,27 @@ function spawnedWorkers() {
   const worker = /workerSrc = pdfURL\('([^']+)'\)/.exec(pdf);
   assert.ok(dir && worker, 'import/pdf.ts no longer points pdf.js at a worker of its own');
 
-  return [media[1], dir[1] + worker[1]].map(url => url.replace(/^\.?\//, '/'));
+  // Read off the constant rather than off the `new Worker(...)` call, because
+  // that call wraps it in a URL() against document.baseURI and there is no
+  // literal in it to match. The constant is why WORKER_URL must stay a plain
+  // string - a computed one would leave this rule unanchored.
+  const matte = /WORKER_URL = '([^']+)'/.exec(read(join(JS, 'canvas', 'matte.ts')));
+  assert.ok(matte, 'canvas/matte.ts no longer names a worker - is the exemption still needed?');
+
+  // On matte.ts's terms exactly, and for the same reason: a plain string, read
+  // off the constant rather than off the `new Worker(...)` call that wraps it in
+  // a URL().
+  const occt = /WORKER_URL = '([^']+)'/.exec(read(join(JS, 'mesh', 'occt.ts')));
+  assert.ok(occt, 'mesh/occt.ts no longer names a worker - is the exemption still needed?');
+
+  return [media[1], dir[1] + worker[1], matte[1], occt[1]].map(url => url.replace(/^\.?\//, '/'));
 }
 
 test('the exempted paths are the workers the app actually spawns', () => {
   const exempt = rules.filter(r => r.removed.includes('Content-Security-Policy'));
   const wanted = spawnedWorkers();
   assert.deepEqual(exempt.map(r => r.path).sort(), [...wanted].sort(),
-    'a path drops the policy that is not one of the two workers, or a worker has lost its rule '
+    'a path drops the policy that is not one of the four workers, or a worker has lost its rule '
     + '- each unlisted one is a page or a script running unprotected');
   for (const rule of exempt) {
     assert.ok(existsSync(join(WEB, rule.path.slice(1))), `${rule.path} does not exist`);

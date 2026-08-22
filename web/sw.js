@@ -12,7 +12,7 @@
 // Written out in full rather than composed from PREFIX, because save.bat bumps
 // this line by regex on every commit and would not recognise an expression.
 // tests/sw.test.js holds the two together.
-const VERSION = 'mbrd-v259';
+const VERSION = 'mbrd-v260';
 const PREFIX = 'mbrd-';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) turns the
@@ -114,6 +114,14 @@ const SHELL = [
   // while leaving the notice on the server is an installed app that does not
   // meet it. See THIRD-PARTY.md.
   './assets/cuelume-LICENSE.txt',
+  // The CAD kernel, and only its notice. occt-import-js is seven megabytes of
+  // WebAssembly and is deliberately not precached: a STEP file opened with no
+  // network falls back to the reader in mesh/step.ts, which is the degradation
+  // mesh/occt.ts is built around. The notice is here anyway, on the terms above
+  // - the LGPL asks that it accompany the library, the browser cache can hold
+  // that library across a spell offline, and fifty kilobytes is not a thing to
+  // weigh against a condition that is met or is not. See THIRD-PARTY.md.
+  './assets/vendor/occt/LICENSE.txt',
   // The three faces the same way, and for the same reason spelled the same way.
   // The OFL asks that the notice accompany the fonts; every .woff2 below is in
   // this list, so offline the app was carrying three typefaces and none of the

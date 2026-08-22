@@ -831,7 +831,11 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
   const pictureEdits: MenuEntry[] = [
     // The ellipsis is the one in this menu that means it - the row opens a
     // surface and decides nothing on its own.
-    { label: 'Crop & adjust…', icon: 'i-crop', hidden: !croppable,
+    // Named for the room rather than for two of the five things in it. It was
+    // "Crop & adjust" when those were the two; a row that lists its contents
+    // has to be renamed every time one is added, and the third time is the time
+    // somebody forgets and the menu quietly stops mentioning a feature.
+    { label: 'Edit picture…', icon: 'i-crop', hidden: !croppable,
       action: () => cmds!.editPicture(id) },
     // A radio pair drawn as two ticked entries: the current fit reads checked,
     // the other is the one click to switch to it. The icons are a mirrored

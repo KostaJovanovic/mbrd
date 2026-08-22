@@ -7,81 +7,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-const soon = fn => Promise.resolve().then(fn);
-
-/**
- * A fake `indexedDB` that lets a test dictate how the transaction ends.
- *
- * `txOutcome` is one of 'complete' | 'abort' | 'error'. `openFailures` is how
- * many times `open()` should fail before it starts succeeding, which is what
- * exercises the reconnect path.
- */
-function fakeIndexedDB({ txOutcome = 'complete', openFailures = 0 } = {}) {
-  const data = new Map();
-  let remainingFailures = openFailures;
-  // How many transactions the fake has opened, so a test can assert that a
-  // batch call really is one round trip and not a loop wearing a new name.
-  const stats = { transactions: 0 };
-
-  function makeRequest(result) {
-    const t = makeRequest.tx;
-    // A transaction ends once, after the last request in it has succeeded - the
-    // real thing commits when its request queue drains, and a fake that ended
-    // after the *first* one would let a broken batch look like a working one.
-    t.pending++;
-    const r = {};
-    soon(() => {
-      r.result = result;
-      r.onsuccess && r.onsuccess();
-      // Only after request success does the transaction reach its outcome. An
-      // early-resolving wrapper would have already resolved by now - that is
-      // exactly the bug the abort case catches.
-      soon(() => {
-        if (--t.pending > 0) return;
-        if (txOutcome === 'abort') { t.error = new Error('aborted'); t.onabort && t.onabort(); }
-        else if (txOutcome === 'error') { t.error = new Error('tx error'); t.onerror && t.onerror(); }
-        else t.oncomplete && t.oncomplete();
-      });
-    });
-    return r;
-  }
-
-  return {
-    open() {
-      const req = {};
-      soon(() => {
-        if (remainingFailures > 0) {
-          remainingFailures--;
-          req.error = new Error('open failed');
-          req.onerror && req.onerror();
-          return;
-        }
-        const store = {
-          put(v, k) { data.set(k, v); return makeRequest(v); },
-          get(k) { return makeRequest(data.get(k)); },
-          delete(k) { data.delete(k); return makeRequest(undefined); },
-          clear() { data.clear(); return makeRequest(undefined); },
-          getAllKeys() { return makeRequest([...data.keys()]); },
-        };
-        const db = {
-          objectStoreNames: { contains: () => true },
-          createObjectStore() {},
-          close() {},
-          transaction() {
-            stats.transactions++;
-            const t = { objectStore: () => store, pending: 0 };
-            makeRequest.tx = t;
-            return t;
-          },
-        };
-        req.result = db;
-        req.onsuccess && req.onsuccess();
-      });
-      return req;
-    },
-    stats,
-  };
-}
+// The fake used to live here. It moved to helpers.js when storage/matte-cache.ts
+// - a cache built on this wrapper - needed one too, because two copies of it are
+// two definitions of what IndexedDB does. Its documentation moved with it.
+import { fakeIndexedDB, soon } from './helpers.js';
 
 // Each test needs its own module instance, because idb.js caches the open
 // connection in a module-level promise. A cache-busting query gives a fresh one.

@@ -1144,26 +1144,27 @@
   <div id="viewer-body" tabindex="-1"></div>
 </dialog>
 
-<!-- The darkroom: one picture, cropped and graded.
+<!-- The darkroom: one picture, cropped, turned, graded and cut out.
 
      A separate dialog from the viewer above rather than a mode inside it, and
      the split is the same one the app makes everywhere else: the viewer's whole
      design is a table of ways to *show* an item, and none of its entries edit
-     anything. Folding a crop rectangle, eight handles and three dials into the
+     anything. Folding a crop rectangle, eight handles and four dials into the
      image entry would have made one of the seven views the size of the other
      six put together.
 
-     Nothing here is destructive. The crop is four fractions and the grade is
-     three multipliers, both stored on the item; the bytes in the board are
-     never touched, so Reset is always a way back and so is Ctrl+Z. See
-     itemCrop() in board-model.js.
+     Nothing here is destructive. The crop is four fractions, the turn is one
+     angle, the grade is three multipliers and the background removal is one
+     flag, all stored on the item; the bytes in the board are never touched, so
+     Reset is always a way back and so is Ctrl+Z. See itemCrop() in
+     board-model.js.
 
      The stage is sized by CSS and the frame inside it is positioned by
      ui/darkroom.js in percentages of the picture, so the whole surface survives
      a window resize without measuring anything. -->
 <dialog id="darkroom" aria-labelledby="darkroom-title">
   <header id="darkroom-head">
-    <h2 id="darkroom-title">Crop &amp; adjust</h2>
+    <h2 id="darkroom-title">Edit picture</h2>
     <button type="button" id="darkroom-close" aria-label="Close">
       <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-close"/></svg>
     </button>
@@ -1175,25 +1176,51 @@
        tidy: the frame is positioned in percentages, so its parent has to be
        exactly the drawn picture and not the box the picture is centred in. An
        object-fit letterbox would have made every percentage wrong by however
-       much grey was on each side. -->
+       much grey was on each side.
+
+       A quarter turn is the one case where it cannot shrink-wrap, because the
+       turned picture's layout box is still the shape it had before it turned.
+       ui/darkroom.js puts .dk-quarter and the picture's own ratio on the plate
+       and dialog.css does the rest - still no measurement, because a ratio is a
+       property of the photograph rather than of the window. -->
   <div id="darkroom-stage">
     <div id="darkroom-plate">
       <img id="darkroom-image" alt="">
       <div id="darkroom-frame" hidden>
+        <!-- The background preview, first so it paints under the thirds and the
+             handles. Inside the frame rather than over the plate because the
+             frame already *is* the region that will survive, positioned and
+             sized, so the two line up for free. Empty until something needs
+             showing; ui/darkroom.js sizes it and hides it. -->
+        <canvas id="darkroom-cutout" aria-hidden="true" hidden></canvas>
         <div class="dk-grid" aria-hidden="true"></div>
       </div>
     </div>
   </div>
-  <!-- The two mirrors. Buttons rather than a third and fourth slider, because
-       neither is a quantity: a picture is turned or it is not, and the control
-       that says so is one that stays pressed. aria-pressed is written by
-       ui/darkroom.js from the same value the picture is drawn from, so the
-       button cannot claim one thing while the plate shows another.
+  <!-- The two turns and the two mirrors. Buttons rather than sliders, because
+       none of the four is a quantity: a picture is turned or it is not, and the
+       control that says so is one you press.
+
+       The turns are a pair rather than one button stepping a quarter, so that
+       going back is one press. They are verbs and carry no aria-pressed; the
+       mirrors are toggles and do, written by ui/darkroom.js from the same value
+       the picture is drawn from, so a button cannot claim one thing while the
+       plate shows another.
 
        The word and the sentence both, and deliberately: flip and flop are the
        words asked for, they are each other's opposite in half the software that
        has them, and the title is what settles which way this one turns. -->
   <div id="darkroom-tools">
+    <button type="button" id="dk-turn-l" class="dk-tool"
+            title="Turn the picture a quarter to the left">
+      <svg class="ico dk-mirror" aria-hidden="true"><use href="assets/icons.svg#i-rotate"/></svg>
+      Left
+    </button>
+    <button type="button" id="dk-turn-r" class="dk-tool"
+            title="Turn the picture a quarter to the right">
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-rotate"/></svg>
+      Right
+    </button>
     <button type="button" id="dk-flip-x" class="dk-tool" aria-pressed="false"
             title="Mirror the picture left to right">
       <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-flip-h"/></svg>
@@ -1203,6 +1230,28 @@
             title="Mirror the picture top to bottom">
       <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-flip-v"/></svg>
       Flop
+    </button>
+    <!-- The background remover. A toggle and not a dial, because there is
+         nothing to turn: a model decides which pixels are the subject and it
+         has no setting. This was a flood-fill tolerance slider for one version
+         and the slider went with the fill - a knob that only chooses which way
+         a bad technique fails is worse than no knob. See canvas/matte.js.
+
+         ui/darkroom.js hides it outright where the model could never run - no
+         workers, or an engine that will not read a canvas back - rather than
+         disabling it, because a disabled control promises something the person
+         could do nothing about.
+
+         It shares i-cut-out with the menu's "No card", which is a different
+         thing - that one takes the card frame away and this one takes pixels
+         away. They share the glyph rather than getting one each because the two
+         never appear on the same surface (one is in the item menu, one is in
+         this dialog) and because the label is what carries the meaning here.
+         Say "background" and not "cut out" on the button for that reason. -->
+    <button type="button" id="dk-cutout" class="dk-tool" aria-pressed="false"
+            title="Take the background out and keep the subject">
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-cut-out"/></svg>
+      Remove background
     </button>
   </div>
   <div id="darkroom-dials">
@@ -1337,6 +1386,13 @@
         <span class="credits-lic">MIT</span>
         <span class="credits-by">Photopea, Nodeca</span>
         <span class="credits-why">Decodes TIFF, in a worker.</span>
+      </li>
+      <li>
+        <a href="https://github.com/kovacsv/occt-import-js" target="_blank" rel="noopener noreferrer">occt&#8209;import&#8209;js</a>
+        <span class="credits-lic">LGPL-2.1</span>
+        <span class="credits-by">Viktor Kov&#225;cs, Open CASCADE</span>
+        <span class="credits-why">Turns a STEP or IGES file, which holds surfaces
+          rather than triangles, into a model a card can draw.</span>
       </li>
       <li>
         <a href="https://github.com/ffmpegwasm/ffmpeg.wasm" target="_blank" rel="noopener noreferrer">ffmpeg.wasm</a>

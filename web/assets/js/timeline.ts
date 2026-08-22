@@ -101,7 +101,8 @@ export type Step = {
    *
    * See recordStep(): it is the cards that changed and the fields of them that
    * changed, so moving the same card twice with nothing in between is one step
-   * and moving it then recolouring it is two.
+   * and moving it then recolouring it is two. A step carrying a rule puts the
+   * rule's name in front of that - see opRunKey().
    */
   run: string,
   /**
@@ -626,15 +627,25 @@ export function recordStep(label: string, before: Snap): Step | null {
     steps.length = at;
     for (const key of [...checkpoints.keys()]) if (key > at) checkpoints.delete(key);
   }
-  // A step with a rule never merges into the one before it. Two aligns in a row
-  // are two decisions, and folding them would leave one step whose recorded
-  // parameters describe the second while its difference describes both.
-  const run = op ? '' : runKey(delta);
+  // A step with a rule collapses on the rule *and* the subject. See runKey() for
+  // the subject and opRunKey() for why the rule's name has to be in front of it.
+  const subject = runKey(delta);
+  const run = subject && op ? opRunKey(op.name, subject) : subject;
   const prev = steps[steps.length - 1];
   if (run && prev && prev.run === run) {
     prev.delta = mergeDelta(prev.delta, delta);
     prev.at = Date.now();
     prev.label = label;
+    // The *latest* rule over the merged difference, which is the whole of what
+    // makes folding a run of rules sound. The difference now runs from the state
+    // before the first arrange to the state after the last one, and these are the
+    // parameters that produced that last one - so the two agree, and rebuilding
+    // this step re-runs the arrangement somebody actually settled on.
+    //
+    // Both steps carry a rule of the same name whenever this branch is reached,
+    // because the name is in the key - so there is no case here where a rule is
+    // being dropped or one invented.
+    if (op) prev.op = op;
     // A run that folded back to nothing is not a step. Dropping it here is what
     // stops "moved it and moved it back" leaving a dot behind.
     if (!Object.keys(prev.delta).length) {
@@ -672,6 +683,38 @@ export function recordStep(label: string, before: Snap): Step | null {
   if (steps.length > TIMELINE_STEP_CAP) foldOldest(steps.length - TIMELINE_STEP_CAP);
   return step;
 }
+
+/**
+ * The run key for a step that carries a rule: the rule's name, then the subject.
+ *
+ * **A rule used to be exempt from run collapsing entirely**, on the argument
+ * that folding two aligns would leave one step whose parameters described the
+ * second while its difference described both. That is a real hazard and it is
+ * not what this does. recordStep() writes the *later* rule onto the merged step,
+ * so the parameters describe the last press and the difference runs from before
+ * the first press to after that same last press. The two agree, which is exactly
+ * the invariant the exemption was protecting - reached by keeping both ends of
+ * the run rather than by refusing to have a run at all.
+ *
+ * What the exemption cost is the case the collapsing exists for. Cycling an
+ * arrangement to see which one looks right is one decision taken over a dozen
+ * presses, and it left a dozen marks on the strip - so the three commands where
+ * repetition is most likely were the three where every repeat was written down.
+ *
+ * **The name goes in front of the subject** because the subject alone cannot
+ * tell two rules apart: an align and an arrange over the same cards move the
+ * same fields of the same ids, and merging them would produce a step claiming to
+ * be an arrange whose difference is half an align. It also keeps a rule from
+ * merging with an ordinary step, which the empty key used to do for free - a
+ * prefixed key can never equal an unprefixed one.
+ *
+ * The subject is the same one every other step uses rather than something read
+ * out of `params`, and that is what keeps this general: a rule declares a name
+ * and a bag of arguments whose shape is its own business, and asking every op
+ * author to also nominate which key holds the subject is a thing to forget. The
+ * delta already knows precisely which cards moved and in which fields.
+ */
+const opRunKey = (name: string, subject: string) => `op:${name}|${subject}`;
 
 /**
  * What makes two steps one: the ids that changed, and which of their fields.

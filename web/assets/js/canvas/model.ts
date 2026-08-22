@@ -22,7 +22,7 @@
 import { clamp } from '../util.ts';
 import { addFile, allAssets, assetURL, derivedFile, getAsset, readText } from '../storage/assets.ts';
 import { surface, surfaceToBlob } from './surface.ts';
-import { applyMaterials, meshKind, parseMesh, parseMTL, MeshError } from '../mesh.ts';
+import { applyMaterials, meshKind, readModel, parseMTL, MeshError } from '../mesh.ts';
 import { lift, isOversize } from '../consent.ts';
 import type { Mesh } from '../mesh.ts';
 import { board, bus, byId, selection, setModelShot } from '../state.ts';
@@ -105,6 +105,28 @@ const FOV = 0.79;
  * seen corner-on does, and that is the one that came out clipped.
  */
 const FIT_MARGIN = 1.12;
+
+/**
+ * How far back the camera stands to frame a sphere of `radius` in a w x h box.
+ *
+ * Exported for tests/model.test.js, which holds the one property the whole
+ * still/live arrangement rests on: **the sphere lands at `min(w, h) /
+ * FIT_MARGIN` pixels across.** It touches the narrow axis and leaves the long
+ * one slack, whatever the box's shape.
+ *
+ * That is also why takeShot() renders a *square* still. `object-fit: contain`
+ * fits the narrow axis too, so a square still composes with it exactly - and a
+ * still shaped like anything else does not, which is a model that changed size
+ * the moment you stopped turning it.
+ */
+export function frameDistance(radius: number, w: number, h: number, zoom = 1) {
+  const fit = Math.min(1, w / h);
+  return (radius * FIT_MARGIN) / (Math.tan(FOV / 2) * fit * zoom);
+}
+
+/** Half the height of the frustum at `dist`, which is the world-space measure
+ *  a pixel size is read off. */
+export const halfHeightAt = (dist: number) => dist * Math.tan(FOV / 2);
 
 const VERT = `
 attribute vec3 aPos;
@@ -359,12 +381,13 @@ async function load(item: Item): Promise<Mesh> {
 
   // Read once; if it stops at a ceiling, say what it found and read it again.
   //
-  // The asking end of the retry contract in consent.ts. parseMesh() is
-  // synchronous and cannot ask anything, and this is the nearest place that both
-  // knows the file's name and is allowed to wait - so the ceiling comes back as a
-  // throw, the question goes out here, and a yes re-parses with `lift`. The second
-  // parse is the cost of a yes and it only ever happens to a model somebody has
-  // explicitly asked for.
+  // The asking end of the retry contract in consent.ts. The readers underneath
+  // are synchronous and cannot ask anything - readModel() awaits the CAD kernel
+  // for STEP and IGES, but a worker cannot put a dialog on the page either - and
+  // this is the nearest place that both knows the file's name and is allowed to
+  // wait. So the ceiling comes back as a throw, the question goes out here, and a
+  // yes re-reads with `lift`. The second read is the cost of a yes and it only
+  // ever happens to a model somebody has explicitly asked for.
   //
   // Keyed by the asset hash rather than by a name: two cards on one file are one
   // model, and answering for the first has answered for the second.
@@ -372,10 +395,10 @@ async function load(item: Item): Promise<Mesh> {
   const name = asset.name || item.name || 'This model';
   let mesh: Mesh;
   try {
-    mesh = parseMesh(kind, buf, item.meta?.upAxis);
+    mesh = await readModel(kind, buf, item.meta?.upAxis);
   } catch (err) {
     if (!await lift(err, `mesh:${hash}`, name, 'Open it')) throw err;
-    mesh = parseMesh(kind, buf, item.meta?.upAxis, true);
+    mesh = await readModel(kind, buf, item.meta?.upAxis, true);
   }
   await paint(mesh);
   meshes.set(key, mesh);
@@ -603,11 +626,34 @@ async function takeShot(id: string): Promise<boolean> {
   if (outgrewStill(item)) return false;
   const mesh = await load(item);
 
-  // The card's own proportions, so the still drops straight into the same box
-  // without letterboxing. Falls back to square for an item with no size yet.
-  const aspect = (+item.w > 0 && +item.h > 0) ? item.w / item.h : 1;
-  const w = Math.max(1, Math.round(aspect >= 1 ? SHOT_MAX : SHOT_MAX * aspect));
-  const h = Math.max(1, Math.round(aspect >= 1 ? SHOT_MAX / aspect : SHOT_MAX));
+  // Square, whatever shape the card is, and that is the one arrangement that
+  // makes the still and the live stage the same size.
+  //
+  // The framing rule in renderShared() reduces to one line: the model's bounding
+  // sphere lands at `min(w, h) / FIT_MARGIN` pixels across. It touches the
+  // *narrow* axis and leaves the long one slack. `object-fit: contain` fits the
+  // narrow axis too - and that is exactly the trap, because the two are only the
+  // same axis when the two boxes are the same shape.
+  //
+  // They are not. This used to render at the *card's* proportions, on the
+  // reasoning that the still would then drop into the card without letterboxing.
+  // But it is not dropped into the card: it is dropped into the *stage*, which
+  // is the card less its padding, less the filename, less the gap above it. A
+  // square card has a stage wider than it is tall. So the still was framed to
+  // its own narrow axis, contain re-fitted it to a different one, and the model
+  // came out smaller than the live canvas had just drawn it - which reads as the
+  // model shrinking the moment you stop turning it.
+  //
+  // Square makes the composition exact rather than approximate: at iw = ih the
+  // sphere is SHOT_MAX / FIT_MARGIN across, contain scales by
+  // min(bw, bh) / SHOT_MAX, and the product is min(bw, bh) / FIT_MARGIN - which
+  // is what the live stage draws, for every box shape there is. It costs nothing
+  // in detail either. The model is sized to the narrow axis in both, so a square
+  // still holds *more* of it than a matched-aspect one of the same long edge;
+  // what the extra pixels hold is transparent padding, which is what WebP is
+  // best at.
+  const w = SHOT_MAX;
+  const h = SHOT_MAX;
 
   const ink = boardInk();
   const view = liveView(item);
@@ -808,8 +854,17 @@ function drawInto(stage: HTMLCanvasElement, mesh: Mesh, view: View) {
   if (!box) { box = stage.getBoundingClientRect(); stageBox.set(stage, box); }
   if (!box.width || !box.height) return;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const w = Math.max(1, Math.min(Math.round(box.width * dpr), MAX_BUFFER));
-  const h = Math.max(1, Math.min(Math.round(box.height * dpr), MAX_BUFFER));
+  // Both axes by one factor, which is what keeps the ceiling a ceiling rather
+  // than a reshape. Clamping them separately - which is what this did - turns a
+  // card big enough to reach MAX_BUFFER on its long edge into a *square* buffer:
+  // the framing in renderShared() reads the buffer's aspect, so the model was
+  // framed for a shape the canvas was not, and the browser then stretched the
+  // backing store to the element's real box. On a board zoomed in far enough it
+  // is a model drawn wide and clipped, and it goes away when you zoom out, which
+  // is the worst way for a bug to behave.
+  const scale = Math.min(1, MAX_BUFFER / Math.max(box.width * dpr, box.height * dpr));
+  const w = Math.max(1, Math.round(box.width * dpr * scale));
+  const h = Math.max(1, Math.round(box.height * dpr * scale));
 
   if (stage.width !== w || stage.height !== h) { stage.width = w; stage.height = h; }
 
@@ -900,8 +955,7 @@ function renderShared(mesh: Mesh, view: View, w: number, h: number, cssColor: st
   // 45 degree field the half-height at that distance is one radius, so the
   // sphere touched the edge and any rounding took a pixel off it. FIT_MARGIN is
   // the air around it.
-  const fit = Math.min(1, w / h);
-  const dist = (radius * FIT_MARGIN) / (Math.tan(FOV / 2) * fit * view.zoom);
+  const dist = frameDistance(radius, w, h, view.zoom);
 
   gl.uniformMatrix4fv(uni.proj, false,
     perspective(FOV, w / h, radius * 0.02, dist + radius * 4));

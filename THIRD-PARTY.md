@@ -60,8 +60,9 @@ third-party. The two are separate files for the reason the head of each states.
 | pdf.js 4.7.76 | `web/assets/vendor/pdfjs/pdf.min.mjs`, `web/assets/vendor/pdfjs/pdf.worker.min.mjs` | https://github.com/mozilla/pdf.js | Apache-2.0 | `web/assets/vendor/pdfjs/LICENSE.txt` |
 | UTIF.js 3.1.0 | `web/assets/vendor/utif/UTIF.js` | https://github.com/photopea/UTIF.js | MIT | `web/assets/vendor/utif/LICENSE.txt` |
 | pako 1.0.11 (inflate) | `web/assets/vendor/pako/pako_inflate.min.js` | https://github.com/nodeca/pako | MIT AND Zlib | `web/assets/vendor/pako/LICENSE.txt` |
+| occt-import-js 0.0.23 | `web/assets/vendor/occt/occt-import-js.js`, `web/assets/vendor/occt/occt-import-js.wasm` | https://github.com/kovacsv/occt-import-js | LGPL-2.1 | `web/assets/vendor/occt/LICENSE.txt` |
 
-Four vendored builds, none of them modified, each loaded only when a file that
+Five vendored builds, none of them modified, each loaded only when a file that
 needs it is imported and none of them in `SHELL`.
 
 **pdf.js** renders page one of a PDF — and of an `.ai`, which is a PDF — to a
@@ -80,6 +81,27 @@ compression, which Photoshop writes by default. Both run inside
 `web/assets/js/import/tiff-worker.js`, off the main thread, because the decode
 is straight-line JavaScript over every pixel of what may be a 400-megapixel
 scan. Neither touches the DOM and neither reaches any host.
+
+**occt-import-js** is Open CASCADE Technology (https://dev.opencascade.org)
+compiled to WebAssembly, and it is the only entry here whose licence changes how
+it may be loaded. STEP and IGES contain no triangles - they describe a solid as
+trimmed surfaces and the topology between them - so drawing one means running a
+geometry kernel. `web/assets/js/mesh/occt-worker.js` runs this one, off the main
+thread and with the site's Content-Security-Policy removed for that file alone;
+`web/assets/js/mesh/occt.ts` pins the version and `tests/occt-vendor.test.js`
+holds the pin to the bytes in the directory.
+
+Both the wrapper and the kernel are LGPL-2.1. This project is GPL-3.0-or-later,
+and the two are not compatible as one work - so they are not one work. The
+kernel is carried as a standalone pair of files, loaded at run time by a worker
+and never passed through esbuild, which is LGPL-2.1 section 6: a work that
+*uses* the library, relinkable against another build of it without rebuilding
+anything here, may carry terms of its own. Bundling `occt-import-js.js` into
+`web/assets/app.js` would end that and is the one thing not to do with it.
+
+This is also the only vendored build the app can do without. `mesh/step.ts` and
+`mesh/iges.ts` read both formats without it, and are what happens when the
+kernel does not load - see the head of `mesh/occt.ts`.
 
 The ffmpeg core (`@ffmpeg/core` 0.12.6, MIT over LGPL-2.1 — the npm package is
 MIT and the FFmpeg build inside it is LGPL-2.1 —

@@ -18,7 +18,7 @@ import {
   setItemsTagged,
 } from '../web/assets/js/state.ts';
 import { hash } from './helpers.js';
-import { fresh, note, photo, clip } from './state-fixtures.js';
+import { fresh, note, photo, clip, model } from './state-fixtures.js';
 
 beforeEach(() => {
   setBoardMode('desktop');
@@ -205,11 +205,22 @@ test('a note can lose its paper, and keeps its words', () => {
   assert.equal('bare' in (byId(n.id).meta || {}), false, 'stored only when true');
 });
 
+test('a model can stand on the board without its card', () => {
+  // The picture reading of the same idea. canvas/model.ts draws on a transparent
+  // buffer, so the box round a part is mostly board already - the frame round
+  // nothing that made this flag exist for cut-outs in the first place.
+  const [m] = addItems([model()]);
+  setItemBare(m.id, true);
+  assert.equal(byId(m.id).meta.bare, true);
+  setItemBare(m.id, false);
+  assert.equal('bare' in (byId(m.id).meta || {}), false, 'stored only when true');
+});
+
 test('nothing else can lose its card', () => {
   // A video without its card loses the surface its controls sit on. The list is
-  // pictures and notes - see canSetBare() in commands/item-meta.ts, which is the
-  // same list and says why - and this is the door refusing everything off it, so
-  // a flag nothing draws never reaches a file.
+  // pictures, notes and models - see canSetBare() in commands/item-meta.ts,
+  // which is the same list and says why - and this is the door refusing
+  // everything off it, so a flag nothing draws never reaches a file.
   const [v] = addItems([clip()]);
   setItemBare(v.id, true);
   assert.equal(byId(v.id).meta?.bare, undefined);
