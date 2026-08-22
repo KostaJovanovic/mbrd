@@ -247,6 +247,22 @@
   transition: border-width var(--dur-fast) var(--ease);
 }
 
+/* Except on an anchored card, which wears no ring at all.
+   The ring is not a label saying "this one" - it is the handle's edge. It
+   stands off the card by --sel-gap precisely so the grips have somewhere to
+   sit, and the grips are the first thing data-locked takes away (see
+   item-chrome.css). So on an anchored card it draws the outline of a grab that
+   cannot happen: an invitation to a drag the press will answer by panning the
+   board.
+   What says "selected" instead is the anchor mark, which is drawn on exactly
+   this condition and no other - .item[data-locked].is-selected > .item-locked,
+   item-chrome.css. One mark, and it names the reason the ring is missing rather
+   than leaving its absence to be worked out.
+   Written as border-width and not as `display: none`, so it goes through the
+   same transition every other ring uses and an item unanchored while selected
+   grows its ring rather than having one appear. */
+.item[data-locked].is-selected::before { border-width: 0; }
+
 /* The ring's geometry, in two versions of the same three names.
      --sel-edge    how far the ring's outer edge sits from the item box
      --mark-radius the curve both it and the corner marks trace: the item's own

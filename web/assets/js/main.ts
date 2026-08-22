@@ -43,6 +43,7 @@ import { homePath, isPatchPage, isNotFoundPage, openingFace } from './page.ts';
 import { Viewport } from './canvas/viewport.ts';
 import { paintGrid, paintGridOnView } from './canvas/grid.ts';
 import { initGrain, paintGrain } from './canvas/grain.ts';
+import { initFarLands } from './canvas/farlands.ts';
 import { initPaper } from './canvas/paper.ts';
 import { initMobileFrame } from './canvas/mobile-frame.ts';
 // The four painters under the cards, and the three caches they resolve out of
@@ -277,6 +278,10 @@ initAppearance({
   },
 });
 initGrain(vp);
+// Watches for the board's edge and marks it if anybody reaches it. Costs one
+// comparison per view frame and nothing at all to the rest of the app - what it
+// places is not an item. See canvas/farlands.ts.
+initFarLands(vp);
 initAudio();
 // paintGrain too: the two layouts keep their stock on different surfaces - the
 // full-bleed layer on Desktop, the sheet itself on Mobile - so a mode switch

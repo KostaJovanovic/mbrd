@@ -58,7 +58,7 @@ export const APP_CSS_ORDER = [
   'sidebar.css', 'chrome.css',
   'trash.css', 'menu.css', 'library.css', 'status.css', 'dialog.css',
   'viewer.css', 'color-picker.css', 'sticker-pad.css',
-  'mobile.css', 'quality.css',
+  'mobile.css', 'timeline.css', 'quality.css',
 ];
 
 export const appCss = () => APP_CSS_ORDER

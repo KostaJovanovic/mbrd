@@ -53,22 +53,27 @@ test('text that is not an address at all is refused', () => {
 // ---------------------------------------------------------------------------
 
 test('the first press picks an end and joins nothing', () => {
-  assert.deepEqual(connectStep(null, 'a'), { pick: 'a', connect: null, refused: false });
+  assert.deepEqual(connectStep(null, 'a'),
+    { pick: 'a', connect: null, refused: false, disarm: false });
 });
 
 test('the second press on another card joins the pair and clears the pick', () => {
-  assert.deepEqual(connectStep('a', 'b'), { pick: null, connect: ['a', 'b'], refused: false });
+  assert.deepEqual(connectStep('a', 'b'),
+    { pick: null, connect: ['a', 'b'], refused: false, disarm: true });
 });
 
 test('pressing the card you just picked is how you change your mind', () => {
   // Not a connection from a card to itself, which is a dot, and not a no-op
   // either - the pick has to be droppable without reaching for Escape.
-  assert.deepEqual(connectStep('a', 'a'), { pick: null, connect: null, refused: false });
+  assert.deepEqual(connectStep('a', 'a'),
+    { pick: null, connect: null, refused: false, disarm: false });
 });
 
 test('empty canvas drops the pick and joins nothing', () => {
-  assert.deepEqual(connectStep('a', null), { pick: null, connect: null, refused: false });
-  assert.deepEqual(connectStep(null, null), { pick: null, connect: null, refused: false });
+  assert.deepEqual(connectStep('a', null),
+    { pick: null, connect: null, refused: false, disarm: false });
+  assert.deepEqual(connectStep(null, null),
+    { pick: null, connect: null, refused: false, disarm: false });
 });
 
 test('a card no line can reach is refused, and costs nothing', () => {
@@ -78,9 +83,9 @@ test('a card no line can reach is refused, and costs nothing', () => {
   // sticker tapped by accident while a pick is standing has to leave the pick
   // exactly where it was, or a slip costs you the card you already pointed at.
   assert.deepEqual(connectStep('a', 'sticker', false),
-    { pick: 'a', connect: null, refused: true });
+    { pick: 'a', connect: null, refused: true, disarm: false });
   assert.deepEqual(connectStep(null, 'sticker', false),
-    { pick: null, connect: null, refused: true });
+    { pick: null, connect: null, refused: true, disarm: false });
 });
 
 test('refusing is not the same as pressing empty canvas', () => {
@@ -94,22 +99,40 @@ test('an unjoinable end is refused before the same-card case', () => {
   // Order matters where the two overlap: tapping the picked card again means
   // "change my mind", but a sticker cannot have been picked in the first place,
   // so there is no mind to change and nothing to drop.
-  assert.deepEqual(connectStep('s', 's', false), { pick: 's', connect: null, refused: true });
+  assert.deepEqual(connectStep('s', 's', false),
+    { pick: 's', connect: null, refused: true, disarm: false });
 });
 
-test('nothing in the step ever disarms', () => {
-  // The property the whole mode hangs on: staying armed after a pair is what
-  // makes joining five things one trip to the toolbar rather than five. So
-  // there is no case here that says stop - the button and Escape are the two
-  // ways out, and both of them are things somebody did on purpose.
-  const cases = [[null, 'a'], ['a', 'b'], ['a', 'a'], ['a', null], [null, null]];
-  for (const [from, id] of cases) {
-    const out = connectStep(from, id);
-    assert.deepEqual(Object.keys(out).sort(), ['connect', 'pick', 'refused'],
-      'the step reports a pick, a pair and a refusal, and has no way to say "disarm"');
+test('a finished pair is the only press that puts the tool down', () => {
+  // The rule the mode now hangs on, and it is the reverse of the one it shipped
+  // with: a tester who drew one line went on clicking and could not work out
+  // why the board had stopped selecting. So the press that completes the pair
+  // ends the mode, and nothing else does - clicking empty canvas is "not that
+  // one", a refusal is a slip of the hand, and neither is somebody saying they
+  // are finished.
+  assert.equal(connectStep('a', 'b').disarm, true);
+  for (const [from, id, joinable] of
+    [[null, 'a', true], ['a', 'a', true], ['a', null, true],
+      [null, null, true], ['a', 'sticker', false], [null, 'sticker', false]]) {
+    assert.equal(connectStep(from, id, joinable).disarm, false,
+      `only a completed pair disarms - ${JSON.stringify([from, id])} must not`);
   }
-  for (const [from, id] of cases) {
-    assert.deepEqual(Object.keys(connectStep(from, id, false)).sort(),
-      ['connect', 'pick', 'refused'], 'and refusing does not disarm either');
+});
+
+test('Shift on the completing press keeps the tool armed', () => {
+  // The run of joins, kept as a modifier rather than as the default: the person
+  // drawing five lines holds a key, and the person drawing one does nothing.
+  assert.deepEqual(connectStep('a', 'b', true, true),
+    { pick: null, connect: ['a', 'b'], refused: false, disarm: false });
+});
+
+test('Shift changes nothing about a press that was not a pair', () => {
+  // It is read on every press because the caller has no reason to know which
+  // press will complete a pair. Everywhere else it has to be inert, or holding
+  // Shift while picking the first end would mean something nobody asked for.
+  for (const [from, id, joinable] of
+    [[null, 'a', true], ['a', 'a', true], ['a', null, true], ['a', 'sticker', false]]) {
+    assert.deepEqual(connectStep(from, id, joinable, true), connectStep(from, id, joinable),
+      `Shift is only about staying armed - ${JSON.stringify([from, id])} must not read it`);
   }
 });

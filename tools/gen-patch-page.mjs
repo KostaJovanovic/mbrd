@@ -180,11 +180,36 @@ const esc = s => s
   .replace(/”/g, '&rdquo;').replace(/…/g, '&hellip;')
   .replace(/·/g, '&middot;').replace(/‑/g, '&#8209;');
 
+/**
+ * The app's name set in the app's face, the same `.wm` the app itself uses.
+ *
+ * Runs on the *output* of inline(), after escaping and after the three marks,
+ * so the span it adds is the only unescaped markup in the string and cannot be
+ * produced by anything in patch-notes.md.
+ *
+ * Two exclusions, both because the name is not always the name. `<code>` spans
+ * are stepped over whole - `mbrd.cmds.connectSelection()` is a handle somebody
+ * types, and a wordmark in the middle of a code span is the mark appearing
+ * where it means nothing. And a preceding `.` or word character keeps it off a
+ * file extension, so "a .mbrd file" stays a format being named.
+ *
+ * Lookahead is used freely here and would be a bug in web/assets/js - this file
+ * runs in Node, not in a browser, so the Safari floor tests/engine-floor.test.js
+ * guards does not apply to it.
+ */
+const wordmark = html => html
+  .split(/(<code>[\s\S]*?<\/code>)/)
+  .map(part => part.startsWith('<code>') ? part : part.replace(
+    /(^|[^.\w])(mbrd\.?(?![\w.]))/g,
+    (_, before, name) => `${before}<span class="wm">${name}</span>`,
+  ))
+  .join('');
+
 /** The source's inline flavour as markup, escaped first so no source can inject. */
-const inline = s => esc(s)
+const inline = s => wordmark(esc(s)
   .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
   .replace(/`([^`]+)`/g, '<code>$1</code>')
-  .replace(/_([^_]+)_/g, '<em>$1</em>');
+  .replace(/_([^_]+)_/g, '<em>$1</em>'));
 
 /** One release, as the article it is on the page. */
 function buildRelease(r) {
@@ -408,7 +433,7 @@ ${entries}
   </ol>
 
   <footer class="pn-foot">
-    <span>mbrd ${esc(version)} by valjdakosta</span>
+    <span><span class="wm">mbrd</span> ${esc(version)} by valjdakosta</span>
     <a href="/">Back to the board</a>
   </footer>
  </div>

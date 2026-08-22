@@ -212,7 +212,13 @@ export function initItems(world: HTMLElement, viewport: Viewport) {
   worldEl = world;
   shadowLayerEl = world.querySelector('#item-shadows');
   vp = viewport;
-  bus.on('items', delta => { reconcile(delta); reindex(delta); sync(); });
+  // paintGrips() on both, because pinning is a fact about two items and changes
+  // without either being rebuilt. 'items' is the host deleted or undone back out
+  // of existence, which frees its riders; 'geom' is a drop, a nudge and Unstick,
+  // all of which change what a sticky is fixed to without touching the
+  // selection. It costs one question per selected id, which is what keeps it
+  // affordable on 'geom' - see the docstring.
+  bus.on('items', delta => { reconcile(delta); reindex(delta); sync(); paintGrips(); });
   bus.on('geom', ids => {
     for (const id of ids) {
       // The one per-item index write on a hot path: a moved card has to change
@@ -223,6 +229,7 @@ export function initItems(world: HTMLElement, viewport: Viewport) {
       spatial.update(id, item && cullBox(item));
     }
     sync();
+    paintGrips();
   });
   bus.on('item', id => rebuild(id));
   // A per-item fit change comes through 'item' (rebuild re-reads fitMode). The
@@ -956,7 +963,14 @@ function build(item: Item) {
   // ride its transform and hold a constant on-screen size through --iz.
   if (item.type === 'title') buildTitleControls(el);
   place(el, item);
-  if (selection.has(item.id)) { el.classList.add('is-selected'); setGrips(el, true); }
+  // Grips on the same terms paintGrips() sets them: selected, and not pinned to
+  // something. A card culled while selected is rebuilt from nothing when it
+  // comes back on screen, so the question has to be asked here too or a pinned
+  // sticker would collect handles by being panned away from and back.
+  if (selection.has(item.id)) {
+    el.classList.add('is-selected');
+    setGrips(el, !isPinned(item));
+  }
   // Written at build for the reason the connector's pick is: a card culled while
   // a filter is up is thrown away and rebuilt from nothing when it comes back on
   // screen, so a class applied only by the repaint pass would come off every
@@ -1420,12 +1434,60 @@ function placeNode(id: string) {
 function paintSelection() {
   for (const [id, el] of nodes) {
     const on = selection.has(id);
-    setGrips(el, on);
+    // Taking them *away* only. Which selected cards get grips is paintGrips()'s
+    // question, because it has a second one to ask and a clock to watch - and
+    // this walk, over every mounted node, is the one that must not run per frame.
+    if (!on) setGrips(el, false);
     el.classList.toggle('is-selected', on);
     // The twin tracks selection too, so a selected card's shadow holds still
     // under the pointer exactly as the card does (see .item-shadow in canvas.css).
     shadows.get(id)?.classList.toggle('is-selected', on);
   }
+  paintGrips();
+}
+
+/**
+ * The eight resize handles onto the selection - minus anything pinned.
+ *
+ * A note or sticker fixed to a card is that card's. Its place is already the
+ * card's (press it and the host moves), and its size is the same sentence one
+ * dimension over, so the grips it would wear are eight handles canvas/input.ts
+ * then declines. That is precisely what data-locked avoids by not drawing them,
+ * and the same bargain applies: the refusal itself lives in pressIntent() and
+ * never here, because a paint pass that was the only thing standing between a
+ * pointer and an item's geometry would be one missed repaint away from meaning
+ * nothing.
+ *
+ * Over the selection rather than over every mounted node, because this runs on
+ * 'geom' - which fires on every frame of a drag - and a selection is a handful
+ * of ids where `nodes` is a screenful. Deselected cards lose their grips in
+ * paintSelection(), which walks the whole map once per selection change.
+ *
+ * The timer is the settle clock, and it is the argument paintPinBadge() makes
+ * one relation over. A sticker is stuck the instant it lands but does not *pin*
+ * for ten seconds (SETTLE_MS, sticky.ts), and nothing announces the moment it
+ * does - so without this, a sticker dropped onto a photograph, which a drop
+ * leaves selected, would keep its grips for as long as it stayed selected and
+ * pressing one would move the photograph. One outstanding timer, cleared on
+ * every run, so there is nothing to cancel on a delete or a board swap: the
+ * next run finds the item unselected or gone and schedules nothing.
+ */
+let gripWatch = 0;
+function paintGrips() {
+  clearTimeout(gripWatch);
+  let soonest = 0;
+  for (const id of selection) {
+    const it = byId(id);
+    // A selected card can be culled: it has no node until it comes back on
+    // screen, and build() asks this same question when it does.
+    const el = nodes.get(id);
+    if (el) setGrips(el, !isPinned(it));
+    const left = settlesIn(it);
+    if (left && (!soonest || left < soonest)) soonest = left;
+  }
+  // +50ms, so the callback lands the far side of the comparison rather than on
+  // the exact millisecond it turns over.
+  if (soonest) gripWatch = setTimeout(paintGrips, soonest + 50);
 }
 
 /**

@@ -268,6 +268,21 @@ export type PressFacts = {
   onCard: string | null;
   /** Is that card's geometry pinned - `meta.locked`? */
   locked: boolean;
+  /**
+   * Is it a sticky fixed to a host - stuck, and past its settle?
+   *
+   * A pinned note or sticker belongs to the card under it. Its *place* is that
+   * card's already (drag it and the host moves), and its size is the same
+   * question one dimension over: a corner drag on one is a corner drag on
+   * something the pointer does not have hold of.
+   *
+   * Separate from `locked`, and answered differently below, because the two are
+   * different refusals. A locked card is immovable on its own account and the
+   * press pans, as a press on bare board does. A pinned sticky is not immovable
+   * at all - it moves with its host - so a grip press on one falls through and
+   * means what every other press on it means.
+   */
+  pinned: boolean;
   /** Is it unpicked, so that a drag would have to select it first? */
   needsTapFirst: boolean;
   /** Is it already in the selection? */
@@ -291,7 +306,9 @@ export type PressFacts = {
  *      resize drives one item off one corner and there is no defined answer for
  *      what a corner drag means across a selection. With more than one it falls
  *      through and picks the selection up like any other press on a card. A
- *      locked card has no grips to press either.
+ *      locked card has no grips to press either, and neither has a pinned
+ *      sticky: its size is the card it is fixed to, and a press on it takes
+ *      hold of that card.
  *   4. The second tap of a double tap on empty board is a marquee candidate.
  *   5. An unpicked card under a finger - or under anything at all on Mobile - is
  *      the two-step gate. A mouse on the Desktop board has no such tension: a
@@ -305,7 +322,7 @@ export function pressIntent(f: PressFacts): PressIntent {
   const middle = f.button === 1;
   if (f.onWidget && !f.spaceDown && !middle) return { kind: 'widget' };
   if (f.spaceDown || middle) return { kind: 'pan', middle };
-  if (f.onGrip && f.onCard && f.selectionSize <= 1 && !f.locked) {
+  if (f.onGrip && f.onCard && f.selectionSize <= 1 && !f.locked && !f.pinned) {
     return { kind: 'resize', id: f.onCard };
   }
   if (f.doubleTapDrag) return { kind: 'marqueeDrag' };
@@ -1209,7 +1226,7 @@ type InputCommands = {
   // Read straight from state.ts on the pointer path - the flag is state, not a
   // command - so what is wanted here is only the way *out*, for Escape.
   toggleMultiSelect?(): void,
-  connectTap?(id: string | null): boolean,
+  connectTap?(id: string | null, sticky?: boolean): boolean,
   connectionUnder?(at: Point): { a: string, b: string } | null,
   pickConnection?(at: Point): void,
   clearActiveConnection?(): void,
@@ -1943,7 +1960,14 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // an end completes on the press and never becomes a drag. cmds.connectTap
     // answers false on every ordinary board, so what this costs the hot path is
     // one boolean.
-    if (cmds.connectTap?.(id)) {
+    //
+    // The Shift key goes with it, and this is the only place that has it: a pair
+    // completed with Shift held keeps the tool armed for the next one, which is
+    // the run of joins that used to be the default (see ui/toolbar.ts). Read off
+    // the event rather than off `intent`, because the connector is answered
+    // before pressIntent() ever runs - the additive flag it would fold Shift
+    // into is about selection, and while the tool is out this press is not.
+    if (cmds.connectTap?.(id, e.shiftKey)) {
       pointers.delete(e.pointerId);
       return;
     }
@@ -2027,6 +2051,12 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       onGrip: !!grip,
       onCard: id,
       locked: !!id && isLocked(byId(id)),
+      // isPinned(), not stuckTo(): a sticker dropped three seconds ago is still
+      // lying loose on its host and is still the thing you reached for, so its
+      // grips are still its own. It is the same clock canvas/items.ts draws them
+      // by, asked at the same moment, so the handles on screen and the handles
+      // this will honour are one answer.
+      pinned: !!id && isPinned(byId(id)),
       needsTapFirst: !!id && needsTapFirst(id),
       wasSelected: !!id && selection.has(id),
       selectionSize: selection.size,

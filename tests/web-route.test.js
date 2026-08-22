@@ -19,8 +19,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  routeConnection, anchorFor, blockOf, trim, pathData,
-  CLEARANCE, STUB, TURN_COST, MAX_OBSTACLES,
+  routeConnection, anchorFor, anchorsFor, blockOf, trim, pathData,
+  CLEARANCE, STUB, TURN_COST, MAX_OBSTACLES, PULL_CLEARANCE, OVERLAP_COST,
 } from '../web/assets/js/web-route.ts';
 
 const card = (x, y, w = 100, h = 80, rot = 0) => ({ id: `${x},${y}`, x, y, w, h, rot });
@@ -453,4 +453,138 @@ test('a raised clearance is room the route actually keeps', () => {
   const room = CLEARANCE + 22;
   const { points } = routeConnection(a, b, [mid], { shape: 'taut', clearance: room });
   assertClearsDiag(points, mid, room - 1, 'soft');
+});
+
+// ---------------------------------------------------------------------------
+// Four ways out, not one
+// ---------------------------------------------------------------------------
+
+test('every face is offered, best first', () => {
+  const from = card(0, 0);
+  const out = anchorsFor(from, card(500, 40));
+  assert.equal(out.length, 4, 'four faces, always');
+  assert.ok(out[0].edge.x > from.x, 'the dominant axis still picks the first');
+  const xs = new Set(out.map(p => p.edge.x));
+  const ys = new Set(out.map(p => p.edge.y));
+  assert.ok(xs.size > 1 && ys.size > 1, 'the four are four different faces');
+  assert.deepEqual(out[0], anchorFor(from, card(500, 40)),
+    'the single-answer door is the head of the list');
+});
+
+test('a sealed face is not a sealed route', () => {
+  // The case the elbow used to be reached by, and the whole reason the faces
+  // escalate. The two cards are level, so the dominant axis sends the route out
+  // of the right of one and the left of the other - and a tall card parked flat
+  // against that face shuts it. Three other ways out were open the whole time.
+  const a = card(0, 0), b = card(700, 0);
+  const wall = card(90, 0, 20, 900);
+  const { points } = routeConnection(a, b, [wall]);
+  assertOrthogonal(points, 'sealed');
+  assertClears(points, wall, 0, 'sealed');
+});
+
+test('a card lying over an end is still the one case that concedes', () => {
+  // The face escalation must not turn the honest elbow into an infinite search:
+  // a card on top of an end is not something the route passes, it is something
+  // the route arrives under, and no way out of a sealed box exists to find.
+  const a = card(0, 0), b = card(600, 0);
+  const lid = card(0, 0, 400, 400);
+  const { points } = routeConnection(a, b, [lid]);
+  assertOrthogonal(points, 'covered');
+  assert.ok(points.length >= 2, 'a line is still drawn');
+});
+
+// ---------------------------------------------------------------------------
+// The fan at a shared face
+// ---------------------------------------------------------------------------
+
+test('slots spread the endpoints along the face they share', () => {
+  const from = card(0, 0), to = card(500, 0);
+  const one = anchorsFor(from, to, { index: 0, count: 3 })[0];
+  const two = anchorsFor(from, to, { index: 1, count: 3 })[0];
+  const three = anchorsFor(from, to, { index: 2, count: 3 })[0];
+  assert.equal(one.edge.x, two.edge.x, 'the same face');
+  assert.ok(one.edge.y < two.edge.y && two.edge.y < three.edge.y,
+    'and three distinct places on it, in slot order');
+  const box = blockOf(from);
+  for (const p of [one, three]) {
+    assert.ok(p.edge.y > box.y0 && p.edge.y < box.y1, 'never off the end of the face');
+  }
+});
+
+test('the middle slot is the endpoint every unslotted route already had', () => {
+  const from = card(0, 0), to = card(500, 0);
+  assert.deepEqual(anchorsFor(from, to, { index: 0, count: 1 })[0], anchorFor(from, to),
+    'one line meeting a card is still the middle of the face');
+});
+
+test('two lines to the same card do not leave from the same point', () => {
+  const hub = card(0, 0);
+  const up = routeConnection(hub, card(500, -30), [], { fromSlot: { index: 0, count: 2 } });
+  const down = routeConnection(hub, card(500, 30), [], { fromSlot: { index: 1, count: 2 } });
+  assert.notDeepEqual(up.points[0], down.points[0]);
+});
+
+// ---------------------------------------------------------------------------
+// Crossing is fine, lying on top of each other is not
+// ---------------------------------------------------------------------------
+
+test('a route gets off a line that is already there', () => {
+  // Level cards with a straight run between them, and that exact run already
+  // occupied. Nothing is refused, so a route still exists; what it must not do
+  // is draw itself on top of what is there.
+  const a = card(0, 0), b = card(600, 0);
+  const drawn = routeConnection(a, b, []);
+  const again = routeConnection(a, b, [], { avoid: [drawn.points] });
+  assertOrthogonal(again.points, 'avoid');
+  // Measured as length rather than as "no leg at all on that line", because the
+  // two stubs are on it by construction: both routes arrive at the same two
+  // cards, and the last units into a face are where the line is going. What the
+  // cost is for is the long run between them.
+  let along = 0;
+  for (let i = 1; i < again.points.length; i++) {
+    const p = again.points[i - 1], q = again.points[i];
+    if (Math.abs(p.y) < 1e-3 && Math.abs(q.y) < 1e-3) along += Math.abs(q.x - p.x);
+  }
+  assert.ok(along <= STUB * 2 + 1,
+    `the second route ran ${along} units of the same corridor: ${JSON.stringify(again.points)}`);
+});
+
+test('crossing costs nothing', () => {
+  // A line straight across the corridor, at right angles to it. The route
+  // through is unchanged, because a crossing is what every diagram does.
+  const a = card(0, 0), b = card(600, 0);
+  const across = [{ x: 300, y: -400 }, { x: 300, y: 400 }];
+  assert.deepEqual(
+    routeConnection(a, b, [], { avoid: [across] }).points,
+    routeConnection(a, b, []).points,
+  );
+});
+
+test('nothing to avoid is the route this always drew', () => {
+  const a = card(0, 0), b = card(600, 300), mid = card(300, 150, 200, 160);
+  const plain = routeConnection(a, b, [mid]);
+  assert.deepEqual(routeConnection(a, b, [mid], { avoid: [] }).points, plain.points);
+  assert.deepEqual(routeConnection(a, b, [mid], { avoid: undefined }).points, plain.points);
+});
+
+test('an overlap is priced, never refused', () => {
+  // The corridor between two cards is the only way through and it is already
+  // occupied. A cost that had become a ban would leave this with no route.
+  const a = card(0, 0), b = card(700, 0);
+  const top = card(350, -180, 200, 200), bottom = card(350, 180, 200, 200);
+  const first = routeConnection(a, b, [top, bottom]);
+  const second = routeConnection(a, b, [top, bottom], { avoid: [first.points] });
+  assertOrthogonal(second.points, 'priced');
+  assertClears(second.points, top, 0, 'priced');
+  assertClears(second.points, bottom, 0, 'priced');
+});
+
+test('the two margins say what they each mean', () => {
+  assert.ok(PULL_CLEARANCE < CLEARANCE,
+    'the string is pulled tighter than the corridor was found');
+  assert.ok(STUB < CLEARANCE,
+    "the stub's own header says so, and the two disagreed for a while");
+  assert.ok(OVERLAP_COST > 1,
+    'running along another line costs more than running anywhere else');
 });

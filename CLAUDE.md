@@ -16,6 +16,14 @@ the app. The reasoning lives elsewhere and is not repeated here:
 There is deliberately no `AGENTS.md`: conventions stated in two places disagree
 within a quarter.
 
+**Edit files with the file tools, never through the shell.** Read, Edit, Write,
+Grep, Glob — not `cat`, `sed -i`, a heredoc or a throwaway Python script, and
+this holds over any harness setting that says to prefer the shell. The reason is
+review: a tool edit lands as a diff somebody can read, and a `sed` rewrite lands
+as an opaque command whose effect has to be reconstructed from the file
+afterwards. The shell is for commands that are commands — `npm test`, the build,
+`git`, `tools/serve.py`.
+
 ## Commands
 
 ```bash
@@ -47,6 +55,10 @@ header.
 Generators, run when their source changes:
 `node tools/gen-formats.mjs` (→ `import/formats.ts`), `tools/gen-stickers.mjs`
 (→ `stickers.svg`), `node tools/gen-patch-page.mjs` (→ `web/patch.html`).
+
+Two more `.mjs` under `tools/` are one-shot printers and not build steps:
+`preset-oklch.mjs` and `gen-tier-palettes.mjs` print numbers that were pasted
+into `tokens.css` by hand. Nothing regenerates from them and nothing should.
 
 **A refresh alone is not enough.** The app is TypeScript, the browser gets one
 esbuild bundle, and `index.html` loads `assets/app.js` — so an edit needs
@@ -106,6 +118,20 @@ included — `tests/sw.test.js` reads that list by pulling out single-quoted run
 - **An icon** → a `<symbol>` in `web/assets/icons.svg`, referenced by name. A
   misspelled id fails *silently* on screen; `tests/icons.test.js` is what
   catches it, in both directions.
+- **A stylesheet** → a `<link>` in `index.html`, the same place in `SHELL`
+  (`web/sw.js`), and the same place in `APP_CSS_ORDER` (`tests/helpers.js`) —
+  one list written three times, because **document order is the cascade** and
+  `quality.css` wins on it rather than on specificity. Miss the third and
+  nothing fails: every CSS test simply stops reading that sheet. `patch.html`
+  is generated and needs no edit.
+- **An id** — written in `index.html` or handed to a node at runtime by a
+  module — is how the sheets address the furniture. A rename fails *silently*:
+  the selector stays valid CSS and matches nothing. `tests/element-ids.test.js`
+  checks both directions, the job `tests/icons.test.js` does for icon names.
+- **A sound** → a recipe in `RECIPES` and a mapping from what happened to what
+  is heard in `CUES`, both `cuelume/recipes.ts`. The recipes are vendored from
+  Cuelume number for number; the cues are this app's. A press that logs nothing
+  under `mbrd.sound.log()` never reached the engine.
 - **A size ceiling** → a `CeilingId` and a risk sentence in `consent.ts`, a
   `throw oversize(...)` where the number is measured, and a `lift()` at the
   nearest async caller that knows the file. **No ceiling refuses anything on its

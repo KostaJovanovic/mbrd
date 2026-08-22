@@ -49,10 +49,23 @@
 // What is deliberately not here
 // ---------------------------------------------------------------------------
 //
-// - **Connections do not avoid each other.** Only cards are obstacles. Two
-//   lines crossing is what every diagram in existence does; making them avoid
-//   each other multiplies the cost of every route by the number of routes, for
-//   something nobody looks at.
+// - **Connections still do not avoid each other, but they no longer lie on top
+//   of each other.** This paragraph used to refuse both, on one argument: two
+//   lines crossing is what every diagram in existence does, and making routes
+//   avoid routes multiplies the cost of each by the number of them. The first
+//   half of that is right and stands - a crossing costs nothing here and never
+//   will. The second half was answering the wrong complaint. What reads as
+//   damage is not a crossing, it is a *coincidence*: two lines running the same
+//   corridor do not read as two lines, they read as one that is somehow
+//   heavier, and the second one is invisible work.
+//
+//   So only cards are obstacles, and a lattice edge that lies along a line
+//   already drawn simply costs more to travel (OVERLAP_COST, charged by the
+//   length of the overlap). Nothing is refused, so no route is ever lost to
+//   this; a route with no better answer pays the charge and draws where it was
+//   going to. The lines to avoid are handed in through `opts.avoid` by
+//   canvas/web.js, which is the half that knows there is more than one line -
+//   this file still sees exactly one route at a time.
 // - **Nothing is cached.** A path is a function of where the cards are now, the
 //   same way the web it replaced was derived rather than saved. There is
 //   nothing to invalidate and nothing to go stale. The performance rule that
@@ -102,12 +115,29 @@ import type { Point, Box, Bounds } from './geometry.ts';
 
 /**
  * Which side of a card a route leaves by: the point on the face, and the point
- * one stub out from it. See anchorFor().
+ * one stub out from it. See anchorsFor().
  */
 export type Anchor = { edge: Point, stub: Point };
 
+/**
+ * Which of the lines meeting one card's face this route is, and how many there
+ * are. See anchorsFor() for where it lands the endpoint, and canvas/web.js for
+ * who counts - this module sees one route at a time and is told.
+ */
+export type Slot = { index: number, count: number };
+
+/** The one slot a caller that has not thought about it gets: the middle. */
+const MIDDLE: Slot = { index: 0, count: 1 };
+
 /** How the look reaches the algorithm - see the header, and routeConnection(). */
-export type RouteOpts = { shape?: string, step?: number, clearance?: number };
+export type RouteOpts = {
+  shape?: string,
+  step?: number,
+  clearance?: number,
+  fromSlot?: Slot,
+  toSlot?: Slot,
+  avoid?: Point[][],
+};
 
 /** Degrees to radians, for the one place here that needs the card's own frame. */
 const RAD = Math.PI / 180;
@@ -117,8 +147,33 @@ const RAD = Math.PI / 180;
  *
  * Enough to read as clearance rather than as a line grazing an edge, and small
  * enough that two cards a normal gap apart still have a corridor between them.
+ * That last clause is the ceiling and it is arithmetic rather than taste: cards
+ * on a default board stand a grid step (64) apart, two margins have to fit
+ * inside that gap, so anything at or above 32 closes the corridor between two
+ * neighbours and every route between them starts going the long way round.
+ *
+ * Was 14, which was under half of what the gap allows and read as a line
+ * grazing the card rather than passing it.
  */
-export const CLEARANCE = 14;
+export const CLEARANCE = 22;
+
+/**
+ * The margin pull() tests the string against, which is *not* the margin the
+ * search kept clear.
+ *
+ * One number used to do both jobs and they pull opposite ways. The search wants
+ * a generous margin - that is the air between a line and a photograph. The
+ * string pull wants a mean one: it drops a turn only when it can see through
+ * the blocks it is testing, so fattening them for the search's sake leaves
+ * every taut line carrying bends it does not need. Raising the clearance made
+ * the picture stiffer, which is the opposite of what raising it was for.
+ *
+ * Split, the two say what they each mean: find the corridor generously, then
+ * pull the string through it tightly. A pulled segment may therefore pass
+ * nearer a card than the search would have - by design, and only ever on a
+ * straight run that has been checked against the real boxes.
+ */
+export const PULL_CLEARANCE = CLEARANCE / 2;
 
 /**
  * The straight run every route makes on its way out of a card before it is
@@ -127,10 +182,24 @@ export const CLEARANCE = 14;
  * Without it the first lattice line available is the card's own edge, and a
  * route would set off by sliding along the side of the card it just left -
  * which reads as the line tracing the card rather than leaving it. Larger than
- * nothing and smaller than CLEARANCE would be, so the stub of one card never
- * lands inside another card's margin more often than the card itself would.
+ * nothing and smaller than CLEARANCE, so the stub of one card never lands
+ * inside another card's margin more often than the card itself would.
+ *
+ * That sentence was here while the number disagreed with it - a stub of 18
+ * against a clearance of 14 - which is one of the two having been changed
+ * without the other. Both are named here now and the order between them holds.
  */
-export const STUB = 18;
+export const STUB = 20;
+
+/**
+ * How much of a face the fan of lines meeting it is allowed to spread across.
+ *
+ * Two thirds rather than all of it. A slot at the very end of the face puts a
+ * line on the card's corner, where the eye reads it as missing the card rather
+ * than as arriving at it - and a corner is also where a leaning card's outline
+ * is furthest from the box this measures against.
+ */
+const SPREAD = 0.66;
 
 /**
  * The shapes a route may be asked for - see the header, and canvas/web.js for
@@ -152,6 +221,37 @@ const SHAPES = new Set(['square', 'grid', 'taut']);
  * sixty-unit detour to lose one bend and will not take a two-hundred-unit one.
  */
 export const TURN_COST = 60;
+
+/**
+ * What running along another line costs, as a multiple of the distance run.
+ *
+ * A multiplier rather than a flat charge per lattice edge, and the difference
+ * matters: the lattice is built out of whatever card edges happen to be nearby,
+ * so a corridor can be one long edge on a sparse board and eight short ones on
+ * a dense one. A flat charge would make the same picture cost eight times as
+ * much in the second case, which is a penalty on how many cards are in the
+ * neighbourhood rather than on the thing being discouraged. Charged by length,
+ * a unit run along another line costs five units instead of one, wherever it is.
+ *
+ * Four says a route will go four times as far to get off another line, and will
+ * not go five - which is the right order next to TURN_COST, since a bend is
+ * always the cheaper way out of a coincidence than a long detour is.
+ *
+ * Crossing costs nothing at all, deliberately. See the header.
+ */
+export const OVERLAP_COST = 4;
+
+/**
+ * How many searches the face escalation is allowed, past the ones the rungs
+ * already ran.
+ *
+ * A ceiling on the one path that can multiply a route's cost. Sixteen face
+ * pairs exist and the cheap L is tried on every one of them; the lattice search
+ * is not, because a board that has got this far is a board where each of those
+ * is a full A* over a few thousand states. Six is enough for the near faces at
+ * both margins and is a number a dense board can afford once.
+ */
+const MAX_FACE_SEARCHES = 6;
 
 /**
  * The most cards one route will consider going around.
@@ -235,28 +335,78 @@ function lattice(values: number[]) {
 }
 
 /**
- * Which side of `from` faces `to`, and the point on that side to leave by.
+ * Which face of a card a route leaves by. Named by axis and direction rather
+ * than by compass point, because this module is handed y-down coordinates by
+ * canvas/web.js and y-up ones by half its tests, and "north" would have to mean
+ * something in both.
+ */
+type Side = 'x+' | 'x-' | 'y+' | 'y-';
+
+const OPPOSITE: Record<Side, Side> = { 'x+': 'x-', 'x-': 'x+', 'y+': 'y-', 'y-': 'y+' };
+
+/**
+ * The point on one named face to leave by, and the point a stub out from it.
+ *
+ * `slot` is where along the face it lands. The default is the middle, which is
+ * where every endpoint in this file used to be unconditionally - a face
+ * midpoint is the right place for the *only* line meeting a card, and the wrong
+ * one for the fifth, because all five arrive at the same point and the four
+ * corridors behind them coincide. Spread across SPREAD of the face, the fan
+ * reads as a fan.
+ */
+function faceAnchor(from: Box, side: Side, slot: Slot = MIDDLE): Anchor {
+  const box = blockOf(from);
+  // -0.5 to 0.5, and exactly 0 for the single-line case, so an unslotted route
+  // is arithmetically identical to the one this drew before slots existed.
+  const t = (slot.index + 1) / (slot.count + 1) - 0.5;
+  if (side === 'x+' || side === 'x-') {
+    const x = side === 'x+' ? box.x1 : box.x0;
+    const y = from.y + t * (box.y1 - box.y0) * SPREAD;
+    return { edge: { x, y }, stub: { x: side === 'x+' ? x + STUB : x - STUB, y } };
+  }
+  const y = side === 'y+' ? box.y1 : box.y0;
+  const x = from.x + t * (box.x1 - box.x0) * SPREAD;
+  return { edge: { x, y }, stub: { x, y: side === 'y+' ? y + STUB : y - STUB } };
+}
+
+/**
+ * The four ways out of `from` towards `to`, best first.
  *
  * The side is chosen per route and recomputed whenever anything moves, rather
  * than fixed to a compass point on the card. Fixed anchors would be a second
  * thing for somebody to manage, and they are wrong the moment either card is
  * dragged past the other.
  *
- * The dominant axis decides it: mostly-sideways goes out of a side, mostly-up
- * or down goes out of the top or the bottom. Ties go sideways, because cards
- * are wider than they are tall more often than not.
+ * The dominant axis still decides the *first* one: mostly-sideways goes out of
+ * a side, mostly-up or down goes out of the top or the bottom. Ties go
+ * sideways, because cards are wider than they are tall more often than not.
+ *
+ * What is new is the other three, and they exist because the first used to be
+ * the only one. A card parked flat against the chosen face seals the route: the
+ * search fails at every clearance, the whole concession ladder fails with it,
+ * and the line was drawn *behind* the cards in its way - while three open faces
+ * sat there and nothing ever looked at them. Ranked near faces before away
+ * ones, since leaving by the far side of a card is a real answer and rarely the
+ * pretty one.
  */
-export function anchorFor(from: Box, to: Point): Anchor {
-  const box = blockOf(from);
+export function anchorsFor(from: Box, to: Point, slot?: Slot): Anchor[] {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
-  if (Math.abs(dx) >= Math.abs(dy)) {
-    const x = dx >= 0 ? box.x1 : box.x0;
-    return { edge: { x, y: from.y }, stub: { x: dx >= 0 ? x + STUB : x - STUB, y: from.y } };
-  }
-  const y = dy >= 0 ? box.y1 : box.y0;
-  return { edge: { x: from.x, y }, stub: { x: from.x, y: dy >= 0 ? y + STUB : y - STUB } };
+  const sideways: Side = dx >= 0 ? 'x+' : 'x-';
+  const upright: Side = dy >= 0 ? 'y+' : 'y-';
+  const near: Side[] = Math.abs(dx) >= Math.abs(dy)
+    ? [sideways, upright]
+    : [upright, sideways];
+  const sides = [...near, ...near.map(s => OPPOSITE[s])];
+  return sides.map(s => faceAnchor(from, s, slot));
 }
+
+/**
+ * The one way out, for every caller and every test that wants the answer this
+ * function has always given. anchorsFor()'s first entry is the face the
+ * dominant axis picks, which is what this used to compute on its own.
+ */
+export const anchorFor = (from: Box, to: Point): Anchor => anchorsFor(from, to)[0];
 
 /**
  * Where a line drawn from this card's *middle* towards `target` leaves it.
@@ -324,18 +474,28 @@ export type Route = { points: Point[] };
  * coordinate system the caller draws in. `obstacles` are the other cards, in
  * the same shape and the same system, and must not include the two ends.
  *
- * `opts` is how the look reaches the algorithm - `{ shape, step, clearance }`,
- * see the header. Everything about it is optional and the default is the
- * right-angled route this always drew, which is what keeps every caller and
- * every test that predates the whimsy axis saying exactly what it said.
+ * `opts` is how the look and the caller's wider knowledge reach the algorithm -
+ * `{ shape, step, clearance, fromSlot, toSlot, avoid }`, see the header.
+ * Everything about it is optional and the default is the right-angled route
+ * this always drew, which is what keeps every caller and every test that
+ * predates the whimsy axis saying exactly what it said.
  *
  * There is no failure flag on the result, and there used to be. It marked the
  * straight line this drew when it could not find a way round, and canvas/web.js
  * drew those dimmed and dashed so a give-up was visible. Both are gone: the last
- * resort is an orthogonal elbow now, which is a line that goes *behind* the cards
+ * resort is an orthogonal elbow, which is a line that goes *behind* the cards
  * in its way rather than across them, and the web is drawn under the items - so
  * it looks like a connector passing under a photograph, because that is what it
  * is. A state worth marking as a failure has to look like one.
+ *
+ * What has changed is how nearly unreachable that last resort now is. It used
+ * to be one sealed face away: the dominant axis picked a side, a card parked
+ * against that side failed every rung of the ladder, and the elbow drew through
+ * the lot. The faces escalate now (see anchorsFor), so a route concedes only
+ * when all sixteen ways out are shut - which, at zero clearance, is a card
+ * lying on top of one of the two ends. A line arriving under a card really is
+ * arriving under a card, and there the elbow is the honest picture rather than
+ * a shrug.
  */
 export function routeConnection(
   from: Box, to: Box, obstacles: Box[] = [], opts: RouteOpts = {},
@@ -350,8 +510,18 @@ export function routeConnection(
   // A board with no grid step is not a board whose connectors can answer one.
   const step = shape === 'grid' && opts.step && opts.step > 0 ? opts.step : 0;
 
-  const a = anchorFor(from, to);
-  const b = anchorFor(to, from);
+  // Four ways out of each end, best first, and the pair at the head of them is
+  // the one every attempt below runs on. The other fifteen pairs are the
+  // escalation at the bottom, and nothing reaches them on an ordinary board.
+  const as = anchorsFor(from, to, opts.fromSlot);
+  const bs = anchorsFor(to, from, opts.toSlot);
+  const a = as[0];
+  const b = bs[0];
+
+  // The other lines already drawn near this one, reduced to their segments once
+  // rather than per lattice edge. Empty on every caller that has not thought
+  // about it, and empty is what makes the search identical to the old one.
+  const avoid = segmentsOf(opts.avoid);
 
   // Nearest first, so a cap that bites drops the cards least likely to be in
   // the way rather than whichever the caller happened to list last.
@@ -375,24 +545,34 @@ export function routeConnection(
     ? [...near].sort((p, q) => distSqToMidpoint(p, from, to) - distSqToMidpoint(q, from, to))
     : near;
 
-  /** The obstacle blocks at a given margin, on the lattice or off it. */
-  const blocksAt = (pad: number, snap: boolean) => ordered.map(it => {
+  /** A card list's blocks at a given margin, on the lattice or off it. */
+  const blocksOf = (cards: Box[], pad: number, snap: boolean) => cards.map(it => {
     const k = blockOf(it, pad);
     return snap && step ? snapOut(k, step) : k;
   });
 
+  /** The same, over every card this route is considering. */
+  const blocksAt = (pad: number, snap: boolean) => blocksOf(ordered, pad, snap);
+
   /**
-   * The taut passes, or nothing, depending on the shape asked for. `obstacles`
-   * is the other cards alone; the two ends are added where they belong.
+   * The taut passes, or nothing, depending on the shape asked for. `cards` is
+   * the other cards alone; the two ends are added where they belong.
    *
    * Pull first and aim second, in that order and not the other way round: which
    * way the first leg points is not known until the turns it was going to make
    * have been dropped, and aiming a leg that is about to be removed is work
    * thrown away.
+   *
+   * Both of them work against PULL_CLEARANCE rather than against the margin the
+   * corridor was found at, and that is the point of there being two numbers.
+   * The search is asked for room; the string is asked for a straight line and
+   * given only what a line needs. Capped at the rung's own pad, so a route that
+   * already conceded its clearance is not handed some back here.
    */
-  const done = (points: Point[], obstacles: Bounds[]) => {
+  const done = (points: Point[], cards: Box[], pad: number, snap: boolean) => {
     if (!taut) return { points };
-    return { points: aim(pull(points, [...obstacles, ...ends]), obstacles) };
+    const soft = blocksOf(cards, Math.min(pad, PULL_CLEARANCE), snap);
+    return { points: aim(pull(points, [...soft, ...ends]), soft) };
   };
 
   /**
@@ -443,7 +623,13 @@ export function routeConnection(
   // loop over a handful of segments against the cost of building a lattice.
   const easyBlocks = blocksAt(clearance, true);
   const easy = simple(a, b, [...easyBlocks, ...ends]);
-  if (easy) return done(easy.points, easyBlocks);
+  // Taken unless it lies along a line that is already there. The shortcut is
+  // the one path that never reaches the search, so it is also the one place the
+  // overlap cost cannot be charged - and left unchecked it would hand back the
+  // coincident L in exactly the case the cost exists for. Handing it to the
+  // search is not the same as refusing it: the cost prices an overlap rather
+  // than banning one, so a board with no better answer gets this L back.
+  if (easy && !laidOn(easy.points, avoid)) return done(easy.points, ordered, clearance, true);
 
   // -------------------------------------------------------------------------
   // Otherwise: keep trying, and give up room before giving up the route.
@@ -460,6 +646,7 @@ export function routeConnection(
   //   2. a third of it           passes closer than is pretty, still passes
   //   3. none at all             hugs the edges; only real overlap blocks now
   //   4. and (3) again, ignoring cards that lie *on top of* an end
+  //   5. every other way out of the two cards, at full clearance and then none
   //
   // Four is the case the first three cannot answer, and it is not a corner: a
   // card stacked over one of the two ends encloses it, and no amount of margin
@@ -468,15 +655,27 @@ export function routeConnection(
   // which is also the honest reading, since a covered card is not something the
   // route is passing, it is something the route is arriving under.
   //
-  // And if all four find nothing, the answer is still not a diagonal. It is the
-  // plain two-bend elbow, drawn through whatever is left in the way - see
+  // Five is new and it is the one that made the elbow below almost unreachable.
+  // Every rung above it runs on the pair of faces the dominant axis picked, and
+  // that choice is made before anything has looked at the board - so a card
+  // parked flat against one of those two faces failed the whole ladder while
+  // three open sides sat there. The other fifteen pairs are tried here, cheap L
+  // first on all of them and the lattice search on as many as MAX_FACE_SEARCHES
+  // allows, because a board that has got this far is a board where each search
+  // is a real cost.
+  //
+  // And if even that finds nothing, the answer is still not a diagonal. It is
+  // the plain two-bend elbow, drawn through whatever is left in the way - see
   // elbow() for why that is a real answer rather than a shrug, and why the flag
-  // that used to mark these as failures is gone with it.
+  // that used to mark these as failures is gone with it. What is worth knowing
+  // is *when* it is reached now: sixteen ways out, at zero clearance, all shut.
+  // That is a card lying over one of the two ends, and nothing else on a board
+  // small enough for the lattice to hold.
   // -------------------------------------------------------------------------
   const overlapsEnd = (k: Bounds) => ends.some(e =>
     k.x0 < e.x1 - EPS && k.x1 > e.x0 + EPS && k.y0 < e.y1 - EPS && k.y1 > e.y0 + EPS);
 
-  const attempt = (pool: Bounds[]) => {
+  const attempt = (pool: Bounds[], a: Anchor, b: Anchor) => {
     // The end cards' own edges are lines in the lattice as well as the
     // obstacles', which is what lets a route get out from under a card it
     // overlaps. Skipping that was a bug: with no other cards in the way and the
@@ -502,7 +701,7 @@ export function routeConnection(
     const xj = xs.indexOf(nearestIn(xs, b.stub.x));
     const yj = ys.indexOf(nearestIn(ys, b.stub.y));
 
-    const path = search(xs, ys, all, xi, yi, xj, yj);
+    const path = search(xs, ys, all, xi, yi, xj, yj, avoid);
     if (!path) return null;
     // The stubs bracket the search's own answer, and the edge points bracket
     // those. Duplicates are shed on the way out: when a stub lands exactly on a
@@ -522,19 +721,57 @@ export function routeConnection(
 
   for (const [pad, snap] of rungs) {
     const pool = blocksAt(pad, snap);
-    const got = attempt(pool);
-    if (got) return done(got.points, pool);
+    const got = attempt(pool, a, b);
+    if (got) return done(got.points, ordered, pad, snap);
   }
-  const uncovered = blocksAt(0, false).filter(k => !overlapsEnd(k));
+  // The cards that lie over an end drop out here, filtered on the card list
+  // rather than on the blocks so that the taut pass can rebuild the same set at
+  // its own margin - see done(), which is handed cards and a pad.
+  const uncovered = ordered.filter(it => !overlapsEnd(blockOf(it)));
   if (uncovered.length !== ordered.length) {
-    const got = attempt(uncovered);
-    if (got) return done(got.points, uncovered);
+    const got = attempt(blocksOf(uncovered, 0, false), a, b);
+    if (got) return done(got.points, uncovered, 0, false);
   }
+
+  // Rung five: the other fifteen ways out. Ordered by how far each end has had
+  // to depart from the face the dominant axis wanted - `i + j` - so a route that
+  // has to give up one end's preference is tried before one that gives up both.
+  const pairs: [number, number][] = [];
+  for (let sum = 1; sum <= 6; sum++) {
+    for (let i = 0; i < 4; i++) {
+      const j = sum - i;
+      if (j >= 0 && j < 4) pairs.push([i, j]);
+    }
+  }
+  let searches = 0;
+  // Two margins and no snapping. Quantizing is a rung above the whole ladder and
+  // was given up long before this, so there is nothing left here to try it on.
+  const faceRungs: [number, boolean][] = [[clearance, false], [0, false]];
+  for (const [pad, snap] of faceRungs) {
+    const pool = blocksOf(ordered, pad, snap);
+    const withEnds = [...pool, ...ends];
+    // The cheap L on every pair before any lattice is built. A sealed face is
+    // usually sealed by one card, and the open face beside it usually has the
+    // plain two-bend path clear - which is the answer, at the cost of a loop
+    // over four segments.
+    for (const [i, j] of pairs) {
+      const got = simple(as[i], bs[j], withEnds);
+      if (got && !laidOn(got.points, avoid)) return done(got.points, ordered, pad, snap);
+    }
+    for (const [i, j] of pairs) {
+      if (searches >= MAX_FACE_SEARCHES) break;
+      searches++;
+      const got = attempt(pool, as[i], bs[j]);
+      if (got) return done(got.points, ordered, pad, snap);
+    }
+  }
+
   // Even the elbow is offered to the taut pass. Nothing routed, which at this
-  // point means the search could not find a way round rather than that there is
-  // none - and if a straight run between two of the elbow's own corners is in
-  // fact clear, that is a better picture than a line through a card.
-  return done(elbow(a, b), blocksAt(clearance, false));
+  // point means every way out of both cards is shut at no clearance at all - a
+  // card lying on top of an end, or a lattice that had to shed the card doing
+  // the blocking. If a straight run between two of the elbow's own corners is
+  // in fact clear, that is a better picture than a line through a card.
+  return done(elbow(a, b), ordered, clearance, false);
 }
 
 /**
@@ -622,6 +859,82 @@ function pull(points: Point[], blocks: Bounds[]) {
     }
   }
   return trim(out);
+}
+
+/**
+ * One straight run of a line that is already on the board, reduced to the four
+ * numbers an overlap test needs: which axis it lies along, where, and between
+ * what.
+ */
+type Run = { flat: boolean, at: number, lo: number, hi: number };
+
+/**
+ * The other routes, flattened into the runs this one can lie on top of.
+ *
+ * Axis-aligned runs only, and the diagonals a taut route carries are dropped
+ * rather than handled. Two diagonals coincide only when they share an angle as
+ * well as a line, which is a measure-zero accident between two routes that were
+ * pulled through different corridors - and the lattice this cost is charged
+ * against has no diagonal edges to charge anyway. Every run that matters is one
+ * of these.
+ */
+function segmentsOf(routes?: Point[][]): Run[] {
+  if (!routes?.length) return [];
+  const out: Run[] = [];
+  for (const points of routes) {
+    for (let i = 1; i < points.length; i++) {
+      const p = points[i - 1], q = points[i];
+      if (Math.abs(p.y - q.y) < EPS && Math.abs(p.x - q.x) > EPS) {
+        out.push({ flat: true, at: p.y, lo: Math.min(p.x, q.x), hi: Math.max(p.x, q.x) });
+      } else if (Math.abs(p.x - q.x) < EPS && Math.abs(p.y - q.y) > EPS) {
+        out.push({ flat: false, at: p.x, lo: Math.min(p.y, q.y), hi: Math.max(p.y, q.y) });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * How much of an axis-aligned segment lies on top of a run that is already
+ * drawn. Zero for a crossing, which is the whole distinction being drawn here:
+ * a line that crosses another reads as a diagram, and a line that lies along
+ * one reads as a mistake in the drawing.
+ *
+ * Summed over the runs rather than unioned. Two lines already coincident with
+ * each other charge a third twice for joining them, which is right: that place
+ * is more crowded, not less.
+ */
+function overlapLen(flat: boolean, at: number, lo: number, hi: number, runs: Run[]) {
+  let total = 0;
+  for (const r of runs) {
+    if (r.flat !== flat || Math.abs(r.at - at) > EPS) continue;
+    const span = Math.min(hi, r.hi) - Math.max(lo, r.lo);
+    if (span > EPS) total += span;
+  }
+  return total;
+}
+
+/**
+ * Whether a finished path lies along a line that is already drawn, by enough of
+ * its own length to be worth refusing a shortcut over.
+ *
+ * A threshold rather than any overlap at all, because two lines meeting at a
+ * card share the last few units by construction - they are arriving at the same
+ * place - and a test that counted those would send every second route to the
+ * search to discover it could not do better.
+ */
+function laidOn(points: Point[], runs: Run[]) {
+  if (!runs.length) return false;
+  for (let i = 1; i < points.length; i++) {
+    const p = points[i - 1], q = points[i];
+    const flat = Math.abs(p.y - q.y) < EPS;
+    const at = flat ? p.y : p.x;
+    const lo = flat ? Math.min(p.x, q.x) : Math.min(p.y, q.y);
+    const hi = flat ? Math.max(p.x, q.x) : Math.max(p.y, q.y);
+    if (hi - lo < EPS) continue;
+    if (overlapLen(flat, at, lo, hi, runs) > STUB) return true;
+  }
+  return false;
 }
 
 const nearestIn = (values: number[], v: number) =>
@@ -715,6 +1028,7 @@ export function trim(points: Point[]) {
 function search(
   xs: number[], ys: number[], blocks: Bounds[],
   xi: number, yi: number, xj: number, yj: number,
+  avoid: Run[] = [],
 ) {
   const W = xs.length, H = ys.length;
   const N = W * H;
@@ -725,6 +1039,14 @@ function search(
   // over, and the blocked test is a loop over every obstacle.
   const okRight = new Uint8Array(N);   // node -> the edge to (x+1, y) is clear
   const okDown = new Uint8Array(N);    // node -> the edge to (x, y+1) is clear
+  // What each of those edges costs on top of its own length, for lying along a
+  // line that is already drawn. Precomputed in the same pass and for the same
+  // reason - an edge is relaxed from both ends and the test is a loop over every
+  // run - and skipped entirely when there is nothing to avoid, which is every
+  // caller that has not asked for this and every test that predates it.
+  const soft = avoid.length > 0;
+  const overRight = soft ? new Float64Array(N) : null;
+  const overDown = soft ? new Float64Array(N) : null;
   const at = (x: number, y: number) => y * W + x;
   const clear = (ax: number, ay: number, bx: number, by: number) => {
     for (const k of blocks) if (segmentBlocked(ax, ay, bx, by, k)) return false;
@@ -732,8 +1054,20 @@ function search(
   };
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
-      if (x + 1 < W) okRight[at(x, y)] = clear(xs[x], ys[y], xs[x + 1], ys[y]) ? 1 : 0;
-      if (y + 1 < H) okDown[at(x, y)] = clear(xs[x], ys[y], xs[x], ys[y + 1]) ? 1 : 0;
+      if (x + 1 < W) {
+        const ok = clear(xs[x], ys[y], xs[x + 1], ys[y]);
+        okRight[at(x, y)] = ok ? 1 : 0;
+        if (ok && overRight) {
+          overRight[at(x, y)] = overlapLen(true, ys[y], xs[x], xs[x + 1], avoid) * OVERLAP_COST;
+        }
+      }
+      if (y + 1 < H) {
+        const ok = clear(xs[x], ys[y], xs[x], ys[y + 1]);
+        okDown[at(x, y)] = ok ? 1 : 0;
+        if (ok && overDown) {
+          overDown[at(x, y)] = overlapLen(false, xs[x], ys[y], ys[y + 1], avoid) * OVERLAP_COST;
+        }
+      }
     }
   }
 
@@ -810,21 +1144,27 @@ function search(
 
     const x = node % W;
     const y = (node / W) | 0;
-    const step = (nx: number, ny: number, nd: number, passable: boolean | number) => {
+    const step = (
+      nx: number, ny: number, nd: number, passable: boolean | number, extra: number,
+    ) => {
       if (!passable) return;
       const next = at(nx, ny) * 4 + nd;
       if (done[next]) return;
       const cost = Math.abs(xs[nx] - xs[x]) + Math.abs(ys[ny] - ys[y]) +
-                   (nd === dir ? 0 : TURN_COST);
+                   (nd === dir ? 0 : TURN_COST) + extra;
       if (g[s] + cost >= g[next]) return;
       g[next] = g[s] + cost;
       from[next] = s;
       push(next, g[next] + h(nx, ny));
     };
-    step(x + 1, y, 0, x + 1 < W && okRight[at(x, y)]);
-    step(x - 1, y, 1, x - 1 >= 0 && okRight[at(x - 1, y)]);
-    step(x, y + 1, 2, y + 1 < H && okDown[at(x, y)]);
-    step(x, y - 1, 3, y - 1 >= 0 && okDown[at(x, y - 1)]);
+    // The overlap charge is a property of the edge and not of the direction
+    // travelled, so the two headings that use one edge read the same number -
+    // which is why it is stored against the lower-indexed end of each, exactly
+    // as passability already is.
+    step(x + 1, y, 0, x + 1 < W && okRight[at(x, y)], overRight?.[at(x, y)] || 0);
+    step(x - 1, y, 1, x - 1 >= 0 && okRight[at(x - 1, y)], x > 0 ? overRight?.[at(x - 1, y)] || 0 : 0);
+    step(x, y + 1, 2, y + 1 < H && okDown[at(x, y)], overDown?.[at(x, y)] || 0);
+    step(x, y - 1, 3, y - 1 >= 0 && okDown[at(x, y - 1)], y > 0 ? overDown?.[at(x, y - 1)] || 0 : 0);
   }
   return null;
 }

@@ -1016,6 +1016,30 @@
    strengths rather than two lines. */
 #web .web-focus { opacity: 1; }
 
+/* The world axes go with the rest of the board's lines.
+
+   The lift above drops every line that is not this card's, and the axes were
+   the exception - not because anybody decided they should be, but because they
+   are a canvas in screen space outside #world and no selector aimed at #web
+   could reach them. So a board that dimmed forty threads to show you three kept
+   two full-strength rules ruled straight through the picture, which is the lift
+   half-applied.
+
+   Reached by a flag on the root instead, written by canvas/web.js on the same
+   line as .is-focused - the arrangement data-snap and .is-connecting already
+   use, and the only one available across two stacking contexts.
+
+   Not as far down as the threads. 0.18 on a line that reads as structure rather
+   than as content is the axis effectively gone, and the axes are what the whole
+   board is positioned against - somebody looking at one card's connections has
+   not stopped needing to know where the origin is. Far enough back to stop
+   competing, near enough to still be there.
+
+   The same duration and easing as the threads, deliberately: two things fading
+   together at two speeds read as two events. */
+#axis-ink { transition: opacity var(--dur-fast) var(--ease); }
+:root.web-lifted #axis-ink { opacity: 0.4; }
+
 /* The line a press landed on, which stays lit after the pointer has moved on -
    the hover says "this is a thing", this says "this is the thing", and Delete
    means it.
@@ -1045,15 +1069,39 @@
 
 /* The board while the Join tool is armed. This is the app's only mode, so it
    says so where the hand is rather than only where the button is: the button at
-   the top of the screen is pressed, and the whole board under the cursor is a
-   crosshair. Somebody who armed the tool and then looked away for a minute
+   the top of the screen is pressed, and the whole board under the cursor is the
+   tool's own mark. Somebody who armed the tool and then looked away for a minute
    should be able to tell from the board alone.
+
+   It was a crosshair, and a crosshair was not enough - the first tester outside
+   this machine asked for "custom cursor na join" while looking straight at one.
+   That is the whole argument for the picture below: `crosshair` is the browser's
+   generic mode cursor, it means precision rather than joining, and a reader who
+   has seen it on a hundred canvases reads it as nothing in particular.
+
+   Two ends and a line between them, drawn twice - a white pass at 5px under a
+   dark pass at 2.2px - because a cursor is the one graphic in the app that has
+   no control over what it lands on. The halo is what keeps it legible over a
+   dark photograph and over bare paper alike, at every whimsy tier, without the
+   sheet knowing which it is over. Hotspot at the centre, matching the crosshair
+   it replaces, and `crosshair` stays as the fallback for anything that will not
+   take a URL cursor.
+
+   A data: URL rather than a file in assets/img: it is 400 bytes, it is part of
+   the rule that uses it, and a cursor that lives in the offline shell as a
+   separate fetch is a cursor that can be missing at the exact moment the mode
+   turns on. img-src carries `data:` already, for the same reason and for the
+   glyphs in items.css - see web/_headers.
 
    The cursor is written on the viewport rather than on the cards, so empty
    canvas carries it too - clicking nothing is a real move in this mode (it
    drops the pick), and a card-only cursor would say the gaps were inert. */
 :root.is-connecting #viewport,
-:root.is-connecting .item { cursor: crosshair; }
+:root.is-connecting .item {
+  cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cg fill='none' stroke='%23fff' stroke-width='5' stroke-linecap='round'%3E%3Cpath d='M7 17 17 7'/%3E%3C/g%3E%3Ccircle cx='5' cy='19' r='4' fill='%23fff'/%3E%3Ccircle cx='19' cy='5' r='4' fill='%23fff'/%3E%3Cpath d='M7 17 17 7' fill='none' stroke='%23111' stroke-width='2.2' stroke-linecap='round'/%3E%3Ccircle cx='5' cy='19' r='2.4' fill='%23111'/%3E%3Ccircle cx='19' cy='5' r='2.4' fill='%23111'/%3E%3C/svg%3E") 12 12,
+    crosshair;
+}
 
 /* The board while a finger is collecting cards - the second mode, and the one
    that had to say so somewhere a cursor cannot. It is a touch mode by
@@ -1149,4 +1197,48 @@
 @supports not (color: color-mix(in srgb, red, blue)) {
   #mobile-surround { background: rgb(var(--ink-c) / 6%); }
   #mobile-board-frame { background: var(--lc-mobile-board, #fff); }
+}
+
+/* The card at the edge of the board - see canvas/farlands.ts, which places it
+   and argues why it is not an item.
+
+   Positioned by canvas/farlands.ts the same way items.js positions a card:
+   absolutely, inside #world, at left = x - w/2 and top = -y - h/2. Only the
+   four geometry properties are set from script; everything it looks like is
+   here, so the whimsy axis and the palette reach it like they reach anything
+   else on the paper.
+
+   Inert in every sense the board cares about. It is not selectable, not a drop
+   target and not a hit-test participant, so a marquee dragged across it catches
+   nothing and a click goes through to the paper underneath - which is what
+   keeps it furniture rather than a card somebody has to deal with. */
+#far-lands {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.75em;
+  box-sizing: border-box;
+  padding: 2.5em;
+  background: var(--paper-card);
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  box-shadow: var(--item-shadow);
+  color: var(--ink-2);
+  font-size: var(--t-body);
+  line-height: 1.5;
+  text-wrap: pretty;
+  pointer-events: none;
+  user-select: none;
+}
+
+#far-lands p { margin: 0; }
+
+/* The first line is the one worth reading; the second is the footnote that
+   explains it. Stated as a weight and a colour rather than a size, because two
+   type sizes inside a card this small reads as a heading and a body, and it is
+   neither - it is one remark in two breaths. */
+#far-lands p:first-child {
+  color: var(--ink);
+  font-weight: 600;
 }

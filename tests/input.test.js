@@ -720,6 +720,7 @@ const press = (over = {}) => ({
   onGrip: false,
   onCard: null,
   locked: false,
+  pinned: false,
   needsTapFirst: false,
   wasSelected: false,
   selectionSize: 0,
@@ -763,6 +764,23 @@ test('a locked card has no grips and does not move', () => {
   assert.deepEqual(
     pressIntent(press({ onCard: 'a', locked: true, onGrip: true, wasSelected: true })),
     { kind: 'lockedPan', id: 'a', additive: false, wasSelected: true },
+  );
+});
+
+test('a pinned sticky has no grips, and a press on one takes its host', () => {
+  // Its size is the card it is fixed to, the way its place already is. So the
+  // grip press is not a resize - it falls through to the move below and does
+  // what every other press on a pinned sticky does, which is take hold of the
+  // host (dragRoot, sticky.ts). Not lockedPan: a pinned sticky is not immovable,
+  // it moves with the thing under it.
+  assert.deepEqual(
+    pressIntent(press({ onCard: 'a', pinned: true, onGrip: true, wasSelected: true })),
+    { kind: 'move', id: 'a', additive: false, wasSelected: true },
+  );
+  // And the two refusals do not collapse into one: a locked card still pans.
+  assert.deepEqual(
+    pressIntent(press({ onCard: 'a', pinned: true, locked: true, onGrip: true })),
+    { kind: 'lockedPan', id: 'a', additive: false, wasSelected: false },
   );
 });
 
