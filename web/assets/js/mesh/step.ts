@@ -677,10 +677,23 @@ function readLoop(db: Db, v: Val, scaleHint: number): Vec[] {
 /**
  * One edge, from its start vertex to its end, as a polyline.
  *
- * The direction is two flags multiplied together: the oriented edge's, and the
- * edge curve's own `same_sense`. Both are ordinary and both occur false, and
- * getting the product wrong reverses a loop - which reads as a face turned
- * inside out rather than as an error.
+ * **Two flags, and they answer two different questions.** The oriented edge's
+ * says which of the edge's two vertices this loop reaches first, and it says so
+ * on its own. The edge curve's `same_sense` says whether the curve's parameter
+ * runs with the edge or against it, and it says nothing about the vertices - an
+ * edge with `same_sense` false still runs from its start vertex to its end one,
+ * along a curve that happens to be parameterised the other way.
+ *
+ * Multiplying the two together and using the product for both - which is the
+ * mistake this had - walks every `.F.` edge backwards. That is not a face turned
+ * inside out, which would be visible: it is a boundary that goes out along one
+ * edge and back along the next, so the polygon crosses itself and the
+ * triangulation of it is meaningless in a small region. On a retaining ring
+ * whose profile is eight edges, two of them `.F.`, it put a hundred crossings
+ * into a boundary of six hundred points.
+ *
+ * The product is still what the *parameter* runs on, and that is what decides
+ * which way round a circle an arc goes.
  */
 function sampleEdge(db: Db, edge: Entity, forward: boolean, scaleHint: number): Vec[] {
   const args = partArgs(edge, 'EDGE_CURVE') || edge.args;
@@ -692,12 +705,12 @@ function sampleEdge(db: Db, edge: Entity, forward: boolean, scaleHint: number): 
   if (!a || !b) return [];
   if (!info) return forward ? [a] : [b];
 
+  const from = forward ? a : b;
+  const to = forward ? b : a;
   const dir = (forward ? 1 : -1) * (sameSense ? 1 : -1);
-  const from = dir > 0 ? a : b;
-  const to = dir > 0 ? b : a;
 
   const { curve } = info;
-  let t0 = curve.param(from);
+  const t0 = curve.param(from);
   let t1 = curve.param(to);
 
   if (curve.period) {
@@ -709,11 +722,11 @@ function sampleEdge(db: Db, edge: Entity, forward: boolean, scaleHint: number): 
       while (dir > 0 && t1 <= t0) t1 += curve.period;
       while (dir < 0 && t1 >= t0) t1 -= curve.period;
     }
-  } else if (dir < 0 && t1 > t0) {
-    // A non-periodic curve read backwards: swap so the walk below still runs
-    // from t0 to t1.
-    [t0, t1] = [t1, t0];
   }
+  // A curve that is not periodic needs nothing here: `t0` and `t1` are the
+  // parameters of the two ends in the order they are walked, and every
+  // `segments()` measures the span with an absolute value, so running down is
+  // as good as running up.
 
   const n = Math.max(1, curve.segments(t0, t1));
   const out: Vec[] = [from];
@@ -778,17 +791,36 @@ function times(outer: Matrix, inner: Matrix): Matrix {
  * assembly it sits in. Files written the other way round exist; the symptom is
  * an assembly whose parts are inside out of each other, which is the reason this
  * paragraph is here.
+ *
+ * **The representation a transform names is usually not the one holding the
+ * geometry.** ST-Developer, Autodesk, SolidWorks and Creo all write the
+ * component as a bare SHAPE_REPRESENTATION carrying nothing but its origin
+ * placement, hang the ADVANCED_BREP_SHAPE_REPRESENTATION off it with a plain
+ * SHAPE_REPRESENTATION_RELATIONSHIP - no transform, the two are in the same
+ * place - and relate *that* bare one into the assembly. Reading only the
+ * transformed relationships finds every placement and then applies it to a
+ * representation with no faces under it, so every part draws at its own local
+ * origin: an assembly collapsed into one heap, which looks like a mangled part
+ * rather than like a file that failed. So the untransformed relationships are
+ * read too, as identity links.
  */
 function placements(db: Db) {
   /** Representation entity id -> its parent and the transform into it. */
   const parent = new Map<number, { to: number; m: Matrix }>();
+  /** Pairs related with no transform between them: same place, two records. */
+  const same: [number, number][] = [];
 
   for (const e of db.values()) {
-    const rel = partArgs(e, 'REPRESENTATION_RELATIONSHIP');
-    const withT = partArgs(e, 'REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION');
-    if (!rel || !withT) continue;
+    // A subtype written under its own name - SHAPE_REPRESENTATION_RELATIONSHIP
+    // is the one every exporter writes - carries the same four arguments, and
+    // is the *only* form the untransformed half of an assembly ever takes.
+    const rel = partArgs(e, 'REPRESENTATION_RELATIONSHIP')
+      || (e.type.endsWith('_REPRESENTATION_RELATIONSHIP') ? e.args : null);
+    if (!rel || rel.length < 4) continue;
     const child = rel[2], owner = rel[3];
     if (!isRef(child) || !isRef(owner)) continue;
+    const withT = partArgs(e, 'REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION');
+    if (!withT) { same.push([child.ref, owner.ref]); continue; }
     const transform = at(db, isList(withT[0]) ? withT[0][0] : withT[0]);
     const item = transform ? partArgs(transform, 'ITEM_DEFINED_TRANSFORMATION') : null;
     if (!item) continue;
@@ -798,13 +830,27 @@ function placements(db: Db) {
     parent.set(child.ref, { to: owner.ref, m: between(a, b) });
   }
 
+  // Which end of an untransformed pair is the one standing in the assembly is
+  // decided by which of the two has a transform of its own, not by the argument
+  // order - the order is written both ways round and carries no meaning here,
+  // the two representations being in the same place either way.
+  const alias = new Map<number, number>();
+  for (const [a, b] of same) {
+    if (parent.has(a) === parent.has(b)) continue;
+    if (parent.has(a)) alias.set(b, a);
+    else alias.set(a, b);
+  }
+
   const world = new Map<number, Matrix>();
   const resolve = (id: number, depth: number): Matrix => {
     const had = world.get(id);
     if (had) return had;
     if (depth > MAX_FOLLOW) return UNIT;
     const up = parent.get(id);
-    const m = up ? times(resolve(up.to, depth + 1), up.m) : UNIT;
+    const via = alias.get(id);
+    const m = up ? times(resolve(up.to, depth + 1), up.m)
+      : via !== undefined ? resolve(via, depth + 1)
+        : UNIT;
     world.set(id, m);
     return m;
   };

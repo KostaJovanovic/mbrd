@@ -508,13 +508,37 @@ export function splineSurface(s: SplineSurface): Surface {
   // directions. A NURBS patch is not invertible in closed form and this is the
   // reading that does not need derivatives to be well behaved.
   const GRID = 20;
+
+  /**
+   * The coarse grid, evaluated once for the patch rather than once per point.
+   *
+   * Every inversion starts from the same four hundred and forty-one places, and
+   * `at()` on a NURBS patch is a de Boor pass down every row of the control grid
+   * and one across - so doing it per point spent nearly all of the time this
+   * file takes on a mechanical model. A face's boundary is hundreds of points
+   * and a spline patch's is up to a thousand.
+   */
+  let coarse: Vec[] | null = null;
+  const grid = () => {
+    if (coarse) return coarse;
+    const g: Vec[] = [];
+    for (let i = 0; i <= GRID; i++) {
+      for (let j = 0; j <= GRID; j++) {
+        g.push(at(uLo + (uHi - uLo) * i / GRID, vLo + (vHi - vLo) * j / GRID));
+      }
+    }
+    coarse = g;
+    return g;
+  };
+
   const uv = (p: Vec): number[] | null => {
+    const g = grid();
     let bu = uLo, bv = vLo, best = Infinity;
     for (let i = 0; i <= GRID; i++) {
       const u = uLo + (uHi - uLo) * i / GRID;
       for (let j = 0; j <= GRID; j++) {
         const v = vLo + (vHi - vLo) * j / GRID;
-        const d = length(sub(at(u, v), p));
+        const d = length(sub(g[i * (GRID + 1) + j], p));
         if (d < best) { best = d; bu = u; bv = v; }
       }
     }
@@ -832,12 +856,19 @@ const ccw = (uv: number[][]) => area2(uv) > 0;
 /**
  * Ear clipping, plainly.
  *
- * Quadratic in the number of points and entirely fast enough: the polygons here
- * are a face's boundary, which is tens of points on anything but a spline patch
- * with a hundred-segment edge. The guard counter is what stops a self-touching
- * polygon - which the bridging above can produce - from looping forever; it
- * gives up and returns what it has, and the face comes out with a piece missing
- * rather than the tab hanging.
+ * The polygons here are a face's boundary, which is tens of points on anything
+ * but a spline patch with a hundred-segment edge - or a hole bridged into a
+ * loop, which is both loops at once and a slit joining them.
+ *
+ * **Only a reflex corner can block an ear**, and testing against those alone is
+ * not an optimisation. Testing against every corner sounds safer and is wrong on
+ * the one polygon this file makes on purpose: bridging writes the bridge's two
+ * endpoints *twice*, so a duplicate sits exactly on the corner of every ear next
+ * to the slit, and a containment test that counts its own boundary rejects them
+ * all. What follows is a face that finds no ear, falls through to the escape
+ * below, and comes out folded - with, and this is what made it hard to see, the
+ * right number of triangles and the right signed area. It reads as a ring drawn
+ * as a filled disc.
  */
 function earClip(uv: number[][]): number[][] {
   const n = uv.length;
@@ -846,8 +877,19 @@ function earClip(uv: number[][]): number[][] {
   if (!ccw(uv)) index.reverse();
 
   const out: number[][] = [];
-  let guard = n * n + 16;
+  // One vertex leaves per turn, so this bounds the loop rather than guessing at
+  // it.
+  let guard = n + 16;
   while (index.length > 3 && guard-- > 0) {
+    const m = index.length;
+    const turn: number[] = [];
+    const reflex: number[] = [];
+    for (let i = 0; i < m; i++) {
+      const a = uv[index[(i + m - 1) % m]], b = uv[index[i]], c = uv[index[(i + 1) % m]];
+      turn.push((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]));
+      if (turn[i] < 0) reflex.push(index[i]);
+    }
+
     // Candidates in order of how square they are, and the first valid one wins.
     //
     // Taking the *first* ear rather than the best is the textbook version and it
@@ -860,44 +902,69 @@ function earClip(uv: number[][]): number[][] {
     //
     // The parameters are isometric by the time they get here, so "compact" is a
     // statement about the surface and not about the numbers. See faceFacets().
-    const order = index.map((_, i) => i).sort((p, q) => squat(uv, index, p) - squat(uv, index, q));
-    let clipped = false;
-    for (const i of order) {
-      const a = index[(i + index.length - 1) % index.length];
-      const b = index[i];
-      const c = index[(i + 1) % index.length];
-      if (!isEar(uv, index, a, b, c)) continue;
+    const order: { at: number; cost: number }[] = [];
+    for (let i = 0; i < m; i++) if (turn[i] > 0) order.push({ at: i, cost: squat(uv, index, i, turn[i]) });
+    order.sort((p, q) => p.cost - q.cost);
+
+    let clipped = -1;
+    for (const { at: i } of order) {
+      const a = index[(i + m - 1) % m], b = index[i], c = index[(i + 1) % m];
+      if (blocked(uv, reflex, a, b, c)) continue;
       out.push([a, b, c]);
-      index.splice(i, 1);
-      clipped = true;
+      clipped = i;
       break;
     }
-    // No ear anywhere means the polygon is degenerate or self-touching. Taking
-    // the least-bad triangle keeps progress, and the alternative is nothing.
-    if (!clipped) {
-      const a = index[index.length - 1], b = index[0], c = index[1];
-      out.push([a, b, c]);
-      index.splice(0, 1);
+    // No ear anywhere means the polygon touches itself. Taking the most compact
+    // *convex* corner keeps progress and stays inside the polygon's hull; the
+    // old escape took whatever corner happened to be first, and a reflex one is
+    // a triangle wound backwards - area the face does not have, facing the wrong
+    // way. With no convex corner at all there is nothing to clip and what has
+    // been found already is the answer.
+    if (clipped < 0) {
+      if (!order.length) break;
+      const i = order[0].at;
+      out.push([index[(i + m - 1) % m], index[i], index[(i + 1) % m]]);
+      clipped = i;
     }
+    index.splice(clipped, 1);
   }
   if (index.length === 3) out.push([index[0], index[1], index[2]]);
   return out;
 }
 
-/** Perimeter squared over area: one for an equilateral triangle after scaling,
- *  unbounded for a sliver. Infinite for a reflex corner, which sorts every
- *  non-candidate to the back without a second pass to find them. */
-function squat(uv: number[][], index: number[], i: number) {
-  const a = uv[index[(i + index.length - 1) % index.length]];
+/** Perimeter squared over twice the area: one for an equilateral triangle after
+ *  scaling, unbounded for a sliver. */
+function squat(uv: number[][], index: number[], i: number, turn: number) {
+  const m = index.length;
+  const a = uv[index[(i + m - 1) % m]];
   const b = uv[index[i]];
-  const c = uv[index[(i + 1) % index.length]];
-  const turn = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
-  if (turn <= 0) return Infinity;
+  const c = uv[index[(i + 1) % m]];
   const perimeter = Math.hypot(b[0] - a[0], b[1] - a[1])
     + Math.hypot(c[0] - b[0], c[1] - b[1])
     + Math.hypot(a[0] - c[0], a[1] - c[1]);
   return perimeter * perimeter / turn;
 }
+
+/**
+ * Whether any reflex corner sits inside the candidate ear.
+ *
+ * A corner that shares a *position* with one of the ear's own three does not
+ * count, which is not the same test as sharing an index: bridging writes one
+ * point twice on purpose, and the duplicate is a different corner at the same
+ * place. See the header above.
+ */
+function blocked(uv: number[][], reflex: number[], a: number, b: number, c: number) {
+  const A = uv[a], B = uv[b], C = uv[c];
+  for (const i of reflex) {
+    if (i === a || i === b || i === c) continue;
+    const p = uv[i];
+    if (samePoint(p, A) || samePoint(p, B) || samePoint(p, C)) continue;
+    if (inTriangle(p, A, B, C)) return true;
+  }
+  return false;
+}
+
+const samePoint = (p: number[], q: number[]) => p[0] === q[0] && p[1] === q[1];
 
 // ---------------------------------------------------------------------------
 // Making the triangulation a good one
@@ -952,10 +1019,21 @@ function flipToDelaunay(tris: number[][], uv: number[][], fixed: Set<number>) {
       }
     });
 
+    // At most one flip per triangle per pass. The map above describes the
+    // triangles as they were when the pass began, and a flip rewrites two of
+    // them - so a second flip that named either one would look up its neighbour
+    // across an edge that no longer exists, and splice vertices the triangle no
+    // longer has. That produces a pair of overlapping triangles out of a valid
+    // pair, and it is silent: the triangle *count* never changes. It showed as a
+    // seven-sided face - the smallest that flips twice in one pass - coming out
+    // with a fold in it, and as every round face in a STEP model being subtly
+    // wrong while every square one was exact.
+    const done = new Set<number>();
     let flipped = false;
     for (const [key, list] of shared) {
       if (list.length !== 2 || guard-- <= 0) continue;
       const [i, j] = list;
+      if (done.has(i) || done.has(j)) continue;
       const a = Math.floor(key / 1e6), b = key % 1e6;
       const c = tris[i].find(v => v !== a && v !== b);
       const d = tris[j].find(v => v !== a && v !== b);
@@ -965,13 +1043,29 @@ function flipToDelaunay(tris: number[][], uv: number[][], fixed: Set<number>) {
       // into a folded one.
       if (!convexQuad(uv, a, c, b, d)) continue;
       if (!inCircle(uv[a], uv[c], uv[b], uv[d])) continue;
-      tris[i] = [a, c, d];
-      tris[j] = [c, b, d];
+      // Which of the two carries the edge *forwards* decides how the
+      // replacements are written. `a` and `b` come back from the key in
+      // numerical order, which says nothing about either triangle's winding - so
+      // writing the pair the same way round every time reverses one flip in two.
+      // A reversed triangle keeps its area and loses its facing: the face is
+      // still the right shape and is lit from inside, which reads as a dark
+      // patch rather than as a hole.
+      const carriesAB = carries(tris[i], a, b);
+      if (!carriesAB && !carries(tris[j], a, b)) continue;
+      const [p, q] = carriesAB ? [i, j] : [j, i];
+      const [cp, cq] = carriesAB ? [c, d] : [d, c];
+      tris[p] = [cp, a, cq];
+      tris[q] = [cq, b, cp];
+      done.add(i); done.add(j);
       flipped = true;
     }
     if (!flipped) break;
   }
 }
+
+/** Whether the triangle runs `a` to `b`, rather than `b` to `a`. */
+const carries = (t: number[], a: number, b: number) =>
+  (t[0] === a && t[1] === b) || (t[1] === a && t[2] === b) || (t[2] === a && t[0] === b);
 
 /** Whether `a c b d`, in that order, is a convex quadrilateral. */
 function convexQuad(uv: number[][], a: number, c: number, b: number, d: number) {
@@ -1001,17 +1095,6 @@ function inCircle(a: number[], b: number[], c: number[], d: number[]) {
     (cx * cx + cy * cy) * (ax * by - ay * bx);
   const orient = (a[0] - c[0]) * (b[1] - c[1]) - (a[1] - c[1]) * (b[0] - c[0]);
   return orient > 0 ? det > 1e-18 : det < -1e-18;
-}
-
-function isEar(uv: number[][], index: number[], a: number, b: number, c: number) {
-  const [ax, ay] = uv[a], [bx, by] = uv[b], [cx, cy] = uv[c];
-  const turn = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
-  if (turn <= 0) return false;                 // reflex or collinear
-  for (const i of index) {
-    if (i === a || i === b || i === c) continue;
-    if (inTriangle(uv[i], uv[a], uv[b], uv[c])) return false;
-  }
-  return true;
 }
 
 function inTriangle(p: number[], a: number[], b: number[], c: number[]) {
@@ -1088,7 +1171,17 @@ function emitPoints(
     ];
     const m = unscale(mid, scale);
     const curved = surface.at(m[0], m[1]);
-    if (length(sub(curved, chord)) > tolerance) {
+    // The middle of the triangle as well as the middle of its longest edge. A
+    // triangle whose three edges all hug the surface can still bulge away from
+    // it in the middle - a wide, short triangle across a cylinder is the case,
+    // and it is exactly the shape a good triangulation of a strip produces. The
+    // edge test alone lets it through, and what is left is a flat spot where the
+    // model should be round.
+    const inside = [(uv[0][0] + uv[1][0] + uv[2][0]) / 3, (uv[0][1] + uv[1][1] + uv[2][1]) / 3];
+    const flat: Vec = [0, 1, 2].map(t => (xyz[0][t] + xyz[1][t] + xyz[2][t]) / 3);
+    const c = unscale(inside, scale);
+    if (length(sub(curved, chord)) > tolerance
+      || length(sub(surface.at(c[0], c[1]), flat)) > tolerance) {
       emitPoints(surface, scale, [uv[i], mid, uv[k]], [xyz[i], curved, xyz[k]], tolerance, depth - 1, out);
       emitPoints(surface, scale, [mid, uv[j], uv[k]], [curved, xyz[j], xyz[k]], tolerance, depth - 1, out);
       return;

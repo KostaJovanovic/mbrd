@@ -136,12 +136,13 @@ import {
   cloneSettings, layoutSettingsOf, dropIdIndex,
   MAX_CONNECTIONS, pairKey, normalizeAudioOrder, CONN_DIRECTIONS, CONN_STYLES,
 } from './board-model.ts';
-// The five readers the per-item settings below are written in terms of. Each is
+// The readers the per-item settings below are written in terms of. Each is
 // the *same* function the file reader and every consumer uses, which is what
 // keeps "what this app will store" and "what a reader will get back" one answer
 // rather than two that agree today - see setItemCrop().
 import {
   isLocked, isFiltered, itemCrop, itemAdjust, adjustFilter, itemFlip, flipTransform,
+  itemRotate, itemMatte,
   itemTags, boardTags, cleanTag,
   normalizeTour, TAGS_PER_ITEM, TAG_MAX, MIN_CROP,
 } from './board-model.ts';
@@ -150,6 +151,7 @@ import type { MergePlan } from './merge.ts';
 
 export { MAX_CONNECTIONS, pairKey, CONN_DIRECTIONS, CONN_STYLES };
 export { isLocked, isFiltered, itemCrop, itemAdjust, adjustFilter, itemFlip, flipTransform };
+export { itemRotate, itemMatte };
 export { itemTags, boardTags, cleanTag };
 export { TAGS_PER_ITEM, TAG_MAX, MIN_CROP };
 
@@ -1044,9 +1046,12 @@ export function setItemFit(id: string, fit: unknown) {
  * has to be overridable. Whatever the person chooses wins and is what gets
  * saved.
  *
- * **Images only, and that is the type guard rather than an accident.** A note
+ * **Three types, and that is the type guard rather than an accident.** A note
  * without its paper is text lying on the board with nothing holding it, and a
- * video without its card loses the surface its controls sit on.
+ * video without its card loses the surface its controls sit on. A model is the
+ * third and reads like the first: it is drawn on a transparent buffer, so what
+ * a model card frames is already a silhouette with board showing through the
+ * corners - the box round it is the same frame round nothing a cut-out had.
  *
  * The card that is removed is the *paint*. The box stays exactly where it was:
  * hit-testing, the marquee, the selection ring and the resize grips all measure
@@ -1055,11 +1060,11 @@ export function setItemFit(id: string, fit: unknown) {
  */
 export function setItemBare(id: string, bare: unknown) {
   const it = byId(id);
-  // The two types that have a card to lose - see canSetBare() in
+  // The three types that have a card to lose - see canSetBare() in
   // commands/item-meta.ts, which is the same list and says why. Guarded here as
   // well because this is the door: a `bare` flag on a sticker or a fence would
   // be a byte in the file that nothing draws and nothing can take off again.
-  if (!it || (it.type !== 'image' && it.type !== 'note')) return;
+  if (!it || (it.type !== 'image' && it.type !== 'note' && it.type !== 'model')) return;
   // Stored only when true, which is what the null branch of patchMeta's write()
   // is for: `bare: false` on every ordinary photograph would be a byte per card
   // in every file to say that nothing is unusual.
@@ -1238,6 +1243,51 @@ const sameFlip = (a: unknown, b: unknown) => {
   if (!isRecord(a) || !isRecord(b)) return a === b;
   return a.x === b.x && a.y === b.y;
 };
+
+/**
+ * Which quarter turn one picture is hung at: 90, 180, 270, or null for none.
+ *
+ * Pictures only, on exactly the terms setItemFlip() above gives - the darkroom
+ * is the only door and canEditPicture() will not open it on a clip, so a wider
+ * guard here would be a door onto a room with no handle. Widen both together or
+ * neither.
+ *
+ * The validator is itemRotate(), which rounds to the nearest quarter and folds
+ * a full turn back to nothing, so what reaches the file is what every reader
+ * gets back out of it. Same comparator as any other scalar - Object.is, which is
+ * patchMeta()'s default - because two turns are the same turn when the numbers
+ * are, and both sides have already been through the validator.
+ */
+export function setItemRotate(id: string, rotate: unknown) {
+  const it = byId(id);
+  if (!it || it.type !== 'image') return;
+  patchMeta(id, 'rotate', rotate, next => (next ? 'Turn picture' : 'Unturn picture'),
+    value => itemRotate({ meta: { rotate: value } }));
+}
+
+/**
+ * Whether one picture is shown with its background taken out.
+ *
+ * Pictures only, for the reason the turn above is. itemMatte() is the validator
+ * and answers a boolean, so anything truthy stores as the flag and anything else
+ * removes the key - which is why the call below normalises to `true` or `null`
+ * rather than passing a caller's value through. `false` would be a key that says
+ * the default.
+ *
+ * **This one costs real work on every consumer, unlike the other four**, and it
+ * is worth knowing where: the cut is a neural network over the pixels
+ * (canvas/matte.ts), so it happens where the display copy is made and again at
+ * export, and on the main thread both times. Writing it is still one meta key
+ * and one undo entry, which is what keeps it the same kind of thing as the crop
+ * from here.
+ */
+export function setItemMatte(id: string, matte: unknown) {
+  const it = byId(id);
+  if (!it || it.type !== 'image') return;
+  patchMeta(id, 'matte', matte ? true : null,
+    next => (next ? 'Remove background' : 'Restore background'),
+    value => itemMatte({ meta: { matte: value } }));
+}
 
 /** Two axis maps with the same tags and values, whatever order those were written in. */
 const sameAxes = (a: Record<string, number>, b: Record<string, number>) => {

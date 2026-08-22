@@ -5,19 +5,20 @@
 // durable artefact is always the .mbrd file the user saves.
 
 const DB_NAME = 'mbrd';
-// v2 adds the `library` store. Purely additive - the upgrade below only creates
-// stores that are absent, so an existing `kv`/`assets` database keeps every byte
-// it had and simply gains an empty third store. See storage/library.js.
-const DB_VERSION = 2;
+// v2 adds the `library` store, v3 the `matte` one. Both are purely additive -
+// the upgrade below only creates stores that are absent, so an existing
+// database keeps every byte it had and simply gains an empty one. See
+// storage/library.js and storage/matte-cache.ts.
+const DB_VERSION = 3;
 
 /**
- * The three stores this database has, spelled out rather than left as `string`.
+ * The four stores this database has, spelled out rather than left as `string`.
  *
  * Every store is created in the upgrade below, so the set is closed and a typo
  * in a caller is a compile error rather than a transaction that throws
  * NotFoundError at the moment somebody tries to save.
  */
-export type StoreName = 'kv' | 'assets' | 'library';
+export type StoreName = 'kv' | 'assets' | 'library' | 'matte';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -54,6 +55,12 @@ function open(): Promise<IDBDatabase> {
       // is swept against - a board in here survives regardless of what the active
       // board's autosave deletes.
       if (!db.objectStoreNames.contains('library')) db.createObjectStore('library');
+      // The cut-out cache: one card-sized picture per matted variant, keyed by
+      // the display copy's own key. Derived bytes and nothing else - every entry
+      // in it can be rebuilt from the asset it came from, which is what makes
+      // dropping the whole store a safe answer to anything going wrong with it.
+      // See storage/matte-cache.ts.
+      if (!db.objectStoreNames.contains('matte')) db.createObjectStore('matte');
     };
     req.onsuccess = () => {
       const db = req.result;

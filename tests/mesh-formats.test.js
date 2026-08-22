@@ -833,43 +833,48 @@ const CUBE = [
   [0, 0, 10], [10, 0, 10], [10, 10, 10], [0, 10, 10],
 ];
 
+/** The cube as a MANIFOLD_SOLID_BREP, returning its record number. */
+function cubeSolid(put) {
+  const pts = CUBE.map(([x, y, z]) => put(`CARTESIAN_POINT('',(${x}.,${y}.,${z}.))`));
+  const verts = pts.map(p => put(`VERTEX_POINT('',#${p})`));
+  const edges = new Map();
+  const edge = (a, b) => {
+    const key = `${Math.min(a, b)}-${Math.max(a, b)}`;
+    if (edges.has(key)) return edges.get(key);
+    const [lo, hi] = [Math.min(a, b), Math.max(a, b)];
+    const d = [0, 1, 2].map(i => CUBE[hi][i] - CUBE[lo][i]);
+    const len = Math.hypot(...d);
+    const dir = put(`DIRECTION('',(${d.map(v => (v / len).toFixed(6)).join(',')}))`);
+    const vec = put(`VECTOR('',#${dir},${len}.)`);
+    const line = put(`LINE('',#${pts[lo]},#${vec})`);
+    const made = put(`EDGE_CURVE('',#${verts[lo]},#${verts[hi]},#${line},.T.)`);
+    edges.set(key, made);
+    return made;
+  };
+  const face = (loop, normal) => {
+    const oriented = loop.map((a, i) => {
+      const b = loop[(i + 1) % loop.length];
+      return put(`ORIENTED_EDGE('',*,*,#${edge(a, b)},.${a < b ? 'T' : 'F'}.)`);
+    });
+    const edgeLoop = put(`EDGE_LOOP('',(${oriented.map(o => `#${o}`).join(',')}))`);
+    const bound = put(`FACE_OUTER_BOUND('',#${edgeLoop},.T.)`);
+    const dir = put(`DIRECTION('',(${normal.map(v => `${v}.`).join(',')}))`);
+    const place = put(`AXIS2_PLACEMENT_3D('',#${pts[loop[0]]},#${dir},$)`);
+    const plane = put(`PLANE('',#${place})`);
+    return put(`ADVANCED_FACE('',(#${bound}),#${plane},.T.)`);
+  };
+  const faces = [
+    face([0, 3, 2, 1], [0, 0, -1]), face([4, 5, 6, 7], [0, 0, 1]),
+    face([0, 1, 5, 4], [0, -1, 0]), face([2, 3, 7, 6], [0, 1, 0]),
+    face([1, 2, 6, 5], [1, 0, 0]), face([0, 4, 7, 3], [-1, 0, 0]),
+  ];
+  const shell = put(`CLOSED_SHELL('',(${faces.map(f => `#${f}`).join(',')}))`);
+  return put(`MANIFOLD_SOLID_BREP('cube',#${shell})`);
+}
+
 function stepCube({ colour = null } = {}) {
   return stepFile(put => {
-    const pts = CUBE.map(([x, y, z]) => put(`CARTESIAN_POINT('',(${x}.,${y}.,${z}.))`));
-    const verts = pts.map(p => put(`VERTEX_POINT('',#${p})`));
-    const edges = new Map();
-    const edge = (a, b) => {
-      const key = `${Math.min(a, b)}-${Math.max(a, b)}`;
-      if (edges.has(key)) return edges.get(key);
-      const [lo, hi] = [Math.min(a, b), Math.max(a, b)];
-      const d = [0, 1, 2].map(i => CUBE[hi][i] - CUBE[lo][i]);
-      const len = Math.hypot(...d);
-      const dir = put(`DIRECTION('',(${d.map(v => (v / len).toFixed(6)).join(',')}))`);
-      const vec = put(`VECTOR('',#${dir},${len}.)`);
-      const line = put(`LINE('',#${pts[lo]},#${vec})`);
-      const made = put(`EDGE_CURVE('',#${verts[lo]},#${verts[hi]},#${line},.T.)`);
-      edges.set(key, made);
-      return made;
-    };
-    const face = (loop, normal) => {
-      const oriented = loop.map((a, i) => {
-        const b = loop[(i + 1) % loop.length];
-        return put(`ORIENTED_EDGE('',*,*,#${edge(a, b)},.${a < b ? 'T' : 'F'}.)`);
-      });
-      const edgeLoop = put(`EDGE_LOOP('',(${oriented.map(o => `#${o}`).join(',')}))`);
-      const bound = put(`FACE_OUTER_BOUND('',#${edgeLoop},.T.)`);
-      const dir = put(`DIRECTION('',(${normal.map(v => `${v}.`).join(',')}))`);
-      const place = put(`AXIS2_PLACEMENT_3D('',#${pts[loop[0]]},#${dir},$)`);
-      const plane = put(`PLANE('',#${place})`);
-      return put(`ADVANCED_FACE('',(#${bound}),#${plane},.T.)`);
-    };
-    const faces = [
-      face([0, 3, 2, 1], [0, 0, -1]), face([4, 5, 6, 7], [0, 0, 1]),
-      face([0, 1, 5, 4], [0, -1, 0]), face([2, 3, 7, 6], [0, 1, 0]),
-      face([1, 2, 6, 5], [1, 0, 0]), face([0, 4, 7, 3], [-1, 0, 0]),
-    ];
-    const shell = put(`CLOSED_SHELL('',(${faces.map(f => `#${f}`).join(',')}))`);
-    const solid = put(`MANIFOLD_SOLID_BREP('cube',#${shell})`);
+    const solid = cubeSolid(put);
     if (colour) {
       const rgb = put(`COLOUR_RGB('',${colour.map(v => `${v}.`).join(',')})`);
       const fill = put(`FILL_AREA_STYLE_COLOUR('',#${rgb})`);
@@ -889,6 +894,44 @@ test('a STEP cube is twelve triangles at the corners the file names', () => {
   assert.deepEqual(m.bounds.min, [0, 0, 0]);
   assert.deepEqual(m.bounds.max, [10, 10, 10]);
   for (const corner of CUBE) assert.ok(has(m, corner), `corner ${corner}`);
+});
+
+/**
+ * The cube as one component of an assembly, written the way every mechanical
+ * exporter writes one: the geometry in an ADVANCED_BREP_SHAPE_REPRESENTATION,
+ * hung off a bare SHAPE_REPRESENTATION carrying nothing but an origin placement
+ * by an *untransformed* SHAPE_REPRESENTATION_RELATIONSHIP, and that bare one
+ * related into the assembly by the transform that says where the part goes.
+ */
+function stepAssembly(offset) {
+  return stepFile(put => {
+    const solid = cubeSolid(put);
+    const z = put(`DIRECTION('',(0.,0.,1.))`);
+    const x = put(`DIRECTION('',(1.,0.,0.))`);
+    const origin = put(`CARTESIAN_POINT('',(0.,0.,0.))`);
+    const here = put(`AXIS2_PLACEMENT_3D('',#${origin},#${z},#${x})`);
+    const away = put(`CARTESIAN_POINT('',(${offset.map(v => `${v}.`).join(',')}))`);
+    const there = put(`AXIS2_PLACEMENT_3D('',#${away},#${z},#${x})`);
+    const geometry = put(`ADVANCED_BREP_SHAPE_REPRESENTATION('',(#${solid}),$)`);
+    const part = put(`SHAPE_REPRESENTATION('',(#${here}),$)`);
+    const assembly = put(`SHAPE_REPRESENTATION('',(#${there}),$)`);
+    put(`SHAPE_REPRESENTATION_RELATIONSHIP('SRR','None',#${part},#${geometry})`);
+    const moved = put(`ITEM_DEFINED_TRANSFORMATION($,$,#${here},#${there})`);
+    put(`(REPRESENTATION_RELATIONSHIP($,$,#${part},#${assembly})`
+      + `REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION(#${moved})`
+      + `SHAPE_REPRESENTATION_RELATIONSHIP())`);
+  });
+}
+
+test('an assembly transform reaches geometry hung off the representation it names', () => {
+  // The transform is written against a shape representation that holds no faces
+  // at all - the faces are in the brep representation related to it with no
+  // transform. Miss that second relationship and every component of every
+  // assembly draws at its own local origin, in one heap.
+  const m = parseMesh('step', buf(stepAssembly([100, 20, 3])), 'y');
+  assert.equal(m.count, 36, 'the same cube, moved');
+  assert.deepEqual(m.bounds.min, [100, 20, 3]);
+  assert.deepEqual(m.bounds.max, [110, 30, 13]);
 });
 
 test('a STEP presentation colour reaches the faces of the solid it styles', () => {
@@ -954,6 +997,137 @@ test('a STEP cylinder is round, and is round in about as few triangles as that t
     const onWall = Math.abs(r - 5) < 0.05;
     const onCap = (Math.abs(z) < 1e-6 || Math.abs(z - 20) < 1e-6) && r < 5.05;
     assert.ok(onWall || onCap, `point off the cylinder: ${[x, y, z]}`);
+  }
+});
+
+/**
+ * A planar face at z = 0, written from explicit loops.
+ *
+ * The point of the fixture is that the area such a face encloses is known
+ * exactly, so a triangulation of it can be checked against a number rather than
+ * against a triangle count - and the failures this guards against all keep the
+ * count. `flip` names edges of the outer loop, by index, written with their LINE
+ * pointing backwards and `same_sense` false: legal, ordinary, and what an
+ * exporter writes for an edge two faces share.
+ */
+function stepPlanarFace({ outer, holes = [], flip = [] }) {
+  // Every real in the format carries a decimal point, so a whole number needs
+  // one appended and a fraction already has one - `${v}.` on both writes `8.5.`
+  // for the second, which is not a number and reads as a string.
+  const real = v => (Number.isInteger(v) ? `${v}.` : v.toFixed(12));
+  return stepFile(put => {
+    const ring = (pts, isOuter, back) => {
+      const ids = pts.map(([x, y]) => put(`CARTESIAN_POINT('',(${real(x)},${real(y)},0.))`));
+      const verts = ids.map(p => put(`VERTEX_POINT('',#${p})`));
+      const oriented = pts.map((_, i) => {
+        const j = (i + 1) % pts.length;
+        const [from, to] = back.has(i) ? [j, i] : [i, j];
+        // The direction is the raw delta and the magnitude is one, so the two
+        // vertices land on parameters 0 and 1 exactly and the area below is the
+        // outline's own rather than a rounding of it. The format does not
+        // require a DIRECTION to be a unit vector and exporters differ.
+        const d = [pts[to][0] - pts[from][0], pts[to][1] - pts[from][1]];
+        const dir = put(`DIRECTION('',(${real(d[0])},${real(d[1])},0.))`);
+        const vec = put(`VECTOR('',#${dir},1.)`);
+        const line = put(`LINE('',#${ids[from]},#${vec})`);
+        // The edge always runs i to j. Only the curve under it may run the other
+        // way, and `same_sense` is the whole of what says so.
+        const edge = put(`EDGE_CURVE('',#${verts[i]},#${verts[j]},#${line},.${back.has(i) ? 'F' : 'T'}.)`);
+        return put(`ORIENTED_EDGE('',*,*,#${edge},.T.)`);
+      });
+      const loop = put(`EDGE_LOOP('',(${oriented.map(o => `#${o}`).join(',')}))`);
+      return put(`${isOuter ? 'FACE_OUTER_BOUND' : 'FACE_BOUND'}('',#${loop},.T.)`);
+    };
+    const bounds = [ring(outer, true, new Set(flip)), ...holes.map(h => ring(h, false, new Set()))];
+    const o = put(`CARTESIAN_POINT('',(0.,0.,0.))`);
+    const z = put(`DIRECTION('',(0.,0.,1.))`);
+    const x = put(`DIRECTION('',(1.,0.,0.))`);
+    const plane = put(`PLANE('',#${put(`AXIS2_PLACEMENT_3D('',#${o},#${z},#${x})`)})`);
+    const face = put(`ADVANCED_FACE('',(${bounds.map(b => `#${b}`).join(',')}),#${plane},.T.)`);
+    put(`MANIFOLD_SOLID_BREP('plate',#${put(`CLOSED_SHELL('',(#${face}))`)})`);
+  });
+}
+
+/**
+ * The area of a mesh two ways: signed about +z, and unsigned.
+ *
+ * They agree exactly when every triangle is wound the same way and no two
+ * overlap, and that is the assertion. A triangulation that folds keeps the right
+ * triangle *count* and often the right signed area - the folded pairs cancel -
+ * so the unsigned total is the only one of the three that notices.
+ */
+function areas(m) {
+  const P = m.positions;
+  let signed = 0, total = 0;
+  for (let i = 0; i < P.length; i += 9) {
+    const ux = P[i + 3] - P[i], uy = P[i + 4] - P[i + 1], uz = P[i + 5] - P[i + 2];
+    const vx = P[i + 6] - P[i], vy = P[i + 7] - P[i + 1], vz = P[i + 8] - P[i + 2];
+    const cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx;
+    signed += cz / 2;
+    total += Math.hypot(cx, cy, cz) / 2;
+  }
+  return { signed, total };
+}
+
+/** Areas are compared this loosely because the outline's own vertices come back
+ *  through a curve parameterisation and land a few parts in a hundred million
+ *  from where they were written. What is being guarded against is a face drawing
+ *  a fifth of itself twice, so the margin is seven orders of room. */
+const AREA_EPS = 1e-3;
+
+const polygon = (r, n) => Array.from({ length: n }, (_, i) => {
+  const t = 2 * Math.PI * i / n;
+  return [r * Math.cos(t), r * Math.sin(t)];
+});
+
+test('a STEP face covers the area its outline encloses, once, the right way up', () => {
+  // Twelve sides rather than four because the Delaunay pass that follows the
+  // ear clipper only flips more than once per sweep from about seven vertices
+  // up - below that a broken flipper is indistinguishable from a working one.
+  const want = 12 / 2 * 100 * Math.sin(2 * Math.PI / 12);
+  const m = parseMesh('step', buf(stepPlanarFace({ outer: polygon(10, 12) })), 'y');
+  assert.equal(m.count / 3, 10, 'a twelve-gon is ten triangles');
+  const { signed, total } = areas(m);
+  near(signed, want, 'signed area', AREA_EPS);
+  near(total, want, 'unsigned area', AREA_EPS);
+});
+
+test('a hole in a STEP face is a hole, not a fill', () => {
+  const m = parseMesh('step', buf(stepPlanarFace({
+    outer: [[-10, -10], [10, -10], [10, 10], [-10, 10]],
+    holes: [[[-4, -4], [-4, 4], [4, 4], [4, -4]]],
+  })), 'y');
+  const { signed, total } = areas(m);
+  near(signed, 400 - 64, 'signed area', AREA_EPS);
+  // The failure this catches drew the hole filled in and still had the right
+  // signed area, because the triangles over the hole came in cancelling pairs.
+  near(total, 400 - 64, 'unsigned area', AREA_EPS);
+});
+
+test('two holes in one STEP face are both cut', () => {
+  const m = parseMesh('step', buf(stepPlanarFace({
+    outer: [[-20, -20], [20, -20], [20, 20], [-20, 20]],
+    holes: [
+      [[-12, -4], [-12, 4], [-4, 4], [-4, -4]],
+      [[4, -4], [4, 4], [12, 4], [12, -4]],
+    ],
+  })), 'y');
+  const { signed, total } = areas(m);
+  near(signed, 1600 - 64 - 64, 'signed area', AREA_EPS);
+  near(total, 1600 - 64 - 64, 'unsigned area', AREA_EPS);
+});
+
+test('an edge whose curve runs backwards is still walked from its start vertex', () => {
+  // `same_sense` false says the curve under the edge is parameterised against
+  // the edge's direction. It does not swap the edge's two vertices, and reading
+  // it as though it did walks that edge backwards - which leaves the boundary
+  // crossing itself, not merely facing the wrong way.
+  const square = [[-10, -10], [10, -10], [10, 10], [-10, 10]];
+  for (const flip of [[0], [1, 3], [0, 1, 2, 3]]) {
+    const m = parseMesh('step', buf(stepPlanarFace({ outer: square, flip })), 'y');
+    const { signed, total } = areas(m);
+    near(signed, 400, `signed area with ${flip.length} reversed edges`, AREA_EPS);
+    near(total, 400, `unsigned area with ${flip.length} reversed edges`, AREA_EPS);
   }
 });
 

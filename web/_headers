@@ -351,3 +351,71 @@
 # for, and it would have been the second time a policy was widened for pdf.js.
 /assets/vendor/pdfjs/pdf.worker.min.mjs
   ! Content-Security-Policy
+
+# The third, and the only one of the three this app wrote itself.
+#
+# canvas/matte-worker.js runs u2netp - the model behind the darkroom's Remove
+# background - on ONNX Runtime's wasm backend. Compiling that runtime needs
+# 'wasm-unsafe-eval', which the rule at the top of this file does not grant and
+# should not: it would hand the capability to the document and to every worker
+# in order to buy it for one file.
+#
+# It was very nearly not needed. The first build of this used ORT's *WebGL*
+# backend, which is plain JavaScript - 454 KB, no wasm, no exemption, nothing to
+# add here at all. It does not work: every operator u2netp uses is supported by
+# that backend at opset 11, but it has no int64, and the model computes the
+# target size of all 38 of its Resize nodes as int64 at run time. That is a
+# dtype constraint an operator table does not express. See the header of
+# canvas/matte.ts, which keeps the whole of that reasoning so the cheap path is
+# not tried a second time.
+#
+# Narrower than it looks, and on the same terms as the two above. What runs
+# unpoliced is one file we wrote and one wasm binary committed to this
+# repository, pinned by ORT_VERSION in canvas/matte.ts and by
+# tests/matte-vendor.test.js. It has no DOM, it is spawned by us, and its whole
+# interface is one message in - a Float32Array of 307,200 numbers - and one
+# message out. It cannot reach this page, and it reaches no host: the model and
+# the runtime are both same-origin, so unlike the ffmpeg worker above this one
+# needs no CDN at all and would work with the network off.
+#
+# Removed rather than replaced, for the reason the first exemption gives: two
+# Content-Security-Policy values on one path are intersected, not overridden, so
+# a looser rule here would change nothing.
+/assets/js/canvas/matte-worker.js
+  ! Content-Security-Policy
+
+# The fourth, and the last one this file expects to need.
+#
+# mesh/occt-worker.js runs Open CASCADE - the geometry kernel every CAD viewer
+# runs - over a STEP or IGES file. Those two formats hold no triangles at all,
+# only trimmed surfaces and the topology tying them together, so something has
+# to turn them into a model before anything can be drawn. Compiling that kernel
+# is a WebAssembly compile and wants 'wasm-unsafe-eval', on the terms the three
+# rules above already argue: granting it to the document would grant it to
+# everything, to buy it for one file.
+#
+# Narrower than the other three in one way that matters. This app can already
+# read both formats - mesh/step.ts and mesh/iges.ts are a boundary-representation
+# tessellator written here, and they stay - so what the exemption buys is
+# fidelity rather than the feature. If a host ignores the removal, the worker
+# keeps the strict policy, the compile throws, mesh/occt.ts returns null and the
+# card is read the way it was read before any of this existed. That is the
+# degradation the module is built around, which is what makes this safe to get
+# wrong.
+#
+# What runs unpoliced is one file we wrote and two files committed to this
+# repository, pinned by OCCT_VERSION in mesh/occt.ts and by
+# tests/occt-vendor.test.js. It has no DOM, it is spawned by us, its whole
+# interface is one message in - the bytes of a file - and one message out, and it
+# reaches no host: the kernel resolves its .wasm beside itself and both are
+# same-origin, so like the matting worker and unlike the ffmpeg one it needs no
+# network at all.
+#
+# The licence is the other reason those two files are served rather than bundled,
+# and it is not a CSP matter - see web/assets/vendor/occt/LICENSE.txt.
+#
+# Removed rather than replaced, for the reason the first exemption gives: two
+# Content-Security-Policy values on one path are intersected, not overridden, so
+# a looser rule here would change nothing.
+/assets/js/mesh/occt-worker.js
+  ! Content-Security-Policy

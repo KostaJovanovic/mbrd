@@ -23,7 +23,7 @@
 // Nothing here reaches `document` at import time - initViewer() does, and
 // tests/imports.test.js holds this file to that.
 
-import { byId, itemAdjust, itemCrop, flipTransform } from '../state.ts';
+import { byId, itemAdjust, itemCrop, itemRotate, itemMatte, flipTransform } from '../state.ts';
 import { displayURLReady, ensureDisplay } from '../canvas/display.ts';
 import { assetURL, getAsset, readText } from '../storage/assets.ts';
 import { baseName, formatBytes } from '../util.ts';
@@ -440,12 +440,21 @@ const VIEWS: Record<string, View> = {
     // because the copy may not be made yet - the card is usually what made it,
     // and a card that has never been on screen has not. The full frame shows for
     // that moment, which is the same stand-in the card itself uses.
+    // The quarter turn and the background removal come down the same pipe, and
+    // they have to: neither has a CSS spelling that would let this view apply it
+    // over the original the way the grade and the mirror below are applied. See
+    // itemRotate() in board-model.ts.
     const crop = itemCrop(item);
+    const rot = itemRotate(item);
+    const matte = itemMatte(item);
     const hash = item.asset?.hash;
-    if (crop && hash) {
-      const ready = displayURLReady(hash, crop);
+    if ((crop || rot || matte) && hash) {
+      const ready = displayURLReady(hash, crop, rot, matte);
       if (ready) img.src = ready;
-      else ensureDisplay(hash, crop).then(u => { if (u && img.isConnected) img.src = u; });
+      else {
+        ensureDisplay(hash, crop, rot, matte)
+          .then(u => { if (u && img.isConnected) img.src = u; });
+      }
     }
     // The grade is a filter and applies whatever the source, so it rides on top
     // of either branch above.

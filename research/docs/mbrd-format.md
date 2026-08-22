@@ -563,6 +563,14 @@ keeps a file the size of somebody's intentions rather than the size of their
 keystrokes — and it is the one place the format deliberately remembers less than
 the app did.
 
+`run` is what says whether two steps were one: the ids that changed and which of
+their fields, and — for a step carrying a rule — the rule's name in front of
+them, as `op:arrange|desktop:k3f,desktop:p81|x,y`. So cycling an arrangement to
+see which one looks right is one step holding the board before the first press
+and the arrangement settled on at the last, while an align and an arrange over
+the same cards stay two. A reader can ignore the field entirely: it is only ever
+consulted when the *next* step is recorded, in the session that records it.
+
 **`fingerprint` is taken over `items` and `trash` as this file carries them**,
 not over the live board, because a board written out and read back is not the
 same object — coordinates round, absent keys take defaults, layouts are
@@ -693,6 +701,11 @@ promise 1 above,** and that is the open question at the bottom of this document.
 | `duration` | `audio` | The track length in seconds, read off the file's metadata and cached so the row shows it without loading the file again. A number; additive. |
 | `cover`  | any | An asset hash for the picture a card shows: album art, a diagram, a chosen image. On a `video` it is the poster — a still cut from the clip's own first frame at import, so the card is a picture of itself before it is played. Same key either way, and readers need not tell them apart. |
 | `fit`    | `image`, `video` | This one card's fit, overriding the board-wide `mediaFit`: `"cover"` fills and crops, `"contain"` fits the whole picture in. Absent means follow the board default. |
+| `crop`   | `image` | The rectangle of the picture the card shows: `{ x, y, w, h }`, four **fractions of the source** with the origin at the top left. Fractions rather than pixels so the record survives the bytes being re-encoded at another size by Optimize. Non-destructive — the asset is untouched, and the crop is applied when the display copy is made (`canvas/display.ts`). A full-frame rectangle is not a crop and carries no key. **A reader that honours only this key still gets the right region**, whatever the four below say. |
+| `rotate` | `image` | A quarter turn, clockwise: `90`, `180` or `270`. Not an arbitrary angle — straightening is a different feature. Applied **after** `crop` and before `flip`, which is what keeps `crop` in the source's own coordinates. Absent, `0` or a full turn means the way the file arrived. A quarter turn swaps the card's proportions, so it is baked into the display copy rather than applied as a transform. |
+| `flip`   | `image` | Which way round the picture is hung: `{ x, y }`, two booleans, `x` mirroring left to right and `y` top to bottom. Truthy rather than `=== true`. Applied **last**, to whatever `crop` and `rotate` left, and as a compositor transform rather than in the pixels — a mirror does not change the box. Neither axis set means no key. |
+| `adjust` | `image`, `video` | The grade: `{ brightness, contrast, saturation }`, each a multiplier around 1, clamped to 0–2. Becomes one CSS `filter`, which is why there are three and not thirty. Neutral on all three means no key. Video too, unlike the four above — a filter grades a frame as happily as a still. |
+| `matte`  | `image` | `true` when the picture is shown with its background taken out. A flag and nothing else: the cut is a salient-object model (U²-Netp, vendored — see `canvas/matte.ts`), and it has no setting a person could turn. Applied after `crop` and `rotate`. Absent means the picture keeps every pixel it arrived with; `false` is never written. Non-destructive like the rest — the mask lives in the derived copy and in the export, never in the asset, so **a reader that ignores this key shows the same photograph with its background**, which is a degradation and not a corruption. |
 | `fence`  | any | The id of the fence this item is inside, when it is inside one. Absent means loose — the key is written only where there is a fence to name, since a null on every card would be noise. Stamped at save from live geometry; a load seeds the runtime memo from it. A dangling id (fence deleted) falls back to measuring. |
 | `presnap`| any | Where the item was before snap-to-grid moved it, so turning snapping off can put it back. `{ x, y, w, h }`. |
 

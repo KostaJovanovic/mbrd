@@ -65,6 +65,7 @@ import { parseCollada } from './mesh/collada.ts';
 import { parse3DS } from './mesh/tds.ts';
 import { parseSTEP } from './mesh/step.ts';
 import { parseIGES } from './mesh/iges.ts';
+import { kernelMesh, usesKernel } from './mesh/occt.ts';
 
 // The shape and the ceilings are re-exported rather than moved outright, so that
 // `import { Mesh, MeshError } from './mesh.ts'` keeps meaning what it meant in
@@ -317,16 +318,57 @@ export function parseMesh(
   try {
     const read = kind ? BY_KIND.get(kind) : undefined;
     if (!read) throw new MeshError('Not a model file');
-    const mesh = read(bytes);
-    const said = mesh.upAxis === 'z' || mesh.upAxis === 'y' ? mesh.upAxis : null;
-    const up = upAxis === 'z' || upAxis === 'y' ? upAxis : said || defaultUpAxis(kind);
-    return up === 'z' ? standUp(mesh) : mesh;
+    return orient(kind, read(bytes), upAxis);
   } finally {
     // Whichever way it ended, including the throw that starts the asking. A
     // lifted ceiling that outlived its parse would silently apply to the next
     // model on the board, which nobody agreed to.
     resetCaps();
   }
+}
+
+/**
+ * Which way up, from the three people entitled to an opinion.
+ *
+ * In order of who is most likely to be right: what the *person looking at it*
+ * said, then what the *file* said, then what the format usually means. Pulled
+ * out of parseMesh() because the kernel path below reaches the same question by
+ * a different road and must answer it the same way - a STEP file that stands up
+ * one way through OpenCASCADE and another way through mesh/step.ts would be a
+ * fallback nobody could tell had happened except by the model lying down.
+ */
+function orient(kind: string | null, mesh: Mesh, upAxis?: unknown): Mesh {
+  const said = mesh.upAxis === 'z' || mesh.upAxis === 'y' ? mesh.upAxis : null;
+  const up = upAxis === 'z' || upAxis === 'y' ? upAxis : said || defaultUpAxis(kind);
+  return up === 'z' ? standUp(mesh) : mesh;
+}
+
+/**
+ * The one door a card comes in by, and the only asynchronous one.
+ *
+ * STEP and IGES go to the CAD kernel in mesh/occt.ts first, which is a worker
+ * and therefore a promise; everything else, and either of those two when the
+ * kernel is not available, goes to parseMesh() exactly as before. That is the
+ * whole of the difference, and it is deliberately the whole of it: parseMesh()
+ * stays synchronous, stays the reader every test drives, and stays what happens
+ * when 7 MB of vendored WebAssembly does not load.
+ *
+ * The ceiling is passed to the kernel rather than lifted globally around it -
+ * see the argument at kernelMesh(). Everything else about `lift` is unchanged:
+ * it comes back as an Oversize throw, canvas/model.ts asks, and a yes calls this
+ * again.
+ */
+export async function readModel(
+  kind: string | null,
+  bytes: ArrayBuffer,
+  upAxis?: unknown,
+  lift = false,
+): Promise<Mesh> {
+  if (usesKernel(kind)) {
+    const mesh = await kernelMesh(kind, bytes, lift ? Infinity : MAX_TRIANGLES);
+    if (mesh) return orient(kind, mesh, upAxis);
+  }
+  return parseMesh(kind, bytes, upAxis, lift);
 }
 
 /**

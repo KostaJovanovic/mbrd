@@ -1529,9 +1529,23 @@ resolves to `'cancel'` too, so an unanswerable question about discarding
 somebody's work is answered "don't". Passing a `field` changes the contract to
 "what" rather than "which", and it resolves to the trimmed string or `null`.
 
-`storage/idb.ts` is the whole IndexedDB surface — two stores, `kv` for the board
-snapshot and `assets` for Blobs by hash — and it is **crash recovery only**. The
+`storage/idb.ts` is the whole IndexedDB surface — four stores: `kv` for the board
+snapshot, `assets` for Blobs by hash, `library` for the packed boards on the
+shelf, and `matte` for the cut-out cache — and it is **crash recovery only**. The
 durable artefact is always the `.mbrd` the user saved.
+
+`storage/matte-cache.ts` is the one derived thing in the app that outlives the
+session, and the reason is cost rather than importance. `canvas/display.ts` makes
+a display copy of every picture and holds it for the session; that is right for a
+copy costing a decode and an encode and wrong for one that ran a neural network,
+so a *matted* copy — and only a matted one — is written here and read back on the
+next load. Everything in it is derived and droppable: the key carries every input
+that moves a pixel (the crop, the turn, the sharpness ceiling, the encoder
+quality, the model and runtime pins, a hand-bumped revision), nothing in it ever
+throws, and a miss only costs the picture being derived the way it always was.
+`clearSession()` empties it beside the other two — a cut-out is the photograph
+with its background taken off, so leaving one behind after **Clear everything**
+would be leaving the photograph.
 
 `optimize/` is loaded by dynamic `import()` and never runs on its own — it is a
 button. Nothing in it fires on import, on save or on a timer; it says what it is

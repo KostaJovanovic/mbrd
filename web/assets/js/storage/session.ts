@@ -29,6 +29,7 @@ import { allAssets, putAsset } from './assets.ts';
 import {
   idbGet, idbSet, idbClear, idbKeys, idbGetMany, idbSetMany, idbDelMany,
 } from './idb.ts';
+import { clearMatteCache } from './matte-cache.ts';
 // The shape errors.ts will read this module's one answer through. A type only,
 // and errors.ts sits in the base layer beside notify.ts - see setBoardProbe().
 import type { BoardSafety } from '../errors.ts';
@@ -541,6 +542,13 @@ export async function restoreSession() {
 export async function clearSession() {
   await idbClear('kv');
   await idbClear('assets');
+  // The derived half, and it is not optional on the wider of the two callers. A
+  // cached cut-out is a photograph with its background taken off; one left in
+  // this browser after somebody asked for everything gone is that photograph,
+  // still here. It goes on New as well, which needs it less - the assets it was
+  // derived from are being wiped on the line above - but a rule with an
+  // exception in it is a rule somebody eventually gets wrong.
+  await clearMatteCache();
 }
 
 /**

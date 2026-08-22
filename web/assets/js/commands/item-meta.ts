@@ -325,16 +325,22 @@ export function itemMetaCommands() {
     // default rather than a verdict: whatever is chosen here wins and is what
     // gets saved.
     //
-    // Pictures and notes, which is two readings of one idea. On a photograph
-    // the card is a mount and taking it away leaves the silhouette; on a sticky
-    // the card is the pad paper and taking it away leaves the words, sitting on
-    // the board the way something written straight onto it would. A caption
-    // over a photograph, a title across a corner of the board, a line of text
-    // that is not a note about anything - those all wanted a note with no paper
-    // and had to be made by dropping a transparent image instead.
+    // Pictures, notes and models, which is three readings of one idea. On a
+    // photograph the card is a mount and taking it away leaves the silhouette;
+    // on a sticky the card is the pad paper and taking it away leaves the words,
+    // sitting on the board the way something written straight onto it would. A
+    // caption over a photograph, a title across a corner of the board, a line of
+    // text that is not a note about anything - those all wanted a note with no
+    // paper and had to be made by dropping a transparent image instead.
+    //
+    // A model is the picture reading. canvas/model.ts draws on a transparent
+    // buffer, so a part on a card is already a silhouette with board showing
+    // through the corners of its box - and a bracket or a bolt is exactly the
+    // shape somebody wants sitting *on* a moodboard rather than mounted on a
+    // plate. It is the type where the frame round nothing is most of the frame.
     canSetBare: (id: string) => {
       const type = byId(id)?.type;
-      return type === 'image' || type === 'note';
+      return type === 'image' || type === 'note' || type === 'model';
     },
     itemBare: (id: string) => byId(id)?.meta?.bare === true,
     setItemBare: (id: string, bare: boolean) => setItemBare(id, bare),

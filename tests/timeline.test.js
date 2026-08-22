@@ -329,6 +329,20 @@ function shiftTo(id, to) {
   commitGeom('Shift', before, [id]);
 }
 
+// A second rule doing the same thing under another name, which is the only way
+// to test that the rule's name keeps two runs apart. The real pair is align and
+// arrange: both move x and y of the same cards, and only their names differ.
+registerOp('nudge-to', params => nudgeTo(String(params.id), Number(params.to)));
+
+function nudgeTo(id, to) {
+  const item = byId(id);
+  if (!item) throw new Error('no such card');
+  const before = snapshotGeom([id]);
+  declareOp('nudge-to', { id, to });
+  item.x = to;
+  commitGeom('Nudge', before, [id]);
+}
+
 test('a step that carries a rule says so', () => {
   const [a] = addItems([photo({ x: 0, y: 0 })]);
   shiftTo(a.id, 100);
@@ -426,14 +440,42 @@ test('a sealed step cannot be edited', () => {
   assert.equal(editStep(1, { anything: 1 }), false);
 });
 
-test('two rules in a row stay two steps', () => {
+test('two rules in a row are one step carrying the later rule', () => {
   const [a] = addItems([photo({ x: 0, y: 0 })]);
   shiftTo(a.id, 100);
   shiftTo(a.id, 200);
-  // They touch the same card in the same field, which is what a run is - but a
-  // step carrying a rule never merges, because one merged step's parameters
-  // would describe the second while its difference described both.
+  // They touch the same card in the same field, which is what a run is, and a
+  // rule is not exempt from that. This used to assert three: the exemption meant
+  // cycling an arrangement to see which looked right left a mark per press.
+  assert.equal(timelineSteps().length, 2);
+  const [step] = timelineSteps().slice(-1);
+  // The parameters of the last press over the difference of the whole run, which
+  // is what makes the fold sound - editing this step re-runs the rule somebody
+  // settled on, and the difference it replaces already spans both presses.
+  assert.equal(step.op.params.to, 200);
+  assert.equal(editStep(1, { to: 250 }), true);
+  assert.equal(byId(a.id).x, 250);
+});
+
+test('two rules of different names over the same cards stay two steps', () => {
+  const [a] = addItems([photo({ x: 0, y: 0 })]);
+  shiftTo(a.id, 100);
+  nudgeTo(a.id, 200);
+  // Same card, same field - so the subject matches and only the rule's name
+  // keeps them apart. Merged, the step would claim to be a nudge whose
+  // difference is half a shift.
   assert.equal(timelineSteps().length, 3);
+});
+
+test('a rule does not merge with an ordinary step that moved the same card', () => {
+  const [a] = addItems([photo({ x: 0, y: 0 })]);
+  shiftTo(a.id, 100);
+  move(a.id, 40, 0);
+  shiftTo(a.id, 300);
+  // The empty key used to keep a rule away from a sealed step for free. The
+  // prefix is what does it now, and a sealed step in the middle closes the run
+  // besides.
+  assert.equal(timelineSteps().length, 4);
 });
 
 // ---------------------------------------------------------------------------

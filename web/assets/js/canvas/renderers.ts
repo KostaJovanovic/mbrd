@@ -14,7 +14,10 @@ import { extOf, baseName, formatBytes, hasOwn, isRecord } from '../util.ts';
 import { shownHash, type Item, type ItemType } from '../board-model.ts';
 import { assetURL, getAsset, readText } from '../storage/assets.ts';
 import { noPreview } from '../notify.ts';
-import { byId, bus, markDirty, board, isDefaultTitle, itemCrop, setSwatchHex, baseStep } from '../state.ts';
+import {
+  byId, bus, markDirty, board, isDefaultTitle, itemCrop, itemRotate, itemMatte,
+  setSwatchHex, baseStep,
+} from '../state.ts';
 import { latticeBox } from '../geometry.ts';
 import {
   describeExt, formatName, PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS,
@@ -517,7 +520,19 @@ const RENDERERS = {
     // for a cropped card, and that is the point of doing it there: the copy is
     // already the cropped picture by the time object-fit, the aspect adopted on
     // load and the far-zoom twin get hold of it.
+    //
+    // The quarter turn and the background removal ride down with it, on exactly
+    // those terms and for exactly that reason - a turn swaps the box and a matte
+    // is pixels, and neither is something this function should be teaching
+    // object-fit about. See itemRotate() in board-model.ts.
     const crop = itemCrop(item);
+    const rot = itemRotate(item);
+    const matte = itemMatte(item);
+    // Whether the copy is the only picture that would be right here. A card with
+    // none of the three can show its thumbnail and can fall back to the original
+    // while the copy renders; a card with any of them cannot, because both of
+    // those are the untouched file.
+    const edited = !!(crop || rot || matte);
     // An `<img>` that will not load says nothing: it draws its own alt text and
     // fires an event nobody was listening for. Answered rather than only
     // reported - a display copy that will not decode is this app's own derived
@@ -530,23 +545,24 @@ const RENDERERS = {
       noPreview('card', 'this browser would not draw the picture');
     });
     if (hash && !isAnimated(item) && !vector) {
-      const ready = displayURLReady(hash, crop);
+      const ready = displayURLReady(hash, crop, rot, matte);
       if (ready) {
         img.src = ready;
       } else {
         const thumbHash = metaStr(item.meta?.thumb);
         const thumb = thumbHash && assetURL(thumbHash);
-        // The thumbnail is the whole picture, so on a cropped card it is a
-        // stand-in for something else - it would show the full frame and then
-        // snap to the detail. Better to show nothing for the moment it takes.
-        if (thumb && !crop) img.src = thumb;   // crisp-enough stand-in while the copy renders
+        // The thumbnail is the whole picture, so on an edited card it is a
+        // stand-in for something else - it would show the full frame, the wrong
+        // way up, with its background still on it, and then snap to the detail.
+        // Better to show nothing for the moment it takes.
+        if (thumb && !edited) img.src = thumb;   // crisp-enough stand-in while the copy renders
         // **A copy that could not be made falls back to the original.** Without
         // it this card ends with no `src` at all, which is an `<img>` drawing
         // its own alt text - the file's name at the top of an empty rectangle,
         // on an item whose picture is sitting in the store. `!img.src` alongside
         // isConnected for the same reason: the guard exists to save work on a
         // discarded card, not to leave a live one blank.
-        ensureDisplay(hash, crop).then(u => {
+        ensureDisplay(hash, crop, rot, matte).then(u => {
           const src = u || assetURL(hash);
           if (src && (img.isConnected || !img.src)) img.src = src;
         });

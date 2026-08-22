@@ -35,9 +35,24 @@
 //    left alone and the entry points at the asset store's own object URL; that
 //    URL is storage/assets.js's to revoke, not this module's. Only the WebP
 //    copies this module created are revoked by clearDisplay().
+//
+// ── One kind of copy outlives the session ──
+//
+// Held-for-the-session is right for a copy that costs a decode and an encode.
+// It is wrong for a copy that ran a neural network to exist: a matted card is a
+// pass through u2netp (canvas/matte.ts), serialized against every other matted
+// card, and session-only meant a board of cut-outs re-derived all of them, in
+// order, on every load, arriving at the same bytes each time. So those - and
+// only those - are also written to storage/matte-cache.ts and read back on the
+// next load. Everything about that cache is derived and droppable; what this
+// module owes it is a key that changes whenever the pixels would, which is what
+// persistKey() below is, and the truth about whether the model actually ran,
+// which is what `knocked` is.
 
 import { getAsset, assetURL } from '../storage/assets.ts';
+import { loadMatte, saveMatte, forgetMatte } from '../storage/matte-cache.ts';
 import { quality } from '../quality.ts';
+import { cutout, MODEL_NAME, ORT_VERSION } from './matte.ts';
 import { surface, surfaceToBlob, type Surface } from './surface.ts';
 
 /**
@@ -86,14 +101,76 @@ const QUALITY = 0.82;
 export type Crop = { x: number, y: number, w: number, h: number } | null;
 
 /**
- * The cache key: the content hash, plus the rectangle when there is one.
+ * The other two things baked in beside the crop, and why they are baked at all.
  *
- * The uncropped key is the bare hash and not `hash|0,0,1,1`, so every entry
- * made before crops existed keys exactly as it did - and, more to the point, so
- * the common case stays one string concatenation of nothing.
+ * `rot` is a quarter turn - 90, 180 or 270 clockwise, or null. It is here rather
+ * than on the card as a CSS transform for one reason, argued in full at
+ * itemRotate() in board-model.ts: a quarter turn swaps the box, so a card that
+ * turned its picture with the compositor would still be laying out, fitting and
+ * far-zooming the shape of the untouched file.
+ *
+ * `matte` is whether the background is taken out. It is here because there is no
+ * CSS that does it at all - see canvas/matte.ts, which is the model and the
+ * argument for it.
+ *
+ * **Both are applied to the region the crop left, in that order**, so the crop
+ * stays four fractions of the source and a reader that carries either key
+ * through without understanding it still cuts the right slice.
  */
-const keyFor = (hash: string, crop: Crop) =>
-  (crop ? `${hash}|${crop.x},${crop.y},${crop.w},${crop.h}` : hash);
+export type Turn = 90 | 180 | 270 | null;
+export type Matte = boolean;
+
+/**
+ * The cache key: the content hash, plus whatever of the three there is.
+ *
+ * The plain key is the bare hash and not `hash|0,0,1,1@0%0`, so every entry made
+ * before any of this existed keys exactly as it did - and, more to the point, so
+ * the common case stays one string concatenation of nothing. Each part carries
+ * its own sigil, so a picture that is only turned and a picture that is only
+ * matted cannot collide.
+ */
+const keyFor = (hash: string, crop: Crop, rot: Turn, matte: Matte) =>
+  hash
+  + (crop ? `|${crop.x},${crop.y},${crop.w},${crop.h}` : '')
+  + (rot ? `@${rot}` : '')
+  + (matte ? '%' : '');
+
+/** Whether a copy has to be made at all, whatever size the original already is. */
+const derived = (crop: Crop, rot: Turn, matte: Matte) => !!(crop || rot || matte);
+
+/**
+ * Bumped by hand when this module would draw the same picture differently.
+ *
+ * The in-memory cache never needed one - it dies with the page, so a change to
+ * the drawing takes effect on the next load whatever the key says. The persisted
+ * one does: an entry written by the build before a change to the crop
+ * arithmetic, the rotation, or the way the mask is composited would be served
+ * for as long as it survives eviction, and the picture would be subtly wrong
+ * with nothing to point at. Bump this and every stale entry misses once.
+ *
+ * The numbers that already move on their own are in persistKey() rather than
+ * here, so the only thing left to remember is a change to the *code*.
+ */
+const COPY_REV = 1;
+
+/**
+ * The key the persisted cut-out cache is asked under: everything that moved a
+ * pixel, spelled out.
+ *
+ * The hash and the three edits come from keyFor above, so the two caches cannot
+ * disagree about what a variant is. What is added is everything the session
+ * cache gets to leave implicit because it does not outlive the thing that set
+ * it: the sharpness ceiling (a copy made at 1024 must not be served to a board
+ * now asking for 1280 - see displayMax()), the encoder quality, the model and
+ * the runtime that produced the mask, and the revision above.
+ *
+ * MODEL_NAME and ORT_VERSION are the pins tests/matte-vendor.test.js holds to
+ * the bytes on disk, so swapping either vendored thing invalidates every cached
+ * cut-out without anybody having to think of it.
+ */
+const persistKey = (hash: string, crop: Crop, rot: Turn) =>
+  keyFor(hash, crop, rot, true).slice(hash.length)
+  + `~${displayMax()}~${QUALITY}~${MODEL_NAME}@${ORT_VERSION}~${COPY_REV}`;
 
 /** key -> { url, own }. own=false when the entry points at the original's URL. */
 const cache = new Map<string, { url: string; own: boolean }>();
@@ -114,8 +191,10 @@ let epoch = 0;
  * re-mount of a picture whose copy exists (panned back into view, say) sets its
  * src at once with no flicker.
  */
-export function displayURLReady(hash: string, crop: Crop = null): string | null {
-  return cache.get(keyFor(hash, crop))?.url || null;
+export function displayURLReady(
+  hash: string, crop: Crop = null, rot: Turn = null, matte: Matte = false,
+): string | null {
+  return cache.get(keyFor(hash, crop, rot, matte))?.url || null;
 }
 
 /**
@@ -123,8 +202,10 @@ export function displayURLReady(hash: string, crop: Crop = null): string | null 
  * URL. Idempotent and shared: repeated calls for the same hash return the one
  * in-flight or finished job. Resolves to null only if the asset is gone.
  */
-export function ensureDisplay(hash: string, crop: Crop = null): Promise<string | null> {
-  const key = keyFor(hash, crop);
+export function ensureDisplay(
+  hash: string, crop: Crop = null, rot: Turn = null, matte: Matte = false,
+): Promise<string | null> {
+  const key = keyFor(hash, crop, rot, matte);
   const done = cache.get(key);
   if (done) return Promise.resolve(done.url);
   const inFlight = pending.get(key);
@@ -132,7 +213,7 @@ export function ensureDisplay(hash: string, crop: Crop = null): Promise<string |
   // Chain onto the queue so generation is serial; keep the chain alive past a
   // failure so one undecodable file does not stall every picture behind it.
   const mine = epoch;
-  const job = queue.then(() => generate(hash, crop, mine));
+  const job = queue.then(() => generate(hash, crop, rot, matte, mine));
   queue = job.catch(() => {});
   // Deleted by identity, not by key. `pending` is cleared wholesale by
   // clearDisplay(), so a job that started before the clear and settled after it
@@ -147,13 +228,38 @@ export function ensureDisplay(hash: string, crop: Crop = null): Promise<string |
   return tracked;
 }
 
-async function generate(hash: string, crop: Crop, mine: number): Promise<string | null> {
-  const key = keyFor(hash, crop);
+async function generate(
+  hash: string, crop: Crop, rot: Turn, matte: Matte, mine: number,
+): Promise<string | null> {
+  const key = keyFor(hash, crop, rot, matte);
   const existing = cache.get(key);
   if (existing) return existing.url;
   const a = getAsset(hash);
   if (!a) return null;
-  const small = await shrink(a.blob, crop);
+  // Fixed before anything is drawn, so that a sharpness change landing mid-decode
+  // cannot file this picture under a ceiling it was not made at.
+  const variant = matte ? persistKey(hash, crop, rot) : '';
+  // Asked before shrink() rather than after, because a hit is the whole point:
+  // it skips the full-resolution decode *and* the model, which is the second of
+  // those this exists for. Only matted copies are kept - see the header - and
+  // loadMatte() answers null for every way of not having one, including there
+  // being no database at all.
+  let small = matte ? await loadMatte(hash, variant) : null;
+  if (!small) {
+    const made = await shrink(a.blob, crop, rot, matte);
+    small = made.blob;
+    // Kept only when the model actually cut. cutout() answers false on a browser
+    // with no worker, a runtime that would not import or a canvas that will not
+    // hand its pixels back, and what it leaves behind is a correct picture with
+    // its background still on - persisting that would pin the failure to disk,
+    // and the cut-out would never appear on a machine where it later works.
+    //
+    // Not awaited, and not behind the epoch check below. A cached copy is keyed
+    // by content rather than by board, so one finished after a clear is still a
+    // correct copy of the same bytes - and a write nobody is waiting on has no
+    // business holding a mount.
+    if (matte && made.knocked && made.blob) void saveMatte(hash, variant, made.blob);
+  }
   // A clear landed while that decode ran - a new board, or a new sharpness
   // ceiling. Publishing now would put back a copy the clear meant to drop, at a
   // resolution nobody asked for, and the entry would outlive the board it came
@@ -178,19 +284,38 @@ async function generate(hash: string, crop: Crop, mine: number): Promise<string 
 }
 
 /**
+ * What one attempt at a display copy produced: the bytes, and whether the
+ * background was actually taken off.
+ *
+ * `blob` is null for the ordinary "leave it alone" cases - already within the
+ * ceiling, the browser cannot decode it - because those are not failures: the
+ * original is already a fine thing to mount.
+ *
+ * `knocked` is the second half and exists for one caller: generate() persists a
+ * cut-out and must not persist a picture that was *asked* to be one and came
+ * back whole. Every path that declines - no worker, no runtime, no readable
+ * canvas - returns a correct uncut picture, and only this flag tells the two
+ * apart. It is false whenever `blob` is null, which has no cut-out to describe.
+ */
+type Made = { blob: Blob | null, knocked: boolean };
+
+/** Nothing came of it, and there is nothing to say about a cut that did not run. */
+const NOTHING: Made = { blob: null, knocked: false };
+
+/**
  * A card-sized WebP of a picture, or null to mount the original as-is.
  *
- * Null for the ordinary "leave it alone" cases - already within the ceiling,
- * the browser cannot decode it - because those are not failures: the original is
- * already a fine thing to mount. Same four-call shape as optimize/picture.js.
+ * Same four-call shape as optimize/picture.js.
  */
-async function shrink(blob: Blob | null | undefined, crop: Crop = null): Promise<Blob | null> {
-  if (!blob || !/^image\//i.test(blob.type)) return null;
+async function shrink(
+  blob: Blob | null | undefined, crop: Crop = null, rot: Turn = null, matte: Matte = false,
+): Promise<Made> {
+  if (!blob || !/^image\//i.test(blob.type)) return NOTHING;
   let bmp;
   try {
     bmp = await createImageBitmap(blob);
   } catch {
-    return null;
+    return NOTHING;
   }
   try {
     // The region being kept, in the source's own pixels. The whole picture when
@@ -200,13 +325,19 @@ async function shrink(blob: Blob | null | undefined, crop: Crop = null): Promise
     const sw = Math.max(1, crop ? Math.round(crop.w * bmp.width) : bmp.width);
     const sh = Math.max(1, crop ? Math.round(crop.h * bmp.height) : bmp.height);
     const scale = Math.min(1, displayMax() / Math.max(sw, sh));
-    // Already inside the ceiling: mount the original - but only when there is no
-    // crop to apply. A cropped picture always needs a copy made, however small
-    // it is, because the copy *is* the crop. This is the one branch where the
-    // two paths genuinely differ.
-    if (scale === 1 && !crop) return null;
+    // Already inside the ceiling: mount the original - but only when there is
+    // nothing to apply. A picture that is cropped, turned or matted always needs
+    // a copy made, however small it is, because the copy *is* the edit. This is
+    // the one branch where the two paths genuinely differ.
+    if (scale === 1 && !derived(crop, rot, matte)) return NOTHING;
     const w = Math.max(1, Math.round(sw * scale));
     const h = Math.max(1, Math.round(sh * scale));
+    // A quarter turn swaps the surface, and only a quarter turn: 180 lands back
+    // on the same box. This is the one place the swap is computed - everything
+    // downstream reads the copy's own dimensions and needs no branch.
+    const quarter = rot === 90 || rot === 270;
+    const dw = quarter ? h : w;
+    const dh = quarter ? w : h;
     // Through canvas/surface.js rather than `new OffscreenCanvas(...)` directly,
     // and this is the whole module's fate riding on one constructor: it landed
     // in Safari 16.4, and below that the call threw straight into the catch
@@ -216,12 +347,30 @@ async function shrink(blob: Blob | null | undefined, crop: Crop = null): Promise
     //
     // No surface is one more "leave the original alone" case, and it already
     // was one: it threw into the same catch. Said out loud now.
-    const face = surface(w, h);
-    if (!face) return null;
-    face.ctx.drawImage(bmp, sx, sy, sw, sh, 0, 0, w, h);
-    return await encode(face, blob.type);
+    const face = surface(dw, dh);
+    if (!face) return NOTHING;
+    if (rot) {
+      // About the middle of the *destination*, then the source is drawn centred
+      // on the new origin. Written this way rather than as a translate-to-corner
+      // because the corner differs per angle and the centre does not, so there
+      // is one line here instead of a table of four.
+      face.ctx.translate(dw / 2, dh / 2);
+      face.ctx.rotate(rot * Math.PI / 180);
+      face.ctx.drawImage(bmp, sx, sy, sw, sh, -w / 2, -h / 2, w, h);
+      face.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    } else {
+      face.ctx.drawImage(bmp, sx, sy, sw, sh, 0, 0, w, h);
+    }
+    // After the turn, so the model sees the picture the way the person does -
+    // a saliency network is not orientation-invariant, and a subject lying on
+    // its side is a subject it was not trained on. It answers false on an engine
+    // with no workers, a runtime that would not load or a canvas that will not
+    // hand its pixels back, in which case the copy is still a correct cropped
+    // and turned picture, just an opaque one. See canvas/matte.ts.
+    const knocked = matte ? await cutout(face, dw, dh) : false;
+    return { blob: await encode(face, blob.type, knocked), knocked };
   } catch {
-    return null;
+    return NOTHING;
   } finally {
     bmp.close?.();
   }
@@ -257,12 +406,22 @@ async function shrink(blob: Blob | null | undefined, crop: Crop = null): Promise
  * is the one format that provably has no alpha to lose. Anything that might be
  * a cut-out keeps the canvas's own PNG rather than gaining a black background,
  * which would be this function trading a crash for a wrong picture.
+ *
+ * `knocked` is that same rule for the alpha this module puts there itself. A
+ * JPEG whose background has just been removed is a JPEG *with* alpha now, and it
+ * is the one case where "the source had none to lose" stops being true: without
+ * this flag, a matted photograph on Safari came back as a JPEG and the
+ * transparency it was asked for became a black rectangle. The flag rather than a
+ * pixel test, because the caller already knows and reading the canvas back a
+ * second time to ask is work to learn something nobody forgot.
  */
-async function encode(face: Surface, sourceType: string): Promise<Blob | null> {
+async function encode(
+  face: Surface, sourceType: string, knocked = false,
+): Promise<Blob | null> {
   const first = await surfaceToBlob(face, 'image/webp', QUALITY);
   if (!first) return null;
   if (first.type.toLowerCase() === 'image/webp') return first;
-  if (!/^image\/jpe?g$/i.test(sourceType)) return first;
+  if (knocked || !/^image\/jpe?g$/i.test(sourceType)) return first;
   // A second encode, and it can only improve on the first: JPEG or not, the
   // blob that comes back is the same pixels at the same size. Falls back to
   // `first` if this engine cannot write JPEG either, which no engine does.
@@ -283,9 +442,15 @@ async function encode(face: Surface, sourceType: string): Promise<Blob | null> {
  * this cache for the rest of the session - the original gone, the derived
  * WebP still held, and nothing left that could ever ask for it.
  *
- * Every key for a hash, not the hash itself: a cropped card keys its copy as
- * `hash|x,y,w,h` (see keyFor), so one photograph cropped two ways has three
- * entries here and the bare hash finds one of them.
+ * Every key for a hash, not the hash itself: an edited card keys its copy as
+ * `hash|x,y,w,h@rot%matte` (see keyFor), so one photograph cropped two ways has
+ * three entries here and the bare hash finds one of them.
+ *
+ * Cut at the first of the three sigils rather than at `|` alone. A picture that
+ * is turned but not cropped keys as `hash@90`, which a split on `|` hands back
+ * whole - so emptying the bin on it left the copy behind, holding an object URL
+ * for bytes that no longer exist anywhere. A hash is hex and can contain none of
+ * the three, which is what makes one character enough to find the end of it.
  *
  * `pending` is cleared for the same keys, and deliberately not awaited. A job
  * in flight publishes into `cache` when it lands, which is a copy of bytes
@@ -298,13 +463,19 @@ export function forgetDisplay(hashes: Iterable<string>) {
   // is walked. Deleting the current entry mid-iteration happens to be defined
   // for a Map, which is exactly the kind of thing a reader has to stop and look
   // up - and the lists here are a handful of entries.
-  const mine = (key: string) => doomed.has(key.split('|')[0]);
+  const mine = (key: string) => doomed.has(key.split(/[|@%]/)[0]);
   for (const key of Array.from(cache.keys()).filter(mine)) {
     const entry = cache.get(key);
     if (entry?.own) URL.revokeObjectURL(entry.url);
     cache.delete(key);
   }
   for (const key of Array.from(pending.keys()).filter(mine)) pending.delete(key);
+  // And the half that would otherwise outlive the bytes it was made from. A
+  // cut-out is the photograph with its background taken off, so a purge that
+  // left one in IndexedDB would have left the photograph - the one thing
+  // emptying the bin is supposed to mean. Not awaited, for the reason `pending`
+  // is not: this is inside an action somebody pressed a button for.
+  void forgetMatte(doomed);
 }
 
 /**

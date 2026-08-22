@@ -602,13 +602,20 @@
   border-radius: var(--radius-sm);
   overflow: hidden;
 }
-#darkroom-plate { position: relative; display: inline-block; line-height: 0; }
+#darkroom-plate {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+  /* The ceiling the picture is drawn inside, named once so the turned plate
+     below can do arithmetic with it. Bounded against the window rather than
+     against the dialog, so a tall portrait picture cannot push the dials and
+     the buttons off the bottom. */
+  --dk-cap: min(56dvh, 560px);
+}
 #darkroom-image {
   display: block;
   max-width: 100%;
-  /* Bounded against the window rather than against the dialog, so a tall
-     portrait picture cannot push the dials and the buttons off the bottom. */
-  max-height: min(56dvh, 560px);
+  max-height: var(--dk-cap);
   width: auto;
   height: auto;
   /* Nothing here is a drag target except the frame, and a picture that could be
@@ -616,6 +623,52 @@
   -webkit-user-drag: none;
   -webkit-user-select: none;
   user-select: none;
+}
+
+/* ── A quarter turn, which is the one case the plate cannot shrink-wrap ──
+
+   A CSS rotation does not change an element's layout box: the turned picture
+   paints on its side and the box under it is still the shape it had before, so
+   the plate would be a landscape rectangle with a portrait picture sticking out
+   of the top and bottom of it, and every one of the frame's percentages would
+   be a percentage of the wrong thing.
+
+   So on a quarter turn the plate stops taking its size from the picture and
+   takes it from the picture's *ratio* instead - `--dk-ar`, which ui/darkroom.js
+   writes as naturalHeight / naturalWidth, the width-over-height of the turned
+   picture. A ratio is a property of the photograph, so nothing here is a
+   measurement and nothing goes stale on a resize; the header of ui/darkroom.js
+   is where that promise is made.
+
+   `width` is the definite dimension and `aspect-ratio` derives the height,
+   rather than the other way round with a `max-width` clamping it. Those two
+   fight: a specified height and a clamped width make a box that does not obey
+   its own ratio, and the picture inside it is then stretched. Taking the
+   smaller of the two candidate widths up front means the height that comes out
+   is inside the cap by construction.
+
+   The picture is then laid out at the plate's own box with the sides swapped -
+   100cqh by 100cqw, which is what `container-type: size` on the plate makes
+   available - so that turning it lands it exactly on the plate with nothing
+   over or under. That is also why it is taken out of flow and centred: a
+   transform turns about the centre, and the two only coincide when the element
+   is centred to begin with. The translate is written by ui/darkroom.js as part
+   of the same transform, since a `transform` property has one value and the
+   turn has to be in it too. */
+#darkroom-plate.dk-quarter {
+  container-type: size;
+  display: block;
+  width: min(100%, calc(var(--dk-cap) * var(--dk-ar)));
+  aspect-ratio: var(--dk-ar);
+}
+#darkroom-plate.dk-quarter > #darkroom-image {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100cqh;
+  height: 100cqw;
+  max-width: none;
+  max-height: none;
 }
 
 /* Everything outside the crop is dimmed by one enormous spread rather than by
@@ -630,6 +683,56 @@
   touch-action: none;
 }
 #darkroom-frame[hidden] { display: none; }
+
+/* The background preview, filling the frame exactly - which costs nothing to
+   arrange, because the frame already is the region that survives.
+
+   The checkerboard behind it is the point of the whole element. A knocked-out
+   picture drawn straight over the plate would show the untouched photograph
+   through its own transparency, so the removal would be invisible; the board
+   behind it is what makes "gone" look like gone. Two gradients rather than an
+   image, at 10px, in the sheet's own inks so it reads at either end of the
+   whimsy axis.
+
+   `image-rendering: pixelated` is deliberately *not* here: the canvas is drawn
+   at preview resolution and stretched, and a smooth stretch of a soft-edged
+   matte is a fair picture of what the card will get, where a pixelated one
+   would show a staircase the card does not have. */
+#darkroom-cutout {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(45deg, var(--paper-3) 25%, transparent 25%, transparent 75%, var(--paper-3) 75%),
+    linear-gradient(45deg, var(--paper-3) 25%, transparent 25%, transparent 75%, var(--paper-3) 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 10px 10px;
+  pointer-events: none;
+}
+#darkroom-cutout[hidden] { display: none; }
+
+/* The model is running. A pulse on the plate rather than a spinner on the
+   button, because what is being waited for is the picture - and the button
+   keeps its pressed state throughout, since that state is what was asked for
+   rather than what has arrived.
+
+   It is on the plate and not on the frame so that it reads on the first run,
+   when there is no cut-out canvas on screen yet to pulse. Honours
+   prefers-reduced-motion by holding a steady dim instead, which says the same
+   thing without the movement. */
+@keyframes dk-working {
+  50% { opacity: 0.62; }
+}
+#darkroom.dk-busy #darkroom-plate {
+  animation: dk-working 1.1s var(--ease) infinite;
+}
+#darkroom.dk-busy #darkroom-stage { cursor: progress; }
+@media (prefers-reduced-motion: reduce) {
+  #darkroom.dk-busy #darkroom-plate { animation: none; opacity: 0.62; }
+}
+
 /* Thirds, drawn as two lines each way. Decoration only - nothing snaps to
    them - and aria-hidden in the markup for that reason. */
 .dk-grid {
@@ -677,7 +780,7 @@
    the accent on paper-3 and it is keyed off aria-pressed rather than a class,
    so the only thing that has to be right is the attribute a screen reader is
    already reading - one state, not two that can disagree. */
-#darkroom-tools { display: flex; gap: 8px; }
+#darkroom-tools { display: flex; flex-wrap: wrap; gap: 8px; }
 .dk-tool {
   display: inline-flex;
   align-items: center;
@@ -699,6 +802,11 @@
   background: var(--paper-3);
 }
 .dk-tool .ico { width: 15px; height: 15px; }
+/* The left turn wears the right turn's glyph, mirrored. One <symbol> and a
+   transform rather than two nearly identical arcs in icons.svg: the pair has to
+   read as each other's opposite, and two hand-drawn arcs is exactly how that
+   stops being true after somebody nudges one of them. */
+.dk-tool .dk-mirror { transform: scaleX(-1); }
 
 /* Three dials in a column, each a label, a slider and its readout on one line.
    The readout is monospace and a fixed width so the row does not jitter as the

@@ -25,7 +25,8 @@
 // now-playing one is kept mounted wherever it has scrolled to.
 
 import {
-  board, bus, isDefaultTitle, byId, itemAdjust, itemCrop, flipTransform, stuckTo, isRider,
+  board, bus, isDefaultTitle, byId, itemAdjust, itemCrop, itemRotate, itemMatte,
+  flipTransform, stuckTo, isRider,
   select, selection, trackTitle,
 } from '../state.ts';
 import { noteWords } from '../canvas/note-model.ts';
@@ -632,14 +633,23 @@ function fillImage(t: Tile) {
   // picture that is cropped everywhere else would not be a small inconsistency -
   // it would be the only view most phone users ever see.
   const crop = itemCrop(t.item);
+  // The quarter turn and the background removal arrive by the same route, and
+  // the Feed wants them for the same reason it wants the crop: this tile is the
+  // whole picture on a phone, so a photograph lying on its side here and upright
+  // everywhere else is not a small inconsistency.
+  const rot = itemRotate(t.item);
+  const matte = itemMatte(t.item);
   // `shown` again, not the asset: a cropped PDF page has to be cropped from the
   // page, and asking display.ts for a crop of the PDF's own bytes answers with
   // nothing - which then left the tile on whatever it had, uncropped, on the one
   // view where a wrong frame is most visible.
-  if (crop && shown) {
-    const ready = displayURLReady(shown, crop);
+  if ((crop || rot || matte) && shown) {
+    const ready = displayURLReady(shown, crop, rot, matte);
     if (ready) img.src = ready;
-    else ensureDisplay(shown, crop).then(u => { if (u && img.isConnected) img.src = u; });
+    else {
+      ensureDisplay(shown, crop, rot, matte)
+        .then(u => { if (u && img.isConnected) img.src = u; });
+    }
   }
   applyGrade(img, t.item);
   t.el.appendChild(img);
