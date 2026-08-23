@@ -20,6 +20,7 @@ import assert from 'node:assert/strict';
 
 import {
   routeConnection, anchorFor, anchorsFor, blockOf, trim, pathData,
+  endOf, intoMiddles, exitTowards,
   CLEARANCE, STUB, TURN_COST, MAX_OBSTACLES, PULL_CLEARANCE, OVERLAP_COST,
 } from '../web/assets/js/web-route.ts';
 
@@ -587,4 +588,68 @@ test('the two margins say what they each mean', () => {
     "the stub's own header says so, and the two disagreed for a while");
   assert.ok(OVERLAP_COST > 1,
     'running along another line costs more than running anywhere else');
+});
+
+// ---------------------------------------------------------------------------
+// The items whose box is not their picture
+// ---------------------------------------------------------------------------
+
+// A card fills its rectangle, so a line stopping on the rectangle stops where
+// the picture starts. An item with no card - `meta.bare`, which is a cut-out, a
+// note without its paper or a model on its transparent buffer - is the case that
+// inverts it: the rectangle is mostly nothing with the thing in the middle of
+// it, so the same rule leaves the line ending in open paper a box's width from
+// anything, which reads as a stray mark rather than as a join. See endOf().
+
+const bare = (x, y, w = 100, h = 80) => ({ ...card(x, y, w, h), bare: true });
+
+test('a line to a card still stops on its outline', () => {
+  const a = card(0, 0);
+  const target = { x: 500, y: 0 };
+  assert.deepEqual(endOf(a, target), exitTowards(a, target),
+    'nothing about the case with a card may move');
+});
+
+test('a line to an item with no card runs to its middle', () => {
+  const a = bare(0, 0);
+  assert.deepEqual(endOf(a, { x: 500, y: 0 }), { x: 0, y: 0 });
+  // From any direction, since a middle has no sides.
+  assert.deepEqual(endOf(a, { x: -500, y: 300 }), { x: 0, y: 0 });
+});
+
+test('a bare end is carried past its own outline, not short of it', () => {
+  // The property that makes this the right answer rather than a longer wrong
+  // one: the endpoint is strictly inside the box, so the last stretch of line is
+  // under the picture the way it is under a card at that card's own edge.
+  const a = bare(0, 0);
+  const end = endOf(a, { x: 500, y: 40 });
+  assert.ok(Math.abs(end.x) < a.w / 2 && Math.abs(end.y) < a.h / 2);
+});
+
+test('a routed path gains a middle only at the ends that have no card', () => {
+  const points = [{ x: 50, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 100 }];
+  const framed = card(0, 0);
+  const cut = bare(200, 140);
+
+  assert.equal(intoMiddles(points, framed, framed), points,
+    'two ends with cards is the route untouched, and the same array');
+
+  const one = intoMiddles(points, framed, cut);
+  assert.deepEqual(one[one.length - 1], { x: 200, y: 140 }, 'the bare end reaches its middle');
+  assert.deepEqual(one[0], points[0], 'the end with a card is left where the router put it');
+  assert.equal(one.length, points.length + 1);
+
+  const both = intoMiddles(points, bare(0, 0), cut);
+  assert.deepEqual(both[0], { x: 0, y: 0 });
+  assert.deepEqual(both[both.length - 1], { x: 200, y: 140 });
+  assert.equal(both.length, points.length + 2);
+});
+
+test('the route the router found is kept whole underneath the added stubs', () => {
+  // Added rather than substituted. Replacing the face point would send the line
+  // across the box on a diagonal the router never chose and never checked for
+  // obstacles - which is the one shape this whole module exists to stop drawing.
+  const points = [{ x: 50, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 100 }];
+  const out = intoMiddles(points, bare(0, 0), bare(200, 140));
+  assert.deepEqual(out.slice(1, -1), points, 'every point the router chose survives, in order');
 });

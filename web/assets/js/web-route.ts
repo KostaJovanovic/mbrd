@@ -457,6 +457,68 @@ export function exitTowards(it: Box, target: Point): Point {
 }
 
 /**
+ * An end of a line: a card, and whether there is actually a card drawn there.
+ *
+ * `bare` is optional so every existing caller and test passes a plain Box and
+ * gets the behaviour it always got. It is the only non-geometric fact this
+ * module knows about a card, and it is here because it changes an answer this
+ * module gives - see endOf() below.
+ */
+export type End = Box & { bare?: boolean };
+
+/**
+ * Where a line joining this card actually stops: its outline, or its **middle**
+ * if no card is drawn there.
+ *
+ * A card fills its rectangle, so stopping on the outline is stopping where the
+ * picture starts. Running to the middle instead would bury half a card of line
+ * under it - invisible until the hover lift raises the card and leaves a stub in
+ * the gap, which is the bug drawnTilt() in canvas/web.ts is written about.
+ *
+ * An item with no card is the case that inverts all of it. `meta.bare` takes the
+ * paint away and leaves the box - a logo cut out of its background, a note
+ * without its paper, a model on its transparent buffer - so the rectangle is
+ * mostly nothing with the thing itself somewhere in the middle of it. Two people
+ * cut out of a photograph occupy the centre of a box that is four-fifths empty,
+ * and a line clipped at that outline stops in open paper a card's width from
+ * anything: it reads as a stray mark rather than as a join.
+ *
+ * So the same reasoning gives two answers and the flag is which one applies. The
+ * overshoot that would be a bug on a card is the whole point without one: the
+ * line runs in under the subject and the subject hides it, which is exactly what
+ * a card does at its own edge.
+ *
+ * The middle rather than the thing's real silhouette, and that is not an
+ * approximation being settled for. The alpha is in a WebP on the compositor's
+ * side: this layer has no access to it, could not afford to trace it per frame
+ * if it did, and what a bare item shows sits in the middle of its own box by
+ * construction - it is what the box was fitted to.
+ */
+export const endOf = (card: End, target: Point): Point =>
+  card.bare ? { x: card.x, y: card.y } : exitTowards(card, target);
+
+/**
+ * A routed path, carried the last stretch into whichever ends have no card.
+ *
+ * The router works in boxes - it has to, since what it is avoiding is cards - so
+ * its first and last points are on the two faces. For a bare end that is the
+ * same open paper endOf() exists to avoid, so the middle is added on.
+ *
+ * Added rather than substituted, and that is the whole of it: the face point is
+ * where the route genuinely left the card, and dropping it would send the line
+ * across the box on a diagonal the router never chose and never checked for
+ * obstacles. What is appended is a stub that lies entirely inside a box, which
+ * nothing can collide with.
+ */
+export function intoMiddles(points: Point[], a: End, b: End): Point[] {
+  if (!a.bare && !b.bare) return points;
+  const out = points.slice();
+  if (a.bare) out.unshift({ x: a.x, y: a.y });
+  if (b.bare) out.push({ x: b.x, y: b.y });
+  return out;
+}
+
+/**
  * A finished route: the points a line is drawn through, ends included.
  *
  * An object rather than the bare array because a route is the sort of answer

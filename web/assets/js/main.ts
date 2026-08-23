@@ -63,6 +63,8 @@ import {
 } from './storage/storage.ts';
 import { boardThumb } from './ui/snapshot.ts';
 import { flushNoteEdit, growNote, setNoteMenu } from './canvas/notes.ts';
+import { setMarkdownRenderer } from './canvas/renderers.ts';
+import { renderMarkdown } from './ui/markdown.ts';
 import { initAssets, getAsset, forgetAssets } from './storage/assets.ts';
 import { forgetDisplay } from './canvas/display.ts';
 import { initSidebar } from './ui/sidebar.ts';
@@ -230,6 +232,12 @@ setNoteMenu((anchor, rows, current, pick) => {
     owner: anchor,
   });
 });
+// And the Markdown parser to the card renderer, the third seam of that shape in
+// as many paragraphs and for the identical reason: ui/markdown.ts is interface
+// and canvas/renderers.ts is not, so a `.md` card is handed the one function it
+// needs. Unwired it falls back to showing the file's source, which is what a
+// text card did before this - see setMarkdownRenderer() in canvas/renderers.ts.
+setMarkdownRenderer(renderMarkdown);
 // The saved quality level onto <html>, before anything reads a flag off it.
 // The inline guard in index.html has already done this for the stylesheet; this
 // is the module half, and it is also what fills `quality` for canvas/*.

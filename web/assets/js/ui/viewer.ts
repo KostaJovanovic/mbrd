@@ -27,7 +27,7 @@ import { byId, itemAdjust, itemCrop, itemRotate, itemMatte, flipTransform } from
 import { displayURLReady, ensureDisplay } from '../canvas/display.ts';
 import { assetURL, getAsset, readText } from '../storage/assets.ts';
 import { baseName, formatBytes } from '../util.ts';
-import { linkURL } from '../canvas/renderers.ts';
+import { linkURL, MARKDOWN } from '../canvas/renderers.ts';
 import { noteTint } from '../canvas/note-model.ts';
 import { kindName } from '../canvas/item-dom.ts';
 import { renderMarkdown } from './markdown.ts';
@@ -58,9 +58,6 @@ const urlOf = (hash: unknown): string | null => (typeof hash === 'string' ? asse
  * so at the bottom.
  */
 const TEXT_MAX = 200000;
-
-/** The extensions that get read as prose rather than shown as source. */
-export const MARKDOWN = new Set(['md', 'markdown', 'mdown', 'mkd']);
 
 // The dialog and its three slots, taken once in initViewer(). Everything past
 // that guard reads them with `!`: initViewer() returns early without the
@@ -426,7 +423,6 @@ const VIEWS: Record<string, View> = {
     img.className = 'viewer-media';
     img.alt = item.name || '';
     img.decoding = 'async';
-    img.src = url;
     // A cropped picture is shown cropped, and the crop arrives the only way it
     // exists: as the display copy, which is where canvas/display.ts bakes it.
     // So this is the one case where the viewer does not show the original file -
@@ -436,25 +432,38 @@ const VIEWS: Record<string, View> = {
     // here and the honest trade: the alternative is a full-size view that
     // disagrees with every card on the board.
     //
-    // Asynchronous and layered over the original rather than replacing it,
-    // because the copy may not be made yet - the card is usually what made it,
-    // and a card that has never been on screen has not. The full frame shows for
-    // that moment, which is the same stand-in the card itself uses.
     // The quarter turn and the background removal come down the same pipe, and
     // they have to: neither has a CSS spelling that would let this view apply it
     // over the original the way the grade and the mirror below are applied. See
     // itemRotate() in board-model.ts.
+    //
+    // **An edited picture waits for its copy rather than showing the original
+    // first.** This used to set the original above unconditionally and layer the
+    // copy over it a tick later, on the reasoning that the full frame for one
+    // moment is the same stand-in the card uses. The card does not use it - it
+    // refuses a stand-in on an edited picture precisely because the stand-in is
+    // the picture the person said they were not showing - and here it is at its
+    // worst: full screen, so a cut-out opens with its background on and then has
+    // it taken away in front of the reader. A blank instant is the better half
+    // of that trade, and it is usually not even an instant: the card that was
+    // just clicked has normally already made the copy, so `ready` answers
+    // synchronously.
     const crop = itemCrop(item);
     const rot = itemRotate(item);
     const matte = itemMatte(item);
     const hash = item.asset?.hash;
-    if ((crop || rot || matte) && hash) {
-      const ready = displayURLReady(hash, crop, rot, matte);
-      if (ready) img.src = ready;
-      else {
-        ensureDisplay(hash, crop, rot, matte)
-          .then(u => { if (u && img.isConnected) img.src = u; });
-      }
+    const edited = !!(crop || rot || matte) && !!hash;
+    const ready = edited && hash ? displayURLReady(hash, crop, rot, matte) : null;
+    if (ready) img.src = ready;
+    else if (!edited) img.src = url;
+    if (edited && hash && !ready) {
+      ensureDisplay(hash, crop, rot, matte).then(u => {
+        // A copy that could not be made falls back to the original: wrong in the
+        // way described above, and still better than an empty viewer over a
+        // picture that is sitting in the store.
+        const src = u || url;
+        if (img.isConnected || !img.src) img.src = src;
+      });
     }
     // The grade is a filter and applies whatever the source, so it rides on top
     // of either branch above.

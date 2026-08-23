@@ -1096,6 +1096,29 @@ export function itemMatte(it: unknown): boolean {
   return !!it.meta.matte;
 }
 
+/**
+ * Whether this item is drawn **without a card** - `meta.bare`.
+ *
+ * The paint goes and the box stays: a cut-out logo, a note without its paper or
+ * a model on its transparent buffer sits *on* the board rather than in a frame,
+ * while hit-testing, the marquee, the selection ring and the eight resize grips
+ * all go on measuring the same rectangle. setItemBare() in state.ts is the door
+ * and holds the three types that have a card to lose; items.css draws the
+ * consequence.
+ *
+ * Read through this rather than off `meta.bare` at each site, and that is the
+ * reason it exists at all: it started as an inline `item?.meta?.bare === true`
+ * in canvas/item-dom.ts, and the second reader - canvas/web.ts, which needs to
+ * know because a line cannot stop on an outline that is not drawn - would have
+ * been a second spelling of the same question. The strict `=== true` went with
+ * the move, on the same grounds itemMatte() above gives: this comes out of
+ * somebody else's file and a hand-written `"bare": 1` plainly means bare.
+ */
+export function itemBare(it: unknown): boolean {
+  if (!isRecord(it) || !isRecord(it.meta)) return false;
+  return !!it.meta.bare;
+}
+
 /** The longest a single tag may be, and the most one item may carry. */
 export const TAG_MAX = 24;
 export const TAGS_PER_ITEM = 12;

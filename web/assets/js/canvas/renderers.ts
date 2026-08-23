@@ -92,6 +92,40 @@ const TEXT_EXT = new Set([
 ]);
 
 /**
+ * The extensions read as prose rather than shown as source.
+ *
+ * Written in ui/viewer.ts first, and moved down here once a third surface came
+ * to depend on it. Three now split on this set and they sit two tiers apart -
+ * the viewer, the Feed tile, and the card built below - and canvas/ may not
+ * import ui/ (tests/layers.test.js). So it has to live under all three, or the
+ * card keeps a second copy of the answer and the two drift: one surface goes on
+ * printing hashes and asterisks for months after the others stopped.
+ */
+export const MARKDOWN = new Set(['md', 'markdown', 'mdown', 'mkd']);
+
+/**
+ * How a card draws Markdown, handed in rather than imported.
+ *
+ * The parser is ui/markdown.ts and this file is canvas/, which is the one
+ * direction the layering refuses. Same shape as setNoteMenu() next door, and
+ * setOverlays() and setAssetNameLookup() at the bottom of the graph: the answer
+ * lives up the graph, the question is asked from under it, and main.ts is what
+ * puts the two together.
+ *
+ * **Unwired, a `.md` card shows its source** - exactly what every text card
+ * showed before this existed. A missing renderer is the old behaviour and not a
+ * failure, which is what keeps this module buildable in a test with no browser
+ * and no interface layer loaded.
+ */
+export type MarkdownRenderer = (src: string) => DocumentFragment;
+
+let renderMd: MarkdownRenderer | null = null;
+
+export function setMarkdownRenderer(fn: MarkdownRenderer | null | undefined) {
+  renderMd = typeof fn === 'function' ? fn : null;
+}
+
+/**
  * Item type for a dropped File. MIME first, extension as the fallback.
  *
  * Only four things actually render today - picture, moving picture, sound,
@@ -587,12 +621,32 @@ const RENDERERS = {
     // at a size where the difference is not visible because a card is under a
     // hundred pixels wide there.
     //
+    // **Not on an edited card**, and this is the same sentence as the one at the
+    // stand-in above, finally applied in both places. The thumbnail is the
+    // untouched whole picture: on a cropped, turned or matted card it shows the
+    // full frame, the wrong way up, with its background still on. As a stand-in
+    // that was already refused; as the far-zoom twin it was mounted anyway, so a
+    // cut-out card grew its background back the moment you zoomed out and lost
+    // it again on the way in. One rule, two places, and only one of them had it.
+    //
+    // What that costs is the far-zoom saving, on edited cards only: such a card
+    // keeps its display copy up instead of swapping to a hundred-pixel file. The
+    // copy is already bounded by the sharpness ceiling rather than being the
+    // original, so this is a smaller decode held, not an unbounded one - and the
+    // alternative is a second derived picture per edited card, which is a real
+    // piece of machinery to build for a board with many of them. The correct
+    // picture first.
+    //
+    // The CSS is what makes an absent twin safe: the swap is written as
+    // `img:not(.still):has(+ .still.is-ready)`, so a card with no ready sibling
+    // simply keeps showing its own picture at every zoom. See items.css.
+    //
     // Never both. An animated file with a thumbnail would have stills.js
     // overwrite the thumbnail's src on the first pass, so the thumbnail is
     // simply not made for one - makeThumb() refuses animated input.
     const animated = isAnimated(item);
     const thumbHash = metaStr(item.meta?.thumb);
-    const thumb = !animated && thumbHash && assetURL(thumbHash);
+    const thumb = !animated && !edited && thumbHash && assetURL(thumbHash);
     if (!animated && !thumb) return img;
 
     if (animated) img.dataset.gif = '';
@@ -921,6 +975,13 @@ const RENDERERS = {
    * Bounded by readText's own limit rather than trusting the file: a card on a
    * board is a preview, and a 40 MB log has no business being turned into DOM
    * to be looked at from across an infinite canvas.
+   *
+   * Markdown is the exception and reads as prose, the same split the viewer and
+   * the Feed tile make and by the same test - the extension, and only the
+   * extension. A `.md` is the one text format people write in order to be read,
+   * and a card showing its hashes and asterisks is showing the scaffolding
+   * instead of the building. Everything else classify() routes here is source,
+   * config or tabular data, and stays source.
    */
   text(item: Item) {
     const card = document.createElement('div');
@@ -930,20 +991,29 @@ const RENDERERS = {
     name.className = 'card-name';
     name.textContent = baseName(item.name) || item.name || 'untitled';
 
+    // Captured once rather than read again when the file arrives: the renderer
+    // is wired at boot and never swapped, but the element below is built for one
+    // of the two answers and the fill has to be the same answer.
+    const md = MARKDOWN.has(metaStr(item.meta.ext)) ? renderMd : null;
+
     // .card-text was already in items.css, waiting - monospaced, pre-wrapped, and
     // masked to a fade at the bottom so a long file ends by trailing off rather
-    // than by being chopped. It had no markup to style until now.
+    // than by being chopped. It had no markup to style until now. .card-md is
+    // its prose twin, sharing the box and the fade.
     //
     // <pre> and textContent, never innerHTML: most of what classify() routes
     // here is source, config or tabular data whose whitespace is its shape,
-    // and .html is on the list of things that land here.
+    // and .html is on the list of things that land here. The Markdown branch
+    // holds the same line from the other side - ui/markdown.ts builds trees out
+    // of createElement and createTextNode and touches innerHTML nowhere, so raw
+    // HTML inside a `.md` comes out as the characters it is made of.
     //
     // (It said ".html and .svg". An SVG is routed to `image` by classify() two
     // hundred lines up and has been for a long time, so half the justification
     // for this rule named a file type that never reaches it. The rule is right
     // for the half that is true, and it would still be right for one file.)
-    const body = document.createElement('pre');
-    body.className = 'card-text';
+    const body = document.createElement(md ? 'div' : 'pre');
+    body.className = md ? 'card-md' : 'card-text';
 
     card.append(name, body);
 
@@ -954,7 +1024,8 @@ const RENDERERS = {
       // The card can be rebuilt or culled while the read is in flight, and
       // writing into a node nothing will ever show is wasted work.
       if (!card.closest('.item')) return;
-      body.textContent = text;
+      if (md) body.append(md(text));
+      else body.textContent = text;
       // Said out loud rather than left to the fade, which looks identical
       // whether the file ended or the preview did.
       //

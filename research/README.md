@@ -133,6 +133,23 @@ register and two subject documents:
   anything is done to either; when they disagree, the audit is the record of what
   was found and this is the record of what to do, and neither is the code.
 
+- `apple-motion-2026-08-23.md` — **ten findings about how the interface answers a
+  press, and the order to clear them in.** Audited by reading the source against
+  Apple's fluid-interface talks, which is the method
+  `old/feedback-plan-2026-08-14.md` proves wrong four times in twelve — so every
+  finding in it carries what would be seen on screen, and two of them say outright
+  to open the app before touching them. It takes the same bargain the plan and the
+  cuelume document took and says so at the top: it **goes to `old/` on the last
+  commit of the work it schedules.** Two of its ten items are refusals with the
+  reasoning written out rather than tasks, which is the half most worth reading if
+  either gets proposed again — haptics in particular, which is a feature the sound
+  engine would have to grow a track for, not a fix. Its opening table is the other
+  durable half: seven things about this app that are already on the right side of
+  the line, listed so nobody re-finds them, and two more that look like findings
+  and are decisions — there is no glass chrome here because the material is paper,
+  and a dropped card carries no momentum because you place a card rather than
+  throw one.
+
 `patch-notes-full.md` sits at this level too and is **not open work** - it is an
 archive, and the only file here that argues nothing. It holds every release at
 the length it was first written at, internal work included, and it was split off

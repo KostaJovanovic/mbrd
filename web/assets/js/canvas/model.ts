@@ -25,7 +25,8 @@ import { surface, surfaceToBlob } from './surface.ts';
 import { applyMaterials, meshKind, readModel, parseMTL, MeshError } from '../mesh.ts';
 import { lift, isOversize } from '../consent.ts';
 import type { Mesh } from '../mesh.ts';
-import { board, bus, byId, selection, setModelShot } from '../state.ts';
+import { makeThumb } from '../optimize/picture.ts';
+import { board, bus, byId, selection, setItemThumb, setModelShot } from '../state.ts';
 import type { Item } from '../board-model.ts';
 
 /** Where a model is being looked at from: two angles and a distance. */
@@ -46,13 +47,56 @@ type View = { yaw: number; pitch: number; zoom: number };
  */
 const turning = new Set<string>();
 
-/** The still's long edge, in device pixels. */
-const SHOT_MAX = 450;
+/**
+ * The biggest either path is ever asked to draw.
+ *
+ * A card can be dragged to any size on an infinite board, and the drawing buffer
+ * is the one cost that scales with it. Past this the model is drawn at this size
+ * and stretched, which on a card that large is a difference nobody looking at a
+ * moodboard is going to find.
+ */
+const MAX_BUFFER = 1024;
 
 /**
- * How much bigger than its still a card has to be drawn before the still stops
- * being good enough. Below this it is indistinguishable; above it, the card
- * goes back to live geometry rather than showing somebody a soft picture.
+ * The still's **long** edge, in pixels - the short one follows the shape of the
+ * card's picture area, see stageShape(). Sized to the card rather than fixed,
+ * between these two.
+ *
+ * **SHOT_MAX is MAX_BUFFER, and that identity is the point rather than a
+ * coincidence.** The live canvas is clamped to MAX_BUFFER too (see drawInto), so
+ * on a card bigger than that the *live* render is being upscaled as well. Tying
+ * the two together makes the still exactly as sharp as the geometry it stands in
+ * for, at every card size there is - which is what lets the ceiling below this
+ * go away entirely.
+ *
+ * SHOT_MIN is a floor rather than an exact fit, because pixels are cheap and a
+ * small card that is later made bigger should not have to be re-photographed to
+ * look right.
+ *
+ * The number used to be a fixed 450, and that same 450 was also a ceiling past
+ * which a card gave up on stills and drew live WebGL for the life of the session,
+ * re-reading its geometry on every reload - a second of CAD kernel per load, on
+ * exactly the cards big enough to be worth looking at. That ceiling has now been
+ * hit three times by ordinary use at three different values, which is the board
+ * telling us the rule was wrong rather than the number.
+ *
+ * **So there is no ceiling.** A card is always photographed. The argument for
+ * one was "past some size the live geometry is sharper than a picture of it",
+ * and MAX_BUFFER makes that false above 1024 - the two are the same pixels. What
+ * is left is a still that costs one WebP against a card that costs a WebGL blit
+ * on every move, every palette change and every redraw, for ever.
+ */
+const SHOT_MIN = 320;
+const SHOT_MAX = MAX_BUFFER;
+
+/**
+ * How much smaller than the card wants it a still may be before it is retaken.
+ *
+ * Only the repair in buildModelCard() reads this now. A card is resized by
+ * dragging, which fires 'geom' and retakes on its own; this is for the still
+ * that arrives already wrong - taken by an older build, or under a size the
+ * runtime record of has been lost to a reload. Some slack, or every card whose
+ * size has drifted by a pixel would re-read its mesh on mount.
  */
 const SHOT_SLACK = 1.35;
 
@@ -85,48 +129,129 @@ const meshes = new Map<string, Mesh>();
 const MESH_CACHE_MAX = 12;
 
 /**
- * The biggest the shared canvas is ever asked to be.
+ * How far the camera stands off, in radii of the model's bounding sphere.
  *
- * A card can be dragged to any size on an infinite board, and the drawing
- * buffer is the one cost that scales with it. Past this the model is drawn at
- * this size and stretched, which on a card that large is a difference nobody
- * looking at a moodboard is going to find.
+ * **Fixed, and that is load-bearing twice over.** It is the same 2.73 radii the
+ * old sphere-on-the-narrow-axis rule put the camera at with a 45 degree lens, so
+ * the perspective is the one this app has always drawn - but it is now the only
+ * thing the camera position depends on. It does not move with the card's shape,
+ * with the zoom, or with the angle.
+ *
+ * That is what makes a still a *rigid scale* of the live render. Perspective
+ * foreshortening is a function of distance, so a model photographed from one
+ * distance and drawn from another is not the same picture scaled - it is a
+ * different picture, and `object-fit: contain` cannot turn one into the other.
+ * Framing by moving the camera, which is the obvious way and the way this was
+ * first written, breaks the still/live pairing by 8% on an ordinary card. So the
+ * camera holds still and the *lens* does the framing - see frame() below.
+ *
+ * It also means the perspective does not breathe while you turn the model, which
+ * a distance that tracked the outline would have done.
  */
-const MAX_BUFFER = 1024;
-
-/** Vertical field of view, in radians. About 45 degrees. */
-const FOV = 0.79;
+const STANDOFF = 2.73;
 
 /**
- * How much of the frame the model's bounding sphere is allowed to fill.
- *
- * 1 is an exact fit and touches the edge on every side. The sphere is the
- * *diagonal* of the bounding box, so a model rarely reaches it - but a cube
- * seen corner-on does, and that is the one that came out clipped.
+ * How much of the frame the model is allowed to fill. 1 touches the edge on
+ * every side, and the margin is the air around it.
  */
 const FIT_MARGIN = 1.12;
 
 /**
- * How far back the camera stands to frame a sphere of `radius` in a w x h box.
+ * How big the model is, as one number that does not depend on which way round
+ * it is: the furthest any of its points sits from the centre of its box.
  *
- * Exported for tests/model.test.js, which holds the one property the whole
- * still/live arrangement rests on: **the sphere lands at `min(w, h) /
- * FIT_MARGIN` pixels across.** It touches the narrow axis and leaves the long
- * one slack, whatever the box's shape.
+ * **A model must not change size as you turn it over**, and that is a hard
+ * constraint rather than a preference - a card you are dragging is the one place
+ * on the board where the thing under your hand has to hold still. A measurement
+ * that cannot change under rotation is a measurement about a *sphere*, so a
+ * sphere is what this is. Fitting the silhouette instead fills the card far
+ * better and makes the part breathe the whole time you turn it, which was worse
+ * than the air it saved.
  *
- * That is also why takeShot() renders a *square* still. `object-fit: contain`
- * fits the narrow axis too, so a square still composes with it exactly - and a
- * still shaped like anything else does not, which is a model that changed size
- * the moment you stopped turning it.
+ * What can be improved is *which* sphere. The one this used was the bounding
+ * box's diagonal, and a box diagonal is only the model's own size when the model
+ * fills its corners. A turned part, a bracket, a bolt, a body with a curved
+ * shell - all of them have empty box corners, and every one was framed as though
+ * it were the ball that box would hold. Reading the real vertices instead is
+ * exact, never clips (nothing lies outside a sphere that contains every point),
+ * and on the STEP assembly this was found on it is 18% tighter, which is 18%
+ * less air on every model card at every angle.
+ *
+ * Cached per mesh, because it is a pass over every vertex - one to two million
+ * floats on a large STL - and the answer cannot change: standing a mesh up
+ * rewrites its points, but that produces a different Mesh under a different
+ * cache key (see load()). A WeakMap so it does not outlive the mesh.
+ *
+ * Falls back to the box diagonal for a mesh with no positions, which is the
+ * empty model and draws nothing anyway.
  */
-export function frameDistance(radius: number, w: number, h: number, zoom = 1) {
-  const fit = Math.min(1, w / h);
-  return (radius * FIT_MARGIN) / (Math.tan(FOV / 2) * fit * zoom);
+const radii = new WeakMap<Mesh, number>();
+
+export function modelRadius(mesh: Mesh): number {
+  const held = radii.get(mesh);
+  if (held !== undefined) return held;
+  const { min, max } = mesh.bounds;
+  const cx = (min[0] + max[0]) / 2, cy = (min[1] + max[1]) / 2, cz = (min[2] + max[2]) / 2;
+  let furthest = 0;
+  const p = mesh.positions;
+  for (let i = 0; i + 2 < p.length; i += 3) {
+    const dx = p[i] - cx, dy = p[i + 1] - cy, dz = p[i + 2] - cz;
+    const d = dx * dx + dy * dy + dz * dz;
+    if (d > furthest) furthest = d;
+  }
+  const box = Math.hypot(max[0] - min[0], max[1] - min[1], max[2] - min[2]) / 2;
+  const radius = Math.max(1e-6, furthest ? Math.sqrt(furthest) : box);
+  radii.set(mesh, radius);
+  return radius;
 }
 
-/** Half the height of the frustum at `dist`, which is the world-space measure
- *  a pixel size is read off. */
-export const halfHeightAt = (dist: number) => dist * Math.tan(FOV / 2);
+/** What a camera has to be told to draw a model of this size into a w x h box. */
+export type Framing = {
+  /** Eye to centre. STANDOFF radii, and nothing else. */
+  dist: number;
+  /** The model's silhouette half-angle at `dist`, as a tangent. */
+  tan: number;
+  /** Pixels per tangent unit: the framing itself. */
+  scale: number;
+  /** The vertical field of view, in radians, that puts `scale` on the canvas. */
+  fov: number;
+};
+
+/**
+ * Everything the camera needs, from the model's size and the box it goes in.
+ *
+ * **Nothing here reads the angle**, which is the whole point: the model is the
+ * same size at every yaw and pitch, so turning it over moves it and does not
+ * resize it.
+ *
+ * The camera stands at a fixed distance and the *lens* does the framing. Those
+ * could be swapped - backing the camera off is the more obvious way and is what
+ * this did for one revision - but they are not interchangeable, because
+ * foreshortening is a function of distance. A model photographed from one
+ * distance and drawn from another is not the same picture at a different size,
+ * it is a different picture, and `object-fit: contain` can only scale. With the
+ * eye pinned the still is a rigid scale of the live render by construction, and
+ * the two agree for every box shape and size with nothing recorded on either
+ * side.
+ *
+ * `tan` is the exact silhouette of a sphere rather than `radius / dist`: the
+ * tangent line from the eye touches the sphere short of its equator, so the
+ * naive ratio over-states the silhouette and quietly buys air nobody asked for
+ * on top of FIT_MARGIN.
+ *
+ * The fit is `min(w, h)` - the sphere touches the narrow axis and leaves the
+ * long one slack, because a sphere has nothing to say about which axis is which.
+ * That slack is the model's remaining air and there is no honest way to spend it
+ * without reading the angle.
+ */
+export function frame(radius: number, zoom: number, w: number, h: number): Framing {
+  const dist = radius * STANDOFF;
+  // sin of the silhouette half-angle is radius/dist; this is its tangent.
+  const tan = radius / Math.sqrt(Math.max(dist * dist - radius * radius, 1e-12));
+  const wheel = Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
+  const scale = (Math.min(w, h) / (2 * tan * FIT_MARGIN)) * wheel;
+  return { dist, tan, scale, fov: 2 * Math.atan(h / (2 * scale)) };
+}
 
 const VERT = `
 attribute vec3 aPos;
@@ -279,10 +404,74 @@ export function buildModelCard(item: Item) {
     img.src = still;
     img.alt = item.name || 'model';
     img.draggable = false;
+    // **Nothing records what a still was taken at**, deliberately - that would
+    // be a second size field and a shape field in the file format, kept in step
+    // for ever. The picture is its own record, so it is asked once it decodes,
+    // and a still that no longer suits the card is replaced.
+    //
+    // Two ways it can stop suiting. It can be too *small*, which is a card that
+    // was made bigger; and it can be the wrong *shape*, which is a card that was
+    // reshaped, or a still taken by a build whose shot was square. Both come out
+    // of naturalWidth and naturalHeight against what takeShot() would do now.
+    //
+    // Size only upwards: a card made smaller keeps its bigger still and draws it
+    // scaled down, which is what an <img> is good at. Shape in both directions,
+    // because a wrong shape is not a soft picture, it is a model at the wrong
+    // size next to the live canvas.
+    //
+    // Self-limiting, which it has to be: a retake is a mesh parse. The new still
+    // is taken at exactly this stage's shape and edge, so the second pass through
+    // here returns at the first line, and the shotSize entry stops a card whose
+    // retake fails from trying again on every mount.
+    img.addEventListener('load', () => {
+      const it = byId(item.id);
+      if (!it || it.type !== 'model') return;
+      // The long edge, which is what shotEdge() sets - a stage-shaped still is
+      // taller than it is wide as often as not, so reading the width alone would
+      // call every portrait shot too small and retake it for ever.
+      const long = Math.max(img.naturalWidth, img.naturalHeight);
+      const shape = img.naturalHeight ? img.naturalWidth / img.naturalHeight : 1;
+      // Null is a card with no box to measure, which is a question this cannot
+      // answer rather than a shot that is wrong - retaking on it would replace a
+      // good still with a squared-up one.
+      const wanted = stageShape(it.id);
+      const fits = wanted === null || Math.abs(shape / wanted - 1) < 0.02;
+      if (long >= shotEdge(it) / SHOT_SLACK && fits) return;
+      if (shotSize.get(it.id) === sizeOf(it)) return;
+      shotSize.set(it.id, sizeOf(it));
+      takeShot(it.id).catch(() => {});
+    }, { once: true });
     const name = document.createElement('div');
     name.className = 'card-name';
     name.textContent = item.name || 'model';
-    card.append(img, name);
+    // The zoomed-out twin, exactly as a photograph carries one: a sibling
+    // `<img class="still">` that items.css shows in the primary's place once
+    // #world is marked zoomed-out. Immediately after the primary and before the
+    // filename, because the rule that hides the primary is written with an
+    // adjacent sibling combinator and only looks one element forward.
+    //
+    // `model-still` as well as `still`, so the twin sits in the box the same way
+    // the picture it stands for does - it is the same square photograph at a
+    // hundred pixels, and `contain` has to survive the swap or the model would
+    // change size at the rung it is meant to become cheaper at.
+    //
+    // is-ready on load rather than on assignment, which is the whole point of
+    // the class: the src lands at once and the bytes still have to decode, and
+    // a card that swapped early would show a blank square where the model was.
+    const thumbHash = item.meta?.thumb;
+    const thumb = typeof thumbHash === 'string' && thumbHash ? assetURL(thumbHash) : null;
+    if (!thumb) {
+      card.append(img, name);
+      return card;
+    }
+    const small = document.createElement('img');
+    small.className = 'still model-still';
+    small.alt = '';
+    small.decoding = 'async';
+    small.draggable = false;
+    small.addEventListener('load', () => small.classList.add('is-ready'), { once: true });
+    small.src = thumb;
+    card.append(img, small, name);
     return card;
   }
 
@@ -521,13 +710,19 @@ function liveView(item: Item): View {
 /**
  * The URL of the still to show for this item, or null to draw it live.
  *
- * Null for four different reasons, and each one is a case that would otherwise
+ * Null for three different reasons, and each one is a case that would otherwise
  * show somebody the wrong picture: the card is being turned, there is no still
- * yet, the bytes have gone, or the palette has moved since it was taken.
+ * yet, or the palette has moved since it was taken.
+ *
+ * There used to be a fourth - a card grown past some multiple of the shot's own
+ * size went back to live geometry rather than show a soft picture. It is gone;
+ * SHOT_MAX says why at length. The short version is that it was the single
+ * biggest source of trouble in this file: it is reached by ordinary use, a card
+ * past it never becomes a photograph, and so it re-reads its geometry on every
+ * load for ever - which on a STEP file is a second of CAD kernel each time.
  */
 function stillFor(item: Item): string | null {
   if (turning.has(item.id)) return null;
-  if (outgrewStill(item)) return null;
   // The string test is the same refusal the truthiness test was making: an item
   // arrives through makeItem(), which drops a `shot` that is not a digest, so
   // anything else here is a value no asset could ever be found under.
@@ -542,20 +737,24 @@ function stillFor(item: Item): string | null {
 }
 
 /**
- * A card dragged so much bigger than its still that the picture would show.
+ * How big to photograph this card: the still's **long** edge.
  *
- * Measured against the item's own size in world units and not against what is
- * on screen, on purpose: zoom does not rebuild cards, so a rule that read the
- * zoom would be answered once at mount and then be wrong for the rest of the
- * session - and a card that flipped between a photograph and live geometry as
- * you scrolled the wheel would be worse than either.
+ * The still is shaped like the card's picture area (see stageShape), so its long
+ * edge lies along the card's long edge and `max` is the axis to read. `min`
+ * would under-resolve a wide model on a wide card by the whole aspect ratio -
+ * which it did, for one revision, while the shot was square and pinned to the
+ * narrow axis. The rule follows the shot's shape and has changed with it twice.
  *
- * The same test guards the photographing below, which is what stops the two
- * from arguing: a card this size is never given a still it would refuse, and a
- * shot is never taken that nothing would show.
+ * Measured against the item's own size in world units and not against what is on
+ * screen, on purpose: zoom does not rebuild cards, so a rule that read the zoom
+ * would be answered once at mount and then be wrong for the rest of the session.
+ *
+ * There is no companion "too big to bother" test any more, and its absence is
+ * deliberate - see SHOT_MAX. A card larger than MAX_BUFFER is upscaling its live
+ * geometry too, so refusing it a still only ever bought a permanent WebGL card.
  */
-const outgrewStill = (item: Item) =>
-  Math.max(+item.w || 0, +item.h || 0) > SHOT_MAX * SHOT_SLACK;
+const shotEdge = (item: Item) =>
+  clamp(Math.round(Math.max(+item.w || 0, +item.h || 0)), SHOT_MIN, SHOT_MAX);
 
 /**
  * The colour an uncoloured model is shaded in, resolved to plain rgb().
@@ -605,6 +804,37 @@ export function rotateModel(id: string) {
 export const isTurning = (id: string) => turning.has(id);
 
 /**
+ * The shape of the box this card shows its model in, as width over height.
+ *
+ * The **stage**, not the card: a model card is padding, then the picture, then
+ * the filename, and only the middle one of those is what `object-fit: contain`
+ * fits the still into. Reading the card's own w/h instead is the bug this
+ * function exists to end, and it is not a small one - the filename row is a
+ * fifth of a small card's height.
+ *
+ * Either element will do and both are the same box: the live canvas while the
+ * model is being turned, the still standing in its place the rest of the time.
+ *
+ * clientWidth over clientHeight rather than a client rect, for the reason set
+ * out at stageBox() below: a card is tilted, and the rect of a rotated element
+ * is the axis-aligned box around it - a different shape from the element, by an
+ * amount that depends on the lean. The layout box is the one the still is
+ * `contain`ed into and so the one to shoot at.
+ *
+ * Null when the card is not mounted, which culling makes an ordinary case rather
+ * than an edge one: a shot can be retaken for a card that has been panned off
+ * screen. The caller squares up rather than guessing.
+ */
+function stageShape(id: string): number | null {
+  const card = document.querySelector(`.item[data-id="${CSS.escape(id)}"] .card-model`);
+  const box = card?.querySelector('canvas.model-stage, img.model-still');
+  if (!(box instanceof HTMLElement) || !box.clientWidth || !box.clientHeight) return null;
+  // Bounded on the same argument as the shot's own edge: a card dragged to a
+  // sliver is still a card, and a still one pixel tall is not a still.
+  return clamp(box.clientWidth / box.clientHeight, 0.2, 5);
+}
+
+/**
  * Photograph a model as it currently sits.
  *
  * At most SHOT_MAX on the long edge, in WebP - which is the whole point of the
@@ -620,43 +850,37 @@ export const isTurning = (id: string) => turning.has(id);
 async function takeShot(id: string): Promise<boolean> {
   const item = byId(id);
   if (!item || item.type !== 'model') return false;
-  // Nothing would show it - see outgrewStill(). Encoding a WebP for a card that
-  // is going to draw itself live anyway is the one cost this whole file exists
-  // to avoid paying.
-  if (outgrewStill(item)) return false;
   const mesh = await load(item);
-
-  // Square, whatever shape the card is, and that is the one arrangement that
-  // makes the still and the live stage the same size.
-  //
-  // The framing rule in renderShared() reduces to one line: the model's bounding
-  // sphere lands at `min(w, h) / FIT_MARGIN` pixels across. It touches the
-  // *narrow* axis and leaves the long one slack. `object-fit: contain` fits the
-  // narrow axis too - and that is exactly the trap, because the two are only the
-  // same axis when the two boxes are the same shape.
-  //
-  // They are not. This used to render at the *card's* proportions, on the
-  // reasoning that the still would then drop into the card without letterboxing.
-  // But it is not dropped into the card: it is dropped into the *stage*, which
-  // is the card less its padding, less the filename, less the gap above it. A
-  // square card has a stage wider than it is tall. So the still was framed to
-  // its own narrow axis, contain re-fitted it to a different one, and the model
-  // came out smaller than the live canvas had just drawn it - which reads as the
-  // model shrinking the moment you stop turning it.
-  //
-  // Square makes the composition exact rather than approximate: at iw = ih the
-  // sphere is SHOT_MAX / FIT_MARGIN across, contain scales by
-  // min(bw, bh) / SHOT_MAX, and the product is min(bw, bh) / FIT_MARGIN - which
-  // is what the live stage draws, for every box shape there is. It costs nothing
-  // in detail either. The model is sized to the narrow axis in both, so a square
-  // still holds *more* of it than a matched-aspect one of the same long edge;
-  // what the extra pixels hold is transparent padding, which is what WebP is
-  // best at.
-  const w = SHOT_MAX;
-  const h = SHOT_MAX;
 
   const ink = boardInk();
   const view = liveView(item);
+
+  // **Shaped like the card's picture area, measured rather than guessed.**
+  //
+  // This has been three shapes now and the card's proportions were the first,
+  // on the reasoning that the still would then drop in without letterboxing.
+  // The reasoning was right and the measurement was wrong: it is not dropped
+  // into the card, it is dropped into the **stage** - the card less its padding,
+  // less the filename, less the gap above it. On a 240 x 300 card that is a box
+  // wider than it is tall inside a card taller than it is wide, so `contain`
+  // re-fitted the picture and the model changed size the moment you let go.
+  //
+  // So the stage is measured. stageShape() reads the box the card is actually
+  // showing the model in - the live canvas, or the still standing in its place -
+  // and that is the aspect the shot is taken at. A card not on screen has no box
+  // to read and falls back to a square, which composes exactly too (see
+  // frame(): the fit is min(w, h), so a square contained in any box lands where
+  // the live canvas draws). The square is the safe answer, not the good one -
+  // it is a bigger file for the same picture.
+  //
+  // The long edge follows the card (shotEdge()), and a resize is already a
+  // retake - see the 'geom' handler below - so a card made bigger is
+  // re-photographed bigger rather than left holding a picture it has outgrown.
+  const shape = stageShape(id) ?? 1;
+  const edge = shotEdge(item);
+  const w = shape >= 1 ? edge : Math.max(1, Math.round(edge * shape));
+  const h = shape >= 1 ? Math.max(1, Math.round(edge / shape)) : edge;
+
   if (!renderShared(mesh, view, w, h, ink)) return false;
 
   // Copied off the shared canvas rather than encoded from it: that one is the
@@ -688,7 +912,39 @@ async function takeShot(id: string): Promise<boolean> {
   // it back as a card that still owes a picture.
   shotSize.set(id, sizeOf(item));
   setModelShot(id, { hash, ink: mesh.colors ? '' : ink, view });
+  // After the card has its picture, not before: the thumbnail is the zoomed-out
+  // copy of a still that already exists, and making it is another decode and
+  // another encode. Nothing waits on it and a failure is silent - the card then
+  // simply draws its full still at every zoom, which is what it did before.
+  cutThumb(id, blob, w).catch(() => {});
   return true;
+}
+
+/**
+ * The hundred-pixel copy the board draws when it is zoomed out.
+ *
+ * The same twin every photograph on the board carries, and made for the same
+ * reason: past the detail rung a card is under a hundred pixels wide, and a
+ * board of models drawing their full stills there is a full decode per card for
+ * a difference nobody can see. The swap itself is two rules in items.css and a
+ * sibling `<img class="still">` - see the image renderer in canvas/renderers.ts,
+ * which is where that arrangement is argued.
+ *
+ * It matters more here than it does there now that the still follows the card:
+ * shotEdge() will photograph a large card at 900px, and the CSS note that used
+ * to call the still "an <img> of at most 450px, the cheapest picture on the
+ * board" stopped being true the moment that number moved.
+ *
+ * Cut from the still rather than from the shared canvas, which costs a decode
+ * and is worth it: makeThumb() is the one place in the app that knows what a
+ * thumbnail is - the resize-on-decode, the quality, the refusal when the copy
+ * outweighs the original - and a second implementation here would be a second
+ * set of those numbers to keep in step.
+ */
+async function cutThumb(id: string, still: Blob, width: number) {
+  const small = await makeThumb(still, width);
+  if (!small) return;
+  setItemThumb(id, await addFile(derivedFile(small.blob, `${id}-thumb`)));
 }
 
 /**
@@ -768,9 +1024,6 @@ bus.on('geom', ids => {
       const item = byId(id);
       if (!item || turning.has(id)) return;
       shotSize.set(id, sizeOf(item));
-      // Past the point where a still would be shown at all, there is nothing to
-      // retake - the card just has to be told to go back to live geometry.
-      if (outgrewStill(item)) { bus.emit('item', id); return; }
       takeShot(id).catch(() => {});
     }, RESIZE_QUIET_MS));
   }
@@ -840,31 +1093,51 @@ function orbit(stage: HTMLCanvasElement, view: View, paint: () => void) {
 // The draw
 // ---------------------------------------------------------------------------
 
-// The stage's box and its 2d context, cached per canvas so a turn's per-frame
-// drawInto() forces neither a layout nor a context lookup. The box changes only
-// on a resize, which the ResizeObserver on the stage signals by clearing this
-// entry before it repaints (see buildModelCard); the context a plain <canvas>
-// hands back is the same object every call. Same motive as the boardInk() cache
-// below - a turn should force nothing it does not have to.
-const stageBox = new WeakMap<HTMLCanvasElement, DOMRect>();
+/**
+ * The stage's box and its 2d context, cached per canvas so a turn's per-frame
+ * drawInto() forces neither a layout nor a context lookup. The box changes only
+ * on a resize, which the ResizeObserver on the stage signals by clearing this
+ * entry before it repaints (see buildModelCard); the context a plain <canvas>
+ * hands back is the same object every call. Same motive as the boardInk() cache
+ * below - a turn should force nothing it does not have to.
+ *
+ * **The layout box, not a client rect, and that is a bug fix rather than a
+ * tidy-up.** Every card on this board is *tilted* - `--item-tilt`, dealt per
+ * card - and getBoundingClientRect() on a rotated element does not describe the
+ * element. It describes the axis-aligned box the rotated shape fits inside,
+ * which is both bigger and **a different shape**. So the drawing buffer was
+ * allocated at the bounding box's proportions, renderShared() framed the model
+ * for those proportions, and the browser then stretched that buffer into the
+ * canvas's real box: a model squashed along one axis, by an amount that depends
+ * on how far the card happens to lean. clientWidth and clientHeight are the
+ * untransformed layout box, which is what a canvas's backing store has to match.
+ *
+ * It costs one thing, knowingly: a client rect carried the board's own
+ * magnification, so a card turned while zoomed in got a buffer sized to what was
+ * on screen. The layout box does not, so that card is drawn at its unzoomed size
+ * times the device ratio and scaled up. Slightly soft while turning in close is a
+ * straight trade against the wrong shape at every zoom, and MAX_BUFFER was
+ * already capping the sharp end of that anyway.
+ */
+type Box = { w: number; h: number };
+const stageBox = new WeakMap<HTMLCanvasElement, Box>();
 const stageCtx = new WeakMap<HTMLCanvasElement, CanvasRenderingContext2D>();
 
 function drawInto(stage: HTMLCanvasElement, mesh: Mesh, view: View) {
   let box = stageBox.get(stage);
-  if (!box) { box = stage.getBoundingClientRect(); stageBox.set(stage, box); }
-  if (!box.width || !box.height) return;
+  if (!box) { box = { w: stage.clientWidth, h: stage.clientHeight }; stageBox.set(stage, box); }
+  if (!box.w || !box.h) return;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   // Both axes by one factor, which is what keeps the ceiling a ceiling rather
   // than a reshape. Clamping them separately - which is what this did - turns a
   // card big enough to reach MAX_BUFFER on its long edge into a *square* buffer:
   // the framing in renderShared() reads the buffer's aspect, so the model was
   // framed for a shape the canvas was not, and the browser then stretched the
-  // backing store to the element's real box. On a board zoomed in far enough it
-  // is a model drawn wide and clipped, and it goes away when you zoom out, which
-  // is the worst way for a bug to behave.
-  const scale = Math.min(1, MAX_BUFFER / Math.max(box.width * dpr, box.height * dpr));
-  const w = Math.max(1, Math.round(box.width * dpr * scale));
-  const h = Math.max(1, Math.round(box.height * dpr * scale));
+  // backing store to the element's real box - the same failure the client rect
+  // above was causing by a different route, which is how that one was found.
+  const scale = Math.min(1, MAX_BUFFER / Math.max(box.w * dpr, box.h * dpr));
+  const w = Math.max(1, Math.round(box.w * dpr * scale));
+  const h = Math.max(1, Math.round(box.h * dpr * scale));
 
   if (stage.width !== w || stage.height !== h) { stage.width = w; stage.height = h; }
 
@@ -943,22 +1216,15 @@ function renderShared(mesh: Mesh, view: View, w: number, h: number, cssColor: st
 
   const { min, max } = mesh.bounds;
   const centre = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2];
-  const radius = Math.max(1e-6, Math.hypot(max[0] - min[0], max[1] - min[1], max[2] - min[2]) / 2);
-  // Framed from the model's own size, so a 3mm screw and a 3m bridge both
-  // arrive filling the card.
-  //
-  // Backed off far enough that the model's bounding sphere fits the *narrow*
-  // axis. The field of view is vertical and the projection widens it by the
-  // aspect, so a flat 2.4 radii framed the height and let a card taller than it
-  // is wide crop the model at the sides - which is what cut the corner off a
-  // model on a portrait card. And 2.4 radii was the exact fit even then: at a
-  // 45 degree field the half-height at that distance is one radius, so the
-  // sphere touched the edge and any rounding took a pixel off it. FIT_MARGIN is
-  // the air around it.
-  const dist = frameDistance(radius, w, h, view.zoom);
+  // Framed from the model's own size, so a 3mm screw and a 3m bridge both arrive
+  // filling the card - and from a size that does not change with the angle, so
+  // turning one over moves it and does not resize it. See frame(), which is also
+  // the reason `fov` is a variable and the distance is not.
+  const radius = modelRadius(mesh);
+  const { dist, fov } = frame(radius, view.zoom, w, h);
 
   gl.uniformMatrix4fv(uni.proj, false,
-    perspective(FOV, w / h, radius * 0.02, dist + radius * 4));
+    perspective(fov, w / h, radius * 0.02, dist + radius * 4));
   gl.uniformMatrix4fv(uni.view, false, orbitView(centre, dist, view.yaw, view.pitch));
   gl.uniform3fv(uni.color, rgbOf(cssColor));
   gl.uniform1f(uni.ownColor, mesh.colors ? 1 : 0);

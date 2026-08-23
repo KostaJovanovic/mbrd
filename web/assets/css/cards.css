@@ -653,12 +653,24 @@
 .model-stage.is-turning { cursor: grabbing; }
 /* The photograph the card shows when nobody is turning it - see
    canvas/model.js. It stands in the stage's place and has to sit in the box the
-   same way: the still was taken at the card's own proportions, so `contain`
-   changes nothing on a card that has not been reshaped since, and keeps the
-   model whole rather than cropping it on one that has.
+   same way, and `contain` is what makes that exact: the shot is taken at this
+   box's own proportions, measured off it (stageShape() in canvas/model.js), so
+   containing it here is a scale and nothing else. The framing itself fits the
+   model's bounding sphere to the narrow axis, which is the same measurement at
+   every angle - so a model on a card holds still while you turn it over.
+
+   **Written against .card-model, and the descendant is the whole point.** A
+   bare `.model-still` is one class where `.item-body img` above is a class and
+   a type, so the generic rule out-specified this one and every model still on
+   the board was drawn `cover` - cropped to fill, at a scale the live canvas
+   never used. That is a model that changes size and loses its corners the
+   moment you stop turning it, which is the fault takeShot() was squared off to
+   fix and could not, because the fix was being overruled two files away.
+   Two classes beats a class and a type, whatever the source order says.
+
    No cursor and no pointer: this is a picture, and a drag on it moves the card
    like a drag on any other picture does. Turning it over is a menu away. */
-.model-still {
+.card-model .model-still {
   flex: 1;
   min-height: 0;
   width: 100%;
@@ -667,14 +679,20 @@
      pale card is the same picture the canvas would have shown. */
   background: none;
 }
-/* And it stays visible however far out the board goes. The stage below hides
-   at the detail rung because a WebGL canvas is the most expensive thing on the
-   card and a turned model is a grey smudge out there - but the still is an
-   <img> of at most 450px, the cheapest picture on the board and cheaper than
-   any photograph beside it, none of which are hidden either. Taking it away
-   turned every model into an empty card at exactly the zoom where the board
-   stops being a set of things to read and becomes a composition to look at,
-   which is the one job a picture of the model still has out there. */
+/* And it stays visible however far out the board goes - as the hundred-pixel
+   twin beside it, which is the same swap every photograph on the board gets.
+   The stage below hides at the detail rung because a WebGL canvas is the most
+   expensive thing on the card and a turned model is a grey smudge out there.
+   The picture is not hidden: taking it away turned every model into an empty
+   card at exactly the zoom where the board stops being a set of things to read
+   and becomes a composition to look at, which is the one job a picture of the
+   model still has out there.
+
+   It used to be kept on the grounds that the still was "an <img> of at most
+   450px, cheaper than any photograph beside it". That stopped being true when
+   shotEdge() started sizing the shot to the card - a large card is photographed
+   at 900px now - so the model takes the twin on the same terms the photographs
+   do, and the two rules that swap it are in items.css beside theirs. */
 .card-model .card-name {
   flex: none;
   font-size: var(--t-tiny);
