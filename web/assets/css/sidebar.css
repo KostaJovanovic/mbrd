@@ -44,9 +44,19 @@
    :focus-visible is untouched. That distinction is the point: an outline is how
    this interface says "the keyboard is here", and spending it on a hover left
    the keyboard without a signal of its own. */
-#menu-btn:hover,
-#mobile-header-edit-btn:hover,
-#mobile-find-btn:hover { background: var(--paper-2); color: var(--accent-deep); }
+/* Behind a hover query, and this sheet's three corner buttons are the ones that
+   most needed it: two of the three exist only on the Mobile board, where there
+   is no pointer to hover with and `:hover` is whatever the last tap left behind.
+   Same split chrome.css now makes and the same reasoning - the press below is
+   outside the query, because a press is a thing every pointer does. */
+@media (hover: hover) {
+  #menu-btn:hover,
+  #mobile-header-edit-btn:hover,
+  #mobile-find-btn:hover { background: var(--paper-2); color: var(--accent-deep); }
+}
+#menu-btn:active,
+#mobile-header-edit-btn:active,
+#mobile-find-btn:active { background: var(--paper-3); color: var(--accent-deep); }
 /* The mark tints with it, which is the half that makes the hover visible at all.
    --paper-2 over --paper-card is about a twelve-unit shift on a light sheet -
    real, and not something an eye notices on a 46px button. Every other control
@@ -59,7 +69,16 @@
    Naming them here is what puts it back - and it is the same accent-deep the
    toolbar and the bin already move to, rather than a second idea about what a
    hover looks like. */
-#menu-btn:hover span { background: var(--accent-deep); }
+@media (hover: hover) {
+  #menu-btn:hover span { background: var(--accent-deep); }
+}
+/* And the press needs it for the same reason the hover does, which is the whole
+   of why this line is not just the rule above with a second selector on it: the
+   fill this button changes on `:active` is --paper-2 to --paper-3, and on a
+   phone - where this button always is and a hover never is - that shift is the
+   only thing a tap was answered with. The bars have to move with it or the
+   press is a twelve-unit change on a 46px square and nothing else. */
+#menu-btn:active span { background: var(--accent-deep); }
 /* Find rides the top-left under the menu button - a stable second affordance on
    the Mobile board, on either lens (ui/mobile-header.js paintFind). It is not on
    the [hidden] fade the pen uses: it toggles only on a layout change, not per
@@ -312,8 +331,19 @@
    50%/50% origin spins it in place. */
 #side-close svg,
 #header-close svg { width: 15px; height: 15px; display: block; }
-#side-close:hover,
-#header-close:hover { color: var(--accent-text); background: var(--paper-2); transform: rotate(90deg); }
+@media (hover: hover) {
+  #side-close:hover,
+  #header-close:hover { color: var(--accent-text); background: var(--paper-2); transform: rotate(90deg); }
+}
+/* Background alone, and deliberately not the spin. The rotate is the hover's
+   flourish and it runs at --dur-base on --ease-back - 0.4s at Softish, which is
+   longer than this button's own panel takes to start leaving. A press that
+   begins a spin nobody sees the end of is worse than a press that does not.
+   This is the same one-step-into-the-paper the round buttons on the player and
+   the toolbar answer with, and it is instant: the transition above already runs
+   background at --dur-fast. */
+#side-close:active,
+#header-close:active { color: var(--accent-text); background: var(--paper-3); }
 
 /* The tab strip. Outside .side-body, so it holds still while a tab scrolls -
    three headings that move away as you read are three headings you have to go
@@ -347,7 +377,14 @@
   transition: color var(--dur-fast) var(--ease),
               border-color var(--dur-fast) var(--ease);
 }
-.side-tab:hover { color: var(--ink); }
+@media (hover: hover) {
+  .side-tab:hover { color: var(--ink); }
+}
+/* Past --ink to the accent, which is where the tab is about to end up anyway -
+   this is the one control in the sheet whose press has an obvious destination,
+   so the press may as well point at it. Before .is-on rather than after, so a
+   press on the tab already open changes nothing. */
+.side-tab:active { color: var(--accent-text); }
 .side-tab.is-on { color: var(--accent-text); border-bottom-color: var(--accent-text); }
 .side-tab:focus { outline: none; }
 .side-tab:focus-visible {
@@ -562,20 +599,39 @@
 /* Every control reacts by the same budget, set by the whimsy axis: it springs
    towards you on hover and squashes under a press at the playful end, and does
    neither at the plain end, without either end needing its own rule. */
-.btn-row button:hover {
-  background: var(--paper-2);
-  border-color: var(--accent-text);
-  color: var(--accent-deep);
-  transform: translateY(var(--btn-lift)) scale(var(--btn-grow));
+@media (hover: hover) {
+  .btn-row button:hover {
+    background: var(--paper-2);
+    border-color: var(--accent-text);
+    color: var(--accent-deep);
+    transform: translateY(var(--btn-lift)) scale(var(--btn-grow));
+  }
 }
-.btn-row button:active { transform: scale(var(--btn-press)); background: var(--paper-3); }
+.btn-row button:active {
+  transform: scale(var(--btn-press));
+  background: var(--paper-3);
+  /* The press comes off the hover's curve, the same edit #zoom-ctl and #toolbar
+     take and for the same reason: the transition above runs transform at
+     --dur-base on --ease-back, which is a spring settling towards a pointer.
+     Under a finger that is 0.4s of squash at Softish, and the panel these sit in
+     has usually answered before it finishes. */
+  transition: transform var(--dur-fast) var(--ease-in),
+              background var(--dur-fast) var(--ease);
+}
 .btn-row button.primary {
   background: var(--accent);
   border-color: var(--accent-deep);
   color: var(--accent-fg);
   letter-spacing: calc(0.03em * var(--ls-scale));
 }
-.btn-row button.primary:hover { background: var(--accent-deep); color: var(--accent-fg); }
+@media (hover: hover) {
+  .btn-row button.primary:hover { background: var(--accent-deep); color: var(--accent-fg); }
+}
+/* The same darkening on a press, and it has to be said again rather than left to
+   the rule above: `.btn-row button:active` takes the background to --paper-3,
+   and .primary outranks it, so without this line the one button in the panel
+   that is filled is the one button whose press does nothing to its fill. */
+.btn-row button.primary:active { background: var(--accent-deep); color: var(--accent-fg); }
 /* Bounded in ink at the plain end, and this is the one place it is not
    optional. The fill there is the accent at its hue's cusp - the lightness
    where the colour is loudest - and for a chartreuse or a teal that is a few
@@ -605,7 +661,20 @@
    same reason: outlined until you are over it, so it reads as available rather
    than as the thing the panel wants you to press. */
 .btn-row button.danger { border-color: var(--danger); color: var(--danger); }
-.btn-row button.danger:hover {
+@media (hover: hover) {
+  .btn-row button.danger:hover {
+    background: var(--danger);
+    border-color: var(--danger);
+    color: var(--paper-card);
+  }
+}
+/* The press fills it too, and on a phone this is the *only* thing that does -
+   the bargain in the comment above is that it stays outlined until you are over
+   it, and there is no being over it on a touch screen. Which matters more here
+   than on any other button in the sheet: this is the destructive one, it arms
+   and counts down (armClear() in main.js), and a press that gives nothing back
+   is a press somebody repeats. */
+.btn-row button.danger:active {
   background: var(--danger);
   border-color: var(--danger);
   color: var(--paper-card);

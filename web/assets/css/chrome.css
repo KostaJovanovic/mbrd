@@ -45,7 +45,16 @@
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 #zoom-ctl button + button { border-left: 1px solid var(--rule); }
-#zoom-ctl button:hover { background: var(--paper-2); color: var(--accent-deep); }
+/* Hover behind a query and press in front of it, and the split is the rule this
+   whole sheet now follows.
+   A hover is a pointer that can rest on a thing without committing to it, which
+   a finger cannot do: on touch the browser answers `:hover` from the last tap
+   and leaves it standing, so a tool pressed once stays lit until something else
+   is pressed. That is a wrong signal, and it is standing in for the right one.
+   A press is a thing every pointer does, so `:active` stays outside. */
+@media (hover: hover) {
+  #zoom-ctl button:hover { background: var(--paper-2); color: var(--accent-deep); }
+}
 #zoom-ctl button:active { background: var(--paper-3); }
 #zoom-ctl button:disabled { color: var(--ink-3); cursor: default; background: none; }
 #zoom-ctl svg {
@@ -54,8 +63,22 @@
      would drag the hairline dividers between them around. */
   transition: transform var(--dur-base) var(--ease-back);
 }
-#zoom-ctl button:hover:not(:disabled) svg { transform: scale(var(--btn-grow)) translateY(var(--btn-lift)); }
-#zoom-ctl button:active:not(:disabled) svg { transform: scale(calc(var(--btn-press) - 0.08)); }
+@media (hover: hover) {
+  #zoom-ctl button:hover:not(:disabled) svg { transform: scale(var(--btn-grow)) translateY(var(--btn-lift)); }
+}
+#zoom-ctl button:active:not(:disabled) svg {
+  transform: scale(calc(var(--btn-press) - 0.08));
+  /* A press does not get the hover's curve, and this is the one line in the bar
+     that is about latency rather than about looks.
+     The rule above settles a glyph rising to meet a pointer, so it takes its
+     time and overshoots - which is right for a thing arriving on its own and
+     wrong for a thing being pushed. A press is the app saying it heard you, and
+     --dur-base is 0.4s at Softish: long enough that the reply reads as lag
+     arriving where there used to be nothing at all. --ease-in is the curve that
+     starts where it was and gathers speed, which is what being pushed looks
+     like; --dur-fast is the shortest step on the axis and still follows it. */
+  transition: transform var(--dur-fast) var(--ease-in);
+}
 /* The readout doubles as the reset-to-100% button, so it needs to be wide
    enough that 12% and 1600% don't shove the + and - around as you zoom. */
 #zoom-level {
@@ -187,7 +210,11 @@
    on `#toolbar button` above without needing to: an attribute beats a type. */
 #toolbar [data-mobile] { display: none; }
 
-#toolbar button:hover { background: var(--paper-2); color: var(--accent-deep); }
+/* Behind the query, for the reason #zoom-ctl gives. The rule below it is not,
+   and neither is the aria-expanded rule two down - see its own comment. */
+@media (hover: hover) {
+  #toolbar button:hover { background: var(--paper-2); color: var(--accent-deep); }
+}
 #toolbar button:active { background: var(--paper-3); color: var(--accent-deep); }
 /* A button whose flyout is down (ui/flyout.js), held at the hover look while
    the pointer is off it and inside the panel.
@@ -205,8 +232,14 @@
      gives: scaling the button would drag the hairlines between them about. */
   transition: transform var(--dur-base) var(--ease-back);
 }
-#toolbar button:hover svg { transform: scale(var(--btn-grow)) translateY(var(--btn-lift)); }
-#toolbar button:active svg { transform: scale(calc(var(--btn-press) - 0.08)); }
+@media (hover: hover) {
+  #toolbar button:hover svg { transform: scale(var(--btn-grow)) translateY(var(--btn-lift)); }
+}
+#toolbar button:active svg {
+  transform: scale(calc(var(--btn-press) - 0.08));
+  /* The press curve, argued at #zoom-ctl's copy of this line. */
+  transition: transform var(--dur-fast) var(--ease-in);
+}
 
 /* An armed tool, marked the way #zoom-lock marks a held zoom: the accent at
    full strength rather than a fill behind it, because the bar is one pill on
@@ -390,7 +423,21 @@
   transition: background var(--dur-fast) var(--ease), scale var(--dur-base) var(--ease-back);
 }
 #nowplaying .np-play svg { width: 16px; height: 16px; }
-#nowplaying .np-play:hover { scale: var(--btn-grow); }
+@media (hover: hover) {
+  #nowplaying .np-play:hover { scale: var(--btn-grow); }
+}
+/* And the press, which this bar had never had.
+   The comment above says this is the only control on the glass anybody presses
+   without looking for it, which is exactly why the omission mattered: on a phone
+   there was no hover to stand in for it, so the most-pressed button in the app
+   answered a tap with nothing at all until the audio started. Its own curve, for
+   the reason #zoom-ctl's press gives - the transition above settles a disc
+   rising to meet a pointer, over --dur-base and with an overshoot, and a press
+   wants neither. */
+#nowplaying .np-play:active {
+  scale: var(--btn-press);
+  transition: scale var(--dur-fast) var(--ease-in);
+}
 /* Next is a passenger: it is only there some of the time, so it is one of the
    quiet round buttons (.np-qbtn, below) rather than a second accent disc. Its
    own rule is further down, next to the class it shares. */
@@ -663,7 +710,9 @@
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
-#nowplaying .np-close:hover { background: var(--paper-2); color: var(--accent-deep); }
+@media (hover: hover) {
+  #nowplaying .np-close:hover { background: var(--paper-2); color: var(--accent-deep); }
+}
 #nowplaying .np-close svg { width: 12px; height: 12px; }
 
 /* The right-hand controls: play, and the playlist's shuffle / prev / next /
@@ -682,7 +731,17 @@
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
-#nowplaying .np-qbtn:hover { background: var(--paper-2); color: var(--ink); }
+@media (hover: hover) {
+  #nowplaying .np-qbtn:hover { background: var(--paper-2); color: var(--ink); }
+}
+/* The press, for both round buttons at once - the comment above already says the
+   close and these are one idiom, and the pressed look is the half of that idiom
+   they share exactly. One step further into the paper than the hover, which is
+   what #toolbar's press says with the same two tokens.
+   No transition of its own, unlike the play disc and the two glyph rules up the
+   file: what moves here is a background, and both blocks already run that at
+   --dur-fast on --ease. There is nothing to shorten and no overshoot to undo. */
+#nowplaying :is(.np-qbtn, .np-close):active { background: var(--paper-3); }
 #nowplaying .np-qbtn svg { width: 16px; height: 16px; }
 /* An engaged shuffle or repeat reads in the accent. */
 #nowplaying .np-qbtn[aria-pressed="true"] { color: var(--accent-text); }
@@ -815,7 +874,13 @@
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
-#tour button:hover:not(:disabled) { background: var(--paper-2); color: var(--accent-deep); }
+@media (hover: hover) {
+  #tour button:hover:not(:disabled) { background: var(--paper-2); color: var(--accent-deep); }
+}
+/* :not(:disabled) on the press as well as on the hover. The two at the ends are
+   dead by design - see the clamp in stepTour() - and a dead button that darkens
+   under a finger is the one saying it will do something. */
+#tour button:active:not(:disabled) { background: var(--paper-3); }
 /* Greyed at the ends. Clamped rather than wrapped - see stepTour() - so the
    first and last stops each have one dead button, and it has to look dead. */
 #tour button:disabled { color: var(--ink-3); opacity: 0.45; cursor: default; }
