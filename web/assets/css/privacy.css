@@ -161,7 +161,11 @@ body::before {
   font-family: var(--font-display);
   font-size: clamp(var(--t-display), 8vw, calc(var(--t-display) * 2.1));
   font-weight: var(--display-weight);
-  letter-spacing: calc(0.01em * var(--ls-scale));
+  /* Tracking that follows the clamp, argued at .pn-title in patch.css. It is
+     here rather than only there because of the line above this rule: the two
+     titles are supposed to sit at the same height, and that only stays true if
+     both take the same change. */
+  letter-spacing: calc(clamp(-0.02em, 0.03em - 0.09vw, 0.01em) * var(--ls-scale));
   line-height: 1.04;
   color: var(--ink);
 }

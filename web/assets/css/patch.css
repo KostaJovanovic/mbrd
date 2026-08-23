@@ -220,7 +220,23 @@ body.is-patch::before {
   font-family: var(--font-display);
   font-size: clamp(var(--t-display), 8vw, calc(var(--t-display) * 2.1));
   font-weight: var(--display-weight);
-  letter-spacing: calc(0.01em * var(--ls-scale));
+  /* Tracking that follows the size, because the size moves and the old flat
+     0.01em did not.
+     Letters set at 30px want a little air between them and the same letters at
+     63px do not: the gaps grow with the type while the eye's tolerance for them
+     does not, so one value across a 2.1x clamp is loose at the top or cramped at
+     the bottom, and this was loose at the top. The line-height beside it has
+     always been doing the size-responsive half correctly - 1.04 is a large-type
+     leading, not a body one - which is what made the tracking stand out.
+     Driven by the same vw the font-size is, which is what keeps the two in step:
+     0.01em at a phone's width, crossing zero somewhere around 560px, and -0.02em
+     by the time the clamp has stopped growing.
+     This does not touch what --ls-scale is for. That knob is held at 1 at every
+     whimsy level because tracking was the one thing on the axis that moved type
+     sideways under a reader mid-sentence - a heading shifting when a slider is
+     nudged. Nothing here is nudged: the size is already moving, and this only
+     stops the spacing being wrong while it does. */
+  letter-spacing: calc(clamp(-0.02em, 0.03em - 0.09vw, 0.01em) * var(--ls-scale));
   line-height: 1.04;
   color: var(--ink);
 }
@@ -354,7 +370,12 @@ body.is-patch::before {
   font-family: var(--font-display);
   font-size: calc(var(--t-display) * 1.15);
   font-weight: var(--display-weight);
-  letter-spacing: calc(0.01em * var(--ls-scale));
+  /* A flat value here and a clamp in .pn-title, and the difference is the
+     font-size two lines up: this one is a fixed multiple of a token rather than
+     something that grows with the window, so there is nothing for a vw term to
+     follow. It is a release heading rather than the page's title, so it sits at
+     the shallow end of the same correction. */
+  letter-spacing: calc(-0.005em * var(--ls-scale));
   line-height: 1.12;
   color: var(--ink);
 }

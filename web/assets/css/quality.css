@@ -401,6 +401,74 @@
   transition-duration: 0.01ms !important;
 }
 
+/* ---------------------------------------------------------------------------
+   The two preferences the system holds, which the dial above does not answer
+
+   The blur stop above is a *quality* decision - somebody, or the Light default,
+   deciding this machine should not spend a frame re-sampling a backdrop. This is
+   a different question with the same answer: somebody has told their operating
+   system they do not want translucency, and until now the app did not ask. The
+   two overlap and neither implies the other. A fast machine set to Full quality
+   still has to honour the preference, and a Light board still blurs nothing
+   whatever the system says.
+
+   Here rather than in base.css, where prefers-reduced-motion sits, because the
+   shape of the fix is this file's rather than that one's: `backdrop-filter` is a
+   property and not a custom property, so it cannot be handed down and has to be
+   cancelled where it is set - a universal selector and an !important, which is
+   the block above's whole argument for existing. Reduced motion had somewhere
+   better to go: the durations *are* tokens, so tokens.css flattens them at the
+   root and the cascade does the rest.
+   --------------------------------------------------------------------------- */
+
+@media (prefers-reduced-transparency: reduce) {
+  * {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}
+
+/* Contrast is the one that wants the opposite of a blanket.
+   Every scrim in the app is the board's own ink at 42% - tinted rather than
+   black, so a sheet dims into the palette instead of going grey, which
+   dialog.css argues where it sets it. At `more` that tint is doing the job
+   backwards: 42% leaves the board legible through it, and what a contrast
+   preference asks for is the sheet in front having an unmistakable edge. So the
+   same colour, further up. Not opaque - the scrim would stop saying there is a
+   board behind it at all, and losing that is losing the thing the dimming is
+   for.
+
+   Eight backdrops and one value, written once against the list. The list is
+   copied from dialog.css, color-picker.css and viewer.css, and a dialog added
+   since is a dialog missing from it - there is no test for this, because a
+   scrim's depth is not a thing a test can hold an opinion about.
+
+   #viewer is on the list and the *media* viewer still will not take it, which is
+   right rather than an oversight: `#viewer[data-media]::backdrop` is near-black
+   at 94% and outranks this on specificity whatever the order. It is already
+   darker than this asks for, and it is deliberately not the board's ink - a
+   photograph is judged against a neutral ground. What this reaches is the
+   viewer's other half, the one showing a document on paper.
+
+   color-mix(), like the rules it overrides. Below WebKit 16.2 the whole
+   declaration is dropped and the 42% scrim stands: less contrast than was asked
+   for, on a browser three years old, and still a working scrim. The channel-form
+   spelling is deliberately not reached for - tokens.css declares --ink-c *inside*
+   its @supports block precisely so that no current browser can see a second set
+   of colours, and this rule is not worth being the exception. */
+@media (prefers-contrast: more) {
+  #ask::backdrop,
+  #credits::backdrop,
+  #inventory::backdrop,
+  #timeline-sheet::backdrop,
+  #compose::backdrop,
+  #darkroom::backdrop,
+  #pick::backdrop,
+  #viewer::backdrop {
+    background: color-mix(in srgb, var(--ink) 78%, transparent);
+  }
+}
+
 /* The two card types that have no `.card` inside them, and so no hairline of
    their own: canvas/renderers.js hands back the picture itself for an image and
    a video, because they *are* the card. Every other type wears the inset ring
