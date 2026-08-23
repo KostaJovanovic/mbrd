@@ -254,8 +254,13 @@ function open(btn: HTMLElement, focus: boolean, delay = 0) {
   // rightmost of the three - hung 28px past the end of the bar it is drawn as
   // part of. Note and Colour sit mid-bar and never showed it, which is why this
   // belongs in render() rather than in a special case for one button.
+  // `right` is the button's, like `left` and unlike `bottom`: the panel grows
+  // out of the middle of the button it hangs off, and the middle is those two
+  // averaged. The bar's edges are in `bounds` and are a different question -
+  // where the panel may sit, not what it came out of.
   const rect = {
     left: box.left,
+    right: box.right,
     top: box.top,
     bottom: barBox.bottom,
     bounds: { left: barBox.left, right: barBox.right },
