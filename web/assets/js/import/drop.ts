@@ -271,19 +271,17 @@ export function initDrop(vp: DropViewport) {
     const text = e.clipboardData?.getData('text/plain');
     if (text && text.trim()) {
       e.preventDefault();
-      // A pasted address is a link, not a note about a link. Tested before the
-      // note branch because a note is the fallback for "some text arrived" and
-      // a bare URL is the one shape of text that means something narrower than
-      // that. It is also the one shape a note handles badly: NOTE_MAX would cut
-      // a long address in half, leaving a sticky that quietly says somewhere
-      // else. linkURL() is strict, so a paragraph that merely mentions a link
-      // still lands as the note it is.
+      // A pasted address is a link, not a document about a link. Tested before
+      // the branch below because that one is the fallback for "some text
+      // arrived" and a bare URL is the one shape of text that means something
+      // narrower than that. linkURL() is strict, so a paragraph that merely
+      // mentions a link still lands as the document it is.
       const url = linkURL(text);
       if (url) { addLink(centre, url); return; }
       // An `<iframe>` block is the second shape of text that means a link and
       // nothing else. YouTube and Spotify both hand out markup rather than an
       // address from their Share menus, so pasting that block is a thing people
-      // do - and landing it as a sticky note full of angle brackets is the app
+      // do - and landing it as a card full of angle brackets is the app
       // refusing to understand something it plainly understands. See
       // iframeURL(): the pasted string is never parsed as HTML, only searched.
       //
@@ -295,7 +293,7 @@ export function initDrop(vp: DropViewport) {
       // open.spotify.com/embed/track/… is showing plumbing.
       const framed = iframeURL(text, linkURL);
       if (framed) addLink(centre, embedPage(framed));
-      else addNote(centre, text.trim());
+      else await importFiles([pastedFile(text)], centre);
     }
   });
 
@@ -325,6 +323,84 @@ export function initDrop(vp: DropViewport) {
     if (files.length) await importFiles(files, vp.toWorld(vp.left + vp.cx, vp.top + vp.cy));
   });
 }
+
+/**
+ * Text off the clipboard, as a file.
+ *
+ * A paste used to become a sticky note, and a sticky note is the wrong
+ * container for something that arrived from outside. NOTE_MAX cuts it, the card
+ * is 120 world units square, and what came out of pasting three pages was a
+ * yellow square holding the first paragraph of them. Text from elsewhere is a
+ * *document* - usually the thing somebody meant to keep - so it lands as one,
+ * down the same path a dropped file takes: hashed, shared by content with any
+ * identical paste already on the board, packed into the archive, openable in
+ * the viewer, and still a readable file to anyone who unzips the .mbrd. Nothing
+ * downstream needs to know it was pasted rather than dropped.
+ *
+ * `.md`, and for every paste rather than for the ones that look like it.
+ * Markdown *is* plain text - prose with no markers in it renders as the prose
+ * it is - so the extension only decides what happens when there *are* markers,
+ * and pasted text is full of them: a bullet list off a page, a heading out of a
+ * document, a fenced block out of a chat with a machine. Sniffing the content
+ * to choose between two extensions would file the same paste two different ways
+ * on two different days, which is the guess this module refuses everywhere else
+ * (see linkURL, which will not add a scheme to `example.com`). One answer, and
+ * it is the one that reads.
+ *
+ * The sticky note has not gone anywhere: the Note button still mints one, which
+ * is the door for something you are writing rather than something you brought.
+ */
+function pastedFile(text: string): File {
+  // Normalised on the way in rather than at every read, the same fold
+  // renderMarkdown() opens with: a paste out of a Windows editor carries CRLF,
+  // and this is the moment the file is being written for the first time.
+  const body = text.replace(/\r\n?/g, '\n').trim();
+  return new File([body], `${pastedName(body)}.md`, { type: 'text/markdown' });
+}
+
+/** How much of the first line a pasted document is named after. */
+const PASTE_NAME_MAX = 48;
+
+/**
+ * What a pasted document is called: its first line, tidied.
+ *
+ * The first line of a piece of prose is the closest thing it has to a title,
+ * and it is what the sticky note this replaces took its name from too. The
+ * Markdown marker comes off the front - a heading pasted as `## Findings` is a
+ * card called "Findings" - because the marker is punctuation *about* the line
+ * rather than part of what it says.
+ *
+ * The *first* line with words in it, not the first line: a paste that opens
+ * with a fence or a rule opens with punctuation, and neither has a title in it.
+ * A fence is the case worth naming, because it has something on it and the
+ * something is wrong - ```` ```js ```` would call the file "js", which is the
+ * language it is written in rather than anything about the paste.
+ *
+ * The sweep after that is the filename half, and it is not cosmetic. This
+ * string becomes a zip entry's name on save (storage/mbrd.ts) and the suggested
+ * name in a Save dialog, so a slash in it would read as a directory and a
+ * control character would make a name no filesystem will take. What survives is
+ * somebody's own words, in whatever script they wrote them in.
+ */
+function pastedName(text: string): string {
+  for (const line of text.split('\n')) {
+    if (PASTE_NAME_SKIP.test(line)) continue;
+    const title = line
+      .replace(/^ {0,3}(#{1,6} +|> ?|[-*+] +|\d{1,9}[.)] +)/, '')
+      .replace(/[\p{Cc}/\\:*?"<>|]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, PASTE_NAME_MAX)
+      .trim();
+    if (title) return title;
+  }
+  // Nothing but punctuation, or nothing at all. Reached only from the clipboard,
+  // where the caller has already refused an empty paste.
+  return 'Pasted text';
+}
+
+/** A fence or a thematic break: a line of Markdown with no words in it. */
+const PASTE_NAME_SKIP = /^ {0,3}(```|~~~|((\*\s*){3,}|(-\s*){3,}|(_\s*){3,})$)/;
 
 /**
  * Open the OS file picker for content (not for .mbrd - that's storage.js).

@@ -14,8 +14,16 @@ import assert from 'node:assert/strict';
 // Canonical, deliberately un-cache-busted: display.js resolves '../storage/
 // assets.js' without a query, so a query-busted copy here would be a second,
 // empty registry and every lookup would miss - which looks exactly like the
-// pass this file is trying to prove.
+// pass this file is trying to prove. The cut-out cache is imported the same way
+// and for the same reason.
 import { putAsset, clearAssets } from '../web/assets/js/storage/assets.ts';
+import { saveMatte } from '../web/assets/js/storage/matte-cache.ts';
+import { fakeIndexedDB } from './helpers.js';
+
+// A database for the cut-out cache to sit on. Installed before anything opens a
+// connection; storage/idb.ts reaches for the global inside open() and nowhere
+// else, so this lands in time even though the imports above have already run.
+globalThis.indexedDB = fakeIndexedDB();
 
 /** A blob-alike: display.js only reads .type, and putAsset only reads .size. */
 const imageBlob = (type = 'image/png') => ({ type, size: 1024 });
@@ -176,4 +184,37 @@ test('a JPEG source retries as JPEG where WebP is refused, a PNG one does not', 
 
   assert.deepEqual(api.asked(), ['image/webp', 'image/jpeg', 'image/webp'],
     'the JPEG source asks twice and the PNG source keeps what came out');
+});
+
+// The queue holds this app to one full-resolution decode at a time, and a cached
+// cut-out is not one: it is a card-sized WebP that was decoded, cut and encoded
+// on some earlier load and written to IndexedDB. Putting it in the queue anyway
+// is what the first version of the persisted cache did, and it gave back almost
+// nothing - on a board of thirty photographs the queue is seconds long, so a
+// picture sitting ready on disk still appeared about as late as it had when the
+// model was running. The model no longer ran and the wait was unchanged.
+// A deadline, because the regression this guards does not fail - it *waits*.
+// Without the unqueued path the assertion below is parked behind a decode that
+// this test deliberately never releases, and a hanging suite says nothing.
+test('a cached cut-out does not wait behind a full-resolution decode', { timeout: 5000 }, async (t) => {
+  const api = stubImageAPIs();
+  t.after(api.restore);
+  const { ensureDisplay, matteVariant } = await freshDisplay();
+
+  putAsset('slow', imageBlob('image/jpeg'));
+  putAsset('cut', imageBlob('image/png'));
+  // What an earlier load would have left behind, under the key this module will
+  // ask for rather than under one spelled out again here.
+  await saveMatte('cut', matteVariant('cut', null, null), new Blob([new Uint8Array(2048)]));
+
+  // Occupies the one permitted decode and never finishes: api.release() is not
+  // called until the assertion below has already had its answer.
+  const parked = ensureDisplay('slow');
+  const quick = ensureDisplay('cut', null, null, true);
+
+  assert.match(await quick, /^blob:copy-/, 'the cached copy is published while the decode is parked');
+  assert.equal(api.peak(), 1, 'and it started no decode of its own');
+
+  api.release();
+  await parked;
 });

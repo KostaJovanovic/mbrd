@@ -13,6 +13,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import {
   classify, defaultSize, hasRenderer, measureSize,
@@ -145,6 +146,27 @@ test('rich flattens to the markdown it parses from', () => {
   const text = '# Title\n## Heading\nbody';
   const rich = normalizeNoteRich(undefined, text);
   assert.equal(flattenNoteRich(rich), text, 'the plaintext round-trips');
+});
+
+// ---------------------------------------------------------------------------
+// The thumbnail is the untouched picture, and an edited card must not show it
+// ---------------------------------------------------------------------------
+
+// Read off the source, because what is being held here is a shape and there is
+// no DOM to build a card in - the same answer boot.test.js gives for the
+// IndexedDB connection it cannot open. What the shape is worth: meta.thumb is
+// the hundred-pixel copy of the *whole untouched* file, so on a cropped, turned
+// or matted card it is the full frame, the wrong way up, with its background
+// still on. The image renderer consults it twice - once as the stand-in while
+// the display copy renders, once as the far-zoom twin - and for a long time only
+// the first of those knew. The visible symptom was a cut-out card growing its
+// background back on zoom-out and losing it again on the way in.
+test('neither use of meta.thumb survives on an edited card', () => {
+  const src = readFileSync('web/assets/js/canvas/renderers.ts', 'utf8');
+  assert.match(src, /if \(thumb && !edited\) img\.src = thumb;/,
+    'the stand-in while the copy renders must be refused on an edited card');
+  assert.match(src, /const thumb = !animated && !edited && thumbHash/,
+    'and so must the far-zoom twin, which is the same picture by the other door');
 });
 
 test('rich is authoritative when present, and is sanitised', () => {

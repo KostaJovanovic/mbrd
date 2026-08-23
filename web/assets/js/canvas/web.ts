@@ -34,6 +34,7 @@
 // the router, which may not read anything - see look().
 import {
   board, bus, byId, isRider, isJoinEnd, baseStep, selection, pairKey, stuckFollowers,
+  itemBare,
 } from '../state.ts';
 // How a styled connection is drawn, straight off the board's own model. Named
 // from there rather than restated here, which is the whole of why it is
@@ -51,7 +52,9 @@ import type { Point, Box, Bounds } from '../geometry.ts';
 // Where a line runs when there are cards in the way - see web-route.js. Pure,
 // and deliberately not in this file for the same reason web-graph.js is not:
 // the algorithm is the half that can be tested without a browser.
-import { routeConnection, pathData, blockOf, exitTowards, CLEARANCE } from '../web-route.ts';
+import {
+  routeConnection, pathData, blockOf, endOf, intoMiddles, CLEARANCE,
+} from '../web-route.ts';
 import type { Slot } from '../web-route.ts';
 // Which cards are near enough to be in the way. The index is kept current by
 // canvas/items.js on every add, remove and move.
@@ -79,8 +82,12 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
  * already been folded in - see centres(). A missing rotation would be a card
  * that had not been through that conversion, which is not a thing this file
  * ever holds.
+ *
+ * `bare` is the one thing here that is not geometry, and it is here because it
+ * changes where a line is allowed to stop: an item drawn without a card has no
+ * outline for a line to stop on. See endOf() in web-route.ts.
  */
-type Card = Box & { id: string, rot: number };
+type Card = Box & { id: string, rot: number, bare: boolean };
 
 /**
  * One drawn line: where it runs, and everything that decides how it looks.
@@ -583,8 +590,12 @@ function land(key: string) {
  */
 function cardOf(it: Item, maxLean: number): Card {
   const lean = it.type === 'fence' ? 0 : tiltOf(it.id) * maxLean;
-  return { id: it.id, x: it.x, y: -it.y, w: it.w, h: it.h, rot: -(it.rot || 0) + lean };
+  return {
+    id: it.id, x: it.x, y: -it.y, w: it.w, h: it.h, rot: -(it.rot || 0) + lean,
+    bare: itemBare(it),
+  };
 }
+
 
 /**
  * Item centres in #world's coordinates.
@@ -634,7 +645,9 @@ function centres(): Card[] {
  * traded a stub that appeared on hover for a gap that was there all the time.
  * A card's drawn outline is exactly knowable, so the line stops exactly on it -
  * see exitTowards() in web-route.js, which clips against the leaning rectangle
- * rather than against the box around it.
+ * rather than against the box around it. endOf() beside it is where the items
+ * this reasoning inverts - the ones drawn with no card at all, whose rectangle
+ * is mostly nothing - get the opposite answer.
  *
  * The tier is read rather than the token alone, because the token is not the
  * whole answer: Harsh zeroes `rotate` on `.item` in quality.css rather than
@@ -769,7 +782,12 @@ export function resetWeb() {
  */
 const sigOf = (a: Card, b: Card) =>
   [a.x, a.y, a.w, a.h, a.rot, b.x, b.y, b.w, b.h, b.rot]
-    .map(n => Math.round(n * 10) / 10).join(',');
+    .map(n => Math.round(n * 10) / 10).join(',')
+  // Both cards' "is there a card here" on the end of it, because taking the card
+  // off moves this line's endpoint without moving either end - see endOf().
+  // Without them the cached route survives the toggle and the line goes on
+  // stopping in the paper until something else happens to disturb it.
+  + `,${a.bare ? 1 : 0}${b.bare ? 1 : 0}`;
 
 /**
  * The whole obstacle field as one number, for the invalidation in build().
@@ -879,9 +897,12 @@ function build() {
       // card is flat, and revealed as a stub the moment the hover lift raises
       // it off the board. It also aims at the two middles, which is what the
       // routed line it is standing in for will do when the pass lands.
+      //
+      // Which edge, and the one card where the edge is the wrong answer, are
+      // both endOf()'s.
       : {
         a: pa, b: pb, sig,
-        points: [exitTowards(pa, pb), exitTowards(pb, pa)],
+        points: [endOf(pa, pb), endOf(pb, pa)],
       };
     // The display settings ride on the seg, refreshed every build even when the
     // route is reused - an edit changes the look without moving an end, so the
@@ -1108,7 +1129,7 @@ function routePass() {
       toSlot: fan?.to,
       avoid: linesNear(key, seg),
     });
-    seg.points = routed.points;
+    seg.points = intoMiddles(routed.points, a, b);
     seg.routed = true;
     seg.slot = fan?.sig;
     for (const p of seg.points) stretchBox(p);
@@ -1802,12 +1823,16 @@ function aimDraft(e: PointerEvent) {
   const overBox = overId && overId !== draftFrom ? boxOf(overId) : null;
   const aim = overBox ? overId : null;
   setConnectAim(aim);
-  const to = overBox || { id: '', x: w.x, y: -w.y, w: 1, h: 1, rot: 0 };
+  // The pointer, when it is over nothing, is a point and not a card - so it is
+  // never bare and the draft ends exactly on it, which is what a line being
+  // aimed should do.
+  const to = overBox || { id: '', x: w.x, y: -w.y, w: 1, h: 1, rot: 0, bare: false };
   // From the edge of the picked card towards wherever the far end is, and to
   // the far card's edge when there is one - the same clip the drawn lines take,
   // so the draft is the line that would be drawn rather than an approximation
-  // of it that jumps when it lands.
-  draftPoints = [exitTowards(draftBox, to), aim ? exitTowards(to, draftBox) : { x: to.x, y: to.y }];
+  // of it that jumps when it lands. Which includes running into the middle of a
+  // cut-out card, for the same reason: endOf() is the one answer both use.
+  draftPoints = [endOf(draftBox, to), aim ? endOf(to, draftBox) : { x: to.x, y: to.y }];
   requestPaint();
   // Routed on the settle, exactly as a dropped card is. The straight line in
   // the meantime is not a placeholder for the route - it is what a line looks
@@ -1817,8 +1842,9 @@ function aimDraft(e: PointerEvent) {
     if (!draftFrom || !draftBox) return;
     const where = new Map<string, Card>(centres().map(p => [p.id, p]));
     const opts = look();
-    draftPoints = routeConnection(
-      draftBox, to, obstaclesBetween(draftBox, to, where, opts.clearance), opts).points;
+    draftPoints = intoMiddles(routeConnection(
+      draftBox, to, obstaclesBetween(draftBox, to, where, opts.clearance), opts).points,
+    draftBox, to);
     requestPaint();
   }, ROUTE_SETTLE_MS);
 }

@@ -167,8 +167,12 @@ const COPY_REV = 1;
  * MODEL_NAME and ORT_VERSION are the pins tests/matte-vendor.test.js holds to
  * the bytes on disk, so swapping either vendored thing invalidates every cached
  * cut-out without anybody having to think of it.
+ *
+ * Exported for tests/display.test.js, which has to seed the cache under the key
+ * this module will actually ask for. Writing the format out a second time there
+ * would be a test that passes while the app misses.
  */
-const persistKey = (hash: string, crop: Crop, rot: Turn) =>
+export const matteVariant = (hash: string, crop: Crop, rot: Turn) =>
   keyFor(hash, crop, rot, true).slice(hash.length)
   + `~${displayMax()}~${QUALITY}~${MODEL_NAME}@${ORT_VERSION}~${COPY_REV}`;
 
@@ -210,11 +214,8 @@ export function ensureDisplay(
   if (done) return Promise.resolve(done.url);
   const inFlight = pending.get(key);
   if (inFlight) return inFlight;
-  // Chain onto the queue so generation is serial; keep the chain alive past a
-  // failure so one undecodable file does not stall every picture behind it.
   const mine = epoch;
-  const job = queue.then(() => generate(hash, crop, rot, matte, mine));
-  queue = job.catch(() => {});
+  const job = start(hash, crop, rot, matte, mine);
   // Deleted by identity, not by key. `pending` is cleared wholesale by
   // clearDisplay(), so a job that started before the clear and settled after it
   // deleted a key that by then pointed at a *newer* job for the same picture -
@@ -228,7 +229,48 @@ export function ensureDisplay(
   return tracked;
 }
 
-async function generate(
+/**
+ * The two ways a copy can arrive, and the reason they are not the same queue.
+ *
+ * **A cached cut-out is bytes, not work.** It is already a card-sized WebP - the
+ * decode it would have cost was paid on some earlier load, and paid into
+ * IndexedDB. So it is fetched and published straight away, ahead of the queue
+ * entirely.
+ *
+ * Putting it *in* the queue is what the first version of this did, and it undid
+ * most of what the cache was for. That queue exists to hold the app to one
+ * full-resolution decode at a time (see the header), and on a board of thirty
+ * photographs it is seconds long - so a matted card whose picture was sitting
+ * ready on disk waited behind every 6000x4000 JPEG ahead of it and appeared
+ * about as late as it had before anything was cached. The model no longer ran
+ * and the wait was unchanged, which is the worst of both: all of the storage and
+ * none of the speed.
+ *
+ * Everything else still queues, because everything else really does decode.
+ *
+ * The chain is extended here rather than in ensureDisplay() and that is still
+ * safe: `const decode = queue.then(...)` and `queue = decode.catch(...)` run as
+ * one synchronous pair, so whichever job reaches this line next chains onto the
+ * tail rather than beside it. What is lost is that jobs may now enter the queue
+ * in a different order than they were asked for - a matted miss joins it one
+ * IndexedDB read late - and nothing anywhere depends on that order.
+ */
+async function start(
+  hash: string, crop: Crop, rot: Turn, matte: Matte, mine: number,
+): Promise<string | null> {
+  if (matte) {
+    const kept = await loadMatte(hash, matteVariant(hash, crop, rot));
+    if (kept) return publish(hash, crop, rot, matte, kept, mine);
+  }
+  // Chain onto the queue so generation is serial; keep the chain alive past a
+  // failure so one undecodable file does not stall every picture behind it.
+  const decode = queue.then(() => derive(hash, crop, rot, matte, mine));
+  queue = decode.catch(() => {});
+  return decode;
+}
+
+/** The slow path: decode the original, draw it, cut it, encode it, keep it. */
+async function derive(
   hash: string, crop: Crop, rot: Turn, matte: Matte, mine: number,
 ): Promise<string | null> {
   const key = keyFor(hash, crop, rot, matte);
@@ -238,28 +280,32 @@ async function generate(
   if (!a) return null;
   // Fixed before anything is drawn, so that a sharpness change landing mid-decode
   // cannot file this picture under a ceiling it was not made at.
-  const variant = matte ? persistKey(hash, crop, rot) : '';
-  // Asked before shrink() rather than after, because a hit is the whole point:
-  // it skips the full-resolution decode *and* the model, which is the second of
-  // those this exists for. Only matted copies are kept - see the header - and
-  // loadMatte() answers null for every way of not having one, including there
-  // being no database at all.
-  let small = matte ? await loadMatte(hash, variant) : null;
-  if (!small) {
-    const made = await shrink(a.blob, crop, rot, matte);
-    small = made.blob;
-    // Kept only when the model actually cut. cutout() answers false on a browser
-    // with no worker, a runtime that would not import or a canvas that will not
-    // hand its pixels back, and what it leaves behind is a correct picture with
-    // its background still on - persisting that would pin the failure to disk,
-    // and the cut-out would never appear on a machine where it later works.
-    //
-    // Not awaited, and not behind the epoch check below. A cached copy is keyed
-    // by content rather than by board, so one finished after a clear is still a
-    // correct copy of the same bytes - and a write nobody is waiting on has no
-    // business holding a mount.
-    if (matte && made.knocked && made.blob) void saveMatte(hash, variant, made.blob);
-  }
+  const variant = matte ? matteVariant(hash, crop, rot) : '';
+  const made = await shrink(a.blob, crop, rot, matte);
+  // Kept only when the model actually cut. cutout() answers false on a browser
+  // with no worker, a runtime that would not import or a canvas that will not
+  // hand its pixels back, and what it leaves behind is a correct picture with
+  // its background still on - persisting that would pin the failure to disk, and
+  // the cut-out would never appear on a machine where it later works.
+  //
+  // Not awaited, and not behind the epoch check below. A cached copy is keyed by
+  // content rather than by board, so one finished after a clear is still a
+  // correct copy of the same bytes - and a write nobody is waiting on has no
+  // business holding a mount.
+  if (matte && made.knocked && made.blob) void saveMatte(hash, variant, made.blob);
+  return publish(hash, crop, rot, matte, made.blob, mine);
+}
+
+/**
+ * Hand a finished copy to the cache, or decline to - the tail both paths share.
+ *
+ * `small` null means "mount the original", which is the ordinary answer for a
+ * picture already inside the ceiling with nothing to apply. It cannot be the
+ * answer on the cached path, which only ever holds copies that were made.
+ */
+function publish(
+  hash: string, crop: Crop, rot: Turn, matte: Matte, small: Blob | null, mine: number,
+): string | null {
   // A clear landed while that decode ran - a new board, or a new sharpness
   // ceiling. Publishing now would put back a copy the clear meant to drop, at a
   // resolution nobody asked for, and the entry would outlive the board it came
@@ -267,6 +313,7 @@ async function generate(
   // has nothing to revoke and cannot leak. Callers read null as "no copy yet",
   // which is true, and resetItems() remounts every card behind the clear anyway.
   if (mine !== epoch) return null;
+  const key = keyFor(hash, crop, rot, matte);
   // Two jobs for one key can only exist across a clear, which empties pending.
   // If the later one already published, keep its entry: it was made under the
   // current ceiling. Dropping `small` here is free - no URL was ever handed out.
@@ -274,8 +321,8 @@ async function generate(
   if (won) return won.url;
   // A copy that came out is ours to revoke; a picture already small enough rides
   // the asset store's own URL, which assets.js revokes - do not double-manage it.
-  // assetURL() is null only for a hash the store does not hold, and getAsset()
-  // above already proved it holds this one - so the assertion cannot fire.
+  // assetURL() is null only for a hash the store does not hold, and the caller
+  // proved it holds this one - so the assertion cannot fire.
   const entry = small
     ? { url: URL.createObjectURL(small), own: true }
     : { url: assetURL(hash)!, own: false };

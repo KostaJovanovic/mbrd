@@ -142,7 +142,7 @@ import {
 // rather than two that agree today - see setItemCrop().
 import {
   isLocked, isFiltered, itemCrop, itemAdjust, adjustFilter, itemFlip, flipTransform,
-  itemRotate, itemMatte,
+  itemRotate, itemMatte, itemBare,
   itemTags, boardTags, cleanTag,
   normalizeTour, TAGS_PER_ITEM, TAG_MAX, MIN_CROP,
 } from './board-model.ts';
@@ -151,7 +151,7 @@ import type { MergePlan } from './merge.ts';
 
 export { MAX_CONNECTIONS, pairKey, CONN_DIRECTIONS, CONN_STYLES };
 export { isLocked, isFiltered, itemCrop, itemAdjust, adjustFilter, itemFlip, flipTransform };
-export { itemRotate, itemMatte };
+export { itemRotate, itemMatte, itemBare };
 export { itemTags, boardTags, cleanTag };
 export { TAGS_PER_ITEM, TAG_MAX, MIN_CROP };
 
@@ -1012,9 +1012,49 @@ export const originalsHeld = () =>
  *
  * Undoable, because it is a visible change to an item and every other visible
  * change to an item is.
+ *
+ * **The photograph goes with it.** A model card is a WebP of itself nearly all
+ * the time (canvas/model.ts), and standing the model up is the one edit that
+ * turns that picture into a picture of something else - the part is lying on its
+ * side in it, and nothing about writing `upAxis` makes the card notice. Dropping
+ * the reference sends the card back to live geometry, which re-reads the mesh
+ * under the new axis and photographs it again on the way past; that is the same
+ * route a palette change takes, and it is why nothing here has to know how a
+ * still is made.
+ *
+ * Written by hand rather than through patchMeta() for that second key alone, and
+ * in **one** commit with the axis: a history entry that put the old reading back
+ * and left the new photograph would show a model standing up in a picture of it
+ * lying down. The bytes stay in the registry either way - undo has to be able to
+ * put the picture back, and the autosave sweep is what eventually collects
+ * anything no item points at, exactly as for setItemCover() above.
  */
 export function setItemUpAxis(id: string, axis: unknown) {
-  patchMeta(id, 'upAxis', axis, 'Turn model upright', oneOf('z', 'y'));
+  const it = byId(id);
+  if (!it) return;
+  const pick = oneOf('z', 'y');
+  const next = pick(axis);
+  const prev = pick(it.meta?.upAxis);
+  if (Object.is(next, prev)) return;
+  // shotInk travels with the shot in both directions: it is only ever read
+  // beside one, so leaving it behind would be a note about a photograph that no
+  // longer exists, and dropping it on the way back would make a still that has
+  // gone stale look current.
+  const shot = it.meta?.shot;
+  const shotInk = it.meta?.shotInk;
+  const write = (up: unknown, keep: unknown, ink: unknown) => {
+    const item = byId(id);
+    if (!item) return;
+    const meta = { ...item.meta };
+    if (up == null) delete meta.upAxis; else meta.upAxis = up;
+    if (keep == null) delete meta.shot; else meta.shot = keep;
+    if (ink == null) delete meta.shotInk; else meta.shotInk = ink;
+    item.meta = meta;
+    bus.emit('item', id);
+  };
+  commit('Turn model upright',
+    () => write(next, null, null),
+    () => write(prev, shot, shotInk));
 }
 
 /**

@@ -46,7 +46,7 @@
 
 import { extOf, shuffle } from '../util.ts';
 import { formatName } from '../import/formats.ts';
-import { adjustFilter, flipTransform, isFence, isLocked } from '../state.ts';
+import { adjustFilter, flipTransform, isFence, isLocked, itemBare } from '../state.ts';
 import { buildContent, fitMode } from './renderers.ts';
 import { noteTint } from './note-model.ts';
 import type { Item } from '../board-model.ts';
@@ -335,7 +335,12 @@ export function writeFit(el: HTMLElement, item: ItemLike): void {
   // paper. An attribute rather than a class so it reads like the rest of the
   // card's state in the inspector, and so item-chrome.css can answer it with
   // one selector next to the rules it is turning off.
-  if (item?.meta?.bare === true) el.dataset.bare = '';
+  //
+  // Through itemBare() rather than off the meta key, because this stopped being
+  // the only reader: canvas/web.ts has to know too - a line cannot stop on an
+  // outline that is not drawn - and two spellings of one question is how the
+  // stylesheet and the connector come to disagree about which cards have a card.
+  if (itemBare(item)) el.dataset.bare = '';
   else delete el.dataset.bare;
 }
 

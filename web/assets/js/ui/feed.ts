@@ -37,7 +37,7 @@ import { mobileOrder } from '../arrange/arrangements.ts';
 // that file for why the two walls are one rule and two surfaces.
 import { packColumns } from '../arrange/columns.ts';
 import { assetURL, readText } from '../storage/assets.ts';
-import { linkURL, buildContent, swatchHex } from '../canvas/renderers.ts';
+import { linkURL, buildContent, swatchHex, MARKDOWN } from '../canvas/renderers.ts';
 import { kindName } from '../canvas/item-dom.ts';
 import { bindDial } from '../canvas/ghosts.ts';
 import { noteTint } from '../canvas/note-model.ts';
@@ -50,7 +50,7 @@ import {
   stickerArt, stickerShape, DEFAULT_SHAPE,
 } from '../stickers/catalogue.ts';
 import { armedSticker, disarm } from './sticker-window.ts';
-import { openViewer, canView, MARKDOWN } from './viewer.ts';
+import { openViewer, canView } from './viewer.ts';
 import { renderMarkdown } from './markdown.ts';
 import { shownHash, type Item } from '../board-model.ts';
 import type { Point } from '../geometry.ts';
@@ -618,15 +618,6 @@ function fillImage(t: Tile) {
   // `meta.preview` is.
   const shown = shownHash(t.item);
   const url = (shown && assetURL(shown)) || pictureURL(t.item);
-  if (url) img.src = url;
-  // And a source that will not load is answered rather than left as alt text -
-  // the same guard the card has. The fallback is the thumbnail, which is a
-  // different set of bytes made by a different path, so it survives whatever
-  // this one hit.
-  img.addEventListener('error', () => {
-    const spare = spareURL(t.item);
-    if (spare && img.src !== spare) img.src = spare;
-  });
   // A cropped picture is cropped here too, and by the same route the card and
   // the viewer take: the display copy is where the rectangle is applied. The
   // Feed is the whole board on a phone, so a tile showing the full frame of a
@@ -643,13 +634,35 @@ function fillImage(t: Tile) {
   // page, and asking display.ts for a crop of the PDF's own bytes answers with
   // nothing - which then left the tile on whatever it had, uncropped, on the one
   // view where a wrong frame is most visible.
-  if ((crop || rot || matte) && shown) {
-    const ready = displayURLReady(shown, crop, rot, matte);
-    if (ready) img.src = ready;
-    else {
-      ensureDisplay(shown, crop, rot, matte)
-        .then(u => { if (u && img.isConnected) img.src = u; });
-    }
+  const edited = !!(crop || rot || matte) && !!shown;
+  const ready = edited && shown ? displayURLReady(shown, crop, rot, matte) : null;
+  // **An edited tile never shows the untouched file, not even for a moment.**
+  // This used to set `url` here unconditionally and let the copy replace it a
+  // tick later, which on a cut-out card is the background arriving and then
+  // being taken away again in front of the reader - the same flash the card
+  // renderer refuses when it declines to use a thumbnail as a stand-in. An empty
+  // tile for the moment it takes is the better of the two, and on a re-mount
+  // `ready` answers synchronously and there is no moment at all.
+  if (ready) img.src = ready;
+  else if (!edited && url) img.src = url;
+  // And a source that will not load is answered rather than left as alt text -
+  // the same guard the card has. The fallback is the thumbnail, which is a
+  // different set of bytes made by a different path, so it survives whatever
+  // this one hit.
+  img.addEventListener('error', () => {
+    const spare = spareURL(t.item);
+    if (spare && img.src !== spare) img.src = spare;
+  });
+  if (edited && shown && !ready) {
+    ensureDisplay(shown, crop, rot, matte).then(u => {
+      // A copy that could not be made falls back to the untouched picture, which
+      // is wrong in the way the comment above describes and is still better than
+      // a tile drawing its own filename. `!img.src` alongside isConnected for
+      // the reason the card gives: the guard saves work on a discarded tile, it
+      // does not leave a live one blank.
+      const src = u || url;
+      if (src && (img.isConnected || !img.src)) img.src = src;
+    });
   }
   applyGrade(img, t.item);
   t.el.appendChild(img);

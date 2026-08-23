@@ -14,8 +14,8 @@ import {
   board, selection, loadBoard, serializeBoard, addItems, removeItems, undo,
   byId, select, deselect, clearSelection, selectAll, setItemText, renameItem,
   NOTE_MAX, setItemCover, setItemPoster, setTitle, cleanBoardTitle,
-  cleanBoardTitleDraft, BOARD_TITLE_MAX, setBoardMode, setItemBare,
-  setItemsTagged,
+  cleanBoardTitleDraft, BOARD_TITLE_MAX, setBoardMode, setItemBare, itemBare,
+  setItemsTagged, setItemUpAxis,
 } from '../web/assets/js/state.ts';
 import { hash } from './helpers.js';
 import { fresh, note, photo, clip, model } from './state-fixtures.js';
@@ -214,6 +214,74 @@ test('a model can stand on the board without its card', () => {
   assert.equal(byId(m.id).meta.bare, true);
   setItemBare(m.id, false);
   assert.equal('bare' in (byId(m.id).meta || {}), false, 'stored only when true');
+});
+
+test('one reader answers whether an item has a card', () => {
+  // itemBare() exists because the question stopped having one asker. The
+  // stylesheet flag is written from it (canvas/item-dom.ts) and so is the
+  // connector's endpoint (canvas/web.ts, via endOf) - a line cannot stop on an
+  // outline that is not drawn - and two spellings of one question is how those
+  // two come to disagree about which items have a card.
+  assert.equal(itemBare(null), false, 'nothing at all has a card by default');
+  assert.equal(itemBare({}), false);
+  assert.equal(itemBare({ meta: {} }), false);
+  assert.equal(itemBare({ meta: { bare: true } }), true);
+  // Truthiness, the reading itemMatte() and isLocked() give their flags: this
+  // comes out of somebody else's file and a hand-written `"bare": 1` plainly
+  // means bare. The inline `=== true` this replaced would have ignored it.
+  assert.equal(itemBare({ meta: { bare: 1 } }), true);
+  assert.equal(itemBare({ meta: { bare: 0 } }), false);
+});
+
+test('standing a model up throws away its photograph', () => {
+  // A model card is a WebP of itself nearly all the time, and the one edit that
+  // makes that picture a picture of something else is which way up the file is
+  // read - the part is lying down in it. Nothing about writing `upAxis` makes
+  // the card notice, so the reference goes with it and the card falls back to
+  // live geometry, which re-reads the mesh and photographs it again.
+  const [m] = addItems([model({ meta: { shot: hash('still'), shotInk: 'rgb(1, 2, 3)' } })]);
+  setItemUpAxis(m.id, 'y');
+  assert.equal(byId(m.id).meta.upAxis, 'y');
+  assert.equal('shot' in byId(m.id).meta, false, 'the card still points at a picture of it lying down');
+  assert.equal('shotInk' in byId(m.id).meta, false, 'a note about a photograph that is gone');
+});
+
+test('undoing it puts the axis and the photograph back together', () => {
+  // One commit, not two. A history entry that restored the old reading and left
+  // the new photograph would show a model standing up in a picture of it lying
+  // down - which is the same fault as not dropping it, arrived at backwards.
+  const shot = hash('still');
+  const [m] = addItems([model({ meta: { upAxis: 'z', shot, shotInk: 'rgb(1, 2, 3)' } })]);
+  setItemUpAxis(m.id, 'y');
+  undo();
+  const meta = byId(m.id).meta;
+  assert.equal(meta.upAxis, 'z');
+  assert.equal(meta.shot, shot, 'the photograph did not come back with the axis');
+  assert.equal(meta.shotInk, 'rgb(1, 2, 3)', 'a still that had gone stale came back looking current');
+});
+
+test('setting the axis it already has changes nothing at all', () => {
+  // The refusal has to come before the shot is dropped, or asking for the
+  // reading a card already uses would cost it its picture and a mesh parse.
+  const shot = hash('still');
+  const [m] = addItems([model({ meta: { upAxis: 'z', shot } })]);
+  setItemUpAxis(m.id, 'z');
+  assert.equal(byId(m.id).meta.shot, shot);
+});
+
+test('clearing the override is a change of reading, so it costs the photograph too', () => {
+  // Anything that is not an axis clears the override and hands the decision back
+  // to the format's own default - which may or may not be the reading the card
+  // was using, so the picture cannot be assumed to still be of it. Same door,
+  // same answer.
+  const shot = hash('still');
+  const [m] = addItems([model({ meta: { upAxis: 'z', shot } })]);
+  setItemUpAxis(m.id, 'sideways');
+  assert.equal('upAxis' in byId(m.id).meta, false, 'the override was not cleared');
+  assert.equal('shot' in byId(m.id).meta, false, 'a picture taken under a reading nothing is using now');
+  undo();
+  assert.equal(byId(m.id).meta.upAxis, 'z');
+  assert.equal(byId(m.id).meta.shot, shot);
 });
 
 test('nothing else can lose its card', () => {
