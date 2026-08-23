@@ -177,8 +177,43 @@
    from the side. Same duration, same easing - only the direction says which of
    the two panels it is. */
 #ctx-child { animation-name: ctx-in-side; }
-@keyframes ctx-in { from { opacity: 0; transform: translateY(-3px); } }
-@keyframes ctx-in-side { from { opacity: 0; transform: translateX(-4px); } }
+/* The scale is what makes the origin mean anything, and the origin is written
+   from script - ui/menu.js sets transform-origin from the anchor once the panel
+   has been placed and the flip has been decided. Without a scale there is
+   nothing for an origin to be the origin *of*, which is why these two lines and
+   that one arrived together: a panel that only slides three pixels grows from
+   nowhere in particular however carefully you name the point.
+   0.97 and not less. This is a panel arriving over a board, not a thing being
+   thrown at the screen - and the rows inside it are text, which at a smaller
+   scale spends the first half of the animation re-hinting. */
+@keyframes ctx-in { from { opacity: 0; transform: translateY(-3px) scale(0.97); } }
+@keyframes ctx-in-side { from { opacity: 0; transform: translateX(-4px) scale(0.97); } }
+/* And the way back out, along the path it came in on.
+   A menu used to arrive as an object and leave as a deletion: five surfaces
+   share `ctx-in` and every close was a bare remove(). The exit is the entrance
+   reversed rather than a fade, because the entrance is now making a spatial
+   promise - I came out of this button - and a panel that vanished from the
+   middle of the screen would break it on the way out.
+   `forwards`, because the last frame is what the panel has to hold until
+   ui/menu.js takes it away: without it the panel snaps back to full opacity for
+   however long the removal takes to land. */
+/* Id-qualified, and that is not tidiness. The block that sets `animation:
+   ctx-in` names both panels by id, so a bare `.is-leaving` is a class losing to
+   an id and the exit would simply never play - the panel would sit there
+   replaying its entrance until the removal landed. */
+:is(#ctx-menu, #ctx-child).is-leaving {
+  animation-name: ctx-out;
+  animation-fill-mode: forwards;
+  /* Not optional. A panel mid-exit that could still be hovered is a row
+     somebody can press on a menu that has already answered. `inert` on the node
+     says the same thing about the keyboard and the accessibility tree; this is
+     the pointer half, and it is here as well as there so that the rule holds on
+     an engine too old for the attribute. */
+  pointer-events: none;
+}
+#ctx-child.is-leaving { animation-name: ctx-out-side; }
+@keyframes ctx-out { to { opacity: 0; transform: translateY(-3px) scale(0.97); } }
+@keyframes ctx-out-side { to { opacity: 0; transform: translateX(-4px) scale(0.97); } }
 /* The row a child is hanging off stays lit while it is up. Without it the menu
    has two panels open and nothing saying which row the second one belongs to -
    and the hover highlight has already left the row by then, because the pointer

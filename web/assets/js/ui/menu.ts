@@ -164,6 +164,18 @@ export type MenuEntry = {
  */
 export type MenuAnchor = {
   left: number;
+  /**
+   * The anchor's own right edge, so the panel can grow out of the middle of it
+   * rather than out of its corner - see the transform-origin in placeRoot().
+   *
+   * Required rather than optional, which costs three of the four callers
+   * nothing: they hand over a DOMRect, which has it. The fourth is ui/flyout.ts,
+   * which builds a literal out of two different boxes - the button's left and
+   * the *bar's* bottom - and had been throwing this one away. Optional would
+   * have let that keep happening silently and left the toolbar, the one caller
+   * this was written for, pointing at a button's left corner.
+   */
+  right: number;
   top: number;
   bottom: number;
   bounds?: { left: number; right: number };
@@ -289,6 +301,84 @@ export interface MenuCommands {
 let node: HTMLElement | null = null;
 let vp: Viewport | null = null;
 let cmds: MenuCommands | null = null;
+
+/**
+ * Panels that have been closed and are still on screen playing their way out.
+ *
+ * A menu used to arrive as an object and leave as a deletion: `ctx-in` fades and
+ * lifts it in, and every close was a bare `remove()`. Five surfaces share that
+ * keyframe - Find, the right-click menu, the toolbar flyouts, the fence offer
+ * and the connection chip - so all five appeared and none of them left.
+ *
+ * **This set is not `node` by another name, and that is the whole design.** A
+ * leaving panel is no longer the menu: it does not hold the keyboard, it is not
+ * `insideMenu()`, and `menu.css` gives it `pointer-events: none` so a row on a
+ * panel that has already answered cannot be pressed on its way out. Everything
+ * `close()` does apart from the removal still happens on the tick it happens on
+ * now - the focus hand-back, the type-ahead reset, `menuOwner`, and `onClose`
+ * last of all, which the flyout driver reads to write `aria-expanded` back onto
+ * its button. A deferred hook would let that driver see a panel on its way out
+ * as one that is still up, which is exactly what the ordering there exists to
+ * prevent.
+ *
+ * A set rather than one slot because the root and its child leave together.
+ */
+const leaving = new Set<HTMLElement>();
+
+/**
+ * How long a panel may take to go before it is taken.
+ *
+ * A floor under `animationend`, not a guess at the duration. An element whose
+ * animation never starts never fires the event - a panel closed on a hidden tab,
+ * or one whose sheet did not load - and the node would sit in the document for
+ * the rest of the session. Comfortably longer than --dur-fast at every whimsy
+ * level, so in the ordinary case the event is what fires and this never does.
+ *
+ * Deliberately a timer rather than requestAnimationFrame: rAF stops dead when
+ * the window is occluded, which `research/old/ui-audit-*` records as the source
+ * of its most convincing false finding. A menu closed behind another window must
+ * still be gone when that window moves.
+ */
+const LEAVE_MS = 400;
+
+/**
+ * Start a panel's exit, or finish it now if one is already under way.
+ *
+ * `flush` is the half that keeps the invariant: **at most one `#ctx-menu` in the
+ * document.** Two elements sharing an id is invalid, and a hover flyout makes it
+ * reachable rather than theoretical - running the pointer along the toolbar
+ * opens and closes panels faster than any exit can play. Every path that builds
+ * a panel flushes first, so a new one never has to wait for an old one.
+ */
+function flushLeaving() {
+  for (const el of leaving) el.remove();
+  leaving.clear();
+}
+
+function dismiss(el: HTMLElement) {
+  leaving.add(el);
+  el.classList.add('is-leaving');
+  // `inert` and not only the stylesheet's pointer-events, because the two guard
+  // different halves and the keyboard is the half that bites. It blurs whatever
+  // inside the panel still held focus, takes the rows out of the tab order and
+  // out of the accessibility tree, and blocks hit-testing - so a panel that has
+  // already answered cannot be pressed, arrowed into, or announced while it
+  // plays out. Without it a close whose opener has since left the document
+  // leaves the keyboard on an invisible panel until the removal lands.
+  //
+  // Safari 15.5, Chrome 102, Firefox 112: comfortably under the 16.4 floor in
+  // research/docs/browser-support.md. On anything older the attribute is inert
+  // in the other sense and menu.css's pointer-events carries the pointer half
+  // alone, which is what the app had a moment ago anyway.
+  el.setAttribute('inert', '');
+  const done = () => {
+    clearTimeout(timer);
+    el.remove();
+    leaving.delete(el);
+  };
+  const timer = setTimeout(done, LEAVE_MS);
+  el.addEventListener('animationend', done, { once: true });
+}
 // Whatever had the keyboard when the menu opened, so it can be given back.
 let opener: HTMLElement | null = null;
 
@@ -587,7 +677,14 @@ export function close() {
   // Read before the node goes: removing the element that holds focus drops the
   // keyboard on <body>, and the board's shortcuts go with it.
   const held = node.contains(document.activeElement);
-  node.remove();
+  // Out of `node` on this tick and off the screen a moment later. Only the
+  // removal is deferred; see `leaving` for why nothing else here may be.
+  //
+  // `held` above is still read against the live node, and it has to be: focus is
+  // moved off the panel below, while the panel is still in the document. A
+  // leaving panel that kept the keyboard would be one whose rows the arrows
+  // still walked.
+  dismiss(node);
   node = null;
   // The letters somebody was typing belonged to the menu that has just gone.
   // Left standing, the first key pressed in the next one would continue a search
@@ -1461,7 +1558,13 @@ function swap(entries: MenuEntry[]) {
   // longer exists, the orphan stayed until something else closed the menu
   // outright. Hover Edit, arrow to Tags, press Enter, and the Edit fold was
   // still there over the new page.
-  closeChild();
+  closeChild(false);
+  // Removed outright, not dismissed. **This is not a close and must not
+  // animate.** It is the same menu turning a page - close() is three lines of
+  // focus and ownership this deliberately skips, and the exit belongs with
+  // them. A page turn that faded the old list out while the new one faded in
+  // would make a menu flinch every time a row's tick changed, which is the
+  // commonest thing that happens on one of these.
   if (node) { node.remove(); node = null; }
   render(entries, lastX, lastY, { ...lastOpts, focus: lastOpts.focus || held });
 }
@@ -1515,6 +1618,13 @@ function panelHost(): HTMLElement {
 }
 
 function render(entries: MenuEntry[], clientX: number, clientY: number, opts: MenuOpts = {}) {
+  // Every path that builds a panel comes through here, which is what makes this
+  // the one place the "at most one #ctx-menu" invariant has to be kept. A panel
+  // still playing its way out is taken now rather than waited for: two elements
+  // sharing an id is invalid, and a hover flyout makes it reachable rather than
+  // theoretical - running the pointer along the toolbar opens and closes panels
+  // faster than any exit can play.
+  flushLeaving();
   lastX = clientX;
   lastY = clientY;
   lastOpts = opts;
@@ -1743,10 +1853,18 @@ let childTimer = 0;
 /** How long the pointer may be over neither panel before the child gives up. */
 const CHILD_GRACE_MS = 220;
 
-function closeChild() {
+/**
+ * `animate` false is a page turn rather than a dismissal - see swap(), the one
+ * caller that passes it. A fold being drilled into is the same panel showing a
+ * different list, and playing the old child out over the new page would be the
+ * menu saying something left when nothing did.
+ */
+function closeChild(animate = true) {
   clearTimeout(childTimer);
   childTimer = 0;
-  child?.remove();
+  if (child) {
+    if (animate) dismiss(child); else child.remove();
+  }
   child = null;
   childFrom = null;
   childRow?.classList.remove('is-open');
@@ -1756,7 +1874,10 @@ function closeChild() {
 /** Let go of the child after the grace period, unless something asks again. */
 function fadeChild() {
   clearTimeout(childTimer);
-  childTimer = setTimeout(closeChild, CHILD_GRACE_MS);
+  // Wrapped rather than passed by reference: setTimeout calls its callback with
+  // no arguments today, and `closeChild` now has a defaulted one. Handing it
+  // over bare is a line that reads as correct and depends on that staying true.
+  childTimer = setTimeout(() => closeChild(), CHILD_GRACE_MS);
 }
 
 function openChild(row: HTMLElement, entries: MenuEntry[], from: HTMLElement, label?: string) {
@@ -1764,6 +1885,11 @@ function openChild(row: HTMLElement, entries: MenuEntry[], from: HTMLElement, la
   // the ordinary case of travelling to the panel and is not a reopen.
   if (childRow === row && child) { clearTimeout(childTimer); childTimer = 0; return; }
   closeChild();
+  // The same invariant render() keeps for the root, and the child needs it more
+  // rather than less: the grace period means a fold can be left playing out
+  // while the pointer is already on the row below it, so two #ctx-child elements
+  // is the ordinary case here rather than a race.
+  flushLeaving();
   child = document.createElement('div');
   child.id = 'ctx-child';
   child.setAttribute('role', 'menu');
@@ -1796,6 +1922,14 @@ function openChild(row: HTMLElement, entries: MenuEntry[], from: HTMLElement, la
   const y = Math.max(pad, Math.min(r.top - 5, innerHeight - box.height - pad));
   child.style.left = `${Math.round(x)}px`;
   child.style.top = `${Math.round(y)}px`;
+  // Out of the row it belongs to, the way the root grows out of its button. The
+  // horizontal source is whichever edge is against the parent - `x === right`
+  // means it opened to the right, so it came from its own left - and the
+  // vertical source is the row's middle, which is the thing the top-alignment
+  // above is already saying and this only says again in motion.
+  child.style.transformOrigin =
+    originPercent((x === right ? 0 : box.width) , box.width) + ' ' +
+    originPercent((r.top + r.bottom) / 2 - y, box.height);
   child.style.visibility = '';
 
   childRow = row;
@@ -1805,6 +1939,23 @@ function openChild(row: HTMLElement, entries: MenuEntry[], from: HTMLElement, la
   child.addEventListener('pointerenter', () => { clearTimeout(childTimer); childTimer = 0; });
   child.addEventListener('pointerleave', fadeChild);
 }
+
+/**
+ * One axis of a transform-origin: an offset into a box, as a percentage of it.
+ *
+ * Clamped, and the clamp is the point rather than a guard against nonsense. A
+ * panel that had to be pushed sideways to stay on screen - or one hung off a
+ * button near the edge of a bar wider than it - has its button outside its own
+ * box, and an unclamped percentage would put the origin off the panel entirely,
+ * so it would grow from a point in mid-air. Pinned to the near edge it still
+ * grows *towards* its button, which is the whole of what the origin is saying.
+ *
+ * A zero-width box answers 0 rather than NaN: `visibility: hidden` measures, but
+ * a panel inside a container that has not laid out yet can still read zero, and
+ * a NaN here is a dropped declaration and a silently centred panel.
+ */
+const originPercent = (offset: number, extent: number) =>
+  (extent > 0 ? Math.round(Math.max(0, Math.min(100, (offset / extent) * 100))) : 0) + '%';
 
 /** Where the root panel goes, once its rows are in and it can be measured. */
 function placeRoot(node: HTMLElement, clientX: number, clientY: number, opts: MenuOpts) {
@@ -1879,6 +2030,28 @@ function placeRoot(node: HTMLElement, clientX: number, clientY: number, opts: Me
   }
   node.style.left = Math.round(x) + 'px';
   node.style.top = Math.round(y) + 'px';
+  // Where the panel grew from, now that there is a box to say it against.
+  //
+  // A menu should come out of the thing that opened it: a flyout out of its
+  // button, a right-click menu out of the cursor. It used to grow from its own
+  // middle - `ctx-in` lifts it three pixels and says nothing about an origin, so
+  // the default 50% 50% stood - which reads as a panel appearing near a button
+  // rather than as one belonging to it. The idiom is already in this app
+  // elsewhere: cards.css hangs the note toolbar off `100% 0`, and the sticker
+  // pad and the desktop playlist both grow from `bottom right`. It had simply
+  // never reached the stock every menu is cut from.
+  //
+  // The source is the anchor's horizontal centre and the edge the panel is
+  // actually attached to - which is why this is computed after the flip and not
+  // before it. A panel that flipped above its button and still pointed down
+  // would be pointing at nothing.
+  //
+  // Set from script rather than written as a `style` attribute: `style-src`
+  // carries no unsafe-inline and a CSP hash covers an element, never an
+  // attribute. See tests/csp.test.js.
+  const srcX = opts.anchor ? (opts.anchor.left + opts.anchor.right) / 2 : clientX;
+  const srcY = opts.anchor ? (y < opts.anchor.top ? opts.anchor.top : opts.anchor.bottom) : clientY;
+  node.style.transformOrigin = originPercent(srcX - x, width) + ' ' + originPercent(srcY - y, height);
   node.style.visibility = '';
   // A hover must not take the keyboard - see openAnchored. Everything else
   // does, and the default is the context menu's because that is the caller

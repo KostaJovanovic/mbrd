@@ -62,10 +62,19 @@ test('the hover child is torn down with the page it hangs off', () => {
   // detached panel - and the only thing that clears those compares childFrom
   // against a live panel, so the orphan outlived every page turn.
   const swap = code(menu).slice(code(menu).indexOf('function swap('));
-  const closed = swap.indexOf('closeChild();');
+  // `closeChild(` and not `closeChild();`: the call takes an argument now - a
+  // page turn passes false, because playing the old fold out over the new page
+  // would be the menu saying something left when nothing did. What this test is
+  // about is the *order*, which that change did not touch.
+  const closed = swap.indexOf('closeChild(');
   const removed = swap.indexOf('node.remove()');
   assert.ok(closed > 0 && closed < removed,
     'swap() tears down the root without closing the child first');
+  // And the root goes outright rather than through dismiss(): swap is not a
+  // close. A page turn that animated the old list out while the new one came in
+  // would make a menu flinch every time a row's tick changed.
+  assert.ok(!swap.slice(0, removed).includes('dismiss(node)'),
+    'swap() plays the root out as if it were closing');
 });
 
 test('a keyboard press on a flown-out fold still drills in', () => {
