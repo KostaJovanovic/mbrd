@@ -78,6 +78,7 @@ const JS_BUILT = {
   'search': 'the Find panel',
   'search-field': 'the Find input',
   'search-hits': 'the Find results list',
+  'tour-editor': 'the bar the tour is built from, which has nothing in it until there is a stop',
   'web': 'the SVG layer every connection is drawn into',
   'whimsy-stop-labels': 'the tick labels under the whimsy slider',
 };

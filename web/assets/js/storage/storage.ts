@@ -33,7 +33,8 @@
 
 import { uid, isRecord } from '../util.ts';
 import { toast, busy } from '../notify.ts';
-import { idbGet, idbSet } from './idb.ts';
+import { idbGet, idbSet, idbKeys, idbGetMany } from './idb.ts';
+import type { StoreName } from './idb.ts';
 import {
   libraryIndex, putLibraryBoard, getLibraryBoard, removeLibraryBoard, hasLibraryBoard,
   trimLibrary, sweepLibrary,
@@ -196,6 +197,140 @@ export async function storageReport() {
     used: typeof est?.usage === 'number' ? est.usage : null,
     quota: typeof est?.quota === 'number' ? est.quota : null,
   };
+}
+
+/**
+ * Where the bytes are: one source, what it holds, how many records hold it.
+ *
+ * `what` is the source's own name and not a phrase - `idb:library`,
+ * `cache:mbrd-v263` - because the wording belongs to whoever prints it, and the
+ * only printer is a Debug row in commands/file.ts. This module knows which
+ * stores exist; it does not know what to call them in a sentence.
+ */
+export type StorageSlice = { what: string, bytes: number, count: number };
+
+/**
+ * Roughly how many bytes a stored value holds.
+ *
+ * Every store here is mostly Blobs, and a Blob out of IndexedDB is a *handle* -
+ * `.size` is the answer without a byte being read, which is what makes walking
+ * a 300 MB shelf cheap. Everything else is the index records around them, so
+ * the rest of this is a structured-clone-shaped walk: strings by length (the
+ * thumbnails are ASCII data URLs, and they are the only strings here big enough
+ * to matter), numbers at eight, keys counted because a hundred thousand
+ * two-character keys are not free either.
+ *
+ * Approximate on purpose and not worth making exact: the engine's own
+ * accounting includes per-record overhead nothing in a page can see, so this is
+ * for *which store is the big one*, never for reconciling against
+ * estimate().usage. Map, Set and Date clone fine and weigh nearly nothing here;
+ * nothing this app writes uses them, and a wrong answer for one is a small
+ * number in a readout rather than a bug.
+ */
+function weigh(value: unknown, seen: Set<object>): number {
+  if (value == null) return 1;
+  if (typeof value === 'string') return value.length;
+  if (typeof value === 'boolean') return 1;
+  if (typeof value === 'number') return 8;
+  if (typeof value !== 'object') return 8;
+  if (value instanceof Blob) return value.size;
+  if (value instanceof ArrayBuffer) return value.byteLength;
+  if (ArrayBuffer.isView(value)) return value.byteLength;
+  // A structured clone may carry a cycle even though nothing here writes one.
+  if (seen.has(value)) return 0;
+  seen.add(value);
+  let n = 0;
+  if (Array.isArray(value)) {
+    for (const v of value) n += weigh(v, seen);
+    return n;
+  }
+  for (const [k, v] of Object.entries(value)) n += k.length + weigh(v, seen);
+  return n;
+}
+
+/** One store of the `mbrd` database, weighed. Unreadable reads as empty. */
+async function weighStore(store: StoreName): Promise<StorageSlice> {
+  try {
+    const keys = await idbKeys(store);
+    const values = await idbGetMany(store, keys);
+    const seen = new Set<object>();
+    let bytes = 0;
+    for (const v of values) bytes += weigh(v, seen);
+    return { what: `idb:${store}`, bytes, count: keys.length };
+  } catch {
+    return { what: `idb:${store}`, bytes: 0, count: 0 };
+  }
+}
+
+/**
+ * Cache Storage, one slice per cache.
+ *
+ * Origin-wide by definition, and that is the point rather than a leak: Cache
+ * Storage is shared across every worker on the host, so on a dev server that
+ * serves more than one project these rows are where an unexplained few hundred
+ * megabytes actually is. The service worker keeps exactly one of its own (the
+ * activate sweep in web/sw.js drops the rest), so more than one `mbrd-*` row
+ * means a worker that never activated.
+ *
+ * `content-length` where the response carries one, and the body only where it
+ * does not - reading a cached body back is the one part of this readout that
+ * moves real bytes, and the shell is small enough that it is worth the accuracy.
+ */
+async function weighCaches(): Promise<StorageSlice[]> {
+  const store = globalThis.caches;   // absent on an insecure origin
+  if (!store) return [];
+  const out: StorageSlice[] = [];
+  for (const name of await store.keys()) {
+    const cache = await store.open(name);
+    const reqs = await cache.keys();
+    let bytes = 0;
+    for (const req of reqs) {
+      const res = await cache.match(req);
+      if (!res) continue;
+      const len = Number(res.headers.get('content-length'));
+      bytes += Number.isFinite(len) && len > 0 ? len : (await res.blob()).size;
+    }
+    out.push({ what: `cache:${name}`, bytes, count: reqs.length });
+  }
+  return out;
+}
+
+/**
+ * What is actually taking the room the estimate reports.
+ *
+ * storageReport() prints the browser's number, and that number is the whole
+ * origin - every database and every cache any script on this host ever wrote,
+ * rounded and padded by the engine. On a dev server it can be mostly somebody
+ * else's project. This walks what this app owns and says how much of the total
+ * it accounts for, so "306 MB" stops being a number nobody can act on.
+ *
+ * `rest` is deliberately not called anything: it is the estimate minus what was
+ * measured, and it is engine padding, per-record overhead, and any database
+ * below that this could not size - `others` names those. There is no way from a
+ * page to weigh a database without opening it at a version, and opening a
+ * stranger's database at a guessed version is how you trigger somebody else's
+ * upgrade handler.
+ */
+export async function storageBreakdown() {
+  const { persisted, used, quota } = await storageReport();
+  const stores: StoreName[] = ['kv', 'assets', 'library', 'matte'];
+  const slices = [
+    ...await Promise.all(stores.map(weighStore)),
+    ...await weighCaches().catch(() => []),
+  ];
+  const measured = slices.reduce((n, s) => n + s.bytes, 0);
+  let others: string[] = [];
+  try {
+    // Chrome and Safari list them; Firefox has no such method and answers with
+    // the empty list, which reads as "nothing else here" rather than as a hole.
+    const dbs = typeof indexedDB.databases === 'function' ? await indexedDB.databases() : [];
+    others = dbs.map(d => d.name || '').filter(name => name && name !== 'mbrd');
+  } catch { others = []; }
+  slices.sort((a, b) => b.bytes - a.bytes);
+  // `persisted` is carried through rather than left to a second call: this is
+  // one Debug row printing one sentence, and asking the engine twice for the
+  // same answer inside it is two answers that can disagree.
+  return { slices, measured, others, persisted, used, quota, rest: used == null ? null : used - measured };
 }
 
 /**

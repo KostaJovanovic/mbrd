@@ -51,7 +51,10 @@ import type { Viewport } from '../canvas/viewport.ts';
 import type { ViewPerf } from '../perf/view-perf.ts';
 import { togglePlayback } from '../canvas/audio.ts';
 import { currentLens, setLens } from '../ui/board-view.ts';
-import { goToStop, startTour, stepTour, stopTour, tourActive, tourLength } from '../ui/tour.ts';
+import {
+  goToStop, startTour, stepTour, stopTour, tourActive, tourAt, tourLength,
+} from '../ui/tour.ts';
+import { stopTourEdit, toggleTourEdit } from '../ui/tour-edit.ts';
 import { togglePlayerWindow } from '../ui/playlist.ts';
 import { openCredits } from '../ui/credits.ts';
 import { openInventory } from '../ui/inventory.ts';
@@ -220,11 +223,21 @@ export function viewCommands(vp: CommandViewport, { resetAppearance, perf }: Vie
      * dropping the press through to nudging the selection a pixel.
      */
     tourStart: () => startTour(),
+    // Building one, which is a mode over the board rather than a move of the
+    // camera - the command is here anyway, because a data-cmd button is how the
+    // panel reaches anything and this run is where the tour lives. `tourEditStop`
+    // is Escape's, in the same answer-whether-you-took-it shape as tourStop.
+    tourEdit: () => toggleTourEdit(),
+    tourEditStop: () => stopTourEdit(),
     tourStop: () => stopTour(),
     tourStep: (delta: number) => stepTour(delta),
     tourGo: (i: number) => goToStop(i),
     inTour: () => tourActive(),
     tourLength: () => tourLength(),
+    // Which stop, for the two surfaces that draw the tour rather than drive it:
+    // the menu greys its ends off this, and the editor's list highlights the
+    // row. -1 when nothing is running, which is what both of them check.
+    tourAt: () => tourAt(),
     // Space, from the canvas key handler: play or pause the current track. Returns
     // whether it did - false when nothing is loaded, so Space falls back to pan.
     playPause: () => togglePlayback(),

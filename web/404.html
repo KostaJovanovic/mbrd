@@ -989,6 +989,10 @@
   </button>
   <div class="tour-where">
     <div class="tour-name"></div>
+    <!-- What was written for this stop, when anything was. Hidden by ui/tour.js
+         rather than left empty: an uncaptioned board would otherwise carry a
+         blank line's height under every card name for the whole tour. -->
+    <div class="tour-caption" hidden></div>
     <div class="tour-count"></div>
   </div>
   <button type="button" class="tour-next" aria-label="The next stop" title="The next stop  Right">

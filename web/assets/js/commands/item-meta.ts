@@ -36,9 +36,9 @@
 
 import { toast } from '../notify.ts';
 import {
-  board, boardTags, byId, cleanTag, freezeClip, isContent, isLocked, isRider,
+  addTourStop, board, boardTags, byId, cleanTag, freezeClip, isContent, isLocked, isRider,
   itemTags, selection, setItemBare, setItemCover, setItemFit, setItemUpAxis, setItemsLocked,
-  setItemsTagged, setStickerTint, setTourMembers, unstickItems, TAG_MAX, TAGS_PER_ITEM,
+  setItemsTagged, setStickerTint, unstickItems, TAG_MAX, TAGS_PER_ITEM,
 } from '../state.ts';
 import { extOf } from '../util.ts';
 import { ask } from '../ui/dialog.ts';
@@ -244,44 +244,35 @@ export function itemMetaCommands() {
       }
     },
     /**
-     * On the tour, or off it.
+     * The selection, added to the tour as one stop.
      *
-     * Here rather than with the four tour commands in commands/view.ts, and the
-     * line between them is the one this file's header draws: those move the
-     * camera, this writes board.tour. It is the same relation the tag rows have
-     * to the filter rows one run over - membership is a fact about the card,
-     * and what you are looking at is not.
+     * Here rather than with the tour commands in commands/view.ts, and the line
+     * between them is the one this file's header draws: those move the camera,
+     * this writes board.tour. It is the same relation the tag rows have to the
+     * filter rows one run over - membership is a fact about the cards, and what
+     * you are looking at is not.
      *
-     * Selection-wide and ticked the same three-state way the tags are: checked
-     * only when *everything* eligible in the selection is already a stop, so a
-     * half-added selection shows unticked and the press completes it. That is
-     * what makes "select six cards, add them" one gesture, and setTourMembers()
-     * puts them on in the board's own stacking order rather than in whatever
-     * order the selection iterates - see state.ts.
+     * **One stop, however many cards.** That is the whole of the editor's Add
+     * button: a selection is a group somebody made, and a stop that frames the
+     * group is the thing a flat list could not say. Six separate stops are
+     * still reachable - add them one at a time - and the reverse would not be.
      *
      * The same eligibility as a tag: isContent(), so no fence and no title
      * card. A tour stop is a card the camera can frame and somebody can look
      * at, and a fence is already a name drawn round a group.
      *
-     * There was a `canTour` here saying exactly that in exactly canTag()'s
-     * words, and nothing called it: the tour row in ui/menu.ts gates on
-     * canTag(). One predicate under two names is a rule that stops being one
-     * rule the first time somebody edits the copy they found.
+     * It used to be a ticked row on the item menu, toggling membership card by
+     * card. The menu no longer says anything about the tour at all - the whole
+     * of it is the editor in the Board tab (ui/tour-edit.ts), which is where an
+     * *order* can be seen and changed, and a right-click menu never could.
      */
-    selectionInTour: () => {
-      const items = taggable();
-      const stops = new Set(board.tour);
-      return items.length > 0 && items.every(i => stops.has(i.id));
-    },
-    toggleSelectionTour: () => {
+    addSelectionToTour: () => {
       const items = taggable();
       if (!items.length) return;
-      const stops = new Set(board.tour);
-      const on = !items.every(i => stops.has(i.id));
-      setTourMembers(items.map(i => i.id), on);
-      toast(on
-        ? (items.length > 1 ? `${items.length} stops added to the tour` : 'Added to the tour')
-        : (items.length > 1 ? `${items.length} stops taken off the tour` : 'Taken off the tour'));
+      const added = addTourStop(items.map(i => i.id));
+      toast(!added ? 'Already on the tour'
+        : added > 1 ? `A stop with ${added} cards, added to the tour`
+          : 'Added to the tour');
     },
     resetSize,
     // Album art, and nothing else. A cover is the picture a card that cannot be

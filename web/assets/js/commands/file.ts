@@ -40,7 +40,7 @@ import { ask } from '../ui/dialog.ts';
 import { hasContent } from '../onboarding.ts';
 import {
   boardSafety, exportBoard, lastSaveFailure, newBoard, openBoard,
-  saveBlob, shareBoard, storageReport,
+  saveBlob, shareBoard, storageBreakdown,
 } from '../storage/storage.ts';
 import { assetBytes } from '../storage/assets.ts';
 import { openLibrary } from '../ui/library.ts';
@@ -61,6 +61,32 @@ function boardArtefactName(ext: string): string {
   // their extension. A parameter nobody passes is a claim about a collision
   // that cannot happen.
   return `${base}.${ext}`;
+}
+
+/**
+ * What to call one slice of the storage readout in a sentence.
+ *
+ * storage.ts hands back source names (`idb:library`, `cache:mbrd-v263`) because
+ * naming the stores is its job and wording a toast is not. This is the wording,
+ * and it is deliberately in the user's terms rather than the schema's: nobody
+ * pressing a Debug row knows what `matte` is, and everybody knows what a cut-out
+ * is. An unrecognised name prints as itself - a store added later shows up as a
+ * row nobody labelled, which is better than being silently left out of a total.
+ */
+function storageLabel(what: string): string {
+  switch (what) {
+    case 'idb:kv': return 'session';
+    case 'idb:assets': return 'this board';
+    case 'idb:library': return 'shelf';
+    case 'idb:matte': return 'cut-outs';
+    default: break;
+  }
+  // Cache Storage is shared by every worker on the host, so a cache this app
+  // did not name is another project's - worth showing under its own name, since
+  // on a dev server that is where the unexplained megabytes usually are.
+  const cache = what.startsWith('cache:') ? what.slice(6) : '';
+  if (!cache) return what;
+  return cache.startsWith('mbrd-') ? 'app cache' : `cache ${cache}`;
 }
 
 /**
@@ -212,13 +238,24 @@ export function fileCommands() {
      * is when the app asks - and null is reported as such rather than as "no".
      */
     storageState: async () => {
-      const { persisted, used, quota } = await storageReport();
+      const { slices, measured, others, persisted, rest, used, quota } = await storageBreakdown();
       const durable = persisted === null ? 'not asked yet - save once and it will be'
         : persisted ? 'durable: the browser has promised to keep it'
           : 'best-effort: the browser may clear it to make room';
       const room = used == null ? '' : ` Using ${formatBytes(used)}${quota ? ' of ' + formatBytes(quota) : ''}.`;
-      toast(`Storage is ${durable}.${room}`);
-      console.info('[mbrd] storage:', { persisted, used, quota });
+      // The estimate alone is a number nobody can act on - "306 MB" on a board
+      // with nothing on it reads as a bug in the app, and is usually the shelf,
+      // or another project sharing localhost. So the toast carries the parts,
+      // biggest first, and only the ones with bytes in them.
+      const parts = slices.filter(s => s.bytes > 0).map(s => `${storageLabel(s.what)} ${formatBytes(s.bytes)}`);
+      // Named rather than dropped. The gap between what this app owns and what
+      // the engine reports is padding and per-record overhead on a quiet origin
+      // and somebody else's database on a busy one, and a reader who cannot see
+      // it goes looking for the missing megabytes inside this app.
+      if (rest != null && rest > measured * 0.1) parts.push(`elsewhere ${formatBytes(Math.max(0, rest))}`);
+      const where = parts.length ? ` ${parts.join(', ')}.` : '';
+      toast(`Storage is ${durable}.${room}${where}`);
+      console.info('[mbrd] storage:', { persisted, used, quota, measured, rest, slices, others });
     },
     /**
      * What is on this board and how much of it is already optimised.

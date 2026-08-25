@@ -209,7 +209,7 @@ filename supplies one and is decoded the same way.
   },
   "connections": [ ["k3f9a2", "p81m4x"] ],
   "audioOrder": [ "a91k2c", "a44m7d" ],
-  "tour": [ "k3f9a2", "p81m4x" ],
+  "tour": [ { "cards": ["k3f9a2"] }, { "cards": ["p81m4x", "s02b7q"], "caption": "The two greens" } ],
   "trash": [ { "at": 1753440000000, "item": { … } } ]
 }
 ```
@@ -434,9 +434,43 @@ it through.
 
 ### `tour`
 
-The board's tour: the cards it stops at, in order, as a flat list of item ids.
-A tour is a *reading* of a board — somebody's route through it — and the app
-walks it with a camera move per stop.
+The board's tour: an ordered list of **stops**, each holding one or more cards
+and, optionally, a line of text. A tour is a *reading* of a board — somebody's
+route through it — and the app walks it with one camera move per stop, framing
+everything at that stop together.
+
+```json
+"tour": [
+  { "cards": ["k3f9a2"] },
+  { "cards": ["p81m4x", "s02b7q"], "caption": "The two greens" }
+]
+```
+
+A stop holds a group because that is what a stop on a moodboard usually is: a
+photograph and the two swatches beside it are one thing being shown, and a tour
+that flew to each of them separately would be reading out the parts of a
+sentence. `caption` is **absent** rather than empty when there is nothing to
+say, so an uncaptioned tour writes exactly the keys it always did plus the
+nesting.
+
+**Three shapes are read and one is written.** The entries are told apart by
+what they are, so a hand-edited file is read stop by stop rather than refused
+whole:
+
+| in the file | read as |
+| --- | --- |
+| `"k3f9a2"` | a stop holding that one card |
+| `["p81m4x", "s02b7q"]` | a stop holding both, no caption |
+| `{ "cards": [...], "caption": "…" }` | itself — the form written |
+
+The first row is the whole of the migration: a file written before stops could
+hold more than one card carries a flat `["a", "b"]`, and that reads as two
+stops of one card each — the same tour it always was.
+
+**A file written now, opened by a build from before this, shows no tour.** The
+older reader holds every entry to `typeof id === 'string'` and drops the
+objects, so the tour reads as empty rather than as broken. That cost was
+accepted rather than worked around; nothing else in the file is affected.
 
 **Top-level, not inside a layout,** for exactly the reason `connections` and
 `audioOrder` are: it is an ordering of *items*, items are shared across Desktop
@@ -457,9 +491,17 @@ What is held to, on the way in and out:
   instead and simply skips what is not there, which is the one place the two
   differ and is deliberate: a file must remember, a camera must not fly to a
   card that is not on the board.
+- **A card appears at one stop at most.** Deduping is across the whole tour and
+  not within a stop: a card at stop 2 and again at stop 7 makes "how far
+  through am I" unanswerable, and no reading of a moodboard means it. The
+  second appearance is dropped.
+- A stop left holding no cards — every one of them dropped, or named by nothing
+  the file carries — is dropped itself. An empty stop is a place the camera
+  cannot go.
 - Duplicates and non-string entries are dropped one at a time rather than
-  failing the load; the cap is `MAX_ITEMS`. `normalizeTour` is `normalizeIdList`
-  under another name — the same function `audioOrder` is normalised through.
+  failing the load; the cap is `MAX_ITEMS` and counts **cards**, not stops, so
+  the bound is the one the flat list carried. A caption is trimmed, collapsed
+  to single spaces and cut at `MAX_TOUR_CAPTION` (140).
 - Written even when empty, for the reason the same rule is stated for
   `audioOrder`: a tour that was built and then cleared must not read as a board
   that never had one.

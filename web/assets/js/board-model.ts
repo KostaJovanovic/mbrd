@@ -187,7 +187,7 @@ export type Board = {
   paletteSources: number;
   connections: Connection[];
   audioOrder: string[];
-  tour: string[];
+  tour: TourStop[];
   trash: TrashEntry[];
 };
 
@@ -551,7 +551,9 @@ export const board: Board = {
   // scrambled on a phone. What is per-layout is where each stop *is*, which is
   // already in board.layouts - so the same tour frames the same cards on both,
   // wherever each layout happens to have put them.
-  tour: [],
+  //
+  // SAFETY: empty, as with `items` below - the assertion is the element type.
+  tour: [] as TourStop[],
   // Thrown away but not gone. Entries are { item, at }, newest first.
   //
   // SAFETY: empty, as with `items` above - the assertion is the element type.
@@ -728,14 +730,87 @@ export function normalizeConnections(raw: unknown, live?: Set<string> | null): C
 export const normalizeAudioOrder = normalizeIdList;
 
 /**
- * The board's tour, out of whatever arrived. Same shape, same rules, same
- * reader as the Playlist's order above - an ordered list of ids that has to
- * survive the items it names being deleted, binned and restored.
+ * One stop on the tour: the cards it frames, and what is said about them.
  *
- * Two lists, one reader, and the name at each call site is what says which is
- * being read. They were the same nine lines twice for about an hour.
+ * A stop holds *several* cards because that is what a stop on a moodboard
+ * usually is - a photograph and the two swatches beside it are one thing being
+ * shown, and a tour that flew to each of them separately would be reading out
+ * the parts of a sentence. The camera frames the whole group, which is what
+ * makes the grouping mean something rather than being a tidier list.
+ *
+ * `caption` is absent rather than empty when there is nothing to say, so a
+ * board whose stops were never captioned writes exactly the keys it always did
+ * plus the nesting - see normalizeTourStop().
  */
-export const normalizeTour = normalizeIdList;
+export type TourStop = { cards: string[], caption?: string };
+
+/** How long a stop's caption may be. A line under a name, not a paragraph. */
+export const MAX_TOUR_CAPTION = 140;
+
+/**
+ * The board's tour, out of whatever arrived: an ordered list of stops, each
+ * holding one or more cards.
+ *
+ * **Three shapes are accepted and one is written**, which is the whole of the
+ * migration. Files written before stops could hold more than one card carry a
+ * flat `["a", "b"]`, and that reads as two stops of one card each - the same
+ * tour it always was. `[["a"], ["b", "c"]]` is the grouped form without
+ * captions, which is what a hand-written file is likely to say. The form this
+ * writes is `[{ cards: [...], caption? }]`.
+ *
+ * Nothing announces which shape a file is in and nothing needs to: the entries
+ * are told apart by what they are - a string is a card, an array is a group, an
+ * object is a stop - so a file half-edited by hand reads stop by stop rather
+ * than being refused whole. Note the cost, which is real and was accepted: a
+ * file written *now*, opened by a build from before this, hits normalizeIdList
+ * and every entry fails `typeof id === 'string'`, so the older app shows no
+ * tour rather than a broken one.
+ *
+ * Held to `live` (the board's ids and the bin's) exactly as the Playlist's
+ * order is, and deduped across the *whole* tour rather than within a stop: a
+ * card that appears at stop 2 and again at stop 7 makes "how far through am I"
+ * unanswerable, and no reading of a moodboard means it.
+ */
+export function normalizeTour(raw: unknown, live?: Set<string> | null): TourStop[] {
+  if (!Array.isArray(raw)) return [];
+  const out: TourStop[] = [];
+  const seen = new Set<string>();
+  for (const entry of raw) {
+    const stop = normalizeTourStop(entry, live, seen);
+    if (stop) out.push(stop);
+    // The cap counts cards and not stops, so the bound is the same one the flat
+    // list carried: a tour cannot name more cards than a board can hold.
+    if (seen.size >= MAX_ITEMS) break;
+  }
+  return out;
+}
+
+/**
+ * One entry of the tour, whichever of the three shapes it is in. Null when
+ * nothing survived - a stop naming only cards this board does not have is not a
+ * stop, and an empty one would be a place the camera cannot go.
+ */
+function normalizeTourStop(entry: unknown, live: Set<string> | null | undefined,
+  seen: Set<string>): TourStop | null {
+  const raw = typeof entry === 'string' ? [entry]
+    : Array.isArray(entry) ? entry
+    : isRecord(entry) ? entry.cards
+    : null;
+  if (!Array.isArray(raw)) return null;
+  const cards: string[] = [];
+  for (const id of raw) {
+    if (typeof id !== 'string' || !id || seen.has(id)) continue;
+    if (live && !live.has(id)) continue;
+    seen.add(id);
+    cards.push(id);
+    if (seen.size >= MAX_ITEMS) break;
+  }
+  if (!cards.length) return null;
+  const caption = isRecord(entry) && typeof entry.caption === 'string'
+    ? entry.caption.replace(/\s+/g, ' ').trim().slice(0, MAX_TOUR_CAPTION)
+    : '';
+  return caption ? { cards, caption } : { cards };
+}
 
 /**
  * An ordered list of item ids: deduped, held to `live` when one is given, and

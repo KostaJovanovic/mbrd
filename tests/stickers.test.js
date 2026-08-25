@@ -20,7 +20,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
-  addItems, removeItems, byId, board, setBoardMode, undo,
+  addItems, removeItems, byId, board, setBoardMode, setSetting, undo,
   stuckTo, stuckFollowers, isRider, isSticky, isPinned, dragRoot,
   serializeBoard, loadBoard, snapshotGeom, applyGeom, commitGeom, unstickItems,
   resettle, ensureTitleCard, TITLE_ID,
@@ -410,4 +410,132 @@ test('the loose flag survives a save and a reload', () => {
   loadBoard(file);
   assert.equal(isPinned(byId(star.id)), false);
   assert.ok(board.items.length);
+});
+
+// ---------------------------------------------------------------------------
+// The lattice: a rider rides, it never lands on a grid line
+//
+// Whimsy's plain end turns Desktop snapping on (see axisMoved() in
+// ui/appearance.ts), so a slide from the middle to Harsh is a board-wide snap
+// sweep - and a person who has just pressed a star onto a photograph and then
+// reached for the slider watched the star jump to a grid line and leave the
+// picture. Three separate holes said yes to that, and each of them is quiet:
+//
+//  - snapAll()/unsnapAll() skipped `isPinned`, which is stuck *and set*, so the
+//    ten seconds between a drop and its pin were ten seconds in which a stuck
+//    sticker was swept onto the lattice like a loose card;
+//  - and then it stayed there, because by the time the slider came back the
+//    sticker *was* pinned, so unsnapAll() skipped it and the memo it had been
+//    given was never spent;
+//  - onLattice() (state.ts) laid every arrival on the grid, so a star pressed
+//    onto a card while the board was already Harsh never got to be on the card.
+//
+// The invariant underneath all three is one sentence: a rider's place is a
+// fraction of its host, and neither sweep may change that fraction.
+// ---------------------------------------------------------------------------
+
+/** Where a rider sits on its host, as the fraction sticky.js measures. */
+const fractionOn = (riderId, hostId) => {
+  const r = byId(riderId), h = byId(hostId);
+  return { fx: (r.x - h.x) / h.w, fy: (r.y - h.y) / h.h };
+};
+
+/** Fractions come out of a divide, so they are compared as numbers, not bytes. */
+function assertRides(riderId, hostId, was, message) {
+  const now = fractionOn(riderId, hostId);
+  assert.ok(Math.abs(now.fx - was.fx) < 1e-9 && Math.abs(now.fy - was.fy) < 1e-9,
+    `${message}: ${JSON.stringify(now)} is not ${JSON.stringify(was)}`);
+}
+
+// Deliberately off every grid line, so a sweep that touched them would show.
+const CARD = { x: 13, y: 17, w: 300, h: 300 };
+
+test('a settled sticker rides its host onto the grid rather than snapping', () => {
+  const [pic] = addItems([photo(CARD)]);
+  const [star] = addItems([sticker({ x: 33, y: 37 })]);
+  const was = fractionOn(star.id, pic.id);
+  setSetting('snap', true);
+  assertRides(star.id, pic.id, was, 'settled');
+  assert.equal(byId(star.id).meta?.presnap, undefined,
+    'a rider has no life before the lattice, so it is given no memo of one');
+});
+
+test('the settling window is no excuse for the sweep to snap a rider', () => {
+  const [pic] = addItems([photo(CARD)]);
+  const [star] = addItems([sticker({ x: 33, y: 37 })]);
+  startSettling([star.id]);
+  assert.equal(isPinned(byId(star.id)), false, 'stuck, but not yet set');
+  const was = fractionOn(star.id, pic.id);
+  setSetting('snap', true);
+  assertRides(star.id, pic.id, was, 'still settling');
+});
+
+test('a note is no more snappable than a sticker while it settles', () => {
+  const [pic] = addItems([photo(CARD)]);
+  const [n] = addItems([note({ x: 33, y: 37 })]);
+  startSettling([n.id]);
+  const was = fractionOn(n.id, pic.id);
+  setSetting('snap', true);
+  assertRides(n.id, pic.id, was, 'settling note');
+});
+
+test('a sticker on a note on a photo rides the whole pile', () => {
+  const [pic] = addItems([photo({ x: 13, y: 17, w: 400, h: 400 })]);
+  const [n] = addItems([note({ x: 23, y: 27 })]);
+  const [star] = addItems([sticker({ x: 29, y: 31 })]);
+  assert.equal(stuckTo(byId(star.id))?.id, n.id);
+  const onPhoto = fractionOn(n.id, pic.id), onNote = fractionOn(star.id, n.id);
+  setSetting('snap', true);
+  assertRides(n.id, pic.id, onPhoto, 'note on photo');
+  assertRides(star.id, n.id, onNote, 'sticker on note');
+});
+
+test('a sticker pressed onto a card on an already-snapped board stays where it landed', () => {
+  addItems([photo(CARD)]);
+  setSetting('snap', true);
+  const [star] = addItems([sticker({ x: 33, y: 37 })]);
+  assert.ok(stuckTo(byId(star.id)), 'stuck on arrival');
+  assert.deepEqual({ x: byId(star.id).x, y: byId(star.id).y }, { x: 33, y: 37 });
+});
+
+test('and rides the card back off the grid, having no memo to be restored from', () => {
+  const [pic] = addItems([photo(CARD)]);
+  setSetting('snap', true);
+  const [star] = addItems([sticker({ x: 33, y: 37 })]);
+  const was = fractionOn(star.id, pic.id);
+  setSetting('snap', false);
+  assertRides(star.id, pic.id, was, 'off the grid again');
+});
+
+test('a pile comes back exactly where it was when the board leaves the lattice', () => {
+  const [pic] = addItems([photo(CARD)]);
+  const [star] = addItems([sticker({ x: 33, y: 37 })]);
+  const host = { x: pic.x, y: pic.y, w: pic.w, h: pic.h };
+  const rider = { x: star.x, y: star.y };
+  setSetting('snap', true);
+  setSetting('snap', false);
+  const p = byId(pic.id), s = byId(star.id);
+  assert.deepEqual({ x: p.x, y: p.y, w: p.w, h: p.h }, host);
+  assert.ok(Math.abs(s.x - rider.x) < 1e-9 && Math.abs(s.y - rider.y) < 1e-9,
+    `the rider came back to ${s.x},${s.y} rather than ${rider.x},${rider.y}`);
+});
+
+test('one undo takes the sweep back, riders included', () => {
+  const [pic] = addItems([photo(CARD)]);
+  const [star] = addItems([sticker({ x: 33, y: 37 })]);
+  setSetting('snap', true);
+  undo();
+  assert.equal(board.settings.snap, false, 'the flag rides in the same entry');
+  assert.deepEqual({ x: byId(pic.id).x, y: byId(pic.id).y }, { x: CARD.x, y: CARD.y });
+  assert.deepEqual({ x: byId(star.id).x, y: byId(star.id).y }, { x: 33, y: 37 });
+});
+
+test('a note unstuck on purpose is snapped like any other card', () => {
+  addItems([photo(CARD)]);
+  const [n] = addItems([note({ x: 33, y: 37 })]);
+  unstickItems([n.id]);
+  assert.equal(stuckTo(byId(n.id)), null);
+  setSetting('snap', true);
+  assert.notDeepEqual({ x: byId(n.id).x, y: byId(n.id).y }, { x: 33, y: 37 },
+    'the lattice governs a loose note, which is the whole point of Unstick');
 });
