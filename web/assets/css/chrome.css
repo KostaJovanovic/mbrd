@@ -855,11 +855,35 @@
   font-size: var(--t-small);
   color: var(--ink);
 }
+/* The line somebody wrote for this stop. Between the name and the counter
+   because that is the order they are read in - what this is, what is being said
+   about it, how far through you are - and in the ink the name is not, so the
+   two are told apart at a glance rather than by position alone. Two lines at
+   most: a caption is a sentence under a name, and one that ran to five would
+   push the counter off a bar this size. */
+#tour .tour-caption {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  margin-top: 1px;
+  font-size: var(--t-tiny);
+  line-height: 1.35;
+  color: var(--ink-2);
+}
+#tour .tour-caption[hidden] { display: none; }
 #tour .tour-count {
   font-size: var(--t-tiny);
   color: var(--ink-3);
   font-variant-numeric: tabular-nums;
 }
+/* The three buttons, and there is one rule for all three. Back, forward and out
+   are the whole of what this bar does, they sit on one strip within a few pixels
+   of each other, and nothing distinguishes them that the glyph does not already
+   say - so the close used to carry a divider, a squared-off pair of corners and
+   a glyph three pixels smaller than its neighbours', and read as a fourth kind
+   of control borrowed from somewhere else. Anything added here goes on
+   `#tour button` or it goes on none of them. */
 #tour button {
   flex: none;
   display: grid;
@@ -885,8 +909,10 @@
    first and last stops each have one dead button, and it has to look dead. */
 #tour button:disabled { color: var(--ink-3); opacity: 0.45; cursor: default; }
 #tour button svg { width: 15px; height: 15px; }
-#tour .tour-close { margin-left: 2px; border-left: var(--hairline) solid var(--rule); border-radius: 0 var(--leaf) var(--leaf) 0; }
-#tour .tour-close svg { width: 12px; height: 12px; }
+/* The one thing the close does not share, and it is space rather than shape:
+   stepping and leaving are different errands, and two more pixels between them
+   is enough to say so without drawing anything. */
+#tour .tour-close { margin-left: 2px; }
 
 /* Idle - fifteen seconds of nothing, and the furniture goes.
    ui/idle.js puts the class on and takes it off; what counts as "something
@@ -926,6 +952,470 @@
   pointer-events: none;
   transition: opacity calc(var(--dur-base) * 6) var(--ease);
 }
+
+/* ---------------------------------------------------------------------------
+   Touring - the board being shown rather than worked on. ui/tour.js puts the
+   class on <html> at the first stop and takes it off at the end. And the same
+   list again for .is-tour-edit, which ui/tour-edit.js puts on while the tour is
+   being *built*: the mode marks every card on the board and the marks are the
+   editor, so a panel over the third of the board they are on is the one thing
+   that must not be there. Two classes rather than one, because the two modes
+   differ everywhere else - a tour freezes the board (see pressIntent() in
+   canvas/input.js) and building one leaves every gesture alone.
+
+   The idle list above, plus the two panels, and going for a different reason.
+   Idle is the app noticing nobody is there and stepping back for a moment;
+   this is the app being told to get out of the way for as long as a tour lasts,
+   and nothing here comes back on a pointer move - the way back is ending the
+   tour. Same pairing of opacity with pointer-events, and for the same safety:
+   a faded control that could still be pressed is a mine.
+
+   Quick rather than the idle fade's six beats. A tour starts on a press and the
+   first stop is already flying; furniture drifting out over three seconds would
+   still be leaving while the camera arrived.
+
+   The two panels are hidden rather than closed, because a panel left open is a
+   decision somebody made - it is exactly where they left it when the tour ends.
+   #tour itself is not on the list, and neither is #toast: see presentation()
+   in ui/tour.js for both. */
+:root:is(.is-touring, .is-tour-edit) :is(
+  #menu-btn,
+  #mobile-header-edit-btn,
+  #mobile-find-btn,
+  #sidebar,
+  #header-panel,
+  #bin,
+  #corner,
+  #toolbar,
+  #timeline-strip,
+  #nowplaying
+) {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-base) var(--ease);
+}
+
+/* And the three rules that move the tour bar out of something's way, undone -
+   because the thing being got out of the way of is now invisible. Each is the
+   base value from #tour's own block restated, at the one extra class of
+   specificity it takes to win: an open sidebar under a running tour would
+   otherwise hold the bar a sidebar's width off-centre for the whole reading,
+   with nothing on screen to explain why. */
+:root.is-touring #sidebar.is-open ~ #tour { left: max(16px, env(safe-area-inset-left)); }
+:root.is-touring #header-panel.is-open ~ #tour { right: max(16px, env(safe-area-inset-right)); }
+:root.is-touring #nowplaying:not([hidden]) ~ #tour {
+  bottom: max(16px, env(safe-area-inset-bottom));
+}
+
+/* ---------------------------------------------------------------------------
+   The tour editor's bar (ui/tour-edit.js)
+
+   The tour bar's twin, in the same slot along the foot and in the same idiom,
+   because the two modes are the same shape: the chrome goes, the board fills the
+   screen, and one strip says what is being done to it. The tour bar reads a
+   tour; this one writes one.
+
+   Built by the module rather than declared in index.html, unlike its twin - see
+   initTourEdit() for why. Which means none of the sibling combinators #tour uses
+   to dodge the sidebar and the player apply here, and none are needed: this bar
+   is only ever up while :root.is-tour-edit is hiding both of them.
+
+   ── One size, always ──
+
+   A **fixed width** and two rows of **fixed height**, and every one of those
+   words is load-bearing. This bar is the one surface in the app you drag things
+   around inside, and it used to resize constantly while you did it: the width
+   came from the content, so a button whose label went from "Select cards, then
+   add them" to "Add 3 cards as one stop" moved the whole bar and every chip in
+   it, and the caption row appeared out of nothing when a chip was pressed, so
+   the bar grew a line taller under the pointer that had just pressed it.
+
+   Nothing here is allowed to move because of something that happened somewhere
+   else on it. The width is a number; the rows are heights; the chips scroll
+   sideways inside a strip whose left edge never moves; the second row holds the
+   caption or the hints, and either way it is the same box at the same height.
+
+   Wider than #tour's 420px: that bar holds a name and a counter, and this one
+   holds every stop in the tour. */
+#tour-editor {
+  position: fixed;
+  z-index: 21;
+  bottom: max(16px, env(safe-area-inset-bottom));
+  left: max(16px, env(safe-area-inset-left));
+  right: max(16px, env(safe-area-inset-right));
+  width: min(760px, 100vw - 32px);
+  margin-inline: auto;
+  display: flex;
+  flex-direction: column;
+  /* No padding here and no gap: the rows carry their own, so the hairline
+     between them runs the whole width of the bar rather than stopping short of
+     both ends like an underline under a word. */
+  padding: 0;
+  overflow: hidden;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-1);
+  -webkit-user-select: none;
+  user-select: none;
+}
+#tour-editor[hidden] { display: none; }
+
+/* The entrance, in the tour bar's own idiom: up from under the edge, and back
+   under it on the way out. paint() unhides a frame before it adds .is-up. */
+#tour-editor {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(calc(100% + 24px)) scale(0.98);
+  transition: opacity var(--dur-fast) var(--ease),
+              transform var(--dur-fast) var(--ease);
+}
+#tour-editor.is-up {
+  opacity: 1;
+  pointer-events: auto;
+  transform: none;
+  transition: opacity var(--dur-base) var(--ease),
+              transform var(--dur-base) var(--ease-back);
+}
+@media (prefers-reduced-motion: reduce) {
+  #tour-editor { transition: none; }
+  #tour-editor.is-up { transition: none; }
+}
+
+/* The three rows. Heights and not paddings, so what is in them cannot make them
+   taller - see the block at the head of this section. */
+#tour-editor .tour-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 8px;
+}
+
+/* ── The head ── */
+
+/* What this bar is, how much of it there is, and the way out - the Timeline
+   strip's head one edge over, and the same three parts in the same order. */
+#tour-editor .tour-head-row {
+  height: 30px;
+  border-bottom: var(--hairline) solid var(--rule);
+}
+#tour-editor .tour-title {
+  font-size: var(--t-small);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+#tour-editor .tour-count {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--t-small);
+  color: var(--ink-3);
+}
+/* The cross, at the top right, which is where every closable surface in this app
+   puts it: #side-close and #header-close on the two panels, .tl-close on the
+   Timeline, #viewer-close on the viewer. It was at the bottom right of this bar,
+   on the reasoning that the tour bar's own cross is at the end of its row - true
+   of a bar with one row, where the end and the top right are the same place, and
+   false the moment there are three.
+
+   .tl-close's measurements exactly, because that is the closable *strip* rather
+   than the closable panel: 24 square at --radius-sm with a 14px glyph, and the
+   ink-wash hover the rest of the app hovers with. */
+#tour-editor .tour-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+#tour-editor .tour-close svg { width: 14px; height: 14px; }
+@media (hover: hover) {
+  #tour-editor .tour-close:hover {
+    background: color-mix(in srgb, var(--ink) 8%, transparent);
+    color: var(--ink);
+  }
+}
+/* The strip is the one row that may grow, and it grows *upwards* - the bar is
+   pinned to the foot of the window, so a tour long enough to wrap raises the top
+   edge and leaves the head, the caption and both verbs exactly where they were. */
+#tour-editor .tour-strip-row {
+  min-height: 44px;
+  padding-block: 7px;
+}
+#tour-editor .tour-foot-row {
+  height: 40px;
+  border-top: var(--hairline) solid var(--rule);
+}
+
+/* ── The two verbs ── */
+
+/* One pair, and they have to *look* like one pair: the same height, the same
+   radius, the same border, differing only in which one is filled. That is
+   .btn-row in sidebar.css - the pattern this very feature already uses for its
+   two buttons in the Board tab - and it is what makes two controls read as two
+   answers to one question rather than as two unrelated things that happen to be
+   near each other. They were 30px accent and 24px outline, in different rows,
+   and read as exactly that. */
+#tour-editor .tour-acts { flex: none; display: flex; gap: 6px; }
+#tour-editor .tour-add,
+#tour-editor .tour-play {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 12px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--t-small);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease),
+              border-color var(--dur-fast) var(--ease),
+              color var(--dur-fast) var(--ease);
+}
+#tour-editor .tour-add { min-width: 96px; }
+
+/* The filled one, on .btn-row's own terms - accent ground, accent-deep edge. It
+   is Add rather than Take the tour because building a tour is adding stops to it
+   over and over, and Take the tour is what you press once at the end. */
+#tour-editor .tour-add.is-primary:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent-deep);
+  color: var(--accent-fg);
+}
+/* And the same button pointing the other way: everything selected is already on
+   the tour, so the only thing left to offer is taking it off. One button, one
+   subject, and which direction it is facing is the label and the colour rather
+   than a second control somewhere else. */
+#tour-editor .tour-add.is-cut:not(:disabled) {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--paper-card);
+}
+/* The greying the tour bar's dead buttons wear one strip over - ink-3 at 0.45.
+   This bar had two different disabled values in it and neither was the app's. */
+#tour-editor .tour-add:disabled,
+#tour-editor .tour-play:disabled { cursor: default; color: var(--ink-3); opacity: 0.45; }
+@media (hover: hover) {
+  #tour-editor .tour-play:not(:disabled):hover {
+    background: var(--paper-2);
+    border-color: var(--accent-text);
+    color: var(--accent-deep);
+  }
+  #tour-editor .tour-add.is-primary:not(:disabled):hover { background: var(--accent-deep); }
+  /* Toward the ink, the way every other deepened colour in this app is made -
+     --accent-deep is the same shape. It was a brightness() filter, which was the
+     only one in the whole stylesheet and would have lightened rather than
+     deepened the red on a dark palette. */
+  #tour-editor .tour-add.is-cut:not(:disabled):hover {
+    background: color-mix(in srgb, var(--danger) 86%, var(--ink));
+    border-color: color-mix(in srgb, var(--danger) 86%, var(--ink));
+  }
+}
+
+/* How many cards the press would take. A pill and not part of the sentence, so
+   the number can change without the button changing width.
+
+   Outlined in `currentColor` rather than filled with a colour of its own: this
+   sits on the accent and on the danger red by turns, and a translucent white
+   would have been the one hardcoded colour in the bar and wrong on a light
+   palette. The outline is whatever the label is, so it is right on both by
+   construction. */
+#tour-editor .tour-add-n {
+  flex: none;
+  display: grid;
+  place-items: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 var(--hairline) currentColor;
+  opacity: 0.8;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* ── The foot row ── */
+
+/* Which stop is being captioned. The same square the chip and the card both
+   wear, one size down: three drawings of one fact, so the field, the chip and
+   the photograph are read as the same thing said three times. */
+#tour-editor .tour-cap-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+#tour-editor .tour-cap-n {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-xs);
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* What is said at this stop. Underlined only when it is being used: a boxed
+   field would be the loudest thing on a bar whose whole job is to stay out of
+   the way of the board behind it.
+
+   user-select back on, against the bar's own `none`: this is the one thing here
+   somebody types in, and a text field you cannot select the text in is a text
+   field with half its editing gone. */
+#tour-editor .tour-cap {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 2px 0;
+  border: 0;
+  border-bottom: var(--hairline) solid transparent;
+  background: none;
+  font: inherit;
+  font-size: var(--t-small);
+  color: var(--ink);
+  -webkit-user-select: text;
+  user-select: text;
+}
+#tour-editor .tour-cap::placeholder { color: var(--ink-3); }
+#tour-editor .tour-cap:hover { border-bottom-color: var(--rule); }
+#tour-editor .tour-cap:focus { outline: none; border-bottom-color: var(--accent-text); }
+
+/* What can be done here, in the caption's place while there is no stop being
+   captioned. It is the only written record of the three gestures this mode
+   hides - the drag, the right-click and the mark on a card - and it is in the
+   quietest ink on the bar, because a hint that competes with the controls it is
+   about has stopped being a hint. */
+#tour-editor .tour-hint {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--t-tiny);
+  color: var(--ink-3);
+}
+
+/* ── The strip ── */
+
+/* The order. It **wraps**, and that is the whole of it: a strip that scrolled
+   sideways hid half the tour behind a gesture, and the one thing this row exists
+   for is seeing the order at a glance. A wrapped block shows every stop at once
+   and pays for it in height, which is the right way round on a bar that is
+   pinned to the bottom of an otherwise empty screen.
+
+   Bottom-up, so the last line of chips is the one that stays put and the block
+   grows away from the controls rather than through them.
+
+   The cap is five lines. Past that there is no honest answer left - a tour of
+   thirty stops cannot be one glance - and a scroll down a block you can read is
+   a far smaller loss than a scroll along a line you cannot. */
+#tour-editor .tour-chips {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-end;
+  gap: 4px;
+  max-height: 166px;
+  margin: 0;
+  /* Room for the stacked square a grouped chip draws above and to the right of
+     itself, which the overflow below would otherwise cut off on the top line. */
+  padding: 3px 3px 0 0;
+  overflow: hidden auto;
+  scrollbar-width: thin;
+  list-style: none;
+}
+#tour-editor .tour-chips > li { flex: none; border-radius: var(--radius-xs); }
+/* Where a dragged chip would land. On the side of the neighbour rather than in
+   the gap: there is four pixels of gap to draw in, and an edge is what the eye
+   reads as "between these two" anyway. */
+#tour-editor .tour-chips > li.drop-before {
+  box-shadow: inset var(--sel-line) 0 0 var(--select);
+}
+#tour-editor .tour-chips > li.drop-after {
+  box-shadow: inset calc(var(--sel-line) * -1) 0 0 var(--select);
+}
+
+/* One stop: a square with the stop's *name* on it, and nothing else.
+
+   The name is the order the stops were added in, not where they are lying - the
+   argument is written out at the head of ui/tour-edit.js and it is the whole
+   reason this row can show a reorder having happened. Drawn in the same shape
+   and face as the mark a card wears in its own corner, because they are the two
+   halves of one editor, and deliberately not in the same colour: the card's is
+   accent because it answers "when is this seen", and this one is quiet paper
+   until it is the stop being pointed at.
+
+   Chips carrying the cards' names were tried in between and cost the row the
+   thing it is for. A named chip is four times as wide, so a dozen stops became a
+   block five lines deep, and seeing the whole order at a glance - the one job
+   this row has that the board cannot do - was what paid for it. What a square
+   cannot say, *which* photograph a stop is, the board says instead and says it
+   better: hovering this bar lays every number across the card it belongs to
+   (:root.is-tour-peek in item-chrome.css). */
+#tour-editor .tour-chip {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: var(--paper-2);
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  cursor: grab;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+#tour-editor .tour-chip:active { cursor: grabbing; }
+/* The stop the foot row is pointed at, in the accent the marks on the cards
+   wear - so the chip being pointed at and the cards it is about are one colour. */
+#tour-editor .tour-chip.is-current { background: var(--accent); color: var(--accent-fg); }
+@media (hover: hover) {
+  #tour-editor .tour-chip:hover:not(.is-current) { background: var(--paper-3); color: var(--ink); }
+}
+
+/* Several cards framed together, drawn as a second square behind the first.
+   A count *inside* a square that already holds a number is two numbers in
+   twenty pixels; a stack says "more than one" without asking anybody to read
+   anything, and the tooltip carries the figure for when it matters.
+
+   An offset shadow rather than a pseudo-element: it is the chip's own shape,
+   automatically, so it stays right if the chip ever changes size or radius -
+   and it cannot be caught by the z-order trouble a negative z-index behind a
+   button invites. */
+#tour-editor .tour-chip.is-group { box-shadow: 3px -3px 0 0 var(--paper-3); }
+#tour-editor .tour-chip.is-group.is-current,
+#tour-editor .tour-chip.is-group:hover { box-shadow: 3px -3px 0 0 var(--rule-2); }
+
 
 /* The scale bar. A label over a stick, both right-aligned, so the stick's right
    end lines up with the edge of the zoom control beneath it - the eye then has

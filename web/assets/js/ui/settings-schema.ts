@@ -55,6 +55,10 @@ import {
 /** How many cards are picked. Read by the style tile row's title, which says
  *  what the export will draw from and so changes with the selection. */
 const selectionSize = () => selection.size;
+// The Tour section's two titles read the board's own list rather than the
+// runner's: how many stops there are is a fact about the board, and asking
+// ui/tour.ts would make this table depend on a module that owns a camera.
+const tourStops = () => board.tour.length;
 import { ARRANGEMENTS, MOBILE_ARRANGEMENTS } from '../arrange/arrangements.ts';
 import { currentLens } from './board-view.ts';
 // The palette row's chips, read out of tokens.css at the moment the menu opens.
@@ -457,6 +461,52 @@ export const SECTIONS: Section[] = [
   //
   // Board is what this tab is for: the file, where it goes, how it is laid out.
   // Putting things *on* the board is the toolbar's whole job.
+  //
+  // --- Tour ---------------------------------------------------------------
+  //
+  // The whole of the tour, and the only place in the app that says anything
+  // about one: the item menu's ticked row and the board menu's "Take the tour"
+  // both went when this section arrived (see ui/menu.ts). A tour is an order,
+  // and an order needs a list - which is a panel and never a menu.
+  //
+  // On the Board tab rather than the Look tab, and it is worth saying why: a
+  // tour is not a way the board is dressed, it is a thing the board *is*. It
+  // travels in the .mbrd beside the connections and the playlist order, and
+  // those two are board data for exactly the same reason.
+  {
+    id: 'tour', tab: 'board', title: 'Tour', needsBoard: true,
+    controls: [
+      // Two verbs, one row, and that is the whole of the tour in this panel.
+      // Take the tour carries the weight because it is the answer on a board
+      // that already has stops - the editor is where you go once, and the tour
+      // is what you do with it after.
+      //
+      // Both close the panel, unlike every other pair on this tab: neither of
+      // them is a setting, they are two ways of handing the whole screen over
+      // to the board. The editor used to be a list under this row and moved out
+      // to the board itself - see the head of ui/tour-edit.ts for why, and note
+      // that a panel left open under it would be hidden anyway (:root.is-tour-edit
+      // in chrome.css), so a row that did not close it would be a row that
+      // closed it invisibly.
+      { type: 'buttons', buttons: [
+        { cmd: 'tour-start', label: 'Take the tour', className: 'primary',
+          closesPanel: true,
+          title: () => (tourStops()
+            ? `${tourStops()} stops, in order`
+            : 'Add a stop first - the tour has nowhere to go') },
+        // `ariaPressed` as a starting value rather than a `pressed` predicate,
+        // and that is the whole reason this table does not import ui/tour-edit:
+        // the panel repaints on `board`, `settings`, `layout` and `lens`, and
+        // opening the editor is none of those - so a predicate here would be
+        // read once and then be wrong until something unrelated repainted the
+        // panel. The module writes the attribute itself when it opens and
+        // closes, which is the same shape `debug-grips` uses one tab over.
+        { cmd: 'tour-edit', label: 'Edit the tour', ariaPressed: 'false',
+          closesPanel: true,
+          title: () => 'Number the cards on the board, in the order they are seen' },
+      ] },
+    ],
+  },
   {
     // Board layout and Arrange were one idea under two headings: which of the
     // two arrangements you are in, how wide it is, and how things are placed

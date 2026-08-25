@@ -726,6 +726,7 @@ const press = (over = {}) => ({
   selectionSize: 0,
   doubleTapDrag: false,
   isMobile: false,
+  touring: false,
   ...over,
 });
 
@@ -743,6 +744,34 @@ test('a widget inside a card owns the press, unless the press means pan', () => 
     { kind: 'pan', middle: false });
   assert.deepEqual(pressIntent(press({ onWidget: true, button: 1 })),
     { kind: 'pan', middle: true });
+});
+
+test('nothing on the board moves or pans while a tour is running', () => {
+  // The board is being shown, not worked on: the press takes hold of nothing
+  // and drives nothing. A nudged photograph during a presentation is a mistake
+  // that gets saved; a panned-off stop is a reading nobody can follow.
+  assert.deepEqual(pressIntent(press({ touring: true, onCard: 'a' })), { kind: 'frozen' });
+  // Including by its corners - a card that was selected when the tour started
+  // still has grips on screen, and they must not resize it either.
+  assert.deepEqual(
+    pressIntent(press({ touring: true, onCard: 'a', onGrip: true, wasSelected: true, selectionSize: 1 })),
+    { kind: 'frozen' });
+  // And including under a finger, which would otherwise take the two-step gate.
+  assert.deepEqual(
+    pressIntent(press({ touring: true, onCard: 'a', pointerType: 'touch', needsTapFirst: true })),
+    { kind: 'frozen' });
+  // Space and the middle button are ways of driving the board, so the freeze is
+  // above them too - unlike the widget branch, which is above the freeze.
+  assert.deepEqual(pressIntent(press({ touring: true, onCard: 'a', spaceDown: true })),
+    { kind: 'frozen' });
+  assert.deepEqual(pressIntent(press({ touring: true, button: 1 })), { kind: 'frozen' });
+  assert.deepEqual(pressIntent(press({ touring: true, onCard: 'a', onWidget: true })),
+    { kind: 'widget' });
+  // Bare board is frozen too. That press is still the one that walks the tour
+  // on, but it is answered on the lift rather than here - see tourClick in
+  // input.ts - and the pan it used to start with it is gone.
+  assert.deepEqual(pressIntent(press({ touring: true })), { kind: 'frozen' });
+  assert.deepEqual(pressIntent(press({ touring: true, additive: true })), { kind: 'frozen' });
 });
 
 test('a grip is a resize only with one card picked or none', () => {

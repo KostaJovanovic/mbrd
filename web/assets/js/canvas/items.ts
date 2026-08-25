@@ -212,6 +212,17 @@ export function initItems(world: HTMLElement, viewport: Viewport) {
   worldEl = world;
   shadowLayerEl = world.querySelector('#item-shadows');
   vp = viewport;
+  // The tour mark's press, delegated once for the whole world rather than bound
+  // per node. The marks come and go with the cull and with every edit to the
+  // list, and a listener per mark would be one closure per mounted card thrown
+  // away on every pan. The id comes off the card the mark is in, which is where
+  // itemIdFromEvent() reads it from too.
+  world.addEventListener('click', e => {
+    const mark = e.target instanceof Element ? e.target.closest('.tour-mark') : null;
+    if (!mark) return;
+    const id = itemIdFromEvent(mark);
+    if (id) tourMarks?.press(id);
+  });
   // paintGrips() on both, because pinning is a fact about two items and changes
   // without either being rebuilt. 'items' is the host deleted or undone back out
   // of existence, which frees its riders; 'geom' is a drop, a nudge and Unstick,
@@ -331,6 +342,126 @@ export function showStickTarget(host: { id: string } | null | undefined) {
 
 /** Subscribe to view changes (pan/zoom); returns the unsubscribe. */
 export function onViewChange(fn: (vp: Viewport) => void) { return vp?.onChange(fn); }
+
+// ---- the tour mark -------------------------------------------------------
+//
+// The square in a card's top-right corner while the tour editor is open: the
+// stop number the card is at, or a "+" that puts it on the tour. It is the
+// editor's whole surface on the board, and it is drawn here rather than by
+// ui/tour-edit.ts for one reason that is not tidiness.
+//
+// **A culled card is thrown away and rebuilt from nothing.** See the detach pass
+// in sync(): a node that leaves the padded viewport is discarded and dropped
+// from the map, and build() makes a new one when it comes back. A mark written
+// onto the node from outside therefore survives exactly until the card is panned
+// off screen and back, which is the one thing somebody building a tour on a
+// board bigger than the window does constantly. It is the same argument the
+// `isFiltered` and `selection` reads inside build() make, in the same words, and
+// the answer is the same: ask the question where the node is made.
+//
+// Injected rather than imported, because what it needs to know - is the editor
+// open, and which stop is this card at - is a ui/ fact and this is canvas/.
+// Unwired it draws nothing, which is what keeps this module loadable in a test
+// with no editor and no board.
+
+/**
+ * What the editor knows and this module has to ask it.
+ *
+ * `markFor` answers the number the card wears: a positive integer for a card
+ * that is at that stop, `0` for a card that is not on the tour (the "+"), and
+ * `null` for no mark at all - the editor is shut, or this is furniture, which is
+ * the state every card is in for all of an ordinary session.
+ */
+export type TourMarks = {
+  markFor(id: string): number | null,
+  press(id: string): void,
+};
+
+let tourMarks: TourMarks | null = null;
+
+/**
+ * Which cards are wearing a mark, so the common answer costs one Set lookup.
+ *
+ * applyTourMark() runs from build(), which is the mount pass - the hot path this
+ * module's spatial index and build budget both exist for - and for all of an
+ * ordinary session the answer there is "no mark, and there was not one before".
+ * Without this that answer costs a querySelector against every card built on
+ * every pan, to find nothing.
+ *
+ * An id in here whose node has since been discarded and rebuilt is harmless: the
+ * removal below finds nothing and the id leaves the set on the same pass.
+ */
+const marked = new Set<string>();
+
+/** Wire the editor up, or `null` to take every mark off. See paintTourMarks(). */
+export function setTourMarks(marks: TourMarks | null) {
+  tourMarks = marks;
+  paintTourMarks();
+}
+
+/**
+ * Re-ask the question for every mounted card.
+ *
+ * The push half of the pair: build() covers a card arriving on screen, and this
+ * covers the list changing under cards that are already there. Every mounted
+ * node rather than a diff - the marks change on a press, not on a frame, and the
+ * mounted set is bounded by the screen.
+ */
+export function paintTourMarks() {
+  for (const [id, el] of nodes) applyTourMark(el, id);
+}
+
+/** One card's mark, put on, changed or taken off. */
+function applyTourMark(el: HTMLElement, id: string) {
+  const n = tourMarks ? tourMarks.markFor(id) : null;
+  if (n === null) {
+    if (!marked.has(id)) return;
+    el.querySelector(':scope > .tour-mark')?.remove();
+    marked.delete(id);
+    return;
+  }
+  const had = el.querySelector<HTMLButtonElement>(':scope > .tour-mark');
+  const mark = had ?? document.createElement('button');
+  if (!had) {
+    // A real <button>, and that is load-bearing twice over. canvas/input.ts
+    // treats `button` as a widget that owns its own press (see pressIntent), so
+    // pressing this selects the card and never drags it - without which the
+    // mark would be a target you could only hit by not moving a pixel. And it
+    // is the only thing here a keyboard can reach.
+    mark.type = 'button';
+    mark.className = 'tour-mark';
+    // Two glyphs, built once and swapped by CSS: the stop number at rest and a
+    // cross under the pointer. A number is not a button - it reads as a label,
+    // and the first version of this had no visible way to take a card back off
+    // the tour at all, because the only one was the number nobody would think
+    // to press. The cross is the removable-chip idiom and says so in one hover.
+    // Both live in the DOM from the start rather than being written on hover,
+    // so nothing under the pointer is replaced between a press and its click.
+    const num = document.createElement('span');
+    num.className = 'tour-mark-n';
+    mark.append(num);
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'ico tour-mark-x');
+    svg.setAttribute('aria-hidden', 'true');
+    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttribute('href', 'assets/icons.svg#i-close');
+    svg.append(use);
+    mark.append(svg);
+    el.append(mark);
+  }
+  marked.add(id);
+  mark.classList.toggle('is-add', n === 0);
+  // Non-null: the branch above appends it to every mark this function makes,
+  // and a `.tour-mark` in a card is one it made.
+  const num = mark.querySelector('.tour-mark-n')!;
+  const text = n === 0 ? '+' : String(n);
+  // Only when it has actually changed. This runs for every mounted card on every
+  // selection, every edit and every card built by a pan, and the overwhelming
+  // majority of those are the same number written again.
+  if (num.textContent !== text) num.textContent = text;
+  mark.title = n === 0 ? 'Put this card on the tour' : `Stop ${n} - press to take it off`;
+  mark.setAttribute('aria-label', mark.title);
+}
 
 /**
  * The client-space box of an item, computed rather than measured.
@@ -1029,6 +1160,10 @@ function build(item: Item) {
     el.classList.add('is-filtered');
     shadows.get(item.id)?.classList.add('is-filtered');
   }
+  // And the tour mark, for the third time in the same words - see the block
+  // above applyTourMark(). A card panned off screen and back is a new node, and
+  // the editor is a mode somebody spends minutes in doing exactly that.
+  applyTourMark(el, item.id);
   return el;
 }
 

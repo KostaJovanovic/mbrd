@@ -1094,3 +1094,9 @@ kbd {
     box-shadow: inset 0 0 0 var(--hairline) rgb(var(--ink-c) / 22%);
   }
 }
+
+/* The tour editor used to be a slot in the Board tab and its rules were here.
+   It is a mode over the board now - a mark on each card and one bar along the
+   foot - so what is left of it in this panel is the button that opens it, and
+   the rules moved to chrome.css beside the tour bar's. See the head of
+   ui/tour-edit.js for the argument. */

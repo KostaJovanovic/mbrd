@@ -87,7 +87,12 @@ export type BusEvents = {
   autosaved: void,
   filter: void,
   audioOrder: string[],
-  tour: string[],
+  // board-model.ts's TourStop, spelled out rather than imported: this module is
+  // under that one - board-model.ts imports the bus from here - and a type-only
+  // import back is still an edge to tests/layers.test.js, which reads the
+  // specifier and not the keyword. Two lines that have to agree, and the shape
+  // is small enough to be the cheaper of the two costs.
+  tour: { cards: string[], caption?: string }[],
   'tour:at': number,
   fonts: void,
   'fonts:add': File[],

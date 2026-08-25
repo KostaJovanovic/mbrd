@@ -723,6 +723,181 @@
 .grip[data-g="w"] { left:  calc(-1 * var(--grip-edge, 14px) * var(--grip-reach)); }
 .grip[data-g="e"] { right: calc(-1 * var(--grip-edge, 14px) * var(--grip-reach)); }
 
+/* ---------------------------------------------------------------------------
+   The tour mark: which stop a card is, and the way to make it one
+
+   canvas/items.js puts one of these inside every card's node while the tour
+   editor is open and takes them all away when it closes - see setTourMarks()
+   there, and the head of ui/tour-edit.js for why the editor is a mode over the
+   board rather than a list in the panel. Nothing else in the app builds one.
+
+   Two states, one square. `.is-add` is a card that is on no stop: a dashed "+"
+   that puts it on the end of the tour. Without it is a card that is at a stop,
+   and it reads that stop's number.
+
+   The number rather than a dot, because the question the editor answers is
+   *the order*: a board of forty photographs with nine of them marked tells you
+   which are on the tour and nothing about what comes after what. Every card of
+   one stop wears the same number, which is the honest picture of a group.
+
+   A <button>, so canvas/input.js's widget branch gives it the whole press and
+   the card underneath never moves - and so a keyboard can reach it at all.
+
+   **An element and not a pseudo, and that is not a preference.** Both of
+   .item's pseudo-elements are spoken for and neither is optional: ::before is
+   the selection ring (items.css) and ::after is the drop shadow, the pin dot
+   and the far-zoom plate between them. The first draft of this drew on
+   ::before, which cost the ring on every card that was on the tour - and, since
+   that rule sets `inset`, supplied a `left` that beat this rule's `right` and
+   put the mark on the wrong corner. Two bugs from one shared pseudo.
+
+   Top right, overhanging the corner, so it sits clear of the caption plate
+   along the foot and of the menu handle beside it.
+
+   **Sized in --iz (= 1/zoom), so it holds a constant size on screen** - the same
+   way the resize grips and the title card's two buttons do, and for the same
+   reason: this is a control you press, not a thing drawn on the card. In board
+   units it was a postage stamp on a photograph zoomed out and a dinner plate on
+   one zoomed in, and the number stopped being readable at both ends. The number
+   itself is --t-tiny scaled the same way, so it stays on the type scale and
+   still measures the same on screen at every zoom.
+
+   Which puts it over the north-east grip on a selected card, and above it: the
+   grips are z-index 2 and this is 4, so the press goes to the mark. That is the
+   right way round while the editor is open - the mode is for saying what order
+   the cards are seen in, not for resizing them, and the other seven corners are
+   untouched - but it is a collision rather than a coincidence, and moving
+   either one moves the other. */
+.tour-mark {
+  position: absolute;
+  z-index: 4;
+  top: calc(-10px * var(--iz, 1));
+  right: calc(-10px * var(--iz, 1));
+  /* Square, and it has to stay square: a fixed box with no padding, so stop 9
+     and stop 12 are the same mark rather than a circle and a lozenge down one
+     board. Two digits fit at --t-tiny in the mono face with room to spare, and
+     a tour long enough to need three is longer than a tour anybody reads. */
+  width: calc(22px * var(--iz, 1));
+  height: calc(22px * var(--iz, 1));
+  box-sizing: border-box;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: calc(var(--radius-xs) * var(--iz, 1));
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-family: var(--font-mono);
+  font-size: calc(var(--t-tiny) * var(--iz, 1));
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  box-shadow: var(--shadow-1);
+  cursor: pointer;
+  transition: opacity var(--dur-fast) var(--ease),
+              background var(--dur-fast) var(--ease);
+}
+/* A card that is on no stop. Quiet: on a board of forty this is thirty-one of
+   them, and an invitation repeated thirty-one times in the accent colour is a
+   board nobody can read. Dashed and in paper, the same grammar the Add button
+   in the bar uses for the same reason - it is an outline of a thing rather than
+   a thing. */
+.tour-mark.is-add {
+  background: var(--paper-card);
+  color: var(--ink-3);
+  /* --board-hairline, not --hairline: this box is inside the world transform, so
+     the plain token would be a hairline multiplied by the zoom. It is the same
+     scaled token every other edge drawn on a card uses. */
+  border: var(--board-hairline) dashed var(--rule-2);
+  box-shadow: none;
+}
+/* And quieter still until it is aimed at. Only where there is a pointer to
+   hover with: on a touch screen there is no hover and a control that appears
+   under the finger already on it is a control nobody finds, so there it simply
+   stays on. */
+@media (hover: hover) {
+  .tour-mark.is-add { opacity: 0; }
+  .item:hover > .tour-mark.is-add,
+  .item.is-selected > .tour-mark.is-add,
+  .tour-mark.is-add:focus-visible { opacity: 1; }
+  .tour-mark.is-add:hover { border-color: var(--accent-text); color: var(--accent-text); }
+}
+
+/* The number, and the cross that replaces it under the pointer.
+   canvas/items.js builds both into every mark and this is the whole of the
+   swap - see the comment there for why they are not written on hover.
+
+   A number at rest and a cross when aimed at, because the mark answers two
+   questions and only one of them at a time: which stop this card is, and how to
+   take it off. Without the cross the second answer was invisible - a number is
+   read as a label, and nobody presses a label.
+
+   In the danger colour on the way out, which is the pairing the dialog's
+   irreversible button uses: red ground, paper glyph. Not irreversible here -
+   pressing "+" puts the card back - but it is the one press on this mark that
+   destroys something somebody arranged, and it should not have to be decoded. */
+.tour-mark-x {
+  display: none;
+  width: calc(11px * var(--iz, 1));
+  height: calc(11px * var(--iz, 1));
+}
+@media (hover: hover) {
+  .tour-mark:not(.is-add):hover { background: var(--danger); color: var(--paper-card); }
+  .tour-mark:not(.is-add):hover > .tour-mark-n { display: none; }
+  .tour-mark:not(.is-add):hover > .tour-mark-x { display: block; }
+}
+/* And the same from the keyboard, where there is no hover to do it. */
+.tour-mark:not(.is-add):focus-visible { background: var(--danger); color: var(--paper-card); }
+.tour-mark:not(.is-add):focus-visible > .tour-mark-n { display: none; }
+.tour-mark:not(.is-add):focus-visible > .tour-mark-x { display: block; }
+
+/* ---------------------------------------------------------------------------
+   The peek: a pointer over the editor's bar, and the order laid over the board
+
+   ui/tour-edit.js puts .is-tour-peek on <html> while the pointer is on the bar
+   and takes it off when it leaves. A class and not a selector because there is
+   no selector for it - the bar is a child of <body> and the cards are inside
+   #viewport, and the only combinator between them looks the wrong way.
+
+   The same mark, opened out. It is already absolutely positioned inside the
+   card and already centres its contents, so covering the card is `inset: 0` and
+   two `auto`s - no second element, no second thing to keep in step with the
+   list, and the number that was in the corner is the number in the middle.
+
+   A wash rather than a tint: 40% white over the picture, so the card is still
+   the card and the numeral on top of it is legible over anything. Ink and not
+   the accent, because the accent over a lightened photograph is a colour on a
+   colour and this has one job.
+
+   Not on the type scale, and that is deliberate rather than an oversight: this
+   is not text, it is a numeral used as a graphic and sized to the card it is
+   drawn on. `rem` rather than px so it does not read as a pixel measurement
+   somebody chose - both scale with the board either way, since the whole card
+   is inside the world's transform. */
+:root.is-tour-peek .tour-mark.is-add { display: none; }
+:root.is-tour-peek .tour-mark:not(.is-add) {
+  inset: 0;
+  width: auto;
+  height: auto;
+  border: 0;
+  border-radius: inherit;
+  background: rgb(255 255 255 / 40%);
+  color: var(--ink);
+  box-shadow: none;
+  font-size: 2.2rem;
+  overflow: hidden;
+  /* Instant, both ways. The box changes size and the colour changes with it,
+     and a transition on one of the two is the box jumping and then the paint
+     catching up. */
+  transition: none;
+}
+/* And at far zoom, where the base rule takes the marks off. This is the one
+   view the peek is most use in - the whole board at once, with the reading
+   order written across it - so it is the one place the mark has to come back. */
+:root.is-tour-peek #world.zoom-far .tour-mark:not(.is-add) { display: grid; }
+/* Gone at far zoom, for the same reason the caption plate is: at that size it
+   is a smudge, and a smudge on nine cards is noise. */
+#world.zoom-far .tour-mark { display: none; }
+
 /* Without color-mix(), for WebKit below 16.2 - section 7 of tokens.css carries
    the argument and declares the channel-form tokens. */
 @supports not (color: color-mix(in srgb, red, blue)) {

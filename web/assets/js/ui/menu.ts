@@ -244,12 +244,20 @@ export interface MenuCommands {
   clearTagFilter: () => void;
   filterCounts: () => { shown: number, all: number };
   selectFiltered: () => void;
-  selectionInTour: () => boolean;
-  toggleSelectionTour: () => void;
+  // The tour, and only the half of it that is about a tour already running -
+  // see tourEntries(). Building one is the Board tab's, so there is no
+  // tourStart, no membership toggle and no way in from here at all.
   inTour: () => boolean;
   tourLength: () => number;
-  tourStart: () => void;
+  tourAt: () => number;
+  tourStep: (delta: number) => void;
+  tourGo: (i: number) => void;
   tourStop: () => void;
+  // Zoom to fit, which the menu had and gave up when the zoom cluster grew a
+  // button for it. It is back for one caller: during a tour the cluster is not
+  // on screen (see :root.is-touring in chrome.css), so this menu is the only
+  // place "show me the whole thing" can be asked for while one is running.
+  fit: () => void;
   canLock: () => boolean;
   lockableCount: () => number;
   lockedCount: () => number;
@@ -768,6 +776,12 @@ export function openContextMenu(clientX: number, clientY: number, itemId: string
   // whatever owned it first. That is the element this menu owes it to as well.
   close();
   opener = focusedNow();
+  // A tour is running: the board menu and the item menu are both about editing
+  // a board, and during a tour nothing on screen is. Over a card as well as
+  // over bare board, deliberately - the whole window is the reading, and a
+  // right-click that offered Duplicate because it happened to land on a
+  // photograph would be the one press that could ruin a presentation.
+  if (cmds!.inTour()) { render(tourEntries(), clientX, clientY); return; }
   // Annotated rather than inferred: canvas/viewport.ts is still on the migration
   // pragma, so toWorld() answers `any` until it is not.
   const at: Point = vp!.toWorld(clientX, clientY);
@@ -1104,18 +1118,12 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // holds whether it is about one card or nine.
     { label: 'Tags', icon: 'i-tag', hidden: !taggable,
       sub: taggable ? tagEntries() : undefined },
-    // The tour, as a single ticked row rather than a fold. There is exactly one
-    // tour on a board, so there is nothing to choose between - the whole of the
-    // question is "is this card a stop", and a fold holding one entry would be a
-    // drill-down into a checkbox. Selection-wide and three-state on the same
-    // terms as the tags above it: ticked only when every eligible card in the
-    // selection is already on, so a half-added selection completes.
-    //
-    // The zoom-to icon rather than an invented one, and it is the honest glyph:
-    // what a stop *is* is a card the camera goes and frames.
-    { label: many ? 'These are tour stops' : 'A tour stop', icon: 'i-zoom-to',
-      check: taggable && cmds!.selectionInTour(), hidden: !taggable,
-      action: () => cmds!.toggleSelectionTour() },
+    // No tour row, and its absence is a decision rather than an omission. There
+    // was a ticked "A tour stop" here, toggling membership card by card, and
+    // what it could never show is the one thing a tour is: an *order*. A stop
+    // is also a group now - several cards framed together - and a checkbox has
+    // nowhere to say which group. The whole of the tour is the editor in the
+    // Board tab (ui/tour-edit.ts), where the order is a list you can drag.
     // ── How it sits on the board ──
     //
     // Everything above this rule is about what the card *is*. Everything below
@@ -1445,6 +1453,42 @@ function connectionWeightEntries(conn: { a: string, b: string }, weight: string)
   }));
 }
 
+/**
+ * The whole menu while a tour is running, wherever the press landed.
+ *
+ * Short by design. A tour has three verbs - on, back, out - and this is those
+ * three plus the two things somebody presenting a board reaches for and cannot
+ * otherwise get at: back to the beginning, and out to the whole board for a
+ * moment. Everything else the right-click normally offers edits a board, and
+ * during a tour nothing on screen is being edited.
+ *
+ * The two steps are greyed at the ends rather than hidden, because a menu whose
+ * rows move as you walk through a tour is a menu you have to read every time -
+ * and stepTour() clamps anyway, so the disabled row is telling the truth about
+ * what a press would do. That is the same argument the bar's own two buttons
+ * make, in the same two places.
+ *
+ * "Show the whole board" does not end the tour, and that is the point of having
+ * it: the tour is where you are up to, the fit is a glance away from it, and
+ * the next press of Right or a click carries on from the stop you were on.
+ */
+function tourEntries(): MenuEntry[] {
+  const at = cmds!.tourAt();
+  const last = cmds!.tourLength() - 1;
+  return [
+    { label: 'The next stop', icon: 'i-chevron-right', accel: 'Right',
+      disabled: at >= last, action: () => cmds!.tourStep(1) },
+    { label: 'The stop before', icon: 'i-chevron-left', accel: 'Left',
+      disabled: at <= 0, action: () => cmds!.tourStep(-1) },
+    { sep: true },
+    { label: 'Back to the first stop', icon: 'i-home',
+      disabled: at <= 0, action: () => cmds!.tourGo(0) },
+    { label: 'Show the whole board', icon: 'i-fit', action: () => cmds!.fit() },
+    { sep: true },
+    { label: 'End the tour', icon: 'i-close', accel: 'Esc', action: () => cmds!.tourStop() },
+  ];
+}
+
 function canvasEntries(at: Point): MenuEntry[] {
   // A press inside a region falls through to the board - the fence's face takes
   // no pointer, which is what keeps panning and banding working inside one - so
@@ -1510,20 +1554,12 @@ function canvasEntries(at: Point): MenuEntry[] {
         action: () => cmds!.rearrange() },
     { label: 'Reload board', icon: 'i-reload', action: () => cmds!.reload() },
     { sep: true },
-    // The tour, alone in its band now that Zoom to fit and Back to 0,0 have
-    // gone to the zoom cluster where they were already drawn. It is the one way
-    // of moving the view that no button on the chrome offers, which is exactly
-    // why it survived the cut its two neighbours did not.
-    //
-    // One row that flips rather than a pair, the same shape Lock/Unlock uses on an item
-    // - a tour is running or it is not, and only one of the two sentences can
-    // be true. Absent entirely on a board with no stops on it yet, which is the
-    // schema's own "absence, not disabling" rule: a row offering to start a tour
-    // of nothing is a row that can only apologise.
-    { label: cmds!.inTour() ? 'End the tour' : `Take the tour (${cmds!.tourLength()})`,
-      icon: 'i-zoom-to', hidden: !cmds!.tourLength(),
-      action: () => (cmds!.inTour() ? cmds!.tourStop() : cmds!.tourStart()) },
-    { sep: true },
+    // The tour had a row in this band - "Take the tour (n)" - and it has gone
+    // with the item menu's. Starting a tour is one press on a button that is on
+    // screen with the stop list it belongs to, in the Board tab; a second door
+    // to it here would be the only way to reach a feature whose editor is
+    // somewhere else entirely. What the right-click *does* still open is the
+    // tour's own menu, and only while one is running - see tourEntries().
     // The board's own two marks: the lattice, and the lattice with a card
     // locked onto it. The tick that says which way they are set is a separate
     // mark on the other edge of the row - see render().

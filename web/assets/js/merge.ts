@@ -49,7 +49,7 @@
 // share.
 
 import { dedupeIds } from './board-model.ts';
-import type { Board, Connection, Item } from './board-model.ts';
+import type { Board, Connection, Item, TourStop } from './board-model.ts';
 import { itemBounds } from './geometry.ts';
 import { isRecord } from './util.ts';
 
@@ -61,7 +61,7 @@ export type MergePlan = {
   items: Item[],
   connections: Connection[],
   audioOrder: string[],
-  tour: string[],
+  tour: TourStop[],
 };
 
 /**
@@ -154,7 +154,13 @@ export function planMerge(
           : [now(c[0]), now(c[1])]) as Connection;
       }),
     audioOrder: incoming.audioOrder.filter(id => arriving.has(id)).map(now),
-    tour: incoming.tour.filter(id => arriving.has(id)).map(now),
+    // The same filter-then-rename over a stop's cards, one level in. A stop
+    // left holding nothing is dropped rather than carried as an empty one: a
+    // group of three where only one card arrived is still a stop worth having,
+    // and a group where none did is a place the camera cannot go.
+    tour: incoming.tour
+      .map(stop => ({ ...stop, cards: stop.cards.filter(id => arriving.has(id)).map(now) }))
+      .filter(stop => stop.cards.length),
   };
 }
 

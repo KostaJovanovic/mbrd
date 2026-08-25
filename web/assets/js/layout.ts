@@ -81,7 +81,6 @@ export type GeomPatch =
   { id: string } & Partial<Omit<GeomSnap, 'id' | 'presnap'>> & { presnap?: unknown };
 import {
   isRider, attachRiders, stuckPlacement, restick, stuckFollowers, startSettling,
-  isPinned,
 } from './sticky.ts';
 import { isFence, refence, refenceAround, mobileRuns, fenceFollowers } from './fences.ts';
 
@@ -1297,30 +1296,72 @@ export function usableMemo(pre: unknown): Presnap | null {
 export function snapAll(snapTo?: boolean) {
   const step = baseStep();
   const before: SnapState[] = [], after: SnapState[] = [];
-  for (const it of board.items) {
-    // A pinned item is not on the board, it is on its host - see isPinned() in
-    // sticky.js. Its place is a fraction of the card underneath it, and putting
-    // that fraction on the lattice would slide a sticky off the photograph it
-    // was pressed onto, in a sweep the person asked of the *board*. The host
-    // lands on the grid and the rider comes along.
-    if (isPinned(it)) continue;
-    const pre = it.meta?.presnap || null;
+  // A rider is not on the board, it is on its host. Its place is a fraction of
+  // the card underneath it, and putting that fraction on the lattice would
+  // slide a sticky off the photograph it was pressed onto, in a sweep the
+  // person asked of the *board*. The host lands on the grid and the rider comes
+  // along - which is the second half, below, and used to be a claim this
+  // function made in a comment and did not carry out.
+  //
+  // isRider(), not isPinned(). Pinning is stuck *and set*, and the ten seconds
+  // between a drop and its pin are ten seconds in which a sticker was still
+  // stuck to a card and was swept onto the lattice anyway - reach for the
+  // whimsy slider straight after pressing a star onto a photograph and the star
+  // jumped to a grid line. Worse, it stayed there: by the time the slider came
+  // back the sticker *was* pinned, so unsnapAll() skipped it and the memo it
+  // was carrying was never spent. The settling window is about what a *press*
+  // takes hold of; it has nothing to say about a board-wide sweep.
+  const riders: Item[] = [], placed = new Map<string, SnapBox>();
+  const push = (it: Item, box: SnapBox, pre: unknown, memo: unknown) => {
     before.push({ id: it.id, x: it.x, y: it.y, w: it.w, h: it.h, pre });
-
+    after.push({ id: it.id, x: box.x, y: box.y, w: box.w, h: box.h, pre: memo });
+  };
+  for (const it of board.items) {
+    if (isRider(it)) { riders.push(it); continue; }
+    const pre = it.meta?.presnap || null;
     const box = latticeBox(it, step);
-    after.push({
-      id: it.id,
-      x: box.x,
-      y: box.y,
-      w: box.w,
-      h: box.h,
-      // A board snapped, unsnapped and snapped again remembers the first
-      // position, not the second - the memo is of life before the lattice.
-      pre: pre || { x: it.x, y: it.y, w: it.w, h: it.h },
-    });
+    placed.set(it.id, box);
+    // A board snapped, unsnapped and snapped again remembers the first
+    // position, not the second - the memo is of life before the lattice.
+    push(it, box, pre, pre || { x: it.x, y: it.y, w: it.w, h: it.h });
+  }
+  const stranded = rideHosts(riders, placed);
+  for (const note of riders) {
+    const box = stranded.has(note.id) ? null : placed.get(note.id);
+    if (!box) continue;               // host vanished, or a cycle: leave it be
+    // No memo, in either column. A rider has no life before the lattice to
+    // remember - it did not land on one - and unsnapAll() puts it back by
+    // asking its host again, not by spending a memory. One carried in from an
+    // older file is left exactly as it was rather than cleared here, so that a
+    // rider which *did* sit loose before somebody stuck it keeps its way back.
+    const pre = note.meta?.presnap || null;
+    push(note, box, pre, pre);
   }
   applySnapState(before, after, 'Snap to grid', snapTo);
 }
+
+/** Where one of the two sweeps decided an item goes. */
+type SnapBox = { x: number, y: number, w: number, h: number };
+
+/**
+ * Add every rider to `placed`, at the fraction of its host it already holds.
+ *
+ * Both sweeps do this and neither may do it differently, which is the whole
+ * reason it is a function: snapping and unsnapping have to agree about where a
+ * sticker sits on its card, or a board that went onto the lattice and came back
+ * would return its cards exactly and its stickers approximately.
+ *
+ * Called before anything is written, and that is load-bearing. `hostSrc` inside
+ * attachRiders() is read off the live board, so the fraction is measured against
+ * the host where it still is; `hostDst` is the box the sweep has decided on.
+ * Returns the riders it could not place - a host that is not moving, a deleted
+ * one, a cycle - for the caller to leave alone.
+ */
+const rideHosts = (riders: Item[], placed: Map<string, SnapBox>) =>
+  attachRiders(riders, placed, (note, hostSrc, hostDst) => {
+    const at = stuckPlacement(note, hostSrc, hostDst);
+    return { x: at.x, y: at.y, w: note.w, h: note.h };
+  });
 
 /**
  * Re-assert the geometry rules that can drift from their rendered result.
@@ -1338,18 +1379,37 @@ export function recheckBoardGeometry() {
 /** Put back what snapAll() remembered, for everything still carrying a memo. */
 export function unsnapAll(snapTo?: boolean) {
   const before: SnapState[] = [], after: SnapState[] = [];
+  // The mirror of snapAll(): riders are held back and placed on their hosts
+  // once the hosts are back where they were, rather than restored from a memo
+  // they are not given one of. A sticker pressed onto a card *while* the board
+  // was on the lattice has no memo at all, and skipping it - which is what
+  // isPinned() used to do here - left it hanging in mid-air while the card
+  // walked back to where it had been.
+  const riders: Item[] = [], placed = new Map<string, SnapBox>();
   for (const it of board.items) {
+    if (isRider(it)) { riders.push(it); continue; }
     // Checked rather than trusted: a memo arrives from a .mbrd like everything
     // else, and a hand-edited one holding a string would write it straight onto
     // the item's geometry. A memo that does not describe a box is no memo.
-    //
-    // Pinned items are skipped for the same reason snapAll() skips them: the
-    // sweep never moved one, so there is nothing of its to put back.
-    if (isPinned(it)) continue;
     const pre = usableMemo(it.meta?.presnap);
     if (!pre) { forgetPresnap(it); continue; }
+    placed.set(it.id, pre);
     before.push({ id: it.id, x: it.x, y: it.y, w: it.w, h: it.h, pre });
     after.push({ id: it.id, x: pre.x, y: pre.y, w: pre.w, h: pre.h, pre: null });
+  }
+  const stranded = rideHosts(riders, placed);
+  for (const note of riders) {
+    // A host that never moved leaves its riders alone: it has no entry in
+    // `placed`, so attachRiders() strands them and there is nothing to do.
+    const box = stranded.has(note.id) ? null : placed.get(note.id);
+    if (!box) continue;
+    before.push({ id: note.id, x: note.x, y: note.y, w: note.w, h: note.h,
+                 pre: note.meta?.presnap || null });
+    // Cleared on the way out, like everything else this sweep touches. A memo
+    // on a rider is either an older version's mistake - the settling-window bug
+    // snapAll() names - or a memory of life before it was stuck, and neither
+    // survives the board leaving the lattice.
+    after.push({ id: note.id, x: box.x, y: box.y, w: box.w, h: box.h, pre: null });
   }
   applySnapState(before, after, 'Leave the grid', snapTo);
 }

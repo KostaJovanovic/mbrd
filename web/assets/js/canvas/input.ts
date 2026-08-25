@@ -227,6 +227,9 @@ export function shortcutsSuppressed(
  *                 edit from a pick.
  *   lockedPan ... a press on a locked card. It selects and then pans, which is
  *                 what a press on bare board does.
+ *   frozen ...... a press while a tour is running. It does nothing at all: no
+ *                 pan, no pick, no band. The view during a reading belongs to
+ *                 the tour and to nothing else.
  *   marquee ..... a modified press on empty board.
  *   empty ....... an unmodified one: clear the selection, point at whatever line
  *                 is under it, and pan.
@@ -234,6 +237,7 @@ export function shortcutsSuppressed(
 export type PressIntent =
   | { kind: 'widget' }
   | { kind: 'pan', middle: boolean }
+  | { kind: 'frozen' }
   | { kind: 'resize', id: string }
   | { kind: 'marqueeDrag' }
   | { kind: 'tapGate', id: string, additive: boolean }
@@ -291,6 +295,15 @@ export type PressFacts = {
   /** The second tap of a touch double tap on empty board. */
   doubleTapDrag: boolean;
   isMobile: boolean;
+  /**
+   * Is a tour running?
+   *
+   * The board is being *shown* rather than worked on, so nothing on it may be
+   * moved, resized or picked up, and the view may not be driven either - see
+   * the branch below. A fact here rather than a call inside the cascade, for
+   * the reason `additive` gives: this stays a function of its argument alone.
+   */
+  touring: boolean;
 };
 
 /**
@@ -301,26 +314,45 @@ export type PressFacts = {
  *   1. A widget claims the press outright - but not while space is held or on a
  *      middle button, both of which mean pan from anywhere, including from over
  *      a scrubber.
- *   2. Space or the middle button, therefore, is a pan.
- *   3. A grip is a resize *candidate*, and only with one card picked or none:
+ *   2. While a tour is running, every other press is nothing: the board is being
+ *      read rather than worked on, so nothing on it moves, resizes or is picked
+ *      up, and the view is the tour's. Above the space-and-middle pan as well as
+ *      the card branches, because a held space is a way of driving the board and
+ *      not an exception to it. Below the widget branch, because a video somebody
+ *      is showing is part of the showing.
+ *   3. Space or the middle button, otherwise, is a pan.
+ *   4. A grip is a resize *candidate*, and only with one card picked or none:
  *      resize drives one item off one corner and there is no defined answer for
  *      what a corner drag means across a selection. With more than one it falls
  *      through and picks the selection up like any other press on a card. A
  *      locked card has no grips to press either, and neither has a pinned
  *      sticky: its size is the card it is fixed to, and a press on it takes
  *      hold of that card.
- *   4. The second tap of a double tap on empty board is a marquee candidate.
- *   5. An unpicked card under a finger - or under anything at all on Mobile - is
+ *   5. The second tap of a double tap on empty board is a marquee candidate.
+ *   6. An unpicked card under a finger - or under anything at all on Mobile - is
  *      the two-step gate. A mouse on the Desktop board has no such tension: a
  *      left press on a card is a grab, and waiting for select-then-drag felt
  *      broken, so it falls through to the move below.
- *   6. Any other press on a card moves it, or pans if it is locked.
- *   7. A modified press on bare board bands.
- *   8. An unmodified one clears, points at a line, and pans.
+ *   7. Any other press on a card moves it, or pans if it is locked.
+ *   8. A modified press on bare board bands.
+ *   9. An unmodified one clears, points at a line, and pans.
  */
 export function pressIntent(f: PressFacts): PressIntent {
   const middle = f.button === 1;
   if (f.onWidget && !f.spaceDown && !middle) return { kind: 'widget' };
+  // While a tour runs the board is frozen: a press takes hold of nothing and
+  // drives nothing. Above the grip branch as well as the move one, so a card
+  // that was selected when the tour started cannot be resized by its corners
+  // either - and above the space-and-middle pan, because the stops are framed
+  // shots and a viewer who has panned off one is looking at a tour that has
+  // lost its place with no way back to it but the next stop. A presentation
+  // somebody nudges a photograph out of is a presentation with a mistake saved
+  // into it; a presentation somebody drags the board out from under is one
+  // nobody can follow.
+  //
+  // It used to be a lockedPan, which was the smaller change and the wrong one:
+  // it said cards may not move, and left the view to whoever pressed hardest.
+  if (f.touring) return { kind: 'frozen' };
   if (f.spaceDown || middle) return { kind: 'pan', middle };
   if (f.onGrip && f.onCard && f.selectionSize <= 1 && !f.locked && !f.pinned) {
     return { kind: 'resize', id: f.onCard };
@@ -1239,6 +1271,13 @@ type InputCommands = {
   // whether it took the press. See the Escape and arrow cases below.
   tourStop?(): boolean,
   tourStep?(delta: number): boolean,
+  // And the mode that *builds* a tour, which Escape ends in the same shape and
+  // one layer in from a running one.
+  tourEditStop?(): boolean,
+  // And whether one is running, which the *pointer* half needs rather than the
+  // keys: a click on bare board means the next stop while a tour is up and
+  // means deselect the rest of the time - see tourClick.
+  inTour?(): boolean,
 };
 
 export function initInput(vp: Viewport, cmds: InputCommands): void {
@@ -1347,6 +1386,25 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   // still lands with nothing selected. Only the moment moves, from the press to
   // the lift.
   let clearOnLift: number | null = null;
+  /**
+   * A press that may still turn out to be the click that walks a tour on.
+   *
+   * While a tour is running, a click on anything that is not a card means "next
+   * stop" - the same click a slide deck answers, and the reason the tour needs
+   * no chrome beyond its bar. On a card it means nothing at all: the card is
+   * what is being shown, and a press on the thing you are pointing at should
+   * not skip past it.
+   *
+   * Recorded on the press and spent on the lift rather than answered on the
+   * press, because a press on bare board is also how the board is panned, and a
+   * tour that jumped a stop every time somebody dragged the view an inch would
+   * be unusable. TAP_MOVE_SLOP is the same threshold the touch records above use
+   * for the same question, so "a click" means one thing in this file.
+   *
+   * Not a gesture and not a mode - it coexists with the pan the press started,
+   * exactly as `taps.arm` coexists with one. The pipeline is untouched.
+   */
+  let tourClick: { pointerId: number, x: number, y: number } | null = null;
   // The presses that may still turn out to be taps, and the taps just past.
   //
   // None of these is a mode: every one of them coexists with a live gesture -
@@ -1475,7 +1533,11 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   ) => resizeAxisOn(sign, centre, extent, travel, snap, stepNow(), insetFor(snap));
 
   function setPanCursor() {
-    el.classList.toggle('can-pan', spaceDown && gesture.mode === 'idle');
+    // Not while a tour runs: space is held down and nothing pans, and an open
+    // hand promising a drag that will not happen is worse than no cursor at all.
+    el.classList.toggle(
+      'can-pan', spaceDown && gesture.mode === 'idle' && !cmds.inTour?.(),
+    );
   }
 
   function startPan(e: PointerEvent) {
@@ -1891,6 +1953,17 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     vp.stopAnim();
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
+    // Two fingers during a tour are not a pinch, for the reason pressIntent()
+    // gives one branch down: while the board is being read the view is the
+    // tour's, and a pinch is the one gesture that drives it without a press
+    // intent to refuse. Captured and returned exactly as a third finger is, so
+    // that this pointer can still be taken back out of `pointers` on its lift -
+    // see the leak the capture below was added for.
+    if (pointers.size >= 2 && cmds.inTour?.()) {
+      capturePointerSafely(el, e.pointerId);
+      return;
+    }
+
     // A second finger always converts the gesture into a pinch - by dropping
     // whatever was standing (abortGesture, which lands in idle) and entering the
     // pinch from there, never by converting one live gesture into another. That
@@ -2031,6 +2104,15 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         ? { pointerId: e.pointerId, x: e.clientX, y: e.clientY }
         : null;
     }
+    // The click that walks a running tour on - see tourClick. The primary
+    // button only: the secondary one opens the tour's own menu (ui/menu.ts) and
+    // the middle one is a paste, and neither is somebody asking for the next
+    // stop. Every pointer type, because a tour shown on a tablet is still a
+    // tour; on touch this is the same tap that would have cleared the selection,
+    // and during a tour there is nothing selected to clear.
+    tourClick = cmds.inTour?.() && e.button === 0 && !id && !widget
+      ? { pointerId: e.pointerId, x: e.clientX, y: e.clientY }
+      : null;
 
     // What this press is, decided in one place off facts a test can state - see
     // pressIntent() above. Everything below performs the answer; nothing below
@@ -2062,6 +2144,9 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       selectionSize: selection.size,
       doubleTapDrag,
       isMobile: vp.isMobile,
+      // The same question tourClick asks two blocks up, at the same moment and
+      // through the same door - one press, one answer about what is running.
+      touring: !!cmds.inTour?.(),
     });
 
     // Every press that takes hold of a card, said once here rather than in each
@@ -2095,7 +2180,16 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // the one branch below that disagrees says so itself, by marking one again.
     cmds.clearActiveConnection?.();
 
-    if (intent.kind === 'pan') {
+    if (intent.kind === 'frozen') {
+      // A tour is running and this press does nothing - see pressIntent(). Not
+      // an early return: the pointer is captured above so that the lift reaches
+      // this module (that lift is what walks the tour on - see tourClick), and
+      // the long-press arming at the foot of the function is how a finger opens
+      // the tour's own menu. preventDefault stops the browser filling the gap
+      // with a text selection or an image drag, which is all a frozen press
+      // could otherwise turn into.
+      e.preventDefault();
+    } else if (intent.kind === 'pan') {
       if (intent.middle) {
         midPaste.down = true;
         midPaste.dragged = false;
@@ -2268,6 +2362,12 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         && Math.hypot(e.clientX - taps.empty.x, e.clientY - taps.empty.y) > TAP_MOVE_SLOP) {
       taps.empty = null;
       taps.lastEmpty = null;
+    }
+    // And the same slop again for the tour's click: a pointer that has gone
+    // this far was moving the board, not asking for the next stop.
+    if (tourClick?.pointerId === e.pointerId
+        && Math.hypot(e.clientX - tourClick.x, e.clientY - tourClick.y) > TAP_MOVE_SLOP) {
+      tourClick = null;
     }
     // The same slop, for the same reason: a finger that has travelled this far
     // was panning, and a pan must not leave a selection behind it.
@@ -2610,6 +2710,19 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       if (e.type === 'pointerup') pauseOnTap(taps.card.id);
       taps.card = null;
     }
+    // The click that walks the tour on - see tourClick. pointerup only, unlike
+    // the deselect below it: a pointercancel is the system taking the gesture
+    // away, and a tour that stepped because a notification arrived would be
+    // moving on nobody's instruction. Cleared either way, so a cancelled press
+    // cannot be spent by the next lift.
+    if (tourClick?.pointerId === e.pointerId) {
+      tourClick = null;
+      // Answered through the same door Escape and the arrows use, which returns
+      // whether it took the press. Nothing is done with the answer here: this
+      // press was a click on bare board during a tour, and if the tour ended
+      // underneath it there is nothing else it could have meant either.
+      if (e.type === 'pointerup') cmds.tourStep?.(1);
+    }
     // The deselect a touch press on bare board put off - see clearOnLift. Spent
     // whichever way the press ended, cancel included: the press was still a
     // hand put on empty board, and the only thing that ever calls it off is the
@@ -2853,6 +2966,10 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       : null;
     if (over) return;
     e.preventDefault();
+    // The wheel's half of the tour freeze - see pressIntent(). After
+    // preventDefault and not before it: returning bare would hand the notch
+    // back to the page and scroll the document behind the board.
+    if (cmds.inTour?.()) return;
     const w = readWheel(e, vp.height);
     // Mobile is a fixed-width feed with one navigable axis, so everything that
     // arrives moves the feed along it - a sideways swipe and a Shift+wheel
@@ -3013,6 +3130,11 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         // in this app, and while the bar is up the tour is the outermost of them.
         // It answers false when there is none, so the ordinary three still run.
         if (cmds.tourStop?.()) break;
+        // Then the mode that builds one, which hides the same chrome and is the
+        // next temporary state in. Above the pick mode below it because it is
+        // the outer of the two: the marks on the cards are what Escape is most
+        // likely being pressed at.
+        if (cmds.tourEditStop?.()) break;
         // And the pick mode next, for the same reason and with the same shape:
         // it is a temporary state, so Escape ends it - and only it, keeping the
         // group the mode was for. A second Escape then clears that group, which

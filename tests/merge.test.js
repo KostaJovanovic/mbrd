@@ -22,6 +22,17 @@ const incoming = (items, extra = {}) => ({
   ...extra,
 });
 
+/**
+ * A tour written the short way in a fixture: one stop per card.
+ *
+ * planMerge() is handed a board that has already been through
+ * normalizeBoard(), so what reaches it is the stop shape - `{ cards }` per stop
+ * - rather than the flat id list files may still carry. Nothing about the merge
+ * is about the grouping, so every fixture here is one card per stop and this is
+ * what says so once instead of at eight call sites.
+ */
+const tourOf = (...ids) => ids.map(id => ({ cards: [id] }));
+
 /** A host card at a known spot, so placement can be asserted against it. */
 const host = (id, x = 0, y = 0) => makeItem({ id, type: 'note', x, y, w: 100, h: 100 });
 
@@ -36,7 +47,7 @@ test('a colliding id is renamed, and every reference to it follows', () => {
       { id: 'photo', type: 'image', w: 200, h: 200 },
       { id: 'note', type: 'note', meta: { stuckTo: 'photo' } },
     ],
-    { connections: [['photo', 'note']], tour: ['photo'], audioOrder: ['photo'] },
+    { connections: [['photo', 'note']], tour: tourOf('photo'), audioOrder: ['photo'] },
   ), ['photo']);
 
   const [photo, note] = plan.items;
@@ -46,7 +57,7 @@ test('a colliding id is renamed, and every reference to it follows', () => {
   // that now belongs to a card on the host board.
   assert.equal(note.meta.stuckTo, photo.id);
   assert.deepEqual(plan.connections, [[photo.id, note.id]]);
-  assert.deepEqual(plan.tour, [photo.id]);
+  assert.deepEqual(plan.tour, [{ cards: [photo.id] }]);
   assert.deepEqual(plan.audioOrder, [photo.id]);
 });
 
@@ -67,7 +78,7 @@ test('a reference to something the file does not carry is dropped, not kept', ()
   // the measurement, which is what sticky.ts already does for a loose note.
   const plan = planMerge(incoming(
     [{ id: 'note', type: 'note', meta: { stuckTo: 'someone-elses-card' } }],
-    { connections: [['note', 'someone-elses-card']], tour: ['someone-elses-card'] },
+    { connections: [['note', 'someone-elses-card']], tour: tourOf('someone-elses-card') },
   ), ['someone-elses-card']);
 
   assert.equal('stuckTo' in plan.items[0].meta, false, 'the dangling pin is dropped');
@@ -167,7 +178,7 @@ test('a dangling fence, connection, tour stop and track are dropped the same way
       { id: 'a', type: 'image', w: 200, h: 200 },
       { id: 'note', type: 'note', meta: { fence: 'a~2' } },
     ],
-    { connections: [['a~2', 'note']], tour: ['a~2'], audioOrder: ['a~2'] },
+    { connections: [['a~2', 'note']], tour: tourOf('a~2'), audioOrder: ['a~2'] },
   ), ['a']);
 
   const note = plan.items.find(i => i.id === 'note');

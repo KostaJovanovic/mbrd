@@ -93,6 +93,7 @@ import { initDarkroom } from './ui/darkroom.ts';
 import { initInventory } from './ui/inventory.ts';
 import { initPlaylist } from './ui/playlist.ts';
 import { initTour } from './ui/tour.ts';
+import { initTourEdit } from './ui/tour-edit.ts';
 
 import { createCommands } from './commands.ts';
 import { createViewPerf, initPerfHash } from './perf/view-perf.ts';
@@ -357,6 +358,11 @@ initInventory(vp);
 // initInput, so the arrow and Escape keys have a runner to ask by the time the
 // handler can fire.
 initTour(vp);
+// And the panel that builds one. Takes nothing at all: the list it draws is
+// board.tour, the mode it holds is its own, and the element it fills is the
+// slot the settings schema asks for - so it has to run after buildPanel(),
+// which is where that slot comes into the document.
+initTourEdit();
 initInput(vp, cmds);
 initMenu(vp, cmds);
 // The offer that follows a rubber band. Takes the viewport and not cmds: the

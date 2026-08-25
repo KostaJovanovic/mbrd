@@ -463,17 +463,27 @@ test('a binned card keeps its place in the tour and in the playlist', () => {
   setTour([a.id, b.id, c.id]);                // any later edit
   setAudioOrder([a.id, b.id, c.id]);
 
-  assert.ok(board.tour.includes(b.id), 'the binned card lost its stop');
+  assert.ok(tourCards(board.tour).includes(b.id), 'the binned card lost its stop');
   assert.ok(board.audioOrder.includes(b.id), 'the binned card lost its place in the playlist');
 
   // And the file carries it, which is what makes restoring work.
   const saved = serializeBoard();
-  assert.ok(saved.tour.includes(b.id));
+  assert.ok(tourCards(saved.tour).includes(b.id));
   assert.ok(saved.audioOrder.includes(b.id));
 });
+
+/**
+ * Every card the tour names, whichever stop it is at.
+ *
+ * A stop holds a group now - see normalizeTour() in board-model.ts - so the
+ * questions this file asks about the tour ("did the binned card keep its
+ * place") are one level in from where they used to be. Flattened rather than
+ * asserted stop by stop, because none of these tests is about the grouping.
+ */
+const tourCards = tour => tour.flatMap(stop => stop.cards);
 
 test('an id that is on neither the board nor the bin is still pruned', () => {
   const [a] = addItems([photo({ id: 'a' })]);
   setTour([a.id, 'never-existed']);
-  assert.deepEqual(board.tour, [a.id]);
+  assert.deepEqual(board.tour, [{ cards: [a.id] }]);
 });
