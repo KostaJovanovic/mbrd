@@ -16,6 +16,7 @@ import {
 } from '../storage/storage.ts';
 import { toast } from '../notify.ts';
 import { ask } from './dialog.ts';
+import { icon } from './menu.ts';
 import type { LibraryEntry } from '../storage/library.ts';
 
 /** A shelf row as the switcher sees it - the index entry, plus "is this the one on screen". */
@@ -153,11 +154,17 @@ async function render() {
     await newBoard();
     closeLibrary();
   }));
+  // The app's own cross, from the sprite, rather than the `×` character this
+  // used to set in 22px type. It was the only close in the app not drawn from
+  // icons.svg, so it was the only one whose weight and proportion came from
+  // whatever face the reader happens to have - and the only one a palette or a
+  // whimsy tier could not reach. See research/design-audit-2026-08-25.md, B1.
   const shut = document.createElement('button');
   shut.type = 'button';
   shut.className = 'library-close';
-  shut.setAttribute('aria-label', 'Close');
-  shut.textContent = '×';
+  shut.setAttribute('aria-label', 'Close the board list');
+  shut.title = 'Close the board list';
+  shut.append(icon('i-close'));
   shut.addEventListener('click', closeLibrary);
   head.append(title, spacer, fresh, shut);
 
@@ -209,7 +216,11 @@ function card(b: ShelfEntry) {
     del.type = 'button';
     del.className = 'library-del';
     del.setAttribute('aria-label', 'Delete this board');
-    del.textContent = '×';
+    del.title = 'Delete this board';
+    // The sprite's cross, like the close beside it and every other cross in the
+    // app. It set the `×` character, which is a different shape at a different
+    // weight in whatever face the reader has.
+    del.append(icon('i-close'));
     // Asked for, because there is nothing behind it. The bin covers items, not
     // boards: deleteLibraryBoard() drops the packed blob and its index row, and
     // there is no undo, no restore and no second copy. This is a 22px glyph in

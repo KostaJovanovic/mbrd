@@ -300,10 +300,12 @@
               border-color var(--dur-fast) var(--ease),
               transform var(--dur-base) var(--ease-back);
 }
-.paper-grip:hover {
-  background: var(--accent);
-  border-color: var(--accent-deep);
-  transform: scale(1.25);
+@media (hover: hover) {
+  .paper-grip:hover {
+    background: var(--accent);
+    border-color: var(--accent-deep);
+    transform: scale(1.25);
+  }
 }
 /* Placed by their own corner so the margin above centres each one on the edge
    it belongs to, rather than hanging off it. */
@@ -728,8 +730,12 @@
   top: 50%;
   left: 100%;
   margin-left: calc(10px * var(--iz, 1));
-  width: calc(30px * var(--iz, 1));
-  height: calc(30px * var(--iz, 1));
+  /* --icon-button, like the tour mark on the other corner of the same card and
+     like every small icon button in the app. It was a flat 30 and the mark was a
+     flat 22, which put two sizes of on-card control on one board with nothing
+     choosing between them. */
+  width: calc(var(--icon-button) * var(--iz, 1));
+  height: calc(var(--icon-button) * var(--iz, 1));
   display: grid;
   place-items: center;
   padding: 0;
@@ -750,10 +756,13 @@
   transition: opacity var(--dur-fast) var(--ease);
 }
 /* Straddle the card's mid-line: the pen sits half a button-and-gap above it, the
-   T the same below, so the pair is centred on the card's right edge. */
-.item-pen { transform: translateY(calc(-50% - 18px * var(--iz, 1))); }
+   T the same below, so the pair is centred on the card's right edge. Written as
+   the arithmetic it is - half the button plus half the 6px gap - rather than as
+   the 18 that arithmetic came to when the button was 30, so the pair stays
+   centred and stays 6 apart if the token ever moves again. */
+.item-pen { transform: translateY(calc(-50% - (var(--icon-button) + 6px) / 2 * var(--iz, 1))); }
 .item-rename {
-  transform: translateY(calc(-50% + 18px * var(--iz, 1)));
+  transform: translateY(calc(-50% + (var(--icon-button) + 6px) / 2 * var(--iz, 1)));
   font-family: var(--font-display);
   font-weight: 700;
   font-size: calc(16px * var(--iz, 1));
@@ -820,9 +829,13 @@
 }
 .item[data-type="title"]:hover::after,
 .item[data-type="title"].is-selected::after { pointer-events: auto; }
-.item-pen:hover,
-.item-rename:hover { background: var(--paper-2); color: var(--accent-deep); border-color: var(--accent-text); }
-.item-pen svg { width: calc(16px * var(--iz, 1)); height: calc(16px * var(--iz, 1)); }
+@media (hover: hover) {
+  .item-pen:hover,
+  .item-rename:hover { background: var(--paper-2); color: var(--accent-deep); border-color: var(--accent-text); }
+}
+.item-pen:focus-visible,
+.item-rename:focus-visible { background: var(--paper-2); color: var(--accent-deep); border-color: var(--accent-text); }
+.item-pen svg { width: calc(var(--icon-glyph) * var(--iz, 1)); height: calc(var(--icon-glyph) * var(--iz, 1)); }
 /* Gone once the card is too small to aim at, the same rung the grips vanish on. */
 #world.zoom-tiny .item-pen,
 #world.zoom-tiny .item-rename { display: none; }

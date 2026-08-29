@@ -159,7 +159,7 @@
 <link rel="stylesheet" href="assets/css/item-chrome.css">
 <link rel="stylesheet" href="assets/css/sidebar.css">
 <link rel="stylesheet" href="assets/css/chrome.css">
-<link rel="stylesheet" href="assets/css/trash.css">
+<link rel="stylesheet" href="assets/css/drawer.css">
 <link rel="stylesheet" href="assets/css/menu.css">
 <link rel="stylesheet" href="assets/css/library.css">
 <link rel="stylesheet" href="assets/css/status.css">
@@ -468,7 +468,12 @@
       <h1>mbrd.<span class="vh"> An infinite freeform moodboard in your browser.</span></h1>
       <span class="sub">Plan it, see it. Sorted.</span>
     </div>
-    <button id="side-close" type="button" aria-label="Close menu" title="Close">
+    <!-- Both channels say the same thing, and the specific thing. The tooltip
+         used to read "Close" while the aria-label read "Close menu", which had
+         it exactly backwards: the tooltip is what somebody hesitating over the
+         button reads, and it was the one saying nothing. Every other close in
+         the app names what it closes - "Close the timeline", "End the tour". -->
+    <button id="side-close" type="button" aria-label="Close the menu" title="Close the menu">
       <!-- Two crossed strokes rather than a "times" glyph: a character's ink is
            not centred in its line box, so the glyph orbits when it spins. The
            strokes are in assets/icons.svg, along with every other icon here. -->
@@ -528,7 +533,7 @@
     <div class="wordmark">
       <h2>Header</h2>
     </div>
-    <button id="header-close" type="button" aria-label="Close header options" title="Close">
+    <button id="header-close" type="button" aria-label="Close header options" title="Close header options">
       <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-close"/></svg>
     </button>
   </header>
@@ -623,37 +628,19 @@
   <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-find"/></svg>
 </button>
 
-<!-- The bin. Opposite corner to the zoom controls, and deliberately the same
-     kind of object: a small permanent affordance on the glass rather than
-     something buried in the panel. Its list is built by ui/trash.js. -->
-<div id="bin">
-  <!-- The pop-up and, beside it, the title card's restore button. The button
-       rides the panel rather than the dock below: it belongs to "what did I
-       throw away", which is what the open panel is, so it sits next to the
-       pop-up and not next to the trash button that opens it. -->
-  <div class="bin-pop">
-    <div id="bin-panel" hidden role="dialog" aria-label="Trash">
-      <header>
-        <h2>Trash</h2>
-        <button type="button" id="bin-empty" title="Throw it all out — the files go for good">Empty</button>
-      </header>
-      <div id="bin-list"></div>
-      <p id="bin-none">Nothing thrown away yet.</p>
-      <p id="bin-hint">Drag anything back onto the board.</p>
-    </div>
-    <!-- The Desktop title card, when it has been thrown away, is not filed in the
-         bin among ordinary items - it is a singleton the board is meant to have.
-         So it gets its own way back: this small square appears beside the open
-         pop-up while the card is gone, and one press restores it. Hidden to start
-         and toggled by ui/trash.js. -->
-    <button type="button" id="title-restore" hidden
-            aria-label="Bring back the title card" title="Bring back the title card">
-      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-title"/></svg>
-    </button>
-  </div>
+<!-- The drawer's dock. Opposite corner to the zoom controls, and deliberately
+     the same kind of object: a small permanent affordance on the glass rather
+     than something buried in the panel.
+
+     The drawer itself is not here. It is a floating window built by
+     ui/drawer.js when it is opened - draggable and resizable like the sticker
+     pad, because it is a window you unpack a card at a time and a panel welded
+     over this corner is in the way exactly when it is being used. What stays in
+     the markup is the button that opens it, which is permanent. -->
+<div id="drawer-dock">
   <!-- The autosave, saying so. Absolutely placed rather than stacked in the
        column, because it comes and goes: a slot held open for it would be a
-       permanent gap above the bin for the sake of something visible two seconds
+       permanent gap above the dock for the sake of something visible two seconds
        in every minute. aria-hidden because this is a reassurance and not an
        announcement - a screen reader hearing "Saved" every few seconds while
        you work is the same information turned into an interruption. The
@@ -662,18 +649,19 @@
     <svg class="ico"><use href="assets/icons.svg#i-check"/></svg>
     <span>Saved</span>
   </div>
-  <!-- One row along the bottom of the corner. The bin keeps the corner itself,
-       because that is where it has always been and where the panel above it is
-       anchored; undo and redo are added to its right rather than around it. -->
-  <div class="bin-row">
+  <!-- One row along the bottom of the corner. The drawer button keeps the corner
+       itself, because that is where it has always been and where the window
+       opens from; undo and redo are added to its right rather than around it. -->
+  <div class="drawer-row">
     <!-- Named as empty here because that is what it is before any board has
-         loaded, and it matches the muted look the button starts in; ui/trash.js
-         rewrites both the label and the tooltip every time the bin changes. -->
-    <button type="button" id="bin-btn" aria-label="Trash, empty" aria-expanded="false" aria-controls="bin-panel" title="Trash, empty">
-      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-delete"/></svg>
+         loaded, and it matches the muted look the button starts in; ui/drawer.js
+         rewrites both the label and the tooltip every time the drawer changes.
+         With a selection the same button is Delete - see initDrawer(). -->
+    <button type="button" id="drawer-btn" aria-label="Drawer, nothing in it" aria-expanded="false" aria-controls="drawer-window" title="Drawer, nothing in it">
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-drawer"/></svg>
     </button>
-    <!-- Undo and redo. Beside the bin because they belong to the same thought -
-         the bin is the one mistake you can walk back by hand, and these are
+    <!-- Undo and redo. Beside the drawer because they belong to the same thought
+         - the drawer is the one mistake you can walk back by hand, and these are
          every other one - and a segmented pair like the zoom cluster opposite,
          because that is what this app's furniture looks like.
 
@@ -760,8 +748,8 @@
 
      Top-centre on a desktop. Both side edges are spoken for - the panel opens
      left and the masthead's opens right, and both already shove #nowplaying
-     out of the way when they do - and the whole bottom edge is the bin and the
-     history pair at one end, the zoom cluster and the readout at the other,
+     out of the way when they do - and the whole bottom edge is the drawer and
+     the history pair at one end, the zoom cluster and the readout at the other,
      and the player in between. The top edge is the only clear one.
 
      On a phone it collapses to #toolbar-toggle, sitting in the bottom row
@@ -885,7 +873,7 @@
      sentences, a column instead of a scale.
 
      hidden to start, and stays hidden until asked for. The bottom edge already
-     carries the bin, the zoom cluster and the player, and a fourth permanent
+     carries the drawer, the zoom cluster and the player, and a fourth permanent
      tenant there would be the app talking about itself while somebody is
      working. -->
 <div id="timeline-strip" hidden aria-label="Timeline">
@@ -925,7 +913,7 @@
      volume is not one of those - it is a property of the room rather than of the
      list, and it belongs where the sound is stopped.
 
-     Along the foot between the bin and the zoom cluster, which is where a
+     Along the foot between the drawer and the zoom cluster, which is where a
      transport has lived on every player anybody has used. On a phone that edge
      belongs to the add bar, so the CSS lifts this above it rather than moving
      it - the two are never the same piece of screen.
@@ -1137,7 +1125,7 @@
       <h2 id="viewer-title"></h2>
       <p id="viewer-meta"></p>
     </div>
-    <button type="button" id="viewer-close" aria-label="Close">
+    <button type="button" id="viewer-close" aria-label="Close this view" title="Close this view  Esc">
       <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-close"/></svg>
     </button>
   </header>
@@ -1169,7 +1157,7 @@
 <dialog id="darkroom" aria-labelledby="darkroom-title">
   <header id="darkroom-head">
     <h2 id="darkroom-title">Edit picture</h2>
-    <button type="button" id="darkroom-close" aria-label="Close">
+    <button type="button" id="darkroom-close" aria-label="Close the picture editor" title="Close the picture editor  Esc">
       <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-close"/></svg>
     </button>
   </header>

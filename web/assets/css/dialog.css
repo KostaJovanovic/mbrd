@@ -143,11 +143,15 @@
               transform var(--dur-base) var(--ease-back),
               color var(--dur-fast) var(--ease);
 }
-.ask-row button:hover {
-  background: var(--paper-2);
-  border-color: var(--accent-text);
-  color: var(--accent-deep);
-  transform: translateY(var(--btn-lift)) scale(var(--btn-grow));
+/* Guarded: this one lifts as well as washing, so on a touch screen the answer
+   somebody tapped stayed raised off the panel until the dialog closed over it. */
+@media (hover: hover) {
+  .ask-row button:hover {
+    background: var(--paper-2);
+    border-color: var(--accent-text);
+    color: var(--accent-deep);
+    transform: translateY(var(--btn-lift)) scale(var(--btn-grow));
+  }
 }
 .ask-row button:active { transform: scale(var(--btn-press)); background: var(--paper-3); }
 /* The dialog opens with a button already focused, so whatever ring this is
@@ -165,10 +169,12 @@
 /* The irreversible one is the only thing in the panel wearing the danger
    colour, and it is not the one that has focus when the dialog opens. */
 .ask-row button.danger { border-color: var(--danger); color: var(--danger); }
-.ask-row button.danger:hover {
-  background: var(--danger);
-  border-color: var(--danger);
-  color: var(--paper-card);
+@media (hover: hover) {
+  .ask-row button.danger:hover {
+    background: var(--danger);
+    border-color: var(--danger);
+    color: var(--paper-card);
+  }
 }
 @keyframes ask-in { from { opacity: 0; transform: translateY(8px) scale(0.97); } }
 
@@ -381,7 +387,9 @@
   text-decoration: none;
   transition: color var(--dur-fast) var(--ease);
 }
-.credit-name:hover { color: var(--accent-text); text-decoration: underline; }
+@media (hover: hover) {
+  .credit-name:hover { color: var(--accent-text); text-decoration: underline; }
+}
 .credit-name:focus { outline: none; }
 .credit-name:focus-visible {
   outline: var(--sel-line) solid var(--select);
@@ -446,7 +454,9 @@
               background var(--dur-fast) var(--ease);
 }
 .credits-more > summary::-webkit-details-marker { display: none; }
-.credits-more > summary:hover { color: var(--ink); background: var(--paper-2); }
+@media (hover: hover) {
+  .credits-more > summary:hover { color: var(--ink); background: var(--paper-2); }
+}
 .credits-more > summary:focus { outline: none; }
 .credits-more > summary:focus-visible {
   outline: var(--sel-line) solid var(--select);
@@ -501,7 +511,9 @@
   text-decoration: none;
   transition: color var(--dur-fast) var(--ease);
 }
-.credits-deps a:hover { color: var(--accent-text); text-decoration: underline; }
+@media (hover: hover) {
+  .credits-deps a:hover { color: var(--accent-text); text-decoration: underline; }
+}
 .credits-deps a:focus { outline: none; }
 .credits-deps a:focus-visible {
   outline: var(--sel-line) solid var(--select);
@@ -579,15 +591,24 @@
   flex: none;
   display: grid;
   place-items: center;
-  width: calc(30px * var(--density));
-  height: calc(30px * var(--density));
+  /* The one close that scales with the reading size, and it keeps doing so: a
+     dialog grows with --density the way .ask-row's buttons do, where a bar
+     pinned to the glass does not. The 30 it multiplied was its own number
+     though, and is --icon-button now like every other one. */
+  width: calc(var(--icon-button) * var(--density));
+  height: calc(var(--icon-button) * var(--density));
   color: var(--ink-2);
   border: none;
   border-radius: var(--leaf);
   background: none;
   cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
-#darkroom-close:hover { color: var(--accent-text); background: var(--paper-2); }
+@media (hover: hover) {
+  #darkroom-close:hover { color: var(--accent-deep); background: var(--paper-2); }
+}
+#darkroom-close:active { background: var(--paper-3); }
+#darkroom-close:focus-visible { color: var(--accent-deep); background: var(--paper-2); }
 
 /* The stage centres the plate; the plate *is* the picture. Nothing may size the
    plate independently - the frame inside it is positioned in percentages, and a
@@ -795,7 +816,13 @@
   cursor: pointer;
   transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
 }
-.dk-tool:hover { color: var(--ink); background: var(--paper-2); }
+/* Guarded: the darkroom's tool rail stays on screen after the tap, so an
+   unguarded hover left the last tool touched looking as selected as the one
+   that actually is - on a rail whose whole job is saying which is which. */
+@media (hover: hover) {
+  .dk-tool:hover { color: var(--ink); background: var(--paper-2); }
+}
+.dk-tool:active { background: var(--paper-3); }
 .dk-tool[aria-pressed="true"] {
   color: var(--accent-text);
   border-color: color-mix(in srgb, var(--accent-text) 40%, transparent);
@@ -903,7 +930,9 @@
   text-align: left;
 }
 button.inv-line { cursor: pointer; transition: background var(--dur-fast) var(--ease); }
-button.inv-line:hover { background: var(--paper-2); }
+@media (hover: hover) {
+  button.inv-line:hover { background: var(--paper-2); }
+}
 button.inv-line:focus { outline: none; }
 button.inv-line:focus-visible {
   outline: var(--sel-line) solid var(--select);

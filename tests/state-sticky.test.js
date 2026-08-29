@@ -11,7 +11,7 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  loadBoard, serializeBoard, addItems, removeItems, byId, select,
+  loadBoard, serializeBoard, addItems, removeItems, restoreItems, byId, select,
   stuckTo, stuckFollowers, stuckPlacement, restick, STICK_MIN, snapshotGeom,
   applyGeom, commitGeom, setBoardMode, raiseSelection, lowerSelection,
   visualStackOrder, selectionHasStackOverlap, wouldStick, board, ensureTitleCard,
@@ -361,12 +361,21 @@ test('a note stuck to nothing stays stuck to nothing until it is moved', () => {
 test('a host that leaves the board lets its note find another', () => {
   // Not "the note moved", but the alternative is a note that can never stick to
   // anything again until somebody happens to drag it.
+  //
+  // The route matters and is the one that still exists. A delete takes the note
+  // with the card now (riderCascade, trash.ts), so it is not the way to strand
+  // one - restoring the note *alone* out of the drawer is: it comes back exactly
+  // where it was, its memo still names the photograph it was on, and that
+  // photograph is still in the drawer.
   fresh();
   const [big] = addItems([photo({ x: 0, y: 0, w: 400, h: 400 })]);
   const [small] = addItems([photo({ x: 0, y: 0, w: 300, h: 300 })]);
   const [n] = addItems([note({ x: 0, y: 0, w: 80, h: 80 })]);
   assert.equal(stuckTo(byId(n.id))?.id, small.id);
+
   removeItems([small.id]);
+  restoreItems([n.id]);
+  assert.equal(byId(small.id), undefined, 'the remembered host is still in the drawer');
   assert.equal(stuckTo(byId(n.id))?.id, big.id);
 });
 

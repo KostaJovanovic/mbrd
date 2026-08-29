@@ -30,7 +30,7 @@
    --------------------------------------------------------- */
 #search {
   position: fixed;
-  z-index: 70;               /* over the context menu, which it can be opened from */
+  z-index: var(--z-search);  /* over the context menu, which it can be opened from */
   top: 12vh;
   left: 50%;
   translate: -50% 0;
@@ -126,7 +126,14 @@
    moving it - the pointer is usually resting wherever it was left, and letting
    that win would drag the selection back every time the list reflowed. */
 .search-hit.is-at { background: var(--paper-2); }
-.search-hit:hover { background: var(--paper-3); }
+/* The one hover in the app that is deliberately at the press step, and the line
+   above is why: the keyboard's highlight already owns --paper-2 here, so a hover
+   drawn in it would be indistinguishable from "this is the one Enter takes".
+   Two states, two washes, and the pointer gets the louder one because it is the
+   transient of the two. */
+@media (hover: hover) {
+  .search-hit:hover { background: var(--paper-3); }
+}
 .search-hit:focus-visible { outline: var(--sel-line) solid var(--select); outline-offset: -2px; }
 
 .search-note {
@@ -145,7 +152,7 @@
    openChild in ui/menu.ts. */
 #ctx-menu, #ctx-child {
   position: fixed;
-  z-index: 60;
+  z-index: var(--z-menu);
   min-width: 208px;
   /* The 8px the placement keeps at each edge (ui/menu.js). A picture card's
      menu is a dozen entries, which is taller than a phone held sideways - so
@@ -323,7 +330,7 @@
      for ever afterwards, so it sits in a register below the smallest step the
      scale offers. The other members of that register are the other kbd rule
      (sidebar.css), the menu's own hint column below, .wordmark .sub and
-     .bin-when - all 10px, all captions on something else rather than content.
+     .drawer-when - all 10px, all captions on something else rather than content.
      A sixth --t- step for them would be a scale step nothing composes with.
      (Sorted deliberately-off-scale by research/old/visual-audit-2026-08-12.md
      item 2.) */
@@ -474,7 +481,7 @@
    two cannot both be up, and a right-click while the offer stands closes it. */
 #fence-prompt {
   position: fixed;
-  z-index: 61;
+  z-index: calc(var(--z-menu) + 1);
   padding: 4px;
   border: var(--hairline) solid var(--rule-2);
   border-radius: var(--radius);
@@ -501,7 +508,7 @@
    thing just opened is the thing being used. */
 #conn-chip {
   position: fixed;
-  z-index: 59;
+  z-index: calc(var(--z-menu) - 1);
   display: flex;
   align-items: stretch;
   padding: 2px;
@@ -517,8 +524,11 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 28px;
+  /* Square, and the app's one icon-button square. It was 30 x 28 - the only
+     non-square icon button in the codebase, and 30 read as a measurement
+     somebody took rather than a size somebody chose. */
+  width: var(--icon-button);
+  height: var(--icon-button);
   padding: 0;
   border: 0;
   border-radius: max(0px, calc(var(--radius-sm) - 2px));
@@ -534,18 +544,26 @@
   border-radius: 0 max(0px, calc(var(--radius-sm) - 2px))
                    max(0px, calc(var(--radius-sm) - 2px)) 0;
 }
-#conn-chip button:hover,
 #conn-chip button:focus-visible { background: var(--paper-2); color: var(--accent-deep); }
-#conn-chip button.is-danger:hover,
 #conn-chip button.is-danger:focus-visible { color: var(--danger); }
+/* Guarded, and the chip is the case that makes the point: it sits on the board
+   beside the connection it belongs to and stays there after the tap, so an
+   unguarded hover left one of its five buttons lit for as long as the chip was
+   up - on the one control where "which of these did I just press" matters. */
+@media (hover: hover) {
+  #conn-chip button:hover { background: var(--paper-2); color: var(--accent-deep); }
+  #conn-chip button.is-danger:hover { color: var(--danger); }
+}
 #conn-chip .ico {
-  width: 16px;
-  height: 16px;
+  width: var(--icon-glyph);
+  height: var(--icon-glyph);
   color: var(--accent-text);
   transition: transform var(--dur-base) var(--ease-back);
 }
-#conn-chip button:hover .ico { transform: scale(var(--btn-grow)) translateY(var(--btn-lift)); }
-#conn-chip button.is-danger:hover .ico { color: var(--danger); }
+@media (hover: hover) {
+  #conn-chip button:hover .ico { transform: scale(var(--btn-grow)) translateY(var(--btn-lift)); }
+  #conn-chip button.is-danger:hover .ico { color: var(--danger); }
+}
 
 /* The region the offer is about, held on the board for as long as the offer is.
 

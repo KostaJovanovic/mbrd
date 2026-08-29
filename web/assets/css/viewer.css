@@ -78,7 +78,7 @@
   flex: none;
   display: grid;
   place-items: center;
-  width: 32px; height: 32px;
+  width: var(--icon-button); height: var(--icon-button);
   border: 0;
   border-radius: var(--leaf);
   background: none;
@@ -86,8 +86,12 @@
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
-#viewer-close:hover { background: var(--paper-2); color: var(--accent-deep); }
-#viewer-close svg { width: 15px; height: 15px; }
+@media (hover: hover) {
+  #viewer-close:hover { background: var(--paper-2); color: var(--accent-deep); }
+}
+#viewer-close:active { background: var(--paper-3); }
+#viewer-close:focus-visible { background: var(--paper-2); color: var(--accent-deep); }
+#viewer-close svg { width: var(--icon-glyph); height: var(--icon-glyph); }
 
 /* The body. One scroller, and the only one in here.
 
@@ -283,9 +287,12 @@
   border: 0;
   border-top: var(--hairline) solid var(--rule-2);
 }
+/* --radius-xs is 4.004px at the middle tier, so this is the corner it has always
+   drawn - written against the token so the plain tier squares it off with
+   everything else instead of leaving it the one rounded thing on the page. */
 .viewer-md code {
   padding: 0.12em 0.35em;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: var(--paper-3);
   font-family: var(--font-mono);
   font-size: 0.88em;
@@ -319,7 +326,7 @@
 .viewer-md .md-image {
   padding: 0.1em 0.45em;
   border: var(--hairline) dashed var(--rule);
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   color: var(--ink-3);
   font-size: 0.9em;
 }
@@ -438,7 +445,10 @@
   cursor: pointer;
 }
 .viewer-more:hover { background: var(--paper-2); color: var(--accent-deep); }
-.viewer-more:disabled { opacity: 0.5; cursor: default; }
+/* The app's one disabled recipe. It was `opacity: 0.5` with no ink change - the
+   only dead control in the app that kept full-strength ink, so it read as
+   pressable and simply faint. */
+.viewer-more:disabled { color: var(--ink-3); cursor: default; }
 
 /* An SVG at its own size, or the box's, whichever is smaller. */
 .doc-svg { display: grid; place-items: center; }

@@ -107,7 +107,7 @@ split onto, and across two rounds of it they have taken two thirds of the file �
 | `onboarding.ts` | the ghost, hint and 404 cards: their ids, their geometry, and the two session latches |
 | `clipboard.ts` | the internal clipboard |
 | `connections.ts` | every write to `board.connections` |
-| `trash.ts` | the bin — delete and restore, which are two directions of one door |
+| `trash.ts` | the drawer's contents — delete and restore, which are two directions of one door |
 
 And four more from the `util.ts` split, down here for the older reason — they
 are what everything else stands on:
@@ -151,8 +151,11 @@ mutations of one concern that had been filed by accident: `board-model.ts`
 already owned the *shape* of a connection, and delete and restore had been
 sitting four hundred lines apart. `TRASH_LIMIT` went to `board-model.ts` rather
 than to `trash.ts`, because the file reader holds an arriving bin to it too and a
-base module cannot reach up. There is now both a `trash.ts` at the base and a
-`ui/trash.ts` at the top, which is the relation between them said out loud.
+base module cannot reach up. There is a `trash.ts` at the base and a
+`ui/drawer.ts` at the top: the board's word for the store is `trash` and travels
+inside every `.mbrd`, and the interface's word for it is the Drawer — the two are
+deliberately not renamed into each other, because renaming the base one would be
+a schema change for the sake of a label.
 
 All of them are re-exported by `state.ts` under their old names, so nothing
 imports them directly and no caller knows they exist — and **none may ever import
@@ -235,15 +238,48 @@ that closes over a whole-board snapshot passes a fourth argument, `weight`: the
 number of items it retains, so the history evicts on what it holds and not only
 on how many entries it has.
 
-Undo is not the only way back. `ui/trash.ts` is the bin, and the two are
+Undo is not the only way back. `ui/drawer.ts` is the Drawer, and the two are
 different models on purpose: undo is a stack, so it returns the *last* thing and
-only if nothing has happened since; the bin holds everything thrown away
+only if nothing has happened since; the drawer holds everything thrown away
 (`TRASH_LIMIT`, 60) with no relation to what came after, taken back one at a
 time. Restoring is a **drag** rather than a Restore button, because a deleted
 item remembers where it was and that spot is usually why it was deleted — the
 board has grown into the gap, so the drag is what says where it goes now. Title
-and ghost cards are never binned: the title card is a singleton with its own
-restore control in the dock, and a dismissed ghost does not come back at all.
+and ghost cards are never filed there: the title card is a singleton with its own
+restore control in the drawer's header, and a dismissed ghost does not come back
+at all.
+
+**A stuck thing travels with what it is stuck to, through both doors.** Deleting
+a card takes every sticky on it — sticker *and* note, at any depth — and
+restoring it brings them back on it, at the fraction of it each one held. The
+relation is measured at the delete, where both are still on the board, and
+carried across as `meta.stuckOf` on the drawer entry, because two entries in the
+drawer have no geometry to measure against each other; it is dropped again the
+moment they land. Stickers alone used to travel, on the argument that a note is
+something somebody wrote — but nothing is lost either way, and what the old rule
+produced was a note left hovering over the gap and re-measured onto whatever
+happened to be underneath it.
+
+The drawer is a floating window (`ui/float-window.ts`, shared with the sticker
+pad and the player) of the board's **real cards**, three to a shelf. There is no
+second drawing of a card in the app: `buildItem()` from `canvas/item-dom.ts` is
+what fills every slot, which is why a note in the drawer is its own words on its
+own pad. Because a real card is a real decoder, a slot mounts its card when it
+scrolls into the window and hands it back through `releaseCardContent()` — the
+same door culling uses — when it scrolls out, with the quality dial setting how
+many may be built per frame, how far ahead of the scroll, and whether a clip
+mounts live or as the still it was already showing.
+
+A shelf slot holds a **pile**, not an entry: the host and everything stamped
+`stuckOf` onto it, drawn where they sat on it. Three entries went into the drawer
+and one card stands on the shelf, which is what the restore does anyway — the
+alternative was a note standing on its own beside the photograph it is stuck to,
+where dragging either one back would bring both. Each card is given its real
+world box relative to the pile's bounding box (`placeInPile`, the drawer's
+`placeBox`) and the *pile* takes the scale, so a note stays the share of its
+photograph it is on the board; fitting two cards into two boxes would not. A
+rider whose host has been taken back out gets a slot of its own, which is the
+honest picture.
 
 ### The entry point and the command surface
 
@@ -389,11 +425,11 @@ in `index.html` and an entry in `commands.ts`, and nothing here hears about it.
 
 It is one component on two layouts, not two. Top-centre on a desktop, because
 both side edges are spoken for by the panels and the whole bottom edge is the
-bin, the history pair, the zoom cluster and the player. On a phone it collapses
+drawer, the history pair, the zoom cluster and the player. On a phone it collapses
 to a handle in that bottom row — where the old `#add-bar` was, whose `data-add`
 one-off it absorbed — and opens upward into a second tier, with the player
 stepped up to a third. The tier is wider than the handle: the handle shares its
-row with the bin and the history pair and has to clear them, the tier has a row
+row with the drawer and the history pair and has to clear them, the tier has a row
 to itself and spans the whole foot, which is what pays for the words under the
 icons — all four above 360px, Files alone below it. **`#toolbar` must stay before `#nowplaying` in `index.html`:**
 the rules that move the player are general sibling combinators.
@@ -1461,7 +1497,7 @@ media release or culling; the clone is stripped of its `<video>`/`<audio>` sourc
 so a card fading out cannot hold a stream open, and undo can rebuild the item
 immediately without two nodes fighting for the same id. `exitKindFor()` is pure —
 the whimsy tier picks the feel, except a title card, which vanishes and drops a
-chip toward the bin.
+chip toward the drawer button.
 
 `canvas/grain.ts` takes both its position **and** its size from the board: the
 paper travels on a pan and scales on a zoom, because flecks that belong to the
@@ -1638,7 +1674,7 @@ specificity:
 | `item-chrome.css` | what is drawn over a card rather than in it — grips, marks, the aim ring |
 | `sidebar.css` | the panel — tabs, sections, folds, `.field` and its variants |
 | `chrome.css` | the corner, HUD readouts, the toolbar, the now-playing bar |
-| `trash.css` | the bin and its panel (`ui/trash.ts`), and the fly-out a deleted card plays (`canvas/exit-anim.ts`) |
+| `drawer.css` | the corner dock and the drawer window (`ui/drawer.ts`), and the fly-out a deleted card plays (`canvas/exit-anim.ts`) |
 | `menu.css` | the panels that open over the board to be answered — Find, the context menu and the toolbar flyouts, the fence offer, the connection chip |
 | `library.css` | the board switcher (`ui/library.ts`) |
 | `status.css` | what the app says while it works — the drop target, the waiting strip, the toast slips — plus the global `prefers-reduced-motion` stop, which is here because its one exception is the indeterminate bar |
@@ -1657,7 +1693,7 @@ loaded by `web/patch.html` alone to hide the board behind the changelog, and
 app is offline on every page it has.
 
 This was one 6,000-line `app.css` until it became the file every interface
-change had to touch at once. The eight from `trash.css` to `sticker-pad.css`
+change had to touch at once. The eight from `drawer.css` to `sticker-pad.css`
 were then one 2,370-line `overlays.css` until *that* file had eleven unrelated
 subsystems in it and had become the thing the first split was for; `items.css`
 went the same way afterwards, into the six from `items.css` to `item-chrome.css`
@@ -1694,16 +1730,17 @@ number is a claim about the whole screen.
 | 90 | `#splash`, the boot cover; `#nojs`, its no-JavaScript twin | `base.css`; the `<noscript>` `<style>` in `index.html` |
 | 70 | `#search` — over the context menu, which it can be opened from | `menu.css` |
 | 61 | `#fence-prompt`, the offer under a rubber band | `menu.css` |
-| 60 | `#ctx-menu`; `#bin-ghost`; `.sticker-ghost` | `menu.css`; `trash.css`; `sticker-pad.css` |
+| 60 | `#ctx-menu`; `#drawer-ghost`; `.sticker-ghost` | `menu.css`; `drawer.css`; `sticker-pad.css` |
 | 59 | `#conn-chip` — deliberately *under* the menu, because the menu is opened from the chip and then covers it | `menu.css` |
 | 55 | `#busy`, the waiting strip | `status.css` |
 | 50 | `#toast` | `status.css` |
 | 41 | `#mobile-header-edit-btn`, but only while `#sidebar.is-open` | `sidebar.css` |
 | 40 | `#sidebar`, `#header-panel`; `#library`; `.player-window`; `.sticker-window` | `sidebar.css`; `library.css`; `mobile.css`; `sticker-pad.css` |
+| 39 | `#drawer-window` — a rung *under* the panels, because the sidebar opens over the same corner and at a tie the drawer would win on document order alone (it is appended to `<body>`, the panels are written in `index.html`) | `drawer.css` |
 | 30 | `#menu-btn`, `#mobile-header-edit-btn`, `#mobile-find-btn` | `sidebar.css` |
 | 25 | `#drop-overlay` | `status.css` |
-| 24 | `#exit-layer`, the delete fly-out | `trash.css` |
-| 20 | `#corner`, `#toolbar`, `#nowplaying`; `#bin` | `chrome.css`; `trash.css` |
+| 24 | `#exit-layer`, the delete fly-out | `drawer.css` |
+| 20 | `#corner`, `#toolbar`, `#nowplaying`; `#drawer-dock` | `chrome.css`; `drawer.css` |
 | 2 | `#mobile-feed`, `#mobile-playlist` | `mobile.css` |
 | *auto* | `#viewport`, then `#grain`, then the paper on `<body>` — document order, no number | `canvas.css`, `base.css` |
 

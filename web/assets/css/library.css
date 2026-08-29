@@ -14,7 +14,7 @@
 #library {
   position: fixed;
   inset: 0;
-  z-index: 40;
+  z-index: var(--z-overlay);
   display: grid;
   place-items: center;
   padding: max(24px, env(safe-area-inset-top)) 24px;
@@ -48,21 +48,34 @@
   color: var(--accent-deep);
   cursor: pointer;
 }
-.library-new:hover { background: var(--paper-2); }
+@media (hover: hover) {
+  .library-new:hover { background: var(--paper-2); }
+}
+.library-new:active { background: var(--paper-3); }
+/* It set a 22px `×` character until now, which is why this block used to carry
+   a paragraph about sizing a glyph to its box rather than to the type scale.
+   The button draws icons.svg#i-close like every other close in the app, so
+   there is no type here to argue about. */
 .library-close {
-  width: 30px;
-  height: 30px;
+  display: grid;
+  place-items: center;
+  width: var(--icon-button);
+  height: var(--icon-button);
+  padding: 0;
   border: 0;
+  border-radius: var(--leaf);
   background: none;
-  /* A glyph in a fixed 30px box - sized to the box, not to the type scale. See
-     the note on the note toolbar's buttons in cards.css, which is the same case
-     and carries the argument. */
-  font-size: 22px;
-  line-height: 1;
   color: var(--ink-3);
   cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
-.library-close:hover { color: var(--ink); }
+.library-close svg { width: var(--icon-glyph); height: var(--icon-glyph); }
+/* It had ink and no wash, alone among the ten. */
+@media (hover: hover) {
+  .library-close:hover { background: var(--paper-2); color: var(--accent-deep); }
+}
+.library-close:active { background: var(--paper-3); }
+.library-close:focus-visible { background: var(--paper-2); color: var(--accent-deep); }
 .library-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -90,7 +103,10 @@
   text-align: left;
   color: inherit;
 }
-.library-open:hover:not(:disabled) { border-color: var(--accent-text); }
+@media (hover: hover) {
+  .library-open:hover:not(:disabled) { border-color: var(--accent-text); }
+}
+.library-open:focus-visible:not(:disabled) { border-color: var(--accent-text); }
 .library-card.is-current .library-open { border-color: var(--accent-text); cursor: default; }
 .library-thumb {
   aspect-ratio: 4 / 3;
@@ -110,22 +126,32 @@
   position: absolute;
   top: 6px;
   right: 6px;
+  display: grid;
+  place-items: center;
   width: 24px;
   height: 24px;
+  padding: 0;
   border: 0;
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
   background: color-mix(in oklab, var(--paper) 82%, transparent);
   color: var(--ink-2);
-  /* A glyph in a fixed 24px round box - see .library-close above. */
-  font-size: 16px;
-  line-height: 1;
   cursor: pointer;
   opacity: 0;
-  transition: opacity var(--dur-fast) var(--ease);
+  transition: opacity var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
+/* Smaller than --icon-button on purpose and the comment two blocks up is why:
+   this is the destructive one, riding the corner of a card whose whole face is
+   the Open button, and the two gestures have to stay half a centimetre apart on
+   a phone. It is the one icon button in the app that is deliberately not the
+   token, which is a different thing from the eight that were not it by
+   accident. */
+.library-del svg { width: 13px; height: 13px; }
 .library-card:hover .library-del,
 .library-del:focus-visible { opacity: 1; }
-.library-del:hover { color: var(--danger); }
+@media (hover: hover) {
+  .library-del:hover { color: var(--danger); }
+}
+.library-del:focus-visible { color: var(--danger); }
 
 /* Without color-mix(), for WebKit below 16.2 - section 7 of tokens.css carries
    the argument and declares the channel-form tokens. Both of these are `in

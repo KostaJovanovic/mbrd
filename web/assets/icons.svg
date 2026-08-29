@@ -87,6 +87,17 @@
   <path d="M6.6 6.5v5M9.4 6.5v5"/>
 </symbol>
 
+<!-- The corner button, which opens the drawer of what you deleted. A drawer
+     pulled out of its carcass and seen from the front: the box behind, the face
+     in front of it, and the pull. Deliberately not the bin above, which is still
+     the right drawing for Delete on a menu row and is used there - one is a verb
+     and the other is a place. -->
+<symbol id="i-drawer" viewBox="0 0 16 16">
+  <path d="M4 6.5v-3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v3"/>
+  <path d="M2.5 6.5h11v5.5a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z"/>
+  <path d="M6.5 9.5h3"/>
+</symbol>
+
 <symbol id="i-undo" viewBox="0 0 16 16">
   <path d="M3 6.5h6.2a3.4 3.4 0 0 1 0 6.8H6.4"/>
   <path d="M5.6 3.6 2.7 6.5l2.9 2.9"/>

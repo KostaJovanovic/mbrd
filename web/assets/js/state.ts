@@ -78,10 +78,12 @@ export { clipboardBounds, clipboardHasOurs, clipboardSize, copyItems };
 // leaving and coming back are two directions of one door.
 import {
   removeItems, restoreItems, emptyTrash, setAssetPurge, freezeClip, clipHomeId,
+  stuckHostId,
 } from './trash.ts';
 
 export {
   removeItems, restoreItems, emptyTrash, setAssetPurge, freezeClip, clipHomeId,
+  stuckHostId,
 };
 // Downward: the catalogue is pure - geometry.js and nothing else - and this is
 // the one thing state needs from it, which of the two lists a stored
@@ -1120,7 +1122,14 @@ export function setItemBare(id: string, bare: unknown) {
   // is for: `bare: false` on every ordinary photograph would be a byte per card
   // in every file to say that nothing is unusual.
   patchMeta(id, 'bare', bare ? true : null,
-    (next: unknown) => (next ? 'Remove card' : 'Restore card'), v => (v === true ? true : null));
+    // Named for what the control that sets it is called - the item menu's row
+    // is "No card" - rather than for the flag. "Remove card" put the word the
+    // menu uses for destroying an item onto a step that takes the paper backing
+    // off a photograph, so the timeline read "Remove card" for something still
+    // sitting on the board. Phrased to survive the "Undo " the history titles
+    // put in front of it.
+    (next: unknown) => (next ? 'Take the card off' : 'Put the card back'),
+    v => (v === true ? true : null));
 }
 
 /**

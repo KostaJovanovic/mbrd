@@ -522,8 +522,10 @@
    Written as a multiplier on the whole corner rather than as a border-width of
    its own, because the four corners each blank two of their own borders and a
    `border-width` here would put those back. */
-.grip:not(.grip-edge):hover,
 .item.is-resizing .grip:not(.grip-edge) { --grip-swell: 1.6; }
+@media (hover: hover) {
+  .grip:not(.grip-edge):hover { --grip-swell: 1.6; }
+}
 /* The mark follows the corner it traces rather than turning a hard 90 degrees
    against a rounded item. A curve of radius R offset outwards by d is a curve
    of radius R + d, so the two stay concentric - and because both terms are in
@@ -776,15 +778,22 @@
   /* Square, and it has to stay square: a fixed box with no padding, so stop 9
      and stop 12 are the same mark rather than a circle and a lozenge down one
      board. Two digits fit at --t-tiny in the mono face with room to spare, and
-     a tour long enough to need three is longer than a tour anybody reads. */
-  width: calc(22px * var(--iz, 1));
-  height: calc(22px * var(--iz, 1));
+     a tour long enough to need three is longer than a tour anybody reads.
+
+     --icon-button, like the title card's pen and rename beside it and like every
+     small icon button in the app. It was 22 and they were 30, which meant the
+     board carried two sizes of on-card control with nothing choosing between
+     them - the same drift the app had ten of, at the one place a reader sees two
+     of them at once. --leaf for the corner for the reason tokens.css gives: it
+     sizes controls, and --radius-xs is for chips. */
+  width: calc(var(--icon-button) * var(--iz, 1));
+  height: calc(var(--icon-button) * var(--iz, 1));
   box-sizing: border-box;
   display: grid;
   place-items: center;
   padding: 0;
   border: 0;
-  border-radius: calc(var(--radius-xs) * var(--iz, 1));
+  border-radius: calc(var(--leaf) * var(--iz, 1));
   background: var(--accent);
   color: var(--accent-fg);
   font-family: var(--font-mono);
@@ -837,8 +846,8 @@
    destroys something somebody arranged, and it should not have to be decoded. */
 .tour-mark-x {
   display: none;
-  width: calc(11px * var(--iz, 1));
-  height: calc(11px * var(--iz, 1));
+  width: calc(var(--icon-glyph) * var(--iz, 1));
+  height: calc(var(--icon-glyph) * var(--iz, 1));
 }
 @media (hover: hover) {
   .tour-mark:not(.is-add):hover { background: var(--danger); color: var(--paper-card); }
@@ -890,13 +899,21 @@
      catching up. */
   transition: none;
 }
-/* And at far zoom, where the base rule takes the marks off. This is the one
-   view the peek is most use in - the whole board at once, with the reading
-   order written across it - so it is the one place the mark has to come back. */
-:root.is-tour-peek #world.zoom-far .tour-mark:not(.is-add) { display: grid; }
-/* Gone at far zoom, for the same reason the caption plate is: at that size it
-   is a smudge, and a smudge on nine cards is noise. */
-#world.zoom-far .tour-mark { display: none; }
+/* And at the zoom the base rule takes the marks off at. This is the one view
+   the peek is most use in - the whole board at once, with the reading order
+   written across it - so it is the one place the mark has to come back. */
+:root.is-tour-peek #world.zoom-tiny .tour-mark:not(.is-add) { display: grid; }
+/* Gone below the zoom the grips and the title card's two buttons go at, which is
+   the threshold for "an on-card control is now too small to aim at".
+
+   It was --zoom-far (40%), on the reasoning that the mark becomes a smudge - and
+   that was true when the mark was drawn in board units and shrank with the card.
+   It holds a constant size on screen now, so at 40% it is the same 28 pixels it
+   is at 100% and perfectly aimable. Worse, 40% is exactly where somebody
+   building a tour is standing: the whole point of the mode is seeing many cards
+   at once and saying what order they are read in, and the marks were
+   disappearing at the zoom that makes that possible. */
+#world.zoom-tiny .tour-mark { display: none; }
 
 /* Without color-mix(), for WebKit below 16.2 - section 7 of tokens.css carries
    the argument and declares the channel-form tokens. */

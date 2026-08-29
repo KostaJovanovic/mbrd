@@ -817,7 +817,13 @@ export const SECTIONS: Section[] = [
       // every one of these - and writes an override that outranks the dial from
       // then on. "Start over" at the foot is the way back, the same as
       // Appearance's.
-      { id: 'q-motion', type: 'check', label: 'Animate GIFs', advanced: true,
+      // "Moving GIFs" and not "Animate GIFs": the four checkboxes in this row
+      // are things the app has - shadows, backdrops, animations - and this one
+      // was the only command among them, which made it read as a button rather
+      // than a state. Not "GIF animation" either, which would sit two lines
+      // above "Animations" saying almost the same words about a different
+      // thing.
+      { id: 'q-motion', type: 'check', label: 'Moving GIFs', advanced: true,
         get: () => quality.motion, set: v => setQualityOverride('motion', v) },
       { id: 'q-shadows', type: 'check', label: 'Card shadows', advanced: true,
         get: () => quality.shadows, set: v => setQualityOverride('shadows', v) },
