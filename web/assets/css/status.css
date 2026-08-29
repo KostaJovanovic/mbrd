@@ -22,7 +22,7 @@
 #drop-overlay {
   position: fixed;
   inset: 0;
-  z-index: 25;
+  z-index: var(--z-drop);
   display: grid;
   place-items: center;
   background: color-mix(in srgb, var(--accent-warm) 14%, transparent);
@@ -66,7 +66,7 @@
    --------------------------------------------------------- */
 #busy {
   position: fixed;
-  z-index: 55;
+  z-index: var(--z-toast);
   /* Below the toolbar, which holds the same middle of the same edge. This
      strip is over it in the stack and would simply land on top, and the button
      it would cover is very often the one that started the import it is
@@ -189,7 +189,7 @@
    the lines themselves are furniture. */
 #toast {
   position: fixed;
-  z-index: 50;
+  z-index: var(--z-status);
   left: 50%;
   bottom: max(24px, env(safe-area-inset-bottom));
   transform: translateX(-50%);

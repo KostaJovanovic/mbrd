@@ -21,7 +21,7 @@ const src = rel => code(read(join(JS, rel)));
 test('discard() calls every release hook there is', () => {
   const items = src('canvas/items.ts');
   const body = items.slice(items.indexOf('function discard('), items.indexOf('function disposable('));
-  for (const hook of ['releaseContent', 'releaseStills', 'releaseTransports', 'releaseModels']) {
+  for (const hook of ['releaseCardContent', 'releaseStills', 'releaseTransports', 'releaseModels']) {
     assert.ok(new RegExp(`${hook}\\(`).test(body + items),
       `discard() no longer reaches ${hook}()`);
   }
@@ -35,10 +35,25 @@ test('a rebuild tears its old body down the way a discard does', () => {
   // photograph's decode lived until the next GC, once per rename.
   const items = src('canvas/items.ts');
   const rebuild = items.slice(items.indexOf('function rebuild('));
-  assert.match(rebuild.slice(0, 900), /releaseContent\(body\);/,
+  assert.match(rebuild.slice(0, 900), /releaseCardContent\(body\);/,
     'rebuild() is back to releasing only the players');
   assert.ok(!/^\s*releasePlayers\(body\);/m.test(rebuild.slice(0, 900)),
-    'rebuild() still tears down by hand instead of through releaseContent()');
+    'rebuild() still tears down by hand instead of through releaseCardContent()');
+});
+
+test('the drawer lets its cards go through the same door the board does', () => {
+  // ui/drawer.ts mounts real cards on its shelves and drops them as they scroll
+  // out of the window, which is the same act as culling one off the board - so
+  // it is the same function, exported, rather than four lines copied. The copy
+  // is the failure mode worth guarding: it would go on pausing videos and
+  // clearing srcs correctly for years while quietly missing whatever the next
+  // renderer starts holding on to.
+  const items = src('canvas/items.ts');
+  assert.match(items, /export function releaseCardContent\(/,
+    'releaseCardContent() is private again - the drawer cannot reach it');
+  const drawer = src('ui/drawer.ts');
+  assert.match(drawer, /releaseCardContent\(/,
+    'the drawer no longer hands its cards back through canvas/items.ts');
 });
 
 test('culling leaves a card that has been lifted out of the world layer alone', () => {

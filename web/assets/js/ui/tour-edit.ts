@@ -497,9 +497,16 @@ function footRow(names: number[]): HTMLElement {
   // sentence. The label used to be the whole sentence - "Add 3 cards as one
   // stop" - which is better English and made the button change width on every
   // selection. The sentence is in the tooltip, where being long costs nothing.
+  // "Take off" and not "Remove". This feature called one act three things - the
+  // button said Remove, its own tooltip said "Take these off the tour", the mark
+  // on the card said "Take this card off the tour" and the chip's menu said
+  // "Take off" - so the control disagreed with the tooltip attached to it. Three
+  // of the four already said it this way, and it is the better phrase: a stop is
+  // taken off a tour, where "remove" is what you do to a thing that then stops
+  // existing. The card does not stop existing.
   const add = textButton(
     'tour-add is-primary',
-    cutting ? 'Remove' : 'Add stop',
+    cutting ? 'Take off' : 'Add stop',
     !n ? 'Select cards on the board, then add them as a stop'
       : cutting
         ? 'Take these off the tour - a stop they leave empty goes with them'

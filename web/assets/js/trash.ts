@@ -47,7 +47,7 @@ import { commit } from './history.ts';
 import { cue } from './cuelume/engine.ts';
 import { board, byId, topZ, makeItem, TRASH_LIMIT } from './board-model.ts';
 import type { Item, TrashEntry } from './board-model.ts';
-import { stuckTo } from './sticky.ts';
+import { stuckTo, isSticky, stuckPlacement } from './sticky.ts';
 import { refenceArrivals } from './fences.ts';
 import { fitBoardMode } from './layout.ts';
 import { itemHashes, isRecord, extOf } from './util.ts';
@@ -57,40 +57,76 @@ import { itemHashes, isRecord, extOf } from './util.ts';
 import { rewriteRecorded } from './timeline.ts';
 
 /**
- * The stickers that go with a delete: everything of type `sticker` stuck, at
- * any depth, to something being removed.
+ * Everything that goes with a delete: every sticky - sticker or note - stuck, at
+ * any depth, to something being removed, and what each is stuck to.
  *
- * **Two rules rather than one, and they are two because the things are two.** A
+ * ── Why notes travel too, having once not ──
+ *
+ * This took stickers alone, and the argument was that the two things are two: a
  * star on a photograph is a remark *about* that photograph and means nothing
- * once it is gone; a note is something you wrote, and losing it to a delete you
- * aimed at a picture would be the app throwing away your words. So notes keep
- * today's behaviour exactly - left on the board, re-measured against whatever
- * is underneath - and only stickers follow.
+ * once it is gone, whereas a note is something you wrote, and losing it to a
+ * delete you aimed at a picture would be the app throwing away your words.
  *
- * The walk collects stickers alone, which is also what cuts it short at the
- * first surviving host: a sticker on a *note* on a deleted photograph stays,
- * because the note it is stuck to stays and the note never joins the going set
- * for the sticker to follow it through. The naive version - stuckFollowers()
- * and then a filter - takes that sticker too, because the note is a follower
- * even though it is not being deleted.
+ * The first half of that still holds and the second turned out to be an argument
+ * about a different app. Nothing here loses a note - a delete files it in the
+ * drawer, which is the whole reason the drawer exists - and it comes back out
+ * with its host, on its host, because of the `stuckOf` link below. What the old
+ * rule actually produced was a note left hovering over the gap where its card
+ * used to be, re-measured against whatever happened to be underneath, and stuck
+ * to *that* instead. The pile you built came apart at the one moment you were
+ * least likely to be watching, and the words were not saved by it - they were
+ * merely left somewhere else, wearing a new host.
+ *
+ * The rule is now the one the rest of the app already states: a stuck thing
+ * travels with what it is stuck to. It is what a drag does (stuckFollowers), it
+ * is what a layout does (attachRiders), and a delete was the one door that read
+ * it differently.
+ *
+ * ── The map ──
+ *
+ * The host is returned alongside, because it is known *here* and nowhere later:
+ * stuckness is measured off live geometry (sticky.ts), and a moment after this
+ * the pile is in the drawer where there is no geometry to measure. removeItems()
+ * stamps it onto the binned copy as `meta.stuckOf`, and restoreItems() reads it
+ * back. Same shape as `clipOf` further down: a link between two drawer entries,
+ * written at one door and read at the other, meaningless anywhere else.
+ *
+ * **The map is measured over everything that is going, not over what the walk
+ * added**, and the two are different exactly when the delete already named the
+ * whole pile - Select All, or a marquee round a photograph and its notes. The
+ * walk finds nothing to add there, because there is nothing left to add; if the
+ * stamp were a by-product of the walk, a board deleted in one press would arrive
+ * in the drawer as loose cards while the same board deleted card by card arrived
+ * as piles. Nothing about that fails - it is two shelves that disagree about what
+ * a pile is, depending on how the delete was made.
  */
-function stickerCascade(ids: Iterable<string>) {
+function riderCascade(ids: Iterable<string>) {
   const going = new Set(ids);
+  // Passes, like stuckFollowers(): a note on a note can only join once the one
+  // underneath it has, and board.items is in no particular order. `out` is
+  // therefore in dependency order - a host is always pushed before its riders -
+  // which is what restoreItems() relies on to place a pile back in one sweep.
   const out: string[] = [];
-  // Passes, like stuckFollowers(): a sticker on a sticker can only join once
-  // the one underneath it has, and board.items is in no particular order.
   for (let grew = true; grew;) {
     grew = false;
     for (const it of board.items) {
-      if (it.type !== 'sticker' || going.has(it.id)) continue;
-      const host = stuckTo(it);
-      if (!host || !going.has(host.id)) continue;
+      if (!isSticky(it) || going.has(it.id)) continue;
+      const on = stuckTo(it);
+      if (!on || !going.has(on.id)) continue;
       going.add(it.id);
       out.push(it.id);
       grew = true;
     }
   }
-  return out;
+  // One sweep over the finished set, once nothing more can join it. A sticky
+  // whose host is also going is a rider whichever of the two got it here.
+  const host = new Map<string, string>();
+  for (const it of board.items) {
+    if (!going.has(it.id) || !isSticky(it)) continue;
+    const on = stuckTo(it);
+    if (on && going.has(on.id)) host.set(it.id, on.id);
+  }
+  return { ids: out, host };
 }
 
 /**
@@ -181,6 +217,85 @@ export function clipHomeId(item: Item): string | null {
 }
 
 /**
+ * The drawer entry this one was stuck to when the two went in together, if it is
+ * still in the drawer.
+ *
+ * `meta.stuckOf` is the second link of the same kind as `clipOf` above, and it
+ * exists for the same reason that one does: a relation between two things in the
+ * drawer cannot be *measured* while they are in there. Stuckness is geometry
+ * (sticky.ts is emphatic that it is never stored as a relation inside the board
+ * file), and geometry is exactly what a drawer entry has stopped taking part in
+ * - a note and the photograph under it are two entries with two old coordinates
+ * and nothing underneath either of them.
+ *
+ * So it is written at the one moment it is known - the delete, where both are
+ * still on the board and riderCascade() has just measured it - and read at the
+ * one moment it is wanted, which is the restore. In between it is inert. It is
+ * dropped on the way back out (see restoreItems), because on the board the
+ * measurement is the truth again and a stale id would be a second opinion.
+ *
+ * A string that names nothing is the ordinary case rather than a fault: it means
+ * the host has already been taken back out, or emptied, or was the title card,
+ * which never goes in the drawer at all. All of them mean the same thing here -
+ * this one comes back on its own, wherever it is put.
+ */
+function stuckOfId(item: Item): string | null {
+  const of = item.meta?.stuckOf;
+  return typeof of === 'string' ? of : null;
+}
+
+/**
+ * The same question, for the drawer: which entry is this one sitting on?
+ *
+ * clipHomeId()'s counterpart, and it exists for the counterpart reason. The
+ * drawer draws a pile as one card on the shelf rather than as three cards that
+ * happen to be adjacent, which means it has to know which entries belong to
+ * which - and it has no more business knowing that the link is spelled
+ * `meta.stuckOf` than the panel had knowing about `meta.clipOf`.
+ *
+ * Null when the stamp names nothing that is still in the drawer, which is the
+ * ordinary case rather than a fault - the host has been taken back out, or
+ * emptied. It means what it means everywhere else in this file: this one is on
+ * its own now, and the drawer gives it a shelf slot of its own.
+ */
+export function stuckHostId(item: Item): string | null {
+  const of = stuckOfId(item);
+  return of && board.trash.some(t => t.item.id === of) ? of : null;
+}
+
+/**
+ * The drawer entries that have to come back with these: everything stuck, at any
+ * depth, to something being restored.
+ *
+ * riderCascade()'s other half, and deliberately the same shape - passes over the
+ * pool until nothing more joins, so a sticker on a note on a photograph comes
+ * back with the photograph and comes back *after* the note it is stuck to. That
+ * ordering is not incidental: restoreItems() places each rider against a host it
+ * has already placed, and a pile handed back in the wrong order would put a
+ * sticker where its note used to be.
+ *
+ * The one difference is what it measures with. The cascade asks live geometry
+ * because the pile is still on the board; this asks the stamp that cascade left,
+ * because it is not. Nothing else about a drawer entry could answer it.
+ */
+function ridersInBin(chosen: TrashEntry[]) {
+  const going = new Set(chosen.map(e => e.item.id));
+  const out: TrashEntry[] = [];
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const t of board.trash) {
+      if (going.has(t.item.id)) continue;
+      const on = stuckOfId(t.item);
+      if (!on || !going.has(on)) continue;
+      going.add(t.item.id);
+      out.push(t);
+      grew = true;
+    }
+  }
+  return out;
+}
+
+/**
  * Throw the clip away and keep the frame that was on it.
  *
  * The fourth route out, after the three the header names, and the one that is
@@ -256,7 +371,8 @@ export function removeItems(ids: Iterable<string>, label = 'Delete') {
   // whole reason it is folded in here rather than run by the caller: Ctrl+Z
   // brings the photograph and its stickers back together, and nobody has to
   // press it twice.
-  const set = new Set([...ids, ...stickerCascade(ids)]);
+  const cascade = riderCascade(ids);
+  const set = new Set([...ids, ...cascade.ids]);
   // Keep the original index so undo restores z-order position, not just the item.
   // One pass that pushes only the matches, rather than a wrapper per board item
   // and a filter after: a delete of three cards off a 20,000-card board built
@@ -276,9 +392,21 @@ export function removeItems(ids: Iterable<string>, label = 'Delete') {
   // card: they are hints rather than anything of the user's, so a thrown-away
   // one is finished rather than filed. Deleting one by hand is a dismissal like
   // any other - see dismissGhosts() - and it does not come back.
+  // The drawer's copy, which for a rider is a *copy* rather than the item
+  // itself: the pile relation is stamped onto it so restoreItems() can rebuild
+  // the pile, and the board's own object has no business carrying a link that
+  // only means anything inside the drawer. `removed` still holds the originals,
+  // which is what undo splices back - so undoing a delete puts the board exactly
+  // as it was, unstamped, and the measurement speaks again.
   const binned = removed
     .filter(r => r.item.type !== 'title' && r.item.type !== 'ghost')
-    .map(r => ({ item: r.item, at: Date.now() }));
+    .map(r => {
+      const on = cascade.host.get(r.item.id);
+      const item = on
+        ? makeItem({ ...r.item, meta: { ...r.item.meta, stuckOf: on } })
+        : r.item;
+      return { item, at: Date.now() };
+    });
   const binIds = new Set(binned.map(b => b.item.id));
   // What this delete pushed out the bottom of the bin, so undo can put it back.
   //
@@ -355,11 +483,30 @@ export function removeItems(ids: Iterable<string>, label = 'Delete') {
  * and the entry comes back as an ordinary video card the way it always would
  * have. That is the honest fallback rather than a refusal: the clip is still a
  * clip, and the bin is still the only place it exists.
+ *
+ * ── The entries nobody asked for ──
+ *
+ * A card that went in with a pile of stickies on it comes back out with them.
+ * `ids` is what was dragged, clicked or picked; ridersInBin() is everything
+ * stuck to it that went in at the same time, and the two are restored as one
+ * thing under one history entry - the same bargain removeItems() makes with the
+ * same pile in the other direction, so that undoing either takes one press.
+ *
+ * They are not placed independently. `at` says where the *host* goes, and each
+ * rider is put back on it at the fraction of it that it held - stuckPlacement(),
+ * the same arithmetic a layout uses to carry a note onto its host's new box - so
+ * a photograph dropped anywhere on the board arrives with its notes where they
+ * were on it, at whatever size the board mode gives it.
  */
 export function restoreItems(ids: Iterable<string>, at: { x: number, y: number } | null = null, label = 'Restore') {
-  const set = new Set(ids);
-  const entries = board.trash.filter(t => set.has(t.item.id));
-  if (!entries.length) return [];
+  const picked = new Set(ids);
+  const chosen = board.trash.filter(t => picked.has(t.item.id));
+  if (!chosen.length) return [];
+  // Hosts first, riders after - which is the order ridersInBin() hands back and
+  // the order the placement loop below depends on, since a rider is placed
+  // against a host that has already been placed.
+  const entries = [...chosen, ...ridersInBin(chosen)];
+  const set = new Set(entries.map(e => e.item.id));
   // Split before anything is built, because the two halves are built
   // differently: one is placed on the board and one takes a card's place.
   const homing = entries
@@ -384,11 +531,42 @@ export function restoreItems(ids: Iterable<string>, at: { x: number, y: number }
     };
   });
   let z = topZ();
-  const items = arriving.map(e => fitBoardMode({
-    ...e.item,
-    ...(at ? { x: at.x, y: at.y } : null),
-    z: ++z,
-  }));
+  // The box each entry had in the drawer, and the box it has now - one pair per
+  // id, so a rider can be measured against its host in both. Only hosts are ever
+  // looked up, but every arrival is recorded because a rider may be one: a note
+  // with a sticker on it is both at once.
+  const was = new Map<string, Item>();
+  const now = new Map<string, Item>();
+  const items: Item[] = [];
+  for (const e of arriving) {
+    const on = stuckOfId(e.item);
+    const hostWas = on ? was.get(on) : null;
+    const hostNow = on ? now.get(on) : null;
+    // Three answers, in order of how much is known. On its host, if the host is
+    // coming back in this same restore. Otherwise wherever the drag let go. And
+    // failing both - a keyboard restore, or a rider whose host is not coming -
+    // exactly where it was deleted from, which is what this always did.
+    const where = hostWas && hostNow ? stuckPlacement(e.item, hostWas, hostNow) : at;
+    // The link is drawer-only and is dropped on the way out, for the reason
+    // stuckOfId() gives: on the board the geometry is the truth again, and a
+    // stale id sitting in `meta` would be a second opinion about the same
+    // question that nothing re-measures.
+    const meta = { ...e.item.meta };
+    delete meta.stuckOf;
+    // SAFETY: fitBoardMode() clamps numbers on the object it is given and hands
+    // the same object back - it adds and removes nothing - so a copy of an Item
+    // comes out an Item. The spread above is what makes it a copy. Same
+    // assertion, and the same reason for it, as fitOnto() in layout.ts.
+    const item = fitBoardMode({
+      ...e.item,
+      ...(where ? { x: where.x, y: where.y } : null),
+      z: ++z,
+      meta,
+    }) as Item;
+    was.set(e.item.id, e.item);
+    now.set(item.id, item);
+    items.push(item);
+  }
   const back = new Set(items.map(i => i.id));
   const all = [...items, ...rehomes.map(r => r.item)];
   commit(label,

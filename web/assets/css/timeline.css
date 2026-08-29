@@ -32,7 +32,7 @@
    families of object, which is the argument the border-radius above is already
    making; the height was contradicting it.
 
-   --chrome-button-h is the token #bin-btn and the zoom pill's segments are cut
+   --chrome-button-h is the token #drawer-btn and the zoom pill's segments are cut
    to, and it is a min- rather than a fixed height for one reason: the trim
    offer. That row appears only past 2 MB of history, wraps to a line of its
    own, and is allowed to make the strip taller for as long as it is up.
@@ -41,7 +41,7 @@
    over a number written twice. */
 #timeline-strip {
   position: fixed;
-  z-index: 21;
+  z-index: var(--z-chrome-over);
   left: var(--foot-left);
   right: var(--foot-right);
   bottom: max(16px, env(safe-area-inset-bottom));
@@ -155,24 +155,40 @@
   display: grid;
   place-items: center;
   flex: 0 0 auto;
-  width: 24px;
-  height: 24px;
+  width: var(--icon-button);
+  height: var(--icon-button);
   padding: 0;
   border: 0;
-  border-radius: var(--radius-sm);
+  /* --leaf, not --radius-sm: these are two controls standing on their own, and
+     --radius-sm is for the seams inside a segmented group. See the shape block
+     in tokens.css, which now says which is which. */
+  border-radius: var(--leaf);
   background: none;
   color: var(--ink-3);
   cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
-#timeline-strip .tl-close:hover,
 /* --wash was a number, not a colour: tokens.css declares it as the whimsy
    ornament multiplier (1 / 1.4 / 0), so `background: 1` was invalid at
-   computed-value time and these three hovers did nothing at all. The tint
-   the rest of the app hovers with, written the way cards.css and menu.css
-   already write it. */
-#timeline-strip .tl-name:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink); }
+   computed-value time and these hovers did nothing at all. That was repaired
+   with an ink veil, which worked and was still the wrong one of the app's
+   three - the paper step is the one tokens.css names for a hovered control.
+
+   Guarded, unlike before: on a phone an unguarded :hover latches on tap and
+   stays lit until you press something else, and the strip is read by finger. */
+@media (hover: hover) {
+  #timeline-strip .tl-close:hover,
+  #timeline-strip .tl-name:hover { background: var(--paper-2); color: var(--accent-deep); }
+}
+#timeline-strip .tl-close:active,
+#timeline-strip .tl-name:active { background: var(--paper-3); }
+/* The app's own ring rather than the browser's - see sidebar.css for the
+   argument. The chrome had been letting the default through while every panel
+   drew this one, so a tab round the window changed focus language halfway. */
+#timeline-strip .tl-close:focus-visible,
+#timeline-strip .tl-name:focus-visible { background: var(--paper-2); color: var(--accent-deep); }
 #timeline-strip .tl-close svg,
-#timeline-strip .tl-name svg { width: 14px; height: 14px; }
+#timeline-strip .tl-name svg { width: var(--icon-glyph); height: var(--icon-glyph); }
 /* Absent at the start of the board, where there is no step to name. A grid
    display would otherwise outrank the attribute the way every other flat
    display in this codebase has learned to. */
@@ -301,11 +317,18 @@
               transform var(--dur-fast) var(--ease);
 }
 #timeline-strip .tl-step .tl-dot .ico { width: 14px; height: 14px; }
-#timeline-strip .tl-step:hover .tl-dot {
-  transform: scale(1.15);
-  /* See the note by .tl-name:hover above. */
-  background: color-mix(in srgb, var(--ink) 8%, transparent);
-  color: var(--ink);
+/* The ink veil stays here, where it did not on the two head buttons, and the
+   difference is what the thing is. Those are controls and take the paper step
+   tokens.css names. This is a mark on a track that fills with the accent when
+   it is the current one - a paper wash under it would be a fourth ground in the
+   same 26 pixels, and a hovered dot turning accent ink would say "you are here"
+   about a step you are only pointing at. Guarded now, which it was not. */
+@media (hover: hover) {
+  #timeline-strip .tl-step:hover .tl-dot {
+    transform: scale(1.15);
+    background: color-mix(in srgb, var(--ink) 8%, transparent);
+    color: var(--ink);
+  }
 }
 
 /* The start of the board, which is a position rather than an event and so has
@@ -317,9 +340,11 @@
   width: var(--tl-start);
   height: var(--tl-start);
 }
-#timeline-strip .tl-step:first-child:hover .tl-dot {
-  box-shadow: inset 0 0 0 5px var(--ink);
-  background: none;
+@media (hover: hover) {
+  #timeline-strip .tl-step:first-child:hover .tl-dot {
+    box-shadow: inset 0 0 0 5px var(--ink);
+    background: none;
+  }
 }
 
 /* Ahead of the marker: done, then stepped back past. Present and faded rather
@@ -327,15 +352,22 @@
    forward again, and a redo you cannot see is a redo you do not know you have. */
 #timeline-strip .tl-step.is-ahead .tl-dot { opacity: 0.42; }
 
-/* Where the board actually is. The one filled accent on the strip. */
+/* Where the board actually is. The one filled accent on the strip.
+
+   --accent-fg rather than --paper-card, and this was not cosmetic: every
+   whimsy-2 palette redeclares --accent-fg to var(--ink) precisely because that
+   tier's accents are neon (#d5fa00 on absinthe, #0fffed on orca). --paper-card
+   stays a near-white on all of them, so this glyph - whose entire job is "you
+   are here" - was printing white on acid yellow and white on cyan. The rule is
+   at cards.css:356 and this is the third place it had to be learned. */
 #timeline-strip .tl-step.is-at .tl-dot {
   background: var(--accent);
-  color: var(--paper-card);
+  color: var(--accent-fg);
   transform: scale(1.1);
 }
 #timeline-strip .tl-step.is-at:hover .tl-dot {
   background: var(--accent);
-  color: var(--paper-card);
+  color: var(--accent-fg);
 }
 #timeline-strip .tl-step.is-at::after {
   content: '';
@@ -412,13 +444,17 @@
   font: inherit;
   padding: 3px 9px;
   border: var(--hairline) solid var(--rule-2);
-  border-radius: var(--radius-sm);
+  border-radius: var(--leaf);
   background: none;
   color: var(--ink-2);
   cursor: pointer;
 }
-/* Ditto - see .tl-name:hover. */
-.tl-trim-go:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink); }
+/* A control, so the paper step and the deep accent - see .tl-name:hover. */
+@media (hover: hover) {
+  .tl-trim-go:hover { background: var(--paper-2); color: var(--accent-deep); }
+}
+.tl-trim-go:active { background: var(--paper-3); }
+.tl-trim-go:focus-visible { background: var(--paper-2); color: var(--accent-deep); }
 /* In the strip it takes a line of its own under the track, and it is the only
    thing that ever wraps there - everything else is the one row the strip is cut
    to. Scoped, because the sheet uses the same row as a block between its list
@@ -506,7 +542,9 @@
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease);
 }
-#timeline-sheet .tl-go:hover { background: var(--paper-2); }
+@media (hover: hover) {
+  #timeline-sheet .tl-go:hover { background: var(--paper-2); }
+}
 #timeline-sheet .tl-go:focus { outline: none; }
 #timeline-sheet .tl-go:focus-visible {
   outline: var(--sel-line) solid var(--select);
@@ -549,7 +587,7 @@
 
 /* Where the board actually is. The one filled accent in the list, and the row
    the sheet scrolls to on open. */
-#timeline-sheet .tl-row.is-at .tl-mark { background: var(--accent); color: var(--paper-card); }
+#timeline-sheet .tl-row.is-at .tl-mark { background: var(--accent); color: var(--accent-fg); }
 #timeline-sheet .tl-row.is-at .tl-said { color: var(--ink); }
 /* Ahead of the marker: done, then stepped back past. Faded rather than absent,
    because the whole reason to step back is to be able to come forward again and
@@ -592,9 +630,9 @@
    the argument and declares the channel-form tokens. Only the colour is
    restated; the rest of each rule above is untouched and still applies. */
 @supports not (color: color-mix(in srgb, red, blue)) {
-  #timeline-strip .tl-name:hover,
-  #timeline-strip .tl-step:hover .tl-dot,
-  .tl-trim-go:hover { background: rgb(var(--ink-c) / 8%); }
+  /* One left, where there were three: the head buttons and the trim button now
+     hover on --paper-2, which is a flat token and needs no fallback. */
+  #timeline-strip .tl-step:hover .tl-dot { background: rgb(var(--ink-c) / 8%); }
   #timeline-strip .tl-step.is-at::after {
     box-shadow: 0 0 0 2px rgb(var(--accent-c) / 35%);
   }

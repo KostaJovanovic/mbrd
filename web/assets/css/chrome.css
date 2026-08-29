@@ -5,7 +5,7 @@
 /* The corner stack: zoom controls over the coordinate readout. */
 #corner {
   position: fixed;
-  z-index: 20;
+  z-index: var(--z-chrome);
   right: max(16px, env(safe-area-inset-right));
   bottom: max(16px, env(safe-area-inset-bottom));
   display: flex;
@@ -56,6 +56,13 @@
   #zoom-ctl button:hover { background: var(--paper-2); color: var(--accent-deep); }
 }
 #zoom-ctl button:active { background: var(--paper-3); }
+/* Keyboard focus in the app's own language rather than the browser's. Every
+   panel and menu already drew its own and none of the floating chrome did, so a
+   tab round the window changed focus language halfway. Mirroring the hover is
+   #conn-chip's answer and it is the right one here: these are icon buttons in a
+   segmented group, and an outline ring on a segment would draw a box round one
+   third of an object that has one outline. */
+#zoom-ctl button:focus-visible:not(:disabled) { background: var(--paper-2); color: var(--accent-deep); }
 #zoom-ctl button:disabled { color: var(--ink-3); cursor: default; background: none; }
 #zoom-ctl svg {
   width: 15px; height: 15px;
@@ -131,7 +138,7 @@
 
 #toolbar {
   position: fixed;
-  z-index: 20;
+  z-index: var(--z-chrome);
   top: max(16px, env(safe-area-inset-top));
   left: 50%;
   translate: -50% 0;
@@ -216,6 +223,8 @@
   #toolbar button:hover { background: var(--paper-2); color: var(--accent-deep); }
 }
 #toolbar button:active { background: var(--paper-3); color: var(--accent-deep); }
+/* Focus mirrors the hover - see #zoom-ctl's copy of this, one bar over. */
+#toolbar button:focus-visible { background: var(--paper-2); color: var(--accent-deep); }
 /* A button whose flyout is down (ui/flyout.js), held at the hover look while
    the pointer is off it and inside the panel.
    Without this the button goes cold the moment you reach for a row in its own
@@ -251,7 +260,7 @@
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
-/* The bar goes while a panel is open. Same bargain as #bin and the bar this
+/* The bar goes while a panel is open. Same bargain as #drawer-dock and the bar this
    replaced, and fading rather than sliding, because there is nowhere for a
    centred object to slide to.
 
@@ -323,7 +332,7 @@
    objects on one edge wearing two different corners read as two strips. */
 #nowplaying {
   position: fixed;
-  z-index: 20;
+  z-index: var(--z-chrome);
   bottom: max(16px, env(safe-area-inset-bottom));
   left: var(--foot-left);
   right: var(--foot-right);
@@ -694,17 +703,24 @@
   align-items: center;
   gap: 6px;
 }
-#nowplaying .np-volume svg { width: 15px; height: 15px; color: var(--ink-3); }
+#nowplaying .np-volume svg { width: var(--icon-glyph); height: var(--icon-glyph); color: var(--ink-3); }
 #nowplaying .np-volume input { width: 68px; }
 #nowplaying .np-close {
   flex: none;
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
+  width: var(--icon-button);
+  height: var(--icon-button);
   padding: 0;
   border: 0;
-  border-radius: 50%;
+  /* --radius-pill, not 50%, and tokens.css:354 is the instruction: a 50% that is
+     really a rounded rectangle which happens to be square wants the pill. This
+     is a square button with an icon in it, not a disc - the play button two
+     rules up is the disc, and it keeps its 50%. The difference on screen is one
+     tier: at Harsh, where --radius-pill is 0, this squares off with the bar
+     around it instead of being the one thing on a board that declares nothing
+     curves still curving. */
+  border-radius: var(--radius-pill);
   background: none;
   color: var(--ink-3);
   cursor: pointer;
@@ -713,27 +729,30 @@
 @media (hover: hover) {
   #nowplaying .np-close:hover { background: var(--paper-2); color: var(--accent-deep); }
 }
-#nowplaying .np-close svg { width: 12px; height: 12px; }
+#nowplaying .np-close:focus-visible { background: var(--paper-2); color: var(--accent-deep); }
+#nowplaying .np-close svg { width: var(--icon-glyph); height: var(--icon-glyph); }
 
 /* The right-hand controls: play, and the playlist's shuffle / prev / next /
-   repeat. Round icon buttons in the bar's own idiom, like the close. */
+   repeat. Round icon buttons in the bar's own idiom, like the close - and
+   rounded on the same token, so all three follow the corner axis together. */
 #nowplaying .np-qbtn {
   flex: none;
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: var(--icon-button);
+  height: var(--icon-button);
   padding: 0;
   border: 0;
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
   background: none;
   color: var(--ink-2);
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 @media (hover: hover) {
-  #nowplaying .np-qbtn:hover { background: var(--paper-2); color: var(--ink); }
+  #nowplaying .np-qbtn:hover { background: var(--paper-2); color: var(--accent-deep); }
 }
+#nowplaying .np-qbtn:focus-visible { background: var(--paper-2); color: var(--accent-deep); }
 /* The press, for both round buttons at once - the comment above already says the
    close and these are one idiom, and the pressed look is the half of that idiom
    they share exactly. One step further into the paper than the hover, which is
@@ -742,7 +761,7 @@
    file: what moves here is a background, and both blocks already run that at
    --dur-fast on --ease. There is nothing to shorten and no overshoot to undo. */
 #nowplaying :is(.np-qbtn, .np-close):active { background: var(--paper-3); }
-#nowplaying .np-qbtn svg { width: 16px; height: 16px; }
+#nowplaying .np-qbtn svg { width: var(--icon-glyph); height: var(--icon-glyph); }
 /* An engaged shuffle or repeat reads in the accent. */
 #nowplaying .np-qbtn[aria-pressed="true"] { color: var(--accent-text); }
 /* And one of them comes and goes: Next, which is only on the bar while a list is
@@ -777,7 +796,7 @@
   --tour-gap: 12px;
 
   position: fixed;
-  z-index: 21;
+  z-index: var(--z-chrome-over);
   bottom: max(16px, env(safe-area-inset-bottom));
   left: max(16px, env(safe-area-inset-left));
   right: max(16px, env(safe-area-inset-right));
@@ -888,11 +907,11 @@
   flex: none;
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: var(--icon-button);
+  height: var(--icon-button);
   padding: 0;
   border: 0;
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
   background: none;
   color: var(--ink-2);
   cursor: pointer;
@@ -906,9 +925,14 @@
    under a finger is the one saying it will do something. */
 #tour button:active:not(:disabled) { background: var(--paper-3); }
 /* Greyed at the ends. Clamped rather than wrapped - see stepTour() - so the
-   first and last stops each have one dead button, and it has to look dead. */
-#tour button:disabled { color: var(--ink-3); opacity: 0.45; cursor: default; }
-#tour button svg { width: 15px; height: 15px; }
+   first and last stops each have one dead button, and it has to look dead.
+
+   --ink-3 and nothing else: it is already ink at 38%, and the `opacity: 0.45`
+   that used to sit on top of it made these two roughly twice as faint as the
+   zoom cluster's dead buttons, which had it right all along. */
+#tour button:disabled { color: var(--ink-3); cursor: default; }
+#tour button:focus-visible:not(:disabled) { background: var(--paper-2); color: var(--accent-deep); }
+#tour button svg { width: var(--icon-glyph); height: var(--icon-glyph); }
 /* The one thing the close does not share, and it is space rather than shape:
    stepping and leaving are different errands, and two more pixels between them
    is enough to say so without drawing anything. */
@@ -933,7 +957,7 @@
 :root.is-idle #menu-btn,
 :root.is-idle #mobile-header-edit-btn,
 :root.is-idle #mobile-find-btn,
-:root.is-idle #bin,
+:root.is-idle #drawer-dock,
 :root.is-idle #corner,
 /* The toolbar goes with the rest, and it is the one entry here worth arguing
    about: everything else on this list reports or controls the view, and this
@@ -984,7 +1008,7 @@
   #mobile-find-btn,
   #sidebar,
   #header-panel,
-  #bin,
+  #drawer-dock,
   #corner,
   #toolbar,
   #timeline-strip,
@@ -1039,7 +1063,7 @@
    holds every stop in the tour. */
 #tour-editor {
   position: fixed;
-  z-index: 21;
+  z-index: var(--z-chrome-over);
   bottom: max(16px, env(safe-area-inset-bottom));
   left: max(16px, env(safe-area-inset-left));
   right: max(16px, env(safe-area-inset-right));
@@ -1121,30 +1145,32 @@
    of a bar with one row, where the end and the top right are the same place, and
    false the moment there are three.
 
-   .tl-close's measurements exactly, because that is the closable *strip* rather
-   than the closable panel: 24 square at --radius-sm with a 14px glyph, and the
-   ink-wash hover the rest of the app hovers with. */
+   .tl-close's measurements, which are now every close's measurements: this
+   copied that one faithfully and both were wrong in the same two ways. 24 at
+   --radius-sm was a size nobody chose and a corner meant for the seams inside a
+   segmented control, and the ink wash was described here as "the hover the rest
+   of the app hovers with" when it was the rarest of three. --icon-button,
+   --leaf, and the paper step. */
 #tour-editor .tour-close {
   flex: none;
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
+  width: var(--icon-button);
+  height: var(--icon-button);
   padding: 0;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--leaf);
   background: none;
   color: var(--ink-3);
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
-#tour-editor .tour-close svg { width: 14px; height: 14px; }
+#tour-editor .tour-close svg { width: var(--icon-glyph); height: var(--icon-glyph); }
 @media (hover: hover) {
-  #tour-editor .tour-close:hover {
-    background: color-mix(in srgb, var(--ink) 8%, transparent);
-    color: var(--ink);
-  }
+  #tour-editor .tour-close:hover { background: var(--paper-2); color: var(--accent-deep); }
 }
+#tour-editor .tour-close:active { background: var(--paper-3); }
+#tour-editor .tour-close:focus-visible { background: var(--paper-2); color: var(--accent-deep); }
 /* The strip is the one row that may grow, and it grows *upwards* - the bar is
    pinned to the foot of the window, so a tour long enough to wrap raises the top
    edge and leaves the head, the caption and both verbs exactly where they were. */
@@ -1207,10 +1233,22 @@
   border-color: var(--danger);
   color: var(--paper-card);
 }
-/* The greying the tour bar's dead buttons wear one strip over - ink-3 at 0.45.
-   This bar had two different disabled values in it and neither was the app's. */
+/* The greying the tour bar's dead buttons wear one strip over, which is now the
+   app's single one: --ink-3 and no opacity on top of it. The 0.45 that used to
+   be here faded the button's *ground* as well as its ink, so a dead Add cut a
+   hole in the row it sits in rather than going quiet in it. */
 #tour-editor .tour-add:disabled,
-#tour-editor .tour-play:disabled { cursor: default; color: var(--ink-3); opacity: 0.45; }
+#tour-editor .tour-play:disabled { cursor: default; color: var(--ink-3); }
+/* Focus takes the edge and leaves the fill alone, so the three faces this pair
+   wears - plain, accent, danger - all show it and none of them lose their
+   colour to it. --accent-text rather than --accent-deep because this is an
+   *edge* on a filled ground, which is the bound mobile.css argues for. */
+#tour-editor .tour-play:not(:disabled):focus-visible,
+#tour-editor .tour-add:not(:disabled):focus-visible { border-color: var(--accent-text); }
+#tour-editor .tour-play:not(:disabled):focus-visible {
+  background: var(--paper-2);
+  color: var(--accent-deep);
+}
 @media (hover: hover) {
   #tour-editor .tour-play:not(:disabled):hover {
     background: var(--paper-2);
@@ -1300,7 +1338,9 @@
   user-select: text;
 }
 #tour-editor .tour-cap::placeholder { color: var(--ink-3); }
-#tour-editor .tour-cap:hover { border-bottom-color: var(--rule); }
+@media (hover: hover) {
+  #tour-editor .tour-cap:hover { border-bottom-color: var(--rule); }
+}
 #tour-editor .tour-cap:focus { outline: none; border-bottom-color: var(--accent-text); }
 
 /* What can be done here, in the caption's place while there is no stop being
@@ -1399,9 +1439,14 @@
 /* The stop the foot row is pointed at, in the accent the marks on the cards
    wear - so the chip being pointed at and the cards it is about are one colour. */
 #tour-editor .tour-chip.is-current { background: var(--accent); color: var(--accent-fg); }
+/* --paper-2, not --paper-3: the hover is one step into the paper and the press
+   is two, and this chip is dragged - a grab that started at the press colour has
+   nowhere left to go. */
 @media (hover: hover) {
-  #tour-editor .tour-chip:hover:not(.is-current) { background: var(--paper-3); color: var(--ink); }
+  #tour-editor .tour-chip:hover:not(.is-current) { background: var(--paper-2); color: var(--ink); }
 }
+#tour-editor .tour-chip:active:not(.is-current) { background: var(--paper-3); }
+#tour-editor .tour-chip:focus-visible:not(.is-current) { background: var(--paper-2); color: var(--ink); }
 
 /* Several cards framed together, drawn as a second square behind the first.
    A count *inside* a square that already holds a number is two numbers in
@@ -1414,7 +1459,10 @@
    button invites. */
 #tour-editor .tour-chip.is-group { box-shadow: 3px -3px 0 0 var(--paper-3); }
 #tour-editor .tour-chip.is-group.is-current,
-#tour-editor .tour-chip.is-group:hover { box-shadow: 3px -3px 0 0 var(--rule-2); }
+#tour-editor .tour-chip.is-group:focus-visible { box-shadow: 3px -3px 0 0 var(--rule-2); }
+@media (hover: hover) {
+  #tour-editor .tour-chip.is-group:hover { box-shadow: 3px -3px 0 0 var(--rule-2); }
+}
 
 
 /* The scale bar. A label over a stick, both right-aligned, so the stick's right

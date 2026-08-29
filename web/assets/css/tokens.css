@@ -48,9 +48,40 @@
      tinted, not less, because at equal chroma a darker sheet shows its hue
      more. Less colour, more light. Either half alone is the wrong answer. */
   --paper:      #faf8f3;   /* the sheet */
-  --paper-2:    #f1efe8;   /* insets, wells */
+  --paper-2:    #f1efe8;   /* insets, wells, and a hovered control */
   --paper-3:    #e6e3d8;   /* pressed, active */
   --paper-card: #fdfdfa;   /* items sit slightly brighter than the board */
+
+  /* ---- what a control does when you touch it ----
+     Three declarations, in this order, and the two steps above are the first
+     two of them. Written down because the app had drifted into three answers
+     for the hover alone, and one of the three was the press.
+
+       hover     background: var(--paper-2);  color: var(--accent-deep);
+       press     background: var(--paper-3);
+       disabled  color: var(--ink-3);         cursor: default;
+
+     **The hover is one step into the paper and the press is two.** A control
+     that hovers at --paper-3 has nowhere left to go under a finger, which is
+     what the mobile player and the sticker window were doing.
+
+     **--accent-deep is the ink a control turns, --accent-text is the ink a
+     *word* is.** They are the same pigment at two lightnesses and the app had
+     been picking between them by which file the rule was in. --accent-text is
+     also --select, which is the tell: it is tuned to be read against paper, so
+     it belongs to links, labels, a focused field's rule and the selection
+     outline. A hovered icon darkening towards its accent wants the deeper one.
+
+     **Disabled is --ink-3 and nothing else.** --ink-3 is already ink at 38%;
+     the six rules that stacked an extra `opacity: 0.4` or `0.45` on top of it
+     were making those controls twice as faint as the zoom cluster's, which had
+     it right. An opacity there also fades the *background*, so a disabled
+     button in a filled group dissolves a hole in its own bar.
+
+     A hover belongs inside `@media (hover: hover)`. A press does not: it is the
+     one of the three a finger can actually reach.
+
+     See research/design-audit-2026-08-25.md, findings A2 and B3 to B5. */
 
   /* ---- ink ---- */
   --ink:        #31261b;
@@ -206,6 +237,25 @@
   --chrome-button-w:     42px;
   --chrome-button-h:     40px;
   --chrome-button-touch: 46px;
+  /* The *small* icon button, which is the other one and by far the more common:
+     a close, a step, a transport control, anything that is one glyph in a box
+     sitting inside a bar rather than on the glass on its own.
+
+     There are about thirty of them and until this token there were eight sizes.
+     Ten of those thirty were the same button - "close the thing you are looking
+     at" - at 24, 26, 28, 30, 30 x --density and 32, with three glyph sizes
+     inside them. Nobody chose any of that; each one was written next to the bar
+     it landed in and copied the number that looked right on the day.
+
+     28 and 15 because they were already the plurality: the player's transport
+     buttons, the sticker window and the mobile player were at 28, and eight
+     surfaces were drawing their glyph at 15. --density is applied at the two
+     sites that already scaled with it (the dialogs), not here, because a bar
+     pinned to the glass does not grow with the reading size and a dialog does.
+
+     See research/design-audit-2026-08-25.md, finding B1. */
+  --icon-button: 28px;
+  --icon-glyph:  15px;
   /* How far off square an item may come to rest. Each one gets its own factor
      in [-1, 1] from canvas/items.js and multiplies it by this, so the whole
      board straightens up or scatters as the axis moves, with no JS involved. */
@@ -304,9 +354,35 @@
      weight is chosen per shape in tools/gen-stickers.mjs by picking which
      Phosphor weight to vendor, and nothing downstream can change it. */
 
+  /* ---- stacking ----
+     The --z-* ladder is NOT here. It is in base.css, and the reason is this
+     file's own contract rather than a filing preference.
+
+     Everything declared in this block is a *look*: a board carries its palette,
+     its type and its corner radius in the file, ui/look.ts is the allowlist of
+     what a file may set, and tests/appearance.test.js holds that allowlist to
+     exactly what this file declares - in both directions, so a token born here
+     is a token a board may set. That is right for a colour and wrong for a
+     stacking order: `--z-menu: -1` in a file would put the right-click menu
+     behind the board, which is not a look, it is the app rearranged.
+
+     base.css's banner is the other half of the same rule: "Structure only.
+     Every colour, corner, duration, typeface and ornament comes from a custom
+     property in tokens.css." What is in front of what is structure, so it lives
+     there and never enters the look system at all. No deny list, no exception
+     in the test, and nothing to remember - the two files already said which is
+     which. See research/design-audit-2026-08-25.md, finding B7. */
+
   /* ---- shape ----
      Every corner is even. --leaf sizes controls, --ogee the panels that hold
-     them, --radius-xs the small fry (checkboxes, chips, kbd).
+     them, --radius-sm the seams inside a segmented control, --radius-xs the
+     small fry (checkboxes, chips, kbd).
+
+     --radius-sm carried sixteen uses and no clause in that sentence until now,
+     which is how it ended up on two closes that wanted --leaf. Its actual job
+     is the one #conn-chip and the zoom cluster do: a group of buttons sharing
+     one outline, where the outer corners follow the group and the inner ones
+     are struck from it. If a control is on its own, it is --leaf.
 
      One number, four ratios. --radius is the only corner a tier declares and
      the only one the Corner radius slider writes; the rest are struck from it,
@@ -339,10 +415,16 @@
 
      ── And the circles do not come with them ──
 
-     Fourteen elements across the stylesheets are `border-radius: 50%` and stay
-     perfectly round at Harsh, where this token is 0px and nothing else curves.
-     That looks like the same fault and it is not, which is why it is written
-     down here rather than left to be rediscovered and "fixed".
+     A dozen-odd elements across the stylesheets are `border-radius: 50%` and
+     stay perfectly round at Harsh, where this token is 0px and nothing else
+     curves. That looks like the same fault and it is not, which is why it is
+     written down here rather than left to be rediscovered and "fixed".
+
+     The count used to be written here as a number and is not any more: seven of
+     them turned out to be the very thing the last paragraph of this block warns
+     about, and pinning a figure invites the next reader to make it match rather
+     than to ask what each one is. What is below is the test; the arithmetic is
+     nobody's business.
 
      A swatch dot, a slider thumb, a colour-picker handle and an EQ bar cap are
      not rectangles with eased corners. They are circles - the shape carries the
@@ -353,6 +435,19 @@
      capped end follows --radius-pill, and a circle is drawn as a circle at
      every tier. If you are adding a 50% and it is really a rounded rectangle
      that happens to be square, it wants --radius-pill instead.
+
+     That last sentence caught seven buttons that were already here: the tour
+     bar's three, the player's close and its transport buttons, the phone
+     player's, the two panel closes and the board list's delete. Every one is a
+     square with a glyph in it and none of them is a circle carrying meaning -
+     a square close is still a close. They are on --radius-pill now, so they go
+     square at Harsh with the bars around them.
+
+     The play buttons stayed 50%, and that is the line: a disc is what says
+     "play" before the triangle inside it has been read, the way a dot says
+     "colour". #nowplaying .np-play, .transport .play, .vbig and .pw-play are
+     the four, and .pw-play has to restate its 50% because it is a .pw-btn as
+     well.
 
      (Left correct-by-accident until now: nobody had chosen it, which is the
      only reason it was worth a paragraph. See research/old/visual-audit-2026-08-12.md,

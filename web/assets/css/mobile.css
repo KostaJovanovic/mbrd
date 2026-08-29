@@ -87,12 +87,12 @@
    drops it. */
 :root[data-board-mode="mobile"][data-feed-lens="playlist"] #mobile-header-edit-btn { display: none; }
 /* The Playlist is a player, not an editor: the board-editing cluster in the foot -
-   the bin and the undo/redo pair - has nothing to act on here (there is no
+   the drawer and the undo/redo pair - has nothing to act on here (there is no
    selection, and a reorder is off the undo stack), and it fought the now-playing
    bar for the same corner. It comes down on the Playlist lens, leaving the foot to
    the player: the menu, the add bar, and the transport that rises over it. The Feed
    keeps it - a browse wall is closer to the board it edits. */
-:root[data-board-mode="mobile"][data-feed-lens="playlist"] .bin-row { display: none; }
+:root[data-board-mode="mobile"][data-feed-lens="playlist"] .drawer-row { display: none; }
 
 /* The board sheet: a fixed width, centred, standing clear of the chrome by its
    margins. The near-white fill carries a little of the palette accent, exactly as
@@ -729,9 +729,15 @@
   border-color: var(--accent-text);
   box-shadow: var(--shadow-1);
 }
-.pl-play:hover { background: var(--accent-deep); }
 .pl-shuffle { background: transparent; color: var(--ink-2); border-color: var(--rule); }
-.pl-shuffle:hover { background: var(--paper-3); color: var(--ink); }
+/* Guarded and stepped back to --paper-2. This is the phone's playlist: every
+   hover in it was answering a tap and staying lit, and the wash they were using
+   is the one tokens.css names for a press. */
+@media (hover: hover) {
+  .pl-play:hover { background: var(--accent-deep); }
+  .pl-shuffle:hover { background: var(--paper-2); color: var(--accent-deep); }
+}
+.pl-shuffle:active { background: var(--paper-3); }
 .pl-shuffle.is-on {
   background: color-mix(in srgb, var(--accent) 14%, var(--paper-card));
   border-color: var(--accent-text);
@@ -778,7 +784,10 @@
    ruling rather than as the edge of the row it belongs to. */
 .pl-row.is-playing,
 .pl-row.is-playing + .pl-row { border-top-color: transparent; }
-.pl-row:hover { background: var(--paper-3); }
+@media (hover: hover) {
+  .pl-row:hover { background: var(--paper-2); }
+}
+.pl-row:active { background: var(--paper-3); }
 .pl-row.is-playing { background: color-mix(in srgb, var(--accent) 10%, var(--paper-card)); }
 /* The needle: the playing row is marked at its edge and not by tint alone, so it
    is still the current track when it has scrolled half off the screen.
@@ -866,7 +875,10 @@
   cursor: grab;
   touch-action: none;
 }
-.pl-grip:hover { background: var(--paper-3); color: var(--ink-2); }
+@media (hover: hover) {
+  .pl-grip:hover { background: var(--paper-2); color: var(--ink-2); }
+}
+.pl-grip:active { background: var(--paper-3); }
 .pl-row.is-dragging .pl-grip { cursor: grabbing; }
 .pl-grip svg { width: 16px; height: 16px; }
 /* Where there is a pointer the handle waits to be asked for. Nine of them
@@ -923,7 +935,7 @@
    bottom-right corner on open. */
 .player-window {
   position: fixed;
-  z-index: 40;
+  z-index: var(--z-overlay);
   right: max(16px, env(safe-area-inset-right));
   bottom: max(16px, env(safe-area-inset-bottom));
   width: min(340px, calc(100vw - 32px));
@@ -974,19 +986,30 @@
   flex: none;
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: var(--icon-button);
+  height: var(--icon-button);
   padding: 0;
   border: 0;
   border-radius: var(--leaf);
   background: none;
   color: var(--ink-2);
   cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
-.player-window-toggle:hover,
-.player-window-close:hover { background: var(--paper-3); color: var(--ink); }
+/* Guarded, and on --paper-2 rather than --paper-3. This is the phone's player
+   and it had both faults at once: the hover step was the press step, and it was
+   unguarded, so a tap left the button lit at the pressed colour until you
+   touched something else. */
+@media (hover: hover) {
+  .player-window-toggle:hover,
+  .player-window-close:hover { background: var(--paper-2); color: var(--accent-deep); }
+}
+.player-window-toggle:active,
+.player-window-close:active { background: var(--paper-3); }
+.player-window-toggle:focus-visible,
+.player-window-close:focus-visible { background: var(--paper-2); color: var(--accent-deep); }
 .player-window-toggle svg,
-.player-window-close svg { width: 15px; height: 15px; }
+.player-window-close svg { width: var(--icon-glyph); height: var(--icon-glyph); }
 /* The region under the title bar. It holds the body and takes the leftover
    height; the body scrolls inside it. */
 .player-window-content {
@@ -1030,7 +1053,9 @@
   border-bottom-right-radius: 2px;
   opacity: 0.55;
 }
-.player-window-resize:hover { color: var(--accent-text); }
+@media (hover: hover) {
+  .player-window-resize:hover { color: var(--accent-text); }
+}
 .player-window.is-resizing { cursor: nwse-resize; }
 .player-window.is-resizing .player-window-resize { color: var(--accent-text); }
 
@@ -1148,13 +1173,23 @@
   height: 34px;
   padding: 0;
   border: 0;
-  border-radius: 50%;
+  /* --radius-pill, per tokens.css:354: these are square icon buttons and follow
+     the corner axis. .pw-play below is the exception and puts its 50% back - a
+     play button is a disc, and the disc is what says "play" before the glyph
+     inside it is read. */
+  border-radius: var(--radius-pill);
   background: none;
   color: var(--ink-2);
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
-.pw-btn:hover { background: var(--paper-3); color: var(--ink); }
+@media (hover: hover) {
+  .pw-btn:hover { background: var(--paper-2); color: var(--accent-deep); }
+}
+/* :not(.pw-play) on both - the play button is the one filled control in the row
+   and a paper wash over it would undo the fill rather than deepen it. */
+.pw-btn:not(.pw-play):active { background: var(--paper-3); }
+.pw-btn:not(.pw-play):focus-visible { background: var(--paper-2); color: var(--accent-deep); }
 .pw-btn.is-on { color: var(--accent-text); }
 /* Flex the glyph wrapper so the SVG is laid out as a flex item, not an inline box:
    an inline SVG rides the text baseline and its descender space nudges every icon a
@@ -1165,16 +1200,24 @@
   width: 44px;
   height: 44px;
   border: var(--hairline) solid var(--accent-text);
+  border-radius: 50%;
   color: var(--accent-text);
 }
-.pw-play:hover { background: var(--accent); color: var(--accent-fg); }
+@media (hover: hover) {
+  .pw-play:hover { background: var(--accent); color: var(--accent-fg); }
+}
 .pw-play svg { width: 18px; height: 18px; }
 /* The two ends of a list being read straight through. Only ever set with repeat
    off and shuffle off - see refresh() in ui/playlist.js, which is where the
    argument for that lives. It has to *look* dead, because it is: the press does
    nothing rather than wrapping to the other end of the list. */
-.pw-btn:disabled { color: var(--ink-3); opacity: 0.4; cursor: default; }
-.pw-btn:disabled:hover { background: none; color: var(--ink-3); }
+/* --ink-3 and nothing else, the app's one disabled recipe. The `opacity: 0.4`
+   that used to sit on top of it faded the ground as well as the ink, which on a
+   row of filled transport buttons cut a hole rather than going quiet. */
+.pw-btn:disabled { color: var(--ink-3); cursor: default; }
+@media (hover: hover) {
+  .pw-btn:disabled:hover { background: none; color: var(--ink-3); }
+}
 
 /* "4 of 12", under the artist. A third line in the info column rather than
    something in the seek row, because it is a fact about the *list* and the two
@@ -1260,7 +1303,7 @@
      (sidebar.css), which the list never named - so on Chromium the bars tinted
      to the accent and the sheet under them did not move. Half a hover is how a
      rule that was quietly wrong on every control got noticed on one. */
-  #menu-btn:active, #mobile-header-edit-btn:active, #bin-btn:active, #zoom-ctl button:active,
+  #menu-btn:active, #mobile-header-edit-btn:active, #drawer-btn:active, #zoom-ctl button:active,
   .btn-row button:active { background: var(--paper-3); }
 
   /* 44px, everywhere a finger has to land. This is the *input* question, so it
@@ -1271,7 +1314,7 @@
      number in this control that must not move. */
   #menu-btn span { width: 20px; }
   #mobile-header-edit-btn svg { width: 20px; height: 20px; }
-  #bin-btn svg { width: 20px; height: 20px; }
+  #drawer-btn svg { width: 20px; height: 20px; }
   /* Width only. The height used to be restated here as 46 because the base rule
      set 32 and a finger needs more than that; now the base rule reads
      --chrome-button-h, which this query has already taken to
@@ -1291,8 +1334,8 @@
 @media (max-width: 700px) {
   /* Two bands instead of four corners.
 
-     The foot is for the hand: the add bar along the very bottom, with the bin,
-     undo and redo on the row above it. The view controls go up to the top
+     The foot is for the hand: the add bar along the very bottom, with the
+     drawer, undo and redo on the row above it. The view controls go up to the top
      edge, because they are the odd one out - zoom is something you set and
      then leave, not something you reach for mid-gesture, and it was the piece
      most often pressed by accident while dragging an item towards the bottom
@@ -1506,41 +1549,67 @@
     left: auto;
   }
 
-  /* The bin takes the left corner of the foot, which is the one it holds at
-     every other width. It sat on the right here for a while, from back when the
-     menu button owned the bottom left and the two could not share the strip;
-     the menu has since moved, so the only thing the right-hand pin still bought
-     was a bin that changes sides between a phone and the laptop it syncs with. */
-  #bin {
+  /* The drawer button takes the left corner of the foot, which is the one it
+     holds at every other width. It sat on the right here for a while, from back
+     when the menu button owned the bottom left and the two could not share the
+     strip; the menu has since moved, so the only thing the right-hand pin still
+     bought was a control that changes sides between a phone and the laptop it
+     syncs with. */
+  #drawer-dock {
     bottom: max(12px, env(safe-area-inset-bottom));
     left: max(12px, env(safe-area-inset-left));
   }
   /* And undo and redo stay at the other end, which is the one thing about this
-     row that does not match the desktop. On a laptop they sit against the bin
-     because they are the same thought - the bin is the one mistake you can walk
-     back by hand and these are every other one - and the pointer costs nothing
-     to move between them. Here the cost is a thumb: both far corners of the foot
-     are comfortable and the middle is the stretch, so a pair pressed as often as
-     these belongs in a corner rather than beside one - and the add bar takes the
-     stretch between them, where it is aimed at rather than reached for in a hurry.
-     It stays a child of #bin, so the idle fade and the sidebar-open hide still
-     take it with everything else; only where it is pinned changes. */
+     row that does not match the desktop. On a laptop they sit against the drawer
+     because they are the same thought - the drawer is the one mistake you can
+     walk back by hand and these are every other one - and the pointer costs
+     nothing to move between them. Here the cost is a thumb: both far corners of
+     the foot are comfortable and the middle is the stretch, so a pair pressed as
+     often as these belongs in a corner rather than beside one - and the add bar
+     takes the stretch between them, where it is aimed at rather than reached for
+     in a hurry. It stays a child of #drawer-dock, so the idle fade and the
+     sidebar-open hide still take it with everything else; only where it is
+     pinned changes. */
   #history-ctl {
     position: fixed;
     bottom: max(12px, env(safe-area-inset-bottom));
     right: max(12px, env(safe-area-inset-right));
   }
   /* All three share one height so the foot is a single flush line. */
-  #bin-btn, #history-ctl { height: var(--bar-h); }
+  #drawer-btn, #history-ctl { height: var(--bar-h); }
 
   /* The toast rises from the foot on a desktop, where the foot is empty. Here
      the foot is the button row, so a line landing at its usual 24px would sit
-     behind the bin and the add bar. Lift it clear: the row's own bottom, plus
-     the row height, plus a gap. */
+     behind the drawer button and the add bar. Lift it clear: the row's own
+     bottom, plus the row height, plus a gap. */
   #toast { bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--bar-h) + 12px); }
-  /* Only the width is narrowed - the panel hangs off the left edge here just as
-     it does on a desktop, so nothing about which way it opens changes. */
-  #bin-panel { width: min(268px, calc(100vw - 24px)); max-height: min(60vh, 420px); }
+  /* The window is narrowed and lifted clear of the button row it opens from -
+     on a desktop it stands on the corner, and here that corner is the foot bar.
+     It still hangs off the left edge, so nothing about which way it opens
+     changes, and it is still draggable off wherever this leaves it. */
+  #drawer-window {
+    width: min(360px, calc(100vw - 24px));
+    max-height: min(60vh, 460px);
+    left: max(12px, env(safe-area-inset-left));
+    bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--bar-h) + 10px);
+  }
+  /* And it gets out of the way almost completely while a card is being carried
+     out of it, where a desktop leaves it at 30%.
+
+     The difference is how much of the board it is standing on. On a laptop the
+     window is a fifth of the screen in a corner and 30% is enough - you can see
+     what you are aiming at past it, and it stays present enough to aim *away*
+     from, which matters because a drop let go over the window is a cancel. Here
+     it is most of the board: at 30% the phone shows a card being dragged across
+     a grey panel, and the thing being aimed at is underneath the thing doing the
+     aiming.
+
+     1%, not 0. It has the same job to do at either number - it still takes the
+     pointer, so releasing over it still cancels rather than flinging the card
+     somewhere arbitrary - and a window at 0 that silently eats a drop is a
+     control that has stopped existing while still deciding what happens. One
+     percent is a pane of glass you can just make out the edge of. */
+  #drawer-window.is-lifting { opacity: 0.01; }
 
   /* Up at the top edge, clear of everything the thumb is doing. Right-aligned
      rather than centred: #corner is a column that grows downwards from its
@@ -1588,12 +1657,12 @@
      the scale bar is measuring something nobody can look at, and a zoom control
      floating over a full-screen panel reads as a piece of the panel - one that
      does nothing you would expect a control on this screen to do. The menu
-     button, the bin and the toolbar already leave for exactly this reason; this
+     button, the drawer and the toolbar already leave for exactly this reason; this
      is the last corner that stayed.
 
      visibility with the opacity, and delayed by the fade's own length, so the
      controls finish fading before they leave the tab order and come back the
-     instant the panel starts to close. The same pairing #bin and #toolbar use -
+     instant the panel starts to close. The same pairing #drawer-dock and #toolbar use -
      a control faded to nothing that can still be pressed is worse than one that
      is simply there. */
   #sidebar.is-open ~ #corner,

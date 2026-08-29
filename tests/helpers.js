@@ -56,7 +56,7 @@ export const APP_CSS_ORDER = [
   'items.css', 'ghosts.css', 'fences.css', 'media.css', 'cards.css',
   'item-chrome.css',
   'sidebar.css', 'chrome.css',
-  'trash.css', 'menu.css', 'library.css', 'status.css', 'dialog.css',
+  'drawer.css', 'menu.css', 'library.css', 'status.css', 'dialog.css',
   'viewer.css', 'color-picker.css', 'sticker-pad.css',
   'mobile.css', 'timeline.css', 'quality.css',
 ];

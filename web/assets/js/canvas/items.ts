@@ -636,13 +636,13 @@ export function itemIdFromEvent(target: EventTarget | null): string | null {
  */
 function discard(el: HTMLElement) {
   el.remove();
-  releaseContent(el);
+  releaseCardContent(el);
 }
 
 /**
  * Everything a card's *contents* hold on to, handed back.
  *
- * Its own function because two callers throw content away and only one of them
+ * Its own function because callers throw content away and only one of them
  * was doing this. discard() is the obvious one; rebuild() is the other, and it
  * replaces a card's whole body on a rename, a Fit toggle, a crop, an adjust or
  * a cover change - every one of which arrives as an 'item' emit. It called
@@ -653,8 +653,16 @@ function discard(el: HTMLElement) {
  *
  * The argument for every line of it is discard()'s own: the element frees what
  * it has buffered when its source goes, not when the last reference to it does.
+ *
+ * Exported for the third caller, which is not on the canvas at all: ui/drawer.ts
+ * mounts real cards on its shelves and lets them go again as they scroll out of
+ * the window, and that is the same act as culling one off the board. The whole
+ * point of exporting it rather than letting that module write its own four lines
+ * is that there is one answer to "what does a card hold on to" - the day a
+ * renderer starts holding something new, it is added here and every surface that
+ * mounts a card gets the release for free.
  */
-function releaseContent(el: Element) {
+export function releaseCardContent(el: Element) {
   releasePlayers(el);
   for (const m of el.querySelectorAll<HTMLMediaElement>('video, audio')) {
     m.pause();
@@ -1248,7 +1256,7 @@ function rebuild(id: string) {
   // <audio> registered under the volume control and holding its stream, once
   // per rename, and its <img> holding a full-resolution decode. The same
   // teardown discard() does, because this is the same act on a smaller scale.
-  releaseContent(body);
+  releaseCardContent(body);
   body.replaceChildren(buildContent(item));
   // data-fit lives on the outer .item and is otherwise only written in build(),
   // so a per-item fit change (which arrives as 'item' → rebuild) would rebuild

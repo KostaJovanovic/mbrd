@@ -18,8 +18,8 @@
 //
 // The feel is chosen by the whimsy tier (Softish/Middle/Harsh), except the
 // title card, which is a singleton headed for its own restore button in the
-// bin dock: it simply vanishes, and a small chip tumbles down to the bin in its
-// place - a hint at where it went, not the whole card sailing over.
+// drawer: it simply vanishes, and a small chip tumbles down to the drawer button
+// in its place - a hint at where it went, not the whole card sailing over.
 
 /** The four feels, each of which is a `.exit-<kind>` rule in the stylesheet. */
 export type ExitKind = 'chip' | 'fall' | 'shatter' | 'dissolve';
@@ -31,7 +31,7 @@ const TIER_KIND: Record<string, ExitKind> = { 0: 'fall', 2: 'shatter' };
  * The exit animation kind for an item, as a bare string the CSS turns into
  * keyframes (`.exit-<kind>`). Pure and DOM-free so it can be unit-tested:
  *
- *   - a title card is a 'chip' (the card vanishes, a scrap falls to the bin),
+ *   - a title card is a 'chip' (the card vanishes, a scrap falls to the drawer),
  *     whatever the whimsy tier;
  *   - otherwise the whimsy tier picks the feel, defaulting to a plain dissolve
  *     for the middle tier and any unset/unknown value.
@@ -77,18 +77,19 @@ function sweepOnEnd(node: Element): void {
 
 /**
  * The title card's exit: the card itself vanishes (its node is discarded by the
- * caller) and a small chip appears just above the bin button, lifts, then drops
- * into it. The motion is entirely at the bin - the chip does not travel from
- * where the card was. A no-op if there is no bin, so the card just disappears.
+ * caller) and a small chip appears just above the drawer button, lifts, then
+ * drops into it. The motion is entirely at that corner - the chip does not
+ * travel from where the card was. A no-op if there is no drawer button, so the
+ * card just disappears.
  */
 function dropChip() {
-  const bin = document.getElementById('bin-btn')?.getBoundingClientRect();
-  if (!bin) return;
+  const dock = document.getElementById('drawer-btn')?.getBoundingClientRect();
+  if (!dock) return;
 
   const chip = document.createElement('div');
   chip.className = 'exit-anim exit-chip';
-  chip.style.left = Math.round(bin.left + bin.width / 2) + 'px';
-  chip.style.top = Math.round(bin.top + bin.height / 2) + 'px';
+  chip.style.left = Math.round(dock.left + dock.width / 2) + 'px';
+  chip.style.top = Math.round(dock.top + dock.height / 2) + 'px';
 
   exitLayer().append(chip);
   sweepOnEnd(chip);

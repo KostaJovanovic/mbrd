@@ -58,6 +58,60 @@
 
 * { box-sizing: border-box; }
 
+/* ---------------------------------------------------------
+   The stacking ladder: what is in front of what, written once
+
+   These were fourteen bare integers spread over ten stylesheets - 20, 21, 24,
+   25, 30, 40, 41, 50, 55, 59, 60, 61, 70, 90 - with nothing naming the ladder
+   and nothing testing it, in a codebase that tests icon names and element ids
+   precisely because those fail silently. This fails silently too, and worse: a
+   surface one rung short of another is invisible only in the one combination
+   that puts the two on screen together.
+
+   Every number below is the number that was already there, so this is a rename
+   and not a re-order. Read it as the order things pile up in:
+
+     chrome      the furniture on the glass - toolbar, corner, bin, menu
+     chrome-over the strips that lift clear of it - tour, player, timeline
+     sweep       #exit-layer, where a deleted card is animated away
+     drop        the "let it fall" cover, while files are over the window
+     panel       the sidebar and the header panel, which cover the chrome
+     overlay     a window that takes the board over - library, sticker pad
+     status      the busy line, which must clear a working overlay
+     toast       what the app says back, over everything working
+     menu        a context menu, which can be opened from any of the above
+     search      opened *from* the menu, so one rung over it
+     splash      the boot cover, which is in front of an app not yet drawn
+
+   A surface that has to sit one over its own rung says so in arithmetic -
+   `calc(var(--z-menu) + 1)` - rather than writing 61 and leaving the next
+   reader to work out which 60 it was answering.
+
+   **Here and not in tokens.css, and that is load-bearing.** Everything in
+   tokens.css is a look: a board file carries its palette and its corners, and
+   tests/appearance.test.js holds ui/look.ts's allowlist to exactly what that
+   file declares - so a token born there is a token a saved board may set. A
+   colour, yes. A stacking order, no: `--z-menu: -1` drops the right-click menu
+   below #viewport, which has no z-index of its own, and the menu is gone until
+   another board is opened. That is the app rearranged rather than repainted,
+   and the way to make it impossible is for these names never to be look tokens
+   in the first place. This file's banner already says "Structure only"; this is
+   structure. tests/stacking.test.js is what keeps the ladder honest.
+   --------------------------------------------------------- */
+:root {
+  --z-chrome:      20;
+  --z-chrome-over: 21;
+  --z-sweep:       24;
+  --z-drop:        25;
+  --z-panel:       30;
+  --z-overlay:     40;
+  --z-status:      50;
+  --z-toast:       55;
+  --z-menu:        60;
+  --z-search:      70;
+  --z-splash:      90;
+}
+
 /* Selected text, in this board's own pigment rather than the browser's blue.
    Unqualified on purpose: it covers the canvas, the sidebar and the menus in
    one rule, because a highlight is a property of the board's palette and not
@@ -102,7 +156,7 @@ html, body {
    thirteen times, and kept next to the body rule it is the counterweight to. */
 .card-icon, .card-meta, .item-label, .wordmark :is(h1, h2), .wordmark .sub,
 .side-sec h2, .field > span, .dk-dial > span, .hint, .keys li, .side-foot,
-#bin-panel h2, #bin-none, #bin-hint, #drop-overlay div, #toast {
+.drawer-none, .drawer-hint, #drop-overlay div, #toast {
   font-family: var(--font-display);
 }
 
@@ -329,7 +383,7 @@ body {
   /* Above the sidebar (40), the dialogs (70) and the toast (50) - a cover that
      something can appear over is not a cover. Under the debug overlay, which is
      the only thing in the app that outranks the app. */
-  z-index: 90;
+  z-index: var(--z-splash);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -497,9 +551,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
  * and an outline for focus and for the on/pressed states. Kept deliberately small -
  * the query itself is the guard, so it cannot touch the ordinary palette. */
 @media (forced-colors: active) {
-  #menu-btn, #mobile-header-edit-btn, #mobile-find-btn, #bin, #bin-btn,
+  #menu-btn, #mobile-header-edit-btn, #mobile-find-btn, #drawer-dock, #drawer-btn,
   #history-ctl, #zoom-ctl, #toolbar, #nowplaying, #busy,
-  #sidebar, #header-panel, .player-window, #search, #ctx-menu, #ctx-child, #pick {
+  #sidebar, #header-panel, .player-window, #drawer-window, #search, #ctx-menu, #ctx-child, #pick {
     border: 1px solid CanvasText;
   }
   /* Keyboard focus stays obvious even where the app draws its own accent ring. */

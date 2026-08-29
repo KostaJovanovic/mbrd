@@ -1,7 +1,7 @@
 // The contract between the markup and the stylesheets, which nothing else checks.
 //
 // The CSS in this app addresses the furniture by id. Over five hundred selector
-// occurrences across the sheets name eighty-odd distinct ids: #toolbar, #bin,
+// occurrences across the sheets name eighty-odd distinct ids: #toolbar, #corner,
 // #viewer, #search-hits, #ctx-menu. Most of those are literal id="..." in
 // web/index.html; the rest are on nodes a module builds at runtime and hands an
 // id to.
@@ -60,8 +60,9 @@ const html = read(join(WEB, 'index.html'));
  */
 const JS_BUILT = {
   'appearance-fonts': 'the font list, poured into a slot the settings schema declares',
-  'bin-ghost': 'the card that flies into the bin as it is deleted',
   'conn-chip': 'the little editor that follows a selected connection',
+  'drawer-ghost': 'the copy of a card that follows the pointer out of the drawer',
+  'drawer-window': 'the drawer of what you deleted - a floating window, built on open',
   'ctx-child': 'the hover submenu flown out beside a fold - the menu node again, once',
   'ctx-menu': 'the right-click menu - every menu in the app is this one node',
   'exit-layer': 'the overlay an exit animation is drawn on, above everything',

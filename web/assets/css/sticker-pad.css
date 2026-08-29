@@ -25,7 +25,7 @@
    tap-to-place is the one creation gesture that works on a phone. */
 .sticker-window {
   position: fixed;
-  z-index: 40;
+  z-index: var(--z-overlay);
   right: max(16px, env(safe-area-inset-right));
   bottom: max(16px, env(safe-area-inset-bottom));
   width: min(320px, calc(100vw - 32px));
@@ -75,17 +75,25 @@
   flex: none;
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: var(--icon-button);
+  height: var(--icon-button);
   padding: 0;
   border: 0;
   border-radius: var(--leaf);
   background: none;
   color: var(--ink-2);
   cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
-.sticker-window-close:hover { background: var(--paper-3); color: var(--ink); }
-.sticker-window-close svg { width: 15px; height: 15px; }
+/* --paper-2 and --accent-deep. This hovered at --paper-3, which tokens.css
+   names as the *press* - so the button had nowhere left to go under a finger
+   and read as already held down. */
+@media (hover: hover) {
+  .sticker-window-close:hover { background: var(--paper-2); color: var(--accent-deep); }
+}
+.sticker-window-close:active { background: var(--paper-3); }
+.sticker-window-close:focus-visible { background: var(--paper-2); color: var(--accent-deep); }
+.sticker-window-close svg { width: var(--icon-glyph); height: var(--icon-glyph); }
 
 .sticker-window-body {
   flex: 1 1 auto;
@@ -185,7 +193,7 @@
    be when it lands - what you are carrying is the thing you are placing. */
 .sticker-ghost {
   position: fixed;
-  z-index: 60;
+  z-index: var(--z-menu);
   width: 64px;
   height: 64px;
   margin: -32px 0 0 -32px;

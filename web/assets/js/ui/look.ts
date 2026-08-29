@@ -40,6 +40,7 @@ export const TOKENS = new Set([
   '--grain', '--grid-alpha',
   '--grid-axis', '--grid-dot', '--grid-major', '--grid-minor',
   '--grow-hover', '--hairline', '--highlight', '--highlight-ink',
+  '--icon-button', '--icon-glyph',
   '--ink', '--ink-2', '--ink-3',
   '--item-bg', '--item-border', '--item-shadow', '--leaf', '--leafy',
   '--lift-drag', '--lift-hover', '--ls-scale', '--note-1', '--note-2',
@@ -56,6 +57,13 @@ export const TOKENS = new Set([
   '--stock', '--t-body',
   '--t-display', '--t-small', '--t-tiny', '--t-title', '--tilt-drag',
   '--tilt-max', '--vignette', '--wash', '--web-line', '--web-weight',
+  // No --z-* here, and none in tokens.css either: the stacking ladder is
+  // declared in base.css. The parity test above is why that matters - it holds
+  // this list to exactly what tokens.css declares, so a name that lands in that
+  // file becomes a name a board may set, and `--z-menu: -1` in a saved board
+  // would put the right-click menu behind the board it was opened from. The
+  // ladder is structure, base.css is the structure file, and keeping it there
+  // is what makes this a decision nobody has to remember.
 ]);
 
 /**

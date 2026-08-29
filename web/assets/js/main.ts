@@ -77,7 +77,7 @@ import { initSearch } from './ui/search.ts';
 import { initIdle } from './ui/idle.ts';
 import { initBackfill } from './optimize/backfill.ts';
 import { initScaleBar } from './ui/scalebar.ts';
-import { initTrash } from './ui/trash.ts';
+import { initDrawer } from './ui/drawer.ts';
 import { initNowPlaying } from './ui/nowplaying.ts';
 import { initToolbar } from './ui/toolbar.ts';
 import { initFlyouts } from './ui/flyout.ts';
@@ -386,7 +386,7 @@ if (!isPatch) initIdle(vp);
 // mark). It is the one thing wired here that would turn reading the patch notes
 // into an edit.
 if (!isPatch) initBackfill();
-initTrash(vp);
+initDrawer(vp);
 // After initAudio(), which is what reads the stored volume - the bar's slider
 // paints itself from that value on the way up.
 initNowPlaying();

@@ -20,7 +20,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
-  addItems, removeItems, byId, board, setBoardMode, setSetting, undo,
+  addItems, removeItems, restoreItems, byId, board, setBoardMode, setSetting, undo,
   stuckTo, stuckFollowers, isRider, isSticky, isPinned, dragRoot,
   serializeBoard, loadBoard, snapshotGeom, applyGeom, commitGeom, unstickItems,
   resettle, ensureTitleCard, TITLE_ID,
@@ -203,10 +203,15 @@ test('a sticker survives a save and a reload still stuck', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Deleting the host: stickers go with the card, notes stay behind
+// Deleting the host: everything stuck to it goes with it, and comes back on it
 // ---------------------------------------------------------------------------
 
-test('deleting a card takes its stickers and leaves its notes', () => {
+test('deleting a card takes everything stuck to it', () => {
+  // Stickers alone used to travel, on the argument that a star is a remark about
+  // the photograph and a note is something somebody wrote. Nothing is lost
+  // either way - a delete files it in the drawer - and what leaving the note
+  // behind actually produced was a note hovering over the gap, re-measured onto
+  // whatever happened to be under it. See riderCascade() in trash.ts.
   const [pic] = addItems([photo({ x: 0, y: 0, w: 400, h: 400 })]);
   const [n] = addItems([note({ x: -100, y: -100 })]);
   const [star] = addItems([sticker({ x: 100, y: 100 })]);
@@ -215,22 +220,97 @@ test('deleting a card takes its stickers and leaves its notes', () => {
 
   removeItems([pic.id]);
   assert.equal(byId(pic.id), undefined);
-  assert.equal(byId(star.id), undefined, 'the star was a remark about the photo');
-  assert.ok(byId(n.id), 'the note is something somebody wrote');
+  assert.equal(byId(star.id), undefined);
+  assert.equal(byId(n.id), undefined);
+  // In the drawer, not gone: three entries, and the two riders remember what
+  // they were on so the restore can put the pile back together.
+  assert.equal(board.trash.length, 3);
+  const binned = id => board.trash.find(t => t.item.id === id).item;
+  assert.equal(binned(n.id).meta.stuckOf, pic.id);
+  assert.equal(binned(star.id).meta.stuckOf, pic.id);
+  assert.equal(binned(pic.id).meta.stuckOf, undefined, 'the host rides on nothing');
 });
 
-test('the cascade stops at a surviving host', () => {
-  // The naive version - stuckFollowers() then a filter to stickers - takes this
-  // star too, because the note is a follower of the photo even though it is not
-  // being deleted.
+test('a delete that already names the whole pile still records the pile', () => {
+  // Select All, or a marquee thrown round a photograph and its notes: the walk
+  // has nothing to add, because everything is already going. The stamp is
+  // measured over the finished set for exactly this - it used to be a by-product
+  // of the walk, and a board cleared in one press arrived in the drawer as loose
+  // cards while the same board cleared card by card arrived as piles.
   const [pic] = addItems([photo({ x: 0, y: 0, w: 400, h: 400 })]);
-  const [n] = addItems([note({ x: 0, y: 0 })]);
-  const [star] = addItems([sticker({ x: 0, y: 0 })]);
-  assert.equal(stuckTo(byId(star.id))?.id, n.id);
+  const [n] = addItems([note({ x: -100, y: -100 })]);
+  const [star] = addItems([sticker({ x: 100, y: 100 })]);
+  assert.equal(stuckTo(byId(n.id))?.id, pic.id);
+
+  removeItems([pic.id, n.id, star.id]);
+  const binned = id => board.trash.find(t => t.item.id === id).item;
+  assert.equal(binned(n.id).meta.stuckOf, pic.id);
+  assert.equal(binned(star.id).meta.stuckOf, pic.id);
+  assert.equal(binned(pic.id).meta.stuckOf, undefined, 'the host rides on nothing');
+
+  // And it comes back as a pile from one id, which is what the drawer drags.
+  restoreItems([pic.id], { x: 1000, y: 700 });
+  assert.equal(board.trash.length, 0, 'all three came back on one restore');
+  assert.equal(byId(n.id).x - byId(pic.id).x, -100, 'the note kept its place on the picture');
+});
+
+test('the cascade stops at a host that is not going', () => {
+  // The walk takes what is stuck to something *being deleted*, and nothing else.
+  // A second photograph standing beside the first, with its own note, is not
+  // part of this delete and neither is anything on it.
+  const [pic] = addItems([photo({ x: 0, y: 0, w: 400, h: 400 })]);
+  const [other] = addItems([photo({ x: 900, y: 0, w: 400, h: 400 })]);
+  const [mine] = addItems([note({ x: 0, y: 0 })]);
+  const [theirs] = addItems([note({ x: 900, y: 0 })]);
+  assert.equal(stuckTo(byId(mine.id))?.id, pic.id);
+  assert.equal(stuckTo(byId(theirs.id))?.id, other.id);
 
   removeItems([pic.id]);
+  assert.equal(byId(mine.id), undefined, 'stuck to the one that went');
+  assert.ok(byId(other.id));
+  assert.ok(byId(theirs.id), 'stuck to the one that stayed');
+});
+
+test('a pile comes back out of the drawer on its card, where it was on it', () => {
+  // The other direction of the same rule, and the reason meta.stuckOf exists:
+  // stuckness is geometry, and two entries in the drawer have no geometry to
+  // measure against each other. See ridersInBin() and stuckPlacement().
+  const [pic] = addItems([photo({ x: 0, y: 0, w: 400, h: 400 })]);
+  const [n] = addItems([note({ x: 100, y: 50, w: 80, h: 80 })]);
+  assert.equal(stuckTo(byId(n.id))?.id, pic.id);
+
+  removeItems([pic.id]);
+  // Only the photograph is asked for, and it is dropped a long way from where it
+  // was deleted - which is the ordinary case, since the drag is what says where.
+  const back = restoreItems([pic.id], { x: 1000, y: 700 });
+  assert.equal(back.length, 2, 'the note came back with it');
+
+  const card = byId(pic.id);
+  const sticky = byId(n.id);
+  assert.ok(card && sticky);
+  assert.equal(card.x, 1000);
+  assert.equal(card.y, 700);
+  // The offset it held on the card, kept: it was a quarter of the way right of
+  // centre and an eighth down, and it still is.
+  assert.equal(sticky.x - card.x, 100);
+  assert.equal(sticky.y - card.y, 50);
+  assert.equal(stuckTo(byId(n.id))?.id, pic.id, 'and still stuck to it');
+  // The drawer link is a drawer link. On the board the measurement is the truth.
+  assert.equal(sticky.meta.stuckOf, undefined);
+  assert.equal(board.trash.length, 0);
+});
+
+test('a rider left in the drawer stays there', () => {
+  // Restoring the note alone must not drag its host back out. The relation is
+  // one-way on the way out: a host brings its riders, a rider brings nothing.
+  const [pic] = addItems([photo({ x: 0, y: 0, w: 400, h: 400 })]);
+  const [n] = addItems([note({ x: 0, y: 0 })]);
+  removeItems([pic.id]);
+
+  restoreItems([n.id], { x: 500, y: 500 });
   assert.ok(byId(n.id));
-  assert.ok(byId(star.id), 'the note it is stuck to is still here');
+  assert.equal(byId(pic.id), undefined, 'the photograph is still in the drawer');
+  assert.equal(board.trash.length, 1);
 });
 
 test('the cascade is one undo entry', () => {

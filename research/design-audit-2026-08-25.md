@@ -1,5 +1,10 @@
 # The design audit: where the app disagrees with itself
 
+> **Carried out on the same day it was written.** Everything below stands as the
+> record of what was found; what was done about each finding is in **Outcome**
+> at the foot, along with the one finding that was wrong (D1) and the two that
+> were deliberately left. Read the outcome first if you want the current state.
+
 Scope was everything: board chrome, sidebar and panels, on-card furniture,
 dialogs and the standalone pages. Depth was "inconsistencies plus weak spots" —
 so this reports both places where the app contradicts itself and places where it
@@ -380,3 +385,156 @@ Two items are deliberately not on this list. B6 (focus rings in the chrome) is
 correct-but-inconsistent and touching it means deciding whether the app wants to
 own focus everywhere — a direction question, and direction was out of scope.
 D5 is a two-pixel observation and can ride along with B1.
+
+---
+
+## Outcome
+
+Everything above was carried out except D3 and D4, which are named below with
+the reason. B6 was carried out after all — the decision it needed turned out to
+be already made: `#conn-chip button:focus-visible` mirrors its own hover, so
+"the chrome mirrors its hover on focus" was an existing pattern to follow rather
+than a new direction to pick.
+
+### D1 was wrong
+
+`.tour-add.is-primary` already carried `border-color: var(--accent-deep)`, which
+is `.btn-row button.primary` exactly (`sidebar.css:621`) — accent ground,
+accent-deep edge, `--accent-fg` ink. The app *does* have an accent-filled
+primary idiom and this button was following it. The premise of the finding —
+"accent fill only ever marks state" — is false: `sidebar.css` has had a filled
+primary the whole time, and the dialog's refusal to use one is the dialog's
+argument about dialogs, not an app-wide rule.
+
+Nothing was changed there beyond the disabled recipe.
+
+### What was written down
+
+Four things that were true and undocumented now live in `tokens.css`, which is
+what makes the rest of this hold:
+
+- **`--icon-button` (28) and `--icon-glyph` (15).** The small icon button had no
+  token, which is the root of B1 and B2.
+- **The control states**, in the paper block: hover is `--paper-2` and
+  `--accent-deep`, press is `--paper-3`, disabled is `--ink-3` and nothing else,
+  and a hover belongs inside `@media (hover: hover)` where a press does not.
+  Also the `--accent-deep` / `--accent-text` split — the ink a control turns
+  against the ink a word is.
+- **The stacking ladder**, eleven named rungs at exactly the numbers that were
+  already there, so it is a rename and not a re-order.
+- **`--radius-sm`'s job**, which the shape block had never stated: the seams
+  inside a segmented control. A control on its own is `--leaf`.
+
+### What changed on screen
+
+- **A1.** `timeline.css` prints `--accent-fg` on the accent in all three places.
+  The current-step marker is visible on absinthe and orca again.
+- **B1 / B2 / D5.** Ten closes at one size, one glyph, one hover, one press.
+  `.library-close` and `.library-del` draw `icons.svg#i-close` — they were
+  setting the `×` character in 22px and 16px type, the only two crosses in the
+  app not from the sprite. `#conn-chip button` is square. The sidebar close
+  keeps its 90° spin, which is now the only thing distinguishing any close from
+  any other.
+- **B3 / B4 / B5.** `--paper-3` hovers stepped back to `--paper-2` on the mobile
+  player, the playlist, the sticker window and the tour chips; `--accent-text`
+  hovers moved to `--accent-deep` on the sidebar closes, the darkroom and the
+  font list; the three `opacity` values came off the disabled rules.
+  `.search-hit` keeps its `--paper-3` hover and now says why — the keyboard
+  highlight already owns `--paper-2` there.
+- **A2.** Thirty-odd control hovers guarded, across `cards`, `canvas`, `dialog`,
+  `ghosts`, `item-chrome`, `library`, `media`, `menu`, `mobile`, `sidebar`,
+  `timeline` and `viewer`. **Reveal hovers were left alone on purpose** —
+  `.item:hover`, `.library-card:hover .library-del`,
+  `.item[data-type="image"]:hover .item-bar`. On a touch screen the sticky hover
+  is what makes those reachable at all, and guarding them would remove the only
+  way to get at a delete button on a phone.
+- **B6.** Focus mirrors hover on `#toolbar`, `#zoom-ctl`, `#tour`, the player,
+  the timeline strip, the tour editor, the on-card pen and rename, and every
+  close. The browser's own ring still lands on top, exactly as it does on
+  `#conn-chip` — nothing was suppressed.
+- **B7.** The ladder is declared in `base.css` and in use in ten stylesheets,
+  and `tests/stacking.test.js` holds it three ways: no bare `z-index` of 20 or
+  more outside one named exemption, no rung declared that nothing stands on, and
+  no rung in `tokens.css`. The last of those is the interesting one — see the
+  section below it.
+- **C1 / C2 / C3.** `--leaf` on the two closes that had `--radius-sm` and on the
+  tour mark; `--radius-sm` documented; the four frozen corners written against
+  the tokens they were copied from, so they follow the Corner radius slider.
+- **D2.** The tour mark and the title card's pen and rename are all
+  `--icon-button` at `--leaf`, and the mark now goes at `zoom-tiny` with the
+  grips rather than at `zoom-far`. That last one was a usability bug as well as
+  an inconsistency: 40% is exactly the zoom somebody building a tour works at,
+  and the marks were disappearing there.
+- **E1 – E5.** The two closes whose tooltip said "Close" while their aria-label
+  was specific now say the specific thing in both; the viewer, the picture
+  editor and the board list name what they close. The tour says "Take off" in
+  all four places it used to say three different things. "Trash, empty" is
+  "Trash, nothing in it". The history label for taking the backing off a
+  photograph is "Take the card off" rather than "Remove card", which was the
+  word the menu uses for destroying an item. "Animate GIFs" is "Moving GIFs",
+  the only command among four states.
+
+### The ladder is structure, so it does not live with the look
+
+First pass put the `--z-*` rungs in `tokens.css`, and that had a consequence
+worth writing down because it was not obvious and was not a fault of the format.
+
+`tests/appearance.test.js` holds `ui/look.ts`'s allowlist to **exactly** what
+`tokens.css` declares, in both directions. That is a good rule with a plain
+meaning: a token born in `tokens.css` is a token a saved `.mbrd` file may set,
+because a board carrying its own palette and corners is the whole point of the
+look system. Putting the ladder there therefore made stacking a board file's
+business by default.
+
+Which is not a nuisance on the scale of `--paper: transparent`. `#viewport` is
+`position: fixed` with `contain: layout paint` and **no z-index of its own**
+(`canvas.css:5`), and the menu is a `document.body` child positioned solely by
+`z-index: var(--z-menu)` (`panelHost()`, `ui/menu.ts:1653`). A board carrying
+`--z-menu: -1` drops the right-click menu below the board — not behind a panel,
+below the whole surface — and it stays there until a different board is opened.
+The value check allows it: `SAFE_VALUE` (`look.ts:90`) permits a leading `-`,
+because real tokens like `--lift-hover: -3.6px` need one.
+
+The fix is not a deny list and not a negative-number check. Both of those are
+mechanisms bolted on to hold back a value that should never have been in the
+look vocabulary. `base.css`'s banner already draws the line — *"Structure only.
+Every colour, corner, duration, typeface and ornament comes from a custom
+property in tokens.css"* — and what is in front of what is structure. The ladder
+is declared in `base.css`, `tokens.css` carries a pointer saying why, and
+`tests/stacking.test.js` gained a third check: **no `--z-*` in `tokens.css`**,
+because a rung drifting back there would make it a board's business silently,
+and the way that fails is a menu opening behind the board on somebody else's
+machine.
+
+No new mechanism, no exception in the appearance test, and nothing for a future
+reader to remember: the two files had already said which of them holds what.
+
+### Left undone, and why
+
+- **D3, the two strips of numbered squares.** `.tour-chip` (30, `--radius-xs`)
+  and `#timeline-sheet .tl-mark` (26, `50%`) still disagree. Converging them
+  means deciding whether that mark is a square or a dot, which is a redesign of
+  the timeline's shape rather than a token edit — and the audit's own sequence
+  says it should wait for `ui-clutter-2026-08-15.md` item F, which is asking
+  whether the strip is the right shape for the data at all.
+- **D4, the spacing rhythm.** Thirteen `gap` values across twenty files, and
+  normalising them is twenty judgement calls that look identical in a diff and
+  different on screen. There is no browser-driven suite to catch a wrong one.
+  This one wants somebody with the app open.
+
+### Two things found while implementing, not in the audit above
+
+- **The `50%` icon buttons.** `tokens.css:354` instructs that a `50%` which is
+  "really a rounded rectangle that happens to be square" wants `--radius-pill`
+  instead — which is what seven of the round icon buttons are. **Done**, on the
+  author's call: the tour bar's three, the player's close and transport buttons,
+  the phone player's, the two panel closes and the board list's delete are all
+  `--radius-pill` now, so they square off at Harsh with the bars around them.
+  The four play buttons kept their `50%` — a disc is what says "play" before the
+  triangle inside it is read — and `.pw-play` restates it because it is a
+  `.pw-btn` as well. The paragraph in `tokens.css` no longer pins a count, since
+  a number there invites the next reader to make it match rather than to ask
+  what each circle is.
+- **`#toolbar svg` at 17 and `#zoom-ctl svg` at 15** were left as literals. Those
+  buttons belong to the `--chrome-button-*` tier, not the icon-button tier, and
+  tying their glyphs to `--icon-glyph` would say they were the same family.

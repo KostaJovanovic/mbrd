@@ -323,7 +323,7 @@
    two rows and stay readable rather than shrinking to fit one. */
 .note-toolbar.is-mobile {
   box-sizing: border-box;
-  z-index: 21;
+  z-index: var(--z-chrome-over);
   bottom: auto;
   top: max(12px, env(safe-area-inset-top));
   left: max(12px, env(safe-area-inset-left));
@@ -347,9 +347,18 @@
    where the Mobile board does not - so without this they sit under the bar. */
 :root.note-edit-mobile #zoom-ctl,
 :root.note-edit-mobile #scale-bar { display: none; }
-.note-toolbar .ntb-btn:hover {
-  background: color-mix(in srgb, var(--ink) 8%, transparent);
-  color: var(--ink);
+/* The ink veil rather than --paper-2, and this is the case it is for: the bar
+   floats over a note whose paper is one of four tints, so a wash struck from
+   the app's paper would be a different colour from the note under it. A veil
+   made of ink darkens whatever is behind it.
+
+   Guarded, which it was not: this bar is used with a finger more than with a
+   pointer, and it stays on screen after the tap that lit it. */
+@media (hover: hover) {
+  .note-toolbar .ntb-btn:hover {
+    background: color-mix(in srgb, var(--ink) 8%, transparent);
+    color: var(--ink);
+  }
 }
 .note-toolbar .ntb-btn.is-active {
   background: var(--accent);
@@ -387,7 +396,12 @@
   display: block;
   width: 17px;
   height: 17px;
-  border-radius: 4px;
+  /* --radius-xs, which resolves to 4.004px at the middle tier - so this literal
+     was the token frozen as the number it happened to be on the day it was
+     copied, and the chip stayed rounded when the Corner radius slider went to 0.
+     tokens.css describes that fault in the past tense; three sites still had
+     it. */
+  border-radius: var(--radius-xs);
   background: var(--note-wash, transparent);
   box-shadow: inset 0 0 0 var(--hairline) color-mix(in srgb, var(--ink) 30%, transparent);
 }
@@ -772,7 +786,9 @@
   pointer-events: auto;   /* same bargain the anchor above makes */
   transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
 }
-.embed-go:hover { background: var(--accent); border-color: var(--accent-text); color: var(--accent-fg); }
+@media (hover: hover) {
+  .embed-go:hover { background: var(--accent); border-color: var(--accent-text); color: var(--accent-fg); }
+}
 .embed-go svg { width: 11px; height: 11px; }
 /* Far out, the offer is unreadable and un-pressable, and it would be the only
    thing left saying anything on a card whose text has already stood down. */
@@ -859,7 +875,9 @@ plates do: below a third of size a card is a coloured tile, and a click on
   .note-toolbar .ntb-group + .ntb-group {
     border-left: var(--hairline) solid rgb(var(--ink-c) / 12%);
   }
-  .note-toolbar .ntb-btn:hover { background: rgb(var(--ink-c) / 8%); }
+  @media (hover: hover) {
+    .note-toolbar .ntb-btn:hover { background: rgb(var(--ink-c) / 8%); }
+  }
   .note-toolbar .ntb-select { background: rgb(var(--ink-c) / 6%); }
   .note-toolbar .ntb-chip {
     box-shadow: inset 0 0 0 var(--hairline) rgb(var(--ink-c) / 30%);

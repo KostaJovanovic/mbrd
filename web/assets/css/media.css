@@ -210,7 +210,9 @@
               transform var(--dur-base) var(--ease-back);
 }
 .transport .play svg { width: 13px; height: 13px; }
-.transport .play:hover { background: var(--accent); color: var(--accent-fg); transform: scale(var(--btn-grow)); }
+@media (hover: hover) {
+  .transport .play:hover { background: var(--accent); color: var(--accent-fg); transform: scale(var(--btn-grow)); }
+}
 .transport.is-playing .play { background: var(--accent); color: var(--accent-fg); }
 
 /* The waveform. Each bar is an RMS reading of that slice of the file, mirrored
@@ -406,7 +408,9 @@
 .vbig svg { width: 40%; height: 40%; }
 /* scale, not transform: translate above is doing the centring, and a transform
    here would overwrite it and throw the button off the middle of the card. */
-.vbig:hover { background: var(--accent); color: var(--accent-fg); scale: var(--btn-grow); }
+@media (hover: hover) {
+  .vbig:hover { background: var(--accent); color: var(--accent-fg); scale: var(--btn-grow); }
+}
 .vplayer.is-playing .vbig { opacity: 0; pointer-events: none; }
 
 /* There is no bar across the foot of a video card any more, and nothing here
