@@ -61,8 +61,11 @@ items belonging to another, and nothing tells the other document. Five status
 blocks is five things that can be wrong about the same tree.
 
 So the open items are in one register, and the documents that argued them are all
-five in `old/` with the reasoning intact. Three files at this level now, the
-register and two subject documents:
+five in `old/` with the reasoning intact. **Nine documents at this level now: the
+register and eight subject documents**, which is the debt the closing section of
+this file describes, grown rather than shrunk. It was three when that section was
+written. Five of the eight have an end written into them and will go down when
+their work does; the other three do not, and those are the ones to argue about:
 
 - `open-work-2026-08-14.md` — **the whole of what is open, in plain language.**
   Twenty items with an id each: five things somebody using the app would hit
@@ -150,12 +153,70 @@ register and two subject documents:
   and a dropped card carries no momentum because you place a card rather than
   throw one.
 
+  **Four of its five batches are in.** What is left is batch 5 alone — a Mobile
+  board that resists at its own edges instead of stopping dead — and it is the
+  only one of the five with no CSS in it: `give()`, a `dragging` flag on the
+  viewport, and a settle phase inside `glide()`'s own rAF chain. That is why this
+  document is still here.
+
+- `tester-feedback-2026-08-21.md` — **what two people said the first time they
+  used the app, on machines that are not this one.** A Discord session
+  transcribed because a chat log is not a work list. Almost none of it is a
+  defect, and that is the point of it: it is the two things somebody who wrote
+  the app cannot see for themselves — what is discoverable on first contact, and
+  what is inconsistent in a way that reads as broken rather than as a choice.
+  Four items are done, including the loudest one, and **the fix reversed a rule
+  the code had argued for**: the connect tool now puts itself down after a pair,
+  with Shift keeping it. Read the *Defects* section for how that argument went,
+  because the same shape will come up again — a behaviour with a good paragraph
+  behind it that a first-time hand reads as a fault. What is open: an audio file
+  on the starting board (the strongest of them, and one nobody would think to
+  ask for), a playlist that is not empty on arrival, the theme half-fading and
+  half-snapping, colourblind mode, dark mode, and "finish the timeline", which is
+  unpinned and wants the tester pointing at something before it is work.
+
+- `connection-routing-2026-08-22.md` — **carried out, all five items**, and here
+  for what it left rather than for what it did. Four limitations are written down
+  at its foot on purpose: a route still concedes when a card lies over one of its
+  ends, `MAX_NODES` shedding can still let a dense patch clip, avoidance is
+  order-dependent, and the taut straight-line shortcut is not charged for
+  overlap. Each is a thing somebody will eventually see on screen and file as a
+  bug, and each is the honest picture rather than an oversight. The argument for
+  *why a face became a ranked set* is the durable half — one face committed to
+  before the search is what made a line go behind a card, stack on its
+  neighbours, and read as stiff, all three at once.
+
+- `design-audit-2026-08-25.md` — **where the app disagreed with itself, and what
+  was done about it.** Read the **Outcome** at the foot first: everything was
+  carried out except D3 and D4, and D1 was simply wrong, which it says at length.
+  Its finding is worth knowing even now that it is fixed — the token layer was in
+  good shape and the *use* of it was not, and what had no token at all was the
+  thing this interface is mostly made of, a small square button with an icon in
+  it. Ten close buttons at eight sizes. The two left are the two that are
+  design questions rather than token edits: **D3**, whether the timeline's mark
+  is a square or a dot, which its own sequence says should wait for
+  `ui-clutter-2026-08-15.md` item F; and **D4**, the spacing rhythm, which is
+  twenty judgement calls that look identical in a diff and different on screen.
+  Also read *The ladder is structure, so it does not live with the look* — a
+  `--z-*` rung in `tokens.css` would quietly make stacking a `.mbrd` file's
+  business, and the way that fails is a menu opening behind the board on
+  somebody else's machine.
+
 `patch-notes-full.md` sits at this level too and is **not open work** - it is an
 archive, and the only file here that argues nothing. It holds every release at
 the length it was first written at, internal work included, and it was split off
 when `/patch` was cut down to the entries a person using the app would notice.
 Nothing generates anything from it and nothing keeps it in step; the live source
 is `patch-notes.md` at the repository root.
+
+`tier-palettes-2026-08-18.md` was a tenth and went down on 2026-09-01 — **late,
+and the lateness is the point.** It is the design for what the whimsy ends do to
+a palette's colours, and its own text still reads "Not committed. Nothing below
+is started" while every item in it is in the tree: the generator, the §3b blocks,
+the parity test, the lab's tier control. Nothing said so, because nothing tells a
+document that the work it schedules has been done. It carries a banner at its
+head now, which is what makes it safe to read, and it is the second entry on this
+page found by reading a claim against the tree rather than against a plan.
 
 Three documents that were at this level went down to `old/` on 2026-08-15.
 

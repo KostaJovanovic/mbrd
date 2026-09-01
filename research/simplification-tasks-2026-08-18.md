@@ -1238,6 +1238,9 @@ its whole name.
 
 Both belong to whoever owns the repo. If you hit them, record and move on.
 
+> **Both answered on 2026-09-01. `setItemText()` is deleted; C6 is declined.**
+> The reasons are under the checklist below, with what was checked for each.
+
 **1. `state.ts:511` `setItemText()` — delete it or document it?** It has no
 caller outside `tests/state-items.test.js`. Note editing goes through
 `setNoteContent()` (`:577`), which caps `NOTE_MAX`, keeps `meta.rich` in step
@@ -1323,8 +1326,8 @@ Mark each as `DONE`, `SKIPPED — <reason>`, or `DECLINED`.
 | T5.9 | optimize plan built twice | |
 | T5.10 | eight smaller same-work-twice sites | |
 | | **commit C5 + four legs** | |
-| T6.1 | one `followers()` for four copies | |
-| | **commit C6 + four legs** | |
+| T6.1 | one `followers()` for four copies | **DECLINED** |
+| | **commit C6 + four legs** | not run — nothing to commit |
 | T7.1 | `cullMargin` and `baseStep` duplicated | |
 | T7.2 | `contentEditable` fallback ×3 | |
 | T7.3 | select-contents range dance ×5 | |
@@ -1336,6 +1339,42 @@ Mark each as `DONE`, `SKIPPED — <reason>`, or `DECLINED`.
 | T7.9 | dead code | |
 | T7.10 | inline `pictureFrom`, three classes | |
 | | **commit C7 + four legs** | |
+
+---
+
+## The two answers, 2026-09-01
+
+**C6 is declined, because the argument for it expired rather than because it was
+weighed and lost.** The task's own guard is explicit that the case is not line
+count: it is that `ui/board-actions.ts` grew its two copies by transcription and
+inherited a bug `sticky.ts` had already fixed and documented. That was true when
+this was written and is not true now — `:853` reads `const host = stuckTo(note)`
+and uses `host` directly, carrying a comment that names sticky.ts as where the
+argument lives. Whichever task repaired it, the two copies now agree with the
+original.
+
+What is left is "a seventh copy would do it again", weighed against widening
+`attachRiders`' callback from a live host to snapshot geometry, checking its
+three callers in `layout.ts`, and touching the drag, delete and fence paths —
+four copies that are correct, tested and stable, on a repo with no
+browser-driven suite. Rule 2 at the head of this file covers exactly this: a
+task whose ground has moved is abandoned rather than improvised, because a
+finding whose reasoning may not hold is not a finding.
+
+**Worth keeping when this comes up again**, and it will: the duplication is real
+and the count is right. What changed is only the evidence that it *costs*
+something. If a seventh copy is ever written, or if one of the six is found to
+have drifted from the others, that is the day this becomes a task again — and
+the shape of it is still `followers(pool, seed, parentOf)` at or below
+`sticky.ts` in the layering graph, with `trash.ts`'s subtlety carried by the pool
+predicate.
+
+**`setItemText()` is deleted.** It wrote `meta.text` and re-derived the name and
+did not touch `meta.rich`, which is the desync `storage/mbrd.ts` repairs on the
+way in; it had no caller in the app, and the two tests that kept it alive now
+drive `setNoteContent()` with no `rich` — the same assertions through the door
+every note edit already used. `state.ts` carries a comment where it was, because
+the absence of a plain-text door is the thing a reader will wonder about.
 
 ---
 
