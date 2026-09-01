@@ -1079,7 +1079,15 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
       action: () => cmds!.clearCover(id) },
     // The five picture edits, one row deep. Built above, where the note saying
     // what is in it and what is deliberately not sits with the list itself.
-    { label: 'Edit', icon: 'i-crop', hidden: !editable_picture,
+    //
+    // "Picture" rather than "Edit", which was the one word in this menu that did
+    // not mean what it said: the row above it renames the card and the row below
+    // it takes the card away, so a reader arriving at "Edit" reasonably expects
+    // to edit the *item* and gets five rows about the photograph on it. Naming
+    // it for its subject costs the third "picture" in as many rows, and that is
+    // the cheaper confusion - those three are the same subject, and the fold is
+    // the only one of them that is a room rather than an act.
+    { label: 'Picture', icon: 'i-crop', hidden: !editable_picture,
       sub: editable_picture ? pictureEdits : undefined },
     // Out of the fold and directly under the row that opens it, because it was
     // the one entry in there that is not about the picture. Fill and Fit are two

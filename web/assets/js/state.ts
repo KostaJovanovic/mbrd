@@ -523,18 +523,20 @@ export function pasteItems(at: { x: number, y: number } | null = null) {
  */
 const noteName = (text: string) => text.split('\n')[0].slice(0, 40) || 'Note';
 
-export function setItemText(id: string, text: string) {
-  const it = byId(id);
-  if (it?.type === 'note') text = text.slice(0, NOTE_MAX);
-  if (!it || it.meta.text === text) return;
-  const prev = it.meta.text;
-  const isNote = it.type === 'note';
-  const prevName = it.name;
-  const nextName = isNote ? noteName(text) : it.name;
-  commit('Edit note',
-    () => { const x = byId(id); if (!x) return; x.meta.text = text; x.name = nextName; bus.emit('item', id); },
-    () => { const x = byId(id); if (!x) return; x.meta.text = prev; x.name = prevName; bus.emit('item', id); });
-}
+/*
+ * There was a `setItemText(id, text)` here and it is gone, which is worth a line
+ * because the shape of it will look missing to anyone reading setNoteContent()
+ * below and wondering where the plain-text door went.
+ *
+ * It wrote `meta.text` and re-derived the name and did **not** touch `meta.rich`
+ * - so calling it on a formatted note left the structured half saying one thing
+ * and the flat half another, which is exactly the desync storage/mbrd.ts
+ * describes having to repair on the way in. It had no caller anywhere in the app;
+ * every note edit goes through setNoteContent(), which writes both halves in one
+ * commit. What kept it alive was two tests that exercised it, and those now drive
+ * setNoteContent() with no `rich` - the same assertions through the door the app
+ * actually uses.
+ */
 
 /**
  * Recolour a swatch: its `meta.hex` and the name it wears, as one step.
@@ -587,7 +589,8 @@ export function setSwatchHex(id: string, hex: unknown) {
  * takes back the whole edit rather than the two halves separately. A no-op when
  * neither half moved, which is what keeps closing an editor you only looked at
  * from spending a history slot. `rich` is trusted to be normalised by the caller
- * (canvas/notes.js), and `text` is capped here the way setItemText caps its own.
+ * (canvas/notes.js), and `text` is capped here at NOTE_MAX - this is the only
+ * door that writes a note's words, so the cap has nowhere else to be.
  */
 export function setNoteContent(id: string, rich: unknown, text: unknown) {
   const it = byId(id);

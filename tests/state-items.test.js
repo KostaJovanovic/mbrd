@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 
 import {
   board, selection, loadBoard, serializeBoard, addItems, removeItems, undo,
-  byId, select, deselect, clearSelection, selectAll, setItemText, renameItem,
+  byId, select, deselect, clearSelection, selectAll, setNoteContent, renameItem,
   NOTE_MAX, setItemCover, setItemPoster, setTitle, cleanBoardTitle,
   cleanBoardTitleDraft, BOARD_TITLE_MAX, setBoardMode, setItemBare, itemBare,
   setItemsTagged, setItemUpAxis,
@@ -82,9 +82,12 @@ test('a note is capped on the way in', () => {
   assert.equal(a.meta.text.length, NOTE_MAX);
 });
 
+// Both drive setNoteContent() with no `rich`, which is the plain-text case: it
+// is the only door that writes a note's words now, and these two assertions are
+// what a deleted setItemText() left behind.
 test('editing a note is undoable', () => {
   const [a] = addItems([note({ meta: { text: 'before' } })]);
-  setItemText(a.id, 'after');
+  setNoteContent(a.id, undefined, 'after');
   assert.equal(byId(a.id).meta.text, 'after');
   undo();
   assert.equal(byId(a.id).meta.text, 'before');
@@ -92,7 +95,7 @@ test('editing a note is undoable', () => {
 
 test('setting a note to what it already says commits nothing', () => {
   const [a] = addItems([note({ meta: { text: 'same' } })]);
-  setItemText(a.id, 'same');
+  setNoteContent(a.id, undefined, 'same');
   assert.equal(undo(), true, 'the only undo entry should be the add');
   assert.equal(board.items.length, 0);
 });
