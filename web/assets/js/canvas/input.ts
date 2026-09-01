@@ -1343,6 +1343,13 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // The check happened at the call, where M was fixed.
     const next = { mode, ...data } as GestureOf<M>;
     gesture = next;
+    // The viewport's one fact about the hand: is a finger dragging the board
+    // right now. It decides whether a Mobile board's edges clamp or resist, and
+    // it is written here rather than at the four call sites that start and end a
+    // pan because this is the pipeline's only door between modes - so every path
+    // out of `pan`, including a pinch stealing it and a pointercancel, clears it
+    // for free. Anything that is not a pan is not a finger dragging the board.
+    vp.dragging = mode === 'pan';
     return next;
   }
 
