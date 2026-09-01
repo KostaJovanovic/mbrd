@@ -511,12 +511,28 @@ reader to remember: the two files had already said which of them holds what.
 
 ### Left undone, and why
 
-- **D3, the two strips of numbered squares.** `.tour-chip` (30, `--radius-xs`)
-  and `#timeline-sheet .tl-mark` (26, `50%`) still disagree. Converging them
-  means deciding whether that mark is a square or a dot, which is a redesign of
-  the timeline's shape rather than a token edit — and the audit's own sequence
-  says it should wait for `ui-clutter-2026-08-15.md` item F, which is asking
-  whether the strip is the right shape for the data at all.
+- ~~**D3, the two strips of numbered squares.**~~ **Done on 2026-09-01, and the
+  sequence's "wait for ui-clutter F" was overruled deliberately.** The answer to
+  *square or dot* is square, at `--icon-button` and `--leaf`: both of these are a
+  small square with one mark in it, which is the thing this audit gave a token to
+  in the first place, and a disc is the app's mark for a play control and for
+  nothing else. Three shapes moved, not two — `#timeline-strip .tl-dot` had to
+  come with the sheet's mark, because the sheet's own comment says it draws "the
+  same disc the strip draws" and converging one of a stated pair is how a
+  document ends up lying about the code. The strip's mark keeps `--tl-mark`
+  rather than taking `--icon-button`: `--tl-cell`, `--tl-gap` and `--tl-mark` are
+  what the connector arithmetic between the cells is written in. The corner is
+  the family; the size is each row's own.
+
+  Two `50%` marks were left round on purpose and now read as decisions rather
+  than as leftovers: the first step's plain dot, which has no glyph and is a
+  *position* rather than an event, and the 4px badge on a named step. The
+  `is-at` ring took `calc(var(--leaf) - 1px)` so it stays concentric with the
+  mark it sits a pixel inside.
+
+  Waiting for ui-clutter F would have been right if F could change the answer,
+  and it cannot: whatever shape that strip ends up being, its marks are
+  containers for a glyph and the token is what they should be drawn at.
 - **D4, the spacing rhythm.** Thirteen `gap` values across twenty files, and
   normalising them is twenty judgement calls that look identical in a diff and
   different on screen. There is no browser-driven suite to catch a wrong one.
