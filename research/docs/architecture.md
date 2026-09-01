@@ -908,10 +908,27 @@ Three modules divide the work:
   back as real lines.
 
 Making one is the app's **only mode**. `ui/toolbar.ts` holds the armed state and
-the four-case step (`connectStep`); `canvas/input.ts` asks through `cmds` rather
-than importing a `ui/` module, the same seam the title card's pen uses. The tool
-stays armed after a pair — connecting five things is one trip to the toolbar —
-and Escape always puts it down.
+the five-case step (`connectStep`); `canvas/input.ts` asks through `cmds` rather
+than importing a `ui/` module, the same seam the title card's pen uses. **A
+completed pair puts the tool down, and Shift held on the press that completes it
+keeps it armed for the next one** — the run of joins is not gone, it moved onto a
+modifier, so the cost sits with the person drawing five lines rather than with
+the person drawing one. `disarm` is true on exactly that one line of the step and
+nowhere else: a press on empty canvas is "not that one" rather than "stop", and a
+refused press — a sticker, which can never be an end — keeps the standing pick,
+because a mis-tap must not cost you the card you had already pointed at. Escape
+and the button remain the two ways down from anywhere. Arming with two or more
+cards already selected does not arm at all: that press asked a whole question and
+`joinAll()` gave a whole answer. Exactly one selected still arms, because half a
+pair is a question still open, and its toast is the one line in the app that
+teaches Shift.
+
+This reverses what the tool did until v0.258, and the reversal came out of a
+tester session (`research/tester-feedback-2026-08-21.md`): the mode was invisible
+enough that somebody in it kept not knowing they were in it. The cursor answers
+the other half of that — the tool's own mark, two ends and a line between them,
+a data: URL in `canvas.css` rather than a file, so the mode's mark cannot be the
+one asset missing at the moment the mode turns on.
 
 **The tool draws while you aim it.** From the moment an end is picked,
 `canvas/web.ts` runs a draft path from that card to the pointer — straight while

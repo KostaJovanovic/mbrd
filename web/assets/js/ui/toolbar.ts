@@ -152,7 +152,7 @@ let pick: string | null = null;
  * What one press does, as a total function of the state and what was hit.
  *
  * Pure, and lifted out for that reason: this is the whole of the interaction,
- * it is four cases, and every one of them is a sentence somebody has to be able
+ * it is five cases, and every one of them is a sentence somebody has to be able
  * to check. `id` is the card that was pressed, or null for empty canvas.
  *
  *   nothing picked, a card      pick it

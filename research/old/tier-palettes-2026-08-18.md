@@ -1,5 +1,21 @@
 # Tier palettes: colour personalities for the whimsy ends
 
+> **Carried out, and filed here on 2026-09-01 rather than on the commit that
+> finished it — which is the filing bug `research/README.md` warns about, found
+> by reading this document against the tree instead of against itself.** Every
+> item under *Remaining work* below is in the code: `tools/gen-tier-palettes.mjs`
+> exists and carries the one-shot argument its spec asked for,
+> `tokens.css` §3b holds a combo block for every palette at both ends,
+> `tests/appearance.test.js` has the parity check (a palette with no block at a
+> tier "renders in the default look's pigments there") and `web/lab.html` has the
+> three-stop tier control that replaced the plain checkbox. The amendments landed
+> with it: the generator imports `pastelInk`, `boldSecond`, `counterTurn` and
+> `toGround`, which are A1, A3 and A6 by their working names.
+>
+> **The text below still says "Not committed. Nothing below is started."** It is
+> left as written — it was true on 2026-08-18 and this banner is what makes it
+> safe to read, which is the rule the whole of `old/` runs on.
+
 2026-08-18. Plan for finishing the work; the JS half is already done (see
 "State of the work" below). Written to be carried out by an agent with no
 memory of the conversation that produced it.
