@@ -247,6 +247,38 @@ const GLIDE_MIN = 120;
 const GLIDE_STOP = 8;
 
 /**
+ * How far the board follows a finger that has gone `over` past its own edge,
+ * given a screen `dim` to scale the resistance against.
+ *
+ * Diminishing, so it never stops following and never keeps up: the first pixels
+ * past the edge come at about `k` of the finger, and no amount of pull moves it
+ * more than one screen, which is the asymptote of this ratio. Both properties
+ * matter and they are the same property said twice - a board that stopped dead
+ * would say the gesture had failed, and one that kept up would say there was no
+ * edge there at all. What the hand is told is "there is more of this, and it is
+ * ending".
+ *
+ * Pure, and in world units in and out: the caller divides by the zoom once.
+ */
+const RUBBER_K = 0.55;
+const give = (over: number, dim: number, k = RUBBER_K) =>
+  (over * dim * k) / (dim + k * Math.abs(over));
+
+/**
+ * How fast the board comes back after being let go past its edge.
+ *
+ * Critically damped rather than eased over a duration, because the settle has to
+ * start from a *speed* as well as a position - it is what a flick into the
+ * boundary hands over to, and _animate() takes a duration and no velocity. A
+ * critically damped return is the one curve that accepts both and never
+ * overshoots, which is the whole requirement: a board that bounced back past its
+ * own edge would have to be caught twice.
+ */
+const SETTLE_TAU = 0.15;
+/** Close enough to the edge to write the edge itself and stop. World px. */
+const SETTLE_EPS = 0.25;
+
+/**
  * Device pixels per CSS pixel.
  *
  * One definition, because two things snap to this grid and they have to agree
@@ -508,6 +540,10 @@ export class Viewport {
   bus: Emitter<{ change: Viewport }>;
   _flush: () => void;
   _anim: number | null;             // rAF id of a view animation in flight
+  // Where the finger has dragged to, before the edges take anything off it, and
+  // null whenever no finger is down - which is what `dragging` reads. See
+  // _constrainMobile() for why the raw value has to be the one kept.
+  _rawY: number | null;
   _still: number;                   // timer that ends the cheap mode - see _moving()
   _iz: number;                      // what --iz was last written as
   _dpr: number;                     // what --dpr was last written as - see _setDpr()
@@ -530,6 +566,7 @@ export class Viewport {
     this.left = 0;
     this.top = 0;
     this._topPad = MOBILE_TOP_PAD;
+    this._rawY = null;
     this.bus = emitter();
     this._flush = rafThrottle(() => this._paint());
     this._anim = null;
@@ -595,14 +632,121 @@ export class Viewport {
     return this.mobileWorldBottom + (this.cy - MOBILE_BOTTOM_PAD) / this.zoom;
   }
 
+  /**
+   * The Mobile board's two travel limits.
+   *
+   * If the whole board fits vertically, `bottom` is pinned to `top` instead of
+   * giving it a small, meaningless travel range between two competing edges -
+   * which is also what makes a short board resist in both directions rather
+   * than in neither.
+   */
+  _mobileBounds() {
+    const top = this._mobileTopPan();
+    return { top, bottom: Math.min(this._mobileBottomPan(), top) };
+  }
+
+  /**
+   * Hold the Mobile board inside its own edges - hard when nothing is touching
+   * it, softly while a finger is.
+   *
+   * The soft half is the whole of what a boundary should say. Clamping while the
+   * finger is still moving is the board announcing that the gesture stopped
+   * working, and the finger is the only thing on screen that did not stop; the
+   * eye reads that as the app having dropped the touch. So past an edge the
+   * board keeps following at a diminishing fraction - see give() - and comes
+   * back when it is let go.
+   *
+   * The overshoot is measured from `_rawY`, which is where the finger has
+   * actually dragged to, not from `pan.y`, which is where the resistance last
+   * put it. Damping an already damped value compounds: the board would resist
+   * more the longer you held it at the same place, and the two would converge on
+   * a point the finger was nowhere near.
+   */
   _constrainMobile() {
     if (!this.isMobile) return;
     this.pan.x = 0;
-    const top = this._mobileTopPan();
-    // If the whole board fits vertically, pin it to the top instead of giving
-    // it a small, meaningless travel range between two competing edges.
-    const bottom = Math.min(this._mobileBottomPan(), top);
-    this.pan.y = clamp(this.pan.y, bottom, top);
+    const { top, bottom } = this._mobileBounds();
+    if (this._rawY === null) {
+      this.pan.y = clamp(this.pan.y, bottom, top);
+      return;
+    }
+    // A screen's worth of world, which is what the resistance is scaled against:
+    // the same drag past the edge should feel the same on a tall screen and a
+    // short one, and it is the *screen* the finger is crossing.
+    const dim = this.height / this.zoom;
+    const y = this._rawY;
+    if (y > top) this.pan.y = top + give(y - top, dim);
+    else if (y < bottom) this.pan.y = bottom - give(bottom - y, dim);
+    else this.pan.y = y;
+  }
+
+  /**
+   * Whether a finger is on the board this moment.
+   *
+   * Written by canvas/input.ts at the two ends of a gesture and nowhere else -
+   * it is one line in enter(), which is the pipeline's single door between
+   * modes, so there is no path that can set it and forget to clear it.
+   *
+   * A setter rather than a field because turning it on has to remember where the
+   * board was: `_rawY` is the undamped pan the resistance is measured from, and
+   * it exists only for as long as the finger does. Turning it off is a release,
+   * so it asks the board to come home - which does nothing at all unless the
+   * board is actually being held past an edge, and is overruled a moment later
+   * by glide() if the lift turned out to be a throw.
+   */
+  get dragging() { return this._rawY !== null; }
+
+  set dragging(on: boolean) {
+    if (on === (this._rawY !== null)) return;
+    this._rawY = on ? this.pan.y : null;
+    if (!on) this._settleMobile();
+  }
+
+  /**
+   * Bring the board back inside its edges from wherever it is, at whatever speed
+   * it is already moving.
+   *
+   * `v0` is world units per second, in pan.y's own sense, and is what makes this
+   * a hand-over rather than a new animation: a flick that runs into the boundary
+   * stops being a flick at the frame it crosses and becomes this, from the same
+   * position and the same speed. Starting a fresh eased move to the edge would
+   * put a corner in a motion the hand is still watching, which is the jump this
+   * whole thing exists to remove.
+   *
+   * Critically damped: x(t) = (A + Bt)e^(-t/tau), with A the overshoot and B the
+   * speed corrected for the decay's own contribution. It approaches the edge
+   * without crossing it for any starting speed, including one still travelling
+   * *away* from the board.
+   *
+   * Reduced motion snaps instead, which is the distinction tokens.css already
+   * draws by collapsing durations and leaving --btn-press alone: the answer to
+   * "less motion" is not "no correction". A board left hanging past its own edge
+   * because somebody asked for less movement is a board that has to be dragged
+   * back by hand.
+   */
+  _settleMobile(v0 = 0) {
+    if (!this.isMobile || this._rawY !== null) return;
+    const { top, bottom } = this._mobileBounds();
+    const edge = this.pan.y > top ? top : this.pan.y < bottom ? bottom : null;
+    if (edge === null) return;
+    this.stopAnim();
+    const over = this.pan.y - edge;
+    if (reducedMotion() || typeof requestAnimationFrame !== 'function') {
+      this.pan.y = edge;
+      this.apply();
+      return;
+    }
+    const b = v0 + over / SETTLE_TAU;
+    const t0 = performance.now();
+    const tick = (now: number) => {
+      const t = (now - t0) / 1000;
+      const offset = (over + b * t) * Math.exp(-t / SETTLE_TAU);
+      const done = Math.abs(offset) < SETTLE_EPS;
+      this.pan.y = done ? edge : edge + offset;
+      this.apply();
+      this._anim = done ? null : requestAnimationFrame(tick);
+    };
+    this._anim = requestAnimationFrame(tick);
   }
 
   _setMobileBounds(worldWidth: number, worldTop: number, worldBottom: number) {
@@ -709,10 +853,23 @@ export class Viewport {
       this.pan.x = this.isMobile ? 0 : x0 - vx * travelled / z;
       const nextY = y0 + vy * travelled / z;
       this.pan.y = nextY;
+      // The frame the throw runs out of board is where the throw ends and the
+      // settle begins, from this position and at this speed - not a new eased
+      // move to the edge, which would put a corner in a motion the hand is
+      // still watching. The flick's speed right now is its initial speed times
+      // the decay, in world units because that is what pan.y is in.
+      if (this.isMobile) {
+        const { top, bottom } = this._mobileBounds();
+        if (nextY > top || nextY < bottom) {
+          this.apply();
+          this._anim = null;
+          this._settleMobile(vy * decay / z);
+          return;
+        }
+      }
       this._constrainMobile();
       this.apply();
-      const hitEdge = this.isMobile && nextY !== this.pan.y;
-      this._anim = !hitEdge && speed * decay > GLIDE_STOP ? requestAnimationFrame(tick) : null;
+      this._anim = speed * decay > GLIDE_STOP ? requestAnimationFrame(tick) : null;
     };
     this._anim = requestAnimationFrame(tick);
   }
@@ -721,7 +878,14 @@ export class Viewport {
   panByScreen(dx: number, dy: number) {
     this.stopAnim();
     this.pan.x = this.isMobile ? 0 : this.pan.x - dx / this.zoom;
-    this.pan.y += dy / this.zoom;   // screen y is down, world y is up
+    const step = dy / this.zoom;    // screen y is down, world y is up
+    // The finger's own total goes on `_rawY` while there is a finger, and
+    // _constrainMobile() decides what of it the board is allowed to show. Every
+    // other caller of this - the wheel, a trackpad, a keyboard nudge - leaves
+    // `_rawY` null and takes the hard clamp, which is right: none of them is a
+    // continuous gesture that a rubber band would be telling anything.
+    if (this._rawY !== null) this._rawY += step;
+    this.pan.y += step;
     this._constrainMobile();
     this.apply();
   }

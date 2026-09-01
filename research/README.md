@@ -153,11 +153,19 @@ their work does; the other three do not, and those are the ones to argue about:
   and a dropped card carries no momentum because you place a card rather than
   throw one.
 
-  **Four of its five batches are in.** What is left is batch 5 alone — a Mobile
-  board that resists at its own edges instead of stopping dead — and it is the
-  only one of the five with no CSS in it: `give()`, a `dragging` flag on the
-  viewport, and a settle phase inside `glide()`'s own rAF chain. That is why this
-  document is still here.
+  **All five batches are written, and it stays here until somebody has held a
+  phone.** Batch 5 — a Mobile board that resists at its own edges rather than
+  stopping dead — landed on 2026-09-01: `give()` and a `dragging` flag on the
+  viewport, and a settle that `glide()` hands its remaining speed to instead of
+  ending on the frame it hits a bound. Four properties of it are under test
+  (`tests/viewport-mode.test.js`), including the one that is wrong in most
+  implementations of this: the resistance is measured from where the finger has
+  dragged to, never from its own last answer, or the damping compounds and the
+  board converges on a point the finger is nowhere near. **What no test here can
+  say is whether it feels like anything**, and the batch's own by-eye list is the
+  bar: drag past the top slowly, let go, flick hard into the boundary, catch it
+  mid-settle, then do all four again with reduced motion on. This goes to `old/`
+  when that has been run and not before.
 
 - `tester-feedback-2026-08-21.md` — **what two people said the first time they
   used the app, on machines that are not this one.** A Discord session

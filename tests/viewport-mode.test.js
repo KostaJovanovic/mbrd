@@ -298,6 +298,80 @@ test('Mobile viewport has side gutters and finite vertical bounds', () => {
     'the board cannot scroll past its bottom edge');
 });
 
+// The rubber band. Four properties, and the middle two are the ones that are
+// wrong in every implementation that does this by clamping a damped value.
+test('a held Mobile board follows past its edge, by less and less', () => {
+  const vp = new Viewport(element(), element());
+  vp.setBoardMode('mobile', 384, 384, -1216);
+  vp.fit([]);
+  const top = vp.pan.y;
+
+  vp.dragging = true;
+  vp.panByScreen(0, 100);
+  const first = vp.pan.y - top;
+  assert.ok(first > 0, 'the board follows the finger past its own edge');
+  assert.ok(first < 100 / vp.zoom, 'and follows it by less than the finger moved');
+
+  vp.panByScreen(0, 100);
+  const second = vp.pan.y - top - first;
+  assert.ok(second > 0, 'it never stops following');
+  assert.ok(second < first, 'and each hundred pixels buys less than the last');
+
+  vp.dragging = false;
+});
+
+test('the resistance is measured from the finger, not from its own last answer', () => {
+  const one = new Viewport(element(), element());
+  one.setBoardMode('mobile', 384, 384, -1216);
+  one.fit([]);
+  one.dragging = true;
+  one.panByScreen(0, 200);
+
+  const two = new Viewport(element(), element());
+  two.setBoardMode('mobile', 384, 384, -1216);
+  two.fit([]);
+  two.dragging = true;
+  for (let i = 0; i < 20; i++) two.panByScreen(0, 10);
+
+  assertNear(two.pan.y, one.pan.y,
+    'the same drag in twenty steps and in one must land in the same place - '
+    + 'damping an already damped value compounds');
+  one.dragging = false;
+  two.dragging = false;
+});
+
+test('nothing but a finger gets the soft edge', () => {
+  const vp = new Viewport(element(), element());
+  vp.setBoardMode('mobile', 384, 384, -1216);
+  vp.fit([]);
+  const top = vp.pan.y;
+  // The wheel, a trackpad and a keyboard nudge all come through panByScreen and
+  // none of them is a gesture a boundary can tell anything.
+  vp.panByScreen(0, 100);
+  assert.equal(vp.pan.y, top, 'the hard clamp is still the default');
+});
+
+test('letting go past the edge brings the board back', () => {
+  const vp = new Viewport(element(), element());
+  vp.setBoardMode('mobile', 384, 384, -1216);
+  vp.fit([]);
+  const top = vp.pan.y;
+  vp.dragging = true;
+  vp.panByScreen(0, 300);
+  assert.ok(vp.pan.y > top);
+
+  // One frame, a long way into the settle: the curve has to have arrived rather
+  // than merely be heading there, which is what SETTLE_EPS decides.
+  const rAF = globalThis.requestAnimationFrame;
+  globalThis.requestAnimationFrame = cb => { cb(performance.now() + 2000); return 1; };
+  try {
+    vp.dragging = false;
+  } finally {
+    globalThis.requestAnimationFrame = rAF;
+  }
+  assert.equal(vp.pan.y, top, 'and it settles on the edge itself, not near it');
+});
+
 test('the Mobile masthead keeps a 3:2 ratio with the board, above its top edge', () => {
   assert.equal(mobileHeaderHeight(330), 220);
 
