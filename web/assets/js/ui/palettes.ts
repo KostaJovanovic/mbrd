@@ -54,21 +54,51 @@ const SWATCH_TOKENS = ['--paper', '--accent', '--ink'];
  */
 export function paletteSwatches(value: string): string[] {
   const want = value ? `:root[data-palette="${value}"]` : ':root';
+  // The same palette dressed for the end of the axis the reader is at. Section
+  // 3b of tokens.css is a block per palette per end - `[data-whimsy="0"]
+  // [data-palette="absinthe"]` and its Harsh twin - and without this the menu
+  // showed the middle-tier literals at every level, so a board wearing pastels
+  // was offered four chips it was not wearing and would not wear if picked.
+  //
+  // Read off the attribute rather than from the look model, which would be an
+  // import and a ring - see the header. An absent attribute is level 1, where
+  // there are no combo blocks and this walk finds nothing, which is the same
+  // answer as not looking.
+  const tier = document.documentElement.dataset.whimsy || '1';
+  const dressed = value
+    ? `:root[data-whimsy="${tier}"][data-palette="${value}"]`
+    : `:root[data-whimsy="${tier}"]`;
+  const found: Record<string, string> = {};
   for (const sheet of document.styleSheets) {
     let rules: CSSRuleList;
     try { rules = sheet.cssRules; } catch { continue; }
     for (const rule of rules) {
-      if (!(rule instanceof CSSStyleRule) || rule.selectorText !== want) continue;
-      const out = SWATCH_TOKENS
-        .map(t => rule.style.getPropertyValue(t).trim())
-        .filter(Boolean);
-      // Keep looking unless the rule answered with all three. The bare `:root`
-      // selector matches several rules across the sheets - base.css declares one,
-      // quality.css another - and only tokens.css's carries pigments, so taking
-      // the first rule that merely *matches* would hand back nothing for Papyrus.
-      if (out.length === SWATCH_TOKENS.length) return out;
+      if (!(rule instanceof CSSStyleRule)) continue;
+      // Document order, and the combo blocks sit below the palette blocks they
+      // dress, so a later answer overwrites an earlier one exactly the way the
+      // cascade would - which is the property that makes two passes unnecessary.
+      if (rule.selectorText !== want && rule.selectorText !== dressed) continue;
+      for (const t of SWATCH_TOKENS) {
+        const v = rule.style.getPropertyValue(t).trim();
+        if (v) found[t] = v;
+      }
     }
   }
+  const out = SWATCH_TOKENS.map(t => found[t]).filter(Boolean);
+  // All three or nothing. The bare `:root` selector matches several rules across
+  // the sheets - base.css declares one, quality.css another - and only
+  // tokens.css's carries pigments, so a partial answer means the walk found a
+  // rule that merely matched and not the one that defines the palette.
+  //
+  // Harsh is the honest gap in this: its combo blocks set the pigments and not
+  // the sheet, because the hand-written `[data-whimsy="2"]` block derives paper
+  // and ink from `var(--accent)` by color-mix and the boldened accent propagates
+  // through the whole ramp for free. So the paper chip there is the middle
+  // tier's, which is the wrong white by a little. Resolving it properly means
+  // evaluating a color-mix against a palette that is not on :root, which is the
+  // engine's job and not this walk's - and the accent chip, the one that tells
+  // two palettes apart, is exact.
+  if (out.length === SWATCH_TOKENS.length) return out;
   // No block of its own: the live look. See the note above - this is Dynamic's
   // row, and the value it is showing is by definition whatever is on screen.
   if (!value) return [];

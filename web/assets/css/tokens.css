@@ -658,6 +658,7 @@
 @property --accent-warm{ syntax: "<color>"; inherits: true; initial-value: #e89100; }
 @property --accent-deep{ syntax: "<color>"; inherits: true; initial-value: #7f2f00; }
 @property --accent-fg  { syntax: "<color>"; inherits: true; initial-value: #fdfcfa; }
+@property --accent-text{ syntax: "<color>"; inherits: true; initial-value: #b94900; }
 @property --leafy      { syntax: "<color>"; inherits: true; initial-value: #66842b; }
 
 /* Not on the first paint: an element has no before-change style the first time
@@ -678,6 +679,7 @@
       --accent     var(--dur-palette) var(--ease),
       --accent-warm var(--dur-palette) var(--ease),
       --accent-deep var(--dur-palette) var(--ease),
+      --accent-text var(--dur-palette) var(--ease),
       --leafy      var(--dur-palette) var(--ease);
   }
 }
@@ -707,7 +709,32 @@
   transition-duration: 0s !important;
 }
 
-/* --accent-fg is registered above but deliberately not in that list, and the
+/* --accent-text is in that list and --accent-fg is not, which looks arbitrary
+   and is the one place the rule above needs a second sentence.
+
+   The rule is "a token built out of another token needs its input to have a
+   transition, not one of its own". --accent-text obeyed it for as long as it was
+   only ever `var(--accent)`: it tracked the accent for free and nothing here
+   named it. Section 3b broke that. At Harsh every palette gives it a *literal* -
+   the accent taken down to a lightness words can be read at - and a literal has
+   no input to track, so it jumped to the new palette's value on the first frame
+   while the sheet under it took the full duration. That is not a subtle miss:
+   --accent-text is the tab labels, the links, --select, and --grid-axis, which
+   is the one set of lines drawn on the board itself. Half the interface
+   travelling and the other half arriving at once is exactly the seam a tester
+   described, and it appeared at one end of the axis only.
+
+   Transitioning it costs the alias case a small lag - at the other two levels it
+   is still `var(--accent)`, so its target moves every frame and it follows the
+   accent by a curve rather than with it. That is the chasing the paragraph below
+   refuses for --accent-fg, and it is survivable here for the reason that
+   paragraph turns on: --accent-fg is printed *on* --accent, so the two drifting
+   apart is a label and its own background disagreeing, which is what reads as a
+   flash. --accent-text is printed on paper. Nothing pairs it against the pigment
+   it is derived from, so a hair of lag is a colour arriving late rather than two
+   colours crossing.
+
+   --accent-fg is registered above but deliberately not in that list, and the
    difference matters. It is a color-mix() of --paper, so while --paper travels
    its target moves every frame and its own transition restarts against the new
    one - a property chasing a moving target arrives by a curve nobody chose, and
