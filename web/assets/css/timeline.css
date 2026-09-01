@@ -297,11 +297,17 @@
               - (var(--tl-mark) + var(--tl-start)) / 2);
 }
 
-/* The mark. A disc the width of the cell's inner square, carrying the glyph for
-   what was done.
+/* The mark. The width of the cell's inner square, carrying the glyph for what
+   was done.
+
+   --leaf rather than the 50% it was, and it keeps --tl-mark rather than taking
+   --icon-button: the corner is the family (see .tl-mark in the sheet, and
+   .tour-chip in chrome.css) and the size is this strip's own - --tl-cell,
+   --tl-gap and --tl-mark are what the connector arithmetic between the cells is
+   written in, and a mark that stopped matching them would move the joins.
 
    The background is no longer holding a line off the glyph - the connector
-   stops at this disc's edge now - and it stays for the two states that colour
+   stops at this mark's edge now - and it stays for the two states that colour
    it: the hover wash, and the accent fill on wherever the board is standing. */
 #timeline-strip .tl-step .tl-dot {
   position: relative;
@@ -309,7 +315,7 @@
   place-items: center;
   width: var(--tl-mark);
   height: var(--tl-mark);
-  border-radius: 50%;
+  border-radius: var(--leaf);
   background: var(--paper-card);
   color: var(--ink-3);
   transition: color var(--dur-fast) var(--ease),
@@ -373,7 +379,10 @@
   content: '';
   position: absolute;
   inset: 1px;
-  border-radius: 50%;
+  /* A pixel inside the mark, so it takes the mark's corner less that pixel -
+     the same curve concentric rather than a rounder one sitting on a squarer
+     one, which is what the two read as at the Harsh end where --leaf is small. */
+  border-radius: calc(var(--leaf) - 1px);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
@@ -551,17 +560,23 @@
   outline-offset: calc(var(--sel-gap) * -1);
 }
 
-/* The mark: the same disc the strip draws, at the size a row can afford. It is
+/* The mark: the same shape the strip draws, at the size a row can afford. It is
    what makes the list skimmable - a column of glyphs down the left is read far
-   faster than a column of sentences. */
+   faster than a column of sentences.
+
+   An icon button's size and corner, because that is what this and the tour's
+   chips both are - see the note on .tour-chip in chrome.css. It was a 26px disc
+   against a 30px square there, which is design-audit D3, and the answer to
+   "square or dot" is square: a disc is the app's mark for a *play* control and
+   for nothing else, and these two are containers for a glyph and a number. */
 #timeline-sheet .tl-mark {
   position: relative;
   flex: none;
   display: grid;
   place-items: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
+  width: var(--icon-button);
+  height: var(--icon-button);
+  border-radius: var(--leaf);
   background: var(--paper-2);
   color: var(--ink-3);
 }

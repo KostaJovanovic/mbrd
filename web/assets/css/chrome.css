@@ -1389,7 +1389,10 @@
   scrollbar-width: thin;
   list-style: none;
 }
-#tour-editor .tour-chips > li { flex: none; border-radius: var(--radius-xs); }
+/* The corner is the chip's, because the only thing this element draws is the
+   drop edge below - a wrapper rounded differently from the thing inside it
+   would put a second curve a pixel outside the first. */
+#tour-editor .tour-chips > li { flex: none; border-radius: var(--leaf); }
 /* Where a dragged chip would land. On the side of the neighbour rather than in
    the gap: there is four pixels of gap to draw in, and an edge is what the eye
    reads as "between these two" anyway. */
@@ -1417,15 +1420,21 @@
    cannot say, *which* photograph a stop is, the board says instead and says it
    better: hovering this bar lays every number across the card it belongs to
    (:root.is-tour-peek in item-chrome.css). */
+/* Sized and cornered as an icon button, which is what it is: a small square with
+   one mark in it. It was 30px at --radius-xs and the timeline's mark was 26px at
+   50%, two strips of numbered squares that agreed about nothing - design-audit
+   D3. Both are on --icon-button and --leaf now, so the family is one shape at one
+   corner and the only difference left is what is inside: a number here, a glyph
+   there. */
 #tour-editor .tour-chip {
   position: relative;
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: var(--icon-button);
+  height: var(--icon-button);
   padding: 0;
   border: 0;
-  border-radius: var(--radius-xs);
+  border-radius: var(--leaf);
   background: var(--paper-2);
   color: var(--ink-2);
   font-family: var(--font-mono);
