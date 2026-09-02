@@ -47,6 +47,7 @@ import { normalizeBoard } from '../board-schema.ts';
 import { planMerge } from '../merge.ts';
 import { packBoard, unpackBoard, MIME } from './mbrd.ts';
 import { allAssets, clearAssets } from './assets.ts';
+import type { Asset } from './assets.ts';
 import { fileNameFor, titleFromFileName, titleForOpenedBoard } from './naming.ts';
 // The browser's own copy of the board. It is handed what it needs from this
 // half through initSession() below rather than importing it back - see the
@@ -522,6 +523,34 @@ export async function shareBoard({ history = true } = {}) {
   }
 }
 
+/**
+ * The same archive Export and Share write, handed back instead of filed.
+ *
+ * For the share *link*, which needs the bytes in memory to upload them rather
+ * than a place on disk to put them. It is a third caller of one pipeline and not
+ * a third way to write a board: the same serializeBoard(), the same packBoard(),
+ * the same created-stamp bookkeeping, so a board sent as a link and the same
+ * board exported to disk are byte-for-byte the same file.
+ *
+ * `history` is passed through and never defaulted here on purpose. Every other
+ * door in this module has an opinion about it - Export keeps it, Share asks -
+ * and this one is the door where the file is most certainly going to somebody
+ * else, so a default would be the module quietly answering the one question the
+ * caller exists to ask. commands/file.ts asks it through askHistory().
+ *
+ * It throws rather than toasting, unlike its two neighbours. Uploading is a
+ * multi-step job with a progress strip over it and three later steps that can
+ * fail on their own; one caller catching all four failures says one sentence,
+ * where a pack that reported itself would say two.
+ */
+export async function packForShare({ history }: { history: boolean }) {
+  const data = serializeBoard();
+  if (!history) delete data.timeline;
+  const { blob, manifest } = await packBoard(data, { created });
+  created = manifest.created;
+  return { blob, name: fileNameFor(data.title) };
+}
+
 // ---------------------------------------------------------------------------
 // Open
 // ---------------------------------------------------------------------------
@@ -627,6 +656,213 @@ export async function openFile(file: File, handle: FileSystemFileHandle | null =
 }
 
 /**
+ * Open a board somebody shared as a link: fetch the file, then open it.
+ *
+ * **The whole design of the incoming path is that it ends in openFile().** A
+ * person following a share link may have an hour of their own work on the
+ * screen, and openFile() already holds the right policy for that and the
+ * reasoning behind it - the outgoing board is filed on the shelf before
+ * anything is replaced, and nothing is replaced until the file is actually in
+ * hand. A second door with its own confirm would be a second place that policy
+ * could drift from.
+ *
+ * The provider module is loaded here rather than imported, which keeps this
+ * module off the OAuth flow in tests/layers.test.js's graph and keeps that flow
+ * from being evaluated on every boot. It is not a download saving - the build
+ * does not split - and page.ts's openingShare() is the test that decides whether
+ * any of it runs at all.
+ *
+ * **No token, and that is the feature.** The recipient's half is an anonymous
+ * fetch of a file the sender marked readable by anyone with the link. Nobody
+ * signs in to receive a board, which is what makes a link a link.
+ *
+ * A failure here is one toast and a board left exactly as it was. There is no
+ * retry: the two ordinary reasons a shared file will not come back are that the
+ * sender revoked it and that they deleted it, and neither improves on a second
+ * attempt.
+ */
+export async function openSharedBoard(ref: { provider: string, id: string }) {
+  const job = busy('Fetching the shared board');
+  try {
+    const { shareProvider } = await import('./cloud/cloud.ts');
+    const provider = shareProvider(ref.provider);
+    if (!provider) {
+      // Not an error about the link. Either it names a service this build has
+      // never heard of, or this build was deployed without that service's
+      // identifiers - and the person holding the link can act on neither.
+      toast('This app cannot open that kind of share link', 'error');
+      return false;
+    }
+    const blob = await provider.download(ref.id);
+    // A name for the sake of the board's title and the receipt. The real title
+    // is inside board.json and titleForOpenedBoard() prefers it; this only shows
+    // where a file has none, which is the same bargain every other open makes.
+    const file = new File([blob], fileNameFor('shared board'), { type: MIME });
+    return await openFile(file);
+  } catch (err) {
+    console.error(err);
+    toast('Could not open the shared board: ' + detailOf(err), 'error');
+    return false;
+  } finally {
+    job.end();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The cloud copy
+//
+// Three functions, and they sit here rather than in storage/cloud/ for the
+// reason every other door in this file does: they need the board id, the
+// serialiser and the board-swap transaction, and those are this module's. The
+// *algorithm* - what to upload, what counts as a conflict - is sync.ts, which
+// knows nothing about this app's state and is tested against a fake store.
+// ---------------------------------------------------------------------------
+
+/** Which board is on screen, for the sync table to file it under. */
+export const currentBoardId = () => ensureBoardId();
+
+/**
+ * Whether this board is one somebody asked to keep in the cloud, read fresh.
+ *
+ * Every call also points the synchronous mirror the settings panel reads at the
+ * answer, which is what keeps that mirror true without a second thing having to
+ * remember to update it. See syncedNow() in cloud/sync.ts.
+ */
+export async function boardSyncState() {
+  const { syncFor, noteCurrentSync } = await import('./cloud/sync.ts');
+  const row = await syncFor(await ensureBoardId());
+  noteCurrentSync(row);
+  return row;
+}
+
+/**
+ * Push the board on screen to whichever provider it is filed under.
+ *
+ * The row is written **after** the push lands, never before, and never at all on
+ * a conflict - so a refused push leaves this browser's idea of the remote
+ * exactly as it was and the next attempt asks the same question rather than
+ * quietly deciding it has won.
+ *
+ * `force` is what a caller passes once a person has been asked and said
+ * overwrite. Nothing in the automatic path may pass it.
+ */
+export async function pushBoardToCloud(
+  { force = false, onProgress }:
+    { force?: boolean, onProgress?: (done: number, total: number) => void } = {},
+) {
+  const { shareProvider } = await import('./cloud/cloud.ts');
+  const { pushBoard, syncFor, writeSyncRow, noteCurrentSync } = await import('./cloud/sync.ts');
+  const id = await ensureBoardId();
+  const known = await syncFor(id);
+  const provider = shareProvider(known?.provider || 'gdrive');
+  if (!provider) throw new Error('that cloud account is not available in this build');
+  if (!provider.signedIn()) throw new Error(`sign in to ${provider.label} first`);
+
+  const out = await pushBoard(provider, id, serializeBoard(), { known, force, onProgress });
+  if (out.ok) {
+    await writeSyncRow(id, out.row);
+    noteCurrentSync(out.row);
+  }
+  return out;
+}
+
+/** Stop keeping this board in the cloud. What is already up there stays. */
+export async function stopSyncingBoard() {
+  const { forgetSync, noteCurrentSync } = await import('./cloud/sync.ts');
+  await forgetSync(await ensureBoardId());
+  noteCurrentSync(null);
+}
+
+/**
+ * Start keeping this board in the cloud: file it, then push it once.
+ *
+ * Two steps rather than one because the row has to exist before the first push
+ * can know which provider it belongs to, and the push is what makes the row
+ * true. A first push that fails leaves no row at all, which is the honest
+ * outcome - a board marked as synced that has never reached the cloud is worse
+ * than one that plainly is not.
+ */
+export async function startSyncingBoard(providerId: string) {
+  const { shareProvider } = await import('./cloud/cloud.ts');
+  const { pushBoard, writeSyncRow, noteCurrentSync } = await import('./cloud/sync.ts');
+  const provider = shareProvider(providerId);
+  if (!provider) throw new Error('that cloud account is not available in this build');
+  const id = await ensureBoardId();
+  const out = await pushBoard(provider, id, serializeBoard(), { known: null });
+  if (out.ok) {
+    await writeSyncRow(id, out.row);
+    noteCurrentSync(out.row);
+  }
+  return out;
+}
+
+/**
+ * Open a board out of the cloud, over the top of whatever is on screen.
+ *
+ * Modelled on openFile() line for line, and the shape is the point rather than
+ * the similarity: the outgoing board is filed on the shelf first, the assets are
+ * swapped inside withFreshAssets() so a failure puts the old ones back, and
+ * nothing is replaced until the board is actually in hand. A second board-swap
+ * written from scratch is a second place that policy can drift from, which is
+ * why this one is a copy of that one and not an improvement on it.
+ *
+ * The pull happens *inside* the transaction, which is the one thing worth
+ * reading twice. pullBoard() registers what it downloads through putAsset(), so
+ * running it outside would file the incoming board's bytes into the outgoing
+ * board's store and then throw them away with it.
+ */
+export async function openCloudBoard(remote: { boardId: string, folder: string, modifiedTime: string }) {
+  const { shareProvider } = await import('./cloud/cloud.ts');
+  const { pullBoard, adoptedRow, writeSyncRow, noteCurrentSync } = await import('./cloud/sync.ts');
+  const provider = shareProvider('gdrive');
+  if (!provider) throw new Error('that cloud account is not available in this build');
+
+  try {
+    if (!(await shelveCurrent())) return false;
+    const job = busy('Fetching the board');
+    let seen: string | null = null;
+    try {
+      await withFreshAssets(async stash => {
+        const pulled = await pullBoard(provider, remote, {
+          onProgress: (done, total) => job.step(done, total),
+          // The board being replaced, offered to the one arriving. Two boards
+          // sharing a photograph share the bytes, so reopening your own synced
+          // board fetches board.json and nothing else.
+          reuse: stash,
+        });
+        seen = pulled.seen;
+        loadBoard(normalizeBoard(pulled.board));
+      });
+    } finally {
+      job.end();
+    }
+    fileHandle = null;
+    created = null;
+    // The board's own id follows the remote's, which is what makes a second
+    // machine's copy the *same* board rather than a duplicate of it: the folder
+    // is named for the id, so a machine that minted a fresh one would push into
+    // a second folder and the two would never converge again.
+    await setCurrentBoardId(remote.boardId);
+    // After the board is on screen, deliberately. A pull that succeeded and a
+    // load that then failed must not leave this browser believing it holds a
+    // current copy - the next push would overwrite the remote from a board that
+    // never opened.
+    if (seen) {
+      const row = adoptedRow(provider, remote, seen);
+      await writeSyncRow(remote.boardId, row);
+      noteCurrentSync(row);
+    }
+    resetSessionLatches();
+    toast('Opened the cloud copy');
+    return true;
+  } catch (err) {
+    console.error(err);
+    toast('Could not open that board: ' + detailOf(err), 'error');
+    return false;
+  }
+}
+
+/**
  * Fold a .mbrd into the board that is already open, instead of replacing it.
  *
  * The third thing that can be done with a board file, beside Open and Export,
@@ -726,12 +962,19 @@ export async function openOrMergeFile(file: File) {
  * released once the new board is definitely in - which is why the whole of
  * "open" runs in here rather than just the unpacking.
  */
-async function withFreshAssets<T>(commit: () => Promise<T>): Promise<T> {
+async function withFreshAssets<T>(commit: (stash: Map<string, Asset>) => Promise<T>): Promise<T> {
   const store = allAssets();
   const stash = new Map(store);
   store.clear();
   try {
-    const result = await commit();
+    // The stash is handed to the commit, and exactly one caller wants it: the
+    // cloud pull, which would otherwise re-download every photograph on a board
+    // this browser already holds, because the store it looks in was emptied one
+    // line above. Handing it over rather than exposing it is what keeps the
+    // rollback below the only other thing that can touch it - a caller holding
+    // the stash after this returns would be holding the assets of a board that
+    // has either been replaced or been put back, and neither is a thing to keep.
+    const result = await commit(stash);
     for (const a of stash.values()) if (a.url) URL.revokeObjectURL(a.url);
     return result;
   } catch (err) {

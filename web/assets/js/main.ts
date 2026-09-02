@@ -39,7 +39,7 @@ import {
   defaultBoardTitle,
 } from './state.ts';
 import { freezePrefs } from './prefs.ts';
-import { homePath, isPatchPage, isNotFoundPage, openingFace } from './page.ts';
+import { homePath, isPatchPage, isNotFoundPage, openingFace, openingShare } from './page.ts';
 import { Viewport } from './canvas/viewport.ts';
 import { paintGrid, paintGridOnView } from './canvas/grid.ts';
 import { initGrain, paintGrain } from './canvas/grain.ts';
@@ -59,7 +59,8 @@ import { initInput } from './canvas/input.ts';
 import { initDrop, setImportPrompt } from './import/drop.ts';
 import {
   initStorage, restoreSession, openFile, autosave, setPrompt, setBoardThumb,
-  suspendCache, resetSessionLatches, failHandover, boardSafety,
+  suspendCache, resetSessionLatches, failHandover, boardSafety, openSharedBoard,
+  boardSyncState, pushBoardToCloud,
 } from './storage/storage.ts';
 import { boardThumb } from './ui/snapshot.ts';
 import { flushNoteEdit, growNote, setNoteMenu } from './canvas/notes.ts';
@@ -68,7 +69,7 @@ import { renderMarkdown } from './ui/markdown.ts';
 import { initAssets, getAsset, forgetAssets } from './storage/assets.ts';
 import { forgetDisplay } from './canvas/display.ts';
 import { initSidebar } from './ui/sidebar.ts';
-import { buildPanel } from './ui/panel.ts';
+import { buildPanel, paintPanel } from './ui/panel.ts';
 import { armQuality, watchQuality } from './ui/quality.ts';
 import { initMenu, openAnchored, justDismissed } from './ui/menu.ts';
 import { initFencePrompt } from './ui/fence-prompt.ts';
@@ -891,6 +892,28 @@ const started = (async function start() {
   const face = (notFound || isPatch) ? null : openingFace();
   if (face) cmds[face]();
   openingView();
+  // A board somebody sent as a link, fetched and opened over the top of what is
+  // on screen. Deliberately the last thing in the boot and deliberately not
+  // awaited: the fetch is a network round trip to somebody else's Drive, and
+  // holding the first paint behind it would put a blank app in front of every
+  // recipient for as long as their connection took.
+  //
+  // Nothing is replaced until the file is in hand, and the board that was here
+  // is filed on the shelf before it is - that policy is openFile()'s and this
+  // path ends in it rather than writing a second copy of it. Which is also why
+  // the ordinary boot below runs to completion regardless: a share link that
+  // never arrives leaves an ordinary working board, not a half-started one.
+  //
+  // Not on the two boards nobody owns, on exactly the terms the face above is
+  // not: a dead address and the changelog are pages showing something other than
+  // the visitor's board, and neither should have one land on it.
+  if (!notFound && !isPatch) openIncomingShare();
+  // After the session, because the first thing this listens for is an autosave
+  // of a board that has to exist. Not on the two boards nobody owns, on the same
+  // terms as everything else in this run: the changelog and a dead address both
+  // suspend the writer, so `autosaved` never fires there anyway - and arming a
+  // listener that cannot fire is a line that reads as if it might.
+  if (!notFound && !isPatch) initCloudSync();
   if (restored) toast('Restored your last board');
   el('hud')!.hidden = !board.settings.hud;
   paintSnap();
@@ -900,6 +923,125 @@ const started = (async function start() {
   console.log('[mbrd] v' + VERSION + ' ready');
   warnMissingCapabilities();
 })();
+
+/**
+ * Keep a board that asked to be kept, on the signal that already knows whether
+ * anything happened.
+ *
+ * Hung off `autosaved` rather than a timer of its own, and that is the whole of
+ * the cadence design. That event fires when the session was actually written,
+ * which is to say when a person actually changed something - so this inherits an
+ * answer that would otherwise have to be worked out again, and a board nobody is
+ * touching is never uploaded. The stored versions used the same signal for the
+ * same reason before they were removed.
+ *
+ * **It stops rather than retries, and says so once.** Three things can go wrong
+ * and all three are permanent until somebody acts: the token expired (an hour is
+ * all a browser-only OAuth token gets, and a popup cannot be reopened without a
+ * gesture), the network is down, or another machine wrote the board and this is
+ * a conflict nothing here may resolve silently. A background loop that kept
+ * trying would produce a toast every ten minutes and fix none of them. So the
+ * latch goes up, the person is told, and the row in the panel is how they come
+ * back - pressing it is the gesture that a sign-in needs anyway.
+ *
+ * The latch is per-session and per-board, cleared when a board arrives, because
+ * a new board's sync has nothing to do with the last one's failure.
+ */
+let syncStopped = false;
+
+function initCloudSync() {
+  // Both doors a different board comes through - loaded from anywhere, or made
+  // from nothing. `arrive` is a *sound*, not an event on this bus, and reaching
+  // for it here was a mistake the typecheck caught: the cue is fired by the
+  // things below, which is why the two names look interchangeable and are not.
+  for (const arrival of ['board:load', 'board:new'] as const) {
+    bus.on(arrival, () => {
+      syncStopped = false;
+      // And re-read whether *this* board is a synced one, because the Cloud
+      // section reads a synchronous mirror and a board arriving is the one
+      // event that can change what it should say without anybody pressing
+      // anything. boardSyncState() writes the mirror on its way past; the
+      // repaint is what puts the new sentence on screen, since paintPanel()
+      // listens for four bus events and this is not one of them.
+      void boardSyncState().then(() => paintPanel()).catch(() => {});
+    });
+  }
+  bus.on('autosaved', () => {
+    if (syncStopped) return;
+    void (async () => {
+      const state = await boardSyncState();
+      if (!state) return;
+      const { shareProvider } = await import('./storage/cloud/cloud.ts');
+      const provider = shareProvider(state.provider);
+      // Not signed in is the ordinary case rather than a failure: the token is
+      // gone on every reload, and a board that syncs is not a board that nags.
+      // It says so once and waits to be asked.
+      if (!provider?.signedIn()) {
+        syncStopped = true;
+        toast('Signed out of Drive — this board is not syncing. Open Board → Keep in Drive to sign back in');
+        return;
+      }
+      const out = await pushBoardToCloud();
+      if (!out.ok) {
+        syncStopped = true;
+        toast('This board changed somewhere else — press Keep in Drive to sort it out', 'error');
+      }
+    })().catch(err => {
+      syncStopped = true;
+      console.warn('[mbrd] cloud sync stopped:', err);
+      toast('Cloud sync stopped — press Keep in Drive to try again', 'error');
+    });
+  });
+}
+
+/**
+ * Open the board a `?s=` link names, if this page was opened with one.
+ *
+ * Two cheap tests before anything else runs, and that ordering is the whole
+ * design of this function. `openingShare()` reads the query string and imports
+ * nothing; only a page that actually carries a reference evaluates
+ * `parseShareRef()`, and only a reference that parses reaches the provider and
+ * the network behind it. An ordinary board runs none of it.
+ *
+ * Cheap in work done, not in bytes fetched - the build does not split, so every
+ * one of those modules is in the bundle either way. See storage/cloud/config.ts,
+ * where the distinction is argued, because "loaded on demand" reads as a
+ * download saving in this codebase and is not one.
+ *
+ * **The address is cleared before the board arrives, not after.** A reload of
+ * `?s=...` would otherwise fetch and open the same board a second time, over
+ * whatever the person had done to the first copy in the meantime - and a URL
+ * left in the history for the back button to find is the same trap one press
+ * further away. replaceState rather than a navigation, so nothing reloads and
+ * the entry the visitor arrived on is corrected in place, which is the same
+ * move leaveNotFound() makes for the same reason.
+ *
+ * A failure says so through storage.ts's own toast and leaves the board alone.
+ * Nothing here retries: the two ordinary reasons a shared file will not come
+ * back are that the sender revoked the link or deleted the file, and neither
+ * improves on a second attempt.
+ */
+function openIncomingShare(): void {
+  const raw = openingShare();
+  if (!raw) return;
+  void (async () => {
+    const { parseShareRef } = await import('./storage/cloud/provider.ts');
+    const ref = parseShareRef(raw);
+    if (!ref) {
+      toast('That share link is not one this app can read', 'error');
+      return;
+    }
+    try {
+      history.replaceState(null, '', homePath() + location.hash);
+    } catch (err) {
+      // A history API a browser will not let this page use is not a reason to
+      // refuse somebody their board. The cost is that a reload opens it again,
+      // which openFile() makes survivable by shelving what was there.
+      console.warn('[mbrd] could not clear the share link from the address', err);
+    }
+    await openSharedBoard(ref);
+  })().catch(err => reportCaught(err, 'the shared board'));
+}
 
 /**
  * A quiet floor check, run once the board is up (Safari audit S4).

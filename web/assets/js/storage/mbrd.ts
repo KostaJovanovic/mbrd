@@ -148,6 +148,45 @@ const dec = new TextDecoder();
 const json = (obj: unknown) => enc.encode(JSON.stringify(obj, null, 2));
 
 /**
+ * Every asset hash a board points at, in one set.
+ *
+ * The same four classes of reference packBoard() walks below - the live items,
+ * the bin, the faces the board is set in, and the pictures the step history
+ * names - and it exists because a *second* thing now needs that answer: the
+ * cloud sync, which uploads assets individually and has to know exactly which
+ * ones a board still claims.
+ *
+ * **The two are not allowed to disagree, and the thing keeping them honest is a
+ * test rather than shared code.** Extracting the walk out of packBoard() was the
+ * obvious move and is the wrong one: that loop does three things this cannot -
+ * it captures a readable label off the item that named the bytes, it refuses a
+ * malformed hash outright, and it distinguishes a missing photograph (fatal)
+ * from a missing face or step (not) - and a function serving both would have to
+ * carry all of that to answer a question that is one line. So `tests/mbrd.test.js`
+ * packs a board and asserts that the `assets/` entries in the archive are
+ * exactly this set. Two implementations bound by an assertion, which is the same
+ * bargain SHELL and the CSP hashes already make in this repository.
+ *
+ * A malformed hash is skipped here rather than thrown on, and that is the one
+ * deliberate difference. packBoard() is writing a file somebody will be handed
+ * and is right to refuse; this is deciding what to upload, and refusing to sync
+ * a whole board over one bad id would strand it. The bad id is not a valid file
+ * name in either destination, so skipping it is the same outcome by a quieter
+ * route.
+ */
+export function boardAssetHashes(boardData: PackedBoard): Set<string> {
+  const out = new Set<string>();
+  for (const item of [...boardData.items, ...(boardData.trash || []).map(t => t.item)]) {
+    for (const hash of itemHashes(item)) if (isHash(hash)) out.add(hash);
+  }
+  for (const font of boardData.settings?.fonts || []) {
+    if (isHash(font?.hash)) out.add(font.hash);
+  }
+  for (const hash of timelineHashes(boardData.timeline)) if (isHash(hash)) out.add(hash);
+  return out;
+}
+
+/**
  * Pack a serialised board plus the assets it references into a .mbrd Blob.
  * Only hashes still referenced by an item are written, so deleting an item and
  * saving actually shrinks the file.
@@ -940,6 +979,6 @@ const MIME_BY_EXT: Record<string, string> = {
   pdf: 'application/pdf', zip: 'application/zip',
 };
 
-function mimeFor(ext: string) {
+export function mimeFor(ext: string) {
   return MIME_BY_EXT[(ext || '').toLowerCase()] || '';
 }
