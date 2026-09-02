@@ -128,3 +128,46 @@ export function openingFace(): BoardFace | null {
   const hash = location.hash.replace(/^#/, '');
   return hash === 'feed' || hash === 'playlist' ? hash : null;
 }
+
+/**
+ * The query parameter a shared board arrives under.
+ *
+ * Here rather than in storage/cloud/provider.ts, which is the module that knows
+ * what the *value* means, because the name of a parameter in this app's own
+ * address bar is the same kind of fact as `#feed` and `/patch` - and it is read
+ * from two directions that must agree. The link builder spells it into a URL and
+ * the boot reads it back out; a second spelling of `s` would be a link this app
+ * writes and cannot open, which fails at nobody's desk but the recipient's.
+ *
+ * The query and not the fragment, unlike every other thing this app reads off
+ * its own URL, and the difference is worth one sentence. A fragment is never
+ * sent to a server, which is exactly why the sign-in token comes back in one -
+ * but a share link is meant to survive being pasted into a chat window, a mail
+ * client and a document, and those rewrite, strip and truncate fragments far
+ * more readily than query strings. What is in this one is a provider name and a
+ * file id that is already public to anyone holding the link.
+ */
+export const SHARE_PARAM = 's';
+
+/**
+ * The share reference this page was opened with, unparsed, or null.
+ *
+ * A string rather than a `{ provider, id }`, on the same reasoning that keeps
+ * this module importing nothing: what a share reference *means* belongs to
+ * storage/cloud/provider.ts, and main.ts is not going to load that module - nor
+ * the OAuth flow and uploader behind it - to find out that this is an ordinary
+ * board with no query string at all. So this answers the cheap half of the
+ * question and the expensive half stays behind the dynamic import.
+ *
+ * Read once by main.ts, after the session is back, in the same place and for the
+ * same reason openingFace() is.
+ */
+export function openingShare(): string | null {
+  try {
+    return new URLSearchParams(location.search).get(SHARE_PARAM);
+  } catch {
+    // A query string that will not parse is not a share link, and there is
+    // nothing in this app that a malformed one should stop.
+    return null;
+  }
+}

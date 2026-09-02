@@ -628,8 +628,39 @@ export function paintPanel() {
     // The heading greys with its rows, so a whole inert section reads as one
     // thing switched off rather than as a live title over dead controls.
     el.classList.toggle('is-inert', !!(c.patch && spec.needsBoard));
+    paintFold(el);
   }
   paintRules();
+}
+
+/**
+ * A fold whose every row is hidden comes down with them.
+ *
+ * The same rule sectionVisible() states for a heading, one level in, and it was
+ * missing for as long as no fold had a conditional row in it. buildSection()
+ * makes the <details> the moment any control carries `advanced`, and `when` is
+ * answered here at paint time by hiding the row - so a fold holding one
+ * conditional control renders as an **empty Advanced dropdown** on every board
+ * where that condition is false. It opens onto nothing, which reads as a broken
+ * panel rather than as a fold with nothing to say.
+ *
+ * The Sync section is what found it: its Stop syncing row only exists on a board
+ * that is actually being synced, which is not the ordinary case.
+ *
+ * Run after the controls are painted, never before - it is reading the `hidden`
+ * they have just been given.
+ */
+function paintFold(section: HTMLElement) {
+  for (const fold of section.children) {
+    if (!(fold instanceof HTMLDetailsElement)) continue;
+    let any = false;
+    for (const row of fold.children) {
+      // The summary is the fold's own label rather than one of its rows, so it
+      // is never what keeps one open.
+      if (row instanceof HTMLElement && row.tagName !== 'SUMMARY' && !row.hidden) any = true;
+    }
+    fold.hidden = !any;
+  }
 }
 
 function paintControl({ c: spec, owner, wrap, input, out, nodes }: Built, c: Ctx) {

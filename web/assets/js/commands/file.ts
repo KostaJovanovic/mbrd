@@ -39,9 +39,14 @@ import {
 import { ask } from '../ui/dialog.ts';
 import { hasContent } from '../onboarding.ts';
 import {
-  boardSafety, exportBoard, lastSaveFailure, newBoard, openBoard,
-  saveBlob, shareBoard, storageBreakdown,
+  boardSafety, currentBoardId, exportBoard, lastSaveFailure, newBoard,
+  openBoard, openCloudBoard, packForShare, pushBoardToCloud, saveBlob, shareBoard,
+  startSyncingBoard, stopSyncingBoard, storageBreakdown,
 } from '../storage/storage.ts';
+import { shareLinkFor } from '../storage/cloud/provider.ts';
+import { justDismissed, openAnchored } from '../ui/menu.ts';
+import { paintPanel } from '../ui/panel.ts';
+import { homePath } from '../page.ts';
 import { assetBytes } from '../storage/assets.ts';
 import { openLibrary } from '../ui/library.ts';
 import { boardPdf, boardPng } from '../ui/snapshot.ts';
@@ -151,6 +156,161 @@ async function askHistory(): Promise<boolean> {
     danger: false,
   });
   return answer === 'keep';
+}
+
+/**
+ * Attach a cloud account: say what is about to happen, then open the popup.
+ *
+ * **The dialog is not ceremony, it is what makes the popup open at all.** Every
+ * browser blocks a window that is not opened from a live user gesture, and a
+ * press on this dialog's own button is the freshest gesture there is. It also
+ * happens to be the honest interface - somebody else's login page appearing
+ * unannounced over a board is a worse surprise than a sentence saying it is
+ * about to.
+ *
+ * The panel is repainted afterwards because the Sync section's whole shape hangs
+ * off whether an account is connected, and paintPanel() listens for four bus
+ * events of which none is "somebody signed in".
+ */
+async function connectTo(id: string): Promise<void> {
+  const { shareProvider } = await import('../storage/cloud/cloud.ts');
+  const provider = shareProvider(id);
+  if (!provider) { toast('That account is not set up in this build', 'error'); return; }
+  if (provider.signedIn()) { toast(`Already connected to ${provider.label}`); return; }
+
+  const go = await ask({
+    title: `Connect ${provider.label}?`,
+    body: `Boards you choose are copied into your own ${provider.label} and kept up to `
+      + 'date while this tab is open — never onto a server of ours. Photographs are '
+      + 'uploaded once each, so only what changes is sent again. A sign-in window opens '
+      + 'next, and the connection lasts until you reload.',
+    go: 'Sign in',
+    cancel: 'Cancel',
+    danger: false,
+  });
+  if (go !== 'go') return;
+  try {
+    await provider.signIn();
+    toast(`Connected to ${provider.label}`);
+  } catch (err) {
+    console.error(err);
+    toast('Sign-in failed: ' + why(err), 'error');
+  } finally {
+    paintPanel();
+  }
+}
+
+/**
+ * The box to hang a menu off, from the button that opened it.
+ *
+ * A menu anchored to nothing lands in the top-left corner, which reads as a bug
+ * rather than as a menu. The fallback is the middle of the viewport, for the one
+ * case that can produce it: a command fired from the console or a keystroke
+ * while the panel that carries the row is shut.
+ */
+function anchorFor(button: Element | null) {
+  if (button) return button.getBoundingClientRect();
+  const x = innerWidth / 2, y = innerHeight / 3;
+  return { left: x, right: x, top: y, bottom: y };
+}
+
+/**
+ * Push the open board, and turn the one answer that is not a failure into a
+ * question.
+ *
+ * A conflict is not an error and must not be toasted as one: it means another
+ * machine has written this board since we last did, and the only safe answer is
+ * to ask. There is no merge - item positions are absolute and there is no CRDT -
+ * so the two real choices are overwrite and leave it, and a person has to pick.
+ */
+async function runSync({ force }: { force: boolean }): Promise<void> {
+  const job = busy('Syncing to Google Drive');
+  try {
+    const out = await pushBoardToCloud({
+      force,
+      onProgress: (done, total) => job.step(done, total),
+    });
+    if (out.ok) {
+      toast(out.uploaded
+        ? `Synced — ${out.uploaded} new file${out.uploaded === 1 ? '' : 's'} sent`
+        : 'Synced — nothing new to send');
+      return;
+    }
+    job.end();
+    const answer = await ask({
+      title: 'This board changed somewhere else',
+      body: `The copy in Drive was written on ${new Date(out.theirs).toLocaleString()}, `
+        + 'which was not from this machine. There is no way to merge two boards — item '
+        + 'positions are absolute — so this is a choice between the two copies.',
+      go: 'Overwrite the cloud copy',
+      cancel: 'Leave it alone',
+      danger: true,
+    });
+    if (answer === 'go') await runSync({ force: true });
+  } catch (err) {
+    console.error(err);
+    toast('Could not sync: ' + why(err), 'error');
+  } finally { job.end(); }
+}
+
+/**
+ * When a board is big enough that uploading it is worth a sentence.
+ *
+ * Not a ceiling and deliberately not one: nothing here refuses, and there is no
+ * `CeilingId` in consent.ts for it, because a ceiling in this app means "larger
+ * than something a reader can safely allocate" and this is only "larger than
+ * somebody would like to wait for". A hundred megabytes is about a minute on a
+ * typical upstream connection, which is the point at which a person deserves to
+ * be told rather than left watching a bar.
+ */
+const HEAVY_SHARE = 100 * 1024 * 1024;
+
+/**
+ * Put the finished link where the person can use it, and say which happened.
+ *
+ * The clipboard is the answer people actually want - a share link exists to be
+ * pasted - but writeText() is refused in more situations than is comfortable to
+ * rely on: no secure context (a phone reaching a dev board over the LAN), a
+ * permission policy, a browser that wants a fresher gesture than an upload that
+ * took a minute. So a refusal is not an error, it is the other branch: the link
+ * goes into a dialog with a box round it, which is selectable and is the same
+ * thing the Debug rows fall back to.
+ *
+ * The dialog's Copy button is not decoration and is the reason this is worth two
+ * attempts rather than one. The commonest refusal is a browser wanting a fresher
+ * user gesture than an upload that has just taken a minute, and a press on that
+ * button is exactly that - so the retry usually works where the automatic one
+ * did not. What the field answers with is thrown away: `link` is what gets
+ * copied, not whatever ended up in a box somebody may have typed into.
+ */
+async function handOverLink(link: string): Promise<void> {
+  const copy = async (): Promise<boolean> => {
+    try {
+      if (!navigator.clipboard?.writeText) return false;
+      await navigator.clipboard.writeText(link);
+      return true;
+    } catch {
+      // Refused, which is one of the two ordinary outcomes rather than a fault.
+      return false;
+    }
+  };
+
+  if (await copy()) {
+    toast('Link copied — anyone with it can open this board');
+    return;
+  }
+  const again = await ask({
+    title: 'The board is shared',
+    body: 'Anyone with this link can open the board, and nobody needs an account.',
+    go: 'Copy',
+    cancel: 'Close',
+    field: { value: link },
+  });
+  // Null is every way out that is not the Copy button, and all of them mean the
+  // same thing here: the link was on screen to be read, and it has been.
+  if (again === null) return;
+  if (await copy()) toast('Link copied — anyone with it can open this board');
+  else toast('Could not reach the clipboard — the link is in the console', 'error');
 }
 
 /**
@@ -323,6 +483,218 @@ export function fileCommands() {
     share: async () => {
       if (!await confirmEmptyExport()) return;
       await shareBoard({ history: await askHistory() });
+    },
+    // And the other kind of share: a URL rather than a file. The whole design is
+    // in storage/cloud/provider.ts; what is here is the order the questions are
+    // asked in, and that order is not arbitrary.
+    //
+    // **Sign-in must be the last thing before the work starts.** Every browser
+    // blocks a popup that is not opened from a live user gesture, and the two
+    // questions above spend it: a person reading the history dialog for ten
+    // seconds has an expired activation by the time they answer. So the sign-in
+    // gets its own dialog immediately in front of it, and the popup is opened
+    // out of *that* button's press. It also happens to be the honest interface -
+    // a Google window appearing unannounced over somebody's board is a worse
+    // surprise than a sentence saying it is about to.
+    //
+    // The provider is loaded on demand, on the terms optimize/ is two rows
+    // below: a graph seam rather than a download saving - the build does not
+    // split - so what it buys is that the command surface does not statically
+    // depend on an OAuth flow, and that nothing in it runs until somebody
+    // presses this.
+    shareLink: async () => {
+      if (!await confirmEmptyExport()) return;
+      const { shareProvider } = await import('../storage/cloud/cloud.ts');
+      // 'gdrive' by name rather than through a picker, and the plan's own reason:
+      // choosing one of three is a menu, ui/menu.ts renders every menu in this
+      // app, and a menu with one row is worse than no menu. See share.ts.
+      const provider = shareProvider('gdrive');
+      if (!provider) { toast('Sharing a link is not set up in this build', 'error'); return; }
+
+      const history = await askHistory();
+
+      if (!provider.signedIn()) {
+        const go = await ask({
+          title: `Sign in to ${provider.label}?`,
+          body: `The board is uploaded to your own ${provider.label} and the link `
+            + 'points there — it never touches a server of ours, and whoever you send '
+            + 'it to needs no account. A sign-in window opens next.',
+          go: 'Sign in',
+          cancel: 'Cancel',
+          danger: false,
+        });
+        if (go !== 'go') return;
+        try {
+          await provider.signIn();
+        } catch (err) {
+          console.error(err);
+          toast('Sign-in failed: ' + why(err), 'error');
+          return;
+        }
+      }
+
+      let packed;
+      const packing = busy('Packing the board');
+      try {
+        packed = await packForShare({ history });
+      } catch (err) {
+        console.error(err);
+        toast('Could not pack the board: ' + why(err), 'error');
+        return;
+      } finally { packing.end(); }
+
+      // Asked after packing because that is the first moment the number is
+      // known, and asked at all because this is the version of the feature that
+      // uploads the originals. A board of video is slow to send and - the part
+      // that is not obvious from this end - the recipient waits through the whole
+      // download before they see anything at all. The lighter viewing copy is the
+      // next phase of this work; until it exists, saying the number is the honest
+      // substitute. See research/docs/cloud.md.
+      if (packed.blob.size > HEAVY_SHARE) {
+        const go = await ask({
+          title: `That is ${formatBytes(packed.blob.size)} to upload`,
+          body: 'Uploading will take a while on a slow connection, and whoever opens '
+            + 'the link downloads all of it before they see the board. Optimising the '
+            + 'board first (System → Optimize) usually cuts it a long way.',
+          go: 'Upload anyway',
+          cancel: 'Cancel',
+          danger: false,
+        });
+        if (go !== 'go') return;
+      }
+
+      const job = busy(`Uploading to ${provider.label}`);
+      try {
+        const id = await provider.upload(packed.blob, packed.name,
+          (sent, total) => job.step(sent, total));
+        const link = shareLinkFor(location.origin, homePath(), { provider: provider.id, id });
+        // Said twice, the way every Debug row is: a receipt for the person who
+        // pressed it, and a console line for the one case the receipt cannot
+        // cover - a clipboard write the browser refused, on a board the person
+        // now has to be able to get the link off somehow.
+        console.info('[mbrd] share link:', link);
+        await handOverLink(link);
+      } catch (err) {
+        console.error(err);
+        toast('Could not share the board: ' + why(err), 'error');
+      } finally { job.end(); }
+    },
+    // ── The cloud copy ───────────────────────────────────────────────────
+    //
+    // The same Google account the share link uses, doing the other thing it is
+    // good for. `research/docs/cloud.md` and the header of
+    // storage/cloud/sync.ts carry the design; what is here is the order of the
+    // questions, which follows the share command's for the same reason - the
+    // sign-in popup has to be the last thing before the work, or the browser
+    // blocks it.
+    // Attach an account, and nothing else. The whole of the Sync section until
+    // this has happened, because every other row in it is meaningless without
+    // somewhere to sync to.
+    //
+    // One command per provider rather than one taking an id, because a
+    // `data-cmd` is a name and not a call - there is nowhere in the markup to
+    // put an argument, and inventing somewhere would be a second dispatch
+    // mechanism beside the one every button in this app already uses.
+    connectGdrive: () => connectTo('gdrive'),
+    // Start keeping this board in the cloud. The section only shows this row
+    // once an account is attached and on a board that is not already kept, so
+    // there is neither a sign-in branch nor an "already synced" branch here -
+    // those are connect-* and cloud-push, and the schema decides which is on
+    // screen.
+    cloudSync: async () => {
+      if (!await confirmEmptyExport()) return;
+      const { shareProvider } = await import('../storage/cloud/cloud.ts');
+      const provider = shareProvider('gdrive');
+      if (!provider?.signedIn()) { toast('Connect an account first', 'error'); return; }
+
+      const job = busy(`Copying the board to ${provider.label}`);
+      try {
+        const out = await startSyncingBoard(provider.id);
+        if (!out.ok) {
+          // A board of this id is already up there and this machine has never
+          // pushed it. That is somebody's other machine, and the answer is to
+          // open theirs rather than to flatten it from here.
+          toast('A copy of this board is already in Drive — open it from the cloud instead', 'error');
+          return;
+        }
+        toast(`Kept in ${provider.label} — ${out.uploaded} file${out.uploaded === 1 ? '' : 's'} sent`);
+      } catch (err) {
+        console.error(err);
+        toast('Could not copy the board: ' + why(err), 'error');
+      } finally {
+        job.end();
+        // The section reads a synchronous mirror that this press has just
+        // changed, and the panel repaints on four bus events of which none is
+        // "a board started syncing". Repainting by hand is the same move
+        // ui/quality.ts makes for the same reason.
+        paintPanel();
+      }
+    },
+    /** Push now, for somebody about to close the lid rather than wait for an autosave. */
+    cloudPush: async () => {
+      await runSync({ force: false });
+      paintPanel();
+    },
+    /**
+     * Stop syncing. Asks, because it is not obvious from the button what happens
+     * to the copy that is already up there - and the answer, that it stays, is
+     * the thing somebody needs to hear before they press it rather than after.
+     */
+    cloudStop: async () => {
+      const answer = await ask({
+        title: 'Stop keeping this board in Drive?',
+        body: 'The copy already in your Drive stays exactly where it is — this app cannot '
+          + 'delete it, and will not try. What stops is the sending: changes from here on '
+          + 'stay in this browser until you turn it back on.',
+        go: 'Stop syncing',
+        cancel: 'Cancel',
+        danger: false,
+      });
+      if (answer !== 'go') return;
+      await stopSyncingBoard();
+      toast('No longer syncing — the copy in your Drive is untouched');
+      paintPanel();
+    },
+    // The boards this app has put in the person's Drive, from any machine. A
+    // menu rather than a modal, and anchored to the row that opened it -
+    // ui/menu.ts renders every menu in this app and a second implementation is
+    // the thing CLAUDE.md forbids by name.
+    cloudOpen: async () => {
+      const { shareProvider } = await import('../storage/cloud/cloud.ts');
+      const provider = shareProvider('gdrive');
+      if (!provider) { toast('Cloud storage is not set up in this build', 'error'); return; }
+
+      const button = document.querySelector('[data-cmd="cloud-open"]');
+      // The trap CLAUDE.md names: the menu closes on an outside pointerdown in
+      // the capture phase and this button is outside it, so without this the
+      // second press closes the menu and the click reopens it.
+      if (justDismissed(button)) return;
+
+      // No sign-in branch: this row is only drawn once an account is attached,
+      // and the connect-* command is the only place that opens a popup.
+      if (!provider.signedIn()) { toast('Connect an account first', 'error'); return; }
+
+      const job = busy(`Looking in ${provider.label}`);
+      let boards;
+      try {
+        const { remoteBoards } = await import('../storage/cloud/sync.ts');
+        boards = await remoteBoards(provider);
+      } catch (err) {
+        console.error(err);
+        toast('Could not read your Drive: ' + why(err), 'error');
+        return;
+      } finally { job.end(); }
+
+      if (!boards.length) { toast('No boards in Drive yet'); return; }
+
+      const here = await currentBoardId();
+      openAnchored(anchorFor(button), boards.map(remote => ({
+        label: remote.boardId === here ? 'This board (cloud copy)' : remote.boardId,
+        // The date the cloud copy was last written, which is the only thing that
+        // distinguishes two rows for somebody who never sees a board id.
+        accel: new Date(remote.modifiedTime).toLocaleDateString(),
+        action: () => { void openCloudBoard(remote); },
+      })), { label: 'Boards in Drive', focus: true, owner: button });
     },
     // A picture of the board, for showing rather than reopening. A moodboard
     // exists to be presented, and until these two the only thing that left mbrd

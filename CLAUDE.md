@@ -149,6 +149,26 @@ included — `tests/sw.test.js` reads that list by pulling out single-quoted run
   is heard in `CUES`, both `cuelume/recipes.ts`. The recipes are vendored from
   Cuelume number for number; the cues are this app's. A press that logs nothing
   under `mbrd.sound.log()` never reached the engine.
+- **A cloud provider** → a module under `storage/cloud/` exporting a
+  `ShareProvider`, its id in `PROVIDER_IDS` (`cloud/provider.ts`) and its object
+  in `PROVIDERS` (`cloud/cloud.ts`), its identifiers in `cloud/config.ts`, **its
+  API host in `connect-src` in `web/_headers`**, and its sign-in page in
+  `tests/csp.test.js`'s `NOT_FETCHED` — that last one because the sign-in is
+  *navigated* to and not fetched, which is the only shape of URL allowed to be
+  absent from the policy. Implementing `store` as well as the share methods is
+  what lets it keep boards in sync; a provider that cannot is absent from that
+  half rather than failing in it. The picker, once there are two, is one
+  `openAnchored()` call and never a second menu. `research/docs/cloud.md` is the
+  specification. **`config.ts` ships empty and `tests/share.test.js` asserts
+  it**, so the rows are absent rather than broken in a checkout nobody has
+  registered an application for.
+- **A new class of asset reference** → `itemHashes()` / `timelineHashes()` **and**
+  `boardAssetHashes()` in `storage/mbrd.ts`, which is what the cloud sync uploads
+  from. The packer and that walk are two implementations bound by an assertion in
+  `tests/mbrd.test.js`; a class added to one and not the other means the sync
+  silently stops uploading a whole category and the board comes back on another
+  machine with holes in it. Three readers had to learn at once when the stored
+  versions arrived in v0.198, which is why this line exists.
 - **A size ceiling** → a `CeilingId` and a risk sentence in `consent.ts`, a
   `throw oversize(...)` where the number is measured, and a `lift()` at the
   nearest async caller that knows the file. **No ceiling refuses anything on its
@@ -286,7 +306,8 @@ explicitly**.
 `research/docs/` holds the specifications —
 [`mbrd-format.md`](research/docs/mbrd-format.md),
 [`layout-settings.md`](research/docs/layout-settings.md),
-[`browser-support.md`](research/docs/browser-support.md).
+[`browser-support.md`](research/docs/browser-support.md),
+[`cloud.md`](research/docs/cloud.md).
 
 `research/` holds why things are the way they are, in three tiers: open work at
 the top level, carried-out work in `old/`, speculative work in `future/`. See

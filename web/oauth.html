@@ -1,0 +1,60 @@
+<!doctype html>
+<!--
+  Where a cloud provider's sign-in window comes back to.
+
+  It exists because the redirect has to land *somewhere that is not the app*.
+  Every path this site does not have is answered with index.html - that is the
+  whole not-found design, and 404.html is a byte copy of it - so a redirect to
+  any address that does not exist would boot a second copy of the whole board
+  inside a popup, half a megabyte of script behind a window that is about to
+  close. This is the smallest page that stops that happening.
+
+  ── Why there is no script in here ──
+
+  The obvious version of this page posts the fragment back to the opener and
+  closes itself. This one does nothing at all: once the provider has redirected
+  here the popup is same-origin again, so the opener simply reads its location.
+  See storage/share/oauth.ts, which polls for exactly that.
+
+  Three things follow from having no script, and each is the reason:
+
+    - no hash in web/_headers. tests/csp.test.js sweeps every inline <script>
+      in web/ and requires script-src to carry its hash; a script here would be
+      a seventh hash whose bytes have to be kept in step with a file, for a page
+      that is visible for a quarter of a second.
+    - no postMessage, so no target-origin check to get wrong. The commonest way
+      to leak an OAuth token is a postMessage sent to '*'.
+    - nothing to go wrong when a browser blocks third-party script in a popup.
+
+  No stylesheet either, and that is not neglect. This page appears for one poll
+  interval at the end of a sign-in the person is watching Google draw, in a
+  window that closes itself; a stylesheet would be a fetch on the critical path
+  of that close, to style a sentence almost nobody reads. The words are the
+  design.
+
+  ── What it is not part of ──
+
+  Not in SHELL in web/sw.js, on the benches' terms: it is only ever reached
+  after a round trip through somebody else's login page, so caching it for
+  offline use is caching the last step of a journey that cannot start offline.
+  Not in sitemap.xml, and noindex, for the same reason lab.html is - it is not a
+  page of the site, it is a mechanism. Nothing links to it.
+
+  Its address is registered with each provider, so it may not move. Renaming
+  this file breaks sign-in on the deploy and nowhere else, until every
+  registered redirect URI is edited to match. REDIRECT_PATH in
+  storage/share/oauth.ts is the other half of the name.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Signing in - mbrd</title>
+<link rel="icon" href="assets/img/icon.svg">
+</head>
+<body>
+<p>Signed in. You can close this window.</p>
+<p><a href="/">Back to the board</a></p>
+</body>
+</html>

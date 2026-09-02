@@ -4,8 +4,16 @@
 
   Short on purpose. Almost every privacy policy is long because the product
   collects things and the document exists to make that lawful; this one is
-  short because there is nothing to disclose, and padding it out with the usual
-  clauses about lawful bases and data processors would imply there were.
+  short because there is almost nothing to disclose, and padding it out with the
+  usual clauses about lawful bases and data processors would imply there were.
+
+  The "almost" arrived with the share link, and it is the reason the network
+  section has four items rather than three. One button in this app sends a
+  board somewhere - to the user's own Google Drive, never to us - and a page
+  that went on saying "no upload" while that button existed would be the one
+  kind of privacy policy worth less than none. The tally at the top changed with
+  it: "no upload" became "no server of ours", which is the claim that is still
+  true and is the one that was always doing the work.
 
   A plain document, not the app. It loads tokens.css so it belongs to the site,
   and assets/css/privacy.css for the rest - no bundle, no service worker
@@ -34,7 +42,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Privacy - mbrd</title>
-<meta name="description" content="mbrd keeps your boards on your own computer. No account, no upload, no tracking.">
+<meta name="description" content="mbrd keeps your boards on your own computer. No account, no server of ours, no tracking.">
 <link rel="canonical" href="https://mbrd.valjdakosta.com/privacy">
 <link rel="icon" href="assets/img/icon.svg">
 <link rel="stylesheet" href="assets/css/tokens.css">
@@ -63,9 +71,9 @@
          and the date it last changed. -->
     <p class="pv-tally">
       <span>no account</span>
-      <span>no upload</span>
+      <span>no server of ours</span>
       <span>no tracking</span>
-      <span>last changed 14 August 2026</span>
+      <span>last changed 1 September 2026</span>
     </p>
   </header>
 
@@ -77,16 +85,16 @@
     </div>
     <article class="pv-plate">
      <p>
-      mbrd runs entirely in your browser. There is no account, no sign-in and no
-      server that holds your work: images, video, audio, notes and everything
-      else you add stay on your own computer, in your browser's storage, and
-      exporting a board writes a <code>.mbrd</code> file wherever you choose to
-      put it. We collect nothing at all - no analytics, no tracking pixels, no
-      cookies, no fingerprinting, no error reporting - and the app works with the
-      internet switched off, so opening a board tells nobody. The other half of
-      that promise is that clearing your browser's data for this site deletes
-      your boards and we have no backup to restore them from, so export anything
-      you would be sorry to lose.
+      mbrd runs entirely in your browser. There is no account and no server that
+      holds your work: images, video, audio, notes and everything else you add
+      stay on your own computer, in your browser's storage, and exporting a board
+      writes a <code>.mbrd</code> file wherever you choose to put it. We collect
+      nothing at all - no analytics, no tracking pixels, no cookies, no
+      fingerprinting, no error reporting - and the app works with the internet
+      switched off, so opening a board tells nobody. The other half of that
+      promise is that clearing your browser's data for this site deletes your
+      boards and we have no backup to restore them from, so export anything you
+      would be sorry to lose.
      </p>
     </article>
    </li>
@@ -98,16 +106,30 @@
     </div>
     <article class="pv-plate">
      <p>
-      Three things reach the network. All three you have to ask for, and none of
-      them sends your board. Pressing play on a YouTube or Spotify card loads
-      that card from YouTube or Spotify, who then see the request the way they
-      would if you opened it in a tab; the YouTube embed uses their no-cookie
-      host. Generating a preview image for a video your browser cannot read
-      downloads a converter from a public code mirror, jsDelivr - the converter
-      comes to the video, never the other way round. And loading this page at all
-      fetches it from our host, Cloudflare, which serves the site as static files
-      and sees the traffic that reaches it the way every web server does; we have
-      added no logging of our own on top.
+      Four things reach the network, and all four you have to ask for. Pressing
+      play on a YouTube or Spotify card loads that card from YouTube or Spotify,
+      who then see the request the way they would if you opened it in a tab; the
+      YouTube embed uses their no-cookie host. Generating a preview image for a
+      video your browser cannot read downloads a converter from a public code
+      mirror, jsDelivr - the converter comes to the video, never the other way
+      round. And loading this page at all fetches it from our host, Cloudflare,
+      which serves the site as static files and sees the traffic that reaches it
+      the way every web server does; we have added no logging of our own on top.
+     </p>
+     <p>
+      The fourth is the only one that sends your board anywhere, and it is worth
+      spelling out. <em>Share link</em> signs you in to your own Google Drive and
+      uploads the board there, as a file in your account, and then gives you a
+      link that points at it. It never passes through anything of ours - we run
+      no server and have nowhere to put it - so what leaves your computer goes
+      from you to Google and nowhere else, under whatever terms you already have
+      with them. Two things follow from that. The link works for anyone who has
+      it and needs no account, which is the point of it, so it is as private as
+      the people you send it to. And the file stays in your Drive until you
+      delete it there; nothing in mbrd can reach into your account to take it
+      back, because the permission we ask for reaches only files this app itself
+      created. If you never press that button, nothing about your boards ever
+      leaves your machine.
      </p>
     </article>
    </li>

@@ -1,5 +1,23 @@
 # Sharing a board as a link
 
+> **Built on 2026-09-01, and this document is now history rather than a plan.**
+> The specification is [`../docs/share-link.md`](../docs/share-link.md) and it is
+> what to read for what the app does; this is what to read for why the other
+> designs are not it. Three things below are no longer true of the code and are
+> left standing because the reasoning around them still is:
+>
+> - **Google Drive is the first provider, not Dropbox.** Overruled on install
+>   base — see the L1 block in `research/open-work-2026-08-14.md`.
+> - **Phase 2, the viewing copy, is still open.** The originals are what get
+>   uploaded, with a size question in front of anything over 100 MB.
+> - **There is no picker.** With one provider there is nothing to choose, which
+>   is what this document itself predicted at the foot of Phase 1.
+>
+> Its four open questions were all answered. The viewing copy: originals now,
+> copy later. Expiry: no, and no list of what has been shared. Copy or view: a
+> copy, as assumed here. Remembering the last provider: not yet, because there is
+> only one.
+
 > **Moved to `old/` on 2026-08-14 with nothing in it built.** It went to
 > `future/` first, and that was wrong twice over. `ui-audit-2026-08-13.md` went
 > to `old/` the same day with all four of its findings open, on the rule that the

@@ -10,7 +10,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { packBoard, unpackBoard, MIME } from '../web/assets/js/storage/mbrd.ts';
+import { boardAssetHashes, packBoard, unpackBoard, MIME } from '../web/assets/js/storage/mbrd.ts';
 import { putAsset, clearAssets } from '../web/assets/js/storage/assets.ts';
 import { readZip, writeZip } from '../web/assets/js/storage/zip.ts';
 import { item, hash, realHash } from './helpers.js';
@@ -115,6 +115,76 @@ test('the same asset used twice is stored once', async () => {
   // One entry, and it takes its name from the first card to reference it -
   // otherwise which of the two names won would come down to iteration order.
   assert.deepEqual(assetFiles, [`assets/a--${id}.png`]);
+});
+
+// ---------------------------------------------------------------------------
+// The second reader of the reference union
+//
+// boardAssetHashes() answers "what does this board point at" for the cloud sync,
+// which uploads assets one at a time and has to know exactly which ones a board
+// still claims. packBoard() answers the same question for itself, in a loop that
+// also captures readable labels and sorts fatal misses from tolerable ones - so
+// the two are separate implementations on purpose (the reasoning is in the
+// function's own header), and this is the assertion that stops them drifting.
+//
+// The drift it exists to catch is one-directional and quiet: a fourth class of
+// reference added to the packer and not to the walk would mean the sync silently
+// stops uploading a whole category of asset, and the board comes back on the
+// second machine with holes in it. That is precisely what happened when the
+// stored versions arrived in v0.198 and three separate reference readers had to
+// learn about them at once.
+// ---------------------------------------------------------------------------
+
+/** The digest out of an `assets/<slug>--<hash>.<ext>` entry, either spelling. */
+const hashFromEntry = (name) => {
+  const base = name.slice('assets/'.length).replace(/\.[a-z0-9]{1,12}$/i, '');
+  const dashes = base.lastIndexOf('--');
+  return dashes < 0 ? base : base.slice(dashes + 2);
+};
+
+test('boardAssetHashes names exactly what the packer writes', async () => {
+  clearAssets();
+  // One of every class the packer walks: a live item, its cover, a binned item,
+  // a face, and a picture named only by a step in the history. A board short of
+  // any one of them would let that class drift unnoticed, which is the whole
+  // failure this test is here for.
+  const live = await stubAsset('live');
+  const cover = await stubAsset('cover', { body: 'cover-bytes' });
+  const binned = await stubAsset('binned', { body: 'binned-bytes' });
+  const face = await stubAsset('face', { ext: 'woff2', mime: 'font/woff2', body: 'face-bytes' });
+  const stepped = await stubAsset('stepped', { body: 'stepped-bytes' });
+
+  const board = boardOf([withAsset(live, { id: 'i1', name: 'a.png', meta: { cover } })], {
+    trash: [{ at: 1, item: withAsset(binned, { id: 'i9', name: 'b.png' }) }],
+    settings: { fonts: [{ hash: face, family: 'Test Face' }] },
+    timeline: {
+      steps: [{
+        delta: {
+          items: {
+            changed: {
+              i5: [JSON.stringify(withAsset(stepped, { id: 'i5', name: 'gone.png' })), null],
+            },
+          },
+        },
+      }],
+    },
+  });
+
+  const written = new Set(
+    [...(await readZip((await packBoard(board)).blob)).keys()]
+      .filter(n => n.startsWith('assets/'))
+      .map(hashFromEntry),
+  );
+
+  assert.deepEqual(
+    [...boardAssetHashes(board)].sort(),
+    [...written].sort(),
+    'the sync would upload a different set of assets than the packer writes',
+  );
+  // The guard on the guard: five distinct classes, five distinct digests. Two
+  // empty sets are deepEqual, and a stubAsset() that stopped registering
+  // anything would make this test pass while proving nothing.
+  assert.equal(written.size, 5);
 });
 
 // ---------------------------------------------------------------------------

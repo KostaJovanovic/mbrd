@@ -157,12 +157,23 @@
 # ---------------------------------------------------------------------------
 #
 # There is no remote host in any of the three, and that is not an accident of
-# this file - it is a property of the app that this file pins down. A board
-# renders the same with the network off: link cards refuse to fetch a favicon or
-# a preview, and nothing anywhere resolves a URL out of a document it opened.
-# These three directives are what make that a guarantee instead of a habit, and
-# they are the ones that would have caught a "renderer follows a URL out of a
-# .mbrd" bug outright, at the browser, whatever the code did.
+# this file - it is a property of the app that this file pins down. **Nothing
+# that renders resolves a URL out of a document it opened**: link cards refuse to
+# fetch a favicon or a preview, and no picture, clip or face on a board is ever
+# addressed anywhere but here. These three directives are what make that a
+# guarantee instead of a habit, and they are the ones that would have caught a
+# "renderer follows a URL out of a .mbrd" bug outright, at the browser, whatever
+# the code did.
+#
+# This used to be stated as "a board renders the same with the network off", and
+# the share link makes that sentence half wrong in a way worth being exact about
+# rather than deleting. A board *that is already here* still renders with the
+# network off, and that is the property these three protect. A board arriving
+# from a share link does not: its bytes come over connect-src first, and only
+# once they are in the asset store do they become blob: URLs like everything
+# else - so from the first paint onwards it is an ordinary board with no remote
+# anything in it. The distinction is between fetching a file and rendering one,
+# and it is exactly the distinction these directives draw.
 #
 #   img-src 'self' blob: data:
 #     'self'  - assets/icons.svg, assets/img/*, the sticker sprite.
@@ -187,10 +198,10 @@
 #     imported font fails to load and the look silently falls back.
 #
 # ---------------------------------------------------------------------------
-# connect-src 'self' blob: https://cdn.jsdelivr.net
+# connect-src 'self' blob: https://cdn.jsdelivr.net https://www.googleapis.com
 # ---------------------------------------------------------------------------
 #
-# Exactly three origins are fetched from:
+# Exactly four origins are fetched from:
 #
 #   'self'    - ui/snapshot.ts reads assets/stickers.svg as text, and sw.js
 #               fetches same-origin requests it is caching. The service worker
@@ -206,11 +217,37 @@
 #               mattered less than it might because the two share a host -
 #               named now so the count below is the truth.
 #
-#               These are the only outbound requests the app makes on its own,
-#               and they are the single reason a remote host appears anywhere in
-#               this file. pdf.js used to be a third, loaded from this same host
-#               by import/pdf.ts and never mentioned here; it is vendored into
+#               pdf.js used to be a third user of this host, loaded from it by
+#               import/pdf.ts and never mentioned here; it is vendored into
 #               web/assets/vendor/pdfjs now and reaches nothing.
+#
+#   googleapis - the share link, both halves: storage/share/google.ts uploads a
+#               packed .mbrd into the sender's own Google Drive (a resumable
+#               session, so several requests), marks it readable by anyone with
+#               the link, and - on the other side - fetches one back with no
+#               account at all. One host for all of it.
+#
+#               This is the line that ended a claim this file used to make, and
+#               it is worth saying which. Until the share link there were no
+#               outbound requests except a converter fetched from a code mirror,
+#               and the sentence under img-src below said flatly that a board
+#               renders with the network off. **A shared board arrives over the
+#               wire before it renders**, which is a different thing from a board
+#               following a URL out of a file - see the note down there, which
+#               has been rewritten rather than left to be read as still true.
+#
+#               accounts.google.com is deliberately NOT here. The sign-in is a
+#               popup *navigated* to Google's own login page, and a navigation is
+#               governed by no directive in this policy - not connect-src, and
+#               not form-action, because there is no form. tests/csp.test.js
+#               carries it in its NOT_FETCHED list with that reason, which is the
+#               only way a URL in a module is allowed to be absent from here.
+#
+#               There is no SDK and there will not be one. Google's own answer is
+#               a script from accounts.google.com, which would put a remote host
+#               in script-src - the one directive this file argues hardest about,
+#               since a host there is a place an injected <script> can come from.
+#               A hundred lines of fetch is much the cheaper half of that trade.
 #
 # Pinned to the host, not the path: CSP has no useful path matching for this and
 # pretending otherwise would read as a promise the directive cannot keep.
@@ -219,6 +256,12 @@
 # false and video optimisation and HEVC posters are quietly not offered, the
 # same graceful skip the module already takes when the CDN is down. It is here
 # because "quietly not offered" is a bad way to find out about a header.
+#
+# Dropping googleapis breaks the share link outright, in both directions and
+# loudly - the upload fails with a message and a shared link opens nothing. That
+# is the right shape for it: unlike the converter, nothing about sharing degrades
+# into "quietly not offered", because somebody is standing there having pressed a
+# button.
 #
 # ---------------------------------------------------------------------------
 # frame-src - the two embed hosts, and nothing else
@@ -292,7 +335,7 @@
 # report to, which is the whole architecture).
 
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-TXFmC+WkJ7pej6GG4eilTgWXAPfRfnxeO2p8iCMvh/k=' 'sha256-qxiwxtjeQUbsHr4op9ZRXOdxUq+CLu4QIJRuvidUe5c=' 'sha256-eJzJ8523EitoBKAS5A1tCSnraL7SAmf2gesGT63wGSk=' 'sha256-xihqZ8REZBqbhv/X2MkimJtn0Nf8Zo5L1SB1HnLyNew=' 'sha256-Q8ZzrQgcVPkApKR0qNf6mroKHffRQsjhyVVZIRu0QtU=' 'sha256-8ZGO4EWxaESz6+qYFa7Px/8iyW9D2UaZh/+P4/mg99Q=' 'sha256-W6Ek3VdZ0h8I8y6AJQrxOK0kORl/bq7s85k8oOrakjs='; style-src 'self' 'sha256-wkVFcbpQLLLncGzQDSypPX4g+PgpgKuYUfkJ3D7xrA8=' 'sha256-wNl32lMHz3gn4pEFjtTgfLAClE+QNsM0xnQ6sYtFEJo=' 'sha256-AL9WaAEqAR1J/jBnSEHAmJZsBz/eGk5SgKE4e+Z9lIY='; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'self' blob:; connect-src 'self' blob: https://cdn.jsdelivr.net; worker-src 'self'; manifest-src 'self'; frame-src https://www.youtube-nocookie.com https://open.spotify.com; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-TXFmC+WkJ7pej6GG4eilTgWXAPfRfnxeO2p8iCMvh/k=' 'sha256-qxiwxtjeQUbsHr4op9ZRXOdxUq+CLu4QIJRuvidUe5c=' 'sha256-eJzJ8523EitoBKAS5A1tCSnraL7SAmf2gesGT63wGSk=' 'sha256-xihqZ8REZBqbhv/X2MkimJtn0Nf8Zo5L1SB1HnLyNew=' 'sha256-Q8ZzrQgcVPkApKR0qNf6mroKHffRQsjhyVVZIRu0QtU=' 'sha256-8ZGO4EWxaESz6+qYFa7Px/8iyW9D2UaZh/+P4/mg99Q=' 'sha256-W6Ek3VdZ0h8I8y6AJQrxOK0kORl/bq7s85k8oOrakjs='; style-src 'self' 'sha256-wkVFcbpQLLLncGzQDSypPX4g+PgpgKuYUfkJ3D7xrA8=' 'sha256-wNl32lMHz3gn4pEFjtTgfLAClE+QNsM0xnQ6sYtFEJo=' 'sha256-AL9WaAEqAR1J/jBnSEHAmJZsBz/eGk5SgKE4e+Z9lIY='; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'self' blob:; connect-src 'self' blob: https://cdn.jsdelivr.net https://www.googleapis.com; worker-src 'self'; manifest-src 'self'; frame-src https://www.youtube-nocookie.com https://open.spotify.com; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
 
 # The two exemptions, and the only interesting thing about the whole file.
 #

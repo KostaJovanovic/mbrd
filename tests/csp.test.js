@@ -18,7 +18,10 @@
 //   - the embed hosts. canvas/embed.ts is the only place in the app that talks
 //     to a third party; a provider added there and not here is a card whose
 //     "Watch here" button swaps in a frame that never loads.
-//   - the one remote host in connect-src, which comes from optimize/media.ts.
+//   - the two remote hosts in connect-src, one from optimize/media.ts and one
+//     from storage/cloud/google.ts. The second is the one with teeth: a share
+//     that is refused by the policy dies part-way through an upload, having
+//     already written half a file into somebody's own Drive.
 //   - the worker exemption path, which is a URL written as a string in one file
 //     and as a path in another, with nothing between them.
 //
@@ -341,6 +344,14 @@ test('no module names a remote host the policy does not allow', () => {
     ['https://www.youtube.com', 'matched when a link is pasted, then rewritten'],
     // A placeholder in a field.
     ['https://example.com', 'placeholder text'],
+    // Navigated to, never fetched. storage/cloud/google.ts opens Google's own
+    // login page in a popup and reads the fragment it comes back with; a
+    // top-level navigation is governed by no directive in this policy, and
+    // form-action does not apply because there is no form - the parameters are
+    // in the query string of a URL that gets opened. Adding it to connect-src
+    // would be a permission nothing uses, which is worse than an exemption with
+    // a reason beside it.
+    ['https://accounts.google.com', 'the sign-in page, navigated to in a popup'],
   ]);
 
   const offenders = [];
@@ -357,10 +368,10 @@ test('no module names a remote host the policy does not allow', () => {
     + 'and are refused on the deploy');
 });
 
-test('connect-src carries the one host the app fetches from', () => {
-  // optimize/media.ts is the only outbound request mbrd makes on its own. The
-  // check is on the host rather than the whole URL because that is all CSP
-  // matches on, and the version in the path is expected to move.
+test('connect-src carries the host the converter is fetched from', () => {
+  // optimize/media.ts was for a long time the only outbound request mbrd makes
+  // on its own. The check is on the host rather than the whole URL because that
+  // is all CSP matches on, and the version in the path is expected to move.
   //
   // Matched only where the URL *opens a string literal*. It used to be the
   // first `https://` anywhere in the file, which a sentence of prose in the
@@ -372,6 +383,25 @@ test('connect-src carries the one host the app fetches from', () => {
   const sources = directives.get('connect-src') ?? [];
   assert.ok(sources.includes(`https://${core[1]}`),
     `optimize/media.ts fetches ${core[1]} and connect-src does not allow it`);
+});
+
+test('connect-src carries the host a board is shared through', () => {
+  // The second outbound request, and the one that is somebody's board rather
+  // than a converter. Bound to the module that names it, exactly as the line
+  // above is bound to optimize/media.ts, so a provider added in code and not in
+  // the header fails in `npm test` rather than on the deploy - which for this
+  // feature means "the upload dies mid-way having half-written a file into
+  // somebody's Drive", a failure worth catching before it ships.
+  //
+  // The API constant only, deliberately. google.ts also names the sign-in page,
+  // which is navigated to and not fetched and is in NOT_FETCHED above with that
+  // reason; asserting the whole file against connect-src would demand a
+  // permission nothing uses.
+  const api = /\bconst API = '(https:\/\/[^/']+)'/.exec(read(join(JS, 'storage', 'cloud', 'google.ts')));
+  assert.ok(api, "no `const API = 'https://...'` in storage/cloud/google.ts - has the host moved?");
+  const sources = directives.get('connect-src') ?? [];
+  assert.ok(sources.includes(api[1]),
+    `storage/cloud/google.ts fetches ${api[1]} and connect-src does not allow it`);
 });
 
 test('no remote host reaches anything that renders a document', () => {
