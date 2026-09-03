@@ -266,6 +266,47 @@
    already runs at 0.3s - see the corner rule above - and this borrows it. */
 #header-panel.is-open ~ #mobile-header-edit-btn { opacity: 0; pointer-events: none; }
 
+/* ── Neither sheet is a document ──────────────────────────────────────────
+   Every word in these panels is a label, a heading or the face of a button.
+   None of it is content, so none of it should drag into a selection - and it
+   did: dragging a slider that the pointer slipped off, or double-pressing a
+   section heading, left half the panel highlighted in the selection colour and
+   nothing to press to clear it. Same reasoning as #toolbar, #timeline-strip,
+   the menus and the tour, all of which have carried this since they were
+   written; the panel simply predates the habit.
+
+   Both sheets, because they are one sheet. #header-panel is the same furniture
+   arriving from the other edge - .side-head, .side-body, .side-sec and every
+   field are shared - so a rule that took only #sidebar would leave the masthead
+   behaving differently for no reason anybody could see.
+
+   Selection is switched off here and back on below rather than listed control
+   by control: the panel is built from a schema (ui/settings-schema.ts) and grows
+   rows without this file hearing about it, so the default has to be the safe one
+   and the exceptions have to be the things that are actually typed in.
+
+   Not `pointer-events` and not `cursor` - this is about what a drag *leaves
+   behind*, not about what can be pressed. Everything in here stays clickable. */
+#sidebar,
+#header-panel {
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* And the exception, which is not optional: a text field whose text cannot be
+   selected is a field you can only edit by deleting backwards. An inherited
+   `none` reaches into an <input> in Chromium and has done for years - the
+   contenteditable case in canvas.css is exempt by accident of engine behaviour
+   and says so at length, and a form field is not exempt at all.
+
+   Written wide on purpose. `input` covers the checkboxes and ranges too, where
+   it is a no-op because there is no text in them to select, and that is cheaper
+   than a type list this file would have to keep in step with the schema. */
+#sidebar :is(input, textarea, [contenteditable]),
+#header-panel :is(input, textarea, [contenteditable]) {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 .side-head {
   position: relative;
   display: flex;

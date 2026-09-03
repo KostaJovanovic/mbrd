@@ -153,6 +153,88 @@
 }
 .library-del:focus-visible { color: var(--danger); }
 
+/* =========================================================
+   The other shelf: boards that are also, or only, in Drive
+   ========================================================= */
+
+/* The mark on a board that is on both shelves.
+   Top LEFT, and that is the whole placement decision: the delete cross is top
+   right on every card, and a glyph that lands in the same corner on some cards
+   and not others is a target somebody learns wrongly and then presses. This one
+   is not a button at all - no pointer, no hover, it is a fact about the board. */
+.library-cloud {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklab, var(--paper) 82%, transparent);
+  color: var(--ink-3);
+  pointer-events: none;
+}
+/* 13px, matching .library-del rather than --icon-glyph, for the reason that
+   block gives: at this size on this card the token is too big, and these two
+   sit at opposite corners of the same 180px thumbnail where a difference in
+   weight between them would read as a mistake. */
+.library-cloud svg { width: 13px; height: 13px; }
+
+/* A board that is in Drive and not on this machine. It has no thumbnail - there
+   is nothing to draw one from without downloading the whole board - so the
+   frame carries the mark instead of a picture, at the size a picture would have
+   been. Quieter than a real thumbnail on purpose: it is a placeholder for
+   something that is not here, and dressing it up as a board would suggest the
+   app knows what is on it. */
+.library-card.is-cloud .library-thumb {
+  display: grid;
+  place-items: center;
+  color: var(--ink-3);
+}
+.library-card.is-cloud .library-thumb svg { width: 26px; height: 26px; }
+.library-card.is-cloud .library-name { color: var(--ink-2); }
+
+/* The foot: the one place the shelf mentions the cloud unprompted.
+   No border and no padding until it has a child, so a build with no cloud
+   identifiers - or a person already signed in - renders nothing rather than an
+   empty strip with a hairline over it. :empty is exactly this condition and is
+   why the rule can be stated as a default rather than as a class the script has
+   to remember to set. */
+.library-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 10px 16px;
+  border-top: var(--hairline) solid var(--rule);
+}
+.library-foot:empty { padding: 0; border-top: 0; }
+.library-foot-note { font-size: var(--t-tiny); color: var(--ink-3); }
+/* Drawn like .library-new, which is the other button in this panel that offers
+   something rather than acting on a board. Deliberately not `primary`: the
+   thing somebody opened this panel to do is pick a board, and a louder button
+   down here would compete with the grid for the first press. */
+.library-connect {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  background: var(--paper-card);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: var(--t-small);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.library-connect svg { width: var(--icon-glyph); height: var(--icon-glyph); }
+@media (hover: hover) {
+  .library-connect:hover { border-color: var(--accent-text); color: var(--accent-deep); }
+}
+.library-connect:focus-visible { border-color: var(--accent-text); color: var(--accent-deep); }
+
 /* Without color-mix(), for WebKit below 16.2 - section 7 of tokens.css carries
    the argument and declares the channel-form tokens. Both of these are `in
    oklab` above and convert the same way: the transparent end premultiplies to
@@ -161,4 +243,5 @@
 @supports not (color: color-mix(in srgb, red, blue)) {
   #library { background: rgb(var(--ink-c) / 34%); }
   .library-del { background: rgb(var(--paper-c) / 82%); }
+  .library-cloud { background: rgb(var(--paper-c) / 82%); }
 }

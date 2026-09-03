@@ -171,12 +171,34 @@ export async function writeSyncRow(boardId: string, row: BoardSync | null): Prom
 
 /** Stop syncing a board. Leaves what is already in Drive exactly where it is. */
 export async function forgetSync(boardId: string): Promise<void> {
-  // Deliberately does not delete the remote folder. "Stop keeping this in sync"
-  // and "delete my board out of my Drive" are two different sentences, and a
+  // Deliberately does not remove the remote folder. "Stop keeping this in sync"
+  // and "take my board out of my Drive" are two different sentences, and a
   // button that quietly meant both would be the worst kind of data loss - the
-  // kind where the app was technically told to do it. The folder stays; the
-  // person deletes it in Drive if they want it gone.
+  // kind where the app was technically told to do it. The folder stays.
+  //
+  // There *is* now a button that means the second sentence - see the store's
+  // purge() and cmds.cloudPurge - and it is a separate control, worded
+  // separately, behind its own dialog. That is the point rather than a
+  // contradiction of it: the two readings each got a button, so neither has to
+  // be guessed at from one.
   await writeSyncRow(boardId, null);
+}
+
+/**
+ * Forget every board's cloud bookkeeping at once.
+ *
+ * The local half of a purge, and it has to run *after* the remote half rather
+ * than before. If the trashing failed halfway, this table is the only record of
+ * what is up there - clearing it first would strand whatever survived, with no
+ * folder id left to find it by and no row to try again from.
+ *
+ * The mirror goes with it. `syncedNow()` is what the Sync section reads to
+ * decide which buttons to draw, and a table cleared under a live mirror leaves
+ * the panel offering "Sync now" for a board whose folder is in the trash.
+ */
+export async function forgetAllSyncs(): Promise<void> {
+  await idbSet('kv', SYNC_KEY, {});
+  noteCurrentSync(null);
 }
 
 /** `<hash>.<ext>`, which is exactly the .mbrd archive's convention minus its slug. */

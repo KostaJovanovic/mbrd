@@ -86,6 +86,23 @@ export interface ShareProvider {
    * in front of this one and calls it from that answer.
    */
   signIn(): Promise<void>;
+  /**
+   * Let the token go. Synchronous, because forgetting is not a round trip.
+   *
+   * **This is a local sign-out and nothing more, and the distinction matters
+   * enough to state on the interface rather than in one provider.** It drops
+   * this tab's token and the copy that would have survived a reload; it does
+   * not revoke the grant, so the provider still lists this application among
+   * the ones the person has authorised, and the next sign-in will not ask for
+   * consent again - only which account.
+   *
+   * Revoking properly is one more request to a host that is not `connect-src`
+   * in web/_headers, and it would sign the person out of every other tab and
+   * machine at once, which is not what a button in this panel should quietly
+   * mean. If it is ever wanted it belongs beside this method rather than inside
+   * it, with its own wording.
+   */
+  signOut(): void;
   /** Upload, make it readable by anyone with the link, and answer with its id. */
   upload(blob: Blob, name: string, onProgress: ShareProgress): Promise<string>;
   /** Fetch one back, with no account and no token. This is the recipient's half. */
@@ -141,6 +158,28 @@ export interface CloudStore {
   put(folder: string, name: string, blob: Blob, replacing: string | null): Promise<string>;
   /** Read one back, with the token. The signed-in half of `download()`. */
   fetch(id: string): Promise<Blob>;
+  /**
+   * Take everything this app ever put in the person's storage back out again.
+   * Answers how many things it removed.
+   *
+   * **The scope of "everything" is the provider's to define, and it must be able
+   * to define it exactly.** This is not a search-and-guess over somebody's
+   * files: a provider belongs here only if it can enumerate precisely what this
+   * application created and nothing else. Google can, because `drive.file` is
+   * that guarantee at the API level rather than a filter we apply afterwards.
+   * A provider whose API cannot draw that line has no business implementing
+   * this method, and should not be added until it can.
+   *
+   * It covers *both* halves of the feature, which is easy to forget: the synced
+   * boards under the app folder, and the loose files that share links point at,
+   * which are uploaded with no parent and therefore sit outside it entirely.
+   * Anything that only walked the app folder would leave every board anybody
+   * had ever shared sitting in their Drive.
+   *
+   * Required rather than optional, unlike the rest of this interface. Somewhere
+   * to put files is a capability; a way to take them back is an obligation.
+   */
+  purge(onProgress: ShareProgress): Promise<number>;
 }
 
 /**
@@ -170,7 +209,33 @@ export interface ShareRef {
 export const PROVIDER_IDS = ['gdrive'] as const;
 
 /**
- * Read `gdrive.abc123` into a reference, or null for anything else.
+ * The letter a provider goes by *in a link*, as opposed to the name it goes by
+ * everywhere else.
+ *
+ * Links used to spell the provider out - `?s=gdrive.<id>` - and the six
+ * characters were pure ceremony: nobody reads a share link, and the part that
+ * has to be unambiguous is unambiguous at one letter for as long as no two
+ * providers start with the same one. `PROVIDER_IDS` stays long-form, because
+ * that is what appears in a stored sync row, in a console handle and in every
+ * error message a person might have to make sense of.
+ *
+ * **Both spellings are read and only the short one is written.** Every link
+ * handed out before this existed says `gdrive`, those links are in other
+ * people's chat histories, and a format change that quietly broke them would be
+ * the worst kind - the sender's copy still works, so nobody finds out from
+ * their own testing.
+ *
+ * A second provider adds one line here, and the letter must not collide. There
+ * is no check for that: two providers is a table small enough to read, and a
+ * runtime assertion over a frozen literal would fire in production or nowhere.
+ */
+const PROVIDER_CODES: Record<string, string> = { gdrive: 'g' };
+
+/** The short spelling for a link, falling back to the full name. */
+const codeFor = (provider: string) => PROVIDER_CODES[provider] || provider;
+
+/**
+ * Read `g.abc123` - or the older `gdrive.abc123` - into a reference, or null.
  *
  * The value comes from page.ts's openingShare(), which owns the parameter name;
  * this owns what the value means. Deliberately strict about the provider half
@@ -180,17 +245,19 @@ export const PROVIDER_IDS = ['gdrive'] as const;
  * path. A reference naming a provider this build does not carry is null rather
  * than an error, because an older build meeting a newer link should read as
  * "this app cannot open that" rather than as a fault.
+ *
+ * The provider half is resolved through the code table first and the name table
+ * second, and what comes back is always the **long** id - so nothing downstream
+ * of here ever learns that links have a short spelling at all.
  */
 export function parseShareRef(value: string | null): ShareRef | null {
   if (!value) return null;
   const dot = value.indexOf('.');
   if (dot < 1) return null;
-  const provider = value.slice(0, dot);
+  const said = value.slice(0, dot);
   const id = value.slice(dot + 1);
-  // SAFETY: the cast is a membership test against a frozen literal tuple, not a
-  // claim about the value - `includes` on a `readonly string[]` refuses a plain
-  // string argument, and widening the tuple is what the check is *for*.
-  if (!(PROVIDER_IDS as readonly string[]).includes(provider)) return null;
+  const provider = PROVIDER_IDS.find(p => p === said || PROVIDER_CODES[p] === said);
+  if (!provider) return null;
   if (!id || !/^[\w-]{1,256}$/.test(id)) return null;
   return { provider, id };
 }
@@ -202,9 +269,22 @@ export function parseShareRef(value: string | null): ShareRef | null {
  * and a link built against '/' would be wrong the day this is hosted in a
  * subdirectory. The origin comes from the caller for the same reason this module
  * imports nothing: it is testable without a document.
+ *
+ * ── On the length of these ──
+ *
+ * `https://host/?s=g.1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbu`, and roughly two thirds
+ * of what follows the host is Google's file id. That part is **not ours to
+ * shorten**: a shorter link would have to be a code that something looks up,
+ * and a lookup is a server. This app runs none, which is the constraint the
+ * whole cloud feature is built inside - see storage/cloud/oauth.ts, which gives
+ * up the recommended OAuth flow for the same reason.
+ *
+ * So what got shortened is the only part that was ever ours - `gdrive.` became
+ * `g.` - and that is five characters out of about forty. Worth doing and worth
+ * being honest about: this is a link to paste, not a link to read out.
  */
 export function shareLinkFor(origin: string, home: string, ref: ShareRef): string {
-  return `${origin}${home}?${SHARE_PARAM}=${ref.provider}.${ref.id}`;
+  return `${origin}${home}?${SHARE_PARAM}=${codeFor(ref.provider)}.${ref.id}`;
 }
 
 /**

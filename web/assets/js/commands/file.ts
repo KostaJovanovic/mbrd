@@ -34,18 +34,18 @@
 import { busy, toast } from '../notify.ts';
 import { formatBytes } from '../util.ts';
 import {
-  board, historyDepth, historyState, historyWeight, timelineSteps,
+  board, historyDepth, historyState, historyWeight,
 } from '../state.ts';
 import { ask } from '../ui/dialog.ts';
 import { hasContent } from '../onboarding.ts';
 import {
-  boardSafety, currentBoardId, exportBoard, lastSaveFailure, newBoard,
-  openBoard, openCloudBoard, packForShare, pushBoardToCloud, saveBlob, shareBoard,
+  boardSafety, exportBoard, lastSaveFailure, newBoard,
+  openBoard, packForShare, pushBoardToCloud, saveBlob, shareBoard,
   startSyncingBoard, stopSyncingBoard, storageBreakdown,
 } from '../storage/storage.ts';
 import { shareLinkFor } from '../storage/cloud/provider.ts';
-import { justDismissed, openAnchored } from '../ui/menu.ts';
 import { paintPanel } from '../ui/panel.ts';
+import { connectCloud } from '../ui/cloud-connect.ts';
 import { homePath } from '../page.ts';
 import { assetBytes } from '../storage/assets.ts';
 import { openLibrary } from '../ui/library.ts';
@@ -111,108 +111,47 @@ const why = (err: unknown): string =>
   // throw, which is the failure the paragraph says is acceptable.
   (err as Error).message;
 
-/**
- * Whether this share should carry the step history, asked.
- *
- * The history records everything that was tried and thrown away, so a file
- * carrying it hands the recipient every rejected picture and every deleted note.
- * That is worth having between two machines of your own and is not worth
- * leaking, and nobody can be expected to remember which case they are in - so
- * this asks, and the safe answer is the primary button.
- *
- * **Share only.** Export used to ask as well and no longer does: a file you
- * write to your own disk is one you will open again yourself, and an export
- * without its history opens as a board that has never been touched. Share is
- * where the file is going to somebody else by definition, so the question is
- * about the one path where the answer can matter.
- *
- * **It only asks when there is something to ask about.** A board whose history
- * is empty - a file just opened, a board never edited this session - shares
- * without a word, which is what keeps this from becoming a dialog people learn
- * to dismiss without reading. The one that then appears on the board they have
- * been working on all afternoon is a question they will actually read.
- *
- * The answer is deliberately **not remembered**. A preference that quietly
- * turns leaking back on six months later is precisely the failure this exists to
- * prevent, and the cost of not remembering is one keystroke on the shares where
- * it matters.
- *
- * Cancelling the dialog answers "leave it out" rather than abandoning the share,
- * on the same reasoning ask() gives for every accidental way out resolving to
- * the harmless answer: this question is not "do you want to share", and a stray
- * Escape must not turn into a file with somebody's discarded work in it.
- */
-async function askHistory(): Promise<boolean> {
-  if (!timelineSteps().length) return false;
-  const answer = await ask({
-    title: 'Include the history?',
-    body: 'This board has a step history. Including it lets whoever opens the '
-      + 'file walk back through every change - which also means everything you '
-      + 'tried and threw away. Leave it out and they get the board as it '
-      + 'stands.',
-    go: 'Leave it out',
-    keep: 'Include it',
-    cancel: 'Cancel',
-    danger: false,
-  });
-  return answer === 'keep';
-}
+// ── The history question, which is no longer a question ──
+//
+// askHistory() stood here and put up a dialog before every share: "Include the
+// history?", with Leave it out as the primary. Every path that once called it
+// now passes `history: true` and asks nothing.
+//
+// **The argument it was making was real and is worth keeping written down**,
+// because the way this comes back is somebody re-deriving it from scratch. A
+// board's step history records what was tried and thrown away - every rejected
+// picture, every deleted note - so a shared file carrying it hands the
+// recipient the discards along with the board. The dialog existed so that a
+// share to a client and a share to your own second machine could be told apart,
+// by the only party who knows which is which.
+//
+// What it cost was a modal in front of a button somebody had just deliberately
+// pressed, on the boards most likely to be worth sharing - it only appeared
+// when there *was* a history, which is to say on the board somebody had been
+// working on all afternoon. Two dialogs already stand between that press and
+// the upload on a first share (this one, then sign-in), and a question people
+// meet often enough to answer without reading has stopped doing the job it was
+// added for.
+//
+// So the behaviour is now: **a shared board carries its history, always.** The
+// consequence is stated rather than hidden - see privacy.html, which is where a
+// person can actually go and read what leaves this machine.
+//
+// If it should ever be a choice again, it belongs in ui/settings-schema.ts as a
+// setting somebody sets once, not as a dialog in front of every share. That was
+// considered and rejected when this was written the first time, on the grounds
+// that a preference "quietly turns leaking back on six months later" - a fair
+// point about a stored answer, and the reason a returning question would need
+// to be visible in the panel rather than remembered from a modal.
 
-/**
- * Attach a cloud account: say what is about to happen, then open the popup.
- *
- * **The dialog is not ceremony, it is what makes the popup open at all.** Every
- * browser blocks a window that is not opened from a live user gesture, and a
- * press on this dialog's own button is the freshest gesture there is. It also
- * happens to be the honest interface - somebody else's login page appearing
- * unannounced over a board is a worse surprise than a sentence saying it is
- * about to.
- *
- * The panel is repainted afterwards because the Sync section's whole shape hangs
- * off whether an account is connected, and paintPanel() listens for four bus
- * events of which none is "somebody signed in".
- */
-async function connectTo(id: string): Promise<void> {
-  const { shareProvider } = await import('../storage/cloud/cloud.ts');
-  const provider = shareProvider(id);
-  if (!provider) { toast('That account is not set up in this build', 'error'); return; }
-  if (provider.signedIn()) { toast(`Already connected to ${provider.label}`); return; }
+// connectTo() was here and is now connectCloud() in ui/cloud-connect.ts - the
+// board switcher's foot grew a Connect button of its own, and two callers is
+// where a helper in a command file stops being one. Its header carries the
+// user-gesture argument that used to be here.
 
-  const go = await ask({
-    title: `Connect ${provider.label}?`,
-    body: `Boards you choose are copied into your own ${provider.label} and kept up to `
-      + 'date while this tab is open — never onto a server of ours. Photographs are '
-      + 'uploaded once each, so only what changes is sent again. A sign-in window opens '
-      + 'next, and the connection lasts until you reload.',
-    go: 'Sign in',
-    cancel: 'Cancel',
-    danger: false,
-  });
-  if (go !== 'go') return;
-  try {
-    await provider.signIn();
-    toast(`Connected to ${provider.label}`);
-  } catch (err) {
-    console.error(err);
-    toast('Sign-in failed: ' + why(err), 'error');
-  } finally {
-    paintPanel();
-  }
-}
-
-/**
- * The box to hang a menu off, from the button that opened it.
- *
- * A menu anchored to nothing lands in the top-left corner, which reads as a bug
- * rather than as a menu. The fallback is the middle of the viewport, for the one
- * case that can produce it: a command fired from the console or a keystroke
- * while the panel that carries the row is shut.
- */
-function anchorFor(button: Element | null) {
-  if (button) return button.getBoundingClientRect();
-  const x = innerWidth / 2, y = innerHeight / 3;
-  return { left: x, right: x, top: y, bottom: y };
-}
+// anchorFor() was here too, for the anchored menu cloud-open used to raise. That
+// menu is gone: the boards in Drive are drawn in the board switcher beside the
+// ones on this machine, which is the panel they belong in. See cmds.cloudOpen.
 
 /**
  * Push the open board, and turn the one answer that is not a failure into a
@@ -465,37 +404,39 @@ export function fileCommands() {
         weight: historyWeight() });
     },
     save: () => saveWithCooldown(),
-    // Neither of these asks about the history any more: a file you write to your
-    // own disk keeps everything, because an export without its history opens as
-    // a board with no past and nothing can put that back. See askHistory().
-    // Both ask first if there is nothing to write - see confirmEmptyExport(),
-    // and note that a board with anything on it never reaches the dialog.
+    // A file you write to your own disk keeps everything, because an export
+    // without its history opens as a board with no past and nothing can put that
+    // back. Both ask first if there is nothing to write - see
+    // confirmEmptyExport(), and note that a board with anything on it never
+    // reaches the dialog.
     export: async () => { if (await confirmEmptyExport()) await exportBoard(); },
     exportAs: async () => { if (await confirmEmptyExport()) await exportBoard({ pickNew: true }); },
     // The mobile face of Export: the same packed .mbrd, handed to the OS share
     // sheet instead of a download folder a phone has no good way to reach. Falls
     // back to Export where files cannot be shared - see shareBoard(), which
-    // carries the answer below into that fallback.
-    // The emptiness question comes first, ahead of the history one: there is no
-    // sense asking what to put in a file somebody is about to decide not to
-    // write. An empty board has no history to ask about anyway, so in practice
-    // this is one dialog rather than two.
+    // carries this flag into that fallback.
+    //
+    // `history: true` outright, like every other packing path in this file. The
+    // dialog that used to stand here is gone; the block where askHistory() was
+    // says what it argued and what would have to be true to bring it back.
     share: async () => {
       if (!await confirmEmptyExport()) return;
-      await shareBoard({ history: await askHistory() });
+      await shareBoard({ history: true });
     },
     // And the other kind of share: a URL rather than a file. The whole design is
     // in storage/cloud/provider.ts; what is here is the order the questions are
     // asked in, and that order is not arbitrary.
     //
     // **Sign-in must be the last thing before the work starts.** Every browser
-    // blocks a popup that is not opened from a live user gesture, and the two
-    // questions above spend it: a person reading the history dialog for ten
-    // seconds has an expired activation by the time they answer. So the sign-in
-    // gets its own dialog immediately in front of it, and the popup is opened
-    // out of *that* button's press. It also happens to be the honest interface -
-    // a Google window appearing unannounced over somebody's board is a worse
-    // surprise than a sentence saying it is about to.
+    // blocks a popup that is not opened from a live user gesture, and a dialog
+    // spends it: a person reading a question for ten seconds has an expired
+    // activation by the time they answer. So the sign-in gets its own dialog
+    // immediately in front of it, and the popup is opened out of *that* button's
+    // press. That is still true with one question fewer in front of it - the
+    // empty-board check can put up a dialog of its own - and it also happens to
+    // be the honest interface: a Google window appearing unannounced over
+    // somebody's board is a worse surprise than a sentence saying it is about
+    // to.
     //
     // The provider is loaded on demand, on the terms optimize/ is two rows
     // below: a graph seam rather than a download saving - the build does not
@@ -510,8 +451,6 @@ export function fileCommands() {
       // app, and a menu with one row is worse than no menu. See share.ts.
       const provider = shareProvider('gdrive');
       if (!provider) { toast('Sharing a link is not set up in this build', 'error'); return; }
-
-      const history = await askHistory();
 
       if (!provider.signedIn()) {
         const go = await ask({
@@ -536,7 +475,7 @@ export function fileCommands() {
       let packed;
       const packing = busy('Packing the board');
       try {
-        packed = await packForShare({ history });
+        packed = await packForShare({ history: true });
       } catch (err) {
         console.error(err);
         toast('Could not pack the board: ' + why(err), 'error');
@@ -595,7 +534,43 @@ export function fileCommands() {
     // `data-cmd` is a name and not a call - there is nowhere in the markup to
     // put an argument, and inventing somewhere would be a second dispatch
     // mechanism beside the one every button in this app already uses.
-    connectGdrive: () => connectTo('gdrive'),
+    connectGdrive: async () => { await connectCloud('gdrive'); },
+    /**
+     * Let go of the account. One command for every provider, unlike connect-*.
+     *
+     * The asymmetry is deliberate and is not an oversight of the rule above.
+     * Connecting is *to* somewhere and so needs a name; disconnecting is from
+     * whatever is attached, and this app attaches one account at a time. A
+     * second provider changes that, and the answer then is a picker on this
+     * row rather than a second command - `openAnchored()`, like cloud-open.
+     *
+     * It asks, for the reason cloudStop asks: what happens to the copies
+     * already in Drive is the thing somebody wants to know *before* pressing a
+     * button called Log out, and every honest reading of that phrase - "does
+     * this delete my boards", "does this stop the syncing for good" - has an
+     * answer that is only reassuring if it arrives first.
+     */
+    cloudSignOut: async () => {
+      const { shareProvider } = await import('../storage/cloud/cloud.ts');
+      const provider = shareProvider('gdrive');
+      if (!provider?.signedIn()) { toast('No account is connected'); return; }
+
+      const answer = await ask({
+        title: `Log out of ${provider.label}?`,
+        body: 'Everything already in your Drive stays there, and boards you keep in Drive '
+          + 'stay marked as kept — what stops is the sending, until you connect again. '
+          + 'This browser forgets the sign-in; your Drive account itself is untouched.',
+        go: 'Log out',
+        cancel: 'Cancel',
+        danger: false,
+      });
+      if (answer !== 'go') return;
+      provider.signOut();
+      toast(`Logged out of ${provider.label}`);
+      // Same repaint connectTo() ends on and for the same reason: the section's
+      // whole shape hangs off signedIn(), and no bus event fires for this.
+      paintPanel();
+    },
     // Start keeping this board in the cloud. The section only shows this row
     // once an account is attached and on a board that is not already kept, so
     // there is neither a sign-in branch nor an "already synced" branch here -
@@ -643,9 +618,9 @@ export function fileCommands() {
     cloudStop: async () => {
       const answer = await ask({
         title: 'Stop keeping this board in Drive?',
-        body: 'The copy already in your Drive stays exactly where it is — this app cannot '
-          + 'delete it, and will not try. What stops is the sending: changes from here on '
-          + 'stay in this browser until you turn it back on.',
+        body: 'The copy already in your Drive stays exactly where it is — nothing is '
+          + 'removed. What stops is the sending: changes from here on stay in this '
+          + 'browser until you turn it back on.',
         go: 'Stop syncing',
         cancel: 'Cancel',
         danger: false,
@@ -655,47 +630,92 @@ export function fileCommands() {
       toast('No longer syncing — the copy in your Drive is untouched');
       paintPanel();
     },
-    // The boards this app has put in the person's Drive, from any machine. A
-    // menu rather than a modal, and anchored to the row that opened it -
-    // ui/menu.ts renders every menu in this app and a second implementation is
-    // the thing CLAUDE.md forbids by name.
-    cloudOpen: async () => {
+    /**
+     * Take everything this app has put in the person's Drive back out.
+     *
+     * **The one command in this file that removes somebody's data**, so it is
+     * the one that argues hardest for its own guards.
+     *
+     * It cannot reach anything mbrd did not create. That is not care taken here
+     * but a property of the token: `drive.file` gives this app sight of its own
+     * files and nothing else, so the query behind it is incapable of naming a
+     * photograph somebody's family put in the same Drive. Worth knowing when
+     * reading the dialog below, which is written to be frightening in exact
+     * proportion to what this actually does and no more.
+     *
+     * What it does is move those files to the Drive trash, where they sit for
+     * thirty days. The dialog says so in those words rather than "delete",
+     * because the way back matters and because thirty days is the real promise
+     * - not a comforting vagueness.
+     *
+     * `danger: true`, unlike cloudStop beside it. The distinction the two draw
+     * is the one the whole section is built on: Stop syncing changes what this
+     * browser does, and this changes what is in somebody's Drive.
+     *
+     * The local table is cleared afterwards and never before - sync.ts's
+     * forgetAllSyncs() says why, and the short version is that a half-finished
+     * purge needs those rows to finish from.
+     */
+    cloudPurge: async () => {
       const { shareProvider } = await import('../storage/cloud/cloud.ts');
       const provider = shareProvider('gdrive');
-      if (!provider) { toast('Cloud storage is not set up in this build', 'error'); return; }
+      if (!provider?.signedIn()) { toast('Connect an account first', 'error'); return; }
+      const store = provider.store;
+      if (!store) { toast(`${provider.label} cannot do that`, 'error'); return; }
 
-      const button = document.querySelector('[data-cmd="cloud-open"]');
-      // The trap CLAUDE.md names: the menu closes on an outside pointerdown in
-      // the capture phase and this button is outside it, so without this the
-      // second press closes the menu and the click reopens it.
-      if (justDismissed(button)) return;
+      const answer = await ask({
+        title: `Remove everything from ${provider.label}?`,
+        body: 'Every board this app has put in your Drive goes to your Drive trash — the '
+          + 'synced copies and the files behind any links you have shared, which stop '
+          + 'working. Boards stay on this machine and nothing on screen is touched. '
+          + 'Nothing else in your Drive can be reached: this app only ever sees what it '
+          + 'made itself. Trashed files stay recoverable for thirty days.',
+        go: 'Remove them',
+        cancel: 'Cancel',
+        danger: true,
+      });
+      if (answer !== 'go') return;
 
-      // No sign-in branch: this row is only drawn once an account is attached,
-      // and the connect-* command is the only place that opens a popup.
-      if (!provider.signedIn()) { toast('Connect an account first', 'error'); return; }
-
-      const job = busy(`Looking in ${provider.label}`);
-      let boards;
+      const job = busy(`Clearing ${provider.label}`);
       try {
-        const { remoteBoards } = await import('../storage/cloud/sync.ts');
-        boards = await remoteBoards(provider);
+        const gone = await store.purge((done, total) => job.step(done, total));
+        // "items" and not "files", deliberately: the number counts the things
+        // that were removed at the top, one of which can be a folder holding a
+        // whole board. See the note at the end of purge().
+        const { forgetAllSyncs } = await import('../storage/cloud/sync.ts');
+        await forgetAllSyncs();
+        toast(gone
+          ? `Removed ${gone} item${gone === 1 ? '' : 's'} from ${provider.label} — they are in your Drive trash`
+          : `There was nothing of mbrd's in ${provider.label}`);
       } catch (err) {
         console.error(err);
-        toast('Could not read your Drive: ' + why(err), 'error');
-        return;
-      } finally { job.end(); }
-
-      if (!boards.length) { toast('No boards in Drive yet'); return; }
-
-      const here = await currentBoardId();
-      openAnchored(anchorFor(button), boards.map(remote => ({
-        label: remote.boardId === here ? 'This board (cloud copy)' : remote.boardId,
-        // The date the cloud copy was last written, which is the only thing that
-        // distinguishes two rows for somebody who never sees a board id.
-        accel: new Date(remote.modifiedTime).toLocaleDateString(),
-        action: () => { void openCloudBoard(remote); },
-      })), { label: 'Boards in Drive', focus: true, owner: button });
+        // The local table is deliberately left alone on a failure. Some of it
+        // may still be up there, and those rows are the only way back to it.
+        toast('Could not clear your Drive: ' + why(err), 'error');
+      } finally {
+        job.end();
+        paintPanel();
+      }
     },
+    /**
+     * The boards in Drive - which is the board switcher, because they are
+     * boards.
+     *
+     * **This used to raise a menu of its own** listing board ids and dates
+     * against nothing, on the reasoning that a board in Drive was a different
+     * kind of thing from a board on the shelf. It is not. It is the same board
+     * somewhere else, often literally the same board - the ids match, because
+     * both are what ensureBoardId() minted - so the two lists shown separately
+     * asked people to hold a merge in their heads that the app could do for
+     * them.
+     *
+     * So there is one shelf. ui/library.ts draws the local boards immediately
+     * and the cloud ones as they arrive, marks the ones that are in both, and
+     * offers to connect an account in its foot when there is none. This command
+     * is now the same call the Boards button makes, and stays only because the
+     * Sync section has a row that should still take you there.
+     */
+    cloudOpen: () => openLibrary(),
     // A picture of the board, for showing rather than reopening. A moodboard
     // exists to be presented, and until these two the only thing that left mbrd
     // was a .mbrd only mbrd can read. The board is composited onto a canvas
