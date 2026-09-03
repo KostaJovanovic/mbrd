@@ -44,10 +44,32 @@ test('a link is built against the path the app is served from', () => {
   // is wherever that says it is. A link hard-coded to the root would be wrong
   // the day this is hosted in a subdirectory - and wrong in the way that is
   // hardest to notice, since it would keep working on the machine that made it.
+  // The provider is written short. It is spelled `gdrive` everywhere a person
+  // might have to read it - a stored sync row, an error, the console handle -
+  // and `g` in a link, which is the one place nobody reads it and every
+  // character is one more to paste.
   assert.equal(shareLinkFor(ORIGIN, '/', { provider: 'gdrive', id: 'x1' }),
-    `${ORIGIN}/?${SHARE_PARAM}=gdrive.x1`);
+    `${ORIGIN}/?${SHARE_PARAM}=g.x1`);
   assert.equal(shareLinkFor(ORIGIN, '/boards/', { provider: 'gdrive', id: 'x1' }),
-    `${ORIGIN}/boards/?${SHARE_PARAM}=gdrive.x1`);
+    `${ORIGIN}/boards/?${SHARE_PARAM}=g.x1`);
+});
+
+test('a link written before the short spelling still opens', () => {
+  // The whole reason parseShareRef reads both: every link handed out before the
+  // codes existed says `gdrive`, and those are in other people's chat histories
+  // where nothing can go and correct them. A format change that broke them
+  // would also be the hardest kind to notice - the sender's own copy of the
+  // board is on their shelf, so it is only ever the recipient who finds out.
+  assert.deepEqual(parseShareRef('gdrive.x1'), { provider: 'gdrive', id: 'x1' });
+  assert.deepEqual(parseShareRef('g.x1'), { provider: 'gdrive', id: 'x1' });
+});
+
+test('a reference answers with the long provider id, whichever spelling it carried', () => {
+  // Nothing downstream of parseShareRef learns that links have a short
+  // spelling: it looks the provider up in PROVIDERS by this value, and a `g`
+  // reaching that table would find nothing and read as "this app cannot open
+  // that link".
+  assert.equal(parseShareRef('g.x1')?.provider, 'gdrive');
 });
 
 test('an id keeps every character a provider may put in one', () => {
@@ -70,7 +92,9 @@ test('everything that is not a share reference is null, not a throw', () => {
     '.abc',                     // no provider
     'gdrive.',                  // no id
     'dropbox.abc',              // a provider this build does not carry
+    'd.abc',                    // nor a short code this build does not carry
     'GDRIVE.abc',               // the id is opaque; the provider name is not
+    'G.abc',                    // and the code is not either
     'gdrive.a/b',               // a separator that would climb out of a URL
     'gdrive.a b',               // whitespace
     'gdrive.' + 'x'.repeat(257),  // longer than any provider's id

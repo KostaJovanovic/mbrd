@@ -179,6 +179,29 @@ async function signIn(): Promise<void> {
   rememberGrant('gdrive', grant);
 }
 
+/**
+ * Forget the token, here and on the shelf it would have been recalled from.
+ *
+ * Both halves, and neither is optional: clearing only `grant` would leave
+ * sessionStorage holding a live credential that the very next `held()` reads
+ * straight back in, so a sign-out would appear to work and undo itself on the
+ * first call after it.
+ *
+ * The resumable sessions go too, and that is not tidying. A session URI is a
+ * half-written file in one particular account, and the map is keyed by folder
+ * and filename - both of which the *next* account will produce again for the
+ * same board. Left standing, a resumed upload would write somebody's bytes into
+ * the previous account's file, or more likely fail with a 401 nobody could
+ * explain. See the header above the map.
+ *
+ * What this does not do is revoke the grant at Google; the interface says why.
+ */
+function signOut(): void {
+  grant = null;
+  rememberGrant('gdrive', null);
+  sessions.clear();
+}
+
 /** The bearer header, or a throw that says to sign in rather than a 401 later. */
 function auth(): string {
   const live = held();
@@ -402,6 +425,107 @@ async function folder(name: string, parent: string | null): Promise<string> {
 const list = (folderId: string) =>
   query(`${quoted(folderId)} in parents and trashed = false`);
 
+// ---------------------------------------------------------------------------
+// Taking it all back out
+//
+// ── Trashed, not deleted, and that is the whole safety argument ──
+//
+// `DELETE /files/{id}` in Drive is permanent and immediate: no trash, no undo,
+// nothing to ring support about. `PATCH` with `{trashed: true}` puts the file
+// where a file goes when somebody deletes it in Drive's own interface, where it
+// sits for thirty days and can be dragged back out. Both are one request, so
+// the recoverable one is free.
+//
+// It also means the button can tell the truth in a way people already
+// understand - "moved to your Drive trash" is a sentence with a known shape and
+// a known way back, where "deleted" from a web page somebody pressed once at
+// midnight is not. Emptying the trash stays the person's own decision, made in
+// their own Drive, which is exactly where a decision that cannot be undone
+// belongs.
+//
+// **If a permanent version is ever wanted it is a second method beside this
+// one, never a flag on it.** A boolean that turns a recoverable action into an
+// irreversible one is a boolean somebody passes wrongly.
+//
+// ── What "everything" is, and why the answer is exact ──
+//
+// `drive.file` means files.list can only see files this application created, so
+// a query with no name filter at all is already precisely "everything mbrd put
+// here" - the synced boards under mbrd/, the loose .mbrd files that share links
+// point at, and any folder that was left behind by a version of this app that
+// no longer exists. There is nothing to pattern-match and nothing of anybody
+// else's that a mistake here could reach.
+//
+// The parent walk is what keeps this small rather than what makes it correct.
+// Trashing a folder trashes what is inside it, so sending a request per file
+// would be hundreds of round trips to do what a handful already did. Anything
+// whose parent is also in the set is skipped for that reason - and a file whose
+// parent is *not* in the set, which is every shared upload, is trashed on its
+// own. Skipping is an optimisation; the set is the correctness.
+// ---------------------------------------------------------------------------
+
+/** One file, with the one extra field the walk below needs. */
+interface OwnedFile {
+  id: string;
+  parents?: string[];
+}
+
+/** Everything this application created and has not already thrown away. */
+async function owned(): Promise<OwnedFile[]> {
+  const out: OwnedFile[] = [];
+  let page: string | undefined;
+  // Paged, unlike every other listing here, and the asymmetry is deliberate:
+  // list() reads one board's folder and 1000 files is far past what a board can
+  // hold, where this reads a whole account's history with the app in it. A purge
+  // that silently stopped at the first thousand would report success over a
+  // Drive it had half emptied, which is the worst possible way for this
+  // particular button to be wrong.
+  do {
+    const params = new URLSearchParams({
+      q: 'trashed = false',
+      fields: 'nextPageToken, files(id,parents)',
+      pageSize: '1000',
+      spaces: 'drive',
+    });
+    if (page) params.set('pageToken', page);
+    const res = await fetch(`${API}/drive/v3/files?${params}`, { headers: { Authorization: auth() } });
+    if (!res.ok) throw await failure(res, 'Google Drive would not list your files');
+    // SAFETY: asserted then read defensively - both keys are optional and both
+    // reads below cover their absence, which is also how the loop terminates.
+    const body = await res.json() as { files?: OwnedFile[], nextPageToken?: string };
+    out.push(...(body.files ?? []));
+    page = body.nextPageToken;
+  } while (page);
+  return out;
+}
+
+/** Move one file to the person's Drive trash. See the note above on why not delete. */
+async function trash(id: string): Promise<void> {
+  const res = await fetch(`${API}/drive/v3/files/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { Authorization: auth(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ trashed: true }),
+  });
+  if (!res.ok) throw await failure(res, 'Google Drive would not remove a file');
+}
+
+async function purge(onProgress: ShareProgress): Promise<number> {
+  const all = await owned();
+  const ids = new Set(all.map(f => f.id));
+  const roots = all.filter(f => !(f.parents || []).some(p => ids.has(p)));
+
+  let done = 0;
+  onProgress(0, roots.length);
+  for (const file of roots) {
+    await trash(file.id);
+    onProgress(++done, roots.length);
+  }
+  // The count is of *roots*, and the caller must not dress it up as a count of
+  // files: one number here can stand for a folder holding four hundred
+  // photographs. Every sentence built on this in commands/file.ts says "items".
+  return roots.length;
+}
+
 /**
  * Write a file into a folder, creating or replacing.
  *
@@ -540,7 +664,8 @@ export const googleDrive: ShareProvider = {
   configured,
   signedIn,
   signIn,
+  signOut,
   upload,
   download,
-  store: { folder, list, put, fetch: fetchFile },
+  store: { folder, list, put, fetch: fetchFile, purge },
 };

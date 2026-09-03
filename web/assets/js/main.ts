@@ -978,18 +978,18 @@ function initCloudSync() {
       // It says so once and waits to be asked.
       if (!provider?.signedIn()) {
         syncStopped = true;
-        toast('Signed out of Drive — this board is not syncing. Open Board → Keep in Drive to sign back in');
+        toast('Signed out of Drive — this board is not syncing. Board → Sync to connect again');
         return;
       }
       const out = await pushBoardToCloud();
       if (!out.ok) {
         syncStopped = true;
-        toast('This board changed somewhere else — press Keep in Drive to sort it out', 'error');
+        toast('This board changed somewhere else — press Sync now to sort it out', 'error');
       }
     })().catch(err => {
       syncStopped = true;
       console.warn('[mbrd] cloud sync stopped:', err);
-      toast('Cloud sync stopped — press Keep in Drive to try again', 'error');
+      toast('Cloud sync stopped — press Sync now to try again', 'error');
     });
   });
 }

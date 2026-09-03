@@ -302,38 +302,6 @@ const CONNECT_BUTTONS: ButtonSpec[] = cloudProviders().map(p => ({
   title: () => `Sign in, so boards can be kept in your own ${p.label}`,
 }));
 
-/**
- * When this board last actually went up, in one sentence.
- *
- * Only ever drawn on a board that is kept in Drive - the control carries the
- * `when` and this carries the wording, which is the same split every other row
- * in this file makes. The un-synced case is not a state worth a sentence: the
- * button beside it says what it does.
- *
- * The interesting case is the third one, and it is the reason this is a sentence
- * rather than a tick: kept, but last sent hours ago. A board that says "kept in
- * Drive" and has not gone up since this morning is a board somebody is about to
- * trust wrongly, and the only honest fix is to say when.
- *
- * The reading is a snapshot as of the last panel paint. See the note on the
- * control that draws it.
- */
-function cloudLine(): string {
-  const row = syncedNow();
-  // Not reachable through the schema, which guards this row on the same call -
-  // but a function that reads a nullable and assumes it is not is one refactor
-  // away from being wrong, and the honest empty string costs a line.
-  if (!row) return '';
-  const mins = Math.round((Date.now() - (row.at || 0)) / 60000);
-  const when = !row.at ? 'not yet pushed from this machine'
-    : mins < 1 ? 'last sent a moment ago'
-      : mins < 60 ? `last sent ${mins} minute${mins === 1 ? '' : 's'} ago`
-        : mins < 60 * 24 ? `last sent ${Math.round(mins / 60)} hour${Math.round(mins / 60) === 1 ? '' : 's'} ago`
-          : `last sent on ${new Date(row.at).toLocaleDateString()}`;
-  return `Kept in Google Drive — ${when}. Photographs go up once each, so only what `
-    + 'changes is sent again.';
-}
-
 /** The three tabs, in order. The first is the one the panel always opens on. */
 export const TABS = [
   { id: 'board',  label: 'Board' },
@@ -510,25 +478,16 @@ export const SECTIONS: Section[] = [
       // the same rule the paper sheet follows, because a Share that quietly
       // turned into a download would be a promise the phone could not read. See
       // shareBoard().
+      //
+      // **Share link is not here, and used to be.** The other kind of share -
+      // upload the board and hand out a URL - now sits in the Sync section, with
+      // the account it needs; the argument for the move is written there. The
+      // labels stayed as they were, because they were the thing that stopped the
+      // two being confused with each other: this one is **Send file** and that
+      // one is **Share link**.
       { type: 'buttons', advanced: true,
         when: () => typeof navigator !== 'undefined' && typeof navigator.canShare === 'function',
         buttons: [{ cmd: 'share', label: 'Send file', closesPanel: true }] },
-      // The other kind of share, and the two are genuinely different things: the
-      // row above hands the packed file to the phone's own share sheet, and this
-      // one uploads it and gives you a URL. Calling both of them "Share" was the
-      // collision the plan for this feature predicted, so the file one is now
-      // **Send file** and this one is **Share link** - which is also the pair of
-      // labels that says which is which without a tooltip.
-      //
-      // Its own row rather than beside Send file, because the two guards are
-      // unrelated: one asks whether this engine can put a file in a share sheet,
-      // the other whether this *build* was deployed with a cloud application
-      // registered. Absent rather than disabled when it was not - the schema's
-      // own rule, applied to a capability instead of to a control, and see the
-      // header of storage/cloud/config.ts for what filling it in involves.
-      { type: 'buttons', advanced: true, when: canShareLink,
-        buttons: [{ cmd: 'share-link', label: 'Share link', closesPanel: true,
-          title: () => 'Upload the board to your own Google Drive and copy a link to it' }] },
       // A picture of the board, for showing rather than reopening - a PNG to send
       // or a PDF to print. Derived artefacts, not board files; see cmds.exportImage.
       { type: 'buttons', advanced: true, buttons: [
@@ -704,9 +663,12 @@ export const SECTIONS: Section[] = [
   // two tabs have two different answers to every row here.
   //
   // Absent outright where the build carries no cloud identifiers - the schema's
-  // own rule, and the same `when` the Share link row uses. A heading with
-  // nothing under it is checked for by tests/settings-panel.test.js, so the
-  // guard has to be on the section rather than on each row.
+  // own rule, applied to a capability rather than to a control. See the header
+  // of storage/cloud/config.ts for what filling those two strings in involves.
+  // A heading with nothing under it is checked for by
+  // tests/settings-panel.test.js, so the guard has to be on the section rather
+  // than on each row - which is also why the Share link row below carries no
+  // `canShareLink` of its own.
   {
     id: 'cloud', tab: 'board', title: 'Sync', needsBoard: true, when: canShareLink,
     controls: [
@@ -728,50 +690,121 @@ export const SECTIONS: Section[] = [
       // where whether it is *connected* changes on every sign-in and is asked
       // through a predicate below.
       { type: 'buttons', when: () => !anyConnected(), buttons: CONNECT_BUTTONS },
-      // The state, in a sentence - but only once there is a state to report.
+      // **No status line here, and there was one.** It said when this board last
+      // went up - "Kept in Google Drive, last sent a moment ago" - and it came
+      // out for the same reason the sentence before it did: the section is four
+      // buttons, and a paragraph over four buttons is a caption people learn to
+      // scroll past. The state is already legible from which buttons are
+      // standing there, which is what the `when` predicates below are doing.
       //
-      // There was a second sentence here for the un-synced case, explaining what
-      // pressing the button would do, and it came out: the button says "Keep in
-      // Drive" and its own tooltip says the rest, so the paragraph was a caption
-      // under a label. A section that opens with prose on every board is a
-      // section people learn to scroll past, and the line that matters - when
-      // this board last actually went up - is the one that gets scrolled past
-      // with it.
+      // It was also never quite honest. paintPanel() repaints on `board`,
+      // `settings`, `layout` and `lens` and on nothing else, so the reading was
+      // a snapshot as of the last paint rather than a clock - "a moment ago" sat
+      // there saying so an hour later. **If a status line ever comes back it
+      // needs a repaint trigger first**, not just a sentence.
       //
-      // **It is a snapshot and not a live readout**, which is forced rather than
-      // chosen: paintPanel() repaints on `board`, `settings`, `layout` and `lens`
-      // and on nothing else, so a clock counting up here would be wrong the
-      // moment anybody looked at it. What it says is true as of the last time
-      // the panel was painted, and every action below repaints it on the way
-      // out. Same constraint the Debug readouts document at length.
-      { type: 'hint', when: () => anyConnected() && !!syncedNow(), text: () => cloudLine() },
       // Two rows that are never both present. The schema's rule is absence
-      // rather than disabling, and "Keep this board" on a board that is already
+      // rather than disabling, and "Save to cloud" on a board that is already
       // being kept is a button that lies about what it does.
       //
       // **No `primary` on either.** Save carries it on this tab and the section
       // above argues why - it is the only button here with a deadline attached -
       // so a second one would be two answers to "what is the obvious thing to
       // press", which is the same as none.
+      //
+      // **Save to cloud / Load from cloud**, which is a deliberate borrowing.
+      // The pair above them on this tab is Save and Open, and these do the same
+      // two things one place further away - so they are named for the verbs
+      // everybody already has rather than for the machinery underneath. "Keep
+      // this board" described the arrangement accurately and told nobody what
+      // pressing it would do.
+      //
+      // Sync now keeps its own name and is not a third "Save to cloud", because
+      // it is the one of the three that is not a decision: the board is already
+      // going up on its own, and this is the button for somebody who does not
+      // want to wait for the next autosave to do it.
       { type: 'buttons', when: () => anyConnected() && !syncedNow(), buttons: [
-        { cmd: 'cloud-sync', label: 'Keep this board',
+        { cmd: 'cloud-sync', label: 'Save to cloud',
           title: () => 'Copy it to your connected account and keep it up to date' },
-        { cmd: 'cloud-open', label: 'Open from cloud',
+        { cmd: 'cloud-open', label: 'Load from cloud',
           title: () => 'Open a board this app has put in your account, from any machine' },
       ] },
       { type: 'buttons', when: () => anyConnected() && !!syncedNow(), buttons: [
         { cmd: 'cloud-push', label: 'Sync now',
           title: () => 'Send whatever has changed since the last sync' },
-        { cmd: 'cloud-open', label: 'Open from cloud',
+        { cmd: 'cloud-open', label: 'Load from cloud',
           title: () => 'Open a board this app has put in your account, from any machine' },
       ] },
+      // Sharing a link, which lived in File → Advanced until it came here.
+      //
+      // It moved because of what it actually needs. Every other row in File
+      // writes a file, or asks the engine to hand one over, and needs nothing
+      // beyond this machine; this one uploads the board to the same Google
+      // account the two rows above sync to, using the same sign-in and the same
+      // token. Sitting under Save and Export made it look like a third kind of
+      // export, and the first thing it did when pressed was open a sign-in
+      // window nothing on that screen had mentioned.
+      //
+      // **Its own row, and not a third button beside Sync now.** The pair above
+      // is one board's copy going up and coming back; this hands a URL to
+      // somebody else, which is the only row in the section that involves
+      // another person. Three buttons in a line would read as three degrees of
+      // the same thing.
+      //
+      // Guarded on being connected, like everything else below the Connect
+      // buttons. The command signs in on its own if it has to - see
+      // cmds.shareLink, which keeps that path for the share arriving from
+      // anywhere else - but a section whose first rule is "the account comes
+      // first" should not carry one row that quietly disagrees.
+      //
+      // The upload is a **separate copy** from the synced one and deliberately
+      // so: a share is a board as it was the moment it was sent, and a sync is a
+      // board as it is now. Pointing a link at the syncing folder would mean
+      // every later edit rewriting what somebody was already looking at.
+      { type: 'buttons', when: () => anyConnected(), buttons: [
+        { cmd: 'share-link', label: 'Share link', closesPanel: true,
+          title: () => 'Upload a copy and copy a link to it — whoever you send it to needs no account' },
+      ] },
       // Behind the fold, and not dressed as a danger: it stops the syncing and
-      // leaves the stored copy exactly where it is. The one destructive reading
-      // of it - "delete my board out of my Drive" - is a thing this app
-      // deliberately cannot do. See forgetSync().
+      // leaves the stored copy exactly where it is. The other reading of it -
+      // "take my board out of my Drive" - is the row below, which is a
+      // different button saying a different sentence. See forgetSync().
       { type: 'buttons', advanced: true, when: () => anyConnected() && !!syncedNow(), buttons: [
         { cmd: 'cloud-stop', label: 'Stop syncing',
-          title: () => 'Leaves the stored copy where it is; nothing is deleted' },
+          title: () => 'Leaves the stored copy where it is; nothing is removed' },
+      ] },
+      // The only row in this section that takes something away, and the fold is
+      // the right place for exactly that reason - this one *is* rarely wanted,
+      // which is the test Log out failed. Last, under everything it undoes.
+      //
+      // Guarded on the account rather than on this board, because it is not
+      // about this board: it clears every board mbrd has put in that Drive, and
+      // the shared files besides. A row that appeared only on a synced board
+      // would hide the button on the machine most likely to want it - the one
+      // signed in with nothing of its own up there.
+      //
+      // `danger` on the dialog and not on the button. The panel has no red
+      // button and should not grow one here: a control that looks alarming on
+      // every visit stops being read, and the alarming thing is the question,
+      // which is where cmds.cloudPurge puts it.
+      { type: 'buttons', advanced: true, when: () => anyConnected(), buttons: [
+        { cmd: 'cloud-purge', label: 'Remove all from Drive',
+          title: () => 'Move every board and shared file mbrd has put there to your Drive trash' },
+      ] },
+      // **Not behind the fold, and it was for one revision.** The argument for
+      // putting it there was that logging out is rare - which is true and is
+      // not what the fold is for. The fold holds rows that are rarely *wanted*;
+      // a Log out is wanted seldom and then urgently, by somebody on a shared
+      // machine or signed in as the wrong account, and that is the worst kind
+      // of row to make somebody open a disclosure triangle to find. Rarity is
+      // not the test. Being able to find it under pressure is.
+      //
+      // Last of the visible rows, after Share link, because it undoes the
+      // Connect button at the top: the section reads down from attaching an
+      // account to letting it go.
+      { type: 'buttons', when: () => anyConnected(), buttons: [
+        { cmd: 'cloud-sign-out', label: 'Log out',
+          title: () => 'Forget the sign-in in this browser. Nothing in your Drive is touched' },
       ] },
     ],
   },
