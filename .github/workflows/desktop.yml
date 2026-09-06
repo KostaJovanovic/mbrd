@@ -1,0 +1,150 @@
+# The desktop release, and the only job in this repository with a matrix.
+#
+# ci.yml is deliberately one lane - the app has no runtime dependency and there
+# is nothing a fan-out would make faster there. This is the opposite case and
+# for a reason that is not about speed: **an installer can only be built on the
+# operating system it installs on.** A DMG needs macOS, an AppImage needs Linux,
+# an NSIS Setup.exe needs Windows. Three runners is not an optimisation, it is
+# the whole requirement.
+#
+# ── One stamp, in one place ──
+#
+# `save.bat` stamps `web/assets/js/version.js` and the VERSION line in
+# `web/sw.js`, and it does not touch `desktop/package.json` - which carries
+# 0.0.0 in the repository on purpose. This workflow reads the stamp, **refuses
+# a tag that disagrees with it**, and writes it into the desktop package before
+# building. So there is one version in one file and two places that copy it,
+# rather than three that have to be kept in step by hand.
+#
+# The refusal is the part that matters. A tag that says v0.281 while version.js
+# says v0.280 would produce installers whose auto-update metadata points at a
+# release that is not what it claims to be, and every copy in the field would
+# then be comparing against the wrong number for good.
+#
+# ── Nothing here touches ci.yml ──
+#
+# That workflow still runs on every push with `npm test` before `npm ci`, which
+# is what keeps the zero-install claim honest. This one runs on a tag, installs
+# everything, and is about artefacts.
+
+name: Desktop release
+
+on:
+  push:
+    tags: ['desktop-v*']
+
+# The release is written by this workflow, so it needs more than ci.yml's
+# read-only token - and exactly that much more.
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      # One platform failing must not cancel the other two. A macOS build that
+      # falls over on a universal binary should still leave a Windows and a
+      # Linux artefact on the draft, which is most of a release.
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: win32
+          - os: macos-latest
+            platform: darwin
+          - os: ubuntu-latest
+            platform: linux
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Before anything is built, because a mismatch here means every artefact
+      # produced afterwards would be mislabelled - and an installer with the
+      # wrong version in its update metadata is worse than no installer.
+      #
+      # bash on all three runners, which GitHub provides on Windows too. The
+      # alternative is writing this twice.
+      - name: Check the tag against the stamp
+        shell: bash
+        run: |
+          stamped=$(node -e "import('./web/assets/js/version.js').then(m => process.stdout.write(m.VERSION))")
+          tagged="${GITHUB_REF_NAME#desktop-v}"
+          echo "version.js says $stamped; the tag says $tagged"
+          if [ "$stamped" != "$tagged" ]; then
+            echo "::error::the tag and web/assets/js/version.js disagree - run save.bat, then tag"
+            exit 1
+          fi
+          echo "MBRD_VERSION=$stamped" >> "$GITHUB_ENV"
+
+      # The one write. desktop/package.json holds 0.0.0 in the repository and
+      # is stamped here, so the version lives in version.js and nowhere else.
+      - name: Stamp the desktop package
+        shell: bash
+        run: |
+          node -e "
+            const fs = require('node:fs');
+            const p = 'desktop/package.json';
+            const d = JSON.parse(fs.readFileSync(p, 'utf8'));
+            d.version = process.env.MBRD_VERSION;
+            fs.writeFileSync(p, JSON.stringify(d, null, 2) + '\n');
+          "
+
+      # The web bundle, which is what the shell serves. Built from the root
+      # package, whose four devDependencies are all this needs.
+      - name: Install the root tooling
+        run: npm ci
+
+      - name: Build the app
+        run: npm run build
+
+      # The shell's own dependencies, including the two native ones. `npm ci`
+      # rather than install, so the lockfile is what is built.
+      - name: Install the shell
+        working-directory: desktop
+        run: npm ci
+
+      # 80-odd megabytes per platform, fetched rather than committed. The script
+      # pins a GPL build with no non-free codecs and refuses a download too
+      # small to be an encoder - see its header.
+      - name: Fetch ffmpeg
+        working-directory: desktop
+        run: node scripts/fetch-ffmpeg.mjs ${{ matrix.platform }}
+
+      # The typecheck the root one cannot do: desktop/ is outside
+      # tsconfig.json's `include` because it needs Node's types and the root
+      # config closes them. This is the leg that reads it.
+      - name: Typecheck the shell
+        working-directory: desktop
+        run: npm run typecheck
+
+      - name: Build the installer
+        working-directory: desktop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Unsigned, and the download page says so. When there is a Developer
+          # ID this is where it goes - CSC_LINK and CSC_KEY_PASSWORD as
+          # secrets, and MBRD_SIGNED set so the updater stops being
+          # notice-only on macOS. Nothing in electron-builder.yml moves.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: npx electron-builder --publish always
+
+      # The artefacts are on the draft release, but a failed publish should not
+      # mean a build nobody can reach. Kept for a week, which is longer than
+      # anybody takes to notice.
+      - name: Keep the artefacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mbrd-${{ matrix.platform }}
+          path: |
+            desktop/out/*.exe
+            desktop/out/*.dmg
+            desktop/out/*.AppImage
+            desktop/out/*.yml
+          if-no-files-found: warn
+          retention-days: 7

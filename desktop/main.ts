@@ -54,6 +54,7 @@ import * as files from './files.ts';
 import * as ffmpeg from './native/ffmpeg.ts';
 import * as matte from './native/matte.ts';
 import * as decode from './native/decode.ts';
+import * as updates from './updates.ts';
 
 /**
  * One instance, one window, one board.
@@ -266,7 +267,13 @@ function createWindow(): BrowserWindow {
   // Anything the OS handed over before there was a window. The page waits for
   // its own boot to finish before opening one, so this only has to wait for a
   // renderer that can receive a message.
-  win.webContents.once('did-finish-load', () => { void deliver(); });
+  win.webContents.once('did-finish-load', () => {
+    void deliver();
+    // After the board is on screen, not before it. The first thing a launch
+    // should do is show a board; a network call in front of that is a network
+    // call the person waits through.
+    updates.watchForUpdates();
+  });
   win.loadURL(APP_INDEX).catch(err => log('error', 'could not load the app', err));
   return win;
 }
@@ -437,6 +444,11 @@ function wireApp(): void {
   // Anything the shell needs to tell the person that the page could not have
   // known. One string, read once at boot, empty on every ordinary run.
   ipcMain.handle('app:startupNotes', () => startupNote);
+
+  // The updater's two questions. `check` is also what the renderer calls at
+  // boot, so an update found before the window existed is not lost.
+  ipcMain.handle('updates:check', () => updates.check());
+  ipcMain.on('updates:install', () => updates.install());
 }
 
 /**
