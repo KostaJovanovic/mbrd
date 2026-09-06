@@ -722,7 +722,7 @@ blank. A group with a skipped task is not done.
 | group | status | notes |
 | --- | --- | --- |
 | A | DONE | `pickOpen`/`pickSave` take the picker types as an argument — see below |
-| B | | |
+| B | DONE | `read`, `refForHandle`, `OpenedFile` added to the port — see below |
 | C | | |
 | D | | |
 | E | | 300-photo board: save ms / boot ms, desktop vs browser: |
@@ -759,3 +759,32 @@ nothing calls either, because A is unwired. Both are marked `TODO(B1)`.
 `idbSetMany` and `idbDelMany` resolve to an array and `tests/idb.test.js`
 asserts the empty-batch case is `[]`. `StoreBackend`'s mutations are typed
 `Promise<unknown>` for that reason; a tidier `Promise<void>` is a red test.
+
+**B, B1 — the pickers take a `PickSpec`, not a `PickerType[]`.** The two
+fallbacks want the accept list in two spellings — the File System Access API's
+`types`, and the hidden `<input>`'s `accept` attribute, which is deliberately
+wider than the first and carries its own argument about iOS and UTIs. Neither
+is derivable from the other without `platform/` guessing, so both travel
+together with the `dataset.mode` owner name that the one hidden input needs.
+`pickViaInput()` moved across whole and is now `viaInput()`.
+
+**B, B3 — `FilesPort` gained `read(ref)`, and `fileNameOf()` is exported.** A
+path row keeps no copy, so opening one is a read of the path and there was
+nothing in §4 that could do it. `fileNameOf()` is here rather than at its two
+call sites — `switchBoard()` and the shelf grid — because a path is the one
+value in this app whose spelling depends on the operating system, and one wrong
+split renders a card labelled with a whole `C:\Users\…` path.
+
+**B, B4 — `onOpenFiles` hands over `OpenedFile[]`, not `File[]`.** "Open this"
+and "this is the document you now have open" are different claims and only the
+desktop can make the second, so the ref travels beside the file rather than in
+a side table. `refForHandle()` is exported for the one web caller that has a
+handle already: `launchQueue`, whose handle used to become `fileHandle`
+directly, and which would silently stop being able to save over the file it
+opened if the ref were dropped.
+
+**B, B3 — `tests/library.test.js` is new, and `memoryStore()` is in
+`helpers.js`.** An in-memory `StoreBackend` rather than another fake
+IndexedDB: it impersonates the whole of `idb.ts`'s contract instead of the
+database underneath it, which is the seam both real backends sit behind. C2
+uses the same helper.

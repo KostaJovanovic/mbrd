@@ -13,8 +13,9 @@
 
 import {
   listLibrary, switchBoard, newBoard, deleteLibraryBoard, ensureCurrentOnShelf,
-  openCloudBoard,
+  openCloudBoard, relocateLibraryBoard,
 } from '../storage/storage.ts';
+import { platform, fileNameOf } from '../platform/platform.ts';
 import { toast } from '../notify.ts';
 import { ask } from './dialog.ts';
 import { icon } from './menu.ts';
@@ -404,6 +405,40 @@ function card(b: ShelfEntry) {
     if (await switchBoard(b.id)) closeLibrary();
   }));
   el.append(open);
+
+  // A row that is a file says which file, under the title. Desktop only: `path`
+  // is never set on the web, so every branch below is absent there rather than
+  // conditional. See the field's own note in storage/library.ts.
+  if (b.path) {
+    const file = document.createElement('div');
+    file.className = 'library-file';
+    file.textContent = fileNameOf(b.path);
+    // The full path is worth having but not worth the width - a card is one
+    // line of small text wide, and the folder is the half you would lose.
+    file.title = b.path;
+    open.insertBefore(file, when);
+    // Asked after the card is on screen, not before it is built. Checking every
+    // row's file first would hold the whole shelf behind a burst of filesystem
+    // calls, and the answer for all but the broken ones is yes - so the card is
+    // drawn as usual and repainted in the one case that is not.
+    void platform.files.exists({ name: fileNameOf(b.path), path: b.path }).then(there => {
+      if (there) return;
+      el.classList.add('is-missing');
+      when.textContent = 'Moved or deleted';
+      // Not disabled and not removed. The row is still the record that this
+      // board exists somewhere, and Locate is the only thing that can repair
+      // it - deleting the row would throw away the title and the thumbnail as
+      // well as the pointer.
+      const find = document.createElement('button');
+      find.type = 'button';
+      find.className = 'library-locate';
+      find.textContent = 'Locate';
+      find.addEventListener('click', () => guard(async () => {
+        if (await relocateLibraryBoard(b.id)) await render();
+      }));
+      el.append(find);
+    }, () => {});
+  }
 
   if (!b.current) {
     const del = document.createElement('button');

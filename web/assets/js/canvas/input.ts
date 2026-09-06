@@ -102,6 +102,7 @@ import {
 } from './items.ts';
 import { noteFloor } from './notes.ts';
 import { queryRect } from './spatial.ts';
+import { isDesktop } from '../platform/platform.ts';
 
 const DRAG_SLOP = 3;      // screen px before a press becomes a drag
 const DOUBLE_TAP_MS = 350;
@@ -1244,6 +1245,7 @@ type InputCommands = {
   redo(): void,
   duplicate(): void,
   save(): void,
+  saveAs(): void,
   export(): void,
   open(): void,
   deleteSelection(): void,
@@ -3100,9 +3102,24 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); cmds.duplicate(); return; }
     // Ctrl+S is the cheap one - keep this, in the browser. Ctrl+Shift+S is the
     // deliberate one, and writes a file.
+    //
+    // On the desktop both mean something slightly different, because Save is
+    // the file there: Ctrl+S writes it and Ctrl+Shift+S asks where. Export
+    // keeps its own place on the native menu rather than a keystroke, which is
+    // where a "write me a copy" belongs once Save is no longer a browser thing.
+    //
+    // This handler stays on the desktop and is not gated on !isDesktop(). The
+    // native menu carries the same accelerators, and whether Electron delivers
+    // the keydown to the page *as well as* firing the menu differs by OS - that
+    // is the open question in the plan's §12, and it is answered by pressing
+    // the keys on each OS after the menu exists, not by guessing here. Both
+    // roads end at the same cmds entry, so a double-fire is a duplicate save
+    // and not a wrong one.
     if (mod && e.key.toLowerCase() === 's') {
       e.preventDefault();
-      if (e.shiftKey) cmds.export(); else cmds.save();
+      if (!e.shiftKey) cmds.save();
+      else if (isDesktop()) cmds.saveAs();
+      else cmds.export();
       return;
     }
     if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); cmds.open(); return; }

@@ -87,6 +87,23 @@ export interface PickerType {
   accept: Record<string, string[]>;
 }
 
+/**
+ * What a picker will accept, in both spellings the web needs.
+ *
+ * Two strings rather than one because the two fallbacks take different shapes -
+ * the File System Access API wants `types`, a hidden `<input>` wants an
+ * `accept` attribute - and neither is derivable from the other without this
+ * module guessing. `.mbrd` is an extension no operating system has heard of and
+ * iOS resolves an accept list to UTIs rather than matching strings, which is
+ * why the attribute is wider than the types and why the caller writes it out.
+ * `mode` is the owner's name, for the one hidden input this app has.
+ */
+export interface PickSpec {
+  types: PickerType[];
+  accept: string;
+  mode: string;
+}
+
 /** Where a file's bytes come from and where they go. Plan §4 *files*. */
 export interface FilesPort {
   /**
@@ -100,9 +117,9 @@ export interface FilesPort {
    */
   canPick(): boolean;
   /** Choose a file to open. Rejects `AbortError` when dismissed. */
-  pickOpen(types: PickerType[]): Promise<{ file: File, ref: DocumentRef }>;
+  pickOpen(spec: PickSpec): Promise<{ file: File, ref: DocumentRef }>;
   /** Choose where to write. Rejects `AbortError` when dismissed. */
-  pickSave(suggested: string, types: PickerType[]): Promise<DocumentRef>;
+  pickSave(suggested: string, spec: PickSpec): Promise<DocumentRef>;
   /**
    * Write bytes to the document.
    *
@@ -112,8 +129,26 @@ export interface FilesPort {
    * for and also a ref that outlived its page.
    */
   write(ref: DocumentRef, blob: Blob): Promise<void>;
-  /** Choose pictures, clips and documents to add. Rejects `AbortError`. */
-  pickImport(): Promise<File[]>;
+  /**
+   * Choose pictures, clips and documents to add. Rejects `AbortError`.
+   *
+   * Desktop only, and unusually for this file the web default is not the web
+   * behaviour - it is a rejection. Adding files on the web is `import/drop.ts`'s
+   * own flow over the one hidden `<input>`, which knows about drag state, the
+   * paste path and the `dataset.mode` handshake, and routing it through a port
+   * would be a second opener for a thing that already has exactly one. The
+   * desktop needs this because a native dialog hands back paths, which that
+   * flow has nowhere to put.
+   */
+  pickImport(spec: PickSpec): Promise<File[]>;
+  /**
+   * Read the document back. Desktop only, and the other half of a path row.
+   *
+   * The shelf's file rows keep no copy of the board, so opening one is a read
+   * of the path. On the web this rejects and is never called: a row there has
+   * no path, and a browser cannot open a file nobody just handed it.
+   */
+  read(ref: DocumentRef): Promise<File>;
   /**
    * Whether the document is still where it was.
    *
@@ -123,6 +158,20 @@ export interface FilesPort {
    * is no path to have gone stale.
    */
   exists(ref: DocumentRef): Promise<boolean>;
+}
+
+/**
+ * A file the shell handed over, and what it was on disk if the shell knows.
+ *
+ * Two fields rather than a bare File, because "open this" and "this is the
+ * document you now have open" are different claims and only the desktop can
+ * make the second. A `ref` with a path means Save writes back to that file; a
+ * null one means the app was handed bytes and nothing more, which is what a
+ * browser's file handler gives it.
+ */
+export interface OpenedFile {
+  file: File;
+  ref: DocumentRef | null;
 }
 
 /** Closing, quitting, and being handed a file. Plan §4 *lifecycle*. */
@@ -141,7 +190,7 @@ export interface LifecyclePort {
    * argv. Takes the place of `launchQueue`, which never fires under the
    * desktop's own scheme. Never called on the web.
    */
-  onOpenFiles(fn: (files: File[]) => void): void;
+  onOpenFiles(fn: (files: OpenedFile[]) => void): void;
 }
 
 /** Options for a native transcode. Empty on the web, which never calls it. */
@@ -275,29 +324,49 @@ function refFor(handle: FileSystemFileHandle): DocumentRef {
   return ref;
 }
 
+/**
+ * The same wrapper, for a handle this module did not open.
+ *
+ * One caller: `launchQueue`, which is the PWA's own file-handling entry point
+ * and hands the page a FileSystemFileHandle directly. That handle is as good as
+ * one from the picker - Save can write back through it - and without this it
+ * would be dropped on the floor and "Open with mbrd" would stop being able to
+ * save over the file it opened.
+ *
+ * Exported rather than a port method because it is not a question either shell
+ * answers: the desktop has no launchQueue and never calls it.
+ */
+export function refForHandle(handle: FileSystemFileHandle): DocumentRef {
+  return refFor(handle);
+}
+
 const canPick = () => hasWindow() && typeof window.showSaveFilePicker === 'function';
 
 const webFiles: FilesPort = {
   canPick,
 
-  async pickOpen(types: PickerType[]) {
-    // TODO(B1): the hidden-<input> fallback - pickViaInput() in storage.ts -
-    // moves here when storage.ts is rewired onto this port, and is what a
-    // browser with no File System Access API opens with. Until then nothing
-    // calls this: storage.ts still holds its own copy and A is unwired.
-    if (!hasWindow() || typeof window.showOpenFilePicker !== 'function') {
-      throw abort('No file picker in this browser');
+  async pickOpen(spec: PickSpec) {
+    if (hasWindow() && typeof window.showOpenFilePicker === 'function') {
+      const [handle] = await window.showOpenFilePicker({ types: spec.types, multiple: false });
+      if (!handle) throw abort('Nothing picked');
+      return { file: await handle.getFile(), ref: refFor(handle) };
     }
-    const [handle] = await window.showOpenFilePicker({ types, multiple: false });
-    if (!handle) throw abort('Nothing picked');
-    return { file: await handle.getFile(), ref: refFor(handle) };
+    const [file] = await viaInput(spec, false);
+    // A dismissed dialog is an AbortError here and a null from viaInput(),
+    // because the two doors into this function report it differently and the
+    // callers may only learn one of them. This is the seam that makes them one.
+    if (!file) throw abort('Nothing picked');
+    // No handle: this browser cannot write back to what it just read, so the
+    // ref carries a name and nothing else and write() will download. That is
+    // Safari's Export today, unchanged.
+    return { file, ref: { name: file.name } };
   },
 
-  async pickSave(suggested: string, types: PickerType[]) {
+  async pickSave(suggested: string, spec: PickSpec) {
     if (!canPick()) throw abort('No file picker in this browser');
     // Non-null: canPick() is the test for exactly this function and was asked
     // one line above.
-    return refFor(await window.showSaveFilePicker!({ suggestedName: suggested, types }));
+    return refFor(await window.showSaveFilePicker!({ suggestedName: suggested, types: spec.types }));
   },
 
   async write(ref: DocumentRef, blob: Blob) {
@@ -315,15 +384,25 @@ const webFiles: FilesPort = {
     await blob.stream().pipeTo(writable);
   },
 
-  async pickImport() {
-    // TODO(B1): the shared hidden <input> is how the web adds files today, and
-    // it is import/drop.ts's, not this module's. Until that is threaded
-    // through here this rejects as dismissed, and nothing on the web calls it.
-    throw abort('No import picker on the web');
-  },
+  // Nothing on the web calls this - see the interface. Rejecting as dismissed
+  // rather than resolving empty, so a caller that reaches it by mistake stops
+  // rather than quietly adding no files.
+  pickImport: async () => { throw abort('Adding files is import/drop.ts on the web'); },
+
+  read: async () => { throw abort('A browser cannot open a file by name'); },
 
   exists: async () => true,
 };
+
+/**
+ * The last segment of a path, on either shell's separator.
+ *
+ * Here rather than at the two call sites - the shelf's file rows and the grid
+ * that draws them - because a `path` is the one field in this app whose spelling
+ * depends on the operating system, and one wrong split is a row labelled
+ * `C:\Users\...\board.mbrd`. Windows accepts both separators, so both are.
+ */
+export const fileNameOf = (path: string) => path.split(/[\\/]/).pop() || path;
 
 /**
  * The download, which is what "write a file" means without a picker.
@@ -341,6 +420,69 @@ function download(blob: Blob, name: string) {
   a.click();
   // Revoke late: Safari needs the URL to survive the click turn.
   setTimeout(() => URL.revokeObjectURL(url), 20000);
+}
+
+/**
+ * The fallback file chooser, for browsers with no File System Access API.
+ *
+ * Moved here from storage.ts whole, because it is the *other* implementation of
+ * pickOpen() and the two belong in one place. Everything it argues still holds.
+ *
+ * Cancellation is the awkward part. A native file dialog that is dismissed
+ * fires no `change`, so this promise used to simply never settle - and because
+ * the hidden <input> is shared with Add files, it was also left holding
+ * `.mbrd` and `multiple = false` for whatever came next. Modern engines fire
+ * `cancel` for exactly this; the focus fallback covers the ones that do not, so
+ * every exit restores the input and resolves.
+ */
+function viaInput(spec: PickSpec, multiple: boolean) {
+  return new Promise<File[]>(resolve => {
+    // #file-input is the one hidden <input type="file"> in index.html, shared
+    // with Add files - see the dataset.mode note below. Absent, this whole
+    // fallback has nothing to click, which is a broken build rather than a
+    // state to recover from.
+    // SAFETY: #file-input is the one <input type="file"> in index.html - the
+    // same element import/drop.ts reaches for, and the paragraph above says why
+    // an absent one is a broken build rather than a state to recover from.
+    const input = document.getElementById('file-input') as HTMLInputElement;
+    const prevAccept = input.accept;
+    // The accept list is the caller's, and its own comment says why it is wider
+    // than the File System Access types beside it.
+    input.accept = spec.accept;
+    input.multiple = multiple;
+    // Say whose picker this is rather than saying nothing. import/drop.js
+    // listens on the same input and stands down on a mode it does not own - it
+    // used to stand down on the *absence* of one, which is the same thing only
+    // while every other opener remembers to clear it. Naming the owner makes
+    // that guard positive at both ends.
+    input.dataset.mode = spec.mode;
+
+    let settled = false;
+    const finish = (files: File[]) => {
+      if (settled) return;
+      settled = true;
+      input.removeEventListener('change', onChange);
+      input.removeEventListener('cancel', onCancel);
+      removeEventListener('focus', onFocus);
+      input.accept = prevAccept;
+      input.multiple = true;
+      input.value = '';
+      delete input.dataset.mode;
+      resolve(files);
+    };
+    const picked = () => [...input.files ?? []];
+    const onChange = () => finish(picked());
+    const onCancel = () => finish([]);
+    // Focus returns to the window the moment the dialog closes either way, so
+    // this has to give `change` a turn to land before deciding it was a
+    // cancellation. Harmless where `cancel` already fired: finish() is once.
+    const onFocus = () => setTimeout(() => finish(picked()), 300);
+
+    input.addEventListener('change', onChange);
+    input.addEventListener('cancel', onCancel);
+    addEventListener('focus', onFocus, { once: true });
+    input.click();
+  });
 }
 
 const webLifecycle: LifecyclePort = {

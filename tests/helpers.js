@@ -92,6 +92,51 @@ export const zeros = n => new Uint8Array(n);
 export const soon = fn => Promise.resolve().then(fn);
 
 /**
+ * An in-memory `StoreBackend` for storage/idb.ts's setStoreBackend().
+ *
+ * The other way to fake this layer, and the one to reach for first. fakeIndexedDB
+ * below impersonates the *database*, which is what a test of idb.ts itself needs;
+ * this impersonates the whole of idb.ts's contract, which is what a test of
+ * anything built on it needs - session.ts, library.ts, matte-cache.ts. It is also
+ * the shape the desktop's file backend has, so a test written against this is
+ * testing the seam both real backends sit behind rather than one of them.
+ *
+ * A Map per store, genuinely separate, unlike the fake below - a caller that
+ * shelves a board writes the blob to `library` and the row to `kv`, and a single
+ * map would let those two collide.
+ *
+ * `stats.writes` counts every landed key, which is how a test says "a path row
+ * stored no blob" rather than inspecting the store and hoping.
+ */
+export function memoryStore() {
+  const stores = new Map();
+  const of = name => {
+    if (!stores.has(name)) stores.set(name, new Map());
+    return stores.get(name);
+  };
+  const stats = { writes: 0, deletes: 0 };
+  const backend = {
+    get: async (s, k) => of(s).get(k),
+    set: async (s, k, v) => { stats.writes++; of(s).set(k, v); },
+    del: async (s, k) => { stats.deletes++; of(s).delete(k); },
+    keys: async s => [...of(s).keys()],
+    clear: async s => { of(s).clear(); },
+    getMany: async (s, keys) => keys.map(k => of(s).get(k)),
+    setMany: async (s, entries) => {
+      for (const [k, v] of entries) { stats.writes++; of(s).set(k, v); }
+      return [];
+    },
+    delMany: async (s, keys) => {
+      for (const k of keys) { stats.deletes++; of(s).delete(k); }
+      return [];
+    },
+  };
+  backend.stores = stores;
+  backend.stats = stats;
+  return backend;
+}
+
+/**
  * A fake `indexedDB` that lets a test dictate how the transaction ends.
  *
  * `txOutcome` is one of 'complete' | 'abort' | 'error'. `openFailures` is how

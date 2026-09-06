@@ -33,6 +33,7 @@ import { clearMatteCache } from './matte-cache.ts';
 // The shape errors.ts will read this module's one answer through. A type only,
 // and errors.ts sits in the base layer beside notify.ts - see setBoardProbe().
 import type { BoardSafety } from '../errors.ts';
+import { platform } from '../platform/platform.ts';
 
 /** What this engine borrows from the file half. Filled by initSession(). */
 export interface SessionDeps {
@@ -657,7 +658,11 @@ export async function clearAllData(): Promise<boolean> {
   // After the session, because it is re-downloadable and its failure must not
   // sink a wipe of the data that was the point.
   await clearAppCaches();
-  location.reload();
+  // "Start over" through the port, because a reload is only what that means in
+  // a page. On the desktop there is nothing to reload: the shell relaunches the
+  // process, which is the same promise - come back as if this were the first
+  // run - kept in the only way that shell can keep it.
+  platform.relaunch();
   return true;
 }
 
