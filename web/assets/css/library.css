@@ -122,6 +122,42 @@
   text-overflow: ellipsis;
 }
 .library-when { padding: 0 10px 9px; font-size: var(--t-tiny); color: var(--ink-3); }
+/* The file a desktop row points at, between the title and the time. Same size
+   as the time below it and a shade lighter than the title above, because it is
+   an address rather than a name: what a person reads to tell two boards with
+   the same title apart, not what they read to find the board. Never present in
+   a browser - see LibraryEntry.path. */
+.library-file {
+  padding: 0 10px 2px;
+  font-size: var(--t-tiny);
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A row whose file has gone. Dimmed rather than struck through or tinted with
+   the error colour: nothing has failed and nothing is broken, the board is
+   simply not where the shelf last saw it, and the Locate button beside it is
+   the whole of what the card is now asking for. The button itself stays at full
+   strength, which is what makes it the one thing to press. */
+.library-card.is-missing .library-open { opacity: 0.45; }
+.library-locate {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  padding: 3px 9px;
+  font: inherit;
+  font-size: var(--t-tiny);
+  color: inherit;
+  background: var(--paper-card);
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .library-locate:hover { border-color: var(--accent-text); }
+}
+.library-locate:focus-visible { border-color: var(--accent-text); }
 .library-del {
   position: absolute;
   top: 6px;

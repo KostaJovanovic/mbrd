@@ -90,6 +90,7 @@ import { syncedNow } from '../storage/cloud/sync.ts';
 // second source of truth that goes stale in the direction that matters -
 // claiming connected after the hour is up. See anyConnected().
 import { anyConnected, cloudProviders } from '../storage/cloud/cloud.ts';
+import { isDesktop } from '../platform/platform.ts';
 
 // ---------------------------------------------------------------------------
 // What a control is
@@ -425,8 +426,21 @@ export const SECTIONS: Section[] = [
       // weight made Save look like an option; the answer to that turned out to
       // be the weight, not the row - and Export writes the real .mbrd, which is
       // the one file on this tab that opens again.
-      { type: 'buttons', buttons: [
+      //
+      // Two rows written out rather than one row with a button appearing in the
+      // middle of it, because `when` is a control's and not a button's, and
+      // giving a button one would make every row in this file a thing that has
+      // to be read twice. The pair is exclusive - exactly one is ever on screen
+      // - and the desktop's is the longer one, which is the shape a document
+      // application has: Save writes the file, Save As asks where, Export makes
+      // a copy that is not the file.
+      { type: 'buttons', when: () => !isDesktop(), buttons: [
         { cmd: 'save', label: 'Save', className: 'primary', closesPanel: true },
+        { cmd: 'export', label: 'Export', closesPanel: true },
+      ] },
+      { type: 'buttons', when: isDesktop, buttons: [
+        { cmd: 'save', label: 'Save', className: 'primary', closesPanel: true },
+        { cmd: 'saveAs', label: 'Save As…', closesPanel: true },
         { cmd: 'export', label: 'Export', closesPanel: true },
       ] },
       // Which board you are on. Three verbs, one row, none of them about the

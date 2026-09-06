@@ -65,6 +65,7 @@ import { syncBoardMode } from './board-view.ts';
 import type { Item, Geometry } from '../board-model.ts';
 import type { Point } from '../geometry.ts';
 import type { Viewport } from '../canvas/viewport.ts';
+import { platform } from '../platform/platform.ts';
 
 /**
  * canvas/viewport.ts still carries its migration pragma, so the class type it
@@ -496,7 +497,9 @@ export async function restartApp(): Promise<boolean> {
     if (answer === 'cancel') return false;
     if (answer === 'keep') return (await exportBoard()) ? restartApp() : false;
   }
-  location.reload();
+  // See clearAllData() in storage/session.ts: a reload is what "restart" means
+  // in a page, and a process relaunch is what it means in the shell.
+  platform.relaunch();
   return true;
 }
 

@@ -39,6 +39,21 @@ export type LibraryEntry = {
   title: string,
   at: number,
   thumb: string | null,
+  /**
+   * The file this row *is*, on a shell that has files. Desktop only.
+   *
+   * A row is one of two things and this field is which. With a path there is no
+   * blob: the file on disk is the board, opening the row reads it, and Save
+   * writes it. Without one the row is an unsaved board and the packed blob below
+   * is the only copy, exactly as every row on the web is.
+   *
+   * The second copy is the thing this avoids. A path row that also kept a blob
+   * would be a board in two places, and the moment either is written the shelf
+   * and the disk disagree with no way to say which is right - so a file that has
+   * moved shows as missing and offers to be found again, rather than silently
+   * opening a stale copy that looks fine. `path` is never set on the web.
+   */
+  path?: string,
 };
 
 /**
@@ -80,7 +95,7 @@ export async function hasLibraryBoard(id: string) {
  * copy is kept current as it is worked on and switched away from.
  */
 export async function putLibraryBoard(
-  id: string, blob: Blob, { title, at, thumb }: Partial<Omit<LibraryEntry, 'id'>>,
+  id: string, blob: Blob | null, { title, at, thumb, path }: Partial<Omit<LibraryEntry, 'id'>>,
 ) {
   // Serialised against every other writer. The index is a read-modify-write
   // over one key, so two overlapping stashes both read the same list, both
@@ -97,20 +112,34 @@ export async function putLibraryBoard(
   // survive the tab closing between the two writes, which is what the sweep
   // below is for.
   return (writes = writes.then(async () => {
-    await idbSet(STORE, id, blob);
+    // A null blob is a path row, and the delete is not a tidy-up: it is the
+    // moment an unsaved board becomes a saved one. That row had a blob, the
+    // first Save gave it a file, and leaving the blob behind would leave the
+    // second copy this design exists to avoid - quietly, since nothing reads it
+    // once the row has a path.
+    if (blob) await idbSet(STORE, id, blob);
+    else await idbDel(STORE, id).catch(() => {});
     const rest = (await libraryIndex()).filter(e => e.id !== id);
     // `at` is when this board was last worked on, and the shelf is sorted by it
     // - so a missing one is not 0. Zero is a real timestamp, 1970, and it sinks
     // the board to the bottom of the shelf forever with a blank "when" beside
     // it. A row with no time of its own is being filed *now*, which is the one
     // thing that is certainly true about it.
-    rest.push({ id, title: title || 'Untitled board', at: at || Date.now(), thumb: thumb || null });
+    const entry: LibraryEntry = {
+      id, title: title || 'Untitled board', at: at || Date.now(), thumb: thumb || null,
+    };
+    // Set rather than spread, and absent rather than undefined: a web row and a
+    // desktop row whose file is gone are then the same shape in the stored
+    // index, and `'path' in entry` is a question with one answer.
+    if (path) entry.path = path;
+    rest.push(entry);
     try {
       await writeIndex(rest);
     } catch (err) {
       // The row is what makes the blob reachable, so a blob with no row is
       // rubbish rather than a board. Cleaning up here is the difference between
-      // a failed stash and a permanent leak.
+      // a failed stash and a permanent leak. Harmless on a path row, which has
+      // no blob to lose.
       await idbDel(STORE, id).catch(() => {});
       throw err;
     }

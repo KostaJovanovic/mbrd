@@ -33,6 +33,11 @@
 
 import { uid, isRecord } from '../util.ts';
 import { toast, busy } from '../notify.ts';
+// Which shell this is running in, and how it answers "where does the file go".
+// Unwired - which is every browser - every one of these is the code that used
+// to be in this file, moved rather than rewritten. See platform.ts's header.
+import { platform, isDesktop, fileNameOf } from '../platform/platform.ts';
+import type { DocumentRef, PickSpec } from '../platform/platform.ts';
 import { idbGet, idbSet, idbKeys, idbGetMany } from './idb.ts';
 import type { StoreName } from './idb.ts';
 import {
@@ -40,7 +45,7 @@ import {
   trimLibrary, sweepLibrary,
 } from './library.ts';
 import {
-  board, serializeBoard, loadBoard, markDirty, setTitle, bus, mergeBoard,
+  board, serializeBoard, loadBoard, markDirty, isDirty, setTitle, bus, mergeBoard,
   defaultBoardTitle, isNotFoundBoard, hasContent,
 } from '../state.ts';
 import { normalizeBoard } from '../board-schema.ts';
@@ -113,38 +118,40 @@ export function setBoardThumb(fn: ThumbMaker | null | undefined) {
 }
 
 /**
- * The File System Access API, which lib.dom does not declare.
+ * What a board looks like to a file picker, in both spellings a browser needs.
  *
- * Only the two entry points this module calls and only the fields it passes -
- * a wider guess would be this file asserting a shape for an API it asks two
- * things of. Both are optional because the whole of canPickFiles() is whether
- * they are there: Safari and Firefox have neither, and the download path below
- * exists for exactly that.
+ * This module's knowledge, handed to the port rather than known by it: the MIME
+ * type is mbrd.js's one exported constant, and platform.ts sits underneath this
+ * file in the layering, so a copy of it down there would be the second place
+ * the format is written down.
+ *
+ * The two lists differ on purpose. `.mbrd` is an extension no operating system
+ * has heard of, and iOS resolves an accept attribute to UTIs rather than
+ * matching the string - an unrecognised entry there can leave the Files browser
+ * showing every file greyed out, this app's own boards included. octet-stream
+ * is the widest honest thing to say about a binary container and is in the
+ * attribute to keep that door open; the list only ever *widens* what can be
+ * picked, so it cannot hide a file that used to be selectable.
  */
-interface FilePickerOptions {
-  suggestedName?: string;
-  types?: { description?: string, accept: Record<string, string[]> }[];
-  multiple?: boolean;
-}
+const PICK_SPEC: PickSpec = {
+  types: [{ description: 'mbrd board', accept: { [MIME]: ['.mbrd'] } }],
+  accept: '.mbrd,application/zip,application/octet-stream',
+  mode: 'mbrd',
+};
 
-declare global {
-  interface Window {
-    showSaveFilePicker?: (opts?: FilePickerOptions) => Promise<FileSystemFileHandle>;
-    showOpenFilePicker?: (opts?: FilePickerOptions) => Promise<FileSystemFileHandle[]>;
-  }
-}
-
-const PICKER_TYPES = [{
-  description: 'mbrd board',
-  accept: { [MIME]: ['.mbrd'] },
-}];
-
-/** Handle of the file Export writes back to, when the browser supports it. */
-let fileHandle: FileSystemFileHandle | null = null;
+/**
+ * The file this board is, when it is one.
+ *
+ * A DocumentRef rather than a FileSystemFileHandle, and the difference is the
+ * whole of what the desktop needed from this file. On the web it is a name with
+ * a handle kept beside it in platform.ts; on the desktop it is a name and a
+ * path; in Safari it is a name and nothing, which is what a download is. Every
+ * question this module used to ask of the handle - is there one, what is it
+ * called, write to it - is now the port's, and the answers are the same ones.
+ */
+let doc: DocumentRef | null = null;
 /** First-created timestamp, carried across saves of the same board. */
 let created: string | null = null;
-
-const canPickFiles = () => typeof window.showSaveFilePicker === 'function';
 
 // ---------------------------------------------------------------------------
 // Save
@@ -387,7 +394,11 @@ export async function saveBoard() {
  * browser that refuses to share files would write the history to disk anyway.
  */
 export async function exportBoard({ pickNew = false, history = true } = {}) {
-  const picking = canPickFiles();
+  // Whether there is a dialog at all, asked once and not re-read. On the
+  // desktop this is always true and the dialog is a native one; in Safari and
+  // Firefox it is false and every export is a download, which is the branch
+  // this flag has always selected.
+  const picking = platform.files.canPick();
   try {
     // The picker runs *before* anything is serialised, and that ordering is the
     // whole of the fix here.
@@ -403,17 +414,12 @@ export async function exportBoard({ pickNew = false, history = true } = {}) {
     // Nothing is written and no state moves until the picker returns, so
     // cancelling still leaves the board exactly as it was: the AbortError
     // below is thrown from here, ahead of everything.
-    if (picking && (pickNew || !fileHandle)) {
-      // Non-null: canPickFiles() *is* the test for this function, and `picking`
-      // is its answer, taken one line above and not re-read since.
-      fileHandle = await window.showSaveFilePicker!({
-        suggestedName: fileNameFor(board.title),
-        types: PICKER_TYPES,
-      });
+    if (picking && (pickNew || !doc)) {
+      doc = await platform.files.pickSave(fileNameFor(board.title), PICK_SPEC);
     }
     // Non-null for the reason the branch above is: with a picker there was
-    // either a handle already or that branch has just put one here.
-    if (picking) setTitle(titleFromFileName(fileHandle!.name));
+    // either a document already or that branch has just put one here.
+    if (picking) setTitle(titleFromFileName(doc!.name));
 
     // Everything past the picker is the slow half - deflating every asset on
     // the board into one archive - and on a board of video it is a long slow
@@ -431,18 +437,14 @@ export async function exportBoard({ pickNew = false, history = true } = {}) {
       const { blob, manifest } = await packBoard(data, { created });
       created = manifest.created;
 
-      if (picking) {
-        job.label('Writing the file');
-        const writable = await fileHandle!.createWritable();
-        // Piped rather than handed over whole. The archive packBoard returns is
-        // a composition of the assets' own Blobs (see writeZip), so it is a
-        // description of a file rather than a file in memory - and pipeTo pulls
-        // it a chunk at a time, which is the only way that stays true all the
-        // way to the disk. pipeTo closes the destination on its own.
-        await blob.stream().pipeTo(writable);
-      } else {
-        download(blob, fileNameFor(data.title));
-      }
+      // One call for both endings. The port streams to the handle where there
+      // is one and downloads where there is not, which is the branch that used
+      // to be written out here - and on the desktop it is a temp file and a
+      // rename. `data.title` rather than `board.title` for the fallback name:
+      // without a picker nothing renamed the board, so the name comes from what
+      // was actually packed.
+      if (picking) job.label('Writing the file');
+      await platform.files.write(doc ?? { name: fileNameFor(data.title) }, blob);
     } finally {
       job.end();
     }
@@ -461,24 +463,17 @@ export async function exportBoard({ pickNew = false, history = true } = {}) {
   }
 }
 
-function download(blob: Blob, name: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  a.click();
-  // Revoke late: Safari needs the URL to survive the click turn.
-  setTimeout(() => URL.revokeObjectURL(url), 20000);
-}
-
 /**
- * Write any blob to disk under `name`, through the same download the exporter
+ * Write any blob to disk under `name`, through the same write the exporter
  * uses. For the derived artefacts - a PNG or PDF of the board - which are not
- * .mbrd files and so never touch the file handle or the picker types, but do
- * want the one Safari-safe download in this module rather than a second copy.
+ * .mbrd files and so never touch the document or the picker spec, but do want
+ * the one Safari-safe download in this app rather than a second copy.
+ *
+ * A ref with a name and nothing else is exactly "there is no document here",
+ * which the web answers with a download and the desktop with its own dialog.
  */
 export function saveBlob(blob: Blob, name: string) {
-  download(blob, name);
+  return platform.files.write({ name }, blob);
 }
 
 /**
@@ -567,15 +562,12 @@ export async function packForShare({ history }: { history: boolean }) {
  */
 export async function openBoard() {
   try {
-    let file: File | null = null;
-    let handle: FileSystemFileHandle | null = null;
-    if (typeof window.showOpenFilePicker === 'function') {
-      [handle] = await window.showOpenFilePicker({ types: PICKER_TYPES, multiple: false });
-      file = await handle.getFile();
-    } else {
-      file = await pickViaInput();
-    }
-    return file ? await openFile(file, handle) : false;
+    // Both doors - the File System Access picker and the hidden <input> - are
+    // behind this one call now, and both report a dismissal the same way. That
+    // is the seam: this function used to have to know that one of them returned
+    // null and the other threw.
+    const { file, ref } = await platform.files.pickOpen(PICK_SPEC);
+    return await openFile(file, ref);
   } catch (err) {
     if (isAbort(err)) return false;
     console.error(err);
@@ -602,7 +594,7 @@ export async function openBoard() {
  * would inherit the shelf row of the one just put away and overwrite it on the
  * next stash - two boards, one row, and the older of them gone.
  */
-export async function openFile(file: File, handle: FileSystemFileHandle | null = null) {
+export async function openFile(file: File, ref: DocumentRef | null = null) {
   try {
     // Refused rather than risked: if the outgoing board could not be filed,
     // opening this one would destroy it. shelveCurrent() has already said so.
@@ -616,7 +608,7 @@ export async function openFile(file: File, handle: FileSystemFileHandle | null =
     // still on screen pointing at nothing. Now nothing is committed until the
     // board itself is in.
     const job = busy('Opening ' + file.name);
-    // Set inside the transaction, read in the finally. `handle` is null on two
+    // Set inside the transaction, read in the finally. `ref` is null on two
     // of the three doors into here, so it cannot tell a completed open from a
     // failed one - and what the finally decides is whether the arriving board
     // takes a new shelf row or the outgoing one keeps its old one.
@@ -628,7 +620,7 @@ export async function openFile(file: File, handle: FileSystemFileHandle | null =
         // decoding - see titleForOpenedBoard(). The field was documented as
         // informational; this is the one thing that reads it.
         loadBoard({ ...data, title: titleForOpenedBoard(data.title, file.name, manifest.app) });
-        fileHandle = handle;
+        doc = ref;
         // The manifest is a file's, so its stamp is only a stamp if it is text.
         // Anything else starts the board's created date afresh at the next save,
         // which is what an absent one has always done.
@@ -836,7 +828,7 @@ export async function openCloudBoard(remote: { boardId: string, folder: string, 
     } finally {
       job.end();
     }
-    fileHandle = null;
+    doc = null;
     created = null;
     // The board's own id follows the remote's, which is what makes a second
     // machine's copy the *same* board rather than a duplicate of it: the folder
@@ -984,70 +976,6 @@ async function withFreshAssets<T>(commit: (stash: Map<string, Asset>) => Promise
   }
 }
 
-/**
- * The fallback file chooser, for browsers with no File System Access API.
- *
- * Cancellation is the awkward part. A native file dialog that is dismissed
- * fires no `change`, so this promise used to simply never settle - and because
- * the hidden <input> is shared with Add files, it was also left holding
- * `.mbrd` and `multiple = false` for whatever came next. Modern engines fire
- * `cancel` for exactly this; the focus fallback covers the ones that do not, so
- * every exit restores the input and resolves.
- */
-function pickViaInput() {
-  return new Promise<File | null>(resolve => {
-    // #file-input is the one hidden <input type="file"> in index.html, shared
-    // with Add files - see the dataset.mode note below. Absent, this whole
-    // fallback has nothing to click, which is a broken build rather than a
-    // state to recover from.
-    // SAFETY: #file-input is the one <input type="file"> in index.html - the
-    // same element import/drop.ts reaches for, and the paragraph above says why
-    // an absent one is a broken build rather than a state to recover from.
-    const input = document.getElementById('file-input') as HTMLInputElement;
-    const prevAccept = input.accept;
-    // `.mbrd` is an extension no operating system has heard of, and iOS
-    // resolves an accept list to UTIs rather than matching the string - an
-    // unrecognised entry there can leave the Files browser showing every file
-    // greyed out, this app's own boards included. octet-stream is the widest
-    // honest thing to say about a binary container and is here to keep that
-    // door open; the list only ever *widens* what can be picked, so it cannot
-    // hide a file that used to be selectable.
-    input.accept = '.mbrd,application/zip,application/octet-stream';
-    input.multiple = false;
-    // Say whose picker this is rather than saying nothing. import/drop.js
-    // listens on the same input and stands down on a mode it does not own - it
-    // used to stand down on the *absence* of one, which is the same thing only
-    // while every other opener remembers to clear it. Naming the owner makes
-    // that guard positive at both ends.
-    input.dataset.mode = 'mbrd';
-
-    let settled = false;
-    const finish = (file: File | null) => {
-      if (settled) return;
-      settled = true;
-      input.removeEventListener('change', onChange);
-      input.removeEventListener('cancel', onCancel);
-      removeEventListener('focus', onFocus);
-      input.accept = prevAccept;
-      input.multiple = true;
-      input.value = '';
-      delete input.dataset.mode;
-      resolve(file);
-    };
-    const onChange = () => finish(input.files?.[0] || null);
-    const onCancel = () => finish(null);
-    // Focus returns to the window the moment the dialog closes either way, so
-    // this has to give `change` a turn to land before deciding it was a
-    // cancellation. Harmless where `cancel` already fired: finish() is once.
-    const onFocus = () => setTimeout(() => finish(input.files?.[0] || null), 300);
-
-    input.addEventListener('change', onChange);
-    input.addEventListener('cancel', onCancel);
-    addEventListener('focus', onFocus, { once: true });
-    input.click();
-  });
-}
-
 // ---------------------------------------------------------------------------
 // New
 // ---------------------------------------------------------------------------
@@ -1089,7 +1017,7 @@ export async function newBoard() {
   // shelf, silently, and the board that was on screen is gone.
   if (!(await shelveCurrent())) return false;
   clearAssets();
-  fileHandle = null;
+  doc = null;
   created = null;
   // A new board is a new board, and it needs a row of its own. Without this it
   // would inherit the shelf row of the board just filed and overwrite it at the
@@ -1176,6 +1104,21 @@ export async function listLibrary() {
 export async function stashCurrent() {
   const id = await ensureBoardId();
   const thumb = await makeThumb().catch(() => null);
+  // A board that is a file gets a row that points at the file, and no copy.
+  //
+  // This is the whole of the desktop shelf. On the web a packed blob is the only
+  // place an outgoing board can go, which is why every row here is one; on the
+  // desktop the file already is that place, and a blob beside it would be a
+  // second board that the next Save leaves stale. So a saved board is filed as a
+  // pointer and an untitled one is filed as a blob, exactly as on the web, and
+  // the row changes kind at the first Save rather than at any other moment.
+  //
+  // It is also the cheap path: no serialise, no pack, no deflate of every
+  // photograph on the board just to shelve a file that is already on disk.
+  if (isDesktop() && doc?.path) {
+    await putLibraryBoard(id, null, { title: board.title, at: Date.now(), thumb, path: doc.path });
+    return id;
+  }
   const data = serializeBoard();
   // The shelf tolerates a missing asset; Export does not. Both go through
   // packBoard() and the refusal was written for the file, so a board that had
@@ -1219,7 +1162,46 @@ export async function stashCurrent() {
  * one case the old dialog was built for is the one case nothing now guards -
  * and it would fail silently, which is worse than the dialog ever was.
  */
+/**
+ * The one question a document application has to ask, and the web app was
+ * proud not to.
+ *
+ * On the web nothing is asked, and the header of shelveCurrent() below carries
+ * the argument: a board that is always filed on the shelf before the next one
+ * arrives has nothing to lose, so there is nothing to ask about.
+ *
+ * That argument turns on the shelf being the only place the board can go. On the
+ * desktop it is not - the file is - and a board with a file and unsaved changes
+ * has somewhere the changes belong. Filing it as a path row without asking would
+ * point the shelf at a file that is *older* than what was on screen, and the
+ * changes would be gone with no dialog having admitted it. So the question is
+ * asked exactly where that is true: a desktop board, with a document, that is
+ * dirty. An untitled board is still filed as a blob and still asks nothing.
+ *
+ * Cancel keeps the board, which is why this can refuse the whole shelving.
+ */
+async function askBeforeLeaving() {
+  if (!isDesktop() || !doc || !isDirty()) return true;
+  const answer = await prompt({
+    title: 'Save changes to ' + doc.name + '?',
+    body: 'This board is a file on disk. Changes you have not saved are not in it yet.',
+    go: 'Save',
+    keep: "Don't save",
+    cancel: 'Cancel',
+    danger: false,
+  });
+  // Null is the dialog closing without an answer, which is a cancel - the same
+  // reading every other caller of prompt() takes.
+  if (answer !== 'go' && answer !== 'keep') return false;
+  // A save that fails or is cancelled at its own picker is not a "don't save":
+  // somebody asked for the file to be written and it was not, so the board stays
+  // where it is rather than being filed over.
+  if (answer === 'go') return await exportBoard();
+  return true;
+}
+
 async function shelveCurrent() {
+  if (!(await askBeforeLeaving())) return false;
   suspendCache();
   await drainSave();
   try {
@@ -1290,16 +1272,36 @@ export async function switchBoard(id: string) {
   const job = busy('Switching boards');
   try {
     if (!(await shelveCurrent())) return false;
-    const blob = await getLibraryBoard(id);
-    if (!blob) { toast('That board is not on the shelf any more', 'error'); return false; }
+    // Which kind of row this is decides where the bytes come from, and it is the
+    // only place in this function that the desktop differs. A path row has no
+    // blob on the shelf by construction - see stashCurrent() - so the file *is*
+    // the board, and it is read now rather than unpacked from a copy.
+    const row = (await libraryIndex()).find(e => e.id === id);
+    const ref: DocumentRef | null =
+      row?.path ? { name: fileNameOf(row.path), path: row.path } : null;
+    let file: File;
+    if (ref) {
+      // Checked rather than caught, so a file that has moved says so plainly
+      // instead of arriving as an unpack failure. The row stays on the shelf
+      // either way: it is a pointer, and Locate is how it is repaired.
+      if (!(await platform.files.exists(ref))) {
+        toast('That file has moved or been deleted - use Locate to find it', 'error');
+        return false;
+      }
+      file = await platform.files.read(ref);
+    } else {
+      const blob = await getLibraryBoard(id);
+      if (!blob) { toast('That board is not on the shelf any more', 'error'); return false; }
+      file = new File([blob], 'board.mbrd', { type: MIME });
+    }
     await withFreshAssets(async () => {
-      const { manifest, board: data } = await unpackBoard(new File([blob], 'board.mbrd', { type: MIME }));
+      const { manifest, board: data } = await unpackBoard(file);
       loadBoard(data);
       // A string or nothing, as in openFile() above and for the same reason:
       // this manifest came out of a packed blob rather than out of this run.
       created = (typeof manifest.created === 'string' && manifest.created) || null;
     });
-    fileHandle = null;
+    doc = ref;
     await setCurrentBoardId(id);
     return true;
   } catch (err) {
@@ -1309,6 +1311,36 @@ export async function switchBoard(id: string) {
   } finally {
     resetSessionLatches();
     job.end();
+  }
+}
+
+/**
+ * Point a shelf row at the file again, after it moved.
+ *
+ * Desktop only, and the repair for the one failure a path row has that a blob
+ * row does not: the board is somewhere this app is not allowed to go looking.
+ * There is no copy to fall back on, deliberately - keeping one is the two-places
+ * problem the whole design of a path row avoids - so the only honest answer is
+ * to ask where the file went.
+ *
+ * It rewrites the row rather than opening the board. Somebody repairing four
+ * rows in a row should not be opening four boards on the way past, and the row
+ * being right again is the thing they asked for.
+ */
+export async function relocateLibraryBoard(id: string) {
+  try {
+    const { ref } = await platform.files.pickOpen(PICK_SPEC);
+    if (!ref.path) return false;
+    const row = (await libraryIndex()).find(e => e.id === id);
+    await putLibraryBoard(id, null, {
+      title: row?.title, at: row?.at, thumb: row?.thumb, path: ref.path,
+    });
+    return true;
+  } catch (err) {
+    if (isAbort(err)) return false;
+    console.error(err);
+    toast('Could not find that board: ' + detailOf(err), 'error');
+    return false;
   }
 }
 
@@ -1362,7 +1394,7 @@ export { fileNameFor, titleFromFileName, titleForOpenedBoard } from './naming.ts
  */
 export function initStorage() {
   initSession({
-    fileName: () => fileHandle?.name || null,
+    fileName: () => doc?.name || null,
     created: () => created,
     setCreated: at => { created = at; },
     exportBoard,

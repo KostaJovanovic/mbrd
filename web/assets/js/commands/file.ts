@@ -51,6 +51,7 @@ import { assetBytes } from '../storage/assets.ts';
 import { openLibrary } from '../ui/library.ts';
 import { boardPdf, boardPng } from '../ui/snapshot.ts';
 import { saveWithCooldown } from '../ui/board-actions.ts';
+import { isDesktop } from '../platform/platform.ts';
 
 /**
  * A download name for a board's derived PNG/PDF, from its title. Held to word
@@ -403,12 +404,30 @@ export function fileCommands() {
       console.info('[mbrd] history:', { undo, redo, next: { undo: undoLabel, redo: redoLabel },
         weight: historyWeight() });
     },
-    save: () => saveWithCooldown(),
+    // Save means two different things and the shell decides which.
+    //
+    // In a browser it is "keep this here" - no dialog, no file, the copy this
+    // browser is holding for you, and the cooldown that stops a held Ctrl+S
+    // writing forty times. That is the whole argument at the top of storage.js
+    // and it is right for a page.
+    //
+    // On the desktop the board *is* a file, and a document application that
+    // answered Ctrl+S with "kept in this app" would be lying about where the
+    // work is. So Save writes the .mbrd: the picker only on a board that has
+    // never been saved, silence after that. Both still autosave underneath;
+    // what changes is what the person is told they just did.
+    save: () => isDesktop() ? exportBoard() : saveWithCooldown(),
+    saveAs: async () => { if (await confirmEmptyExport()) await exportBoard({ pickNew: true }); },
     // A file you write to your own disk keeps everything, because an export
     // without its history opens as a board with no past and nothing can put that
     // back. Both ask first if there is nothing to write - see
     // confirmEmptyExport(), and note that a board with anything on it never
     // reaches the dialog.
+    //
+    // Export keeps its meaning on both shells: write a copy somewhere. On the
+    // desktop that is the difference between Save and this one - Save writes
+    // *the* file, Export writes *a* file - and it is also where Share's
+    // no-history path lands where a file cannot be shared.
     export: async () => { if (await confirmEmptyExport()) await exportBoard(); },
     exportAs: async () => { if (await confirmEmptyExport()) await exportBoard({ pickNew: true }); },
     // The mobile face of Export: the same packed .mbrd, handed to the OS share

@@ -27,6 +27,10 @@ import { el, rafThrottle } from './util.ts';
 import { toast } from './notify.ts';
 import { initErrors, setBoardProbe, reportCaught } from './errors.ts';
 import { setRiskPrompt } from './consent.ts';
+// Which shell this is, and the six questions it answers differently. Nothing is
+// wired here yet - the Electron adapter arrives in group E and reads
+// window.mbrdDesktop at exactly one place, which is this file.
+import { platform, isDesktop, refForHandle } from './platform/platform.ts';
 import { initOverlays } from './ui/overlays.ts';
 import { initTimeline } from './ui/timeline-view.ts';
 import { ask } from './ui/dialog.ts';
@@ -702,17 +706,21 @@ if (location.hash.includes('grips')) cmds.debugGrips();
 // The latch is one-way and set in start(). Failing closed is the right
 // direction: a throw before the session is read means nothing is written, which
 // is what the visitor wants from a boot that did not finish.
+//
+// Registered through the lifecycle port rather than on the two events directly,
+// and unwired that is exactly what it still does - the web default in
+// platform.ts holds the same pair of listeners with the same visibility guard.
+// What the port buys is the one thing a browser tab could never offer: the
+// desktop holds the window's close open until this promise resolves, so the
+// flush below is *awaited* there instead of raced.
 let sessionReady = false;
 const markSessionReady = () => { sessionReady = true; };
-const flushEdits = () => {
+const flushEdits = async () => {
   if (!sessionReady) return;
   flushNoteEdit();
-  autosave().catch(() => {});
+  await autosave().catch(() => {});
 };
-addEventListener('pagehide', flushEdits);
-addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'hidden') flushEdits();
-});
+platform.lifecycle.onCloseRequested(flushEdits);
 
 /**
  * The moment a not-found board stops being one.
@@ -1122,7 +1130,11 @@ function dismissSplash() {
 started.then(dismissSplash, dismissSplash);
 
 // Installed as a PWA, "Open with mbrd" on a .mbrd hands us the file here
-// (manifest.json file_handlers). The desktop equivalent lands in M4 via Tauri.
+// (manifest.json file_handlers). The desktop equivalent is
+// lifecycle.onOpenFiles below, wired from desktop/ - a double-clicked file, a
+// second launch's argv, or macOS's open-file event, all arriving as the same
+// call. `launchQueue` is never present there: the window loads the app from its
+// own scheme and nothing installs a PWA over it.
 //
 // Waits for start(), which is the whole of the fix. Both of these load a board
 // and both register assets, and start() yields at its first await - so the OS
@@ -1139,12 +1151,37 @@ if ('launchQueue' in window) {
     if (!files?.length) return;
     try {
       await started;
-      await openFile(await files[0].getFile(), files[0]);
+      await openFile(await files[0].getFile(), refForHandle(files[0]));
     } catch (err) { console.warn('[mbrd] launch file:', err); }
   });
 }
 
-if ('serviceWorker' in navigator) {
+// The same arrival, from the other shell. Same rule and the same reason: wait
+// for start() so a file handed over during the session read does not race the
+// restore. The web default never calls this, so the block above is not dead
+// code on either side - each shell has exactly one door and they are different
+// doors.
+//
+// The desktop reads the bytes in its main process and sends them over, so what
+// arrives here is a File and nothing about a path - the ref that names the file
+// is attached by the adapter, and no path ever becomes a string this module
+// holds.
+platform.lifecycle.onOpenFiles(files => {
+  const first = files[0];
+  if (!first) return;
+  void (async () => {
+    try {
+      await started;
+      await openFile(first.file, first.ref);
+    } catch (err) { console.warn('[mbrd] open file:', err); }
+  })();
+});
+
+// Not on the desktop, where electron-updater is the updater and the shell serves
+// `web/` from its own scheme - a worker registered over that would be a second
+// cache in front of files that are already local. sw.js and SHELL are untouched;
+// the worker is simply never registered there, so its cache is never populated.
+if (!isDesktop() && 'serviceWorker' in navigator) {
   // A new worker installing while a page is already controlled means a fresh
   // build shipped mid-session. sw.js self-promotes (skipWaiting + claim), so
   // the code swaps under the running tab; tell the user rather than reload out
