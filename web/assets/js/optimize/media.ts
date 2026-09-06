@@ -39,6 +39,7 @@
 // it already was.
 
 import { extOf } from '../util.ts';
+import { platform } from '../platform/platform.ts';
 
 // Where the core lives. The single-threaded UMD build - the one that exposes a
 // `createFFmpegCore` factory and loads through importScripts, which is what
@@ -261,6 +262,19 @@ const HEAD_BYTES = 64 * 1024 ** 2;
  * re-thrown - see the note at the await below.
  */
 export async function firstFrame(file: File, say: (msg: string) => void = () => {}): Promise<Blob | null> {
+  // The shell first, and everything below is unchanged.
+  //
+  // A native ffmpeg answers in milliseconds and with the network off, where the
+  // path below is a 32 MB download and a single-threaded wasm decode. Unwired -
+  // which is every browser - this resolves null and the rest of the function
+  // runs exactly as it always did.
+  //
+  // Ahead of mediaAvailable(), deliberately: that call probes a CDN, and a
+  // desktop with a bundled binary should not be reaching for the network to
+  // find out whether it needs to.
+  const native = await platform.native.firstFrame(await file.arrayBuffer(), file.name);
+  if (native) return native;
+
   if (!(await mediaAvailable())) {
     say('The video tools could not be reached - no network, or the CDN is blocked here');
     return null;

@@ -46,7 +46,7 @@ test('every native port answers null, so every caller falls through', async () =
   const bytes = new ArrayBuffer(8);
   assert.equal(await platform.native.firstFrame(bytes, 'clip.mov'), null);
   assert.equal(await platform.native.transcode(bytes, 'clip.mov', {}), null);
-  assert.equal(await platform.native.matte(new Float32Array(3), 1, 1), null);
+  assert.equal(await platform.native.matte(new Float32Array(3)), null);
   assert.equal(await platform.native.decode(bytes, 'photo.heic'), null);
 });
 
@@ -121,6 +121,7 @@ function fakeShell({ canPick = true } = {}) {
     },
     lifecycle: { onCloseRequested() {}, onOpenFiles() {} },
     native: {
+      canTranscode: () => false,
       firstFrame: async () => null, transcode: async () => null,
       matte: async () => null, decode: async () => null,
     },

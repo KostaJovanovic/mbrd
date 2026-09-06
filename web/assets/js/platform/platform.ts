@@ -214,10 +214,30 @@ export interface TranscodeOpts {
 export interface NativePort {
   /** A poster frame for a clip the browser cannot decode. */
   firstFrame(bytes: ArrayBuffer, name: string): Promise<Blob | null>;
+  /**
+   * Whether shrinking a clip is on offer at all.
+   *
+   * Synchronous, unlike everything else here, and that is the point: this
+   * answers "should the interface *offer* this", which the optimiser has to
+   * decide while it is building a plan - and a button that appears and then
+   * fails is worse than one that was never there. Every other method answers
+   * "do this", after somebody has pressed something.
+   *
+   * False on the web always, and false on a desktop with no ffmpeg beside it.
+   */
+  canTranscode(): boolean;
   /** Shrink a clip. Desktop only - the web dropped this and §6 says why. */
   transcode(bytes: ArrayBuffer, name: string, opts: TranscodeOpts): Promise<Blob | null>;
-  /** u2netp on a native runtime. Same Float32Array in and out as the worker. */
-  matte(rgb: Float32Array, w: number, h: number): Promise<Float32Array | null>;
+  /**
+   * u2netp on a native runtime.
+   *
+   * Exactly the protocol canvas/matte-worker.js already speaks: one
+   * Float32Array in - a 1x3x320x320 tensor the caller has already built - and
+   * one out. No width and no height, because the model's input is a fixed
+   * square and the caller resamples to it either way; passing them would be two
+   * numbers this side could disagree with.
+   */
+  matte(input: Float32Array): Promise<Float32Array | null>;
   /** Decode HEIC and the other formats no browser opens. */
   decode(bytes: ArrayBuffer, name: string): Promise<ImageBitmap | null>;
 }
@@ -532,6 +552,10 @@ const webLifecycle: LifecyclePort = {
 };
 
 const webNative: NativePort = {
+  // The web dropped video optimisation, and the header of optimize/media.ts
+  // says why: a single-threaded wasm encoder pins a core for the length of the
+  // clip. This is that decision, stated where the interface reads it.
+  canTranscode: () => false,
   firstFrame: async () => null,
   transcode: async () => null,
   matte: async () => null,

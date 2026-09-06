@@ -66,6 +66,14 @@ contextBridge.exposeInMainWorld('mbrdDesktop', {
     exists: (path: string) => invoke('files:exists', path),
   },
 
+  native: {
+    can: () => invoke('native:can'),
+    firstFrame: (bytes: ArrayBuffer) => invoke('native:firstFrame', bytes),
+    transcode: (bytes: ArrayBuffer, opts: unknown) => invoke('native:transcode', bytes, opts),
+    matte: (input: Float32Array) => invoke('native:matte', input),
+    decode: (bytes: ArrayBuffer, name: string) => invoke('native:decode', bytes, name),
+  },
+
   setDocument: (state: unknown) => ipcRenderer.send('app:document', state),
 
   relaunch: () => ipcRenderer.send('app:relaunch'),

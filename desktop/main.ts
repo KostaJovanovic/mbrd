@@ -46,6 +46,13 @@ import { initLog, log } from './log.ts';
 import { installMenu } from './menu.ts';
 import * as store from './store.ts';
 import * as files from './files.ts';
+// The three native answers. Each is imported for its `available()` and loads
+// its own heavy dependency on first use - see the note in each file: sharp and
+// onnxruntime-node are tens of megabytes of binary, and loading them at startup
+// would cost every launch for a feature most sessions never touch.
+import * as ffmpeg from './native/ffmpeg.ts';
+import * as matte from './native/matte.ts';
+import * as decode from './native/decode.ts';
 
 /**
  * One instance, one window, one board.
@@ -100,6 +107,7 @@ function main(): void {
     wireStore();
     wireFiles();
     wireApp();
+    wireNative();
     installMenu(cmd => current()?.webContents.send('app:command', cmd));
     // Before the window, so the shelf's file rows are already vouched for when
     // the page asks whether their files still exist - see files.ts's `known`.
@@ -370,6 +378,36 @@ function wireApp(): void {
   // whether the close button has a dot in it. Reported by storage.ts whenever
   // the document, the board's name or the dirty flag changes.
   ipcMain.on('app:document', (_e, state: unknown) => showDocument(state));
+}
+
+/**
+ * The native side of the four ports that have one.
+ *
+ * Every handler answers `null` where it cannot help, which is the whole
+ * protocol: the renderer asks first and falls through, so a build with no
+ * ffmpeg beside it is a slower desktop rather than a broken one. The two
+ * `available` channels exist so the renderer can *offer* a feature - the
+ * Optimise row's video branch - rather than offering it and then failing.
+ */
+function wireNative(): void {
+  ipcMain.handle('native:can', () => ({
+    transcode: ffmpeg.available(),
+    matte: matte.available(),
+  }));
+  ipcMain.handle('native:firstFrame', (_e, bytes: unknown) =>
+    bytes instanceof ArrayBuffer ? ffmpeg.firstFrame(bytes) : null);
+  ipcMain.handle('native:transcode', (_e, bytes: unknown, opts: unknown) => {
+    if (!(bytes instanceof ArrayBuffer)) return null;
+    // SAFETY: what arrives is two optional numbers from the renderer, and
+    // ffmpeg.ts clamps both before they reach a command line - see the Math.max
+    // on each. The assertion names a shape whose every field is already treated
+    // as untrusted on the far side.
+    return ffmpeg.transcode(bytes, (opts ?? {}) as ffmpeg.TranscodeOpts);
+  });
+  ipcMain.handle('native:matte', (_e, input: unknown) =>
+    input instanceof Float32Array ? matte.matte(input) : null);
+  ipcMain.handle('native:decode', (_e, bytes: unknown, name: unknown) =>
+    bytes instanceof ArrayBuffer && typeof name === 'string' ? decode.decode(bytes, name) : null);
 }
 
 /** The document, in the window's furniture. */
