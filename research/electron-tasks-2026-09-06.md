@@ -724,7 +724,7 @@ blank. A group with a skipped task is not done.
 | A | DONE | `pickOpen`/`pickSave` take the picker types as an argument — see below |
 | B | DONE | `read`, `refForHandle`, `OpenedFile` added to the port — see below |
 | C | DONE | C3 skips until `desktop/` exists; two real bugs found — see below |
-| D | | |
+| D | DONE | boots over `app://`, no CSP violation; C3 red until F as designed |
 | E | | 300-photo board: save ms / boot ms, desktop vs browser: |
 | F | | accelerator check result → plan §12 |
 | G | | ffmpeg build chosen: |

@@ -1,0 +1,23 @@
+{
+  "name": "mbrd-desktop",
+  "private": true,
+  "version": "0.0.0",
+  "license": "GPL-3.0-or-later",
+  "main": "dist/main.js",
+  "description": "The Electron shell. A second package rather than dependencies on the root one, which declares none and must keep declaring none - `npm test` at the root installs nothing and CI's first leg is what checks that claim. electron-updater, sharp and onnxruntime-node are runtime dependencies of this app and could not live there. Note the absence of \"type\": \"module\": both bundles are CommonJS because a preload script under sandbox:true must be, and one format for the package is cheaper than two rules. The version is 0.0.0 on purpose - the release workflow reads VERSION out of web/assets/js/version.js and stamps it here, so there is one stamp rather than three, and an unpackaged run has no version at all (which is why the updater refuses to run unless app.isPackaged).",
+  "scripts": {
+    "build": "esbuild main.ts preload.ts --bundle --platform=node --format=cjs --target=node20 --external:electron --outdir=dist",
+    "typecheck": "tsc -p tsconfig.json",
+    "start": "npm run build && electron .",
+    "dev": "npm run build && electron . --dev"
+  },
+  "dependencies": {
+    "electron-updater": "^6.6.2"
+  },
+  "devDependencies": {
+    "electron": "^38.2.0",
+    "electron-builder": "^26.0.12",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.9.3"
+  }
+}
