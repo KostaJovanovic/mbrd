@@ -346,7 +346,13 @@ const webFiles: FilesPort = {
   canPick,
 
   async pickOpen(spec: PickSpec) {
-    if (hasWindow() && typeof window.showOpenFilePicker === 'function') {
+    // No window at all is the strongest form of "this browser has no picker",
+    // and it is the case a test runs in. Without this the fallback below reaches
+    // for #file-input and throws a ReferenceError, which no caller reads as a
+    // dismissal - the one shape of failure this whole file exists to keep
+    // consistent.
+    if (!hasWindow()) throw abort('No file picker here');
+    if (typeof window.showOpenFilePicker === 'function') {
       const [handle] = await window.showOpenFilePicker({ types: spec.types, multiple: false });
       if (!handle) throw abort('Nothing picked');
       return { file: await handle.getFile(), ref: refFor(handle) };

@@ -723,7 +723,7 @@ blank. A group with a skipped task is not done.
 | --- | --- | --- |
 | A | DONE | `pickOpen`/`pickSave` take the picker types as an argument — see below |
 | B | DONE | `read`, `refForHandle`, `OpenedFile` added to the port — see below |
-| C | | |
+| C | DONE | C3 skips until `desktop/` exists; two real bugs found — see below |
 | D | | |
 | E | | 300-photo board: save ms / boot ms, desktop vs browser: |
 | F | | accelerator check result → plan §12 |
@@ -788,3 +788,24 @@ opened if the ref were dropped.
 IndexedDB: it impersonates the whole of `idb.ts`'s contract instead of the
 database underneath it, which is the seam both real backends sit behind. C2
 uses the same helper.
+
+**C found two bugs in B, which is what it was for.** `pickOpen()` reached the
+hidden-`<input>` fallback with no `window` at all and threw a ReferenceError
+rather than an `AbortError`, so the one shape of failure this whole port keeps
+consistent was inconsistent in the one case a test runs in. And `exportBoard()`
+wrote to `doc ?? {name}`, which on a browser with no picker but a stale
+document would have written back to a file nobody was shown a dialog for; it is
+`picking && doc ? doc : {name}` now, which is the branch the file always had.
+
+**C, C2 — `tests/store-backend.test.js` rather than a section of
+`platform.test.js`.** Two subjects: what a port answers unwired, and whether
+`session.ts` still works over a store with no transactions. The second holds
+`idb.ts`'s two stated contracts — a `setMany()` that tears is survivable
+because of `writeSnapshot()`'s order, and a `clear()` that tears must reject,
+which is PERSIST-03 and the one that would be a privacy failure.
+
+**C, C3 — the skip is conditional on `desktop/package.json`, as specified, and
+the assertion inside it is not.** Once `desktop/` exists, a missing
+`desktop/menu.ts` fails rather than skips. There is also a named check that
+`saveAs` is on the menu: it is the one command that exists *because* of the
+desktop, so it is the entry a sweep would most easily pass over.
