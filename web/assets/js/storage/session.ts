@@ -338,6 +338,13 @@ export async function drainSave() {
  * the board just written does not mention, so a failure anywhere earlier
  * leaves the previous snapshot and its assets completely intact - the sweep
  * simply does not happen that time round.
+ *
+ * That order is also what lets storage/idb.js be written against a store that
+ * is not a database. Its batch forms are one transaction on IndexedDB and are
+ * not on the desktop's file backend, so a torn setMany() is a thing this
+ * function has to survive - and it does, by the three steps above, leaving at
+ * worst an asset nobody references yet. See idb.js's header before relying on
+ * a batch landing whole.
  */
 async function writeSnapshot() {
   if (!cacheOk) {

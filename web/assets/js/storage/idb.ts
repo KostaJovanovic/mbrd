@@ -3,6 +3,41 @@
 // Two stores: `kv` holds the board snapshot and bookkeeping, `assets` holds the
 // raw Blobs keyed by content hash. This is the crash-recovery layer only - the
 // durable artefact is always the .mbrd file the user saves.
+//
+// ── This file is already a port ──
+//
+// The eight exports at the foot are the entire surface session.js, library.js
+// and matte-cache.js are written against, and none of them says the word
+// IndexedDB. So making recovery live somewhere else is not a change to those
+// three files: it is a second implementation of eight functions, wired through
+// setStoreBackend(). The desktop writes `userData/store/<store>/<key>` from its
+// main process for exactly that reason - Chromium's IndexedDB partition is the
+// browser's to evict, and app data is not. See research/electron-2026-09-06.md
+// §4 *store*.
+//
+// **The batch forms lose "all land or none" on a backend that is not a
+// database, and that is safe because of an order somebody already argued.** A
+// file backend writes keys one at a time, so a crash can land three of five.
+// writeSnapshot() in session.js writes the assets first, the snapshot second
+// and sweeps last, precisely so a half-finished write is never a snapshot
+// pointing at bytes that are not there - the worst a torn batch leaves is an
+// asset nobody references yet, which is what the sweep is for. Read that
+// function's header before changing this one's contract.
+//
+// **`clear()` is the exception and must be all-or-nothing on every backend.**
+// It is not covered by the paragraph above, because the ordering argument is
+// about writes. clearAllData() in session.js drops the write latch, drains the
+// writer and *reports a failed wipe* rather than reloading over it - that was
+// PERSIST-03 and it is the reason a partial wipe has to come back as a
+// rejection. A backend whose clear() deletes what it can and resolves anyway
+// turns a reported failure into a silent half-erased store.
+//
+// **Keys are strings on a backend that is not IndexedDB.** The signatures below
+// say IDBValidKey because they always did and forty callers pass strings; a
+// file backend has to reject anything else rather than coerce it, since a path
+// is where the key ends up. Case is the other half of that: NTFS and APFS fold
+// it, so a backend keying files by name needs its keys lowercase or hashed.
+// Asset keys are lowercase hex out of crypto.js and are safe as they are.
 
 const DB_NAME = 'mbrd';
 // v2 adds the `library` store, v3 the `matte` one. Both are purely additive -
@@ -225,6 +260,69 @@ function tx<F extends Issued>(
 }
 
 /**
+ * Where the working-state cache actually lives.
+ *
+ * Eight operations, which is the whole of what this file ever offered anybody.
+ * The names drop the `idb` prefix because the second implementation of this is
+ * not IndexedDB; the exports below keep it because forty call sites use it and
+ * renaming them would be a diff about nothing.
+ *
+ * Note what is *not* here: no transaction, no connection, no upgrade. Those are
+ * the default backend's private business, and a backend that has no such
+ * concepts - a directory of files - implements this interface without pretending
+ * to. The contract is only the one at the top of this file: keys are strings
+ * outside IndexedDB, `clear()` is all-or-nothing, and the batch forms may tear.
+ */
+export interface StoreBackend {
+  get(store: StoreName, key: IDBValidKey): Promise<unknown>;
+  set(store: StoreName, key: IDBValidKey, value: unknown): Promise<unknown>;
+  del(store: StoreName, key: IDBValidKey): Promise<unknown>;
+  keys(store: StoreName): Promise<IDBValidKey[]>;
+  clear(store: StoreName): Promise<unknown>;
+  getMany(store: StoreName, keys: IDBValidKey[]): Promise<unknown[]>;
+  setMany(store: StoreName, entries: [IDBValidKey, unknown][]): Promise<unknown>;
+  delMany(store: StoreName, keys: IDBValidKey[]): Promise<unknown>;
+}
+
+/**
+ * The default: everything above this line.
+ *
+ * The batch forms are empty in, empty out, without opening a transaction to do
+ * nothing - the autosave sweep reaches all three of them on a board where
+ * nothing changed, which is most of the time.
+ */
+const idbBackend: StoreBackend = {
+  get: (store, key) => tx(store, 'readonly', s => s.get(key)),
+  set: (store, key, value) => tx(store, 'readwrite', s => s.put(value, key)),
+  del: (store, key) => tx(store, 'readwrite', s => s.delete(key)),
+  keys: store => tx(store, 'readonly', s => s.getAllKeys()),
+  clear: store => tx(store, 'readwrite', s => s.clear()),
+  getMany: (store, keys) =>
+    keys.length ? tx(store, 'readonly', s => keys.map(k => s.get(k))) : Promise.resolve([]),
+  // All of them land, or none do - one transaction, which is the guarantee a
+  // file backend cannot make and the header says nobody may rely on.
+  setMany: (store, entries) =>
+    entries.length ? tx(store, 'readwrite', s => entries.map(([k, v]) => s.put(v, k))) : Promise.resolve([]),
+  delMany: (store, keys) =>
+    keys.length ? tx(store, 'readwrite', s => keys.map(k => s.delete(k))) : Promise.resolve([]),
+};
+
+let backend: StoreBackend = idbBackend;
+
+/**
+ * Put the cache somewhere else. main.js calls this once on the desktop, with a
+ * backend that writes files; `null` puts IndexedDB back, which is what a test
+ * that drove a fake through here wants in its teardown.
+ *
+ * Wired *before* anything reads the store, and main.js's own ordering comment
+ * says so: restoreSession() runs later in boot, but a swap after a read would
+ * mean the session came from one store and the writes go to another.
+ */
+export function setStoreBackend(b: StoreBackend | null | undefined): void {
+  backend = b ?? idbBackend;
+}
+
+/**
  * The value stored under `key`, or undefined if there is none.
  *
  * `unknown` rather than a shape: what comes out was written by some build of
@@ -233,26 +331,22 @@ function tx<F extends Issued>(
  * Blob, a version field - and this is the type saying they must.
  */
 export const idbGet = (store: StoreName, key: IDBValidKey): Promise<unknown> =>
-  tx(store, 'readonly', s => s.get(key));
+  backend.get(store, key);
 export const idbSet = (store: StoreName, key: IDBValidKey, value: unknown) =>
-  tx(store, 'readwrite', s => s.put(value, key));
+  backend.set(store, key, value);
 export const idbDel = (store: StoreName, key: IDBValidKey) =>
-  tx(store, 'readwrite', s => s.delete(key));
+  backend.del(store, key);
 export const idbKeys = (store: StoreName): Promise<IDBValidKey[]> =>
-  tx(store, 'readonly', s => s.getAllKeys());
-export const idbClear = (store: StoreName) => tx(store, 'readwrite', s => s.clear());
-
-// The batch forms. Empty in, empty out, without opening a transaction to do
-// nothing - the autosave sweep reaches all three of these on a board where
-// nothing changed, which is most of the time.
+  backend.keys(store);
+export const idbClear = (store: StoreName) => backend.clear(store);
 
 /** Values for `keys`, in that order. A missing key reads as undefined. */
 export const idbGetMany = (store: StoreName, keys: IDBValidKey[]): Promise<unknown[]> =>
-  keys.length ? tx(store, 'readonly', s => keys.map(k => s.get(k))) : Promise.resolve([]);
+  backend.getMany(store, keys);
 
-/** Write `[key, value]` pairs. All of them land, or none do. */
+/** Write `[key, value]` pairs. See the header on what a backend promises. */
 export const idbSetMany = (store: StoreName, entries: [IDBValidKey, unknown][]) =>
-  entries.length ? tx(store, 'readwrite', s => entries.map(([k, v]) => s.put(v, k))) : Promise.resolve([]);
+  backend.setMany(store, entries);
 
 export const idbDelMany = (store: StoreName, keys: IDBValidKey[]) =>
-  keys.length ? tx(store, 'readwrite', s => keys.map(k => s.delete(k))) : Promise.resolve([]);
+  backend.delMany(store, keys);

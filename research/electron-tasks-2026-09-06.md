@@ -721,7 +721,7 @@ blank. A group with a skipped task is not done.
 
 | group | status | notes |
 | --- | --- | --- |
-| A | | |
+| A | DONE | `pickOpen`/`pickSave` take the picker types as an argument — see below |
 | B | | |
 | C | | |
 | D | | |
@@ -731,3 +731,31 @@ blank. A group with a skipped task is not done.
 | H | | universal DMG: worked / fell back |
 | I | | |
 | J | | |
+
+### Notes from the work
+
+**A, A1 — the picker types are an argument.** §4 has `pickOpen()` and
+`pickSave(suggested)` knowing what a `.mbrd` is. They cannot: the MIME type is
+`storage/mbrd.ts`'s one exported `MIME`, `platform/` is BASE and sits under
+`storage/`, and a second copy of that string down there is the thing
+`docs/mbrd-format.md` exists to prevent. So both take a `PickerType[]` and the
+caller passes its own `PICKER_TYPES`. The desktop adapter hands the same list
+to Electron's dialog filters, so it is one list in one place either way.
+
+**A, A1 — `canPick()` is a seventh method on `FilesPort`.** Without it there is
+no way for `exportBoard()` to tell "the person dismissed the dialog" from "this
+browser has no dialog", and those two have to end differently: dismissed is
+`false` and silence, no-dialog is a download. That is `canPickFiles()` in
+`storage.ts` today, asked of the port instead of of `window`. B1 is where it
+gets its callers.
+
+**A, A1 — two fallbacks are still in `storage.ts` and B1 moves them.** The
+hidden-`<input>` picker (`pickViaInput()`) is shared with `import/drop.ts`
+through `dataset.mode`, and moving it in A would have been a copy living in two
+files for a commit. `pickOpen` and `pickImport` reject as dismissed until then;
+nothing calls either, because A is unwired. Both are marked `TODO(B1)`.
+
+**A, A3 — the eight exports keep their return values, not just their names.**
+`idbSetMany` and `idbDelMany` resolve to an array and `tests/idb.test.js`
+asserts the empty-batch case is `[]`. `StoreBackend`'s mutations are typed
+`Promise<unknown>` for that reason; a tidier `Promise<void>` is a red test.
