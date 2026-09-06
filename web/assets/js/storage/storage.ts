@@ -443,8 +443,14 @@ export async function exportBoard({ pickNew = false, history = true } = {}) {
       // rename. `data.title` rather than `board.title` for the fallback name:
       // without a picker nothing renamed the board, so the name comes from what
       // was actually packed.
+      // `picking &&` rather than just `doc ??`, so the two endings stay the two
+      // endings this always had: with a picker the document is written, without
+      // one the file is named from what was packed. A stale document reached on
+      // the second branch would write back to a file the person was never shown
+      // a dialog for.
       if (picking) job.label('Writing the file');
-      await platform.files.write(doc ?? { name: fileNameFor(data.title) }, blob);
+      await platform.files.write(
+        picking && doc ? doc : { name: fileNameFor(data.title) }, blob);
     } finally {
       job.end();
     }
