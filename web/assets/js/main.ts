@@ -1245,6 +1245,36 @@ platform.lifecycle.onOpenFiles(files => {
 // `web/` from its own scheme - a worker registered over that would be a second
 // cache in front of files that are already local. sw.js and SHELL are untouched;
 // the worker is simply never registered there, so its cache is never populated.
+// The desktop's half of the same sentence.
+//
+// The block below this one is the web's updater: a service worker self-promotes
+// and the toast says "reload to update". There is no worker here, so this says
+// the same thing with electron-updater behind it - and in one of two shapes,
+// because a portable copy and an unsigned macOS build cannot replace
+// themselves. Those are told the version and given the release page instead of
+// a button that cannot work, which is the honest half of plan §1's decision to
+// ship unsigned.
+//
+// Both the announcement and the check, because an update found before the
+// window existed would otherwise be lost: the shell pushes when it finds one,
+// and this asks once in case it already had.
+if (bridge) {
+  const announceUpdate = (info: { version: string, canInstall: boolean } | null) => {
+    if (!info) return;
+    if (info.canInstall) {
+      toast(`v${info.version} will install when you quit`);
+    } else {
+      // No button. A toast in this app is a receipt, not a dialog - see
+      // notify.ts - and "go and download it" is a sentence, not an action this
+      // page can take: the shell opens the release page through the same
+      // external-link path every other outbound link in the app uses.
+      toast(`v${info.version} is out — download it from the releases page`);
+    }
+  };
+  bridge.updates.onFound(announceUpdate);
+  void platform.updates.check().then(announceUpdate);
+}
+
 if (!isDesktop() && 'serviceWorker' in navigator) {
   // A new worker installing while a page is already controlled means a fresh
   // build shipped mid-session. sw.js self-promotes (skipWaiting + claim), so

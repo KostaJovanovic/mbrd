@@ -36,7 +36,7 @@
 
 import type {
   Platform, FilesPort, LifecyclePort, NativePort, UpdatesPort,
-  DocumentRef, OpenedFile, PickSpec, TranscodeOpts, UpdateInfo,
+  DocumentRef, OpenedFile, PickSpec, TranscodeOpts,
 } from './platform.ts';
 // Note what is *not* imported here: `StoreBackend` from storage/idb.ts.
 //
@@ -88,6 +88,15 @@ export interface Bridge {
     transcode(bytes: ArrayBuffer, opts: unknown): Promise<Uint8Array | null>;
     matte(input: Float32Array): Promise<Float32Array | null>;
     decode(bytes: ArrayBuffer, name: string): Promise<Uint8Array | null>;
+  };
+  updates: {
+    check(): Promise<{ version: string, canInstall: boolean } | null>;
+    install(): void;
+    // Typed rather than `unknown`, because the only sender is
+    // desktop/updates.ts and the only thing it sends is its own Available.
+    // Leaving it wide would push a cast onto main.ts for a shape both sides of
+    // this bridge already agree on.
+    onFound(fn: (info: { version: string, canInstall: boolean }) => void): void;
   };
   startupNotes(): Promise<string>;
   setDocument(state: { title: string, name: string | null, path: string | null, dirty: boolean }): void;
@@ -395,11 +404,20 @@ function electronNative(bridge: Bridge): NativePort {
   };
 }
 
-/** Group I. Until then the desktop is told about no updates, which is honest. */
-function electronUpdates(_bridge: Bridge): UpdatesPort {
+/**
+ * New versions, which on the web are the service worker's business and here
+ * are electron-updater's.
+ *
+ * Two shapes, and `canInstall` is which. A portable copy and an unsigned macOS
+ * build cannot replace themselves - the first because it wrote nothing an
+ * installer could replace, the second because Squirrel.Mac refuses an unsigned
+ * update - so both are told about the version and given a link rather than a
+ * button that cannot work. desktop/updates.ts decides; this only carries it.
+ */
+function electronUpdates(bridge: Bridge): UpdatesPort {
   return {
-    check: async (): Promise<UpdateInfo | null> => null,
-    install: () => {},
+    check: () => bridge.updates.check().catch(() => null),
+    install: () => bridge.updates.install(),
   };
 }
 

@@ -729,7 +729,7 @@ blank. A group with a skipped task is not done.
 | F | DONE | accelerator check **NOT DONE** — needs a person on each OS, see below |
 | G | DONE | gyan.dev 7.1 essentials (GPL, no non-free); matte 13 ms on DirectML |
 | H | DONE (Windows) | Setup.exe built and the packaged app runs; **DMG and AppImage not built** — see below |
-| I | | |
+| I | DONE (untested) | no tag pushed — the workflow has never run |
 | J | | |
 
 ### Notes from the work
@@ -946,6 +946,27 @@ should live.
 between a dev run and a packaged one, which is convenient, but it is the
 package's name rather than the product's. Worth a maintainer's decision before
 anyone has data in it; `productName: mbrd` in `desktop/package.json` moves it.
+
+**I — the release workflow has never run, and cannot be run from here.** It
+fires on a `desktop-v*` tag, and pushing one is the maintainer's — rule 10 says
+not to push at all. The YAML parses and every step was written against the
+tools it calls, but "a tag produces a draft release with three assets" is
+unverified. The first real tag is the test.
+
+**I — the tag/stamp check is the first step, before anything is built.** A tag
+that says v0.281 while `version.js` says v0.280 would produce installers whose
+update metadata points at a release that is not what it claims to be, and every
+copy in the field would compare against the wrong number for good. Failing
+before the build is what keeps that from being a thing anybody has to notice.
+
+**I — `fail-fast: false` on the matrix.** A macOS build that falls over on the
+universal binary should still leave a Windows and a Linux artefact on the draft,
+which is most of a release. That is also the failure the plan predicts as most
+likely (§1's two-DMG fallback).
+
+**I — the updater is off unless `app.isPackaged`.** `desktop/package.json`
+carries 0.0.0 in the repository, so an unpackaged run would find every release
+on GitHub newer than itself and offer to install one over a working tree.
 
 **C, C3 — the skip is conditional on `desktop/package.json`, as specified, and
 the assertion inside it is not.** Once `desktop/` exists, a missing
