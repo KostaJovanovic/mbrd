@@ -82,6 +82,13 @@ export interface Bridge {
     read(path: string): Promise<HandedFile>;
     exists(path: string): Promise<boolean>;
   };
+  native: {
+    can(): Promise<{ transcode: boolean, matte: boolean }>;
+    firstFrame(bytes: ArrayBuffer): Promise<Uint8Array | null>;
+    transcode(bytes: ArrayBuffer, opts: unknown): Promise<Uint8Array | null>;
+    matte(input: Float32Array): Promise<Float32Array | null>;
+    decode(bytes: ArrayBuffer, name: string): Promise<Uint8Array | null>;
+  };
   setDocument(state: { title: string, name: string | null, path: string | null, dirty: boolean }): void;
   relaunch(): void;
   onClose(fn: () => Promise<void>): void;
@@ -315,19 +322,75 @@ function electronLifecycle(bridge: Bridge): LifecyclePort {
 }
 
 /**
- * Still null, all four of them.
+ * The four native answers, and the one rule they all keep.
  *
- * Group G is what fills these in - ffmpeg, onnxruntime-node, sharp - and until
- * then the desktop takes the same wasm and browser paths the web does. That is
- * why the protocol is "answer null and let the caller fall through": a shell
- * with no native side is not a broken shell, it is a slower one.
+ * **Null means "I cannot help; use your own path", and every caller has one.**
+ * optimize/media.ts has the wasm encoder behind firstFrame, canvas/matte.ts has
+ * its worker behind matte, import/drop.ts has the browser's own decoder behind
+ * decode. So a build with no ffmpeg beside it, or a machine whose GPU refuses,
+ * is a slower desktop and not a broken one - and none of those four modules
+ * needs a branch that knows which shell it is in.
+ *
+ * A rejection would break that. Anything that goes wrong on the far side is
+ * logged there and comes back as null here, including a channel that is not
+ * registered at all, which is what an older shell loading a newer bundle looks
+ * like.
  */
-function electronNative(_bridge: Bridge): NativePort {
+function electronNative(bridge: Bridge): NativePort {
+  // Asked once, at boot, and remembered. The question the optimiser asks is
+  // synchronous - it is building a plan, not doing work - and the answer cannot
+  // change under a running process: a binary either shipped beside this app or
+  // it did not. False until the answer arrives, which is the safe direction: a
+  // feature that appears a moment late beats one that appears and then fails.
+  let canTranscode = false;
+  bridge.native.can()
+    .then(can => { canTranscode = can.transcode; })
+    .catch(() => { /* an older shell with no such channel; false stands */ });
+
+  // A copy into a plain ArrayBuffer rather than the view as it arrived. Node's
+  // Buffer is a Uint8Array over a possibly-shared allocation, and a Blob wants
+  // a definitely-unshared one; the copy is also what stops the renderer holding
+  // a window onto whatever else was in the pool it crossed on.
+  const bytesToBlob = (data: Uint8Array | null, type: string): Blob | null => {
+    if (!data?.length) return null;
+    const buffer = new ArrayBuffer(data.length);
+    new Uint8Array(buffer).set(data);
+    return new Blob([buffer], { type });
+  };
+
+  // A failure here is a shell that cannot do the thing, which is the same
+  // answer as a shell that will not - so every one of these collapses to null
+  // rather than distinguishing them for a caller that would not use the
+  // difference.
+  const quiet = async <T>(work: Promise<T>): Promise<T | null> => {
+    try {
+      return await work;
+    } catch (err) {
+      console.warn('[mbrd] the shell could not do that natively:', err);
+      return null;
+    }
+  };
+
   return {
-    firstFrame: async () => null,
-    transcode: async (_bytes: ArrayBuffer, _name: string, _opts: TranscodeOpts) => null,
-    matte: async () => null,
-    decode: async () => null,
+    canTranscode: () => canTranscode,
+
+    firstFrame: async (bytes: ArrayBuffer) =>
+      bytesToBlob(await quiet(bridge.native.firstFrame(bytes)), 'image/png'),
+
+    transcode: async (bytes: ArrayBuffer, _name: string, opts: TranscodeOpts) =>
+      bytesToBlob(await quiet(bridge.native.transcode(bytes, opts)), 'video/mp4'),
+
+    matte: async (input: Float32Array) => quiet(bridge.native.matte(input)),
+
+    decode: async (bytes: ArrayBuffer, name: string) => {
+      const png = bytesToBlob(await quiet(bridge.native.decode(bytes, name)), 'image/png');
+      if (!png) return null;
+      // Turned into a bitmap here rather than in main, because an ImageBitmap
+      // is a renderer object - it cannot cross the bridge, and the far side has
+      // no canvas to make one on. What travels is PNG bytes, which is the one
+      // format both sides certainly agree about.
+      return createImageBitmap(png);
+    },
   };
 }
 

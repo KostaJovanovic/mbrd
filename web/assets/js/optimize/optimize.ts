@@ -35,6 +35,7 @@ import { PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS } from '../import/formats.
 import { coverArt, audioTags } from '../import/artwork.ts';
 import { shrinkPicture, makeThumb, MAX_SIDE, MAX_SIDE_COVER, QUALITY } from './picture.ts';
 import { toOpus, opusAvailable } from './opus.ts';
+import { platform } from '../platform/platform.ts';
 
 /** Which of the encoders a file belongs to. Null is "leave it alone". */
 type MediaKind = 'image' | 'audio' | 'video';
@@ -55,6 +56,17 @@ type EmptyEntry = { id: string, asset: boolean, cover: boolean, name: string };
 export type Plan = {
   pictures: Job[],
   sounds: Job[],
+  /**
+   * Clips this shell can shrink, which on the web is always none.
+   *
+   * The header of optimize/media.ts argues why video was dropped there: a
+   * single-threaded wasm encoder pins a core for the length of the clip, which
+   * is not a trade worth making for a board you look at. A native ffmpeg has
+   * none of that problem, so on the desktop the clips come out of `skipped` and
+   * into a bucket that is actually encoded. It is the first user-visible thing
+   * the desktop does that the browser does not.
+   */
+  clips: Job[],
   skipped: Job[],
   empty: EmptyEntry[],
   done: number,
@@ -149,7 +161,7 @@ type Swap = { id: string, asset: string | undefined, cover: string | null | unde
  */
 export function planOptimize(): Plan {
   const seen = new Set<string>();
-  const plan: Plan = { pictures: [], sounds: [], skipped: [], empty: [], done: 0, total: 0, posters: 0 };
+  const plan: Plan = { pictures: [], sounds: [], clips: [], skipped: [], empty: [], done: 0, total: 0, posters: 0 };
 
   for (const item of cards()) {
     // Files with no bytes in them, which is the one case here that is a removal
@@ -215,8 +227,12 @@ export function planOptimize(): Plan {
       const entry: Job = { hash, size: asset.size, name, isCover, kind };
       if (kind === 'image') plan.pictures.push(entry);
       else if (kind === 'audio') plan.sounds.push(entry);
-      // Video is bucketed with the skips - counted so a dialog can say how many
-      // clips it is leaving alone, but never encoded. See the module note.
+      // Video is bucketed with the skips on the web - counted so a dialog can
+      // say how many clips it is leaving alone, but never encoded. See the
+      // module note. On a shell with a native encoder it goes in a bucket that
+      // is encoded, and the dialog counts it among the work rather than among
+      // the exemptions.
+      else if (kind === 'video' && platform.native.canTranscode()) plan.clips.push(entry);
       else plan.skipped.push(entry);
     }
   }
@@ -324,6 +340,24 @@ async function pool<T>(
  * Thumbnails are cheapest, because past this change they decode straight to a
  * hundred pixels rather than in full - see the width hint in backfillThumbs().
  */
+/**
+ * The ceilings a clip is shrunk to, on the one shell that shrinks clips.
+ *
+ * Here rather than in desktop/native/ffmpeg.ts for the reason every other
+ * ceiling in this app is where it is: the number belongs beside the argument
+ * for it, and the argument is this module's. 1600 is the long edge a board card
+ * is ever drawn at with room to spare on a retina screen, and it is the same
+ * shape of decision MAX_SIDE makes for a photograph. The bitrate is what H.264
+ * needs to look untouched at that size for the kind of clip that ends up on a
+ * board - a phone video, not a film.
+ *
+ * `scale='min(N,iw)'` on the far side means a clip already under the ceiling is
+ * left at its own size rather than blown up to it, which is the rule the
+ * picture path follows too.
+ */
+const MAX_VIDEO_EDGE = 1600;
+const VIDEO_BITRATE = 2_500_000;
+
 const LANES = {
   get media() { return Math.max(1, Math.min(4, cores() - 1)); },
   get thumbs() { return Math.max(1, Math.min(6, cores() - 1)); },
@@ -367,7 +401,7 @@ export async function runOptimize(
       ? `Remove ${doomed.length} empty files` : 'Remove empty file');
   }
 
-  const jobs = [...plan.pictures, ...plan.sounds];
+  const jobs = [...plan.pictures, ...plan.sounds, ...plan.clips];
   // hash -> the hash of the smaller file that replaces it. One entry per set of
   // bytes, not per card, so nine tracks sharing one cover re-encode it once.
   // Keyed by hash, and asked with a hash that a card may not have: `undefined`
@@ -722,6 +756,18 @@ async function encodeOne(asset: AssetEntry, job: Job) {
   // No WebCodecs Opus means no sound encoder at all now - a browser old enough
   // that this is theoretical. Left alone rather than downloaded for.
   if (job.kind === 'audio' && opusAvailable()) return toOpus(asset.blob, await carried(asset));
+  if (job.kind === 'video') {
+    // Only ever reached on a shell that said it could - planOptimize() puts a
+    // clip in this bucket on no other condition - so a null here is a clip
+    // ffmpeg could not read rather than a feature that is not offered. Null is
+    // "leave it alone", which is the same answer the whole board got before.
+    const smaller = await platform.native.transcode(
+      await asset.blob.arrayBuffer(), job.name, { maxEdge: MAX_VIDEO_EDGE, bitrate: VIDEO_BITRATE });
+    // The same rule the picture path takes: a "smaller" file that is not
+    // smaller is not an improvement, and swapping it would spend a second
+    // generation of loss on nothing.
+    return smaller && smaller.size < asset.size ? { blob: smaller } : null;
+  }
   return null;
 }
 

@@ -727,7 +727,7 @@ blank. A group with a skipped task is not done.
 | D | DONE | boots over `app://`, no CSP violation; C3 red until F as designed |
 | E | DONE | 300 x 2 MB: write 447 ms, read 341 ms — see below |
 | F | DONE | accelerator check **NOT DONE** — needs a person on each OS, see below |
-| G | | ffmpeg build chosen: |
+| G | DONE | gyan.dev 7.1 essentials (GPL, no non-free); matte 13 ms on DirectML |
 | H | | universal DMG: worked / fell back |
 | I | | |
 | J | | |
@@ -876,6 +876,41 @@ box — where the page's handler is not what the OS is talking to. The board's
 own clipboard commands are still bound to the same keystrokes by
 `canvas/input.ts` and still act on cards. Both are correct at once because they
 act on different things, and the OS decides which by what has focus.
+
+**G — measured, all three, on this machine.** A cut-out is **13 ms** on
+DirectML against the wasm worker's ~2 s, with the session itself taking 2.2 s to
+build once. A poster frame through an ffmpeg pipe is **60 ms** with no network
+at all, against a 32 MB CDN download and a single-threaded wasm decode. sharp
+round-trips a TIFF to PNG. The ffmpeg pipe commands were run exactly as
+`native/ffmpeg.ts` issues them, including the fragmented-MP4 flags a pipe needs.
+
+**G — the ffmpeg build is gyan.dev 7.1 `essentials`, which answers plan §12's
+second open question.** GPL, no non-free codecs (no libfdk-aac), 87.6 MB on
+Windows. `desktop/scripts/fetch-ffmpeg.mjs` pins that version rather than
+tracking latest — a build that changes under a release is a release nobody can
+reproduce — and refuses a download too small to be an encoder, which is the
+failure that actually happens (a CDN serving an HTML error page with a 200).
+**The notice still has to go in the About sheet**; that is not done.
+
+**G — `NativePort` gained `canTranscode()`, which is synchronous.** Everything
+else in that port answers "do this", after somebody pressed something. The
+optimiser has to answer "should this even be *offered*" while building a plan,
+and a button that appears and then fails is worse than one that was never there.
+The adapter asks the shell once at boot and caches it; the answer cannot change
+under a running process, since a binary either shipped beside the app or did
+not.
+
+**G — video optimisation is back, and it is the first thing the desktop does
+that the browser does not.** `Plan` gained a `clips` bucket that is empty on the
+web by construction. A clip that does not come out smaller is left alone — the
+same rule the picture path takes, and not a hypothetical: the synthetic clip
+used to test the pipe transcoded to 149% of its input.
+
+**G — the native modules are `--external` in the esbuild command.** sharp and
+onnxruntime-node carry `.node` binaries esbuild cannot inline, and the failure
+is a build error rather than a subtle one. electron-updater is external too, so
+electron-builder can find it in the packaged `node_modules` to wire its
+metadata.
 
 **C, C3 — the skip is conditional on `desktop/package.json`, as specified, and
 the assertion inside it is not.** Once `desktop/` exists, a missing

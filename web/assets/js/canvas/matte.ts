@@ -69,6 +69,7 @@
 // throws.
 
 import { canvasReads, surface, type Surface } from './surface.ts';
+import { platform, isDesktop } from '../platform/platform.ts';
 
 /**
  * The two vendored things, pinned.
@@ -164,6 +165,10 @@ let queue: Promise<unknown> = Promise.resolve();
  * the rest of the session.
  */
 export function matteAvailable(): boolean {
+  // The shell can do this without a worker at all, so a browser test for one is
+  // the wrong question there. It still has to be able to *read* a canvas, since
+  // that is where the pixels come from and where they go back.
+  if (isDesktop()) return canvasReads();
   if (typeof Worker !== 'function' || spawnFailed) return false;
   return canvasReads();
 }
@@ -192,7 +197,12 @@ export function cutout(face: Surface, w: number, h: number): Promise<boolean> {
 async function run(face: Surface, w: number, h: number): Promise<boolean> {
   const input = preprocess(face, w, h);
   if (!input) return false;
-  const mask = await ask(input);
+  // The shell first, and the worker behind it. Same model, same numbers, same
+  // 1x3x320x320 tensor in and mask out - the only difference is a runtime that
+  // can reach the machine, which is a two-second stall becoming a fifth of one.
+  // Unwired, and on a desktop whose provider declined, this resolves null and
+  // the worker below answers exactly as it always did.
+  const mask = (await platform.native.matte(input)) ?? await ask(input);
   if (!mask) return false;
   return applyMask(face, w, h, mask);
 }

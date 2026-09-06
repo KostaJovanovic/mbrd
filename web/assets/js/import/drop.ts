@@ -6,6 +6,7 @@
 // forty photos lands as a spiral around the cursor rather than a stack.
 
 import { extOf } from '../util.ts';
+import { platform } from '../platform/platform.ts';
 import { toast, busy } from '../notify.ts';
 import { cue } from '../cuelume/engine.ts';
 import {
@@ -1062,7 +1063,19 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
     // import/preview.js, and the note there on why iOS 27 makes this urgent.
     const portable = !NOT_PORTABLE.has(extOf(file.name));
     if (type === 'image' && (!size.decodable || !portable)) {
-      const preview = await asking(file, l => embeddedPreview(file, l));
+      // The shell first, and everything below is unchanged.
+      //
+      // A native decoder reads the *real* picture, where the path below goes
+      // looking for whatever preview the camera happened to bake in - which is
+      // absent on some files and a postage stamp on others. Both produce the
+      // same thing as far as this function is concerned: a decodable stand-in
+      // that the card draws while `asset.hash` still names the untouched
+      // original, so the .mbrd is byte-identical either way.
+      //
+      // Unwired, and for every format the shell does not know, this resolves
+      // null and the embedded-preview path runs exactly as it always did.
+      const preview = await nativePreview(file)
+        ?? await asking(file, l => embeddedPreview(file, l));
       // Budgeted for the same reason the baked path above now is. preview.ts
       // verifies the lead bytes are FF D8 FF and admits a JPEG up to MAX_JPEG
       // (128 MB) with no dimension check at all - so a .dng whose
@@ -1588,5 +1601,42 @@ async function walkEntry(entry: FileSystemEntry, out: File[], depth = 0, seen = 
     if (!batch.length) break;
     for (const child of batch) await walkEntry(child, out, depth + 1, seen);
     if (out.length >= MAX_FILES) break;
+  }
+}
+
+
+/**
+ * The picture a native decoder can read, as a File the rest of this path
+ * already knows how to handle.
+ *
+ * A PNG, because that is what desktop/native/decode.ts hands back and because
+ * the alternative - a second lossy step on a photograph nobody asked to
+ * compress - is the wrong default for the one copy the card will draw. The name
+ * carries the original's stem so a card that falls back to a filename still
+ * says something recognisable.
+ *
+ * Null for every failure and on every browser, which is the protocol every
+ * native port in this app takes: the caller has a path behind this one.
+ */
+async function nativePreview(file: File): Promise<File | null> {
+  const bitmap = await platform.native.decode(await file.arrayBuffer(), file.name);
+  if (!bitmap) return null;
+  try {
+    // Back to bytes, because everything downstream measures and stores a File.
+    // Drawn rather than re-read: the decoder handed back a bitmap, and this is
+    // the one place that has a canvas to put it on.
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.drawImage(bitmap, 0, 0);
+    const blob = await canvas.convertToBlob({ type: 'image/png' });
+    const stem = file.name.replace(/\.[^.]*$/, '');
+    return new File([blob], stem + '.png', { type: 'image/png' });
+  } catch {
+    return null;
+  } finally {
+    // The bitmap holds decoded pixels until it is closed, and a board of
+    // photographs would otherwise hold every one of them at once.
+    bitmap.close();
   }
 }
