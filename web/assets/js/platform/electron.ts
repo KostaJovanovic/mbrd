@@ -82,9 +82,11 @@ export interface Bridge {
     read(path: string): Promise<HandedFile>;
     exists(path: string): Promise<boolean>;
   };
+  setDocument(state: { title: string, name: string | null, path: string | null, dirty: boolean }): void;
   relaunch(): void;
   onClose(fn: () => Promise<void>): void;
   onOpenFiles(fn: (files: HandedFile[]) => void): void;
+  onCommand(fn: (cmd: string) => void): void;
 }
 
 /** A file main read for us: bytes, and what it was called and where. */
@@ -344,6 +346,12 @@ export function electronPlatform(bridge: Bridge): Platform {
     lifecycle: electronLifecycle(bridge),
     native: electronNative(bridge),
     updates: electronUpdates(bridge),
+    setDocument: state => bridge.setDocument({
+      title: state.title,
+      name: state.ref?.name ?? null,
+      path: state.ref?.path ?? null,
+      dirty: state.dirty,
+    }),
     relaunch: () => bridge.relaunch(),
   };
 }

@@ -726,7 +726,7 @@ blank. A group with a skipped task is not done.
 | C | DONE | C3 skips until `desktop/` exists; two real bugs found — see below |
 | D | DONE | boots over `app://`, no CSP violation; C3 red until F as designed |
 | E | DONE | 300 x 2 MB: write 447 ms, read 341 ms — see below |
-| F | | accelerator check result → plan §12 |
+| F | DONE | accelerator check **NOT DONE** — needs a person on each OS, see below |
 | G | | ffmpeg build chosen: |
 | H | | universal DMG: worked / fell back |
 | I | | |
@@ -852,6 +852,30 @@ browser-specific and a second config is a second place they drift. The
 `no-unknown-returns` exemption travelled with the contract: `idb.ts` had it,
 and its second implementation and the seam between them need it for the same
 reason.
+
+**F — `Platform` gained `setDocument()`, a seventh member.** The plan has the
+title bar driven by `document.title`, and this app has never set one: that is
+the *browser tab's* name, and setting it on the desktop's account would change
+what every web visitor's tab says. So storage.ts reports `{ title, ref, dirty }`
+whenever any of the three moves and the shell does whatever that means for it —
+a window title, and on macOS the proxy icon and the dot in the close button.
+The web default does nothing, which is what the web did.
+
+**F — the accelerator check in plan §12 is NOT done, and cannot be done here.**
+It asks whether Electron delivers a keydown to the page *as well as* firing the
+menu item, on each of three operating systems, with DevTools open. That is a
+person pressing keys on three machines. The menu carries the same accelerators
+`canvas/input.ts` binds and both roads end at the same `cmds` entry, so a
+double-fire is a duplicate save rather than a wrong one — but it is unanswered,
+and B2 deliberately left the page's handler in place pending the answer.
+
+**F — Cut, Copy, Paste and Select All are Electron `role`s, not commands.** Not
+laziness about the app's own clipboard: a role is what makes the item work
+inside a *native text field* — the board title, a note being edited, the find
+box — where the page's handler is not what the OS is talking to. The board's
+own clipboard commands are still bound to the same keystrokes by
+`canvas/input.ts` and still act on cards. Both are correct at once because they
+act on different things, and the OS decides which by what has focus.
 
 **C, C3 — the skip is conditional on `desktop/package.json`, as specified, and
 the assertion inside it is not.** Once `desktop/` exists, a missing

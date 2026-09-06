@@ -153,6 +153,25 @@ let doc: DocumentRef | null = null;
 /** First-created timestamp, carried across saves of the same board. */
 let created: string | null = null;
 
+/**
+ * Tell the shell which document is on screen, whenever that changes.
+ *
+ * The window's title bar and, on macOS, its proxy icon and its close-dot are
+ * the desktop's way of saying "this is the file, and it has unsaved changes".
+ * There is no way to say that from inside the page: `document.title` is the
+ * browser tab's, and this app has deliberately never set one.
+ *
+ * Fired from the `board` bus event, which is what state.ts emits for a title
+ * change *and* for a dirty-flag flip - both of which the title bar shows - and
+ * once directly wherever `doc` itself moves, because a document changing is not
+ * a board event. On the web every call is a no-op.
+ */
+function reportDocument() {
+  platform.setDocument({ title: board.title, ref: doc, dirty: isDirty() });
+}
+bus.on('board', reportDocument);
+bus.on('board:load', reportDocument);
+
 // ---------------------------------------------------------------------------
 // Save
 // ---------------------------------------------------------------------------
@@ -416,6 +435,7 @@ export async function exportBoard({ pickNew = false, history = true } = {}) {
     // below is thrown from here, ahead of everything.
     if (picking && (pickNew || !doc)) {
       doc = await platform.files.pickSave(fileNameFor(board.title), PICK_SPEC);
+      reportDocument();
     }
     // Non-null for the reason the branch above is: with a picker there was
     // either a document already or that branch has just put one here.
@@ -627,6 +647,7 @@ export async function openFile(file: File, ref: DocumentRef | null = null) {
         // informational; this is the one thing that reads it.
         loadBoard({ ...data, title: titleForOpenedBoard(data.title, file.name, manifest.app) });
         doc = ref;
+        reportDocument();
         // The manifest is a file's, so its stamp is only a stamp if it is text.
         // Anything else starts the board's created date afresh at the next save,
         // which is what an absent one has always done.
@@ -835,6 +856,7 @@ export async function openCloudBoard(remote: { boardId: string, folder: string, 
       job.end();
     }
     doc = null;
+    reportDocument();
     created = null;
     // The board's own id follows the remote's, which is what makes a second
     // machine's copy the *same* board rather than a duplicate of it: the folder
@@ -1024,6 +1046,7 @@ export async function newBoard() {
   if (!(await shelveCurrent())) return false;
   clearAssets();
   doc = null;
+  reportDocument();
   created = null;
   // A new board is a new board, and it needs a row of its own. Without this it
   // would inherit the shelf row of the board just filed and overwrite it at the
@@ -1308,6 +1331,7 @@ export async function switchBoard(id: string) {
       created = (typeof manifest.created === 'string' && manifest.created) || null;
     });
     doc = ref;
+    reportDocument();
     await setCurrentBoardId(id);
     return true;
   } catch (err) {
