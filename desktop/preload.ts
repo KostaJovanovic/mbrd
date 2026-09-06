@@ -9,9 +9,10 @@
 //   it can ask is readable in one screen.
 //
 //   **A function here is a request, not a capability.** Main validates every
-//   argument again on its own side - see main.ts's note about paths - because
-//   this file runs in the renderer's process and a compromised renderer would
-//   own it. The value of the boundary is that main does not trust what arrives.
+//   argument again on its own side - a path is only honoured if that process
+//   produced it, see desktop/files.ts - because this file runs in the
+//   renderer's process and a compromised renderer would own it. The value of
+//   the boundary is that main does not trust what arrives.
 //
 // ── Why this file is CommonJS ──
 //
@@ -20,25 +21,69 @@
 // failure is a window that loads with no bridge at all rather than an error
 // anybody sees. `sandbox: true` is the decision; the format follows it.
 //
-// ── What is here now ──
+// ── The two callbacks ──
 //
-// A version, and nothing else. The window loading and the app booting over
-// `app://` is the whole of group D, and every later group adds its functions
-// beside this one with a matching `ipcMain.handle` in main.ts. The page reads
-// this global in exactly one place - main.ts's bridge check - and hands it to
-// electronPlatform() as an argument, so nothing below that line knows this file
-// exists.
+// `onClose` and `onOpenFiles` are the only inbound direction. Both take one
+// listener and keep the last one, rather than adding to a list: there is one
+// renderer, it registers once at boot, and a set of them would be a leak with
+// no way to notice. `closeNow` is not exposed separately - the close handler
+// answers by resolving, which is what makes it impossible to forget.
 
-import { contextBridge } from 'electron';
+import { contextBridge, ipcRenderer } from 'electron';
+
+const invoke = (channel: string, ...args: unknown[]) => ipcRenderer.invoke(channel, ...args);
 
 contextBridge.exposeInMainWorld('mbrdDesktop', {
   /**
    * The bridge's own version, not the app's.
    *
-   * It is here so the renderer has something to test that is not "did this
-   * object exist", and so a future adapter can refuse a shell older than it
-   * expects rather than calling a function that is not there. One number,
-   * bumped when something is removed or changes shape.
+   * The shape of this object is written twice - here, and as `Bridge` in
+   * platform/electron.ts - because the two live in packages with different
+   * tsconfigs and a web module may not import Node's types. This number is what
+   * catches the two drifting: bumped when something is removed or changes
+   * shape, so an adapter can refuse a shell older than it expects rather than
+   * calling a function that is not there.
    */
   bridge: 1,
+
+  store: {
+    get: (store: string, key: string) => invoke('store:get', store, key),
+    set: (store: string, key: string, value: unknown) => invoke('store:set', store, key, value),
+    del: (store: string, key: string) => invoke('store:del', store, key),
+    keys: (store: string) => invoke('store:keys', store),
+    clear: (store: string) => invoke('store:clear', store),
+    getMany: (store: string, keys: string[]) => invoke('store:getMany', store, keys),
+    setMany: (store: string, entries: [string, unknown][]) => invoke('store:setMany', store, entries),
+    delMany: (store: string, keys: string[]) => invoke('store:delMany', store, keys),
+  },
+
+  files: {
+    pickOpen: () => invoke('files:pickOpen'),
+    pickSave: (suggested: string) => invoke('files:pickSave', suggested),
+    pickImport: () => invoke('files:pickImport'),
+    write: (path: string, data: ArrayBuffer) => invoke('files:write', path, data),
+    read: (path: string) => invoke('files:read', path),
+    exists: (path: string) => invoke('files:exists', path),
+  },
+
+  relaunch: () => ipcRenderer.send('app:relaunch'),
+
+  onClose: (fn: () => Promise<void>) => {
+    // One listener, replaced rather than added to. The answer is sent back on
+    // its own channel rather than returned, because main is waiting on a
+    // window close it has already prevented - there is no invoke to resolve.
+    ipcRenderer.removeAllListeners('app:close-requested');
+    ipcRenderer.on('app:close-requested', () => {
+      // Settled either way. A close the page refuses to acknowledge would be a
+      // window that cannot be shut, which is worse than a lost autosave - main
+      // has its own ceiling for that case and this is the half that keeps it
+      // from being reached in the ordinary one.
+      fn().then(() => ipcRenderer.send('app:close-now'), () => ipcRenderer.send('app:close-now'));
+    });
+  },
+
+  onOpenFiles: (fn: (files: unknown[]) => void) => {
+    ipcRenderer.removeAllListeners('app:open-files');
+    ipcRenderer.on('app:open-files', (_event, files: unknown[]) => fn(files));
+  },
 });

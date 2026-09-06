@@ -64,13 +64,32 @@
 //                             to add a row to those tables; this rule would tell
 //                             you off for the table.
 //
-// A fifth, no-unknown-returns, is on everywhere but two files - see the override
-// at the foot of this config. It found eighty real ones: the injected command
-// interfaces said `=> unknown` where they meant `=> void`, and two of them were
-// hiding a value the caller then read. The two exemptions are the only places
-// where the return genuinely is unknown - idb.ts hands back bytes some older
-// build of this app wrote, and errors.ts reads a property off something that
-// may be a Proxy with a throwing getter. Both headers say so at length.
+// A fifth, no-unknown-returns, is on everywhere but four files - see the
+// override at the foot of this config. It found eighty real ones: the injected
+// command interfaces said `=> unknown` where they meant `=> void`, and two of
+// them were hiding a value the caller then read. The exemptions are the only
+// places where the return genuinely is unknown - idb.ts hands back bytes some
+// older build of this app wrote, and errors.ts reads a property off something
+// that may be a Proxy with a throwing getter. Both headers say so at length.
+//
+// The other three are the same exemption travelling with the same contract.
+// desktop/store.ts and desktop/format.mts are idb.ts's *second* implementation,
+// reading files some older build of this app wrote; platform/electron.ts is the
+// seam between them, turning Blobs into bytes and back for values it is not
+// allowed to have an opinion about. A named return type in any of the three
+// would be a claim about bytes nothing has checked. That the exemption had to
+// travel is the point - without it, the desktop store would have been held to a
+// stricter contract than the interface it implements.
+//
+// ── desktop/ is linted, and is not in the root tsconfig ──
+//
+// The two are separate on purpose and in opposite directions. The typecheck is
+// split because desktop/ needs Node's types and the root config closes them
+// (`types: []`, argued in its own header). The lint is *not* split, because
+// nothing about a lint rule is browser-specific: the same anti-slop rules
+// should catch the same mistakes in a main process as in a renderer, and a
+// second config would be a second place they could drift. All desktop/ needs is
+// the Node env, which it shares with tests/ and tools/ below.
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "env": {
@@ -158,7 +177,8 @@
     {
       "files": [
         "tests/**",
-        "tools/**"
+        "tools/**",
+        "desktop/**"
       ],
       "env": {
         "node": true
@@ -167,7 +187,10 @@
     {
       "files": [
         "web/assets/js/storage/idb.ts",
-        "web/assets/js/errors.ts"
+        "web/assets/js/errors.ts",
+        "web/assets/js/platform/electron.ts",
+        "desktop/store.ts",
+        "desktop/format.mts"
       ],
       "rules": {
         "anti-slop/no-unknown-returns": "off"
