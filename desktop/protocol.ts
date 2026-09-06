@@ -167,6 +167,9 @@ function webRoot(): string {
  * the log says so, which beats running with a policy nobody wrote.
  */
 function readPolicy(root: string): { value: string, exempt: string[] } {
+  // SAFETY: an empty array literal has no element type to infer from, so this
+  // names the one the rest of the function fills it with. Nothing is being
+  // claimed about a value - there is no value yet.
   const empty = { value: '', exempt: [] as string[] };
   let text: string;
   try {

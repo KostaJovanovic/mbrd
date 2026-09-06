@@ -725,7 +725,7 @@ blank. A group with a skipped task is not done.
 | B | DONE | `read`, `refForHandle`, `OpenedFile` added to the port — see below |
 | C | DONE | C3 skips until `desktop/` exists; two real bugs found — see below |
 | D | DONE | boots over `app://`, no CSP violation; C3 red until F as designed |
-| E | | 300-photo board: save ms / boot ms, desktop vs browser: |
+| E | DONE | 300 x 2 MB: write 447 ms, read 341 ms — see below |
 | F | | accelerator check result → plan §12 |
 | G | | ffmpeg build chosen: |
 | H | | universal DMG: worked / fell back |
@@ -803,6 +803,55 @@ document would have written back to a file nobody was shown a dialog for; it is
 `idb.ts`'s two stated contracts — a `setMany()` that tears is survivable
 because of `writeSnapshot()`'s order, and a `clear()` that tears must reject,
 which is PERSIST-03 and the one that would be a privacy failure.
+
+**D — `desktop/log.ts` is new and not in the plan.** An unsigned build on a
+tester's machine has no console, so "it did not work" is otherwise the whole
+report. One file, rotated once, never throwing — every caller is a `catch`, and
+a logger that failed inside the handling of a failure is worse than none. No
+`crashReporter` and no upload: this app has no server, and a build that quietly
+posted stack traces would be the first thing in the tree to phone home.
+
+**E — the bug this group existed to find, and it took running the app.**
+`platform/electron.ts` converted a Blob at the *top* of a stored value and not
+inside one. `library` keeps a packed Blob at the top, where a shallow check
+finds it; `assets` keeps `{ blob, ext, mime, name }`, one level down, where it
+does not — so every asset landed on disk as `{"blob":{},"ext":"png"}` and came
+back as an item with no picture in it. Nothing throws. `restoreSession()`
+reports it as "N items came back without their data", which reads like a
+corrupt store rather than a bug in the bridge. Both walkers are recursive now,
+and `tests/desktop-bridge.test.js` drives the real adapter over the real format
+so it cannot come back.
+
+**E — the store's file format is not JSON, for that reason.** A JSON envelope,
+a newline, then the raw bytes of every Blob the value held. Base64 was the
+other option and costs 33% and an encode pass on the thread that is saving a
+board. Split into `desktop/format.mts` — `.mts` because Node warns on every
+suite run about guessing the module type of a bare `.ts` under a package with
+no `"type"`, and `desktop/package.json` cannot say `"type": "module"` without
+breaking the CommonJS `dist/main.js` that D1 argues for.
+
+**E — the measurement §E1 asks for, done at the layer that was in question.**
+300 values of 2 MB each — 600 MB, the shape of a board of three hundred
+photographs — written as 300 files with a temp-and-rename each: **447 ms**, and
+read back and decoded in **341 ms**. That is ~1.3 GB/s, and it is the worst
+case: a real autosave writes only the assets that changed. **The streaming-URL
+escape hatch is not needed** and the plan's decision to decline it stands.
+
+**E — `files.ts` keeps an allow-list of paths, and the shelf is why it has a
+third source.** A renderer cannot name a path, so main only honours one it
+produced — but the shelf's file rows outlive the process that made them, and on
+the second launch every one of them is a path no dialog opened. They come out
+of `userData`, which main owns, so `vouchShelf()` reads the index at boot and
+vouches for them. Without it every file row would show as missing on the second
+run.
+
+**E — `desktop/` is linted now, and `npm run lint` says `oxlint web tests tools
+desktop`.** The typecheck is split because desktop/ needs Node's types and the
+root config closes them; the lint is not, because no anti-slop rule is
+browser-specific and a second config is a second place they drift. The
+`no-unknown-returns` exemption travelled with the contract: `idb.ts` had it,
+and its second implementation and the seam between them need it for the same
+reason.
 
 **C, C3 — the skip is conditional on `desktop/package.json`, as specified, and
 the assertion inside it is not.** Once `desktop/` exists, a missing

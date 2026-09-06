@@ -30,7 +30,10 @@ import { setRiskPrompt } from './consent.ts';
 // Which shell this is, and the six questions it answers differently. Nothing is
 // wired here yet - the Electron adapter arrives in group E and reads
 // window.mbrdDesktop at exactly one place, which is this file.
-import { platform, isDesktop, refForHandle } from './platform/platform.ts';
+import { platform, isDesktop, refForHandle, setPlatform } from './platform/platform.ts';
+import { electronPlatform, electronStore } from './platform/electron.ts';
+import type { Bridge } from './platform/electron.ts';
+import { setStoreBackend } from './storage/idb.ts';
 import { initOverlays } from './ui/overlays.ts';
 import { initTimeline } from './ui/timeline-view.ts';
 import { ask } from './ui/dialog.ts';
@@ -118,6 +121,27 @@ import { initBoardActions, resetSave } from './ui/board-actions.ts';
 // it is worse, it is nothing at all.
 
 initOverlays();
+
+// Which shell this is, decided here and nowhere else.
+//
+// **This is the only read of `window.mbrdDesktop` in the tree**, and the rule
+// is the whole design of platform/: the bridge is an *argument* to
+// electronPlatform(), so no module below this line depends on a global that
+// only one of two shells defines. In a browser the object is absent, both
+// setters take their defaults, and every port stays the code that was in these
+// files before any of it existed.
+//
+// **Before anything can touch the store.** restoreSession() runs much later in
+// boot, but autosave() is armed from a bus event and the shelf is read by the
+// library - so a backend swapped after the first read would mean the session
+// came out of one store and the writes went into another. Two lines, as high as
+// they can go: after initOverlays(), because a failure here should be sayable,
+// and before everything else.
+const bridge = window.mbrdDesktop;
+if (bridge) {
+  setPlatform(electronPlatform(bridge));
+  setStoreBackend(electronStore(bridge));
+}
 
 /**
  * Which of the three pages this is, worked out once at the top and then only
@@ -630,7 +654,19 @@ declare global {
   var launchQueue: {
     setConsumer(consumer: (params: { files?: FileSystemFileHandle[] }) => void): void;
   } | undefined;
-  interface Window { mbrd: typeof handle }
+  interface Window {
+    mbrd: typeof handle;
+    /**
+     * The desktop shell's bridge, where there is one.
+     *
+     * Optional because only one of the two shells defines it, and declared here
+     * rather than in platform/ for the reason the block below this one is: this
+     * is the only file in the tree that reads either global. Everything else
+     * takes the object as an argument - see the wiring at the head of this
+     * file, and platform/electron.ts's header.
+     */
+    mbrdDesktop?: Bridge;
+  }
 }
 
 // A console handle, deliberately public, and the list below is all of it:
