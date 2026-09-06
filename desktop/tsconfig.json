@@ -1,0 +1,55 @@
+{
+  // The shell's typecheck, which is the opposite of the root one in the one
+  // place that matters.
+  //
+  // ../tsconfig.json closes its ambient types with `"types": []` and its header
+  // argues that line at length: tsc discovers `@types/*` by walking
+  // node_modules *upwards*, so a stray `@types/node` anywhere above the
+  // repository joins the compilation of a browser-only app and every setTimeout
+  // handle kept in a `number` goes red on one machine and never in CI.
+  //
+  // This directory is the exception that proves it. Everything here runs in
+  // Node - `app`, `BrowserWindow`, `readFile`, `process.resourcesPath` - so the
+  // types are asked for by name rather than discovered, which is the same
+  // discipline stated the other way round. Two configs, each closed, and
+  // neither compilation can be changed by what somebody installed two
+  // directories up.
+  //
+  // ── Nothing here compiles either ──
+  //
+  // `noEmit`, like the root. esbuild builds dist/main.js and dist/preload.js
+  // and tsc only checks, so a type error is a red run rather than a shell that
+  // half-starts.
+  //
+  // ── Why the output is CommonJS and the sources are not ──
+  //
+  // `module: ESNext` here describes the *sources*, which are ordinary ES
+  // modules like the rest of the tree. The bundles esbuild writes are CJS, and
+  // that is not a style choice: a preload script under `sandbox: true` must be
+  // CommonJS, because Electron does not run an ESM preload in the sandbox. Main
+  // could be either and is CJS so the package carries one rule rather than two.
+  //
+  // ── erasableSyntaxOnly, for a different reason than the root's ──
+  //
+  // The root needs it because `npm test` runs the sources through Node's own
+  // type stripper and an enum would make the whole suite unrunnable. Nothing
+  // here is ever stripped - esbuild builds every file. It is on anyway so that
+  // one dialect of TypeScript is written in this repository, and somebody
+  // moving a function between web/ and desktop/ does not have to know which
+  // side they are on.
+  "compilerOptions": {
+    "strict": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["*.ts", "native/*.ts"]
+}

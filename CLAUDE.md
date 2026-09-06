@@ -46,6 +46,18 @@ npm run dev:sound   # watch build for web/lab-sound.html, the sound lab
 save.bat            # version stamps → build → commit → optionally push
 ```
 
+The desktop shell is a **second package** under `desktop/` with its own
+`node_modules`, and needs its own `npm install` before any of this:
+
+```bash
+npm run desktop                     # build the shell and open the app
+cd desktop && npm run typecheck     # outside the root tsconfig on purpose
+```
+
+The root package still declares four devDependencies and no runtime
+dependency, and `npm test` still installs nothing — that is what the two-package
+layout is for. See `research/electron-2026-09-06.md` §11.
+
 The lint is oxlint plus one vendored plugin, `tools/oxlint/anti-slop`, which is
 why `@oxlint/plugins` is a dependency. Its rules are the single departure from
 correctness-only and a narrow one — each fires on a way of writing TypeScript

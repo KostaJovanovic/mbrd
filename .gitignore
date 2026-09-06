@@ -13,9 +13,14 @@ Thumbs.db
 desktop.ini
 .DS_Store
 
-# Tauri (M4+)
-src-tauri/target/
-src-tauri/gen/
+# The desktop shell. Its sources are committed; none of this is. dist/ is the
+# two esbuild bundles, out/ is electron-builder's installers, and resources/
+# holds the per-platform ffmpeg binary a script fetches at release time - 80-odd
+# megabytes that belong to a release rather than to a repository.
+desktop/node_modules/
+desktop/dist/
+desktop/out/
+desktop/resources/ffmpeg/
 
 # Node. The app has no dependencies; these are the two optional dev tools -
 # `npm run lint` and `npm run typecheck`. `npm test` needs neither, and needs
