@@ -21,6 +21,8 @@ desktop/node_modules/
 desktop/dist/
 desktop/out/
 desktop/resources/ffmpeg/
+desktop/test-results/
+desktop/playwright-report/
 
 # Node. The app has no dependencies; these are the two optional dev tools -
 # `npm run lint` and `npm run typecheck`. `npm test` needs neither, and needs

@@ -730,7 +730,7 @@ blank. A group with a skipped task is not done.
 | G | DONE | gyan.dev 7.1 essentials (GPL, no non-free); matte 13 ms on DirectML |
 | H | DONE (Windows) | Setup.exe built and the packaged app runs; **DMG and AppImage not built** — see below |
 | I | DONE (untested) | no tag pushed — the workflow has never run |
-| J | | |
+| J | PARTIAL | smoke green (3 tests); the download page has no home yet |
 
 ### Notes from the work
 
@@ -967,6 +967,48 @@ likely (§1's two-DMG fallback).
 **I — the updater is off unless `app.isPackaged`.** `desktop/package.json`
 carries 0.0.0 in the repository, so an unpackaged run would find every release
 on GitHub newer than itself and offer to install one over a working tree.
+
+**J1 — the smoke test covers three things and deliberately not a fourth.** It
+launches, adds a note, closes, relaunches and asserts the board came back; it
+checks the boot console is clean, which is how a CSP violation arrives; and it
+checks the snapshot landed on disk as a file, which is what makes plan §4's
+claim about where recovery lives observable rather than asserted. Three tests,
+4.8 s, green on Windows.
+
+**J1 — the fourth was Save-to-a-file, and taking it out was the right call.**
+It needs a real path, which needs a native dialog Playwright cannot press. The
+way through was a test-only bridge function that vouched for a path behind an
+environment variable — a hole in "a renderer cannot name a path", the invariant
+the whole of `desktop/files.ts` exists to keep, cut for a test's convenience. It
+was written, and then removed. **Saving to a file is a hand check.**
+
+**J1 — the spec needs its own tsconfig, and that is not incidental.** Its
+`page.evaluate` bodies run in the renderer, so they touch `window`; everything
+else under `desktop/` runs in main and must never see a browser global.
+Widening `lib` in the parent would hand `window` to `main.ts`, which is exactly
+the confusion the two-package split exists to prevent. `desktop/test/tsconfig.json`
+adds the DOM and nothing else does.
+
+**J1 — `import.meta` is a syntax error in a spec under this package.**
+`desktop/package.json` declares no `"type": "module"` (D1 argues why), and
+Playwright loads the spec under it. The symptom is "No tests found", which
+points nowhere near the cause. `__dirname`.
+
+**J2 — the download page is written and has no home, which is what the task
+said would happen.** It defers the location to the maintainer ("wherever the
+site's download lives") and the maintainer has not said. Adding a page to the
+site is a decision about the *site*: a stylesheet is three lists
+(`index.html`, `SHELL`, `APP_CSS_ORDER`), a new page wants a `sitemap.xml`
+line, and an inline script needs a hash in `_headers` and an entry in
+`tests/csp.test.js` — and rule 4 puts `SHELL` on the do-not-touch list. So the
+copy, the markup and the chip-detection snippet are in
+`research/download-page-2026-09-07.md`, and placing them is one commit by
+somebody who knows where the front door is. **Nothing was added to `web/`.**
+
+**Still outstanding after J, and neither is small:** the ffmpeg licence notice
+belongs in the About sheet (group G shipped the binary and not the notice), and
+the release-asset URLs in that page are placeholders until there is a release
+to point at.
 
 **C, C3 — the skip is conditional on `desktop/package.json`, as specified, and
 the assertion inside it is not.** Once `desktop/` exists, a missing
