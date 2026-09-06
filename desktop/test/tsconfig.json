@@ -1,0 +1,21 @@
+{
+  // The smoke test's own config, and the reason it needs one is the reason the
+  // test is worth having.
+  //
+  // Its `page.evaluate` bodies are *not* Node. They are serialised, sent to the
+  // renderer and run in the page, so they touch `window` and `document` - and
+  // the parent config closes both, because everything else under desktop/ runs
+  // in the main process and must never see a browser global. Widening `lib`
+  // there to let this file compile would hand `window` to main.ts, which is
+  // precisely the confusion the two-package split exists to prevent.
+  //
+  // So the DOM is added here and nowhere else. `npm run typecheck` in desktop/
+  // checks the shell; `npx tsc -p test` checks this; neither can lend the other
+  // a global.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"]
+  },
+  "include": ["*.ts"]
+}

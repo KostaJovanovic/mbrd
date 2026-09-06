@@ -122,6 +122,26 @@ jobs:
         working-directory: desktop
         run: npm run typecheck
 
+      # The one check that drives the assembled application: launch, add a
+      # note, close, relaunch, and assert the board came back. It runs before
+      # the installer is built rather than after, because an app that does not
+      # start is not worth wrapping in 200 MB of installer - and because the
+      # artefact it would have to unwrap to test is not built yet on two of the
+      # three runners.
+      #
+      # Linux has no display on a GitHub runner, so Electron needs a virtual
+      # one. xvfb-run is the whole of that.
+      - name: Smoke test
+        working-directory: desktop
+        shell: bash
+        run: |
+          if [ "${{ matrix.platform }}" = "linux" ]; then
+            sudo apt-get update && sudo apt-get install -y xvfb
+            xvfb-run --auto-servernum npm run smoke
+          else
+            npm run smoke
+          fi
+
       - name: Build the installer
         working-directory: desktop
         env:
