@@ -210,6 +210,36 @@ their work does; the other three do not, and those are the ones to argue about:
   business, and the way that fails is a menu opening behind the board on
   somebody else's machine.
 
+- `electron-2026-09-06.md` — **the plan for the desktop app, and the record of
+  every decision in it.** Twenty-odd choices made in a question-and-answer
+  session, in one table at the top; read that table before proposing an
+  alternative to any of them, because most were argued and several were
+  delegated and say so. Its durable half is §3 and §4: what Electron changes
+  about this app is seven questions the browser used to answer, and the answer
+  to each is a port in the shape `setPrompt()` already takes — so the web app
+  keeps working at every commit and nothing below `main.ts` learns which shell
+  it is in. Two findings in it are worth knowing without building anything.
+  `index.html`'s `<base href="/">` means the page cannot be loaded from
+  `file://`, so the desktop serves `web/` from a custom scheme and applies
+  `web/_headers`' own policy to it. And the July Tauri audit's three
+  persistence blockers are all closed in the tree, which §2 records so nobody
+  re-finds them. It supersedes `future/code-audit-tauri-readiness-2026-07-26.md`
+  as the plan and leaves it where it is. Goes to `old/` on the last commit of
+  the work it schedules.
+
+- `electron-tasks-2026-09-06.md` — **the executable half of the document
+  above, and nothing else**, on exactly the terms `simplification-tasks` takes:
+  ten commit groups A–J, each task naming a file, a string to find it by, what
+  is there, what to change, and what done looks like, with a checklist at the
+  foot. The maintainer intends an **Opus 4.8** session to work through it, and
+  it is written for an agent that has not read the plan: the rules at its head
+  are the whole of what it needs to know, and rule 3 — *the web app must work at
+  every commit* — is the one that makes the order safe. Groups A and B are the
+  only ones that touch `storage/`; everything from D on is new files under
+  `desktop/`. When the two disagree, the plan is the record of what was decided
+  and this is the record of what to do, and neither is the code. Goes to `old/`
+  with the plan.
+
 `patch-notes-full.md` sits at this level too and is **not open work** - it is an
 archive, and the only file here that argues nothing. It holds every release at
 the length it was first written at, internal work included, and it was split off
