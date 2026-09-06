@@ -339,6 +339,20 @@ const BASE = new Set([
   // so the question is injected through setRiskPrompt() and the module under all
   // three of them holds it. Imports nothing at all.
   'consent.ts',
+  // The seven questions a browser tab used to answer on its own, and the shell
+  // that might answer them differently. Down here for the reason errors.js and
+  // consent.js are, one tier wider: storage/ asks where a file's bytes go,
+  // import/ and canvas/ ask whether there is a native decoder, main.js asks
+  // whether to register the service worker - so the thing all four ask has to
+  // be under all four. The web defaults *are* the implementations, which is
+  // what keeps this from being an inversion in the other direction: nothing
+  // here reaches up for a picker or a dialog, it holds them.
+  //
+  // electron.js is beside it and not above it because it is a function of a
+  // bridge object rather than a reader of one. main.js takes window.mbrdDesktop
+  // - the only read of that global in the tree - and hands it in, so this pair
+  // imports nothing either and a test with no browser loads both.
+  'platform/platform.ts', 'platform/electron.ts',
 ]);
 
 /**
