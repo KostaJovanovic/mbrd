@@ -66,7 +66,14 @@ contextBridge.exposeInMainWorld('mbrdDesktop', {
     exists: (path: string) => invoke('files:exists', path),
   },
 
+  setDocument: (state: unknown) => ipcRenderer.send('app:document', state),
+
   relaunch: () => ipcRenderer.send('app:relaunch'),
+
+  onCommand: (fn: (cmd: string) => void) => {
+    ipcRenderer.removeAllListeners('app:command');
+    ipcRenderer.on('app:command', (_event, cmd: string) => fn(cmd));
+  },
 
   onClose: (fn: () => Promise<void>) => {
     // One listener, replaced rather than added to. The answer is sent back on

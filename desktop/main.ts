@@ -43,6 +43,7 @@ import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import { join } from 'node:path';
 import { registerSchemes, serveWeb, APP_INDEX, APP_ORIGIN } from './protocol.ts';
 import { initLog, log } from './log.ts';
+import { installMenu } from './menu.ts';
 import * as store from './store.ts';
 import * as files from './files.ts';
 
@@ -61,8 +62,37 @@ if (!app.requestSingleInstanceLock()) {
   main();
 }
 
+/**
+ * Files the OS asked for before there was a window to hand them to.
+ *
+ * macOS fires `open-file` for a double-clicked document and it can arrive
+ * *before* `ready` - which is the one ordering in this file that cannot be
+ * rearranged away, because the event is how the app learns why it was launched.
+ * Held here and delivered once the renderer says it is listening.
+ */
+const pending: string[] = [];
+
 function main(): void {
   registerSchemes();
+
+  // Registered before `ready` for the reason above. `preventDefault` is
+  // required or macOS treats the event as unhandled.
+  app.on('open-file', (event, path) => {
+    event.preventDefault();
+    handOver([path]);
+  });
+
+  // Windows and Linux instead: a second launch with a file on its command line.
+  // The lock was taken at the top of this file, so the second process is
+  // already on its way out; this is where its argument arrives.
+  app.on('second-instance', (_event, argv) => {
+    const win = current();
+    if (win) {
+      if (win.isMinimized()) win.restore();
+      win.focus();
+    }
+    handOver(boardsIn(argv));
+  });
 
   app.whenReady().then(async () => {
     initLog();
@@ -70,6 +100,7 @@ function main(): void {
     wireStore();
     wireFiles();
     wireApp();
+    installMenu(cmd => current()?.webContents.send('app:command', cmd));
     // Before the window, so the shelf's file rows are already vouched for when
     // the page asks whether their files still exist - see files.ts's `known`.
     await vouchShelf();
@@ -77,6 +108,10 @@ function main(): void {
     // bytes nobody can reach, left behind by a wipe whose delete failed after
     // its rename had already emptied the store.
     void store.sweepTrash();
+    // The first launch's own command line, which is neither of the two events
+    // above: double-clicking a .mbrd when the app is *not* running starts it
+    // with the path in argv and fires nothing.
+    handOver(boardsIn(process.argv));
     createWindow();
 
     // macOS keeps the process alive with no windows, and clicking the dock icon
@@ -165,6 +200,10 @@ function createWindow(): BrowserWindow {
   });
 
   holdCloseForFlush(win);
+  // Anything the OS handed over before there was a window. The page waits for
+  // its own boot to finish before opening one, so this only has to wait for a
+  // renderer that can receive a message.
+  win.webContents.once('did-finish-load', () => { void deliver(); });
   win.loadURL(APP_INDEX).catch(err => log('error', 'could not load the app', err));
   return win;
 }
@@ -227,6 +266,65 @@ function safeProtocol(url: string): string {
 const current = () => BrowserWindow.getAllWindows()[0] ?? null;
 
 // ---------------------------------------------------------------------------
+// Open-with
+// ---------------------------------------------------------------------------
+
+/**
+ * The boards on a command line, and nothing else that happens to be on it.
+ *
+ * argv carries the executable, Electron's own switches, and in development the
+ * `.` that named the app directory. Filtering on the extension rather than
+ * taking the last argument is what keeps `--inspect` or a stray flag from being
+ * read as a file - and a file that is not a `.mbrd` is not something this app
+ * opens as a board anyway.
+ */
+function boardsIn(argv: readonly string[]): string[] {
+  return argv.filter(arg => /\.mbrd$/i.test(arg) && !arg.startsWith('-'));
+}
+
+/**
+ * Read the files and hand them to the page, once there is a page.
+ *
+ * Held rather than dropped when the window is not up yet: on macOS this is
+ * routinely called before `ready`, and on every OS the first launch reads argv
+ * before the renderer has finished booting. The renderer's own side waits for
+ * `started` too - see main.ts in web/ - so a file handed over during the
+ * session restore is opened after it rather than racing it.
+ */
+function handOver(paths: string[]): void {
+  if (!paths.length) return;
+  pending.push(...paths);
+  void deliver();
+}
+
+async function deliver(): Promise<void> {
+  const win = current();
+  if (!win || !pending.length) return;
+  const paths = pending.splice(0, pending.length);
+  try {
+    const handed = await Promise.all(paths.map(p => files.read(vouched(p))));
+    win.webContents.send('app:open-files', handed);
+    log('info', 'handed over', { paths });
+  } catch (err) {
+    log('error', 'could not open a file the OS handed over', { paths, err: String(err) });
+  }
+}
+
+/**
+ * A path the OS gave us is a path this process produced.
+ *
+ * files.ts refuses anything it did not vouch for, which is the whole of "a
+ * renderer cannot name a path" - and an argument on our own command line, or a
+ * document the Finder double-clicked, is as much this process's own as a dialog
+ * result. Vouching for it here is where that claim is made, in one place, where
+ * it can be read.
+ */
+function vouched(path: string): string {
+  files.vouch(path);
+  return path;
+}
+
+// ---------------------------------------------------------------------------
 // The bridge's other half
 // ---------------------------------------------------------------------------
 
@@ -267,6 +365,40 @@ function wireApp(): void {
     app.relaunch();
     app.exit(0);
   });
+
+  // What the title bar says, and on macOS what the proxy icon points at and
+  // whether the close button has a dot in it. Reported by storage.ts whenever
+  // the document, the board's name or the dirty flag changes.
+  ipcMain.on('app:document', (_e, state: unknown) => showDocument(state));
+}
+
+/** The document, in the window's furniture. */
+function showDocument(state: unknown): void {
+  const win = current();
+  if (!win || !state || typeof state !== 'object') return;
+  // SAFETY: the truthy-object test on the line above is the check, and every
+  // field below is read as `unknown` and narrowed before use - this arrives
+  // from the renderer, which is exactly the boundary main does not trust.
+  const { title, name, path, dirty } = state as {
+    title?: unknown, name?: unknown, path?: unknown, dirty?: unknown,
+  };
+
+  // The file's name leads where there is one, because on the desktop the file
+  // *is* the board and the file name is what the person will look for in a
+  // folder. The board's own title follows it, and is the whole of the title on
+  // a board that has never been saved.
+  const file = typeof name === 'string' ? name : '';
+  const board = typeof title === 'string' && title ? title : 'Untitled board';
+  const mark = dirty === true ? '• ' : '';
+  win.setTitle(mark + (file ? `${file} — ${board}` : board) + ' — mbrd');
+
+  if (process.platform !== 'darwin') return;
+  // macOS says both of these in its own furniture rather than in the text: the
+  // proxy icon is the file, draggable out of the title bar, and the dot in the
+  // close button is the unsaved mark. Setting them is what makes the window
+  // read as a document window rather than a page.
+  win.setRepresentedFilename(typeof path === 'string' ? path : '');
+  win.setDocumentEdited(dirty === true);
 }
 
 /**

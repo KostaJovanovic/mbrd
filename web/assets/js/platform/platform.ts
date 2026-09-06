@@ -240,12 +240,35 @@ export interface UpdatesPort {
   install(): void;
 }
 
+/** What the shell is told about the document on screen. */
+export interface DocumentState {
+  /** The board's own name, which is what a browser tab would say. */
+  title: string;
+  /** The file, where there is one. */
+  ref: DocumentRef | null;
+  /** Whether there are changes the file does not have yet. */
+  dirty: boolean;
+}
+
 /** The whole of what a shell answers. */
 export interface Platform {
   files: FilesPort;
   lifecycle: LifecyclePort;
   native: NativePort;
   updates: UpdatesPort;
+  /**
+   * Tell the shell what is on screen. Desktop only; a no-op on the web.
+   *
+   * The window's title bar and macOS's proxy icon and close-dot are the
+   * desktop's way of saying "this is the file, and it has unsaved changes",
+   * and there is no way to say it from inside the page - a `document.title`
+   * would be the browser tab's, which this app has deliberately never set.
+   *
+   * A report rather than a request: storage.ts says what the document is
+   * whenever it changes, and the shell does whatever that means for it. The
+   * web does nothing at all, which is what it did before this existed.
+   */
+  setDocument(state: DocumentState): void;
   /**
    * Start again from nothing.
    *
@@ -527,6 +550,10 @@ const web: Platform = {
   lifecycle: webLifecycle,
   native: webNative,
   updates: webUpdates,
+  // Nothing. A browser tab has no title bar to put a file name in, and the one
+  // thing it does have - document.title - this app has never set and should not
+  // start setting because the desktop wanted a window title.
+  setDocument: () => {},
   relaunch: () => { location.reload(); },
 };
 
@@ -578,5 +605,6 @@ export const platform: Readonly<Platform> = {
   get lifecycle() { return current.lifecycle; },
   get native() { return current.native; },
   get updates() { return current.updates; },
+  setDocument(state) { current.setDocument(state); },
   relaunch() { current.relaunch(); },
 };

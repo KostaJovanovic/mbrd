@@ -216,6 +216,26 @@ initBoardActions(vp);
 const viewPerf = createViewPerf(vp);
 const cmds = createCommands(vp, { resetAppearance, setWhimsy, perf: viewPerf });
 
+// The native menu, which is a second *surface* onto these commands and never a
+// second implementation of one. Every row in desktop/menu.ts names a key of
+// this object by string, and tests/desktop-menu.test.js asserts each one exists
+// - the same job tests/icons.test.js does for icon names, against the same
+// failure: a menu item wired to a name nothing defines draws, is clickable, and
+// does nothing at all.
+//
+// The optional call is not defensive about the table. It is defensive about the
+// *version*: an installed copy of the shell may be older than the bundle it is
+// loading, and a menu row naming a command this build removed should do nothing
+// rather than throw where nobody can see it.
+bridge?.onCommand(name => {
+  // SAFETY: the index signature is only to look a name up in a table whose
+  // keys are known at compile time and whose lookup key is not. The `typeof`
+  // on the next line is the check, and nothing is called until it passes.
+  const run = (cmds as Record<string, unknown>)[name];
+  if (typeof run === 'function') run();
+  else console.warn('[mbrd] the menu asked for a command that is not here:', name);
+});
+
 // ---------------------------------------------------------------------------
 // Wiring
 // ---------------------------------------------------------------------------

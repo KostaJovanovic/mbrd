@@ -104,7 +104,7 @@ test('fileNameOf reads both separators, because a path is the OS spelling', () =
  * TypeError somewhere unrelated.
  */
 function fakeShell({ canPick = true } = {}) {
-  const calls = { picked: [], written: [], relaunched: 0 };
+  const calls = { picked: [], written: [], documents: [], relaunched: 0 };
   return {
     calls,
     files: {
@@ -125,6 +125,7 @@ function fakeShell({ canPick = true } = {}) {
       matte: async () => null, decode: async () => null,
     },
     updates: { check: async () => null, install() {} },
+    setDocument: state => { calls.documents.push(state); },
     relaunch: () => { calls.relaunched++; },
   };
 }
@@ -240,4 +241,25 @@ test('openFile takes the document it was opened as', async () => {
   await exportBoard();
   assert.equal(shell.calls.picked.length, 0, 'no picker: it already knows the file');
   assert.equal(shell.calls.written.at(-1).ref.path, '/tmp/Second.mbrd');
+});
+
+test('the shell is told which document is on screen, and whether it is dirty', async () => {
+  // The window's title bar and, on macOS, its proxy icon and close-dot. There
+  // is no way to say this from inside the page: document.title is the browser
+  // tab's, and this app has deliberately never set one - so a report is the
+  // only shape it can take.
+  const shell = fakeShell();
+  setPlatform(shell);
+  shell.calls.documents.length = 0;
+
+  loadBoard({ title: 'Reported', items: [] });
+  assert.ok(shell.calls.documents.length, 'loading a board says so');
+
+  markDirty(true);
+  assert.equal(shell.calls.documents.at(-1).dirty, true);
+
+  await exportBoard({ pickNew: true });
+  const last = shell.calls.documents.at(-1);
+  assert.equal(last.ref.path, '/tmp/Reported.mbrd', 'and the document it was saved as');
+  assert.equal(last.dirty, false, 'an export is a save, so the mark comes off');
 });
