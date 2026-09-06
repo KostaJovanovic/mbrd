@@ -40,7 +40,8 @@
 // phishing frame ever built.
 
 import { app, BrowserWindow, ipcMain, shell } from 'electron';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { existsSync, mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
 import { registerSchemes, serveWeb, APP_INDEX, APP_ORIGIN } from './protocol.ts';
 import { initLog, log } from './log.ts';
 import { installMenu } from './menu.ts';
@@ -79,7 +80,58 @@ if (!app.requestSingleInstanceLock()) {
  */
 const pending: string[] = [];
 
+/**
+ * What a portable copy had to say about where its data went, if anything.
+ *
+ * Read by the renderer once, at boot, so it can toast. Empty on every ordinary
+ * run, which is most of them.
+ */
+let startupNote = '';
+
+/**
+ * A copy that keeps its data beside itself, and the one way that fails.
+ *
+ * The installer writes a `portable` marker next to the executable when somebody
+ * chose that branch - see installer.nsh, which also says what portable promises
+ * and therefore gives up. This is the app's half: put userData in `data/` next
+ * to the exe, so the folder is the whole of the app and a USB stick carries it
+ * off intact.
+ *
+ * **On a read-only medium it falls back and says so**, which is plan §1's
+ * decision. A CD, a write-protected stick, a folder under Program Files that a
+ * standard user cannot write to - all of them are ordinary, and none of them
+ * should be a copy that refuses to start. The data goes where Electron would
+ * have put it and one toast names the folder, so somebody who came back to an
+ * empty board knows why.
+ *
+ * Runs before `ready`, because `app.setPath('userData', ...)` after that point
+ * is ignored - the session has already been created against the old one.
+ */
+function claimPortableData(): void {
+  const beside = dirname(app.getPath('exe'));
+  if (!existsSync(join(beside, 'portable'))) return;
+  const data = join(beside, 'data');
+  try {
+    mkdirSync(data, { recursive: true });
+    // `recursive: true` does not fail on a read-only medium until something is
+    // actually written, so the directory being there is not yet proof it can be
+    // used. One probe file is.
+    const probe = join(data, '.writable');
+    writeFileSync(probe, '');
+    unlinkSync(probe);
+    app.setPath('userData', data);
+  } catch (err) {
+    startupNote = 'This folder cannot be written to, so mbrd is keeping your '
+      + 'boards in ' + app.getPath('userData') + ' for this run.';
+    // Not through log(), which has no file yet: initLog() runs after `ready`
+    // and this runs before it. Said again there, once there is somewhere to
+    // say it.
+    console.warn('[mbrd] portable data folder refused:', err);
+  }
+}
+
 function main(): void {
+  claimPortableData();
   registerSchemes();
 
   // Registered before `ready` for the reason above. `preventDefault` is
@@ -103,6 +155,9 @@ function main(): void {
 
   app.whenReady().then(async () => {
     initLog();
+    // Said again now there is a file to say it in - see claimPortableData(),
+    // which runs before the log exists.
+    if (startupNote) log('warn', 'portable fallback', { note: startupNote });
     serveWeb();
     wireStore();
     wireFiles();
@@ -378,6 +433,10 @@ function wireApp(): void {
   // whether the close button has a dot in it. Reported by storage.ts whenever
   // the document, the board's name or the dirty flag changes.
   ipcMain.on('app:document', (_e, state: unknown) => showDocument(state));
+
+  // Anything the shell needs to tell the person that the page could not have
+  // known. One string, read once at boot, empty on every ordinary run.
+  ipcMain.handle('app:startupNotes', () => startupNote);
 }
 
 /**

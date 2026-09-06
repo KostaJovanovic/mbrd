@@ -74,6 +74,8 @@ contextBridge.exposeInMainWorld('mbrdDesktop', {
     decode: (bytes: ArrayBuffer, name: string) => invoke('native:decode', bytes, name),
   },
 
+  startupNotes: () => invoke('app:startupNotes'),
+
   setDocument: (state: unknown) => ipcRenderer.send('app:document', state),
 
   relaunch: () => ipcRenderer.send('app:relaunch'),

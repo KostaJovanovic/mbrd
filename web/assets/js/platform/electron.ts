@@ -89,6 +89,7 @@ export interface Bridge {
     matte(input: Float32Array): Promise<Float32Array | null>;
     decode(bytes: ArrayBuffer, name: string): Promise<Uint8Array | null>;
   };
+  startupNotes(): Promise<string>;
   setDocument(state: { title: string, name: string | null, path: string | null, dirty: boolean }): void;
   relaunch(): void;
   onClose(fn: () => Promise<void>): void;

@@ -728,7 +728,7 @@ blank. A group with a skipped task is not done.
 | E | DONE | 300 x 2 MB: write 447 ms, read 341 ms — see below |
 | F | DONE | accelerator check **NOT DONE** — needs a person on each OS, see below |
 | G | DONE | gyan.dev 7.1 essentials (GPL, no non-free); matte 13 ms on DirectML |
-| H | | universal DMG: worked / fell back |
+| H | DONE (Windows) | Setup.exe built and the packaged app runs; **DMG and AppImage not built** — see below |
 | I | | |
 | J | | |
 
@@ -911,6 +911,41 @@ onnxruntime-node carry `.node` binaries esbuild cannot inline, and the failure
 is a build error rather than a subtle one. electron-updater is external too, so
 electron-builder can find it in the packaged `node_modules` to wire its
 metadata.
+
+**H — only the Windows artefact was built, and that is a machine limit, not a
+decision.** `mbrd-Setup-0.0.0.exe` is 202 MB, and the unpacked app was launched
+and logged `packaged: true` with `web/` and `ffmpeg` both found under
+`resources/` and no renderer error. **A DMG cannot be built on Windows at all,
+and an AppImage needs a Linux host or a container.** Both configurations are
+written and neither has been run. The `arch: universal` fallback plan §1 names -
+switching to two DMGs if sharp or onnxruntime-node will not merge - is
+therefore also untested, and is the most likely thing to need it.
+
+**H — `web/` ships under `resources/`, not beside the executable.** It was
+`extraFiles` first, which puts it one level further up than
+`app.getAppPath()` resolves to in a packaged build, and the app booted to a 404
+on its own index.html. Found by running the packaged artefact, which is the only
+way it could have been found.
+
+**H — three NSIS failures worth writing down, because each looked like a
+correct file.** `MUI_HEADER_TEXT` is not defined where electron-builder includes
+a custom script, so the header text is gone. `customWelcomePage` is declared in
+its template but is not reached in this configuration - the symptom is a page
+that never draws and a warning that its function is unreferenced - so the page
+hangs off `customPageAfterChangeDir` instead, which turns out to be the better
+order anyway. And the page's functions had to be wrapped in `!ifndef
+BUILD_UNINSTALLER`: makensis runs twice, the second pass inserts no pages, and
+electron-builder treats the resulting warning as an error.
+
+**H — the portable copy no longer relocates itself.** With the page after the
+directory page, `$INSTDIR` is what the person chose, and overriding it would be
+deciding on their behalf where a folder they are about to carry off on a stick
+should live.
+
+**H — userData is `%APPDATA%/mbrd-desktop`, from the package name.** Consistent
+between a dev run and a packaged one, which is convenient, but it is the
+package's name rather than the product's. Worth a maintainer's decision before
+anyone has data in it; `productName: mbrd` in `desktop/package.json` moves it.
 
 **C, C3 — the skip is conditional on `desktop/package.json`, as specified, and
 the assertion inside it is not.** Once `desktop/` exists, a missing

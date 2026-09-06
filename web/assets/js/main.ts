@@ -141,6 +141,14 @@ const bridge = window.mbrdDesktop;
 if (bridge) {
   setPlatform(electronPlatform(bridge));
   setStoreBackend(electronStore(bridge));
+  // Anything the shell needs to say that the page could not have known. Today
+  // there is exactly one: a portable copy on a read-only medium, which keeps
+  // its data in AppData instead and has to say where it went - see plan §1,
+  // which chose "fall back and say so" over refusing to start. Empty on every
+  // ordinary run, and never awaited: a toast is not worth a boot delay.
+  void bridge.startupNotes()
+    .then(note => { if (note) toast(note); })
+    .catch(() => {});
 }
 
 /**

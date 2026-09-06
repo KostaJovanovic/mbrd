@@ -1,0 +1,140 @@
+# What ships, and on what terms.
+#
+# One artefact per platform, chosen so a person downloading this has exactly one
+# link to press: a Setup.exe that asks Install or Portable on its first page, a
+# universal DMG, an AppImage that runs on every distribution. deb, rpm and
+# Flatpak are follow-ons - see research/electron-2026-09-06.md §10.
+
+appId: com.valjdakosta.mbrd
+productName: mbrd
+copyright: © Kosta Jovanović. GPL-3.0-or-later.
+
+directories:
+  output: out
+  buildResources: icons
+
+# The two halves of the app, and nothing else.
+#
+# `dist/**` is the shell's two bundles. `../web/**` is the app itself, served
+# over app:// by the protocol handler - which is why the source .ts files come
+# with it: they are what the deployed site serves beside the bundle, and the
+# same handler serves the same tree here.
+#
+# The exclusions are the things web/ carries that a desktop build has no use
+# for. The two benches are debug harnesses (see CLAUDE.md); sw.js is the web's
+# updater and is never registered here; the source map is 2.9 MB that is not
+# even committed. `_headers` is NOT excluded and must not be: the protocol
+# handler reads it for the CSP, which is the whole reason there is one policy
+# rather than two.
+files:
+  - dist/**
+
+# Beside the app rather than inside the asar, and every one of these is read by
+# something that is not Node.
+#
+# `web/` is served over app:// by the protocol handler, which resolves it
+# relative to app.getAppPath() - and in a packaged build that is
+# `resources/app.asar`, so `resources/web` is what `../web` finds. It was
+# `extraFiles` first, which puts it beside the executable one level further up,
+# and the app booted to a 404 on its own index.html. ffmpeg is executed and
+# onnxruntime reads the model by path; a file inside an asar is neither.
+#
+# `_headers` is in the copy and must stay: the protocol handler reads it for the
+# CSP, which is the whole reason there is one policy rather than two. The
+# exclusions are the things web/ carries that a desktop build has no use for -
+# the two benches are debug harnesses (CLAUDE.md), sw.js is the web's updater
+# and is never registered here, and the source map is not even committed.
+# Beside the app rather than inside the asar, because both are read by something
+# that is not Node: ffmpeg is executed, and onnxruntime reads the model by path.
+# A file inside an asar has neither.
+extraResources:
+  - from: ../web
+    to: web
+    filter:
+      - '**/*'
+      - '!lab*.html'
+      - '!assets/lab-*.js'
+      - '!assets/app.js.map'
+      - '!sw.js'
+  - from: resources/ffmpeg
+    to: ffmpeg
+    filter: ['**/*']
+  - from: ../web/assets/vendor/u2netp
+    to: u2netp
+    filter: ['*.onnx']
+
+# .mbrd belongs to this app. `role: Editor` rather than Viewer because opening
+# one is opening it to work on - there is no read-only mode and §4 of the plan
+# says why there is not.
+fileAssociations:
+  - ext: mbrd
+    name: mbrd board
+    description: mbrd board
+    mimeType: application/vnd.mbrd+zip
+    role: Editor
+    icon: icons/icon.ico
+
+# The native modules keep their .node binaries outside the archive. Without
+# this they cannot be dlopen'd - electron-builder detects most of these on its
+# own, and naming them is what stops that detection being the thing that breaks.
+asarUnpack:
+  - '**/node_modules/sharp/**'
+  - '**/node_modules/@img/**'
+  - '**/node_modules/onnxruntime-node/**'
+
+win:
+  target: nsis
+  icon: icons/icon.ico
+  # Unsigned for now, and the download page has to say so - see plan §1. The
+  # layout leaves signing a config change: a certificateFile and a password in
+  # the workflow's secrets, and nothing here moves.
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  allowElevation: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  # The Install-or-Portable page, and the branch that skips the registry.
+  include: installer.nsh
+  artifactName: mbrd-Setup-${version}.${ext}
+
+mac:
+  target:
+    - target: dmg
+      arch: universal
+  icon: icons/icon.icns
+  category: public.app-category.graphics-design
+  # Unsigned, so Gatekeeper refuses the DMG as "damaged" on first open and the
+  # download page carries the xattr line - plan §1, and note that macOS 15
+  # removed the right-click-Open bypass, so the page has to name System
+  # Settings as well.
+  identity: null
+  # If sharp or onnxruntime-node cannot be merged into a universal binary,
+  # switch this to `arch: [arm64, x64]` and add chip detection to the download
+  # page. Plan §1 makes that the fallback rather than the default.
+
+dmg:
+  artifactName: mbrd-${version}-${arch}.${ext}
+
+linux:
+  target: AppImage
+  icon: icons/icon.png
+  category: Graphics
+  # An AppImage registers no MIME association without desktop integration the
+  # user installs themselves, so open-with on Linux arrives with the .deb in
+  # plan §10 and not here. The desktop entry is still correct for the launchers
+  # that do integrate one.
+  desktop:
+    entry:
+      MimeType: application/vnd.mbrd+zip
+
+appImage:
+  artifactName: mbrd-${version}-${arch}.${ext}
+
+publish:
+  provider: github
+  owner: valjdakosta
+  repo: mbrd
+  releaseType: draft
