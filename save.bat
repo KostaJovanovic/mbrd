@@ -25,10 +25,19 @@ rem it commits where you are and then pushes something else, and reports success
 rem for having done it. Resolved once, here, and used everywhere.
 call :resolvebranch
 
-if /i "%ACTION%"=="--force"   (set FORCE_MODE=1 & set ACTION=save)
-if /i "%ACTION%"=="commit"    (set COMMIT_ONLY=1 & set ACTION=save)
-if /i "%ACTION%"=="--commit"  (set COMMIT_ONLY=1 & set ACTION=save)
-if /i "%ACTION%"=="--no-push" (set COMMIT_ONLY=1 & set ACTION=save)
+rem set "VAR=value" and not set VAR=value, and this is not a style choice.
+rem
+rem Inside parentheses, `set FORCE_MODE=1 & set ACTION=save` assigns everything
+rem up to the `&` - including the space in front of it. FORCE_MODE becomes "1 ",
+rem every `if "%FORCE_MODE%"=="1"` below compares unequal, and the flag silently
+rem does nothing. All four of these lines had it, and so did the menu: `save.bat
+rem commit` set COMMIT_ONLY and then asked to push anyway, because the answer to
+rem "is this commit-only" was a string that only looked like 1. The quoted form
+rem ends the value at the closing quote and is immune to it.
+if /i "%ACTION%"=="--force"   (set "FORCE_MODE=1" & set "ACTION=save")
+if /i "%ACTION%"=="commit"    (set "COMMIT_ONLY=1" & set "ACTION=save")
+if /i "%ACTION%"=="--commit"  (set "COMMIT_ONLY=1" & set "ACTION=save")
+if /i "%ACTION%"=="--no-push" (set "COMMIT_ONLY=1" & set "ACTION=save")
 if /i "%ACTION%"=="save"   goto checkrepo
 if /i "%ACTION%"=="push"    goto push
 if /i "%ACTION%"=="pull"    goto pull
@@ -45,7 +54,8 @@ echo   5  quit
 echo.
 set /p CHOICE=select [1-5]:
 if "%CHOICE%"=="1" goto checkrepo
-if "%CHOICE%"=="2" (set COMMIT_ONLY=1 & goto checkrepo)
+rem Quoted, for the reason the four lines above the menu give.
+if "%CHOICE%"=="2" (set "COMMIT_ONLY=1" & goto checkrepo)
 if "%CHOICE%"=="3" goto push
 if "%CHOICE%"=="4" goto pull
 if "%CHOICE%"=="5" exit /b 0
