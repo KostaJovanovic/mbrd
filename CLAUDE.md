@@ -43,16 +43,30 @@ npm run lint        # oxlint, correctness only — adding a formatter is a regre
 npm run typecheck   # tsc --noEmit, strict, every .ts under web/assets/js
 npm run dev:lab     # watch build for web/lab.html, the pigment lab
 npm run dev:sound   # watch build for web/lab-sound.html, the sound lab
-save.bat            # version stamps → build → commit → optionally push
+save.bat            # version stamps → build → commit → portable copy → optionally push
 ```
+
+`save.bat` rebuilds `dist/` — the portable copy — after every commit it makes,
+which is the one step in it that **cannot fail the save**: `dist/` is gitignored,
+so nothing built there is committed, pushed or deployed, and the worst a failure
+does is leave one machine with a stale copy. It is skipped entirely when
+`desktop/node_modules` is absent, which is most checkouts. It also adds about
+ninety seconds, which is why it runs last, after the push question.
 
 The desktop shell is a **second package** under `desktop/` with its own
 `node_modules`, and needs its own `npm install` before any of this:
 
 ```bash
 npm run desktop                     # build the shell and open the app
+npm run portable                    # → dist/, a runnable portable copy
 cd desktop && npm run typecheck     # outside the root tsconfig on purpose
 ```
+
+`dist/` is the unpacked app plus the `portable` marker `installer.nsh`'s Portable
+branch writes — there is no portable *target*, only that page inside the one
+Setup.exe. `main.ts` reads the marker before `ready` and puts `userData` in
+`dist/data`, which is why **`dist/data/` survives a rebuild and everything else
+in `dist/` does not**. See `desktop/scripts/portable.mjs`.
 
 The root package still declares four devDependencies and no runtime
 dependency, and `npm test` still installs nothing — that is what the two-package
