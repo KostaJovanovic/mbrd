@@ -7,8 +7,11 @@ the app. The reasoning lives elsewhere and is not repeated here:
 
 - **[`research/docs/architecture.md`](research/docs/architecture.md)** — how the app
   is put together. The single source of truth.
-- **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — how to run it and test it, the five
-  easily-broken invariants, style, and what a commit or PR has to say.
+- **[`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md)** — how to run it and
+  test it, the five easily-broken invariants, style, and what a commit or PR has
+  to say. It and `.github/THIRD-PARTY.md` sit there rather than at the root
+  because GitHub surfaces both from `.github/`, and the root is kept for files
+  that have no choice about being in it.
 - **Module headers.** Every file in this codebase argues its own design at the
   top, often at length. **Read the top of a file before changing it**, and keep
   that convention in anything you add.
@@ -46,10 +49,10 @@ npm run dev:sound   # watch build for web/lab-sound.html, the sound lab
 save.bat            # version stamps → build → commit → portable copy → optionally push
 ```
 
-`save.bat` rebuilds `dist/` — the portable copy — after every commit it makes,
-which is the one step in it that **cannot fail the save**: `dist/` is gitignored,
-so nothing built there is committed, pushed or deployed, and the worst a failure
-does is leave one machine with a stale copy. It is skipped entirely when
+`save.bat` rebuilds `desktop/portable/` — the portable copy — after every commit
+it makes, which is the one step in it that **cannot fail the save**: it is
+gitignored, so nothing built there is committed, pushed or deployed, and the
+worst a failure does is leave one machine with a stale copy. It is skipped when
 `desktop/node_modules` is absent, which is most checkouts. It also adds about
 ninety seconds, which is why it runs last, after the push question.
 
@@ -58,15 +61,16 @@ The desktop shell is a **second package** under `desktop/` with its own
 
 ```bash
 npm run desktop                     # build the shell and open the app
-npm run portable                    # → dist/, a runnable portable copy
+npm run portable                    # → desktop/portable/, a runnable copy
 cd desktop && npm run typecheck     # outside the root tsconfig on purpose
 ```
 
-`dist/` is the unpacked app plus the `portable` marker `installer.nsh`'s Portable
-branch writes — there is no portable *target*, only that page inside the one
-Setup.exe. `main.ts` reads the marker before `ready` and puts `userData` in
-`dist/data`, which is why **`dist/data/` survives a rebuild and everything else
-in `dist/` does not**. See `desktop/scripts/portable.mjs`.
+`desktop/portable/` is the unpacked app plus the `portable` marker
+`installer.nsh`'s Portable branch writes — there is no portable *target*, only
+that page inside the one Setup.exe. `main.ts` reads the marker before `ready` and
+puts `userData` in `portable/data`, which is why **`portable/data/` survives a
+rebuild and everything else in there does not**. Not `desktop/dist/`, which is
+the two esbuild bundles. See `desktop/scripts/portable.mjs`.
 
 The root package still declares four devDependencies and no runtime
 dependency, and `npm test` still installs nothing — that is what the two-package

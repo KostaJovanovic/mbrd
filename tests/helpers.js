@@ -16,6 +16,17 @@ export const ROOT = resolve(import.meta.dirname, '..');
 export const WEB = join(ROOT, 'web');
 export const JS = join(WEB, 'assets', 'js');
 
+/**
+ * The licence manifest, which four tests read and none of them should have to
+ * locate. It lives under .github/ beside CONTRIBUTING.md rather than at the
+ * repo root - GitHub surfaces both from there, and the root is kept for the
+ * files that have no choice about being in it.
+ *
+ * Named here because the alternative was the same `join` written four times,
+ * and the next move would have fixed three of them.
+ */
+export const THIRD_PARTY = join(ROOT, '.github', 'THIRD-PARTY.md');
+
 /** Every file under `dir` matching one of `exts`, as paths relative to `from`. */
 export function walk(dir, exts, from = WEB) {
   const out = [];
