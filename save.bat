@@ -6,6 +6,12 @@ rem Git helper. Bumps a version stamp on every commit and writes it into two
 rem places that must never drift: the VERSION constant the app shows, and the
 rem service-worker cache epoch (without that bump, stale-while-revalidate keeps
 rem serving the old shell to anyone who already loaded the app).
+rem
+rem Four things are rebuilt around the commit and all four are argued where they
+rem happen: the bundle and web/404.html and web/patch.html before it, because
+rem those are committed and a stale one ships; and the portable copy in dist/
+rem after it at :portable, because that one is gitignored and only ever wrong on
+rem this machine. The last is also the only one that cannot fail the save.
 
 set FORCE_MODE=0
 set COMMIT_ONLY=0
@@ -195,6 +201,11 @@ if errorlevel 1 (
   goto end
 )
 
+rem A commit happened. Read at :end, and by nothing else - the portable copy is
+rem rebuilt from it there rather than here, so the push question below is asked
+rem immediately instead of ninety seconds after the commit it belongs to.
+set DID_COMMIT=1
+
 rem Re-resolved: in a repo whose first commit has just been made, HEAD did not
 rem name a branch when this script started.
 call :resolvebranch
@@ -359,7 +370,58 @@ set SAVE_ERROR=1
 goto end
 
 
+rem The portable copy in dist/, rebuilt from the commit that was just made.
+rem
+rem ── Why here, at the very end ──
+rem
+rem Every path that reaches :end after a commit reaches it having already asked
+rem about the push, so this runs while nobody is waiting to answer anything. It
+rem is also the last thing in the script for the plainer reason: it takes about
+rem ninety seconds, and ninety seconds in front of the commit message prompt is a
+rem tax on every save for an artifact that ships nothing.
+rem
+rem ── Why it cannot fail the save ──
+rem
+rem dist/ is gitignored. Nothing built here is committed, pushed or deployed, so
+rem unlike the bundle above there is no version of this failing that puts a wrong
+rem file in front of anybody - the worst case is a stale copy on one machine.
+rem The bundle stops the commit because a bundle that did not build means the
+rem sources were never compiled together; this one warns and gets on with it,
+rem and SAVE_ERROR is deliberately left alone.
+rem
+rem ── Why the gate is desktop\node_modules ──
+rem
+rem The shell is a second package with its own install (see CLAUDE.md), and most
+rem checkouts of this repository have never run it. Testing for the directory
+rem rather than running npx and letting it fail is the difference between one
+rem line of output and a minute of npm working out that it has nothing to work
+rem with. `npm test` at the root still installs nothing, and this does not change
+rem that: it only runs where somebody has already chosen to build the desktop app.
+rem
+rem It runs after the root `npm run build` above, which is what makes it correct
+rem rather than merely last: electron-builder copies ../web wholesale, so the
+rem portable copy carries the bundle that was just built and the version that was
+rem just stamped into it.
+:portable
+if not exist "desktop\node_modules" (
+  echo.
+  echo [dist] skipped - desktop\node_modules is not installed
+  echo        run "npm install" in desktop\ to have save.bat keep dist\ current
+  exit /b 0
+)
+echo.
+echo [dist] portable copy
+call npm run portable
+if errorlevel 1 (
+  echo.
+  echo [warn] the portable copy did not rebuild - dist\ is now behind this commit
+  echo        run "npm run portable" to see why. The commit itself is fine.
+)
+exit /b 0
+
+
 :end
+if "%DID_COMMIT%"=="1" call :portable
 echo.
 pause
 exit /b %SAVE_ERROR%
