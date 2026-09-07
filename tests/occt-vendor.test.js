@@ -25,7 +25,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { JS, ROOT, WEB, read } from './helpers.js';
+import { JS, THIRD_PARTY, WEB, read } from './helpers.js';
 import { OCCT_DIR, OCCT_VERSION, WORKER_URL } from '../web/assets/js/mesh/occt.ts';
 
 const DIR = join(WEB, 'assets', 'vendor', 'occt');
@@ -84,7 +84,7 @@ test('the licence the kernel ships under is the one the manifest claims', () => 
   assert.match(licence, /occt-import-js/, 'the wrapper is not named in the notice');
   assert.match(licence, /Open CASCADE/, 'the kernel is not named in the notice');
 
-  const manifest = read(join(ROOT, 'THIRD-PARTY.md'));
+  const manifest = read(THIRD_PARTY);
   assert.match(manifest, /occt-import-js/, 'THIRD-PARTY.md does not list the kernel');
   assert.match(manifest, /web\/assets\/vendor\/occt\/LICENSE\.txt/,
     'THIRD-PARTY.md does not point at the notice beside the kernel');

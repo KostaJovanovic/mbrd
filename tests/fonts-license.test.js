@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { join, basename } from 'node:path';
 
-import { WEB, ROOT, read, walk } from './helpers.js';
+import { WEB, THIRD_PARTY, read, walk } from './helpers.js';
 
 const FONTS = join(WEB, 'assets', 'fonts');
 
@@ -58,7 +58,7 @@ test('the Geist licence reserves both Geist and Geist Mono', () => {
 });
 
 test('THIRD-PARTY.md names every licence file that covers a shipped face', () => {
-  const manifest = read(join(ROOT, 'THIRD-PARTY.md'));
+  const manifest = read(THIRD_PARTY);
   for (const licence of new Set(Object.values(COVER))) {
     assert.ok(manifest.includes(licence), `THIRD-PARTY.md does not point at ${licence}`);
   }

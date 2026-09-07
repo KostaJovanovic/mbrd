@@ -1,6 +1,5 @@
 # Boards are user data, not source. Keep test boards out of the repo.
 *.mbrd
-!docs/examples/*.mbrd
 
 # Python
 __pycache__/
@@ -13,6 +12,18 @@ Thumbs.db
 desktop.ini
 .DS_Store
 
+# Installed agent skills, and the lockfile that records where they came from.
+# Ignored rather than committed because a skill installer writes two mirrored
+# trees - .agents/skills/ and .claude/skills/ - and eighty files of somebody
+# else's prose rode into this repository that way once already. They are a
+# property of a working copy and not of the project: nothing here builds, tests
+# or lints from them. The one that mattered is vendored on purpose instead,
+# byte for byte, at tools/oxlint/anti-slop, which is the copy .oxlintrc.json
+# loads and the only one that has ever run.
+.agents/
+.claude/skills/
+skills-lock.json
+
 # The desktop shell. Its sources are committed; none of this is. dist/ is the
 # two esbuild bundles, out/ is electron-builder's installers, and resources/
 # holds the per-platform ffmpeg binary a script fetches at release time - 80-odd
@@ -24,12 +35,12 @@ desktop/resources/ffmpeg/
 desktop/test-results/
 desktop/playwright-report/
 
-# The portable copy, at the root because that is where somebody looks for a
-# built app. `npm run portable` writes it: the unpacked application plus the
-# `portable` marker installer.nsh's Portable branch writes, which is the whole
-# of what a portable copy is. dist/data/ inside it is boards and is survived by
-# a rebuild - see desktop/scripts/portable.mjs.
-/dist/
+# The portable copy. `npm run portable` writes it: the unpacked application plus
+# the `portable` marker installer.nsh's Portable branch writes, which is the
+# whole of what a portable copy is. portable/data/ inside it is boards and is
+# survived by a rebuild - see desktop/scripts/portable.mjs. It sat at the
+# repository root until the root was cleared of everything that had a choice.
+desktop/portable/
 
 # Node. The app has no dependencies; these are the two optional dev tools -
 # `npm run lint` and `npm run typecheck`. `npm test` needs neither, and needs

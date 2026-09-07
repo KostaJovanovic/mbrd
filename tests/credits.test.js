@@ -21,10 +21,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 
-import { WEB, ROOT, read } from './helpers.js';
+import { WEB, THIRD_PARTY, read } from './helpers.js';
 
 const html = read(join(WEB, 'index.html'));
-const manifest = read(join(ROOT, 'THIRD-PARTY.md'));
+const manifest = read(THIRD_PARTY);
 
 /** The fold, and nothing else on the page. */
 const fold = html.match(/<details class="credits-more">([\s\S]*?)<\/details>/)?.[1] ?? '';

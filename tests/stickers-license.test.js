@@ -17,7 +17,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { WEB, ROOT, read } from './helpers.js';
+import { WEB, ROOT, THIRD_PARTY, read } from './helpers.js';
 
 const LICENCE = join(WEB, 'assets', 'phosphor-LICENSE.txt');
 
@@ -41,7 +41,7 @@ test('the MIT licence ships beside it', () => {
 });
 
 test('THIRD-PARTY.md names the sprite and its licence file', () => {
-  const manifest = read(join(ROOT, 'THIRD-PARTY.md'));
+  const manifest = read(THIRD_PARTY);
   assert.ok(manifest.includes('phosphor-LICENSE.txt'), 'no pointer at the licence file');
   assert.ok(manifest.includes('web/assets/stickers.svg'), 'no pointer at the sprite');
   assert.ok(manifest.includes('phosphor-icons/core'), 'no pointer at the source repository');

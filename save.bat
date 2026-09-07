@@ -9,9 +9,10 @@ rem serving the old shell to anyone who already loaded the app).
 rem
 rem Four things are rebuilt around the commit and all four are argued where they
 rem happen: the bundle and web/404.html and web/patch.html before it, because
-rem those are committed and a stale one ships; and the portable copy in dist/
-rem after it at :portable, because that one is gitignored and only ever wrong on
-rem this machine. The last is also the only one that cannot fail the save.
+rem those are committed and a stale one ships; and the portable copy in
+rem desktop\portable\ after it at :portable, because that one is gitignored and
+rem only ever wrong on this machine. The last is also the only one that cannot
+rem fail the save.
 
 set FORCE_MODE=0
 set COMMIT_ONLY=0
@@ -380,7 +381,7 @@ set SAVE_ERROR=1
 goto end
 
 
-rem The portable copy in dist/, rebuilt from the commit that was just made.
+rem The portable copy in desktop\portable\, rebuilt from the commit just made.
 rem
 rem ── Why here, at the very end ──
 rem
@@ -392,7 +393,7 @@ rem tax on every save for an artifact that ships nothing.
 rem
 rem ── Why it cannot fail the save ──
 rem
-rem dist/ is gitignored. Nothing built here is committed, pushed or deployed, so
+rem It is gitignored. Nothing built here is committed, pushed or deployed, so
 rem unlike the bundle above there is no version of this failing that puts a wrong
 rem file in front of anybody - the worst case is a stale copy on one machine.
 rem The bundle stops the commit because a bundle that did not build means the
@@ -415,16 +416,16 @@ rem just stamped into it.
 :portable
 if not exist "desktop\node_modules" (
   echo.
-  echo [dist] skipped - desktop\node_modules is not installed
-  echo        run "npm install" in desktop\ to have save.bat keep dist\ current
+  echo [portable] skipped - desktop\node_modules is not installed
+  echo            run "npm install" in desktop\ to have save.bat keep it current
   exit /b 0
 )
 echo.
-echo [dist] portable copy
+echo [portable] portable copy
 call npm run portable
 if errorlevel 1 (
   echo.
-  echo [warn] the portable copy did not rebuild - dist\ is now behind this commit
+  echo [warn] the portable copy did not rebuild - it is now behind this commit
   echo        run "npm run portable" to see why. The commit itself is fine.
 )
 exit /b 0

@@ -114,7 +114,7 @@ npm test                # run the tests, no install needed
 npm run dev             # rebuild the bundle on save (needs npm install)
 ```
 
-[`CONTRIBUTING.md`](CONTRIBUTING.md) is where to start,
+[`CONTRIBUTING.md`](.github/CONTRIBUTING.md) is where to start,
 [`research/docs/architecture.md`](research/docs/architecture.md) explains how it is put together,
 and [`research/docs/mbrd-format.md`](research/docs/mbrd-format.md) specifies the file format.
 Contributions welcome.
