@@ -96,6 +96,139 @@ string from the interface.
 
 ## Releases
 
+## A Window of Its Own
+version: 0.273 - 0.291
+date: 6 - 7 September 2026
+
+- mbrd is an app you can install now. The board in the browser is unchanged and
+  is still the whole of it - what the desktop adds is a window of its own, your
+  boards where you can see them, and three jobs a tab is not allowed to do.
+- [new] **mbrd installs on Windows, macOS and Linux.** One `Setup.exe` that asks
+  on a page of its own whether to install or to leave a portable copy, a `.dmg`
+  for macOS and an `.AppImage` for Linux. `/download` has the three of them, and
+  says plainly what your computer will say about an app nobody has paid to sign
+  yet, and what to do about it.
+- [new] **A `.mbrd` file opens by double-clicking it.** The title bar says which
+  board is open, a menu bar carries the app's own commands, and a second file
+  opens in the window already running rather than starting another one.
+- [new] **Your boards are a folder rather than a browser's storage.** They sit
+  in `%APPDATA%/mbrd` and its equivalents, and a portable copy keeps them in
+  `data` beside the program. A browser may clear its own storage to make room;
+  a folder stays where you put it.
+- [new] **`Optimize` does video on the desktop**, which is the first thing this
+  app can do there and cannot do in a tab. ffmpeg is a program sitting beside
+  the app rather than a 32 MB download into a page.
+- [faster] **`Remove background` is close to instant on the desktop** - 13
+  milliseconds against a couple of seconds in a browser, once the model has
+  loaded the first time - and the still taken from a clip is found in about a
+  sixteenth of a second, with nothing fetched to do it.
+- [new] **New versions arrive on their own and install when you quit.** Nothing
+  ever restarts under your hands: a note says which version will install when
+  you close the app, and then nothing happens until you do. A portable copy and
+  an unsigned macOS build say they cannot replace themselves rather than
+  offering a button that fails.
+- [new] **`Add files` offers every format mbrd knows** - twelve groups, from
+  pictures and sound to 3D and CAD, archives, maps and disk images - where it
+  had been offering only the four kinds the app can draw, and a `.svg`, an
+  `.stl` and a `.zip` were in none of them. `All files` is still last on the
+  list, because a named card for something nothing can draw is often the whole
+  reason for putting it on a board.
+
+## Off This Machine
+version: 0.266 - 0.272
+date: 1 - 3 September 2026
+
+- [new] **A board can be shared as a link, and kept in your own Google Drive.**
+  `Share link` puts the board in your Drive and copies a link to it that anybody
+  can open. `Keep this board` copies it to your account and keeps it up to date
+  from then on, `Open from cloud` opens it on another machine, `Sync now` sends
+  whatever has changed since the last one, and `Stop syncing` leaves the stored
+  copy exactly where it is. The app asks for the one permission that reaches
+  files it put there itself, and for nothing else in your Drive.
+- [fix] **A Mobile board resists at its edges instead of stopping dead.** Dragged
+  past the top it follows at a diminishing fraction of your finger and settles
+  back when you let go, and a flick into the boundary no longer ends on the
+  frame it arrives.
+- [fix] **The palette menu shows the colours you will actually get.** At either
+  end of the whimsy dial it had been drawing four of the palettes in their
+  middle colours - colours the board was not wearing and would not have worn if
+  you had picked one.
+- [fix] **Accent-coloured words fade with everything around them** when the dial
+  moves. The tab labels, the links and the lines drawn on the board itself used
+  to arrive in the new palette on the first frame while the paper under them
+  took the full seven tenths of a second.
+- [fix] **The item menu's `Edit` row is `Picture`.** The row above it renames the
+  card and the row below it deletes the card, so `Edit` was the one row that did
+  not mean what it said: it opens five rows about the photograph.
+- [fix] **The tour's chips and the timeline's marks are one shape.** Two rows of
+  small squares, each carrying one mark, agreeing about nothing.
+
+## Under the Hand
+version: 0.254 - 0.265
+date: 19 - 29 August 2026
+
+- Mostly a release about what the app does when you touch it: a press that is
+  answered, a menu that leaves the way it came, a board that steps back while
+  you follow a thread across it. Two tools also stopped guessing, and the tour
+  is built somewhere else entirely.
+- [new] **The tour is built on the board.** Every card carries a small square in
+  its corner - a number if it is at that stop, a `+` if it is not - and a bar
+  along the foot holds the order, which can be dragged about, and a caption for
+  each stop. It used to be a list in a panel covering the third of the board you
+  were picking the cards from.
+- [new] **`Remove background` finds the subject.** It had been filling inwards
+  from the edges of the picture against their average colour, which is a real
+  technique on a product shot on white and useless on everything else. A card
+  cut out this way is cut out in the exported picture too.
+- [new] **CAD files draw properly.** `.iges` and `.igs` are read at all now, and
+  they and `.step` go through a real CAD kernel rather than this app's own
+  reading of their surfaces, so a curved part arrives curved. The hand-written
+  readers stay behind it, so a file still opens where the kernel cannot load.
+- [new] **Following a card's threads steps the rest of the board back.** Hovering
+  a card already dropped every line that was not its own, which left three lit
+  lines over forty photographs. The cards those lines reach stay as they are and
+  everything else goes quiet - enough to separate, not enough to hide.
+- [new] **Markdown reads as prose on a card and in the Feed**, not only in the
+  viewer, instead of showing its own hashes and asterisks.
+- [new] **Menus leave the way they arrive.** Find, the right-click menu, the
+  toolbar's flyouts, the fence offer and the connection chip all appeared and
+  then simply vanished; each plays its way out now, and a flyout opens from the
+  middle of the button that opened it rather than from its corner.
+- [new] **Every button answers a press**, and a tapped one stops staying lit
+  afterwards. On a touch screen the browser answers hover from the last tap and
+  leaves it standing, so a tool pressed once looked chosen until something else
+  was - while the press itself, the one thing every pointer does, was drawn
+  nowhere at all.
+- [new] **Every palette has its own colours at each end of the whimsy dial**,
+  rather than wearing the middle's at all three.
+- [new] **The board has an edge, for anybody who goes looking for it.** Pan far
+  enough and there is something out there. It is not saved with the board, it
+  cannot be picked up, and a board that has been out there is byte for byte a
+  board that has not.
+- [fix] **A connection finds its way around the cards between its ends.** It
+  used to settle on a side before looking, which is what sent a line behind a
+  card, stacked it on its neighbours and made it read as stiff, all three at
+  once.
+- [fix] **The connect tool puts itself down after a pair**, with Shift keeping
+  it up. It stayed armed before, which every first-time hand read as the app
+  having got stuck.
+- [fix] **A cut-out card stops growing its background back when you zoom out.**
+  The card's far-zoom twin was the untouched picture, so a card that had been
+  cropped, turned or cut out lost all three on the way out and got them back on
+  the way in.
+- [fix] **The timeline's current step is visible on absinthe and orca again.**
+- [fix] **The tour's marks stay put at 40% zoom**, which is exactly the zoom
+  somebody building a tour works at, and where they had been disappearing.
+- [fix] **Ten close buttons at eight sizes are one close button.** Three corners
+  that had ignored the Corner radius slider follow it now, and the round icon
+  buttons square off at the harsh end along with the bars they sit in.
+- [fix] **A few things are called what they are.** `Take off` for starting a
+  tour, in all four places that used to say three different things; `Trash,
+  nothing in it`, which used to read as an order; `Take the card off` for taking
+  the backing off a photograph, which had been borrowing the word the menu uses
+  for destroying an item; and `Moving GIFs` for the switch that said `Animate
+  GIFs`.
+
 ## The Long Way Round
 version: 0.253
 date: 18 August 2026

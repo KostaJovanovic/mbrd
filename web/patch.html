@@ -192,13 +192,89 @@
          down: how many releases there are, how many commits they cover, and
          when it started. All counted from the source. -->
     <p class="pn-tally">
-      <span>19 releases</span>
-      <span>290 commits</span>
+      <span>22 releases</span>
+      <span>291 commits</span>
       <span>since 25 July 2026</span>
     </p>
   </header>
 
   <ol class="pn-list">
+<li class="pn-rel" id="r-a-window-of-its-own">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">19</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.273 - 0.291</p>
+      <h2 class="pn-name">A Window of Its Own</h2>
+      <p class="pn-date">6 - 7 September 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><span class="wm">mbrd</span> is an app you can install now. The board in the browser is unchanged and is still the whole of it - what the desktop adds is a window of its own, your boards where you can see them, and three jobs a tab is not allowed to do.</li>
+      <li><span class="pn-tag is-new">New</span><strong><span class="wm">mbrd</span> installs on Windows, macOS and Linux.</strong> One <code>Setup.exe</code> that asks on a page of its own whether to install or to leave a portable copy, a <code>.dmg</code> for macOS and an <code>.AppImage</code> for Linux. <code>/download</code> has the three of them, and says plainly what your computer will say about an app nobody has paid to sign yet, and what to do about it.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A <code>.mbrd</code> file opens by double-clicking it.</strong> The title bar says which board is open, a menu bar carries the app's own commands, and a second file opens in the window already running rather than starting another one.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Your boards are a folder rather than a browser's storage.</strong> They sit in <code>%APPDATA%/mbrd</code> and its equivalents, and a portable copy keeps them in <code>data</code> beside the program. A browser may clear its own storage to make room; a folder stays where you put it.</li>
+      <li><span class="pn-tag is-new">New</span><strong><code>Optimize</code> does video on the desktop</strong>, which is the first thing this app can do there and cannot do in a tab. ffmpeg is a program sitting beside the app rather than a 32 MB download into a page.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong><code>Remove background</code> is close to instant on the desktop</strong> - 13 milliseconds against a couple of seconds in a browser, once the model has loaded the first time - and the still taken from a clip is found in about a sixteenth of a second, with nothing fetched to do it.</li>
+      <li><span class="pn-tag is-new">New</span><strong>New versions arrive on their own and install when you quit.</strong> Nothing ever restarts under your hands: a note says which version will install when you close the app, and then nothing happens until you do. A portable copy and an unsigned macOS build say they cannot replace themselves rather than offering a button that fails.</li>
+      <li><span class="pn-tag is-new">New</span><strong><code>Add files</code> offers every format <span class="wm">mbrd</span> knows</strong> - twelve groups, from pictures and sound to 3D and CAD, archives, maps and disk images - where it had been offering only the four kinds the app can draw, and a <code>.svg</code>, an <code>.stl</code> and a <code>.zip</code> were in none of them. <code>All files</code> is still last on the list, because a named card for something nothing can draw is often the whole reason for putting it on a board.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-off-this-machine">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">7</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.266 - 0.272</p>
+      <h2 class="pn-name">Off This Machine</h2>
+      <p class="pn-date">1 - 3 September 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>A board can be shared as a link, and kept in your own Google Drive.</strong> <code>Share link</code> puts the board in your Drive and copies a link to it that anybody can open. <code>Keep this board</code> copies it to your account and keeps it up to date from then on, <code>Open from cloud</code> opens it on another machine, <code>Sync now</code> sends whatever has changed since the last one, and <code>Stop syncing</code> leaves the stored copy exactly where it is. The app asks for the one permission that reaches files it put there itself, and for nothing else in your Drive.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A Mobile board resists at its edges instead of stopping dead.</strong> Dragged past the top it follows at a diminishing fraction of your finger and settles back when you let go, and a flick into the boundary no longer ends on the frame it arrives.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The palette menu shows the colours you will actually get.</strong> At either end of the whimsy dial it had been drawing four of the palettes in their middle colours - colours the board was not wearing and would not have worn if you had picked one.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Accent-coloured words fade with everything around them</strong> when the dial moves. The tab labels, the links and the lines drawn on the board itself used to arrive in the new palette on the first frame while the paper under them took the full seven tenths of a second.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The item menu's <code>Edit</code> row is <code>Picture</code>.</strong> The row above it renames the card and the row below it deletes the card, so <code>Edit</code> was the one row that did not mean what it said: it opens five rows about the photograph.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The tour's chips and the timeline's marks are one shape.</strong> Two rows of small squares, each carrying one mark, agreeing about nothing.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-under-the-hand">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">12</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.254 - 0.265</p>
+      <h2 class="pn-name">Under the Hand</h2>
+      <p class="pn-date">19 - 29 August 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain">Mostly a release about what the app does when you touch it: a press that is answered, a menu that leaves the way it came, a board that steps back while you follow a thread across it. Two tools also stopped guessing, and the tour is built somewhere else entirely.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The tour is built on the board.</strong> Every card carries a small square in its corner - a number if it is at that stop, a <code>+</code> if it is not - and a bar along the foot holds the order, which can be dragged about, and a caption for each stop. It used to be a list in a panel covering the third of the board you were picking the cards from.</li>
+      <li><span class="pn-tag is-new">New</span><strong><code>Remove background</code> finds the subject.</strong> It had been filling inwards from the edges of the picture against their average colour, which is a real technique on a product shot on white and useless on everything else. A card cut out this way is cut out in the exported picture too.</li>
+      <li><span class="pn-tag is-new">New</span><strong>CAD files draw properly.</strong> <code>.iges</code> and <code>.igs</code> are read at all now, and they and <code>.step</code> go through a real CAD kernel rather than this app's own reading of their surfaces, so a curved part arrives curved. The hand-written readers stay behind it, so a file still opens where the kernel cannot load.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Following a card's threads steps the rest of the board back.</strong> Hovering a card already dropped every line that was not its own, which left three lit lines over forty photographs. The cards those lines reach stay as they are and everything else goes quiet - enough to separate, not enough to hide.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Markdown reads as prose on a card and in the Feed</strong>, not only in the viewer, instead of showing its own hashes and asterisks.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Menus leave the way they arrive.</strong> Find, the right-click menu, the toolbar's flyouts, the fence offer and the connection chip all appeared and then simply vanished; each plays its way out now, and a flyout opens from the middle of the button that opened it rather than from its corner.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Every button answers a press</strong>, and a tapped one stops staying lit afterwards. On a touch screen the browser answers hover from the last tap and leaves it standing, so a tool pressed once looked chosen until something else was - while the press itself, the one thing every pointer does, was drawn nowhere at all.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Every palette has its own colours at each end of the whimsy dial</strong>, rather than wearing the middle's at all three.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The board has an edge, for anybody who goes looking for it.</strong> Pan far enough and there is something out there. It is not saved with the board, it cannot be picked up, and a board that has been out there is byte for byte a board that has not.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A connection finds its way around the cards between its ends.</strong> It used to settle on a side before looking, which is what sent a line behind a card, stacked it on its neighbours and made it read as stiff, all three at once.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The connect tool puts itself down after a pair</strong>, with Shift keeping it up. It stayed armed before, which every first-time hand read as the app having got stuck.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A cut-out card stops growing its background back when you zoom out.</strong> The card's far-zoom twin was the untouched picture, so a card that had been cropped, turned or cut out lost all three on the way out and got them back on the way in.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The timeline's current step is visible on absinthe and orca again.</strong></li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The tour's marks stay put at 40% zoom</strong>, which is exactly the zoom somebody building a tour works at, and where they had been disappearing.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Ten close buttons at eight sizes are one close button.</strong> Three corners that had ignored the Corner radius slider follow it now, and the round icon buttons square off at the harsh end along with the bars they sit in.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A few things are called what they are.</strong> <code>Take off</code> for starting a tour, in all four places that used to say three different things; <code>Trash, nothing in it</code>, which used to read as an order; <code>Take the card off</code> for taking the backing off a photograph, which had been borrowing the word the menu uses for destroying an item; and <code>Moving GIFs</code> for the switch that said <code>Animate GIFs</code>.</li>
+    </ul>
+  </article>
+</li>
 <li class="pn-rel" id="r-the-long-way-round">
   <div class="pn-margin" aria-hidden="true">
     <span class="pn-mark"></span>
@@ -635,7 +711,7 @@
   </ol>
 
   <footer class="pn-foot">
-    <span><span class="wm">mbrd</span> 0.290 by valjdakosta</span>
+    <span><span class="wm">mbrd</span> 0.291 by valjdakosta</span>
     <a href="/">Back to the board</a>
   </footer>
  </div>
