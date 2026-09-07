@@ -98,7 +98,24 @@ nsis:
   createStartMenuShortcut: true
   # The Install-or-Portable page, and the branch that skips the registry.
   include: installer.nsh
-  artifactName: mbrd-Setup-${version}.${ext}
+  # ── No ${version} in any of the three artifactName lines, and that is the
+  # download page's requirement rather than a preference ──
+  #
+  # web/download.html points each button at GitHub's
+  # `releases/latest/download/<name>` redirect, which is the only link shape
+  # that survives a release without somebody editing a page. It resolves a
+  # *filename*, so the filename cannot carry the version - a versioned name
+  # means three dead links the moment the next tag is pushed, and they die on
+  # the deployed site rather than anywhere a test can see.
+  #
+  # The version is not lost by this. It is in the installer's own metadata, in
+  # the About sheet, and in latest.yml, which is what electron-updater reads -
+  # see updates.ts. What is lost is being able to tell two downloaded copies
+  # apart by filename alone, which is the trade.
+  #
+  # tests/download.test.js holds these three names and the page's three hrefs
+  # in step, in both directions.
+  artifactName: mbrd-Setup.${ext}
 
 mac:
   target:
@@ -116,7 +133,13 @@ mac:
   # page. Plan §1 makes that the fallback rather than the default.
 
 dmg:
-  artifactName: mbrd-${version}-${arch}.${ext}
+  # `universal` written out rather than ${arch}, for the same reason the version
+  # is gone: the page links this name by string and a test compares the two, so
+  # a name electron-builder derives is a name that test cannot check against
+  # anything. If §1's two-DMG fallback is ever taken, this becomes
+  # mbrd-${arch}.${ext} and the page grows a second Mac link - both edits, or
+  # tests/download.test.js fails.
+  artifactName: mbrd-universal.${ext}
 
 linux:
   target: AppImage
@@ -131,7 +154,13 @@ linux:
       MimeType: application/vnd.mbrd+zip
 
 appImage:
-  artifactName: mbrd-${version}-${arch}.${ext}
+  # `x86_64` written out, not ${arch}. electron-builder spells the AppImage
+  # architecture differently from every other target - x86_64 rather than x64 -
+  # and a page that hardcodes one spelling against a config that derives the
+  # other is a broken link nobody can see until the Linux build has actually
+  # run, which on this repository has not happened yet. Written out, the two
+  # agree by string and tests/download.test.js says so.
+  artifactName: mbrd-x86_64.${ext}
 
 publish:
   provider: github

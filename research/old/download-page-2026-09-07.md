@@ -1,9 +1,41 @@
 # The download page — copy, markup and the two things it must say
 
-*Open work. Group J2 of [`electron-tasks-2026-09-06.md`](electron-tasks-2026-09-06.md).
-The task says the page goes "wherever the site's download lives (the maintainer
-says)", and the maintainer has not said — so this is the page's **content**,
-written and ready, with no route chosen for it. Nothing in `web/` was added.*
+> **Carried out on 2026-09-07, which is why this is in `old/`.** The maintainer
+> said `/download`, and the page was built from the copy below as
+> `web/download.html` with `web/assets/css/download.css`. What was decided
+> rather than copied:
+>
+> - **It is `privacy.html`'s page, not `patch.html`'s.** No generator: it has no
+>   markdown source, so it loads `tokens.css` plus one sheet and carries no
+>   inline script or style, which keeps it out of the CSP hash list entirely —
+>   the same trade `/privacy` makes. The `SHELL` question the section below
+>   worried about turned out to be two lines and a fourth branch in the navigate
+>   handler.
+> - **The `<details>` is gone**, and the warning is a plate at the top of the
+>   spine. Its own argument here is that the warning has to arrive *in advance*;
+>   a fold puts the summary in advance and the three remedies behind a press,
+>   and the remedies are the half somebody reads with a refused installer
+>   already on screen.
+> - **The chip detection was not written in.** `arch: universal` still holds, so
+>   there is one Mac link and nothing to detect — and the script would have cost
+>   the page a `sha256-` in `web/_headers` to guess at something it knows.
+> - **The `RELEASE/` and `VERSION` placeholders were resolved by removing the
+>   version from the filenames**, not by templating them: the three
+>   `artifactName` lines in `desktop/electron-builder.yml` are now
+>   `mbrd-Setup.exe`, `mbrd-universal.dmg` and `mbrd-x86_64.AppImage`, which is
+>   what makes `releases/latest/download/<name>` a link nobody has to edit.
+>   `tests/download.test.js` holds the config and the page in step both ways.
+> - **The ffmpeg licence notice, listed below as missing, was added** — to
+>   `THIRD-PARTY.md` and to the fold in the credits sheet in `index.html`.
+>
+> The prose below is as it was written and is the source the page was built
+> from; the wording on the page is this wording. Everything under "What is still
+> missing from the release itself" is done.
+
+*Group J2 of [`electron-tasks-2026-09-06.md`](../electron-tasks-2026-09-06.md).
+The task said the page goes "wherever the site's download lives (the maintainer
+says)", and at the time of writing the maintainer had not said — so this was the
+page's **content**, written and ready, with no route chosen for it.*
 
 ## Why this is a document and not `web/download.html`
 

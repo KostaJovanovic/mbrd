@@ -48,6 +48,16 @@ const SHELL = [
   // served at - the navigate handler below maps one to the other, exactly as it
   // does for the changelog.
   './privacy.html',
+  // The download page, on exactly the same terms as the two above: a page of
+  // this site rather than a page of the app, two files, both tiny. Precached
+  // because the thing it explains is what a computer does when it refuses an
+  // unsigned build - and somebody reading it has a refused download and quite
+  // possibly no working browser tab left to search from.
+  //
+  // Listed by filename rather than as ./download, which is the address it is
+  // served at - the navigate handler below maps one to the other, exactly as it
+  // does for the other two.
+  './download.html',
   './manifest.json',
   './assets/css/tokens.css',
   // The subsystem stylesheets, in the order index.html loads them, which is the
@@ -88,6 +98,9 @@ const SHELL = [
   // document rather than the app: it loads tokens.css for the palette and this
   // for the rest, and nothing else in the tree loads either of them together.
   './assets/css/privacy.css',
+  // And the third document, the download page, which loads tokens.css for the
+  // palette and this for the rest.
+  './assets/css/download.css',
   // Every icon in the app, in one sprite. Referenced by <use> from index.html
   // and built into the right-click menu by ui/menu.js, so a board opened offline
   // without it is a board of blank buttons - it belongs in the shell as much as
@@ -271,11 +284,14 @@ self.addEventListener('fetch', event => {
   //
   // The privacy page is the third address and answers on exactly the same
   // terms: it exists, it is in the cache, and a visitor who typed it should not
-  // be handed a board.
+  // be handed a board. The download page is the fourth, and is the one where
+  // being handed a board offline would be least useful of all - somebody is on
+  // that address because an installer was refused.
   if (req.mode === 'navigate') {
     const page = /\/patch(\.html)?\/?$/.test(url.pathname) ? './patch.html'
       : /\/privacy(\.html)?\/?$/.test(url.pathname) ? './privacy.html'
-        : './index.html';
+        : /\/download(\.html)?\/?$/.test(url.pathname) ? './download.html'
+          : './index.html';
     event.respondWith((async () => {
       try {
         return await fetch(req);
