@@ -24,6 +24,13 @@ desktop/resources/ffmpeg/
 desktop/test-results/
 desktop/playwright-report/
 
+# The portable copy, at the root because that is where somebody looks for a
+# built app. `npm run portable` writes it: the unpacked application plus the
+# `portable` marker installer.nsh's Portable branch writes, which is the whole
+# of what a portable copy is. dist/data/ inside it is boards and is survived by
+# a rebuild - see desktop/scripts/portable.mjs.
+/dist/
+
 # Node. The app has no dependencies; these are the two optional dev tools -
 # `npm run lint` and `npm run typecheck`. `npm test` needs neither, and needs
 # no install at all.
