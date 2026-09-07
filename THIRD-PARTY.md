@@ -112,6 +112,31 @@ place in the app that reaches a host for code, and `web/_headers`, which permits
 that one host and nothing else. It is listed here because a reader of this file
 wants to know what runs, not only what is committed.
 
+**The desktop build ships FFmpeg itself, and that one is GPL-3.0.** Not the same
+thing as the paragraph above and not on the same terms: `@ffmpeg/core` is an
+LGPL build fetched by a browser at run time, and this is a GPL static executable
+inside a download. It is FFmpeg 7.1 (https://github.com/FFmpeg/FFmpeg), one
+prebuilt binary per platform, pinned by version in
+`desktop/scripts/fetch-ffmpeg.mjs` — GyanD's `essentials` build on Windows
+(https://github.com/GyanD/codexffmpeg), evermeet.cx's on macOS
+(https://evermeet.cx/ffmpeg/), John Van Sickle's static build on Linux
+(https://johnvansickle.com/ffmpeg/). **Every one of them is a GPL build with no
+non-free codec in it**, which is the condition that matters: `libfdk-aac` or
+`libnpp` in any of the three would make the whole download undistributable under
+any licence, whatever the builder's own page says. The head of
+`fetch-ffmpeg.mjs` argues that at length and is where a fourth platform would be
+added.
+
+GPL-3.0 into GPL-3.0-or-later is the one direction that needs no argument, but
+it carries more than a notice: conveying the binary means offering its source.
+The pinned release page each URL above points into publishes the exact source
+tarball beside the build, which is the offer §6(d)'s "access to copy from a
+designated place" describes, and naming the three of them here is what makes
+that offer findable. The binary is fetched at release time rather than committed
+— 80-odd megabytes per platform, `desktop/resources/ffmpeg/` is gitignored — so
+a checkout carries none of it and a developer who never runs the script gets a
+desktop that falls through to the wasm path above.
+
 The interface sounds. Seventeen recipes — each a handful of numbers rather than
 an audio file — and the Web Audio graph that renders them, taken as source and
 forked rather than depended on, since the app has no runtime dependencies and

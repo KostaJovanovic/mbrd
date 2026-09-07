@@ -1393,6 +1393,22 @@
         <span class="credits-why">Fetched on request to pull a still from a clip
           this browser cannot open.</span>
       </li>
+      <li>
+        <!-- The desktop build's ffmpeg, which is a different licence from the
+             row above and is why it is a row of its own: that one is an LGPL
+             build a browser fetches, this one is a GPL executable inside a
+             download, and GPL is the term that has to be shown to the person
+             who has it. Named unconditionally rather than behind isDesktop -
+             the fold says what the app is built on, not what is loaded right
+             now, which is already true of the four rows above it. -->
+        <a href="https://github.com/FFmpeg/FFmpeg" target="_blank" rel="noopener noreferrer">FFmpeg</a>,
+        <a href="https://github.com/GyanD/codexffmpeg" target="_blank" rel="noopener noreferrer">GyanD builds</a>
+        <span class="credits-lic">GPL-3.0</span>
+        <span class="credits-by">The FFmpeg authors</span>
+        <span class="credits-why">In the desktop app only: pulls a poster frame
+          straight from a clip, with no download and no network. Its source is
+          published beside each build &mdash; see <code>THIRD-PARTY.md</code>.</span>
+      </li>
     </ul>
   </details>
 
