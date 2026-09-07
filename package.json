@@ -16,7 +16,8 @@
     "lint": "oxlint web tests tools desktop",
     "typecheck": "tsc -p tsconfig.json",
     "build": "esbuild web/assets/js/main.ts --bundle --minify --format=esm --target=es2022 --outfile=web/assets/app.js && esbuild web/assets/js/ui/pigments.ts --bundle --format=esm --target=es2022 --outfile=web/assets/lab-pigments.js && esbuild web/assets/js/ui/sound-lab.ts --bundle --format=esm --target=es2022 --outfile=web/assets/lab-sound.js",
-    "desktop": "npm --prefix desktop start"
+    "desktop": "npm --prefix desktop start",
+    "portable": "npm --prefix desktop run portable"
   },
   "devDependencies": {
     "@oxlint/plugins": "^1.78.0",
