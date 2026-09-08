@@ -3,10 +3,11 @@
 //
 // None of them can be driven from here: the menu is a module of closures over
 // document, and there is no browser in this suite. What is checkable is the
-// shape of each repair against the source, which is what tests/font-tokens.js
-// and tests/appearance.js already do for the pairs they hold together. Each
-// test below names the failure it is standing in front of, so that a future
-// edit that reintroduces it fails against a sentence rather than a regex.
+// shape of each repair against the source, which is what
+// tests/font-tokens.test.js and tests/appearance.test.js already do for the
+// pairs they hold together. Each test below names the failure it is standing in
+// front of, so that a future edit that reintroduces it fails against a sentence
+// rather than a regex.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

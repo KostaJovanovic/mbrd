@@ -163,7 +163,7 @@ export function splitAppearance(look: Look = {}): SplitLook {
   return { shared, local: { vars: localVars } };
 }
 
-/** Rebuild the complete look consumed by ui/appearance.js. */
+/** Rebuild the complete look consumed by ui/appearance.ts. */
 export function mergeAppearance(shared: Look = {}, local: Look = {}): Look {
   // Each half named before the merge. Both arguments default to {} but are also
   // guarded, because these two arrive off a file as often as from the app.

@@ -17,7 +17,7 @@
 // Which is why they can be on screen at once and why neither replaces the
 // other. Both read ids that index.html declares (#toast, #busy, #busy-label,
 // #busy-count, #busy-fill, #busy-cancel) and both are styled by
-// assets/css/overlays.css; the two constants below that pair with a CSS
+// assets/css/status.css; the two constants below that pair with a CSS
 // duration say so where they sit.
 //
 // ── Nobody imports this ──
@@ -61,7 +61,7 @@ import type { BusyJob, BusyOptions, ToastKind } from '../notify.ts';
 
 /**
  * How long a toast takes to fade, paired with the `transition` on .toast-line in
- * overlays.css. A line is only removed once the fade has run - removing it on
+ * status.css. A line is only removed once the fade has run - removing it on
  * the old schedule would cut the fade off at its first frame.
  */
 const TOAST_FADE_MS = 300;

@@ -63,14 +63,6 @@ const SETEXT = /^ {0,3}(=+|-+)\s*$/;
 const TABLE_RULE = /^ *\|?[ :|-]+\|[ :|-]*$/;
 
 /**
- * One pass over the lines, emitting block nodes.
- *
- * A hand-rolled line walker rather than a two-phase block/inline parse, because
- * every block this supports is decided by its first line and closed by a blank
- * one or by a marker. `i` moves forward only, which is what keeps a malformed
- * document - an unclosed fence, a table with no body - from looping.
- */
-/**
  * The deepest a blockquote may nest.
  *
  * blocks() recurses once per `>` on a quoted line, so 50,000 of them overflowed
@@ -85,6 +77,14 @@ const TABLE_RULE = /^ *\|?[ :|-]+\|[ :|-]*$/;
  */
 const MAX_QUOTE_DEPTH = 64;
 
+/**
+ * One pass over the lines, emitting block nodes.
+ *
+ * A hand-rolled line walker rather than a two-phase block/inline parse, because
+ * every block this supports is decided by its first line and closed by a blank
+ * one or by a marker. `i` moves forward only, which is what keeps a malformed
+ * document - an unclosed fence, a table with no body - from looping.
+ */
 function blocks(lines: string[], depth = 0): HTMLElement[] {
   const out: HTMLElement[] = [];
   let i = 0;

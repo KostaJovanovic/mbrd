@@ -8,12 +8,12 @@
 // the useful one being "no, let me keep this first", which confirm() cannot
 // express and which is the answer most people actually want.
 //
-// Kept in its own module rather than in ui/overlays.js beside toast(), even though the
+// Kept in its own module rather than in ui/overlays.ts beside toast(), even though the
 // two are the same kind of thing - a small piece of interface anything may
 // reach for. toast() says something and returns; this one asks something and
 // waits, which is a different enough contract to be worth its own file and its
 // own name. Like toast(), it reaches for `document` only inside a function, so
-// storage.js can import it and stay loadable without a browser.
+// storage.ts can import it and stay loadable without a browser.
 
 import { setMarked } from './wordmark.ts';
 import { cue } from '../cuelume/engine.ts';
@@ -89,7 +89,7 @@ let current: Promise<Answer | string | null> | null = null;
  * shape, headings, an alignment, a font and a size, and a box that answers with
  * a string can express none of them - so what came back was a note that behaved
  * like a note everywhere except where it was written. See composeNote() in
- * canvas/notes.js: it puts the real editor in a dialog rather than describing a
+ * canvas/notes.ts: it puts the real editor in a dialog rather than describing a
  * second one here.
  */
 // The two contracts the note above describes, said in the signature: without a

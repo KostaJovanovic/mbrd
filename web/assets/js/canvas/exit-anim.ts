@@ -1,6 +1,6 @@
 // The animation a card plays as it is deleted.
 //
-// A delete is instant in state - removeItems() drops the item and items.js
+// A delete is instant in state - removeItems() drops the item and items.ts
 // discards its node the same tick. That is correct and must stay correct:
 // nothing here touches state, undo, media release or culling. The animation
 // runs on a *clone* of the doomed node, lifted into a screen-space overlay,
@@ -10,7 +10,7 @@
 //     fighting the rebuilt node for the same slot.
 //   - The clone owns no registered player and no live <video>/<audio> source
 //     (we strip them), so a card fading out cannot keep a stream open - the
-//     one thing discard() in items.js exists to prevent.
+//     one thing discard() in items.ts exists to prevent.
 //
 // The overlay is screen space, so the world's +y-up sign flip and the pan/zoom
 // transform on #world are all irrelevant here: a clone placed at the node's

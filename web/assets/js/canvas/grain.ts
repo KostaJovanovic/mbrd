@@ -104,7 +104,7 @@ let el: HTMLElement | null = null, sheetEl: HTMLElement | null = null;
  * anywhere. At 0 the layer is fully transparent, and writing a background
  * position onto a transparent full-screen layer is a re-raster of the whole
  * window to show nothing - so the answer is resolved once and held, exactly as
- * grid.js holds its resolved ink, and given back by resetGrain() when a look
+ * grid.ts holds its resolved ink, and given back by resetGrain() when a look
  * changes.
  *
  * The token and not the resolved opacity, which is the tempting read and is
@@ -229,9 +229,9 @@ export function paintGrain(vp: Viewport): void {
  *
  * Deliberately does *not* subscribe to the view. Not because a subscription
  * would be wrong - it is what a self-contained subsystem here normally does -
- * but because this module registers well before main.js does, so its handler
+ * but because this module registers well before main.ts does, so its handler
  * would run ahead of the profiler's first timestamp and the one full-screen
- * re-raster on the pan path would be invisible to mbrd.perf. main.js calls
+ * re-raster on the pan path would be invisible to mbrd.perf. main.ts calls
  * paintGrain() from inside the listener it already measures.
  *
  * Not folded into paintGrid() either: the grain is not the grid. It does not

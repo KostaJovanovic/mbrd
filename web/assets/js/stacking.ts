@@ -11,7 +11,7 @@
 // are ordered against each other by their roots, and members are ordered inside
 // their group by raw z.
 //
-// Fifth concern out of state.js, and it could only follow layout.js: everything
+// Fifth concern out of state.ts, and it could only follow layout.ts: everything
 // here reads geometry and none of it could reach that while the geometry lived
 // in the file being split.
 //
@@ -122,7 +122,7 @@ export function visualStackOrder() {
  *
  * Area answers it exactly and stores nothing, which is the band's whole argument
  * repeated one level down: containment already requires strictly greater area
- * (see measure() in fences.js), so "smaller is nearer the front" *is* "a region
+ * (see measure() in fences.ts), so "smaller is nearer the front" *is* "a region
  * is in front of the region that holds it", for any depth of nesting and with no
  * z to keep in step. Stable, so two fences of the same area - which by that rule
  * cannot contain one another - keep the raw z order they came in with, and Bring

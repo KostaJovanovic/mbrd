@@ -2,17 +2,17 @@
 //
 // A new file rather than an addition to an existing one: nothing else in the
 // suite is about what the app does when it has already gone wrong, and the two
-// modules this covers (errors.js and the boardSafety() ladder in
-// storage/session.js) are joined by exactly that question and nothing else.
+// modules this covers (errors.ts and the boardSafety() ladder in
+// storage/session.ts) are joined by exactly that question and nothing else.
 //
-// No DOM anywhere in here, deliberately. errors.js speaks through notify.js, so
+// No DOM anywhere in here, deliberately. errors.ts speaks through notify.ts, so
 // a test can be the interface - setOverlays() takes a recorder and every toast
-// the module raises arrives as data. That is the same seam main.js uses in the
+// the module raises arrives as data. That is the same seam main.ts uses in the
 // app, which means this exercises the real path rather than a stub of it, and
 // it is why these tests need no fake document at all (compare hud.test.js,
-// which does, because ui/hud.js genuinely draws).
+// which does, because ui/hud.ts genuinely draws).
 //
-// The other half of the wiring is a fake host. errors.js installs on anything
+// The other half of the wiring is a fake host. errors.ts installs on anything
 // with addEventListener/removeEventListener, which is what lets the whole of it
 // be driven without a window - and lets a test assert that the listeners come
 // off again, which nothing could do if the module had assigned window.onerror.
@@ -135,7 +135,7 @@ test('a rejected promise nobody was waiting on is reported too', () => {
 });
 
 test('a caught-but-lost error comes in by the second door', () => {
-  // What emitter.emit() in util.js does with a subscriber that throws: it keeps
+  // What emitter.emit() in util.ts does with a subscriber that throws: it keeps
   // the bus alive, and now it also says so once. Written as one broken function
   // called repeatedly rather than as two identical literals, because that is
   // the real shape - and because the place is half of the identity, so two
@@ -224,8 +224,8 @@ test('an unwired probe says it does not know, and never says saved', () => {
 });
 
 test('the message follows the real dirty flag in both directions', () => {
-  // Not a stub: the actual ladder in storage/session.js over the actual flag in
-  // board-store.js, which is the only version of this claim worth making. The
+  // Not a stub: the actual ladder in storage/session.ts over the actual flag in
+  // board-store.ts, which is the only version of this claim worth making. The
   // whole value of the toast is that this sentence is true.
   loadBoard({ title: 'Safety', items: [] });
 
@@ -348,8 +348,8 @@ test('a rejection reason that is not an object at all is survived', () => {
 });
 
 test('an unwired app is silent rather than broken', () => {
-  // No overlays and no host: notify.js drops the message and initErrors(null)
-  // installs nothing. Silence is not an error - that is notify.js's bargain and
+  // No overlays and no host: notify.ts drops the message and initErrors(null)
+  // installs nothing. Silence is not an error - that is notify.ts's bargain and
   // this module keeps it.
   setOverlays(null);
   const stop = initErrors(null);

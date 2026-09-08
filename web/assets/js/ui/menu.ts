@@ -1,56 +1,54 @@
 // Right-click menu - and, through openAnchored(), the renderer every other menu
 // in the app is drawn by.
 //
-// The canvas already suppresses the browser's own menu (input.js), because a
-// board's useful actions are all spatial - "put a note *here*", "zoom to
-// *this*" - and a generic browser menu can't express any of them. The world
-// point under the cursor is captured when the menu opens and handed to the
-// action, so "Add a note here" means here even after the menu has closed.
+// The canvas suppresses the browser's own menu (input.ts): a board's useful
+// actions are all spatial - "put a note *here*", "zoom to *this*" - and a
+// generic browser menu can't express any of them. The world point under the
+// cursor is captured on open and handed to the action, so "Add a note here"
+// means here even after the menu has closed.
 //
-// One menu exists at a time. It is built fresh on each open rather than kept
-// hidden, so entries can be enabled, checked or omitted per context.
+// One menu at a time, built fresh on each open rather than kept hidden, so
+// entries can be enabled, checked or omitted per context.
 //
 // ── The renderer, and who else uses it ──
 //
-// render() below is the whole of what a menu is here: an array of plain entry
-// objects in, a placed panel out, with the arrow keys walking it and initMenu's
-// listeners closing it on every event that would make its anchor a lie. The
-// toolbar's hover flyouts (ui/flyout.js) are the same panel opened under a
-// button instead of at a cursor, and they are drawn through openAnchored()
-// rather than through a second implementation - which is why the entry
-// vocabulary grew `swatch` and `range` rows that no right-click fold uses yet.
+// render() below is the whole of what a menu is: plain entry objects in, a
+// placed panel out, the arrow keys walking it, initMenu's listeners closing it
+// on every event that would make its anchor a lie. The toolbar's hover flyouts
+// (ui/flyout.ts) are the same panel opened under a button instead of at a
+// cursor, drawn through openAnchored() rather than a second implementation -
+// which is why the entry vocabulary grew `swatch` and `range` rows no
+// right-click fold uses yet.
 //
-// The single `node` is right for both. A right-click and a hover flyout cannot
-// be up at once: the capture-phase pointerdown that closes on an outside press
-// fires before either could open the other.
+// The single `node` serves both: a right-click and a hover flyout cannot be up
+// at once, because the capture-phase pointerdown that closes on an outside
+// press fires before either could open the other.
 //
 // Every entry carries an `icon`, naming a <symbol> in assets/icons.svg - the
-// same file the toolbar and the rest of the chrome draw from, so an action that
-// appears in two places wears one face. All of them, deliberately: a menu with
-// icons on the half of it somebody thought worth marking reads as a menu with
-// pieces missing, and the eye stops using the column as a column. Where an
-// action is already on the toolbar the entry names that toolbar icon and no
-// second drawing exists - the item menu's "Add a note here" wears the toolbar's
-// pen.
+// file the toolbar and the rest of the chrome draw from, so an action in two
+// places wears one face. All of them: a menu with icons on only half its rows
+// reads as one with pieces missing, and the eye stops using the column as a
+// column. Where an action is already on the toolbar the entry names that
+// toolbar icon rather than a second drawing.
 //
 // ── One resting home per action ──
 //
-// Sharing the icon was the answer to an action appearing twice. It is not an
-// answer to an action appearing four times, which is what add-note managed:
-// toolbar, canvas menu, item menu and the panel, under two different names. The
-// canvas menu has since given up its six duplicated rows (see canvasEntries).
+// Sharing the icon answers an action appearing twice, not four times - which is
+// what add-note managed: toolbar, canvas menu, item menu and the panel, under
+// two names. The canvas menu has since given up its six duplicated rows (see
+// canvasEntries).
 //
-// The rule that replaced them: an action rests in exactly one place - one you
-// can see without doing anything - and may be repeated elsewhere only where the
-// repeat reaches something the resting home cannot. The cursor point is the
-// usual excuse and a good one; "also handy" is not one. A keyboard accelerator
-// is not a second home and never counted against this.
+// The rule: an action rests in exactly one place - one you can see without
+// doing anything - and may be repeated elsewhere only where the repeat reaches
+// something the resting home cannot. The cursor point is the usual excuse and a
+// good one; "also handy" is not. A keyboard accelerator is not a second home
+// and never counted against this.
 
 // Reached straight rather than through cmds, which every other entry here goes
 // by. Renaming *is* the name drawn on the item, so the affordance lives with
-// the code that draws it, and routing it through the command surface would add
-// a second name for it and nothing else. canvas/notes.js takes the same
-// shortcut to the same module for the same reason.
+// the code that draws it; routing it through the command surface would add a
+// second name for it and nothing else. canvas/notes.ts takes the same shortcut
+// to the same module for the same reason.
 import { canRenameItem, editItemName } from '../canvas/items.ts';
 import { cue } from '../cuelume/engine.ts';
 import { tickSlider } from './controls.ts';
@@ -69,13 +67,12 @@ export type MenuRange = {
   step: number;
   unit?: string;
   /**
-   * The dial's two ends, and they agree on the type: a slider's position is a
-   * number going in, so it is a number coming out. This used to be `unknown`,
-   * on the reasoning that a board setting read by key could be anything - but
-   * the only reader is rangeRow(), which puts it straight into `slider.value`,
-   * and the only writer is `set` two lines down. A dial that reads something
-   * other than a number has a bug in whoever built the row, and this is where
-   * it should be caught rather than turned into the string "undefined".
+   * The dial's two ends, agreeing on the type: a slider's position is a number
+   * going in, so it is a number coming out. Not `unknown` - the only reader is
+   * rangeRow(), which puts it straight into `slider.value`, and the only writer
+   * is `set` two lines down. A dial that reads something other than a number
+   * has a bug in whoever built the row, and this is where it is caught rather
+   * than turned into the string "undefined".
    */
   get: () => number;
   set: (value: number) => void;
@@ -83,15 +80,15 @@ export type MenuRange = {
 
 /**
  * One row, as every builder in this file and every flyout in ui/flyout.ts writes
- * one. Flat rather than a union of the five kinds render() actually draws, and
- * that is a statement about how the rows are written: `sub` is handed a ternary
- * on the one row that only has children in one case, and a discriminated union
- * would refuse the shape the menu is easiest to read as.
+ * one. Flat rather than a union of the five kinds render() draws, which is a
+ * statement about how the rows are written: `sub` is handed a ternary on the one
+ * row that only has children in one case, and a discriminated union would refuse
+ * the shape the menu is easiest to read as.
  *
  * `check` is `unknown` because the ticks come from settings - getSetting() gives
- * back a board setting and knowing that a key can be read is not knowing what
- * came back. render() only ever asks whether it is present and whether it is
- * truthy, which is the whole of what a tick is.
+ * back a board setting, and knowing a key can be read is not knowing what came
+ * back. render() only asks whether it is present and truthy, which is the whole
+ * of what a tick is.
  */
 export type MenuEntry = {
   label?: string;
@@ -106,36 +103,34 @@ export type MenuEntry = {
    * A colour drawn in the icon column instead of an icon - or several, drawn as
    * one split chip.
    *
-   * The list form arrived with the palette picker, whose rows are choices
-   * between whole palettes rather than between single colours: three bands of
-   * paper, accent and ink say which palette a row is far better than any one of
-   * the three alone. A bare string is still a bare string and draws exactly as
-   * it did for the note tints and the connection colours.
+   * The list form is for the palette picker, whose rows are choices between
+   * whole palettes rather than single colours: three bands of paper, accent and
+   * ink say which palette a row is far better than any one alone. A bare string
+   * draws as it does for the note tints and the connection colours.
    */
   swatch?: string | string[];
   /**
    * The same colours, on the trailing edge instead, and wider.
    *
-   * **Two positions rather than one, because there are two kinds of row.** A
-   * note tint or a connection colour *is* the colour - the row says Yellow and
-   * the chip is what yellow means - so the chip belongs where an icon would be,
-   * in front of the word it is defining. A palette is not: the row says
-   * *Terracotta* and the chip is three bands showing what that palette is made
-   * of, which is a specimen of the thing rather than an icon for it. Specimens
-   * belong on the trailing edge, in a column of their own, where they line up
-   * against each other and can be compared down the list - which is the whole
-   * act a palette menu exists for and is impossible when they are interleaved
-   * with the words in a ragged left column.
+   * **Two positions, because there are two kinds of row.** A note tint or a
+   * connection colour *is* the colour - the row says Yellow and the chip is what
+   * yellow means - so the chip belongs where an icon would be, in front of the
+   * word it defines. A palette is not: the row says *Terracotta* and the chip is
+   * three bands showing what that palette is made of, a specimen rather than an
+   * icon. Specimens belong on the trailing edge, in a column of their own, where
+   * they line up and can be compared down the list - the whole act a palette
+   * menu exists for, and impossible interleaved with the words in a ragged left
+   * column.
    *
-   * Drawn as a bar rather than a square, for the same reason: five colours in a
+   * A bar rather than a square, for the same reason: five colours in a
    * thirteen-pixel square is five bands of two and a half pixels.
    */
   swatchEnd?: string | string[];
   /**
    * A row that reads rather than acts: shown, greyed, and skipped by the arrow
-   * keys. There is no heading in this renderer and this is deliberately not one
-   * - a heading labels the rows under it, where these say something about the
-   * state the menu is describing ("Showing 4 of 61", "nothing is tagged yet").
+   * keys. Not a heading, and this renderer has none - a heading labels the rows
+   * under it, where these say something about the state the menu is describing
+   * ("Showing 4 of 61", "nothing is tagged yet").
    */
   disabled?: boolean;
   /** a child menu, opened in place */
@@ -148,32 +143,29 @@ export type MenuEntry = {
 
 /**
  * What a panel is hung off: the three edges of an anchor's box that render()
- * actually reads. A DOMRect satisfies it, and so does the box ui/flyout.ts
- * builds by hand out of the button's left and the bar's bottom - which is the
- * reason this is the three numbers rather than the rectangle.
+ * reads. A DOMRect satisfies it, and so does the box ui/flyout.ts builds by hand
+ * out of the button's left and the bar's bottom - which is why this is three
+ * numbers rather than the rectangle.
  *
- * `bounds` is the fourth thing and the optional one: the container the panel
- * must stay inside, when there is one it should. It arrived for a reason that
- * has since gone - a flyout used to be drawn as the *underside of the bar*, and
- * past the end of the bar its squared top corner became a cut edge hanging
- * against the board - and it stays for one that has not: a panel belonging to a
- * button on a bar should not hang off the end of that bar, whatever shape it is.
- * The window is the wrong container for that and was the only one render() had.
+ * `bounds` is the fourth and optional one: the container the panel must stay
+ * inside, when there is one it should. A panel belonging to a button on a bar
+ * should not hang off the end of that bar, whatever shape it is. The window is
+ * the wrong container for that and was the only one render() had.
  *
- * Left off, the behaviour is exactly what it was: the window is the bound.
+ * Left off, the window is the bound.
  */
 export type MenuAnchor = {
   left: number;
   /**
-   * The anchor's own right edge, so the panel can grow out of the middle of it
-   * rather than out of its corner - see the transform-origin in placeRoot().
+   * The anchor's own right edge, so the panel grows out of the middle of it
+   * rather than its corner - see the transform-origin in placeRoot().
    *
    * Required rather than optional, which costs three of the four callers
    * nothing: they hand over a DOMRect, which has it. The fourth is ui/flyout.ts,
-   * which builds a literal out of two different boxes - the button's left and
-   * the *bar's* bottom - and had been throwing this one away. Optional would
-   * have let that keep happening silently and left the toolbar, the one caller
-   * this was written for, pointing at a button's left corner.
+   * which builds a literal out of the button's left and the *bar's* bottom and
+   * had been throwing this one away. Optional would let that keep happening
+   * silently and leave the toolbar - the caller this was written for - pointing
+   * at a button's left corner.
    */
   right: number;
   top: number;
@@ -192,18 +184,16 @@ type MenuOpts = {
 /**
  * What this menu asks of the command surface, and nothing else.
  *
- * Named here rather than borrowed from commands.ts for the reason
- * FlyoutCommands states in ui/flyout.ts: that module imports this one, so the
- * arrow may only go one way - which is also why `cmds` is handed in by
- * initMenu() rather than imported.
+ * Named here rather than borrowed from commands.ts for the reason FlyoutCommands
+ * states in ui/flyout.ts: that module imports this one, so the arrow may only go
+ * one way - which is also why `cmds` is handed in by initMenu() rather than
+ * imported.
  */
 export interface MenuCommands {
-  // Five members that no builder in this file called were removed - addFiles,
-  // find, fit, recenter and duplicate. This interface's own sentence above is
-  // "what this menu asks of the command surface, and nothing else", and a
-  // declaration nothing reads is a requirement on every implementer for
-  // nothing: commands.ts still has all five, the keyboard still reaches
-  // duplicate on Ctrl+D, and this list is now the menu again.
+  // Five members no builder here called were removed - addFiles, find, fit,
+  // recenter and duplicate. A declaration nothing reads is a requirement on
+  // every implementer for nothing: commands.ts still has all five, the keyboard
+  // still reaches duplicate on Ctrl+D, and this list is the menu again.
   //
   // The canvas menu
   addNoteAt: (at: Point | null) => void;
@@ -244,19 +234,19 @@ export interface MenuCommands {
   clearTagFilter: () => void;
   filterCounts: () => { shown: number, all: number };
   selectFiltered: () => void;
-  // The tour, and only the half of it that is about a tour already running -
-  // see tourEntries(). Building one is the Board tab's, so there is no
-  // tourStart, no membership toggle and no way in from here at all.
+  // The tour, and only the half about a tour already running - see
+  // tourEntries(). Building one is the Board tab's, so there is no tourStart,
+  // no membership toggle and no way in from here.
   inTour: () => boolean;
   tourLength: () => number;
   tourAt: () => number;
   tourStep: (delta: number) => void;
   tourGo: (i: number) => void;
   tourStop: () => void;
-  // Zoom to fit, which the menu had and gave up when the zoom cluster grew a
-  // button for it. It is back for one caller: during a tour the cluster is not
-  // on screen (see :root.is-touring in chrome.css), so this menu is the only
-  // place "show me the whole thing" can be asked for while one is running.
+  // Zoom to fit, given up when the zoom cluster grew a button for it. Back for
+  // one caller: during a tour the cluster is off screen (see :root.is-touring
+  // in chrome.css), so this menu is the only place "show me the whole thing"
+  // can be asked for while one is running.
   fit: () => void;
   canLock: () => boolean;
   lockableCount: () => number;
@@ -275,8 +265,8 @@ export interface MenuCommands {
   editPicture: (id: string) => void;
   flipUpAxis: (id: string) => void;
   extractSwatches: (id: string) => void;
-  // Async in the implementation - it decodes a frame - and void here, because
-  // the menu presses it and closes. Nothing in this file waits for a row.
+  // Async in the implementation - it decodes a frame - and void here: the menu
+  // presses it and closes. Nothing in this file waits for a row.
   keepFrame: (id: string) => void;
   rotateModel: (id: string) => void;
   setStickerTint: (id: string, tint: number) => void;
@@ -313,10 +303,10 @@ let cmds: MenuCommands | null = null;
 /**
  * Panels that have been closed and are still on screen playing their way out.
  *
- * A menu used to arrive as an object and leave as a deletion: `ctx-in` fades and
- * lifts it in, and every close was a bare `remove()`. Five surfaces share that
- * keyframe - Find, the right-click menu, the toolbar flyouts, the fence offer
- * and the connection chip - so all five appeared and none of them left.
+ * `ctx-in` fades and lifts a panel in, and every close was once a bare
+ * `remove()`. Five surfaces share that keyframe - Find, the right-click menu,
+ * the toolbar flyouts, the fence offer and the connection chip - so all five
+ * appeared and none of them left.
  *
  * **This set is not `node` by another name, and that is the whole design.** A
  * leaving panel is no longer the menu: it does not hold the keyboard, it is not
@@ -326,8 +316,7 @@ let cmds: MenuCommands | null = null;
  * now - the focus hand-back, the type-ahead reset, `menuOwner`, and `onClose`
  * last of all, which the flyout driver reads to write `aria-expanded` back onto
  * its button. A deferred hook would let that driver see a panel on its way out
- * as one that is still up, which is exactly what the ordering there exists to
- * prevent.
+ * as one still up, which is what the ordering there exists to prevent.
  *
  * A set rather than one slot because the root and its child leave together.
  */
@@ -340,23 +329,23 @@ const leaving = new Set<HTMLElement>();
  * animation never starts never fires the event - a panel closed on a hidden tab,
  * or one whose sheet did not load - and the node would sit in the document for
  * the rest of the session. Comfortably longer than --dur-fast at every whimsy
- * level, so in the ordinary case the event is what fires and this never does.
+ * level, so ordinarily the event fires and this never does.
  *
- * Deliberately a timer rather than requestAnimationFrame: rAF stops dead when
- * the window is occluded, which `research/old/ui-audit-*` records as the source
- * of its most convincing false finding. A menu closed behind another window must
- * still be gone when that window moves.
+ * A timer rather than requestAnimationFrame: rAF stops dead when the window is
+ * occluded, which `research/old/ui-audit-*` records as the source of its most
+ * convincing false finding. A menu closed behind another window must still be
+ * gone when that window moves.
  */
 const LEAVE_MS = 400;
 
 /**
  * Start a panel's exit, or finish it now if one is already under way.
  *
- * `flush` is the half that keeps the invariant: **at most one `#ctx-menu` in the
- * document.** Two elements sharing an id is invalid, and a hover flyout makes it
- * reachable rather than theoretical - running the pointer along the toolbar
- * opens and closes panels faster than any exit can play. Every path that builds
- * a panel flushes first, so a new one never has to wait for an old one.
+ * `flush` keeps the invariant: **at most one `#ctx-menu` in the document.** Two
+ * elements sharing an id is invalid, and a hover flyout makes it reachable
+ * rather than theoretical - running the pointer along the toolbar opens and
+ * closes panels faster than any exit can play. Every path that builds a panel
+ * flushes first, so a new one never waits for an old one.
  */
 function flushLeaving() {
   for (const el of leaving) el.remove();
@@ -366,18 +355,18 @@ function flushLeaving() {
 function dismiss(el: HTMLElement) {
   leaving.add(el);
   el.classList.add('is-leaving');
-  // `inert` and not only the stylesheet's pointer-events, because the two guard
+  // `inert` and not only the stylesheet's pointer-events: the two guard
   // different halves and the keyboard is the half that bites. It blurs whatever
   // inside the panel still held focus, takes the rows out of the tab order and
-  // out of the accessibility tree, and blocks hit-testing - so a panel that has
-  // already answered cannot be pressed, arrowed into, or announced while it
-  // plays out. Without it a close whose opener has since left the document
-  // leaves the keyboard on an invisible panel until the removal lands.
+  // the accessibility tree, and blocks hit-testing - so a panel that has already
+  // answered cannot be pressed, arrowed into, or announced while it plays out.
+  // Without it a close whose opener has since left the document leaves the
+  // keyboard on an invisible panel until the removal lands.
   //
-  // Safari 15.5, Chrome 102, Firefox 112: comfortably under the 16.4 floor in
+  // Safari 15.5, Chrome 102, Firefox 112: under the 16.4 floor in
   // research/docs/browser-support.md. On anything older the attribute is inert
   // in the other sense and menu.css's pointer-events carries the pointer half
-  // alone, which is what the app had a moment ago anyway.
+  // alone.
   el.setAttribute('inert', '');
   const done = () => {
     clearTimeout(timer);
@@ -391,10 +380,9 @@ function dismiss(el: HTMLElement) {
 let opener: HTMLElement | null = null;
 
 // SAFETY: document.activeElement answers Element; what holds the keyboard on
-// this page is a button, a field or the board, all of them HTMLElements - and
-// focus() is the only thing ever asked of what comes back, which is why this
-// says so rather than testing for it. Written once here rather than at each of
-// the three menu openers that call it.
+// this page is a button, a field or the board, all HTMLElements - and focus() is
+// the only thing ever asked of what comes back, which is why this asserts rather
+// than testing. Written once here rather than at each of the three openers.
 const focusedNow = () => document.activeElement as HTMLElement | null;
 // The anchor the menu was opened at, kept so a drill-down submenu re-renders in
 // the same place rather than jumping to wherever the pointer has drifted. The
@@ -406,20 +394,19 @@ let lastOpts: MenuOpts = {};
 /**
  * Whether the menu that is up was opened by a finger.
  *
- * Set by openContextMenu() from what the pipeline knows about the press. It is
- * the one thing this module asks about the *pointer* rather than about the
- * board, and exactly one row reads it - see multiSelectEntry().
+ * Set by openContextMenu() from what the pipeline knows about the press. The one
+ * thing this module asks about the *pointer* rather than the board, and exactly
+ * one row reads it - see multiSelectEntry().
  */
 let byTouch = false;
 
 /**
  * Told after every close, whoever caused it.
  *
- * One hook and not a list, because there is one thing that needs to hear this:
- * the toolbar owes its button an aria-expanded, and the panel can go without
- * ui/flyout.js being the one to take it - Escape, a press on the board, a
- * right-click somewhere else. A second subscriber would mean this module
- * growing a subscription list for an audience of one.
+ * One hook and not a list, because one thing needs to hear it: the toolbar owes
+ * its button an aria-expanded, and the panel can go without ui/flyout.ts being
+ * the one to take it - Escape, a press on the board, a right-click elsewhere. A
+ * second subscriber would mean a subscription list for an audience of one.
  */
 let onClose: (() => void) | null = null;
 export function setMenuCloseHook(fn: (() => void) | null) { onClose = fn; }
@@ -428,23 +415,21 @@ export function setMenuCloseHook(fn: (() => void) | null) { onClose = fn; }
  * The press that dismissed the menu, and when - so that pressing the button
  * that opened it a second time *closes* it.
  *
- * **Why this needs recording at all, which is the whole of the bug.** The
- * outside-press listener below closes on `pointerdown`, in the capture phase,
- * and a button that opens a menu is outside that menu. So a second tap on the
- * More button already did close it - and then the `click` that followed a few
- * milliseconds later ran the command and opened it again. The menu never looked
- * as though it had closed, and every attempt to fix it by adding a toggle in the
- * *opener* failed for the same reason: by the time the opener runs, the menu is
- * shut and there is nothing left to see.
+ * **Why this needs recording at all.** The outside-press listener below closes
+ * on `pointerdown`, in the capture phase, and a button that opens a menu is
+ * outside that menu. So a second tap on the More button already closed it - and
+ * the `click` a few milliseconds later ran the command and opened it again. The
+ * menu never looked closed, and a toggle in the *opener* cannot fix it: by the
+ * time the opener runs, the menu is shut and there is nothing left to see.
  *
  * So the fact has to survive the gap between the two events, and it is a fact
- * about that press rather than about the menu: *this element's pointerdown is
- * what dismissed it*. An opener asks, and declines to reopen.
+ * about that press rather than the menu: *this element's pointerdown is what
+ * dismissed it*. An opener asks, and declines to reopen.
  *
  * Timestamped because the pair is a pointerdown and its own click. A stale
- * record would make the *next* press on that button do nothing, which is a
- * worse bug than the one being fixed - so anything older than a slow tap is
- * treated as unrelated.
+ * record would make the *next* press on that button do nothing - a worse bug
+ * than the one being fixed - so anything older than a slow tap counts as
+ * unrelated.
  */
 /** The record above, named: who closed a menu, when, and which menu it was. */
 type Dismissal = { by: EventTarget | null, at: number, owner: Element | null };
@@ -455,16 +440,16 @@ const DISMISS_MS = 400;
 /**
  * The button the standing menu hangs off, when it hangs off one.
  *
- * Passed by the three openers that also ask justDismissed(), and it is what
- * turns that question from "did a press just close a menu" into "did a press on
- * *this* button close *this* button's menu" - which is what it always meant.
+ * Passed by the three openers that also ask justDismissed(), and it turns that
+ * question from "did a press just close a menu" into "did a press on *this*
+ * button close *this* button's menu".
  *
- * Without it, pressing a second menu button while the first's menu was up
- * closed one and opened neither: the capture pointerdown recorded the second
- * button as the dismisser, and the second button's own opener then read that as
- * "I am the toggle that just closed" and declined. Reproduces in the note
- * composer between Font and Highlight, and on the toolbar between More and the
- * palette picker - two buttons, one press, nothing on screen.
+ * Without it, pressing a second menu button while the first's menu was up closed
+ * one and opened neither: the capture pointerdown recorded the second button as
+ * the dismisser, and that button's own opener read it as "I am the toggle that
+ * just closed" and declined. Reproduces in the note composer between Font and
+ * Highlight, and on the toolbar between More and the palette picker - two
+ * buttons, one press, nothing on screen.
  */
 let menuOwner: Element | null = null;
 
@@ -479,9 +464,8 @@ export function justDismissed(el: Element | null): boolean {
   if (!el || !dismissed.by) return false;
   if (performance.now() - dismissed.at > DISMISS_MS) return false;
   // SAFETY: `dismissed.by` is an EventTarget only because that is what a
-  // pointerdown carries. It was recorded by the document listener below off a
-  // press on this page, so it is a Node; the truthiness test two lines up is
-  // what rules out the null.
+  // pointerdown carries. The document listener below recorded it off a press on
+  // this page, so it is a Node; the truthiness test two lines up rules out null.
   if (!el.contains(dismissed.by as Node)) return false;
   // ...and it has to have been *this* button's menu. See menuOwner. A menu with
   // no owner - the right-click menu, a fold - was never a toggle, so a press on
@@ -496,19 +480,18 @@ export function justDismissed(el: Element | null): boolean {
 // rather than a state to paint around - the reading ui/hud.ts states at length.
 // The `e.target as Node | null` below is the same cast ui/search.ts and
 // ui/fence-prompt.ts make in this exact close-on-outside listener: contains()
-// takes a Node or null and is only being asked whether the press was inside.
+// takes a Node or null and is only asked whether the press was inside.
 /**
  * Is this press inside the menu - counting the hover submenu as part of it?
  *
- * **Both panels, and the second one is the whole reason this is a function.**
- * The child is a sibling of the root on `<body>`, not a descendant of it, so
+ * **Both panels, and the second is the whole reason this is a function.** The
+ * child is a sibling of the root on `<body>`, not a descendant, so
  * `node.contains()` alone calls every press inside a submenu an outside press.
- * The three listeners below close on that in the *capture* phase, which is
- * before the click - so a submenu row could be opened, hovered, pointed at and
- * pressed, and the only thing that happened was the menu closing. Every row in
- * the Edit fold was dead on arrival and looked like a menu that simply ignored
- * you. The same trap the two panels' own `pointerleave` handling has to dodge,
- * from the other side.
+ * The three listeners below close on that in the *capture* phase, before the
+ * click - so a submenu row could be opened, hovered, pointed at and pressed, and
+ * all that happened was the menu closing. Every row in the Edit fold was dead on
+ * arrival and read as a menu ignoring you. The same trap the two panels' own
+ * `pointerleave` handling has to dodge, from the other side.
  */
 // SAFETY: the same fact as justDismissed() above - the callers hand this the
 // target of a pointer or focus event out of this document, which is a Node or
@@ -519,14 +502,14 @@ const insideMenu = (target: EventTarget | null) =>
 /**
  * Does the open menu own the keyboard?
  *
- * Two ways to own it, and both are needed. Focus being inside the panel is the
- * ordinary one - a menu opened from a keyboard press, or one a row has since
- * been arrowed onto. `lastOpts.focus` covers the frame after render() and
- * before the browser has settled focus, and it is also the honest answer for a
- * panel that asked for the keyboard and is between rows.
+ * Two ways to own it, both needed. Focus inside the panel is the ordinary one -
+ * a menu opened from a keyboard press, or one a row has been arrowed onto.
+ * `lastOpts.focus` covers the frame after render() and before the browser has
+ * settled focus, and is the honest answer for a panel that asked for the
+ * keyboard and is between rows.
  *
- * The hover flyout answers no to both, which is the whole point: it declined
- * focus on the way in, so it may not take a keystroke on the way past.
+ * The hover flyout answers no to both, which is the point: it declined focus on
+ * the way in, so it may not take a keystroke on the way past.
  */
 const ownsKeyboard = () =>
   !!lastOpts.focus || insideMenu(document.activeElement);
@@ -535,10 +518,10 @@ export function initMenu(viewport: Viewport, commands: MenuCommands) {
   vp = viewport;
   cmds = commands;
 
-  // Close on anything that would make the anchor point meaningless. Both
-  // pointer and wheel let the menu's own scroller through: a menu too tall for
-  // the window scrolls (see render), and closing on the wheel that scrolls it
-  // would make the entries past the fold unreachable with a mouse.
+  // Close on anything that would make the anchor point meaningless. Pointer and
+  // wheel let the menu's own scroller through: a menu too tall for the window
+  // scrolls (see render), and closing on the wheel that scrolls it would make
+  // the entries past the fold unreachable with a mouse.
   addEventListener('pointerdown', e => {
     if (!node || insideMenu(e.target)) return;
     // Recorded before the close, because close() is what clears the state this
@@ -549,9 +532,9 @@ export function initMenu(viewport: Viewport, commands: MenuCommands) {
   addEventListener('wheel', e => {
     if (node && !insideMenu(e.target)) close();
   }, { passive: true, capture: true });
-  // Capture, because a scroll does not bubble. The board itself does not
-  // scroll today, so this is the surrounding page moving under a menu that is
-  // pinned to the window - the anchor point would be a lie afterwards.
+  // Capture, because a scroll does not bubble. The board does not scroll today,
+  // so this is the surrounding page moving under a menu pinned to the window -
+  // the anchor point would be a lie afterwards.
   addEventListener('scroll', e => {
     if (node && !insideMenu(e.target)) close();
   }, true);
@@ -560,21 +543,19 @@ export function initMenu(viewport: Viewport, commands: MenuCommands) {
   addEventListener('keydown', e => {
     if (!node) return;
     // Escape closes whatever is up, focus or no focus: a panel a pointer opened
-    // by drifting over a button is still a panel somebody wants gone, and
-    // Escape is how anything in this app is dismissed.
+    // by drifting over a button is still a panel somebody wants gone, and Escape
+    // is how anything in this app is dismissed.
     if (e.key === 'Escape') { e.stopPropagation(); close(); return; }
-    // Everything below this line is *navigation of the menu*, and it only
-    // belongs to the menu when the menu has the keyboard.
+    // Everything below is *navigation of the menu*, and belongs to the menu only
+    // when the menu has the keyboard.
     //
-    // It used to belong to it whenever a panel was up, which openAnchored's own
-    // header says is wrong: `focus` is false for a hover precisely so that "a
-    // panel that took the keyboard because a pointer drifted over a button"
-    // does not "move the caret out of whatever was being typed". This listener
-    // is on the window, in the capture phase, and did exactly that - dwell on
-    // the toolbar's Note button, press Ctrl+K, type `cat`, and each letter went
-    // to typeAhead(), matched a flyout row, focused it and was eaten by
-    // preventDefault(). The caret left the field and the word never arrived.
-    // The arrows and Home/End the same.
+    // Gated whenever a panel was up, this listener - on the window, in the
+    // capture phase - broke typing: dwell on the toolbar's Note button, press
+    // Ctrl+K, type `cat`, and each letter went to typeAhead(), matched a flyout
+    // row, focused it and was eaten by preventDefault(). The caret left the
+    // field and the word never arrived. The arrows and Home/End the same. See
+    // openAnchored's header: `focus` is false for a hover exactly so a panel a
+    // pointer drifted onto does not move the caret out of what is being typed.
     if (!ownsKeyboard()) return;
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
@@ -582,21 +563,20 @@ export function initMenu(viewport: Viewport, commands: MenuCommands) {
       return;
     }
     // The ends. Cheap, and the first thing a keyboard reaches for in a list of
-    // eleven papers - the arrows are for the row next door, not for the far end.
+    // eleven papers - the arrows are for the row next door, not the far end.
     if (e.key === 'Home' || e.key === 'End') {
       e.preventDefault();
       focusEnd(e.key === 'Home' ? 1 : -1);
       return;
     }
-    // And type-ahead, which is the one thing a native <select> does that no
-    // amount of arrow keys substitutes for: in a list of eleven papers, `t`
-    // is the difference between reading the list and knowing where you are
-    // going. Written here rather than left as a gap, because this menu is what
-    // a dropdown in this app is built out of and the gap is what made replacing
-    // a native control a regression rather than a change.
+    // Type-ahead: the one thing a native <select> does that no amount of arrow
+    // keys substitutes for. In a list of eleven papers, `t` is the difference
+    // between reading the list and knowing where you are going. This menu is
+    // what a dropdown in this app is built out of, and the gap is what made
+    // replacing a native control a regression rather than a change.
     //
     // Anything that is not a single printable character is somebody else's key.
-    // The modifier test is what keeps Ctrl+C and the accelerators out of it.
+    // The modifier test keeps Ctrl+C and the accelerators out of it.
     if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
       if (typeAhead(e.key)) e.preventDefault();
     }
@@ -851,7 +831,7 @@ function titleEntries(_id: string, _at: Point): MenuEntry[] {
  *
  * Gated as a flag on the rows rather than as a second entry list, which was the
  * alternative and the worse one: two lists of the same menu drift the first time
- * only one of them is edited, and one ui/menu.js for every menu in the app is
+ * only one of them is edited, and one ui/menu.ts for every menu in the app is
  * the whole arrangement here.
  */
 function itemEntries(id: string, count: number, at: Point | null, mobile = false): MenuEntry[] {
@@ -1205,7 +1185,7 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // for the reason above: one card has nothing to be grouped with.
     //
     // The second surface, not the only one: a rubber band offers this for itself
-    // as it is let go (ui/fence-prompt.js), which is the gesture people reach for
+    // as it is let go (ui/fence-prompt.ts), which is the gesture people reach for
     // and the one Fences itself uses. This is what is left for a selection built
     // by shift-clicking, where there is no band to catch the answer - so it stays
     // even though the band is now the ordinary way in.
@@ -1252,7 +1232,7 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
 
 /**
  * The align/distribute fold. Six edges to line up on and two axes to space
- * along - the whole of geometry.js's alignTargets/distributeTargets, one row
+ * along - the whole of geometry.ts's alignTargets/distributeTargets, one row
  * each, in reading order: the horizontal edges, the vertical edges, then the
  * two distributions. Each closes the menu and files one undo step through the
  * command, so it reads and undoes as the single tidy-up it is.
@@ -1432,7 +1412,7 @@ function stickerTintEntries(id: string): MenuEntry[] {
  * The colours a line may be given, and the one fold in this file whose rows are
  * a palette rather than a list of behaviours.
  *
- * Names, not values - see connMeta() in board-model.js. What each name looks
+ * Names, not values - see connMeta() in board-model.ts. What each name looks
  * like is one rule in canvas.css, which is what keeps a board file from being
  * able to name a colour the stylesheet did not choose. The board's own grey is
  * first because it is the default and the way back to it.
@@ -1687,9 +1667,10 @@ function render(entries: MenuEntry[], clientX: number, clientY: number, opts: Me
   fillPanel(node, entries);
 
   // Measure off-screen, then place - the menu's size depends on its entries.
-  // The height read here is already capped by the max-height in overlays.css,
-  // so a menu with more entries than the window is tall scrolls rather than
-  // running off the bottom: the flip below can only work with a box that fits.
+  // The height read here is already capped by the max-height on menu.css's
+  // `#ctx-menu, #ctx-child` rule, so a menu with more entries than the window is
+  // tall scrolls rather than running off the bottom: the flip below can only
+  // work with a box that fits.
   node.style.visibility = 'hidden';
   placeRoot(node, clientX, clientY, opts);
 }
@@ -2168,7 +2149,7 @@ function chip(color: string | string[], className = 'ctx-chip') {
 /**
  * One icon from assets/icons.svg, as the same wrapper index.html uses.
  *
- * Exported for ui/fence-prompt.js, which borrows this menu's row and now
+ * Exported for ui/fence-prompt.ts, which borrows this menu's row and now
  * borrows its icons too - the offer under the band and the `Fence these 5`
  * entry are one action met in two places, and this is what keeps them one
  * drawing rather than two that have to be remembered together.

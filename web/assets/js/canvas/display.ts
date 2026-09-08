@@ -7,12 +7,12 @@
 // them anyway, and a decoded bitmap is naturalWidth x naturalHeight x 4 bytes
 // regardless of how small the card is drawn. One 6000x4000 photo is ~96 MB of
 // decode. A board of them, all mounted at once - which is exactly what zooming
-// out to frame the whole board does (see sync() in canvas/items.js) - is why
+// out to frame the whole board does (see sync() in canvas/items.ts) - is why
 // iOS Safari kills the tab with fewer than fifty items on screen.
 //
 // So the renderer mounts a *display copy* instead: a card-sized WebP made once,
 // held for the session, keyed by the same content hash the asset store uses.
-// The original bytes stay in storage/assets.js for export and for the manual
+// The original bytes stay in storage/assets.ts for export and for the manual
 // optimize step; only what the <img> decodes changes.
 //
 // Two properties matter for not making the problem worse while fixing it:
@@ -33,7 +33,7 @@
 //
 //  - The cache owns only what it made. A picture already inside the ceiling is
 //    left alone and the entry points at the asset store's own object URL; that
-//    URL is storage/assets.js's to revoke, not this module's. Only the WebP
+//    URL is storage/assets.ts's to revoke, not this module's. Only the WebP
 //    copies this module created are revoked by clearDisplay().
 //
 // ── One kind of copy outlives the session ──
@@ -68,7 +68,7 @@ import { surface, surfaceToBlob, type Surface } from './surface.ts';
  *
  * The cache below is keyed by content hash alone, so this must not change
  * without emptying it: a copy made at 1024 would otherwise be served for the
- * rest of the session. ui/quality.js answers a change with resetItems(), which
+ * rest of the session. ui/quality.ts answers a change with resetItems(), which
  * calls clearDisplay() on the way through.
  */
 const displayMax = () => quality.sharpness;
@@ -320,7 +320,7 @@ function publish(
   const won = cache.get(key);
   if (won) return won.url;
   // A copy that came out is ours to revoke; a picture already small enough rides
-  // the asset store's own URL, which assets.js revokes - do not double-manage it.
+  // the asset store's own URL, which assets.ts revokes - do not double-manage it.
   // assetURL() is null only for a hash the store does not hold, and the caller
   // proved it holds this one - so the assertion cannot fire.
   const entry = small
@@ -352,7 +352,7 @@ const NOTHING: Made = { blob: null, knocked: false };
 /**
  * A card-sized WebP of a picture, or null to mount the original as-is.
  *
- * Same four-call shape as optimize/picture.js.
+ * Same four-call shape as optimize/picture.ts.
  */
 async function shrink(
   blob: Blob | null | undefined, crop: Crop = null, rot: Turn = null, matte: Matte = false,
@@ -385,7 +385,7 @@ async function shrink(
     const quarter = rot === 90 || rot === 270;
     const dw = quarter ? h : w;
     const dh = quarter ? w : h;
-    // Through canvas/surface.js rather than `new OffscreenCanvas(...)` directly,
+    // Through canvas/surface.ts rather than `new OffscreenCanvas(...)` directly,
     // and this is the whole module's fate riding on one constructor: it landed
     // in Safari 16.4, and below that the call threw straight into the catch
     // below - which answers "leave the original alone". So on an older iOS this
@@ -430,7 +430,7 @@ async function shrink(
  * This used to ask for WebP and, if the blob came back as anything else, return
  * null - which this module's caller reads as "leave it alone" and answers by
  * mounting the full-resolution original. The reasoning was a file-size one
- * borrowed from optimize/picture.js, where refusing a PNG is right because that
+ * borrowed from optimize/picture.ts, where refusing a PNG is right because that
  * module *writes to the board* and a copy larger than the original is a bad
  * trade.
  *

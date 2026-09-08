@@ -1,6 +1,6 @@
 // Stickers, and the two things about them that can go wrong quietly.
 //
-// The first is *completeness*. A sticker is a note in every way sticky.js cares
+// The first is *completeness*. A sticker is a note in every way sticky.ts cares
 // about, and the whole of that claim is one predicate - isSticky() - read from
 // five places. A kind that sticks in stuckTo() but is not recognised by
 // stuckFollowers() is a sticker that gets left behind when the card underneath
@@ -514,7 +514,7 @@ test('the loose flag survives a save and a reload', () => {
 // fraction of its host, and neither sweep may change that fraction.
 // ---------------------------------------------------------------------------
 
-/** Where a rider sits on its host, as the fraction sticky.js measures. */
+/** Where a rider sits on its host, as the fraction sticky.ts measures. */
 const fractionOn = (riderId, hostId) => {
   const r = byId(riderId), h = byId(hostId);
   return { fx: (r.x - h.x) / h.w, fy: (r.y - h.y) / h.h };

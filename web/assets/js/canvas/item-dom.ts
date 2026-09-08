@@ -153,7 +153,7 @@ export const wantsHead = (item: ItemFragment): boolean => !NO_HEAD.has(item.type
  * The word printed above the rule at the index rung.
  *
  * The extension, in preference to anything else, because that is the card's own
- * kicker (see cardShell in canvas/renderers.js) and because on a board built out
+ * kicker (see cardShell in canvas/renderers.ts) and because on a board built out
  * of somebody's files it is the most informative three characters available -
  * PDF, OBJ, WAV and MP3 each say something a type word cannot. The type word is
  * the fallback for the items that were never files: a link has no extension and
@@ -545,7 +545,7 @@ export function setGrips(el: HTMLElement, want: boolean): void {
   // A ghost card is the same, for a different reason: it holds a fixed sentence
   // at a fixed 3:2, and it is leaving as soon as the board has anything on it.
   // There is nothing to gain by resizing one and a stretched hint looks broken.
-  // Grips are the only way into a resize - canvas/input.js reaches it through
+  // Grips are the only way into a resize - canvas/input.ts reaches it through
   // `.grip` and nothing else - so withholding them here is the whole lock.
   //
   // Two kinds and no more, because they are the two this element can answer on
@@ -572,11 +572,11 @@ export function setGrips(el: HTMLElement, want: boolean): void {
  * The title card's two pop-up buttons: a pen to the RIGHT that opens the shared
  * masthead style panel, and a T to the LEFT that drops into inline rename of the
  * board name (single tap). Renaming is also a double-tap of the card itself (see
- * the dblclick handler in input.js). Only the title card has them, built once and
+ * the dblclick handler in input.ts). Only the title card has them, built once and
  * kept - the CSS shows them on hover or while the card is selected. Children of
  * `.item` like the grips, so they ride the card's transform and hold a constant
  * on-screen size through --iz. The clicks themselves are caught by
- * canvas/input.js (which owns cmds), the way grip and widget hits are - this only
+ * canvas/input.ts (which owns cmds), the way grip and widget hits are - this only
  * draws the buttons.
  */
 export function buildTitleControls(el: HTMLElement): void {

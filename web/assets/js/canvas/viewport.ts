@@ -1,10 +1,8 @@
 // Coordinate + viewport model.
 //
-// World coordinates are floats with (0,0) at the centre of the board, oriented
-// like a maths plane rather than like a screen: +x right, **+y up**. Top-right
-// is (+,+), bottom-left is (-,-). Screen y points the other way, so the two
-// axes differ by a sign, and that sign lives here and in items.js/place() -
-// nothing else in the app needs to think about it.
+// World coordinates are floats with (0,0) at the board's centre, oriented like
+// a maths plane rather than a screen: +x right, **+y up**. Screen y points the
+// other way, and that sign lives here and in items.ts/place() - nowhere else.
 //
 //   screenX = (worldX - panX) * zoom + centreX
 //   screenY = (panY - worldY) * zoom + centreY
@@ -13,11 +11,11 @@
 //
 // #world is one absolutely-positioned layer pinned to the viewport centre, and
 // the whole pan/zoom is a single `translate(...) scale(...)` on it - so the
-// browser composites pan/zoom on the GPU and native <img>/<video> keep working.
+// browser composites on the GPU and native <img>/<video> keep working.
 //
 // Transform order matters: `translate(t) scale(z)` puts a child laid out at CSS
 // (cssX, cssY) at centre + (t + css*z). Items are laid out at cssY = -worldY
-// (see items.js), which makes the vertical translate +panY*zoom, not -panY*zoom.
+// (see items.ts), which makes the vertical translate +panY*zoom, not -panY*zoom.
 
 import { clamp, rafThrottle, emitter, readToken } from '../util.ts';
 import type { Emitter } from '../util.ts';
@@ -28,13 +26,10 @@ import type { LayoutMode } from '../board-model.ts';
 /**
  * The board's sheet as the screen sees it - what mobileScreenRect() answers.
  *
- * Declared here rather than in canvas/mobile-frame.ts, which is where it used
- * to live and is still where most of it is read: mobile-frame already imports
- * this module, so the type has to travel in that direction or the graph gains a
- * cycle (tests/layers.test.js counts a type-only import as an edge, and it is
- * right to - the arrow is a fact about the source whatever the runtime does
- * with it). The method that produces the rectangle is the honest owner of its
- * shape anyway.
+ * Declared here, not in canvas/mobile-frame.ts where most of it is read:
+ * mobile-frame already imports this module, so the type has to travel in that
+ * direction or the graph gains a cycle (tests/layers.test.js counts a type-only
+ * import as an edge, rightly - the arrow is a fact about the source).
  */
 export type MobileScreenRect = {
   left: number;
@@ -62,11 +57,11 @@ export type MobileScreenRect = {
  *
  * The name stays, rather than the constant being folded away into 1s. It is the
  * one place that says which scale the corner means by 100%, and `vp.fit(items,
- * 80, 0, BASE_ZOOM)` in main.js reads as what it is - open at 100% - where a
+ * 80, 0, BASE_ZOOM)` in main.ts reads as what it is - open at 100% - where a
  * bare 1 would read as an argument somebody guessed.
  *
  * Anything measured in real screen pixels is deliberately not written against
- * it: the grid's MIN_PX/MAX_PX, paper.js's page outline and the scale bar all
+ * it: the grid's MIN_PX/MAX_PX, paper.ts's page outline and the scale bar all
  * compose with the raw zoom and stay truthful by doing so.
  */
 export const BASE_ZOOM = 1;
@@ -98,7 +93,7 @@ const CULL_MARGIN_MAX = 400;
 /**
  * That margin in world units at the current zoom.
  *
- * Exported from here because canvas/items.js and canvas/web.js both cull against
+ * Exported from here because canvas/items.ts and canvas/web.ts both cull against
  * it: their own module-level copies had drifted apart, which is the shape of bug
  * a duplicated line exists to produce - change one and you had to remember the
  * other. The null guard is not defensive noise: `vp` arrives in each module's
@@ -149,7 +144,7 @@ function mobileTopPad(): number {
  *
  * The room is made here, in the pan clamp, rather than by moving the board's
  * top edge - the strip still starts exactly where mobileBoardTop() says, items
- * still pack from its first row, and nothing in state.js has to know that a
+ * still pack from its first row, and nothing in state.ts has to know that a
  * header exists. What the clamp does is stop the scroll a header lower, so the
  * band above the edge is real space rather than something drawn over the items.
  *
@@ -189,7 +184,7 @@ export function mobileZoom(viewWidth: number, worldWidth: number, pad = MOBILE_S
  * the tree as the regression check rather than being deleted once they have
  * been used. See research/old/2026-07-30-mobile-scroll-perf.md.
  *
- * - `legacyVars` puts back the *cost* of what canvas/mobile-frame.js replaced:
+ * - `legacyVars` puts back the *cost* of what canvas/mobile-frame.ts replaced:
  *   the five custom properties written on #viewport on every frame. Nothing
  *   reads them any more, so this changes no picture - it re-creates only the
  *   invalidation. #viewport is an ancestor of #world and custom properties are
@@ -199,7 +194,7 @@ export function mobileZoom(viewWidth: number, worldWidth: number, pad = MOBILE_S
  *   bought, on the device it was taken away for.
  * - `chrome` false hides the Mobile sheet and masthead and skips their writes
  *   entirely: the upper bound on what the chrome can still be costing.
- * - `gridPos` false skips the background-position write in canvas/grid.js,
+ * - `gridPos` false skips the background-position write in canvas/grid.ts,
  *   which is the lattice layer's per-frame re-raster.
  */
 export const mobilePerfFlags = { legacyVars: false, chrome: true, gridPos: true };
@@ -299,11 +294,11 @@ export const deviceRatio = () =>
 // rather than a set of things you are reading, so item chrome (labels, grips)
 // becomes noise and an animation is movement with nothing to see in it. These
 // were 0.35 and 0.3, which put chrome and motion on separate rungs - two
-// thresholds four hundredths apart that nobody could perceive as two, and that
+// thresholds five hundredths apart that nobody could perceive as two, and that
 // made "zoomed out" mean something slightly different depending on which module
 // was asking. Kept as separate names because separate modules import them for
 // separate purposes; they are one number and should move together, and the day
-// one of them genuinely wants to differ it can, without the other three
+// one of them genuinely wants to differ it can, without the other two
 // silently coming with it.
 
 /** Where the rung sits with a mouse in hand. */
@@ -367,7 +362,7 @@ export function onTouch(): boolean {
  *
  * A third question, and it exists because the media guards were asking the one
  * above and it is not the same question. iOS allows very few live video
- * decoders at once, which is why canvas/renderers.js parks a clip's source
+ * decoders at once, which is why canvas/renderers.ts parks a clip's source
  * until it is played - a board of parked clips mounted by a zoom-out is
  * otherwise a dead tab. That is a fact about **the engine**, not about fingers,
  * and the two come apart on exactly one device: an iPad with a Magic Keyboard
@@ -410,7 +405,7 @@ export function rationsDecoders(): boolean {
  * person who dragged it narrow did not ask for a different level of detail. Both
  * together are a phone and very little else.
  *
- * 640px is the app's existing narrow breakpoint (canvas/notes.js). Width alone,
+ * 640px is the app's existing narrow breakpoint (canvas/notes.ts). Width alone,
  * not height: a laptop with devtools docked along the bottom is short and is not
  * a phone, and it is a machine this app is developed on every day. A phone held
  * in landscape falls back to the desk rung, which is the cheap side of the trade
@@ -454,7 +449,7 @@ const lodZoom = () => (onSmallScreen() ? LOD_ZOOM_SMALL : LOD_ZOOM);
 
 /** Below this, item chrome (labels, grips) is more noise than help. */
 export const farZoom = () => lodZoom();
-/** At or below this, animated pictures hold still - see canvas/stills.js. */
+/** At or below this, animated pictures hold still - see canvas/stills.ts. */
 export const stillZoom = () => lodZoom();
 /**
  * And below this a photograph is drawn from its hundred-pixel thumbnail
@@ -466,7 +461,7 @@ export const thumbZoom = () => lodZoom();
 // labels and the grips, and they no longer leave at all - the far view is the
 // one that shows the whole graph at once, which is where a drawn line earns the
 // most rather than least. See the note where the fade band used to be in
-// canvas/web.js.
+// canvas/web.ts.
 
 // How long a commanded view move takes.
 //
@@ -511,7 +506,7 @@ export class Viewport {
   cursor: Point | null;
   // The padlock in the corner controls. Not a board setting and not saved
   // with one. A board does record the view it was left at, but deliberately
-  // does not open at it - openingView() in main.js frames the whole thing
+  // does not open at it - openingView() in main.ts frames the whole thing
   // instead, for the reasons written there - so a lock restored from a file
   // would be holding a magnification the board had already declined to
   // reopen at. It lasts as long as the sitting does, which is also what it is
@@ -1099,7 +1094,7 @@ export class Viewport {
   _moving() {
     if (!this._still) this.world.classList.add('is-viewing');
     // The same fact as the class, in a form a module can read without asking the
-    // DOM. canvas/grid.js is the caller, and it runs inside the frame - a
+    // DOM. canvas/grid.ts is the caller, and it runs inside the frame - a
     // classList test there would be a style read per frame to learn something
     // this object already knows.
     this.moving = true;
@@ -1167,7 +1162,7 @@ export class Viewport {
    * it, and the chrome that reads them cares which.
    *
    * Public because the grid needs the same rectangle - a lattice is drawn
-   * inside the board and nowhere else (see inkBox() in canvas/grid.js), and it
+   * inside the board and nowhere else (see inkBox() in canvas/grid.ts), and it
    * used to arrive at these four numbers by repeating the arithmetic below.
    */
   mobileScreenRect(): MobileScreenRect {
@@ -1188,7 +1183,7 @@ export class Viewport {
     // of #world. Custom properties are inherited, so that was a computed-style
     // invalidation of every mounted card and everything inside it, on every
     // frame of every scroll, on the layout least able to afford one. They are
-    // canvas/mobile-frame.js's business now, off a change listener like every
+    // canvas/mobile-frame.ts's business now, off a change listener like every
     // other piece of screen-space chrome, and nothing writes to #viewport on a
     // view frame any more.
     //
@@ -1218,7 +1213,7 @@ export class Viewport {
     // The origin mark, centred on the point the axes cross.
     //
     // The rules themselves are not placed here any more. They are drawn, in
-    // whole device pixels, by canvas/grid.js - see paintAxes() there for the
+    // whole device pixels, by canvas/grid.ts - see paintAxes() there for the
     // rounding problem that made an element the wrong tool for a hairline. What
     // is left is this: axisOrigin() hands back the *centre* of the device pixel
     // the crossing falls in, and the mark is centred on the same point, so the

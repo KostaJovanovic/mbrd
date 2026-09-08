@@ -1,6 +1,6 @@
 // The presets, dressed for the two ends of the whimsy axis.
 //
-// ui/pigments.js dresses an *extracted* palette per tier - pastel() at Softish,
+// ui/pigments.ts dresses an *extracted* palette per tier - pastel() at Softish,
 // bolden() at Harsh, the tables untouched in the middle. The four palettes
 // written by hand in tokens.css get no such pass, because nothing measures
 // them: they are literals. This prints what those same two transforms make of

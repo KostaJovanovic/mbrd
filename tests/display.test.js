@@ -11,8 +11,8 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-// Canonical, deliberately un-cache-busted: display.js resolves '../storage/
-// assets.js' without a query, so a query-busted copy here would be a second,
+// Canonical, deliberately un-cache-busted: display.ts resolves '../storage/
+// assets.ts' without a query, so a query-busted copy here would be a second,
 // empty registry and every lookup would miss - which looks exactly like the
 // pass this file is trying to prove. The cut-out cache is imported the same way
 // and for the same reason.
@@ -25,11 +25,11 @@ import { fakeIndexedDB } from './helpers.js';
 // else, so this lands in time even though the imports above have already run.
 globalThis.indexedDB = fakeIndexedDB();
 
-/** A blob-alike: display.js only reads .type, and putAsset only reads .size. */
+/** A blob-alike: display.ts only reads .type, and putAsset only reads .size. */
 const imageBlob = (type = 'image/png') => ({ type, size: 1024 });
 
 /**
- * Install the four browser APIs display.js reaches for, with the decode held
+ * Install the four browser APIs display.ts reaches for, with the decode held
  * open so a test can interleave a clear with a generation in flight.
  *
  * Returns `release()` to let the decode finish, plus counters proving nothing
@@ -90,7 +90,7 @@ function stubImageAPIs({ encodes = ['image/webp'] } = {}) {
   return { release, restore, urls: () => created, revoked: () => revoked, peak: () => peak, asked: () => asked };
 }
 
-// display.js keeps its cache in module scope, so each test needs its own copy.
+// display.ts keeps its cache in module scope, so each test needs its own copy.
 // The asset registry is shared, so it is emptied instead.
 let n = 0;
 const freshDisplay = () => { clearAssets(); return import(`../web/assets/js/canvas/display.ts?case=${n++}`); };

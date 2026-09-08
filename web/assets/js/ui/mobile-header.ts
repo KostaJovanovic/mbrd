@@ -189,7 +189,7 @@ export function initMobileHeaderEditor(vp: Viewport | null) {
   // The button, so a second tap closes rather than discarding the query and
   // rebuilding an empty palette - see open() in ui/search.ts.
   findBtn.addEventListener('click', () => openSearch(findBtn));
-  // The name at the top of the panel, on ui/board-title.js's wiring rather than
+  // The name at the top of the panel, on ui/board-title.ts's wiring rather than
   // on its own. It is the same field the sidebar's Board section has, and a
   // rename typed into either shows in the other because both are painted from
   // `board.title` on the same 'board' event - which is also how it stays in step
@@ -249,7 +249,7 @@ export function initMobileHeaderEditor(vp: Viewport | null) {
   // repaints when the lens changes (which does not emit 'layout').
   bus.on('lens', paintButton);
   // The Feed says when its title page scrolls in and out of view; the pen goes
-  // with it. See paintButton() and the observer in ui/feed.js.
+  // with it. See paintButton() and the observer in ui/feed.ts.
   bus.on('feed:masthead', on => { mastheadOnScreen = !!on; paintButton(); });
   // The edit bar is one of the exclusive right-side panels: it and the player hide
   // and restore each other through the stack.
@@ -273,7 +273,7 @@ export function initMobileHeaderEditor(vp: Viewport | null) {
   });
   // The title card mounts, unmounts and remounts through the delete/restore
   // button and layout switches; each time, its freshly-built node needs the
-  // style written onto it. Deferred a microtask because canvas/items.js mounts
+  // style written onto it. Deferred a microtask because canvas/items.ts mounts
   // the node in its own 'items' handler, which runs after this one - so the node
   // exists by the time this fires. Cheap: a querySelector and a few writes.
   bus.on('items', () => queueMicrotask(() => styleTitleCard()));
@@ -344,7 +344,7 @@ export function openPanel() {
  * Put it away.
  *
  * Exported because Escape closes panels app-wide - see cmds.closeSidebar in
- * main.js - and because leaving Mobile takes the masthead with it, which would
+ * main.ts - and because leaving Mobile takes the masthead with it, which would
  * otherwise leave a panel of controls open over a board that no longer has the
  * thing they style.
  */
@@ -661,20 +661,24 @@ function styleTitleCard(style: MobileHeader = header(), axes: FontAxis[] = avail
   if (!card) return;
   applyTitleStyle(card, style, axes);
   // Match the masthead's *effective* size, clamp and all. The masthead caps its
-  // font at 96px (and floors it at 20px) against the mobile board's width, so a
-  // wide board's name is smaller relative to its box than the raw size dial says
-  // - the 512-wide board caps, the 256-wide card would not, so the same dial ran
-  // the card's text larger and it wrapped where the masthead did not (measured:
-  // card ratio 0.20 vs masthead 0.1875). The card has no screen width of its own
-  // to clamp against, so the ratio is computed here against the mobile board's
-  // width and handed over as --mobile-title-ratio, which the card multiplies by
-  // its own width (100cqw) in the CSS. The two then wrap identically.
+  // font at TITLE_CAP of the mobile board's width - the ratio 0.1875, which is
+  // 96px on the 512-wide board - and floors it at 20px, so a wide board's name
+  // is smaller relative to its box than the raw size dial says - the 512-wide
+  // board capped, the 256-wide card did not, so the same dial ran the card's
+  // text larger and it wrapped where the masthead did not (measured: card ratio
+  // 0.20 vs masthead 0.1875). The card has no screen width of its own to clamp
+  // against, so the ratio is computed here against the mobile board's width and
+  // handed over as --mobile-title-ratio, which the card multiplies by its own
+  // width (100cqw) in the CSS. The two then wrap identically.
   //
   // From mobileBoardWorldWidth(), not viewport.mobileWorldWidth: the viewport
   // holds the *active* layout's figure, and on Desktop that is the Desktop grid
-  // and its mobileColumns default (6, so 6x64=384) - which skips the 96px cap
-  // the real 8x64=512 masthead hits and made the card wrap sooner. This reads
-  // the Mobile layout's own width whatever layout is showing.
+  // and its mobileColumns default (6, so 6x64=384) - which is not the width the
+  // real 8x64=512 masthead is measured against, and made the card wrap sooner
+  // back when the cap was an absolute 96px rather than TITLE_CAP's 0.1875, the
+  // ratio that yields that same 96px at 512. The 20px floor is still absolute,
+  // so the width read here still decides the answer. This reads the Mobile
+  // layout's own width whatever layout is showing.
   const ref = mobileBoardWorldWidth() || 512;
   const px = Math.min(ref * TITLE_CAP, Math.max(20, ref * (style.size / 100)));
   card.style.setProperty('--mobile-title-ratio', String(px / ref));
@@ -858,7 +862,7 @@ function paintButton() {
   // name, its face, size, stretch and weight, every one of which paints onto the
   // masthead. Left riding the whole wall it is a control for something that is
   // not on the screen, sitting over the photographs that are. The Feed announces
-  // the crossing on 'feed:masthead' (see the observer in ui/feed.js), which is
+  // the crossing on 'feed:masthead' (see the observer in ui/feed.ts), which is
   // also why this stays a plain boolean here - the module that can see the
   // scroller is the one that decides, and this one only wears the answer.
   const lens = document.documentElement.dataset.feedLens;
@@ -867,7 +871,7 @@ function paintButton() {
   // scroll - on leaving the top stop and on returning to it. Writing it on
   // every frame in between is two attribute sets a frame to arrive at the state
   // already there, which is the one thing every other view listener in this app
-  // guards against (see paintZoom() in main.js and draw() in ui/scalebar.js).
+  // guards against (see paintZoom() in main.ts and draw() in ui/scalebar.ts).
   if (visible === buttonShown) return;
   buttonShown = visible;
   button.hidden = !visible;
@@ -906,7 +910,7 @@ function update(patch: Partial<MobileHeader>) {
 
 function header(): MobileHeader {
   // Board-level now, not per-layout: the Mobile masthead and the Desktop title
-  // card are one style set in one place. See state.js.
+  // card are one style set in one place. See state.ts.
   return board.mobileHeader || DEFAULT_MOBILE_HEADER;
 }
 

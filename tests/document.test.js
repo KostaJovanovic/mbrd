@@ -1,4 +1,4 @@
-// The picture a document already has of itself (import/document.js).
+// The picture a document already has of itself (import/document.ts).
 //
 // One of the hand-written binary readers, so it is tested the way the others
 // are: mostly on input that is wrong. A .docx off somebody's disk is a file this
@@ -30,7 +30,9 @@ const emf = (extra = 1024) => new Uint8Array([
   0x01, 0x00, 0x00, 0x00, ...new Array(extra).fill(0x42),
 ]);
 
-/** A File named `name`, holding a zip of `entries`. */
+/** A File rather than the Blob writeZip() hands back: both entry points read
+ *  the extension out of `file.name` before they touch a byte, so a fixture with
+ *  no name is a fixture the module declines to look inside. */
 async function zipFile(name, entries) {
   const blob = await writeZip(entries.map(([path, data]) => ({ name: path, data })));
   return new File([blob], name);
@@ -47,7 +49,7 @@ test('it claims the families it can read and nothing else', () => {
     assert.equal(hasBakedPreview({ name }), true, name);
   }
   // Not a photograph, not a video, and emphatically not a PDF - that one has a
-  // renderer of its own (import/pdf.js) and would otherwise be opened twice.
+  // renderer of its own (import/pdf.ts) and would otherwise be opened twice.
   for (const name of ['a.jpg', 'a.mp4', 'a.pdf', 'a.txt', 'a.zip', 'a']) {
     assert.equal(hasBakedPreview({ name }), false, name);
   }

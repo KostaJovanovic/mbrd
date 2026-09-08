@@ -1,9 +1,9 @@
-// Four more files that open with a picture of themselves.
+// Five more files that open with a picture inside them.
 //
 // The last of the embedded-thumbnail readers, and the ones that share nothing
 // but their shape: each is a header with a picture somewhere behind it, each is
 // twenty to sixty lines, and not one of them is worth a module. They live
-// together because the alternative is four files whose headers would all say the
+// together because the alternative is five files whose headers would all say the
 // same thing.
 //
 //   .icns    An Apple icon: a chunk list, and since Snow Leopard the large
@@ -14,6 +14,9 @@
 //            the PostScript and of a preview for screens that cannot render it.
 //   .blend   Blender writes a small render of the scene into the file, when the
 //            preference for it is on.
+//   .vcf     A contact card, and the odd one out: its PHOTO line is a portrait
+//            of the person, not a picture of the file. It is here for the shape
+//            of the read rather than for the subject.
 //
 // What they have in common with the rest of import/ is the discipline: read a
 // bounded head, believe no length until it has been checked against the bytes
@@ -23,7 +26,7 @@
 // ── The one that is honest about mostly failing ──
 //
 // The EPS preview is a TIFF, and a TIFF is not something a browser draws. It is
-// handed to the reader in import/preview.js, which knows how to find a JPEG
+// handed to the reader in import/preview.ts, which knows how to find a JPEG
 // inside one - and an EPS preview is usually uncompressed RGB, so usually there
 // is no JPEG to find and the answer is null. It is here because the carve is ten
 // lines and the miss costs nothing, not because it is expected to work often.
@@ -60,13 +63,13 @@ async function bytes(file: Blob, start: number, length: number): Promise<Bytes> 
 /** The extensions this module answers for. */
 const CARVED = new Set(['icns', 'dwg', 'eps', 'epsf', 'epsi', 'blend', 'vcf']);
 
-/** Whether this file is one of the four. */
+/** Whether this file is one of the five. */
 export const isCarved = (ext: string) => CARVED.has(ext);
 
 /**
  * A picture out of `file`, or null.
  *
- * Answers with bytes, which the caller sniffs and names - see import/document.js,
+ * Answers with bytes, which the caller sniffs and names - see import/document.ts,
  * which owns the list of picture types this app will actually mount.
  */
 export async function carvedPicture(file: Blob, ext: string): Promise<Bytes | null> {
@@ -192,7 +195,7 @@ async function fromDwg(file: Blob): Promise<Bytes | null> {
       continue;
     }
     // Code 1 is a BITMAPINFOHEADER and pixels with no file header, which is the
-    // same headerless bitmap a compound file's thumbnail is - see winimage.js.
+    // same headerless bitmap a compound file's thumbnail is - see winimage.ts.
     const bmp = dibToBmp(body);
     if (bmp) return bmp;
   }
@@ -214,7 +217,7 @@ async function fromDwg(file: Blob): Promise<Bytes | null> {
  * **And it usually finds nothing, which is expected rather than a fault.** The
  * preview is a TIFF, browsers do not draw TIFFs, and the one thing that can be
  * done with it is to look for a JPEG inside - which is exactly what
- * import/preview.js already does for camera RAW. An EPS preview is normally
+ * import/preview.ts already does for camera RAW. An EPS preview is normally
  * uncompressed RGB, so normally there is no JPEG in there and the card is the
  * grey one it was. The alternative is decoding a TIFF, which is a decoder.
  */
@@ -304,7 +307,7 @@ async function fromBlend(file: Blob): Promise<Bytes | null> {
 /**
  * Raw RGBA as a picture file.
  *
- * Through canvas/surface.js, which is the same pair import/slide.js uses and
+ * Through canvas/surface.ts, which is the same pair import/slide.ts uses and
  * which falls back to a `<canvas>` element where OffscreenCanvas is absent. The
  * row order is flipped because Blender writes its preview bottom-up, the way
  * OpenGL reads a framebuffer.

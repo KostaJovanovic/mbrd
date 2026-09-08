@@ -5,7 +5,7 @@
 // So that is what this file is about: they never reach a file, they never reach
 // the bin, and once they have gone they do not come back.
 //
-// state.js is a module singleton, so every case starts from a loaded board, the
+// state.ts is a module singleton, so every case starts from a loaded board, the
 // same door opening a .mbrd goes through.
 
 import { test, beforeEach } from 'node:test';
@@ -87,7 +87,7 @@ test('every hint carries a key the copy knows something to say for', () => {
     assert.ok(hintFor(g.meta.hint).title, 'and the copy has a title');
     // A line or a legend, and the renderer prints whichever it finds - so what
     // is being guarded is that a card is never a bare heading, not that the copy
-    // is prose. See Hint in canvas/ghosts.js.
+    // is prose. See Hint in canvas/ghosts.ts.
     const { line, rows } = hintFor(g.meta.hint);
     assert.ok(line || rows?.length, 'and a line or a row of keys');
     for (const r of rows ?? []) {
@@ -213,8 +213,8 @@ test('hasContent ignores the two kinds of furniture and nothing else', () => {
 
 test('a hint leaves with the whimsy tier, like any other card', () => {
   // Not a title card, so it takes the tier's own feel rather than the chip that
-  // falls to the bin. canvas/items.js flies out every id in a removed delta,
-  // which is why canvas/ghosts.js asks for no animation of its own.
+  // falls to the bin. canvas/items.ts flies out every id in a removed delta,
+  // which is why canvas/ghosts.ts asks for no animation of its own.
   assert.equal(exitKindFor('ghost', '0'), 'fall');
   assert.equal(exitKindFor('ghost', '1'), 'dissolve');
   assert.equal(exitKindFor('ghost', '2'), 'shatter');
@@ -287,7 +287,7 @@ test('every hint is taped down once or twice, never to the same edge twice', () 
 });
 
 test('the roll happens once, at minting, so culling cannot move the tape', () => {
-  // The placement is item state, not a render-time decision: canvas/items.js
+  // The placement is item state, not a render-time decision: canvas/items.ts
   // discards a culled card's node and rebuilds it, so anything rolled while
   // drawing would land somewhere new every time the board panned past.
   ensureGhostCards();
@@ -343,7 +343,7 @@ test('the hints are written in whole grid spaces, so snapping cannot move them',
   // The stronger half of the same rule: the geometry in GHOSTS is *itself* on
   // the lattice, so a snapped board and an unsnapped one lay out identically
   // and the size a paragraph was fitted to is the size it gets. Sides come back
-  // a seam short (geometry.js CELL_GAP) - that sliver is the join between two
+  // a seam short (geometry.ts CELL_GAP) - that sliver is the join between two
   // neighbouring cells and is not a move.
   fresh();
   ensureGhostCards();

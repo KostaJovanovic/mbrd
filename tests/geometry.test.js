@@ -386,7 +386,7 @@ test('a pure pan shifts by the pan distance times the zoom', () => {
 });
 
 test('the sign flip on y does not lose the shift', () => {
-  // Screen y runs the other way from world y (viewport.js toScreen). A y-pan
+  // Screen y runs the other way from world y (viewport.ts toScreen). A y-pan
   // that came out as zero here would let a vertical drag repaint nothing.
   assert.ok(viewShift(view(0, 0, 1), view(0, -0.5, 1), RECT) > 0);
 });

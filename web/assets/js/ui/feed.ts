@@ -17,10 +17,10 @@
 // one column top to bottom before starting the next, which throws reading order
 // away, and Grid masonry is not in the browser floor. So the boxes are computed
 // (feedMasonry) and written as a transform and a width per tile, the same shape
-// canvas/mobile-frame.js uses for the sheet - a compositor move, not a reflow.
+// canvas/mobile-frame.ts uses for the sheet - a compositor move, not a reflow.
 //
 // Video owns its own release discipline: a clip's <video> lives here, outside
-// #world, so items.js sounding() cannot see it. A clip scrolled well away and not
+// #world, so items.ts sounding() cannot see it. A clip scrolled well away and not
 // the now-playing one is released and its element dropped back to a poster; the
 // now-playing one is kept mounted wherever it has scrolled to.
 
@@ -165,7 +165,7 @@ let mastheadEl: HTMLElement | null = null;  // the board's title page across the
 let titleEl: HTMLElement | null = null;
 let gridEl: HTMLElement | null = null;      // the positioning context for the absolute tiles
 let empty: HTMLElement | null = null;       // the "nothing to show" plate
-/** styleFeedMasthead, injected from main.js. */
+/** styleFeedMasthead, injected from main.ts. */
 let styleHeader: ((title: HTMLElement | null, box: Element | null) => void) | null = null;
 let cmds: FeedCommands | null = null;       // the command surface, for the armed-sticker tap
 
@@ -280,14 +280,14 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
   // The right-click slot, which the Feed did not own.
   //
   // There is exactly one contextmenu listener on the canvas side and it is bound
-  // to #viewport (canvas/input.js). #mobile-feed is a fixed scroller at z-index 2
+  // to #viewport (canvas/input.ts). #mobile-feed is a fixed scroller at z-index 2
   // that covers the viewport entirely, so a press here never reached it and the
   // browser's own menu opened instead - on the surface that on a phone *is* the
   // board. Same for the hold gesture: the long-press timer is in the pointer
   // pipeline on #viewport, and a tile is not in it.
   //
   // Its own pair of listeners rather than an extension of that pipeline, and
-  // that is deliberate: canvas/input.js is one pipeline with exactly one active
+  // that is deliberate: canvas/input.ts is one pipeline with exactly one active
   // gesture and must not be split (CLAUDE.md). This is a hold timer beside the
   // sticker drag's own slop check, which is the same shape of decision in the
   // same file.
@@ -369,12 +369,12 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
   // (atMobileTop); the Feed replaced that board and the gate went with it.
   //
   // An observer rather than a line in the scroll handler below, for the reason
-  // ui/mobile-header.js's own latch gives: the answer changes exactly twice in a
+  // ui/mobile-header.ts's own latch gives: the answer changes exactly twice in a
   // scroll, and asking on every frame to arrive at the state already there is the
   // cost every view listener in this app is written to avoid. The observer is the
   // browser answering instead of being asked.
   //
-  // Announced rather than acted on. The button belongs to ui/mobile-header.js and
+  // Announced rather than acted on. The button belongs to ui/mobile-header.ts and
   // this module does not import it - same bargain initFeed() already makes with
   // the viewport and the command set.
   if (typeof IntersectionObserver === 'function') {
@@ -563,15 +563,15 @@ function fillTile(t: Tile) {
  *
  * buildContent() rather than a second hint card written for this surface. There
  * is one place that knows what a hint says, which of them carries the whimsy
- * dial and how the tape is laid on it (canvas/renderers.js, RENDERERS.ghost),
+ * dial and how the tape is laid on it (canvas/renderers.ts, RENDERERS.ghost),
  * and a copy here would be a second thing to remember every time the words
- * change. The fragment it hands back is the same one canvas/items.js appends.
+ * change. The fragment it hands back is the same one canvas/items.ts appends.
  *
  * Two things the canvas provides and this surface has to provide for itself.
  * --iz is the inverse of the board's zoom, which the ghost card's dashed border
  * is measured in so it stays one screen pixel at every zoom; the Feed has no
  * zoom, so the inverse is exactly 1. And the dial has to be wired: on the canvas
- * items.js binds it after mounting, and a slider nobody bound is a slider that
+ * items.ts binds it after mounting, and a slider nobody bound is a slider that
  * moves and changes nothing.
  */
 function fillHint(t: Tile) {
@@ -828,7 +828,7 @@ function noteText(item: Item) {
 }
 
 function fillLink(t: Tile) {
-  // A link stores its URL in meta.url (like the canvas card, renderers.js); validate
+  // A link stores its URL in meta.url (like the canvas card, renderers.ts); validate
   // it through the same scheme check so a non-http(s) string makes an inert card
   // rather than a live window.open.
   const u = linkURL(t.item.meta?.url);
@@ -929,11 +929,22 @@ function fillFile(t: Tile) {
 // ---------------------------------------------------------------------------
 
 /**
+ * A finished masonry pass: where every tile goes, how wide a column came out,
+ * and how tall the whole thing is.
+ *
+ * `colW` and `height` travel with the boxes because the caller needs both and
+ * neither can be recovered from the boxes alone - a column nothing landed in
+ * still has a width, and the tallest box is not the height when the last row is
+ * ragged.
+ */
+type FeedLayout = { boxes: TileBox[], colW: number, height: number };
+
+/**
  * Shortest-column packing. `list` is the tiles in reading order; each lands in
  * whichever column is shortest so far, leftmost on a tie.
  *
  * The packing itself is arrange/columns.ts's, which is *the same call*
- * arrange/arrangements.js's masonry() makes rather than the same rule written
+ * arrange/arrangements.ts's masonry() makes rather than the same rule written
  * out again beside it. They were two loops that had been written from each other
  * and had come apart in three places; two of the three are arguments now
  * (`span`, `tolerance`) and the third - one column width here, a width per
@@ -945,17 +956,6 @@ function fillFile(t: Tile) {
  * the height of the tallest column, which is the wall's height. Pure but for
  * reading `cols`.
  */
-/**
- * A finished masonry pass: where every tile goes, how wide a column came out,
- * and how tall the whole thing is.
- *
- * `colW` and `height` travel with the boxes because the caller needs both and
- * neither can be recovered from the boxes alone - a column nothing landed in
- * still has a width, and the tallest box is not the height when the last row is
- * ragged.
- */
-type FeedLayout = { boxes: TileBox[], colW: number, height: number };
-
 function feedMasonry(list: Tile[], width: number): FeedLayout {
   const colW = (width - (cols - 1) * GAP) / cols;
   // Every tile's span and height, before anything is placed. Both are knowable
@@ -1148,7 +1148,7 @@ function stickerOverlay(it: Item, host: Item) {
   svg.style.top = `${(0.5 - (it.y - host.y) / host.h) * 100}%`;
   svg.style.width = `${(it.w / host.w) * 100}%`;
   svg.style.height = `${(it.h / host.h) * 100}%`;
-  // Negated, like canvas/items.js: world angles run the other way from screen.
+  // Negated, like canvas/items.ts: world angles run the other way from screen.
   svg.style.rotate = `${-(it.rot || 0)}deg`;
   return svg;
 }

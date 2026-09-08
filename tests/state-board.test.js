@@ -1,11 +1,11 @@
 // The board itself: loading, serialising, refusing a file that is not one, and the faces it carries.
 //
-// state.js is a module singleton, which is right for an app with one board and
+// state.ts is a module singleton, which is right for an app with one board and
 // awkward for tests, so every case starts by loading an empty board. That is
 // the same door opening a .mbrd goes through, so it also exercises the reset.
 //
 // One of six files that were tests/state.test.js, split to mirror the modules
-// state.js itself was split onto - see tests/layers.test.js for that list.
+// state.ts itself was split onto - see tests/layers.test.js for that list.
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -70,7 +70,7 @@ test('opening a second board on Mobile does not read the first board index', () 
   // board's with no event fired, so the old board's DOM sat over the new board's
   // state and the next autosave wrote the mixture over the session copy.
   //
-  // A phone is in this mode from first paint (ui/sidebar.js reads the stored
+  // A phone is in this mode from first paint (ui/sidebar.ts reads the stored
   // pref), so "open a second .mbrd holding a stuck note" is the whole repro.
   fresh([photo({ id: 'only-in-a', x: 0, y: 0, w: 400, h: 300 })]);
   setBoardMode('mobile');

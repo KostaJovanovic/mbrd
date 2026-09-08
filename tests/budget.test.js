@@ -1,7 +1,7 @@
 // The import memory policy: byte accounting and header-only dimension sniffing.
-// These are the checks that make the 500-file cap stop being mistaken for a
-// memory boundary (AUD-05). Pure module, so this is a pure test - the headers
-// are hand-built so a case is about the one field it sets.
+// These checks stop the 500-file cap being mistaken for a memory boundary
+// (AUD-05). Pure module, so a pure test - headers are hand-built so each case
+// is about the one field it sets.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -84,10 +84,10 @@ test('a decode bomb is over the pixel budget; an ordinary photo is not', async (
 //
 // PHOTO_EXTS (import/formats.ts) carries BMP, ICO, AVIF and TIFF, and a browser
 // decodes all four - but imageDimensions() knew only PNG, GIF, WebP and JPEG,
-// so overPixelBudget() answered false for every one of them. A sixty-byte BMP
-// declaring 30000x30000 went to createImageBitmap() and allocated about 3.6 GB:
-// the exact allocation this module's header says it exists to stop, from a file
-// that fits in a chat message.
+// so overPixelBudget() answered false for each. A sixty-byte BMP declaring
+// 30000x30000 reached createImageBitmap() and allocated about 3.6 GB - the
+// allocation this module exists to stop, from a file that fits in a chat
+// message.
 // ---------------------------------------------------------------------------
 
 const bmp = (w, h) => {

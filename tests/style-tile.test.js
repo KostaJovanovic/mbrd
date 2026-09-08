@@ -1,6 +1,6 @@
 // The style tile: the summary, rather than a photograph of the board.
 //
-// The drawing is a card now (canvas/renderers.js) and is not tested here -
+// The drawing is a card now (canvas/renderers.ts) and is not tested here -
 // there is no document in a runner. What is tested is the part that decides
 // *what goes on it*, which is where the taste decisions this feature had to
 // take actually live:
@@ -14,7 +14,7 @@
 // not a curation of pictures, and falling through to the largest is the right
 // answer rather than making a tile with no images on it.
 //
-// Imported from style-tile.ts rather than from ui/snapshot.js, which is where
+// Imported from style-tile.ts rather than from ui/snapshot.ts, which is where
 // this lived while a tile was a PNG you saved. The move is the layering rule:
 // the renderer is under canvas/ and canvas/ may not import from ui/, so the
 // choosing had to come down to a tier both it and this file can reach.

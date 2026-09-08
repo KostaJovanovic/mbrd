@@ -1,10 +1,10 @@
 // A still poster for a clip the browser cannot open, through ffmpeg.
 //
 // This module used to encode sound and video too. It no longer does: the browser
-// makes Opus by itself (opus.js), and video is now deliberately left alone -
+// makes Opus by itself (opus.ts), and video is now deliberately left alone -
 // shrinking a clip needs a single-threaded wasm encoder that pins a core for the
 // length of the clip, hard enough on the machine that it is not a trade worth
-// making for a board you look at (see optimize.js). What remains is the one job
+// making for a board you look at (see optimize.ts). What remains is the one job
 // worth ffmpeg's weight: pulling the first frame out of a video no browser here
 // can decode, so its card is a picture of itself instead of a black rectangle.
 //
@@ -224,14 +224,11 @@ const HEAD_BYTES = 64 * 1024 ** 2;
 /**
  * The first frame of a clip this browser cannot open, as a picture it can.
  *
- * The case is H.265. A phone shoots HEVC by default and every desktop browser
- * except Safari refuses to decode it, so the file arrives, is registered, is
- * saved into the .mbrd - and shows on the board as a black rectangle with a
- * play button that does nothing. The bytes are all there and none of them can
- * be seen. Anything else the browser will not open lands here too - AV1 on an
- * older build, ProRes, a raw stream - because the test that sends work this way
- * is "did the browser manage to read it", not "which codec is this". That is
- * both easier to be right about and the question that actually matters.
+ * The case is H.265, argued in the module header above. Anything else the
+ * browser will not open lands here too - AV1 on an older build, ProRes, a raw
+ * stream - because the test that sends work this way is "did the browser manage
+ * to read it", not "which codec is this". That is both easier to be right about
+ * and the question that actually matters.
  *
  * A poster rather than a conversion, and that is the whole restraint of it. The
  * clip is untouched: it stays exactly the file that was dropped, so it plays the

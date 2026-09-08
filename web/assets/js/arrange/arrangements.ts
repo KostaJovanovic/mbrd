@@ -127,7 +127,7 @@ export const ARRANGEMENTS = [
   // to go looking through.
   { id: 'spiral',  label: 'Spiral' },
   // Not "keep positions" any more: a drop under Free falls back to the grid
-  // (see import/drop.js) and Rearrange shakes the board loose, so the only
+  // (see import/drop.ts) and Rearrange shakes the board loose, so the only
   // promise Free still makes is that it will not impose a shape on you.
   { id: 'free',    label: 'Free (no layout)' },
   { id: 'grid',    label: 'Grid rings' },
@@ -242,7 +242,7 @@ function avoidObstacles(items: ArrangeItem[], world: Point[], o: Laying): Point[
 
 /**
  * An item's box grown to the whole number of grid cells it occupies once
- * snapped: the same cell count latticeSide() in geometry.js lands on, times the
+ * snapped: the same cell count latticeSide() in geometry.ts lands on, times the
  * step. A snapped body is `cells*step` less a seam at each end and stays centred
  * in those cells, so a layout that keeps whole-cell gaps between footprints keeps
  * non-overlapping bodies after each is snapped to the lattice - a whole-cell
@@ -798,7 +798,7 @@ function dateOrder(items: ArrangeItem[]): number[] {
 // ---------------------------------------------------------------------------
 //
 // A Mobile board is a column a fixed number of grid spaces wide, packed
-// row-major by placeMobileItems() in state.js. Nothing above survives the trip:
+// row-major by placeMobileItems() in state.ts. Nothing above survives the trip:
 // the packer takes the sequence it is handed and fits it, so whatever a spiral
 // or a scatter or a set of grid rings computed is thrown away the moment it
 // arrives - the *only* thing a layout can still decide on a phone is which card
@@ -925,7 +925,7 @@ const ORDERS: Record<string, Order> = {
  *
  * Pure, and the same shape of promise the layouts make: a new array in the
  * chosen order, the input untouched, and no seed means the same input gives the
- * same output every time. placeMobileItems() in state.js does the rest.
+ * same output every time. placeMobileItems() in state.ts does the rest.
  */
 export function mobileOrder(items: ArrangeItem[], opts: ArrangeOpts = {}): ArrangeItem[] {
   const fn = ORDERS[mobileArrangement(opts.name)] || ORDERS[MOBILE_DEFAULT];

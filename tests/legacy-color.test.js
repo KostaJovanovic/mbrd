@@ -10,7 +10,7 @@
 // The first half holds the two lists against each other: every channel-form
 // token against the hex it was taken from, in both directions, and every
 // color-mix() in the app against a fallback that covers it. The second half is
-// the evaluator in ui/legacy-color.js, which is arithmetic and can simply be
+// the evaluator in ui/legacy-color.ts, which is arithmetic and can simply be
 // run - including the premultiplied-alpha identity that the whole rgb() spelling
 // rests on.
 
@@ -205,7 +205,7 @@ test('every --lc- token is read with a fallback colour behind it', () => {
 
 test('the script retakes a channel token for every one the stylesheet declares', () => {
   // The stylesheet can only carry the four named palettes. A pigment picked in
-  // the Appearance panel, or one ui/pigments.js pulled out of a photograph, is
+  // the Appearance panel, or one ui/pigments.ts pulled out of a photograph, is
   // written inline as --accent alone - so --accent-c has to be retaken from the
   // resolved colour or every tint in the app keeps following the palette the
   // board is no longer wearing. Both directions: a channel token nobody retakes

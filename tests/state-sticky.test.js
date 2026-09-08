@@ -1,11 +1,11 @@
 // The sticky relation: which note is stuck to what, and what it rides.
 //
-// state.js is a module singleton, which is right for an app with one board and
+// state.ts is a module singleton, which is right for an app with one board and
 // awkward for tests, so every case starts by loading an empty board. That is
 // the same door opening a .mbrd goes through, so it also exercises the reset.
 //
 // One of six files that were tests/state.test.js, split to mirror the modules
-// state.js itself was split onto - see tests/layers.test.js for that list.
+// state.ts itself was split onto - see tests/layers.test.js for that list.
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -190,7 +190,7 @@ test('sticking is transitive - a note on a note on a photo', () => {
 test('a stuck note rides its host as it shrinks and stays on the card', () => {
   // The resize bug: shrinking a card under a sticky left the note hanging in
   // mid-air, still "stuck" by the record but no longer over the card. The gesture
-  // now carries each rider by stuckPlacement (input.js), which keeps the note at
+  // now carries each rider by stuckPlacement (input.ts), which keeps the note at
   // the same fraction of the card - so it lands on the shrunk card, not beside it.
   fresh();
   const hostBefore = { x: 0, y: 0, w: 300, h: 300 };

@@ -1,6 +1,6 @@
 // The quality dial, connected to the things it moves.
 //
-// quality.js is the setting; this is the wiring. Two halves, and the split is
+// quality.ts is the setting; this is the wiring. Two halves, and the split is
 // about when each can run:
 //
 //   armQuality()   reads the saved level and writes it onto <html>, which is
@@ -10,7 +10,7 @@
 //                  inline script in index.html does the same thing one moment
 //                  earlier, for the same reason it already does it for whimsy.
 //
-//   watchQuality() subscribes to changes. Called after canvas/items.js is up,
+//   watchQuality() subscribes to changes. Called after canvas/items.ts is up,
 //                  because a change has to rebuild the board and resetItems()
 //                  needs the shadow layer it makes.
 //
@@ -34,13 +34,13 @@ export function armQuality() {
   paintLevel();
 }
 
-/** Answer every later change. Needs canvas/items.js to have been initialised. */
+/** Answer every later change. Needs canvas/items.ts to have been initialised. */
 export function watchQuality() {
   onQuality(() => {
     paintLevel();
     resetItems();
     refreshStills();
-    // canvas/web.js rebuilds on this key and nothing else does work for it, so
+    // canvas/web.ts rebuilds on this key and nothing else does work for it, so
     // it is the honest signal that the threads may have come or gone.
     bus.emit('settings', 'web');
     paintPanel();

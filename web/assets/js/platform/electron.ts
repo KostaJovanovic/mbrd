@@ -35,7 +35,7 @@
 // behaviour is decided.
 
 import type {
-  Platform, FilesPort, LifecyclePort, NativePort, UpdatesPort,
+  Platform, FilesPort, FramePort, LifecyclePort, NativePort, UpdatesPort,
   DocumentRef, OpenedFile, PickSpec, TranscodeOpts,
 } from './platform.ts';
 // Note what is *not* imported here: `StoreBackend` from storage/idb.ts.
@@ -64,6 +64,8 @@ import type {
  */
 export interface Bridge {
   bridge: number;
+  /** `process.platform` from the shell: 'darwin', 'win32', 'linux', … */
+  platform: string;
   store: {
     get(store: string, key: string): Promise<unknown>;
     set(store: string, key: string, value: unknown): Promise<void>;
@@ -97,6 +99,12 @@ export interface Bridge {
     // Leaving it wide would push a cast onto main.ts for a shape both sides of
     // this bridge already agree on.
     onFound(fn: (info: { version: string, canInstall: boolean }) => void): void;
+  };
+  win: {
+    minimize(): void;
+    toggleMaximize(): void;
+    close(): void;
+    onState(fn: (state: { maximized: boolean, fullScreen: boolean }) => void): void;
   };
   startupNotes(): Promise<string>;
   setDocument(state: { title: string, name: string | null, path: string | null, dirty: boolean }): void;
@@ -421,6 +429,33 @@ function electronUpdates(bridge: Bridge): UpdatesPort {
   };
 }
 
+/**
+ * The window, which this shell has no frame around.
+ *
+ * `own()` asks whether the bridge carries the window half at all, rather than
+ * answering a flat true. The two halves of this app ship in one file and cannot
+ * drift in an installed copy - but the *portable* copy is rebuilt out of band
+ * (see save.bat), and a page from one build talking to a shell from another is
+ * the one case where this can be false on a desktop. It is the right answer
+ * there: no buttons drawn, no drag band, and a window that is missing its title
+ * bar rather than a window whose buttons throw.
+ *
+ * `systemLeft()` is macOS and nothing else. Read off the platform string the
+ * preload already knows rather than a userAgent sniff, because what the app
+ * needs to know is where *this shell* put the traffic lights, which is a fact
+ * about the shell and not about the engine.
+ */
+function electronFrame(bridge: Bridge): FramePort {
+  return {
+    own: () => !!bridge.win,
+    systemLeft: () => bridge.platform === 'darwin',
+    minimize: () => bridge.win.minimize(),
+    toggleMaximize: () => bridge.win.toggleMaximize(),
+    close: () => bridge.win.close(),
+    onState: fn => bridge.win.onState(fn),
+  };
+}
+
 /** The shell, assembled. `main.ts` calls this once with the bridge. */
 export function electronPlatform(bridge: Bridge): Platform {
   return {
@@ -428,6 +463,7 @@ export function electronPlatform(bridge: Bridge): Platform {
     lifecycle: electronLifecycle(bridge),
     native: electronNative(bridge),
     updates: electronUpdates(bridge),
+    frame: electronFrame(bridge),
     setDocument: state => bridge.setDocument({
       title: state.title,
       name: state.ref?.name ?? null,

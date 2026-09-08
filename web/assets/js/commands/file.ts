@@ -296,8 +296,8 @@ export function fileCommands() {
     new: () => newBoard(),
     open: () => openBoard(),
     // The board library - several boards kept in this browser, not just the one
-    // the session slot holds. Opens the switcher (ui/library.js); the storage
-    // behind it is in storage/library.js.
+    // the session slot holds. Opens the switcher (ui/library.ts); the storage
+    // behind it is in storage/library.ts.
     //
     // It used to be distinct from New: New guarded a single session slot and
     // offered to export first, while the library had the shelf to set the old
@@ -408,7 +408,7 @@ export function fileCommands() {
     //
     // In a browser it is "keep this here" - no dialog, no file, the copy this
     // browser is holding for you, and the cooldown that stops a held Ctrl+S
-    // writing forty times. That is the whole argument at the top of storage.js
+    // writing forty times. That is the whole argument at the top of storage.ts
     // and it is right for a page.
     //
     // On the desktop the board *is* a file, and a document application that
@@ -467,7 +467,8 @@ export function fileCommands() {
       const { shareProvider } = await import('../storage/cloud/cloud.ts');
       // 'gdrive' by name rather than through a picker, and the plan's own reason:
       // choosing one of three is a menu, ui/menu.ts renders every menu in this
-      // app, and a menu with one row is worse than no menu. See share.ts.
+      // app, and a menu with one row is worse than no menu. See
+      // storage/cloud/cloud.ts.
       const provider = shareProvider('gdrive');
       if (!provider) { toast('Sharing a link is not set up in this build', 'error'); return; }
 
@@ -738,7 +739,7 @@ export function fileCommands() {
     // A picture of the board, for showing rather than reopening. A moodboard
     // exists to be presented, and until these two the only thing that left mbrd
     // was a .mbrd only mbrd can read. The board is composited onto a canvas
-    // (ui/snapshot.js) - not the live DOM, which taints the canvas the moment it
+    // (ui/snapshot.ts) - not the live DOM, which taints the canvas the moment it
     // holds a picture - and handed out as a PNG, or wrapped in a one-page PDF for
     // printing. Both are derived artefacts, never .mbrd: their own types, their
     // own filenames, and they never touch the file handle Export remembers.
@@ -768,9 +769,9 @@ export function fileCommands() {
     },
     // The style tile used to be a third derived artefact here - a PNG and a PDF
     // beside the two above. It is a card on the board now, so it is minted like
-    // every other card and lives in commands.js with the rest of the adders:
+    // every other card and lives in commands.ts with the rest of the adders:
     // this file is the one that has no `vp`, and a thing you place needs one.
-    // Strictly asked for, never automatic - see optimize/optimize.js. Loaded on
+    // Strictly asked for, never automatic - see optimize/optimize.ts. Loaded on
     // demand as well as run on demand: the encoder behind it is thirty megabytes
     // and a board of photographs never needs it.
     optimize: () => import('../optimize/ui.ts').then(m => m.optimizeBoard()),

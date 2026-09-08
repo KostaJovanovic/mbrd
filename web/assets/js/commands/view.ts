@@ -3,8 +3,9 @@
 //
 // Canvas / Feed / Playlist, play-pause, the scale, fit and recenter, the two
 // debug overlays, the zoom lock, the appearance and quality resets, reload,
-// restart, credits. One contiguous run of the object in commands.ts, lifted
-// whole - see commands/file.ts for why the five runs became five files.
+// restart, the three window buttons, credits. One contiguous run of the object
+// in commands.ts, lifted whole - see commands/file.ts for why the five runs
+// became five files.
 //
 // ── The one factory that needs the Viewport ──
 //
@@ -44,6 +45,7 @@ import {
   setBoardMode as selectBoardMode,
 } from '../state.ts';
 import { DEFAULT_SCALE } from '../measure.ts';
+import { platform } from '../platform/platform.ts';
 import { clearQualityOverrides } from '../quality.ts';
 import { cueLogOn, dumpCueLog, setCueLog } from '../cuelume/engine.ts';
 import { onNarrowScreen, travelMs } from '../canvas/viewport.ts';
@@ -135,17 +137,6 @@ export function viewCommands(vp: CommandViewport, { resetAppearance, perf }: Vie
       select(ids);
     },
     /**
-     * The two mobile boards, each its own sidebar button.
-     *
-     * Feed is the masonry wall of everything; Playlist is the audio player. On the
-     * canvas, Feed takes the whole board into its mobile view and Playlist opens
-     * the floating window over the canvas instead - a player, not a takeover. Once
-     * in the mobile view the pair are a switch between the two lenses, and pressing
-     * the one already up steps back out to the canvas, which is the only way back
-     * now that the old single toggle is gone. setLens before the mode switch so
-     * entering the mobile view lands on the lens that was asked for.
-     */
-    /**
      * The third segment of the View row: back to the freeform board.
      *
      * Idempotent, unlike the two below it, and that is the whole of the
@@ -160,6 +151,17 @@ export function viewCommands(vp: CommandViewport, { resetAppearance, perf }: Vie
       if (goHome('canvas')) return;
       if (selectBoardMode('desktop')) toast('Back to the canvas');
     },
+    /**
+     * The two mobile boards, each its own sidebar button.
+     *
+     * Feed is the masonry wall of everything; Playlist is the audio player. On the
+     * canvas, Feed takes the whole board into its mobile view and Playlist opens
+     * the floating window over the canvas instead - a player, not a takeover. Once
+     * in the mobile view the pair are a switch between the two lenses, and pressing
+     * the one already up steps back out to the canvas, which is the only way back
+     * now that the old single toggle is gone. setLens before the mode switch so
+     * entering the mobile view lands on the lens that was asked for.
+     */
     feed: () => {
       if (goHome('feed')) return;
       if (board.layoutMode === 'mobile') {
@@ -252,7 +254,7 @@ export function viewCommands(vp: CommandViewport, { resetAppearance, perf }: Vie
       setSetting('scale', DEFAULT_SCALE);
       toast('Back to the default size');
     },
-    // The title card is left out on Mobile for the same reason canvas/items.js
+    // The title card is left out on Mobile for the same reason canvas/items.ts
     // does not mount it there: it is not on that board. Fitting the view to a card
     // nobody can see - parked above the column by completeLayout() - would zoom
     // out to make room for nothing.
@@ -364,6 +366,21 @@ export function viewCommands(vp: CommandViewport, { resetAppearance, perf }: Vie
     },
     reload: reloadBoard,
     restart: () => restartApp(),
+    // The three window buttons, which exist only where the app draws its own
+    // title bar. Commands rather than three listeners in ui/window-chrome.ts,
+    // for the reason `credits` below is one: a user-facing action is an entry
+    // here, and the module that drew the buttons should know about data-cmd and
+    // nothing else. They are no-ops in a browser - platform.frame is the web's
+    // by default and answers every one of them with silence - so nothing has to
+    // guard the call site.
+    //
+    // Not on any menu, and that is not an oversight. A window has one obvious
+    // way to be shut and it is the button in the corner; a Close row in the
+    // app's own menu beside Save would be a second, quieter one, sitting next to
+    // the rows that are about the board rather than about the window.
+    windowMinimize: () => platform.frame.minimize(),
+    windowMaximize: () => platform.frame.toggleMaximize(),
+    windowClose: () => platform.frame.close(),
     // Who made this. A command rather than a listener on the footer button, for
     // the reason every other action here is one: the sidebar knows about data-cmd
     // and about nothing else, so this is the only wiring the panel needs.

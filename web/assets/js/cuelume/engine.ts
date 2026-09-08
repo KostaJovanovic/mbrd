@@ -577,9 +577,10 @@ function getAudioContext(): AudioContext | null {
  * the edge one.
  *
  * **There is no way to duck another app from a web page.** No API offers it.
- * What there is is the Audio Session API, and 'ambient' says: mix, interrupt
- * nothing, and be silenced by the ringer switch. That is the right category for
- * a hundred-millisecond blip and is the category a keyboard click uses.
+ * What exists instead is the Audio Session API, and 'ambient' says: mix,
+ * interrupt nothing, and be silenced by the ringer switch. That is the right
+ * category for a hundred-millisecond blip and is the category a keyboard click
+ * uses.
  *
  * Feature-detected because it is a Safari API today - which is convenient,
  * since iOS is where the interruption risk mostly lives; elsewhere a short Web

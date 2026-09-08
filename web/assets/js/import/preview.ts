@@ -2,7 +2,7 @@
 //
 // HEIC, camera RAW (CR2/NEF/ARW/DNG and the rest) and a few others are formats
 // this app catalogues but no browser draws unaided - measureSize() asks the
-// engine to decode one, it refuses, and import/drop.js turns the card into a
+// engine to decode one, it refuses, and import/drop.ts turns the card into a
 // named placeholder. That is honest but bleak: a folder of RAWs lands as a wall
 // of grey cards.
 //
@@ -14,7 +14,7 @@
 // the card upgrades itself; until then it shows the picture the camera already
 // made rather than a hole.
 //
-// The style is import/artwork.js's, deliberately, because it is the same job -
+// The style is import/artwork.ts's, deliberately, because it is the same job -
 // walk a container written by something that is not this app, find one blob
 // inside it, and trust none of the numbers on the way. So: slice, never slurp;
 // cap every count read from the file before it is used to loop or allocate;
@@ -62,7 +62,7 @@ const jpegTooBig = (len: number) =>
  * Pictures this browser may well draw and another browser will not.
  *
  * The module above is written for the file *nothing* draws - a RAW, a JPEG XL -
- * and import/drop.js asked for a preview only when the decode had already
+ * and import/drop.ts asked for a preview only when the decode had already
  * failed. That question has an engine in it, and the answer changes with the
  * engine: Safari decodes HEIC and nothing else does, so on an iPhone the branch
  * never ran, the photograph went into the .mbrd as raw HEIC with no preview,
@@ -94,7 +94,7 @@ export const NOT_PORTABLE = new Set(['heic', 'heif', 'hif', 'jxl']);
  * megapixel photograph for a 320px thumbnail on the phone that took it would be
  * fixing another engine's problem with this one's picture.
  *
- * 1280 because that is the top stop of the display ceiling in canvas/display.js:
+ * 1280 because that is the top stop of the display ceiling in canvas/display.ts:
  * at or above it the card draws exactly the same either way, so adopting the
  * preview costs the viewer nothing and buys the board its portability. Below
  * it, the original stays and the board is honestly less portable - which is a

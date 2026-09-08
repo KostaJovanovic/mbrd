@@ -34,7 +34,7 @@
 // twice in a day is that nothing outside it had an opinion.
 
 /**
- * Own-property test. Written out here rather than imported from util.js, and
+ * Own-property test. Written out here rather than imported from util.ts, and
  * that is deliberate: this module has no imports at all and is the better for
  * it - it is a vendored table of numbers, and a dependency on the app's own
  * helpers would make it something else.
@@ -330,7 +330,7 @@ export type Voice = { sound: SoundName, reverse?: boolean };
  * looked like a plumbing fault rather than a choice. A table nobody can hear as
  * a whole is a table that cannot be judged.
  *
- * So: one voice per cue. Eight sounds, not thirty-three, and every one of them
+ * So: one voice per cue. Nine sounds, not thirty-three, and every one of them
  * is heard by everybody, which is the only condition under which the next one to
  * be wrong gets found.
  *
@@ -338,7 +338,7 @@ export type Voice = { sound: SoundName, reverse?: boolean };
  * *looks* changed, and if sound ever earns a character axis again it should be
  * its own control rather than a passenger on that one.
  *
- * ── How these eight were chosen ──
+ * ── How these nine were chosen ──
  *
  * By ear, over several passes, and the passes are worth recording because every
  * one of them that was made by *reading* was wrong.
@@ -453,8 +453,8 @@ export const isCue = (value: unknown): value is Cue =>
 /**
  * Recipes in the palette that no cue names, and what each is for.
  *
- * Nine of seventeen, and that is arithmetic rather than waste: eleven cues,
- * three of which are the inversion of another, is eight slots. The claim that
+ * Eight of seventeen, and that is arithmetic rather than waste: eleven cues,
+ * two of which are the inversion of another, is nine slots. The claim that
  * the whimsy axis gave all seventeen a job died with the axis, and this list is
  * what replaces it - tests/cuelume.test.js checks the table against these names
  * in both directions, so a recipe falling out of use is a deliberate line here
@@ -462,7 +462,7 @@ export const isCue = (value: unknown): value is Cue =>
  *
  * Written as descriptions rather than as epitaphs, because the next
  * reassignment should start from what a thing sounds like and how loud it
- * measures rather than from reading the table above again. Two of the nine are
+ * measures rather than from reading the table above again. Two of the eight are
  * here because they were tried on the busiest cue in the app and *heard* to be
  * wrong, which is worth more than the rest of this list put together. In table
  * order, which is what the test compares against.
@@ -782,8 +782,8 @@ const trims = new WeakMap<SoundRecipe, number>();
 /**
  * What to multiply a recipe's `masterGain` by so it lands at TARGET_LOUDNESS.
  *
- * Memoised on the recipe object, which is what makes it free for the fifteen
- * cues that name a table entry. The three inverted voices build a fresh object
+ * Memoised on the recipe object, which is what makes it free for the nine
+ * cues that name a table entry. The two inverted voices build a fresh object
  * every play and so measure every play; that costs a few thousand multiplies
  * against a sound that lasts a third of a second, and it is worth *not* caching
  * around, because a WeakMap keyed on throwaway objects is a cache that never

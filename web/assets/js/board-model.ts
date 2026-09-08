@@ -269,7 +269,7 @@ export const DEFAULT_SETTINGS: BoardSettings = {
   // Still called `web`, deliberately. It is the key an older build reads to
   // decide whether to draw anything at all between cards, and renaming it would
   // open every board that had the web switched on with nothing between them.
-  // See canvas/web.js, which kept its name for the same reason.
+  // See canvas/web.ts, which kept its name for the same reason.
   web: true,
   // Off to begin with. It is a working instrument - where the pointer is, how
   // big the selected thing is - and a board you have just opened is a thing you
@@ -289,11 +289,11 @@ export const DEFAULT_SETTINGS: BoardSettings = {
   spacing: 12,
   // What the board's coordinates mean in the world: world units per millimetre,
   // and which family of unit names to say it in. Geometry never reads either -
-  // they are a lens over numbers that were always unitless. See measure.js.
+  // they are a lens over numbers that were always unitless. See measure.ts.
   scale: DEFAULT_SCALE,
   units: 'metric',     // or 'imperial'
   // A sheet of standard paper outlined around the origin, sized through the
-  // scale above - see canvas/paper.js. An id out of PAPERS, or '' for none.
+  // scale above - see canvas/paper.ts. An id out of PAPERS, or '' for none.
   // Two flat keys rather than one { size, landscape } object, because
   // setSetting() compares with === and no two objects are ever equal: an object
   // here would emit on every write and never on the one that mattered.
@@ -306,7 +306,7 @@ export const DEFAULT_SETTINGS: BoardSettings = {
   // of a rectangle somebody put up to check a layout against.
   paperResize: false,
   appearance: { palette: '', vars: {} },
-  fonts: [],           // faces dropped onto this board - see ui/fonts.js
+  fonts: [],           // faces dropped onto this board - see ui/fonts.ts
 };
 
 export const BOARD_MODES: LayoutMode[] = ['desktop', 'mobile'];
@@ -342,7 +342,7 @@ export function cleanBoardTitleDraft(value: unknown) {
  *
  * Windows has the narrowest ordinary filename alphabet, so its forbidden
  * punctuation and device names define the shared rule. Spaces remain readable
- * on the board; storage.js changes them to underscores only in exported files.
+ * on the board; storage.ts changes them to underscores only in exported files.
  */
 export function cleanBoardTitle(value: unknown) {
   let title = cleanBoardTitleDraft(value)
@@ -502,7 +502,7 @@ export const board: Board = {
   // SAFETY: an empty array is every array. The assertion names what will go in
   // it, which inference cannot get from `[]`, and asserts nothing about a value.
   items: [] as Item[],
-  // The board name's typography, styled by ui/mobile-header.js. Board-level
+  // The board name's typography, styled by ui/mobile-header.ts. Board-level
   // rather than per-layout on purpose: the Mobile masthead and the Desktop
   // title card (type 'title') are one identity set in one place, so a change
   // on either shows on both. Older .mbrd files carry it under settings; load
@@ -516,12 +516,12 @@ export const board: Board = {
   // fits the whole picture inside and letterboxes; 'cover' fills the card and
   // crops. Board-level, not per-layout, because it is a property of the media
   // rather than of a device's view. A single item can override it from its own
-  // meta.fit - see fitMode() in canvas/renderers.js.
+  // meta.fit - see fitMode() in canvas/renderers.ts.
   mediaFit: 'contain',
   // How many of the board's pictures the "take colours from pictures" palette is
   // read from, newest first. Board-level like the palette itself (colour is
   // shared across layouts), and clamped to [1, 24] - the 24 mirrors MAX_SOURCES
-  // in ui/pigments.js, the absolute ceiling the sampler enforces. Default 12,
+  // in ui/pigments.ts, the absolute ceiling the sampler enforces. Default 12,
   // the count the feature used before it was made a dial.
   paletteSources: 12,
   // Lines somebody drew between two cards. Pairs of item ids, unordered - a
@@ -570,10 +570,10 @@ export const board: Board = {
  * else's board.json is held to a string and a length by makeItem(), which is
  * where that guarantee lives rather than here.
  *
- * canvas/web.js kept a private `keyOf` that was this line character for
+ * canvas/web.ts kept a private `keyOf` that was this line character for
  * character, with no import, and keyed its whole segment cache on it. Two
  * spellings of one key is a cache that half-misses the day either changes; it
- * imports this now, through state.js.
+ * imports this now, through state.ts.
  */
 export const pairKey = (a: string, b: string) => (a < b ? a + '\0' + b : b + '\0' + a);
 
@@ -609,7 +609,7 @@ export const MAX_CONNECTIONS = 2000;
  * values**: a colour is 'leaf', not a hex triple, and it is resolved to a token
  * by one CSS rule per name in canvas.css. That is not tidiness. This object
  * arrives out of a file somebody else wrote, and a value that reaches a stroke
- * is a value that reaches the CSSOM - the same reason ui/look.js holds its
+ * is a value that reaches the CSSOM - the same reason ui/look.ts holds its
  * tokens to an alphabet. A closed list cannot carry a url() into a stylesheet.
  */
 /*
@@ -1469,11 +1469,11 @@ export function makeItem(partial: Record<string, unknown>): Item {
  * `meta` is the open field - anything a renderer wants to remember about an
  * item lives in it and nothing here reads most of it. The content ids are the
  * exception, because they are *second* names for bytes: they get spelled into
- * an archive path by storage/mbrd.js and they decide what the autosave sweep is
+ * an archive path by storage/mbrd.ts and they decide what the autosave sweep is
  * allowed to delete. So each goes through the same gate item.asset.hash does,
  * and one that is not a digest is dropped rather than carried.
  *
- * The list is the same one itemHashes() in util.js reports, less the item's own
+ * The list is the same one itemHashes() in util.ts reports, less the item's own
  * asset. Anything added there wants adding here too.
  */
 const META_HASHES = ['cover', 'shot', 'thumb', 'preview', 'poster'];
@@ -1516,7 +1516,7 @@ function normalizeMeta(meta: ItemMeta): ItemMeta {
  * An item's link to its bytes, or null.
  *
  * The hash is checked for shape here rather than only where it is used, because
- * of what it becomes downstream: storage/mbrd.js spells it into an archive path
+ * of what it becomes downstream: storage/mbrd.ts spells it into an archive path
  * and the asset store treats it as an identity. An id that is not a digest can
  * never resolve to bytes anyway - dropping it leaves a card that shows as a
  * plain one, which is honest, where keeping it leaves a board that also cannot

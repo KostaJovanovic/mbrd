@@ -67,7 +67,7 @@ test('a font with more axes than the panel holds gives its first axes, not none'
   assert.deepEqual(axes[19], { tag: 'AX19', min: 0, default: 50, max: 100 });
 
   // Past the cap it truncates rather than refusing, and the cap is the one in
-  // state.js - a board may not store more axis values than this either.
+  // state.ts - a board may not store more axis values than this either.
   assert.equal((await fontAxes(fontWithAxes(40))).length, 32);
 });
 
@@ -245,7 +245,7 @@ test('a very long name is cut to something a menu can hold', () => {
 });
 
 test('everything familyFor produces is something isFamily accepts', () => {
-  // The two are a pair: one builds names, the other is what state.js holds a
+  // The two are a pair: one builds names, the other is what state.ts holds a
   // .mbrd's font list to on the way in. A name this app makes and then refuses
   // to load back is a face that vanishes on the next save.
   for (const name of [

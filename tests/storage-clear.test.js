@@ -15,8 +15,8 @@ const soon = fn => Promise.resolve().then(fn);
 
 // One shared connection serves both cases; the transaction outcome is read from
 // this flag at settle-time, so flipping it between tests needs no reconnect
-// (idb.js caches the connection for the process, and the relative import means
-// there is only one idb.js instance to cache it).
+// (idb.ts caches the connection for the process, and the relative import means
+// there is only one idb.ts instance to cache it).
 let outcome = 'complete';
 
 globalThis.indexedDB = {

@@ -11,18 +11,18 @@
 // returns is exactly what lands in the file, already held to the same rules the
 // reader will apply to it.
 //
-// It sits here, below state.js, for three reasons that are all the same reason.
+// It sits here, below state.ts, for three reasons that are all the same reason.
 //
 //   1. These are pure `raw -> clean` functions over data. Nothing here mutates
 //      the board; normalizeBoard() *builds* a replacement and hands it back, and
-//      the assignments that swap it in stay in state.js where the rest of the
+//      the assignments that swap it in stay in state.ts where the rest of the
 //      mutation door lives. That split is not cosmetic - it is what makes a
 //      failed open impossible to see, because there is no half-way point at
 //      which one of these can give up. See loadBoard().
 //   2. A format is testable in a way a mutation is not. Feeding this module a
 //      broken object and asserting the board it returns needs no bus, no
 //      history and no selection.
-//   3. state.js was the only file that knew the format, which meant every
+//   3. state.ts was the only file that knew the format, which meant every
 //      change to the format was a change to the mutation door. The one door and
 //      the one schema are different jobs that happened to share a file.
 //
@@ -30,7 +30,7 @@
 // temptation is loadBoard() itself, since it is where normalizeBoard() is
 // called and it reads like the other half of this file - but it clears the
 // history, empties the clipboard, reseeds the stick and fence memos and fires
-// six events, none of which is schema work. state.js keeps whole-board
+// six events, none of which is schema work. state.ts keeps whole-board
 // replacement; this keeps the shape of what is being put there.
 //
 // Note also that serializeBoard() is not pure and is not pretending to be: it
@@ -42,11 +42,11 @@
 // export) would each have had to remember, and the one that forgot would ship
 // files a day out of date.
 //
-// Nothing here imports state.js - see tests/layers.test.js, where this is BASE.
+// Nothing here imports state.ts - see tests/layers.test.js, where this is BASE.
 
 import { clamp, isFamily, isHash, isRecord } from './util.ts';
 // The step ledger, for the one line of serializeBoard() that writes it out.
-// Downward: timeline.js stands on board-model.js and knows nothing about the
+// Downward: timeline.ts stands on board-model.ts and knows nothing about the
 // file format, which is why the format is what imports *it* rather than the
 // other way round.
 import { serializeTimeline, docFingerprint } from './timeline.ts';
@@ -132,7 +132,7 @@ export function normalizeBoard(data: unknown): Omit<Board, 'settings' | 'arrange
   const trashItems = dedupeIds(trash.map(t => makeItem(t.item as Record<string, unknown>)), ids);
   // The ids a connection may name, which is narrower than `ids` and narrower
   // for a reason the id union cannot express: a line to a sticker or a ghost is
-  // one nothing will ever draw. centres() in canvas/web.js filters the ends it
+  // one nothing will ever draw. centres() in canvas/web.ts filters the ends it
   // places through isJoinEnd(), so such a pair is skipped every frame, forever,
   // in silence - and boards written before the tool checked can already carry
   // them. Pruning here is the only place that gets them out of the file.
@@ -413,7 +413,7 @@ export function normalizeFonts(raw: unknown): FontSpec[] {
     const axes = normalizeFontAxes(f.axes);
     // One or the other, never both. `variable` says only "this file has an
     // fvar", which is all a bracketless .woff2 can be asked - its axes are
-    // behind Brotli. It exists so ui/fonts.js can still declare a weight range
+    // behind Brotli. It exists so ui/fonts.ts can still declare a weight range
     // wide enough to reach the axis instead of defaulting to a flat 400; with
     // real axes present that range comes from them and this would be a second
     // source for the same fact.
@@ -500,10 +500,10 @@ export function normalizeMobileHeader(raw: unknown): MobileHeader {
   };
 }
 
-/** Matches MAX_FONTS in ui/fonts.js - the two are one limit in two layers. */
+/** Matches MAX_FONTS in ui/fonts.ts - the two are one limit in two layers. */
 const MAX_FONTS = 8;
 /**
- * Matches MAX_AXES in ui/fonts.js. 32, up from 16: the parametric families are
+ * Matches MAX_AXES in ui/fonts.ts. 32, up from 16: the parametric families are
  * the reason - Roboto Flex ships thirteen axes and Amstelvar more than twenty,
  * and a limit that truncated them was cutting off exactly the fonts a variable
  * axis panel exists for. Still a bound rather than none, since this is what a

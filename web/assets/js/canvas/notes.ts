@@ -4,7 +4,7 @@
 // paragraphs - each a line with its own alignment, over a note-level font, size
 // and vertical placement. The blocks live in `meta.rich`; `meta.text` is the
 // Markdown-flavoured plaintext they flatten to, kept for search, linkify and
-// older readers. canvas/renderers.js owns that model (normalizeNoteRich /
+// older readers. canvas/renderers.ts owns that model (normalizeNoteRich /
 // flattenNoteRich / buildNoteLine); this file is the editor over it.
 //
 // Editing turns the `.note-rich` column into a plaintext-only contenteditable
@@ -183,7 +183,7 @@ let standIn: { id: string; fit: () => void } | null = null;
  * already stops you from making one too small by hand.
  *
  * Not undoable, on purpose - the same reasoning as adoptAspect() in
- * renderers.js. It is part of the text arriving, not an edit of its own, and an
+ * renderers.ts. It is part of the text arriving, not an edit of its own, and an
  * undo entry per keystroke would bury the edit it belongs to.
  *
  * A note the composer is showing grows *there* and not here. The card in the
@@ -1061,33 +1061,6 @@ export function editNote(
 }
 
 /**
- * Write a new note in front of the board, and drop it there.
- *
- * The note is made first and is a real item from the start - which is what
- * makes this the note editor and not a second one. The card the canvas built
- * for it is lifted out of the world layer into #compose for as long as it is
- * being written, and put back where it came from afterwards; everything
- * between those two moves is editNote() doing exactly what it does on the
- * board. The pad colour, the heading, the alignment, the font, the size, the
- * character count, a note that turns out to be nothing but a URL becoming a
- * link - all of it is the same code, because it is the same note.
- *
- * `make` is how the note is made rather than the note itself, and that is the
- * whole of why this owns the making: cancelling has to take back the add, and
- * to take back a command you have to be holding it. The command is captured
- * either side of the call, so a `make` that commits nothing is noticed rather
- * than assumed about. See takeBack() in history.js - this used to reason "the
- * add must still be the top of the stack", which was true and stayed true only
- * as long as three unrelated functions went on not committing.
- *
- * A maker rather than an import, because canvas/ may not reach into import/ for
- * anything but the format catalog, and addNote() lives there.
- *
- * Without the dialog - an older shell, a page stripped of it - the note is
- * still written, just on the board, which is where the context menu writes one
- * anyway.
- */
-/**
  * The composer, opened on a note that is already on the board.
  *
  * Editing a sticky used to be the floating bar over the card, and composing a
@@ -1109,6 +1082,33 @@ export function editNoteInComposer(id: string) {
   openComposer(id, null);
 }
 
+/**
+ * Write a new note in front of the board, and drop it there.
+ *
+ * The note is made first and is a real item from the start - which is what
+ * makes this the note editor and not a second one. The card the canvas built
+ * for it is lifted out of the world layer into #compose for as long as it is
+ * being written, and put back where it came from afterwards; everything
+ * between those two moves is editNote() doing exactly what it does on the
+ * board. The pad colour, the heading, the alignment, the font, the size, the
+ * character count, a note that turns out to be nothing but a URL becoming a
+ * link - all of it is the same code, because it is the same note.
+ *
+ * `make` is how the note is made rather than the note itself, and that is the
+ * whole of why this owns the making: cancelling has to take back the add, and
+ * to take back a command you have to be holding it. The command is captured
+ * either side of the call, so a `make` that commits nothing is noticed rather
+ * than assumed about. See takeBack() in history.ts - this used to reason "the
+ * add must still be the top of the stack", which was true and stayed true only
+ * as long as three unrelated functions went on not committing.
+ *
+ * A maker rather than an import, because canvas/ may not reach into import/ for
+ * anything but the format catalog, and addNote() lives there.
+ *
+ * Without the dialog - an older shell, a page stripped of it - the note is
+ * still written, just on the board, which is where the context menu writes one
+ * anyway.
+ */
 export function composeNote(make: () => Item | null | undefined) {
   const before = lastCommand();
   const item = make();
@@ -1200,7 +1200,7 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>) {
   fit();
 
   // The card's own transform comes off while it is out of the world layer, and
-  // this is not tidiness. canvas/items.js writes `transform` *inline* on every
+  // this is not tidiness. canvas/items.ts writes `transform` *inline* on every
   // item (placeBox) and the string is almost never empty: deviceSnap() returns a
   // sub-pixel correction at any zoom and any device pixel ratio, and a rotated
   // note carries a rotate() instead. A sheet nudged a third of a pixel sideways

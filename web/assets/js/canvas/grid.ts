@@ -323,7 +323,7 @@ export function paintGrid(vp: Viewport) {
   // An attribute read, not getComputedStyle. This function runs on every frame
   // of every pan and pinch, and asking for a computed value in here would force
   // a synchronous style flush per frame for a value that changes about once an
-  // afternoon. ui/appearance.js announces the change instead, so the attribute
+  // afternoon. ui/appearance.ts announces the change instead, so the attribute
   // is always current by the time we look at it.
   const harsh = harshGrid();
 
@@ -517,6 +517,12 @@ function punchHole(canvas: HTMLCanvasElement, o: { x: number; y: number }, vp: V
 const AXIS_PX = 1.2;
 
 /**
+ * Where the two axis lines were last drawn, how thick, and on a bitmap of what
+ * size. Null on either coordinate means that axis was off screen.
+ */
+type AxisMemo = { x: number | null; y: number | null; t?: number; w: number; h: number };
+
+/**
  * Where the two rules were last drawn, in device pixels, so the next frame can
  * wipe those two bands and no more.
  *
@@ -527,12 +533,6 @@ const AXIS_PX = 1.2;
  * height come along so that a canvas which has just been resized - and therefore
  * blanked - is not asked to clear rows out of a bitmap that no longer has them.
  */
-/**
- * Where the two axis lines were last drawn, how thick, and on a bitmap of what
- * size. Null on either coordinate means that axis was off screen.
- */
-type AxisMemo = { x: number | null; y: number | null; t?: number; w: number; h: number };
-
 let axisWas: AxisMemo = { x: null, y: null, t: 0, w: 0, h: 0 };
 
 /**
@@ -691,8 +691,9 @@ let tierRaf = 0;
  *
  * A jump of more than one tier - a fit, a board load, the zoom readout being
  * clicked back to 100% - is not faded. There is no pair of lattices to cross
- * between when the step changes by eight, and half a second of a grid dissolving
- * would be a strange thing to have asked for by pressing "zoom to fit".
+ * between when the step changes by eight, and a tenth of a second of a grid
+ * dissolving would be a strange thing to have asked for by pressing "zoom to
+ * fit".
  *
  * Nor is a tier crossed *during a live zoom*. The fade draws both lattices at
  * once - on the gradient tiers that is up to fourteen radial gradients repainted
@@ -742,7 +743,7 @@ const still = () => !!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)'
 /**
  * The whimsy level that draws crosses. Compared as a string because that is
  * what a data attribute holds, and `data-whimsy` is always written - see the
- * note on `apply()` in ui/appearance.js - so an absent attribute here means
+ * note on `apply()` in ui/appearance.ts - so an absent attribute here means
  * the page has not booted yet, not "the middle".
  *
  * Exported because ui/snapshot.ts asks the same question of the same attribute
@@ -772,7 +773,7 @@ const dot = (color: string, scale: number) => {
 // and the lattice stays a lattice. A cross built by the same rule is not: it
 // spans twice its half-length, so scaling the length with the slider made the
 // mark 2.7x the dot's width at the same setting, and on the minor lattice's
-// tightest tile - gridStep() will let it down to 26px - a mark that wide leaves
+// tightest tile - gridStep() will let it down to 40px - a mark that wide leaves
 // a few pixels of gap and the whole board floods with the grid's own colour.
 // Past a certain size a bigger mark is not a heavier grid, it is a fill.
 //
@@ -1007,7 +1008,7 @@ function clearCanvas(canvas: HTMLCanvasElement) {
  *
  * getComputedStyle is exactly what the note in paintGrid() forbids per frame,
  * so this is read once and held. resetGridInk() below is how it is given back,
- * and ui/appearance.js calls it on every change to a look - which includes each
+ * and ui/appearance.ts calls it on every change to a look - which includes each
  * drag of the strength and weight sliders, since a canvas cannot follow those
  * on its own the way a gradient carrying var() can.
  */

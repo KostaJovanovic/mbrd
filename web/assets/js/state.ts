@@ -13,25 +13,23 @@
 //   board      - a whole new board was loaded, or the title/dirty flag changed
 //   trash      - something was thrown away, restored, or purged
 //   connections- a line between two cards was drawn or removed. Its own event
-//                rather than riding on 'items', which was tempting and wrong:
-//                every subscriber to that one would repaint for a change that
-//                moved nothing and added nothing.
+//                rather than riding on 'items': every 'items' subscriber
+//                would repaint for a change that moved nothing.
 
 import { isHash, isRecord, itemHashes } from './util.ts';
 import { toast } from './notify.ts';
 import { cue } from './cuelume/engine.ts';
-// Pure geometry, shared with the canvas and the input layer so that "where is
-// this item and what does it cover" has exactly one answer in this app. Kept
-// at the top level rather than under canvas/ because it depends on nothing and
-// belongs to no one layer - see geometry.js.
+// Pure geometry, shared with the canvas and the input layer so "where is this
+// item and what does it cover" has one answer. At the top level rather than
+// under canvas/ because it depends on nothing and belongs to no one layer -
+// see geometry.ts.
 import { latticeBox } from './geometry.ts';
 import { splitAppearance, mergeAppearance } from './layout-settings.ts';
-// The .mbrd format, one level down - see board-schema.js. Everything about the
-// shape of a file, in both directions: what an arriving board is held to and
-// what a saved one is written as. serializeBoard() is re-exported below under
-// its old name; the four normalizers are this file's own working set, since
-// setSetting() writes the same board-level fields the reader validates and the
-// two must agree on what a legal value is.
+// The .mbrd format, one level down - see board-schema.ts: what an arriving
+// board is held to and what a saved one is written as. serializeBoard() is
+// re-exported below under its old name; the four normalizers are this file's
+// own working set, since setSetting() writes the same board-level fields the
+// reader validates and the two must agree on what a legal value is.
 import {
   normalizeBoard, normalizeFonts, normalizeMediaFit, normalizeMobileHeader,
   normalizePaletteSources, serializeBoard,
@@ -39,10 +37,10 @@ import {
 
 export { serializeBoard };
 
-// The cards an empty board puts on itself, one level down - see onboarding.js.
+// The cards an empty board puts on itself, one level down - see onboarding.ts.
 // Hydration rather than mutation: no commit, no history, and two session
-// latches that must survive an undo of the import that cleared them. Every name
-// is re-exported below, because callers have always reached them through here.
+// latches that must survive an undo of the import that cleared them. Every
+// name is re-exported below; callers have always reached them through here.
 import {
   GHOST_IDS, NOTFOUND_IDS, tapeFor, hasContent, hasGhosts, isNotFoundBoard,
   leaveNotFoundBoard, ensureGhostCards, dismissGhosts, resetGhostLatch,
@@ -55,10 +53,10 @@ export {
   reseedGhostCards,
 };
 
-// The internal clipboard, one level down - see clipboard.js. Nothing in it
-// touches the board, which is exactly why it could go: the clipboard is not
-// board state, it is not saved and there is nothing about it to undo. The two
-// commands that *do* touch the board - cut and paste - stayed here.
+// The internal clipboard, one level down - see clipboard.ts. Nothing in it
+// touches the board: the clipboard is not board state, is not saved and has
+// nothing to undo. The two commands that *do* touch the board - cut and
+// paste - stayed here.
 import {
   clearClipboard, clipboardBounds, clipboardHasOurs, clipboardSize, cloneItem,
   copyItems, itemCount, itemsIn, pasteCopies, takeItems,
@@ -66,16 +64,14 @@ import {
 
 export { clipboardBounds, clipboardHasOurs, clipboardSize, copyItems };
 
-// The bin, one level down - see trash.js. Delete and restore are two directions
-// of one door and they sat four hundred lines apart in here; the bin's bound is
-// in board-model.js beside MAX_ITEMS, because it is part of the board's shape
-// and the file reader applies it too.
+// The bin, one level down - see trash.ts. Delete and restore are two
+// directions of one door. The bin's bound is in board-model.ts beside
+// MAX_ITEMS, because it is part of the board's shape and the file reader
+// applies it too.
 // setAssetPurge is the seam emptying it needs: the bin destroys the files it
 // was holding, and the registry that holds them is a layer above this one.
 // main.ts wires it, the same shape as setAssetNameLookup() below.
-// freezeClip is the bin's fourth route and belongs with the other three for the
-// reason the file's header gives - it is a way an item leaves the board, and
-// leaving and coming back are two directions of one door.
+// freezeClip is the bin's fourth route: another way an item leaves the board.
 import {
   removeItems, restoreItems, emptyTrash, setAssetPurge, freezeClip, clipHomeId,
   stuckHostId,
@@ -85,13 +81,12 @@ export {
   removeItems, restoreItems, emptyTrash, setAssetPurge, freezeClip, clipHomeId,
   stuckHostId,
 };
-// Downward: the catalogue is pure - geometry.js and nothing else - and this is
+// Downward: the catalogue is pure - geometry.ts and nothing else - and this is
 // the one thing state needs from it, which of the two lists a stored
 // arrangement id belongs to. See tests/layers.test.js, where it is BASE.
-// The floor this file stands on. Both were declared here until state.js was
-// split; they are re-exported below under exactly their old names, because
-// "state.js is the only door" is a rule about where mutations go and not about
-// which file a symbol happens to be declared in. See board-store.js.
+// The floor this file stands on, re-exported below under exactly its old
+// names: "state.ts is the only door" is a rule about where mutations go, not
+// about which file a symbol is declared in. See board-store.ts.
 import {
   bus, selection, isDirty, markDirty, resetDirty,
   select, clearSelection, deselect, tagFilter, setTagFilter,
@@ -101,9 +96,9 @@ import {
   commit, undo, redo, historyState, historyDepth, historyWeight,
   clearHistory, lastCommand, takeBack,
 } from './history.ts';
-// The step ledger, one level down again - see timeline.js. Nothing above this
-// file drives it: commit() records, undo() and redo() move the marker, and what
-// is re-exported here is the reading half plus the two doors a *file* needs.
+// The step ledger, one level down again - see timeline.ts. Nothing above this
+// file drives it: commit() records, undo() and redo() move the marker. What is
+// re-exported here is the reading half plus the two doors a *file* needs.
 import {
   adoptTimeline, timelineSteps, timelineAt, timelineStale, timelineHashes, goTo,
   nameStep, declareOp, registerOp, editStep, rebuildFrom, stepEditable,
@@ -123,10 +118,10 @@ export { tagFilter, setTagFilter };
 export { isMultiSelect, setMultiSelect };
 export { commit, undo, redo, historyState, historyDepth, historyWeight, lastCommand, takeBack };
 
-// The board's shape and its index, one level down - see board-model.js. The
+// The board's shape and its index, one level down - see board-model.ts. The
 // first group is re-exported because callers have always imported these from
-// state.js; the second is this file's own working set, internals of the model
-// that the mutation rules above them are written in terms of.
+// state.ts; the second is this file's own working set, model internals the
+// mutation rules are written in terms of.
 import {
   NOTE_MAX, DEFAULT_MOBILE_HEADER, DEFAULT_SETTINGS, BOARD_MODES, BOARD_TITLE_MAX,
   MOBILE_COLUMNS, MOBILE_COLUMN_OPTIONS, MOBILE_TOP_ROWS, MOBILE_MIN_ROWS,
@@ -138,10 +133,10 @@ import {
   cloneSettings, layoutSettingsOf, dropIdIndex,
   MAX_CONNECTIONS, pairKey, normalizeAudioOrder, CONN_DIRECTIONS, CONN_STYLES,
 } from './board-model.ts';
-// The readers the per-item settings below are written in terms of. Each is
-// the *same* function the file reader and every consumer uses, which is what
-// keeps "what this app will store" and "what a reader will get back" one answer
-// rather than two that agree today - see setItemCrop().
+// The readers the per-item settings below are written in terms of. Each is the
+// *same* function the file reader and every consumer uses, which keeps "what
+// this app will store" and "what a reader will get back" one answer rather
+// than two that agree today - see setItemCrop().
 import {
   isLocked, isFiltered, itemCrop, itemAdjust, adjustFilter, itemFlip, flipTransform,
   itemRotate, itemMatte, itemBare,
@@ -157,11 +152,11 @@ export { itemRotate, itemMatte, itemBare };
 export { itemTags, boardTags, cleanTag };
 export { TAGS_PER_ITEM, TAG_MAX, MIN_CROP };
 
-// Every write to board.connections, one level down - see connections.js. The
-// shape of a connection stayed in board-model.js and the pruning stayed in
-// board-schema.js; what moved is the mutation half, which is all of it that had
-// to sit beside commit(). Re-exported by name: callers have always drawn and
-// parted lines through state.js.
+// Every write to board.connections, one level down - see connections.ts. The
+// shape of a connection stayed in board-model.ts and the pruning in
+// board-schema.ts; only the mutation half had to sit beside commit().
+// Re-exported by name: callers have always drawn and parted lines through
+// state.ts.
 import {
   areConnected, connectedTo, toggleConnection, addConnections, clearConnections,
   updateConnection, connectionMeta,
@@ -172,7 +167,7 @@ export {
   updateConnection, connectionMeta,
 };
 
-// Stuckness, one level down - see sticky.js. Questions about geometry; the
+// Stuckness, one level down - see sticky.ts. Questions about geometry; the
 // mutations that act on their answers are here.
 import {
   STICK_MIN, stuckTo, wouldStick, restick, seedSticks,
@@ -180,46 +175,45 @@ import {
   startSettling, isSettling, settlesIn, SETTLE_MS,
 } from './sticky.ts';
 
-// Fence membership, one level down - see fences.js. Same bargain as sticky.js:
-// a question about where two things are, measured and remembered here, acted on
-// there.
+// Fence membership, one level down - see fences.ts. Same bargain as sticky.ts:
+// a question about where two things are, measured there, acted on here.
 import {
   isFence, fenceOf, fenceAt, fenceMembers, fenceFollowers, refence, refenceAround,
   refenceArrivals, seedFences, fenceBox, nextFenceName,
 } from './fences.ts';
 
-// The sticker catalogue - a leaf module of plain data, imported here for the
-// one thing a mutator has to do with it: hold an arriving tint to the palette
-// that exists.
+// The sticker catalogue - a leaf module of plain data, imported for the one
+// thing a mutator does with it: hold an arriving tint to the palette that
+// exists.
 import { stickerTint } from './stickers/catalogue.ts';
 
-// Where everything is - see layout.js. The Mobile pack, the two geometry
+// Where everything is - see layout.ts. The Mobile pack, the two geometry
 // profiles and the undoable geometry writes, which had to move as one piece
 // because the pack and the profiles call each other.
 import {
   activateLayoutSettings, applyGeom, baseStep, commitGeom, completeLayout, fitBoardMode, mobileBoardWidth, placeMobileItems, recheckBoardGeometry, repackMobileBoard, snapAll, snapshotGeom, travelling, unsnapAll, writeLayout,
 } from './layout.ts';
 
-// Board-wide snapping moved down with the rest of the geometry writes - see the
-// tail of layout.js. setSetting() still owns the `snap` key and hands the value
+// Board-wide snapping lives with the rest of the geometry writes - see the
+// tail of layout.ts. setSetting() still owns the `snap` key and hands the value
 // over; snapAll/unsnapAll take the flag as well as the sweep, because the two
 // are one command (an undo that put the board back and left the checkbox ticked
 // was the bug that made them one).
 export { recheckBoardGeometry };
 
-// Z-order - see stacking.js. Sticky notes are ordered against their host rather
+// Z-order - see stacking.ts. Sticky notes are ordered against their host rather
 // than against the board, which is why this is not a sort by z.
 export { raiseSelection, lowerSelection, stackOrder, visualStackOrder, stackLayerIds, selectionHasStackOverlap } from './stacking.ts';
 
 // Re-exported, not used here: these four are the layout module's public face
-// and callers have always reached for them through state.js.
+// and callers have always reached for them through state.ts.
 export {
   setBoardMode, mobileBoardTop, mobileBoardBottom, mobileBoardWorldWidth,
 } from './layout.ts';
 
 export { baseStep, snapshotGeom, applyGeom, commitGeom, placeMobileItems, mobileBoardWidth, travelling };
 // applyGeom()'s argument type, through the same door as applyGeom itself: a
-// caller in ui/ that builds a patch has to be able to name what it is building,
+// caller in ui/ that builds a patch must be able to name what it is building,
 // and layout.ts is below the line ui/ may import from.
 export type { GeomPatch } from './layout.ts';
 
@@ -246,11 +240,10 @@ export {
 
 // The filename an asset first arrived under lives in the asset registry, which
 // sits *above* state in the layering - storage depends on state, not the other
-// way. So renameItem's oldest fallback is injected here rather than imported:
-// main.js wires this to storage/assets.js at startup. Left unset - in a test,
-// or before wiring - the fallback just skips to the item's current name, which
-// is the same answer the registry gives for an asset it has never seen. See
-// AUD-12.
+// way. So renameItem's oldest fallback is injected rather than imported:
+// main.ts wires this to storage/assets.ts at startup. Left unset - in a test,
+// or before wiring - the fallback skips to the item's current name, the same
+// answer the registry gives for an asset it has never seen. See AUD-12.
 /** The filename an asset arrived under, from whoever holds the registry. */
 type AssetNameLookup = (hash: string) => string | undefined;
 
@@ -272,14 +265,11 @@ export function addItems(
   // The stack is dealt here rather than left to makeItem().
   //
   // makeItem() defaults `z` to topZ() + 1, which reads the *live* board - and
-  // the batch is not on it yet. So a group added in one call every one of them
-  // read the same number and landed on a single layer. One flat layer is a
-  // stacking order nobody chose, and two things went wrong on top of it:
-  // duplicating a pile came back flat, defeating the sort in itemsIn() that
-  // exists for exactly that reason, and stuckTo() - which needs a *strictly*
-  // lower z - stopped recognising the pair. Copy a photo with a note on it and
-  // the copied note was not stuck to the copied photo; it silently attached
-  // itself to whatever else happened to be underneath.
+  // the batch is not on it yet, so a group added in one call all read the same
+  // number and landed on one layer. That broke two things: duplicating a pile
+  // came back flat, defeating the sort in itemsIn(), and stuckTo() - which
+  // needs a *strictly* lower z - stopped recognising the pair, so a copied
+  // note attached itself to whatever happened to be underneath.
   //
   // An explicit z is still honoured, because loadBoard() and the bin restore
   // items that already have one and must come back exactly where they were.
@@ -291,11 +281,11 @@ export function addItems(
   } else {
     added = added.map(item => fitBoardMode(onLattice(item)));
   }
-  // A fence arriving changes what everything under it belongs to, and only this
-  // says so - see refenceArrivals(). In the redo half rather than beside it, for
-  // the reason commitGeom() gives at length: commit() runs redo immediately, so
-  // this covers the first add and every redo after it, while the undo half is a
-  // removal, which heals on its own.
+  // A fence arriving changes what everything under it belongs to, and only
+  // this says so - see refenceArrivals(). In the redo half for the reason
+  // commitGeom() gives: commit() runs redo immediately, so this covers the
+  // first add and every redo after it, while the undo half is a removal, which
+  // heals on its own.
   commit(label,
     () => { const fresh = added.filter(a => !byId(a.id));
             board.items.push(...fresh);
@@ -311,34 +301,29 @@ export function addItems(
 }
 
 /**
- * A new item laid on the lattice, if the board is snapped.
+ * A new item laid on the lattice, if the board is snapped. Arriving is a
+ * placement like any other: without this, a snapped board grew a photograph at
+ * 320x240 sitting a few pixels off every line, fixable only by switching
+ * snapping off and on again.
  *
- * Without this, snapping only governed items that were already on the board
- * when it was switched on, plus anything dragged afterwards - so a snapped
- * board grew a photograph at 320x240 sitting a few pixels off every line it was
- * meant to sit on, and the only way to line it up was to switch snapping off
- * and on again. Arriving is a placement like any other.
+ * Sizes as well as positions, because a box that is not a whole number of
+ * cells is snapped along only two of its four edges, and it is the ragged
+ * right and bottom that a person sees.
  *
- * Sizes as well as positions, because a box on the lattice that is not a whole
- * number of cells is only snapped along two of its four edges, and it is the
- * ragged right and bottom that a person actually sees.
+ * The presnap memo makes this reversible: unsnapAll() puts every item carrying
+ * one back to its pre-lattice geometry, and an imported item with no life
+ * before the lattice would otherwise be stranded at its snapped size when
+ * snapping is turned off. An existing memo is left alone - a duplicated or
+ * pasted item brings its own, a memo of life before the *first* snap.
  *
- * The presnap memo is what makes this reversible: unsnapAll() puts every item
- * carrying one back to the geometry it had before the lattice, and an imported
- * item that never had a life before the lattice would otherwise be stranded at
- * its snapped size when snapping is turned off. An existing memo is left alone
- * - a duplicated or pasted item brings its own, and it is a memo of life before
- * the *first* snap, not of the copy's.
- *
- * Something arriving *on a card* is the exception, and the same one snapAll()
- * makes: a sticker pressed onto a photograph belongs at that spot on the
- * photograph, not at the nearest grid line, and a board that is already on the
- * lattice must not take it off the picture on the way in. wouldStick() rather
- * than stuckTo(), because the item is not on the board yet - it is added a few
- * lines below this - and stuckTo() would answer "stuck to nothing" and then
- * *remember* that, leaving a sticker unstuck until somebody happened to drag
- * it. The loose flag is read here because wouldStick() deliberately does not:
- * a note unstuck on purpose is a note the lattice governs like any other.
+ * Something arriving *on a card* is the exception, the same one snapAll()
+ * makes: a sticker pressed onto a photograph belongs at that spot, not at the
+ * nearest grid line. wouldStick() rather than stuckTo(), because the item is
+ * not on the board yet - it is added a few lines below - and stuckTo() would
+ * answer "stuck to nothing" and *remember* that, leaving the sticker unstuck
+ * until somebody dragged it. The loose flag is read here because wouldStick()
+ * does not: a note unstuck on purpose is governed by the lattice like any
+ * other.
  */
 function onLattice(it: Item): Item {
   if (!board.settings.snap) return it;
@@ -356,7 +341,7 @@ function onLattice(it: Item): Item {
 
 /**
  * The Desktop title card: its fixed geometry and the two helpers that keep it a
- * singleton. Defined here, below the item plumbing, so it can lean on makeItem.
+ * singleton. Below the item plumbing, so it can lean on makeItem.
  */
 // Four grid spaces wide at the default 64px grid step, and 3:2 tall (256 * 2/3
 // = 170.67) - the Mobile masthead's own aspect (MOBILE_HEADER_ASPECT). The card
@@ -365,8 +350,8 @@ function onLattice(it: Item): Item {
 // top-aligned inside, so the extra height falls as slack below it.
 const TITLE_SIZE = Object.freeze({ w: 256, h: 171 });
 // Top-centre, above where a fresh board's items land: x centres it (item x is
-// the box centre), +y is up (world plane), so this sits the card over the origin.
-// One grid space (64) higher than it first sat, to clear the content below it.
+// the box centre), +y is up (world plane), so the card sits over the origin.
+// One grid space (64) higher than it first sat, to clear the content below.
 const TITLE_DEFAULT_POS = Object.freeze({ x: 0, y: 244 });
 
 function makeTitleItem(at: { x?: number, y?: number } | null = null) {
@@ -378,19 +363,17 @@ function makeTitleItem(at: { x?: number, y?: number } | null = null) {
     w: TITLE_SIZE.w,
     h: TITLE_SIZE.h,
     // Anchored from the moment it appears, and this is the one card where that
-    // is the right default. It is the board's *name*: it sits at top-centre
-    // above where everything lands, it is the largest thing on a fresh board,
-    // and it is therefore the thing a press aimed at the board behind it hits.
-    // Anchored, that press pans - which is what somebody reaching past the
-    // masthead meant - and a Rearrange lays the board out around it instead of
-    // dealing a slot underneath it.
+    // is the right default. It is the board's *name*: top-centre above where
+    // everything lands, the largest thing on a fresh board, so it is what a
+    // press aimed at the board behind it hits. Anchored, that press pans -
+    // what somebody reaching past the masthead meant - and a Rearrange lays
+    // the board out around it instead of dealing a slot underneath it.
     //
-    // Nothing is taken away by it: the pen and the T are buttons, so they claim
-    // their own press (see the widget branch in canvas/input.ts), a double
-    // click still drops into the rename, and Reset position goes through
-    // applyGeom rather than a drag, so it works anchored. What is gone is the
-    // accidental drag, and the menu row below Reset position is how to get it
-    // back.
+    // Nothing is lost: the pen and the T are buttons and claim their own press
+    // (see the widget branch in canvas/input.ts), a double click still drops
+    // into the rename, and Reset position goes through applyGeom rather than a
+    // drag, so it works anchored. Only the accidental drag is gone, and the
+    // menu row below Reset position gets it back.
     //
     // Only on a card this function makes. A board opened from a file carries
     // whatever it saved, which is why ensureTitleCard() adds nothing to one
@@ -402,8 +385,8 @@ function makeTitleItem(at: { x?: number, y?: number } | null = null) {
 /**
  * Put the title card on the board if it belongs there and is missing. Board
  * hydration, not a user edit: no commit, no history - it runs on load and at
- * startup, the same way default settings are simply present. A board that threw
- * the card away (titleHidden) keeps it away.
+ * startup, the way default settings are present. A board that threw the card
+ * away (titleHidden) keeps it away.
  */
 export function ensureTitleCard() {
   if (board.titleHidden) return;
@@ -417,9 +400,9 @@ export const isTitleHidden = () => !!board.titleHidden;
 /**
  * Send the title card back to its default spot (top-centre). The card is a
  * movable singleton with no other way home short of deleting and restoring it,
- * so this is its "Reset size" - one undoable step, and a no-op if it is already
- * there. Uses the same geometry funnel a drag does, so it snaps and round-trips
- * like any move.
+ * so this is its "Reset size" - one undoable step, a no-op if it is already
+ * there. Same geometry funnel a drag uses, so it snaps and round-trips like
+ * any move.
  */
 export function resetTitlePosition() {
   const item = board.items.find(i => i.type === 'title');
@@ -462,11 +445,11 @@ export function duplicateItems(ids: Iterable<string>, offset = { x: 28, y: -28 }
 // ---------------------------------------------------------------------------
 // The two clipboard commands that touch the board
 //
-// Everything else about the clipboard is in clipboard.js: what is held, what a
+// Everything else about the clipboard is in clipboard.ts: what is held, what a
 // copy of an item is, the receipt that tells our own paste from somebody
-// else's. These two are here because they are board mutations - one deletes and
-// one adds - and every board mutation is one undoable command with a label,
-// which is what this file is for. See the head of clipboard.js for the seam.
+// else's. These two are here because they are board mutations - one deletes,
+// one adds - and every board mutation is one undoable command with a label.
+// See the head of clipboard.ts for the seam.
 // ---------------------------------------------------------------------------
 
 /**
@@ -474,18 +457,16 @@ export function duplicateItems(ids: Iterable<string>, offset = { x: 28, y: -28 }
  * that touched the board. Cut items go to the bin like any other delete, so a
  * cut you never paste is still recoverable.
  *
- * The one of the three that genuinely needed saying out loud: copy and paste
- * both leave something on screen to look at, where cut makes things disappear
- * and looks identical to having pressed delete by mistake. Naming the bin is
- * the useful half of the message - it is the difference between "gone" and
- * "over there".
+ * The one of the three that needs a toast: copy and paste leave something on
+ * screen, where cut makes things disappear and looks identical to a mistaken
+ * delete. Naming the bin is the useful half - "gone" versus "over there".
  */
 export function cutItems(ids: Iterable<string>) {
   // Resolved once and reused for both the copy and the delete, rather than
   // letting copyItems() resolve them again - two full board filters + sorts.
-  // That is also why this calls takeItems() rather than copyItems(): the latter
-  // toasts, and two toasts in the same turn are not two messages, since the
-  // second replaces the first inside a frame.
+  // Also why this calls takeItems() rather than copyItems(): the latter
+  // toasts, and two toasts in one turn are one message, since the second
+  // replaces the first inside a frame.
   const src = itemsIn(ids);
   const text = takeItems(src);
   if (!text) return '';
@@ -507,56 +488,48 @@ export function pasteItems(at: { x: number, y: number } | null = null) {
   const copies = pasteCopies(at);
   if (!copies.length) return [];
   const added = addItems(copies, copies.length > 1 ? `Paste ${copies.length} items` : 'Paste');
-  // Worth saying even though the copies are visible: a paste that lands under
-  // the pointer looks like a paste, but one that fanned out from an original
-  // off the edge of the screen can put every copy somewhere you are not
-  // looking, and then a working paste and a dead key are the same event.
+  // Said even though the copies are visible: a paste fanned out from an
+  // original off the edge of the screen can put every copy somewhere you are
+  // not looking, and then a working paste and a dead key look the same.
   toast(`Pasted ${itemCount(added.length)}`);
   return added;
 }
 
 
 /**
- * A note's name is its first line, capped - the copy Search reads (ui/search.js).
- * It is taken at creation (import/drop.js) and has to be re-taken on every edit,
- * or Find keeps matching and showing the title the note had when it was made.
+ * A note's name is its first line, capped - the copy Search reads
+ * (ui/search.ts). Taken at creation (import/drop.ts) and re-taken on every
+ * edit, or Find keeps showing the title the note had when it was made.
  */
 const noteName = (text: string) => text.split('\n')[0].slice(0, 40) || 'Note';
 
 /*
- * There was a `setItemText(id, text)` here and it is gone, which is worth a line
- * because the shape of it will look missing to anyone reading setNoteContent()
- * below and wondering where the plain-text door went.
- *
- * It wrote `meta.text` and re-derived the name and did **not** touch `meta.rich`
- * - so calling it on a formatted note left the structured half saying one thing
- * and the flat half another, which is exactly the desync storage/mbrd.ts
- * describes having to repair on the way in. It had no caller anywhere in the app;
- * every note edit goes through setNoteContent(), which writes both halves in one
- * commit. What kept it alive was two tests that exercised it, and those now drive
- * setNoteContent() with no `rich` - the same assertions through the door the app
- * actually uses.
+ * There is no plain-text `setItemText(id, text)` door, and there must not be.
+ * It wrote `meta.text` and re-derived the name without touching `meta.rich`,
+ * so on a formatted note the structured and flat halves disagreed - the desync
+ * storage/mbrd.ts repairs on the way in. Every note edit goes through
+ * setNoteContent(), which writes both halves in one commit; the two tests that
+ * covered the old door now drive setNoteContent() with no `rich`.
  */
 
 /**
  * Recolour a swatch: its `meta.hex` and the name it wears, as one step.
  *
  * The two are one fact. A swatch has no name of its own to lose - it is a
- * colour and the number for it - so the number *is* the name, which is what
- * makes a swatch findable in the palette (ui/search.js reads names) and what
- * puts something readable on the system clipboard when one is copied
- * (summarise(), above, falls back to the name for every type but note and
- * link). Writing them in one commit is the same reasoning applySnapState() uses
- * for the snap flag and the geometry: one act by the user should be one Ctrl+Z,
- * and a state where the two disagree is one nobody could have produced by hand.
+ * colour and the number for it - so the number *is* the name, which makes it
+ * findable in the palette (ui/search.ts reads names) and puts something
+ * readable on the system clipboard when one is copied (summarise(), above,
+ * falls back to the name for every type but note and link). One commit for the
+ * same reason applySnapState() uses one: one act by the user is one Ctrl+Z,
+ * and a state where the two disagree is one nobody could produce by hand.
  *
- * The value arrives from an `<input type="color">`, which can only ever hand
- * over `#rrggbb` - but it also arrives from a .mbrd, so it goes through the
- * same gate the renderer reads it back through rather than being trusted here.
- * That gate is canvas/renderers.js, which sits *above* this file, so the check
- * is repeated in miniature rather than imported: six hex digits or nothing
- * happens. A bad value is dropped, not stored and quietly corrected on the way
- * out - the board should not hold a colour it will not show.
+ * The value arrives from an `<input type="color">`, which can only hand over
+ * `#rrggbb` - but it also arrives from a .mbrd, so it goes through the same
+ * gate the renderer reads it back through. That gate is canvas/renderers.ts,
+ * which sits *above* this file, so the check is repeated in miniature rather
+ * than imported: six hex digits or nothing happens. A bad value is dropped,
+ * not stored and corrected on the way out - the board should not hold a colour
+ * it will not show.
  */
 export function setSwatchHex(id: string, hex: unknown) {
   const it = byId(id);
@@ -570,7 +543,7 @@ export function setSwatchHex(id: string, hex: unknown) {
     const item = byId(id);
     if (!item) return;
     // Undefined is a real previous value - a swatch out of a hand-written file
-    // may carry no hex at all - and setting the key to `undefined` rather than
+    // may carry no hex - and setting the key to `undefined` rather than
     // removing it would leave the board holding a field it does not have. Same
     // shape setItemCover() uses to take a picture away.
     if (value === undefined) { const { hex: _drop, ...rest } = item.meta || {}; item.meta = rest; }
@@ -585,18 +558,18 @@ export function setSwatchHex(id: string, hex: unknown) {
 
 /**
  * Commit a note's formatted content - the structured `meta.rich` and the
- * plaintext `meta.text` it flattens to - as one undoable step, so a single Ctrl+Z
- * takes back the whole edit rather than the two halves separately. A no-op when
- * neither half moved, which is what keeps closing an editor you only looked at
- * from spending a history slot. `rich` is trusted to be normalised by the caller
- * (canvas/notes.js), and `text` is capped here at NOTE_MAX - this is the only
+ * plaintext `meta.text` it flattens to - as one undoable step, so a single
+ * Ctrl+Z takes back the whole edit rather than the two halves separately. A
+ * no-op when neither half moved, so closing an editor you only looked at
+ * spends no history slot. `rich` is trusted to be normalised by the caller
+ * (canvas/notes.ts), and `text` is capped here at NOTE_MAX - this is the only
  * door that writes a note's words, so the cap has nowhere else to be.
  */
 export function setNoteContent(id: string, rich: unknown, text: unknown) {
   const it = byId(id);
   if (!it || it.type !== 'note') return;
-  // Into its own binding rather than back over the parameter, so what the pair
-  // below writes is the capped string rather than whatever arrived.
+  // Its own binding rather than back over the parameter, so the pair below
+  // writes the capped string rather than whatever arrived.
   const next = String(text ?? '').slice(0, NOTE_MAX);
   const prevRich = it.meta.rich;
   const prevText = it.meta.text;
@@ -624,23 +597,22 @@ export function setNoteContent(id: string, rich: unknown, text: unknown) {
 /**
  * Turn one item into an item of another kind, as a single undoable step.
  *
- * The item is replaced rather than edited, and the replacement is minted with
- * a fresh id. That is not bookkeeping. canvas/items.js caches one node per id
- * and writes the type onto that node when it is *built*, and the stylesheet
- * keys off it - so an item that changed type under a node that stayed would go
- * on wearing the old type's clothes until something unrelated forced a
- * rebuild. Retiring the id retires the node with it, which is the only way to
- * get an honest one back without reaching into the renderer from here.
+ * The item is replaced rather than edited, and the replacement gets a fresh id.
+ * canvas/items.ts caches one node per id and writes the type onto that node
+ * when it is *built*, and the stylesheet keys off it - so an item that changed
+ * type under a node that stayed would wear the old type's clothes until
+ * something unrelated forced a rebuild. Retiring the id retires the node with
+ * it, without reaching into the renderer from here.
  *
  * Position, rotation and stacking carry over unless `next` overrules them:
  * this is the same thing seen differently, and it should not move or change
  * places in the pile. The selection follows the swap in both directions, so
- * whichever of the pair is on the board is the one that is selected, and an
- * undo hands the original back ready to be dragged rather than anonymous.
+ * whichever of the pair is on the board is selected, and an undo hands the
+ * original back ready to be dragged.
  *
  * The slot to write into is found by identity when the command runs, not by an
  * index captured while it is being built. Undo may be pressed three edits
- * later, by which time a position recorded now is pointing at somebody else.
+ * later, by which time an index recorded now points at somebody else.
  */
 export function retypeItem(
   id: string, next: Record<string, unknown>, label = 'Change item',
@@ -790,7 +762,7 @@ const oneOf = (...allowed: unknown[]) =>
  * which is what makes "the same cover on nine tracks" cost one file.
  *
  * Wider than what the interface offers on purpose. The right-click menu asks
- * for a picture on a track and nowhere else (canCoverItem, commands.js), and
+ * for a picture on a track and nowhere else (canCoverItem, commands.ts), and
  * the importer sets one from a file's own art or a video's poster frame - but
  * a cover put on any card by an older build, or by the console, is a valid
  * board and draws. Narrowing this as well would turn those into a repair job.
@@ -812,7 +784,7 @@ export function setItemCover(id: string, hash: unknown) {
  * a choice somebody made about what a card looks like; a thumbnail is a derived
  * copy of the picture the item already holds, and there is no state of the
  * board in which having one is a change worth being able to take back. Made at
- * import (import/drop.js) and repaired by the optimiser (optimize/optimize.js);
+ * import (import/drop.ts) and repaired by the optimiser (optimize/optimize.ts);
  * absent simply means the card draws full size at every zoom.
  *
  * Marks the board dirty, because the id has to be saved - the bytes are pinned
@@ -834,7 +806,7 @@ export function setItemThumb(id: string, hash: unknown) {
  * poster is derived output the way a thumbnail is - the clip's own first frame,
  * cut so a card is a picture of itself rather than a black rectangle before it
  * is played - so it is not undoable, for exactly the reasons spelled out above
- * setItemThumb(). Made at import (import/drop.js) and repaired by the optimiser
+ * setItemThumb(). Made at import (import/drop.ts) and repaired by the optimiser
  * for boards saved before posters existed.
  *
  * The refusal is the important half: a clip that already carries a cover keeps
@@ -892,7 +864,7 @@ export function setItemPoster(id: string, hash: unknown, dangling = false) {
  * the *autosave sweep*, which deletes any bytes no item claims and would
  * otherwise collect the originals the moment the board saved itself - leaving an
  * undo entry that could only put back a hash with nothing behind it. See
- * referencedHashes() in storage/storage.js, and packBoard() in storage/mbrd.js,
+ * referencedHashes() in storage/storage.ts, and packBoard() in storage/mbrd.ts,
  * which drops both fields on the way into a .mbrd so an export carries the small
  * files alone.
  *
@@ -1019,7 +991,7 @@ export const originalsHeld = () =>
  *
  * 'z' or 'y'. Anything else clears the override and hands the decision back to
  * the format's own default, which is what a board that has never been told
- * carries - see defaultUpAxis() in mesh.js.
+ * carries - see defaultUpAxis() in mesh.ts.
  *
  * Its own setter rather than a general "write anything into meta", for the same
  * reason setItemCover has one: `meta` is the open field precisely because
@@ -1077,7 +1049,7 @@ export function setItemUpAxis(id: string, axis: unknown) {
  * One image or video's own fit, overriding the board-wide default. 'cover' fills
  * and crops, 'contain' fits the whole picture in; both are explicit, so once set
  * the card no longer follows the board default (that is what an override is for).
- * Undoable and emits 'item', which rebuilds the node so canvas/renderers.js's
+ * Undoable and emits 'item', which rebuilds the node so canvas/renderers.ts's
  * fitMode() reads the new value - the same shape setItemUpAxis uses.
  */
 export function setItemFit(id: string, fit: unknown) {
@@ -1098,7 +1070,7 @@ export function setItemFit(id: string, fit: unknown) {
  *
  * Nothing new is being drawn here: a sticker has had no card since stickers
  * existed. This is the flag that says which of the two an image is, and it is a
- * flag rather than a guess because the guess belongs at import (see drop.js) and
+ * flag rather than a guess because the guess belongs at import (see drop.ts) and
  * has to be overridable. Whatever the person chooses wins and is what gets
  * saved.
  *
@@ -1137,14 +1109,14 @@ export function setItemBare(id: string, bare: unknown) {
 
 /**
  * One sticker's colour. The palette is an override of the shape's own default,
- * not a lottery - see the head of stickers/catalogue.js on why a heart is born
+ * not a lottery - see the head of stickers/catalogue.ts on why a heart is born
  * red rather than taking whatever came next off a cycle.
  *
  * Held to the palette that exists on the way in, because the value ends up as a
  * data-tint attribute the stylesheet keys eight rules off, and a number outside
  * that set is a sticker with no colour at all. Emits 'item', which rebuilds the
  * node - the same shape setItemFit uses, and the tint is read on the way out of
- * canvas/items.js rather than by the renderer.
+ * canvas/items.ts rather than by the renderer.
  */
 export function setStickerTint(id: string, tint: unknown) {
   const it = byId(id);
@@ -1425,7 +1397,7 @@ export function setItemsTagged(ids: Iterable<string>, tag: unknown, on: boolean)
 // ---------------------------------------------------------------------------
 // Unsticking
 //
-// The two mutations that own meta.loose - see the header of sticky.js for what
+// The two mutations that own meta.loose - see the header of sticky.ts for what
 // the flag means and why it is the one piece of stickiness that is stored.
 // They are a pair and they are asymmetric on purpose: one is a menu entry, the
 // other is a consequence of a gesture, and only the first is worth a history
@@ -1448,7 +1420,7 @@ export function unstickItems(ids: Iterable<string>) {
   // isRider, not isPinned: an item dropped three seconds ago is stuck and has
   // not set yet, and unsticking it then is the whole point of being able to -
   // it is how you keep it from ever pinning. See cmds.canUnstick, which asks
-  // the same question, and the settling block in sticky.js.
+  // the same question, and the settling block in sticky.ts.
   const affected = [...new Set(ids)].filter(id => {
     const it = byId(id);
     return !!it && isRider(it);
@@ -1477,7 +1449,7 @@ export function unstickItems(ids: Iterable<string>) {
 /**
  * The way back: a drop that found a host un-looses what it dropped.
  *
- * Called with the ids a *pointer* gesture drove, from canvas/input.js, and only
+ * Called with the ids a *pointer* gesture drove, from canvas/input.ts, and only
  * when the gesture actually moved something. Not from commitGeom(), and that is
  * the distinction the whole design rests on:
  *
@@ -1555,9 +1527,9 @@ export function setModelShot(
 // Selection
 // ---------------------------------------------------------------------------
 
-// select(), clearSelection() and deselect() moved down to board-store.js, which
+// select(), clearSelection() and deselect() moved down to board-store.ts, which
 // owns the Set they write to - see the note beside them there. This one stayed:
-// it needs the item list, and board-model.js sits *above* board-store.js in the
+// it needs the item list, and board-model.ts sits *above* board-store.ts in the
 // graph, so the module holding the selection cannot ask what is on the board.
 export function selectAll() {
   select(board.items.map(i => i.id));
@@ -1601,7 +1573,7 @@ export function setSetting(key: string, value: unknown) {
     return;
   }
   if (key === 'paletteSources') {
-    // Board-level too, and read by ui/appearance.js's palette extraction.
+    // Board-level too, and read by ui/appearance.ts's palette extraction.
     const next = normalizePaletteSources(value);
     if (board.paletteSources === next) return;
     board.paletteSources = next;
@@ -2061,18 +2033,18 @@ export function loadBoard(data: unknown) {
   // function, which is right for every ordinary mutation and wrong for exactly
   // this one: everything below - seedSticks(), completeLayout(), the Mobile
   // carry - reads the board through byId(), and until the index is dropped it
-  // answers about the board that just left. See dropIdIndex() in board-model.js.
+  // answers about the board that just left. See dropIdIndex() in board-model.ts.
   dropIdIndex();
   // The latch travels with the board, not the session: one that arrives with
   // content has already been past this point, and one that arrives empty earns
-  // its hints. See ensureGhostCards(), which main.js calls on 'board:load'.
+  // its hints. See ensureGhostCards(), which main.ts calls on 'board:load'.
   //
   // isContent(), not `type !== 'title'`: fences are furniture too, so a board of
   // nothing but regions is a board with nothing in it and has not earned its
   // hints away. This is the same question hasContent() asks, and it drifted from
   // it when fences arrived.
   resetGhostLatch(board.items.some(isContent));
-  // The Desktop title card is seeded by the app (main.js, on 'board:load'), not
+  // The Desktop title card is seeded by the app (main.ts, on 'board:load'), not
   // here: keeping loadBoard() free of it lets state tests load and serialise a
   // board of exactly the items they gave it. See ensureTitleCard().
   // Before completeLayout(): the Mobile carry below asks stuckTo() where each
@@ -2081,7 +2053,7 @@ export function loadBoard(data: unknown) {
   seedSticks();
   // And the same for fences, for a stronger version of the same reason: a board
   // opened straight into Mobile cannot measure membership at all until somebody
-  // switches modes, so meta.fence is the only thing that knows. See fences.js.
+  // switches modes, so meta.fence is the only thing that knows. See fences.ts.
   seedFences();
   activateLayoutSettings(layoutMode);
   writeLayout(completeLayout(layoutMode));
@@ -2122,7 +2094,7 @@ export function loadBoard(data: unknown) {
   bus.emit('connections');
   // Somewhere has been arrived at. Silent for the board that arrives at boot,
   // and not by a check here: a page that has not been touched yet may not make
-  // a sound at all, which cuelume/engine.js asks about before every cue. The
+  // a sound at all, which cuelume/engine.ts asks about before every cue. The
   // restored session is exactly that page.
   cue('arrive');
 }

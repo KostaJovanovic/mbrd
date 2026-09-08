@@ -42,7 +42,7 @@
      instead, so --shape-radius is overridden per type. And the browser caps a
      border-radius at half the box's shorter side - an item narrower than twice
      its radius comes out a lozenge, whatever was asked for - so --half-min
-     (written by items.js/place(), which is where the size is known) applies
+     (written by items.ts/place(), which is where the size is known) applies
      that same cap here.
      Everything that has to trace this corner reads --own-radius rather than
      guessing, so nothing ends up sweeping a 26px curve around a corner the
@@ -81,7 +81,7 @@
   /* The lift and the tilt are zero at the plain end of the whimsy axis, so the
      same declaration covers "springs up to meet you" and "does not move".
      The resting tilt is each item's own factor in [-1, 1] (written by
-     canvas/items.js, dealt from a bag so a third of the board hangs straight) times
+     canvas/items.ts, dealt from a bag so a third of the board hangs straight) times
      whatever the axis currently allows - and the drag tilt adds on top of it,
      rather than replacing it, so picking a crooked item up keeps it crooked. */
   translate: 0 calc(var(--lift) * var(--iz));
@@ -119,11 +119,11 @@
    the board rather than jumping it. */
 :root[data-snap] .item { rotate: 0deg; }
 
-/* translate/rotate/scale rather than transform, because items.js already owns
+/* translate/rotate/scale rather than transform, because items.ts already owns
    `transform` for the item's own rotation - these are independent properties
    and compose with it instead of fighting over one declaration. */
 /* The ring is the pointer indicator - only the card actually under the pointer
-   gets it. The lift is separate: it is driven by .is-hover, which items.js puts
+   gets it. The lift is separate: it is driven by .is-hover, which items.ts puts
    on the hovered card *and* every sticky riding on top of it, so a photo and its
    notes rise as one object while only the photo carries the ring. */
 .item:hover {
@@ -188,7 +188,7 @@
 
    Hover-only for that reason and one more: pinning is a fact about two items
    and it changes without either being rebuilt, so a class written when the node
-   was built would go stale. items.js sets .is-pinned in setHoverGroup(), where
+   was built would go stale. items.ts sets .is-pinned in setHoverGroup(), where
    the argument is.
 
    No disc behind it. A badge over a photograph has to be legible on whatever
@@ -361,7 +361,7 @@
 .item-body { transform: var(--item-flip, none); }
 
 /* The zoomed-out stand-in. Two things arrive here by the same door: a frozen
-   GIF frame shot by canvas/stills.js, and a photograph's hundred-pixel
+   GIF frame shot by canvas/stills.ts, and a photograph's hundred-pixel
    thumbnail made at import. Both are a sibling <img class="still">, and both
    are swapped in by the same pair of rules - see the note in the image
    renderer.
@@ -481,9 +481,9 @@
   font-style: var(--display-italic);
 }
 /* The body of a text card. Written before the renderer that uses it existed;
-   canvas/renderers.js/RENDERERS.text is what fills it.
+   canvas/renderers.ts/RENDERERS.text is what fills it.
 
-   Two bodies, one box, the same split ui/feed.js makes for its tiles: source is
+   Two bodies, one box, the same split ui/feed.ts makes for its tiles: source is
    monospaced and pre-wrapped, Markdown is prose in the board's own face. The
    box, the clip and the fade are shared here and only the type differs below,
    because a .md card and a .csv card are the same card holding different
@@ -550,7 +550,7 @@
    grid of clipped columns. The viewer draws it. */
 .card-md table { display: none; }
 /* The tombstone card: what is drawn where a file used to be, once the bin was
-   emptied on it. canvas/renderers.js/RENDERERS.gone builds it.
+   emptied on it. canvas/renderers.ts/RENDERERS.gone builds it.
 
    Centred, where every other named card is ranged left, and that is the one
    deliberate break with the rest of the set. Those cards are labels on a thing
@@ -614,7 +614,7 @@
 }
 
 /* The swatch card: a colour and the number for it.
-   canvas/renderers.js/RENDERERS.swatch builds it and writes --swatch.
+   canvas/renderers.ts/RENDERERS.swatch builds it and writes --swatch.
 
    A plate like every other card here rather than a card-shaped rectangle of the
    colour itself, and that is the one real decision in this block. A full-bleed
@@ -775,7 +775,7 @@
 .item.is-filtered.is-selected { opacity: 0.75; }
 
 /* ── The board behind a card whose lines you are following ────────────────
-   Hovering a card lifts its threads out of the board (canvas/web.js), and the
+   Hovering a card lifts its threads out of the board (canvas/web.ts), and the
    board itself carried on at full strength - three lit lines over forty
    photographs, and the loudest thing on a board is the board. So everything the
    lines do not involve steps back with them.
@@ -790,7 +790,7 @@
    is left.
 
    What stays is the card under the pointer, the cards its lines reach, and
-   whatever is stuck to any of those - see setBoardLift() in canvas/items.js,
+   whatever is stuck to any of those - see setBoardLift() in canvas/items.ts,
    which is also why this is written as one class on the root and an attribute
    on the few that stay rather than a class on every card that goes.
 

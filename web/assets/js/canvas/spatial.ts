@@ -12,7 +12,7 @@
 // It is deliberately the bottom of the layering: it imports neither state nor the
 // DOM and knows nothing about what an item *is*. Its whole vocabulary is a box -
 // `{ id, x, y, w, h }`, centre and full size, the same sense item geometry uses -
-// and a query rectangle. The caller decides what a box means (canvas/items.js
+// and a query rectangle. The caller decides what a box means (canvas/items.ts
 // hands it a circumscribed square so a rotated card is registered by the corner
 // it actually reaches, not its unrotated footprint) and re-tests the handful the
 // query returns against the true rectangle. The grid only narrows the field; it

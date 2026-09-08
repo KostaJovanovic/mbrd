@@ -1,6 +1,6 @@
 // Drawing a 3D model on a card.
 //
-// mesh.js turns the bytes into triangles; this puts them on screen and
+// mesh.ts turns the bytes into triangles; this puts them on screen and
 // lets you turn them over. WebGL by hand, which is the first graphics code in
 // this project and is here for the same reason the zip inflater and the ID3
 // reader are: a renderer is a shader pair and a matrix stack, and taking a
@@ -770,7 +770,7 @@ const shotEdge = (item: Item) =>
  * buildModelCard(), inside the culler's build budget. A screenful of models was
  * a screenful of layout flushes on exactly the frames that budget exists to
  * protect. The value changes about as often as the palette does, which is what
- * resetModelInk() below is for; canvas/grid.js's gridInk() is the same shape
+ * resetModelInk() below is for; canvas/grid.ts's gridInk() is the same shape
  * for the same reason.
  */
 let ink: string | null = null;
@@ -886,7 +886,7 @@ async function takeShot(id: string): Promise<boolean> {
   // Copied off the shared canvas rather than encoded from it: that one is the
   // WebGL drawing buffer and the next card to draw will overwrite it, so the
   // bytes have to be taken now.
-  // Through canvas/surface.js: OffscreenCanvas is Safari 16.4, and below that
+  // Through canvas/surface.ts: OffscreenCanvas is Safari 16.4, and below that
   // this line threw and takeShot() answered false - forever, on every settle,
   // paying a WebGL render each time to throw it away.
   const flat = surface(w, h);
@@ -901,7 +901,7 @@ async function takeShot(id: string): Promise<boolean> {
   // settle, so each attempt was a WebGL render, an OffscreenCanvas copy and an
   // encode, thrown away, for the life of the board.
   //
-  // No JPEG retry, unlike canvas/display.js and canvas/poster.js. A model is
+  // No JPEG retry, unlike canvas/display.ts and canvas/poster.ts. A model is
   // drawn over the board's own paper and the still carries that transparency;
   // flattening it onto black would put a rectangle under every model card.
   const blob = await surfaceToBlob(flat, 'image/webp', 0.9);
@@ -1051,7 +1051,7 @@ function orbit(stage: HTMLCanvasElement, view: View, paint: () => void) {
   let last: { x: number; y: number } | null = null;
 
   stage.addEventListener('pointerdown', e => {
-    // The canvas is one of the widgets canvas/input.js hands the whole gesture
+    // The canvas is one of the widgets canvas/input.ts hands the whole gesture
     // to, so a drag here turns the model and does not move the card.
     dragging = e.pointerId;
     last = { x: e.clientX, y: e.clientY };

@@ -1,7 +1,7 @@
 // The small editor that follows the line you pressed.
 //
 // A connection could be edited exactly one way - right-click it - and pressing
-// one now marks it (see activeConnection in canvas/web.js). This is what the
+// one now marks it (see activeConnection in canvas/web.ts). This is what the
 // mark is worth: five buttons over the middle of the marked line, so the two
 // things people change constantly are one press away rather than behind the
 // mouse button most people never use on the one element on the board with no
@@ -17,11 +17,11 @@
 // is for.
 //
 // Anchored to the line's own midpoint rather than to the pointer, which is the
-// difference between this and ui/fence-prompt.js and the reason it does not
+// difference between this and ui/fence-prompt.ts and the reason it does not
 // withdraw by distance: that one answers a gesture that has just finished and
 // must cost nothing to walk away from, and this one belongs to a thing that is
 // still marked. It goes when the mark goes - a press anywhere else, Escape, or
-// the line being removed - all of which happen through canvas/input.js and
+// the line being removed - all of which happen through canvas/input.ts and
 // cmds, so there is no dismissal logic of its own here at all.
 //
 // One at a time, and rebuilt only when the line or its settings change: the
@@ -34,9 +34,9 @@
 // visual language for one feature.
 import { icon } from './menu.ts';
 // Where the marked line is, and when it has moved. Imported rather than pushed
-// in by main.js because the chip is *about* that line - it has nothing to draw
+// in by main.ts because the chip is *about* that line - it has nothing to draw
 // without it - and ui/ reaching into canvas/ is the direction the layering
-// allows (ui/toolbar.js does the same for the draft).
+// allows (ui/toolbar.ts does the same for the draft).
 import { activeConnectionAnchor, onActiveConnectionMove } from '../canvas/web.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 
@@ -68,7 +68,7 @@ interface Conn {
  * The commands this chip presses.
  *
  * Handed in by initConnChip() rather than imported, for the reason at the top
- * of the file; named here rather than taken from commands.js because that
+ * of the file; named here rather than taken from commands.ts because that
  * module imports this one and the arrow may only go one way.
  */
 export interface ConnChipCommands {
@@ -209,7 +209,7 @@ function button(name: string, title: string, action: () => void, danger = false)
  * Put the chip over the middle of the line.
  *
  * Above it by a gap, so it never covers what it is about, and flipped below
- * rather than clamped when there is no room - the same rule ui/menu.js and the
+ * rather than clamped when there is no room - the same rule ui/menu.ts and the
  * fence offer follow, and for the same reason: a popup pinned to the top edge
  * ends up under the pointer and gets pressed by accident. Clamped sideways,
  * where there is nothing to flip about.

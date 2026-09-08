@@ -1,19 +1,18 @@
-// The IndexedDB wrapper's one job is an honest promise: a write resolves only
-// once its transaction commits, never when the request is merely accepted. A
-// tiny controllable fake proves both the abort case (request succeeds, then the
-// transaction aborts -> the public promise must reject) and reconnect after a
-// failed open. See AUD-01 and AUD-16 in research/old/full-code-audit-2026-07-26.md.
+// The IndexedDB wrapper's one job is an honest promise: a write resolves on
+// transaction commit, never on request acceptance. A controllable fake proves
+// the abort case and reconnect after a failed open. AUD-01, AUD-16 in
+// research/old/full-code-audit-2026-07-26.md.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-// The fake used to live here. It moved to helpers.js when storage/matte-cache.ts
-// - a cache built on this wrapper - needed one too, because two copies of it are
-// two definitions of what IndexedDB does. Its documentation moved with it.
+// The fake lives in helpers.js with its documentation: storage/matte-cache.ts
+// - another cache on this wrapper - needs one too, and two copies are two
+// definitions of what IndexedDB does.
 import { fakeIndexedDB, soon } from './helpers.js';
 
-// Each test needs its own module instance, because idb.js caches the open
-// connection in a module-level promise. A cache-busting query gives a fresh one.
+// Each test needs its own module instance: idb.ts caches the open connection
+// in a module-level promise. A cache-busting query gives a fresh one.
 let n = 0;
 async function freshIdb(fake) {
   globalThis.indexedDB = fake;
@@ -34,15 +33,14 @@ test('a write resolves only on transaction complete, and the value round-trips',
 test('a failed open does not poison the connection: a later operation reconnects', async () => {
   const { idbGet } = await freshIdb(fakeIndexedDB({ openFailures: 1 }));
   await assert.rejects(idbGet('kv', 'k'), /open failed/);
-  // Second call must reopen rather than reuse the rejected promise.
+  // Must reopen, not reuse the rejected promise.
   assert.equal(await idbGet('kv', 'missing'), undefined);
 });
 
-// `blocked` is not a terminal event: the request stays live and can still
-// succeed once the blocking tab closes. We answer it by rejecting - a save that
-// fails loudly beats one that hangs on another window - but the connection that
-// arrives afterwards has no owner, and an idle connection nobody holds is
-// itself what blocks the next tab's upgrade. It must be closed.
+// `blocked` is not terminal: the request stays live and can still succeed once
+// the blocking tab closes. We reject - failing loudly beats hanging on another
+// window - but the connection that arrives after has no owner, and an idle
+// connection nobody holds blocks the next tab's upgrade. Close it.
 test('an open blocked and then succeeding does not leave an orphan connection', async () => {
   let closed = 0;
   let succeed;
@@ -51,7 +49,7 @@ test('an open blocked and then succeeding does not leave an orphan connection', 
       const req = {};
       soon(() => {
         req.onblocked && req.onblocked();
-        // The blocking tab closes later; the same request then completes.
+        // The blocking tab closes later; the request then completes.
         succeed = () => {
           req.result = {
             objectStoreNames: { contains: () => true },
@@ -71,13 +69,10 @@ test('an open blocked and then succeeding does not leave an orphan connection', 
   assert.equal(closed, 1, 'the late connection must be closed, not retained');
 });
 
-// The batch calls exist because the autosave sweep and the session restore used
-// to open one transaction per asset and await each before issuing the next -
-// on a board of five hundred photographs, five hundred sequential round trips
-// standing between the user and a board they had been told was saved. What has
-// to hold is that they are genuinely one transaction, that they keep the
-// wrapper's promise honest (nothing resolves before the commit), and that a
-// batch is all-or-nothing.
+// The batch calls replace one transaction per asset in the autosave sweep and
+// the restore: five hundred photographs meant five hundred sequential round
+// trips before a board the user was told was saved. Must hold: genuinely one
+// transaction, nothing resolves before the commit, all-or-nothing.
 
 test('a batch write is one transaction, and every value round-trips', async () => {
   const fake = fakeIndexedDB();
@@ -89,9 +84,8 @@ test('a batch write is one transaction, and every value round-trips', async () =
 });
 
 test('a batch read answers in the order asked, with holes for missing keys', async () => {
-  // Order is the contract: the restore pairs each record back with the hash at
-  // the same index, so a reordered answer would file every asset under the
-  // wrong card.
+  // Order is the contract: the restore pairs each record with the hash at the
+  // same index, so a reordered answer misfiles every asset.
   const { idbSetMany, idbGetMany } = await freshIdb(fakeIndexedDB());
   await idbSetMany('assets', [['x', 'ex'], ['y', 'why']]);
   assert.deepEqual(await idbGetMany('assets', ['y', 'gone', 'x']), ['why', undefined, 'ex']);
@@ -100,7 +94,7 @@ test('a batch read answers in the order asked, with holes for missing keys', asy
 test('an empty batch does no work at all', async () => {
   const fake = fakeIndexedDB();
   const { idbSetMany, idbGetMany, idbDelMany } = await freshIdb(fake);
-  // Touch the connection first, so the count below is about the batches.
+  // Touch the connection first, so the count below is only the batches.
   await idbSetMany('assets', [['seed', 1]]);
   const before = fake.stats.transactions;
   assert.deepEqual(await idbGetMany('assets', []), []);
@@ -110,8 +104,8 @@ test('an empty batch does no work at all', async () => {
 });
 
 test('a batch that aborts rejects rather than reporting a partial write', async () => {
-  // The reason the wrapper resolves on oncomplete and not on request success:
-  // every put in the batch is accepted, and the transaction still fails.
+  // Why oncomplete and not request success: every put is accepted and the
+  // transaction still fails.
   const { idbSetMany } = await freshIdb(fakeIndexedDB({ txOutcome: 'abort' }));
   await assert.rejects(idbSetMany('assets', [['a', 1], ['b', 2]]), /aborted/);
 });

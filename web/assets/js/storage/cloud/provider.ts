@@ -23,7 +23,7 @@
 // which is what lets ui/settings-schema.ts ask "can this build share at all"
 // without the OAuth flow and the uploader becoming dependencies of the settings
 // panel. Each provider is one module behind one interface, reached through
-// share.ts. The second and third providers are cheap if this seam is right and
+// cloud.ts. The second and third providers are cheap if this seam is right and
 // expensive if it is not, which is the only reason Phase 1 was ever a seam
 // rather than one function.
 //
@@ -204,7 +204,7 @@ export interface ShareRef {
  * person you are sending to can open it. OneDrive is next and lands on this
  * table with no user-facing design left to do.
  *
- * Names only - the modules are loaded on demand by share.ts.
+ * Names only - the modules are loaded on demand by cloud.ts.
  */
 export const PROVIDER_IDS = ['gdrive'] as const;
 
@@ -295,7 +295,7 @@ export function shareLinkFor(origin: string, home: string, ref: ShareRef): strin
  * predicate runs while the panel is being built, and the schema's rule is that a
  * control which cannot work is *absent* rather than greyed. So the question has
  * to be answerable from two strings, and the OAuth flow and the uploader stay
- * behind the dynamic import in share.ts where they belong.
+ * behind the dynamic import in cloud.ts where they belong.
  *
  * Both halves of a provider or neither. A build with a client id and no API key
  * can upload a board and then fail to open its own link, which is the one

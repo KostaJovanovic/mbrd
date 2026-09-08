@@ -75,7 +75,7 @@ export function initStills(world: HTMLElement, vp: ZoomSource): void {
   worldEl = world;
 
   const update = () => {
-    // `<`, matching the zoom-far toggle in viewport.js. The two read the same
+    // `<`, matching the zoom-far toggle in viewport.ts. The two read the same
     // rung, so the comparison has to agree as well or the one zoom that sits
     // exactly on it would freeze the pictures while leaving the chrome up.
     //
@@ -157,7 +157,7 @@ function shoot(img: HTMLImageElement, twin: StillImage) {
   // mid zoom-out, once per mounted GIF; a synchronous toDataURL('image/png')
   // per twin blocked that gesture frame. OffscreenCanvas + WebP matches what
   // poster.js/display.js already do for exactly this reason.
-  // Through canvas/surface.js, which falls back to an ordinary <canvas> where
+  // Through canvas/surface.ts, which falls back to an ordinary <canvas> where
   // OffscreenCanvas does not exist - Safari before 16.4, where this used to
   // land in the catch below and every GIF simply kept animating at every zoom.
   let face;

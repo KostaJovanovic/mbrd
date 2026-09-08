@@ -8,8 +8,8 @@
 //
 // It is also the seam canvas/ uses to reach things it may not import: the title
 // card's pen and its inline rename are both `cmds` entries because
-// canvas/input.js has no business importing a ui/ module, and the whimsy dial on
-// the fourth hint card is one because canvas/ghosts.js has the same problem.
+// canvas/input.ts has no business importing a ui/ module, and the whimsy dial on
+// the fourth hint card is one because canvas/ghosts.ts has the same problem.
 //
 // A factory rather than a module-level object: it closes over the Viewport,
 // which is built at boot, and nothing here may touch a browser global at import
@@ -32,10 +32,11 @@
 //
 // What stayed here is what nothing else could hold: the things that put
 // something new on the board, the selection-wide actions, the title card, the
-// arrangements, and the four entries that call `cmds` back (moreTools,
-// addNoteAt). The merge is a spread, so this hands out the same object with the
-// same keys - which is what makes the `data-cmd` contract in index.html, and
-// tests/settings-panel.js's check of it, indifferent to the whole change.
+// arrangements, and the one entry that calls `cmds` back (moreTools, whose
+// flyout presses three of them). The merge is a spread, so this hands out the
+// same object with the same keys - which is what makes the `data-cmd` contract
+// in index.html, and tests/settings-panel.js's check of it, indifferent to the
+// whole change.
 
 import { toast } from './notify.ts';
 import {
@@ -200,7 +201,7 @@ function distributeIds(ids: string[], axis: 'x' | 'y') {
 /**
  * Teach the ledger how to run these three again.
  *
- * Registered here rather than in timeline.js because this is where they are
+ * Registered here rather than in timeline.ts because this is where they are
  * defined and where they will change; the ledger sits at the bottom of the
  * graph and may not import upwards, so the arrow has to point this way. Called
  * once, from createCommands().
@@ -216,7 +217,7 @@ function registerLayoutOps() {
   registerOp('distribute', params =>
     distributeIds(asIds(params.ids), params.axis === 'y' ? 'y' : 'x'));
   // The flagship. An arrangement is a pure (items, opts) -> positions function
-  // with no randomness in it (see arrange/arrangements.js), so re-running one is
+  // with no randomness in it (see arrange/arrangements.ts), so re-running one is
   // reproducible to the pixel - which is the property that makes editing a
   // layout step in the past mean something rather than merely look like it does.
   registerOp('arrange', params => {
@@ -230,14 +231,14 @@ function registerLayoutOps() {
  *
  * `resetAppearance` and `setWhimsy` are injected rather than imported, in the
  * same shape and for the same reason as setAssetNameLookup() and setPrompt():
- * ui/appearance.js is one of the three modules that touch a browser global at
+ * ui/appearance.ts is one of the three modules that touch a browser global at
  * import time, so importing it here would make *this* module unloadable without
- * a DOM and cost the fourth exemption in tests/imports.test.js. main.js already
+ * a DOM and cost the fourth exemption in tests/imports.test.js. main.ts already
  * imports it and is already exempt, so the pair comes in from there.
  *
  * @param vp    the live Viewport. Several commands are journeys rather than
  *              state changes, and those are the ones that need it.
- * @param deps  { resetAppearance, setWhimsy } from ui/appearance.js.
+ * @param deps  { resetAppearance, setWhimsy } from ui/appearance.ts.
  */
 export function createCommands(vp: CommandsViewport, { resetAppearance, setWhimsy, perf }: CommandDeps) {
   registerLayoutOps();
@@ -279,7 +280,7 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     // `tint` is the one thing this takes, and it arrives from the toolbar's
     // hover flyout - the four sheets of note paper, which had no way of being
     // chosen before. Omitted is the whole of the old behaviour: addNote() in
-    // import/drop.js cycles NOTE_TINTS when it is given nothing, and the
+    // import/drop.ts cycles NOTE_TINTS when it is given nothing, and the
     // toolbar's click handler calls every command with no arguments, so a plain
     // press of the Note button is unchanged by construction.
     addNote: (tint?: number) => composeNote(
@@ -292,7 +293,7 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     //
     // Asked through pickColor() rather than ask(), which is the difference
     // between choosing the colour in this app and choosing it in a system panel
-    // drawn over it. See the head of ui/color-picker.js.
+    // drawn over it. See the head of ui/color-picker.ts.
     addSwatch: async () => {
       const picked = await pickColor({ title: 'Add a colour', go: 'Add', value: SWATCH_DEFAULT });
       if (!picked) return;
@@ -334,7 +335,7 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     },
     // Pull a picture's own colours off it and drop them beside it as swatches.
     //
-    // The same read the Dynamic palette does - the hue vote in ui/pigments.js -
+    // The same read the Dynamic palette does - the hue vote in ui/pigments.ts -
     // but of this one image rather than the whole board, and stopped a step
     // early so each swatch is a colour the picture actually holds. The swatches
     // are laid in a little masonry block centred on the image and land as one
@@ -398,7 +399,7 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     // what this board's layout is.
     //
     // Only the second half is on the undo stack. setArrangement is off it by
-    // design (see state.js) and rearrange files its own geometry entry, so one
+    // design (see state.ts) and rearrange files its own geometry entry, so one
     // Ctrl+Z puts the cards back and leaves the board set to the layout you
     // asked for - which is the right half to keep, since the setting is a
     // statement of intent and the positions are the thing you might regret.
@@ -408,7 +409,7 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
       rearrange(board.items.filter(i => i.type !== 'ghost'));
     },
     // The whimsy axis, as a command so the dial on the fourth hint card can drive
-    // it - that card is built under canvas/, which cannot import ui/appearance.js.
+    // it - that card is built under canvas/, which cannot import ui/appearance.ts.
     setWhimsy: (level: number | string) => setWhimsy(level),
     rearrangeSelection: () => rearrange(board.items.filter(i => selection.has(i.id))),
     /** Whether Rearrange selection would do anything - the flyout greys it out. */
@@ -424,7 +425,7 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     // Furniture and regions are left out for the reason rearrange leaves hints
     // out: a hint card is talking to the person, and a fence is a container whose
     // edges mean membership - neither is a card in a row being straightened. The
-    // pure arithmetic is in geometry.js; this only reads the selection and files
+    // pure arithmetic is in geometry.ts; this only reads the selection and files
     // the result. Mobile has no free positions to line up, so it declines.
     alignSelection: (edge: string) => {
       if (board.layoutMode === 'mobile') { toast('Aligning is a canvas thing'); return; }
@@ -466,11 +467,11 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     },
 
     // The Desktop title card's pen: opens the same style panel the Mobile masthead
-    // uses. Routed through cmds so canvas/input.js (which has no business importing
+    // uses. Routed through cmds so canvas/input.ts (which has no business importing
     // a ui/ module) can trigger it off the pen hit.
     editTitle: () => (isHeaderPanelOpen() ? closeHeaderPanel() : openHeaderPanel()),
     // Inline rename of the board name on the card: the T button, a double-click, or
-    // F2. Routed through cmds so canvas/input.js can reach it off those gestures.
+    // F2. Routed through cmds so canvas/input.ts can reach it off those gestures.
     editTitleText: () => editTitleCard(),
     restoreTitle: () => restoreTitleCard(),
     // The title card's own right-click menu keys off this - it is a singleton with
@@ -618,13 +619,13 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
      * The phone's More button: the three creation tools that no longer fit the
      * bar, as a menu hanging off the one that replaced them.
      *
-     * A menu and not a second tier, because that is what ui/menu.js is for and
+     * A menu and not a second tier, because that is what ui/menu.ts is for and
      * there is exactly one of it in this app - openAnchored() is how a menu that
      * is not at a cursor gets opened. Not a FLYOUTS entry either: those open on
      * hover and this is a tap, on the one layout that has no hover at all.
      *
      * It reads the button out of the document rather than being handed it,
-     * because a command takes no arguments from the toolbar - ui/toolbar.js
+     * because a command takes no arguments from the toolbar - ui/toolbar.ts
      * calls every one of them bare. The rect is captured at open time, so the
      * drawer closing underneath (which it does, after every command) leaves the
      * menu where it was rather than dragging it down.
@@ -671,7 +672,7 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     },
     toggleSetting: (key: string) => setSetting(key, !settingsBag()[key]),
     // The dial's half of the pair. The panel writes settings through
-    // ui/settings-schema.js, which imports setSetting straight; the flyout's
+    // ui/settings-schema.ts, which imports setSetting straight; the flyout's
     // Spacing slider is outside that schema and goes through here.
     setSetting: (key: string, value: unknown) => setSetting(key, value),
   };

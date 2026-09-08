@@ -1,5 +1,5 @@
 /* =========================================================
-   mbrd - choosing a colour (pickColor, ui/color-picker.js)
+   mbrd - choosing a colour (pickColor, ui/color-picker.ts)
 
    One of the eight sheets the old overlays.css was split into. The order they
    load in IS the cascade and is listed in the banner at the top of base.css.

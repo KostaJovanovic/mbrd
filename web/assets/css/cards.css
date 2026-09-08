@@ -57,7 +57,7 @@
      whenever the measurement changed the box. Growing a landscape note by a
      line raised min(w, h), which grew the type, which needed another line.
      Every number below is now keyed to the width alone (--half-w, w / 2, from
-     canvas/items.js/placeBox) or to nothing at all, so the height a note is
+     canvas/items.ts/placeBox) or to nothing at all, so the height a note is
      given can never alter what fits in it.
 
      Calibrated on the 240px default, where --half-w is the 120 the old
@@ -135,7 +135,7 @@
   box-shadow: none;
 }
 
-/* A note is a column of formatted block-lines (renderers.js/note). The column
+/* A note is a column of formatted block-lines (renderers.ts/note). The column
    carries the note's font, its size (through --note-scale) and its vertical
    placement (justify-content); each line carries only its own kind and its
    alignment. font-family is written inline by applyNoteStyle from an allowlist,
@@ -514,7 +514,7 @@
   -webkit-line-clamp: 2;
   overflow: hidden;
 }
-/* ---- Stickers (canvas/renderers.js/sticker) -------------------------------
+/* ---- Stickers (canvas/renderers.ts/sticker) -------------------------------
    The one item that is not a card at all: no paper, no border, no caption, no
    cover slot. A sticker is a shape lying on a picture, and a shape in a
    bordered box is a card with a star in it - which is a different object and
@@ -546,7 +546,7 @@
    and is the one that showed: the geometry twin in #item-shadows is a separate
    element in a separate layer, so `--item-shadow: none` on the card never
    reached it and every sticker sat in a rounded-rectangle halo the size of its
-   box. Switched off where it is built - see NO_TWIN in canvas/items.js - since
+   box. Switched off where it is built - see NO_TWIN in canvas/items.ts - since
    a twin that paints nothing is still an element per sticker, placed and
    mirrored on every move. */
 .item[data-type="sticker"] {
@@ -556,7 +556,7 @@
   box-shadow: none;
 }
 /* No caption and no menu handle. The far-zoom headline is refused in JS
-   instead (NO_HEAD in canvas/items.js), because it is never built rather than
+   instead (NO_HEAD in canvas/item-dom.ts), because it is never built rather than
    built and hidden. The name still exists - the trash and Find want it - it
    just is not printed across the shape. */
 .item[data-type="sticker"] .item-bar { display: none; }
@@ -612,7 +612,7 @@
 .sticker-art[data-tint="8"] { --sticker-tint: var(--sticker-8); }
 
 /* The copy on a Mobile feed tile. Placed in percentages of the tile by
-   ui/feed.js, so it holds its fraction of the host through every relayout of
+   ui/feed.ts, so it holds its fraction of the host through every relayout of
    the wall underneath it; the translate is what puts the shape's own centre
    over that point rather than its corner. */
 .feed-sticker {
@@ -622,7 +622,7 @@
   z-index: 2;
 }
 
-/* ---- A model on a card (canvas/model.js) ---------------------------------
+/* ---- A model on a card (canvas/model.ts) ---------------------------------
    The canvas fills the card above the filename and takes the pointer, because
    dragging it turns the model rather than moving the item. Everything around
    it - the padding, the name - still drags the card, which is the same bargain
@@ -666,9 +666,9 @@
 }
 .model-stage.is-turning { cursor: grabbing; }
 /* The photograph the card shows when nobody is turning it - see
-   canvas/model.js. It stands in the stage's place and has to sit in the box the
+   canvas/model.ts. It stands in the stage's place and has to sit in the box the
    same way, and `contain` is what makes that exact: the shot is taken at this
-   box's own proportions, measured off it (stageShape() in canvas/model.js), so
+   box's own proportions, measured off it (stageShape() in canvas/model.ts), so
    containing it here is a scale and nothing else. The framing itself fits the
    model's bounding sphere to the narrow axis, which is the same measurement at
    every angle - so a model on a card holds still while you turn it over.
@@ -729,7 +729,7 @@
 }
 .model-note.is-error { color: var(--danger); }
 /* Far out, a turned model is a grey smudge and the canvas is the most
-   expensive thing on the card. Same rung as every other detail (viewport.js). */
+   expensive thing on the card. Same rung as every other detail (viewport.ts). */
 #world.zoom-far .model-stage { visibility: hidden; }
 
 /* "No card" on a model - the third reading of the promise the cut-out and the
@@ -761,7 +761,7 @@
 .item[data-type="model"][data-bare] .card::after { content: none; }
 .item[data-type="model"][data-bare] .card-name { display: none; }
 
-/* ---- The links that can become players (canvas/embed.js) -----------------
+/* ---- The links that can become players (canvas/embed.ts) -----------------
    The button is a standing offer, not a state: nothing has been requested from
    anyone until it is pressed, and it is styled to say so - the same accent a
    link wears, on the card's own paper, rather than the filled red of a control
@@ -795,7 +795,7 @@
 #world.zoom-far .embed-go { display: none; }
 
 /* Taken. The name row survives as the only part of the card still ours to
-   grab - see embed.js - and the frame takes everything under it. */
+   grab - see embed.ts - and the frame takes everything under it. */
 .card.has-embed { gap: 6px; }
 .card.has-embed .card-name { flex: none; }
 .embed-frame {

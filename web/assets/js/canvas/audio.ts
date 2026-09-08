@@ -31,7 +31,7 @@
 //
 // This file also answers "what is playing", because it is the only place that
 // can. The exclusive-playback listener below already hears every start on every
-// element, by any route, which is exactly the question ui/nowplaying.js asks.
+// element, by any route, which is exactly the question ui/nowplaying.ts asks.
 // Deliberately not on the `bus`: what is coming out of the speakers is a fact
 // about this device at this moment, not a property of the board, and it belongs
 // in a .mbrd no more than the volume does.
@@ -196,7 +196,7 @@ export function claimPlayer(el: Player, item: Item | null | undefined): void {
  * it, but the control moved to the now-playing bar - a volume dial is reached
  * for while something is playing, and that is exactly when the bar is up, where
  * in the panel it was two clicks away from the sound it was about. Still called
- * from main.js and still called first, because ui/nowplaying.js paints its
+ * from main.ts and still called first, because ui/nowplaying.ts paints its
  * slider from getVolume() on the way up.
  */
 export function initAudio() {
@@ -204,7 +204,7 @@ export function initAudio() {
   // The other half of the throttled write - see storeVolume(). pagehide rather
   // than beforeunload, which iOS Safari does not reliably fire, and
   // visibilitychange as well, because a tab discarded in the background never
-  // gets either of the unload events. The same pair ui/appearance.js uses.
+  // gets either of the unload events. The same pair ui/appearance.ts uses.
   addEventListener('pagehide', flushVolume);
   addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') flushVolume();
@@ -221,7 +221,7 @@ export function initAudio() {
  *
  * What it is for: a slider that writes volume where the write is ignored is a
  * lie - it would read "20%" while every clip plays at the system level (Safari
- * audit S2). ui/nowplaying.js takes its slider off rather than show one. iPadOS
+ * audit S2). ui/nowplaying.ts takes its slider off rather than show one. iPadOS
  * gained script-controlled volume in Safari 26, so this only fires where it
  * genuinely cannot work.
  */
@@ -275,9 +275,9 @@ export function setVolume(v: number): void {
 /**
  * How long the stored volume may lag behind the live one.
  *
- * The same 200ms, and for the same reason, as PREF_MS in ui/appearance.js -
+ * The same 200ms, and for the same reason, as PREF_MS in ui/appearance.ts -
  * which writes twenty lines about why a preference written on every frame of a
- * drag is a mistake, and then this one did it anyway. ui/nowplaying.js calls
+ * drag is a mistake, and then this one did it anyway. ui/nowplaying.ts calls
  * setVolume() from the slider's `input` event, so a thumb dragged across the
  * bar was making sixty synchronous localStorage writes a second on the thread
  * that draws the board, next to whatever is playing.
@@ -321,7 +321,7 @@ function readVolume() {
  * The set deliberately survives culling: culling detaches a node and puts it
  * back, and unregistering on detach would silently drop a player out of the
  * volume control for the rest of the session. What it must not survive is a
- * node being *destroyed* - see releasePlayers, and canvas/items.js/discard for
+ * node being *destroyed* - see releasePlayers, and canvas/items.ts/discard for
  * the one place that tells the difference.
  *
  * `item` is what the element is playing, and it is taken rather than looked up
@@ -360,7 +360,7 @@ export function registerPlayer(el: Player, item: Item | null = null): void {
     // that has left the screen is still running, and the argument for being able
     // to stop the thing you can hear does not turn on whether it also had a
     // picture. The bar draws it as a line rather than a waveform; see
-    // buildTransport's `line` option in canvas/transport.js.
+    // buildTransport's `line` option in canvas/transport.ts.
     const owner = owners.get(el);
     if (owner) setNowPlaying({ el, item: owner });
   });
@@ -370,7 +370,7 @@ export function registerPlayer(el: Player, item: Item | null = null): void {
  * Let go of every player inside a card that is being thrown away.
  *
  * The set used to hold every <audio> ever built, on the reasoning that a few
- * dead references were cheaper than teaching items.js about node lifetimes.
+ * dead references were cheaper than teaching items.ts about node lifetimes.
  * That estimate only held while nodes were rare. A rename or a note edit
  * rebuilds a card's whole content, so editing one audio card ten times left
  * ten players in here, and every one of them still owned a decoded stream and

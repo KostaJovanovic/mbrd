@@ -95,7 +95,7 @@ export function sharedFence(items: Boxed[]): Boxed | null {
 
 /**
  * Desktop only, because membership is measured on Desktop geometry and nowhere
- * else (see fences.js). A fence made on a phone would have Mobile geometry, no
+ * else (see fences.ts). A fence made on a phone would have Mobile geometry, no
  * Desktop record to measure against, and no way to acquire one - it would open
  * on a laptop owning nothing.
  */
@@ -164,7 +164,7 @@ function drawFence(rect: Band | null): void {
     //
     // What that costs is the resize gesture - dragging a corner out over three
     // more cards, which is the one way to say "and these too" (see the header of
-    // fences.js). Unanchor from the fence's own menu to get it back. Membership
+    // fences.ts). Unanchor from the fence's own menu to get it back. Membership
     // is measured rather than stored, so nothing about it is frozen by this:
     // drag a card in or out and it is in or out, anchored fence or not.
     meta: { locked: true },
@@ -196,7 +196,7 @@ export function fenceCommands() {
 
     /**
      * Offer to fence what a rubber band just caught, beside the pointer that let
-     * it go. canvas/input.js calls this at the end of every marquee; the policy
+     * it go. canvas/input.ts calls this at the end of every marquee; the policy
      * for whether there is anything worth offering is here rather than there,
      * because it is a question about the board and not about the gesture.
      *

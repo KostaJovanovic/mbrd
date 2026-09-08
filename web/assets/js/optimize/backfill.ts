@@ -30,7 +30,7 @@
 //     and would mark every clip on the board as one that cannot give up a frame.
 //   - **a clip that has already refused**, for the session. H.265 from a phone
 //     is the common case and no amount of asking again will decode it - that is
-//     what the ffmpeg path in optimize/media.js is for, and it is thirty
+//     what the ffmpeg path in optimize/media.ts is for, and it is thirty
 //     megabytes and needs to be asked for.
 //   - **nothing left to do**, which is the normal state of a board built since
 //     import started making these. The scan is a filter over the item list -

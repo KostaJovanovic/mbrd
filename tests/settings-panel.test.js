@@ -3,7 +3,7 @@
 // Everything asserted here is a property the panel used to get by being written
 // out by hand and read by eye: that a control appears once, that a button names
 // a command that exists, that nothing Desktop-only reaches a phone, and that no
-// tab can show a heading with nothing under it. ui/panel.js turning the table
+// tab can show a heading with nothing under it. ui/panel.ts turning the table
 // into DOM needs a browser and is not tested here; the decisions are, and they
 // are all pure.
 
@@ -31,14 +31,14 @@ test('every section belongs to a tab that exists', () => {
 });
 
 test('the panel opens on Board, and Board is first', () => {
-  // ui/panel.js shows TABS[0]. The order here is the order on screen.
+  // ui/panel.ts shows TABS[0]. The order here is the order on screen.
   assert.equal(TABS[0].id, 'board');
   assert.deepEqual(TABS.map(t => t.id), ['board', 'look', 'system']);
 });
 
 test('no id is used twice', () => {
   // Every one of these is looked up by getElementById somewhere - by
-  // ui/appearance.js, canvas/audio.js, ui/sidebar.js or a test - so a duplicate
+  // ui/appearance.ts, canvas/audio.ts, ui/sidebar.ts or a test - so a duplicate
   // is a control that silently loses its wiring to another.
   const seen = new Map();
   for (const [s, c] of allControls()) {
@@ -99,7 +99,7 @@ test('Mobile is shown the arrangement it has and nothing it has not', () => {
     assert.equal(controlVisible(byId(id), DESKTOP), true, `${id} should be present on Desktop`);
   }
   // There is no longer a grid-width control the other way round: the Feed packs
-  // its columns from the sheet width (ui/feed.js), so the manual "Grid width" row
+  // its columns from the sheet width (ui/feed.ts), so the manual "Grid width" row
   // was retired. Its absence from the schema is the assertion now.
   assert.equal(byId('mobile-columns'), undefined, 'the manual Grid width row is retired');
 });
@@ -145,7 +145,7 @@ test('a section that is all fold is all fold', () => {
   // `advanced` straight to the section, above the fold - which in a section with
   // no h2 puts a bare row over the summary that is supposed to be its heading.
   // So the two facts have to travel together, and the missing title is also what
-  // ui/panel.js marks .is-head from.
+  // ui/panel.ts marks .is-head from.
   for (const s of SECTIONS) {
     if (!s.fold) continue;
     assert.equal(s.title, undefined, `${s.id} is a fold and a heading both`);
@@ -193,8 +193,8 @@ test('the Look tab opens on three dials, and type is one of them', () => {
 
 test('the palette source dial has one stop past its highest count', async () => {
   // The last stop is "Every photo" and is stored as 0 - see
-  // normalizePaletteSources() in state.js. Two files know that number: the table
-  // shapes the element, ui/appearance.js rewrites `max` from MAX_SOURCES on the
+  // normalizePaletteSources() in state.ts. Two files know that number: the table
+  // shapes the element, ui/appearance.ts rewrites `max` from MAX_SOURCES on the
   // way past. They have to agree, or the top stop is either unreachable or a
   // count nothing will honour.
   const { MAX_SOURCES } = await import('../web/assets/js/ui/pigments.ts');
@@ -223,7 +223,7 @@ test('the palette menu carries Dynamic, and it is the only way to ask for it', a
     false, 'the checkbox it replaced is gone, not merely hidden');
 
   // And the value is one string in two files that do not import each other:
-  // this table is data with no panel imports, ui/appearance-controls.js owns
+  // this table is data with no panel imports, ui/appearance-controls.ts owns
   // what the menu does with it. Same bargain as the source dial's top stop.
   const controls = await readFile(
     new URL('../web/assets/js/ui/appearance-controls.ts', import.meta.url), 'utf8');

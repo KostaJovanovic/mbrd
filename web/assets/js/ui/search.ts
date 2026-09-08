@@ -61,7 +61,7 @@ export function initSearch(viewport: Viewport) {
   vp = viewport;
 
   // Capture, so this beats the canvas's own key handling rather than racing
-  // it - canvas/input.js binds Ctrl+A, Ctrl+D and the arrows on the same
+  // it - canvas/input.ts binds Ctrl+A, Ctrl+D and the arrows on the same
   // window, and a search that only opened when the canvas happened not to
   // want the key would be a search that opened sometimes.
   addEventListener('keydown', e => {

@@ -200,7 +200,7 @@ test('Desktop and Mobile retain independent settings and local appearance', () =
   ]);
   // Mobile reads its stored id through its own catalogue: 'spiral' is a shape a
   // column cannot make, and 'fit' is the order nearest to it. See
-  // MOBILE_ARRANGEMENTS in arrange/arrangements.js.
+  // MOBILE_ARRANGEMENTS in arrange/arrangements.ts.
   assert.equal(board.arrangement, 'fit');
   assert.equal(board.settings.appearance.whimsy, 2);
   assert.equal(board.settings.appearance.palette, 'photo');

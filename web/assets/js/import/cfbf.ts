@@ -41,8 +41,8 @@
 //
 // **That last part is why this family misses more than it hits, and it is not a
 // bug in this file.** A CF_METAFILEPICT is WMF, no browser draws one, and it is
-// declined for the same reason import/document.js declines docProps/thumbnail.emf.
-// The CF_DIB case works and comes out through import/winimage.js. So .doc and
+// declined for the same reason import/document.ts declines docProps/thumbnail.emf.
+// The CF_DIB case works and comes out through import/winimage.ts. So .doc and
 // .xls will often still be grey cards, .sldprt usually will not because
 // SolidWorks writes a real PNG stream, and that difference is the format's
 // rather than the reader's.

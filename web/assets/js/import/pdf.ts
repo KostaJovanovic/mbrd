@@ -6,12 +6,12 @@
 // interpreter. But a PDF is the most ordinary reference a moodboard holds, and a
 // wall of grey "PDF" cards is a poor answer. So this renders page one to a
 // raster the ordinary image path can then show, and treats the result exactly
-// like the embedded preview import/preview.js pulls out of a RAW: the original
+// like the embedded preview import/preview.ts pulls out of a RAW: the original
 // PDF is untouched, still embedded and still what a click opens, and the raster
 // rides along as the picture the card draws.
 //
 // It leans on pdf.js, and is written to keep that dependency as contained as
-// optimize/media.js keeps ffmpeg - the app's only other outside-code path, and
+// optimize/media.ts keeps ffmpeg - the app's only other outside-code path, and
 // the model this one copies:
 //
 //   - carried, not fetched. pdf.js sits in web/assets/vendor/pdfjs and is served
@@ -28,7 +28,7 @@
 //     render - returns null, and the caller falls back to the named card it
 //     would have shown anyway.
 //
-// This is the second place, after media.js, that the app depends on somebody
+// This is the second place, after media.ts, that the app depends on somebody
 // else's code, and it bends the no-runtime-dependency rule the same controlled
 // way. Called out here so the bending is on the record.
 
@@ -38,7 +38,7 @@
 //
 // **Served from this origin, and that is the fix rather than a preference.**
 // It used to be `https://cdn.jsdelivr.net/npm/pdfjs-dist@.../build/`, and
-// web/_headers carries `script-src 'self'` plus six hashes and `worker-src
+// web/_headers carries `script-src 'self'` plus seven hashes and `worker-src
 // 'self'` - so on the deployed site the import was refused outright and the
 // worker was refused again, firstPageRaster()'s catch swallowed both, and every
 // PDF and .ai became a grey named card. It worked perfectly on tools/serve.py,

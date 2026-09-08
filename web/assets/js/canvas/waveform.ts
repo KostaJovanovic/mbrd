@@ -7,7 +7,7 @@
 // readings outlive the session too: a save writes them into the .mbrd as their
 // own waveforms/<hash>.json, named after the audio rather than after the card,
 // so a board comes back with its waveforms already drawn. See the sidecar block
-// in storage/mbrd.js.
+// in storage/mbrd.ts.
 //
 // When decoding is impossible - an exotic codec, no Web Audio, a context the
 // browser has wedged - the fallback is a stable pattern derived from the file's
@@ -24,7 +24,7 @@
 // wanting to know a file's shape had to import a control strip - and, through
 // it, the queue and the exclusivity rule.
 //
-// media/transport.js already says this in its own header, from the other side:
+// media/transport.ts already says this in its own header, from the other side:
 // "the audio *analysis* ... pairing it with a control strip would recreate the
 // mixture this split exists to undo".
 //
@@ -176,7 +176,7 @@ export async function peaks(item: Measurable): Promise<Readings> {
  * that readings can arrive out of a file a person is invited to open -
  * waveforms/<hash>.json inside the .mbrd - where a deleted comma or a stray
  * letter would otherwise reach drawBars() as a NaN and come out as a card of
- * bars with no height. mbrd.js checks that the file is well formed; this is
+ * bars with no height. mbrd.ts checks that the file is well formed; this is
  * the narrower question of whether this build can use what was in it.
  */
 function usable(v: unknown): v is Readings {

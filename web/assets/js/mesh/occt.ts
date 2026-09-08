@@ -1,24 +1,24 @@
 // The asking end of the CAD kernel.
 //
 // mesh/occt-worker.js runs Open CASCADE over a STEP or IGES file; this is the
-// half that lives on the main thread, decides whether the kernel is available
-// at all, and turns its answer into a `Mesh`. The reasoning about *why* there is
-// a kernel here, and what it does not change, is at the top of that file.
+// main-thread half, which decides whether the kernel is available and turns its
+// answer into a `Mesh`. Why there is a kernel at all, and what it does not
+// change, is at the top of that file.
 //
-// **The fallback is the point.** mesh/step.ts and mesh/iges.ts are still the
-// readers of record when this cannot be used - an old cached service worker with
-// no vendor directory, a browser with WebAssembly turned off, a build somebody
-// stripped the 7 MB out of. So every failure here returns `null` rather than
-// throwing, and the caller reads the file the way it always did. The one failure
-// that is *not* a null is a ceiling: a file the kernel could read and which is
-// larger than somebody has agreed to look at is a question, not a fault, and it
-// is thrown so the retry contract in consent.ts can ask it.
+// **The fallback is the point.** mesh/step.ts and mesh/iges.ts stay the readers
+// of record when this cannot be used - an old cached service worker with no
+// vendor directory, a browser with WebAssembly off, a build stripped of the
+// 7 MB. So every failure returns `null` rather than throwing, and the caller
+// reads the file the way it always did. The one failure that is *not* a null is
+// a ceiling: a file the kernel could read but is larger than somebody agreed to
+// look at is a question, not a fault, thrown so the retry contract in
+// consent.ts can ask it.
 //
-// **One file at a time.** The kernel is one wasm instance with one heap, and a
-// STEP parse is a second or two of solid computation - so a board that pastes
-// six CAD files at once queues them rather than starting six kernels or
-// interleaving six parses through one. The queue is also what makes the
-// worker's own state - a single memoised instantiation - safe to keep.
+// **One file at a time.** The kernel is one wasm instance with one heap and a
+// STEP parse is a second or two of solid computation, so six pasted CAD files
+// queue rather than starting six kernels or interleaving six parses through
+// one. The queue also makes the worker's own state - a single memoised
+// instantiation - safe to keep.
 
 import { oversize } from '../consent.ts';
 import { MeshError, type Mesh, tooBig } from './shared.ts';
@@ -26,9 +26,9 @@ import { MeshError, type Mesh, tooBig } from './shared.ts';
 /**
  * The vendored build, pinned.
  *
- * Read by tests/occt-vendor.test.js, which is what stops the directory and this
- * number from drifting apart, and what holds the licence files to being present
- * - see web/assets/vendor/occt/LICENSE.txt for why they are not optional.
+ * Read by tests/occt-vendor.test.js, which stops the directory and this number
+ * drifting apart and holds the licence files to being present - see
+ * web/assets/vendor/occt/LICENSE.txt for why they are not optional.
  */
 export const OCCT_VERSION = '0.0.23';
 
@@ -38,10 +38,10 @@ export const OCCT_DIR = '/assets/vendor/occt/';
  * A plain string, and it has to stay one.
  *
  * web/_headers drops the site's Content-Security-Policy on exactly this path,
- * and tests/csp.test.js reads the literal out of this file to check that the
- * rule still points at a worker the app spawns. A computed URL would leave that
- * rule unanchored, and the way that shows is CAD files quietly falling back to
- * the hand-written reader on the deployed site and not locally.
+ * and tests/csp.test.js reads the literal out of this file to check the rule
+ * still points at a worker the app spawns. A computed URL leaves that rule
+ * unanchored, which shows up as CAD files falling back to the hand-written
+ * reader on the deployed site and not locally.
  */
 export const WORKER_URL = '/assets/js/mesh/occt-worker.js';
 
@@ -49,7 +49,7 @@ export const WORKER_URL = '/assets/js/mesh/occt-worker.js';
 const KERNEL_KINDS = new Set(['step', 'iges']);
 
 /** A guard rather than a predicate, so the two callers below need no assertion
- *  to hand `kind` on as the string it has just been shown to be. */
+ *  to pass `kind` on as the string it was just shown to be. */
 export const usesKernel = (kind: string | null): kind is string =>
   !!kind && KERNEL_KINDS.has(kind);
 
@@ -83,9 +83,9 @@ function spawn(): Worker | null {
       settle(ev.data);
     };
     // A worker that dies takes its instance with it. Everything outstanding is
-    // told so - each one falls back rather than hanging - and the next request
-    // spawns a fresh one, because the usual reason for this is one enormous file
-    // exhausting the wasm heap and not a kernel that will never work again.
+    // told so - each falls back rather than hanging - and the next request
+    // spawns a fresh one: the usual cause is one enormous file exhausting the
+    // wasm heap, not a kernel that will never work again.
     made.onerror = () => {
       worker = null;
       for (const [id, settle] of waiting) settle({ id, error: 'The kernel stopped' });
@@ -94,9 +94,9 @@ function spawn(): Worker | null {
     worker = made;
     return made;
   } catch {
-    // No Worker constructor at all, which is a browser this app does not
-    // otherwise support - but the fallback costs nothing and this is the one
-    // place that would throw at the top of a card's first paint.
+    // No Worker constructor at all - a browser this app does not otherwise
+    // support - but the fallback costs nothing and this is the one place that
+    // would throw at the top of a card's first paint.
     unavailable = true;
     return null;
   }
@@ -105,19 +105,19 @@ function spawn(): Worker | null {
 /**
  * One file, through the kernel.
  *
- * `null` means "read it the old way", and every reason for that is a null:
- * the wrong kind, no worker, a vendor directory that is not there, a file
- * OpenCASCADE itself refused. A `MeshError` from here would be a claim that the
- * file is unreadable, which this module is in no position to make.
+ * `null` means "read it the old way", and every reason is a null: the wrong
+ * kind, no worker, a missing vendor directory, a file OpenCASCADE refused. A
+ * `MeshError` here would claim the file is unreadable, which this module is in
+ * no position to say.
  */
 export function kernelMesh(
   kind: string | null,
   bytes: ArrayBuffer,
-  // Passed rather than read off CAPS, and that is not a style choice. A lifted
-  // ceiling is a global for the length of one parse (see mesh/shared.ts), and
-  // this parse is awaited across a message port with other cards' parses free to
-  // start in the meantime - so reading the global here would let one file's yes
-  // raise the ceiling on whatever happened to be queued behind it.
+  // Passed rather than read off CAPS, and not a style choice. A lifted ceiling
+  // is a global for the length of one parse (see mesh/shared.ts), and this
+  // parse is awaited across a message port while other cards' parses may
+  // start - so reading the global here would let one file's yes raise the
+  // ceiling on whatever is queued behind it.
   maxTriangles: number,
 ): Promise<Mesh | null> {
   if (!usesKernel(kind)) return Promise.resolve(null);
@@ -134,10 +134,10 @@ function attempt(kind: string, bytes: ArrayBuffer, maxTriangles: number): Promis
   const id = next++;
   return new Promise<Reply>(resolve => {
     waiting.set(id, resolve);
-    // The bytes are copied rather than transferred: the caller still needs them
-    // for the fallback reader, and for the second parse a lifted ceiling asks
-    // for. A STEP file is a fraction of the size of the mesh that comes back,
-    // which is the direction worth transferring.
+    // Copied rather than transferred: the caller still needs the bytes for the
+    // fallback reader and for the second parse a lifted ceiling asks for. A
+    // STEP file is a fraction of the mesh that comes back, which is the
+    // direction worth transferring.
     w.postMessage({ id, kind, bytes, maxTriangles }, []);
   }).then(reply => {
     if (reply.oversize) throw oversize('mesh-triangles', tooBig(maxTriangles));

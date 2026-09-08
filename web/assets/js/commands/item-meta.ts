@@ -103,7 +103,7 @@ export function itemMetaCommands() {
     /**
      * One item, full size, on either layout.
      *
-     * Routed through cmds so canvas/input.js can reach it off a double-click
+     * Routed through cmds so canvas/input.ts can reach it off a double-click
      * without importing a ui/ module, which is the arrow this file exists to
      * turn around. The Feed calls openViewer() directly - it is a ui/ module
      * itself and a tile tap is not a command anybody would bind.
@@ -115,7 +115,7 @@ export function itemMetaCommands() {
      * Is there anything in the selection that is stuck to a host?
      *
      * Stuck, not pinned - isRider() rather than isPinned(). An item dropped
-     * three seconds ago is stuck and has not set yet (see sticky.js), and
+     * three seconds ago is stuck and has not set yet (see sticky.ts), and
      * Unstick during that window is a real thing to want: it is how you say
      * "leave this here but do not fix it", without waiting for it to fix itself
      * so that you can unfix it.
@@ -278,13 +278,13 @@ export function itemMetaCommands() {
     // Album art, and nothing else. A cover is the picture a card that cannot be
     // looked at borrows so it can be recognised from across the board, and in
     // practice that card is a track: the art usually arrives inside the file
-    // (import/artwork.js), and this is how one that came without any gets it.
+    // (import/artwork.ts), and this is how one that came without any gets it.
     // Offering the same thing on a note or a link put a picture behind words
     // that were already legible, which is a card wearing a costume rather than
     // a card that has something to show.
     //
     // The model is deliberately wider than the offer - setItemCover() dresses
-    // any card, and state.js says why - so a picture an older build put on
+    // any card, and state.ts says why - so a picture an older build put on
     // something else still draws. canClearCover is how it comes back off.
     canCoverItem: (id: string) => byId(id)?.type === 'audio',
     // Anything already wearing one, except a video: a video's cover is the
@@ -377,7 +377,7 @@ export function itemMetaCommands() {
       toast(now === 'z' ? 'Read as Y-up' : 'Read as Z-up');
     },
     // Every model card is a photograph of itself until this is asked for - see
-    // canvas/model.js. Offered on any model, including one that has never been
+    // canvas/model.ts. Offered on any model, including one that has never been
     // photographed and is already live: the entry is how somebody learns the card
     // can be turned at all, and asking for it while it is already turning is a
     // no-op rather than a wrong answer. Not offered on a card that is mid-turn,

@@ -1,4 +1,4 @@
-// The four headers that open with a picture (import/carved.js).
+// The five headers that open with a picture (import/carved.ts).
 //
 // Each of these is a length or an offset written by somebody else's exporter, so
 // the tests are about two things: that the honest layout reads, and that a

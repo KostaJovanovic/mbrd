@@ -117,7 +117,7 @@ export async function tiffRaster(file: File, lift = false): Promise<File | null>
 }
 
 /** The worker's ceiling, repeated here for the sentence above. Kept in step by
- *  tests/tiff.test.js, which reads the number out of both files. */
+ *  tests/tiff-vendor.test.js, which reads the number out of both files. */
 const MAX_PIXELS = 64 * 1024 * 1024;
 
 /** The name without its extension, so a `scan.tif` becomes a `scan.webp`. */

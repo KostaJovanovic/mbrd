@@ -1,11 +1,11 @@
 // What the ghost cards say, and when they go.
 //
-// state.js owns the three items themselves - their ids, their geometry and the
+// state.ts owns the three items themselves - their ids, their geometry and the
 // fact that they exist at all (see ensureGhostCards there, and the note above it
 // for why they are real items rather than an overlay). This file owns the two
 // things that are not state's business: the words, and the moment.
 //
-// The split is the layering rule doing its job. state.js sits below the canvas
+// The split is the layering rule doing its job. state.ts sits below the canvas
 // and has no business holding user-facing prose, so an item carries only a key
 // in meta.hint - 'drop', 'move', 'formats' - and the mapping from key to sentence
 // lives up here beside the renderer that draws it.
@@ -21,7 +21,7 @@
 // The three hints are legends rather than paragraphs - three icons with a few
 // words beside each - and that is a form which cannot name the outcome and duck
 // the gesture the way a sentence can. So each row names both registers at once
-// ("Wheel or pinch to zoom"), the move ui/settings-schema.js's KEYS table
+// ("Wheel or pinch to zoom"), the move ui/settings-schema.ts's KEYS table
 // already makes with its 'two fingers' row; and a row with no touch form carries
 // `desktop`, which ghosts.css hides under data-board-mode="mobile". A phone is
 // never shown a gesture it cannot make.
@@ -31,7 +31,7 @@
 // visitor's own board has not been touched has nothing to draw and everything
 // to say.
 //
-// The gestures behind all of it are the ones in canvas/input.js's header - it is
+// The gestures behind all of it are the ones in canvas/input.ts's header - it is
 // the map, and this is a paraphrase of it that has to stay true.
 
 import { bus, dismissGhosts, hasContent, hasGhosts, isNotFoundBoard } from '../state.ts';
@@ -105,7 +105,7 @@ export const HINTS: Readonly<Record<HintKey, Hint>> = Object.freeze({
     // and you gather things up only once there is something to gather. A fourth
     // row would be the manual this card exists not to be - the whole legend,
     // sixteen rows of it, is in the panel already (KEYS in
-    // ui/settings-schema.js) and this is the doorway to it, not a copy.
+    // ui/settings-schema.ts) and this is the doorway to it, not a copy.
     rows: [
       { icon: 'i-move', label: 'Drag or two fingers to pan' },
       { icon: 'i-zoom-in', label: 'Wheel or pinch to zoom' },
@@ -135,13 +135,13 @@ export const HINTS: Readonly<Record<HintKey, Hint>> = Object.freeze({
   formats: {
     title: 'Almost anything you have',
     // The first two rows are what the board *draws*, which is the branches of
-    // classify() in canvas/renderers.js and nothing else - so they move when
+    // classify() in canvas/renderers.ts and nothing else - so they move when
     // that function does and are wrong the moment they do not.
     //
     // The third is the one row on any of these cards that is a promise rather
     // than an instruction, and it earns the space the count row did not: audio
     // is the one thing on that list which stops being a card once there is more
-    // than one of it. The board becomes a player - ui/playlist.js, the sidebar
+    // than one of it. The board becomes a player - ui/playlist.ts, the sidebar
     // window on Desktop and the Feed's second lens on Mobile - and a player is
     // not a thing anybody guesses a pinboard has. Where it opens from is left
     // out on purpose: two layouts, two answers, and neither is any use until
@@ -164,13 +164,13 @@ export const HINTS: Readonly<Record<HintKey, Hint>> = Object.freeze({
   },
 
   // The other set: what an empty board says when it was opened at an address
-  // that does not exist. state.js seeds these instead of the three above when
-  // main.js boots into not-found (see NOTFOUND there); nothing else about the
+  // that does not exist. state.ts seeds these instead of the three above when
+  // main.ts boots into not-found (see NOTFOUND there); nothing else about the
   // board differs, which is the point - the app is its own 404 page, and a 404
   // here is an ordinary blank board that knows why it is blank.
   //
   // Two cards, not three, and the same shape as a hint only on paper: the title
-  // here is the number itself, and items.css sets it at sixty-odd pixels for
+  // here is the number itself, and ghosts.css sets it at sixty-odd pixels for
   // this key alone. Everything else follows the hints' discipline - a head that
   // survives a glance, one line for whoever stopped to read.
   //
@@ -185,7 +185,7 @@ export const HINTS: Readonly<Record<HintKey, Hint>> = Object.freeze({
   // The way back, and the one card in either set that is a link rather than a
   // sentence. `href` is what the renderer switches on; the dial does the same
   // thing through DIAL, and for the same reason - a hint you use rather than
-  // read. canvas/input.js already names `a` in its widget branch, so the press
+  // read. canvas/input.ts already names `a` in its widget branch, so the press
   // reaches the link instead of starting a drag on the card.
   back: {
     title: 'Back to the board',
@@ -207,7 +207,7 @@ export const DIAL = 'whimsy';
  * The names of the three whimsy stops, printed under the dial.
  *
  * The same three words the sidebar prints under the same slider, because it is
- * the same slider - see ui/settings-schema.js, where the panel's copy of this
+ * the same slider - see ui/settings-schema.ts, where the panel's copy of this
  * list lives. Duplicated rather than imported: the list is owned by ui/, which
  * canvas/ may not reach into, and three words are a cheaper duplicate than a
  * new module in the base layer. Whichever way it were shared, the panel and the
@@ -234,7 +234,7 @@ export const hintKey = (key: string | undefined): HintKey => {
 };
 
 /**
- * A strip of tape as state.js's tapeFor() places it: an edge, how far along it,
+ * A strip of tape as state.ts's tapeFor() places it: an edge, how far along it,
  * an optional turn and a length in px. `edge` stays a plain string because it
  * arrives from a stored board and tapeStyle() falls back rather than refuses.
  */
@@ -246,7 +246,7 @@ export type TapeStyle = { x: string; y: string; rot: string; len: string };
 /**
  * Where one strip of tape sits, as the four numbers CSS needs.
  *
- * The placement (see tapeFor in state.js) names an edge and a percentage along
+ * The placement (see tapeFor in state.ts) names an edge and a percentage along
  * it; this turns that into a point in the card's box and an angle. The strip is
  * centred on that point - `translate(-50%, -50%)` in the stylesheet - so half of
  * it is on the card and half is off, which is the only arrangement that reads as
@@ -281,7 +281,7 @@ export function hintFor(key: string | undefined): Hint {
  * individually is how one of them gets missed.
  *
  * Leaving is not this file's job either, as it turns out. dismissGhosts() emits
- * a delta naming the removed ids, and canvas/items.js already flies out every
+ * a delta naming the removed ids, and canvas/items.ts already flies out every
  * node in a removed delta - so a ghost exits with the same whimsy feel as any
  * deleted card (fall / dissolve / shatter) without a line here asking for it.
  * The one thing that has to be true for that is that the emit carries the ids,
@@ -291,8 +291,8 @@ export function hintFor(key: string | undefined): Hint {
  * The command surface, handed in rather than imported.
  *
  * The dial on the fourth card changes the whimsy level, and that lives in
- * ui/appearance.js - which this file may not import, since canvas/ sits below
- * ui/ and tests/layers.test.js enforces it. main.js owns `cmds` and hands it
+ * ui/appearance.ts - which this file may not import, since canvas/ sits below
+ * ui/ and tests/layers.test.js enforces it. main.ts owns `cmds` and hands it
  * down here, the same move it makes for storage's confirmation prompt
  * (setPrompt). So the dial drives the one command surface everything else does.
  */
@@ -308,7 +308,7 @@ const setWhimsyLevel = (level: number) => cmds?.setWhimsy?.(level);
  *
  * The printed stops are what a sighted user reads and are hidden from the
  * accessibility tree, so the name has to reach the input itself - otherwise the
- * dial announces "1 of 2", which names nothing. Same move ui/mobile-header.js
+ * dial announces "1 of 2", which names nothing. Same move ui/mobile-header.ts
  * makes on the weight dial.
  */
 function showLevel(dial: HTMLInputElement, level: string) {
@@ -321,9 +321,9 @@ function showLevel(dial: HTMLInputElement, level: string) {
  *
  * The level can be moved from the settings panel as well as from this card, and
  * an <input> that has drifted from the thing it controls is worse than no input
- * at all. Rather than have ui/appearance.js learn about a card it cannot see,
+ * at all. Rather than have ui/appearance.ts learn about a card it cannot see,
  * this watches the one thing it already writes on every change: data-whimsy on
- * <html>. canvas/grid.js reads the same attribute for the same reason.
+ * <html>. canvas/grid.ts reads the same attribute for the same reason.
  *
  * One observer for the app, not one per card - there are at most a handful of
  * dials and they are gone the moment the board has anything on it.
@@ -364,7 +364,7 @@ export function initGhosts(commands: GhostCommands | null | undefined): void {
     if (!hasGhosts() || !hasContent()) return;
     // The not-found set is not swept. A hint is earned away by doing the thing
     // it describes; these are a statement about the address, and one of them is
-    // the way off it. See isNotFoundBoard() in state.js for the whole argument.
+    // the way off it. See isNotFoundBoard() in state.ts for the whole argument.
     if (isNotFoundBoard()) return;
     dismissGhosts();
   });

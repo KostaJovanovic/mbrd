@@ -16,7 +16,7 @@
 // session slot.
 //
 // Driven through a fake IndexedDB whose only job is to say whether a wipe was
-// reached. state.js is a module singleton, so each case sets the latch it needs.
+// reached. state.ts is a module singleton, so each case sets the latch it needs.
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';

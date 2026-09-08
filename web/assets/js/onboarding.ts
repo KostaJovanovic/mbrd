@@ -2,7 +2,7 @@
 // hints, and the two a board opened at an address that does not exist carries
 // instead.
 //
-// This is *content and policy*, and it spent a long time inside state.js
+// This is *content and policy*, and it spent a long time inside state.ts
 // because the things it does - pushing items onto the board, taking them off
 // again - look like mutations. They are not. Every function here is board
 // hydration: no commit, no history, no undo entry, because none of it is
@@ -15,7 +15,7 @@
 // Ghost cards are furniture, not content, and the difference is enforced at
 // exactly three places rather than by a special case sprinkled everywhere:
 //
-//   1. serializeBoard() strips them (board-schema.js), so no .mbrd ever carries
+//   1. serializeBoard() strips them (board-schema.ts), so no .mbrd ever carries
 //      one and the format does not have to learn the type;
 //   2. dismissGhosts() is hydration, not a command - no commit, no history -
 //      which is what makes their leaving survive an undo of the very import
@@ -26,11 +26,11 @@
 // draggable, resizable and rotatable, its geometry travels in board.layouts,
 // and Mobile packs it into a column like anything else. That is deliberate -
 // the alternative was a separate overlay layer outside board.items, which would
-// have meant a second gesture pipeline beside canvas/input.js for the sake of
+// have meant a second gesture pipeline beside canvas/input.ts for the sake of
 // three cards.
 //
 // **What each card says is not decided here.** This module holds ids, boxes and
-// the key in `meta.hint`; canvas/ghosts.js maps that key to words and pixels.
+// the key in `meta.hint`; canvas/ghosts.ts maps that key to words and pixels.
 // The split is worth keeping: a module at this level has no business holding
 // user-facing prose, and the geometry below has to be reasoned about in grid
 // spaces rather than in sentences.
@@ -38,10 +38,10 @@
 // The two module-level latches are session-scoped and deliberately never
 // written anywhere. They are the whole reason this is a module with state
 // rather than a table of constants, and they are why it must sit *below*
-// state.js: loadBoard() resets one of them on every board that arrives, and a
-// module state.js imports cannot import state.js back.
+// state.ts: loadBoard() resets one of them on every board that arrives, and a
+// module state.ts imports cannot import state.ts back.
 //
-// Nothing here imports state.js - see tests/layers.test.js, where this is BASE.
+// Nothing here imports state.ts - see tests/layers.test.js, where this is BASE.
 
 import { latticeBox } from './geometry.ts';
 import { bus, selection } from './board-store.ts';
@@ -66,7 +66,7 @@ export const GHOST_IDS = Object.freeze([
 ]);
 
 // The one hint that is a control rather than a sentence. Named here because the
-// Mobile column orders itself around it; canvas/ghosts.js exports the same
+// Mobile column orders itself around it; canvas/ghosts.ts exports the same
 // string as DIAL for the renderer, which is the layer that knows what it means.
 const DIAL_HINT = 'whimsy';
 
@@ -85,7 +85,7 @@ const DIAL_HINT = 'whimsy';
 // smallest one the longest hint fits in. The title card snaps to 4x3 as well,
 // so on the board that most people see the whole set matches anyway. Fixed
 // rather than a starting size, since a ghost carries no resize grips (see
-// setGrips in canvas/items.js); canvas/renderers.js defaultSize() names the
+// setGrips in canvas/items.ts); canvas/renderers.ts defaultSize() names the
 // same box.
 //
 // The positions sit below TITLE_DEFAULT_POS so a fresh board reads top to
@@ -146,7 +146,7 @@ const HINT_GHOSTS: readonly GhostSpec[] = Object.freeze([
  * says instead.
  *
  * The app is its own 404 page. A bad URL is served the app with a 404 status
- * (see serve.py, and 404.html for a static host), main.js sees that it is not
+ * (see serve.py, and 404.html for a static host), main.ts sees that it is not
  * at the root and opens a blank board without restoring the session - so what
  * the visitor gets is an ordinary empty board, and the cards that an empty board
  * always carries are the ones telling them what happened.
@@ -177,7 +177,7 @@ const HINT_GHOSTS: readonly GhostSpec[] = Object.freeze([
  * Both numbers were off by a half-step when this was written - the big card's
  * left edge landed at -416 and the small one's lower edge at -160 - so a snapped
  * board slid each of them 32 units and the arrangement described here was not
- * the one on screen. tests/state-ghosts.test.js now asserts the invariant rather
+ * the one on screen. tests/ghosts.test.js now asserts the invariant rather
  * than the prose claiming it.
  */
 export const NOTFOUND_IDS = Object.freeze([
@@ -200,7 +200,7 @@ const NOTFOUND: readonly GhostSpec[] = Object.freeze([
  *
  * One or two per card, each straddling a different edge at an angle. Rolled
  * once, here, and carried in the item - *not* decided when the card is drawn.
- * canvas/items.js throws a culled card's node away and rebuilds it from nothing
+ * canvas/items.ts throws a culled card's node away and rebuilds it from nothing
  * when it comes back on screen, so a placement chosen at render time would put
  * the tape somewhere new every time the board panned past it. Random for each
  * board, and then fixed for that board's life.
@@ -236,7 +236,7 @@ export function tapeFor(rand = Math.random) {
  * Whether the board holds anything the user put there *as content*.
  *
  * isContent() rather than !isFurniture(), which is the same rule the HUD count
- * asks - see board-model.js. A board holding nothing but fences is a board
+ * asks - see board-model.ts. A board holding nothing but fences is a board
  * holding nothing: the regions are drawn around content, so with no content in
  * them there is nothing to be drawn around, and the hints have not been earned
  * away yet.
@@ -257,7 +257,7 @@ let ghostsDismissed = false;
 /**
  * Whether the cards on this board are the not-found set rather than the hints.
  *
- * Session-scoped like the latch above, and read by canvas/ghosts.js, which
+ * Session-scoped like the latch above, and read by canvas/ghosts.ts, which
  * sweeps the hints the moment real content lands. These must not be swept. A
  * hint is earned away - you have dropped something, so you no longer need
  * telling that you can - but the not-found cards are not advice, they are the
@@ -272,9 +272,9 @@ export const isNotFoundBoard = () => notFoundBoard;
 
 /**
  * Stop being one: the visitor has put something on the board, so it is a board
- * now and not a message. main.js owns the rest of that handover - the address,
+ * now and not a message. main.ts owns the rest of that handover - the address,
  * the stored session and the writer - and this is the latch it clears on the
- * way through, which lets canvas/ghosts.js sweep the two cards the way it
+ * way through, which lets canvas/ghosts.ts sweep the two cards the way it
  * sweeps any hint that has been earned away.
  */
 export function leaveNotFoundBoard() {

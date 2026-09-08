@@ -9,7 +9,7 @@
 // It borrows #ask's dressing rather than inventing its own, and that is the
 // whole of the design: the same paper, hairline, ogee radius and lift budget
 // every other surface uses, so the one moment the board steps aside it still
-// looks like the board. What it does not borrow is dialog.js's *contract*.
+// looks like the board. What it does not borrow is dialog.ts's *contract*.
 // ask() resolves to an answer and queues behind itself, because a question two
 // callers ask at once is a focus trap fighting a focus trap. This one asks
 // nothing, resolves to nothing, and the worst a second open can do is find it
@@ -20,7 +20,8 @@
 // not <img src="https://github.com/..."> read at open time. Fetching them would
 // make this the fourth thing in the app that talks to somebody else's server,
 // and the first to do it for decoration - on the screen about the people who
-// wrote the rule. See "Three things that reach outside" in CLAUDE.md.
+// wrote the rule. See "Three things that reach outside" in
+// research/docs/architecture.md.
 
 import { el } from '../util.ts';
 
@@ -42,7 +43,7 @@ export function openCredits(): void {
   if (!wired) {
     // A <dialog> in the top layer fills the screen, so a click that lands on
     // the element itself rather than on anything inside it landed on what is
-    // drawn as ::backdrop. Same test dialog.js makes.
+    // drawn as ::backdrop. Same test dialog.ts makes.
     dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
     el('credits-close')?.addEventListener('click', () => dlg.close());
     wired = true;

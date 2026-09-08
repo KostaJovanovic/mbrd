@@ -1,6 +1,6 @@
 // What a look is allowed to be.
 //
-// Split out of appearance.js so it can be tested: appearance.js reaches for
+// Split out of appearance.ts so it can be tested: appearance.ts reaches for
 // document at import time, by design - it is one of the two modules that owns
 // DOM - and this is the half that is pure data and most wants holding to.
 //
@@ -129,8 +129,8 @@ export function safeVars(vars: unknown): Record<string, string> {
 // jobs - the data model, the persistence, the pigment extraction, the fade
 // loop, the control building and the colour conversion. This is the first of
 // them, and it landed here rather than in a new module because the allowlist it
-// depends on was already here: `clone()` calls `safeVars()`, and a model whose
-// rules live in one file and whose vocabulary lives in another is the same
+// depends on was already here: `cloneLook()` calls `safeVars()`, and a model
+// whose rules live in one file and whose vocabulary lives in another is the same
 // split-brain the move is meant to end.
 //
 // Nothing below touches the DOM, which is the property that makes it worth

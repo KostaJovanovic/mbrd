@@ -4,9 +4,9 @@
    One of the eight sheets the old overlays.css was split into. The order they
    load in IS the cascade and is listed in the banner at the top of base.css.
 
-   ui/viewer.js opens one item as big as the window will allow: a fixed head, a
+   ui/viewer.ts opens one item as big as the window will allow: a fixed head, a
    scrolling body, and a set of rules for each kind of thing it can show.
-   ui/documents.js turns a .docx, an .odt or a .pptx into ordinary elements
+   ui/documents.ts turns a .docx, an .odt or a .pptx into ordinary elements
    inside that body, which is why the two are one file - the document rules are
    written in the viewer's own Markdown measure and face, and every one of them
    reads against #viewer-body.
@@ -240,7 +240,7 @@
    enough to lose - which is the whole reason to render it at all.
 
    Everything below is one selector list per construct rather than a nested
-   `.viewer-md *` sweep: the parser (ui/markdown.js) emits ordinary elements, so
+   `.viewer-md *` sweep: the parser (ui/markdown.ts) emits ordinary elements, so
    these are ordinary element rules and a construct that is not there costs
    nothing. */
 .viewer-md {
@@ -321,7 +321,7 @@
 }
 .viewer-md th { background: var(--paper-3); font-weight: 600; }
 /* An image in a Markdown file points at a path on somebody else disk. Nothing
-   fetches it (see ui/markdown.js); this is what its alt text looks like when it
+   fetches it (see ui/markdown.ts); this is what its alt text looks like when it
    stands in for the picture. */
 .viewer-md .md-image {
   padding: 0.1em 0.45em;
@@ -332,7 +332,7 @@
 }
 
 /* ---------------------------------------------------------
-   Documents in the viewer (ui/documents.js)
+   Documents in the viewer (ui/documents.ts)
 
    A document is read into ordinary elements - headings, paragraphs, lists,
    tables, images - so these are ordinary element rules under one class. The

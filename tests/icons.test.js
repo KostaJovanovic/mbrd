@@ -48,7 +48,7 @@ const defined = new Set(
  *
  * **All three are swept over every module rather than listed**, and it is worth
  * saying why. The href sweep was a list of two files, and the day the volume
- * slider moved from index.html into ui/playlist.js the sprite grew an orphan
+ * slider moved from index.html into ui/playlist.ts the sprite grew an orphan
  * that this file reported as a symbol nobody asks for - the reference was real
  * and simply not being looked at. The other two were still lists of two files
  * afterwards, and cost exactly the same thing again the day the timeline strip

@@ -21,13 +21,14 @@
 // failure is a window that loads with no bridge at all rather than an error
 // anybody sees. `sandbox: true` is the decision; the format follows it.
 //
-// ── The two callbacks ──
+// ── The callbacks ──
 //
-// `onClose` and `onOpenFiles` are the only inbound direction. Both take one
-// listener and keep the last one, rather than adding to a list: there is one
-// renderer, it registers once at boot, and a set of them would be a leak with
-// no way to notice. `closeNow` is not exposed separately - the close handler
-// answers by resolving, which is what makes it impossible to forget.
+// `onClose`, `onOpenFiles`, `onCommand`, `updates.onFound` and `win.onState`
+// are the whole of the inbound direction. Each takes one listener and keeps the
+// last one, rather than adding to a list: there is one renderer, it registers
+// once at boot, and a set of them would be a leak with no way to notice.
+// `closeNow` is not exposed separately - the close handler answers by
+// resolving, which is what makes it impossible to forget.
 
 import { contextBridge, ipcRenderer } from 'electron';
 
@@ -44,7 +45,19 @@ contextBridge.exposeInMainWorld('mbrdDesktop', {
    * shape, so an adapter can refuse a shell older than it expects rather than
    * calling a function that is not there.
    */
-  bridge: 1,
+  bridge: 2,
+
+  /**
+   * Which system this is, and the only thing on this bridge that is a fact
+   * rather than a request.
+   *
+   * The page needs it for exactly one decision: macOS keeps its traffic lights
+   * in the top left, so the app's own button there steps aside, and the drawn
+   * window buttons in the opposite corner are not drawn at all. A sandboxed
+   * preload still has `process.platform`, which is why this is a string here
+   * rather than a call the main process would have to answer.
+   */
+  platform: process.platform,
 
   store: {
     get: (store: string, key: string) => invoke('store:get', store, key),
@@ -80,6 +93,25 @@ contextBridge.exposeInMainWorld('mbrdDesktop', {
     onFound: (fn: (info: unknown) => void) => {
       ipcRenderer.removeAllListeners('app:update');
       ipcRenderer.on('app:update', (_event, info: unknown) => fn(info));
+    },
+  },
+
+  /**
+   * The window itself: the three buttons the page draws, and what shape it is
+   * in.
+   *
+   * `send` and not `invoke` for the three actions, because none of them has an
+   * answer - minimise and maximise are seen, and the reply to a close is the
+   * window going away. `onState` keeps one listener like the two callbacks
+   * above and for the same reason: one renderer, registered once at boot.
+   */
+  win: {
+    minimize: () => ipcRenderer.send('window:minimize'),
+    toggleMaximize: () => ipcRenderer.send('window:maximize'),
+    close: () => ipcRenderer.send('window:close'),
+    onState: (fn: (state: { maximized: boolean, fullScreen: boolean }) => void) => {
+      ipcRenderer.removeAllListeners('app:frame');
+      ipcRenderer.on('app:frame', (_event, state: { maximized: boolean, fullScreen: boolean }) => fn(state));
     },
   },
 

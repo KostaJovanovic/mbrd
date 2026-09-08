@@ -1,22 +1,22 @@
 /* =========================================================
-   mbrd - the sticker pad (ui/sticker-window.js)
+   mbrd - the sticker pad (ui/sticker-window.ts)
 
    One of the eight sheets the old overlays.css was split into. The order they
    load in IS the cascade and is listed in the banner at the top of base.css.
 
    The note below is the design. This header only records the dependency it
-   names: the window's move and resize gestures come from ui/float-window.js,
+   names: the window's move and resize gestures come from ui/float-window.ts,
    which the Playlist's player uses too, and the two deliberately share their
    proportions.
    ========================================================= */
 
 /* ---------------------------------------------------------
-   The sticker pad (ui/sticker-window.js)
+   The sticker pad (ui/sticker-window.ts)
    ---------------------------------------------------------
 
    A floating window of shapes, opening anchored to the bottom-right the way
    the Playlist's player does - the two share their move and resize gestures
-   (ui/float-window.js) and deliberately share their proportions, so a board
+   (ui/float-window.ts) and deliberately share their proportions, so a board
    with both open reads as two of the same thing rather than as two designs.
 
    What is different is what it holds. The player shows the board's own
@@ -139,7 +139,7 @@
 .sticker-tile:hover { background: var(--paper-2); }
 .sticker-tile:focus-visible { outline: 2px solid var(--select); outline-offset: -2px; }
 /* Held down: this shape is in your hand and the next tap on the board places
-   it. Loud on purpose - see the head of ui/sticker-window.js on why an armed
+   it. Loud on purpose - see the head of ui/sticker-window.ts on why an armed
    board has to look armed. */
 .sticker-tile.is-armed {
   background: var(--select-fill);

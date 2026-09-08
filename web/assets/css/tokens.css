@@ -153,7 +153,7 @@
   --grid-axis:  var(--accent-text);
   --grid-dot:   1.7px;
 
-  /* ---- the paper outline (canvas/paper.js) ----
+  /* ---- the paper outline (canvas/paper.ts) ----
      Derived from the ink rather than from the accent, and that is the whole
      decision: a page is a surface the board is arranged *on*, so it has to sit
      behind everything without competing with the accent the axes already own.
@@ -166,7 +166,7 @@
      a coarse pointer gets a bigger one further down this sheet. */
   --sheet-grip: 11px;
 
-  /* ---- the web between items (canvas/web.js) ----
+  /* ---- the web between items (canvas/web.ts) ----
      Deliberately a true neutral grey rather than a mix of this palette's ink,
      which is the one exception on this whole sheet. The threads run *under*
      every item and behind whatever colours those items bring, and a tinted
@@ -257,7 +257,7 @@
   --icon-button: 28px;
   --icon-glyph:  15px;
   /* How far off square an item may come to rest. Each one gets its own factor
-     in [-1, 1] from canvas/items.js and multiplies it by this, so the whole
+     in [-1, 1] from canvas/items.ts and multiplies it by this, so the whole
      board straightens up or scatters as the axis moves, with no JS involved. */
   --tilt-max: 1.5deg;
   --select:      var(--accent-text);
@@ -498,7 +498,7 @@
 
      --font-serif-display is the odd one out now: no tier reads it. It stays
      named because Playfair is still a face both font menus offer by name
-     (DISPLAY_FACES in ui/appearance.js, BUILTIN_HEADER_FACES in ui/fonts.js)
+     (DISPLAY_FACES in ui/appearance.ts, BUILTIN_HEADER_FACES in ui/fonts.ts)
      and because it is in the TOKENS allowlist, so a saved board may already
      carry it.
 
@@ -590,7 +590,7 @@
 
      The reason it shows up on extracted boards and not on the presets: a preset
      sheet is the same lightness at every whimsy level, so the vignette is all
-     the axis changes. An extracted sheet is not - ui/appearance.js passes
+     the axis changes. An extracted sheet is not - ui/appearance.ts passes
      `plain` only at Harsh, so Harsh keeps a near-white sheet while the other
      two take the key shift and can fall to 0.895. The two effects then point
      the same way and compound. Measured on a board of dim photographs: the
@@ -614,7 +614,7 @@
      asking for this name with a `ease-in` fallback behind it since before the
      name existed. */
   --ease-in:   cubic-bezier(0.4, 0, 1, 1);
-  /* Read by canvas/viewport.js, so the board's own movement sits on the same
+  /* Read by canvas/viewport.ts, so the board's own movement sits on the same
      axis as the interface's - not in a JS constant that ignores it. */
   --dur-zoom:   190ms;
   --dur-travel: 400ms;
@@ -636,7 +636,7 @@
    along for free, including the color-mix() tints in the notes and --danger,
    which is left unregistered on purpose so that it keeps re-resolving against
    an --ink that is now moving. The board is a canvas and cannot follow a CSS
-   transition at all: followFade() in ui/appearance.js repaints it for the
+   transition at all: followFade() in ui/appearance.ts repaints it for the
    length of this duration.
 
    Every initial-value here is Papyrus's own, which is what renders before any
@@ -697,7 +697,7 @@
    Zero duration rather than `transition: none`, so nothing is disabled and no
    rule is overridden - the declarations stay exactly as written and simply take
    no time, which means every element tracks the sheet frame for frame instead
-   of chasing it. ui/appearance.js hangs .is-fading on :root for the length of
+   of chasing it. ui/appearance.ts hangs .is-fading on :root for the length of
    the fade and takes it off again, so this is in force for 700ms and never
    while anybody is using the interface.
 
@@ -793,7 +793,7 @@
    Every value below is generated in OKLCh and checked: --ink clears 7:1 on its
    own sheet, --ink-2 clears 4.5:1, and --accent clears 4.5:1 against the label
    that --accent-fg mixes for it. Change one by hand and check it the same way -
-   ui/pigments.js exports contrast() and hex(), and tools/preset-oklch.mjs
+   ui/pigments.ts exports contrast() and hex(), and tools/preset-oklch.mjs
    prints what these currently span.
    ========================================================= */
 
@@ -897,7 +897,7 @@
    each end mixes out of the pigments 3b hands it. Harsh in particular still
    derives its whole sheet from `var(--accent)` by color-mix, which is exactly
    how the bold quartet reaches its own paper and ink for free. The rules that
-   decide what "pastel" and "bold" mean to a colour live in ui/pigments.js, so
+   decide what "pastel" and "bold" mean to a colour live in ui/pigments.ts, so
    an extracted palette and these four are dressed by the same numbers.
 
    The stops are discrete for now. The intended endgame is a board that reads
@@ -1201,7 +1201,7 @@
      the edges, and an eighth of an alpha on near-white paper finished the job.
      Harsh is spare, not blank.
 
-     This is the one level where the lattice is not dots - canvas/grid.js reads
+     This is the one level where the lattice is not dots - canvas/grid.ts reads
      data-whimsy and marks each intersection with a small cross instead, which
      is the drawing-office register mark this end of the axis is quoting. Both
      numbers still mean what they mean everywhere else, so the Grid weight and
@@ -1229,7 +1229,7 @@
    nothing here declares anything at tier 1, which is the reference the two
    ends are relative to and does not move.
 
-   The same transforms dress an *extracted* palette in ui/pigments.js -
+   The same transforms dress an *extracted* palette in ui/pigments.ts -
    pastel() and pastelInk() at one end, bolden() and boldSecond() at the other.
    The four palettes written by hand upstairs are literals and nothing measures
    them, so tools/gen-tier-palettes.mjs applies those same transforms to the
@@ -1487,7 +1487,7 @@
    transition durations - are in the CSS beside the things they switch off.
 
    Two selectors per rule, because there are two states to cover. Before
-   ui/quality.js runs, the inline guard in index.html has set the level and
+   ui/quality.ts runs, the inline guard in index.html has set the level and
    nothing else, so the level stands in for its flags; once the module is up
    every flag is written out as its own attribute, and a hand-set override then
    outranks the stop it was set from. `:not([data-q-shadows])` is what hands
@@ -1496,7 +1496,7 @@
 
 :root[data-quality="light"]:not([data-q-shadows]),
 :root[data-q-shadows="off"] {
-  /* canvas/items.js stops building the twin at all at this point - see the
+  /* canvas/items.ts stops building the twin at all at this point - see the
      shadow guard in build(). This is for the ones CSS draws itself: the title
      card, the ghosts, and Softish's chipped silhouette. */
   --item-shadow: none;
@@ -1580,7 +1580,7 @@
    its entire sheet from --accent, and --accent can be a pigment somebody picked
    in the Appearance panel a moment ago. Those thirty-one are computed in script
    instead and written onto :root, where inline properties outrank every selector
-   in this file. See legacyBlends() in ui/appearance.js, which runs only when this
+   in this file. See legacyBlends() in ui/appearance.ts, which runs only when this
    same condition is false and re-runs whenever the look changes.
 
    The channel tokens are declared *inside* the block on purpose: a current

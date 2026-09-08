@@ -7,7 +7,7 @@
 // id to.
 //
 // Neither half is checked by anything. Rename an element in index.html, or move
-// the line in ui/search.js that says `node.id = 'search'`, and the rules that
+// the line in ui/search.ts that says `node.id = 'search'`, and the rules that
 // styled it stop matching. There is no error. No console warning, no failed
 // request, no parse failure - the selector is still perfectly valid CSS, it just
 // describes a node that no longer exists. What you get is the thing drawn
@@ -70,7 +70,7 @@ const JS_BUILT = {
   'fence-ghost': 'the preview rectangle drawn while a fence is being placed',
   'fence-prompt': 'the name-this-fence prompt',
   // Off the table, and the removal is the point: it was one hardcoded id on a
-  // node canvas/renderers.js builds for the canvas *and* for the Feed, so two
+  // node canvas/renderers.ts builds for the canvas *and* for the Feed, so two
   // of them could be in the document at once and the Feed slider's
   // aria-describedby resolved to the canvas's node. The row is styled through
   // .whimsy-stops now and its id is per item, which is not a name any

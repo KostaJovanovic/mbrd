@@ -1,7 +1,7 @@
 // The button's half of optimising: what it says before, during and after.
 //
-// Separate from optimize.js for the same reason ui/look.js is separate from
-// ui/appearance.js - that one is the work and has no business knowing there is
+// Separate from optimize.ts for the same reason ui/look.ts is separate from
+// ui/appearance.ts - that one is the work and has no business knowing there is
 // a screen, this one is the conversation and has no business knowing how a WebP
 // is made.
 
@@ -75,7 +75,7 @@ export async function optimizeBoard() {
       : 'Sound is left alone - this browser has no Opus encoder.');
   }
   // Video is not optimised: shrinking a clip needs ffmpeg, and that is not worth
-  // waking for a moodboard (see optimize.js). Say how many are being left alone,
+  // waking for a moodboard (see optimize.ts). Say how many are being left alone,
   // so a count smaller than the board holds does not read as a bug.
   const skippedVideos = plan.skipped.filter(e => e.kind === 'video').length;
   if (skippedVideos && counts.length) {
@@ -130,8 +130,8 @@ export async function optimizeBoard() {
   // The waiting strip rather than a toast per file, which is what this was.
   // A toast is a receipt and this is a state: forty of them in a row was the
   // same sentence rewritten forty times, each one resetting its own dismissal
-  // timer, and the count buried in a line of prose. See busy() in notify.js,
-  // and ui/overlays.js for the strip it puts up.
+  // timer, and the count buried in a line of prose. See busy() in notify.ts,
+  // and ui/overlays.ts for the strip it puts up.
   const job = busy('Optimizing');
   let report;
   try {

@@ -1,7 +1,7 @@
 // The sticky-note formatting model.
 //
-// Lifted out of canvas/renderers.js, and the move fixes a backwards arrow as
-// much as a long file: canvas/notes.js is the *editor*, and it was reaching
+// Lifted out of canvas/renderers.ts, and the move fixes a backwards arrow as
+// much as a long file: canvas/notes.ts is the *editor*, and it was reaching
 // through the renderer to get at the model both of them read. Neither owns it.
 //
 // Everything here is pure and free of the DOM on purpose, barring the two
@@ -25,7 +25,7 @@ import { isRecord } from '../util.ts';
 // and `meta.text` is what it flattens to.
 //
 // Everything here is pure and free of the DOM on purpose (barring the two
-// element builders at the end): the renderer, the editor (canvas/notes.js) and
+// element builders at the end): the renderer, the editor (canvas/notes.ts) and
 // the tests all read the one model through these functions.
 // ---------------------------------------------------------------------------
 
@@ -261,7 +261,7 @@ export function flattenNoteRich(rich: NoteRichInput): string {
  * mapped the rich blocks and dropped the markers, which is right.
  * ui/snapshot.ts called flattenNoteRich() and painted the result straight onto
  * the export canvas, so a note with a heading came out of a PNG reading
- * "# Kitchen". ui/trash.ts took the first line of `meta.text`, so the same note
+ * "# Kitchen". trash.ts took the first line of `meta.text`, so the same note
  * sat in the bin as "# Kitchen". Neither is a note anybody wrote: the marker is
  * a storage convention this app invented so that plaintext could carry a
  * heading, and showing it to the person who typed the heading is showing them

@@ -22,7 +22,7 @@ import { WEB, read } from './helpers.js';
  * companions and a copy of every mixed token, all inside an `@supports not`
  * block. None of it is part of the look API: a --ink-c is derived from --ink
  * rather than chosen, it is not something a board may set or a palette switch
- * has to clear, and legacy-color.js rewrites all of it from the resolved
+ * has to clear, and legacy-color.ts rewrites all of it from the resolved
  * colours anyway. Both parity tests below would otherwise read the fallback as
  * fourteen new pigments per palette. tests/legacy-color.test.js is what holds
  * that section honest.
@@ -231,12 +231,12 @@ test('the combined tier-and-palette selectors are invisible to the two parity te
 });
 
 test('the pre-paint anti-flash guard carries look.js\'s grammar and function allowlist', () => {
-  // The inline script in index.html applies a saved look before ui/look.js can
+  // The inline script in index.html applies a saved look before ui/look.ts can
   // load, so it must filter the same way - a poisoned localStorage could
   // otherwise apply display:none or a url() token before first paint (AUD-15).
   // It cannot import the module, so it carries the same grammar and function
   // list by hand; this holds the two together, like the dev-host regex does for
-  // sw.js and util.js.
+  // sw.js and util.ts.
   const html = read(join(WEB, 'index.html'));
   const look = read(join(WEB, 'assets', 'js', 'ui', 'look.ts'));
 
@@ -285,7 +285,7 @@ test('the appearance panel no longer builds a density slider', () => {
 });
 
 test('the palette compares pictures by hash, without minting an object URL', () => {
-  // ui/appearance.js is one of the three modules that touch a browser global at
+  // ui/appearance.ts is one of the three modules that touch a browser global at
   // import time, so this is asked of the source rather than of the module - the
   // same shape as the density-slider check above.
   //
@@ -293,7 +293,7 @@ test('the palette compares pictures by hash, without minting an object URL', () 
   // runs on every 'items' event, and assetURL() *mints* a blob URL on first use
   // and holds it for the session. Resolving inside the walk created one per
   // picture on the board - four hundred on a four-hundred-photo board, none of
-  // them necessarily rendered - which is the laziness storage/assets.js exists
+  // them necessarily rendered - which is the laziness storage/assets.ts exists
   // to preserve. Hashes are identity enough, and the URLs are resolved for the
   // handful actually read.
   const source = read(join(WEB, 'assets', 'js', 'ui', 'appearance.ts'));
@@ -328,7 +328,7 @@ test('the palette compares pictures by hash, without minting an object URL', () 
 //
 // The gate itself is pure and tested in layout-settings.test.js. What is asked
 // here is that the look model actually goes through it - the same shape as the
-// checks above, because ui/appearance.js touches a browser global at import
+// checks above, because ui/appearance.ts touches a browser global at import
 // time and cannot be loaded in Node.
 
 test('the board only ever colours itself through the three-picture gate', () => {

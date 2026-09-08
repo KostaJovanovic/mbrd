@@ -1,6 +1,6 @@
 // The shape every mesh parser returns, and the arithmetic they all repeat.
 //
-// This file exists because mesh.ts stopped being one reader and became eight.
+// This file exists because mesh.ts stopped being one reader and became twelve.
 // STL, OBJ and glTF were three parsers in one module and the helpers below were
 // private to it; PLY, OFF, 3MF, AMF, FBX, Collada, 3DS, STEP and IGES are nine
 // more, and nine more copies of "grow the box, unit the normals, refuse past the

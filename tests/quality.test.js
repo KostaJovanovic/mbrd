@@ -1,6 +1,6 @@
 // The quality dial: what each stop asks for, and what a hand-set flag does to
-// it. All of it is pure - the flags object and the two step tables - so none of
-// this needs a browser.
+// it. Pure throughout - the flags object and the two step tables - so no
+// browser needed.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -18,10 +18,10 @@ const fresh = () => initQuality(null);
 test('an unset preference is Full, and Full is what the app shipped with', () => {
   fresh();
   assert.equal(qualityLevel(), 'full');
-  // The property this whole file exists to hold: installing the version that
-  // added a quality dial must not change what anybody's board looks like. Each
-  // of these is the constant it replaced - DISPLAY_MAX in canvas/display.js and
-  // BUILD_BUDGET in canvas/items.js.
+  // The property this file exists to hold: installing the version that added
+  // the dial must not change what anybody's board looks like. Each value is
+  // the constant it replaced - DISPLAY_MAX (canvas/display.ts), BUILD_BUDGET
+  // (canvas/items.ts).
   assert.equal(quality.sharpness, 1280);
   assert.equal(quality.build, 12);
   assert.equal(quality.motion, true);
@@ -31,11 +31,10 @@ test('an unset preference is Full, and Full is what the app shipped with', () =>
 });
 
 test('the dial cannot hide a line somebody drew', () => {
-  // There was a `threads` flag here, and Light turned it off. That was right
-  // while the web was worked out from the board on every drag frame and wrong
-  // the moment connections became a stored list drawn by hand: what it had
-  // become was a quality setting that silently deleted work. The board's own
-  // "Show connections" is the control, and it is not on this dial.
+  // A `threads` flag was here and Light turned it off. Right while the web was
+  // worked out from the board on every drag frame, wrong once connections
+  // became a stored list: a quality setting that silently deleted work. The
+  // board's own "Show connections" is the control, and it is not on this dial.
   fresh();
   setQualityLevel('light');
   assert.equal('threads' in quality, false,
@@ -147,12 +146,12 @@ test('the panel’s stops and the step tables agree with the presets', () => {
 });
 
 test('no stop makes a picture look broken', () => {
-  // This ladder started at 1280/1024/800, and 800 was a mistake: a card is a few
-  // hundred world units wide, so the ceiling only looks generous at zoom 1, and
-  // zooming in is what a board is for. Below ~1024 a photograph examined closely
+  // The ladder started at 1280/1024/800 and 800 was a mistake: a card is a few
+  // hundred world units wide, so the ceiling only looks generous at zoom 1,
+  // and zooming in is what a board is for. Below ~1024 a close-up photograph
   // is a visible upscale. Decode cost goes as the square of the edge, so the
-  // floor buys back sharpness for about a third of Full's picture memory rather
-  // than a sixth - a trade worth making, and one worth not drifting back.
+  // floor costs a third of Full's picture memory rather than a sixth - worth
+  // it, and worth not drifting back.
   const px = SHARPNESS_STEPS.map(s => s.px);
   assert.deepEqual([...px].sort((a, b) => b - a), px, 'the steps run high to low');
   assert.ok(Math.min(...px) >= 1024, 'no stop may fall below 1024px on the long edge');
@@ -160,8 +159,8 @@ test('no stop makes a picture look broken', () => {
 
 test('the pre-paint guard in index.html knows the same three stops', async () => {
   // The inline script writes data-quality before the module can, so the level
-  // it will accept has to be the level quality.js will resolve - the same
-  // arrangement the look guard has with ui/look.js.
+  // it will accept has to be the level quality.ts will resolve - the same
+  // arrangement the look guard has with ui/look.ts.
   const html = await readFile(new URL('../web/index.html', import.meta.url), 'utf8');
   const inline = html.match(/\/\^\(([a-z|]+)\)\$\/\.test\(q\.level\)/);
   assert.ok(inline, 'the guard no longer tests the saved quality level');
@@ -175,20 +174,19 @@ test('the wired sites read the dial rather than a constant', async () => {
     read('canvas/web.ts'), read('canvas/stills.ts'),
   ]);
   assert.match(items, /built >= buildBudget\(\)/, 'the build budget is the dial’s');
-  // The dial first, and the exclusion list second. *Which* items get no twin is
-  // not this test's business - it has grown from one type to four, and then past
-  // types altogether when a cut-out image joined it - so it is matched loosely,
-  // and what is pinned is that `quality.shadows` is still the thing standing in
-  // front of buildShadow(). The list itself moved behind noTwin(), which is why
-  // this no longer names NO_TWIN: it is now a predicate over an item rather than
-  // a set of type names, because whether an item has a card is a property of the
-  // item.
+  // The dial first, the exclusion list second. *Which* items get no twin is
+  // not this test's business - it grew from one type to four, then past types
+  // altogether when a cut-out image joined it - so it is matched loosely, and
+  // what is pinned is that `quality.shadows` still stands in front of
+  // buildShadow(). The list moved behind noTwin(), which is why NO_TWIN is no
+  // longer named: it is a predicate over an item, not a set of type names,
+  // because whether an item has a card is a property of the item.
   assert.match(items, /quality\.shadows && !noTwin\(/, 'no twin is built when shadows are off');
   assert.match(display, /displayMax\(\) \/ Math\.max/, 'the display copy takes the dial’s long edge');
-  // canvas/web.js is deliberately *not* in this list any more. It is the one
-  // site that stopped reading the dial: what it draws is a stored list rather
-  // than work it has to decide whether to afford. Asserted the other way round
-  // instead, so the flag cannot creep back in.
+  // canvas/web.ts is *not* in this list any more - the one site that stopped
+  // reading the dial, because what it draws is a stored list rather than work
+  // it must decide whether to afford. Asserted the other way round, so the
+  // flag cannot creep back in.
   assert.doesNotMatch(web, /from '\.\.\/quality\.ts'/,
     'connections are drawn whatever the dial says - see canvas/web.ts');
   assert.match(stills, /!quality\.motion \|\| vp\.zoom < stillZoom\(\)/, 'motion off freezes at any zoom');

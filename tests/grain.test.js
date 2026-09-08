@@ -4,7 +4,7 @@
 // on the way out: by 30% the tile is 154px and a fleck is a third of a pixel,
 // so the texture stops being texture and becomes a flat grey film over the
 // whole sheet - the mean darkening with none of the detail that paid for it.
-// See canvas/grain.js.
+// See canvas/grain.ts.
 //
 // Worth a test rather than a look, because the failure is quiet. Both ends of
 // the band are correct-looking on their own: at 1.0 the grain is right, and at
@@ -37,7 +37,7 @@ test('gone at and below the bottom of the band', () => {
 
 test('the middle of the band is half', () => {
   // Within a rounding, not exactly: the midpoint of two decimal fractions is
-  // not representable, and grain.js writes the result at three places anyway.
+  // not representable, and grain.ts writes the result at three places anyway.
   assert.ok(Math.abs(fadeFor((FADE_FULL + FADE_GONE) / 2) - 0.5) < 1e-9);
 });
 

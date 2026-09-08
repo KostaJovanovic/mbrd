@@ -122,6 +122,67 @@
   color: var(--highlight-ink);
 }
 
+/* ---------------------------------------------------------
+   Scrollbars, in the board's own ink
+
+   Unqualified, like ::selection above and for the same reason: a scrollbar is a
+   property of the board's palette and not of any one surface. Six sheets used
+   to each ask for `scrollbar-width: thin` and `scrollbar-color` on their own
+   scroller, which is one decision written six times and a seventh scroller
+   getting the operating system's.
+
+   **The two standard properties and ::-webkit-scrollbar cannot both be used.**
+   Chromium takes `scrollbar-color` or `scrollbar-width` on an element as the
+   whole answer and stops applying the pseudo-elements to it, so the six
+   declarations that used to be spread about were not a fallback for this - they
+   were what would have switched it off. Hence the split: the pseudo-elements
+   are the app's scrollbar, and the standard pair is inside an @supports that
+   only Firefox, which has no ::-webkit-scrollbar to test for, enters.
+
+   The thumb is inset by a transparent border rather than made narrow, which is
+   what gives it air on both sides without a track drawn behind it. `overlay` is
+   deliberately not asked for: it is non-standard, it is gone from Chromium, and
+   a bar that floats over content it does not reserve room for is a bar that
+   sits on the last character of every line.
+   --------------------------------------------------------- */
+
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+/* No track. The surfaces that scroll in this app are panels and sheets that
+   already have a paper of their own, and a channel drawn down the side of one
+   is a second edge beside the edge it already has. */
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--rule-2);
+  /* The inset. background-clip is what makes the border show the paper behind
+     rather than the thumb's own colour - without it the border is simply part
+     of the thumb and the bar is 11px of solid ink. */
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+@media (hover: hover) {
+  ::-webkit-scrollbar-thumb:hover { background: var(--ink-3); background-clip: padding-box; }
+}
+/* Dragging it. Held one step darker than the hover so the bar says it is being
+   moved by you rather than passed over, which is the one moment anybody is
+   actually looking at a scrollbar. */
+::-webkit-scrollbar-thumb:active { background: var(--ink-2); background-clip: padding-box; }
+/* The two arrow buttons at the ends. Gone rather than styled: nothing else in
+   this app is driven a line at a time by a button held down, and Chromium only
+   draws them at all once ::-webkit-scrollbar is written. */
+::-webkit-scrollbar-button { display: none; }
+
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--rule-2) transparent;
+  }
+}
+
 html, body {
   margin: 0;
   height: 100%;
@@ -216,7 +277,7 @@ html, body {
    other into moire. The grain below scales with the board, so it does sweep its
    frequency past the grid's - what keeps that survivable is that it is
    isotropic noise rather than a lattice, and noise has no single period to beat
-   against. See canvas/grain.js, which owns both halves of that trade. */
+   against. See canvas/grain.ts, which owns both halves of that trade. */
 body {
   background-color: var(--paper);
   /* --wash scales the two colour blooms and --vignette the ink shading, so the
@@ -229,7 +290,7 @@ body {
      corner came out the same amber smudge, and on Orca's teal sheet it was a
      gold blob 107 degrees off the palette (which is what --accent-warm is *for*
      there; see its block in tokens.css). The accent tracks the theme instead,
-     including a palette ui/pigments.js has extracted from a picture.
+     including a palette ui/pigments.ts has extracted from a picture.
 
      The share drops because the accent is the darker pigment: measured against
      plain paper, --accent-warm at 5% costs the corner 1.86 levels of lightness
@@ -252,7 +313,7 @@ body {
    --paper-card into less than one. Multiply is subtractive and so has the whole
    range below the sheet to work in. It also keeps the palettes honest for free
    - scaling all three channels by the same grey leaves hue exactly where it
-   was, so an extracted pigment stays the colour ui/pigments.js derived.
+   was, so an extracted pigment stays the colour ui/pigments.ts derived.
 
    The tile is baked high-key for the same reason: its levels run 236-255, so
    the brightest fibres take nothing off the sheet and the darkest take about
@@ -266,14 +327,14 @@ body {
    whimsy dial the blooms and the vignette have.
 
    A real element rather than a body::before, and that is forced. The layer has
-   to travel with the board - canvas/grain.js writes its background-position on
+   to travel with the board - canvas/grain.ts writes its background-position on
    every view change - and a pseudo-element cannot be written to from script; it
    would have to read a custom property off body instead. Body is an ancestor of
    #world, and an inherited custom property written there once a frame
    invalidates the computed style of every card on the board. That is the same
-   trap canvas/mobile-frame.js was built to get out of.
+   trap canvas/mobile-frame.ts was built to get out of.
 
-   The 512px below is the tile at 100%. grain.js scales it with the zoom and
+   The 512px below is the tile at 100%. grain.ts scales it with the zoom and
    carries the same number, so what is written here is only what the layer
    wears between first paint and the first view change. */
 /* Three surfaces, one stock. Desktop's paper is the window, so the grain is a
@@ -311,7 +372,7 @@ body {
   mix-blend-mode: multiply;
   pointer-events: none;
   /* Two dials multiplied. --grain is the look's, from tokens.css; --grain-fade
-     is the zoom's, written onto the surface by canvas/grain.js as the board
+     is the zoom's, written onto the surface by canvas/grain.ts as the board
      goes below 40% - see fadeFor() there. The fallback of 1 is what the layer
      wears before the first view change, and is also what keeps it visible if
      script never runs. */
@@ -360,7 +421,7 @@ body {
 }
 
 /* ---------------------------------------------------------
-   The boot cover (index.html, dismissed by main.js)
+   The boot cover (index.html, dismissed by main.ts)
 
    Third layer of the sheet and the last one painted, which is why it sits here
    rather than with the chrome: paper, then grain, then the thing over both.
@@ -390,7 +451,7 @@ body {
   background-color: var(--paper);
   transition: opacity var(--dur-base) var(--ease);
 }
-/* main.js adds this once there is a board, then removes the node. Pointer
+/* main.ts adds this once there is a board, then removes the node. Pointer
    events go first so a click during the fade lands on the board under it. */
 #splash.is-done {
   opacity: 0;
@@ -525,7 +586,7 @@ body {
 
 /* Clipped to the sheet by the sheet, radius included - which is why this is a
    pseudo-element on the frame rather than a third layer positioned to match it.
-   canvas/mobile-frame.js rewrites that radius as each end of the board scrolls
+   canvas/mobile-frame.ts rewrites that radius as each end of the board scrolls
    in and out of the window, and `inherit` follows it for free. */
 #mobile-board-frame::after {
   content: "";

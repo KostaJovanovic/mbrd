@@ -100,8 +100,8 @@ test('MIME wins over the extension', () => {
 });
 
 test('an extension carries it when the browser sets no MIME', () => {
-  // Which is most of the time for anything interesting: .jxl, .avif and
-  // friends routinely arrive with an empty file.type.
+  // The browser sets no MIME most of the time for anything interesting: .jxl,
+  // .avif and friends routinely arrive with an empty file.type.
   assert.equal(classify(file('a.txt')), 'text');
   assert.equal(classify(file('holiday.JPG')), 'image');
 });
@@ -109,7 +109,7 @@ test('an extension carries it when the browser sets no MIME', () => {
 test('a sticky note is square and small', () => {
   // Square because a sticky comes off a square pad, and small because a note
   // is an annotation on the board rather than a thing on it. The floor that
-  // matters is MIN_SIZE in canvas/input.js (48): the default has to sit above
+  // matters is MIN_SIZE in canvas/input.ts (48): the default has to sit above
   // it, or a fresh note would arrive already smaller than it can be dragged.
   const { w, h } = defaultSize('note');
   assert.equal(w, h, `a note should be square, got ${w}x${h}`);

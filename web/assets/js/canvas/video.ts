@@ -10,7 +10,7 @@
 // board.
 //
 // The obvious fix is `controls`, and it is the wrong one for the same reason
-// canvas/audio.js gives: the native widget is the one piece of chrome a
+// canvas/audio.ts gives: the native widget is the one piece of chrome a
 // browser will not let you restyle, so it puts a slab of vendor-grey plastic
 // on a board whose whole premise is that it is a sheet of paper you chose the
 // colour of. This draws what is left in the board's own tokens.
@@ -29,7 +29,7 @@
 //
 // Mute went with the chin those two lived on. It looks like a property of this
 // clip rather than of the room, which is the argument for keeping it - but only
-// one thing on a board plays at a time (the exclusivity rule in canvas/audio.js),
+// one thing on a board plays at a time (the exclusivity rule in canvas/audio.ts),
 // so the level on the bar already governs whatever is making a noise, and it is
 // on screen for exactly as long as something is. A per-card mute was a second
 // way to silence the one clip the bar could already silence, and it cost a strip
@@ -50,14 +50,14 @@ import { PLAY_ICON } from '../media/transport.ts';
 import type { Item } from '../board-model.ts';
 
 /**
- * Where a parked video sits: the `#t=` media fragment canvas/renderers.js mounts
+ * Where a parked video sits: the `#t=` media fragment canvas/renderers.ts mounts
  * a desktop clip at, which buys a real poster frame instead of a black
  * rectangle.
  *
  * Here rather than beside the `v.src` line that writes it, because it is not a
  * private detail of the renderer - it is the value the cull has to compare
  * against, and comparing against zero instead is what made it wrong.
- * canvas/items.js read `currentTime > 0` as "this clip is doing something" and
+ * canvas/items.ts read `currentTime > 0` as "this clip is doing something" and
  * so exempted every desktop video card from the node cull, which left the cache
  * growing one detached <video> per card panned over for the life of the tab.
  * The card's own clock used to read it too, for the same reason and to the same
@@ -73,7 +73,7 @@ export const POSTER_TIME = 0.1;
  * The transport for one video item.
  *
  * Takes the <video> rather than making it, exactly as buildTransport() takes
- * the <audio>: the element is the engine, and canvas/renderers.js is where an
+ * the <audio>: the element is the engine, and canvas/renderers.ts is where an
  * item's media gets its source and its aspect handling.
  */
 export function buildVideoPlayer(item: Item, video: HTMLVideoElement): HTMLElement {
@@ -93,7 +93,7 @@ export function buildVideoPlayer(item: Item, video: HTMLVideoElement): HTMLEleme
   // laid over the picture, on a control that fades out until you point at the
   // card - while the obvious thing to press, the picture itself, did nothing.
   // So the pause moved to the card: a tap anywhere on a playing video stops it,
-  // which canvas/input.js does on the lift of a press that never travelled. The
+  // which canvas/input.ts does on the lift of a press that never travelled. The
   // big button is what starts it again, because a paused card has to keep some
   // mark saying it is a clip and not a photograph.
   const big = document.createElement('button');
@@ -114,7 +114,7 @@ export function buildVideoPlayer(item: Item, video: HTMLVideoElement): HTMLEleme
     if (!video.src && video.dataset.src) video.src = video.dataset.src;
     if (!video.paused) { video.pause(); return; }
     video.play().catch(err => {
-      // Never swallowed, for the reason audio.js spells out: a rejected play()
+      // Never swallowed, for the reason audio.ts spells out: a rejected play()
       // is usually the browser refusing rather than the file being broken, and
       // an empty catch is how a card becomes silently dead with nothing in the
       // console to say why.
@@ -141,7 +141,7 @@ export function buildVideoPlayer(item: Item, video: HTMLVideoElement): HTMLEleme
 
   // The item goes with it so the exclusive-playback rule can name what is
   // playing - and so the now-playing bar can, since it carries video as well as
-  // audio and reads the type to pick its notation (ui/nowplaying.js).
+  // audio and reads the type to pick its notation (ui/nowplaying.ts).
   registerPlayer(video, item);
   return player;
 }

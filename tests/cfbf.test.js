@@ -1,4 +1,4 @@
-// The compound file reader (import/cfbf.js).
+// The compound file reader (import/cfbf.ts).
 //
 // This one is a filesystem, so the tests are mostly about the two ways a stream
 // can be stored and the several ways a file can lie about where its sectors are.
@@ -293,7 +293,7 @@ test('a clipboard bitmap gets its file header put back', () => {
 
 test('a metafile thumbnail is declined rather than mounted broken', () => {
   // CF_METAFILEPICT is a WMF and no browser draws one. This is the same rule
-  // import/document.js applies to a .emf named thumbnail.png.
+  // import/document.ts applies to a .emf named thumbnail.png.
   assert.ok(
     compoundPicture(readCompound(compound({ [SUMMARY]: summary(8, dib()) }))),
     'the CF_DIB fixture works, so the refusal below means something',

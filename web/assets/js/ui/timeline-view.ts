@@ -1,9 +1,9 @@
 // The Timeline: the step ledger, drawn.
 //
-// timeline.js keeps every change to the board as a record and can put the board
+// timeline.ts keeps every change to the board as a record and can put the board
 // at any point in them. This is the only thing in the app that shows that, and
 // for now it is the only thing that lets you go somewhere other than one step
-// back - undo and redo reach the ledger through history.js, a step at a time.
+// back - undo and redo reach the ledger through history.ts, a step at a time.
 //
 // **Two faces, one module.** On a wide window the Timeline is a strip along the
 // foot, fitted into the gap between the two clusters of chrome that already
@@ -22,7 +22,7 @@
 // verbs would be two vocabularies for one ledger, disagreeing by the second
 // time somebody adds a command. It is also why this file cannot be split the
 // obvious way: a strip module and a sheet module would have to import each
-// other, and tests/layers.js forbids the cycle.
+// other, and tests/layers.test.js forbids the cycle.
 //
 // **Two controls on the strip, and the split is the design.** Left-click a step
 // and the board goes there. Right-click one that carries a *rule* - an align, a

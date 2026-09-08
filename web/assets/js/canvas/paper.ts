@@ -88,7 +88,7 @@ export function initPaper(viewport: Viewport | null): void {
   draw();
 }
 
-/** Exported for main.js's boot sequence, which paints once before the first frame. */
+/** Exported for main.ts's boot sequence, which paints once before the first frame. */
 export const paintPaper = () => draw();
 
 function draw() {

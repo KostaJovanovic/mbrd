@@ -6,7 +6,7 @@
 // The whole of it is four calls; what is worth writing down is the judgement
 // around them, which is when *not* to swap the file.
 //
-// The canvas comes from canvas/surface.js rather than straight from
+// The canvas comes from canvas/surface.ts rather than straight from
 // `new OffscreenCanvas(...)`, which is the one import this otherwise
 // dependency-free module carries. OffscreenCanvas is Safari 16.4, and every
 // call here sat inside a catch that answers "leave the picture alone" - so
@@ -28,7 +28,7 @@ export const MAX_SIDE = 1200;
 /**
  * Album art and card pictures are drawn smaller than the card itself, so they
  * get a lower ceiling. They are kept, not dropped - see the module note in
- * optimize.js.
+ * optimize.ts.
  */
 export const MAX_SIDE_COVER = 600;
 
@@ -106,7 +106,7 @@ export async function shrinkPicture(
     // for an Opus tag is a conversion, not a re-encode, and has to happen.
     if (scale === 1 && blob.type.toLowerCase() === type) return null;
 
-    // Through canvas/surface.js rather than `new OffscreenCanvas(...)`: that
+    // Through canvas/surface.ts rather than `new OffscreenCanvas(...)`: that
     // constructor is Safari 16.4, and below it this threw into the catch that
     // answers "leave the picture alone" - so on those engines the optimiser's
     // whole picture pass silently found nothing to do, which is its largest
@@ -178,7 +178,7 @@ async function encodeShrunk(
  *
  * A hundred is not a guess at a nice round number - it is the widest a card can
  * be drawn at the zoom where thumbnails are used. Below the detail rung - 0.4
- * with a mouse, 0.55 under a finger, see thumbZoom() in canvas/viewport.js - a
+ * with a mouse, 0.55 under a finger, see thumbZoom() in canvas/viewport.ts - a
  * card of the default 320 world units covers 128 screen pixels or fewer, and
  * the boards where this matters are the ones zoomed further out than that. So a hundred pixels
  * is the picture at roughly life size for that view, and every pixel past it is
@@ -208,7 +208,7 @@ export type Thumbnail = { blob: Blob, width: number, height: number, cutout: boo
  *  - not a picture, or a vector. An SVG is already small and already scales;
  *    rasterising it to a hundred pixels would be strictly worse at every zoom.
  *  - animated. Those already have a far-zoom stand-in and it is a better one -
- *    canvas/stills.js shoots the frame that was actually on screen, so a GIF
+ *    canvas/stills.ts shoots the frame that was actually on screen, so a GIF
  *    freezes where you left it rather than snapping back to frame one.
  *  - already this small. The file is its own thumbnail; a second copy of it
  *    would be bytes spent to save nothing.
@@ -277,7 +277,7 @@ export async function makeThumb(
     // No version of Safari encodes WebP from a canvas - not on iOS, not on the
     // desktop - so the refusal meant Safari made *no thumbnails at all*. A
     // thumbnail is not a size optimisation, it is the memory defence for a
-    // zoomed-out board (see the twin in canvas/renderers.js: two hundred
+    // zoomed-out board (see the twin in canvas/renderers.ts: two hundred
     // hundred-pixel pictures instead of two hundred full decodes) and the
     // stand-in a card shows while its display copy renders. Withholding it from
     // the one engine that runs out of memory is the wrong way round.
@@ -285,7 +285,7 @@ export async function makeThumb(
     // The cost is honest and bounded: a hundred-pixel PNG is tens of kilobytes
     // where the WebP is a few, and it travels in the .mbrd. The guard below
     // still refuses one that outweighs the picture it stands for. No JPEG
-    // fallback here, unlike canvas/display.js - looksCutOut() above says this
+    // fallback here, unlike canvas/display.ts - looksCutOut() above says this
     // module deals in pictures with holes in them, and a flattened background
     // is exactly what it must not introduce.
     if (!out) return null;

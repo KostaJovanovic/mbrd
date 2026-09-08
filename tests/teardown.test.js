@@ -1,13 +1,14 @@
 // What a card lets go of when it is thrown away, and what culling must not
 // touch.
 //
-// discard() argues at length that "the media element frees its buffers when its
-// source goes, not when the last reference to it does", and four other kinds of
-// state turned out to want the same sentence: a frozen GIF's object URL, a
-// transport's selection subscription, a model stage's size observer, and the
-// contents of a card being *rebuilt* rather than removed. This file holds the
-// list together - the shape of a teardown cannot be run here, so what is
-// asserted is that each hook exists and that the one door calls all of them.
+// The note over discard() argues at length that "the media element frees its
+// buffers when its source goes, not when the last reference to it does", and
+// four other kinds of state turned out to want the same sentence: a frozen
+// GIF's object URL, a transport's selection subscription, a model stage's size
+// observer, and the contents of a card being *rebuilt* rather than removed.
+// This file holds the list together - the shape of a teardown cannot be run
+// here, so what is asserted is that each hook exists and that the one door
+// calls all of them.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

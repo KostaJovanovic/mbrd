@@ -7,13 +7,13 @@
 // something you can save, name, play or hand to anybody.
 //
 // So the missing piece is a container, and a container is a header format, so
-// it is written here by hand - the same bargain as storage/zip.js and
-// import/artwork.js. Ogg is about ninety lines: a page header, a lacing table
+// it is written here by hand - the same bargain as storage/zip.ts and
+// import/artwork.ts. Ogg is about ninety lines: a page header, a lacing table
 // and a CRC. That is what stands between a 12 MB FLAC and a 3 MB file, and it
 // is a much better trade than thirty megabytes of vendored ffmpeg, which is
 // what this replaces for every sound file on a board.
 //
-// ffmpeg is still what video goes through - see media.js - because demuxing an
+// ffmpeg is still what video goes through - see media.ts - because demuxing an
 // MP4 is a different and much larger problem than muxing an Ogg. Sound no
 // longer waits on it.
 
@@ -51,7 +51,7 @@ const PER_PAGE = 50;
 /** How many frames may be in flight before the loop waits for the encoder. */
 const QUEUE = 24;
 
-/** The bitrate. Transparent enough for a board and a fifth of a 320k MP3. */
+/** The bitrate. Transparent enough for a board and under a third of a 320k MP3. */
 export const OPUS_KBPS = 96;
 
 /**
@@ -80,7 +80,7 @@ export const opusAvailable = () =>
  * A smaller version of this sound, or null to leave it alone.
  *
  * `cover` is an optional File to embed as the front cover - the board extracts
- * album art on import anyway (import/artwork.js), and this puts a copy back
+ * album art on import anyway (import/artwork.ts), and this puts a copy back
  * into the file so that what leaves the board is still a tagged track and not
  * an anonymous stream.
  *
@@ -241,7 +241,7 @@ export function crc32(b: Uint8Array): number {
  * Ogg uses it to tell interleaved streams apart, and a file with one stream in
  * it has nothing to tell apart - so it is a constant rather than a random
  * number, which makes the output a pure function of the input. That matters
- * here: optimize.js addresses files by the hash of their bytes, and an
+ * here: optimize.ts addresses files by the hash of their bytes, and an
  * encoder that produced a different file every run would defeat it.
  */
 const SERIAL = 0x6d627264;                      // 'mbrd'

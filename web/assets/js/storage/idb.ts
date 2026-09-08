@@ -6,8 +6,8 @@
 //
 // ── This file is already a port ──
 //
-// The eight exports at the foot are the entire surface session.js, library.js
-// and matte-cache.js are written against, and none of them says the word
+// The eight exports at the foot are the entire surface session.ts, library.ts
+// and matte-cache.ts are written against, and none of them says the word
 // IndexedDB. So making recovery live somewhere else is not a change to those
 // three files: it is a second implementation of eight functions, wired through
 // setStoreBackend(). The desktop writes `userData/store/<store>/<key>` from its
@@ -18,7 +18,7 @@
 // **The batch forms lose "all land or none" on a backend that is not a
 // database, and that is safe because of an order somebody already argued.** A
 // file backend writes keys one at a time, so a crash can land three of five.
-// writeSnapshot() in session.js writes the assets first, the snapshot second
+// writeSnapshot() in session.ts writes the assets first, the snapshot second
 // and sweeps last, precisely so a half-finished write is never a snapshot
 // pointing at bytes that are not there - the worst a torn batch leaves is an
 // asset nobody references yet, which is what the sweep is for. Read that
@@ -26,7 +26,7 @@
 //
 // **`clear()` is the exception and must be all-or-nothing on every backend.**
 // It is not covered by the paragraph above, because the ordering argument is
-// about writes. clearAllData() in session.js drops the write latch, drains the
+// about writes. clearAllData() in session.ts drops the write latch, drains the
 // writer and *reports a failed wipe* rather than reloading over it - that was
 // PERSIST-03 and it is the reason a partial wipe has to come back as a
 // rejection. A backend whose clear() deletes what it can and resolves anyway
@@ -37,13 +37,13 @@
 // file backend has to reject anything else rather than coerce it, since a path
 // is where the key ends up. Case is the other half of that: NTFS and APFS fold
 // it, so a backend keying files by name needs its keys lowercase or hashed.
-// Asset keys are lowercase hex out of crypto.js and are safe as they are.
+// Asset keys are lowercase hex out of crypto.ts and are safe as they are.
 
 const DB_NAME = 'mbrd';
 // v2 adds the `library` store, v3 the `matte` one. Both are purely additive -
 // the upgrade below only creates stores that are absent, so an existing
 // database keeps every byte it had and simply gains an empty one. See
-// storage/library.js and storage/matte-cache.ts.
+// storage/library.ts and storage/matte-cache.ts.
 const DB_VERSION = 3;
 
 /**
@@ -107,7 +107,7 @@ function open(): Promise<IDBDatabase> {
       // "Clear site data" from another tab both force-close every open handle,
       // and nothing else here would notice: the promise stays cached and
       // resolves forever to a dead connection, every db.transaction() throws
-      // InvalidStateError, and storage/session.js latches cacheOk = false on the
+      // InvalidStateError, and storage/session.ts latches cacheOk = false on the
       // first of those - so nothing is saved again for the rest of the session
       // on a browser where reconnecting would have worked immediately.
       db.onclose = forget;
@@ -310,11 +310,11 @@ const idbBackend: StoreBackend = {
 let backend: StoreBackend = idbBackend;
 
 /**
- * Put the cache somewhere else. main.js calls this once on the desktop, with a
+ * Put the cache somewhere else. main.ts calls this once on the desktop, with a
  * backend that writes files; `null` puts IndexedDB back, which is what a test
  * that drove a fake through here wants in its teardown.
  *
- * Wired *before* anything reads the store, and main.js's own ordering comment
+ * Wired *before* anything reads the store, and main.ts's own ordering comment
  * says so: restoreSession() runs later in boot, but a swap after a read would
  * mean the session came from one store and the writes go to another.
  */

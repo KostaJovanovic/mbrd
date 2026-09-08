@@ -154,7 +154,7 @@ export function sizeSeekWave(
  * pointer leaves the track, which on something fourteen pixels tall is most of
  * the gesture: without it a scrub ends the moment your hand strays off the
  * line, which is exactly when you are moving fastest. And it keeps
- * canvas/input.js out of it - a pointer sequence that got through to the canvas
+ * canvas/input.ts out of it - a pointer sequence that got through to the canvas
  * would be read as a drag of the card, so seeking a clip would carry it across
  * the board.
  *
@@ -189,7 +189,7 @@ export function bindScrub(el: HTMLElement, seekTo: (clientX: number) => void): v
 /* The two glyphs every transport in the app draws. Strings rather than a
    <symbol> in assets/icons.svg because they are set with innerHTML on a button
    that swaps between them on every play and pause, where a <use href> would be a
-   second document fetch on the first press; and because canvas/video.js draws
+   second document fetch on the first press; and because canvas/video.ts draws
    the same two triangles, and a video transport that invented its own play glyph
    would be a second visual language for the same verb on the same board. */
 export const PLAY_ICON =

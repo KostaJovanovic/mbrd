@@ -1,6 +1,6 @@
 // The board library: several boards kept in this browser, not just the one.
 //
-// The working cache (session.js) has always held exactly one board - the one on
+// The working cache (session.ts) has always held exactly one board - the one on
 // screen - and "New" wiped it. This is the shelf beside it: each saved board is
 // packed into a self-contained .mbrd blob (the very archive Export writes) and
 // filed in its own IndexedDB store under a board id, with a small index in `kv`
@@ -19,7 +19,7 @@
 //
 // This module is only the store: the CRUD on the blobs and the index. The
 // orchestration that packs the current board, swaps the assets and loads another
-// lives in storage.js, which already owns the file handle and the session
+// lives in storage.ts, which already owns the file handle and the session
 // lifecycle a switch has to move through.
 
 import { idbGet, idbSet, idbDel, idbKeys, idbDelMany } from './idb.ts';
@@ -32,7 +32,7 @@ const INDEX_KEY = 'library-index';
  * and nothing that would need the packed board opened to know.
  *
  * `thumb` is a data URL rather than a Blob because it goes straight into an
- * `<img>` src and is small by construction - see ui/snapshot.js boardThumb().
+ * `<img>` src and is small by construction - see ui/snapshot.ts boardThumb().
  */
 export type LibraryEntry = {
   id: string,

@@ -62,7 +62,7 @@ const STORE_KEY = 'mbrd.appearance';
 /**
  * The plain end of the axis, named because two things key off it rather than
  * off "the last stop": snapping, below, and the shape of the grid's marks,
- * which canvas/grid.js reads straight off data-whimsy. That file holds the same
+ * which canvas/grid.ts reads straight off data-whimsy. That file holds the same
  * number as a string; they are not shared through an import because the canvas
  * has no business importing from ui/, and both are really keyed to the
  * attribute this module writes rather than to each other.
@@ -97,7 +97,7 @@ const HARSH = 2;
  * have the type back, which is the state every board starts in - so trying
  * something on is always undoable without a reset.
  *
- * Kept under SAFE_VALUE's 160 characters (see ui/look.js), because these end up
+ * Kept under SAFE_VALUE's 160 characters (see ui/look.ts), because these end up
  * in `settings.appearance.vars` and travel inside a .mbrd like any other token.
  */
 const DISPLAY_FACES = [
@@ -278,12 +278,12 @@ export function initAppearance(handlers: { onChange?: () => void } = {}) {
   };
   bus.on('board', syncFromBoard);
   // And on the load itself, ahead of the 'board' that trails it - loadBoard()
-  // emits 'board:load' then 'board' (state.js), so a look left to the second
+  // emits 'board:load' then 'board' (state.ts), so a look left to the second
   // event lands a tick too late: every 'board:load' consumer that reads the
   // resolved type - the Mobile masthead building its weight slider off
   // --font-display is the one that showed it - rebuilds against the *previous*
   // whimsy's face and is a face behind until something forces it again. This
-  // module is wired before those consumers (main.js init order), so applying the
+  // module is wired before those consumers (main.ts init order), so applying the
   // look here means the display font is already the board's own by the time they
   // run. Idempotent with the trailing 'board': sameLook() makes the second a
   // no-op.
@@ -299,7 +299,7 @@ export function initAppearance(handlers: { onChange?: () => void } = {}) {
 /**
  * Slide the whole interface along the playful-to-plain axis. 0, 1 or 2.
  *
- * Exported so main.js can hang it on `cmds`, which is how the dial on the
+ * Exported so main.ts can hang it on `cmds`, which is how the dial on the
  * fourth ghost card reaches it: that card is built under canvas/, which may not
  * import this module (the layering test), so it goes through the command
  * surface like every other user-facing action.
@@ -336,7 +336,7 @@ export function setWhimsy(level: number | string) {
  *
  * The paper is a function of the axis as well as of the pictures - the plain
  * end wants a nearly white sheet whatever the photographs said, see PLAIN_PAPER
- * in pigments.js - and these tokens are written inline, so no stylesheet rule
+ * in pigments.ts - and these tokens are written inline, so no stylesheet rule
  * can answer for them. Without this, moving the slider changed the shapes and
  * the type and left the board wearing the sheet the old level asked for.
  *
@@ -358,7 +358,7 @@ function reshade() {
   // Every pair is a token name and the colour to write.
   //
   // There was an `as [string, string][]` here and at the second copy of this
-  // loop below, each under a comment saying ui/pigments.js "still carries its
+  // loop below, each under a comment saying ui/pigments.ts "still carries its
   // migration pragma, so the token map it builds types as an empty object".
   // That pragma is gone - tests/ts-debt.js counted the migration to zero - and
   // the assertion it justified was doing nothing.
@@ -375,11 +375,11 @@ function reshade() {
 /**
  * The two things a move along the axis changes that a custom property cannot.
  *
- * The first is the grid. canvas/grid.js draws a cross at the plain end where
+ * The first is the grid. canvas/grid.ts draws a cross at the plain end where
  * the other levels get a dot, and it composes that in JS on view change rather
  * than leaving it to the stylesheet - so the marks would keep their old shape
  * until the next pan unless the move is announced. 'settings' is the event
- * main.js already repaints the grid on, and the payload is honest rather than
+ * main.ts already repaints the grid on, and the payload is honest rather than
  * invented: persist() has just rewritten board.settings.appearance.
  *
  * The second is Desktop snapping. Harsh is the level where the Desktop board
@@ -453,7 +453,7 @@ let fadeEnd = 0, fading = false;
  *
  * The panel and the sheet fade on their own - they are CSS, reading registered
  * custom properties that the engine now interpolates, see tokens.css. The board
- * is a canvas and cannot: canvas/grid.js resolves its ink once and holds it,
+ * is a canvas and cannot: canvas/grid.ts resolves its ink once and holds it,
  * because reading computed style per frame is the thing that function exists to
  * avoid. So the fade is the one time it has to be asked repeatedly, and this
  * asks - onChange() is what drops the cached ink and repaints.
@@ -637,8 +637,8 @@ function dropPigments() {
  * for the session, so walking the board to answer "has the picture set changed?"
  * created one blob URL per picture on the board - four hundred of them on a
  * four-hundred-photo board, whether or not any of them was ever rendered,
- * sampled or mounted, which is exactly the laziness storage/assets.js exists to
- * preserve and defeats canvas/items.js's discard() bookkeeping for anything
+ * sampled or mounted, which is exactly the laziness storage/assets.ts exists to
+ * preserve and defeats canvas/items.ts's discard() bookkeeping for anything
  * culled. A hash is a stable identity and costs nothing; the URLs are resolved
  * in recolourFromBoard(), for the handful actually read.
  */
@@ -716,7 +716,7 @@ const ALL_SOURCES_MAX = 120;
  *
  * One past the highest count, so the dial reads low-to-high all the way: more
  * pictures, more pictures, all of them. The value stored is 0, not this - see
- * normalizePaletteSources() in state.js for why a number cannot say "all".
+ * normalizePaletteSources() in state.ts for why a number cannot say "all".
  */
 const ALL_SOURCES_STOP = MAX_SOURCES + 1;
 
@@ -864,7 +864,7 @@ async function recolourFromBoard(
   }
 
   const pixels = await samplePixels(urls, sourceCount());
-  // One line per attempt, in the house style of main.js's "ready". This is a
+  // One line per attempt, in the house style of main.ts's "ready". This is a
   // feature whose every failure mode is a picture quietly not being read, and
   // the count of pictures found against pictures actually decoded is the whole
   // diagnosis - without it the answer to "why has nothing changed?" is a
@@ -987,11 +987,11 @@ function apply(look: Look) {
   // Every colour in the app that is a mix of two pigments, for the engines that
   // cannot mix. A no-op on all of them but WebKit below 16.2, and it has to run
   // here rather than once at boot: the mixes are functions of --accent, and
-  // this is the line after --accent has just moved. See ui/legacy-color.js.
+  // this is the line after --accent has just moved. See ui/legacy-color.ts.
   legacyBlends(root);
   // Every other way a look changes wholesale - the palette menu, the axis, a
   // board arriving with its own colours - and each of them is a change the
-  // canvas has to be walked through as well. Free at boot: main.js has not
+  // canvas has to be walked through as well. Free at boot: main.ts has not
   // wired onChange() yet, so the loop runs against a no-op.
   followFade();
 }

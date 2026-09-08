@@ -2,7 +2,7 @@
 //
 // Extracted when tests/state.test.js was split into six files: each of them
 // opens an empty board in a beforeEach, and each builds the same three kinds of
-// card. Kept out of helpers.js because these know about state.js, which the
+// card. Kept out of helpers.js because these know about state.ts, which the
 // rest of helpers.js deliberately does not.
 
 import { loadBoard } from '../web/assets/js/state.ts';

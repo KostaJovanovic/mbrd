@@ -20,9 +20,9 @@
 // clearQualityOverrides().
 //
 // This module is the bottom of the graph: pure, no DOM, and the only thing it
-// touches outside itself is localStorage through prefs.js, and only from
-// functions. canvas/* imports `quality` and reads it; ui/quality.js is what
-// writes. Deliberately *not* an event on state.js's bus: quality is not board
+// touches outside itself is localStorage through prefs.ts, and only from
+// functions. canvas/* imports `quality` and reads it; ui/quality.ts is what
+// writes. Deliberately *not* an event on state.ts's bus: quality is not board
 // state, and a subscriber list of three is not worth pretending otherwise.
 
 import { readPrefJSON, writePref } from './prefs.ts';
@@ -52,7 +52,7 @@ export const QUALITY_LEVELS: { id: QualityLevel, label: string }[] = [
 ];
 
 /**
- * The long edge a display copy keeps - see canvas/display.js. 1280 is the
+ * The long edge a display copy keeps - see canvas/display.ts. 1280 is the
  * number that module shipped with; the two below it are the same picture with
  * fewer megabytes of decode behind it.
  *
@@ -77,7 +77,7 @@ export const SHARPNESS_STEPS = [
 
 /**
  * How many cards a single frame may build - see BUILD_BUDGET in
- * canvas/items.js. The one lever here that is a trade rather than a reduction:
+ * canvas/items.ts. The one lever here that is a trade rather than a reduction:
  * a smaller batch means a smoother zoom and a board that fills in later.
  */
 export const BUILD_STEPS = [
@@ -91,7 +91,7 @@ export const BUILD_STEPS = [
  *
  *   motion     GIFs animate. Off means they hold still whatever the zoom -
  *              which is also the only thing that reaches a Mobile board, where
- *              the fitted zoom never drops below canvas/stills.js's threshold.
+ *              the fitted zoom never drops below canvas/stills.ts's threshold.
  *   shadows    the twin in #item-shadows is built at all. Off is less DOM, not
  *              just less ink.
  *   blur       backdrop-filter, wherever it is used - the dialog's scrim and
@@ -108,7 +108,7 @@ export const BUILD_STEPS = [
  * There was a `threads` flag here as well, and it is worth saying why it went.
  * It existed because the web computed a maximal planar set over every card on
  * every drag frame, which is genuinely more than a tired phone should be asked
- * for. Connections are drawn from a stored list now (canvas/web.js): a handful
+ * for. Connections are drawn from a stored list now (canvas/web.ts): a handful
  * of pairs somebody drew by hand, and no graph to solve. So the flag stopped
  * paying for itself, and what it had become was a switch that silently hid work
  * the user had done - which is not a quality trade, it is a missing feature. The
@@ -147,7 +147,7 @@ let overrides: Partial<QualityFlags> = {};
  *
  * In place, because every reader imports it once at module load - `if
  * (quality.shadows)` inside a build loop - and a reassigned binding would leave
- * all of them holding the object from boot. The same reason canvas/viewport.js
+ * all of them holding the object from boot. The same reason canvas/viewport.ts
  * exports `mobilePerfFlags` this way.
  */
 export const quality: QualityFlags = { ...PRESETS[DEFAULT_LEVEL] };
@@ -198,7 +198,7 @@ function persist() {
   writePref(PREF, JSON.stringify({ level, over: overrides }));
 }
 
-/** Read the saved setting. Called once, by ui/quality.js, after boot. */
+/** Read the saved setting. Called once, by ui/quality.ts, after boot. */
 export function initQuality(stored: unknown = readPrefJSON(PREF)) {
   const saved: Record<string, unknown> = isRecord(stored) ? stored : {};
   // isLevel is Object.hasOwn and not a truthy PRESETS[saved.level]: localStorage

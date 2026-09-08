@@ -1,13 +1,13 @@
-// The slide-in sidebar: opening it, closing it, and the four things inside it
+// The slide-in sidebar: opening it, closing it, and the five things inside it
 // that are not a row in a table.
 //
-// The controls themselves moved out. ui/settings-schema.js describes them and
-// ui/panel.js builds them, which is what took this file from "every setting,
+// The controls themselves moved out. ui/settings-schema.ts describes them and
+// ui/panel.ts builds them, which is what took this file from "every setting,
 // wired by id" down to the panel as an object: the sheet's open state, the one
 // delegated click that reaches the command surface, the gesture that isolates a
 // slider under a finger, and the paper orientation pair. The name field is the
-// fourth thing here and the one this file no longer implements - it wires and
-// paints ui/board-title.js's, because the masthead's panel has the same field
+// fifth thing here and the one this file no longer implements - it wires and
+// paints ui/board-title.ts's, because the masthead's panel has the same field
 // and one rename must show in both.
 //
 // Paper orientation stays here rather than in the table because it is not a
@@ -162,7 +162,7 @@ export function initSidebar(cmds: SidebarCommands): void {
     // whole of the problem here. On a wide window the board is visible beside
     // the panel and taking it away would be the bug.
     //
-    // After the command rather than before, the same order ui/toolbar.js runs
+    // After the command rather than before, the same order ui/toolbar.ts runs
     // in: a command that throws on its way in should leave the panel where the
     // press was, so there is something on screen to have another go at.
     //
@@ -234,7 +234,7 @@ function wirePaperOrientation(): void {
 
 /** Push state back into the controls (after opening a board, or an undo). */
 function paint(): void {
-  // The name field's behaviour lives in ui/board-title.js now - the masthead's
+  // The name field's behaviour lives in ui/board-title.ts now - the masthead's
   // panel grew a second one, and one rename showing up in both is only true
   // while there is one implementation of it.
   // SAFETY: as at wireTitleField() above.

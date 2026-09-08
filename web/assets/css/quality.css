@@ -35,7 +35,7 @@
    small one on a board that already crops on every resize.
 
    Every measure is a fraction of --half-min (min(w, h) / 2, per item from
-   canvas/items.js/place()). A fraction rather than a fixed border because a
+   canvas/items.ts/place()). A fraction rather than a fixed border because a
    print scales as a print: 12px of mat is a frame on a thumbnail and a
    hairline on a photograph two thousand across. Taking it off the shorter
    side is what makes the mat the same real width on all four edges. */
@@ -93,7 +93,7 @@
 /* ...but Fit in the card, asked for on this one photo, still wins. The board's
    default fit is folded into data-fit, so keying off that would letterbox every
    Softish image; data-fit-own carries only the choice made on this card (see
-   writeFit() in canvas/items.js), so the polaroid holds by default and yields
+   writeFit() in canvas/items.ts), so the polaroid holds by default and yields
    only when someone reached for the menu. More specific than the cover above
    (six classes to its five), so it holds whatever the source order. The picture
    then letterboxes inside the mat window; the hairline traces the window, which
@@ -162,7 +162,7 @@
    edge anywhere on it. The line crosses a pixel row every forty pixels of its
    own length, so it is drawn as two rows of grey the whole way round, and no
    amount of snapping the card onto the device grid (deviceSnap in
-   canvas/items.js) can recover it: there is no position at which a rotated edge
+   canvas/items.ts) can recover it: there is no position at which a rotated edge
    is aligned. Standing the cards up is what makes that snap mean something, and
    between the two it is the edge that has to win at this tier - it is the entire
    elevation model, and a spec sheet is set square in any case.
@@ -340,9 +340,9 @@
    italic, which is the one thing a weight specimen must not do.
 
    An id and a class, because there are two whimsy dials and one of them is not
-   unique: the panel's row is a singleton and is named by id (ui/panel.js, from
+   unique: the panel's row is a singleton and is named by id (ui/panel.ts, from
    the schema's stopsId), while the ghost card's row is built by
-   canvas/renderers.js for the canvas *and* for the Feed, so it wears
+   canvas/renderers.ts for the canvas *and* for the Feed, so it wears
    .whimsy-stops and keeps its id for aria-describedby alone.
 
    The card borrows the panel's slider whole, and
@@ -380,7 +380,7 @@
    why this is a universal selector and an !important, the same shape the
    prefers-reduced-motion block above uses and for the same reason.
 
-   Pairs of selectors again: the level alone until ui/quality.js has written the
+   Pairs of selectors again: the level alone until ui/quality.ts has written the
    flags out, then the flag, so a hand-set override outranks the stop.
    --------------------------------------------------------------------------- */
 
@@ -470,7 +470,7 @@
 }
 
 /* The two card types that have no `.card` inside them, and so no hairline of
-   their own: canvas/renderers.js hands back the picture itself for an image and
+   their own: canvas/renderers.ts hands back the picture itself for an image and
    a video, because they *are* the card. Every other type wears the inset ring
    in `.card` and only needed --item-border firming up next door.
 

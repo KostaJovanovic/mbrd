@@ -42,7 +42,7 @@ import { releaseModels } from './model.ts';
 import * as spatial from './spatial.ts';
 
 // The three pure questions about what a card says. They were exported from here
-// before they moved down, and canvas/renderers.js, ui/ and tests/items.test.js
+// before they moved down, and canvas/renderers.ts, ui/ and tests/items.test.js
 // all still ask this module - so they are re-exported by name, the way state.ts
 // re-exports what it has split downward and for the same reason: an export that
 // stops existing should break loudly at the door rather than quietly at a call
@@ -61,7 +61,7 @@ const nodes = new Map<string, HTMLElement>();
 /** id -> lightweight geometry twin painted below the complete item stack. */
 const shadows = new Map<string, HTMLElement>();
 // The three things initItems() is handed, and the reason for the `!` on a
-// handful of reads below. They are null for exactly as long as it takes main.js
+// handful of reads below. They are null for exactly as long as it takes main.ts
 // to call it - before that this module has no board to mount into and every
 // entry point either returns early or is unreachable - and non-null together
 // for the rest of the session, since one call sets all three. Where a function
@@ -105,7 +105,7 @@ function setHoverLift(id: string, on: boolean) {
 /**
  * Told which cards the pointer is on, whenever that changes.
  *
- * One subscriber, for canvas/web.js, which lifts a card's connections out of the
+ * One subscriber, for canvas/web.ts, which lifts a card's connections out of the
  * rest of the board while the pointer is on it. A callback rather than an event
  * on the board's bus for the reason the web's own move hook gives: this fires on
  * pointer moves, and anything every module can hear is something one of them
@@ -145,7 +145,7 @@ function setHoverGroup(id: string | null) {
  * Write the pin badge onto the hovered item, and come back for it if the item
  * is still settling.
  *
- * The one timer this feature has, and it is here rather than in sticky.js
+ * The one timer this feature has, and it is here rather than in sticky.ts
  * because it is not about the rule - it is about the *badge*, which is a thing
  * on screen and only visible while the pointer is on the card. A hand resting
  * on a note it dropped eight seconds ago should see it become pinned; without
@@ -170,19 +170,22 @@ function paintPinBadge(id: string | null) {
 }
 
 // cullMargin() and its two constants moved to canvas/viewport.ts, which both
-// this module and canvas/web.js already import - the two copies had drifted.
+// this module and canvas/web.ts already import - the two copies had drifted.
 
 /**
  * An item's entry in the spatial cull index: a circumscribed square, centre and
  * full size, matching the precise test sync() runs (itemRadius + 2). Registering
  * by the circumscribed radius rather than the tight box is what makes a rotated
  * card index by the corner it actually reaches, so the grid never drops an item
- * the precise test would have kept - see canvas/spatial.js.
+ * the precise test would have kept - see canvas/spatial.ts.
  */
 const cullBox = (item: Item) => {
   const r = itemRadius(item) + 2;
   return { id: item.id, x: item.x, y: item.y, w: 2 * r, h: 2 * r };
 };
+
+/** What an 'items' announcement carries, and what reconcile() reads too. */
+type ItemsDelta = { added?: string[]; removed?: string[] };
 
 /**
  * Bring the spatial cull index up to date with a membership change.
@@ -193,9 +196,6 @@ const cullBox = (item: Item) => {
  * per-frame path: this runs on 'items' and 'layout', never on a pan or zoom,
  * where the whole point of the index is to avoid walking every item.
  */
-/** What an 'items' announcement carries, and what reconcile() reads too. */
-type ItemsDelta = { added?: string[]; removed?: string[] };
-
 function reindex(delta?: ItemsDelta) {
   if (delta && (delta.added || delta.removed)) {
     for (const id of delta.removed || []) spatial.remove(id);
@@ -234,7 +234,7 @@ export function initItems(world: HTMLElement, viewport: Viewport) {
     for (const id of ids) {
       // The one per-item index write on a hot path: a moved card has to change
       // cells or the next cull would look for it where it no longer is. placeNode
-      // already resolved the item (byId is O(1), state.js), so it is reused here
+      // already resolved the item (byId is O(1), state.ts), so it is reused here
       // rather than looked up again; a null item just removes it from the index.
       const item = placeNode(id);
       spatial.update(id, item && cullBox(item));
@@ -296,7 +296,7 @@ export function initItems(world: HTMLElement, viewport: Viewport) {
   // viewport, and sync() reads its argument.
   //
   // The cull is the zoom-out hot path - visibleRect grows past syncedRect every
-  // frame and this falls through to a full sync() - and the main.js profiler
+  // frame and this falls through to a full sync() - and the main.ts profiler
   // does not wrap it, so its cost was invisible. When mbrd.perf is armed
   // (cullProfile.on), each frame records its own time and whether it ran a full
   // sync; off, it is a single boolean read and the plain call, same as ever.
@@ -327,8 +327,8 @@ export function nodeFor(id: string) { return nodes.get(id); }
  * One at a time, and the caller clears it when the gesture ends. Written here
  * rather than by each gesture because the mark belongs to a node and this
  * module owns the nodes - and because there are two gestures now: a note or
- * sticker dragged across the board (canvas/input.js) and a shape dragged out of
- * the sticker window (ui/sticker-window.js), which cannot see into the other's
+ * sticker dragged across the board (canvas/input.ts) and a shape dragged out of
+ * the sticker window (ui/sticker-window.ts), which cannot see into the other's
  * closure. Two copies of one mark is two chances for one of them to be left on.
  */
 let stickTargetId: string | null = null;
@@ -510,7 +510,7 @@ export function viewportClientRect() {
 /**
  * The card holding the first end of a connection being drawn, or null.
  *
- * Owned here rather than in ui/toolbar.js, which is what actually decides it,
+ * Owned here rather than in ui/toolbar.ts, which is what actually decides it,
  * because a mark on a card has to survive the card being culled and rebuilt -
  * see the note in build(). ui/ hands the id down; this layer keeps it true.
  */
@@ -602,7 +602,7 @@ export function setBoardLift(ids: Set<string> | null | undefined): void {
  * geometry and lives in item.rot.
  *
  * An inline custom property, so this is a string read and not a computed style:
- * canvas/web.js asks for every connected card on every frame of a drag, and a
+ * canvas/web.ts asks for every connected card on every frame of a drag, and a
  * getComputedStyle there would be a style flush per card per frame.
  *
  * 0 for a card with no node - one that is culled is off screen, and a lean
@@ -731,7 +731,7 @@ function disposable(el: HTMLElement) {
  * answer is no while it is playing: removing a media element from the document
  * runs the internal pause steps, so the cull would stop the sound. That is the
  * whole reason panning away from a playing clip used to kill it, and the reason
- * ui/nowplaying.js can offer to control something you cannot see.
+ * ui/nowplaying.ts can offer to control something you cannot see.
  *
  * One node, in practice. registerPlayer()'s one-clip-at-a-time rule means there
  * is only ever one thing playing on a board, so this exempts exactly one card
@@ -800,7 +800,7 @@ function reconcile(delta?: ItemsDelta) {
  *
  * Twelve is what this shipped with and is what the quality dial's top stop asks
  * for; the lower stops trade a board that fills in later for a smoother zoom.
- * See BUILD_STEPS in quality.js.
+ * See BUILD_STEPS in quality.ts.
  */
 const buildBudget = () => quality.build;
 
@@ -917,7 +917,7 @@ export function sync(restack = true, viewPath = false) {
     const item = byId(id);
     if (!item) continue;
     // The title card is not culled with the rest - it is handled once, below,
-    // so it stays mounted off-screen (ui/mobile-header.js must always find its
+    // so it stays mounted off-screen (ui/mobile-header.ts must always find its
     // node to style it) and never appears on the Mobile board.
     if (item.type === 'title') continue;
     // The circumscribed radius rather than the tight box: it costs no trig,
@@ -1035,7 +1035,7 @@ export function sync(restack = true, viewPath = false) {
  * `runs` is every view frame while armed; `fullSyncs` the subset that fell
  * through to a full sync() (the zoom-out case); `ms` the total time in the
  * listener across those frames. avg = ms/runs is the cull's own per-frame cost,
- * the thing the main.js grid profiler never saw. Off by default - the listener
+ * the thing the main.ts grid profiler never saw. Off by default - the listener
  * above pays one boolean read when it is.
  */
 export const cullProfile = { on: false, ms: 0, runs: 0, fullSyncs: 0,
@@ -1085,7 +1085,7 @@ export function ensureMounted(id: string) {
  * region's own width, plus padding in em, so anything here that computed it
  * would be a second copy of that clamp to keep in step. `offsetHeight` is
  * measured before the world transform, so what comes back is already in world
- * units - the same reading canvas/notes.js takes for a note's text.
+ * units - the same reading canvas/notes.ts takes for a note's text.
  *
  * Mounted first, since a plate that is not in the document has no height and
  * "not on screen" is not an answer to this question.
@@ -1110,7 +1110,7 @@ export function barHeight(id: string) {
  * twice would give a card and its shadow two different angles.
  *
  * `pickedId` is the first end of a connection being drawn, and it is held in
- * this module rather than in ui/toolbar.js precisely because of this function: a
+ * this module rather than in ui/toolbar.ts precisely because of this function: a
  * card that is culled while it is picked is thrown away and rebuilt from nothing
  * when it comes back on screen, so a mark applied only to the live node would
  * quietly disappear the moment somebody panned away from it and back.
@@ -1318,9 +1318,9 @@ export const canRenameItem = (id: string) => {
  * inside instead. Whichever one you can actually see is the one that turns
  * editable, so the rename happens where you are already looking rather than in
  * a dialog thrown over the top of it. The same bargain a sticky note makes -
- * see canvas/notes.js, which this follows.
+ * see canvas/notes.ts, which this follows.
  *
- * A card line normally shows the stem alone (renderers.js runs it through
+ * A card line normally shows the stem alone (renderers.ts runs it through
  * baseName), but an edit puts the whole filename back on screen for as long as
  * it lasts. What gets committed is the item's name in full, and hiding half of
  * a string while someone edits it is how a .jpg goes missing without anyone
@@ -1405,7 +1405,7 @@ export function editItemName(id: string) {
 }
 
 // World y points up, CSS top points down - this negation is the only place the
-// two conventions meet on the layout side (viewport.js handles the other half).
+// two conventions meet on the layout side (viewport.ts handles the other half).
 // Rotation is negated for the same reason: a positive angle is anticlockwise in
 // the world, clockwise in CSS.
 function place(el: HTMLElement, item: Item) {
@@ -1547,7 +1547,7 @@ function resnap() {
   for (const [id, el] of nodes) {
     if (!el.isConnected) continue;
     // Connected, but not necessarily *here*. The note composer lifts a live card
-    // out of the world layer and into a dialog (openComposer, canvas/notes.js),
+    // out of the world layer and into a dialog (openComposer, canvas/notes.ts),
     // where it is scaled by the dialog rather than placed by the board - so the
     // device-pixel snap, which is a correction against the world transform, has
     // nothing to correct and would overwrite the scale that is drawing the sheet.
@@ -1565,16 +1565,6 @@ function resnap() {
 }
 
 /**
- * Paint effective z-order for every mounted or cached node.
- *
- * Raw item.z remains the persisted order used to infer that a note lies on a
- * lower host. visualStackOrder() folds each inferred sticky chain into one
- * external layer, then orders its members internally so notes still draw above
- * their host. Repainting all nodes is necessary when one layer moves: every
- * layer it crosses changes relative rank even though those items emitted no
- * geometry event of their own.
- */
-/**
  * id -> effective z-index, cached from the last restack.
  *
  * Read when sync() mounts a fresh node on a view-change frame, which does not
@@ -1589,6 +1579,16 @@ let stackIndex = new Map<string, number>();
 // a bare -3 in the arithmetic below would be a number nobody could check.
 const UNDERLAY_Z = -2;
 
+/**
+ * Paint effective z-order for every mounted or cached node.
+ *
+ * Raw item.z remains the persisted order used to infer that a note lies on a
+ * lower host. visualStackOrder() folds each inferred sticky chain into one
+ * external layer, then orders its members internally so notes still draw above
+ * their host. Repainting all nodes is necessary when one layer moves: every
+ * layer it crosses changes relative rank even though those items emitted no
+ * geometry event of their own.
+ */
 function paintStack() {
   const order = visualStackOrder();
   // Every fence goes *below the shadow underlay*, not merely below every card.
@@ -1726,7 +1726,7 @@ export function resetItems() {
   shadowLayerEl!.replaceChildren();
   // The display copies are keyed by content hash and a new board is new content;
   // release the ones this session made so a long-lived PWA does not accumulate
-  // them board after board (canvas/display.js).
+  // them board after board (canvas/display.ts).
   clearDisplay();
   // A new board gets a new pack, so its first three items carry a full set of
   // leans rather than whatever was left over from the last one.

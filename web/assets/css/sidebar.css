@@ -7,7 +7,11 @@
 #mobile-find-btn {
   position: fixed;
   top: max(16px, env(safe-area-inset-top));
-  left: max(16px, env(safe-area-inset-left));
+  /* --frame-inset-left is zero everywhere except a macOS desktop window, where
+     the system keeps its traffic lights in this exact corner and this button
+     steps clear of them. Declared in chrome.css beside the rest of the drawn
+     frame; the term is written here because this is the element that moves. */
+  left: calc(max(16px, env(safe-area-inset-left)) + var(--frame-inset-left));
   z-index: var(--z-panel);
   width: var(--chrome-button-w);
   height: var(--chrome-button-h);
@@ -80,7 +84,7 @@
    press is a twelve-unit change on a 46px square and nothing else. */
 #menu-btn:active span { background: var(--accent-deep); }
 /* Find rides the top-left under the menu button - a stable second affordance on
-   the Mobile board, on either lens (ui/mobile-header.js paintFind). It is not on
+   the Mobile board, on either lens (ui/mobile-header.ts paintFind). It is not on
    the [hidden] fade the pen uses: it toggles only on a layout change, not per
    scroll, so a plain show/hide reads right. */
 #mobile-find-btn {
@@ -91,7 +95,7 @@
 #mobile-find-btn svg { width: 18px; height: 18px; color: var(--accent-text); }
 /* The far corner, level with the menu button rather than stacked under it. This
    one comes and goes with the top of the Mobile board - paintButton() in
-   ui/mobile-header.js - and a control that appears and vanishes directly below
+   ui/mobile-header.ts - and a control that appears and vanishes directly below
    the one control that is always there reads as the menu sprouting a second
    row. The opposite corner is empty at that stop, #corner being the bottom one,
    so it arrives where nothing else is claiming space.
@@ -185,7 +189,7 @@
    genuine 900. Which is the general trap, and the reason the descriptor was
    worth fixing: a narrow @font-face range is indistinguishable, from every
    point downstream, from a font that simply has less.
-   ui/appearance.js sets the attribute; see markDisplayFace() for how a stack is
+   ui/appearance.ts sets the attribute; see markDisplayFace() for how a stack is
    judged to be a sans. */
 :root[data-display-sans] .wordmark :is(h1, h2) { font-weight: 900; }
 
@@ -362,8 +366,9 @@
   display: grid; place-items: center;
   padding: 0;
   border: 0;
-  /* --radius-pill rather than a flat 50% - see tokens.css:354. Square button,
-     not a disc, so it follows the corner axis with the panel it sits in. */
+  /* --radius-pill rather than a flat 50% - see the shape block in tokens.css.
+     Square button, not a disc, so it follows the corner axis with the panel it
+     sits in. */
   border-radius: var(--radius-pill);
   background: none;
   color: var(--ink-3);
@@ -447,8 +452,11 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 0 18px 16px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--rule-2) transparent;
+  /* The scrollbar is base.css's now, for every scroller in the app at once.
+     Asking for scrollbar-width here again would not have been a fallback - in
+     Chromium the standard properties *replace* ::-webkit-scrollbar on the
+     element that carries them, so this line was what would have switched the
+     app's own bar off on the one panel that scrolls most. */
 }
 
 .side-sec {
@@ -457,7 +465,7 @@
 }
 /* Not `:first-child`: on Mobile the first section of a tab may be hidden, and a
    hidden element is still the first child - so the panel drew a rule across the
-   top of its first visible heading. ui/panel.js marks whichever one is actually
+   top of its first visible heading. ui/panel.ts marks whichever one is actually
    showing. */
 .side-sec.is-first { border-top: 0; }
 .side-sec h2 {
@@ -619,7 +627,7 @@
    legend and Paper - and their summary stands where an h2 stands: no 4px
    lead-in above it, and the same 11px under it that .side-sec h2 sets.
    Everything else - the face, the tracking, the caret - is already inherited
-   from .advanced. ui/panel.js marks these, and marks them by the section having
+   from .advanced. ui/panel.ts marks these, and marks them by the section having
    no heading of its own, which is the same fact said the other way round. */
 .advanced.is-head { margin-top: 0; }
 .advanced.is-head > summary { padding-top: 0; }
@@ -724,14 +732,14 @@
    the bargain in the comment above is that it stays outlined until you are over
    it, and there is no being over it on a touch screen. Which matters more here
    than on any other button in the sheet: this is the destructive one, it arms
-   and counts down (armClear() in main.js), and a press that gives nothing back
+   and counts down (armClear() in main.ts), and a press that gives nothing back
    is a press somebody repeats. */
 .btn-row button.danger:active {
   background: var(--danger);
   border-color: var(--danger);
   color: var(--paper-card);
 }
-/* Armed, with presses left to count down - see armClear() in main.js. It fills
+/* Armed, with presses left to count down - see armClear() in main.ts. It fills
    in and stays filled rather than pulsing: the label is already saying the
    number out loud, and a button that flashes is a button people press again to
    make it stop, which is exactly the reflex the countdown is there to break. */
@@ -934,7 +942,7 @@
    way to reach that inner element: drop its inset and its own border, then
    give it the concentric inner radius (outer minus the frame it sits in). */
 /* The pigment control is a swatch button, not a native <input type="color">: it
-   opens the app's own picker (ui/color-picker.js) so a hand-picked pigment goes
+   opens the app's own picker (ui/color-picker.ts) so a hand-picked pigment goes
    through the same modal every other colour choice does. The button's fill is the
    current pigment, written inline by syncControls(). */
 .field .pigment-swatch {
@@ -953,7 +961,7 @@
 .field .pigment-swatch:hover { border-color: var(--accent-text); }
 
 /* The board's own dropped faces, listed under the type control so each can be
-   taken back off (ui/fonts.js). The whole block is hidden until there is one. */
+   taken back off (ui/fonts.ts). The whole block is hidden until there is one. */
 #appearance-fonts {
   display: flex;
   flex-direction: column;
@@ -1125,8 +1133,8 @@ kbd {
    and the three housekeeping buttons act on a board a reader has not got, so
    they are shown and switched off rather than hidden - hiding two thirds of
    the panel would turn the real sidebar back into a likeness of one, which is
-   the whole thing that page exists not to be. ui/settings-schema.js marks
-   which with `needsBoard` and says why; ui/panel.js sets `disabled` here, and
+   the whole thing that page exists not to be. ui/settings-schema.ts marks
+   which with `needsBoard` and says why; ui/panel.ts sets `disabled` here, and
    that - not this class - is what stops the click.
 
    Only the fade and the cursor, then. `pointer-events` goes on the controls
@@ -1158,4 +1166,4 @@ kbd {
    It is a mode over the board now - a mark on each card and one bar along the
    foot - so what is left of it in this panel is the button that opens it, and
    the rules moved to chrome.css beside the tour bar's. See the head of
-   ui/tour-edit.js for the argument. */
+   ui/tour-edit.ts for the argument. */

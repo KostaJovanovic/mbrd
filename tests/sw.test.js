@@ -276,7 +276,7 @@ test('a runtime miss goes to the network and is cached under this version only',
 });
 
 test('the dev-host test still matches the one in util.js', () => {
-  // sw.js cannot import util.js, so the two carry the same regex by hand and
+  // sw.js cannot import util.ts, so the two carry the same regex by hand and
   // say so in comments. If one is edited the other has to move with it, and
   // the failure mode otherwise is a service worker that caches the dev server.
   const util = read(join(WEB, 'assets', 'js', 'util.ts'));

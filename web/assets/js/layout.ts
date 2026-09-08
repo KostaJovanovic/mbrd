@@ -1,13 +1,12 @@
 // Where everything is: the two layout profiles, the Mobile pack, and every
 // write to an item's geometry.
 //
-// Fourth concern out of state.js, and the one that had to come as a single
-// piece however the audit listed it. "Mobile grid packing" and "layout and
-// settings profiles" read as two things and are not: placeMobileItems() calls
-// completeLayout()'s fitMobile, and completeLayout() calls placeMobileItems.
-// Splitting them would have been two modules importing each other.
+// Fourth concern out of state.ts, and one piece: the Mobile pack and the
+// profiles cannot be split, because placeMobileItems() calls completeLayout()'s
+// fitMobile and completeLayout() calls placeMobileItems - two modules importing
+// each other.
 //
-// What is here is everything that answers "where does this go":
+// Everything that answers "where does this go":
 //
 //   the Mobile pack   a first-fit over a column grid, with stuck notes riding
 //                     their host rather than taking a slot of their own
@@ -16,12 +15,12 @@
 //   the geometry writes  snapshotGeom / applyGeom / commitGeom, the undoable
 //                     triple every drag, nudge and arrange goes through
 //
-// The presnap memo comes with them (forgetPresnap, usableMemo). It is a
-// geometry fact - where an item was before the lattice took it - and snapping
-// is only its first caller.
+// The presnap memo comes with them (forgetPresnap, usableMemo): a geometry
+// fact - where an item was before the lattice took it - of which snapping is
+// only the first caller.
 //
-// Nothing above state.js imports this: state.js re-exports what callers have
-// always had. See board-store.js for why the floor is built this way.
+// Nothing above state.ts imports this: state.ts re-exports what callers have
+// always had. See board-store.ts for why the floor is built this way.
 
 
 import {
@@ -37,19 +36,19 @@ import {
   MOBILE_MIN_ROWS, MOBILE_BOTTOM_ROWS, mobileColumnCount,
   cloneSettings, layoutSettingsOf, settingsFor, defaultLayoutSettings, isLocked,
 } from './board-model.ts';
-// Types only. These were imported while this module was still unchecked, on the
-// rule that a @ts-nocheck suppresses the errors *in* a file without hiding its
-// declarations, so the four signatures below could be annotated ahead of the
-// rest of the file for board-schema.ts to read its geometry through. The file is
-// annotated now; the import stands unchanged, which is what that bet was for.
+// Types only. Imported while this module was still unchecked: a @ts-nocheck
+// suppresses the errors *in* a file without hiding its declarations, so the
+// four signatures below could be annotated ahead of the rest for
+// board-schema.ts to read geometry through. The file is annotated now and the
+// import stands unchanged.
 import type { Geometry, Item, LayoutMode, ItemMeta } from './board-model.ts';
 import type { Box } from './geometry.ts';
 
 /**
  * The four numbers a presnap memo holds - where an item was before the lattice
  * took it. Its own name because three things pass one around: the memo on
- * `meta.presnap`, the copy on a Geometry, and usableMemo(), which is the only
- * thing that decides whether what came out of a file is one.
+ * `meta.presnap`, the copy on a Geometry, and usableMemo(), the only thing that
+ * decides whether what came out of a file is one.
  */
 export type Presnap = { x: number, y: number, w: number, h: number };
 
@@ -105,7 +104,7 @@ const MOBILE_PACK_EPSILON = 1e-9;
  * a board that was already saved.
  *
  * Half, because a gap is shared: each of the two cards either side of it gives
- * up this much, the same arrangement CELL_GAP makes in geometry.js and for the
+ * up this much, the same arrangement CELL_GAP makes in geometry.ts and for the
  * same reason - an item at the edge of the column then has the same margin as
  * one in the middle of it.
  */
@@ -371,12 +370,12 @@ export function placeMobileItems(
   //
   // The Desktop title card is not on this board at all. It has no Mobile
   // geometry, it is never rendered here (the masthead above the column is drawn
-  // by canvas/mobile-frame.js and is not an item), and completeLayout() parks it
+  // by canvas/mobile-frame.ts and is not an item), and completeLayout() parks it
   // clear of the top edge. Left in, it pushed every import four or five rows
   // down; completeLayout() already takes it out of its own sweep.
   //
   // A hint is on the board, but it is leaving: the first real item to arrive
-  // takes all four away (see canvas/ghosts.js). Counting them cost an import the
+  // takes all four away (see canvas/ghosts.ts). Counting them cost an import the
   // six rows they filled, and by the time the file was drawn the rows above it
   // were empty - a photograph dropped onto a blank phone board landed a screen
   // down from the top with nothing over it. They are packed as *items* when the
@@ -486,11 +485,11 @@ export function repackMobileBoard() {
 /**
  * Whatever the lattice is measured in, with the fallback in one place.
  *
- * The *base* step, never the on-screen one. gridStep() in canvas/grid.js picks
+ * The *base* step, never the on-screen one. gridStep() in canvas/grid.ts picks
  * a spacing from the zoom so the dots never become a fill, which is right for
  * something drawn and wrong for something stored - see snapAll() below.
  *
- * Exported because main.js's Rearrange lays the whole board out at once and has
+ * Exported because main.ts's Rearrange lays the whole board out at once and has
  * to size the slots on the same lattice snapAll() would - and a second copy of
  * `gridStep > 0 ? gridStep : 64` in another file is how the two would come to
  * disagree about a board whose step is missing.
@@ -662,7 +661,7 @@ export function fitMobile<T extends Fittable>(
   spacing = 0,
 ) {
   // Every item but one. The Desktop title card is not on the Mobile board at
-  // all - canvas/items.js never mounts it there, the masthead is Mobile's title
+  // all - canvas/items.ts never mounts it there, the masthead is Mobile's title
   // - and completeLayout() parks it clear of the top edge so that nothing else
   // can run into a box that is not on the screen. That parking is above the top
   // edge, which is exactly what the clamp below undoes: it would drag the card
@@ -736,7 +735,7 @@ export function completeLayout(mode: LayoutMode): Geometry[] {
     // through to being packed like anything else.
     const riders = [];
     for (const it of board.items) {
-      // The Desktop title card is not on this board: canvas/items.js leaves it
+      // The Desktop title card is not on this board: canvas/items.ts leaves it
       // out of the Mobile mount pass, and the masthead above the column is
       // Mobile's title instead. So it is parked clear of the top edge rather
       // than left wherever Desktop had it.
@@ -751,7 +750,7 @@ export function completeLayout(mode: LayoutMode): Geometry[] {
       // one of those answers, and it costs nothing, because the one thing this
       // geometry is never used for on Mobile is drawing it.
       //
-      // The stick half of that is now also fixed at the stick end - sticky.js
+      // The stick half of that is now also fixed at the stick end - sticky.ts
       // refuses furniture as a host on either layout - so this parking is doing
       // the obstacle job it was written for and no longer the only thing
       // standing between a note and an invisible card.
@@ -858,7 +857,7 @@ export function completeLayout(mode: LayoutMode): Geometry[] {
     // first, leftmost on a tie. That used to be a claim about two loops written
     // from each other - and by the time it was written here they had come apart,
     // over spanning and over how level two columns have to be to count as level.
-    // It is one call now (packColumns in arrange/columns.js) with the two
+    // It is one call now (packColumns in arrange/columns.ts) with the two
     // differences as arguments, so fed the Feed's order this reproduces the
     // Feed's wall as a rectangular block, which is the one arrangement that can
     // honestly be called "the same board".
@@ -1019,10 +1018,10 @@ export function setBoardMode(mode: string | null) {
  * Both halves already leave out anything they are handed, which is what keeps a
  * marquee from moving a card once as a selection and again as a follower.
  *
- * Here rather than in canvas/input.js, where it was written and where the drag
+ * Here rather than in canvas/input.ts, where it was written and where the drag
  * that needed it lives, because it turned out not to be a fact about gestures:
  * it is the set a geometry write acts on, which is this module's subject, and
- * canvas/items.js needs the same set to lift a region and its cards together on
+ * canvas/items.ts needs the same set to lift a region and its cards together on
  * hover. A copy in the renderer would have been the two relations meeting in a
  * third place, and one of the two was already stale by then.
  */
@@ -1059,7 +1058,7 @@ export function snapshotGeom(ids: Iterable<string>): GeomSnap[] {
     const presnap = usableMemo(it.meta?.presnap);
     g.presnap = presnap ? { ...presnap } : null;
     // Not geometry, and here anyway. "Unstuck on purpose" is the one durable
-    // piece of stickiness state (see sticky.js) and the two things that change
+    // piece of stickiness state (see sticky.ts) and the two things that change
     // it - the arrow keys, and a drop that finds a host - are both gestures that
     // move something. So it belongs to the same undo entry as the movement that
     // set it, and riding in the pair is how it gets there without a second
@@ -1183,7 +1182,7 @@ export function commitGeom(
     if (!driven) return;
     restick(driven);
     // These have just been let go, so their ten seconds start now - see the
-    // settling block in sticky.js. Beside restick() and handed the same set for
+    // settling block in sticky.ts. Beside restick() and handed the same set for
     // the same reason: a note towed across the board by the photograph under it
     // was not put down, and its grace period is not its to have again.
     //
@@ -1216,7 +1215,7 @@ export function commitGeom(
  * Guarded on no-change, because it runs from applyGeom - which a drag calls
  * every frame - and the restick() below must not fire sixty times a second.
  * That restick is the point of routing this through a function at all: the
- * memo in sticky.js still holds whatever the item was stuck to before it was
+ * memo in sticky.ts still holds whatever the item was stuck to before it was
  * unstuck, and the flag is read *in front of* the memo rather than instead of
  * it, so clearing the flag has to send the question back to the measurement.
  */
@@ -1255,7 +1254,7 @@ export function usableMemo(pre: unknown): Presnap | null {
 // Snapping the whole board
 //
 // The board-wide half of the lattice, beside SNAP_KEYS and the presnap memo it
-// is written in terms of rather than in state.js, where it used to sit calling
+// is written in terms of rather than in state.ts, where it used to sit calling
 // down into all three. It is a geometry write like every other one in this
 // file: a before list, an after list, and one commit that carries them.
 //
@@ -1263,7 +1262,7 @@ export function usableMemo(pre: unknown): Presnap | null {
 // flag used to be written by setSetting() *outside* this command, so one Ctrl+Z
 // took the board off the lattice and left the checkbox ticked - the only place
 // in the app where undo produced a state nobody could have produced by hand.
-// state.js still owns setSetting(); what it hands over on the `snap` key is the
+// state.ts still owns setSetting(); what it hands over on the `snap` key is the
 // value, and everything after that is here.
 // ---------------------------------------------------------------------------
 
@@ -1287,7 +1286,7 @@ export function usableMemo(pre: unknown): Presnap | null {
  *   100%, and the same click would do two different things depending on how far
  *   out you happened to be.
  * - **Edges land on the lattice, not centres**, and the arithmetic is latticeBox() in
- *   geometry.js, shared with the gestures in canvas/input.js so that laying the
+ *   geometry.ts, shared with the gestures in canvas/input.ts so that laying the
  *   board out and then dragging one item across it agree about where things go.
  *   What makes a snapped board look snapped is items sitting flush in cells; an
  *   item whose size is an odd number of cells therefore ends up with its centre

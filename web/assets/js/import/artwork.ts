@@ -3,14 +3,14 @@
 //
 // Three container formats, parsed by hand: ID3v2 for .mp3, the MP4 atom tree
 // for .m4a/.mp4/.aac, and FLAC's metadata blocks. No dependency, the same way
-// storage/zip.js is no dependency - these are header formats, and a parser that
+// storage/zip.ts is no dependency - these are header formats, and a parser that
 // only has to find one field in each is a short one.
 //
 // All three readers live here rather than one per caller, because they are the
 // same walk through the same containers and only differ in which field they
-// stop at. coverArt() is what the importer wants - see import/drop.js.
+// stop at. coverArt() is what the importer wants - see import/drop.ts.
 // audioTags() is what the optimiser wants, so that a track re-encoded to Opus
-// arrives at the other end still knowing who made it - see optimize/opus.js.
+// arrives at the other end still knowing who made it - see optimize/opus.ts.
 // streamDuration() is what the playlist wants, and it is the one reader here
 // that walks the audio rather than the metadata around it - see its own note.
 //
@@ -29,7 +29,7 @@ import { oversize, isOversize, mb } from '../consent.ts';
 /**
  * One tag, as a Vorbis-comment pair: `['ARTIST', 'Talk Talk']`.
  *
- * Named because it is what leaves this module and what optimize/opus.js writes -
+ * Named because it is what leaves this module and what optimize/opus.ts writes -
  * see audioTags() for why the pairs are Vorbis-shaped whatever they were read
  * out of.
  */
@@ -94,7 +94,7 @@ const MAX_ATOMS = 4096;
  * The picture embedded in an audio file, as a File, or null.
  *
  * A File rather than a Blob so it can go straight to addFile() in
- * storage/assets.js, which wants a name and a type - and so the asset registry
+ * storage/assets.ts, which wants a name and a type - and so the asset registry
  * remembers it arrived as "cover.jpg" rather than as nothing.
  */
 export async function coverArt(file: Blob, lift = false): Promise<File | null> {
@@ -141,7 +141,7 @@ export const mayHaveArt = (name: string) =>
  *
  * Vorbis keys because that is what the destination speaks - an Opus stream
  * carries its metadata as a Vorbis comment header, so translating on the way
- * out of ID3 and MP4 here means the writer in optimize/opus.js has one shape to
+ * out of ID3 and MP4 here means the writer in optimize/opus.ts has one shape to
  * write and no opinions about where a title came from.
  *
  * Meek in exactly the way coverArt() is: an unparseable file, a container with

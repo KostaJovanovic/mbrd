@@ -45,7 +45,7 @@
 .ghost-card {
   /* .card gives us var(--paper-card) and an inset hairline. The paper stays;
      the hairline is what the dash replaces, so it is the box-shadow that goes -
-     and with it the drop shadow that .card never had, since canvas/items.js
+     and with it the drop shadow that .card never had, since canvas/items.ts
      builds no #item-shadows twin for this type. Carried here in CSS instead,
      exactly as .title-card carries its own for the same reason. */
   box-shadow: var(--item-shadow);
@@ -306,7 +306,7 @@
    piece of tape is outside the thing it is holding down.
 
    Where each strip sits is decided once, when the hint is minted (see tapeFor()
-   in state.js), and travels in the item rather than being rolled here. Culling
+   in state.ts), and travels in the item rather than being rolled here. Culling
    throws a card's node away and rebuilds it from scratch when it comes back on
    screen, so a placement chosen at render time would move every time the board
    panned past. Random per board; fixed for that board's life.
@@ -428,7 +428,7 @@
    what the card is for.
 
    Keyed on the board mode rather than a width query, because it is the layout
-   that changed and not the window: main.js writes data-board-mode on <html>,
+   that changed and not the window: main.ts writes data-board-mode on <html>,
    and a Mobile board shown on a laptop is still a Mobile board. */
 :root[data-board-mode="mobile"] .ghost-card {
   --card-pad-x: 16px;
@@ -461,7 +461,7 @@
 }
 /* A row naming something a phone cannot do - the marquee on the first card, the
    Arrange tool on the third, which is data-desktop on the toolbar too.
-   canvas/ghosts.js marks them rather than shipping a second list per layout; see
+   canvas/ghosts.ts marks them rather than shipping a second list per layout; see
    HintRow there. Hidden and not reworded: a marquee on a screen is a double-tap
    and then a drag, which is not four words and is not what somebody on a phone
    needs told. */
@@ -550,7 +550,7 @@
    .ghost-go:hover is the exception in this file - a blend of two pigments, with
    no rgb() spelling and no value that can be written here, since --accent may
    be something somebody picked a moment ago. It reads a token that
-   legacyBlends() in ui/appearance.js computes, which is the same mechanism the
+   legacyBlends() in ui/appearance.ts computes, which is the same mechanism the
    note and sticker colours use. */
 @supports not (color: color-mix(in srgb, red, blue)) {
   @media (hover: hover) {

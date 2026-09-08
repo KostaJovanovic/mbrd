@@ -216,7 +216,7 @@ test('no view frame writes an inherited custom property onto #viewport', async (
 
 test('Mobile masthead title preserves a trailing space while it is edited', async () => {
   // The shared inline board-name editor, which the masthead and the Desktop
-  // title card both use. Lifted out of main.js into ui/board-title.js.
+  // title card both use. Lifted out of main.ts into ui/board-title.ts.
   const mod = await readFile(
     new URL('../web/assets/js/ui/board-title.ts', import.meta.url), 'utf8');
   assert.match(mod, /cleanBoardTitleDraft\(field\.textContent\)/);
@@ -452,7 +452,7 @@ test('the Playlist lens shows the player and hides the canvas, outside any width
 test('the feed surface is a sibling of #viewport, never a child of it', async () => {
   // #viewport has paint containment and publishes --iz to its subtree; a feed
   // nested inside would inherit that custom property and be caught by the
-  // whole-board invalidation canvas/mobile-frame.js exists to avoid.
+  // whole-board invalidation canvas/mobile-frame.ts exists to avoid.
   const html = await readFile(new URL('../web/index.html', import.meta.url), 'utf8');
   const viewportClose = html.indexOf('<aside id="sidebar"');
   const feedAt = html.indexOf('id="mobile-feed"');

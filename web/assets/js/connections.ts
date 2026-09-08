@@ -2,10 +2,10 @@
 //
 // The list is `board.connections` - unordered pairs of item ids, top-level
 // because items are shared across both layouts while geometry is not (see
-// board-model.js). That module owns the *shape* of a connection: pairKey(),
+// board-model.ts). That module owns the *shape* of a connection: pairKey(),
 // MAX_CONNECTIONS, the CONN_* tables, connMeta() and normalizeConnections().
 // This one owns every write to the list, and the index that makes asking about
-// it cheap. The split is the same one sticky.js and fences.js have with the
+// it cheap. The split is the same one sticky.ts and fences.ts have with the
 // mutations that act on their answers: a question about what a thing is, and a
 // separate place where it is changed.
 //
@@ -20,7 +20,7 @@
 // The pruning happens once, at the edges: on the way into a file and on the way
 // out of one, against the items that file actually holds (live *and* binned).
 // So nothing accumulates on disk, and nothing is lost while the app is running.
-// Both of those edges are in board-schema.js, and neither is here on purpose -
+// Both of those edges are in board-schema.ts, and neither is here on purpose -
 // a module that prunes while the app runs is a module that quietly loses work.
 //
 // Every write below is one commit(), never one per pair. That is not a
@@ -29,7 +29,7 @@
 // entries would also be forty of the history limit spent on a single button
 // press, which is to say the rest of the session's undo thrown away.
 //
-// Nothing here imports state.js - see tests/layers.test.js, where this is BASE.
+// Nothing here imports state.ts - see tests/layers.test.js, where this is BASE.
 
 import { toast } from './notify.ts';
 import { bus } from './board-store.ts';
@@ -84,7 +84,7 @@ export function connectedTo(id: string) {
  * One function rather than a connect and a disconnect, because it is one
  * gesture: the connector tool run again on a pair that already has a line is
  * how a line is removed. The alternative was making connections selectable,
- * which means hit-testing a path in canvas/input.js and a selection model
+ * which means hit-testing a path in canvas/input.ts and a selection model
  * holding things that are not items - a great deal of machinery for a delete
  * key. See research/old/toolbar-2026-08-03.md.
  *
@@ -179,7 +179,7 @@ const sameConnMeta = (a: ConnMeta | null | undefined, b: ConnMeta | null | undef
  * so the same validation the file reader applies also gates a live edit, and a
  * patch that sets everything back to a default leaves a bare `[a, b]` again. One
  * commit, and it emits 'connections' like the others - which is what makes
- * canvas/web.js repaint the line with its new look. No geometry changes, so the
+ * canvas/web.ts repaint the line with its new look. No geometry changes, so the
  * cached route is reused; only the drawing is redone.
  *
  * Returns whether a matching connection was found to edit.

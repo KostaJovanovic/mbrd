@@ -4,7 +4,7 @@
 // tool that looks for dead CSS will therefore offer to delete it, and every one
 // of them will be wrong - the token is not what keeps Playfair in the app, but
 // it is what a saved board may be carrying. A board stores per-token overrides
-// (see the pre-paint restore in index.html and safeVars() in ui/look.js), the
+// (see the pre-paint restore in index.html and safeVars() in ui/look.ts), the
 // font menus offer Playfair by name, and a face offered by name is a face a
 // board can be sitting on years later.
 //

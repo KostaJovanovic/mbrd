@@ -3,7 +3,7 @@
 // Every button on the bar is a single verb, and behind three of them there was
 // a choice you could not see. Arrange laid the board out under whatever layout
 // a <select> in the settings panel happened to be set to. Note gave you
-// whichever of the four sheets a counter in import/drop.js was up to, and
+// whichever of the four sheets a counter in import/drop.ts was up to, and
 // nothing anywhere could ask it for a different one. Colour opened a picker on
 // grey. All three answers existed; none of them was on the bar.
 //
@@ -16,7 +16,7 @@
 // ── Why there is almost nothing here ──
 //
 // The panel is the right-click menu's, opened through openAnchored() in
-// ui/menu.js. That module already measures and places, walks the rows with the
+// ui/menu.ts. That module already measures and places, walks the rows with the
 // arrow keys, and closes on outside pointerdown, wheel, scroll, resize, blur
 // and Escape - which is the whole of what a flyout needs and the whole of what
 // a second implementation would have got wrong differently. What is left in
@@ -73,7 +73,7 @@ const LINGER = 250;
 /**
  * What the three builders below ask of the command surface, and nothing else.
  *
- * Named rather than borrowed from commands.js on purpose: that module imports
+ * Named rather than borrowed from commands.ts on purpose: that module imports
  * this one, and the arrow may only go one way - the same reason `cmds` is handed
  * in rather than imported. It is also what lets a test call a builder with a
  * stub, which tests/flyout.test.js does.
@@ -280,10 +280,10 @@ function open(btn: HTMLElement, focus: boolean, delay = 0) {
 /**
  * The layouts, and the two dials that go with them.
  *
- * One icon on all seven, the way stickerTintEntries() puts one i-swatch on all
- * eight tints: these are a radio, the tick is the state, and seven different
- * drawings for seven arrangements would be seven pictures nobody could read at
- * 15px. The list itself is arrange/arrangements.js's, in its order, so the
+ * One icon on all eight, the way stickerTintEntries() puts one i-swatch on all
+ * eight tints: these are a radio, the tick is the state, and eight different
+ * drawings for eight arrangements would be eight pictures nobody could read at
+ * 15px. The list itself is arrange/arrangements.ts's, in its order, so the
  * flyout and the panel's <select> cannot come to hold different sets.
  *
  * Desktop's catalogue and not Mobile's, and that needs no test: Arrange is
@@ -343,7 +343,7 @@ export function noteEntries(cmds: FlyoutCommands) {
  * The board's own pigments, as swatch cards - and the picker, still.
  *
  * The same five the connection palette offers (connectionColorEntries in
- * ui/menu.js) and the same words for them, because they are the same five
+ * ui/menu.ts) and the same words for them, because they are the same five
  * colours and a board should not have two vocabularies for its own paint. What
  * makes this worth having over the picker is that these follow the board: on
  * one that has coloured itself from its pictures, these are that board's
@@ -378,7 +378,7 @@ export function colourEntries(cmds: FlyoutCommands) {
  * text, so a token written as `color-mix(in srgb, ...)` - which several of
  * these are, on several of the themes - comes out as that string and is not a
  * colour anything can store. Painting it and reading `color` makes the engine
- * do the resolving, which is the same trick boardInk() uses in canvas/model.js.
+ * do the resolving, which is the same trick boardInk() uses in canvas/model.ts.
  *
  * swatchHex() has the last word, so anything that still fails to resolve lands
  * on SWATCH_DEFAULT rather than writing nonsense into a board file.

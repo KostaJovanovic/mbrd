@@ -86,7 +86,7 @@ const ASSETS_DIR = 'assets/';
  * and nothing else, so an id that was never a digest quietly breaks three
  * things that look unrelated.
  *
- * The shape itself is util.js/isHash, which is also what state.js holds items
+ * The shape itself is util.ts/isHash, which is also what state.ts holds items
  * to on the way in - the two ends of the same rule.
  */
 
@@ -275,7 +275,7 @@ export async function packBoard(
   const assets: { hash: string, asset: Asset, label: string }[] = [];
   for (const item of referenced) {
     // Plural: an item can name two lots of bytes, its own and the picture it
-    // was given (see setItemCover in state.js). Both have to be in the archive
+    // was given (see setItemCover in state.ts). Both have to be in the archive
     // or the board comes back with a card that has lost its cover.
     for (const hash of itemHashes(item)) {
       if (seen.has(hash)) continue;
@@ -403,12 +403,6 @@ export async function packBoard(
 }
 
 /**
- * What to call an item in an error the user has to act on. Its name if it has
- * one, the first words of a note if it does not, and the bare hash only as a
- * last resort - "3 items have no stored data (photo.jpg, ...)" is something
- * you can go and look for on the board; a list of SHA-256 digests is not.
- */
-/**
  * A note's own words, as this file may spell them into a filename, a heading or
  * an error. `meta` is `unknown` per key by design (see board-model.ts) and the
  * three readers below all want the same string, so the narrowing is done once
@@ -417,6 +411,12 @@ export async function packBoard(
  */
 const noteTextOf = (item: Item) => (typeof item.meta?.text === 'string' ? item.meta.text : '');
 
+/**
+ * What to call an item in an error the user has to act on. Its name if it has
+ * one, the first words of a note if it does not, and the bare hash only as a
+ * last resort - "3 items have no stored data (photo.jpg, ...)" is something
+ * you can go and look for on the board; a list of SHA-256 digests is not.
+ */
 function nameOf(item: Item, hash: string) {
   if (item.name) return item.name;
   if (item.type === 'note') {
@@ -561,7 +561,7 @@ function noteId(name: string) {
 // Drawing an audio card's bars means decoding the entire file - a few hundred
 // milliseconds for a long track, times every audio card on the board, all at
 // once on the way in. What comes out of that is tiny: a couple of hundred RMS
-// readings in [0, 1], which is why canvas/audio.js caches them on the item, and
+// readings in [0, 1], which is why canvas/audio.ts caches them on the item, and
 // why they have been riding along inside board.json. This gives them a file,
 // for the reason notes have one and for a second reason of their own.
 //
@@ -635,7 +635,7 @@ function withoutPeaks(boardData: PackedBoard, waveforms: Map<string, number[]>) 
     const hash = item.asset?.hash;
     const sidecar = !!hash && waveforms.has(hash);
     // The optimiser's originals. They are kept in the browser so that undoing an
-    // optimisation has something to put back (see swapAssets in state.js), but
+    // optimisation has something to put back (see swapAssets in state.ts), but
     // an export is the thing the optimising was *for* - the archive carries the
     // small copies alone, and a `was` spelled into it would name bytes the
     // packer never wrote. Dropped here rather than at the item, so a board that
@@ -700,7 +700,7 @@ function parseWaveform(text: string): number[] | null {
  * Whether something is a plausible set of readings, in the loose sense this
  * layer can judge: normalised amplitudes, none of them a string, a NaN or a
  * negative number. Deliberately not a check for one exact length - the
- * resolution is canvas/audio.js's business, and a board written at some other one
+ * resolution is canvas/audio.ts's business, and a board written at some other one
  * should arrive there to be rejected on its own terms rather than be thrown
  * away here. The ceiling is only so that a hand-written file cannot ask this
  * to carry a million numbers around.

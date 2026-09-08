@@ -1,6 +1,6 @@
 // The board switcher: the shelf of boards this browser is keeping, drawn.
 //
-// The storage half is in storage/storage.js and storage/library.js; this is only
+// The storage half is in storage/storage.ts and storage/library.ts; this is only
 // the face of it - a grid of the saved boards, each a thumbnail and a title,
 // click one to open it, with a New board that keeps the current one. It renders
 // from the library index alone (title and thumbnail live there), so opening the
@@ -160,7 +160,7 @@ async function render() {
   fresh.textContent = 'New board';
   // newBoard(), which is now the only New: the top-level one and the library's
   // collapsed into it when Open and New started filing the outgoing board on
-  // the shelf. No thumbnail is passed any anywhere here any more - stashCurrent()
+  // the shelf. No thumbnail is passed anywhere here any more - stashCurrent()
   // takes its own through the injection main.ts wires. See setBoardThumb().
   fresh.addEventListener('click', () => guard(async () => {
     await newBoard();
