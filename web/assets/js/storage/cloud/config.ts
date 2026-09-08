@@ -17,8 +17,8 @@
 // boot where nobody shares anything. optimize/ hangs off the tree on exactly
 // these terms and CLAUDE.md states them.
 //
-// So this file imports nothing, is imported by provider.ts, and holds two
-// strings.
+// So this file imports nothing, is imported by provider.ts and google.ts, and
+// holds two strings.
 //
 // ── Why these are in the clear, and what actually protects them ──
 //

@@ -28,10 +28,10 @@
 // it. So the positive relation stays measured, exactly as argued above, and only
 // the negative override is written down. Absent means the ordinary thing.
 //
-// Third concern out of state.js, and the first that needed the board itself to
-// go down before it could follow - see board-model.js. Nothing here commits or
+// Third concern out of state.ts, and the first that needed the board itself to
+// go down before it could follow - see board-model.ts. Nothing here commits or
 // announces: these are questions about geometry, and the mutations that act on
-// the answers stay in state.js.
+// the answers stay in state.ts.
 
 import { overlapFraction } from './geometry.ts';
 import { isRecord } from './util.ts';
@@ -74,13 +74,13 @@ const cannotHost = (it: Item, rider: unknown) => {
   // The title card: a note stuck to it landed in the packed Mobile first row as
   // a rider nothing had treated as an obstacle. Same answer - a sticker is
   // decoration and is not meant to be an obstacle. It rides, nothing packs
-  // around it, and layout.js parks the title card clear of the Mobile board
+  // around it, and layout.ts parks the title card clear of the Mobile board
   // anyway, so a sticker on it goes along.
   //
   // A hint card is still refused. A hint is deleted the moment any real content
   // arrives, so a sticker stuck to one is a sticker stuck to something about to
   // stop existing - and unlike a note, whose delete leaves it behind, a sticker
-  // would go with it (see the delete cascade in state.js).
+  // would go with it (see the delete cascade in state.ts).
   // `unknown` in, read through isRecord, for the reason isFurniture() gives:
   // the rider is an item, or a bare `{ type }` stub for a shape being dragged
   // out of the sticker window, and no one shape names both.
@@ -92,8 +92,8 @@ const cannotHost = (it: Item, rider: unknown) => {
  * What kinds of thing stick: notes, and stickers.
  *
  * One predicate rather than the four separate `type === 'note'` tests this file
- * used to carry, and the same one is read in stacking.js, state.js's serializer
- * and layout.js. Completeness is the whole reason it is exported: a kind that
+ * used to carry, and the same one is read in stacking.ts, state.ts's serializer
+ * and layout.ts. Completeness is the whole reason it is exported: a kind that
  * sticks in stuckTo() but is not recognised by stuckFollowers() is a thing that
  * gets left behind when its host moves, which is the one failure this relation
  * cannot have. Keeping the list in one place is what makes "all of them or none
@@ -154,14 +154,14 @@ const sticks = new Map<string, unknown>();
  * the item. Area rather than the note's centre or its top corners, because
  * those are questions about three particular points and this is a question
  * about a sheet of paper lying on something - a note overlapping a photo's
- * corner by a third of itself is obviously stuck to it, and no test of the
- * centre will ever say so.
+ * corner by a third of itself is stuck to it, and no test of the centre will
+ * ever say so.
  *
  * A host must be a real item. The title card and the hint cards are the app's
  * own furniture: a note stuck to the title card travelled with it and, on
  * Mobile, landed in the packed first row as a rider nothing had treated as an
  * obstacle - while a note stuck to a hint was stuck to something deleted the
- * moment any real content arrived. layout.js parks the title card clear of the
+ * moment any real content arrived. layout.ts parks the title card clear of the
  * Mobile board for the same reason, which fixed the obstacle end of it; this is
  * the stick end.
  *
@@ -253,7 +253,7 @@ export function wouldStick(
  * guard in stuckTo() skips.
  *
  * Exported for one caller: the mutation that clears meta.loose when a drop
- * finds a host (resettle(), in state.js). It cannot ask stuckTo(), because the
+ * finds a host (resettle(), in state.ts). It cannot ask stuckTo(), because the
  * flag it is deciding whether to remove is exactly what stuckTo() refuses to
  * look past. The memo is left alone - this reads live geometry and nothing else,
  * so the caller is free to clear the flag and restick() afterwards.
@@ -429,7 +429,7 @@ export function restick(ids: Iterable<string>) {
  * host is on the board.
  *
  * The title card is named by its constant rather than looked up, because it is
- * not on the board yet: loadBoard() runs this before main.js seeds the card, so
+ * not on the board yet: loadBoard() runs this before main.ts seeds the card, so
  * there is nothing to ask about the type. Hints need no such test - a load drops
  * every ghost, so a record naming one finds no host and simply measures again.
  */

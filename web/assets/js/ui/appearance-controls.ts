@@ -1,7 +1,7 @@
 // The Look tab's controls: the rows, their wiring, and keeping them in step
 // with the look.
 //
-// Lifted out of ui/appearance.js, which was 1,261 lines of two things - the
+// Lifted out of ui/appearance.ts, which was 1,261 lines of two things - the
 // look *model* (what a look is, how it is applied, stored and derived from
 // pictures) and the *panel* that drives it. They read as two halves and are
 // not: the controls reached upward for thirteen names and the model reached
@@ -9,16 +9,16 @@
 //
 // The seam is `d`, below. Everything this module needs from the look model
 // arrives through initAppearanceControls() rather than by import, which is what
-// keeps the arrow pointing one way - ui/appearance.js imports this, and this
+// keeps the arrow pointing one way - ui/appearance.ts imports this, and this
 // imports nothing of it. `current` comes through as a *getter* because the
 // model reassigns it (a board arriving replaces the whole look), so a captured
 // reference would go stale the first time a .mbrd was opened.
 //
 // Two things not to move back. `toHex()` lives here because the only thing that
-// needs #rrggbb is `<input type="color">`, which is a control. And the panel is
-// built once and repainted, never rebuilt - ui/appearance.js and ui/sidebar.js
-// hold their nodes, so a rebuild would hand them elements nothing is listening
-// to.
+// needs #rrggbb is pickColor(), which the pigment swatch opens, and the swatch
+// is a control. And the panel is built once and repainted, never rebuilt -
+// ui/appearance.ts and ui/sidebar.ts hold their nodes, so a rebuild would hand
+// them elements nothing is listening to.
 
 import { board, setSetting } from '../state.ts';
 import { appearanceControlVisible } from '../layout-settings.ts';
@@ -28,7 +28,7 @@ import { field, tickSlider } from './controls.ts';
 import { pickColor } from './color-picker.ts';
 
 // Not `document.documentElement` at module scope: this file must import without
-// a browser (tests/imports.test.js), and ui/appearance.js is already one of the
+// a browser (tests/imports.test.js), and ui/appearance.ts is already one of the
 // three modules exempt from that. A fourth would be a regression, so the root
 // element is taken when the panel is initialised instead - which is after the
 // document exists by definition.
@@ -43,7 +43,7 @@ export type FaceOption = { value: string, label: string };
  * A union rather than one object with everything optional, because the three
  * are genuinely different controls: only a range has a step to round its
  * readout to, and only a font row has a list to choose from. The table itself
- * lives in ui/appearance.js - this is the shape it hands over.
+ * lives in ui/appearance.ts - this is the shape it hands over.
  */
 export type FontControl = { var: string, label: string, host: string, type: 'font', options: readonly FaceOption[] };
 export type ColorControl = { var: string, label: string, host: string, type: 'color' };
@@ -54,7 +54,7 @@ export type RangeControl = {
 export type ControlSpec = FontControl | ColorControl | RangeControl;
 
 /**
- * The look, as the panel reads it back. See ui/appearance.js, which owns it -
+ * The look, as the panel reads it back. See ui/appearance.ts, which owns it -
  * the type lives here because the arrow between the two modules only points
  * that way.
  *
@@ -132,10 +132,10 @@ export const inputs = new Map<string, Row>();
  * A mode rather than a colour, and deliberately not a palette name: it is never
  * written to `look.palette`, and no [data-palette] block in tokens.css answers
  * to it. The menu shows it whenever the board is actually wearing extracted
- * pigments - dynamicOn() in ui/appearance.js - so the row reads as the state the
+ * pigments - dynamicOn() in ui/appearance.ts - so the row reads as the state the
  * board is in rather than as a button somebody once pressed.
  *
- * The same string is the option's value in ui/settings-schema.js, which is data
+ * The same string is the option's value in ui/settings-schema.ts, which is data
  * and imports nothing from here; tests/settings-panel.test.js holds the two
  * together, the same bargain as the source dial's top stop.
  */
@@ -202,7 +202,7 @@ export function buildControls() {
       input.addEventListener('change', () => d.setVar(c.var, input.value));
     } else if (c.type === 'color') {
       // A swatch that opens pickColor() - the same modal every other colour choice
-      // in the app uses (commands.js addSwatch), rather than the native
+      // in the app uses (commands.ts addSwatch), rather than the native
       // <input type="color"> that reads as a different app's control on the glass.
       input = document.createElement('button');
       input.type = 'button';
@@ -364,7 +364,7 @@ function format(value: string, spec: RangeControl) {
  *
  * Both branches drop every pigment the look is carrying and both mark the look
  * accordingly, which is why neither happens here: they are the look model's, in
- * ui/appearance.js, and each runs its own sync on the way out.
+ * ui/appearance.ts, and each runs its own sync on the way out.
  */
 export function wirePalette() {
   // The picker is a button, not a <select>: an <option> cannot paint a swatch
@@ -385,7 +385,7 @@ export function wirePalette() {
 
 /**
  * Normalise whatever the browser reports for a colour token into #rrggbb, which
- * is the only thing <input type="color"> accepts.
+ * is the only thing pickColor() accepts.
  */
 export function toHex(value: string): string | null {
   const v = value.trim();

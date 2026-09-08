@@ -1,6 +1,6 @@
 // Where the four presets actually sit in OKLCh.
 //
-// ui/pigments.js builds a palette out of photographs to the same rule the
+// ui/pigments.ts builds a palette out of photographs to the same rule the
 // presets were built on, and "the same rule" has to mean numbers off the real
 // thing rather than numbers that sound about right. This reads tokens.css,
 // converts every literal pigment in it, and prints the range and mean per token

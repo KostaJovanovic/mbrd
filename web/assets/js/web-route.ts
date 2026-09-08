@@ -6,10 +6,10 @@
 // happening, and it is the only genuinely new algorithm the connector feature
 // needed.
 //
-// Pure, and at the top level beside web-graph.js for exactly that reason: no
+// Pure, and at the top level beside web-graph.ts for exactly that reason: no
 // DOM, no state, no viewport, no spatial index. The obstacles are *handed in*.
-// canvas/web.js is the half that knows which cards are near enough to matter
-// (it asks canvas/spatial.js) and the half that draws; this half is arithmetic
+// canvas/web.ts is the half that knows which cards are near enough to matter
+// (it asks canvas/spatial.ts) and the half that draws; this half is arithmetic
 // over boxes and can be checked in node.
 //
 // ---------------------------------------------------------------------------
@@ -64,12 +64,12 @@
 //   length of the overlap). Nothing is refused, so no route is ever lost to
 //   this; a route with no better answer pays the charge and draws where it was
 //   going to. The lines to avoid are handed in through `opts.avoid` by
-//   canvas/web.js, which is the half that knows there is more than one line -
+//   canvas/web.ts, which is the half that knows there is more than one line -
 //   this file still sees exactly one route at a time.
 // - **Nothing is cached.** A path is a function of where the cards are now, the
 //   same way the web it replaced was derived rather than saved. There is
 //   nothing to invalidate and nothing to go stale. The performance rule that
-//   makes that affordable lives in canvas/web.js: no routing during a drag, and
+//   makes that affordable lives in canvas/web.ts: no routing during a drag, and
 //   only the affected connections rerouted on the drop.
 // - **Rotation is approximated outward.** A turned card is treated as the
 //   axis-aligned box that contains it (rotatedExtents), so a route gives a
@@ -99,11 +99,11 @@
 // fillet cuts *inside* the corner it rounds, and a corner is exactly the place
 // the route is hugging a card at the clearance. So the room a curve needs is
 // bought before the search rather than taken out of the card afterwards.
-// canvas/web.js owns that arithmetic, because it owns the corner radius.
+// canvas/web.ts owns that arithmetic, because it owns the corner radius.
 //
 // The shape is a parameter rather than a read, which is the whole point: this
-// file imports geometry.js and nothing else - tests/layers.test.js holds the
-// list - so canvas/web.js is what turns a data-whimsy attribute and a board's
+// file imports geometry.ts and nothing else - tests/layers.test.js holds the
+// list - so canvas/web.ts is what turns a data-whimsy attribute and a board's
 // grid step into the three lines above.
 
 import { rotatedExtents, segmentMeetsRect, distSqToMidpoint } from './geometry.ts';
@@ -121,7 +121,7 @@ export type Anchor = { edge: Point, stub: Point };
 
 /**
  * Which of the lines meeting one card's face this route is, and how many there
- * are. See anchorsFor() for where it lands the endpoint, and canvas/web.js for
+ * are. See anchorsFor() for where it lands the endpoint, and canvas/web.ts for
  * who counts - this module sees one route at a time and is told.
  */
 export type Slot = { index: number, count: number };
@@ -202,7 +202,7 @@ export const STUB = 20;
 const SPREAD = 0.66;
 
 /**
- * The shapes a route may be asked for - see the header, and canvas/web.js for
+ * The shapes a route may be asked for - see the header, and canvas/web.ts for
  * which level of the whimsy axis asks for which.
  *
  * A set rather than a check at each use, and validated rather than trusted, for
@@ -337,7 +337,7 @@ function lattice(values: number[]) {
 /**
  * Which face of a card a route leaves by. Named by axis and direction rather
  * than by compass point, because this module is handed y-down coordinates by
- * canvas/web.js and y-up ones by half its tests, and "north" would have to mean
+ * canvas/web.ts and y-up ones by half its tests, and "north" would have to mean
  * something in both.
  */
 type Side = 'x+' | 'x-' | 'y+' | 'y-';
@@ -435,7 +435,7 @@ export const anchorFor = (from: Box, to: Point): Anchor => anchorsFor(from, to)[
  * lean and anywhere along it.
  *
  * `rot` therefore has to be the rotation the card is *drawn* with, lean
- * included and signed - see centres() in canvas/web.js, which is where that is
+ * included and signed - see centres() in canvas/web.ts, which is where that is
  * put together.
  */
 export function exitTowards(it: Box, target: Point): Point {
@@ -543,7 +543,7 @@ export type Route = { points: Point[] };
  * predates the whimsy axis saying exactly what it said.
  *
  * There is no failure flag on the result, and there used to be. It marked the
- * straight line this drew when it could not find a way round, and canvas/web.js
+ * straight line this drew when it could not find a way round, and canvas/web.ts
  * drew those dimmed and dashed so a give-up was visible. Both are gone: the last
  * resort is an orthogonal elbow, which is a line that goes *behind* the cards
  * in its way rather than across them, and the web is drawn under the items - so

@@ -2,10 +2,10 @@
  * The colours CSS cannot mix here, mixed in script.
  *
  * WebKit got color-mix() in 16.2. Section 7 of tokens.css carries the argument
- * for the fallback and does most of the work: ninety-nine of the app's hundred
- * and forty-one mixes are `color-mix(in srgb, C N%, transparent)`, which is not
- * a mix at all but C at N% alpha, and those are spelled `rgb(var(--C-c) / N%)`
- * inside an `@supports not` block that a current browser skips whole.
+ * for the fallback and does most of the work: just over half of the app's mixes
+ * are `color-mix(in srgb, C N%, transparent)`, which is not a mix at all but C
+ * at N% alpha, and those are spelled `rgb(var(--C-c) / N%)` inside an
+ * `@supports not` block that a current browser skips whole.
  *
  * This module is the remainder: the mixes of two real pigments, which have no
  * rgb() spelling and - this is the part that rules out precomputing them into
@@ -15,7 +15,7 @@
  *     --paper: color-mix(in srgb, var(--accent) 4%, var(--stock));
  *     --ink:   color-mix(in srgb, var(--accent) 13%, #000);
  *
- * and --accent may be a pigment ui/pigments.js pulled out of a photograph the
+ * and --accent may be a pigment ui/pigments.ts pulled out of a photograph the
  * board is wearing, or one somebody picked in the Appearance panel a second ago.
  * There is no set of four palettes to precompute; there is a function of a
  * colour that is not known until it is known.
@@ -56,7 +56,7 @@
  *
  * ## Scope
  *
- * Writes inline properties on :root, which is where ui/appearance.js writes a
+ * Writes inline properties on :root, which is where ui/appearance.ts writes a
  * hand-picked pigment too - and inline is the one place nothing in a stylesheet
  * can outrank. Two rules keep the two out of each other's way. A token is only
  * written if its computed value *was* a color-mix, so a colour somebody chose
@@ -64,7 +64,7 @@
  * is cleared at the top of the next run, so nothing survives the move that made
  * it wrong. The --lc-* namespace has no other author.
  *
- * Called from apply() in ui/appearance.js, which is the single funnel every
+ * Called from apply() in ui/appearance.ts, which is the single funnel every
  * change of look goes through - palette, whimsy, a board arriving with its own
  * colours, the panel, the boot. On any engine with color-mix() the first line
  * of run() returns and nothing below it ever executes.
@@ -316,7 +316,7 @@ export function legacyBlends(root: HTMLElement): void {
   // tokens.css declares these for the four named palettes, which is what the
   // first paint needs and is as far as a stylesheet can go. It cannot cover the
   // two cases that matter most: a pigment somebody picked in the Appearance
-  // panel, and a palette ui/pigments.js pulled out of a photograph. Both are
+  // panel, and a palette ui/pigments.ts pulled out of a photograph. Both are
   // written inline as --accent and nothing else, so --accent-c would still be
   // the named palette's - and every alpha-only fallback in the app reads the
   // channel form. The accent would move and its own tint would not follow it.

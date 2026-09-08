@@ -1,8 +1,8 @@
 // How the board is framed, and which geometry profile the viewport is on.
 //
-// Three functions that were loose in main.js and are called from four places
+// Three functions that were loose in main.ts and are called from four places
 // between them - the boot, the layout event, a board arriving, and "Reload
-// board". They are here rather than in canvas/viewport.js because each is a
+// board". They are here rather than in canvas/viewport.ts because each is a
 // decision about *this app's* framing (open on a fit, not on the stored view;
 // the title card is furniture) rather than part of the coordinate model.
 //
@@ -37,7 +37,7 @@ export const currentLens = (): Lens => lens;
 
 /**
  * Choose a lens. Writes it where the CSS can see it (only while Mobile) and
- * announces it on the bus, so ui/feed.js and ui/playlist.js each render or tear
+ * announces it on the bus, so ui/feed.ts and ui/playlist.ts each render or tear
  * down without either importing the other or this reaching into them.
  */
 export function setLens(name: string): void {
@@ -89,7 +89,7 @@ export function openingView(): void {
 
 /**
  * Publish the active geometry profile to the viewport and CSS. The choice is a
- * local device preference; state.js keeps both arrangements in the board.
+ * local device preference; state.ts keeps both arrangements in the board.
  */
 export function syncBoardMode(frame = false): void {
   document.documentElement.dataset.boardMode = board.layoutMode;

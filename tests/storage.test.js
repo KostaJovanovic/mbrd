@@ -61,7 +61,7 @@ test('a file with no stored title falls back to a readable filename', () => {
 });
 
 test('the sidebar title field carries the shared thirty-two-character limit', async () => {
-  // In the settings table rather than in index.html now that ui/panel.js builds
+  // In the settings table rather than in index.html now that ui/panel.ts builds
   // the panel. Same assertion, one file along: the field the board is renamed in
   // must stop where cleanBoardTitle() stops, or a name typed to the field's
   // limit comes back cut.

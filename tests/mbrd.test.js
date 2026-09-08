@@ -131,7 +131,7 @@ test('the same asset used twice is stored once', async () => {
 // reference added to the packer and not to the walk would mean the sync silently
 // stops uploading a whole category of asset, and the board comes back on the
 // second machine with holes in it. That is precisely what happened when the
-// stored versions arrived in v0.198 and three separate reference readers had to
+// stored versions arrived in v0.197 and three separate reference readers had to
 // learn about them at once.
 // ---------------------------------------------------------------------------
 

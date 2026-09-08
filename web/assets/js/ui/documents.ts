@@ -1,11 +1,11 @@
 // Documents, read into a tree the viewer can show.
 //
-// The second half of what import/document.js started. That one finds the picture
+// The second half of what import/document.ts started. That one finds the picture
 // a document already carries of itself, which is what a card needs; this one
 // reads the document's actual content, which is what somebody who has just
 // opened it wants. Both work the same way and for the same reason: every format
 // here is a ZIP with XML inside it, and this app already owns a bounds-checking
-// ZIP reader (storage/zip.js) and the browser owns an XML parser. There is no
+// ZIP reader (storage/zip.ts) and the browser owns an XML parser. There is no
 // library in any of this.
 //
 // What is read:
@@ -56,7 +56,7 @@ import {
   type Entries, type Rels,
 } from '../import/ooxml.ts';
 
-/** How large a document this will open. See MAX_CONTAINER in import/document.js. */
+/** How large a document this will open. See MAX_CONTAINER in import/document.ts. */
 const MAX_CONTAINER = 96 * 1024 * 1024;
 
 /**
@@ -98,7 +98,7 @@ const MAX_IMAGES = 300;        // pictures drawn out of one document
 /**
  * What every reader in the table below is.
  *
- * The two that draw pictures take the URL list to record what they minted; the
+ * The four that draw pictures take the URL list to record what they minted; the
  * four that cannot are written without it, which is a narrower function and so
  * still one of these.
  */

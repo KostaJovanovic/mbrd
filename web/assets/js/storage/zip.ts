@@ -335,7 +335,7 @@ export async function writeZip(
 export const LIMITS = {
   /** The archive itself. Beyond this the browser is in trouble regardless. */
   archive: 768 * 1024 ** 2,
-  /** Entries. A 500-file board (import/drop.js caps there) plus its notes and
+  /** Entries. A 500-file board (import/drop.ts caps there) plus its notes and
    *  waveform sidecars lands near 1500; this is an order of magnitude clear. */
   entries: 20000,
   /** One entry, uncompressed. Comfortably past any single video worth pinning. */
@@ -346,7 +346,7 @@ export const LIMITS = {
    *
    * Costed rather than picked. Opening holds, at the same time: the archive
    * bytes, every inflated entry, and then a copy of each asset as its own Blob
-   * (mbrd.js slices out of the archive buffer deliberately, so the whole ZIP is
+   * (mbrd.ts slices out of the archive buffer deliberately, so the whole ZIP is
    * not pinned by a handful of subarrays). So peak is roughly archive + 2x
    * total, and the pair below puts that near 2.3 GB in the worst case - which
    * is already optimistic for a phone and not comfortable on a desktop tab.

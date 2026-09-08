@@ -69,7 +69,7 @@ const stub = (over = {}) => ({
 
 test('the layouts are the arrangement catalogue, in its order', () => {
   // Not a list of seven written out here. If the two ever have to be kept in
-  // step by hand, an arrangement added to arrangements.js is an arrangement the
+  // step by hand, an arrangement added to arrangements.ts is an arrangement the
   // panel offers and the flyout silently does not.
   const rows = arrangeEntries(stub()).filter(e => e.check != null);
   assert.deepEqual(rows.map(r => r.label), ARRANGEMENTS.map(a => a.label));
@@ -202,7 +202,7 @@ test('a sheet the pad does not have falls back to the cycle', () => {
 // ---------------------------------------------------------------------------
 
 test('ui/menu.js can draw the two row kinds these lists use', () => {
-  // The builders emit `swatch` and `range` entries, and menu.js is what turns
+  // The builders emit `swatch` and `range` entries, and menu.ts is what turns
   // them into rows. Nothing else in the app uses either kind yet, so a tidy-up
   // that removed them as dead code would leave the flyouts drawing blank lines.
   const menu = read(join(JS, 'ui', 'menu.ts'));

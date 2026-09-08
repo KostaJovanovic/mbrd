@@ -129,7 +129,7 @@ const joinable = (items: Joinable[]): Joinable[] =>
  * afterwards. One undo entry for the set, because you asked for a set.
  *
  * The graph works in the same plane the cards do; y is not flipped for it the
- * way canvas/web.js flips it to draw, because a reflection cannot turn a
+ * way canvas/web.ts flips it to draw, because a reflection cannot turn a
  * non-crossing set into a crossing one and the tree is the same tree.
  */
 function joinAll(pool: Joinable[], label = 'Join cards'): number {
@@ -149,7 +149,7 @@ export function connectionCommands() {
     // The one tool on the bar that is a mode. Pressing it arms; a completed
     // pair, pressing it again, or Escape puts it down. What a press on the board
     // then means is
-    // ui/toolbar.js's connectStep(), and canvas/input.js asks through the two
+    // ui/toolbar.ts's connectStep(), and canvas/input.ts asks through the two
     // below rather than importing a ui/ module it has no business importing -
     // the same seam the title card's pen and the whimsy dial already use.
     connect: () => {
@@ -194,7 +194,7 @@ export function connectionCommands() {
     // No button, like connectSelection below and for the same reason its comment
     // gives: editing a line means first pointing at one, and this app leaves
     // connections deliberately un-hit-testable (see toggleConnection in
-    // state.js - the machinery a selectable line needs was judged too much for
+    // state.ts - the machinery a selectable line needs was judged too much for
     // it). So this is the door a keyboard binding or a future menu row would bind
     // to, and today it is reached from the console handle:
     //
@@ -225,7 +225,7 @@ export function connectionCommands() {
     connectionStyle: (a: string, b: string) => connectionMeta(a, b),
     // The menu's way in: the connection whose line runs under a right-click, or
     // null. This is the hit-test toggleConnection's note said it was avoiding -
-    // kept as small as that note asked, a walk over the routed points web.js
+    // kept as small as that note asked, a walk over the routed points web.ts
     // already holds rather than a selection model or a per-line element. Only on
     // the canvas, where a press lands on the board rather than on a card.
     connectionUnder: (at: At) => (board.layoutMode === 'mobile' ? null : connectionAt(at.x, at.y)),
@@ -236,7 +236,7 @@ export function connectionCommands() {
     //
     // A press on a line marks it, and the mark is what gives Delete something to
     // delete that is not a card. The hit-test is connectionUnder's, the mark
-    // lives in canvas/web.js beside the hover it is the deliberate half of, and
+    // lives in canvas/web.ts beside the hover it is the deliberate half of, and
     // it is deliberately not part of the selection - see the note over
     // activeConnection() there.
     //

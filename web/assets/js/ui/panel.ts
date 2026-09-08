@@ -1,13 +1,13 @@
-// The sidebar, built from ui/settings-schema.js.
+// The sidebar, built from ui/settings-schema.ts.
 //
-// index.html used to carry every control as markup and ui/sidebar.js wired each
+// index.html used to carry every control as markup and ui/sidebar.ts wired each
 // one by id, which is how a panel ends up with a setting in two files and a
 // section order nobody chose. Now the markup is a head, an empty tab strip, an
 // empty body and a foot, and everything between them is made here.
 //
 // Three properties this file exists to hold:
 //
-//   Built once, never rebuilt. Other modules - ui/appearance.js, canvas/audio.js
+//   Built once, never rebuilt. Other modules - ui/appearance.ts, canvas/audio.ts
 //   - look their controls up by id at boot and keep the element. Rebuilding a
 //   section would leave them holding a node no longer in the document, with no
 //   error to say so. So the panel is constructed in one pass and paint() only
@@ -19,7 +19,7 @@
 //   is the changelog, where the panel is over a document with no board under
 //   it: there the rows that would act on a board are shown and greyed, because
 //   the whole point of that sidebar is that it is this one and not a likeness
-//   of it. `needsBoard` in ui/settings-schema.js says which, and why.
+//   of it. `needsBoard` in ui/settings-schema.ts says which, and why.
 //
 //   The ids are the contract. Every id here is the id that was in index.html,
 //   because three other modules and a handful of tests reach for them.
@@ -29,7 +29,7 @@
 // is why the panel can be built once: switching tabs moves no DOM.
 
 // The one thing here that is not a control: which layout the board is in
-// decides what is on screen. ui/sidebar.js owns the subscriptions and calls
+// decides what is on screen. ui/sidebar.ts owns the subscriptions and calls
 // paintPanel() - there is one paint, not two racing.
 import { board } from '../state.ts';
 import { makeEl as make } from '../util.ts';
@@ -92,10 +92,10 @@ const ctx = (): Ctx => ({
 /**
  * Build the whole panel into a sidebar shell.
  *
- * Called from main.js *before* initAppearance() and initAudio(), because both
+ * Called from main.ts *before* initAppearance() and initAudio(), because both
  * of those look up controls this makes. Everything that needs a command surface
  * - every button - carries `data-cmd` and is answered by the one delegated
- * listener in ui/sidebar.js, so nothing here needs `cmds`.
+ * listener in ui/sidebar.ts, so nothing here needs `cmds`.
  */
 export function buildPanel(root = document.getElementById('sidebar')) {
   const strip = root?.querySelector<HTMLElement>('.side-tabs');
@@ -251,7 +251,7 @@ const BUILDERS: { [K in Control['type']]: (c: Extract<Control, { type: K }>) => 
   keys: buildKeys,
 };
 
-/** The board's name. ui/sidebar.js owns what typing in it does. */
+/** The board's name. ui/sidebar.ts owns what typing in it does. */
 function buildText(c: TextControl) {
   const input = make('input', c.className);
   input.type = 'text';
@@ -510,9 +510,9 @@ function fillSelect(c: SelectControl, select: HTMLSelectElement, ctxValue: Ctx) 
 
 /**
  * A row of buttons. None of them is wired here: every one carries `data-cmd`
- * and is answered by the delegated listener in ui/sidebar.js, which is the one
+ * and is answered by the delegated listener in ui/sidebar.ts, which is the one
  * place the command surface is reached from. The paper orientation pair is the
- * exception and carries `data-orient` instead - ui/sidebar.js wires those two
+ * exception and carries `data-orient` instead - ui/sidebar.ts wires those two
  * directly, because choosing an orientation with no sheet up also puts a sheet
  * up, which is a rule about paper and not a command.
  */
@@ -555,7 +555,7 @@ function buildSlot(c: SlotControl) {
 function buildHint(c: HintControl) {
   const p = make('p', 'hint');
   if (c.id) p.id = c.id;
-  // `html` is a literal in settings-schema.js and never anything a board or a
+  // `html` is a literal in settings-schema.ts and never anything a board or a
   // file carried - it exists so a hint can italicise one word.
   if (c.html) p.innerHTML = c.html;
   register(c, p, null, null);
@@ -737,7 +737,7 @@ function paintRules() {
   for (const { panel } of tabs.values()) {
     let first = true;
     // SAFETY: every child of a tab panel is a <section> this file built - see
-    // buildTab(). Nothing else appends to one, and `hidden` below is the only
+    // buildSection(). Nothing else appends to one, and `hidden` below is the only
     // thing read off them.
     for (const el of panel.children as HTMLCollectionOf<HTMLElement>) {
       if (el.hidden) continue;

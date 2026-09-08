@@ -10,7 +10,7 @@
 // summary, so that copying a sticky note and pasting it into a text editor
 // gives you its words.
 //
-// **The seam with state.js is "does it touch the board".** Everything in here
+// **The seam with state.ts is "does it touch the board".** Everything in here
 // reads the board and writes only to the module-level `clipboard` object, which
 // is not board state: it is not saved, not undoable, and not part of any file.
 // So copying is entirely here, and the two commands that put something on the
@@ -31,7 +31,7 @@
 // back whatever edit came before, because the clipboard is not part of what the
 // board looks like.
 //
-// Nothing here imports state.js - see tests/layers.test.js, where this is BASE.
+// Nothing here imports state.ts - see tests/layers.test.js, where this is BASE.
 
 import { toast } from './notify.ts';
 import { itemBounds } from './geometry.ts';

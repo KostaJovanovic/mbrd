@@ -22,7 +22,7 @@
    ========================================================= */
 
 /* A picture given to a card that is not itself one - album art off an mp3's
-   tags, or anything chosen by hand. See coverEl() in canvas/renderers.js, which
+   tags, or anything chosen by hand. See coverEl() in canvas/renderers.ts, which
    prepends it inside the card rather than behind it.
 
    Inside the padding, not bled to the edges. A card here is a plate: ruled
@@ -219,7 +219,7 @@
    about the centre line - a signal has no up and no down, and half of one
    drawn on a baseline is a bar chart rather than a picture of a sound.
    Rounded off with the rest of the interface, so a plain board gets square
-   bars and a soft one gets capsules. See canvas/audio.js. */
+   bars and a soft one gets capsules. See canvas/audio.ts. */
 .wave {
   position: relative;
   flex: 1;
@@ -255,7 +255,7 @@
    matches. Left on the bare .wave-fill it stood a layer per audio card up for
    the life of the tab, playing or not; the clip-path only actually animates
    while the playhead is moving, so the hint belongs behind the is-playing class
-   the transport already carries (canvas/audio.js). Idle cards give their layer
+   the transport already carries (canvas/audio.ts). Idle cards give their layer
    back, and a board that is audio-heavy stops paying for players nobody started. */
 .transport.is-playing .wave-fill {
   will-change: clip-path;
@@ -282,7 +282,7 @@
 
    What survives is the one control still worth hitting from across the board,
    grown to fill the card it is on. Sized from --half-min (min(w, h) / 2, per
-   item from canvas/items.js/place()) rather than from --iz, because this is
+   item from canvas/items.ts/place()) rather than from --iz, because this is
    part of the card rather than chrome laid over it: it belongs to the board's
    scale, and taking half the shorter side as its bound is what stops it
    outgrowing the card on anything that has been resized to a strip. */
@@ -363,7 +363,7 @@
   backdrop-filter: blur(3px);
 }
 
-/* The video transport (canvas/video.js).
+/* The video transport (canvas/video.ts).
    Laid over the picture rather than under it, because on a video card the
    picture *is* the card - every row of chrome given its own space is a row of
    the thing you pinned up, taken away. So it floats, and it stays out of the
@@ -381,7 +381,7 @@
 /* The one thing on a parked video that says it is a video. A clip sitting on
    its poster frame is otherwise a photograph, which is exactly the state the
    old bare <video> left every one of them in.
-   Sized from --half-min (min(w, h) / 2, per item from items.js/place()) so it
+   Sized from --half-min (min(w, h) / 2, per item from items.ts/place()) so it
    belongs to the card rather than to the screen, with a floor and a ceiling
    because a play button has a size that reads as a play button. */
 .vbig {
@@ -419,7 +419,7 @@
    It held a play button, then a scrubber and a clock, and finally a mute on its
    own; each went to the now-playing bar or went away, and what was left was a
    strip of paper and a hairline drawn across the bottom of every clip on the
-   board to carry one 20px glyph. The argument is in the head of canvas/video.js.
+   board to carry one 20px glyph. The argument is in the head of canvas/video.ts.
    Two things went with it that are worth naming, because they were both real
    work and neither is missed:
 
@@ -443,7 +443,7 @@
    to being a drag target until there is something to seek through, and the
    pointer says so rather than only refusing.
 
-   Off `.is-playing`, which canvas/audio.js already toggles on the transport at
+   Off `.is-playing`, which canvas/audio.ts already toggles on the transport at
    exactly the two moments this turns on; the keyboard and screen-reader halves of
    the same rule are setSeekable() beside it. */
 .transport:not(.is-playing) .wave {
@@ -492,7 +492,7 @@
   /* And it must stop catching the pointer, not only stop being seen. The plate
      hangs off .item and paints - and hit-tests - above the picture, so gone to
      transparent it was still an invisible sheet over the foot of the clip. That
-     is where a tap has to land to pause (see pauseOnTap in canvas/input.js), and
+     is where a tap has to land to pause (see pauseOnTap in canvas/input.ts), and
      over a named video every such press was landing on the plate instead. */
   pointer-events: none;
 }

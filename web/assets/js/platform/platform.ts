@@ -1,10 +1,10 @@
-// The seven questions the browser used to answer on its own.
+// The eight questions the browser used to answer on its own.
 //
 // A desktop build of this app is not a different app. `state.ts`, the .mbrd
 // schema, the renderers, the input pipeline and the whole of canvas/ and ui/
 // are the same code running in the same Chromium, and the bundle the shell
 // loads is the same web/assets/app.js. What changes is smaller than it looks -
-// seven questions the page never had to ask because a browser tab was always
+// eight questions the page never had to ask because a browser tab was always
 // the answer:
 //
 //   where do a file's bytes come from   <input type=file>, drop, File System
@@ -18,11 +18,13 @@
 //   how does a link open                target=_blank  ->  shell.openExternal
 //   where does heavy work run           wasm in a worker  ->  a native process
 //   how does the app update             the service worker  ->  electron-updater
+//   who draws the title bar             the browser's chrome  ->  the app draws
+//                                       its own, over a window with no frame
 //
 // Each of those is a port below, and the argument for every one of them is in
 // `research/electron-2026-09-06.md` §4. Links are the exception and are not a
 // port at all: the shell intercepts window.open in its own process and nothing
-// in web/ changes, which is why there are six ports for seven questions.
+// in web/ changes, which is why there are seven ports for eight questions.
 //
 // ── Unwired is the web ──
 //
@@ -260,6 +262,50 @@ export interface UpdatesPort {
   install(): void;
 }
 
+/** What shape the window is in. Both false on the web, always. */
+export interface FrameState {
+  maximized: boolean;
+  fullScreen: boolean;
+}
+
+/**
+ * The window's own frame, where the app draws it. Plan §4 *frame*.
+ *
+ * The seventh question, and the newest: **who draws the title bar**. A browser
+ * tab has one and it is the browser's, so the web answers "not mine" to every
+ * method here and ui/window-chrome.ts puts nothing on screen. The desktop
+ * window has none at all - see the head of desktop/main.ts - so the same module
+ * draws a drag band and three buttons in the board's own idiom.
+ *
+ * `own()` is the gate and is synchronous for the reason canPick() is: the
+ * interface has to decide whether to *offer* a control before it draws
+ * anything, and a button that appears a tick after the board does is a button
+ * that lands on top of whatever was under the pointer.
+ */
+export interface FramePort {
+  /** Whether the app draws the window frame itself. False in a browser. */
+  own(): boolean;
+  /**
+   * Whether the *system* keeps buttons in the top-left corner, which is macOS
+   * and only macOS. The app's own button there steps aside by that much rather
+   * than the page guessing at a platform - see --frame-inset-left in
+   * chrome.css.
+   */
+  systemLeft(): boolean;
+  minimize(): void;
+  /** Maximise, or restore if it already is. One button, both directions. */
+  toggleMaximize(): void;
+  /**
+   * Ask the window to close.
+   *
+   * The same close every other way out makes, so the flush that holds it open
+   * still runs. Not a quit: on macOS the app outlives its last window.
+   */
+  close(): void;
+  /** What shape the window is in, now and whenever it changes. */
+  onState(fn: (state: FrameState) => void): void;
+}
+
 /** What the shell is told about the document on screen. */
 export interface DocumentState {
   /** The board's own name, which is what a browser tab would say. */
@@ -276,6 +322,7 @@ export interface Platform {
   lifecycle: LifecyclePort;
   native: NativePort;
   updates: UpdatesPort;
+  frame: FramePort;
   /**
    * Tell the shell what is on screen. Desktop only; a no-op on the web.
    *
@@ -499,7 +546,7 @@ function viaInput(spec: PickSpec, multiple: boolean) {
     // than the File System Access types beside it.
     input.accept = spec.accept;
     input.multiple = multiple;
-    // Say whose picker this is rather than saying nothing. import/drop.js
+    // Say whose picker this is rather than saying nothing. import/drop.ts
     // listens on the same input and stands down on a mode it does not own - it
     // used to stand down on the *absence* of one, which is the same thing only
     // while every other opener remembers to clear it. Naming the owner makes
@@ -569,11 +616,30 @@ const webUpdates: UpdatesPort = {
   install: () => {},
 };
 
+/**
+ * The browser's frame, which is the browser's.
+ *
+ * `own()` false is the whole of it: ui/window-chrome.ts asks that first and
+ * returns, so the four methods below are never reached in a browser. They are
+ * still written out rather than thrown from, because "unwired is the web
+ * behaviour" means a port whose methods do nothing, not a port that punishes a
+ * caller for holding it.
+ */
+const webFrame: FramePort = {
+  own: () => false,
+  systemLeft: () => false,
+  minimize: () => {},
+  toggleMaximize: () => {},
+  close: () => {},
+  onState: () => {},
+};
+
 const web: Platform = {
   files: webFiles,
   lifecycle: webLifecycle,
   native: webNative,
   updates: webUpdates,
+  frame: webFrame,
   // Nothing. A browser tab has no title bar to put a file name in, and the one
   // thing it does have - document.title - this app has never set and should not
   // start setting because the desktop wanted a window title.
@@ -629,6 +695,7 @@ export const platform: Readonly<Platform> = {
   get lifecycle() { return current.lifecycle; },
   get native() { return current.native; },
   get updates() { return current.updates; },
+  get frame() { return current.frame; },
   setDocument(state) { current.setDocument(state); },
   relaunch() { current.relaunch(); },
 };

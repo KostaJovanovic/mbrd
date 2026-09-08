@@ -8,7 +8,7 @@
 // thought to try by hand, including one that did not terminate.
 //
 // The DOM is stubbed for the length of each call, the way tests/hud.test.js and
-// tests/trash.test.js stub it. The stub records structure rather than pretending
+// tests/drawer.test.js stub it. The stub records structure rather than pretending
 // to be a browser: a tag, a class, children, and text. That is enough to assert
 // everything below, and a real DOM would be a dependency for one file.
 

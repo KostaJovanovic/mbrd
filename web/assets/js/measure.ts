@@ -19,7 +19,7 @@
 //
 // Everything here is pure. No DOM, no state import, no board: callers pass the
 // two settings in. That keeps this at the very bottom of the layering, beside
-// util.js and geometry.js, so the canvas, the sidebar and the HUD can all reach
+// util.ts and geometry.ts, so the canvas, the sidebar and the HUD can all reach
 // it without any of them reaching each other.
 
 /** The one hard fact in this file. Everything imperial is derived from it. */
@@ -55,7 +55,7 @@ const PX_PER_MM = PX_PER_INCH / MM_PER_INCH;
  * This one is not picked at all, and that is the whole of its argument: at 100%
  * zoom, an A4 outline is an A4 you could hold up against the screen. The zoom
  * readout already claims to be a percentage of something, and this is what it
- * is a percentage of. One world unit is one CSS pixel at 1:1 - see viewport.js
+ * is a percentage of. One world unit is one CSS pixel at 1:1 - see viewport.ts
  * - so the scale that makes the board life size is just CSS's pixels per
  * millimetre, and nothing else in the app has to know that.
  */
@@ -68,7 +68,7 @@ export const DEFAULT_SCALE = PX_PER_MM;
  * into Infinity, and for nothing else - a board about a tray of jewellery is
  * entitled to a scale that measures it, and a board about a building site is
  * entitled to the other end. How *legible* the lattice is at a given scale is a
- * rendering question with a rendering answer; see MIN_PX in canvas/grid.js,
+ * rendering question with a rendering answer; see MIN_PX in canvas/grid.ts,
  * which sets a floor on how close two dots may be drawn rather than on what the
  * board is allowed to mean.
  */

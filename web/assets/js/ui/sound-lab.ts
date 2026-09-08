@@ -160,15 +160,6 @@ function buildPairs(): void {
 // ---------------------------------------------------------------------------
 
 /**
- * Which fields of a layer are worth a slider, and over what range.
- *
- * Hand-written rather than derived from the values, and that is the point: a
- * range derived from the current number can only ever offer a nudge, and the
- * useful question at a bench is what the sound does somewhere it has never
- * been. Frequencies run over most of the audible band, envelopes over the
- * whole range from a click to a pad.
- */
-/**
  * The numeric fields of a layer, taken from the layer types rather than typed
  * out again. A slider for a field a layer does not have is the one mistake this
  * table can make, and spelling `key: string` was what let it: `filterQ` on a
@@ -179,6 +170,15 @@ function buildPairs(): void {
 type NumberKeys<T> = { [K in keyof T]-?: number extends T[K] ? K : never }[keyof T];
 type LayerNumberKey = NumberKeys<ToneLayer> | NumberKeys<NoiseLayer>;
 
+/**
+ * Which fields of a layer are worth a slider, and over what range.
+ *
+ * Hand-written rather than derived from the values, and that is the point: a
+ * range derived from the current number can only ever offer a nudge, and the
+ * useful question at a bench is what the sound does somewhere it has never
+ * been. Frequencies run over most of the audible band, envelopes over the
+ * whole range from a click to a pad.
+ */
 const FIELDS: { key: LayerNumberKey, min: number, max: number, step: number }[] = [
   { key: 'frequency', min: 60, max: 4000, step: 1 },
   { key: 'glideTo', min: 60, max: 4000, step: 1 },

@@ -1,6 +1,6 @@
 // App packages and books: the picture that has to be chosen rather than named.
 //
-// import/document.js finds a document's thumbnail at a known path - `docProps/
+// import/document.ts finds a document's thumbnail at a known path - `docProps/
 // thumbnail.jpeg`, `Thumbnails/thumbnail.png` - because the specifications that
 // define those containers say where it goes. The containers here are the other
 // kind. An Android package has its launcher icon at six densities under names the
@@ -35,7 +35,7 @@
 // BGRA, alpha premultiplied, and a `CgBI` chunk where `IHDR` belongs. It is still
 // a PNG by its first eight bytes and it decodes in nothing but Apple's own
 // software. Handing one to an <img> is the "replace a grey card with a broken
-// image" failure this codebase already refuses for .emf, so import/winimage.js
+// image" failure this codebase already refuses for .emf, so import/winimage.ts
 // answers the question and the .ipa path asks it of every candidate.
 
 import { readZip } from '../storage/zip.ts';
@@ -48,7 +48,7 @@ type Bytes = Uint8Array<ArrayBuffer>;
 /**
  * How much a package may inflate to.
  *
- * Larger than import/document.js's ceiling for documents, because an app is
+ * Larger than import/document.ts's ceiling for documents, because an app is
  * legitimately larger than a document and the alternative is refusing every real
  * game. Still a ceiling: six of these run at once under IMPORT_WORKERS.
  */
@@ -78,7 +78,7 @@ export const isPackage = (ext: string) => FAMILY.has(ext);
  * The picture inside `file`, as `{ bytes, ext }`, or null.
  *
  * Bytes rather than a File, because the caller names every derived picture the
- * same way and re-sniffs it - see import/document.js, which owns that rule and
+ * same way and re-sniffs it - see import/document.ts, which owns that rule and
  * the list of image types this app will actually mount.
  */
 export async function packagePicture(
@@ -194,8 +194,8 @@ function best(
  * Whether these bytes are something this app can actually mount.
  *
  * The extension said it was a picture; this asks the bytes. The one case that
- * matters is a CgBI PNG - see import/winimage.js - and the rule it follows is
- * the one document.js already applies to a .emf named thumbnail.png: a picture
+ * matters is a CgBI PNG - see import/winimage.ts - and the rule it follows is
+ * the one document.ts already applies to a .emf named thumbnail.png: a picture
  * nothing can draw is worse than no picture, because the card stops saying what
  * the file is and starts showing a broken image.
  */
@@ -336,7 +336,7 @@ function windows(entries: Entries): Bytes | null {
  * Both need the OPF, and the OPF is wherever `META-INF/container.xml` says - it
  * is not at a fixed path and assuming one is the usual way this is got wrong.
  * Every href is then resolved against the OPF's own directory and *looked up* in
- * the archive rather than opened as a path, which is the rule import/ooxml.js
+ * the archive rather than opened as a path, which is the rule import/ooxml.ts
  * exists to keep.
  */
 async function book(entries: Entries, file: Blob, lift: boolean): Promise<Bytes | null> {
@@ -398,7 +398,7 @@ function coverPath(entries: Entries): string | null {
  * numbers, so `page2` precedes `page10`. A plain sort puts chapter 10 first,
  * which is the wrong cover.
  *
- * `.cbr` and `.cb7` are RAR and 7z rather than zips. storage/zip.js reads
+ * `.cbr` and `.cb7` are RAR and 7z rather than zips. storage/zip.ts reads
  * neither, and they are declined by not being in FAMILY at all rather than by
  * being opened and failing.
  */

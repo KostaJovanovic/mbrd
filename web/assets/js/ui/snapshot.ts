@@ -1,52 +1,50 @@
 // A picture of the whole board - the thing a moodboard is for and could not do.
 //
-// Until now the only thing that left mbrd was a .mbrd, a file only mbrd opens.
-// A moodboard exists to be shown, so this paints the board onto a canvas and
-// hands it out as a PNG, or wraps that in a one-page PDF for printing.
+// Paints the board onto a canvas and hands it out as a PNG, or wraps that in a
+// one-page PDF for printing.
 //
-// It composites onto a canvas by hand rather than rasterising the live DOM. The
-// obvious route - wrap the board's nodes in an <svg><foreignObject> and draw
-// that - taints the canvas the moment the foreignObject holds an <img> in every
-// engine that matters, and a tainted canvas cannot be read back out, so the
-// export simply fails. Drawing each item straight onto the canvas keeps every
-// source same-origin (the asset store's own object URLs) and the canvas clean.
+// It composites by hand rather than rasterising the live DOM. The obvious route
+// - wrap the board's nodes in an <svg><foreignObject> and draw that - taints the
+// canvas the moment the foreignObject holds an <img>, in every engine that
+// matters, and a tainted canvas cannot be read back out, so the export fails.
+// Drawing each item straight onto the canvas keeps every source same-origin (the
+// asset store's own object URLs) and the canvas clean.
 //
 // No dependency, in keeping with the rest of the app: the PNG is the platform's
 // own toBlob, and the PDF is a few hundred bytes of structure written by hand
-// around the canvas's JPEG - a DCTDecode image XObject on one page, which is the
-// one PDF a hand can write correctly without a font stack or an interpreter.
+// around the canvas's JPEG - a DCTDecode image XObject on one page, the one PDF
+// a hand can write correctly without a font stack or an interpreter.
 //
 // ── This is a second renderer, and it always will be ──
 //
-// Everything above means renderBoardCanvas() is a parallel implementation of
-// canvas/renderers.ts and five stylesheets, kept in step by hand. There is no
-// way out of that while the DOM route taints: what can be done is to reach for
-// the *pure* halves of the real thing wherever they exist rather than restating
-// them, and this file does - fitMode(), itemCrop(), itemFlip(), adjustFilter(),
-// routeConnection(), pathData(), connMeta(), boardGridStep(), noteWords()
-// and paperMm() are all the board's own answers, asked here.
+// renderBoardCanvas() is a parallel implementation of canvas/renderers.ts and
+// five stylesheets, kept in step by hand. There is no way out of that while the
+// DOM route taints; what can be done is to reach for the *pure* halves of the
+// real thing rather than restating them, and this file does - fitMode(),
+// itemCrop(), itemFlip(), adjustFilter(), routeConnection(), pathData(),
+// connMeta(), boardGridStep(), noteWords() and paperMm() are the board's own
+// answers, asked here.
 //
-// Three things genuinely cannot be reused and are restated below: paintGrid(),
-// paintGrain() and paintPaper() each paint *against the live viewport* into an
-// on-screen layer. They take a camera; this has none.
+// Three cannot be reused and are restated below: paintGrid(), paintGrain() and
+// paintPaper() each paint *against the live viewport* into an on-screen layer.
+// They take a camera; this has none.
 //
 // ── What the board surface means here ──
 //
 // The export covers the whole surface, not only the cards: the grid, the paper
-// sheet, the connections, the fences and the grain. A moodboard's regions and
-// the lines between its cards are as much the work as the photographs are, and
-// an export that dropped them handed somebody a bag of pictures rather than the
-// board they made.
+// sheet, the connections, the fences and the grain. The regions and the lines
+// between the cards are as much the work as the photographs, and an export that
+// dropped them hands somebody a bag of pictures rather than their board.
 //
 // ── detail: 'full' | 'thumb' ──
 //
-// The same renderer feeds three callers, and one of them is not an export at
-// all: boardThumb() runs on every open and every new board, for a card in the
-// library shelf that is a couple of hundred pixels across. Grain, the lattice,
-// the sheet, the connections, the shadows and every string of text are invisible
-// at that size and cost real time, so the thumbnail asks for 'thumb' and the two
-// exports ask for 'full'. It is one parameter rather than two renderers for the
-// same reason there is one renderer at all: two would disagree.
+// One of the three callers is not an export: boardThumb() runs on every open and
+// every new board, for a library-shelf card a couple of hundred pixels across.
+// Grain, the lattice, the sheet, the connections, the shadows and every string
+// of text are invisible at that size and cost real time, so the thumbnail asks
+// for 'thumb' and the two exports ask for 'full'. One parameter rather than two
+// renderers, for the same reason there is one renderer at all: two would
+// disagree.
 
 import { readToken } from '../util.ts';
 import { board, adjustFilter, itemCrop, itemFlip, itemRotate, itemMatte } from '../state.ts';
@@ -57,10 +55,9 @@ import { connMeta, pairKey } from '../board-model.ts';
 import { CLEARANCE, routeConnection, pathData } from '../web-route.ts';
 import type { RouteOpts } from '../web-route.ts';
 // The lattice's policy, shared with the live grid: how often a mark is major,
-// how much heavier a major one is drawn, and which tier draws crosses. The
-// *drawing* is restated below and always will be - see the head of this file -
-// but a major every fifth mark in a PNG and every fourth on screen would be two
-// different grids.
+// how much heavier a major one is drawn, and which tier draws crosses. Only the
+// *drawing* is restated below - a major every fifth mark in a PNG and every
+// fourth on screen would be two different grids.
 import { boardGridStep, MAJOR, MAJOR_WEIGHT, harshGrid } from '../canvas/grid.ts';
 import { cutout } from '../canvas/matte.ts';
 import { surface } from '../canvas/surface.ts';
@@ -78,9 +75,9 @@ export type Detail = 'full' | 'thumb';
 /**
  * The side of the box the sticker paths are drawn in, as a number.
  *
- * The canvas wants a scale factor and the DOM wants a viewBox string, so one of
- * the two has to be derived from the other rather than written twice - and the
- * string is the one the five renderers already share.
+ * The canvas wants a scale factor and the DOM wants a viewBox string; one is
+ * derived from the other rather than written twice, and the string is the one
+ * the five renderers already share.
  */
 const STICKER_GRID = +STICKER_VIEWBOX.split(' ')[2] || 256;
 
@@ -92,26 +89,22 @@ const MAX_EDGE = 8000;
 /**
  * The most pixels a canvas may hold, whatever shape they are in.
  *
- * iOS Safari refuses any canvas past 16,777,216 pixels, and refuses it in the
- * worst available way: no throw, no warning, just transparent output from then
- * on. MAX_EDGE alone permits 8000 x 8000, which is 64 megapixels - four times
- * that - so Export as PNG and Export as PDF came back blank on iOS for any
- * board large enough to reach the cap. boardThumb() had already been fixed for
- * exactly this and says so in its own note; the two full-size exports had not.
+ * iOS Safari refuses any canvas past 16,777,216 pixels, in the worst available
+ * way: no throw, no warning, just transparent output from then on. MAX_EDGE
+ * alone permits 8000 x 8000 - 64 megapixels, four times that - so Export as PNG
+ * and Export as PDF came back blank on iOS for any board large enough to reach
+ * the cap. boardThumb() had already been fixed for this; the two full-size
+ * exports had not.
  *
- * Applied only where it is true - see drawsPastArea(). This began as a cap on
- * every engine, on the reasoning that there is no honest way to detect the
- * limit; that was wrong about the detection and right about the user-agent
- * test, which would have been the first in this codebase and would have been
- * wrong for Chrome on iOS, which is WebKit underneath. What there is instead is
- * the canvas itself, asked directly and only when the answer could matter.
+ * Applied only where it is true - see drawsPastArea(), which asks the canvas
+ * rather than the user agent. A user-agent test would be the first in this
+ * codebase and would be wrong for Chrome on iOS, which is WebKit underneath.
  *
- * Sixteen million rather than the engine's 16,777,216 exactly. The two sides
- * are rounded *up* after the scale is applied, so a budget set at the limit
- * lands a few thousand pixels over it - and being over it by any amount is the
- * same blank picture as being over it by half. The 777,216 of headroom is a
- * tenth of one percent of the edge length and buys the arithmetic room to be
- * approximate.
+ * Sixteen million rather than the engine's 16,777,216 exactly: the two sides are
+ * rounded *up* after the scale is applied, so a budget set at the limit lands a
+ * few thousand pixels over it, and over by any amount is the same blank picture.
+ * The 777,216 of headroom is a tenth of one percent of the edge length and buys
+ * the arithmetic room to be approximate.
  */
 const MAX_AREA = 16_000_000;
 
@@ -121,25 +114,23 @@ let bigCanvas: boolean | null = null;
 /**
  * Whether this engine will draw a canvas larger than MAX_AREA.
  *
- * Asked of the canvas rather than of the user agent, and asked **lazily** -
- * which together are what make it cheap enough to be honest. The probe costs
- * one oversized allocation, so it is only ever reached from a board whose
- * export would exceed the cap anyway (see renderBoardCanvas). A board under the
- * ceiling never runs it, which is nearly every board; the answer is then kept
- * for the session, so a person exporting five large boards pays once.
+ * Asked of the canvas, not the user agent, and asked **lazily**: the probe costs
+ * one oversized allocation, so it is only reached from a board whose export
+ * would exceed the cap anyway (see renderBoardCanvas). Nearly every board is
+ * under the ceiling and never runs it; the answer is kept for the session, so
+ * five large exports pay once.
  *
  * The test is the failure mode itself. WebKit does not throw for an oversized
  * canvas and does not return a null context - it hands back a canvas that draws
- * *nothing*, which is exactly why the blank export was so quiet. So: paint one
- * white pixel and read it back. Opaque means the engine drew it and the size is
- * real; transparent means this is the engine that silently gives up, and the
- * cap applies. Anything that throws on the way is read the same way as
- * transparent, because a canvas that cannot be measured cannot be trusted with
- * a full-size export either.
+ * *nothing*, which is why the blank export was so quiet. So: paint one white
+ * pixel and read it back. Opaque means the engine drew it and the size is real;
+ * transparent means the engine silently gives up and the cap applies. Anything
+ * that throws is read as transparent - a canvas that cannot be measured cannot
+ * be trusted with a full-size export either.
  *
  * The probe canvas is collapsed to 0x0 afterwards rather than left to the
- * collector. It is sixty-odd megabytes of backing store on the one path where
- * memory is the entire subject, and releasing it is one assignment.
+ * collector: sixty-odd megabytes of backing store on the one path where memory
+ * is the subject, released in one assignment.
  */
 function drawsPastArea(): boolean {
   if (bigCanvas !== null) return bigCanvas;
@@ -165,21 +156,19 @@ function drawsPastArea(): boolean {
 /**
  * How far a board of this size has to shrink to become a canvas.
  *
- * Two ceilings, and the tighter one wins. The edge cap is about a picture
- * nobody wants to be handed; the area cap is about a canvas the engine will not
- * draw at all - see MAX_AREA, which is also where the headroom for the
- * Math.ceil() on each side afterwards is accounted for.
+ * Two ceilings, and the tighter one wins. The edge cap is about a picture nobody
+ * wants to be handed; the area cap is about a canvas the engine will not draw at
+ * all - see MAX_AREA, which also accounts for the headroom the Math.ceil() on
+ * each side afterwards needs.
  *
  * `areaCap` is Infinity for an engine that draws whatever it is given, which is
- * every engine but WebKit - so the second ceiling simply drops out of the
- * Math.min and the edge cap decides alone, as it did before any of this. Passed
- * in rather than read here so the probe behind it stays the caller's to run,
- * and so this remains what it looks like: arithmetic.
+ * every engine but WebKit - the second ceiling drops out of the Math.min and the
+ * edge cap decides alone. Passed in rather than read here so the probe behind it
+ * stays the caller's to run, and so this stays arithmetic.
  *
- * Pulled out of renderBoardCanvas() and exported so it can be tested: the
- * renderer needs a board, a document and forty painters, and the arithmetic
- * that decides whether an export comes back blank on a phone needs none of
- * them. Never enlarges - a small board is drawn at 1:1 and always was.
+ * Exported so it can be tested: the renderer needs a board, a document and forty
+ * painters, and the arithmetic that decides whether an export comes back blank
+ * on a phone needs none of them. Never enlarges - a small board draws at 1:1.
  */
 export function exportScale(
   worldW: number,
@@ -195,11 +184,10 @@ export function exportScale(
 /**
  * The area budget for this export, and the one place the probe is reached.
  *
- * The order matters and is the whole economy of it: work out what the *edge*
- * cap alone would produce, and only if that is past the ceiling ask whether
- * this engine minds. Nearly every board is comfortably under, so nearly every
- * export costs nothing at all - and the ones that would ask for 64 megapixels
- * pay one allocation, once, to find out whether they may have it.
+ * The order is the whole economy of it: work out what the *edge* cap alone would
+ * produce, and only if that is past the ceiling ask whether this engine minds.
+ * Nearly every board is under, so nearly every export costs nothing; the ones
+ * asking for 64 megapixels pay one allocation, once.
  */
 function areaBudget(worldW: number, worldH: number, maxEdge: number): number {
   const byEdge = Math.min(1, maxEdge / Math.max(worldW, worldH));
@@ -238,8 +226,8 @@ function roundRect(
  * The pixel source an item draws from, or null - the same one the card uses.
  *
  * The three meta keys are content hashes, held to that shape by makeItem() in
- * board-model.ts before they ever land on an item; the narrowing here is what
- * the open `meta` costs at the reading end.
+ * board-model.ts before they land on an item. The narrowing here is what the
+ * open `meta` costs at the reading end.
  */
 const hashAt = (meta: Item['meta'], key: string): string | null =>
   typeof meta?.[key] === 'string' ? meta[key] : null;
@@ -257,9 +245,9 @@ const metaStr = (v: unknown): string => (typeof v === 'string' ? v : '');
  * The tokens and flags one render draws against, read once at the top of it.
  *
  * readToken() is a getComputedStyle, which is a style flush, and a board can
- * carry hundreds of cards. Reading `--ink` inside drawItem() was a flush per
- * card; this is one read per token per render, and it is also what makes the
- * whole render describable - every colour on the output is in this object.
+ * carry hundreds of cards. Reading `--ink` inside the per-item painters
+ * (PAINTERS below) was a flush per card; this is one read per token per render.
+ * It also makes the render describable: every colour on the output is here.
  */
 type Look = {
   detail: Detail;
@@ -288,14 +276,13 @@ const fontOf = (name: string, fallback: string) =>
  * The card shadow, resolved through the browser rather than parsed as a token.
  *
  * `--shadow-1` is `0 1px 2px color-mix(in srgb, var(--ink) 14%, transparent)`,
- * and a custom property is handed back as the tokens it was written with -
- * getPropertyValue does not resolve the color-mix, and this file is not going to
- * grow a colour-space implementation to do it. So the value is put on a real
- * element as a real `box-shadow` and the *computed* style is read back, which
- * the engine has already resolved to `rgba(r, g, b, a) Xpx Ypx Bpx Spx`.
+ * and getPropertyValue hands a custom property back unresolved - this file is
+ * not going to grow a colour-space implementation. So the value goes on a real
+ * element as a real `box-shadow` and the *computed* style is read back, already
+ * resolved by the engine to `rgba(r, g, b, a) Xpx Ypx Bpx Spx`.
  *
- * Null at the two ends of the whimsy axis where the token is `none`, which is
- * the case a parser would have got wrong quietly.
+ * Null at the two ends of the whimsy axis where the token is `none` - the case
+ * a parser would have got wrong quietly.
  */
 function readShadow(): Look['shadow'] {
   const probe = document.createElement('div');
@@ -315,11 +302,11 @@ function readShadow(): Look['shadow'] {
 /**
  * How far a card leans, in degrees, at this look.
  *
- * The same two-part answer canvas/web.ts works out and for the same reason: the
- * lean is `--item-tilt` (a per-card fraction, dealt from a bag and living only
- * on the node) times `--tilt-max`, and two things zero it outright rather than
- * zeroing the token - Harsh, in quality.css, and a snapped board, in items.css.
- * Reading only the token would lean every card on a board that draws none.
+ * The same two-part answer canvas/web.ts works out: the lean is `--item-tilt` (a
+ * per-card fraction, dealt from a bag and living only on the node) times
+ * `--tilt-max`, and two things zero it outright rather than zeroing the token -
+ * Harsh, in quality.css, and a snapped board, in items.css. Reading only the
+ * token would lean every card on a board that draws none.
  */
 function maxLean(): number {
   if (document.documentElement.dataset.whimsy === '2' || board.settings.snap) return 0;
@@ -344,8 +331,7 @@ function readLook(detail: Detail): Look {
       minor: readToken('--grid-minor') || 'rgba(0,0,0,0.08)',
       major: readToken('--grid-major') || 'rgba(0,0,0,0.14)',
       // harshGrid(), not a bare '2': the tier that draws crosses is
-      // canvas/grid.ts's constant, and this file was carrying a second spelling
-      // of it.
+      // canvas/grid.ts's constant, not a second spelling of it here.
       harsh: harshGrid(),
     } : null,
     web: full && board.settings.web ? {
@@ -371,17 +357,16 @@ function withShadow(ctx: CanvasRenderingContext2D, look: Look, on: boolean, scal
 /**
  * The sprite's paths, by shape id, read once and kept.
  *
- * The least pleasant part of this file, and unavoidable. Everything else here
- * is a rectangle, a photograph or some text; a sticker is a vector outline, and
- * the only place its geometry exists is the sprite. Rasterising it the obvious
- * way - an <img> pointed at the SVG - would either taint the canvas or need the
- * whole file inlined as a data URI per sticker, so the paths are fetched once
- * as text and handed to Path2D, which is the platform's own way of drawing an
- * SVG path onto a canvas.
+ * Everything else here is a rectangle, a photograph or some text; a sticker is a
+ * vector outline whose geometry exists only in the sprite. Rasterising it the
+ * obvious way - an <img> pointed at the SVG - would either taint the canvas or
+ * need the whole file inlined as a data URI per sticker, so the paths are
+ * fetched once as text and handed to Path2D, the platform's own way of drawing
+ * an SVG path onto a canvas.
  *
- * A failure is silence rather than an error. The board thumbnail is a
- * convenience; a sticker missing from one is worth less than a snapshot that
- * refuses to be taken because the sprite was not in the cache.
+ * A failure is silence rather than an error: a sticker missing from a thumbnail
+ * is worth less than a snapshot that refuses to be taken because the sprite was
+ * not in the cache.
  */
 /** One filled path out of the sprite: its data, and how the sprite paints it. */
 type ShapePart = { d: string, ink: boolean, evenodd: boolean };
@@ -394,10 +379,9 @@ async function stickerPaths() {
     const text = await (await fetch(STICKER_SPRITE)).text();
     for (const [, id, chunk] of text.matchAll(/<symbol id="([^"]+)"([\s\S]*?)<\/symbol>/g)) {
       // Every <path> in the symbol, not only the first: a duotone shape is a
-      // body *and* the outline over it, and the two are painted differently.
-      // The convention read here is the sprite's own, so a path that opts out
-      // of the default paint there opts out here too - no fill attribute is the
-      // paper, `fill="currentColor"` is the ink.
+      // body *and* the outline over it, painted differently. The convention is
+      // the sprite's own - no fill attribute is the paper, `fill="currentColor"`
+      // is the ink - so a path that opts out there opts out here too.
       const parts = [...chunk.matchAll(/<path([^>]*)\/>/g)].map(([, attrs]) => ({
         d: attrs.match(/\sd="([^"]+)"/)?.[1] || '',
         ink: /\sfill="currentColor"/.test(attrs),
@@ -413,15 +397,14 @@ async function stickerPaths() {
  * One sticker, drawn the way items.css draws it: a paper body with the inked
  * outline over it.
  *
- * Fills only, and no stroke anywhere - the shapes are Phosphor's and it draws
- * even its outline weights as filled paths, where the line is a closed path
- * tracing the outline of a stroke. So this is two `fill()` calls in the order
- * the sprite lists them, which is the whole of the drawing.
+ * Fills only, no stroke - the shapes are Phosphor's and it draws even its
+ * outline weights as filled paths, the line being a closed path tracing the
+ * outline of a stroke. So: two `fill()` calls in the sprite's own order.
  */
 async function drawSticker(ctx: CanvasRenderingContext2D, it: Item, w: number, h: number) {
   const shape = it.meta?.shape;
-  // A shape that is not a string is not in the sprite either, so it takes the
-  // same silent way out as one the sprite does not carry.
+  // A shape that is not a string is not in the sprite either: same silent way
+  // out as one the sprite does not carry.
   if (typeof shape !== 'string') return;
   const parts = (await stickerPaths()).get(shape);
   if (!parts) return;
@@ -463,15 +446,12 @@ type Painter = (p: Paint) => void | Promise<void>;
  * The painters, by item type - keyed the way RENDERERS is in
  * canvas/renderers.ts, and for the same reason.
  *
- * This was a run of `if (it.type === ...)` branches with the picture case and
- * the card-face case falling out of the bottom of it, which is exactly the
- * shape RENDERERS replaced on the real renderer years ago. A table says what
- * the list of kinds *is*, and a new kind is one entry rather than a branch
- * inserted at whichever point in a chain happens to work.
+ * A table says what the list of kinds *is*, and a new kind is one entry rather
+ * than a branch inserted at whichever point in an if-chain happens to work.
  *
  * `paintMedia` is the fallback rather than an entry, because it is not a kind:
- * it is "has pixels, or has a name" and it covers every card that is not one of
- * the four special shapes above.
+ * it is "has pixels, or has a name", covering every card that is not one of the
+ * four shapes above.
  */
 const PAINTERS: Partial<Record<ItemType, Painter>> = {
   sticker: p => drawSticker(p.ctx, p.it, p.w, p.h),
@@ -491,17 +471,15 @@ function paintSwatch({ ctx, it, w, h }: Paint) {
 /**
  * A region: a rounded rectangle with a *stroke* and its name along the foot.
  *
- * Its own painter because a fence has no face. It fell through to the named-card
- * branch before this, which drew it as a small grey card with "Kitchen" in the
- * middle of it - so a board organised into six labelled areas exported as six
- * grey boxes lying under the work they were supposed to be grouping.
+ * Its own painter because a fence has no face. Falling through to the named-card
+ * branch drew it as a small grey card with its name in the middle, so a board of
+ * six labelled areas exported as six grey boxes lying under the work.
  *
- * Stroked and not filled, which is the whole visual argument for a region: it is
- * a line drawn *round* things, and a filled one would put a wash over every card
- * inside it. The name goes on the bar across the bottom, which is where the real
- * one is - see bottomBar() in canvas/item-dom.ts, and the `.item-bar-always`
- * class it gives a fence for the same reason the bar is the only part of one
- * that can be pressed.
+ * Stroked and not filled: a region is a line drawn *round* things, and a filled
+ * one would put a wash over every card inside it. The name goes on the bar
+ * across the bottom, where the real one is - see bottomBar() in
+ * canvas/item-dom.ts and the `.item-bar-always` class it gives a fence, the bar
+ * being the only part of one that can be pressed.
  */
 function paintFence({ ctx, it, w, h, look, scale }: Paint) {
   const r = Math.min(24 * scale, Math.min(w, h) / 2);
@@ -530,20 +508,16 @@ function paintFence({ ctx, it, w, h, look, scale }: Paint) {
 /**
  * A note: its paper, and its text as plain text.
  *
- * **The rich model is deliberately flattened rather than laid out.** A note's
- * `meta.rich` is blocks with their own tags, font, size, alignment and vertical
- * placement, and drawing that on a canvas would be a text engine - a second one,
- * disagreeing with the note on screen at the first styled note somebody made.
- * noteWords() is the board's own answer to "what does this note say", and it is
- * what goes here.
+ * **The rich model is flattened rather than laid out.** A note's `meta.rich` is
+ * blocks with their own tags, font, size, alignment and vertical placement, and
+ * drawing that on a canvas would be a second text engine, disagreeing with the
+ * note on screen at the first styled note somebody made. noteWords() is the
+ * board's own answer to "what does this note say".
  *
- * It was flattenNoteRich() before, which is the answer to a different question -
- * that one writes the *storage* form, with the `# ` and `## ` that let a note
- * round-trip as plaintext, and this paints its result onto a picture. A note
- * with a heading came out of the export reading "# Kitchen".
- *
- * And it was `it.name` before that, which is the note's *first line* - so a
- * six-line note exported as its own heading and nothing else.
+ * Not flattenNoteRich(), which writes the *storage* form with the `# ` and `## `
+ * that let a note round-trip as plaintext: a heading came out of the export
+ * reading "# Kitchen". Not `it.name` either - that is the note's *first line*,
+ * so a six-line note exported as its own heading and nothing else.
  */
 function paintNote({ ctx, it, w, h, look, scale }: Paint) {
   ctx.fillStyle = readToken(`--note-${(Number(it.meta?.tint) || 1)}`) || '#fff7d6';
@@ -551,9 +525,7 @@ function paintNote({ ctx, it, w, h, look, scale }: Paint) {
   ctx.fill();
   if (look.detail !== 'full') return;
 
-  // noteWords() and not flattenNoteRich(): that one writes the storage form,
-  // markers and all, and this paints straight onto the export canvas - so a note
-  // with a heading came out of the PNG reading "# Kitchen". See note-model.ts.
+  // noteWords() and not flattenNoteRich() - see the header and note-model.ts.
   const text = noteWords(it.meta) || it.name || '';
   if (!text) return;
   const size = Math.max(9, Math.min(w, h) * 0.09);
@@ -574,9 +546,9 @@ function paintNote({ ctx, it, w, h, look, scale }: Paint) {
  * Everything else: a picture if the card has one, a card face with its name and
  * what it is if not.
  *
- * The picture half honours three things the export used to ignore, and the first
- * two are correctness rather than fidelity - both features shipped and the
- * export did not know either existed:
+ * The picture half honours six things, the first two being correctness rather
+ * than fidelity - both features shipped and the export did not know either
+ * existed:
  *
  *   meta.crop     the source rectangle, through itemCrop()
  *   meta.flip     which way round it is hung, through itemFlip()
@@ -591,15 +563,15 @@ function paintNote({ ctx, it, w, h, look, scale }: Paint) {
 async function paintMedia({ ctx, it, w, h, look, scale }: Paint) {
   const hash = pixelHash(it);
   const raw = hash ? await loadImage(assetURL(hash)) : null;
-  // The picture to draw, and the rectangle of it to take. Normally the file and
-  // its crop; on a matted card a knocked-out copy of that rectangle, already cut
-  // out, whose whole area is the region. See prepare().
+  // The picture to draw, and the rectangle of it to take: normally the file and
+  // its crop; on a matted card a knocked-out copy of that rectangle whose whole
+  // area is the region. See prepare().
   const img = raw && await prepare(it, raw);
   if (img) {
     // A cut-out is drawn without its rounded clip as well as without its card.
-    // The clip is a corner radius on the *box*, and the box is the thing a
-    // cut-out has been told not to have: rounding it would shave the corners off
-    // a shape that does not reach them anyway, and would slice one that does.
+    // The clip is a corner radius on the *box*, which a cut-out has been told
+    // not to have: rounding it shaves corners off a shape that does not reach
+    // them anyway, and slices one that does.
     const bare = it.meta?.bare === true;
     const radius = Math.min(w, h) * 0.03;
     ctx.save();
@@ -609,25 +581,24 @@ async function paintMedia({ ctx, it, w, h, look, scale }: Paint) {
     }
     // The card behind a contained picture, so the letterboxed bands are the
     // card and not a hole in the board. Never behind a cut-out - those bands
-    // are exactly the empty rectangle it exists to get rid of, and painting
-    // them here would put the card back in the file the screen does not have.
+    // are the empty rectangle it exists to get rid of, and painting them would
+    // put back a card the screen does not have.
     if (fitMode(it) === 'contain' && !bare) {
       ctx.fillStyle = look.card;
       ctx.fillRect(-w / 2, -h / 2, w, h);
     }
-    // The mirror, and it is not gated on `detail` the way the grade above is:
-    // a grade is a shade nobody can name at thumbnail size, and which way round
-    // a photograph faces is legible at any size at all. Left to the clip and
-    // the ctx.restore() below to undo, since everything drawFitted draws is
-    // centred on the origin and so mirrors about the card's own middle.
+    // The mirror, not gated on `detail` the way the grade below is: a grade is
+    // a shade nobody can name at thumbnail size, and which way round a
+    // photograph faces is legible at any size. Undone by the ctx.restore()
+    // below - everything drawFitted draws is centred on the origin, so it
+    // mirrors about the card's own middle.
     const flip = itemFlip(it);
     if (flip) ctx.scale(flip.x ? -1 : 1, flip.y ? -1 : 1);
-    // The quarter turn, inside the mirror and outside the fit - which is the
-    // order the three compose in everywhere else: the crop cuts the source, the
-    // turn turns what is left, and the mirror turns that. The box handed to
-    // drawFitted is swapped for a quarter turn so that what lands after the
-    // rotation is the card's own w x h; 180 needs no swap, which is the whole of
-    // why `quarter` is not just `!!rot`.
+    // The quarter turn, inside the mirror and outside the fit - the order the
+    // three compose in everywhere else: the crop cuts the source, the turn turns
+    // what is left, the mirror turns that. The box handed to drawFitted is
+    // swapped for a quarter turn so what lands after the rotation is the card's
+    // own w x h; 180 needs no swap, which is why `quarter` is not `!!rot`.
     const rot = itemRotate(it);
     if (rot) ctx.rotate(rot * Math.PI / 180);
     const quarter = rot === 90 || rot === 270;
@@ -658,9 +629,8 @@ async function paintMedia({ ctx, it, w, h, look, scale }: Paint) {
   ctx.font = `500 ${size}px ${look.display}`;
   wrapText(ctx, label, w * 0.86, Math.max(12, Math.min(w, h) * 0.13));
   // The line the card carries under its name: how big it is and what it is.
-  // Both strings are already computed by the app - formatBytes() and
-  // describeExt() - so this is the card's own sentence rather than a second
-  // opinion about the file.
+  // Both strings come from the app - formatBytes() and describeExt() - so this
+  // is the card's own sentence, not a second opinion about the file.
   if (look.detail === 'full') {
     const kicker = describeCard(it);
     if (kicker) {
@@ -687,10 +657,9 @@ function describeCard(it: Item): string {
 /**
  * The plate across the foot of a picture card, with its caption on it.
  *
- * Every card has one on the board - see bottomBar() in canvas/item-dom.ts,
- * which builds it for every type and lets the CSS decide who shows a name. A
- * picture with a caption exported without it lost the one piece of writing on
- * that card.
+ * Every card has one on the board - see bottomBar() in canvas/item-dom.ts, which
+ * builds it for every type and lets the CSS decide who shows a name. Exporting
+ * without it lost the one piece of writing on that card.
  */
 function captionBar(
   ctx: CanvasRenderingContext2D, it: Item, w: number, h: number, look: Look, scale: number,
@@ -699,9 +668,9 @@ function captionBar(
   if (!name) return;
   const size = Math.max(9, Math.min(22 * scale, h * 0.07));
   const bar = size * 2;
-  // Below a certain drawn size the plate is a smudge with a smudge on it, which
-  // is worse than a clean photograph. The same judgement canvas/paper.ts makes
-  // about its own caption, at its own threshold.
+  // Below a certain drawn size the plate is a smudge with a smudge on it, worse
+  // than a clean photograph. The same judgement canvas/paper.ts makes about its
+  // own caption, at its own threshold.
   if (bar > h * 0.4 || size < 7) return;
   ctx.save();
   roundRect(ctx, -w / 2, -h / 2, w, h, Math.min(w, h) * 0.03);
@@ -726,15 +695,14 @@ type Ready = {
 /**
  * The long edge a cut-out picture is masked at, for the export.
  *
- * Not the display copy's ceiling: this is the export, which is the one path in
- * the app where the point is resolution the screen never had.
+ * Not the display copy's ceiling: this is the export, the one path in the app
+ * where the point is resolution the screen never had.
  *
  * It bounds the *canvas the mask is composited onto*, not the work the model
  * does - the model reads a 320x320 square whatever it is given (see SIDE in
  * canvas/matte.ts), so this costs one scaled draw rather than more inference.
- * What it buys is the edge: a mask stretched from 320 to 2048 is as soft as that
- * arithmetic allows, and stretching it to 6000 would only make the softness
- * bigger without making it better.
+ * A mask stretched from 320 to 2048 is as soft as that arithmetic allows, and
+ * stretching it to 6000 makes the softness bigger without making it better.
  */
 const MATTE_EXPORT_MAX = 2048;
 
@@ -1290,7 +1258,7 @@ export async function boardThumb(max = 360) {
   // for - it substitutes PNG and says nothing, and no Safari writes WebP from a
   // canvas.
   //
-  // This mattered more than a wrong file extension. storage/library.js keeps
+  // This mattered more than a wrong file extension. storage/library.ts keeps
   // this string in the shelf's index, in one `kv` record read in full every
   // time the switcher draws, on the stated grounds that it is "small by
   // construction". A 360px PNG of a picture-dense board is a few hundred
@@ -1381,7 +1349,7 @@ function buildPdf(jpeg: Uint8Array<ArrayBuffer>, w: number, h: number) {
 //
 // It was: a 1500x1000 canvas painted box by box, saved as a PNG and wrapped in
 // the same buildPdf() the board export uses. It is a card on the board now -
-// see the style-tile renderer in canvas/renderers.js, and style-tile.ts for the
+// see the style-tile renderer in canvas/renderers.ts, and style-tile.ts for the
 // part both versions were really about, which is what goes on it.
 //
 // The reason it could not stay is the reason it was painted box by box in the

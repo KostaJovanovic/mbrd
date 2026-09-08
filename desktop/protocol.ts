@@ -75,12 +75,14 @@ export function registerSchemes(): void {
 /**
  * Answer `app://mbrd/...` out of web/. Must run after `ready`.
  *
- * `app.getAppPath()` is the packaged app's root, which is where electron-builder
- * puts both `desktop/dist` and `web` - see the `files` list in
- * electron-builder.yml. In development it is `desktop/`, so web/ is one level
- * up; the two are reconciled by looking for index.html rather than by asking
- * whether this is a packaged build, because "where is web/" is a question with
- * an answer on disk.
+ * `app.getAppPath()` is the packaged app's root - `resources/app.asar`, holding
+ * `dist/**`, which is the whole of the `files` list in electron-builder.yml.
+ * web/ is not in the archive at all: `extraResources` copies it to
+ * `resources/web`, beside the asar rather than inside it, so it is one level up
+ * from the app path. In development the app path is `desktop/` and web/ is one
+ * level up from that too. The two are reconciled by looking for index.html
+ * rather than by asking whether this is a packaged build, because "where is
+ * web/" is a question with an answer on disk.
  */
 export function serveWeb(): void {
   const root = webRoot();

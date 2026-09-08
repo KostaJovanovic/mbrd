@@ -48,7 +48,7 @@ test('a pair is joined once, whichever way round it is asked', () => {
 
 test('the same pair again parts them, which is how one is removed', () => {
   // The alternative was making connections selectable - hit-testing a path in
-  // canvas/input.js and a selection model holding things that are not items -
+  // canvas/input.ts and a selection model holding things that are not items -
   // which is a great deal of machinery for a delete key.
   const [a, b] = pair();
   assert.equal(toggleConnection(b.id, a.id), false, 'reports that they are parted');
@@ -184,7 +184,7 @@ test('a hint card can never carry one into a file', () => {
 
 test('a sticker cannot be an end, on the way in or the way out', () => {
   // The tap path used to write these and nothing ever drew them: centres() in
-  // canvas/web.js filters its ends through isJoinEnd(), so a pair naming a
+  // canvas/web.ts filters its ends through isJoinEnd(), so a pair naming a
   // sticker is skipped every frame, in silence, and survives a save. Boards
   // written before the tool checked can already carry one, which is why both
   // boundaries prune rather than just the tool.
@@ -275,7 +275,7 @@ test('the app will not draw past the cap either', () => {
 //
 // The spanning tree that used to *be* the web, run once on demand and turned
 // into ordinary stored connections. Driven through the command surface rather
-// than by calling web-graph.js directly, because what is being checked is the
+// than by calling web-graph.ts directly, because what is being checked is the
 // wiring: that what the generator produces lands on the board as real pairs
 // somebody can then remove one at a time.
 // ---------------------------------------------------------------------------

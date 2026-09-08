@@ -5,14 +5,11 @@
 // in-progress drag and takes over as a pinch, which is what makes two-finger
 // pan/zoom feel right on a phone.
 //
-// That "exactly one" used to be a promise every branch had to keep on its own:
-// a nullable `g` plus a bag of booleans beside it, whose legal combinations
-// existed only in the author's head. It is structural now. There is a single
-// `gesture` object with a `mode` field - idle, press, pan, pinch, marquee, move,
-// resize - the data each gesture needs hangs off that object, and enter() is the
-// only thing in the file that writes `mode`. Entering a mode replaces the whole
-// object, so no field of the gesture just ended can be read by the next one, and
-// there is no second gesture for a branch to forget about. The legal moves are
+// That "exactly one" is structural. A single `gesture` object carries a `mode`
+// field - idle, press, pan, pinch, marquee, move, resize - the data each gesture
+// needs hangs off that object, and enter() is the only thing in the file that
+// writes `mode`. Entering a mode replaces the whole object, so no field of the
+// gesture just ended can be read by the next one. The legal moves are
 // GESTURE_MOVES, one table, below; enter() checks itself against it.
 //
 // Gesture map:
@@ -28,58 +25,48 @@
 //   shift + wheel or scroll ..... pan sideways, out of the platform's axis rail
 //   two fingers on a screen ..... pan + pinch zoom
 //
-// What is a mode and what is not. A mode is a thing the pointer is *doing*, and
-// the test is whether two of them could be true at once: if they could, one of
-// them was never a mode. So the seven kinds the pipeline already had became the
-// seven modes (`resize-pending` and `touch-marquee` are the one `press` mode,
-// told apart by `intent` - both are a press waiting out the slop to find out
-// what it is), and everything that outlives or straddles a gesture stayed
-// outside it:
+// A mode is what the pointer is doing. Two can never be true at once - that is
+// the test. Seven kinds, seven modes (`resize-pending` and `touch-marquee` are
+// both `press`, split by `intent`: a press waiting out the slop). Anything that
+// outlives or straddles a gesture stays outside the mode:
 //
-//   spaceDown ....... a modifier key. It is held *across* gestures and decides
-//                     what the next press means; folding it into the mode would
-//                     make "space is down while panning" unsayable.
-//   hover ........... where the cursor is. True of a pointer that is doing
-//                     nothing at all, which is the opposite of a mode.
-//   pointers ........ which pointers are down. The machine is driven by this,
-//                     not the same fact as what the machine is in.
-//   taps ............ the presses that may still turn out to be taps (`arm`,
+//   spaceDown ....... a modifier key, held *across* gestures, deciding what the
+//                     next press means. Folding it into the mode would make
+//                     "space is down while panning" unsayable.
+//   hover ........... where the cursor is. True of a pointer doing nothing at
+//                     all, which is the opposite of a mode.
+//   pointers ........ which pointers are down. What drives the machine, not
+//                     what the machine is in.
+//   taps ............ presses that may still turn out to be taps (`arm`,
 //                     `card`, `empty`) and the taps just past (`lastEmpty`,
-//                     `lastTitle`). Every one of these coexists with a live
-//                     gesture - the whole point of the pan-then-select gate is
-//                     that a pan is running while a selection is still pending -
-//                     and the last two outlive it by design, since a double tap
-//                     is two gestures. Five closure variables, one record.
+//                     `lastTitle`). All coexist with a live gesture - the
+//                     pan-then-select gate exists because a pan runs while a
+//                     selection is still pending - and the last two outlive it,
+//                     since a double tap is two gestures. One record.
 //   hold ............ the long-press timer, its origin, and the menu it opened.
-//                     Deliberately outside the gesture: it has to survive the
-//                     gesture being replaced by a second finger and cancel it.
-//                     Three closure variables, one record.
-//   midPaste ........ the X11 primary-selection guard. Outlives the gesture on
-//                     purpose - the paste it swallows arrives a task *after* the
-//                     pan that armed it. Three closure variables, one record.
+//                     Outside the gesture because it has to survive the gesture
+//                     being replaced by a second finger, and cancel it.
+//   midPaste ........ the X11 primary-selection guard. Outlives the gesture:
+//                     the paste it swallows arrives a task *after* the pan that
+//                     armed it.
 //
 // ── Deciding and doing are two things, and only the first can be tested ──
 //
-// The file is not to be split - CONTRIBUTING.md says so and the reason is the
-// single active gesture, which a second pipeline would reintroduce exactly the
-// bugs of. What that rule has never forbidden, and what this file spent a long
-// time not doing, is *naming* the decisions inside it.
+// The file is not to be split - CONTRIBUTING.md says so, and the reason is the
+// single active gesture, whose bugs a second pipeline would reintroduce. Naming
+// the decisions inside it is allowed.
 //
-// So the pure half is exported and the effects stay where they are. `readWheel`
-// is the oldest of these, `gestureTransition` the mode table, and `pressIntent`
-// the newest and the largest: the eight branches of the pointerdown cascade,
-// which used to be that cascade interleaved with the select, the pointer
-// capture and the enter() each branch performs. The handler gathers facts,
-// asks once what the press means, and then performs the answer - and nothing
-// below the ask re-decides it.
-//
-// That is not a machine standing beside the pipeline. There is still one file,
-// one `gesture`, one pointerdown and one of every listener; what changed is that
-// "a press on an unpicked card, under a finger, pans and selects on the lift" is
-// a sentence tests/input.test.js can put to the module rather than a comment a
-// reader has to trust. Roughly two thirds of this file is still inside
-// initInput() and out of a test's reach - the next thing worth naming is the
-// tap and hold bookkeeping, for the same reason and in the same shape.
+// So the pure half is exported and the effects stay where they are:
+// `readWheel`, `gestureTransition` (the mode table), and `pressIntent` - the
+// eight branches of the pointerdown cascade, lifted out of the select, the
+// pointer capture and the enter() each branch performs. The handler gathers
+// facts, asks once what the press means, then performs the answer; nothing
+// below the ask re-decides it. There is still one file, one `gesture`, one
+// pointerdown and one of every listener - what changed is that "a press on an
+// unpicked card, under a finger, pans and selects on the lift" is a sentence
+// tests/input.test.js can put to the module. Roughly two thirds of the file is
+// still inside initInput() and out of a test's reach; the next thing worth
+// naming is the tap and hold bookkeeping, in the same shape.
 
 import { clamp, hasOwn } from '../util.ts';
 import { cue } from '../cuelume/engine.ts';
@@ -111,12 +98,11 @@ const TAP_MOVE_SLOP = 12;
 /**
  * How many cards of one drop are worth a sound of their own.
  *
- * Seven, because that is what cuelume/engine.js can lay out inside its
- * eighty-millisecond lookahead at twelve milliseconds apart. The eighth and
- * everything after it would be scheduled at the same instant as each other,
- * and transients sharing a sample are one transient - so the cap costs nothing
- * that could be heard, and saves four Web Audio nodes per card on a drop that
- * can legitimately be five hundred of them.
+ * Seven: what cuelume/engine.ts can lay out inside its eighty-millisecond
+ * lookahead at twelve milliseconds apart. The eighth and everything after it
+ * would schedule at the same instant, and transients sharing a sample are one
+ * transient - so the cap costs nothing audible and saves four Web Audio nodes
+ * per card on a drop that can legitimately be five hundred of them.
  */
 const TAP_BURST = 7;
 // How long a finger has to rest before the press means "show me the menu".
@@ -126,11 +112,11 @@ const LONG_PRESS_MS = 480;
 const LONG_PRESS_CONTEXT_GUARD_MS = 900;
 const LONG_PRESS_CONTEXT_GUARD_PX = 24;
 
-// Controls a straddling corner hitbox can cover and must hand the press back to,
-// rather than resize over: buttons (play, mute, the big video play), a link's
-// anchor, the audio card's waveform, a text field. Deliberately *not* the
-// full-card surfaces - a model stage, a picture, a note's editable body fill the
-// card corner to corner, and a corner over those is meant to resize. See onDown().
+// Controls a straddling corner hitbox can cover and must hand the press back
+// to, rather than resize over: buttons (play, mute, the big video play), a
+// link's anchor, the audio card's waveform, a text field. *Not* the full-card
+// surfaces - a model stage, a picture, a note's editable body fill the card
+// corner to corner, and a corner over those is meant to resize. See onDown().
 const GRIP_YIELD = 'button, a[href], input, .wave';
 
 /**
@@ -138,7 +124,7 @@ const GRIP_YIELD = 'button, a[href], input, .wave';
  *
  * Named off the function rather than imported from layout.ts, where the type is
  * declared: state.ts re-exports snapshotGeom as a value and not as a type, and
- * reaching past the one door for the type alone would be a second edge in the
+ * reaching past the one door for the type alone would add a second edge in the
  * graph for a single idea.
  */
 type GeomSnap = ReturnType<typeof snapshotGeom>[number];
@@ -173,8 +159,8 @@ export function needsSelectionBeforeMove(selected: ReadonlySet<string>, id: stri
  *
  * True when the event was already handled (the context menu's capture listener
  * preventDefault-s the keys it acts on) or an overlay owns the keyboard - a
- * modal dialog or the open menu. Extracted from the keydown handler so the rule
- * itself is testable without a DOM. See AUD-08.
+ * modal dialog or the open menu. Out of the keydown handler so the rule is
+ * testable without a DOM. See AUD-08.
  */
 export function shortcutsSuppressed(
   defaultPrevented: boolean,
@@ -188,34 +174,25 @@ export function shortcutsSuppressed(
 // ---------------------------------------------------------------------------
 //
 // The pointerdown handler is a cascade of eight branches deciding what a press
-// has just started, and it used to be that cascade *interleaved with the effects
-// each branch performs* - a select here, a pointer capture there, an enter()
-// with a DOM node on it. Two hundred and seventy lines in which the decision and
-// the doing could only be read together, and in which the decision could not be
-// reached by a test at all: every one of those branches turns on facts a headless
-// runner can state in a line (a pointer type, a modifier, whether the thing under
-// the point was a card) and none of them could be asked.
+// has just started. The decision is this function; the doing stays in the
+// handler. **The pipeline is not split**: one file, one active gesture, one
+// pointerdown. This is the existing branch order, written where a test can ask
+// it a question - every branch turns on facts a headless runner can state in a
+// line (a pointer type, a modifier, whether the thing under the point was a
+// card).
 //
-// So the decision is this function and the doing stays in the handler. **The
-// pipeline is not split**: there is still one file, one active gesture and one
-// pointerdown, and this is not a second machine standing beside it - it is the
-// existing branch order, written down where it can be asked a question. What it
-// buys is that "a press on an unpicked card, on a phone, pans and selects on
-// lift" is now a sentence a test can put to the module rather than a comment
-// somebody has to trust.
-//
-// It is deliberately *not* the whole handler. The four claims above it - the
-// connector tool, the title card's pen, its rename button, its double tap - each
-// call a command and end the press, so they are effects wearing a condition and
-// they stay where they are. This begins where the branch order stops calling out
-// and starts choosing.
+// It is *not* the whole handler. The four claims above it - the connector tool,
+// the title card's pen, its rename button, its double tap - each call a command
+// and end the press, so they are effects wearing a condition and stay where
+// they are. This begins where the branch order stops calling out and starts
+// choosing.
 
 /**
  * What a press turns out to be. One variant per branch of the cascade.
  *
- *   widget ...... a real control inside a card owns the whole gesture. The card
- *                 is selected and the pointer is let go of - capturing here
- *                 would redirect every following move to #viewport and leave a
+ *   widget ...... a control inside a card owns the whole gesture. The card is
+ *                 selected and the pointer let go of - capturing here would
+ *                 redirect every following move to #viewport and leave a
  *                 scrubber dead.
  *   pan ......... the board follows the pointer. `middle` is the X11 primary
  *                 selection guard's business, not the pan's.
@@ -228,9 +205,8 @@ export function shortcutsSuppressed(
  *                 edit from a pick.
  *   lockedPan ... a press on a locked card. It selects and then pans, which is
  *                 what a press on bare board does.
- *   frozen ...... a press while a tour is running. It does nothing at all: no
- *                 pan, no pick, no band. The view during a reading belongs to
- *                 the tour and to nothing else.
+ *   frozen ...... a press while a tour is running. Nothing at all: no pan, no
+ *                 pick, no band. The view during a reading is the tour's.
  *   marquee ..... a modified press on empty board.
  *   empty ....... an unmodified one: clear the selection, point at whatever line
  *                 is under it, and pan.
@@ -250,18 +226,18 @@ export type PressIntent =
 /**
  * Everything the cascade reads, as facts rather than as objects.
  *
- * Named off what the branches ask rather than off where the answer comes from,
- * which is what keeps this a decision and not a second copy of the handler's
- * imports: `onCard` is an id because two branches need to say which card, and
- * everything else is a boolean because that is all any branch does with it.
+ * Named off what the branches ask, not off where the answer comes from - which
+ * keeps this a decision and not a second copy of the handler's imports.
+ * `onCard` is an id because two branches need to say which card; everything
+ * else is a boolean because that is all any branch does with it.
  */
 export type PressFacts = {
   pointerType: string;
   button: number;
   /**
    * shift, ctrl, meta, or the multi-select mode - the four the cascade treats
-   * identically. The mode is a fact here rather than a call inside the cascade
-   * so that pressIntent() stays a function of its argument alone.
+   * identically. A fact here rather than a call inside the cascade, so that
+   * pressIntent() stays a function of its argument alone.
    */
   additive: boolean;
   spaceDown: boolean;
@@ -281,11 +257,11 @@ export type PressFacts = {
    * question one dimension over: a corner drag on one is a corner drag on
    * something the pointer does not have hold of.
    *
-   * Separate from `locked`, and answered differently below, because the two are
-   * different refusals. A locked card is immovable on its own account and the
-   * press pans, as a press on bare board does. A pinned sticky is not immovable
-   * at all - it moves with its host - so a grip press on one falls through and
-   * means what every other press on it means.
+   * Separate from `locked`, and answered differently below: they are different
+   * refusals. A locked card is immovable on its own account and the press pans,
+   * as a press on bare board does. A pinned sticky is not immovable at all - it
+   * moves with its host - so a grip press on one falls through and means what
+   * every other press on it means.
    */
   pinned: boolean;
   /** Is it unpicked, so that a drag would have to select it first? */
@@ -302,7 +278,7 @@ export type PressFacts = {
    * The board is being *shown* rather than worked on, so nothing on it may be
    * moved, resized or picked up, and the view may not be driven either - see
    * the branch below. A fact here rather than a call inside the cascade, for
-   * the reason `additive` gives: this stays a function of its argument alone.
+   * `additive`'s reason: this stays a function of its argument alone.
    */
   touring: boolean;
 };
@@ -315,12 +291,12 @@ export type PressFacts = {
  *   1. A widget claims the press outright - but not while space is held or on a
  *      middle button, both of which mean pan from anywhere, including from over
  *      a scrubber.
- *   2. While a tour is running, every other press is nothing: the board is being
- *      read rather than worked on, so nothing on it moves, resizes or is picked
- *      up, and the view is the tour's. Above the space-and-middle pan as well as
- *      the card branches, because a held space is a way of driving the board and
- *      not an exception to it. Below the widget branch, because a video somebody
- *      is showing is part of the showing.
+ *   2. While a tour is running, every other press is nothing: nothing moves,
+ *      resizes or is picked up, and the view is the tour's. Above the
+ *      space-and-middle pan as well as the card branches, because a held space
+ *      is a way of driving the board and not an exception to it. Below the
+ *      widget branch, because a video somebody is showing is part of the
+ *      showing.
  *   3. Space or the middle button, otherwise, is a pan.
  *   4. A grip is a resize *candidate*, and only with one card picked or none:
  *      resize drives one item off one corner and there is no defined answer for
@@ -343,16 +319,11 @@ export function pressIntent(f: PressFacts): PressIntent {
   if (f.onWidget && !f.spaceDown && !middle) return { kind: 'widget' };
   // While a tour runs the board is frozen: a press takes hold of nothing and
   // drives nothing. Above the grip branch as well as the move one, so a card
-  // that was selected when the tour started cannot be resized by its corners
-  // either - and above the space-and-middle pan, because the stops are framed
-  // shots and a viewer who has panned off one is looking at a tour that has
-  // lost its place with no way back to it but the next stop. A presentation
-  // somebody nudges a photograph out of is a presentation with a mistake saved
-  // into it; a presentation somebody drags the board out from under is one
-  // nobody can follow.
-  //
-  // It used to be a lockedPan, which was the smaller change and the wrong one:
-  // it said cards may not move, and left the view to whoever pressed hardest.
+  // selected when the tour started cannot be resized by its corners either -
+  // and above the space-and-middle pan, because the stops are framed shots and
+  // a viewer who has panned off one has no way back but the next stop. Not a
+  // lockedPan: that says cards may not move and leaves the view to whoever
+  // pressed hardest.
   if (f.touring) return { kind: 'frozen' };
   if (f.spaceDown || middle) return { kind: 'pan', middle };
   if (f.onGrip && f.onCard && f.selectionSize <= 1 && !f.locked && !f.pinned) {
@@ -364,9 +335,9 @@ export function pressIntent(f: PressFacts): PressIntent {
   }
   if (f.onCard) {
     // The four card branches carry the id rather than leaving the caller to
-    // reach for it again. It is the same string the facts arrived with - what it
-    // buys is that a branch which only exists because there *was* a card says so
-    // in its own type, so nothing downstream has to assert it.
+    // reach for it again - the same string the facts arrived with. A branch
+    // that only exists because there *was* a card says so in its own type, so
+    // nothing downstream has to assert it.
     const carried = { id: f.onCard, additive: f.additive, wasSelected: f.wasSelected };
     return f.locked ? { kind: 'lockedPan', ...carried } : { kind: 'move', ...carried };
   }
@@ -386,13 +357,13 @@ export function repeatsLongPressContextMenu(
 }
 
 // Screen pixels of diagonal before a rubber band counts as a rectangle somebody
-// drew, rather than a click that happened to be modified. A shift-click on empty
-// board starts a marquee of zero size (startMarquee runs on the press, not on the
-// first movement), and that gesture means "clear the selection", not "here is a
-// region" - so the offer that follows a band has to be able to tell them apart.
+// drew, rather than a click that happened to be modified. A shift-click on
+// empty board starts a marquee of zero size (startMarquee runs on the press,
+// not on the first movement), and that gesture means "clear the selection", not
+// "here is a region" - so the offer that follows a band has to tell them apart.
 // Comfortably above DRAG_SLOP: crossing the slop makes it a drag, this makes it
-// a rectangle, and the gap is the small deliberate band where a wobbly click
-// selects things without also being asked about fencing them.
+// a rectangle, and the gap is the band where a wobbly click selects things
+// without also being asked about fencing them.
 const MARQUEE_DRAWN = 16;
 
 /** Did this marquee draw a rectangle, or was it a modified click? */
@@ -408,20 +379,20 @@ export function drewRectangle(
 /**
  * Is this item caught by a band over `[x0,x1] x [y0,y1]`?
  *
- * A card by overlap and a fence only by being covered outright, and the
- * asymmetry is the fence's own. It is the one item whose face takes no presses -
- * items.css hands them straight through to whatever is underneath - so a band
- * swept across that face is a band drawn *inside* the region rather than one
- * aimed at it. And a fence is always larger than what is drawn inside it, so
- * under one rule for both, every band within a region caught the region: the
- * offer that follows counted it, the fence it drew was unioned out to swallow
- * the parent it was drawn inside, and dragging what the band caught towed the
- * whole region. To take a fence, put the band round it - or press its name.
+ * A card by overlap, a fence only by being covered outright. The asymmetry is
+ * the fence's own: it is the one item whose face takes no presses - items.css
+ * hands them through to whatever is underneath - so a band swept across that
+ * face is drawn *inside* the region rather than aimed at it. A fence is always
+ * larger than what is drawn inside it, so under one rule for both, every band
+ * within a region caught the region: the offer that follows counted it, the
+ * fence it drew was unioned out to swallow the parent it was drawn inside, and
+ * dragging what the band caught towed the whole region. To take a fence, put
+ * the band round it - or press its name.
  */
 export function marqueeHit(
-  // A box and which kind of thing it is, which is the whole of what the two
-  // rules read - the same bargain commands/fences.ts's `Boxed` makes, and what
-  // lets a test hand this a rectangle rather than a whole board item.
+  // A box and which kind of thing it is - the whole of what the two rules read,
+  // the same bargain commands/fences.ts's `Boxed` makes, and what lets a test
+  // hand this a rectangle rather than a whole board item.
   it: Box & { type?: string },
   x0: number, y0: number, x1: number, y1: number,
 ): boolean {
@@ -440,27 +411,25 @@ export type CarryHold = { fx: number, fy: number, hw: number, hh: number };
  * The smallest a fence may be dragged while its contents still *fit* inside it -
  * `{ w, h }`, or zeroes when it holds nothing.
  *
- * The carry is what makes this a different sum from the floor it replaces. Every
- * card in a region keeps its fraction of the box (stuckPlacement), so no card can
- * be left outside by a moving edge - but a card is a box and not a point, and its
- * size does not shrink with the region. Past a certain width the cards are still
- * at the right fractions and hanging over the border anyway, which is the same
- * "a region that visibly does not hold its contents" the old floor was for, and
- * the reason one is still needed at all.
+ * Every card in a region keeps its fraction of the box (stuckPlacement), so no
+ * card can be left outside by a moving edge - but a card is a box and not a
+ * point, and its size does not shrink with the region. Past a certain width the
+ * cards are at the right fractions and hanging over the border anyway, which is
+ * why a floor is needed at all.
  *
  * `holds` are `{ fx, fy, hw, hh }`: the fraction of the box each card sits at,
  * frozen at grip time, and its half-extents, which do not change. A card at
  * fraction fx has its far edge at `w * |fx| + hw`, and that has to stay inside
  * `w / 2` - so `w >= hw / (0.5 - |fx|)`, and the binding card is whichever asks
- * for the most. No corner arithmetic anywhere: the fraction is preserved whatever
- * edge is dragged, so the floor is a fact about the box's size alone.
+ * for the most. No corner arithmetic: the fraction is preserved whatever edge
+ * is dragged, so the floor is a fact about the box's size alone.
  *
- * Capped at the size the drag started from, and for the same reason as before: a
- * card can already be hanging out of a fence - it joined by its centre, and
- * nothing has had to move it since - and an uncapped floor would then be larger
- * than the fence, so touching a grip would snap the region open to swallow it. A
- * card at or past the halfway fraction can never fit, and the cap is what turns
- * that from an infinity into "this one will not shrink".
+ * Capped at the size the drag started from. A card can already be hanging out
+ * of a fence - it joined by its centre, and nothing has had to move it since -
+ * and an uncapped floor would then be larger than the fence, so touching a grip
+ * would snap the region open to swallow it. A card at or past the halfway
+ * fraction can never fit; the cap turns that infinity into "this one will not
+ * shrink".
  */
 /** The smallest box the held cards allow, as a width and a height. */
 type CarryFloor = { w: number, h: number };
@@ -487,10 +456,9 @@ export function carryFloor(
 /**
  * Decide whether a press on a resize grip is still a tap or has become a drag.
  *
- * A grip waits for real movement before a resize starts, which keeps a plain tap
- * from snapping or committing geometry. A tap that never crosses the slop does
- * nothing - the three-dot menu that a southeast tap used to open is gone, and
- * the context menu is reached by right-click or long-press instead.
+ * A grip waits for real movement before a resize starts, which keeps a plain
+ * tap from snapping or committing geometry. A tap that never crosses the slop
+ * does nothing; the context menu is reached by right-click or long-press.
  */
 export function resizeHandleAction(
   start: Point | null | undefined,
@@ -507,31 +475,30 @@ export function resizeHandleAction(
 // ---------------------------------------------------------------------------
 //
 // A touchpad and a mouse wheel arrive at the same event and mean opposite
-// things. Two fingers moved across a pad is a *scroll* - the board should
-// follow the fingers, in both axes - while a notch of a wheel is the zoom this
-// app has always had. There is no API that says which device sent an event, and
-// no plan to add one, so this is a heuristic; what makes it tolerable is that
+// things. Two fingers across a pad is a *scroll* - the board follows the
+// fingers, in both axes - while a notch of a wheel is a zoom. No API says which
+// device sent an event, so this is a heuristic; what makes it tolerable is that
 // both answers are ordinary board gestures, so being wrong is annoying and
 // never destructive.
 //
 // Three signals, in order of how much they can be trusted:
 //
 //   ctrlKey     A pinch. Every engine reports one as a wheel event with the
-//               control key set and nobody's hand anywhere near control, which
-//               is a hack of long standing and is also completely reliable - it
-//               is the only pinch notification a page gets from a touchpad.
+//               control key set and nobody's hand near control - a hack of long
+//               standing and completely reliable, and the only pinch
+//               notification a page gets from a touchpad.
 //   deltaMode   Lines or pages. No touchpad reports either; it is a mouse, or
 //               it is Firefox reporting a mouse.
 //   the deltas  A pad moves sideways and in fractions of a pixel. A wheel is a
 //               column of whole notches: dx is exactly zero and dy arrives in
 //               steps of 100 or 120, or 3 lines.
 //
-// The last one is the fuzzy one, and it is fuzziest at the *start* of a swipe,
-// which is where a mistake is most visible. So the answer is latched for the
-// length of a gesture: wheel events come in bursts a few milliseconds apart, and
-// a device does not change hands mid-burst. A swipe starts slow - the first
-// event of one is small and gets classified correctly - and every event behind
-// it inherits that answer however fast the fingers get.
+// The last is the fuzzy one, and it is fuzziest at the *start* of a swipe,
+// where a mistake is most visible. So the answer is latched for the length of a
+// gesture: wheel events come in bursts a few milliseconds apart, and a device
+// does not change hands mid-burst. A swipe starts slow - its first event is
+// small and gets classified correctly - and every event behind it inherits that
+// answer however fast the fingers get.
 
 /** Pixels one line of a deltaMode 1 event is taken to be. */
 const WHEEL_LINE = 16;
@@ -551,8 +518,8 @@ export const WHEEL_STREAM_MS = 200;
 /**
  * How much of a zoom one unit of delta is worth, per source.
  *
- * Two numbers because the two devices count in different units. A wheel notch
- * is a hundred at a time and wants a small coefficient; a pinch is a stream of
+ * Two numbers because the devices count in different units. A wheel notch is a
+ * hundred at a time and wants a small coefficient; a pinch is a stream of
  * single figures describing how far the fingers moved, and at the wheel's rate
  * it would take a pinch across the whole pad to change anything.
  */
@@ -565,17 +532,16 @@ const WHEEL_MAX_STEP = 400;
 /**
  * How much of the lean is handed back when the platform rails a swipe.
  *
- * Measured rather than picked. A swipe down this board with a deliberate curve
- * in it arrived as 5257px of vertical and 973px of sideways, the sideways half
- * present in only 75 of its 349 events - the fingers went one way and the
- * platform reported a fifth of it. Three brings that back to roughly half, which
- * is a swipe that goes where it was aimed without the board sliding out from
- * under the hand.
+ * Measured, not picked. A swipe down this board with a curve in it arrived as
+ * 5257px of vertical and 973px of sideways, the sideways half present in only
+ * 75 of its 349 events - the fingers went one way and the platform reported a
+ * fifth of it. Three brings that back to roughly half: a swipe that goes where
+ * it was aimed without the board sliding out from under the hand.
  *
- * It only ever touches an axis the platform is *withholding* - see unrail() - so
- * a swipe delivered whole is left alone however lopsided it is. And it cannot
- * rescue one railed outright: straight sideways reports vertical of exactly
- * zero, and no multiple of zero is a lean.
+ * It only touches an axis the platform is *withholding* - see unrail() - so a
+ * swipe delivered whole is left alone however lopsided it is. It cannot rescue
+ * one railed outright: straight sideways reports vertical of exactly zero, and
+ * no multiple of zero is a lean.
  *
  * This is the one number to turn if it feels wrong.
  */
@@ -584,11 +550,11 @@ const UNRAIL_GAIN = 3;
 /**
  * The most one event may be *boosted* by, in pixels.
  *
- * Not a cap on the movement - what the platform reported always passes through
+ * Not a cap on the movement - what the platform reported passes through
  * untouched, so this can never take away a step the fingers earned. It bounds
- * the invention on top, because a delta the driver held back and released in one
- * lump (48px against a 15px-per-event swipe, in the recording) would otherwise
- * be multiplied into a visible sideways jerk.
+ * the invention on top: a delta the driver held back and released in one lump
+ * (48px against a 15px-per-event swipe, in the recording) would otherwise be
+ * multiplied into a visible sideways jerk.
  */
 const UNRAIL_CAP = 40;
 
@@ -604,9 +570,9 @@ export type WheelKind = 'pan' | 'zoom';
 /**
  * The little of a WheelEvent any of this reads.
  *
- * Structural rather than `WheelEvent` for the reason the pure helpers above are
- * structural: the classification is the one part of this module a runner with
- * no browser can exercise, and it is exercised by handing it six numbers.
+ * Structural rather than `WheelEvent`, for the pure helpers' reason: the
+ * classification is the one part of this module a runner with no browser can
+ * exercise, and it is exercised by handing it six numbers.
  */
 export type WheelSample = {
   deltaX: number,
@@ -632,10 +598,9 @@ let axisY = 0;
  * How often each axis arrives at all, over this burst alone.
  *
  * Both start at 1 - honest until proven otherwise - so a swipe is never lifted
- * on the strength of its first event or two, which is where the evidence is
- * thinnest and a wrong answer is most visible. A gated axis falls away from 1
- * within about a tenth of a second and stays down; an axis the platform is
- * reporting properly never leaves it.
+ * on its first event or two, where the evidence is thinnest and a wrong answer
+ * is most visible. A gated axis falls away from 1 within about a tenth of a
+ * second and stays down; an axis the platform reports properly never leaves it.
  */
 let seenX = 1;
 let seenY = 1;
@@ -645,11 +610,10 @@ let seenY = 1;
  *
  * **Nothing under web/ calls this** - it exists for tests, which need a known
  * starting point between cases and cannot reach four module-level numbers any
- * other way. Kept rather than deleted because the alternative is each case
- * opening with a synthetic gap in `timeStamp`, which is the same reset written
- * less legibly forty times over; said out loud here because it has now been
- * mistaken twice for the live way out of a burst. The live way is the gap:
- * WHEEL_STREAM_MS with no event.
+ * other way. The alternative is each case opening with a synthetic gap in
+ * `timeStamp`, the same reset written less legibly forty times over. Said out
+ * loud because it has been mistaken twice for the live way out of a burst. The
+ * live way is the gap: WHEEL_STREAM_MS with no event.
  */
 export function resetWheelKind(): void {
   wheelKind = 'zoom';
@@ -948,7 +912,7 @@ export function nudgeDelta(
   }
   const cells = far ? NUDGE_LEAP : 1;
   // The item's *low edges* land on the lattice, not its centre - see the move
-  // gesture for why, and snapAll() in state.js for the arrangement this is
+  // gesture for why, and snapAll() in state.ts for the arrangement this is
   // keeping rather than imposing. Measured from the seam rather than from the
   // line, so "flush already" means the same thing here as it does there.
   const axis = (sign: number, low: number) => {
@@ -1063,7 +1027,7 @@ export function gestureTransition(
 }
 
 // MIN_SIZE and MAX_SIZE are the resize limits, in world units, and they live in
-// geometry.js - a resize handle stopped being the only thing that sets a size
+// geometry.ts - a resize handle stopped being the only thing that sets a size
 // when snapping learned to lay the whole board onto the lattice. The reasoning
 // behind both numbers is written there. The floor's job here is the one it has
 // always had: the eight grips are sized in screen pixels, so as an item shrinks
@@ -1234,7 +1198,7 @@ type Taps = {
  *
  * canvas/ may not import ui/ (tests/layers.test.js), and half of what a gesture
  * ends in - the menu, the fence offer, the note editor, the viewer - lives up
- * there. main.js owns the one command surface and hands it down, which is the
+ * there. main.ts owns the one command surface and hands it down, which is the
  * same move ghosts.ts and every ui/ module makes. Optional members are the ones
  * this file already calls with `?.`: a board with no connections, no viewer and
  * no player is a board this module still drives.
@@ -1443,7 +1407,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   //                 because #viewport takes pointer capture on press and that
   //                 retargets the compatibility mouse events to the viewport -
   //                 the same reason the masthead reads its taps directly (see
-  //                 editBoardName in main.js).
+  //                 editBoardName in main.ts).
   const taps: Taps = { arm: null, card: null, empty: null, lastEmpty: null, lastTitle: null };
   const cancelPress = () => { clearTimeout(hold.timer); hold.timer = 0; hold.at = null; };
 
@@ -1491,16 +1455,16 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   const snapLowFor = (v: number, snap: boolean) => (snap ? latticeLow(v, stepNow()) : v);
 
   // The base lattice - the grid as it stands at 100% - never the zoom-tiered
-  // spacing on screen. gridStep() in grid.js coarsens the *drawn* dots as you
+  // spacing on screen. gridStep() in grid.ts coarsens the *drawn* dots as you
   // zoom out so they never become a fill, but a gesture must land on the same
   // lattice snapAll()/onLattice() use however far the board is zoomed, or an
   // item dragged at one zoom would sit off the lines it snapped to at another.
   const stepNow = () => baseStep();
 
   /**
-   * A box laid on the lattice - see latticeBox() in geometry.js.
+   * A box laid on the lattice - see latticeBox() in geometry.ts.
    *
-   * The same shape snapAll() in state.js gives the board when snapping is
+   * The same shape snapAll() in state.ts gives the board when snapping is
    * switched on, and deliberately so: that is the arrangement everything here
    * then has to preserve. An item is flush in the grid only when *both* halves
    * hold, the position and the size - an edge on a line is not enough if the
@@ -1510,16 +1474,14 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   const ontoLattice = (box: Box) => latticeBox(box, stepNow());
 
   /**
-   * The seam a snapped item leaves at each of its four edges, in world units.
+   * The seam a snapped item leaves at each of its four edges, in world units,
+   * for a gesture that says whether it is snapping.
    *
-   * Every edge carries the same one - see CELL_GAP in geometry.js - so the space
+   * Every edge carries the same one - see CELL_GAP in geometry.ts - so the space
    * between two neighbours is two halves of a seam rather than one whole one.
    * The sign is what differs: a low edge sits a seam *past* its grid line and a
    * high edge a seam short of the next, which is why the snapping below still
    * has to know which edge the pointer is holding.
-   */
-  /**
-   * ...for a gesture that says whether it is snapping.
    *
    * `snap` is passed rather than read off `board.settings`, and that is the bug
    * this parameter closes. A resize grip decides `snap` once when it is taken,
@@ -1717,7 +1679,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // recomputing it per frame would let notes latch on and fall off as the drag
     // swept the selection across other items, so the group you picked up would
     // not be the group you put down. What is stuck when you take hold is what
-    // travels. See travelling() in layout.js, where the fixed point is worked out.
+    // travels. See travelling() in layout.ts, where the fixed point is worked out.
     // Filtered again on the way out, and not only on the way in: travelling()
     // adds what is stuck to the selection and what is fenced by it, so a locked
     // card inside a fence that is being dragged would otherwise be carried by
@@ -1755,7 +1717,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // ask again what they are stuck to when the drag ends - a note carried
       // across the board by the photo underneath it has not moved relative to
       // anything, and re-parenting it would take apart the pile you built by
-      // moving it. See restick() in state.js.
+      // moving it. See restick() in state.ts.
       //
       // The roots, not the selection: a pinned star did not move relative to the
       // photograph under it, the photograph moved, so the star must not be
@@ -2362,7 +2324,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // Before the gesture guard below, which drops every pointer that is not
     // pressed - and a hovering mouse is exactly that. Touch is excluded
     // because a finger that is not down is not anywhere.
-    // Mirrored onto the viewport so the import layer's paste (drop.js), which
+    // Mirrored onto the viewport so the import layer's paste (drop.ts), which
     // has no view into this module's `hover`, can land under the cursor too.
     if (e.pointerType !== 'touch') hover = vp.cursor = { x: e.clientX, y: e.clientY };
     if (!pointers.has(e.pointerId)) return;
@@ -2847,7 +2809,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // way back - there is no "stick to this card" menu entry, because putting it
     // on the card is already how you say that. In front of the commit, not
     // inside it, so undo restores the flag instead of re-deriving it; resettle()
-    // in state.js argues the whole of it. Only on a gesture that moved, so a
+    // in state.ts argues the whole of it. Only on a gesture that moved, so a
     // plain click on a loose note cannot quietly re-pin it.
     if (commit) {
       if (gesture.mode === 'move' && gesture.moved) {
@@ -2867,7 +2829,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // one.
       //
       // Capped, and this is the one cap in the feature - it is here because past
-      // it nothing is being lost. cuelume/engine.js spaces cues twelve
+      // it nothing is being lost. cuelume/engine.ts spaces cues twelve
       // milliseconds apart up to an eighty-millisecond lookahead and then lets
       // them pile; a pile is a set of transients starting on the same sample,
       // which is the one thing established to be unhearable as separate events.
@@ -2939,10 +2901,10 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     syncItems();
   }
 
-  // The stick-target ring moved to canvas/items.js, which owns the nodes it
+  // The stick-target ring moved to canvas/items.ts, which owns the nodes it
   // marks. It was a closure in here while a note drag was the only thing that
   // could aim at a host; a shape dragged out of the sticker window aims at one
-  // too, and ui/sticker-window.js cannot reach into this function.
+  // too, and ui/sticker-window.ts cannot reach into this function.
 
   // The band is a world rectangle drawn in screen pixels, so it has to be
   // redrawn when the mapping between the two changes. Nothing here listened to
@@ -3225,7 +3187,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     //
     // Note what it leaves behind: the item stays loose afterwards, indefinitely,
     // until the next *pointer* drag drops it on a host. That asymmetry is the
-    // design and not an oversight - see resettle() in state.js, which is
+    // design and not an oversight - see resettle() in state.ts, which is
     // deliberately not called from here.
     //
     // Written into the applied snapshot rather than onto the item, because these
@@ -3261,13 +3223,13 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   // above, and two things follow from that. A `copy` handler is the only place
   // the system clipboard can be written synchronously and without asking
   // permission, which is what lets a copy leave the receipt that decides the
-  // next paste (see clipboardHasOurs in state.js). And the browser only sends
+  // next paste (see clipboardHasOurs in state.ts). And the browser only sends
   // these where they belong, so a note being edited or a name being typed keeps
   // the browser's own copy and paste for nothing - the same bargain the
   // `widget` branch in pointerdown makes for the pointer.
   //
-  // import/drop.js listens for `paste` too, to bring images, files and text in
-  // from outside. This one is registered first, because main.js calls
+  // import/drop.ts listens for `paste` too, to bring images, files and text in
+  // from outside. This one is registered first, because main.ts calls
   // initInput() before initDrop(), and stops the event dead the moment it
   // claims it - so exactly one of the two ever acts on a given paste.
 

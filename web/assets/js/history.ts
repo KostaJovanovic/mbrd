@@ -10,9 +10,9 @@
 // The obligation this puts on callers is the one thing to remember when adding
 // an operation: the inverse is yours to write. commit() will not work it out.
 //
-// Lifted out of state.js as the first of its ten concerns, and the easiest,
+// Lifted out of state.ts as the first of its ten concerns, and the easiest,
 // because it touches none of the board's shape - only the bus and the dirty
-// flag, both of which now sit below it in board-store.js. See the header there.
+// flag, both of which now sit below it in board-store.ts. See the header there.
 
 import { bus, markDirty } from './board-store.ts';
 import { cue } from './cuelume/engine.ts';
@@ -27,7 +27,7 @@ import {
  * type is the contract the header describes - a caller that knows how to
  * reverse itself - and `weight` is the only field the engine itself reads.
  *
- * `step` is the ledger's, not this engine's: the id of the step in timeline.js
+ * `step` is the ledger's, not this engine's: the id of the step in timeline.ts
  * that this command landed in. It is what keeps the two counts honest when they
  * disagree, which they are *designed* to - see undo() below. Null for a command
  * that recorded no step at all.
@@ -136,7 +136,7 @@ export function commit(
   // the whole of what makes the timeline cost one change instead of thirty:
   // this function runs the redo half itself, so it is the one place in the app
   // that sees the board on both sides of every mutation. Every commit site
-  // records a step without knowing timeline.js exists - including the ones
+  // records a step without knowing timeline.ts exists - including the ones
   // written next year, which is what takes coverage off the list of things
   // somebody has to remember. See the header there for why the diff is cheap.
   //
@@ -280,7 +280,7 @@ export function undo() {
   historyChanged();
   // Held down, this stutters, and that is the intended reading: the stutter is
   // the feedback that many steps are going by. See the repeat guard in
-  // cuelume/engine.js, which is what keeps a stutter from becoming a buzz.
+  // cuelume/engine.ts, which is what keeps a stutter from becoming a buzz.
   cue('fall');
   return true;
 }
@@ -308,7 +308,7 @@ export function redo() {
   markDirty();
   historyChanged();
   // `rise` is `fall`'s recipe with the glide inverted, so redo is audibly undo
-  // played backwards. See invert() in cuelume/recipes.js.
+  // played backwards. See invert() in cuelume/recipes.ts.
   cue('rise');
   return true;
 }

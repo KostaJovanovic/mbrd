@@ -1,7 +1,7 @@
 // The offer that follows a rubber band, in the two parts of it that are decisions
 // rather than DOM: what it says, and when it goes away.
 //
-// Both are exported for exactly this reason. The rest of ui/fence-prompt.js is a
+// Both are exported for exactly this reason. The rest of ui/fence-prompt.ts is a
 // div and a button, which a unit test can only restate; the reach rule is where
 // the feature can actually be wrong, because "far enough away" has a corner case
 // on every edge of the box and a user would experience getting it wrong as the

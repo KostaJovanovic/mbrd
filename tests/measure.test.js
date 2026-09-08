@@ -1,5 +1,5 @@
 // The board's link to real-world sizes. Pure arithmetic and pure formatting, so
-// all of it is testable without a browser - which is the reason measure.js was
+// all of it is testable without a browser - which is the reason measure.ts was
 // written as a module that takes its two settings as arguments rather than one
 // that reaches into `board`.
 //
@@ -118,7 +118,7 @@ test('the scale bar is a round number that fits', () => {
 });
 
 test('the bar it draws is the length it prints', () => {
-  // The one way a scale bar can be actively wrong. Walked across four decades
+  // The one way a scale bar can be actively wrong. Walked across five decades
   // of zoom, because the rung it lands on changes at every one of them.
   let drawn = 0;
   for (let pxPerMm = 0.002; pxPerMm < 200; pxPerMm *= 1.7) {
@@ -132,7 +132,7 @@ test('the bar it draws is the length it prints', () => {
     }
   }
   // Because `if (!step) continue` is the whole loop's escape hatch: a
-  // scaleStep() that returned null at every zoom in four decades passed this
+  // scaleStep() that returned null at every zoom in five decades passed this
   // test, having drawn nothing and disagreed with nothing.
   assert.ok(drawn > 20, `only ${drawn} of the ~30 zoom levels produced a bar at all`);
 });

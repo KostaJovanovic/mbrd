@@ -1,9 +1,9 @@
 // What a style tile says about a board: which pictures, which pigments, which
 // faces. Not how any of it is drawn.
 //
-// This used to live inside ui/snapshot.js, because a style tile used to be a
+// This used to live inside ui/snapshot.ts, because a style tile used to be a
 // picture you saved - a 1500x1000 canvas, a PNG, a download. It is a card on
-// the board now, which moved the drawing into canvas/renderers.js and left this
+// the board now, which moved the drawing into canvas/renderers.ts and left this
 // behind as the part both of them were really about: the three choices the
 // feature has to make before anything is drawn at all.
 //

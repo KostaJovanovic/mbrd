@@ -1,5 +1,5 @@
-// The icon walk through a Windows program (import/pe.js), and the two headers
-// that make a headerless picture drawable (import/winimage.js).
+// The icon walk through a Windows program (import/pe.ts), and the two headers
+// that make a headerless picture drawable (import/winimage.ts).
 //
 // Every one of these is arithmetic over a structure somebody else wrote, and
 // there is no fixture to check it against - a real .exe cannot be committed and

@@ -1176,18 +1176,11 @@ const FLOOR = {
 const ACCENT_FLOOR = 4.5;
 
 /**
- * A full set of pigment tokens from one to three hues.
- *
- * Exported separately from extractPalette() so the rule can be tested on hues
- * chosen to break it - a yellow that cannot be made dark enough, two hues a
- * degree apart - without going through a histogram first.
- */
-/**
  * Every token an extraction writes.
  *
  * Built from the same tables paletteFor() fills, so the two cannot drift: a
  * pigment added to SHEET or PIGMENT is in this list the moment it exists.
- * appearance.js needs it to tell a colour decision from any other kind - a
+ * appearance.ts needs it to tell a colour decision from any other kind - a
  * hand-picked accent is one, choosing a display face is not, and only the first
  * has any business switching the extraction off.
  */

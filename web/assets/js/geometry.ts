@@ -2,9 +2,9 @@
 //
 // Every one of these answers had been written more than once, in modules that
 // could not see each other, and they did not all agree. A point-in-item test
-// that accounted for rotation lived in state.js; a rotation-aware bounding box
-// lived in viewport.js/fit; the marquee in input.js tested the *unrotated*
-// extents; the culler in items.js used a circumscribed square. Four takes on
+// that accounted for rotation lived in state.ts; a rotation-aware bounding box
+// lived in viewport.ts/fit; the marquee in input.ts tested the *unrotated*
+// extents; the culler in items.ts used a circumscribed square. Four takes on
 // one question.
 //
 // Nothing sets `rot` today, so the disagreement is invisible - which is
@@ -48,9 +48,9 @@ const RAD = Math.PI / 180;
 /**
  * How small and how large an item is allowed to get.
  *
- * Here rather than in input.js because a resize handle is no longer the only
+ * Here rather than in input.ts because a resize handle is no longer the only
  * thing that sets a size: snapping the whole board onto the lattice does too,
- * and it lives in state.js, which has no business importing from canvas/.
+ * and it lives in state.ts, which has no business importing from canvas/.
  *
  * 48 is where the eight resize grips stop fitting around a box - below it the
  * corners overlap, the edge strips collapse, and an item dragged down to a
@@ -130,8 +130,8 @@ export const latticeSide = (v: number, step: number) => {
  * A box laid on the lattice, both halves at once.
  *
  * The one place this arithmetic is assembled. Both callers need exactly it -
- * state.js when snapping is switched on and the whole board is laid out at once,
- * and canvas/input.js on every gesture that has to keep it that way - and they
+ * state.ts when snapping is switched on and the whole board is laid out at once,
+ * and canvas/input.ts on every gesture that has to keep it that way - and they
  * differ only in the step they pass: the base step for geometry that is being
  * stored, the on-screen step for something being dragged against the dots.
  */
@@ -279,15 +279,15 @@ export function segmentMeetsRect(a: Point, b: Point, r: Bounds) {
 // ---------------------------------------------------------------------------
 // Polylines
 //
-// The four below came out of canvas/web.js and the two web-* modules, where
+// The five below came out of canvas/web.ts and the two web-* modules, where
 // they were private helpers beside the drawing that used them. They are here
 // for the reason segmentMeetsRect above is: each is arithmetic over points
 // with no idea that a board, a viewport or an SVG exists, and the alternative
-// to one home is the disagreement this file was written to end - four takes on
+// to one home is the disagreement this file was written to end - five takes on
 // "where is it", in modules that cannot see each other.
 //
 // The two squared-distance functions are the pointed case. Both were called
-// `dist2`, in web-graph.js and web-route.js, and they are not the same
+// `dist2`, in web-graph.ts and web-route.ts, and they are not the same
 // function: one is the distance between two points and the other is the
 // distance from a point to the *middle* of a pair of them. Put side by side
 // under one name, either caller would silently get the other's answer - a
@@ -351,7 +351,7 @@ export function distToSegment(px: number, py: number, a: Point, b: Point) {
  *
  * Squared because every caller only ever compares one of these to another, and
  * the square root is monotonic - it would cost time without changing a single
- * choice. Do not "fix" this into a real distance; web-graph.js's spanning tree
+ * choice. Do not "fix" this into a real distance; web-graph.ts's spanning tree
  * runs it O(n^2) times.
  */
 export function distSq(a: Point, b: Point) {
@@ -401,7 +401,7 @@ export function itemRadius(it: Size) {
  * parked in one of those corners would claim to be stuck to nothing.
  *
  * `rot` is the only rotation accounted for. Items also rest at a small
- * presentational tilt (--item-tilt, dealt in items.js) which is deliberately
+ * presentational tilt (--item-tilt, dealt in items.ts) which is deliberately
  * not part of the geometry model. It is a couple of degrees, so leaving it out
  * can only disagree with the eye a hair's breadth from an edge, which is
  * exactly where "is it over it or not" had no obvious answer anyway.
@@ -506,7 +506,7 @@ export function overlapFraction(a: Box, b: Box) {
  * fractions far under one.
  *
  * A view here is the transform itself, `{ pan: {x, y}, zoom }`, in the sense
- * viewport.js's toScreen() uses it: screen = (world - pan) * zoom, with y
+ * viewport.ts's toScreen() uses it: screen = (world - pan) * zoom, with y
  * negated for the sign flip. Both views are measured against the *same*
  * rectangle - the one visible now - because the question is about the marks on
  * screen this moment, not about where a point used to be.

@@ -11,7 +11,7 @@
 // elbow drawn behind what is in the way - never to a corner-to-corner diagonal,
 // which is the one shape this module exists to stop drawing.
 //
-// And the caution web-graph.js earned the hard way, which applies to every test
+// And the caution web-graph.ts earned the hard way, which applies to every test
 // in this file: **assert the arithmetic, never a duration.** Its governor's
 // test was flaky exactly once, for exactly that reason.
 
@@ -344,7 +344,7 @@ test('a lattice too large to search sheds cards rather than the route', () => {
 // The three shapes
 //
 // `opts.shape` is how the whimsy axis reaches the router - see the header there
-// and look() in canvas/web.js, which is what turns a data-whimsy attribute and
+// and look() in canvas/web.ts, which is what turns a data-whimsy attribute and
 // the board's grid step into these arguments. Properties again, not pixels: the
 // grid shape is asserted by where it is allowed to turn, the taut shape by what
 // it no longer needs to do, and both by the thing every shape owes - it does not

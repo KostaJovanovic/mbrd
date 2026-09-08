@@ -33,12 +33,13 @@
 // hands the board over to the lens, which is the album view at the size it was
 // drawn for. Nothing is lost but the miniature.
 //
-// It owns no <audio>. It drives the shared queue in canvas/audio.js - setQueue,
-// playTrack, toggleShuffle - and the global now-playing bar is the transport, so
-// the music keeps playing across a lens switch, a trip to the canvas, or the
-// window being closed. Only a whole new board stops it (clearQueue on board:load),
-// because its tracks and their asset URLs are gone. Play / Shuffle here are the
-// two things a bar cannot be: the way to *start* the board, from cold.
+// It owns no <audio>. It drives the shared queue in canvas/playlist-queue.ts -
+// setQueue, playTrack, toggleShuffle - and the global now-playing bar is the
+// transport, so the music keeps playing across a lens switch, a trip to the
+// canvas, or the window being closed. Only a whole new board stops it (clearQueue
+// on board:load), because its tracks and their asset URLs are gone. Play /
+// Shuffle here are the two things a bar cannot be: the way to *start* the board,
+// from cold.
 //
 // The hand-arranged order lives in board.audioOrder (a list of ids, saved with
 // the board). applyAudioOrder() resolves it against the audio actually present;
@@ -265,7 +266,7 @@ export function initPlaylist(_viewport: Viewport | null, _commands: PlaylistComm
   bus.on('fonts', updateMetaAll);
   onNowPlaying(() => { wirePlayback(); markPlaying(); refreshActions(); bindPlayers(); });
   // Every transport, not just the hero pair: a player's shuffle and repeat
-  // buttons are the only readout of a mode that lives in canvas/playlist-queue.js,
+  // buttons are the only readout of a mode that lives in canvas/playlist-queue.ts,
   // and a press that changes nothing on screen reads as a dead button.
   onQueue(() => { refreshActions(); refreshPlayers(); });
 
@@ -297,7 +298,7 @@ function orderedAudio(): Item[] {
 function renderAll() {
   const audio = orderedAudio();
   // The queue is always the board's audio, whether or not a playlist home is on
-  // screen: a board card plays into this same queue (canvas/audio.js), so the track
+  // screen: a board card plays into this same queue (canvas/audio.ts), so the track
   // has to be in it to be reached, advanced past, or shuffled.
   setQueue(audio);
   if (board.layoutMode === 'mobile') {
@@ -1001,7 +1002,7 @@ function openPlayerWindow() {
   renderWindowBody();
 
   // Out of the scaled-down state and up into place, next frame - it needs two
-  // computed styles to run between for the transition to take (see ui/nowplaying.js
+  // computed styles to run between for the transition to take (see ui/nowplaying.ts
   // raise()).
   requestAnimationFrame(() => windowEl?.classList.add('is-open'));
 }
@@ -1107,10 +1108,10 @@ function closePlayerWindow() {
  * does not.
  *
  * A class on the root and nothing else, the same shape `is-connecting` and
- * `data-snap` use. It is written here rather than read from ui/nowplaying.js
+ * `data-snap` use. It is written here rather than read from ui/nowplaying.ts
  * because that module imports *this* one, and the arrow may only go one way. The
  * Mobile half needs nothing - the lens carries its own controls, and
- * `data-feed-lens` is already on the root from ui/board-view.js/syncLens().
+ * `data-feed-lens` is already on the root from ui/board-view.ts/syncLens().
  *
  * Written straight off the two facts it is made of, so there is no third truth to
  * keep in step.
@@ -1119,7 +1120,7 @@ function markTransport() {
   document.documentElement.classList.toggle('playlist-transport', !!windowEl);
 }
 
-// Moving and resizing the window are in ui/float-window.js. They were written
+// Moving and resizing the window are in ui/float-window.ts. They were written
 // here and lifted out when the sticker pad turned out to want exactly the same
 // two gestures - which is the argument for the move: dragging a window by its
 // title bar and pulling it bigger by its corner is not a fact about music.
@@ -1170,7 +1171,7 @@ function makePlayer(): Player {
   // clipped fill, and the fill carrying both a straight line and a wave, of which
   // the stylesheet shows one per whimsy tier. It was a div scaled on X, which is
   // the one thing a wave cannot be: scaling a wave horizontally changes its
-  // frequency as the track plays. See the note in media/transport.js.
+  // frequency as the track plays. See the note in media/transport.ts.
   line.innerHTML = seekInnerHTML('pw-line');
   const waveSvg = line.querySelector('.pw-line-wave-svg');
   const wavePathEl = line.querySelector('.pw-line-fill-wave');

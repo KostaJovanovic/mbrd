@@ -2,8 +2,8 @@
 //
 // Every settings row in this app is the same three elements - a `label.field`,
 // a head, and the control - and that shape was hand-built in four files that
-// could not see each other: ui/panel.js for the sidebar, ui/appearance.js for
-// the token dials it owns, ui/mobile-header.js twice for the masthead's axis
+// could not see each other: ui/panel.ts for the sidebar, ui/appearance.ts for
+// the token dials it owns, ui/mobile-header.ts twice for the masthead's axis
 // sliders and its weight dial. Four copies of six lines is not expensive; four
 // copies that can *drift* is, because the CSS pins the structure precisely
 // (`.field > span` is the flex head, `.field output` is the readout, and
@@ -13,7 +13,7 @@
 // This is deliberately a builder and not a component. It makes the elements and
 // hands them back; wiring, ids, values and events stay with the caller, because
 // those are the parts that genuinely differ - the panel registers against a
-// schema, appearance.js writes CSS custom properties, the masthead drives a
+// schema, appearance.ts writes CSS custom properties, the masthead drives a
 // variable font's axes. Only the box is shared.
 
 /**

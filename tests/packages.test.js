@@ -1,6 +1,6 @@
-// Choosing a picture out of an app package or a book (import/packages.js).
+// Choosing a picture out of an app package or a book (import/packages.ts).
 //
-// Unlike import/document.js, which looks a thumbnail up at a path a
+// Unlike import/document.ts, which looks a thumbnail up at a path a
 // specification names, every family here has to *rank* what it finds - so what
 // these tests are really about is the ordering, and the ordering is where the
 // judgement calls live. Each one below states a rule the module is making rather
@@ -330,7 +330,7 @@ test('a 3MF whose slicer put the thumbnail elsewhere under Metadata still answer
 // ---------------------------------------------------------------------------
 
 test('a file that is not a zip throws rather than answering null', async () => {
-  // Deliberate, and the split import/document.js already makes: "no picture in
+  // Deliberate, and the split import/document.ts already makes: "no picture in
   // this container" is null, "this is not a container" is the archive reader's
   // error for the caller to turn into a card.
   await assert.rejects(() => packagePicture(new Blob([png(4096)]), 'apk'));

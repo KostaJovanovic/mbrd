@@ -181,7 +181,7 @@
    **A note** - its tint and its opening line, set large. No kicker and no rule:
    a sticky is not a specimen, and NOTE printed over the top of one says nothing
    that the colour and the handwriting have not already said. A note's name *is*
-   its first line (drop.js takes the first forty characters), so this costs
+   its first line (drop.ts takes the first forty characters), so this costs
    nothing to produce and turns a wall of yellow squares into something you can
    actually read across.
 
@@ -192,7 +192,7 @@
 
    Two things about the wiring.
 
-   **One element draws all of it.** .far-head is built once in canvas/items.js
+   **One element draws all of it.** .far-head is built once in canvas/items.ts
    with two children - the kind and the name - and styled two ways here. The
    alternative was to restyle each renderer's own head, which sounds truer to
    "the same card, larger" and is not: a text card has no .card-icon, a model
@@ -206,7 +206,7 @@
    you zoom out, so the further out you go the less readable the one thing out
    here you are meant to be reading. That was tried first and it drew a 180-unit
    card's name at under seven screen pixels. The cost is one --iz relayout, which
-   canvas/viewport.js already paid down - --iz moves in 8% rungs while the board
+   canvas/viewport.ts already paid down - --iz moves in 8% rungs while the board
    is in motion and is written exact the moment it stops, so a 14px name steps by
    under a pixel during a gesture and lands true when you let go. The cap is what
    keeps a small card from wearing type taller than itself, and it is also the
@@ -385,7 +385,7 @@
    out at all.
 
    Keyed on the head being there rather than on a list of types: a picture never
-   gets one (wantsHead in canvas/items.js), so a picture is never hidden by this
+   gets one (wantsHead in canvas/items.ts), so a picture is never hidden by this
    and no exclusion has to say so. Audio is the single exception written out, and
    it is written out because it is genuinely one: its play button survives the
    rung, so it keeps its body and takes the head as a slice off the top instead.
@@ -395,7 +395,7 @@
 /* ---------------------------------------------------------------------------
    Cheap mode: what the board stops paying for while it is being moved.
 
-   Set by canvas/viewport.js for as long as the view keeps changing, and taken
+   Set by canvas/viewport.ts for as long as the view keeps changing, and taken
    off 140ms after it stops. Everything here is an effect that is free on a
    still board and priced per item per frame on a moving one - so what it buys
    scales with exactly the thing that makes zooming heavy, which is how many
@@ -450,7 +450,7 @@
    still has to paint - one per item, and a full-board zoom-out puts every item
    on screen at once. Dropping them is the same trade the chrome above makes, and
    it cuts the compositor's layer count on exactly the view that strains it most
-   (see the shadow underlay in canvas/items.js and #item-shadows). */
+   (see the shadow underlay in canvas/items.ts and #item-shadows). */
 #world.zoom-far .item-shadow { display: none; }
 
 .grip {
@@ -493,7 +493,7 @@
 .item[data-locked].is-selected > .item-locked { display: block; }
 #world.zoom-tiny .item-locked { display: none; }
 /* Grips outlast the labels: gone only when the card is too small to aim at, two
-   rungs below where the chrome drops. See GRIP_MIN_ZOOM in viewport.js. */
+   rungs below where the chrome drops. See GRIP_MIN_ZOOM in viewport.ts. */
 #world.zoom-tiny .grip { display: none; }
 /* Below the grab rung (zoom-grab, 25%) a corner resizes only from the part of its
    hitbox outside the card, and the whole face becomes a move target; above the
@@ -623,7 +623,7 @@
      Per axis, because a 400x60 banner has to give up an eighth of 400 across and
      an eighth of 60 down; capping both against the shorter side would leave a
      wide card with a target sized for a narrow one. --half-w / --half-h are
-     w/2 and h/2, written per item by canvas/items.js/place() - a percentage
+     w/2 and h/2, written per item by canvas/items.ts/place() - a percentage
      cannot say this, since a percentage here resolves against the grip's own
      box, which is itself already capped. The 9999px fallbacks mean an element
      that has not been placed yet behaves exactly as it did before. */
@@ -682,7 +682,7 @@
 /* Interior controls ride above the grips (z-index 2) so the corner mark and its
    grab box, which straddle onto the card at ordinary zoom, do not tint them or
    show a resize cursor over them - the control keeps the eye and the pointer. It
-   works without this too (input.js hands a grip press over a control back to it),
+   works without this too (input.ts hands a grip press over a control back to it),
    but the raise keeps the cursor honest. Only the ones sitting *inside* the card
    face are raised: the big video play, a link's anchor, the audio card's
    waveform - which is the one scrubber left on a card, the video's having moved
@@ -728,9 +728,9 @@
 /* ---------------------------------------------------------------------------
    The tour mark: which stop a card is, and the way to make it one
 
-   canvas/items.js puts one of these inside every card's node while the tour
+   canvas/items.ts puts one of these inside every card's node while the tour
    editor is open and takes them all away when it closes - see setTourMarks()
-   there, and the head of ui/tour-edit.js for why the editor is a mode over the
+   there, and the head of ui/tour-edit.ts for why the editor is a mode over the
    board rather than a list in the panel. Nothing else in the app builds one.
 
    Two states, one square. `.is-add` is a card that is on no stop: a dashed "+"
@@ -742,7 +742,7 @@
    which are on the tour and nothing about what comes after what. Every card of
    one stop wears the same number, which is the honest picture of a group.
 
-   A <button>, so canvas/input.js's widget branch gives it the whole press and
+   A <button>, so canvas/input.ts's widget branch gives it the whole press and
    the card underneath never moves - and so a keyboard can reach it at all.
 
    **An element and not a pseudo, and that is not a preference.** Both of
@@ -832,7 +832,7 @@
 }
 
 /* The number, and the cross that replaces it under the pointer.
-   canvas/items.js builds both into every mark and this is the whole of the
+   canvas/items.ts builds both into every mark and this is the whole of the
    swap - see the comment there for why they are not written on hover.
 
    A number at rest and a cross when aimed at, because the mark answers two
@@ -862,7 +862,7 @@
 /* ---------------------------------------------------------------------------
    The peek: a pointer over the editor's bar, and the order laid over the board
 
-   ui/tour-edit.js puts .is-tour-peek on <html> while the pointer is on the bar
+   ui/tour-edit.ts puts .is-tour-peek on <html> while the pointer is on the bar
    and takes it off when it leaves. A class and not a selector because there is
    no selector for it - the bar is a child of <body> and the cards are inside
    #viewport, and the only combinator between them looks the wrong way.

@@ -7,7 +7,7 @@
 // remove, and nothing that can disagree with the picture on the screen. Drag a
 // card out and it is out; that is the whole interface.
 //
-// This is sticky.js's argument with a different predicate, and the two files are
+// This is sticky.ts's argument with a different predicate, and the two files are
 // deliberately parallel rather than merged - see the note at the bottom of this
 // header for why. Read that one first; most of what is here is the same shape.
 //
@@ -30,16 +30,16 @@
 //                     a corner out over three more cards is the gesture that
 //                     means "and these too", and there is no other one.
 //
-// Why this is not folded into sticky.js: the predicates differ, the layout rule
+// Why this is not folded into sticky.ts: the predicates differ, the layout rule
 // differs, the resize rule differs, and only notes stick while anything can be
 // fenced. An abstraction over the two would have to be parameterised by all four,
 // which is a way of writing the differences down twice. They meet in exactly two
 // places, both of which have to walk both relations to answer a question neither
-// can answer alone: stackRoot() in stacking.js, for "what moves as one when the
-// z-order changes", and travelling() in layout.js, for "what moves as one when
+// can answer alone: stackRoot() in stacking.ts, for "what moves as one when the
+// z-order changes", and travelling() in layout.ts, for "what moves as one when
 // the geometry does". Two is the right number and three would not be - every
 // caller that wants either answer takes it from one of those, which is why the
-// hover lift in canvas/items.js reads travelling() rather than composing the two
+// hover lift in canvas/items.ts reads travelling() rather than composing the two
 // again. If a third relation ever turns up, revisit it then.
 
 import { pointInItem } from './geometry.ts';
@@ -83,7 +83,7 @@ const fences = new Map<string, unknown>();
  *
  * This is the rule the whole feature stands on. On Mobile a fence is drawn as a
  * full-width band with its members packed *underneath* it (see the run packer in
- * layout.js), so no card is ever geometrically inside its own fence there.
+ * layout.ts), so no card is ever geometrically inside its own fence there.
  * Measuring in the active layout would therefore dissolve every fence on the
  * board the moment somebody switched to Mobile - and then stamp that dissolution
  * into the file on the next save, which is the same bug as losing the data.
@@ -108,24 +108,26 @@ function desktopBox(it: Boxed | null | undefined): Box | null {
 }
 
 /**
+ * The Desktop index and the array it was built from. `from` is the staleness
+ * test described over desktopIndex() below, not data - it is compared by
+ * identity and never read.
+ */
+type DesktopIndex = { from: Geometry[] | null, map: Map<string, Geometry> };
+
+let desktopCache: DesktopIndex = { from: null, map: new Map() };
+
+/**
  * The Desktop layout as a Map, rebuilt only when the array behind it changes.
  *
  * Indexed rather than scanned, and this is not premature. measure() asks
  * desktopBox() once for the item and once for every fence it tests, and
  * stackRoot() asks measure() for every item on the board - so a linear `find()`
  * in here is a third power in the caller, on the layout where the board is
- * usually largest. Keyed on the array's identity because layout.js replaces
+ * usually largest. Keyed on the array's identity because layout.ts replaces
  * `board.layouts[mode]` wholesale rather than mutating it (writeLayout,
  * completeLayout, captureLayout all assign), which makes identity an exact
  * test for "this is stale" and costs one comparison.
  */
-/**
- * The Desktop index and the array it was built from. `from` is the staleness
- * test described above, not data - it is compared by identity and never read.
- */
-type DesktopIndex = { from: Geometry[] | null, map: Map<string, Geometry> };
-
-let desktopCache: DesktopIndex = { from: null, map: new Map() };
 function desktopIndex() {
   const list = board.layouts?.desktop || [];
   if (desktopCache.from !== list) {
@@ -140,7 +142,7 @@ const areaOf = (box: Box | null | undefined) => Math.abs((box?.w || 0) * (box?.h
  * The fence an item is inside, or null.
  *
  * Measured by the item's centre falling within the fence, and remembered. Not
- * recomputed on demand, for the reason sticky.js gives at length and which
+ * recomputed on demand, for the reason sticky.ts gives at length and which
  * matters more here: a fence is dragged across a board full of loose cards, and
  * a relation that re-measured on every question would have it hoover up
  * everything it passed over. Only picking up the card itself asks again - or
@@ -149,7 +151,7 @@ const areaOf = (box: Box | null | undefined) => Math.abs((box?.w || 0) * (box?.h
  * Furniture is never in a fence. A fence drawn around the hint cards would own
  * four items that are about to delete themselves, and one drawn over the title
  * card would tow a singleton that is not on the Mobile board at all. Same
- * exclusion sticky.js makes, for the same two reasons.
+ * exclusion sticky.ts makes, for the same two reasons.
  */
 export function fenceOf(it: Boxed | null | undefined): Item | null {
   if (!it || isFurniture(it)) return null;
@@ -303,7 +305,7 @@ export function refenceAround(boxes: (Box | null | undefined)[]) {
  * Seed the memo from what a loaded board wrote down.
  *
  * `meta.fence` is the durable record, stamped at serialize time, and seeding it
- * here does two jobs. The small one is sticky.js's: a pixel of geometry drift
+ * here does two jobs. The small one is sticky.ts's: a pixel of geometry drift
  * across a save and reload must not lose a grouping somebody plainly made.
  *
  * The large one is that a board opened straight into Mobile has no Desktop
@@ -432,7 +434,7 @@ export function nextFenceName() {
  * both. `{ x, y, w, h }` about its centre, or null when handed neither.
  *
  * The only function here that makes a fence rather than measuring one, and it is
- * here rather than in commands.js because the union rule below is the same
+ * here rather than in commands.ts because the union rule below is the same
  * containment rule the rest of the file enforces, seen from the other end: a
  * fence has to *start* holding what it was drawn to hold.
  *

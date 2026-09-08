@@ -80,7 +80,7 @@ test('an item with no meta at all is still answerable', () => {
 
 test('the kind is the extension, because that is the informative part', () => {
   // PDF, OBJ and WAV each say something "file" and "model" cannot, and it is the
-  // card's own kicker - see cardShell in canvas/renderers.js.
+  // card's own kicker - see cardShell in canvas/renderers.ts.
   assert.equal(farKind({ type: 'generic', name: 'report.pdf', meta: {} }), 'pdf');
   assert.equal(farKind({ type: 'model', name: 'bracket.obj', meta: {} }), 'obj');
   // meta.ext wins where the importer recorded one: a name can be edited to

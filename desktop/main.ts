@@ -38,8 +38,37 @@
 // BrowserWindow is never created - a link that opened a chromeless Electron
 // window would be a browser with no address bar, which is the shape of every
 // phishing frame ever built.
+//
+// ── The frame the app draws itself ──
+//
+// mbrd is an infinite sheet of paper with its furniture floating on the glass
+// above it. A native caption bar cuts a grey band off the top of that sheet and
+// puts the one rectangle in the window that obeys none of the board's palette,
+// none of its corners and none of its whimsy dial. So the window has no title
+// bar and web/assets/js/ui/window-chrome.ts draws one.
+//
+// Three platforms, two options, and the difference is not a preference:
+//
+//   macOS    titleBarStyle 'hidden', which keeps the traffic lights. A Mac app
+//            without them reads as broken, full-screen keeps working, and the
+//            page steps its own top-left button aside instead - see
+//            --frame-inset-left in chrome.css. trafficLightPosition lines the
+//            cluster up with the row of glass controls rather than with the
+//            window's own corner.
+//   Windows  the same option, which on Windows removes the caption and leaves
+//            the frame's shadow and resize borders in place.
+//   Linux    `frame: false`. titleBarStyle is macOS and Windows only there, and
+//            setting it alone would leave a Linux build with its native bar.
+//
+// What is knowingly given up on Windows is the Snap Layouts flyout, which the
+// system offers over a maximise button it can identify - and it can only
+// identify one drawn by `titleBarOverlay`, which is the system's buttons in two
+// colours rather than the app's. Snap by keyboard and by drag-to-edge are
+// untouched. The three window commands go through `cmds` like every other
+// user-facing action; this process only ever receives the request.
 
 import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import type { IpcMainEvent } from 'electron';
 import { join, dirname } from 'node:path';
 import { existsSync, mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
 import { registerSchemes, serveWeb, APP_INDEX, APP_ORIGIN } from './protocol.ts';
@@ -204,6 +233,17 @@ function createWindow(): BrowserWindow {
     // in front of it is the one frame that says "web page" out loud.
     backgroundColor: '#000000',
     show: false,
+    // No caption bar anywhere; the page draws one. See the head of this file
+    // for why Linux takes the other option rather than the same one.
+    ...(process.platform === 'linux'
+      ? { frame: false }
+      : { titleBarStyle: 'hidden' as const }),
+    // macOS keeps its traffic lights, so they are placed rather than left in
+    // the corner: 18 across and 22 down centres the 12px cluster on the row the
+    // glass controls sit in, which is 16px of margin plus a 40px button.
+    ...(process.platform === 'darwin'
+      ? { trafficLightPosition: { x: 18, y: 22 } }
+      : {}),
     webPreferences: {
       contextIsolation: true,
       sandbox: true,
@@ -264,6 +304,9 @@ function createWindow(): BrowserWindow {
   });
 
   holdCloseForFlush(win);
+  // Per window, not in wireApp(): these are subscriptions on this window's own
+  // events, and a second window in one session needs its own set.
+  reportFrame(win);
   // Anything the OS handed over before there was a window. The page waits for
   // its own boot to finish before opening one, so this only has to wait for a
   // renderer that can receive a message.
@@ -449,6 +492,63 @@ function wireApp(): void {
   // boot, so an update found before the window existed is not lost.
   ipcMain.handle('updates:check', () => updates.check());
   ipcMain.on('updates:install', () => updates.install());
+
+  // The three the drawn title bar asks for. Each acts on **the window that
+  // asked**, found from the sender, rather than on current(): with two windows
+  // open on macOS a close routed by position would shut the wrong board, and
+  // the difference is invisible in the one-window case every test runs in.
+  //
+  // `close()` and not `destroy()`. The close is the same close the system menu
+  // and Cmd-W make, so holdCloseForFlush() below still holds it open until the
+  // page has finished writing - a button that skipped that would be the one way
+  // out of this app that loses the last sentence of a note.
+  ipcMain.on('window:minimize', e => asker(e)?.minimize());
+  ipcMain.on('window:maximize', e => {
+    const win = asker(e);
+    if (!win) return;
+    if (win.isMaximized()) win.unmaximize();
+    else win.maximize();
+  });
+  ipcMain.on('window:close', e => asker(e)?.close());
+}
+
+/** The window an IPC message came from, or null if it has already gone. */
+const asker = (e: IpcMainEvent) => BrowserWindow.fromWebContents(e.sender);
+
+/**
+ * Tell the page what shape the window is in, whenever that changes.
+ *
+ * The drawn title bar has one glyph that is not an action - the maximise button
+ * shows a restore mark while the window is maximised - and there is no way to
+ * read that from inside the page. It also hides itself in full screen, where
+ * the system draws its own way out.
+ *
+ * Pushed rather than asked, and pushed on the same channel for all four events,
+ * because the page wants the *state* and not the transition: a renderer that
+ * had to keep a tally of maximises and unmaximises would drift the first time
+ * the window manager did one of them on its own - which Windows does on every
+ * drag to the top edge, and macOS does on every green-button zoom.
+ */
+function reportFrame(win: BrowserWindow): void {
+  const send = () => {
+    // A window mid-close has a destroyed webContents and sending to it throws.
+    if (win.isDestroyed()) return;
+    win.webContents.send('app:frame', {
+      maximized: win.isMaximized(),
+      fullScreen: win.isFullScreen(),
+    });
+  };
+  // Four calls rather than a loop over the names: BrowserWindow's `on` is a
+  // wall of per-event overloads, and a union of event names picks the last one
+  // and fails to typecheck. Written out, each resolves on its own.
+  win.on('maximize', send);
+  win.on('unmaximize', send);
+  win.on('enter-full-screen', send);
+  win.on('leave-full-screen', send);
+  // The first one, on the load rather than on an event: a window restored from
+  // a previous session can arrive already maximised, and without this its
+  // button would draw the maximise mark until somebody pressed it.
+  win.webContents.on('did-finish-load', send);
 }
 
 /**

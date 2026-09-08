@@ -9,14 +9,14 @@
 // the colour in was the box ask() exists to avoid. Worse than the original,
 // because now there were two.
 //
-// So this is the same move canvas/notes.js made for writing a note, for the same
+// So this is the same move canvas/notes.ts made for writing a note, for the same
 // reason and with the same shape: when the question is too big for one field,
 // the answer is not a bigger field, it is the real control in a dialog of its
 // own. ask() keeps its contract - one box, one string - and this keeps the
 // picking.
 //
 // HSV rather than OKLCH, which is the one choice here that goes against the
-// grain of the app. ui/pigments.js is perceptual throughout and it is right to
+// grain of the app. ui/pigments.ts is perceptual throughout and it is right to
 // be: it is *reading* colour off photographs, where the question is which two
 // hues a picture is made of and a perceptual space is the only one that answers
 // it honestly. This is the opposite job. Every colour in sRGB has to be
@@ -56,7 +56,7 @@ let current: Promise<string | null> | null = null;
 /**
  * HSV to `#rrggbb`, lowercase.
  *
- * `h` in degrees, `s` and `v` in 0..1. The form is the one canvas/renderers.js
+ * `h` in degrees, `s` and `v` in 0..1. The form is the one canvas/renderers.ts
  * demands of a swatch and the one `<input type="color">` will accept, so it is
  * produced here rather than anywhere the value passes through afterwards.
  */

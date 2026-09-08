@@ -7,7 +7,7 @@
 // a file browser could show a thumbnail - and going and getting that is a zip
 // read and a bounded byte walk, not a document renderer.
 //
-// So this is the third module in the shape import/preview.js established, and it
+// So this is the third module in the shape import/preview.ts established, and it
 // is deliberately the same shape: walk a container written by something that is
 // not this app, find one blob inside it, trust none of the numbers on the way,
 // and identify what comes out by its own first bytes rather than by anything the
@@ -20,7 +20,7 @@
 //   ZIP containers  OOXML (.docx/.xlsx/.pptx), OpenDocument, Krita, Procreate,
 //                   iWork, Sketch. All of them are zip files with a picture at a
 //                   known path, so all of them are one table (WELLS) and one
-//                   read through storage/zip.js - the same hand-rolled reader
+//                   read through storage/zip.ts - the same hand-rolled reader
 //                   the .mbrd format itself is built on.
 //
 //   PSD             Not a zip. Photoshop keeps a JPEG of the composite in its
@@ -35,15 +35,15 @@
 // The original file is untouched and still the one embedded in the .mbrd, so the
 // day any of these gets a real renderer the card upgrades itself; until then it
 // shows the picture the authoring application already made rather than a hole.
-// Same bargain import/pdf.js strikes for a PDF, without the dependency.
+// Same bargain import/pdf.ts strikes for a PDF, without the dependency.
 
 import { readZip } from '../storage/zip.ts';
 import { extOf } from '../util.ts';
 import { oversize, isOversize, mb } from '../consent.ts';
 // The two families whose picture is not at a path a specification names. A
-// program keeps its icon in a resource tree (import/pe.js) and an app package or
+// program keeps its icon in a resource tree (import/pe.ts) and an app package or
 // a book keeps its in one of several places that have to be ranked
-// (import/packages.js). Both answer the same question this module asks and both
+// (import/packages.ts). Both answer the same question this module asks and both
 // are dispatched from bakedPreview() below, so there is one door for "does this
 // file carry a picture of itself" rather than three.
 import { exeIcon, isExecutable } from './pe.ts';
@@ -59,7 +59,7 @@ import { carvedPicture, isCarved } from './carved.ts';
  * the reader the rest of the app uses rather than writing a second, ranged one.
  * For a document that is nothing - a .docx is measured in megabytes - and for
  * the fifty-megabyte Procreate file somebody dropped by accident it is a tab
- * that stops responding. Its own ceiling rather than leaning on zip.js's, which
+ * that stops responding. Its own ceiling rather than leaning on zip.ts's, which
  * is set for a whole board archive and is three orders of magnitude too generous
  * for one document.
  */
@@ -82,7 +82,7 @@ export const MAX_CONTAINER = 96 * 1024 * 1024;
  */
 export const MAX_INFLATED = 192 * 1024 * 1024;
 
-/** A preview under a kilobyte is not one. Same floor import/preview.js uses. */
+/** A preview under a kilobyte is not one. Same floor import/preview.ts uses. */
 const MIN_IMAGE = 512;
 
 /**
@@ -140,7 +140,7 @@ const WELLS: Record<string, string[]> = {
     'previews/preview.png',
   ],
   // Autodesk Fusion. Listed for completeness and expected to miss: an .f3d is a
-  // zip whose entries are Zstandard-compressed, and storage/zip.js reads STORE
+  // zip whose entries are Zstandard-compressed, and storage/zip.ts reads STORE
   // and DEFLATE only. It fails cleanly, which is the whole contract here.
   fusion: [
     'thumbnail.png',
@@ -174,7 +174,7 @@ export function hasBakedPreview(file: File) {
  * A viewable picture out of a document, or null.
  *
  * Returned as a File so the caller can hand it straight to addFile() and to
- * measureSize(), which is what import/preview.js returns too - the two are used
+ * measureSize(), which is what import/preview.ts returns too - the two are used
  * interchangeably by prepareFile().
  */
 export async function bakedPreview(file: File, lift = false): Promise<File | null> {
@@ -182,7 +182,7 @@ export async function bakedPreview(file: File, lift = false): Promise<File | nul
     const ext = extOf(file.name);
     if (ext === 'psd' || ext === 'psb') return await fromPsd(file);
     if (ext === 'pdn') return await fromPdn(file);
-    // A program's icon. No container ceiling of its own here: pe.js reads only
+    // A program's icon. No container ceiling of its own here: pe.ts reads only
     // the section it needs, out of a Blob, and carries its own ceiling on that -
     // so a 400 MB installer costs a few slices rather than 400 MB.
     if (isExecutable(ext)) {
@@ -282,7 +282,7 @@ function imageType(b: Uint8Array): { ext: string, mime: string } | null {
   if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47
       && b[4] === 0x0d && b[5] === 0x0a && b[6] === 0x1a && b[7] === 0x0a) {
     // A CgBI PNG passes every one of those bytes and decodes in nothing outside
-    // Apple's software - see import/winimage.js. It is the .emf case wearing a
+    // Apple's software - see import/winimage.ts. It is the .emf case wearing a
     // signature this function already trusted, which is why the check is here
     // rather than at the one call site that meets one.
     return isDrawablePng(b) ? { ext: 'png', mime: 'image/png' } : null;

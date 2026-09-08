@@ -9,7 +9,7 @@
 //
 // What it will not do:
 //   - touch anything it cannot make meaningfully smaller (see WORTH_IT in
-//     picture.js). A re-encode that saves four percent is a generation of
+//     picture.ts). A re-encode that saves four percent is a generation of
 //     quality spent on a rounding error.
 //   - throw the originals away. They stay in the browser under `meta.was` until
 //     you say otherwise, which is what makes the undo real rather than nominal.
@@ -17,7 +17,7 @@
 //     a card's worth of pixels, never dropped.
 //
 // Pictures and sound are the browser's own work - a canvas writes the WebP, and
-// WebCodecs plus ninety lines of Ogg writes the Opus (picture.js, opus.js), so
+// WebCodecs plus ninety lines of Ogg writes the Opus (picture.ts, opus.ts), so
 // the whole feature runs with nothing downloaded.
 //
 // Video is left alone. Shrinking a clip is the one thing the browser cannot do
@@ -25,7 +25,7 @@
 // core for the length of the clip - and for a board you look at that is not a
 // trade worth making. Clips stay exactly the file that was dropped; a still
 // poster for one the browser cannot even open is a separate, lighter job
-// (firstFrame in media.js), not part of optimising.
+// (firstFrame in media.ts), not part of optimising.
 
 import { board, byId, swapAssets, setItemThumb, setItemPoster, removeItems } from '../state.ts';
 import { toast } from '../notify.ts';
@@ -76,7 +76,7 @@ export type Plan = {
 
 /**
  * What a run says about itself as it goes. `phase` names the two sweeps at the
- * end; the main encoding pass leaves it off - see optimize/ui.js, which turns
+ * end; the main encoding pass leaves it off - see optimize/ui.ts, which turns
  * each into a sentence.
  */
 export type Progress = {
@@ -108,7 +108,7 @@ export type Report = {
 /**
  * As much of a card as this module reads.
  *
- * Structural and local on purpose: state.js is still unchecked, so there is no
+ * Structural and local on purpose: state.ts is still unchecked, so there is no
  * shared item type to import yet. When there is, this goes and the import takes
  * its place - what is written here is only the handful of fields the passes
  * below touch, not an opinion about what an item is.
@@ -136,7 +136,7 @@ type ItemView = {
  *
  * board.items is still an unchecked module's bare `[]`, which types as never[] -
  * so the widening happens here, once and named, rather than at each of the four
- * passes that walk it. When board-model.js is annotated this whole seam goes:
+ * passes that walk it. When board-model.ts is annotated this whole seam goes:
  * the accessor, ItemView and ItemMeta with it. A function rather than a binding
  * because loading a board replaces the array.
  */
@@ -144,7 +144,7 @@ const cards = (): ItemView[] => board.items;
 
 /**
  * An entry in the asset registry, as much of one as this module reads - see
- * storage/assets.js, which is where the real shape lives.
+ * storage/assets.ts, which is where the real shape lives.
  */
 type AssetEntry = { blob: Blob, size: number, name?: string, mime?: string };
 
@@ -194,7 +194,7 @@ export function planOptimize(): Plan {
       plan.posters++;
     }
     // What this item held the last time the optimiser looked at it. Matching
-    // bytes are done with - see swapAssets() in state.js. Skipping them is not
+    // bytes are done with - see swapAssets() in state.ts. Skipping them is not
     // only about the wasted minute: re-encoding a WebP or an Opus stream from
     // its own output is a second generation of loss bought for nothing.
     const marked = new Set(item.meta?.opt || []);
@@ -248,7 +248,7 @@ export function planOptimize(): Plan {
  * to the ffmpeg-only video branch or to the skip pile - so a board of AAC music
  * "optimised" without touching a single sound. A `.m4a`/`.aac` extension says
  * "sound" plainly where the MIME is at best ambiguous, and the browser decodes
- * it to Opus with nothing downloaded (see opus.js). MIME still has the first
+ * it to Opus with nothing downloaded (see opus.ts). MIME still has the first
  * word for pictures, where it is reliable and an extension often absent.
  *
  * A cover is always a picture: it rides on an audio card, so the parent item's
@@ -272,22 +272,6 @@ function mediaKind({ mime, ext, type, isCover }: {
   return null;
 }
 
-/**
- * Do it.
- *
- * `onProgress({ done, total, name })` is called as each file is finished, so a
- * dialog can say which one it is on - a board of forty photographs is several
- * seconds of work and a frozen window is indistinguishable from a broken one.
- *
- * The rewriting touches the board exactly once, at the end, in a single undoable
- * commit - see swapAssets(). Half an optimisation is not a state the board
- * should ever be observed in.
- *
- * Clearing out the empty files is the one thing that stands outside that, as its
- * own commit before any of this runs. It is a different act - taking away what
- * was never content, rather than rewriting what is - and the note over it says
- * why the two should not share a Ctrl+Z.
- */
 /**
  * Run `task` over `items`, at most `limit` at a time.
  *
@@ -316,31 +300,6 @@ async function pool<T>(
 }
 
 /**
- * How many of each job run at once.
- *
- * Deliberately small, and bounded by what a *decode* costs rather than by what
- * the CPU could schedule. A 24-megapixel phone photograph is about 100 MB
- * decoded, so four at once is already most of what a phone will give up - and
- * this feature exists for phones. One less than the core count leaves the main
- * thread something to run the progress dialog on.
- *
- * Posters are lower again because a clip is the heaviest thing here: each one
- * spins up a real media pipeline and holds a decoded frame. The number that
- * matters is not throughput but how far one stalled clip can block the queue -
- * see POSTER_MS in canvas/poster.js, where a clip that will not seek costs six
- * seconds whatever else is happening, so a board with four such clips is
- * twenty-four seconds of nothing at one lane and six at four.
- *
- * Three rather than the two this was, and the reason it can go up at all is
- * that a grab no longer buffers the whole file (preload, canvas/poster.js).
- * Not higher: iOS rations simultaneous video decoders hard enough to lose the
- * tab, which is the ceiling the video renderer is built around, and this pass
- * runs on the phones that ceiling is about.
- *
- * Thumbnails are cheapest, because past this change they decode straight to a
- * hundred pixels rather than in full - see the width hint in backfillThumbs().
- */
-/**
  * The ceilings a clip is shrunk to, on the one shell that shrinks clips.
  *
  * Here rather than in desktop/native/ffmpeg.ts for the reason every other
@@ -358,6 +317,31 @@ async function pool<T>(
 const MAX_VIDEO_EDGE = 1600;
 const VIDEO_BITRATE = 2_500_000;
 
+/**
+ * How many of each job run at once.
+ *
+ * Deliberately small, and bounded by what a *decode* costs rather than by what
+ * the CPU could schedule. A 24-megapixel phone photograph is about 100 MB
+ * decoded, so four at once is already most of what a phone will give up - and
+ * this feature exists for phones. One less than the core count leaves the main
+ * thread something to run the progress dialog on.
+ *
+ * Posters are lower again because a clip is the heaviest thing here: each one
+ * spins up a real media pipeline and holds a decoded frame. The number that
+ * matters is not throughput but how far one stalled clip can block the queue -
+ * see POSTER_MS in canvas/poster.ts, where a clip that will not seek costs six
+ * seconds whatever else is happening, so a board with four such clips is
+ * twenty-four seconds of nothing at one lane and six at four.
+ *
+ * Three rather than the two this was, and the reason it can go up at all is
+ * that a grab no longer buffers the whole file (preload, canvas/poster.ts).
+ * Not higher: iOS rations simultaneous video decoders hard enough to lose the
+ * tab, which is the ceiling the video renderer is built around, and this pass
+ * runs on the phones that ceiling is about.
+ *
+ * Thumbnails are cheapest, because past this change they decode straight to a
+ * hundred pixels rather than in full - see the width hint in backfillThumbs().
+ */
 const LANES = {
   get media() { return Math.max(1, Math.min(4, cores() - 1)); },
   get thumbs() { return Math.max(1, Math.min(6, cores() - 1)); },
@@ -367,6 +351,22 @@ const LANES = {
 /** Cores, where the runtime admits to having any. Node and old engines say 4. */
 const cores = () => globalThis.navigator?.hardwareConcurrency || 4;
 
+/**
+ * Do it.
+ *
+ * `onProgress({ done, total, name })` is called as each file is finished, so a
+ * dialog can say which one it is on - a board of forty photographs is several
+ * seconds of work and a frozen window is indistinguishable from a broken one.
+ *
+ * The rewriting touches the board exactly once, at the end, in a single undoable
+ * commit - see swapAssets(). Half an optimisation is not a state the board
+ * should ever be observed in.
+ *
+ * Clearing out the empty files is the one thing that stands outside that, as its
+ * own commit before any of this runs. It is a different act - taking away what
+ * was never content, rather than rewriting what is - and the note over it says
+ * why the two should not share a Ctrl+Z.
+ */
 export async function runOptimize(
   { onProgress = () => {}, plan = planOptimize() }:
     { onProgress?: (p: Progress) => void, plan?: Plan } = {},
@@ -455,7 +455,7 @@ export async function runOptimize(
   // not a delete: the card has a real file on it and only its picture is the
   // hollow one, so it loses the picture and keeps everything else. `null` is the
   // third thing a swap can say - drop this reference - beside a hash (replace
-  // it) and nothing at all (leave it alone). See swapAssets() in state.js.
+  // it) and nothing at all (leave it alone). See swapAssets() in state.ts.
   //
   // Read off the live board rather than off the plan, because the cards whose
   // own file was empty have already gone by now.
@@ -556,9 +556,9 @@ async function backfillPosters(onProgress: (p: Progress) => void): Promise<numbe
   const wanted = await clipsWantingStills();
   if (!wanted.length) return 0;
 
-  // Loaded here rather than at the top of the file, and from canvas/poster.js
+  // Loaded here rather than at the top of the file, and from canvas/poster.ts
   // rather than through the renderer that re-exports it: the renderer is the
-  // whole card-building module and none of it is wanted here, while poster.js
+  // whole card-building module and none of it is wanted here, while poster.ts
   // imports nothing at all and only reaches for `document` inside the call.
   const { videoFrame } = await import('../canvas/poster.ts');
 
@@ -571,7 +571,7 @@ async function backfillPosters(onProgress: (p: Progress) => void): Promise<numbe
       // ffmpeg is still only reached when the browser's own decoder came back
       // with nothing - it is a 32 MB download, and the ternary below is what
       // keeps it that way. Its result carries its own name and type; a frame
-      // cut here is named from the blob instead, because what canvas/poster.js
+      // cut here is named from the blob instead, because what canvas/poster.ts
       // hands back is no longer always a WebP (see encodeFrame there).
       const ff = shot ? null : await viaFfmpeg(asset.blob, asset.name || item.name || 'clip', asset.mime);
       const named = shot ? derivedFile(shot.blob, 'poster')
@@ -639,8 +639,8 @@ async function viaFfmpeg(
  *   - a clip carries a poster, which is a picture like any other by the time it
  *     is here. A board of video is the heaviest kind there is and was the one
  *     kind that never got the cheap copy.
- *   - a document (PDF, DOCX, ODT, Krita, PSD - see import/pdf.js and
- *     import/document.js) arrives as an image card whose asset is the original
+ *   - a document (PDF, DOCX, ODT, Krita, PSD - see import/pdf.ts and
+ *     import/document.ts) arrives as an image card whose asset is the original
  *     file and whose picture is meta.preview, so cutting from asset.hash would
  *     be cutting a thumbnail out of a zip.
  *
@@ -710,7 +710,7 @@ async function backfillThumbs(
     if (!asset) { onProgress({ done: ++n, total: wanted.length, name: item.name || '', phase: 'thumbs' }); return; }
     try {
       // The width hint is the whole difference between a full decode and a
-      // hundred-pixel one, and makeThumb() has taken it since import/drop.js
+      // hundred-pixel one, and makeThumb() has taken it since import/drop.ts
       // started passing it - this caller simply never did, so every thumbnail
       // on the board was cut by decoding the picture in full and turning it
       // down. Known for anything the pass above just rewrote, which is exactly

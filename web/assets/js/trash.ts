@@ -1,10 +1,10 @@
 // The bin: deleting, restoring, and emptying it.
 //
-// One concern that sat in two non-contiguous blocks of state.js, which is
+// One concern that sat in two non-contiguous blocks of state.ts, which is
 // usually the sign that it was never really one of that file's. The bin is not
 // a place items go on their way out - it *is* where a deleted item lives, it
-// travels in the saved file (see board-schema.js), and its bound is part of the
-// board's shape (TRASH_LIMIT, in board-model.js beside MAX_ITEMS). Delete and
+// travels in the saved file (see board-schema.ts), and its bound is part of the
+// board's shape (TRASH_LIMIT, in board-model.ts beside MAX_ITEMS). Delete and
 // restore are two directions of one door, and they were four hundred lines
 // apart.
 //
@@ -14,11 +14,11 @@
 //   - Ordinary items are binned, oldest-first, up to the limit.
 //   - The Desktop title card is not binned: it is a singleton the board is
 //     meant to have, so it is hidden and offered back by its own restore button
-//     (ui/trash.js) rather than filed among thrown-away things.
+//     (ui/drawer.ts) rather than filed among thrown-away things.
 //   - Ghost cards are not binned either, for a different reason: they are hints
 //     rather than anything of the user's, so a thrown-away one is finished
 //     rather than filed. Deleting one by hand is a dismissal like any other -
-//     see dismissGhosts() in onboarding.js - and it does not come back.
+//     see dismissGhosts() in onboarding.ts - and it does not come back.
 //
 // **Eviction is part of what a delete did.** Truncating the bin used to be a
 // one-liner on the grounds that entries falling out the bottom are older than
@@ -36,11 +36,11 @@
 //
 // What is deliberately *not* here: any bookkeeping about connections. A pair
 // naming a deleted item is simply not drawn, and the item coming back brings
-// its lines with it because they never left - see the head of connections.js.
+// its lines with it because they never left - see the head of connections.ts.
 // Undoing a delete must give back exactly the board that was there, and the
 // cheapest way to promise that is to have taken nothing else away.
 //
-// Nothing here imports state.js - see tests/layers.test.js, where this is BASE.
+// Nothing here imports state.ts - see tests/layers.test.js, where this is BASE.
 
 import { bus, selection } from './board-store.ts';
 import { commit } from './history.ts';
@@ -52,8 +52,8 @@ import { refenceArrivals } from './fences.ts';
 import { fitBoardMode } from './layout.ts';
 import { itemHashes, isRecord, extOf } from './util.ts';
 // The ledger's own copies of every item, which emptying the bin has to reach -
-// see entombRecorded() at the foot of this file. history.ts already imports it;
-// the arrow from here points the same way and there is nothing pointing back.
+// see rewriteRecorded() in timeline.ts. The arrow from here points that way and
+// there is nothing pointing back.
 import { rewriteRecorded } from './timeline.ts';
 
 /**
@@ -384,7 +384,7 @@ export function removeItems(ids: Iterable<string>, label = 'Delete') {
   if (!removed.length) return;
   // The Desktop title card does not go to the bin - it is a singleton the board
   // is meant to have, so it is hidden and offered back by its own restore button
-  // (see ui/trash.js) rather than filed among thrown-away items. Only the rest
+  // (see ui/drawer.ts) rather than filed among thrown-away items. Only the rest
   // are binned; deleting the title also flips the flag, and undo flips it back.
   const titleGone = removed.some(r => r.item.type === 'title');
   const wasHidden = board.titleHidden;
@@ -448,11 +448,11 @@ export function removeItems(ids: Iterable<string>, label = 'Delete') {
   // commit() has now run the do half once, so `evicted` holds what this delete
   // pushed off the bottom of a full bin. Say so - those entries are past the point
   // of getting back. Fired here, not inside the closure, so undo/redo replays (which
-  // re-run the closure) do not re-announce it. A UI module toasts (ui/trash.js);
+  // re-run the closure) do not re-announce it. A UI module toasts (ui/drawer.ts);
   // state does not reach for the DOM itself.
   if (evicted.length) bus.emit('trash:evicted', evicted.length);
   // Out here rather than inside the closure, for the reason the line above is:
-  // undo and redo re-run the closure, and they have their own cues (history.js).
+  // undo and redo re-run the closure, and they have their own cues (history.ts).
   // A delete that also sounded from in there would say two things at once.
   cue('fall');
 }
@@ -808,7 +808,7 @@ export function emptyTrash() {
     () => { board.trash = stones; bus.emit('trash'); });
   // Out here rather than in the closure, the same rule removeItems() states for
   // 'trash:evicted': undo and redo re-run the closure, and this is a thing that
-  // happened once. A UI module toasts it (ui/trash.ts); state does not reach for
+  // happened once. A UI module toasts it (ui/drawer.ts); state does not reach for
   // the DOM itself.
   if (entombed) bus.emit('trash:purged', { items: entombed, bytes });
 }

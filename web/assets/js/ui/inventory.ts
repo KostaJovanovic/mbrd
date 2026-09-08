@@ -137,7 +137,7 @@ export function boardInventory(): Inventory {
     }
   }
   for (const t of board.trash) for (const h of itemHashes(t.item)) referenced.add(h);
-  // And the third. Asked of timeline.js, which owns the shape of a step, rather
+  // And the third. Asked of timeline.ts, which owns the shape of a step, rather
   // than walked here - a second copy of that walk is exactly how the two would
   // come to disagree about what is rubbish. Called with no argument, so it
   // reads the live ledger rather than a document: this sheet is a report on the

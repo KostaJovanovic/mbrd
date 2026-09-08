@@ -45,7 +45,7 @@ import type { FontAxis, FontSpec } from '../board-model.ts';
 const MAX_BYTES = 4 * 1024 * 1024;
 const MAX_FONTS = 8;
 
-/** Matches MAX_FONT_AXES in state.js - the two are one limit in two layers. */
+/** Matches MAX_FONT_AXES in state.ts - the two are one limit in two layers. */
 const MAX_AXES = 32;
 
 /**
@@ -555,7 +555,7 @@ function parseFvar(bytes: Uint8Array) {
   // there are were the ones that offered no sliders at all. The table still has
   // to fit its own declared length, which is the check that actually defends
   // against a corrupt header; the cap is only about how many controls a panel
-  // can usefully hold. See MAX_FONT_AXES in state.js, which is the same number
+  // can usefully hold. See MAX_FONT_AXES in state.ts, which is the same number
   // one layer down - a board may not store more than this either.
   for (let i = 0; i < Math.min(count, MAX_AXES); i++) {
     const at = offset + i * size;
@@ -693,7 +693,7 @@ async function syncFonts() {
 /**
  * The board's font list.
  *
- * Trusted, because normalizeBoard() in state.js has already held it to shape -
+ * Trusted, because normalizeBoard() in state.ts has already held it to shape -
  * valid hashes, family names inside isFamily(), no duplicates. That is where
  * the check belongs: settings are spread wholesale out of a .mbrd, so every
  * field in them arrives from a file this app did not necessarily write, and one

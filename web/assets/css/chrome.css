@@ -122,7 +122,7 @@
    into is the accent either way. */
 
 /* ---------------------------------------------------------
-   The toolbar (ui/toolbar.js)
+   The toolbar (ui/toolbar.ts)
    --------------------------------------------------------- */
 
 /* Top-centre, and the one piece of chrome on that edge. Why there rather than
@@ -225,7 +225,7 @@
 #toolbar button:active { background: var(--paper-3); color: var(--accent-deep); }
 /* Focus mirrors the hover - see #zoom-ctl's copy of this, one bar over. */
 #toolbar button:focus-visible { background: var(--paper-2); color: var(--accent-deep); }
-/* A button whose flyout is down (ui/flyout.js), held at the hover look while
+/* A button whose flyout is down (ui/flyout.ts), held at the hover look while
    the pointer is off it and inside the panel.
    Without this the button goes cold the moment you reach for a row in its own
    menu, and the panel is left hanging off a bar with nothing on it to say which
@@ -290,7 +290,146 @@
 }
 
 /* ---------------------------------------------------------
-   The now-playing bar (ui/nowplaying.js)
+   The window's own frame (ui/window-chrome.ts)
+
+   Only on the desktop shell, whose window has no caption bar - every rule here
+   hangs off `.is-framed` on <html>, which that module writes and a browser
+   never gets. Nothing below changes a single pixel of the web app.
+
+   Two objects and one variable.
+
+   --frame-inset-left is what the app's top-left button steps aside by, and it
+   is declared here rather than in tokens.css for the reason the stacking ladder
+   is: it is a fact about the window this app is in, not a look, and a board file
+   has no business setting it. Zero everywhere but macOS, where the system keeps
+   its traffic lights in that corner. sidebar.css reads it.
+
+   The band is invisible and is only a drag handle. It is deliberately *under*
+   the chrome - one rung below --z-chrome, the only place in this sheet that
+   steps down rather than up - because everything on the glass has to stay
+   pressable through it, and a `-webkit-app-region: drag` element takes every
+   press that reaches it before the page ever hears about one. That is also what
+   it costs: a gesture cannot *start* in the top 32 pixels of the board. Thirty-
+   two because a thinner strip is hard to find without looking and a taller one
+   takes a real bite out of the board - the chrome row itself is 56.
+   --------------------------------------------------------- */
+
+:root {
+  --frame-inset-left: 0px;
+  --frame-drag-h: 32px;
+}
+:root.is-frame-mac {
+  /* The three lights plus the gap after them, measured off
+     trafficLightPosition in desktop/main.ts: 18 across, three 12px dots at 20
+     apart, and a clear 16 before the app's own button starts. */
+  --frame-inset-left: 88px;
+}
+
+.is-framed #window-drag {
+  position: fixed;
+  z-index: calc(var(--z-chrome) - 1);
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--frame-drag-h);
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+/* Full screen has no edges to drag by and the system draws its own way out. */
+:root.is-fullscreen #window-drag,
+:root.is-fullscreen #window-controls { display: none; }
+
+/* The three buttons, as one pill in the idiom every other control on the glass
+   wears: --paper-card behind a hairline, --leaf at the corners, --shadow-1
+   under it, seams drawn as rules rather than gaps. It is the zoom cluster read
+   backwards, in the one corner of the glass this app has never used.
+
+   The pill itself drags and its buttons do not, so the corner is a handle as
+   well as a control - `-webkit-app-region` inherits, which is why the buttons
+   have to say no rather than the pill having to say yes three times. */
+.is-framed #window-controls {
+  position: fixed;
+  z-index: var(--z-chrome);
+  top: max(16px, env(safe-area-inset-top));
+  right: max(16px, env(safe-area-inset-right));
+  display: flex;
+  align-items: stretch;
+  height: var(--chrome-button-h);
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  overflow: hidden;
+  background: var(--paper-card);
+  box-shadow: var(--shadow-1);
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-app-region: drag;
+  app-region: drag;
+  transition: opacity var(--dur-base) var(--ease);
+}
+
+#window-controls button {
+  display: grid;
+  place-items: center;
+  min-width: 38px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+#window-controls button + button { border-left: 1px solid var(--rule); }
+
+/* Hover behind the query and press in front of it, the split this whole sheet
+   follows - see the note over #zoom-ctl. */
+@media (hover: hover) {
+  #window-controls button:hover { background: var(--paper-2); color: var(--accent-deep); }
+}
+#window-controls button:active { background: var(--paper-3); color: var(--accent-deep); }
+#window-controls button:focus-visible { background: var(--paper-2); color: var(--accent-deep); }
+
+/* Close is the one button on the glass that can lose work, so it is the one
+   that answers in a different colour. --danger rather than the accent, and only
+   under the pointer: a red button sitting there permanently would be the
+   loudest object on a board it has nothing to do with. */
+@media (hover: hover) {
+  #window-controls [data-cmd="window-close"]:hover {
+    background: color-mix(in srgb, var(--danger) 14%, transparent);
+    color: var(--danger);
+  }
+}
+#window-controls [data-cmd="window-close"]:active,
+#window-controls [data-cmd="window-close"]:focus-visible {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+}
+
+#window-controls svg {
+  width: 14px; height: 14px;
+  /* The glyph takes the reaction and not the button, the zoom pill's line and
+     for its reason: scaling the button would drag the seams between them. */
+  transition: transform var(--dur-base) var(--ease-back);
+}
+@media (hover: hover) {
+  #window-controls button:hover svg { transform: scale(var(--btn-grow)) translateY(var(--btn-lift)); }
+}
+#window-controls button:active svg {
+  transform: scale(calc(var(--btn-press) - 0.08));
+  transition: transform var(--dur-fast) var(--ease-in);
+}
+
+/* One of the two middle glyphs, never both. The padlock's idiom exactly: a
+   <use> renders into a shadow tree no rule here can reach, so the switch is on
+   the wrappers, which are ordinary elements in this document. */
+#window-controls .win-restore,
+#window-controls.is-maximized .win-max { display: none; }
+#window-controls.is-maximized .win-restore { display: block; }
+
+/* ---------------------------------------------------------
+   The now-playing bar (ui/nowplaying.ts)
    --------------------------------------------------------- */
 
 /* ── The gap along the foot, which two bars share ──────────────────────────
@@ -366,7 +505,7 @@
    the bar is a second copy of them laid over the bottom of the window showing the
    first.
 
-   The class ui/playlist.js writes is `.playlist-transport`, not `.playlist-up`,
+   The class ui/playlist.ts writes is `.playlist-transport`, not `.playlist-up`,
    and the difference has already earned itself once. The window used to have a
    second body - an album view, a hero and a list with no transport in it at all,
    built to use this bar as its transport - and a flag meaning "the window is open"
@@ -396,7 +535,7 @@
 }
 
 /* The lead, down the left of both rows: play/pause, and Next behind it while
-   there is a list to step through. ui/nowplaying.js builds it and prepends it,
+   there is a list to step through. ui/nowplaying.ts builds it and prepends it,
    which is why it is the first column without being named in the markup.
 
    Both rows, explicitly, rather than left to the auto-placement: a Next button
@@ -454,7 +593,7 @@
 #nowplaying .np-controls { display: flex; align-items: center; gap: 1px; margin-left: auto; }
 /* Three things in the cluster, all of them always there: open the playlist, the
    volume, close. Play/pause was the fourth and is the lead now - see the note in
-   ui/nowplaying.js about which cluster a control belongs in. Shuffle, prev and
+   ui/nowplaying.ts about which cluster a control belongs in. Shuffle, prev and
    repeat used to live here too and be shown or hidden off an .is-queue class;
    they are in the playlist window, beside the list they act on. */
 
@@ -482,7 +621,7 @@
    goes because somebody closed it.
 
    Both halves of the exit run for the same --dur-fast on purpose:
-   ui/nowplaying.js ends the exit on the opacity transition, so a transform
+   ui/nowplaying.ts ends the exit on the opacity transition, so a transform
    still running when that fires would be cut off by [hidden].
 
    pointer-events with the opacity, or a bar faded to nothing would still be a
@@ -662,7 +801,7 @@
      2 * WAVE_HALF = 14 user units; sizeWave() makes a user unit a pixel and lays the
      path two periods past the edge, so translating by one period and looping is
      seamless - the wave repeats, so the reset is invisible. Keep this 14 in step with
-     WAVE_HALF in ui/nowplaying.js. Slow: a period every few seconds. */
+     WAVE_HALF in ui/nowplaying.ts. Slow: a period every few seconds. */
   animation: seek-wave 3s linear infinite;
 }
 @keyframes seek-wave { to { transform: translateX(-14px); } }
@@ -713,13 +852,13 @@
   height: var(--icon-button);
   padding: 0;
   border: 0;
-  /* --radius-pill, not 50%, and tokens.css:354 is the instruction: a 50% that is
-     really a rounded rectangle which happens to be square wants the pill. This
-     is a square button with an icon in it, not a disc - the play button two
-     rules up is the disc, and it keeps its 50%. The difference on screen is one
-     tier: at Harsh, where --radius-pill is 0, this squares off with the bar
-     around it instead of being the one thing on a board that declares nothing
-     curves still curving. */
+  /* --radius-pill, not 50%, and the shape block in tokens.css is the
+     instruction: a 50% that is really a rounded rectangle which happens to be
+     square wants the pill. This is a square button with an icon in it, not a
+     disc - the play button two rules up is the disc, and it keeps its 50%. The
+     difference on screen is one tier: at Harsh, where --radius-pill is 0, this
+     squares off with the bar around it instead of being the one thing on a
+     board that declares nothing curves still curving. */
   border-radius: var(--radius-pill);
   background: none;
   color: var(--ink-3);
@@ -765,14 +904,14 @@
 /* An engaged shuffle or repeat reads in the accent. */
 #nowplaying .np-qbtn[aria-pressed="true"] { color: var(--accent-text); }
 /* And one of them comes and goes: Next, which is only on the bar while a list is
-   what is playing (paintNext() in ui/nowplaying.js). Written here rather than
+   what is playing (paintNext() in ui/nowplaying.ts). Written here rather than
    left to the browser because `display: grid` above beats the user-agent's
    `[hidden] { display: none }`, so without this the button would be there the
    whole time and merely claim not to be. */
 #nowplaying .np-qbtn[hidden] { display: none; }
 
 /* ---------------------------------------------------------------------------
-   The tour bar (ui/tour.js)
+   The tour bar (ui/tour.ts)
 
    The same card as the player next to it - same paper, same hairline, same
    --leaf corner - because on a board that is playing something the two share an
@@ -832,7 +971,7 @@
 }
 
 /* The entrance, in the player's own idiom: up from under the edge, and back
-   under it on the way out. ui/tour.js unhides a frame before it adds .is-up,
+   under it on the way out. ui/tour.ts unhides a frame before it adds .is-up,
    because an element going straight from display:none to its final state is a
    jump rather than a transition. */
 #tour {
@@ -939,7 +1078,7 @@
 #tour .tour-close { margin-left: 2px; }
 
 /* Idle - fifteen seconds of nothing, and the furniture goes.
-   ui/idle.js puts the class on and takes it off; what counts as "something
+   ui/idle.ts puts the class on and takes it off; what counts as "something
    happened" is decided there.
 
    pointer-events with it, and that pairing is the whole safety of this: a
@@ -957,6 +1096,11 @@
 :root.is-idle #menu-btn,
 :root.is-idle #mobile-header-edit-btn,
 :root.is-idle #mobile-find-btn,
+/* The window buttons go with the rest, and the drag band deliberately does
+   not: it is invisible either way, and a window that could not be moved
+   because nobody had touched it for a while would be a fault rather than a
+   piece of restraint. */
+:root.is-idle #window-controls,
 :root.is-idle #drawer-dock,
 :root.is-idle #corner,
 /* The toolbar goes with the rest, and it is the one entry here worth arguing
@@ -978,14 +1122,14 @@
 }
 
 /* ---------------------------------------------------------------------------
-   Touring - the board being shown rather than worked on. ui/tour.js puts the
+   Touring - the board being shown rather than worked on. ui/tour.ts puts the
    class on <html> at the first stop and takes it off at the end. And the same
-   list again for .is-tour-edit, which ui/tour-edit.js puts on while the tour is
+   list again for .is-tour-edit, which ui/tour-edit.ts puts on while the tour is
    being *built*: the mode marks every card on the board and the marks are the
    editor, so a panel over the third of the board they are on is the one thing
    that must not be there. Two classes rather than one, because the two modes
    differ everywhere else - a tour freezes the board (see pressIntent() in
-   canvas/input.js) and building one leaves every gesture alone.
+   canvas/input.ts) and building one leaves every gesture alone.
 
    The idle list above, plus the two panels, and going for a different reason.
    Idle is the app noticing nobody is there and stepping back for a moment;
@@ -1001,11 +1145,12 @@
    The two panels are hidden rather than closed, because a panel left open is a
    decision somebody made - it is exactly where they left it when the tour ends.
    #tour itself is not on the list, and neither is #toast: see presentation()
-   in ui/tour.js for both. */
+   in ui/tour.ts for both. */
 :root:is(.is-touring, .is-tour-edit) :is(
   #menu-btn,
   #mobile-header-edit-btn,
   #mobile-find-btn,
+  #window-controls,
   #sidebar,
   #header-panel,
   #drawer-dock,
@@ -1032,7 +1177,7 @@
 }
 
 /* ---------------------------------------------------------------------------
-   The tour editor's bar (ui/tour-edit.js)
+   The tour editor's bar (ui/tour-edit.ts)
 
    The tour bar's twin, in the same slot along the foot and in the same idiom,
    because the two modes are the same shape: the chrome goes, the board fills the
@@ -1386,7 +1531,7 @@
      itself, which the overflow below would otherwise cut off on the top line. */
   padding: 3px 3px 0 0;
   overflow: hidden auto;
-  scrollbar-width: thin;
+  /* The scrollbar is base.css's - see the note in sidebar.css. */
   list-style: none;
 }
 /* The corner is the chip's, because the only thing this element draws is the
@@ -1406,7 +1551,7 @@
 /* One stop: a square with the stop's *name* on it, and nothing else.
 
    The name is the order the stops were added in, not where they are lying - the
-   argument is written out at the head of ui/tour-edit.js and it is the whole
+   argument is written out at the head of ui/tour-edit.ts and it is the whole
    reason this row can show a reorder having happened. Drawn in the same shape
    and face as the mark a card wears in its own corner, because they are the two
    halves of one editor, and deliberately not in the same colour: the card's is

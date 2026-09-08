@@ -132,7 +132,7 @@ export async function addFile(file: File): Promise<string> {
  * precisely the engine those changes were made for. No version of Safari
  * encodes WebP from a canvas, so that engine is every Safari.
  *
- * Here rather than in optimize/picture.js, where the first two callers live:
+ * Here rather than in optimize/picture.ts, where the first two callers live:
  * canvas/ does not import optimize/ anywhere today and a naming helper is not
  * the right reason to open that edge. Every caller already imports addFile().
  *
@@ -216,9 +216,11 @@ export function forgetAssets(hashes: Iterable<string>): Map<string, number> {
  * one when the field is empty - which is the same broken picture by a slower
  * route.
  *
- * Registered from main.js rather than on import: a module that reaches for a
+ * Registered from main.ts rather than on import: a module that reaches for a
  * browser global the moment it loads cannot be loaded anywhere else, and this
- * one is imported by state.js and so by everything.
+ * one is imported right across the app - commands.ts, canvas/, import/,
+ * optimize/ and ui/ all reach for it. Not state.ts, which sits in the base
+ * layer under this one and may not import it (tests/layers.test.js again).
  */
 export function initAssets() {
   addEventListener('pagehide', event => {

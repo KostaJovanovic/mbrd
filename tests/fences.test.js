@@ -6,7 +6,7 @@
 // membership is measured on Desktop geometry and nowhere else, and resizing a
 // fence re-measures where resizing a photo does not.
 //
-// state.js is a module singleton, so every case starts by loading an empty
+// state.ts is a module singleton, so every case starts by loading an empty
 // board, which is the same door opening a .mbrd goes through.
 
 import { test, beforeEach } from 'node:test';
@@ -55,7 +55,7 @@ test('a card whose centre is inside a fence is in it', () => {
 
 test('a card whose centre is outside is not, however much of it overlaps', () => {
   // The straddle. Half a metre of this card is over the fence, which under
-  // sticky.js's area rule would stick it - and a region has edges, so it has to
+  // sticky.ts's area rule would stick it - and a region has edges, so it has to
   // land on exactly one side of this one.
   addItems([fence({ x: 0, y: 0, w: 800, h: 600 })]);
   const [pic] = addItems([photo({ x: 420, y: 0, w: 200, h: 200 })]);
@@ -168,7 +168,7 @@ test('a note stuck to a card in a fence travels with the fence', () => {
 
 test('and the closure goes down only - a card does not travel with its region', () => {
   // The property both readers of travelling() stand on. A drag of one card must
-  // not tow the fence around it, and the hover lift in canvas/items.js is the
+  // not tow the fence around it, and the hover lift in canvas/items.ts is the
   // same statement in the other medium: pointing at a card in a region lifts the
   // card, while pointing at the region lifts everything in it.
   addItems([fence({ x: 0, y: 0, w: 900, h: 700 })]);

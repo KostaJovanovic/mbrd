@@ -25,10 +25,10 @@
 // Two rAF loops run while a clip plays, one per view. That is the price of not
 // writing a second transport with its own idea of what a waveform looks like,
 // and it is one loop for one clip - the exclusive-playback rule in
-// canvas/audio.js means there is never a second.
+// canvas/audio.ts means there is never a second.
 //
 // What keeps the sound going once the card is gone is not here: it is
-// sounding() in canvas/items.js, which exempts a playing card from the cull.
+// sounding() in canvas/items.ts, which exempts a playing card from the cull.
 // Removing a media element from the document pauses it, so without that the bar
 // would be a remote for something the browser had already stopped.
 //
@@ -154,7 +154,7 @@ export function initNowPlaying() {
     // two closures: the module binding is reassigned on the branch beside this
     // one, so the narrowing would not follow it in.
     const slider = volume;
-    // Both halves go through the curve in canvas/audio.js: the position is not
+    // Both halves go through the curve in canvas/audio.ts: the position is not
     // the amplitude, and the two mappers are exact inverses, so a whole-number
     // position survives the round trip back through paint() and the thumb never
     // walks under a thumb that is being dragged. The percentage a screen reader
@@ -222,7 +222,7 @@ export function initNowPlaying() {
   paintNext();
 
   // A track that ends hands over only while the playlist is up - see
-  // playlistOpen(). By injection rather than an import, because canvas/audio.js
+  // playlistOpen(). By injection rather than an import, because canvas/audio.ts
   // sits below ui/ and may not reach back up into it; the same seam
   // setAssetNameLookup and setPrompt use, and tests/layers.test.js is what keeps
   // it one-way.
@@ -232,7 +232,7 @@ export function initNowPlaying() {
   // played fraction (--np-progress), and the times at its ends. The fill carries
   // both a straight line and a wave; the CSS shows one per whimsy tier.
   // The line itself is seekInnerHTML's, shared with the playlist window and the
-  // video card so all three scrubbers are one shape - see media/transport.js.
+  // video card so all three scrubbers are one shape - see media/transport.ts.
   // Only the two time labels either side of it are the bar's own.
   seekWrap!.innerHTML =
     '<span class="np-time np-elapsed">0:00</span>'
@@ -303,7 +303,7 @@ function show(current: NowPlaying | null) {
   sizeWave();
 }
 
-/** The bar's half of the shared sizer - see sizeSeekWave in media/transport.js. */
+/** The bar's half of the shared sizer - see sizeSeekWave in media/transport.ts. */
 function sizeWave() { sizeSeekWave(lineEl!, waveSvg, wavePathEl); }
 
 /**
@@ -498,7 +498,7 @@ function raise() {
  * Stop what is playing and put the bar away. Both, because either alone is half
  * an answer to a close button on a player.
  *
- * It goes through canvas/audio.js rather than calling hide() here, and that is
+ * It goes through canvas/audio.ts rather than calling hide() here, and that is
  * not ceremony: the record of what is playing has to be let go of too, or the
  * next press of that same card's play button announces a track that is already
  * on record and the bar never comes back. Clearing it comes back round as

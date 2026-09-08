@@ -94,7 +94,7 @@ export function paletteSwatches(value: string): string[] {
   // the sheet, because the hand-written `[data-whimsy="2"]` block derives paper
   // and ink from `var(--accent)` by color-mix and the boldened accent propagates
   // through the whole ramp for free. So the paper chip there is the middle
-  // tier's, which is the wrong white by a little. Resolving it properly means
+  // tier's, which is the wrong white by a little. Resolving the paper chip means
   // evaluating a color-mix against a palette that is not on :root, which is the
   // engine's job and not this walk's - and the accent chip, the one that tells
   // two palettes apart, is exact.

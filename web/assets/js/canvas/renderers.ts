@@ -2,12 +2,11 @@
 // goes inside a card. Adding a new type means adding an entry to RENDERERS and
 // a branch in classify() - nothing else in the app needs to know about it.
 //
-// Both of those still live here, deliberately, because they are the pair a new
-// type touches and splitting them would double that. What moved out is what was
-// never type dispatch: canvas/note-model.js has the sticky-note formatting
-// model (pure, and read by the editor as much as by the renderer) and
-// canvas/poster.js the video first-frame grab. Both are re-exported below so no
-// caller had to learn they moved.
+// Both stay here: they are the pair a new type touches, and splitting them
+// would double that. What moved out was never type dispatch -
+// canvas/note-model.ts has the sticky-note formatting model (pure, read by the
+// editor as much as by the renderer), canvas/poster.ts the video first-frame
+// grab. Both are re-exported below so no caller had to learn they moved.
 
 import { cue } from '../cuelume/engine.ts';
 import { extOf, baseName, formatBytes, hasOwn, isRecord } from '../util.ts';
@@ -40,12 +39,10 @@ import {
   stickerArt, DEFAULT_SHAPE, stickerShape, stickerTint,
 } from '../stickers/catalogue.ts';
 
-// The façade: parseNoteText and its two normalisers moved to note-model.ts, and
-// tests/renderers.test.js still asks for them here. The rest of note-model's
-// surface is imported from note-model.ts directly, so its re-export here was for
-// nobody and is gone. Written out rather than a star re-export for the reason
-// state.js is - a name that goes missing should break loudly at the import, not
-// quietly at runtime.
+// The façade: parseNoteText and its two normalisers moved to note-model.ts,
+// and tests/renderers.test.js still asks for them here. Named rather than a
+// star re-export, for the reason state.ts is - a name that goes missing should
+// break loudly at the import, not quietly at runtime.
 export {
   parseNoteText, normalizeNoteRich, flattenNoteRich,
 } from './note-model.ts';
@@ -55,20 +52,18 @@ export { videoFrame, videoDrawsBlank, pictureIsFlat } from './poster.ts';
 /**
  * How much of a text file a card shows.
  *
- * The same number readText() defaults to, named here because this is where it
- * means something: a card is a preview on a board, not a viewer. Past this the
- * body is marked clipped so the card can say so rather than appearing to be
- * the whole file.
+ * The same number readText() defaults to: a card is a preview, not a viewer.
+ * Past this the body is marked clipped, so the card says so rather than
+ * appearing to be the whole file.
  */
 const TEXT_PREVIEW = 20000;
 
 /**
  * A meta value read as the string it is meant to be, or ''.
  *
- * `meta` is unknown per key on purpose - see the paragraph over ItemMeta in
- * board-model.ts - and this file reads a dozen keys out of it that are hashes,
- * mime types and extensions. Narrowed once here rather than at each of them,
- * and to '' rather than to null so the `||` chains below read as they did.
+ * `meta` is unknown per key on purpose (see ItemMeta in board-model.ts) and
+ * this file reads a dozen hash, mime and extension keys out of it. Narrowed
+ * once here, and to '' rather than null so the `||` chains below still read.
  */
 const metaStr = (v: unknown): string => (typeof v === 'string' ? v : '');
 
@@ -76,11 +71,10 @@ const metaStr = (v: unknown): string => (typeof v === 'string' ? v : '');
 export type Size = { w: number; h: number };
 
 /**
- * What measureSize() answers: a box, whether the browser could decode the file
- * at all, and whether the box came from the file's own dimensions or from the
- * type's placeholder. `measured` is optional and that is the honest shape - the
- * two fallback paths return the placeholder and say nothing about it, which is
- * exactly what import/drop.js reads it for.
+ * What measureSize() answers: a box, whether the browser could decode the file,
+ * and whether the box came from the file's own dimensions or the type's
+ * placeholder. `measured` is optional because the two fallback paths return the
+ * placeholder and say nothing about it - what import/drop.ts reads it for.
  */
 export type MeasuredSize = Size & { decodable: boolean; measured?: boolean; natural?: Size };
 
@@ -94,28 +88,25 @@ const TEXT_EXT = new Set([
 /**
  * The extensions read as prose rather than shown as source.
  *
- * Written in ui/viewer.ts first, and moved down here once a third surface came
- * to depend on it. Three now split on this set and they sit two tiers apart -
- * the viewer, the Feed tile, and the card built below - and canvas/ may not
- * import ui/ (tests/layers.test.js). So it has to live under all three, or the
- * card keeps a second copy of the answer and the two drift: one surface goes on
- * printing hashes and asterisks for months after the others stopped.
+ * Three surfaces split on this set two tiers apart - the viewer, the Feed tile,
+ * and the card built below - and canvas/ may not import ui/
+ * (tests/layers.test.js). So it lives under all three. A second copy would
+ * drift: one surface goes on printing hashes and asterisks after the others
+ * stopped.
  */
 export const MARKDOWN = new Set(['md', 'markdown', 'mdown', 'mkd']);
 
 /**
  * How a card draws Markdown, handed in rather than imported.
  *
- * The parser is ui/markdown.ts and this file is canvas/, which is the one
- * direction the layering refuses. Same shape as setNoteMenu() next door, and
- * setOverlays() and setAssetNameLookup() at the bottom of the graph: the answer
- * lives up the graph, the question is asked from under it, and main.ts is what
- * puts the two together.
+ * The parser is ui/markdown.ts and this file is canvas/ - the one direction the
+ * layering refuses. Same shape as setNoteMenu() next door, setOverlays() and
+ * setAssetNameLookup(): the answer lives up the graph, the question is asked
+ * from under it, main.ts joins them.
  *
- * **Unwired, a `.md` card shows its source** - exactly what every text card
- * showed before this existed. A missing renderer is the old behaviour and not a
- * failure, which is what keeps this module buildable in a test with no browser
- * and no interface layer loaded.
+ * **Unwired, a `.md` card shows its source.** A missing renderer is the old
+ * behaviour, not a failure - that keeps this module buildable in a test with no
+ * browser and no interface layer loaded.
  */
 export type MarkdownRenderer = (src: string) => DocumentFragment;
 
@@ -128,11 +119,11 @@ export function setMarkdownRenderer(fn: MarkdownRenderer | null | undefined) {
 /**
  * Item type for a dropped File. MIME first, extension as the fallback.
  *
- * Only four things actually render today - picture, moving picture, sound,
- * text - because those are what a browser can draw with no help. Everything
- * else becomes a named card; formats.js knows what ~1350 extensions *are*, so
- * a .sldprt says "SolidWorks" rather than "file". Real viewers for the rest
- * can slot in later without this routing changing.
+ * Only four things render today - picture, moving picture, sound, text - what a
+ * browser can draw with no help. Everything else becomes a named card;
+ * formats.ts knows what ~1350 extensions *are*, so a .sldprt says "SolidWorks"
+ * rather than "file". Real viewers can slot in later without this routing
+ * changing.
  */
 export function classify(file: File): ItemType {
   const mime = (file.type || '').toLowerCase();
@@ -140,10 +131,10 @@ export function classify(file: File): ItemType {
   if (mime.startsWith('image/') || SVG_EXTS.has(ext)) return 'image';
   if (mime.startsWith('video/')) return 'video';
   if (mime.startsWith('audio/')) return 'audio';
-  // Before the text branch, not after it. An .obj and a .gltf are both plain
-  // text and arrive as `text/plain` from half the systems that hand them over,
-  // so testing MIME first would route every model a person owns to the text
-  // renderer and print its vertex list.
+  // Before the text branch. An .obj and a .gltf are plain text and arrive as
+  // `text/plain` from half the systems that hand them over, so testing MIME
+  // first would route every model to the text renderer and print its vertex
+  // list.
   if (meshKind(file.name)) return 'model';
   if (mime.startsWith('text/') || mime === 'application/json') return 'text';
   // The catalog's sets are broader than the MIME types a browser bothers to
@@ -158,59 +149,50 @@ export function classify(file: File): ItemType {
 /**
  * Starting size in world units. Media items refine this once they load.
  *
- * Every box here except the two noted below was taken in by a fifth on each
- * side - a dropped folder arrived too heavy, each card claiming more of the
- * board than the glance it is worth. Card type stays fixed while the box
- * shrinks, so a smaller card is genuinely a smaller card and not a scaled
- * photograph of one; that is the point, but it does mean the head of a card
- * (badge, name, size) now costs proportionally more of it, which is why the
- * two types whose whole value is the body they show are left alone.
+ * Every box except the two noted below was taken in by a fifth on each side - a
+ * dropped folder arrived too heavy. Type stays fixed while the box shrinks, so
+ * a smaller card is a smaller card and not a scaled photograph of one; the head
+ * (badge, name, size) then costs proportionally more of it, which is why the
+ * two types whose value is the body they show are left alone.
  */
 export function defaultSize(type: string): Size {
   switch (type) {
     case 'image':   return { w: 256, h: 192 };
     case 'video':   return { w: 288, h: 162 };
     case 'audio':   return { w: 264, h: 157 };
-    // Not shrunk. A text card is a wall of words at a fixed size, so taking a
-    // fifth off each side would show a third less of the file - the one thing
-    // the card is for.
+    // Not shrunk: a text card is a wall of words at a fixed size, so a fifth
+    // off each side would show a third less of the file - what it is for.
     case 'text':    return { w: 300, h: 360 };
     // Square-ish, because a model has no aspect of its own until it is read -
     // it is framed from its bounding sphere, so it fills whatever box it gets.
     case 'model':   return { w: 224, h: 224 };
     // Square: a sticky comes off a square pad. Small, too - a note is an
     // annotation on the board, not a thing on it, and at the old 240 it
-    // outweighed most of the photos it was written about. Well clear of
-    // MIN_SIZE (48) in canvas/input.js, so the resize floor is unchanged.
-    // Already the small one, and left at 120 while everything around it came
-    // down - the gap it was written to hold has simply closed a little.
+    // outweighed the photos it was written about. Well clear of MIN_SIZE (48)
+    // in canvas/input.ts, so the resize floor is unchanged. Left at 120 while
+    // everything around it came down.
     case 'note':    return { w: 120, h: 120 };
-    // Square, and *fixed* - not a fraction of whatever it lands on. The
-    // alternative makes the same star come out three different sizes on three
-    // different photographs, and then the size of a sticker means something
-    // about the picture under it rather than about the sticker. The one you
-    // place should be the one you saw in the window. Smaller than a note,
-    // because a note is something you wrote and a sticker is a mark you made;
-    // the resize grips are right there for the times that is wrong.
+    // Square, and *fixed* - not a fraction of whatever it lands on, or the same
+    // star comes out three sizes on three photographs and its size means
+    // something about the picture under it. The one you place is the one you
+    // saw in the window. Smaller than a note: a note is something you wrote, a
+    // sticker is a mark you made. Resize grips cover the times that is wrong.
     //
-    // 72, a quarter off the 96 this started at. A sticker is a mark *on* the
-    // board and it was arriving the size of the things it was meant to be
-    // marking - next to the 120 note it is smallest by a margin nobody could
-    // see, and on a photograph it covered enough of the picture to be an
-    // object in its own right. Still well clear of MIN_SIZE (48).
+    // 72, a quarter off the 96 this started at - it was arriving the size of
+    // the things it marks, and on a photograph it covered enough of the picture
+    // to be an object in its own right. Still well clear of MIN_SIZE (48).
     case 'sticker': return { w: 72, h: 72 };
     // Wide and short: an address is a wide thing, and there is no body under
     // it - a link card is a name, a URL, and nothing else.
     case 'link':    return { w: 256, h: 106 };
     // Four grid spaces wide and 3:2 tall (256 * 2/3 = 170.67) - the masthead's
-    // aspect. Matches TITLE_SIZE in state.js, where the singleton is minted; the
+    // aspect. Matches TITLE_SIZE in state.ts, where the singleton is minted; the
     // card visual is held to an exact 3:2 in CSS and snapping adds slack below.
     case 'title':   return { w: 256, h: 171 };
     // Four grid spaces by three at the default step, so a snapped board lays it
-    // down exactly where it already is. Fixed: a ghost has no resize grips
-    // (canvas/items.js), so this is not a starting size the way every box above
-    // it is - it is the size. Matches GHOSTS in state.js, where they are minted
-    // and where the reasoning lives.
+    // down where it already is. Fixed: a ghost has no resize grips
+    // (canvas/items.ts), so this is the size, not a starting size. Matches
+    // GHOSTS in state.ts, where they are minted and the reasoning lives.
     case 'ghost':   return { w: 256, h: 192 };
     // A colour and its number, and nothing else - so it is sized like the note
     // next to it rather than like a card with a body. Two grid spaces square at
@@ -227,11 +209,9 @@ export function defaultSize(type: string): Size {
 /**
  * What a swatch starts as.
  *
- * A grey, and deliberately not a colour. The whole content of a swatch is the
- * colour you chose, so any preset here would be the app putting a colour it
- * invented on somebody's board and calling it theirs. Mid grey is the absence
- * of a choice, and it is the one value that reads as "this is waiting for you"
- * rather than as a decision already made.
+ * A grey, not a colour. The content of a swatch is the colour you chose, so any
+ * preset would be the app inventing one and calling it yours. Mid grey reads as
+ * the absence of a choice rather than a decision already made.
  */
 export const SWATCH_DEFAULT = '#8a8a8a';
 
@@ -239,13 +219,12 @@ export const SWATCH_DEFAULT = '#8a8a8a';
  * Write the two face names into a style tile, in the faces themselves.
  *
  * The one part of the card that cannot be a `var()` and so cannot follow the
- * look on its own: the swatches are handed a reference to their token and
- * re-resolve on every paint, but a *name* is text, and text has to be written.
+ * look on its own: swatches re-resolve their token on every paint, but a *name*
+ * is text and has to be written.
  *
- * Exported because canvas/items.js calls it again when the look changes - see
- * the settings listener there. Safe on a card that is not a tile and on a tile
- * that is half built: it writes whatever `.style-tile-face` nodes it finds and
- * does nothing where there are none.
+ * Exported because canvas/items.ts calls it again when the look changes (the
+ * settings listener there). Safe on a non-tile card and on a half-built tile:
+ * it writes whatever `.style-tile-face` nodes it finds.
  */
 export function paintStyleTileFaces(root: HTMLElement): void {
   for (const face of root.querySelectorAll<HTMLElement>('.style-tile-face')) {
@@ -259,16 +238,13 @@ export function paintStyleTileFaces(root: HTMLElement): void {
 /**
  * A swatch's colour, held to what it has to be.
  *
- * `#rrggbb` lowercase and nothing else, because two different things need it in
- * exactly that form: `<input type="color">` refuses anything shorter or named,
- * and the stylesheet interpolates it straight into a custom property. `meta` is
- * the open field and this one arrives from a .mbrd like everything else, so it
- * is checked here rather than trusted - the same bargain normalizeAsset() makes
- * one layer down.
+ * `#rrggbb` lowercase and nothing else: `<input type="color">` refuses anything
+ * shorter or named, and the stylesheet interpolates it into a custom property.
+ * It arrives from a .mbrd through the open `meta` field, so it is checked here
+ * rather than trusted - the bargain normalizeAsset() makes one layer down.
  *
- * The three-digit form is folded out rather than rejected. Nobody typed it into
- * the picker, but somebody may well have typed it into a file by hand, and
- * `#f00` is not a broken colour - it is the same colour written shorter.
+ * The three-digit form is folded out rather than rejected: somebody may have
+ * typed it into a file by hand, and `#f00` is the same colour written shorter.
  */
 export function swatchHex(raw: unknown): string {
   const s = String(raw ?? '').trim().toLowerCase();
@@ -280,20 +256,17 @@ export function swatchHex(raw: unknown): string {
 /**
  * True size for a file, measured *before* it becomes an item.
  *
- * This has to happen up front: the arrangement engine reserves a cell per item,
- * so if a portrait photo only discovered it was portrait after the layout ran,
- * it would grow past its cell and sit on its neighbours. Measuring first makes
- * every layout exact. Falls back to the placeholder size if the media can't be
- * decoded - adoptAspect() then picks it up later, capped so it can't overflow.
+ * Up front, because the arrangement engine reserves a cell per item: a portrait
+ * photo that discovered it was portrait after the layout ran would grow past
+ * its cell onto its neighbours. Falls back to the placeholder size if the media
+ * cannot be decoded - adoptAspect() picks it up later, capped so it cannot
+ * overflow.
  *
  * `natural` is the file's own pixel dimensions, carried alongside the world box
- * rather than folded into it, because fitToBox() deliberately throws them away -
- * it answers how much *board* an item takes, which is area-preserving and says
- * nothing about how many pixels are in the file. One caller needs the pixels:
- * makeThumb() can ask the decoder for a downscaled bitmap instead of a full one,
- * and to know whether that is worth doing it has to know how big the picture
- * actually is. Measuring it twice to find out would be the opposite of the
- * point.
+ * because fitToBox() throws them away - it answers how much *board* an item
+ * takes, area-preserving, saying nothing about pixel count. makeThumb() needs
+ * the pixels to decide whether to ask the decoder for a downscaled bitmap, and
+ * measuring twice to find out would defeat the point.
  */
 export async function measureSize(type: string, file: File): Promise<MeasuredSize> {
   const box = defaultSize(type);
@@ -367,7 +340,7 @@ async function svgSize(file: File): Promise<Size | null> {
  * Split out of measureSize() because the ratio does not always come from the
  * browser. A video this browser cannot open has no dimensions to offer - but a
  * frame pulled out of it with ffmpeg does, and that frame is measured after the
- * fact by a different path (see import/drop.js). Both have to land on the same
+ * fact by a different path (see import/drop.ts). Both have to land on the same
  * arithmetic or the same clip would be a different size depending on which route
  * discovered its shape.
  */
@@ -440,7 +413,7 @@ export function buildContent(item: Item) {
 }
 
 /**
- * The picture an item was given, or null. See setItemCover() in state.js.
+ * The picture an item was given, or null. See setItemCover() in state.ts.
  *
  * Null when the hash names nothing, which is a real state and not a fault: a
  * board can be opened from a .mbrd whose assets are still being registered, and
@@ -531,7 +504,7 @@ const RENDERERS = {
     // The picture is mounted at a bounded display resolution, not the native
     // original: a full-res <img> is tens of megabytes of decode held for a
     // card a few hundred pixels wide, and a whole board of them mounted at once
-    // (zoom-out) is what crashes Safari on a phone. canvas/display.js makes a
+    // (zoom-out) is what crashes Safari on a phone. canvas/display.ts makes a
     // card-sized copy once per session, serialized so only one full decode is
     // ever live, and the original stays in the asset store for export/optimize.
     //
@@ -543,7 +516,7 @@ const RENDERERS = {
     // The preview, when the original is a picture the browser cannot decode
     // (HEIC, RAW): asset.hash still names the untouched original for export and
     // for the day a decoder lands, but the pixels drawn here are the camera's
-    // own embedded JPEG - see import/preview.js and meta.preview in drop.js.
+    // own embedded JPEG - see import/preview.ts and meta.preview in drop.ts.
     // shownHash(), which is that rule written once - see board-model.ts. This
     // file had it right and the Feed did not, which is exactly what two copies
     // of a rule are for.
@@ -611,11 +584,11 @@ const RENDERERS = {
     // instead of this one once #world is marked zoomed-out. Two sources for
     // it, and they are the two halves of the same idea.
     //
-    // An animation's twin is shot live by canvas/stills.js, because what
+    // An animation's twin is shot live by canvas/stills.ts, because what
     // should freeze is the frame that was on screen - not frame one.
     //
     // A still photograph's twin is the hundred-pixel copy made at import
-    // (see thumbFor() in import/drop.js). It is the cheap half of the feature:
+    // (see thumbFor() in import/drop.ts). It is the cheap half of the feature:
     // zoomed out past the rung, a board of two hundred photographs draws two
     // hundred hundred-pixel WebPs instead of two hundred full-size decodes,
     // at a size where the difference is not visible because a card is under a
@@ -641,7 +614,7 @@ const RENDERERS = {
     // `img:not(.still):has(+ .still.is-ready)`, so a card with no ready sibling
     // simply keeps showing its own picture at every zoom. See items.css.
     //
-    // Never both. An animated file with a thumbnail would have stills.js
+    // Never both. An animated file with a thumbnail would have stills.ts
     // overwrite the thumbnail's src on the first pass, so the thumbnail is
     // simply not made for one - makeThumb() refuses animated input.
     const animated = isAnimated(item);
@@ -675,7 +648,7 @@ const RENDERERS = {
    * here autoplays - playback starts from a click - so it bought nothing and
    * cost the sound. Looping suits a silent GIF and not a clip with audio in
    * it: an eight-second loop with a voice on it is not ambience, it is a
-   * board that will not stop talking. See canvas/video.js for the controls,
+   * board that will not stop talking. See canvas/video.ts for the controls,
    * which is also where this is registered for the global volume and for the
    * one-clip-at-a-time rule the audio cards already follow.
    */
@@ -796,7 +769,7 @@ const RENDERERS = {
    * The <audio> element is still what plays the sound - it handles streaming,
    * seeking and codecs, and nothing here would be improved by reimplementing
    * that - but it is kept out of the layout entirely and driven by the button
-   * and the bars. See canvas/audio.js for the waveform and the global volume.
+   * and the bars. See canvas/audio.ts for the waveform and the global volume.
    */
   audio(item: Item) {
     const card = cardShell(item, 'audio');
@@ -812,9 +785,9 @@ const RENDERERS = {
     // an oversight rather than a decision.
     //
     // The source is attached at the one place a card's own element is ever
-    // started - startCurrent() in canvas/playlist-queue.js - so unlike video
+    // started - startCurrent() in canvas/playlist-queue.ts - so unlike video
     // there is no second entry point to keep in step. The waveform is unaffected
-    // either way: canvas/waveform.js decodes the asset's bytes through an
+    // either way: canvas/waveform.ts decodes the asset's bytes through an
     // OfflineAudioContext and never asks the element for anything.
     if (rationsDecoders()) {
       sound.preload = 'none';
@@ -840,7 +813,7 @@ const RENDERERS = {
    * `.note-rich` column that carries the note's font, size and vertical
    * placement. The model is normalizeNoteRich(): meta.rich when it is there,
    * meta.text parsed back when it is not, so a legacy note still reads titled.
-   * canvas/notes.js edits the same blocks and writes both halves back.
+   * canvas/notes.ts edits the same blocks and writes both halves back.
    */
   note(item: Item) {
     const card = document.createElement('div');
@@ -874,15 +847,15 @@ const RENDERERS = {
    *
    * The name doubles as the anchor, because the line you read should be the
    * line you can click, and it is item.name - so a renamed link keeps its new
-   * name, canvas/items.js editing .card-name in place exactly as it does on
+   * name, canvas/items.ts editing .card-name in place exactly as it does on
    * every other card. What a name can never do is hide where the link goes:
    * the address under it is drawn from the URL and from nothing else, so a
    * card called "the good one" still says out loud that it leads to
    * example.com.
    *
    * classify() is not involved and never will be - it sorts *files*, and a
-   * link arrives as text, from a paste (import/drop.js) or from a sticky note
-   * that turned out to hold nothing else (canvas/notes.js).
+   * link arrives as text, from a paste (import/drop.ts) or from a sticky note
+   * that turned out to hold nothing else (canvas/notes.ts).
    */
   link(item: Item) {
     const card = document.createElement('div');
@@ -929,7 +902,7 @@ const RENDERERS = {
       a.addEventListener('click', (e: MouseEvent) => {
         // Two reasons to swallow a click, both of them about this element
         // being more than an anchor. F2 turns it into a field (see
-        // editItemName in canvas/items.js) and a click meant to place the
+        // editItemName in canvas/items.ts) and a click meant to place the
         // caret must not also open the page; and a double click is a zoom-to-
         // fit on the canvas, which arriving through an anchor would be two
         // clicks and so two tabs.
@@ -940,7 +913,7 @@ const RENDERERS = {
     card.append(icon, name);
 
     // The links that can be more than a link. The offer only - see
-    // canvas/embed.js for why nothing is loaded until it is taken.
+    // canvas/embed.ts for why nothing is loaded until it is taken.
     const spec = u && embedFor(u);
     if (spec) {
       card.classList.add('card-embed');
@@ -1047,7 +1020,7 @@ const RENDERERS = {
   },
 
   /**
-   * A model, turned over on the card. See canvas/model.js - the geometry is
+   * A model, turned over on the card. See canvas/model.ts - the geometry is
    * read there, the drawing happens there, and this is only the routing.
    */
   model(item: Item) {
@@ -1060,10 +1033,10 @@ const RENDERERS = {
    * Bare on purpose - no `.card` shell, so no paper, no border, no cover - it is
    * the same styled name the Mobile masthead shows, only movable. This renderer
    * builds the structure and writes the current name; the typography (face,
-   * size, weight, axes) is painted by ui/mobile-header.js, which owns that style
+   * size, weight, axes) is painted by ui/mobile-header.ts, which owns that style
    * for both the masthead and this card and is the only layer that can resolve a
    * board's own font faces. A singleton kept out of classify() - it is never a
-   * dropped file - and desktop-only, gated at mount in canvas/items.js.
+   * dropped file - and desktop-only, gated at mount in canvas/items.ts.
    */
   title(_item: Item) {
     const card = document.createElement('div');
@@ -1071,7 +1044,7 @@ const RENDERERS = {
     const name = document.createElement('div');
     name.className = 'title-name';
     name.textContent = board.title;
-    // Dim an unnamed board here, not only in main.js's paintMobileTitle: this
+    // Dim an unnamed board here, not only in main.ts's paintMobileTitle: this
     // runs on every build, so the card keeps its quiet grey across an unmount and
     // remount (a layout switch to Mobile and back) where paintMobileTitle - which
     // fires on 'board', not on the rebuild - would not reapply it.
@@ -1083,7 +1056,7 @@ const RENDERERS = {
   /**
    * A ghost card: one of the three hints a brand-new board opens with.
    *
-   * Structure only. What it says comes from canvas/ghosts.js (the item carries
+   * Structure only. What it says comes from canvas/ghosts.ts (the item carries
    * a key, not prose - see the note there), and what it looks like is entirely
    * items.css: a dashed outline at Middle and Harsh, a page torn out of a pad and
    * taped down at Softish - except for the dial, which stays an ordinary card at
@@ -1092,7 +1065,7 @@ const RENDERERS = {
    * see it. The dial reads it, but as a value to show, not as a look.
    *
    * classify() is not involved and never will be. That function routes dropped
-   * *files*, and no file is ever a hint; these are minted by state.js on an
+   * *files*, and no file is ever a hint; these are minted by state.ts on an
    * empty board and by nothing else.
    */
   ghost(item: Item) {
@@ -1100,7 +1073,7 @@ const RENDERERS = {
     // perforated by a CSS mask, and a mask applies to an element's descendants
     // as well as to itself - tape drawn inside the card would be punched full
     // of the same holes. So the strips are siblings of the card, and both land
-    // in .item-body together. items.js appends whatever this returns, and
+    // in .item-body together. items.ts appends whatever this returns, and
     // append() spreads a fragment, so nothing there had to change.
     const frag = document.createDocumentFragment();
     const card = document.createElement('div');
@@ -1125,7 +1098,7 @@ const RENDERERS = {
 
     if (key === DIAL) {
       // A hint you operate rather than read. The range input is what makes
-      // canvas/input.js let the press through - its widget branch names `input`
+      // canvas/input.ts let the press through - its widget branch names `input`
       // outright, so a drag on the thumb moves the thumb and not the card.
       //
       // .field is the sidebar's own form row, borrowed whole rather than
@@ -1149,7 +1122,7 @@ const RENDERERS = {
       slider.min = '0';
       slider.max = '2';
       slider.step = '1';
-      // The level the interface is at, read off the attribute ui/appearance.js
+      // The level the interface is at, read off the attribute ui/appearance.ts
       // writes - the same source watchWhimsy() keeps this in step with.
       slider.value = document.documentElement.dataset.whimsy ?? '1';
       slider.setAttribute('aria-label', title);
@@ -1168,7 +1141,7 @@ const RENDERERS = {
         cue('pick');
       });
 
-      // The stops, built the way ui/panel.js builds them: names rather than a
+      // The stops, built the way ui/panel.ts builds them: names rather than a
       // <datalist>, which Chromium ignores on a painted track and Firefox draws
       // as ticks whose ends vanish into the rounded ends of it. Hidden from the
       // accessibility tree, because the same three words reach a screen reader
@@ -1202,7 +1175,7 @@ const RENDERERS = {
       // A legend rather than a paragraph, which is what all three hints print;
       // the prose branch below is the not-found pair's. Icons are built the
       // long way here for the reason
-      // canvas/item-dom.js's anchor badge is: ui/menu.js's icon() is the helper
+      // canvas/item-dom.ts's anchor badge is: ui/menu.ts's icon() is the helper
       // every other module reaches for and canvas/ may not import ui/.
       //
       // .ico is base.css's, plain screen pixels - which on a card is what is
@@ -1215,7 +1188,7 @@ const RENDERERS = {
         row.className = 'ghost-key';
         // Named rather than hidden here: Mobile and Desktop share the item, the
         // card is rebuilt on a layout switch either way, and a row that CSS can
-        // drop is one list instead of two. See HintRow in canvas/ghosts.js.
+        // drop is one list instead of two. See HintRow in canvas/ghosts.ts.
         if (desktop) row.dataset.only = 'desktop';
         const svg = document.createElementNS(SVG_NS, 'svg');
         svg.setAttribute('class', 'ico');
@@ -1276,7 +1249,7 @@ const RENDERERS = {
    * div with a picker bolted to it, which buys the platform's own colour dialog,
    * the eyedropper where there is one, and keyboard reachability, for nothing.
    *
-   * It is also why nothing had to change in canvas/input.js. That pipeline
+   * It is also why nothing had to change in canvas/input.ts. That pipeline
    * already yields a press to a native widget - GRIP_YIELD names `input`
    * outright, which is what lets the whimsy dial on the fourth hint card work -
    * so pressing the well opens the picker instead of dragging the card, and
@@ -1339,7 +1312,7 @@ const RENDERERS = {
    * stylesheet resolves it against :root every time it paints. Change the
    * palette, or the whimsy dial, and every tile on the board follows in the
    * same frame, with no listener and nothing to invalidate. Only the two face
-   * names are text this has to write, and canvas/items.js refreshes those when
+   * names are text this has to write, and canvas/items.ts refreshes those when
    * the look changes - see repaintStyleTiles().
    *
    * The pictures are *recorded*, not recomputed. `meta.shots` holds the ids the

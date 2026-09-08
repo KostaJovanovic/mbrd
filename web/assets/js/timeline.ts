@@ -1,7 +1,7 @@
 // The step ledger: every change to the board written down, rather than closed
 // over.
 //
-// history.js keeps a pair of functions per change - do it, and put it back -
+// history.ts keeps a pair of functions per change - do it, and put it back -
 // and its header explains at length why that is the right engine. It is, for
 // undo. It is not enough for a history that survives the tab closing, because
 // a closure cannot be written to a file, and it is not enough for a history you
@@ -11,12 +11,12 @@
 // of what the board looked like on either side of one action, and the board at
 // any point is the starting snapshot plus the steps up to the marker.
 //
-// **Why the diff this module is built on is affordable, when history.js's own
+// **Why the diff this module is built on is affordable, when history.ts's own
 // header says it would not be.** That note says a diff "would either be
 // enormous or would have to know what every operation means", and it was right
 // about the app it was written for. What makes it wrong now is that assets
 // never lived in the board: they are content-addressed, `item.asset` is a hash
-// and the bytes are in storage/assets.js. Every field of Board is JSON, and the
+// and the bytes are in storage/assets.ts. Every field of Board is JSON, and the
 // geometry for the layout you are *not* looking at is in board.layouts, which
 // is one of those fields. So the difference between two boards is a handful of
 // small objects, and only for the items that actually changed - a nudge is a
@@ -36,9 +36,9 @@
 // the difference as a lock. Sealing is not a stopgap - Fusion 360 has the same
 // escape hatch under the name "base feature", for the same reason.
 //
-// Below state.js, and it may never import it: this is the floor a step stands
-// on, and history.js - which is also below state.js - is what calls in here.
-// board-model.js holds the board itself and is lower still.
+// Below state.ts, and it may never import it: this is the floor a step stands
+// on, and history.ts - which is also below state.ts - is what calls in here.
+// board-model.ts holds the board itself and is lower still.
 
 import { board, dropIdIndex } from './board-model.ts';
 import { bus, selection, markDirty } from './board-store.ts';
@@ -222,7 +222,7 @@ export function snapshot(): Snap {
 export function restore(snap: Snap) {
   board.items = snap.itemOrder.map(id => JSON.parse(snap.items[id]));
   // In the same breath as the assignment, which is the contract dropIdIndex()
-  // states and the reason it exists. board-model.js drops its id index when
+  // states and the reason it exists. board-model.ts drops its id index when
   // 'items' is announced, and a replay announces nothing until it has finished -
   // so without this, every byId() during a rebuild is answered out of the board
   // as it was before the replay started. That is not a stale read that resolves
@@ -329,7 +329,7 @@ function applyKeyed<T>(
 ): T[] {
   // Rebuilt through a map rather than by index so that an item nothing touched
   // keeps its object identity. Other modules hold references - the id index in
-  // board-model.js, a gesture in canvas/input.js - and replacing every object
+  // board-model.ts, a gesture in canvas/input.ts - and replacing every object
   // on every step would invalidate all of them for the sake of one that moved.
   const map = new Map<string, T>();
   for (const entry of current) map.set(idOf(entry), entry);
@@ -549,7 +549,7 @@ export function declareOp(name: string, params: Record<string, unknown>) {
 let replaying = false;
 
 /**
- * Whether a rebuild is in progress, for history.js.
+ * Whether a rebuild is in progress, for history.ts.
  *
  * A rule is re-run by calling the command that made it, and commands commit -
  * so without this every rebuilt step would push an undo entry for the *replay*
@@ -1248,7 +1248,7 @@ export function docFingerprint(doc: unknown): string {
  * The timeline as board.json carries it, or null when there is nothing to say.
  *
  * The fingerprint is handed in rather than taken here, because it is a hash of
- * the *document* and this module never sees one - board-schema.js builds it and
+ * the *document* and this module never sees one - board-schema.ts builds it and
  * is therefore the only place that can. See docFingerprint().
  */
 export function serializeTimeline(fingerprintOf = '') {

@@ -8,13 +8,13 @@
 // one: the inline caret on the name where it sits, and the ordinary text field
 // in a panel. The field is now in two panels - the sidebar's Board section and
 // the masthead's own - and the second one is why wireTitleField() and
-// paintTitleField() are here rather than in ui/sidebar.js where they were
+// paintTitleField() are here rather than in ui/sidebar.ts where they were
 // written. They were private to the sidebar for as long as there was one field;
 // a copy in the header panel would have been a second place for the sanitizer,
 // the commit-on-change rule and the placeholder trick to drift out of step,
 // which is the exact failure the top of this file exists to prevent.
 //
-// Lifted out of main.js unchanged. Reached from `cmds` (the T button, F2, a
+// Lifted out of main.ts unchanged. Reached from `cmds` (the T button, F2, a
 // double-click on the card) and from the masthead tap wired below.
 
 import { el, makeEditable, selectContents, caretToEnd } from '../util.ts';
@@ -28,7 +28,7 @@ import {
  *
  * Not a `click` listener, and that is the whole of this. A press anywhere the
  * canvas considers empty - which the masthead is, since it is not a card and
- * not one of the widgets input.js knows by name - has #viewport take pointer
+ * not one of the widgets input.ts knows by name - has #viewport take pointer
  * capture on the way down and start a pan. Capture retargets the rest of the
  * gesture, the compatibility mouse events with it, so the lift is delivered to
  * the viewport and the name is never clicked at all. It looked like the rename
@@ -36,7 +36,7 @@ import {
  *
  * So the two ends are heard separately: the press on the name itself, the lift
  * on the window in the capture phase, which runs before the viewport's own
- * handlers and cannot be redirected. The name is left out of input.js's widget
+ * handlers and cannot be redirected. The name is left out of input.ts's widget
  * list deliberately - a third of the screen that cannot be dragged is worse
  * than no shortcut at all - so the slop below is what separates the two: a
  * finger that travelled was panning, and a pan must not open an editor when it
@@ -46,7 +46,7 @@ const TITLE_TAP_SLOP = 6;
 /** The press half of a tap in flight: which pointer, and where it went down. */
 let titleTap: { id: number, x: number, y: number } | null = null;
 
-/** Wire the masthead tap and subscribe the repaint. Called once, from main.js. */
+/** Wire the masthead tap and subscribe the repaint. Called once, from main.ts. */
 export function initBoardTitle() {
   // #mobile-board-title and #mobile-board-header are static markup in
   // index.html - this module has always read them straight through, and an
@@ -79,7 +79,7 @@ export function initBoardTitle() {
 /**
  * The name across the Mobile masthead.
  *
- * The band itself is positioned by canvas/mobile-frame.js, off the same view
+ * The band itself is positioned by canvas/mobile-frame.ts, off the same view
  * change everything else in screen space paints on, so this is the only part
  * that needs saying here. Written whatever the mode: a header that is
  * display:none has nothing to gain from being stale when Mobile is switched
@@ -176,7 +176,7 @@ export function paintTitleField(input: HTMLInputElement | null) {
  * Rename the board by tapping its name on the masthead.
  *
  * The same bargain a sticky note and an item's caption strike - see
- * editItemName() in canvas/items.js, which this follows down to the Escape
+ * editItemName() in canvas/items.ts, which this follows down to the Escape
  * handling: the edit happens where you are already looking rather than in a
  * dialog thrown over the top of it, and on a phone the sidebar's name field is
  * three taps away behind a menu.
@@ -185,7 +185,7 @@ export function paintTitleField(input: HTMLInputElement | null) {
  * can be done to it, and there is no drag or selection for a single tap to be
  * competing with - so the cheapest gesture is free to be the one that works.
  * Panning is not competing either: the field only takes the pointer while it is
- * standing still, and once it is editable input.js recognises a contenteditable
+ * standing still, and once it is editable input.ts recognises a contenteditable
  * and leaves the gesture alone.
  */
 function editMobileTitle() {

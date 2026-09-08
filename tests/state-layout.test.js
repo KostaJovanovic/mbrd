@@ -1,11 +1,11 @@
 // Snapping the whole board, and the two geometry profiles.
 //
-// state.js is a module singleton, which is right for an app with one board and
+// state.ts is a module singleton, which is right for an app with one board and
 // awkward for tests, so every case starts by loading an empty board. That is
 // the same door opening a .mbrd goes through, so it also exercises the reset.
 //
 // One of six files that were tests/state.test.js, split to mirror the modules
-// state.js itself was split onto - see tests/layers.test.js for that list.
+// state.ts itself was split onto - see tests/layers.test.js for that list.
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';

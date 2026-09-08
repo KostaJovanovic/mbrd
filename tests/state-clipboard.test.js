@@ -1,11 +1,11 @@
 // The internal clipboard, and the receipts it leaves on the system one.
 //
-// state.js is a module singleton, which is right for an app with one board and
+// state.ts is a module singleton, which is right for an app with one board and
 // awkward for tests, so every case starts by loading an empty board. That is
 // the same door opening a .mbrd goes through, so it also exercises the reset.
 //
 // One of six files that were tests/state.test.js, split to mirror the modules
-// state.js itself was split onto - see tests/layers.test.js for that list.
+// state.ts itself was split onto - see tests/layers.test.js for that list.
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -27,9 +27,9 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 test('the clipboard leaves its receipts without a screen to leave them on', () => {
-  // copy/cut/paste now toast, and state.js is imported by tests that have no
+  // copy/cut/paste now toast, and state.ts is imported by tests that have no
   // document at all. toast() no-ops when there is nothing to draw on - stated
-  // here because a regression in util.js would otherwise fail this whole file
+  // here because a regression in util.ts would otherwise fail this whole file
   // with a ReferenceError far from its cause.
   assert.equal(typeof globalThis.document, 'undefined', 'this test is only meaningful headless');
   const [a] = addItems([note({ meta: { text: 'said to nobody' } })]);
@@ -90,7 +90,7 @@ test('a copy shares the original asset rather than duplicating bytes', () => {
 });
 
 test('an asset id that is not a content hash is dropped', () => {
-  // A hash is spelled into an archive path by storage/mbrd.js, so an id that
+  // A hash is spelled into an archive path by storage/mbrd.ts, so an id that
   // was never a digest is both a path this app would be writing on someone
   // else's say-so and a reference that can never resolve to bytes. The card
   // survives as a plain one; the claim does not.

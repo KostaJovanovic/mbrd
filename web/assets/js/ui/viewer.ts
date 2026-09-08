@@ -7,7 +7,7 @@
 // - which on a phone *is* the board - a tap on most types did nothing at all.
 //
 // One surface for every type rather than one per type. VIEWS below is the same
-// shape as RENDERERS in canvas/renderers.js: a table keyed by what the item is,
+// shape as RENDERERS in canvas/renderers.ts: a table keyed by what the item is,
 // each entry handed the item and the body to fill. A new type is one entry, and
 // nothing else in this file or in the markup changes. That is deliberate and it
 // is why this was built before it was needed for documents - the argument for
@@ -16,7 +16,7 @@
 //
 // A real <dialog>, opened with showModal(). Three things come free with that and
 // each of them is a thing not to reimplement: the top layer (so nothing on the
-// board can paint over it), the backdrop, and Escape. canvas/input.js already
+// board can paint over it), the backdrop, and Escape. canvas/input.ts already
 // stands the board's own shortcuts down while a modal is up, so arrow keys and
 // Delete do not reach the board through this.
 //
@@ -31,7 +31,7 @@ import { linkURL, MARKDOWN } from '../canvas/renderers.ts';
 import { noteTint } from '../canvas/note-model.ts';
 import { kindName } from '../canvas/item-dom.ts';
 import { renderMarkdown } from './markdown.ts';
-// Statically: the reader's only import is storage/zip.js, which is already in
+// Statically: the reader's only import is storage/zip.ts, which is already in
 // memory because it is what opens every .mbrd, and the browser's own DOMParser.
 // There is no dependency to defer, so deferring it would only buy a second
 // module fetch at the moment somebody asked to see something.
@@ -116,7 +116,7 @@ export function canView(id: string) {
  *
  * Documents are asked about *first*, and by extension rather than by type,
  * because a document does not have a type of its own on this board: a .docx that
- * carried a thumbnail imported as an `image` (import/document.js found its baked
+ * carried a thumbnail imported as an `image` (import/document.ts found its baked
  * preview) and one that did not imported as `generic`. Neither says "document",
  * and both should open as one. The type table below is the fallback and covers
  * everything the board draws natively.
@@ -128,7 +128,7 @@ function viewFor(item: Item): View | null {
   return VIEWS[item.type] || null;
 }
 
-/** The two extensions the PDF renderer opens. See isPdf() in import/drop.js. */
+/** The two extensions the PDF renderer opens. See isPdf() in import/drop.ts. */
 const PDF_EXTS = new Set(['pdf', 'ai']);
 
 export function openViewer(id: string) {
@@ -543,7 +543,7 @@ const VIEWS: Record<string, View> = {
    * better.
    *
    * Both paths end in text nodes. <pre> plus textContent for source; for
-   * Markdown, ui/markdown.js builds DOM and never touches innerHTML, so raw HTML
+   * Markdown, ui/markdown.ts builds DOM and never touches innerHTML, so raw HTML
    * inside the file shows as the characters it is made of rather than running.
    * That is not a nicety here: these are files the app did not write.
    */
@@ -637,7 +637,7 @@ const PDF_BATCH = 5;
  * A PDF, page by page.
  *
  * A PDF is a page-description language and rendering it is an interpreter, which
- * is the app's first outside-code dependency (import/pdf.js). That library is
+ * is the app's first outside-code dependency (import/pdf.ts). That library is
  * carried in web/assets/vendor and served from this origin, so this view reaches
  * no third party and works offline once the service worker has seen it once. A
  * failure here says so and the file is still what it was - the same degradation

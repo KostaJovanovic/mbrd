@@ -1,6 +1,6 @@
 // The one memory policy the importer answers to.
 //
-// import/drop.js caps a drop at 500 *files*, which is a UX guard against
+// import/drop.ts caps a drop at 500 *files*, which is a UX guard against
 // dropping a photo library by accident - not a memory boundary. A count says
 // nothing about bytes: five files can be five 4K videos, and one 50 KB PNG can
 // claim 30000x30000 and cost gigabytes the moment createImageBitmap() touches
@@ -26,7 +26,7 @@ import type { Crossed } from '../consent.ts';
 import { mb } from '../consent.ts';
 
 export const IMPORT_LIMITS = {
-  /** One file, raw. Matches the ZIP single-entry ceiling in storage/zip.js. */
+  /** One file, raw. Matches the ZIP single-entry ceiling in storage/zip.ts. */
   fileBytes: 512 * 1024 ** 2,
   /**
    * The size at which one file is worth mentioning first.
@@ -160,7 +160,7 @@ export function makeByteBudget(limit: number = IMPORT_LIMITS.batchBytes) {
  *
  * A module-level counter rather than a queue: the point is not to serialise
  * imports, which would make a second drop feel broken, but to stop the second
- * one claiming a budget the first is still spending. releaseByteBudget() is
+ * one claiming a budget the first is still spending. The budget's release() is
  * called when an import finishes, however it finishes.
  */
 let inFlight = 0;
@@ -316,6 +316,18 @@ export async function overPixelBudget(file: Blob): Promise<boolean> {
 }
 
 /**
+ * The answer for each file, memoised by the file's own identity.
+ *
+ * pixelCrossing() is asked several times for the same file across one drop - at
+ * the consent gate, again at the measurement, again for a baked or preview
+ * variant - and each ask read and parsed a 128 KB header slice. A Blob is
+ * immutable, so its identity fixes its answer; the WeakMap lets both go when the
+ * file does. Different Blobs (a preview, a rasterised page) are different keys
+ * and answered on their own, which is correct.
+ */
+const crossingMemo = new WeakMap<Blob, Promise<Crossed | null>>();
+
+/**
  * The same question, answered with the numbers rather than with a yes.
  *
  * What overPixelBudget() is underneath, and the form the importer wants: a
@@ -330,18 +342,6 @@ export async function overPixelBudget(file: Blob): Promise<boolean> {
  * the same reason: a false positive here interrupts somebody about a picture
  * that was never a problem.
  */
-/**
- * The answer for each file, memoised by the file's own identity.
- *
- * pixelCrossing() is asked several times for the same file across one drop - at
- * the consent gate, again at the measurement, again for a baked or preview
- * variant - and each ask read and parsed a 128 KB header slice. A Blob is
- * immutable, so its identity fixes its answer; the WeakMap lets both go when the
- * file does. Different Blobs (a preview, a rasterised page) are different keys
- * and answered on their own, which is correct.
- */
-const crossingMemo = new WeakMap<Blob, Promise<Crossed | null>>();
-
 export function pixelCrossing(file: Blob): Promise<Crossed | null> {
   let hit = crossingMemo.get(file);
   if (!hit) {

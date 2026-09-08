@@ -1,7 +1,7 @@
 // The browser's own copy of the board: the IndexedDB working cache, the
 // background autosave, and the restore that runs at boot.
 //
-// Lifted out of storage.js, which carried three different failure models in one
+// Lifted out of storage.ts, which carried three different failure models in one
 // file - Save (this), Export (a .mbrd on disk) and Open - and the interface
 // already has to say which of them failed. They were not two sequential halves:
 // this engine reached up for five things and the file half reached down for
@@ -11,7 +11,7 @@
 // module. A handle is about the document somebody chose on disk; a session is
 // about the copy this browser is keeping for them. So `d` below is the seam -
 // the handle, the created-stamp, Export and the discard prompt all arrive from
-// storage.js, and nothing here imports it back.
+// storage.ts, and nothing here imports it back.
 //
 // This is crash recovery only. The durable artefact is always the .mbrd the
 // user exported.
@@ -208,7 +208,7 @@ function referencedHashes(data: BoardLike) {
   // its original bytes stranded it permanently - every later save then reported
   // the hash missing and the board never went clean again. Preferred over
   // stripping was/wasCover when an item is binned, because undo across a delete
-  // closes over the old ids. See swapAssets() and discardOriginals() in state.js.
+  // closes over the old ids. See swapAssets() and discardOriginals() in state.ts.
   const add = (it: unknown) => {
     if (!isRecord(it)) return;
     for (const h of itemHashes(it)) out.add(h);
@@ -340,11 +340,11 @@ export async function drainSave() {
  * leaves the previous snapshot and its assets completely intact - the sweep
  * simply does not happen that time round.
  *
- * That order is also what lets storage/idb.js be written against a store that
+ * That order is also what lets storage/idb.ts be written against a store that
  * is not a database. Its batch forms are one transaction on IndexedDB and are
  * not on the desktop's file backend, so a torn setMany() is a thing this
  * function has to survive - and it does, by the three steps above, leaving at
- * worst an asset nobody references yet. See idb.js's header before relying on
+ * worst an asset nobody references yet. See idb.ts's header before relying on
  * a batch landing whole.
  */
 async function writeSnapshot() {
@@ -675,7 +675,7 @@ export function initSessionStorage() {
   // and markDirty() is idempotent - so on an already-dirty board, purging the
   // bin would bump no change generation at all and a reload brought every
   // purged item back.
-  // 'view' is emitted by main.js once a pan or zoom has settled. It does not
+  // 'view' is emitted by main.ts once a pan or zoom has settled. It does not
   // mark the board dirty - looking around is not editing - but it does have to
   // be snapshotted, or closing the tab after moving about restores the view the
   // board had before, which is not where it was left.
@@ -698,7 +698,7 @@ export function initSessionStorage() {
   bus.on('board:load', hushNextSave);
   bus.on('board:new', hushNextSave);
   // No "Leave site?" guard on close. The 20s autosave and the pagehide flush
-  // (main.js) have already put the board in IndexedDB, and restoreSession()
+  // (main.ts) have already put the board in IndexedDB, and restoreSession()
   // brings it straight back on the next visit, so the prompt guarded nothing and
   // cost a click on every reload.
 }

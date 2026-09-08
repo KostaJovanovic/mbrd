@@ -1,24 +1,24 @@
 // The three primitives everything else in the board layer is built on: the
 // event bus, the selection set, and whether there is anything unsaved.
 //
-// This exists to give state.js a floor to stand on. state.js is the app's one
+// This exists to give state.ts a floor to stand on. state.ts is the app's one
 // mutation door and it grew to hold about ten separate concerns - history,
 // stacking, sticky relations, the clipboard, the Mobile pack, serialization -
 // each of which is a module waiting to be lifted out. None of them can be,
 // while the things they all reach for (the bus to announce on, the dirty flag
 // to raise, the selection to read) live in the file being split: a module
-// lifted out would have to import state.js, and state.js would have to import
+// lifted out would have to import state.ts, and state.ts would have to import
 // it back.
 //
 // So these move down first. Nothing here imports anything above it, which is
 // what makes it safe for a module at any level to depend on. Everything is
-// re-exported by state.js under its old name, because "state.js is the only
+// re-exported by state.ts under its old name, because "state.ts is the only
 // door" is a rule about where mutations go, not about which file the symbol is
 // declared in, and no caller should have to care that it moved.
 //
 // What does *not* belong here: the board itself. `board` is data with a shape,
 // defaults, and a hundred rules about how it may change, and putting it under
-// the bus would make this the god-module instead of state.js.
+// the bus would make this the god-module instead of state.ts.
 
 import { emitter } from './util.ts';
 
@@ -116,7 +116,7 @@ export const selection = new Set<string>();
 /**
  * The three writes to that Set that announce themselves.
  *
- * They live beside it rather than in state.js because they are not board
+ * They live beside it rather than in state.ts because they are not board
  * mutations: nothing about the board changes, nothing is dirtied and there is
  * nothing to undo - which is exactly why they never needed the mutation door in
  * the first place. What they do need is the Set and the bus, and both are here.
@@ -130,7 +130,7 @@ export const selection = new Set<string>();
  * id on every delete.
  *
  * `selectAll()` is not here, and cannot be: it needs the item list, which lives
- * in board-model.js, which imports this module. It stays in state.js as a
+ * in board-model.ts, which imports this module. It stays in state.ts as a
  * one-liner over this.
  */
 export function select(ids: Iterable<string>, additive = false) {

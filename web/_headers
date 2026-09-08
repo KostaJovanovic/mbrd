@@ -32,7 +32,7 @@
 # a change that would break the deploy fails in `npm test` instead.
 #
 # ---------------------------------------------------------------------------
-# script-src 'self' + six hashes
+# script-src 'self' + seven hashes
 # ---------------------------------------------------------------------------
 #
 # No 'unsafe-inline', which is the whole value of the directive: with hashes

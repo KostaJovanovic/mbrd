@@ -4,13 +4,13 @@
    One of the eight sheets the old overlays.css was split into. The order they
    load in IS the cascade and is listed in the banner at the top of base.css.
 
-   #ask is ui/dialog.js and #credits is ui/credits.js, and they share every rule
+   #ask is ui/dialog.ts and #credits is ui/credits.ts, and they share every rule
    about being a sheet - the same paper, hairline, leaf radius and arrival -
    parting company only at their width. That shared block is the reason the two
    are one file, and it has to stay above the credits rules below it: the two
    selectors weigh the same, so document order is what settles the width.
 
-   The note composer (composeNote, canvas/notes.js) is here as the exception
+   The note composer (composeNote, canvas/notes.ts) is here as the exception
    that proves it. It is the one dialog in the app that is not a sheet, because
    the thing in the middle of it is a card and a card inside a card is two
    pieces of paper - and a comment saying "unlike every other dialog in this
@@ -185,7 +185,7 @@
    hold the backdrop, and stack the formatting bar, the note and the buttons in
    that order.
 
-   The bar comes from canvas/notes.js and lands last in the DOM, so `order` is
+   The bar comes from canvas/notes.ts and lands last in the DOM, so `order` is
    what puts it back on top. Written on the three children rather than on the
    bar alone, so the reading order of the rule is the reading order on screen.
 
@@ -231,7 +231,7 @@
    world layer.
 
    An item is absolutely positioned and carries its board coordinates inline -
-   canvas/items.js writes left/top/width/height on the node itself - so the only
+   canvas/items.ts writes left/top/width/height on the node itself - so the only
    way to show one anywhere else is to take the positioning away. `static` does
    that: the two coordinates stop meaning anything and the two sizes go on
    meaning what any width and height mean, which is the size of the box. That is
@@ -267,7 +267,7 @@
    also selected - the grips, the ring and the bottom bar belong to a thing you
    can drag, resize, rotate and rename, and none of those are true of a note
    being written in a dialog.
-   .item-body is what holds the card (see build() in canvas/items.js); naming
+   .item-body is what holds the card (see build() in canvas/items.ts); naming
    .card here instead would hide the wrapper and leave the sheet with no box at
    all, which is a zero-height contenteditable and a caret with nowhere to go. */
 #compose-mount .item > :not(.item-body, .note-count) { display: none; }
@@ -424,7 +424,7 @@
 
 /* What the app is standing on, folded away under the two names.
 
-   A <details>, so the open state is the element's own and ui/credits.js stays
+   A <details>, so the open state is the element's own and ui/credits.ts stays
    two listeners and no builder. The dressing is the app's: the summary is a
    quiet row that behaves like every other button here on hover and focus, and
    the marker is a chevron drawn with a border rather than the platform's
@@ -655,10 +655,10 @@
    be a percentage of the wrong thing.
 
    So on a quarter turn the plate stops taking its size from the picture and
-   takes it from the picture's *ratio* instead - `--dk-ar`, which ui/darkroom.js
+   takes it from the picture's *ratio* instead - `--dk-ar`, which ui/darkroom.ts
    writes as naturalHeight / naturalWidth, the width-over-height of the turned
    picture. A ratio is a property of the photograph, so nothing here is a
-   measurement and nothing goes stale on a resize; the header of ui/darkroom.js
+   measurement and nothing goes stale on a resize; the header of ui/darkroom.ts
    is where that promise is made.
 
    `width` is the definite dimension and `aspect-ratio` derives the height,
@@ -673,7 +673,7 @@
    available - so that turning it lands it exactly on the plate with nothing
    over or under. That is also why it is taken out of flow and centred: a
    transform turns about the centre, and the two only coincide when the element
-   is centred to begin with. The translate is written by ui/darkroom.js as part
+   is centred to begin with. The translate is written by ui/darkroom.ts as part
    of the same transform, since a `transform` property has one value and the
    turn has to be in it too. */
 #darkroom-plate.dk-quarter {

@@ -8,7 +8,7 @@
   /* Pointer Events only - the browser must never claim a pan/pinch for itself. */
   touch-action: none;
   /* Nor a *selection*. A long press on the board opens this app's own context
-     menu (canvas/input.js), and a long press is also how iOS starts a text
+     menu (canvas/input.ts), and a long press is also how iOS starts a text
      selection - so the gesture did both, and because the board surface is one
      fixed element behind everything, what the system reached for was the whole
      screen. The card was already covered (.item in items.css); the ground it
@@ -29,8 +29,8 @@
 /* The board's editable surfaces, given their selection back explicitly.
  *
  * Three of them, all inside #viewport and all made editable from script rather
- * than in the markup: a card's name (canvas/items.js), a note's text
- * (canvas/notes.js) and the board title (ui/board-title.js). The first two sit
+ * than in the markup: a card's name (canvas/items.ts), a note's text
+ * (canvas/notes.ts) and the board title (ui/board-title.ts). The first two sit
  * inside `.item`, which has carried `user-select: none` since long before the
  * rule above existed and has been fine - which is the evidence that a
  * contenteditable is exempt from an inherited `none`, and it is *only* evidence.
@@ -57,12 +57,12 @@
    to be set here rather than on .item - the captured element owns the cursor. */
 #viewport.is-moving  { cursor: grabbing; }
 /* Over a connection line: a pointer, so it reads as clickable. After can-pan so
-   it wins the tie when both are set; web.js drops the class the moment a pan or
+   it wins the tie when both are set; web.ts drops the class the moment a pan or
    drag starts, so it never fights the grabbing cursor those bring. */
 #viewport.over-connection { cursor: pointer; }
 
 /* The one transformed layer. Sits at the viewport centre so world (0,0) is the
-   centre of the screen at pan (0,0); viewport.js writes the transform and --iz
+   centre of the screen at pan (0,0); viewport.ts writes the transform and --iz
    (= 1/zoom), which item chrome multiplies by to stay a constant screen size. */
 #world {
   position: absolute;
@@ -106,16 +106,16 @@
      either side of a boundary.
 
      Multiplying by --iz (= 1/zoom) makes it one *screen* pixel instead, which is
-     the whole meaning of the word: the same thing canvas/web.js asks the browser
+     the whole meaning of the word: the same thing canvas/web.ts asks the browser
      for with vector-effect: non-scaling-stroke - "a thread, not a beam" - and
-     what canvas/grid.js gets for free by painting in screen space. It also
+     what canvas/grid.ts gets for free by painting in screen space. It also
      settles what a border does when you zoom *in*, which was never decided so
      much as inherited: a ring that scaled reached four device pixels at 4x,
      which is a frame around a card rather than a hairline on it.
 
      Under its own name rather than by redeclaring --hairline here, and that
      distinction is worth the extra name. --hairline is on the TOKENS list in
-     ui/look.js, so a .mbrd may set it inline on :root - and #world is a
+     ui/look.ts, so a .mbrd may set it inline on :root - and #world is a
      descendant of :root, so a declaration on this selector outranks anything an
      author writes and silently takes the control away from everything on the
      board. It is the same trap the [data-snap] rule in items.css names for
@@ -127,7 +127,7 @@
      items.css says why.
 
      --iz is quantised to 8% rungs while the board is moving (IZ_STEP in
-     canvas/viewport.js) and written exact the moment it stops, so a line drawn
+     canvas/viewport.ts) and written exact the moment it stops, so a line drawn
      from it sits within a twelfth of a pixel of its settled weight during a
      gesture - under the resample a moving layer is already doing. That is why
      nothing here reaches for an unquantised copy of it: publishing one would be
@@ -138,7 +138,7 @@
   /* One physical pixel, expressed in CSS pixels. Read by the Harsh override
      below; nothing else on the board wants it.
 
-     --dpr is published on this element by canvas/viewport.js and refreshed on
+     --dpr is published on this element by canvas/viewport.ts and refreshed on
      resize. On a 1x or 2x display it says nothing new: a 1px hairline is one or
      two whole device pixels already. On the fractional scalings Windows hands
      out - 125%, 150% - it is the difference between a line and a smear, because
@@ -190,10 +190,10 @@
    Making the line thicker hides it and is not a fix - it trades an uneven hair
    for an even beam, which is the wrong object. That was tried here and taken out.
 
-   The fix is to move the *card* onto the grid, and it lives in canvas/items.js:
+   The fix is to move the *card* onto the grid, and it lives in canvas/items.ts:
    deviceSnap() nudges each item by under a pixel so its drawn box lands on whole
    device pixels, on the settle pass rather than per frame. Same principle
-   canvas/grid.js and canvas/paper.js already work on - see the note on #paper
+   canvas/grid.ts and canvas/paper.ts already work on - see the note on #paper
    below, "a page edge is one device pixel at every zoom or it is not a drawn
    edge" - applied to items, which are the one thing on the board that could not
    simply be moved out of the transform.
@@ -226,9 +226,9 @@
   rotate: calc(var(--item-tilt, 0) * var(--tilt-max));
   /* The twin follows the card's hover/drag lift so it never slides out from
      under it as a second card - the reveal Softish's spring used to show. The
-     card's own lift is in items.js via translate/scale on the .item; these
+     card's own lift is in items.ts via translate/scale on the .item; these
      mirror it with the same tokens and the same spring. is-hover / is-selected
-     are toggled onto the twin from items.js alongside the card. */
+     are toggled onto the twin from items.ts alongside the card. */
   translate: 0 calc(var(--sh-lift, 0px) * var(--iz));
   scale: var(--sh-grow, 1);
   /* opacity is here for the tag filter, which fades the twin with its card. It
@@ -253,10 +253,10 @@
 /* The lattice layer: the Harsh crosses are drawn on it and the other two tiers
    tile their dots onto it as a background image, so it is either the whole grid
    or nothing, never a second layer under one.
-   Sized in device pixels by canvas/grid.js and stretched back to CSS pixels,
+   Sized in device pixels by canvas/grid.ts and stretched back to CSS pixels,
    which is what lets a mark be snapped to the device grid rather than to a CSS
    pixel that may be two thirds of one. The box below is only where it starts:
-   canvas/grid.js writes left/top/width/height on every paint, because on a
+   canvas/grid.ts writes left/top/width/height on every paint, because on a
    Mobile board the layer is the board rather than the window - see inkBox(). */
 #grid-ink {
   position: absolute;
@@ -266,7 +266,7 @@
   pointer-events: none;
 }
 
-/* The paper outline, positioned in screen space by canvas/paper.js for the same
+/* The paper outline, positioned in screen space by canvas/paper.ts for the same
    reason the axes are: a border inside the transformed #world would be scaled
    by the zoom, and a page edge is one device pixel at every zoom or it is not a
    drawn edge. The faint fill is what makes it read as a surface rather than as
@@ -280,7 +280,7 @@
 
 /* The four corner grips, which is how the board's scale is actually set: drag
    an A4 until it looks right against the photographs, and the scale follows
-   from where you let go. See canvas/paper.js.
+   from where you let go. See canvas/paper.ts.
 
    pointer-events go back on for these alone - the sheet itself must stay
    transparent to the pan, the marquee and every card sitting on it, and only
@@ -339,7 +339,7 @@
 
 /* World axes, drawn in screen space so they stay hairline at any zoom - and on
    a canvas, in whole device pixels, so a hairline is a hairline rather than a
-   fraction of a row the rasteriser is free to round away. canvas/grid.js draws
+   fraction of a row the rasteriser is free to round away. canvas/grid.ts draws
    it; index.html says why it is not two <div>s. Sized in device pixels there
    and stretched back to CSS ones here, exactly like #grid-ink. */
 #axis-ink {
@@ -350,12 +350,12 @@
   pointer-events: none;
 }
 
-/* Mobile is a finite, content-sized selected-width strip. canvas/mobile-frame.js
+/* Mobile is a finite, content-sized selected-width strip. canvas/mobile-frame.ts
    keeps these screen-space edges aligned with its live world bounds as the
    window and the lowest item change.
    The four dashed rules that used to trace those edges - two down the sides,
    one along the head and one along the foot - are gone. The lattice now stops
-   at the board (see inkBox() in canvas/grid.js), so the edge is already drawn
+   at the board (see inkBox() in canvas/grid.ts), so the edge is already drawn
    by the dots ending: a ruled line over the top of that is the same statement
    made twice, in the heavier of the two hands. What remains is the difference
    in tone between the sheet and the surround, which is what says "off the
@@ -378,7 +378,7 @@
   background: color-mix(in srgb, var(--ink) 6%, transparent);
   pointer-events: none;
 }
-/* Its geometry is written by canvas/mobile-frame.js, clipped to the window, so
+/* Its geometry is written by canvas/mobile-frame.ts, clipped to the window, so
    there is nothing here to position - only what the sheet is made of. */
 #mobile-board-frame {
   /* Middle: a white sheet still carrying enough of the palette to belong to
@@ -395,7 +395,7 @@
 }
 :root[data-whimsy="0"] #mobile-board-frame { --mobile-board-accent: 7%; }
 :root[data-whimsy="2"] #mobile-board-frame { --mobile-board-accent: 4.5%; }
-/* The 3:2 masthead standing on the board's top edge - canvas/mobile-frame.js
+/* The 3:2 masthead standing on the board's top edge - canvas/mobile-frame.ts
    derives its height from the board width, so the same board has the same title
    page in short and tall windows. It travels with the board and scrolls away
    for good; the ceiling's wash is already behind it, and this adds no
@@ -432,7 +432,7 @@
 :root[data-board-mode="mobile"] #mobile-board-frame { display: block; }
 :root[data-board-mode="mobile"] #mobile-board-header { display: flex; }
 /* mbrd.perf.mobile({ chrome: false }). A dev switch, not a state the app can
-   reach on its own - see mobilePerfFlags in canvas/viewport.js, which is also
+   reach on its own - see mobilePerfFlags in canvas/viewport.ts, which is also
    what stops the writes that would otherwise still be happening behind this. */
 :root.perf-no-mobile-chrome #mobile-surround,
 :root.perf-no-mobile-chrome #mobile-board-frame,
@@ -451,7 +451,7 @@
   min-width: 0;
   max-width: 100%;
   /* The one live thing in the band: tapping the name renames the board - see
-     editMobileTitle() in main.js. Auto against the header's `none`, so a drag
+     editMobileTitle() in main.ts. Auto against the header's `none`, so a drag
      that crosses the name still pans the board. */
   pointer-events: auto;
   cursor: text;
@@ -460,7 +460,7 @@
      line when the wrap is off, to two lines when it is on. Nothing in CSS can
      ask "is this line wider than its container" or "how many lines did that
      take" - the wrap is the only fitting the language does - so fitTitle() in
-     ui/mobile-header.js measures it and writes the ratio here. Applied to the
+     ui/mobile-header.ts measures it and writes the ratio here. Applied to the
      whole clamp rather than inside it, so the fit outranks the 20px floor: a
      name that has to go under twenty pixels to fit is still a name that has to
      fit.
@@ -470,7 +470,7 @@
      name growing while the board kept going - so the same setting gave one
      name-to-box ratio on a 416-wide phone and another on the 512 the Desktop
      card is normalised against, and one name broke in two different places on
-     the two boards. --mobile-title-cap is handed down by ui/mobile-header.js so
+     the two boards. --mobile-title-cap is handed down by ui/mobile-header.ts so
      the card's own arithmetic and this clamp cannot drift; see TITLE_CAP. */
   font-size: calc(clamp(20px,
     calc(var(--mobile-board-width, 0px) * var(--mobile-title-scale, 0.13)),
@@ -537,7 +537,7 @@
      because a name that has been committed has no trailing space to show. */
   white-space: pre-wrap;
 }
-/* Wrapping turned off - ui/mobile-header.js sets the attribute from
+/* Wrapping turned off - ui/mobile-header.ts sets the attribute from
    `settings.mobileHeader.wrap`.
 
    Three declarations, and none of them is optional. `pre` is the no-wrap that
@@ -566,12 +566,12 @@
 #mobile-board-header[data-untitled] #mobile-board-title { opacity: 0.45; }
 
 /* The Desktop title card: the board name as a movable board item, set in the
-   same style as the Mobile masthead. ui/mobile-header.js writes the identical
+   same style as the Mobile masthead. ui/mobile-header.ts writes the identical
    --mobile-title-* custom properties onto .title-name that it writes onto
    #mobile-board-title; the one thing that differs is what the size is measured
    against - the strip's width there, this card's own width here (100cqw), so
    the size dial means the same "percentage of the width it is set across" in
-   both. Bare on purpose: no paper, no border, no caption - see renderers.js. */
+   both. Bare on purpose: no paper, no border, no caption - see renderers.ts. */
 /* The masthead's own rules, one for one, so the same style wraps the same on
    both boards - the only thing that differs is what the size is measured
    against: the strip's width there, this 3:2 card's own width (100cqw) here. So
@@ -595,7 +595,7 @@
      shadow rather than a border so the item's corner clip does not shave it,
      plus the shared drop shadow: on the card itself, not an #item-shadows twin,
      because the twin would trace the taller item box and not this 3:2 card
-     (canvas/items.js skips the twin for the title). */
+     (canvas/items.ts skips the twin for the title). */
   border-radius: inherit;
   background: var(--paper-card);
   box-shadow: inset 0 0 0 var(--board-hairline) var(--item-border), var(--item-shadow);
@@ -605,8 +605,8 @@
 }
 /* The title's box is a grid of one stretched cell, so the 3:2 card can be parked
    against the top, middle or bottom of whatever height the item has. data-valign
-   is written by canvas/items.js from the item's meta and set by dragging the
-   card on a snapped board (canvas/input.js). Top by default: slack below. */
+   is written by canvas/items.ts from the item's meta and set by dragging the
+   card on a snapped board (canvas/input.ts). Top by default: slack below. */
 /* Every .item paints a card face (var(--item-bg)) across its whole box, which
    content normally covers edge to edge. The 3:2 title card covers only the top
    of its taller snapped box, so that face would show through the slack as a
@@ -667,8 +667,8 @@
   color: var(--ink);
   /* Deliberately NOT --display-weight, and this is the one display site that
      opts out. The board's name carries its own weight in board state
-     (DEFAULT_MOBILE_HEADER.weight in board-model.js, the Weight dial in
-     ui/mobile-header.js), written inline by applyTitleStyle() onto both this
+     (DEFAULT_MOBILE_HEADER.weight in board-model.ts, the Weight dial in
+     ui/mobile-header.ts), written inline by applyTitleStyle() onto both this
      card and the masthead - so an inline 700 wins over anything declared here
      on every board that has ever been styled, which is all of them. The name is
      the same on Softish and on Middle by design: one number, chosen per board,
@@ -678,7 +678,7 @@
   font-weight: 700;
   /* A pure fraction of the card's own width - no screen-pixel clamp here. The
      masthead's 20-96px clamp is folded into --mobile-title-ratio by
-     ui/mobile-header.js (the masthead's effective font over the board width), so
+     ui/mobile-header.ts (the masthead's effective font over the board width), so
      the card runs its text at exactly the masthead's ratio and wraps the same,
      at any zoom. Falls back to the raw size dial before the ratio is written. */
   font-size: calc(100cqw
@@ -711,7 +711,7 @@
    flex:none + max-width:none let an over-long line take its own width so the
    card's centring keeps it centred (and the card's overflow trims each end
    evenly), the same reasoning the masthead gives; the fit shrink in
-   ui/mobile-header.js then pulls it back inside the card so it does not clip. */
+   ui/mobile-header.ts then pulls it back inside the card so it does not clip. */
 .title-name[data-nowrap] { white-space: pre; flex: none; max-width: none; }
 /* A board nobody has named yet, held more quietly - as on the masthead. */
 .title-name.is-untitled { opacity: 0.45; }
@@ -720,7 +720,7 @@
 
 /* The title card's two pop-up buttons, stacked off the RIGHT edge of the card:
    the pen on top opens the shared style panel, the T below it drops into inline
-   rename of the board name. canvas/items.js builds both on the card and leaves
+   rename of the board name. canvas/items.ts builds both on the card and leaves
    them there; they show on hover or while the card is selected (the rule below).
    Sized and offset in --iz (= 1/zoom) so they hold a constant on-screen size and
    gap the way the resize grips do. */
@@ -777,7 +777,7 @@
 }
 /* And the card comes to the front for as long as they are up, because the
    z-index the buttons carry cannot reach past the card that holds them. Every
-   .item is written an inline z-index by paintStack() in canvas/items.js - its
+   .item is written an inline z-index by paintStack() in canvas/items.ts - its
    rank in the visual stack - and a numeric z-index makes an element a stacking
    context, so `z-index: 3` on the pen orders it against the card's own children
    and against nothing else. The buttons sit ten pixels *outside* the card's
@@ -860,7 +860,7 @@
 
 /* The origin, marked like a compass rose rather than just a crossing. Drawn a
    shade stronger than the axes so (0,0) reads as a place, not an accident. */
-/* Placed by a transform - viewport.js writes it, and says there why left/top
+/* Placed by a transform - viewport.ts writes it, and says there why left/top
    and a negative margin could not do this job. Both stay at zero so the box
    the browser lays out sits at the viewport's own corner, on the device grid,
    with nothing to snap; the transform carries the whole journey, centring
@@ -886,7 +886,7 @@
   z-index: 5;
 }
 
-/* The lines between items (canvas/web.js). Drawn by hand with the Join tool
+/* The lines between items (canvas/web.ts). Drawn by hand with the Join tool
    rather than worked out from the board - the id and the class kept the names
    they had, for the reason that module's header gives.
 
@@ -928,7 +928,7 @@
    failure. A state worth marking as a failure has to look like one. */
 /* A styled connection - direction, dash or label - drawn in its own layer. It
    inherits the stroke rule above (it is a #web path too); a dash is set per
-   line in web.js, and the arrowhead is a shade firmer than the faint line so a
+   line in web.ts, and the arrowhead is a shade firmer than the faint line so a
    direction reads at a glance. */
 /* The arrowhead follows its own line's colour where the engine can tell it
    which line that is. One marker is shared by every connection on the board, so
@@ -947,7 +947,7 @@
 /* ---- what a line can be told to mean ----
 
    A connection carries a colour and a weight by *name* (see connMeta() in
-   board-model.js), and this is where a name becomes a value. One rule each, no
+   board-model.ts), and this is where a name becomes a value. One rule each, no
    arithmetic on a stored string, and nothing here that a file could reach into:
    a name that matches no rule below draws the ordinary line, which is the right
    answer to a board written by a newer version of the app.
@@ -1008,7 +1008,7 @@
    The lift is done by dropping everything else rather than by brightening the
    few: the lines are already at the weight they are meant to read at, and a
    board that got *louder* when you selected something would be the wrong way
-   round. canvas/web.js draws the focused threads a second time into .web-focus
+   round. canvas/web.ts draws the focused threads a second time into .web-focus
    over the dimmed bulk path, which is why this rule can dim the bulk path
    wholesale without dimming what it is trying to show.
 
@@ -1038,7 +1038,7 @@
    two full-strength rules ruled straight through the picture, which is the lift
    half-applied.
 
-   Reached by a flag on the root instead, written by canvas/web.js on the same
+   Reached by a flag on the root instead, written by canvas/web.ts on the same
    line as .is-focused - the arrangement data-snap and .is-connecting already
    use, and the only one available across two stacking contexts.
 
@@ -1063,7 +1063,7 @@
    showing whether it is dashed or dotted or what colour it was given at the
    exact moment somebody has selected it to change those things. Underneath, the
    line keeps its own dash, its own colour and its own weight, and reads against
-   the halo instead of against the board. web.js appends it first for this
+   the halo instead of against the board. web.ts appends it first for this
    reason; the accent is the same one the hover uses, because they are two
    states of one thing and not two kinds of line. */
 #web .web-active {
@@ -1077,7 +1077,7 @@
 }
 
 /* ---------------------------------------------------------
-   Drawing one (ui/toolbar.js)
+   Drawing one (ui/toolbar.ts)
    --------------------------------------------------------- */
 
 /* The board while the Join tool is armed. This is the app's only mode, so it
@@ -1147,7 +1147,7 @@
   border: 2px solid var(--select);
 }
 
-/* The first end, once one is chosen. canvas/items.js writes data-pick, and it
+/* The first end, once one is chosen. canvas/items.ts writes data-pick, and it
    writes it in build() as well as on the live node - a card culled while it is
    picked is thrown away and rebuilt, and a mark applied only to the node would
    go with it.
@@ -1167,7 +1167,7 @@
    deliberately quieter - dashed and one pixel thinner - because the two are on
    screen at the same time and they are not the same claim: one end has been
    chosen, the other is only where the pointer happens to be. Written on the
-   live node alone by canvas/items.js/setConnectAim; unlike the pick it does not
+   live node alone by canvas/items.ts/setConnectAim; unlike the pick it does not
    survive a rebuild, and should not - a card that has been culled is not under
    the pointer. */
 .item[data-aim] {
@@ -1198,8 +1198,8 @@
 
    The board frame is the one rule in this file that cannot be written here. It
    is a blend, its share is a variable the whimsy axis moves, and --accent may be
-   a pigment ui/pigments.js pulled out of a photograph a second ago - so it is
-   computed in script instead, by legacyBlends() in ui/appearance.js, which
+   a pigment ui/pigments.ts pulled out of a photograph a second ago - so it is
+   computed in script instead, by legacyBlends() in ui/appearance.ts, which
    reads --mobile-board-accent off the root and so follows the axis for free.
 
    The literal in the var() fallback is not decoration. This frame is opaque on
@@ -1215,7 +1215,7 @@
 /* The card at the edge of the board - see canvas/farlands.ts, which places it
    and argues why it is not an item.
 
-   Positioned by canvas/farlands.ts the same way items.js positions a card:
+   Positioned by canvas/farlands.ts the same way items.ts positions a card:
    absolutely, inside #world, at left = x - w/2 and top = -y - h/2. Only the
    four geometry properties are set from script; everything it looks like is
    here, so the whimsy axis and the palette reach it like they reach anything

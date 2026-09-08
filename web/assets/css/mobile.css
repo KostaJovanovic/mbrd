@@ -22,7 +22,7 @@
    Mobile is no longer the world-space canvas. It is two DOM boards that cover the
    canvas: the Feed (#mobile-feed), a Pinterest-style masonry of everything on the
    board, and the Playlist (#mobile-playlist), the board's audio as a player. Which
-   one shows is the data-feed-lens attribute ui/board-view.js writes on <html> -
+   one shows is the data-feed-lens attribute ui/board-view.ts writes on <html> -
    'feed' or 'playlist' - under data-board-mode="mobile". Keyed off the attribute,
    not a width query: entry is a manual choice (the Feed / Playlist sidebar
    buttons), so a wide tablet gets them too. Kept outside every @media block for
@@ -30,8 +30,8 @@
 
    Both are real scrollers (overflow-y:auto, contained overscroll) pinned to the
    window at z-index 2, over the hidden canvas and grain but under the chrome at
-   z-index 20 (the menu, the panels, the now-playing bar, the bin). ui/feed.js and
-   ui/playlist.js fill them.
+   z-index 20 (the menu, the panels, the now-playing bar, the bin). ui/feed.ts and
+   ui/playlist.ts fill them.
    --------------------------------------------------------- */
 #mobile-feed, #mobile-playlist {
   /* How far the sheet stands off the top and bottom, clearing the chrome. */
@@ -76,7 +76,7 @@
 :root[data-board-mode="mobile"][data-feed-lens="playlist"] #mobile-playlist { display: block; }
 /* Hidden by visibility, not display: a lens covers the canvas, but the viewport
    must keep its box. It is position:fixed to the window, so display:none would
-   collapse it to zero size - and canvas/viewport.js caches that size, so a fit()
+   collapse it to zero size - and canvas/viewport.ts caches that size, so a fit()
    on the way back to the canvas would run against a zero rect and clamp the zoom to
    its floor (the board snapping out to ~10%). visibility keeps the size. */
 :root[data-board-mode="mobile"] #viewport { visibility: hidden; }
@@ -140,7 +140,7 @@
 
 /* The masthead: the board's name across the top of the sheet, shared by the Feed
    and the Playlist. It is the same title page the world-space Mobile board had -
-   ui/feed.js and ui/playlist.js style AND fit it through styleFeedMasthead(), so
+   ui/feed.ts and ui/playlist.ts style AND fit it through styleFeedMasthead(), so
    the board's chosen face, size, stretch,
    weight, italic, axes, leading and offset all show here, the name shrinks to the
    same TITLE_LINES rule, and the pen's edits reach it. The .feed-title rules below
@@ -200,7 +200,7 @@
    masthead does. */
 .feed-title.is-default { opacity: 0.45; }
 
-/* The masonry grid: the positioning context for the absolute tiles ui/feed.js
+/* The masonry grid: the positioning context for the absolute tiles ui/feed.ts
    lays out. Inset from the board edge (the sheet has none, so the masthead can
    reach it); its height is written by the module once the wall is packed. */
 .feed-grid {
@@ -931,7 +931,7 @@
    bottom-right above the now-playing bar. It is its own surface, not a docked panel
    - it floats over the board, sized to its content up to a cap, is independent of
    the header edit bar and the menu (they can be open at the same time), and is
-   draggable by its title bar (ui/playlist.js makeWindowDrag). It grows up out of its
+   draggable by its title bar (ui/playlist.ts makeWindowDrag). It grows up out of its
    bottom-right corner on open. */
 .player-window {
   position: fixed;
@@ -1029,7 +1029,7 @@
 
 /* The bottom-right resize grip: a small bracket that sits over the corner. It draws
    an L of two hairlines inside the rounded corner - subtle at rest, the accent under
-   the pointer - and takes the pointer for a resize drag (ui/playlist.js). */
+   the pointer - and takes the pointer for a resize drag (ui/playlist.ts). */
 .player-window-resize {
   position: absolute;
   right: 0;
@@ -1070,7 +1070,7 @@
   padding: 14px 18px 12px;
   border-bottom: var(--hairline) solid var(--rule-2);
 }
-/* display:flex above beats the [hidden] default, so it has to be said. ui/playlist.js
+/* display:flex above beats the [hidden] default, so it has to be said. ui/playlist.ts
    sets it on a board with no audio - see fill(). */
 .pw-player[hidden] { display: none; }
 .pw-top { display: flex; align-items: center; gap: 12px; min-width: 0; }
@@ -1113,7 +1113,7 @@
 .pw-time:last-child { text-align: right; }
 /* The window's scrubber, drawn as the same three-svg shape the now-playing bar
    and the video card use so all three wave together at the soft end of the
-   whimsy axis - see the note in util.js. It was a ::before rail and a div scaled
+   whimsy axis - see the note in util.ts. It was a ::before rail and a div scaled
    on X, which cannot carry a wave: scaling one horizontally changes its
    frequency as the track plays. */
 .pw-line { position: relative; flex: 1 1 auto; height: 14px; cursor: pointer; touch-action: none; }
@@ -1208,7 +1208,7 @@
 }
 .pw-play svg { width: 18px; height: 18px; }
 /* The two ends of a list being read straight through. Only ever set with repeat
-   off and shuffle off - see refresh() in ui/playlist.js, which is where the
+   off and shuffle off - see refresh() in ui/playlist.ts, which is where the
    argument for that lives. It has to *look* dead, because it is: the press does
    nothing rather than wrapping to the other end of the list. */
 /* --ink-3 and nothing else, the app's one disabled recipe. The `opacity: 0.4`
@@ -1235,7 +1235,7 @@
    with the panel it was in: on the phone the now-playing bar is already at the
    foot of the screen and already the transport for every other surface, and a
    second one on the lens was a thing to scroll past on the way to the music.
-   ui/playlist.js builds a player for the window variant only, and chrome.css no
+   ui/playlist.ts builds a player for the window variant only, and chrome.css no
    longer hides #nowplaying under data-feed-lens. */
 
 /* Reduced motion: no tile reflow easing while reordering, no scroll glide, and a
@@ -1325,7 +1325,7 @@
   #zoom-ctl svg { width: 17px; height: 17px; }
   .check input { width: 20px; height: 20px; }
 
-  /* A long press on the board opens the context menu (canvas/input.js). iOS
+  /* A long press on the board opens the context menu (canvas/input.ts). iOS
      answers the same gesture with its own callout - "Copy / Look Up" over a
      card - so the platform's has to be turned off or the two fight. */
   #world, #viewport { -webkit-touch-callout: none; }
@@ -1740,8 +1740,13 @@
     pointer-events: none;
     transition: opacity var(--dur-fast) var(--ease);
   }
-  :is(#sidebar, #header-panel).is-slider-focus .side-body {
-    scrollbar-color: transparent transparent;
+  /* The scrollbar goes with everything else in the panel while a slider is
+     being dragged. Written as the thumb rather than as scrollbar-color, which
+     is the app's own bar everywhere now (base.css): the standard property
+     would not have hidden the drawn one, it would have replaced it with the
+     operating system's, which is the opposite of what this rule wants. */
+  :is(#sidebar, #header-panel).is-slider-focus .side-body::-webkit-scrollbar-thumb {
+    background: transparent;
   }
   :is(#sidebar, #header-panel).is-slider-focus .side-body :where(*):has(.is-slider-active) {
     background: transparent;
@@ -1792,7 +1797,7 @@
    blend rather than a colour at an alpha. Sixteen of the twenty-four here are
    blends and none of them can be written down - Harsh derives the sheet itself
    from --accent, and --accent can be a pigment pulled out of a photograph. They
-   read --lc-* tokens that legacyBlends() in ui/appearance.js computes and
+   read --lc-* tokens that legacyBlends() in ui/appearance.ts computes and
    rewrites whenever the look changes.
 
    Every one carries a var() fallback, and the fallbacks are chosen so that a

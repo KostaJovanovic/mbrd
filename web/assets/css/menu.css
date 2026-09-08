@@ -5,9 +5,9 @@
    load in IS the cascade and is listed in the banner at the top of base.css.
 
    Five things wearing one set of clothes: Find (Ctrl+K), the right-click menu
-   and the toolbar flyouts that are the same panel hung off a bar (ui/menu.js,
-   ui/flyout.js), the fence offer (ui/fence-prompt.js) and the marked
-   connection's chip (ui/conn-chip.js). Every one of them is card paper, a
+   and the toolbar flyouts that are the same panel hung off a bar (ui/menu.ts,
+   ui/flyout.ts), the fence offer (ui/fence-prompt.ts) and the marked
+   connection's chip (ui/conn-chip.ts). Every one of them is card paper, a
    hairline, the menu's shadow and `ctx-in` on the way in, and the last two say
    so in their own comments below. That is why they are one file rather than
    four: the stock is only shared if it is written once, and #fence-prompt
@@ -154,7 +154,7 @@
   position: fixed;
   z-index: var(--z-menu);
   min-width: 208px;
-  /* The 8px the placement keeps at each edge (ui/menu.js). A picture card's
+  /* The 8px the placement keeps at each edge (ui/menu.ts). A picture card's
      menu is a dozen entries, which is taller than a phone held sideways - so
      the overflow scrolls rather than hanging off the bottom where the last
      entries could not be reached at all.
@@ -185,7 +185,7 @@
    the two panels it is. */
 #ctx-child { animation-name: ctx-in-side; }
 /* The scale is what makes the origin mean anything, and the origin is written
-   from script - ui/menu.js sets transform-origin from the anchor once the panel
+   from script - ui/menu.ts sets transform-origin from the anchor once the panel
    has been placed and the flip has been decided. Without a scale there is
    nothing for an origin to be the origin *of*, which is why these two lines and
    that one arrived together: a panel that only slides three pixels grows from
@@ -202,7 +202,7 @@
    promise - I came out of this button - and a panel that vanished from the
    middle of the screen would break it on the way out.
    `forwards`, because the last frame is what the panel has to hold until
-   ui/menu.js takes it away: without it the panel snaps back to full opacity for
+   ui/menu.ts takes it away: without it the panel snaps back to full opacity for
    however long the removal takes to land. */
 /* Id-qualified, and that is not tidiness. The block that sets `animation:
    ctx-in` names both panels by id, so a bare `.is-leaving` is a class losing to
@@ -340,7 +340,7 @@
   justify-self: end;
 }
 
-/* The icons (assets/icons.svg, built by ui/menu.js).
+/* The icons (assets/icons.svg, built by ui/menu.ts).
 
    Dimmed at rest and up to the row's colour when the row is hovered or focused:
    the same grey the accel keys wear, on the same reasoning. A menu is read by
@@ -386,7 +386,7 @@
 }
 
 /* A colour standing in the icon column, for the rows whose subject *is* one -
-   the four sheets of note paper and the board's own pigments (ui/flyout.js).
+   the four sheets of note paper and the board's own pigments (ui/flyout.ts).
    Sized to the icons beside it and set in the same column, so a menu that
    mixes the two still reads as one column of marks.
 
@@ -473,7 +473,7 @@
   background: var(--rule);
 }
 
-/* The fence offer (ui/fence-prompt.js).
+/* The fence offer (ui/fence-prompt.ts).
    The context menu's stock and the context menu's items, because it is the same
    kind of thing appearing in the same way - but snug rather than a column, since
    it holds exactly one entry and a 208px minimum would make a two-word button
@@ -493,7 +493,7 @@
 }
 #fence-prompt .ctx-item { white-space: nowrap; }
 
-/* The marked connection's own five buttons (ui/conn-chip.js).
+/* The marked connection's own five buttons (ui/conn-chip.ts).
 
    The same stock again - hairline, card paper, the menu's shadow and the menu's
    entrance - because it is the third thing in the app that appears over the

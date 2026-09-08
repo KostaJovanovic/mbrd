@@ -1,6 +1,6 @@
 // A deck's first slide, composited into the picture its card draws.
 //
-// Every other document family in import/document.js is read the same cheap way:
+// Every other document family in import/document.ts is read the same cheap way:
 // the application that wrote the file already rendered a thumbnail into it, and
 // finding one is a container read and no renderer at all. PowerPoint is the
 // family where that answer stopped being true. `docProps/thumbnail.jpeg` is

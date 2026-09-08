@@ -87,7 +87,7 @@ export function surface(w: number, h: number, opts: { alpha?: boolean } = {}): S
  * failed - not because it is known to have been the fault.
  *
  * `alpha` is passed through because one caller means it: a video poster draws
- * onto an opaque context (canvas/poster.js), which lets the engine skip the
+ * onto an opaque context (canvas/poster.ts), which lets the engine skip the
  * compositing pass and is why that file could take JPEG unconditionally.
  * Default true, which is the platform default and what the other four want.
  */

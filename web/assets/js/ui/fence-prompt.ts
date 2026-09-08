@@ -15,7 +15,7 @@
 // below. Nothing is selected, nothing is changed, and no key has to be pressed.
 //
 // One at a time, built fresh on each open, torn down on close: the same
-// arrangement ui/menu.js uses, for the same reason - the label depends on what
+// arrangement ui/menu.ts uses, for the same reason - the label depends on what
 // the band caught, and there is nothing worth keeping hidden between two of them.
 
 // The menu's icon builder, for the menu's icon. This module wears .ctx-item and
@@ -207,7 +207,7 @@ export function openFencePrompt(
   // Measure hidden, then place - the width depends on the wording. Down and to
   // the right of the release point by a hair, so the offer is beside the cursor
   // rather than under it, and flipped rather than clamped at an edge for the
-  // reason ui/menu.js gives: a popup pinned to the edge ends up under the
+  // reason ui/menu.ts gives: a popup pinned to the edge ends up under the
   // pointer, and gets pressed by accident.
   node.style.visibility = 'hidden';
   document.body.append(node);

@@ -12,7 +12,7 @@
 // Written out in full rather than composed from PREFIX, because save.bat bumps
 // this line by regex on every commit and would not recognise an expression.
 // tests/sw.test.js holds the two together.
-const VERSION = 'mbrd-v292';
+const VERSION = 'mbrd-v293';
 const PREFIX = 'mbrd-';
 
 // Local dev (server.bat on localhost, or a LAN IP for phone testing) turns the
@@ -102,7 +102,7 @@ const SHELL = [
   // palette and this for the rest.
   './assets/css/download.css',
   // Every icon in the app, in one sprite. Referenced by <use> from index.html
-  // and built into the right-click menu by ui/menu.js, so a board opened offline
+  // and built into the right-click menu by ui/menu.ts, so a board opened offline
   // without it is a board of blank buttons - it belongs in the shell as much as
   // a stylesheet does. Unlike the two below, this one is never an installed app
   // icon; it is chrome.

@@ -29,7 +29,7 @@
 
    So it is drawn as an outline rather than a sheet. No paper fill, because a
    fill at this size is a wall the board is behind rather than a boundary drawn
-   on it; no drop shadow, which canvas/items.js also skips for this type (an
+   on it; no drop shadow, which canvas/items.ts also skips for this type (an
    enormous card casting a shadow over everything it contains); and a dashed
    edge, which says "drawn on" the way a solid one says "lying on". */
 /* The face keeps `.item`'s paper, and where it sits in the stack is what makes
@@ -39,7 +39,7 @@
    inside a region out. The answer is not to make the region transparent (with
    nothing but a hairline left, a fence stops reading as an area at all) but to
    put it under the shadows, where ground belongs: paintStack() in
-   canvas/items.js sinks the whole fence band below both underlays. So the cards
+   canvas/items.ts sinks the whole fence band below both underlays. So the cards
    in a region cast onto it, which is what they do on a table. */
 /* A well, not a card. --paper-card is a shade *brighter* than the board because
    an item is a sheet lying on it; a region is the opposite gesture - it is a part
@@ -60,7 +60,7 @@
    marked off on the paper is still the paper, so it has the tooth of it, and
    taking the same image and the same dials rather than inventing a second texture
    is what keeps that true when the look changes. --grain is the look's dial and
-   --grain-fade is the zoom's, written onto :root by canvas/grain.js; below 40% the
+   --grain-fade is the zoom's, written onto :root by canvas/grain.ts; below 40% the
    board's grain goes and this goes with it.
 
    The pitch and the weight are its own - see the rule below, which is where that
@@ -75,7 +75,7 @@
    The phase is the element's own corner rather than the world origin, so a
    fence's grain does not continue the board's exactly. That is deliberate and
    costs nothing to see: the grain is isotropic noise, which is the property
-   grain.js leans on for the moire argument, and noise has no period for an eye
+   grain.ts leans on for the moire argument, and noise has no period for an eye
    to catch across a seam. What marks the edge of a region is the tint and the
    dashed rule, which are marks somebody made.
 
@@ -193,7 +193,7 @@
    overlapping card would otherwise raise - there is no "did that press mean the
    fence or the photo on top of it", because the fence's face is never a target.
 
-   The shadow twin is not built for this type at all (canvas/items.js), so there
+   The shadow twin is not built for this type at all (canvas/items.ts), so there
    is nothing to exclude here.
 
    It has to be said on `.item` and not on `.item-body`, which is where it was
@@ -219,7 +219,7 @@
    enough that the region visibly disagrees with the cards inside it, which keep
    their own leans and do not turn with it.
 
-   canvas/items.js already declines to deal one a resting lean, for a reason of
+   canvas/items.ts already declines to deal one a resting lean, for a reason of
    its own (the one-in-three straight is a property of the pack, so a region must
    not take a slot out of it). This is the other half: --tilt is the *drag* lean,
    which is set by state and not by the deal, and a region does not pick up a
@@ -232,7 +232,7 @@
 /* And it rises without growing.
 
    Hovering a region now lifts its cards with it (setHoverGroup in
-   canvas/items.js, over travelling()), which only reads as one object if all of
+   canvas/items.ts, over travelling()), which only reads as one object if all of
    them move the same way - and the grow does not. A scale is about the element's
    own centre, so a 3% swell moves a card a pixel or two and moves the corner of a
    two-thousand-unit region thirty: the border would pull away from the very cards
@@ -279,7 +279,7 @@
    fixed number that would then be wrong at the other end of the range.
 
    The container is the .item and not .fence-card, because the plate is the item's
-   child and not the card's - see bottomBar() in canvas/items.js.
+   child and not the card's - see bottomBar() in canvas/items.ts.
 
    The clamp is the whole design. 2.8% of the width is a heading on an ordinary
    fence; the floor keeps a small one legible, and the ceiling stops a fence drawn

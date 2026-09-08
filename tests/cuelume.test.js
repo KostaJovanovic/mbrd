@@ -71,8 +71,9 @@ test('every recipe is either named by a cue or on record as spare', () => {
     'a recipe nothing plays has to be a line in IDLE_SOUNDS with the reason - '
     + 'either put it back in the table, take it out of the palette, or say why '
     + 'it is being kept. The one thing it may not do is quietly stop sounding.');
-  // The other direction, and the one that rots: a spare that has been given a
-  // job again is a comment describing something that is no longer true.
+  // The other direction, and the one that rots: a spare can be given a job
+  // again. Its line in IDLE_SOUNDS is then a comment describing something that
+  // is no longer true.
   const claimed = IDLE_SOUNDS.filter(name => used.has(name));
   assert.deepEqual(claimed, [], `listed as spare but a cue plays it: ${claimed.join(', ')}`);
 });

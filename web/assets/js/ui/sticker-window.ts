@@ -2,7 +2,7 @@
 // board.
 //
 // Modelled on the Playlist's Desktop window and sharing its two gestures
-// outright (ui/float-window.js) - draggable by its title bar, resizable by its
+// outright (ui/float-window.ts) - draggable by its title bar, resizable by its
 // corner. What is different is what it is *for*: the player window shows you
 // the board's own contents, and this one is a drawer of things that are not on
 // the board yet. So it is a grid rather than a list, it is on both layouts
@@ -49,8 +49,8 @@ import type { Viewport } from '../canvas/viewport.ts';
 
 /**
  * What this window asks of the command surface: one verb. Handed in by
- * initStickerWindow() rather than imported, the same seam ui/toolbar.js and
- * ui/hud.js state - commands.js imports this module, and the arrow only goes
+ * initStickerWindow() rather than imported, the same seam ui/toolbar.ts and
+ * ui/hud.ts state - commands.ts imports this module, and the arrow only goes
  * one way.
  */
 export interface StickerCommands {

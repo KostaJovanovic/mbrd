@@ -41,14 +41,6 @@
  */
 const NAME = /\bmbrd\b\.?/g;
 
-/**
- * `text`, as nodes, with every occurrence of the name wrapped for the stylesheet.
- *
- * A fragment rather than an element, so a caller can drop it into whatever it
- * already has without an extra wrapper appearing in the middle of a sentence.
- * A string with no occurrence comes back as a single text node, which is the
- * same thing `textContent` would have made.
- */
 /** A run of `text`, and whether it is the name or the prose around it. */
 export type Segment = { text: string, mark: boolean };
 
@@ -82,6 +74,14 @@ export function segments(text: string): Segment[] {
   return out;
 }
 
+/**
+ * `text`, as nodes, with every occurrence of the name wrapped for the stylesheet.
+ *
+ * A fragment rather than an element, so a caller can drop it into whatever it
+ * already has without an extra wrapper appearing in the middle of a sentence.
+ * A string with no occurrence comes back as a single text node, which is the
+ * same thing `textContent` would have made.
+ */
 export function markName(text: string): DocumentFragment {
   const frag = document.createDocumentFragment();
   for (const seg of segments(text)) {

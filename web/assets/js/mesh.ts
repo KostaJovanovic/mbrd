@@ -1,10 +1,10 @@
 // Reading a 3D model, by hand.
 //
-// Eleven formats now, and the door in front of all of them. It began as three,
+// Twelve formats now, and the door in front of all of them. It began as three,
 // chosen because between them they covered what actually lands on a moodboard -
 // an STL off a printer or a scanner, an OBJ out of almost any modeller, and a
 // GLB, which is what the web has settled on - and the argument for the other
-// eight is the same argument one step further: a dropped folder of somebody's
+// nine is the same argument one step further: a dropped folder of somebody's
 // work has a .3mf from their slicer, a .ply off their scanner, a .fbx from
 // whoever they hired, and a .step from their machinist, and every one of those
 // was a grey card with a filename on it.
@@ -20,7 +20,7 @@
 // **What lives where.** This file holds the door - meshKind(), parseMesh() and
 // the up-axis question - plus the three original readers, because they are the
 // three that need nothing but themselves. Everything shared moved down to
-// mesh/shared.ts, and each of the other eight formats is its own module beside
+// mesh/shared.ts, and each of the other nine formats is its own module beside
 // it. The layering is one way and shallow: mesh.ts imports mesh/*, and mesh/*
 // imports mesh/shared.ts and consent.ts and nothing else.
 //
@@ -95,7 +95,7 @@ const VIEWLESS_MAX = 100_000;
 const MAX_NODE_DEPTH = 4096;
 const MAX_NODE_VISITS = 1_000_000;
 
-// The per-parse ceilings live in mesh/shared.ts now, because eleven readers
+// The per-parse ceilings live in mesh/shared.ts now, because twelve readers
 // share them rather than three. `CAPS` is the record, liftCaps() raises it for
 // the one caller entitled to - the one that asked - and resetCaps() puts it
 // back. The argument for holding them in module state at all is in that file's
@@ -256,7 +256,7 @@ const GUESSED: Set<unknown> = new Set(['stl', 'obj', 'ply', '3ds', '3mf', 'amf',
 export const upAxisIsGuessed = (kind: string | null) => GUESSED.has(kind);
 
 /** One kind, one reader. A table rather than a chain of `if`s because there are
- *  eleven of them now and a chain that long is a place to lose one. */
+ *  twelve of them now and a chain that long is a place to lose one. */
 const PARSERS: Record<MeshKind, (bytes: ArrayBuffer) => Mesh> = {
   stl: parseSTL,
   obj: parseOBJ,
@@ -1110,7 +1110,7 @@ function normalMatrix(m: Matrix): Matrix {
 }
 
 // The bounding box, the normals and finish() moved to mesh/shared.ts when this
-// stopped being three readers and became eleven. They are imported at the top,
+// stopped being three readers and became twelve. They are imported at the top,
 // and there is nothing left down here but the glTF-specific wording below.
 
 /**

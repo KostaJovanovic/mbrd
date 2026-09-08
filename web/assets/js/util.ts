@@ -1,7 +1,7 @@
 // Small shared helpers. Deliberately dependency-free - and now actually small.
 //
 // This file said the same sentence for a year while holding seven unrelated
-// concerns, and forty-four modules imported it - tied with state.js for the
+// concerns, and forty-four modules imported it - tied with state.ts for the
 // highest fan-in in the codebase. Almost none of them wanted what was in here.
 // A module that wanted clamp() got a hand-written SHA-256, a toast renderer, a
 // progress bar, a localStorage wrapper and a waveform SVG builder along with
@@ -21,7 +21,7 @@
 // adding it here instead is how this file got the way it was.
 //
 // Deliberately not a barrel. There are no re-export shims for the five that
-// left: unlike state.js, which is a facade on purpose, this was never a door,
+// left: unlike state.ts, which is a facade on purpose, this was never a door,
 // and a shim would let the fan-in stay exactly where it was while looking as
 // though it had been fixed. Every call site names the module it means.
 //
@@ -175,7 +175,7 @@ export function caretToEnd(node: Node) {
  * works. One spelling means one answer.
  *
  * Not cached. getComputedStyle is a style flush, so this is not free and must
- * not be called per frame - canvas/grid.js says so at its own call site - but a
+ * not be called per frame - canvas/grid.ts says so at its own call site - but a
  * cache here would be wrong rather than merely slow: the tokens change under
  * the whimsy dial, the palette and the theme, and a stale value would be an
  * interface that is one look behind.
@@ -188,8 +188,8 @@ export const readToken = (name: string) =>
  *
  * Every shuffle in the app wants an unbiased one and there is exactly one way
  * to write it, so it is written here rather than a fourth time: dealing the
- * tilt bag in canvas/items.js, re-dealing the layout order in main.js/rearrange,
- * and the shuffle queue in canvas/playlist-queue.js. `rnd` defaults to
+ * tilt bag in canvas/items.ts, re-dealing the layout order in main.ts/rearrange,
+ * and the shuffle queue in canvas/playlist-queue.ts. `rnd` defaults to
  * Math.random; a seeded caller (a reproducible Rearrange in arrange/) passes its
  * own generator so the same board deals the same order twice.
  */
@@ -359,8 +359,8 @@ export const isHash = (v: unknown): v is string =>
 /**
  * A CSS family name a board is allowed to carry, for a face dropped into it.
  *
- * Here beside isHash for exactly the same reason: state.js holds the field to
- * this shape on the way in from a file, ui/fonts.js builds names that satisfy
+ * Here beside isHash for exactly the same reason: state.ts holds the field to
+ * this shape on the way in from a file, ui/fonts.ts builds names that satisfy
  * it, and those two do not import each other.
  *
  * The alphabet is the point. This string is substituted into a real declaration
@@ -375,8 +375,8 @@ export const isFamily = (v: unknown): v is string =>
 
 /**
  * Every content id an item depends on: its own bytes, the picture it was given
- * (see setItemCover in state.js), and - for a model - the still that stands in
- * for it until somebody asks to turn it over (see canvas/model.js).
+ * (see setItemCover in state.ts), and - for a model - the still that stands in
+ * for it until somebody asks to turn it over (see canvas/model.ts).
  *
  * Here beside isHash for the same reason isHash is here - the packer, the
  * autosave sweep, that sweep's error message and the session restore all need
@@ -430,7 +430,7 @@ export const itemHashes = (
  *
  * A function, and memoised, rather than the constant this used to be. A
  * constant meant `location` was read the moment this module was imported, and
- * because almost everything imports util.js that made the whole app impossible
+ * because almost everything imports util.ts that made the whole app impossible
  * to load anywhere without a `location` - which is to say, impossible to test
  * outside a browser. The answer cannot change within a document, so the read
  * still happens exactly once; it just happens on the first ask instead of on

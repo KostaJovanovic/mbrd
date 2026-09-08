@@ -3,11 +3,11 @@
 // Everything `cmds` delegates to rather than inlines: the save button's
 // cooldown, "Reset size", the three-press guard in front of Clear everything,
 // Rearrange, Reload board, Restart, and Scale from item. They were the second
-// half of main.js and they belong together for one reason - each is a whole
+// half of main.ts and they belong together for one reason - each is a whole
 // small policy about a single control, written down where the control's
 // behaviour can be read in one sitting rather than inferred from a handler.
 //
-// Nothing here is wired to an element. These are called by commands.js, and the
+// Nothing here is wired to an element. These are called by commands.ts, and the
 // two paint functions are called by their own state machines. `vp` is handed in
 // by initBoardActions() so nothing touches a browser global at import time.
 //
@@ -440,7 +440,6 @@ export function reloadBoard() {
   // below. That rebuilds the web, but build() keeps a stored route for as long
   // as its two ends have not moved - so a route that came out wrong would
   // survive the one command whose whole job is to put a drifted board right.
-  // See resetWeb().
   resetWeb();
   syncBoardMode();
   bus.emit('items');
@@ -684,7 +683,7 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
   // called "Rearrange everything" that does nothing the second time you press
   // it reads as broken.
   //
-  // The seed changes where the slots are (see arrangements.js). Without it the
+  // The seed changes where the slots are (see arrangements.ts). Without it the
   // board comes back in the identical shape with the cards swapped around,
   // which from any distance is the same picture - and zoomed out far enough to
   // see a whole rearrangement at once, cards are shapes and not subjects.
@@ -729,7 +728,7 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
     // it meets them in. `free` rather than `laid`, and that is the point of the
     // fork - the shuffle above exists to re-deal a set of 2D slots, and dealt
     // into a Mobile order it would scramble the very sequence the order just
-    // chose. See MOBILE_ARRANGEMENTS in arrange/arrangements.js.
+    // chose. See MOBILE_ARRANGEMENTS in arrange/arrangements.ts.
     // SAFETY: the cast holds because mobileOrder() hands back the very items it
     // was given, in a new order - ArrangeItem is only the narrower shape it
     // reads them through, and every ORDERS entry is a permutation of its input.

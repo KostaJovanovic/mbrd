@@ -36,7 +36,7 @@
    to, and it is a min- rather than a fixed height for one reason: the trim
    offer. That row appears only past 2 MB of history, wraps to a line of its
    own, and is allowed to make the strip taller for as long as it is up.
-   measure() in ui/timeline-view.js reads the height back into --tl-h every
+   measure() in ui/timeline-view.ts reads the height back into --tl-h every
    time, so the player steps over whatever this actually comes to rather than
    over a number written twice. */
 #timeline-strip {
@@ -232,7 +232,7 @@
   gap: var(--tl-gap);
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: thin;
+  /* The scrollbar is base.css's - see the note in sidebar.css. */
 }
 
 /* One step: a mark, with a rule reaching to the one before it.
@@ -365,7 +365,8 @@
    tier's accents are neon (#d5fa00 on absinthe, #0fffed on orca). --paper-card
    stays a near-white on all of them, so this glyph - whose entire job is "you
    are here" - was printing white on acid yellow and white on cyan. The rule is
-   at cards.css:356 and this is the third place it had to be learned. */
+   at .note-toolbar .ntb-btn.is-active in cards.css, and this is the third place
+   it had to be learned. */
 #timeline-strip .tl-step.is-at .tl-dot {
   background: var(--accent);
   color: var(--accent-fg);
@@ -522,7 +523,7 @@
   margin: 0 0 4px;
   padding: 0;
   list-style: none;
-  scrollbar-width: thin;
+  /* The scrollbar is base.css's - see the note in sidebar.css. */
 }
 
 /* The rule between rows belongs to the row and everything else to the button

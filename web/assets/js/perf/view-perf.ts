@@ -1,6 +1,6 @@
 // The view-change frame, profiled - a dev tool and nothing else.
 //
-// Lifted out of main.js, where it was a 340-line IIFE in the middle of the
+// Lifted out of main.ts, where it was a 340-line IIFE in the middle of the
 // wiring point. Nothing here runs on a board that never opens the console: the
 // view listener reads `.active` and skips its two performance.now() marks while
 // this is off, so the shipped path pays one boolean read per frame.
@@ -41,7 +41,7 @@ export function createViewPerf(vp: { apply(): void }) {
   // over a debugging cable. Desktop gets it too - a live number beside the
   // gesture is worth more than one printed after it.
   let hud: HTMLDivElement | null = null, hudText: HTMLDivElement | null = null, hudAt = 0;
-  // JS cost of the main.js view listener, per view frame.
+  // JS cost of the main.ts view listener, per view frame.
   let gridMs = 0, restMs = 0, frames = 0, worstFrame = 0;
   // True frame cadence: the interval between animation frames, but recorded only
   // on frames where the view actually moved (a sample() landed since the last
@@ -286,8 +286,8 @@ export function createViewPerf(vp: { apply(): void }) {
   /**
    * Whether the last frame carried the readout, and so must not be measured.
    *
-   * The profiler's own work lands in the interval it is about to report: a
-   * sort of up to eight thousand numbers, four filter passes and a text node
+   * The profiler's own work lands in the interval it is about to report: one
+   * sort over up to eight thousand numbers, four filter passes and a text node
    * rewrite, all inside the rAF callback whose *next* gap they lengthen. Four
    * times a second, that inflates `2f`, `3f+` and `offbeat` - and it inflates
    * them most on the slow devices the readout exists for, which is the one
@@ -413,7 +413,7 @@ export function createViewPerf(vp: { apply(): void }) {
  * and the on-screen readout comes up on its own. Harmless anywhere else.
  *
  * The three Mobile kill switches ride it too, because they are for exactly the
- * device that cannot be typed into - see mobilePerfFlags in canvas/viewport.js.
+ * device that cannot be typed into - see mobilePerfFlags in canvas/viewport.ts.
  * One run is one digit:
  *
  *   #perf    what shipped

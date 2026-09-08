@@ -2,10 +2,10 @@
 // session, and hand out the command set the sidebar and keyboard both drive.
 //
 // The wiring point and nothing else. What used to live here has moved out to
-// the modules that own it - `commands.js` has the command surface,
-// `ui/hud.js` the corner readouts, `ui/board-title.js` the board's name,
-// `ui/board-actions.js` the commands that needed more than a one-liner,
-// `ui/board-view.js` the framing, `perf/view-perf.js` the profiler. What is
+// the modules that own it - `commands.ts` has the command surface,
+// `ui/hud.ts` the corner readouts, `ui/board-title.ts` the board's name,
+// `ui/board-actions.ts` the commands that needed more than a one-liner,
+// `ui/board-view.ts` the framing, `perf/view-perf.ts` the profiler. What is
 // left is the order things are brought up in, the subscriptions that cross
 // subsystems, and the lifecycle.
 //
@@ -88,6 +88,7 @@ import { initScaleBar } from './ui/scalebar.ts';
 import { initDrawer } from './ui/drawer.ts';
 import { initNowPlaying } from './ui/nowplaying.ts';
 import { initToolbar } from './ui/toolbar.ts';
+import { initWindowChrome } from './ui/window-chrome.ts';
 import { initFlyouts } from './ui/flyout.ts';
 import { initStickerWindow } from './ui/sticker-window.ts';
 import { initAppearance, resetAppearance, setWhimsy } from './ui/appearance.ts';
@@ -114,7 +115,7 @@ import { initBoardActions, resetSave } from './ui/board-actions.ts';
 // the toast and the waiting strip are how the app reports that something went
 // wrong, which makes them the worst possible thing to wire late. notify.ts is
 // the door every layer below ui/ says things through - it has to be, since a
-// base or storage module importing ui/overlays.js is a layering inversion
+// base or storage module importing ui/overlays.ts is a layering inversion
 // (tests/layers.test.js) - and until this call it forwards to nobody and every
 // message is silently dropped. Same injection shape as setAssetNameLookup() and
 // setPrompt() below; this one goes first because a lost toast is not an error,
@@ -211,9 +212,9 @@ const vp = new Viewport(el('viewport')!, el('world')!, el('origin-mark')!);
 // The three modules that only need the viewport handed to them, before anything
 // that calls into them. None of these touches the DOM.
 //
-// ui/appearance.js is handed to createCommands() rather than imported by it:
+// ui/appearance.ts is handed to createCommands() rather than imported by it:
 // appearance is one of the three modules allowed a browser global at import
-// time, and commands.js importing it would make that module unloadable without
+// time, and commands.ts importing it would make that module unloadable without
 // a DOM. The same injection shape as setAssetNameLookup() and setPrompt() below.
 initBoardView(vp);
 initBoardActions(vp);
@@ -304,14 +305,14 @@ armQuality();
 // the two never meet: that one plays the board's *content* - somebody's
 // recording, because it was asked for - through <audio> elements, and this
 // synthesises hundred-millisecond blips through Web Audio. (There is a third,
-// and it reaches no speaker at all: canvas/waveform.js and optimize/opus.js
+// and it reaches no speaker at all: canvas/waveform.ts and optimize/opus.ts
 // render into an OfflineAudioContext.)
 //
 // Here rather than beside initAudio(), for the reason armQuality() is above
 // buildPanel(): the panel's Sounds dial paints itself from soundLevel() as it
 // is generated, and until this call that is the default rather than what was
 // stored. The volume slider one line down in the same section has the opposite
-// requirement - canvas/audio.js takes that element *out* of the panel - which
+// requirement - canvas/audio.ts takes that element *out* of the panel - which
 // is why the two sit either side of it.
 //
 // Skipped on the changelog, like initIdle() further down and for the reason
@@ -321,8 +322,8 @@ armQuality();
 // mechanism - there is no page check inside it.
 if (!isPatch) initCuelume();
 // The panel's DOM, before every module that reaches into it by id:
-// ui/appearance.js takes the whimsy slider, the palette menu and three hosts,
-// canvas/audio.js takes the volume slider, and ui/sidebar.js takes the board
+// ui/appearance.ts takes the whimsy slider, the palette menu and three hosts,
+// canvas/audio.ts takes the volume slider, and ui/sidebar.ts takes the board
 // name. None of them should have to learn that the panel is generated now.
 buildPanel();
 // Before initAppearance, so the type menus are built once with the board's own
@@ -330,7 +331,7 @@ buildPanel();
 initFonts();
 // The grid's marks at Harsh are drawn rather than composed from gradients, so
 // unlike every other tier they cannot follow a custom property on their own -
-// see canvas/grid.js. Every edit to a look hands the resolved colours back and
+// see canvas/grid.ts. Every edit to a look hands the resolved colours back and
 // repaints; the other tiers repaint for nothing, which is four gradients.
 // forgetLookInk() is all three of the caches that go stale together - the grid's
 // colours, the ink an uncoloured model card's still is stamped in (a slider drag
@@ -351,7 +352,7 @@ initFarLands(vp);
 initAudio();
 // paintGrain too: the two layouts keep their stock on different surfaces - the
 // full-bleed layer on Desktop, the sheet itself on Mobile - so a mode switch
-// hands the grain to an element that has never been placed. See canvas/grain.js.
+// hands the grain to an element that has never been placed. See canvas/grain.ts.
 // And the hint cards are minted again for the layout that is now live. They are
 // the one thing on an empty board that cannot carry two geometry profiles: every
 // real item is completed into the profile it is missing from, but a hint is
@@ -361,8 +362,8 @@ initAudio();
 // width, stacked down the middle of an infinite board.
 //
 // Here rather than inside setBoardMode(), for the reason ensureGhostCards() is
-// called from this file at all: layout.js is a floor under state.js and may not
-// import it back, and seeding a hint is a state write. main.js already owns both
+// called from this file at all: layout.ts is a floor under state.ts and may not
+// import it back, and seeding a hint is a state write. main.ts already owns both
 // of the other seeding sites.
 bus.on('layout', () => { reseedGhostCards(); syncBoardMode(true); paintGrain(vp); });
 syncBoardMode();
@@ -436,7 +437,7 @@ initSearch(vp);
 // menu button went and the sidebar could not be opened at all. See the same
 // trap, from the other side, in research/old/ui-audit-2026-08-13.md.
 if (!isPatch) initIdle(vp);
-// Video posters, made in the background from here on - see optimize/backfill.js.
+// Video posters, made in the background from here on - see optimize/backfill.ts.
 // Not on the changelog either, and for a harder reason than the fade above: the
 // page freezes the cache and the preferences so a reader records nothing, and
 // this pass *writes to the board* (a poster and its thumbnail, then a dirty
@@ -462,6 +463,13 @@ initHud(vp, cmds);
 // inside initHud() as the phone's add bar. Handed cmds for the same reason: its
 // buttons are data-cmd and nothing else.
 initToolbar(cmds);
+// The window's own frame, where the shell does not draw one - a drag band and
+// three buttons in the free top-right corner. Nothing at all in a browser: it
+// asks platform.frame.own() first and returns. No ordering requirement, which
+// is why there is no row for it in tests/boot-order.test.js; it reads two
+// elements that are in the static markup and takes `cmds` for the same reason
+// the toolbar above it does.
+initWindowChrome(cmds);
 // What is behind three of those buttons, shown by hovering them. After the
 // toolbar because it marks the bar's own markup with aria-haspopup, and after
 // initMenu() because the panel it opens is that module's and the close hook it
@@ -526,7 +534,7 @@ let viewSettle = 0;
 // can time the grid alone against the rest without duplicating it.
 const afterGrid = () => {
   // Inside the profiled listener rather than on a subscription of its own, and
-  // that is the whole reason it is called from here. canvas/grain.js registers
+  // that is the whole reason it is called from here. canvas/grain.ts registers
   // before this file does, so a self-subscribed paint would run ahead of the
   // t0 below and land in neither half of the sample - the one full-screen
   // re-raster on the pan path would have been the one thing mbrd.perf could not
@@ -637,7 +645,7 @@ bus.on('board:load', () => {
   // app adds it here, and the payloadless 'items' emit that follows loadBoard()
   // mounts it. A board that carries or deleted its card is left untouched.
   ensureTitleCard();
-  // And the hint cards, on the same terms and for the same reason: state.js
+  // And the hint cards, on the same terms and for the same reason: state.ts
   // keeps loadBoard() free of both so its own tests can load and serialise an
   // exact item set. A board arriving with anything on it gets none - the latch
   // was set from its contents inside loadBoard().

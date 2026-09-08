@@ -13,8 +13,8 @@
    which is one file rather than two.
 
    Playfair stays declared because it is still a face you can choose - both font
-   menus offer it by name (DISPLAY_FACES in ui/appearance.js and
-   BUILTIN_HEADER_FACES in ui/fonts.js), and a board that picked it keeps it.
+   menus offer it by name (DISPLAY_FACES in ui/appearance.ts and
+   BUILTIN_HEADER_FACES in ui/fonts.ts), and a board that picked it keeps it.
    No default reaches for it, so on a board that has not, the four files below
    are bytes the service worker precaches and the page never asks for. That is
    the price of leaving the face on the menu; dropping it from SHELL in sw.js is

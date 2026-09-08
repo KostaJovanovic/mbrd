@@ -5,8 +5,8 @@
 // needs a single engine the whole board shares rather than an <audio> per row -
 // so this is it. One long-lived element plays whatever track the queue points
 // at; the rows are just a list that calls playTrack(), and the now-playing bar
-// drives it with the transport canvas/transport.js builds plus the four buttons
-// ui/nowplaying.js adds.
+// drives it with the transport canvas/transport.ts builds plus the four buttons
+// ui/nowplaying.ts adds.
 //
 // It registers like any other player, so exclusivity still holds: starting a
 // card pauses the queue and starting the queue pauses a card. nowPlaying() names
@@ -15,7 +15,7 @@
 //
 // ── Why this is a file and not a section ──
 //
-// It is one *policy* about what plays next, sitting on canvas/audio.js's
+// It is one *policy* about what plays next, sitting on canvas/audio.ts's
 // invariant that only one thing plays at all. The two were interleaved in one
 // module and read as one subject, which they are not: the invariant is not
 // negotiable and this is a set of choices - that prev restarts a track within
@@ -33,7 +33,7 @@
 //
 // Which is also why the teardown is a subscription rather than a call. The
 // element the queue is driving may be a card's, and a card can be thrown away
-// underneath it: canvas/audio.js announces every release through
+// underneath it: canvas/audio.ts announces every release through
 // onPlayerReleased() and this drops its two references when the element it hears
 // about is the one it holds. The reverse - the engine reaching in here - is the
 // import that would make these two files a cycle, and the cycle would be true.
@@ -45,8 +45,8 @@
 // not; a second copy of any of them in here would be a second answer to a
 // question that has one.
 //
-// Nor any DOM. The rows, the buttons and the transport are ui/playlist.js and
-// canvas/transport.js. This module has an <audio> and no elements - the shared
+// Nor any DOM. The rows, the buttons and the transport are ui/playlist.ts and
+// canvas/transport.ts. This module has an <audio> and no elements - the shared
 // player is not a node anybody sees, it is a decoder with a volume.
 
 import type { Item } from '../board-model.ts';
@@ -244,7 +244,7 @@ function queueRefused(this: HTMLMediaElement): void {
 /**
  * Drop what this file holds on an element that is being destroyed.
  *
- * Registered at load rather than wired from main.js, for the reason
+ * Registered at load rather than wired from main.ts, for the reason
  * onPlayerReleased()'s own comment gives: there is one queue and one thing to
  * clean up, so this is not a decision about assembly that a boot sequence should
  * be able to get wrong. Without it, endedBound keeps an orphaned element and its
@@ -422,7 +422,7 @@ export function queuePrev(): void {
 /**
  * Whether a track that has ended may start the next one *anyway*.
  *
- * Injected by the interface (ui/nowplaying.js/playlistOpen) rather than asked
+ * Injected by the interface (ui/nowplaying.ts/playlistOpen) rather than asked
  * for, because the answer is "is the playlist on screen" and this module sits
  * below ui/ - the same one-way seam setAssetNameLookup and setPrompt take, kept
  * that way by tests/layers.test.js. Unset - in a test, or before the bar is

@@ -1,11 +1,11 @@
 // The Mobile strip's sheet and masthead, in screen space.
 //
-// Both used to be positioned by canvas/viewport.js, from five custom properties
+// Both used to be positioned by canvas/viewport.ts, from five custom properties
 // written onto #viewport on every frame of every scroll. #viewport is an
 // ancestor of #world, and custom properties are inherited, so changing one of
 // them invalidated the computed style of the whole subtree - every mounted card
 // and everything inside it. That is the same cost --iz is documented as
-// carrying in viewport.js, paid on the one layout that has no zoom at all and
+// carrying in viewport.ts, paid on the one layout that has no zoom at all and
 // therefore never writes --iz. Two elements read those properties; the entire
 // board paid for them.
 //
@@ -18,7 +18,7 @@
 //   of constant width at a constant x running the full height of the window -
 //   the same rectangle, frame after frame. Clipping it to the viewport and
 //   comparing against what was last written therefore costs nothing on the
-//   frames that matter and writes only at the two ends. canvas/grid.js's
+//   frames that matter and writes only at the two ends. canvas/grid.ts's
 //   inkBox()/placeInk() pair is the same idea for the lattice, including
 //   squaring off the radius on an edge that has scrolled away, and this follows
 //   it deliberately rather than inventing a second way to say it.
@@ -76,7 +76,7 @@ export function initMobileFrame(viewport: Viewport | null | undefined): void {
   vp = viewport || null;
   if (!vp || !vp.el) return;
   // Queried off the viewport rather than the document, and tolerant of their
-  // absence, for the same reason canvas/grid.js's ensureCanvas() is: the render
+  // absence, for the same reason canvas/grid.ts's ensureCanvas() is: the render
   // harnesses mount a bare #viewport without the rest of the page around it.
   // #mobile-surround needs no reference at all - it is a static wash that canvas.css
   // shows in Mobile and hides everywhere else, and no frame ever touches it.
@@ -85,12 +85,12 @@ export function initMobileFrame(viewport: Viewport | null | undefined): void {
   if (!frameEl || !mastEl) return;
   // Straight onto the change event rather than through a throttle of its own -
   // the event is already emitted from inside the viewport's rAF, so this paints
-  // on the same frame the grid and the axes do. See the same note in paper.js.
+  // on the same frame the grid and the axes do. See the same note in paper.ts.
   vp.onChange(draw);
   draw();
 }
 
-/** Exported for main.js's boot sequence, which paints once before the first frame. */
+/** Exported for main.ts's boot sequence, which paints once before the first frame. */
 export const paintMobileFrame = () => draw();
 
 function draw() {
@@ -106,7 +106,7 @@ function draw() {
   wasMobile = true;
 
   // The upper bound on what any of this can be costing - see mobilePerfFlags.
-  // main.js's setter adds the class that hides the two elements; this skips the
+  // main.ts's setter adds the class that hides the two elements; this skips the
   // writes that would otherwise still be happening behind it.
   if (!mobilePerfFlags.chrome) return;
 
@@ -158,6 +158,9 @@ export function sheetBox(r: MobileScreenRect, width: number, height: number): Sh
   };
 }
 
+/** Whether the masthead band is on screen at all, and where its top sits. */
+export type MastShift = { visible: boolean; y: number };
+
 /**
  * Where the masthead stands, and whether it is worth writing at all.
  *
@@ -169,9 +172,6 @@ export function sheetBox(r: MobileScreenRect, width: number, height: number): Sh
  * Pure for the same reason as sheetBox() - "does the band go away when it
  * leaves the screen" is a question with a right answer at each end of a board.
  */
-/** Whether the masthead band is on screen at all, and where its top sits. */
-export type MastShift = { visible: boolean; y: number };
-
 export function mastShift(
   r: Pick<MobileScreenRect, 'top'>,
   headerH: number,
@@ -211,7 +211,8 @@ function paintSheet(r: MobileScreenRect) {
  * column count, the position to every frame of a scroll.
  */
 function paintMasthead(r: MobileScreenRect, headerH: number) {
-  // Only ever reached from draw(), which has already tested both.
+  // As in paintSheet() above: only ever reached from draw(), which has already
+  // tested both.
   if (!vp || !mastEl) return;
   const box = `${r.left},${r.width},${headerH}`;
   if (box !== lastMast) {

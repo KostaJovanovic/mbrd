@@ -87,11 +87,6 @@ html, body {
   overflow-y: visible;
 }
 
-html {
-  scrollbar-width: thin;
-  scrollbar-color: var(--rule-2) transparent;
-}
-
 body {
   /* The containing block for the grain below, which is now as tall as the
      changelog rather than as tall as the window. min-height keeps a short page

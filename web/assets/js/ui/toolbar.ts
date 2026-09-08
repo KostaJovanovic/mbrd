@@ -2,13 +2,13 @@
 //
 // Three jobs. It presses commands - every button in the markup carries a
 // data-cmd and this module resolves it against the command surface, exactly as
-// ui/sidebar.js does for the panel. On a phone it owns the open/closed state of
+// ui/sidebar.ts does for the panel. On a phone it owns the open/closed state of
 // the tier the buttons live in, because at that width the bar is a drawer
 // rather than a strip. And it holds the connector tool's armed state, which is
 // the one thing on this bar that is a *mode* rather than an action.
 //
 // It deliberately knows nothing about what any of those commands do. A tool is
-// added by writing a button in index.html and an entry in commands.js; nothing
+// added by writing a button in index.html and an entry in commands.ts; nothing
 // here needs to hear about it, which is the same bargain the panel makes and
 // the reason a new user-facing action is one entry rather than three.
 //
@@ -35,7 +35,7 @@
 // rather than on the person doing it once.
 //
 // `cmds` is handed in by initToolbar() rather than imported, for the reason
-// ui/hud.js states: commands.js imports *this* module (Escape closes the
+// ui/hud.ts states: commands.ts imports *this* module (Escape closes the
 // drawer, and the connector tool is driven from there), and the arrow may only
 // go one way.
 
@@ -149,6 +149,25 @@ let armed = false;
 let pick: string | null = null;
 
 /**
+ * What one press of the connect tool decides: which card is now held, which pair
+ * is finished, whether the press was turned down, and whether the tool is now
+ * done.
+ *
+ * Named because five returns build it and the four fields are not independent -
+ * a `connect` and a `pick` together would be a state nothing draws, a `refused`
+ * with a fresh `pick` would say the tool both declined and advanced, and
+ * `disarm` without a `connect` would be the mode ending on a press that did
+ * nothing. Reading them off one type is what makes the five lines below
+ * comparable.
+ */
+export type ConnectStep = {
+  pick: string | null;
+  connect: [string, string] | null;
+  refused: boolean;
+  disarm: boolean;
+};
+
+/**
  * What one press does, as a total function of the state and what was hit.
  *
  * Pure, and lifted out for that reason: this is the whole of the interaction,
@@ -190,25 +209,6 @@ let pick: string | null = null;
  * survived a reload, and was never drawn, and the only way to find out was to
  * read the file.
  */
-/**
- * What one press of the connect tool decides: which card is now held, which pair
- * is finished, whether the press was turned down, and whether the tool is now
- * done.
- *
- * Named because five returns build it and the four fields are not independent -
- * a `connect` and a `pick` together would be a state nothing draws, a `refused`
- * with a fresh `pick` would say the tool both declined and advanced, and
- * `disarm` without a `connect` would be the mode ending on a press that did
- * nothing. Reading them off one type is what makes the five lines below
- * comparable.
- */
-export type ConnectStep = {
-  pick: string | null;
-  connect: [string, string] | null;
-  refused: boolean;
-  disarm: boolean;
-};
-
 export function connectStep(
   from: string | null,
   id: string | null,
@@ -263,7 +263,7 @@ function setPick(id: string | null): void {
  *
  * Returns whether the connector took the press. False is the answer on every
  * ordinary board and on every press of an unarmed one, which is what keeps this
- * to a single boolean read on the pointer path in canvas/input.js.
+ * to a single boolean read on the pointer path in canvas/input.ts.
  *
  * `sticky` is that press's Shift key, handed in rather than read here: this
  * module has no event, and the pointer path already has the one that matters.
@@ -292,10 +292,10 @@ export function connectTap(id: string | null, sticky = false): boolean {
  * May a line reach this id?
  *
  * The same question the draw path asks, asked one gesture earlier. `centres()`
- * in canvas/web.js filters the ends it places through isJoinEnd(), so a pair
+ * in canvas/web.ts filters the ends it places through isJoinEnd(), so a pair
  * naming anything else is skipped every frame - which is invisible, permanent,
  * and survives a save. The selection door already asked it (`joinable` in
- * commands/connections.js); this is the tap door catching up.
+ * commands/connections.ts); this is the tap door catching up.
  *
  * isRider() is deliberately *not* part of it, though the draw path refuses that
  * too. A rider is a note stuck to something right now; unstick it and the line

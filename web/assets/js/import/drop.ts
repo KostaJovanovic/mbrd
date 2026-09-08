@@ -24,7 +24,7 @@ import { arrange, mobileOrder } from '../arrange/arrangements.ts';
 import { coverArt, mayHaveArt } from './artwork.ts';
 import { mediaFacts } from './containers.ts';
 import { embeddedPreview, NOT_PORTABLE, PORTABLE_MIN_EDGE } from './preview.ts';
-// Statically, unlike import/pdf.js below it: this one reaches storage/zip.js and
+// Statically, unlike import/pdf.ts below it: this one reaches storage/zip.ts and
 // nothing else, and the zip reader is already in memory - it is what opens every
 // .mbrd. There is no dependency to defer and so no reason to defer it.
 import { hasBakedPreview, bakedPreview } from './document.ts';
@@ -81,10 +81,10 @@ const isDirEntry = (e: FileSystemEntry): e is FileSystemDirectoryEntry => e.isDi
 /**
  * Extensions a browser can turn into a FontFace.
  *
- * Here rather than in ui/fonts.js because this is the question "what kind of
+ * Here rather than in ui/fonts.ts because this is the question "what kind of
  * file is this", which is this layer's job - and because naming it there and
  * importing it from here is the import edge the bus exists to avoid. Not in
- * formats.js either: that file is generated from the sibling catalog and would
+ * formats.ts either: that file is generated from the sibling catalog and would
  * lose a hand-written addition on the next run.
  */
 const FONT_EXTS = new Set(['woff2', 'woff', 'ttf', 'otf']);
@@ -259,7 +259,7 @@ export function initDrop(vp: DropViewport) {
     if (target instanceof HTMLElement && (target.isContentEditable || /INPUT|TEXTAREA/.test(target.tagName))) return;
     // Under the cursor when there is one (a mouse has moved over the board),
     // the centre of the view otherwise - a touch device, or a paste before the
-    // pointer has been anywhere. vp.cursor is screen space, set by input.js.
+    // pointer has been anywhere. vp.cursor is screen space, set by input.ts.
     const centre = vp.cursor
       ? vp.toWorld(vp.cursor.x, vp.cursor.y)
       : vp.toWorld(vp.left + vp.cx, vp.top + vp.cy);
@@ -302,7 +302,7 @@ export function initDrop(vp: DropViewport) {
   const input = fileInput();
   input.addEventListener('change', async () => {
     const mode = input.dataset.mode;
-    // Not ours. Either nobody set one, or storage.js has it open for a .mbrd and
+    // Not ours. Either nobody set one, or storage.ts has it open for a .mbrd and
     // said so - both are the same answer here, and asking positively means a
     // future third owner is refused rather than mistaken for content.
     if (mode !== 'content' && mode !== 'cover') return;
@@ -404,7 +404,7 @@ function pastedName(text: string): string {
 const PASTE_NAME_SKIP = /^ {0,3}(```|~~~|((\*\s*){3,}|(-\s*){3,}|(_\s*){3,})$)/;
 
 /**
- * Open the OS file picker for content (not for .mbrd - that's storage.js).
+ * Open the OS file picker for content (not for .mbrd - that's storage.ts).
  *
  * Every attribute the pickers disagree about is written here rather than
  * assumed, and the reason is the one path with no event at the end of it: a
@@ -432,7 +432,7 @@ export function pickFiles() {
  * The item waiting for a picture, between opening the picker and it answering.
  *
  * Module state rather than a closure because the one hidden input is shared
- * three ways - content here, .mbrd in storage.js, and this - and `mode` on
+ * three ways - content here, .mbrd in storage.ts, and this - and `mode` on
  * the element is how they stay out of each other's way.
  *
  * Cleared when it is read, *and* at the head of pickFiles(). Only the first was
@@ -442,7 +442,7 @@ export function pickFiles() {
  */
 let coverFor: string | null = null;
 
-/** Choose a picture for one card. See setItemCover() in state.js. */
+/** Choose a picture for one card. See setItemCover() in state.ts. */
 export function pickCover(id: string) {
   const input = fileInput();
   input.accept = 'image/*';
@@ -513,7 +513,7 @@ export async function importFiles(
   //
   // Announced rather than handled: registering a face means FontFace and
   // document.fonts, and this module has to stay loadable without a browser -
-  // see tests/imports.test.js. ui/fonts.js is listening.
+  // see tests/imports.test.js. ui/fonts.ts is listening.
   const fonts = files.filter(f => FONT_EXTS.has(extOf(f.name)));
   if (fonts.length) {
     bus.emit('fonts:add', fonts);
@@ -596,7 +596,7 @@ export async function importFiles(
   // Sequential on purpose, and this is the one place in the importer that is. The
   // work pool below runs six at a time, but a queue of dialogs is not work - two
   // questions on screen at once is one of them being answered by accident, and
-  // ui/dialog.ts serialises them anyway. See import/budget.js and AUD-05.
+  // ui/dialog.ts serialises them anyway. See import/budget.ts and AUD-05.
   const budget = makeByteBudget();
   let overBudget = 0;
   const keep: File[] = [];
@@ -737,7 +737,7 @@ export async function importFiles(
       center: centre,
       spacing: board.settings.spacing,
       // A snapped Desktop drop is snapped item-by-item on the way in (onLattice
-      // in state.js), so the layout has to reserve whole cells or the same
+      // in state.ts), so the layout has to reserve whole cells or the same
       // rounding that overlaps a tight Rearrange overlaps a tight drop - see
       // arrange().
       cellStep: board.settings.snap ? baseStep() : 0,
@@ -779,7 +779,7 @@ export async function importFiles(
   toast(msg, failed.length ? 'error' : '');
 
   // Announced rather than acted on, and that is a layering constraint rather
-  // than a preference: ui/appearance.js reaches for `document` at import time,
+  // than a preference: ui/appearance.ts reaches for `document` at import time,
   // and tests/imports.test.js holds this file to loading without a browser -
   // which is what keeps the import pipeline testable in node at all. So this
   // says what happened and ui/ decides what that is worth.
@@ -788,7 +788,7 @@ export async function importFiles(
   // undo and a delete as well: "an import happened, and this is what it
   // brought" is a thing worth being able to hear on its own. The palette no
   // longer listens for it - a delete changes the board's colours as surely as
-  // an import does, so ui/appearance.js watches 'items' and compares the
+  // an import does, so ui/appearance.ts watches 'items' and compares the
   // pictures itself - but the announcement stands on its own terms.
   bus.emit('imported', added);
   return added;
@@ -917,18 +917,18 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
   let size: DraftSize | undefined;
   // A decodable stand-in pulled out of a picture the browser cannot draw (HEIC,
   // RAW), and the file it came from. Both stay null for everything else. See the
-  // undecodable branch below and import/preview.js.
+  // undecodable branch below and import/preview.ts.
   let previewHash: string | null = null;
   let previewFile: File | null = null;
   // A PDF is the same shape of problem as an undecodable photo: the app cannot
-  // draw it, but it can produce a picture of its first page (import/pdf.js, which
+  // draw it, but it can produce a picture of its first page (import/pdf.ts, which
   // loads the vendored pdf.js on demand). Handled exactly like the
   // embedded-preview path - the original PDF stays asset.hash and is still what a
   // click opens, while the rendered page becomes meta.preview and is what the card
   // shows. Any failure - a parse error, a page that will not draw, a first PDF on
   // a fresh install with no network - leaves size unset, so it falls through to
   // the named card it would otherwise have been, and says so in the console. This
-  // is the app's second outside-code dependency; see the header of import/pdf.js.
+  // is the app's second outside-code dependency; see the header of import/pdf.ts.
   if (isPdf(file)) {
     const { firstPageRaster } = await import('./pdf.ts');
     const page = await firstPageRaster(file).catch(() => null);
@@ -947,7 +947,7 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
   // Keynote deck and a PSD all ship a rendered thumbnail their own application
   // wrote for the file browser, at a known path inside a zip or in a known
   // record near the front of the file - so this costs a container read and no
-  // renderer, no library and no network. See import/document.js.
+  // renderer, no library and no network. See import/document.ts.
   //
   // After the PDF branch and gated on `size` for the reason it is: a hit here
   // has already decided what the card is, and nothing below should measure it a
@@ -984,7 +984,7 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
   // docProps/thumbnail is optional, current PowerPoint does not write it unless
   // somebody turns it on, and the exporters most decks arrive from never write
   // one at all, so the cheap path answers for almost no .pptx and the family was
-  // a grey card whatever was inside it. import/slide.js composites the first
+  // a grey card whatever was inside it. import/slide.ts composites the first
   // slide instead: the pictures at their real positions, the text at its real
   // size, the background behind both.
   //
@@ -1003,13 +1003,13 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
   // And a TIFF, which is the same shape of problem as all three above and the
   // one where the picture was simply out of reach: a scan or a print export is
   // a photograph in a container no engine but Safari decodes, with no embedded
-  // JPEG for import/preview.js to find and no thumbnail for import/document.js
-  // to look up. import/tiff.js decodes it outright, in a worker, through the
+  // JPEG for import/preview.ts to find and no thumbnail for import/document.ts
+  // to look up. import/tiff.ts decodes it outright, in a worker, through the
   // vendored UTIF - see the head of that file for what that costs and why it is
   // carried rather than fetched.
   //
   // Unconditional rather than gated on this engine failing to draw it, which is
-  // deliberate and is NOT_PORTABLE's argument in import/preview.js: a board made
+  // deliberate and is NOT_PORTABLE's argument in import/preview.ts: a board made
   // on the one browser that *can* draw a TIFF would otherwise travel to every
   // other browser as a grey card. The original file is untouched either way, and
   // this raster is `meta.preview` like every other stand-in.
@@ -1030,7 +1030,7 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
   // A decode bomb - a small file that declares enormous dimensions - is caught
   // from its header before measureSize() hands it to createImageBitmap(), which
   // would otherwise allocate gigabytes. Over budget it becomes a named card, the
-  // same fallback an undecodable image gets below. See import/budget.js.
+  // same fallback an undecodable image gets below. See import/budget.ts.
   //
   // Not asked about here, because it already was: importFiles() puts this file's
   // declared dimensions in the one warning it shows for the file, before any of
@@ -1049,7 +1049,7 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
     size = await measureSize(type, file);
     // A photo this browser can't decode - HEIC, JPEG XL, camera RAW - would
     // mount as a broken <img>. Before falling back to a named card, look inside
-    // it for the copy the camera already made (import/preview.js): most of these
+    // it for the copy the camera already made (import/preview.ts): most of these
     // formats carry a full-size or thumbnail JPEG the browser *will* draw. Found
     // and itself decodable, the card stays an image and draws that preview,
     // while asset.hash below still names the untouched original - so it costs the
@@ -1060,7 +1060,7 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
     // format *this* engine draws and others do not. Safari decodes HEIC, so the
     // test above never fired on an iPhone and the photograph travelled into the
     // .mbrd with nothing any other engine could draw. See NOT_PORTABLE in
-    // import/preview.js, and the note there on why iOS 27 makes this urgent.
+    // import/preview.ts, and the note there on why iOS 27 makes this urgent.
     const portable = !NOT_PORTABLE.has(extOf(file.name));
     if (type === 'image' && (!size.decodable || !portable)) {
       // The shell first, and everything below is unchanged.
@@ -1109,7 +1109,7 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
   // is. Read for every clip and every track, because it costs one slice of the
   // header and answers two questions this app otherwise has to ask a decoder -
   // and for the formats no engine here will open (AVI, WMV, AC-3, an .aac's
-  // true length) it is the only answer there is. See import/containers.js.
+  // true length) it is the only answer there is. See import/containers.ts.
   const facts = type === 'video' || type === 'audio'
     ? await mediaFacts(file, extOf(file.name)).catch(() => null)
     : null;
@@ -1135,7 +1135,7 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
     size = { ...size, ...fitToBox('video', poster.w, poster.h), measured: true };
   }
   // An audio file usually carries its own picture, and the card has a slot for
-  // one already - see setItemCover() in state.js. Registered as an ordinary
+  // one already - see setItemCover() in state.ts. Registered as an ordinary
   // asset, so an album's twelve tracks embedding the identical cover cost one
   // copy of it. Tried before the item exists rather than after it mounts, so
   // the card is never briefly the plain one; null is the common answer and
@@ -1144,7 +1144,7 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
     ? await asking(file, l => coverArt(file, l)).then(art => art && addFile(art)).catch(() => null)
     : null;
   // The hundred-pixel copy the board shows once it is zoomed out past the
-  // detail rung - see makeThumb() for why a hundred, and canvas/stills.js for
+  // detail rung - see makeThumb() for why a hundred, and canvas/stills.ts for
   // the swap, which this reuses wholesale rather than inventing a second one.
   //
   // Here, at import, rather than lazily on the first far-out view: it is one
@@ -1187,7 +1187,7 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
     size: file.size,
     mtime: file.lastModified || 0,
     // The name the file arrived under, kept even after it is renamed, because
-    // clearing a name is meant to give this back - see state.js/renameItem.
+    // clearing a name is meant to give this back - see state.ts/renameItem.
     //
     // On the item rather than only in the asset registry, which is where it used
     // to live alone. The registry is rebuilt from the archive on every open and
@@ -1225,7 +1225,7 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
   // The decodable stand-in for a picture the browser won't draw. asset.hash
   // below is still the untouched original; the image renderer draws this when it
   // is present. Preserved and packed like any other content id - see
-  // META_HASHES in board-model.js and itemHashes() in util.js.
+  // META_HASHES in board-model.ts and itemHashes() in util.ts.
   if (previewHash) meta.preview = previewHash;
   return {
     type,
@@ -1278,7 +1278,7 @@ export function addNote(centre: Point, text = '', want = 0) {
   }], 'Add note');
   // A note written onto a card is a note that has just been let go, so it gets
   // the same ten seconds a dropped one does before it sets - see the settling
-  // block in sticky.js. Without this a note added over a photograph would be
+  // block in sticky.ts. Without this a note added over a photograph would be
   // pinned from the first keystroke, and the editor you are typing into would
   // be attached to something you could no longer move.
   startSettling([item.id]);
@@ -1310,7 +1310,7 @@ const STICKER_TILT_X = 2.7;
  * [data-whimsy] blocks in tokens.css - and a copy of those numbers in JS is a
  * copy that goes wrong the first time the axis is retuned.
  *
- * canvas/item-dom.js reaches the same token, and never has to read it: a card
+ * canvas/item-dom.ts reaches the same token, and never has to read it: a card
  * multiplies its dealt factor by --tilt-max *in CSS*, so it re-leans on its own
  * when the dial moves. A sticker cannot do that. Its angle is real geometry -
  * it goes in the file, it is in the undo snapshot, and a deliberate 45 degrees
@@ -1337,7 +1337,7 @@ function cardTiltMax(): number {
  * because that is what peeling one off and pressing it down again looks like -
  * and it has to happen on the *drop* rather than per frame, or the shape would
  * shimmer while you dragged it. Undo gets it for free: `rot` goes into the same
- * geometry snapshot as x and y (GEOM_KEYS in layout.js), so stepping back puts
+ * geometry snapshot as x and y (GEOM_KEYS in layout.ts), so stepping back puts
  * the old angle back along with the old position.
  *
  * How far it may go is the whimsy axis's to say, the same as a card's lean -
@@ -1371,7 +1371,7 @@ export function addSticker(shape: string, centre: Point, tint?: string) {
   }], 'Add sticker');
   // Just pressed down, so it lies where it landed for ten seconds before it
   // sets - the same window a drag gives, and the one that lets you nudge a
-  // star you placed a hair off centre. See addNote above and sticky.js.
+  // star you placed a hair off centre. See addNote above and sticky.ts.
   startSettling([item.id]);
   select([item.id]);
   // Placed, which is a card landing by another route - the same cue a drag

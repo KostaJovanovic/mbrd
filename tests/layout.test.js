@@ -118,13 +118,13 @@ test('a snapped layout does not overlap once every card is snapped to the grid',
   // *not* to be whole cells, so the rounding is exercised. The step is the
   // board's default (64) - which, like any usable grid, is at least the smallest
   // a card may be (MIN_SIZE 48), so a card always fills the cells it reserves.
-  // See arrange()/toCells and main.js/rearrange.
+  // See arrange()/toCells and main.ts/rearrange.
   const step = 64;
   const sizes = [[100, 80], [130, 90], [70, 70], [210, 140], [305, 240], [90, 190], [160, 60], [64, 96]];
   const src = sizes.map(([w, h], i) => item({ id: `s${i}`, w, h }));
   for (const spacing of [0, 8, 12]) {
     for (const name of named.filter(n => n !== 'free')) {
-      // Body sizes on the lattice, exactly as main.js/rearrange derives them.
+      // Body sizes on the lattice, exactly as main.ts/rearrange derives them.
       const sized = src.map(it => { const b = latticeBox(it, step); return { ...it, w: b.w, h: b.h }; });
       const spots = arrange(sized, { name, center: { x: 0, y: 0 }, spacing, cellStep: step, seed: 7 });
       // Then each card's edge is snapped to the grid, the last thing rearrange does.
@@ -141,7 +141,7 @@ test('a snapped layout does not overlap once every card is snapped to the grid',
 
 test('obstacles keep a fresh block off what is already on the board', () => {
   // A folder dropped onto a busy board flows around the existing items rather
-  // than landing on top of them. See arrange()/avoidObstacles and drop.js.
+  // than landing on top of them. See arrange()/avoidObstacles and drop.ts.
   const obstacles = [
     { x: 0, y: 0, w: 300, h: 300 },
     { x: 260, y: -120, w: 200, h: 160 },
@@ -419,7 +419,7 @@ test('the on-screen grid step stays inside its band at any zoom', () => {
 test('two grid dots are never closer than 1.41 cm under a finger', () => {
   // The whole point of the touch band, stated in the unit it was chosen in. A
   // CSS pixel is 1/96 inch by the spec, which is the only conversion a browser
-  // offers - so this is the nominal centimetre, the same one measure.js uses.
+  // offers - so this is the nominal centimetre, the same one measure.ts uses.
   const cmPerPx = 2.54 / 96;
   assert.ok(MIN_PX_TOUCH * cmPerPx >= 1.41 - 1e-9,
     `${(MIN_PX_TOUCH * cmPerPx).toFixed(3)} cm is under the floor`);
@@ -617,7 +617,7 @@ test('the two catalogues share only the ids that mean the same thing', () => {
 // ---------------------------------------------------------------------------
 // The web
 //
-// canvas/web.js keeps its planarity pass module-private, so the rule is tested
+// canvas/web.ts keeps its planarity pass module-private, so the rule is tested
 // through the geometry it guarantees: whatever threads() decides to draw, no
 // two of them may cross. The segments are reconstructed from the drawn path.
 // ---------------------------------------------------------------------------

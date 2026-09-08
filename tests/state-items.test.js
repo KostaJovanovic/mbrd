@@ -1,11 +1,11 @@
 // Items on the board: what they are called, what they say, and what is picked.
 //
-// state.js is a module singleton, which is right for an app with one board and
+// state.ts is a module singleton, which is right for an app with one board and
 // awkward for tests, so every case starts by loading an empty board. That is
 // the same door opening a .mbrd goes through, so it also exercises the reset.
 //
 // One of six files that were tests/state.test.js, split to mirror the modules
-// state.js itself was split onto - see tests/layers.test.js for that list.
+// state.ts itself was split onto - see tests/layers.test.js for that list.
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -183,7 +183,7 @@ test('deleting an item drops it from the selection', () => {
 // in a box drawn round its bounding rectangle, which for a cut-out is mostly
 // empty. meta.bare is the flag that says this one is a shape rather than a
 // photograph. What is asserted here is the write; the paint is a stylesheet
-// question and the guess is import/drop.js's.
+// question and the guess is import/drop.ts's.
 // ---------------------------------------------------------------------------
 
 test('a picture can have its card taken away, and given back', () => {

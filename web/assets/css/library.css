@@ -1,5 +1,5 @@
 /* =========================================================
-   mbrd - the board switcher (ui/library.js)
+   mbrd - the board switcher (ui/library.ts)
 
    One of the eight sheets the old overlays.css was split into. The order they
    load in IS the cascade and is listed in the banner at the top of base.css.
@@ -52,9 +52,7 @@
   .library-new:hover { background: var(--paper-2); }
 }
 .library-new:active { background: var(--paper-3); }
-/* It set a 22px `×` character until now, which is why this block used to carry
-   a paragraph about sizing a glyph to its box rather than to the type scale.
-   The button draws icons.svg#i-close like every other close in the app, so
+/* The button draws icons.svg#i-close like every other close in the app, so
    there is no type here to argue about. */
 .library-close {
   display: grid;
@@ -70,7 +68,7 @@
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 .library-close svg { width: var(--icon-glyph); height: var(--icon-glyph); }
-/* It had ink and no wash, alone among the ten. */
+/* The hover sets the wash as well as the ink, like every other close in the app. */
 @media (hover: hover) {
   .library-close:hover { background: var(--paper-2); color: var(--accent-deep); }
 }

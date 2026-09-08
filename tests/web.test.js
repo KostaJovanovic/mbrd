@@ -13,7 +13,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-// The graph module, not the renderer. This was imported from canvas/web.js when
+// The graph module, not the renderer. This was imported from canvas/web.ts when
 // the algorithm still lived inside it; the point of the split is that this file
 // never needs the drawing half at all.
 import { threads } from '../web/assets/js/web-graph.ts';
@@ -212,7 +212,7 @@ test('the extra-thread pass runs on cards with real width and height', () => {
   // items with a real size AND enough candidates to get past the spanning tree
   // into the second pass. Every case above this one either passes bare points
   // or stops at the tree, so for the whole life of the module its constructor
-  // called corners() and pointInItem() without web-graph.js importing either,
+  // called corners() and pointInItem() without web-graph.ts importing either,
   // and threads() threw. The web stopped drawing past the tree and said
   // nothing. `npm run typecheck` is what finally noticed.
   //

@@ -1,4 +1,4 @@
-// The TypeScript migration debt, as a number that may only fall.
+// The TypeScript migration debt, as a number that fell to zero.
 //
 // The tree was renamed from .js to .ts in one mechanical step: 104 modules, no
 // annotations, 4,935 errors under `strict`. Fixing all of that before committing
@@ -6,18 +6,19 @@
 // typecheck` red would have meant a check nobody reads - which is worse than no
 // check, because it looks like one.
 //
-// So every module that has not been annotated yet carries `// @ts-nocheck` and
-// is skipped, and this file counts them. That makes the typecheck green and
-// honest at the same time: what it says is "everything not on this list is
-// clean under strict", which is true, useful, and gets truer as the list
-// shrinks.
+// So every module that had not been annotated yet carried `// @ts-nocheck` and
+// was skipped, and this file counted them. That made the typecheck green and
+// honest at the same time: what it said was "everything not on this list is
+// clean under strict", which was true, useful, and got truer as the list
+// shrank. The list is empty now.
 //
-// Converting a module means deleting its pragma block and fixing what tsc then
-// says. Lower CEILING in the same commit. It is the same idiom as the DEBT map
-// in tests/layers.test.js and it has the same one rule: the list can only
-// shrink. If you are adding a NEW module, write it typed - a new pragma is a
-// new debt, and this test is where that argument has to be had rather than
-// where it can be skipped.
+// Converting a module meant deleting its pragma block and fixing what tsc then
+// said, and lowering CEILING in the same commit. That half is finished: CEILING
+// is 0 and the second test below pins it there, so there is no number left to
+// lower. It was the same idiom as the DEBT map in tests/layers.test.js and it
+// had the same one rule: the list can only shrink. If you are adding a NEW
+// module, write it typed - a new pragma is a new debt, and this test is where
+// that argument has to be had rather than where it can be skipped.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

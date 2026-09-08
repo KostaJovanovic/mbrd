@@ -3,17 +3,17 @@
 // Everything the board says about itself without being asked: the zoom
 // percentage and its buttons, the undo/redo pair and what they would undo, the
 // coordinate and size readout, the autosave mark, and the snap flag published
-// to CSS. Lifted out of main.js as one piece because it is one piece - every
+// to CSS. Lifted out of main.ts as one piece because it is one piece - every
 // function here writes to `#hud` or to a control beside it, and nothing here
 // decides anything.
 //
-// The three click surfaces live here rather than in ui/sidebar.js because they
+// The three click surfaces live here rather than in ui/sidebar.ts because they
 // are chrome on the glass and not part of the panel, and they all route through
 // `cmds` rather than calling state directly - the keyboard, the context menu and
 // these buttons press the same button.
 //
 // `vp` and `cmds` are handed in by initHud() rather than imported: the viewport
-// because it is built at boot, and the command surface because commands.js
+// because it is built at boot, and the command surface because commands.ts
 // imports *this* module (for paintZoom) and the arrow may only go one way.
 
 import { el } from '../util.ts';
@@ -24,10 +24,13 @@ import { MIN_ZOOM, MAX_ZOOM, BASE_ZOOM, zoomMs, travelMs } from '../canvas/viewp
 import type { Viewport } from '../canvas/viewport.ts';
 
 /**
- * canvas/viewport.ts still carries its migration pragma, so the class type it
- * exports has the methods but not the fields the constructor assigns. The
- * intersection names the three this module reads; it becomes redundant, and
- * comes out, the day that module is annotated.
+ * The three fields of the viewport this module reads, beside its methods.
+ *
+ * This intersection was written when canvas/viewport.ts still carried a
+ * migration pragma and the class type it exported had the methods but not the
+ * fields the constructor assigned. That module is annotated now and declares all
+ * three, so the intersection restates what Viewport already carries and can come
+ * out.
  */
 type HudViewport = Viewport & {
   pan: { x: number, y: number },
@@ -37,7 +40,7 @@ type HudViewport = Viewport & {
 
 /**
  * The command surface, as this module sees it: three names it presses and
- * nothing else. The same bargain ui/toolbar.js states - the glass knows what a
+ * nothing else. The same bargain ui/toolbar.ts states - the glass knows what a
  * button is called and not what it does.
  */
 export interface HudCommands {
@@ -68,7 +71,7 @@ let savedTimer = 0;
 /**
  * Wire the glass controls and subscribe the readouts.
  *
- * Called once, from main.js, after the viewport exists and the panel has been
+ * Called once, from main.ts, after the viewport exists and the panel has been
  * built. Everything it touches is static markup in index.html.
  */
 export function initHud(viewport: HudViewport, cmds: HudCommands) {
@@ -94,12 +97,12 @@ export function initHud(viewport: HudViewport, cmds: HudCommands) {
 
   // The phone's add bar used to be wired here, beside the zoom controls, with
   // its own data-add attributes and a two-branch switch over them. It is the
-  // toolbar now (ui/toolbar.js), every button on it is an ordinary data-cmd,
+  // toolbar now (ui/toolbar.ts), every button on it is an ordinary data-cmd,
   // and the one-off went with it - which is the whole reason that surface was
   // folded in rather than joined by a second one.
 
   // Undo and redo on the glass, next to the bin. Here beside the zoom controls
-  // rather than in ui/trash.js: they share that corner but not its subject, and
+  // rather than in ui/drawer.ts: they share that corner but not its subject, and
   // the bin module has no business knowing about the history.
   //
   // Through cmds, not through state's undo() directly - the keyboard, the

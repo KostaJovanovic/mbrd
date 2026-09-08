@@ -1,4 +1,4 @@
-// The document reader's four decisions (ui/documents.js).
+// The document reader's four decisions (ui/documents.ts).
 //
 // Most of that module is a walk over a parsed XML tree and needs a DOM to test
 // at all. These four do not: they are the pieces where the module decides
@@ -12,8 +12,8 @@
 // key, so a target that climbs out of the package produces a key that is not in
 // the archive rather than a path that is somewhere on a disk.
 //
-// It and slideNo() are imported from import/ooxml.js rather than from the reader
-// now: the deck compositor in import/slide.js walks the same containers, the
+// It and slideNo() are imported from import/ooxml.ts rather than from the reader
+// now: the deck compositor in import/slide.ts walks the same containers, the
 // importer may not reach into ui/, and a file format with two answers to "where
 // does this picture live" is the disagreement worth spending a module to avoid.
 // The tests follow the functions.
@@ -154,7 +154,7 @@ test('an empty file has no rows', () => {
 // lock, and the first one was defended by nothing.
 //
 // A fake element rather than a DOM, the way tests/markdown.test.js and
-// tests/trash.test.js do it. It records only what scrub() touches: a local
+// tests/drawer.test.js do it. It records only what scrub() touches: a local
 // name, an attribute map, children, and text.
 // ---------------------------------------------------------------------------
 

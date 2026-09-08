@@ -1,8 +1,8 @@
 // Every module must be loadable without a browser.
 //
 // This is the test that keeps the rest of the suite possible. Before it existed
-// `util.js` computed IS_DEV from `location.hostname` at module scope, and since
-// almost everything imports util.js, importing almost anything outside a
+// `util.ts` computed IS_DEV from `location.hostname` at module scope, and since
+// almost everything imports util.ts, importing almost anything outside a
 // browser threw - which is why a codebase this size had no tests at all.
 //
 // The rule is not "no browser globals". It is "no browser globals *at import
@@ -31,8 +31,8 @@ const MODULE_WORKERS = ['canvas/matte-worker.js'];
 /**
  * The six documented exceptions, none of which is a unit.
  *
- *   main.js                     constructs the Viewport against real elements
- *   ui/appearance.js            holds :root and the theme-colour <meta> at
+ *   main.ts                     constructs the Viewport against real elements
+ *   ui/appearance.ts            holds :root and the theme-colour <meta> at
  *                               module scope
  *   optimize/media-worker.js    is not a module at all. It is a *classic*
  *                               worker, because the vendored ffmpeg core is an

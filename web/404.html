@@ -455,6 +455,48 @@
 <div id="mobile-feed" hidden aria-label="Board feed"></div>
 <div id="mobile-playlist" hidden aria-label="Board playlist"></div>
 
+<!-- The window's own frame, which only the desktop shell has: that window opens
+     with no caption bar and the app draws one. Both are `hidden` here and stay
+     hidden in a browser - ui/window-chrome.js asks platform.frame.own() and
+     returns before it touches either - so a web visitor has neither in the
+     layout at any point, not even for the frame between paint and boot.
+
+     Before #sidebar rather than after it, and it is only the ordering rule at
+     the foot of this file being obeyed rather than a rule of its own: the
+     panels and the strips below use general sibling combinators to step each
+     other up, and a new element dropped into the middle of that run is the way
+     that fails. Neither of these is named in any of those selectors, and
+     putting them in front of the whole run is what keeps that true.
+
+     The band is what the window is dragged by. It is invisible, it is 32px
+     tall, and it sits below every piece of glass chrome in the stack, so the
+     menu button and the toolbar over it are pressed normally - see
+     ui/window-chrome.js for what it costs the board. aria-hidden because there
+     is nothing in it: dragging a window is not something a screen reader user
+     does through the page. -->
+<div id="window-drag" hidden aria-hidden="true"></div>
+<!-- The three buttons, in the one corner of the glass this app has never used.
+     Not shown on macOS, which keeps its own three in the opposite corner.
+     data-cmd and nothing else, the toolbar's contract - the actions are
+     windowMinimize / windowMaximize / windowClose in commands/view.js.
+
+     Two glyphs on the middle button and only ever one drawn: `is-maximized` on
+     the group swaps them (chrome.css), which is the padlock's idiom and it is
+     here for the same reason - a <use> renders into a shadow tree no rule can
+     select into, so the switch has to be two elements in this document. -->
+<div id="window-controls" hidden role="group" aria-label="Window">
+  <button type="button" data-cmd="window-minimize" aria-label="Minimise">
+    <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-window-min"/></svg>
+  </button>
+  <button type="button" data-cmd="window-maximize" aria-label="Maximise">
+    <svg class="ico win-max" aria-hidden="true"><use href="assets/icons.svg#i-window-max"/></svg>
+    <svg class="ico win-restore" aria-hidden="true"><use href="assets/icons.svg#i-window-restore"/></svg>
+  </button>
+  <button type="button" data-cmd="window-close" aria-label="Close window">
+    <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-close"/></svg>
+  </button>
+</div>
+
 <aside id="sidebar" aria-hidden="true">
   <header class="side-head">
     <!-- The document's one h1, and the only place the page says in words what it

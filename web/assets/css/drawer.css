@@ -5,13 +5,13 @@
    load in IS the cascade and is listed in the banner at the top of base.css.
 
    Two modules, one moment. The button in the bottom-left corner and the window
-   it opens are ui/drawer.js; what a card plays on its way off the board is
-   canvas/exit-anim.js, and the animation ends at that button. Filing them apart
+   it opens are ui/drawer.ts; what a card plays on its way off the board is
+   canvas/exit-anim.ts, and the animation ends at that button. Filing them apart
    would put the start and the end of one gesture in two places.
 
    The undo/redo pair and the autosave mark share the drawer button's row and
    its stock, so they are here too - which is a fact about the layout rather
-   than about ui/drawer.js.
+   than about ui/drawer.ts.
    ========================================================= */
 
 #drawer-dock {
@@ -195,11 +195,11 @@
 #history-ctl button:active:not(:disabled) svg { transform: scale(calc(var(--btn-press) - 0.08)); }
 
 /* ----------------------------------------------------------
-   The drawer window (ui/drawer.js)
+   The drawer window (ui/drawer.ts)
 
    A floating window of the cards you threw away, opening anchored to the
    bottom-left the way the sticker pad opens to the bottom-right. The two share
-   their move and resize gestures (ui/float-window.js) and deliberately share
+   their move and resize gestures (ui/float-window.ts) and deliberately share
    their proportions and their furniture, so a board with both open reads as two
    of the same thing rather than as two designs.
 
@@ -252,7 +252,7 @@
   transition-delay: 0s;
 }
 /* A card is being carried out of it. The window steps back rather than closing
-   - see startDrag() in ui/drawer.js on why this one stays open where the
+   - see startDrag() in ui/drawer.ts on why this one stays open where the
    sticker pad shuts - but it has to step back far enough that the board under
    it can be aimed at. Pointer events stay on: a drop let go over the window is
    a cancel, and cancelling has to be something you can still hit. */
@@ -304,7 +304,7 @@
 /* The title card's way back. A word rather than an icon, and in the header
    rather than on a shelf, because the title card is a singleton the board is
    meant to have - it has no card to stand up here among the ordinary ones, and
-   the drawer is the place you go looking for it. ui/drawer.js shows it only
+   the drawer is the place you go looking for it. ui/drawer.ts shows it only
    while the card is actually gone. */
 .drawer-title-back,
 .drawer-empty {
@@ -327,7 +327,7 @@
 .drawer-title-back[hidden] { display: none; }
 /* The one control in the app that destroys bytes, so it is the one that wears
    the danger colour standing still rather than on hover. It asks before it does
-   anything - see confirmEmpty() in ui/drawer.js. */
+   anything - see confirmEmpty() in ui/drawer.ts. */
 .drawer-empty { color: var(--danger); }
 .drawer-empty:hover { border-color: var(--danger); }
 .drawer-empty:disabled { color: var(--ink-3); cursor: default; border-color: transparent; }
@@ -362,8 +362,8 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 4px 12px 14px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--rule-2) transparent;
+  /* The scrollbar is base.css's - see the note in sidebar.css for why naming it
+     again here would take it away rather than restate it. */
 }
 
 /* One shelf: three slots and the ledge they stand on.
@@ -394,7 +394,7 @@
   min-width: 0;
   /* No padding across: the column is exactly one card wide at the narrowest
      window this drawer allows, and the gap between shelves is what separates
-     them. See SLOT_W in ui/drawer.js for the arithmetic. */
+     them. See SLOT_W in ui/drawer.ts for the arithmetic. */
   padding: 4px 0 0;
   border-radius: var(--radius-xs);
   cursor: grab;
@@ -403,7 +403,7 @@
      with gaps and a slot is most of a shelf, so `none` here would mean a drawer
      that cannot be scrolled with a finger anywhere it can be touched. The
      vertical direction is left to the browser and the press is not swallowed
-     until it has travelled; see startDrag() in ui/drawer.js, which is the other
+     until it has travelled; see startDrag() in ui/drawer.ts, which is the other
      half of this and says what it costs. */
   touch-action: pan-y;
   -webkit-user-select: none;
@@ -413,7 +413,7 @@
 .drawer-slot:focus-visible { outline: 2px solid var(--select); outline-offset: -2px; }
 .drawer-slot.is-lifting { opacity: 0.4; cursor: grabbing; }
 
-/* The box a pile stands in, sized in px by standPile() (ui/drawer.js) from the
+/* The box a pile stands in, sized in px by standPile() (ui/drawer.ts) from the
    proportions of the pile's own bounding box - so a postcard is wide, a sticky
    is square, and both stand within the same 90px box. The size is written
    whether or not the cards are mounted in it, which is what keeps the shelves
@@ -447,7 +447,7 @@
 
 /* A patch of the board, the size the pile was on it: the host and everything
    stuck to it, each at its own world coordinates within this box (placeInPile,
-   ui/drawer.js). This is the element that shrinks, and it is the only one -
+   ui/drawer.ts). This is the element that shrinks, and it is the only one -
    which is the whole reason it exists.
 
    Everything inside keeps its world size and is *scaled* by this wrapper rather
@@ -473,7 +473,7 @@
   scale: var(--card-k);
 }
 
-/* The real cards, from the board's own builder (canvas/item-dom.js). Their four
+/* The real cards, from the board's own builder (canvas/item-dom.ts). Their four
    geometry properties are written per card by placeInPile(), exactly as
    placeBox() writes them on the canvas, so only the shadow is left to say here.
 
@@ -483,7 +483,7 @@
    drag gets bigger than its neighbours is a shelf that moves while you aim at
    it. Nothing here hovers, so nothing here swells. The lean stays: --item-tilt
    is a `rotate`, an independent property rather than part of the transform
-   canvas/items.js writes, so it survives the card leaving the canvas and is the
+   canvas/items.ts writes, so it survives the card leaving the canvas and is the
    whole reason a shelf looks pinned up rather than stacked. */
 .drawer-pile > .item {
   box-shadow: var(--item-shadow);
@@ -541,14 +541,14 @@
 /* ----------------------------------------------------------
    The delete fly-out. A deleted card's node is discarded at once (state and
    undo do not wait); what animates is a clone lifted into this screen-space
-   overlay by canvas/exit-anim.js. The overlay sits above the board but below
+   overlay by canvas/exit-anim.ts. The overlay sits above the board but below
    the panels and menus, and never takes a pointer - it only ever shows a ghost
    on its way out.
 
    Four feels: the whimsy tier picks fall/dissolve/shatter, and the title card
    vacuums toward the drawer button (--to-x/--to-y are set per-clone in JS). The
    global prefers-reduced-motion rule collapses every duration below, so with
-   motion off these are effectively instant and exit-anim.js's timeout still
+   motion off these are effectively instant and exit-anim.ts's timeout still
    sweeps the clone up.
    ---------------------------------------------------------- */
 #exit-layer {
@@ -568,7 +568,7 @@
 
 /* The title card leaves no clone - it just vanishes. This chip is the only
    thing drawn: a scrap of card centred on the drawer button (the negative
-   margins centre it on the point exit-anim.js parks it at) that appears just
+   margins centre it on the point exit-anim.ts parks it at) that appears just
    above the button, lifts a touch, then drops into it. The whole motion is
    local to the corner - the chip does not travel from where the card was. */
 .exit-chip {

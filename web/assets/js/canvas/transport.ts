@@ -4,55 +4,55 @@
 // piece of chrome a browser will not let you restyle - so every board, whatever
 // its palette or its whimsy, had a strip of Chrome-grey plastic sitting in the
 // middle of it. This is what replaced it, and it is the half of the old
-// canvas/audio.js that builds nodes.
+// canvas/audio.ts that builds nodes.
 //
-// One caller: canvas/renderers.js, for an audio card.
+// One caller: canvas/renderers.ts, for an audio card.
 //
-// It said four - this file for an audio card, canvas/video.js for a video one,
-// ui/nowplaying.js's bar and ui/playlist.js's window - and named that as the
+// It said four - this file for an audio card, canvas/video.ts for a video one,
+// ui/nowplaying.ts's bar and ui/playlist.ts's window - and named that as the
 // reason to be one function rather than four strips that drifted. Three of the
 // four never arrived. What the other three actually share is the part that went
-// down to media/transport.js (bindScrub, clock, the two glyphs, and now
+// down to media/transport.ts (bindScrub, clock, the two glyphs, and now
 // reportPlayError), which is where a claim about four players belongs; each
 // builds its own strip around them. The options this file carried for those
 // callers - `line`, `signal`, `alive` - are gone with the sentence.
 //
 // ── Why canvas/ and not media/ ──
 //
-// media/transport.js is the obvious-looking home and is the wrong one, and the
+// media/transport.ts is the obvious-looking home and is the wrong one, and the
 // reason is a line in its own header: "nothing here should acquire an import
 // that would block it - in particular not state.ts. A transport is told what to
 // draw; it does not ask the board what is playing." This function does ask. It
 // reads `bus` and `selection` from state.ts to know when a card has been let go
 // of and may redraw its bars at a new width; it calls peaks() in
-// canvas/waveform.js, which reaches storage/assets.js and marks the board dirty;
-// and it starts playback through canvas/playlist-queue.js. media/ is in BASE in
+// canvas/waveform.ts, which reaches storage/assets.ts and marks the board dirty;
+// and it starts playback through canvas/playlist-queue.ts. media/ is in BASE in
 // tests/layers.test.js precisely because everything in it sits at the bottom of
 // the graph, and a module with three dependencies on state.ts and storage filed
 // beside one with none would make the directory mean two opposite things.
 //
 // Complaining is the one item that has since gone the other way. A rejected
 // play() is the same sentence in five players, so reportPlayError() is in
-// media/transport.js now and takes notify.js with it - which is the one import
-// that module has, and notify.js is beside it in BASE.
+// media/transport.ts now and takes notify.ts with it - which is the one import
+// that module has, and notify.ts is beside it in BASE.
 //
-// So what went down to media/transport.js is the part that genuinely satisfies
+// So what went down to media/transport.ts is the part that genuinely satisfies
 // that promise - bindScrub(), clock(), and the two glyphs, none of which touch
 // `document` or know there is a board - and the part that could not is here.
 // canvas/ is reachable from all four callers without inverting anything, and DOM
-// construction is not out of place in it: canvas/items.js, canvas/renderers.js
-// and canvas/video.js all build nodes. Cards are canvas/'s to draw. What would
+// construction is not out of place in it: canvas/items.ts, canvas/renderers.ts
+// and canvas/video.ts all build nodes. Cards are canvas/'s to draw. What would
 // be a layering regression is this module reaching *up* into ui/, and it does
 // not.
 //
 // ── What must not move in here ──
 //
-// The measurement. peaks() and resample() are canvas/waveform.js, and the reason
+// The measurement. peaks() and resample() are canvas/waveform.ts, and the reason
 // is the one that split this file: an amplitude is not a bar, and a module that
 // knew both would be the module this came out of.
 //
 // The exclusivity rule, the volume, the record of what is playing. All
-// canvas/audio.js. This builds a button that asks; it is not what answers.
+// canvas/audio.ts. This builds a button that asks; it is not what answers.
 
 import { clamp } from '../util.ts';
 import { bus, selection } from '../state.ts';
