@@ -26,8 +26,16 @@ directories:
 # even committed. `_headers` is NOT excluded and must not be: the protocol
 # handler reads it for the CSP, which is the whole reason there is one policy
 # rather than two.
+#
+# `icons/` joins them because main.ts reads one at runtime for the window's own
+# icon - the taskbar button and the Alt-Tab card, which are not the executable's
+# icon and are not set by anything below. The two files it can ask for and no
+# more: the .icns is the macOS bundle's, electron-builder places it there
+# itself, and 83 KB of it inside the asar would never be opened.
 files:
   - dist/**
+  - icons/icon.ico
+  - icons/icon.png
 
 # Beside the app rather than inside the asar, and every one of these is read by
 # something that is not Node.

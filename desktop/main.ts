@@ -41,20 +41,18 @@
 //
 // ── The frame the app draws itself ──
 //
-// mbrd is an infinite sheet of paper with its furniture floating on the glass
-// above it. A native caption bar cuts a grey band off the top of that sheet and
-// puts the one rectangle in the window that obeys none of the board's palette,
-// none of its corners and none of its whimsy dial. So the window has no title
-// bar and web/assets/js/ui/window-chrome.ts draws one.
+// A native caption bar is the one rectangle in the window that obeys none of
+// the board's palette, none of its corners and none of its whimsy dial. So the
+// window has no title bar and web/assets/js/ui/window-chrome.ts draws one - the
+// same strip of the app's own paper, in the app's own hairline, following the
+// same look a board file carries.
 //
 // Three platforms, two options, and the difference is not a preference:
 //
 //   macOS    titleBarStyle 'hidden', which keeps the traffic lights. A Mac app
-//            without them reads as broken, full-screen keeps working, and the
-//            page steps its own top-left button aside instead - see
-//            --frame-inset-left in chrome.css. trafficLightPosition lines the
-//            cluster up with the row of glass controls rather than with the
-//            window's own corner.
+//            without them reads as broken and full-screen keeps working.
+//            trafficLightPosition sets them inside the drawn bar rather than in
+//            the window's own corner - see the note on that line.
 //   Windows  the same option, which on Windows removes the caption and leaves
 //            the frame's shadow and resize borders in place.
 //   Linux    `frame: false`. titleBarStyle is macOS and Windows only there, and
@@ -66,12 +64,35 @@
 // colours rather than the app's. Snap by keyboard and by drag-to-edge are
 // untouched. The three window commands go through `cmds` like every other
 // user-facing action; this process only ever receives the request.
+//
+// ── The icon ──
+//
+// electron-builder already puts one on the installer, the executable and the
+// .mbrd association, and none of that reaches a window. The taskbar button, the
+// Alt-Tab card and the Linux window manager read the *window's* icon, and a
+// BrowserWindow given none carries Electron's atom - so every unpackaged run,
+// which is every run a person tests from desktop.bat, looks like a different
+// application from the one it builds into.
+//
+// Set here rather than only in the packer, and read from `icons/` by path, so
+// packaged and unpackaged windows carry the same picture. That is what puts
+// `icons/` in electron-builder.yml's `files` list: without it the asar has no
+// such directory and a packaged Linux window falls back to the atom again.
+//
+// macOS is the exception at both ends. It ignores a BrowserWindow icon
+// entirely - the dock reads the bundle, which is the .icns electron-builder
+// already ships - so the only gap there is an unpackaged run, and `dock.setIcon`
+// below closes that one.
+//
+// **Generated, not drawn.** web/assets/img/icon.svg is where the icon is
+// designed and `node tools/gen-desktop-icons.mjs` renders the three files.
+// Editing anything under desktop/icons/ by hand is editing a build artefact.
 
 import { app, BrowserWindow, ipcMain, shell } from 'electron';
-import type { IpcMainEvent } from 'electron';
+import type { BrowserWindowConstructorOptions, IpcMainEvent } from 'electron';
 import { join, dirname } from 'node:path';
 import { existsSync, mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
-import { registerSchemes, serveWeb, APP_INDEX, APP_ORIGIN } from './protocol.ts';
+import { registerSchemes, serveWeb, APP_INDEX, APP_ORIGIN, APP_PATCH } from './protocol.ts';
 import { initLog, log } from './log.ts';
 import { installMenu } from './menu.ts';
 import * as store from './store.ts';
@@ -185,6 +206,12 @@ function main(): void {
 
   app.whenReady().then(async () => {
     initLog();
+    // The dock, on macOS only, and only when there is no bundle to read one
+    // from. A packaged copy already carries the .icns and setting it again here
+    // would be this process overriding the thing it was installed with.
+    if (process.platform === 'darwin' && !app.isPackaged) {
+      app.dock?.setIcon(join(__dirname, '..', 'icons', 'icon.png'));
+    }
     // Said again now there is a file to say it in - see claimPortableData(),
     // which runs before the log exists.
     if (startupNote) log('warn', 'portable fallback', { note: startupNote });
@@ -223,8 +250,25 @@ function main(): void {
   });
 }
 
+/**
+ * The app's icon on disk, as a path.
+ *
+ * `__dirname` is dist/, so this walks up to the package root - which is
+ * `desktop/` unpackaged and `app.asar` packaged. One expression covers both,
+ * which is the whole reason the file is read by path rather than bundled.
+ *
+ * The .ico on Windows and not the .png: an .ico carries 16, 24, 32, 48, 64 and
+ * 256 as separate drawings, and Windows asks for the small ones constantly - in
+ * the taskbar, in Alt-Tab, in the title of a dialog. Handed one 512px PNG it
+ * downscales, and the strokes of this icon go to mud at 16px.
+ */
+function iconPath(): string {
+  const file = process.platform === 'win32' ? 'icon.ico' : 'icon.png';
+  return join(__dirname, '..', 'icons', file);
+}
+
 function createWindow(): BrowserWindow {
-  const win = new BrowserWindow({
+  const options: BrowserWindowConstructorOptions = {
     width: 1280,
     height: 840,
     minWidth: 480,
@@ -234,16 +278,12 @@ function createWindow(): BrowserWindow {
     backgroundColor: '#000000',
     show: false,
     // No caption bar anywhere; the page draws one. See the head of this file
-    // for why Linux takes the other option rather than the same one.
+    // for why Linux takes the other option rather than the same one. Both
+    // branches carry a property, which is what keeps this one a spread and the
+    // two platform lines below plain statements.
     ...(process.platform === 'linux'
       ? { frame: false }
       : { titleBarStyle: 'hidden' as const }),
-    // macOS keeps its traffic lights, so they are placed rather than left in
-    // the corner: 18 across and 22 down centres the 12px cluster on the row the
-    // glass controls sit in, which is 16px of margin plus a 40px button.
-    ...(process.platform === 'darwin'
-      ? { trafficLightPosition: { x: 18, y: 22 } }
-      : {}),
     webPreferences: {
       contextIsolation: true,
       sandbox: true,
@@ -252,7 +292,22 @@ function createWindow(): BrowserWindow {
       // script in package.json.
       preload: join(__dirname, 'preload.js'),
     },
-  });
+  };
+
+  if (process.platform === 'darwin') {
+    // macOS keeps its traffic lights, so they are placed rather than left in
+    // the corner. 18 across, and 10 down centres the 12px cluster in the 32px
+    // bar the page draws - --frame-bar-h in chrome.css, and the two numbers
+    // have to be changed together. They used to sit a whole row lower, level
+    // with the app's own controls, back when there was no bar to be inside.
+    options.trafficLightPosition = { x: 18, y: 10 };
+  } else {
+    // The taskbar button and the Alt-Tab card. See the head of this file for
+    // why macOS is absent from this and what stands in for it there.
+    options.icon = iconPath();
+  }
+
+  const win = new BrowserWindow(options);
 
   // Shown on first paint rather than immediately, so the window arrives with
   // the board in it. `show: false` plus this is Electron's own answer to the
@@ -274,11 +329,44 @@ function createWindow(): BrowserWindow {
   // The other way in: a navigation of the window itself. The app is a single
   // page and never navigates, so anything here is a link that got past the
   // handler above or a document doing something it should not.
+  //
+  // The changelog is the one exception, and it is answered rather than allowed.
+  // See openChangelog() for why a window is the right answer and why this one
+  // must not simply go there.
   win.webContents.on('will-navigate', (event, url) => {
+    if (url === APP_PATCH || url === APP_PATCH + '.html') {
+      event.preventDefault();
+      openChangelog();
+      return;
+    }
     if (url.startsWith(APP_ORIGIN + '/')) return;
     event.preventDefault();
     log('warn', 'refused a navigation', { url });
   });
+
+  // Reload, bound here rather than left to the menu, because this window has no
+  // menu bar to carry an accelerator.
+  //
+  // Measured on Windows: `Menu.getApplicationMenu()` holds the View menu and its
+  // Reload row with CmdOrCtrl+R on it, and `win.isMenuBarVisible()` is false -
+  // the caption went and the menu bar went with it. An accelerator on a menu bar
+  // that is not drawn is an accelerator nothing presses, and the failure is
+  // silent in the worst way: the row is in the menu, it works when clicked, and
+  // the keystroke does nothing. Every *other* accelerator in menu.ts survives
+  // that only because canvas/input.ts binds the same keys inside the page.
+  //
+  // `before-input-event` is the renderer's own input path, so it fires with or
+  // without a menu bar. Kept off macOS, where the application menu is the
+  // system's, is always there, and already delivers this - two handlers would
+  // reload twice.
+  if (process.platform !== 'darwin') {
+    win.webContents.on('before-input-event', (event, input) => {
+      const reload = input.key.toLowerCase() === 'r' && (input.control || input.meta);
+      if (input.type !== 'keyDown' || !reload || input.alt || input.shift) return;
+      event.preventDefault();
+      win.webContents.reload();
+    });
+  }
 
   // No <webview> anywhere in this app, so the only correct number of them is
   // zero. Denied rather than configured, because a webview that is configured
@@ -319,6 +407,99 @@ function createWindow(): BrowserWindow {
   });
   win.loadURL(APP_INDEX).catch(err => log('error', 'could not load the app', err));
   return win;
+}
+
+/** The changelog window, while there is one. At most one is ever open. */
+let changelog: BrowserWindow | null = null;
+
+/**
+ * The changelog, in a window of its own with the system's own caption on it.
+ *
+ * On the web the What Changed row navigates the page - commands/view.ts argues
+ * that at length, and the argument holds there. It does not hold here, for a
+ * reason that is about this shell and not about the changelog: **web/patch.html
+ * carries none of the app's furniture and loads no bundle.** It is index.html's
+ * head and the prose, nothing else. So it has no #window-drag and no
+ * #window-controls, and ui/window-chrome.ts is not there to unhide them - which
+ * in a window whose caption bar was taken away means a document with no way to
+ * be moved, minimised or closed except the keyboard. Navigating in place would
+ * have turned one blank screen into a stuck one.
+ *
+ * So this window keeps the frame the main one gives up. That is the honest shape
+ * anyway: the changelog is a document, and a document window with the system's
+ * caption on it is what every desktop already knows how to close. The board
+ * stays where it was in the window behind, which is the one thing the web
+ * version had to give up to avoid a flashing tab.
+ *
+ * No preload, and that is deliberate rather than an omission. The ports exist so
+ * a *board* can reach the disk, the store and the native helpers; the changelog
+ * asks for none of it and a page that runs no bundle has nothing to call them
+ * with. The window is sandboxed, isolated, and can navigate nowhere but itself.
+ */
+function openChangelog(): void {
+  if (changelog && !changelog.isDestroyed()) {
+    if (changelog.isMinimized()) changelog.restore();
+    changelog.focus();
+    return;
+  }
+
+  const options: BrowserWindowConstructorOptions = {
+    width: 760,
+    height: 900,
+    minWidth: 360,
+    minHeight: 320,
+    // Overridden by the page's own <title> the moment it commits. Set anyway,
+    // because the taskbar button exists before that and an untitled one reads
+    // as a window that failed to open.
+    title: 'What Changed',
+    backgroundColor: '#000000',
+    show: false,
+    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false },
+  };
+  if (process.platform !== 'darwin') options.icon = iconPath();
+
+  const win = new BrowserWindow(options);
+  changelog = win;
+  win.once('ready-to-show', () => win.show());
+  win.on('closed', () => { changelog = null; });
+
+  // No menu bar on this one. It has a frame, so unlike the main window it would
+  // be given the application menu - and every row in that menu acts on the
+  // board, which is in the other window. installMenu() sends to
+  // `getAllWindows()[0]`, so those rows would reach past this window to a board
+  // the reader cannot see acting on it.
+  if (process.platform !== 'darwin') win.setMenu(null);
+
+  // Which leaves this window with no accelerator at all, so the two a document
+  // window is expected to answer are bound by hand.
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+    const close = input.key === 'Escape'
+      || (input.key.toLowerCase() === 'w' && (input.control || input.meta));
+    if (!close) return;
+    event.preventDefault();
+    win.close();
+  });
+
+  // The same two doors as the main window, and shut the same way. The changelog
+  // is prose with links in it, so this one is load-bearing rather than
+  // theoretical: a link to a repository or a licence belongs in the reader's
+  // browser and not in a window of this app wearing this app's origin.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:$/.test(safeProtocol(url))) {
+      shell.openExternal(url).catch(err => log('warn', 'could not open a link', { url, err: String(err) }));
+    } else {
+      log('warn', 'refused to open a link', { url });
+    }
+    return { action: 'deny' };
+  });
+  win.webContents.on('will-navigate', (event, url) => {
+    if (url === APP_PATCH || url === APP_PATCH + '.html') return;
+    event.preventDefault();
+    log('warn', 'refused a navigation from the changelog', { url });
+  });
+
+  win.loadURL(APP_PATCH).catch(err => log('error', 'could not load the changelog', err));
 }
 
 /**

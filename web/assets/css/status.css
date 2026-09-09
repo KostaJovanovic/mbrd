@@ -68,8 +68,11 @@
      The hairlines are not added on - box-sizing is border-box and the bar
      carries its own height, so --toolbar-h is the whole of it. mobile.css hands
      the plain inset back at the width where the toolbar leaves this edge for
-     the foot. */
-  top: calc(max(14px, env(safe-area-inset-top)) + var(--toolbar-h) + 10px);
+     the foot. --frame-bar-h is the fourth term and is 0px until a desktop
+     window gets narrow enough to draw its own title bar, which pushes the
+     toolbar down by exactly that much and has to push this with it. */
+  top: calc(max(14px, env(safe-area-inset-top)) + var(--toolbar-h) + 10px
+    + var(--frame-bar-h));
   left: 50%;
   width: min(330px, calc(100vw - 28px));
   padding: 10px 14px 11px;

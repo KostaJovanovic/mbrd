@@ -1138,6 +1138,19 @@ export const SECTIONS: Section[] = [
         // and a painted value would put the button back to false behind it.
         { cmd: 'debug-grips', label: 'Highlight resize grips', ariaPressed: 'false',
           closesPanel: true },
+        // The drag band the desktop window is moved by, which is invisible and
+        // takes every press that lands on it. Beside the grip overlay because
+        // the two are one idea: an element with no ink whose *reach* is the
+        // only thing worth seeing. Writes its own aria-pressed, like its
+        // neighbour, and closes the panel for the same reason - the thing it
+        // paints is along the top edge, and the panel covers that edge.
+        //
+        // Present in a browser too, where it says there is no drawn title bar
+        // rather than doing nothing. A row that vanished on the web would mean
+        // this table had to learn which shell it is in, and the answer would be
+        // one more thing to keep true.
+        { cmd: 'debug-frame', label: 'Show the window drag band', ariaPressed: 'false',
+          closesPanel: true },
         // The frame profiler, which until now had no way in from the interface
         // at all - a console call or a URL fragment, on a tool whose whole point
         // is the device with neither. Writes its own aria-pressed for the reason

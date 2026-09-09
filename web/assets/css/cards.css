@@ -325,7 +325,9 @@
   box-sizing: border-box;
   z-index: var(--z-chrome-over);
   bottom: auto;
-  top: max(12px, env(safe-area-inset-top));
+  /* + var(--frame-bar-h), which is 0px in a browser and the drawn title bar's
+     height in a desktop window narrow enough to reach this rule. */
+  top: calc(max(12px, env(safe-area-inset-top)) + var(--frame-bar-h));
   left: max(12px, env(safe-area-inset-left));
   right: max(12px, env(safe-area-inset-right));
   width: auto;

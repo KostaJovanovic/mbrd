@@ -125,6 +125,20 @@ const MENU: { label: string, rows: Row[] }[] = [
       { label: 'Zoom Out', role: 'zoomOut' },
       { separator: true },
       { label: 'Full Screen', role: 'togglefullscreen' },
+      { separator: true },
+      // Ctrl+R, which a frameless Electron window does not bind on its own -
+      // the accelerator comes from the menu bar, and until this row existed
+      // there was no menu item to carry it, so the keystroke did nothing at
+      // all. It is here rather than left out because this is how a change to
+      // web/ is seen: the protocol handler reads that tree off the disk fresh
+      // on every request, so a reload picks up the last build with no relaunch.
+      //
+      // A role rather than a command. Reloading is the window's own affair and
+      // the page has no say in it, which is also why it is safe: the board is
+      // written to the recovery store as it changes and the app reads it back
+      // on boot, so a reload lands on the same board. Not `forceReload` - that
+      // one empties the HTTP cache too, and there is nothing here to empty.
+      { label: 'Reload', role: 'reload', accelerator: 'CmdOrCtrl+R' },
       { label: 'Developer Tools', role: 'toggleDevTools' },
     ],
   },

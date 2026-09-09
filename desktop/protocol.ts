@@ -48,6 +48,15 @@ import { log } from './log.ts';
 const HOST = 'mbrd';
 export const APP_ORIGIN = `app://${HOST}`;
 export const APP_INDEX = `${APP_ORIGIN}/index.html`;
+/**
+ * The changelog, which is the one address in this app that is not the app.
+ *
+ * Named here rather than spelled in main.ts because it is the same fact as
+ * APP_INDEX - a path under this scheme - and because main.ts matches a
+ * navigation against it. `homePath()` in web/assets/js/page.ts produces exactly
+ * this, extensionless, and readPage() below is what resolves it to patch.html.
+ */
+export const APP_PATCH = `${APP_ORIGIN}/patch`;
 
 /**
  * Register the scheme. Must run before `ready`, which is why it is not part of
@@ -117,25 +126,58 @@ export function serveWeb(): void {
       return new Response('Forbidden', { status: 403 });
     }
 
-    try {
-      const body = await readFile(file);
-      const headers = new Headers({ 'Content-Type': mimeOf(file) });
-      // Exempt paths get no policy at all rather than a looser one, for the
-      // reason _headers gives: two Content-Security-Policy values are
-      // intersected, not overridden, so a looser second one would change
-      // nothing. The comparison is on the URL path, which is how _headers
-      // spells them.
-      if (policy.value && !policy.exempt.includes(url.pathname)) {
-        headers.set('Content-Security-Policy', policy.value);
-      }
-      return new Response(new Uint8Array(body), { headers });
-    } catch (err) {
+    const found = await readPage(file);
+    if (!found) {
       // Not an error worth a log line at `error`: a 404 here is usually the app
       // probing for something optional - a vendored decoder it can do without.
-      log('info', 'not served', { path: url.pathname, err: String(err) });
+      log('info', 'not served', { path: url.pathname });
       return new Response('Not found', { status: 404 });
     }
+
+    const headers = new Headers({ 'Content-Type': mimeOf(found.file) });
+    // Exempt paths get no policy at all rather than a looser one, for the
+    // reason _headers gives: two Content-Security-Policy values are
+    // intersected, not overridden, so a looser second one would change
+    // nothing. The comparison is on the URL path, which is how _headers
+    // spells them.
+    if (policy.value && !policy.exempt.includes(url.pathname)) {
+      headers.set('Content-Security-Policy', policy.value);
+    }
+    return new Response(new Uint8Array(found.body), { headers });
   });
+}
+
+/**
+ * The bytes behind a resolved path, with the host's one rewrite applied.
+ *
+ * A path carrying no extension is that name with `.html` on it. This is the
+ * rule that makes `/patch` an address on the deploy - a static host resolves
+ * the extensionless form, `page.ts` spells the changelog that way in three
+ * places, and `homePath() + 'patch'` is what the What Changed row navigates to.
+ * Without it the window asked for `web/patch`, got a 404 and painted the
+ * response body: a blank screen, from a row that had worked on the web all
+ * along.
+ *
+ * The extensionless spelling is tried *first* rather than as a fallback. A
+ * directory named `patch` beside `patch.html` would otherwise be read as a file,
+ * fail, and never reach the page - and a bare path has nothing else it could
+ * mean here, since a directory is already rewritten to index.html above.
+ *
+ * Called after the containment check in the handler, and that order matters:
+ * `.html` appended to a path already known to be under web/ cannot take it out,
+ * where doing this first would hand the check a different string than the one
+ * read.
+ */
+async function readPage(file: string): Promise<{ file: string, body: Buffer } | null> {
+  const named = /\.[a-z0-9]+$/i.test(file);
+  for (const candidate of named ? [file] : [`${file}.html`, file]) {
+    try {
+      return { file: candidate, body: await readFile(candidate) };
+    } catch {
+      // The next spelling, or none. The caller logs the miss once.
+    }
+  }
+  return null;
 }
 
 /** Where web/ is, found rather than assumed. */
