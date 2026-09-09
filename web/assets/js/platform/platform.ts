@@ -287,9 +287,9 @@ export interface FramePort {
   own(): boolean;
   /**
    * Whether the *system* keeps buttons in the top-left corner, which is macOS
-   * and only macOS. The app's own button there steps aside by that much rather
-   * than the page guessing at a platform - see --frame-inset-left in
-   * chrome.css.
+   * and only macOS. The app draws none of its own where that is true: a second
+   * set would be this app disagreeing with the system about how many ways there
+   * are to shut a window. Asked of the shell rather than sniffed off the engine.
    */
   systemLeft(): boolean;
   minimize(): void;

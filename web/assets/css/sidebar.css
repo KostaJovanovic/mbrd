@@ -6,12 +6,17 @@
 #mobile-header-edit-btn,
 #mobile-find-btn {
   position: fixed;
-  top: max(16px, env(safe-area-inset-top));
-  /* --frame-inset-left is zero everywhere except a macOS desktop window, where
-     the system keeps its traffic lights in this exact corner and this button
-     steps clear of them. Declared in chrome.css beside the rest of the drawn
-     frame; the term is written here because this is the element that moves. */
-  left: calc(max(16px, env(safe-area-inset-left)) + var(--frame-inset-left));
+  /* --frame-bar-h is 0px on the web and the height of the drawn title bar in a
+     desktop window, where this whole row sits below it. Declared in chrome.css
+     beside the rest of the frame: it is a fact about the window this app is in
+     rather than a look, so it has no business in tokens.css where a board file
+     could set it. */
+  top: calc(max(16px, env(safe-area-inset-top)) + var(--frame-bar-h));
+  /* No macOS term here any more. This button used to step right by
+     --frame-inset-left to clear the traffic lights, which shared its line; the
+     drawn title bar took that line and the lights are inside it now, a whole
+     bar above. The corner is the app's again on every platform. */
+  left: max(16px, env(safe-area-inset-left));
   z-index: var(--z-panel);
   width: var(--chrome-button-w);
   height: var(--chrome-button-h);
@@ -207,7 +212,11 @@
 #sidebar {
   position: fixed;
   z-index: var(--z-overlay);
-  top: max(14px, env(safe-area-inset-top));
+  /* Clear of the drawn title bar, which is 0px tall until there is one. A panel
+     is --z-overlay and the bar is down on --z-chrome, so without this term the
+     panel would cover the window's own buttons and there would be no way to
+     close the window with the sidebar open. */
+  top: calc(max(14px, env(safe-area-inset-top)) + var(--frame-bar-h));
   bottom: max(14px, env(safe-area-inset-bottom));
   left: max(14px, env(safe-area-inset-left));
   width: min(var(--sidebar-w), calc(100vw - 28px));
@@ -242,7 +251,9 @@
 #header-panel {
   position: fixed;
   z-index: var(--z-overlay);
-  top: max(14px, env(safe-area-inset-top));
+  /* And this one for a sharper reason than #sidebar's: it opens against the
+     right edge, which is the corner the window's buttons are in. */
+  top: calc(max(14px, env(safe-area-inset-top)) + var(--frame-bar-h));
   bottom: max(14px, env(safe-area-inset-bottom));
   right: max(14px, env(safe-area-inset-right));
   width: min(var(--sidebar-w), calc(100vw - 28px));

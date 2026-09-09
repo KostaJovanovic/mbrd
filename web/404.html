@@ -468,13 +468,23 @@
      that fails. Neither of these is named in any of those selectors, and
      putting them in front of the whole run is what keeps that true.
 
-     The band is what the window is dragged by. It is invisible, it is 32px
-     tall, and it sits below every piece of glass chrome in the stack, so the
-     menu button and the toolbar over it are pressed normally - see
-     ui/window-chrome.js for what it costs the board. aria-hidden because there
-     is nothing in it: dragging a window is not something a screen reader user
-     does through the page. -->
-<div id="window-drag" hidden aria-hidden="true"></div>
+     The bar is what the window is dragged by, and everything in it is either
+     the window's or a copy of something the window already says. The mark is
+     the app's own icon, and it is dropped on macOS, where the system keeps its
+     traffic lights in that exact corner. The title is the board's name with a
+     dot in front of it when there is unsaved work - the same two facts the OS
+     puts in the taskbar and the switcher, said again where a person is already
+     looking. Neither is a control.
+
+     aria-hidden on the whole strip, and it is the right call rather than a
+     shortcut: dragging a window is not something a screen reader user does
+     through the page, and the title in here is a *second* copy of a string the
+     OS window title already carries - which is what the reader is given. See
+     showDocument() in desktop/main.ts for the copy that counts. -->
+<div id="window-drag" hidden aria-hidden="true">
+  <img id="window-mark" src="assets/img/icon.svg" alt="" width="16" height="16" hidden>
+  <span id="window-title"></span>
+</div>
 <!-- The three buttons, in the one corner of the glass this app has never used.
      Not shown on macOS, which keeps its own three in the opposite corner.
      data-cmd and nothing else, the toolbar's contract - the actions are

@@ -91,13 +91,23 @@ test('nothing draws the frame without .is-framed', () => {
 });
 
 test('the drag band sits under the glass, not over it', () => {
-  // Chromium hands a drag region every press that reaches it and the page never
-  // sees one. A band on --z-chrome rather than below it would take the menu
-  // button, the toolbar and the window buttons with it - all of them at once,
-  // and only on the desktop.
+  // Below --z-chrome so the paint order can answer the question the rule below
+  // asks of it: a no-drag box only takes its own area back from a drag region
+  // when it paints above the drag box.
   const band = /\.is-framed #window-drag \{[\s\S]*?\}/.exec(chrome)?.[0] ?? '';
   assert.match(band, /z-index: calc\(var\(--z-chrome\) - 1\)/);
   assert.match(band, /app-region: drag/);
+});
+
+test('body punches every control back out of the drag region', () => {
+  // The load-bearing line, and the one this file exists for. A drag region is
+  // hit-tested by the window manager before the page hears anything, so a
+  // stacking order alone does not hold it back - and `no-drag` is not the
+  // initial value, so a box that says nothing subtracts nothing. Without this
+  // rule the band covers the whole chrome row and not one button in it can be
+  // pressed, on the desktop only, with nothing logged. That shipped once.
+  assert.match(chrome, /\.is-framed body \{[\s\S]*?app-region: no-drag/,
+    'body no longer declares no-drag, so the drag band swallows the top row');
 });
 
 test('the buttons are not part of the handle they sit in', () => {
@@ -105,6 +115,53 @@ test('the buttons are not part of the handle they sit in', () => {
   // unless it says otherwise - and a draggable button is one that never fires a
   // click, on the one platform this whole feature is for.
   assert.match(chrome, /#window-controls button \{[\s\S]*?app-region: no-drag/);
+});
+
+test('the whole top row steps below the drawn bar together', () => {
+  // --frame-bar-h is the push: 0px on the web, the bar's height in a window
+  // this app drew the frame of. Everything anchored to the top edge has to
+  // carry the term or the bar lands on top of it - and the failure is partial,
+  // so it reads as a layout bug in one element rather than a missing term in
+  // one rule. The sidebar and the header panel are on the list for a sharper
+  // reason than looks: they are --z-overlay and the bar is down on --z-chrome,
+  // so a panel that did not step down would bury the window's own buttons.
+  assert.match(chrome, /--frame-bar-h: 0px;/, 'the push is not zero on the web');
+  assert.match(chrome, /\.is-framed \{[\s\S]*?--frame-bar-h: \d+px/);
+
+  const anchored = [
+    ['chrome.css', '#toolbar'],
+    ['sidebar.css', '#menu-btn'],
+    ['sidebar.css', '#sidebar'],
+    ['sidebar.css', '#header-panel'],
+    ['status.css', '#busy'],
+  ];
+  for (const [sheet, id] of anchored) {
+    const src = read(join(CSS_DIR, sheet));
+    // The rule's own block, from the selector to its closing brace.
+    const rule = new RegExp(`${id}[^{}]*\\{[\\s\\S]*?\\n\\}`).exec(src)?.[0] ?? '';
+    assert.ok(rule, `${sheet} has no rule for ${id}`);
+    assert.match(rule, /var\(--frame-bar-h\)/,
+      `${id} in ${sheet} does not step below the drawn title bar`);
+  }
+});
+
+test('the phone tier steps down too, and it is the corner that proves it', () => {
+  // A desktop window can be dragged narrower than the phone breakpoint, and
+  // then mobile.css's own top rules win over the desktop ones above - including
+  // #corner and #mobile-header-edit-btn, which move to the *top right*, which
+  // is where the window's three buttons are. A sweep of eighteen window sizes
+  // caught exactly this at 700px wide and below.
+  //
+  // Every top-anchored rule in mobile.css, checked by counting rather than by
+  // name: `env(safe-area-inset-top)` appears only in rules that pin something
+  // to the top edge, so each occurrence needs the term beside it.
+  const mobile = read(join(CSS_DIR, 'mobile.css')).replace(/\/\*[\s\S]*?\*\//g, '');
+  for (const decl of mobile.match(/[\w-]+:[^;]*env\(safe-area-inset-top\)[^;]*;/g) ?? []) {
+    assert.match(decl, /var\(--frame-bar-h\)/,
+      `a top-anchored rule in mobile.css misses the title bar's height: ${decl.trim()}`);
+  }
+  // And the short-landscape override, which writes a bare number instead.
+  assert.match(mobile, /#sidebar, #header-panel \{ top: calc\(6px \+ var\(--frame-bar-h\)\)/);
 });
 
 test('base.css is the only place a scrollbar is described', () => {

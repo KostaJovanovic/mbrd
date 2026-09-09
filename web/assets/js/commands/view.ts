@@ -273,6 +273,42 @@ export function viewCommands(vp: CommandViewport, { resetAppearance, perf }: Vie
       return on;
     },
     /**
+     * Dev: paint the window's drag band, and say how tall it is.
+     *
+     * The grip overlay's twin, and it exists for the same reason: the band is
+     * an element with no ink of its own, so the one thing anybody wants to know
+     * about it - where it ends - cannot be checked by eye. It is also the one
+     * piece of chrome in this app that *takes* presses rather than drawing
+     * anything, so a band that is too tall reads as a board which has stopped
+     * accepting a drag near the top edge, with nothing on screen to say why.
+     *
+     * The toast carries the measurement rather than the token. --frame-drag-h
+     * is what the number is written as, and the height on screen is what the
+     * question is actually about - a rule further down the cascade, a zoomed
+     * page, or a stylesheet that failed to load would all leave the two
+     * disagreeing, and only one of them is the thing under the pointer.
+     *
+     * It writes its own aria-pressed, the shape the two rows above it use.
+     */
+    debugFrame: () => {
+      const band = document.getElementById('window-drag');
+      // No band and no drawn frame: this is a browser tab, where the title bar
+      // is the browser's and there is nothing of this app's to show. Said out
+      // loud rather than toggled silently - an attribute that paints nothing is
+      // indistinguishable from a button that is broken.
+      if (!band || band.hidden) {
+        toast('No drawn title bar here - the browser draws this window');
+        return false;
+      }
+      const on = document.documentElement.toggleAttribute('data-debug-frame');
+      document.querySelector('[data-cmd="debug-frame"]')?.setAttribute('aria-pressed', String(on));
+      if (on) {
+        const h = Math.round(band.getBoundingClientRect().height);
+        toast(`The drag band is ${h}px tall - the window is moved from there`);
+      }
+      return on;
+    },
+    /**
      * Arm the frame profiler, and print what it saw.
      *
      * The profiler has existed for a long time with no way into it from the

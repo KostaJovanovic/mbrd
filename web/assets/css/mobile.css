@@ -35,7 +35,8 @@
    --------------------------------------------------------- */
 #mobile-feed, #mobile-playlist {
   /* How far the sheet stands off the top and bottom, clearing the chrome. */
-  --feed-inset-top: calc(max(12px, env(safe-area-inset-top)) + var(--chrome-button-h) + 20px);
+  --feed-inset-top: calc(max(12px, env(safe-area-inset-top)) + var(--chrome-button-h) + 20px
+    + var(--frame-bar-h));
   --feed-inset-bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--chrome-button-h) + 12px);
   display: none;
   position: fixed;
@@ -1535,16 +1536,24 @@
      row you have to aim at. The panel it opens is a two-handed job anyway -
      you go to it to rename a board or change the look, not mid-gesture - so it
      is the one thing in the corner that can afford the reach. */
+  /* ── + var(--frame-bar-h), on every top-anchored rule in this sheet ──
+     The term is 0px in a browser, which is every phone, and the height of the
+     drawn title bar in the desktop window - which can be dragged this narrow,
+     lands on these rules when it is, and has three of its own buttons in the
+     top-right corner. Without the term the phone tier puts #corner and
+     #mobile-header-edit-btn straight on top of them. Measured: the sweep in
+     desktop/test caught it at 700px wide and below. */
   #menu-btn {
-    top: max(12px, env(safe-area-inset-top));
+    top: calc(max(12px, env(safe-area-inset-top)) + var(--frame-bar-h));
     left: max(12px, env(safe-area-inset-left));
   }
   #mobile-find-btn {
-    top: calc(max(12px, env(safe-area-inset-top)) + var(--chrome-button-h) + 8px);
+    top: calc(max(12px, env(safe-area-inset-top)) + var(--chrome-button-h) + 8px
+      + var(--frame-bar-h));
     left: max(12px, env(safe-area-inset-left));
   }
   #mobile-header-edit-btn {
-    top: max(12px, env(safe-area-inset-top));
+    top: calc(max(12px, env(safe-area-inset-top)) + var(--frame-bar-h));
     right: max(12px, env(safe-area-inset-right));
     left: auto;
   }
@@ -1615,7 +1624,7 @@
      rather than centred: #corner is a column that grows downwards from its
      pin, and the top right is the one part of the screen nothing else claims. */
   #corner {
-    top: max(12px, env(safe-area-inset-top));
+    top: calc(max(12px, env(safe-area-inset-top)) + var(--frame-bar-h));
     bottom: auto;
     right: max(12px, env(safe-area-inset-right));
   }
@@ -1645,7 +1654,7 @@
 
   /* The top edge is clear again - the toolbar went to the foot - so the waiting
      strip takes it back. See the note on #busy in status.css. */
-  #busy { top: max(14px, env(safe-area-inset-top)); }
+  #busy { top: calc(max(14px, env(safe-area-inset-top)) + var(--frame-bar-h)); }
 
   /* And with the panel open, the view controls go too - so nothing is left on
      the glass but the panel.
@@ -1687,7 +1696,7 @@
 
   /* Under the view controls rather than beside them: at this width a centred
      330px strip and a right-pinned zoom bar are the same piece of screen. */
-  #busy { top: calc(max(12px, env(safe-area-inset-top)) + 46px); }
+  #busy { top: calc(max(12px, env(safe-area-inset-top)) + 46px + var(--frame-bar-h)); }
 
   /* The panel becomes the screen rather than a sheet laid on it. At this width
      the board behind it is not usable anyway, and half a panel is worse than a
@@ -1701,7 +1710,7 @@
      board at the foot of a screen you are scrolling with your thumb. */
   #sidebar,
   #header-panel {
-    top: max(10px, env(safe-area-inset-top));
+    top: calc(max(10px, env(safe-area-inset-top)) + var(--frame-bar-h));
     bottom: max(10px, env(safe-area-inset-bottom));
     left: max(10px, env(safe-area-inset-left));
     right: max(10px, env(safe-area-inset-right));
@@ -1766,7 +1775,7 @@
   /* The find palette is a desktop-width strip; here it wants the width it can
      get, and to sit higher up so the keyboard does not cover its own results. */
   #search {
-    top: max(10px, env(safe-area-inset-top));
+    top: calc(max(10px, env(safe-area-inset-top)) + var(--frame-bar-h));
     left: 10px;
     right: 10px;
     width: auto;
@@ -1779,7 +1788,12 @@
 /* Landscape on a phone: the bar is still at the bottom but there is barely any
    bottom to put it in, so the panel gives up the inset and takes the height. */
 @media (max-width: 900px) and (max-height: 480px) {
-  #sidebar, #header-panel { top: 6px; bottom: 6px; }
+  /* The 6px is the whole point of this rule and the --frame-bar-h beside it is
+     0px in a browser, which is every phone this block was written for. A
+     desktop window can be dragged into these bounds too, and there the panel
+     has to start below the drawn title bar or it covers the window's own
+     buttons - it is --z-overlay and they are --z-chrome. */
+  #sidebar, #header-panel { top: calc(6px + var(--frame-bar-h)); bottom: 6px; }
   .side-head { padding: 10px 14px 8px; }
   /* Height is the scarce thing here, so the foot row shrinks a notch. The
      finger has not changed size, so this stops at 44 rather than going further.

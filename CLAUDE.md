@@ -60,10 +60,25 @@ The desktop shell is a **second package** under `desktop/` with its own
 `node_modules`, and needs its own `npm install` before any of this:
 
 ```bash
+desktop.bat                         # Windows: build the web bundle, then the above
+desktop.bat portable                # Windows: repackage desktop/portable/ and run it
 npm run desktop                     # build the shell and open the app
 npm run portable                    # → desktop/portable/, a runnable copy
 cd desktop && npm run typecheck     # outside the root tsconfig on purpose
 ```
+
+`desktop.bat` is the launcher to use, and the one thing it adds over `npm run
+desktop` is the web bundle. Electron serves `web/` off the disk you are editing,
+but `index.html` loads `assets/app.js` — so without a build first, an edit to a
+`.ts` file opens the previous bundle and reads as a change that did nothing.
+It also clears `ELECTRON_RUN_AS_NODE`, which an Electron-based editor sets in
+its integrated terminal and which makes `electron .` boot as plain Node: `app`
+is undefined and `main.ts` throws on its first line.
+
+**`Ctrl+R` reloads, but nothing rebuilds.** The window reads `web/` off the disk
+fresh on every request, so a reload shows the last *build* — run `npm run build`
+(or `npm run dev` in another terminal) first, or the reload shows what was
+already there. The Reload row is in the View menu; there is no watch.
 
 `desktop/portable/` is the unpacked app plus the `portable` marker
 `installer.nsh`'s Portable branch writes — there is no portable *target*, only
