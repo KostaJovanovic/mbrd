@@ -1,9 +1,8 @@
 // The only string in this app that is allowed to become an iframe src.
 //
-// A .mbrd is a file anyone can hand-edit, so the id is checked rather than
-// trusted, and the check is the whole of the security story for embeds: the
-// src is a fixed template with one hole in it, and this decides what may go in
-// the hole. Everything below is either "this is a video" or "this is not one".
+// A .mbrd is hand-editable, so the id is checked, not trusted - the whole
+// security story is a fixed src template with one hole, and this decides
+// what may go in it. Everything below is "this is a video" or it isn't.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -24,8 +23,7 @@ test('the four shapes that carry a video id', () => {
 });
 
 test('the host is matched exactly, not by containment', () => {
-  // The attack this rejects: a domain that merely *ends with* or *contains*
-  // youtube.com would otherwise get an iframe pointed at it.
+  // Rejects domains that merely end with or contain youtube.com.
   assert.equal(id('https://youtube.com.evil.test/watch?v=dQw4w9WgXcQ'), null);
   assert.equal(id('https://notyoutube.com/watch?v=dQw4w9WgXcQ'), null);
   assert.equal(id('https://evil.test/youtube.com/watch?v=dQw4w9WgXcQ'), null);
@@ -101,8 +99,7 @@ test('every kind Spotify will embed, and nothing else', () => {
 });
 
 test('a Spotify id is 22 characters of base62 or it is not one', () => {
-  // The whole security story for the frame: this decides what may go in the one
-  // hole in the src template, and a .mbrd is a file anyone can hand-edit.
+  // This decides what may go in the one hole in the src template.
   for (const bad of ['short', TRACK + 'x', TRACK.slice(1), '../../evil', TRACK.slice(0, 21) + '-']) {
     assert.equal(sp(`https://open.spotify.com/track/${bad}`), null, `${bad} was let through`);
   }
@@ -125,12 +122,15 @@ test('a player is described the same way whoever provides it', () => {
     for (const k of ['provider', 'src', 'page', 'title', 'label', 'hint', 'allow']) {
       assert.equal(typeof spec[k], 'string', `${spec.provider} has no ${k}`);
     }
-    assert.equal(typeof spec.heightFor(256), 'number');
+    assert.equal(typeof spec.playerHeight(256), 'number');
+    assert.equal(typeof spec.chrome, 'number');
+    assert.equal(typeof spec.minWidth, 'number');
     assert.ok(spec.src.startsWith('https://'), spec.src);
   }
-  // The src is built from a template, so the id is the only thing in it that
-  // came from outside - and the page is the human link, not the embed one.
-  assert.equal(spot.src, `https://open.spotify.com/embed/track/${TRACK}?theme=0`);
+  // The id is the only part of the template src that came from outside;
+  // page is the human link, not the embed one. No theme parameter - the
+  // default player is the one this card is built around.
+  assert.equal(spot.src, `https://open.spotify.com/embed/track/${TRACK}`);
   assert.equal(spot.page, `https://open.spotify.com/track/${TRACK}`);
   assert.equal(yt.src, 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ');
 });
@@ -138,10 +138,16 @@ test('a player is described the same way whoever provides it', () => {
 test('a track asks for the compact player and a playlist for the tall one', () => {
   const track = embedFor(new URL(`https://open.spotify.com/track/${TRACK}`));
   const list = embedFor(new URL(`https://open.spotify.com/playlist/${TRACK}`));
-  assert.ok(list.heightFor(256) > track.heightFor(256));
-  // Flat in the width, unlike a video: the player picks its layout from its
-  // height, so a wider card must not become a taller one.
-  assert.equal(track.heightFor(256), track.heightFor(900));
+  assert.ok(list.playerHeight(256) > track.playerHeight(256));
+  // Flat in the width, unlike a video: the player picks layout from height.
+  assert.equal(track.playerHeight(256), track.playerHeight(900));
+  // A video is fluid and its height follows the width; Spotify's is not.
+  const yt = embedFor(new URL('https://youtu.be/dQw4w9WgXcQ'));
+  assert.ok(yt.playerHeight(320) > yt.playerHeight(160));
+  // The compact player has a floor a default link is under, so the frame grows
+  // to clear the sideways scrollbar. A video has no such floor.
+  assert.ok(track.minWidth >= 320, 'a Spotify frame must be wide enough for the compact player');
+  assert.equal(yt.minWidth, 0);
 });
 
 test('an ordinary link is not a player', () => {
@@ -160,7 +166,7 @@ const SPOTIFY_BLOCK = '<iframe data-testid="embed-iframe" style="border-radius:1
 test('the src comes out of a pasted share block', () => {
   const u = iframeURL(SPOTIFY_BLOCK, linkURL);
   assert.equal(u.hostname, 'open.spotify.com');
-  // &amp; is how a generator writes the separator, and leaving it encoded would
+  // &amp; is how a generator writes the separator - left encoded, it would
   // make the second parameter part of the first one's value.
   assert.equal(u.searchParams.get('si'), '14e4');
   assert.deepEqual(spotifyRef(u), { kind: 'track', id: TRACK });
@@ -175,9 +181,8 @@ test('only an iframe, and only a real src', () => {
   assert.equal(iframeURL('just some text', linkURL), null);
   assert.equal(iframeURL('<iframemalicious src="https://x.test/">', linkURL), null);
   assert.equal(iframeURL('<iframe></iframe>', linkURL), null);
-  // The pasted string is searched, never parsed - so the scheme allowlist in
-  // linkURL is what stands between a share block and an href, exactly as it
-  // does for a typed address.
+  // The pasted string is searched, never parsed - linkURL's scheme allowlist
+  // stands between a share block and an href, as for a typed address.
   assert.equal(iframeURL('<iframe src="javascript:alert(1)"></iframe>', linkURL), null);
   assert.equal(iframeURL('<iframe src="data:text/html,<b>x"></iframe>', linkURL), null);
   // A sentence *about* an iframe is not one.
@@ -185,15 +190,13 @@ test('only an iframe, and only a real src', () => {
 });
 
 test('the embed module fetches nothing at import time', async () => {
-  // The property the whole file exists to protect. If this module ever gained
-  // a top-level request, loading a board would announce itself before anyone
-  // had pressed anything - so the source is checked for the ways that could
-  // happen rather than trusted to stay clean.
+  // If this module gained a top-level request, loading a board would
+  // announce itself before anyone pressed anything - checked, not trusted.
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../web/assets/js/canvas/embed.ts', import.meta.url), 'utf8');
   for (const bad of ['fetch(', 'XMLHttpRequest', 'new Image', 'importScripts', 'navigator.sendBeacon']) {
     assert.ok(!src.includes(bad), `embed.js should not contain ${bad}`);
   }
-  // And the frame's origin is the no-cookie one, spelt out rather than built.
+  // The frame's origin is the no-cookie one, spelt out rather than built.
   assert.ok(src.includes('https://www.youtube-nocookie.com/embed/'));
 });

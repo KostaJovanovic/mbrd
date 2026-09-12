@@ -1,25 +1,6 @@
-// Live theming. Every control here writes a CSS custom property straight onto
-// :root, so the change is immediate and nothing needs re-rendering.
-//
-// Three things make up a look, in increasing order of how much they change:
-//
-//   whimsy   0-2, how playful the whole interface is. Moves shape, type,
-//            motion, elevation, ornament and contrast at once.
-//   palette  a named set of pigments. Same personality, different colour.
-//   vars     per-token overrides on top of both. Written inline on :root, so
-//            they beat any stylesheet rule and survive a change to either of
-//            the above.
-//
-// The result is stored in two places on purpose:
-//   localStorage  - "my app looks like this", follows the user across boards
-//   board.settings.appearance - "this board looks like this", travels in the
-//                   .mbrd, so opening someone else's board shows their look.
-// Opening a board applies its appearance; editing a control updates both.
-//
-// Everything here is a plain setter over that one `current` object, which is
-// what will let the board set its own look later: reading the pictures dropped
-// on it, extracting their pigments into `vars` and parking `whimsy` where
-// their contrast and sharpness say it belongs.
+// Live theming via CSS custom properties on :root.
+// A look = whimsy (0-2 playfulness axis) + palette (named colour set) +
+// vars (per-token overrides). Stored in both localStorage and the board.
 
 import {
   board, bus, setAppearance, setSetting, MOBILE_APPEARANCE_VARS,
@@ -34,11 +15,7 @@ import { shownHash } from '../board-model.ts';
 import {
   extractPalette, paletteFromAccent, samplePixels, MAX_SOURCES, PALETTE_TOKENS,
 } from './pigments.ts';
-// What a board is allowed to ask for, and what a look *is*. Kept in its own
-// module because this one touches document at import time and that one must
-// stay testable - see look.ts. The model half moved there in the same spirit:
-// clone, the two provenance flags and the equality are arithmetic over a plain
-// object, and none of them has any business needing a browser.
+// Pure look arithmetic — in its own module so it stays testable without a browser.
 import {
   safeVars, cloneLook, sameLook, hasLook, autoOn, clampWhimsy, WHIMSY, DEFAULT_WHIMSY,
 } from './look.ts';
@@ -49,64 +26,20 @@ import {
   wireWhimsy, wirePalette, inputs, toHex,
 } from './appearance-controls.ts';
 import { legacyBlends } from './legacy-color.ts';
+import { refitEmbedMarks } from '../canvas/renderers.ts';
 import type { ControlSpec, Look } from './appearance-controls.ts';
 
-// Re-exported under its old name because this is where the rest of the app has
-// always asked for it, and moving the declaration is not a reason to make every
-// caller say so. The stops themselves are a property of the look model, not of
-// the panel that draws them.
 export { WHIMSY };
 
 const STORE_KEY = 'mbrd.appearance';
 
-/**
- * The plain end of the axis, named because two things key off it rather than
- * off "the last stop": snapping, below, and the shape of the grid's marks,
- * which canvas/grid.ts reads straight off data-whimsy. That file holds the same
- * number as a string; they are not shared through an import because the canvas
- * has no business importing from ui/, and both are really keyed to the
- * attribute this module writes rather than to each other.
- */
 const HARSH = 2;
 
 
-/**
- * Faces the board can be set in, live.
- *
- * Here to settle an argument by looking at it rather than by discussing it:
- * the display serif is the loudest decision on the whole board and the only
- * honest way to choose one is to put real names, real note titles and a real
- * wordmark in it and see. A comparison page cannot do that, because the thing
- * being judged is how a face sits among photographs at three sizes.
- *
- * Every stack here is either shipped with the app (Fraunces, Geist - see
- * fonts.css) or already named as a fallback in tokens.css, so nothing is
- * fetched to try one on. That constraint is the offline-first promise, and it
- * is also why the list is short: these are the faces a board can actually be
- * set in today, not a catalogue.
- *
- * The choice itself is made: **Fraunces is the display serif**, settled on
- * 2026-07-26 after a whole build's worth of boards in it at all three stops of
- * the whimsy axis. The list stays because trying another one is the point - the
- * four operating-system serifs below it are there to be compared against, and a
- * face dropped onto the board joins them. Shipping a different one is an entry
- * here, an @font-face in fonts.css, the files themselves and a line in sw.js's
- * SHELL; nothing else in this module changes.
- *
- * '' is not a face. It removes the inline property and lets the whimsy level
- * have the type back, which is the state every board starts in - so trying
- * something on is always undoable without a reset.
- *
- * Kept under SAFE_VALUE's 160 characters (see ui/look.ts), because these end up
- * in `settings.appearance.vars` and travel inside a .mbrd like any other token.
- */
+// Display faces. '' means "let whimsy decide". All stacks must be shipped or
+// system fonts (offline-first). Values travel in .mbrd — keep under 160 chars.
 const DISPLAY_FACES = [
   { label: 'Default', value: '' },
-  // The two bundled serifs, in the order the axis reaches for them: Playfair is
-  // the middle's display face, Fraunces the soft end's. Both are offered at
-  // every level for the reason given below - comparing one serif across all
-  // three tiers is the point - and offering only whichever the current tier
-  // already resolves to would make "Default" and one entry the same choice.
   { label: 'Playfair',             value: '"Playfair", Georgia, serif' },
   { label: 'Fraunces',             value: '"Fraunces", Georgia, serif' },
   { label: 'Iowan Old Style',      value: '"Iowan Old Style", Palatino, serif' },
@@ -122,64 +55,22 @@ const BODY_FACES = [
   { label: 'System sans',          value: 'system-ui, -apple-system, "Segoe UI", sans-serif' },
   { label: 'Helvetica',            value: '"Helvetica Neue", Helvetica, Arial, sans-serif' },
   { label: 'Georgia',              value: 'Georgia, "Times New Roman", serif' },
-  // The soft end of the axis does exactly this. Offered at every level so the
-  // one-voice setting can be tried without moving the slider to get it.
   { label: 'Same as display',      value: 'var(--font-display)' },
 ];
 
-/**
- * The curated set of tokens worth exposing. Everything else stays internal.
- *
- * `host` files each control into one of three places in the panel:
- *
- *   type      the paired row of face menus, side by side. Above the fold, with
- *             Whimsy and Palette - the display serif is the loudest decision on
- *             a board, and a face dropped onto the board itself lands in this
- *             menu, which made a working feature unfindable while it was hidden.
- *   main      the pigment, which moves the whole sheet. Inside the fold.
- *   advanced  the sliders, for the ones you set once and then leave. Also inside.
- *
- * Whimsy, Palette and the faces are the section above the fold, and nothing else
- * here joins them. Between those three they already move every token this list
- * sets one at a time - which is the argument for the split: the rest are the
- * controls for when the dials did not land where you wanted, not the ones you
- * start with.
- *
- * Deliberately not in AXIS_TOKENS, and that is the decision worth naming:
- * sliding whimsy drops a hand-set radius back to the stylesheet, but a chosen
- * face survives the move. Comparing one serif across all three tiers is the
- * whole reason to have this, and a control that reset itself every time you
- * looked at the other end of the axis could not do it.
- *
- * --font-mono is left out on purpose: it is spent on byte counts, coordinates
- * and the text card's body, where the question is "does it line up in columns"
- * rather than one of taste.
- *
- * There is no --paper control. Paper is derived from the pigment now - see
- * setVar() - because the two were a pair anybody could put out of tune, and
- * a sheet that does not belong to its accent is the one mistake this panel
- * made easiest to make.
- */
+// Exposed controls. host = panel section: type (above fold), main, advanced.
+// Fonts survive whimsy moves (not in AXIS_TOKENS). No --paper (derived from accent).
 const CONTROLS: ControlSpec[] = [
-  // "Display font" and "Body font", not "Display" and "Body". The two sit side
-  // by side in one .field-pair and the shorter words read as a pair of
-  // categories - display *what*, body *what* - where the panel around them is
-  // otherwise a list of nouns you set. The extra word costs nothing: the pair
-  // is a grid of two equal minmax(0, 1fr) columns, so the <select> under each
-  // label sets the column width and a longer label cannot push it.
   { var: '--font-display', label: 'Display font', type: 'font', options: DISPLAY_FACES, host: 'type' },
   { var: '--font-body',    label: 'Body font',    type: 'font', options: BODY_FACES,    host: 'type' },
   { var: '--accent',      label: 'Pigment',       type: 'color', host: 'main' },
-  // Floored well above zero. The bottom of this range used to be an invisible
-  // grid, which is a second, hidden "off" switch sitting next to the real one
-  // in View - and one that gives no hint of what turned the dots off.
+  // Floored above zero — invisible grid would be a hidden "off" switch.
   { var: '--grid-alpha',  label: 'Grid strength', type: 'range', min: 0.04, max: 0.4, step: 0.01, host: 'advanced' },
   { var: '--grid-dot',    label: 'Grid weight',   type: 'range', min: 0.5, max: 4,   step: 0.1,  unit: 'px', host: 'advanced' },
   { var: '--radius',      label: 'Corner radius', type: 'range', min: 0,   max: 28,  step: 1,    unit: 'px', host: 'advanced' },
   { var: '--sidebar-w',   label: 'Panel width',   type: 'range', min: 260, max: 460, step: 4,    unit: 'px', host: 'advanced' },
 ];
 
-/** Where each `host` renders. Missing element = that group is simply not built. */
 const HOSTS: Record<string, string> = {
   type: 'appearance-type',
   main: 'appearance-vars',
@@ -194,28 +85,19 @@ let onChange: () => void = () => {};
 export function initAppearance(handlers: { onChange?: () => void } = {}) {
   onChange = handlers.onChange || (() => {});
 
-  // Hand the panel what it borrows from this module. First, before anything
-  // below can call into it. `current` goes through as a getter rather than by
-  // value because the four sites below reassign it - a board arriving replaces
-  // the whole look - and a captured reference would go stale on the first open.
   initAppearanceControls({
     CONTROLS, HOSTS, WHIMSY, ALL_SOURCES_STOP, ALL_SOURCES_MAX,
     current: () => current,
     setVar, setWhimsy, setPalette, goDynamic, sourceCount, dynamicOn,
   });
 
-  // The other half of the throttled preference write - see storeLook(). pagehide
-  // rather than beforeunload, which iOS Safari does not reliably fire, and
-  // visibilitychange as well, because a tab discarded in the background never
-  // gets either of the unload events.
+  // Flush pending pref writes on tab close (pagehide for iOS, visibility for discard).
   addEventListener('pagehide', flushLook);
   addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') flushLook();
   });
 
   const stored = readStored();
-  // A board's own look wins when it brought one; otherwise fall back to the
-  // user's saved preferences.
   const fromBoard = board.settings.appearance;
   current = hasLook(fromBoard) ? cloneLook(fromBoard) : stored;
   apply(current);
@@ -225,48 +107,29 @@ export function initAppearance(handlers: { onChange?: () => void } = {}) {
   wirePaletteSources();
   wireWhimsy();
 
-  // A board's look on the way in, and the user's own back again on the way out.
-  //
-  // The early return this replaces meant "no look" was read as "no change",
-  // so opening a plain board after someone else's heavily styled one left
-  // their look on screen indefinitely - the board had nothing to say and so
-  // nothing was said. Falling back to the stored preference is what makes a
-  // board without a look mean something rather than nothing.
-  //
-  // Guarded on the look actually differing, because 'board' also fires for a
-  // title change and for every dirty-flag flip, and persist() emits it on the
-  // way through - so an unguarded handler would re-apply the current look on
-  // every keystroke that renames a board.
-  // A new board starts where a first-run board starts - Papyrus, the middle of
-  // the axis, no overrides, the extraction on. The stored preference goes with
-  // it, because these two are one value kept in two places and letting them
-  // disagree is what the whole of readStored()/persist() exists to avoid.
+  // Board without a look falls back to stored prefs; guarded on sameLook()
+  // because 'board' also fires on title/dirty changes.
   bus.on('board:new', () => resetAppearance());
 
-  // While the extraction is allowed, the palette follows whatever is on the
-  // board rather than staying at whatever the pictures said the first time.
-  // Every way that set can change goes through 'items': a picture arriving, a
-  // picture deleted, the undo of either, and everything the bin does. Deleting
-  // used to be the gap - a colour thrown off the board went on tinting the board
-  // it was thrown off, which is the one case where the palette is demonstrably
-  // not a representation of the pictures any more.
+  // Re-derive palette when pictures change (add, delete, undo).
   bus.on('items', autoRecolour);
+  // A single item can gain a picture without an 'items' event: a link card
+  // storing its fetched album cover emits 'item' (state.ts setEmbedMeta). The
+  // source-set dedupe (sourceKey) makes this a no-op unless the picture set
+  // actually changed, so listening to every single-item change costs nothing.
+  bus.on('item', autoRecolour);
 
-  // Turning the "how many pictures" dial changes which pictures the palette is a
-  // representation of, so it re-derives - on the same terms as an edit.
-  // syncPaletteSources() keeps the slider itself in step; this is the colour
-  // half of the same change.
+  // Source count changed — re-derive palette.
   bus.on('settings', key => {
     if (key !== 'paletteSources') return;
     syncPaletteSources();
     autoRecolour();
   });
 
-  // A face arrived, or a board load changed which ones are registered. The
-  // menus are built from a list that just changed under them, so they are built
-  // again - syncControls() at the end of buildControls() puts the current
-  // choice back, including a choice the new list has just made selectable.
-  bus.on('fonts', () => buildControls());
+  // Font list changed — rebuild the menus, and refit the embed watermarks: an
+  // imported face can resolve the current display stack to new metrics, and
+  // fitMark re-measures once document.fonts.ready settles the new load.
+  bus.on('fonts', () => { buildControls(); refitEmbedMarks(); });
 
   const syncFromBoard = () => {
     const look = board.settings.appearance;
@@ -277,48 +140,20 @@ export function initAppearance(handlers: { onChange?: () => void } = {}) {
     syncControls();
   };
   bus.on('board', syncFromBoard);
-  // And on the load itself, ahead of the 'board' that trails it - loadBoard()
-  // emits 'board:load' then 'board' (state.ts), so a look left to the second
-  // event lands a tick too late: every 'board:load' consumer that reads the
-  // resolved type - the Mobile masthead building its weight slider off
-  // --font-display is the one that showed it - rebuilds against the *previous*
-  // whimsy's face and is a face behind until something forces it again. This
-  // module is wired before those consumers (main.ts init order), so applying the
-  // look here means the display font is already the board's own by the time they
-  // run. Idempotent with the trailing 'board': sameLook() makes the second a
-  // no-op.
+  // Apply on 'board:load' too — 'board' fires after consumers that need the resolved face.
   bus.on('board:load', syncFromBoard);
-  // Color and whimsy are shared, while advanced overrides are layout-local.
-  // Switching profiles therefore needs the same reconciliation as opening one.
+  // Advanced overrides are layout-local; reconcile on profile switch.
   bus.on('layout', () => {
     syncFromBoard();
     syncControlVisibility();
   });
 }
 
-/**
- * Slide the whole interface along the playful-to-plain axis. 0, 1 or 2.
- *
- * Exported so main.ts can hang it on `cmds`, which is how the dial on the
- * fourth ghost card reaches it: that card is built under canvas/, which may not
- * import this module (the layering test), so it goes through the command
- * surface like every other user-facing action.
- */
+/** Set the whimsy level (0-2). Exported for cmds (canvas/ cannot import ui/). */
 export function setWhimsy(level: number | string) {
   const n = clampWhimsy(level);
   if (n === current.whimsy) return;
-  // Hand-set values for tokens this axis owns would outrank the new level
-  // (they are inline), so they go back to the stylesheet.
-  //
-  // With one exception the axis cannot win, and it is worth naming rather than
-  // leaving as a puzzle: on Mobile the grid pair comes back. normalizeSettings()
-  // spreads MOBILE_APPEARANCE_VARS *under* a board's saved vars on every read,
-  // so --grid-alpha and --grid-dot are re-injected as a floor the next time the
-  // board is normalised. That is deliberate on the Mobile side -
-  // whimsyControlsSnap() says the same thing about snapping, that Mobile's grid
-  // is a layout setting with its own control - so the deletion here is a no-op
-  // there rather than a fight. Removing them from AXIS_TOKENS would be worse:
-  // Desktop does want the axis to own them.
+  // Drop inline overrides for axis-owned tokens so the new level takes effect.
   for (const key of AXIS_TOKENS) {
     delete current.vars[key];
     root.style.removeProperty(key);
@@ -331,37 +166,18 @@ export function setWhimsy(level: number | string) {
   axisMoved(n);
 }
 
-/**
- * Take the sheet again at the level the axis has just moved to.
- *
- * The paper is a function of the axis as well as of the pictures - the plain
- * end wants a nearly white sheet whatever the photographs said, see PLAIN_PAPER
- * in pigments.ts - and these tokens are written inline, so no stylesheet rule
- * can answer for them. Without this, moving the slider changed the shapes and
- * the type and left the board wearing the sheet the old level asked for.
- *
- * A board on a named palette has nothing inline and needs nothing done: the
- * [data-whimsy] blocks in tokens.css are the whole story there.
- */
+// Re-derive the sheet at the new whimsy level (paper varies by tier).
 function reshade() {
   if (!PALETTE_TOKENS.some(key => key in current.vars)) return;
   if (autoOn(current)) {
     recolourFromBoard({ silent: true }).catch(() => {});
     return;
   }
-  // Off, with a colour somebody picked by hand: the pick stands and the sheet
-  // is rebuilt around it, exactly as picking it did.
+  // Manual accent: rebuild the sheet around the hand-picked colour.
   const sheet = current.vars['--accent']
     ? paletteFromAccent(current.vars['--accent'], { tier: current.whimsy })
     : null;
   if (!sheet) return;
-  // Every pair is a token name and the colour to write.
-  //
-  // There was an `as [string, string][]` here and at the second copy of this
-  // loop below, each under a comment saying ui/pigments.ts "still carries its
-  // migration pragma, so the token map it builds types as an empty object".
-  // That pragma is gone - tests/ts-debt.js counted the migration to zero - and
-  // the assertion it justified was doing nothing.
   for (const [key, value] of Object.entries(sheet)) {
     current.vars[key] = value;
     root.style.setProperty(key, value);
@@ -372,70 +188,22 @@ function reshade() {
   followFade();
 }
 
-/**
- * The two things a move along the axis changes that a custom property cannot.
- *
- * The first is the grid. canvas/grid.ts draws a cross at the plain end where
- * the other levels get a dot, and it composes that in JS on view change rather
- * than leaving it to the stylesheet - so the marks would keep their old shape
- * until the next pan unless the move is announced. 'settings' is the event
- * main.ts already repaints the grid on, and the payload is honest rather than
- * invented: persist() has just rewritten board.settings.appearance.
- *
- * The second is Desktop snapping. Harsh is the level where the Desktop board
- * stops being a scrapbook and starts being a drawing, and things landing on
- * the lattice is part of that. Mobile begins snapped independently and, once
- * created, only its own checkbox may change that setting.
- *
- * Worth naming the straddle, because it is the one place this module reaches
- * outside appearance: whimsy follows the *user* across boards, while `snap` is
- * board state and travels inside someone else's .mbrd. Crossing that line is
- * reserved for a deliberate move of the slider, which is why this is called
- * from the two places the user moves it and never from apply() - applying a
- * look on boot, or when a loaded board brings its own, must leave the snap
- * setting that arrived with that board exactly as saved, and must not mark a
- * board dirty before it has been touched.
- */
+// Announce the axis move for grid shape (canvas/grid.ts) and Desktop snap toggle.
 function axisMoved(level: number) {
   if (whimsyControlsSnap(board.layoutMode)) setSetting('snap', level === HARSH);
-  // setSetting is silent when the value already matches, and it often will:
-  // whenever the checkbox was hand-toggled to where the new level wants it, or
-  // the move was between two levels that agree about snapping. So the repaint
-  // is signalled in its own right rather than left riding on snap changing.
   bus.emit('settings', 'appearance');
 }
 
-/**
- * Replace the pigments wholesale - the hook for palettes derived from the
- * pictures on the board. Pass any subset of the pigment tokens.
- */
+/** Replace pigment tokens wholesale (for picture-derived palettes). */
 export function setPigments(vars: Record<string, string>) {
-  // The named palette is deliberately left alone, field and attribute both.
-  //
-  // PALETTE_TOKENS covers every token the [data-palette] blocks in tokens.css
-  // declare - checked, not assumed: the blocks set thirteen, and SHEET plus
-  // PIGMENT plus --leafy are those same thirteen. So an extraction overrides the
-  // named palette completely and nothing leaks through from underneath, which
-  // is what makes it safe to leave standing. And leaving it standing is what
-  // gives the menu something to fall back to: a board that stops colouring
-  // itself hands the sheet back to the palette that was chosen before Dynamic
-  // was, rather than to Papyrus.
-  //
-  // Through the same filter as anything else, because the eventual caller is
-  // pigments read out of whatever pictures were dropped on the board.
+  // Named palette left standing underneath — fallback when Dynamic is turned off.
   const clean = safeVars(vars);
   for (const [key, value] of Object.entries(clean)) {
     current.vars[key] = value;
     root.style.setProperty(key, value);
     applied.add(key);
   }
-  // Marked as the machine's work, which is what lets the next import replace it
-  // without asking. Counted on what this call actually wrote, not on the whole
-  // var map - which is what the line above was doing, and which made the test
-  // unconditional on Mobile: MOBILE_APPEARANCE_VARS puts --grid-alpha and
-  // --grid-dot into `current.vars` on every Mobile board, so a call that
-  // filtered down to nothing claimed a look it had not written. The comment
-  // already said this was the thing being prevented.
+  // Mark as machine-derived only if something was actually written.
   if (Object.keys(clean).length) current.derived = true;
   paintThemeColour();
   persist();
@@ -443,29 +211,13 @@ export function setPigments(vars: Record<string, string>) {
   followFade();
 }
 
-/** How long a fade lasts if --dur-palette cannot be read. */
 const FADE_MS = 700;
 
 let fadeEnd = 0, fading = false;
 
-/**
- * Repaint the board for the length of a palette fade.
- *
- * The panel and the sheet fade on their own - they are CSS, reading registered
- * custom properties that the engine now interpolates, see tokens.css. The board
- * is a canvas and cannot: canvas/grid.ts resolves its ink once and holds it,
- * because reading computed style per frame is the thing that function exists to
- * avoid. So the fade is the one time it has to be asked repeatedly, and this
- * asks - onChange() is what drops the cached ink and repaints.
- *
- * Re-entrant on purpose: a second change part-way through the first simply
- * pushes the end back rather than starting a second loop.
- */
+// Drive per-frame canvas repaint during palette fade (canvas caches colours).
 function followFade() {
   if (typeof requestAnimationFrame !== 'function') return;
-  // Nothing to follow when the reader asked for less motion - the CSS cuts every
-  // duration to a hundredth of a millisecond - but the loop is still entered for
-  // one frame, because the settle at the end of it is not decoration. See below.
   const still = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
   const raw = readToken('--dur-palette');
   const ms = raw.endsWith('ms') ? parseFloat(raw)
@@ -473,23 +225,12 @@ function followFade() {
   fadeEnd = performance.now() + (still ? 0 : Number.isFinite(ms) ? ms : FADE_MS);
   if (fading) return;
   fading = true;
-  // Everything else stops animating for the length of this - see .is-fading in
-  // tokens.css. A button with a transition of its own is a second animation
-  // reading the same colour, and the two crossing is what flashes.
+  // .is-fading suppresses other transitions to prevent colour flashing.
   if (!still) root.classList.add('is-fading');
   const step = () => {
-    // try/finally, because `fading` and `.is-fading` are cleared only on the
-    // loop's normal exit. onChange() is injected by main.ts and walks the
-    // canvas; a throw out of it left `fading` true - so no later palette change
-    // could ever restart the loop - and left `.is-fading` on :root, which
-    // suppresses every transition in the app. One bad frame and the interface
-    // stopped animating for the session.
+    // try/finally: a throw must not leave fading stuck on.
     try {
       onChange();
-      // The swatch travels with the board rather than jumping at either end of
-      // the fade, which costs one assignment a frame and is the honest picture:
-      // the value it is showing really is the value the interface is painted in
-      // at that instant.
       paintPigment();
     } finally {
       if (performance.now() < fadeEnd) requestAnimationFrame(step);
@@ -503,67 +244,22 @@ function followFade() {
   requestAnimationFrame(step);
 }
 
-/**
- * Read the finished look back into the panel and the title bar.
- *
- * This exists because of one property of the fade, and it is the kind of thing
- * that is obvious only once it has cost you an afternoon: the pigment tokens
- * are registered with @property and transitioned on :root, so
- * getComputedStyle() does not report what they were *set* to - it reports where
- * the animation has got to. Every caller here changes a colour and then
- * immediately reads it back, which is the one moment in the whole 700ms when
- * the answer is still the previous palette.
- *
- * So the swatch under "Pigment" showed the colour you had just left, the theme
- * bar of an installed PWA wore the paper before last, and both stayed that way
- * until the next change pushed them one step further behind. Reading again once
- * the transition has landed is the fix, and there is no synchronous way to ask
- * for the target value instead.
- *
- * Every caller keeps its own immediate syncControls(): radii, faces, durations
- * and the menus are not animated and want to be right now, not in 700ms.
- */
+// Re-read controls after the fade lands — getComputedStyle mid-transition
+// returns the interpolated value, not the target.
 function settle() {
   paintThemeColour();
   syncControls();
 }
 
-/** The pigment swatch alone, which is the only animated control in the panel. */
+// Update the pigment swatch per-frame during the fade.
 function paintPigment() {
   const entry = inputs.get('--accent');
   if (!entry) return;
-  // `.style.background`, not `.value`. The pigment control has been a <button>
-  // since it stopped being an `<input type="color">` - syncControls() paints it
-  // by setting its background - and this went on assigning `value`, a property
-  // a button carries and never renders. So the per-frame paint over
-  // --dur-palette did nothing at all, and the swatch jumped once at settle()
-  // instead of travelling with the board, which is the opposite of what the
-  // note above this pair says happens.
-  //
-  // The activeElement guard went with it, and that is right rather than an
-  // omission: it was there for a native picker's own mid-drag value, and the
-  // picker is a modal now with nothing to jump under.
   const now = toHex(readToken('--accent'));
   if (now) entry.input.style.background = now;
 }
 
-/**
- * Dynamic, chosen from the palette menu.
- *
- * This used to be a checkbox in the fold, below the menu, and the two of them
- * were one decision described twice: a board is set in Papyrus or in Absinthe or
- * in its own photographs, and being asked to pick a named palette and then to
- * say whether it counts is a question with a wrong answer in it. Absence rather
- * than disabling, the same rule the panel keeps everywhere else - so the entry
- * is the state, and the state has one control.
- *
- * Extracts immediately, and with no three-picture floor - unlike the automatic
- * path, see autoPaletteReady(). Waiting would mean the entry appeared to do
- * nothing, which is indistinguishable from broken, and this is somebody asking
- * for it out loud. On a board with fewer pictures than it can read a colour
- * from, recolourFromBoard() says so; that is a better answer than an entry that
- * refuses to be selected.
- */
+// User explicitly chose Dynamic — extract immediately, no minimum-picture floor.
 function goDynamic() {
   delete current.auto;
   persist();
@@ -571,30 +267,9 @@ function goDynamic() {
   recolourFromBoard().catch(() => {});
 }
 
-/**
- * A named palette, chosen from the same menu. Also the only way out of Dynamic.
- *
- * Every pigment comes off, whoever wrote it. That is what makes a palette switch
- * a palette switch rather than a tint over the last one: an extracted look is
- * thirteen inline tokens, and leaving eleven of them standing would leave the
- * named palette outvoted on its own sheet.
- *
- * And *every* pigment, not only the ones this module can prove it derived. The
- * `derived` flag was the obvious guard and the wrong one: a look carried in from
- * an older version, or from somebody else's .mbrd, holds pigment tokens with no
- * flag on them at all - and on exactly those boards the way back did nothing,
- * which is the report that found it. A hand-picked accent needs no special case
- * either, because it is two of those same thirteen keys and deleting all
- * thirteen deletes exactly those two: the branch this replaces dropped every key
- * in `vars` on a derived look, which took a chosen display face with it.
- *
- * Type, radius and the rest of the look are untouched. This is a colour control.
- */
+// Switch to a named palette. Drops all pigment tokens (including hand-picked).
 function setPalette(name: string) {
   dropPigments();
-  // Choosing a colour by name is a decision about the same thing the extraction
-  // decides, so it takes the extraction with it - the same way picking a pigment
-  // by hand does, see setVar().
   current.auto = false;
   current.palette = name;
   apply(current);
@@ -602,14 +277,7 @@ function setPalette(name: string) {
   syncControls();
 }
 
-/**
- * Take every extracted pigment back off and let the named palette answer again.
- *
- * The named palette is still on :root as [data-palette] and has been underneath
- * the whole time - so removing the inline tokens is the whole of the way back,
- * and paintThemeColour() re-reads the sheet that is now showing. Returns
- * whether anything was actually there to remove.
- */
+// Remove all inline pigment tokens; the named palette shows through again.
 function dropPigments() {
   if (!PALETTE_TOKENS.some(key => key in current.vars)) return false;
   for (const key of PALETTE_TOKENS) {
@@ -622,165 +290,48 @@ function dropPigments() {
   return true;
 }
 
-/**
- * The pictures the palette is taken from, newest first, as content hashes.
- *
- * Newest first because a board that grows past MAX_SOURCES should follow what
- * is being added to it rather than stay pinned to whatever was dropped first.
- *
- * The covers count as pictures. A board of audio cards is a board full of album
- * art, and reading the sleeve of every record on it is exactly what somebody
- * pressing the button means.
- *
- * Hashes rather than object URLs, and that is the whole of the difference from
- * the version this replaced. assetURL() *mints* a URL on first use and holds it
- * for the session, so walking the board to answer "has the picture set changed?"
- * created one blob URL per picture on the board - four hundred of them on a
- * four-hundred-photo board, whether or not any of them was ever rendered,
- * sampled or mounted, which is exactly the laziness storage/assets.ts exists to
- * preserve and defeats canvas/items.ts's discard() bookkeeping for anything
- * culled. A hash is a stable identity and costs nothing; the URLs are resolved
- * in recolourFromBoard(), for the handful actually read.
- */
+// Collect picture hashes (newest first) for palette extraction.
+// Hashes, not URLs — minting blob URLs here would defeat lazy asset loading.
 function pictureHashes() {
   const hashes = [];
   for (const it of [...board.items].reverse()) {
-    // Pictures only, named explicitly rather than taken from itemHashes(): that
-    // helper also returns a video's or an audio file's asset, and handing those
-    // to an <img> costs a decode that fails and a source slot that produced no
-    // vote. A video's cover art is still wanted, and is picked up below.
-    // **The preview first, where there is one.** An item is type 'image' from
-    // the moment something drew a picture of it, and for a PDF, a HEIC or a RAW
-    // the asset behind that card is not a picture at all - it is the document or
-    // the camera file, and `meta.preview` names the rendered page or the
-    // embedded JPEG the card is actually showing. Handing the original here is
-    // a decode that cannot succeed and a source slot spent on it, and on a board
-    // of nothing but PDFs it is every slot: the palette then reports "could not
-    // read any of the pictures on the board" about a board whose every card is
-    // showing one. It is also simply the wrong question - the palette is meant
-    // to be the colours of what is on screen, and what is on screen is the
-    // preview.
-    //
-    // shownHash() is that rule written once - see board-model.ts, which holds it
-    // for the canvas renderer and the Feed as well.
+    // shownHash() returns the preview for PDFs/HEIC/RAW, not the raw document.
     const hash = it.type === 'image' ? shownHash(it) : null;
-    for (const h of [hash, it.meta?.cover]) {
-      // Registered, but not resolved: getAsset() is the same "are the bytes
-      // here?" test assetURL() returning null used to stand in for. A cover out
-      // of the open `meta` is held to being a string on the way past, which is
-      // the same thing getAsset() answering nothing already did for it.
+    // meta.art is a link card's fetched album cover (canvas/embed-meta.ts): a
+    // real picture on the board, so it feeds the palette like any other.
+    for (const h of [hash, it.meta?.cover, it.meta?.art]) {
       if (typeof h === 'string' && getAsset(h)) hashes.push(h);
     }
   }
   return hashes;
 }
 
-/**
- * How many pictures the palette is read from: the board's own setting.
- *
- * Zero is the stop past the top of the dial and means every picture on the
- * board - which is ALL_SOURCES_MAX here, not Infinity; the block on that
- * constant below argues why a number rather than "however many there are".
- * Anything else is held inside the sampler's default ceiling, and an unset
- * setting reads as that ceiling.
- */
+// How many pictures to sample. 0 means all (capped at ALL_SOURCES_MAX).
 function sourceCount() {
   const n = board.paletteSources;
   if (n === 0) return ALL_SOURCES_MAX;
   return Number.isFinite(n) ? Math.max(1, Math.min(MAX_SOURCES, n)) : MAX_SOURCES;
 }
 
-/**
- * What "every photo" actually costs, at most.
- *
- * The stop used to return Infinity, which flowed into `hashes.slice(0,
- * sourceCount()).map(assetURL)` - so one `items` event on a 400-photo board
- * with Dynamic on minted a blob URL for all four hundred pictures, and
- * storage/assets.ts caches those for the session with no per-hash release. That
- * defeats canvas/items.ts's discard() bookkeeping outright, and samplePixels()
- * then fetched and full-resolution-decoded all four hundred, one after another.
- * pictureHashes()'s own header says this must never happen, and the slice was
- * written to stop it.
- *
- * A number rather than Infinity, and it is a judgement: a palette read from a
- * hundred and twenty photographs is the same palette as one read from four
- * hundred - the hues have long since converged - and the difference is whether
- * a phone survives it. The stop still means "far more than the dial offers",
- * which is what somebody choosing it is asking for; it no longer means "however
- * many there are, whatever that costs".
- */
+// Hard cap on "all photos" — beyond ~120 the hues converge and the cost grows.
 const ALL_SOURCES_MAX = 120;
 
-/**
- * The slider position that means "every picture".
- *
- * One past the highest count, so the dial reads low-to-high all the way: more
- * pictures, more pictures, all of them. The value stored is 0, not this - see
- * normalizePaletteSources() in state.ts for why a number cannot say "all".
- */
+// Slider stop for "all photos" — one past MAX_SOURCES; stored as 0.
 const ALL_SOURCES_STOP = MAX_SOURCES + 1;
 
-/**
- * The pictures an extraction would actually read, as one comparable string.
- *
- * Sliced to the source count, because the question this answers is "would
- * running the extraction again give a different answer?" and a picture past the
- * count is never read. Order is part of it, and so is the count itself: the same
- * pictures with the dial turned down are a different, shorter list - which is
- * what makes turning the dial re-derive the palette.
- *
- * Hashes, so the key survives a clearAssets() that re-registers the same bytes -
- * the identity is the content, not whichever URL happens to be standing.
- *
- * The walk is a parameter so autoRecolour() can count the pictures and build the
- * key off one pass rather than two - it needs both, and 'items' is an event that
- * fires on every edit a board ever receives.
- */
+// Comparable key for "would re-extraction give a different answer?"
 function sourceKey(hashes = pictureHashes()) {
   return hashes.slice(0, sourceCount()).join('\n');
 }
 
-/** The pictures the palette standing on screen was taken from - see sourceKey(). */
 let lastSources: string | null = null;
 
-/** The last reason an automatic run gave up, so it is said once and not on loop. */
 let lastFailure: string | null = null;
 
-/**
- * Whether the board is wearing colours taken from its own pictures right now.
- *
- * This is what the palette menu shows as Dynamic, and it is deliberately
- * neither of the two flags that look like it. `auto` is only whether the board
- * is *allowed* to colour itself: a fresh board is allowed and is wearing
- * Papyrus, and a menu claiming otherwise would be describing a permission
- * rather than a colour. `derived` is provenance, and is missing from every look
- * written before that flag existed - so a board carrying an extracted palette in
- * from an older version, or from somebody else's .mbrd, would show a palette
- * name it is demonstrably not set in, with no entry selected for what it is.
- *
- * Pigments inline, plus permission, is the honest test, and it is the same one
- * dropPigments() and reshade() already ask.
- */
+// True when the board is actually wearing extracted pigments (auto + inline tokens).
 const dynamicOn = () => autoOn(current) && PALETTE_TOKENS.some(key => key in current.vars);
 
-/**
- * The board recolouring itself because something changed under it.
- *
- * Three gates, in increasing order of what they cost to ask. The extraction has
- * to be allowed at all; the board has to be holding enough pictures to be worth
- * reading, or already be reading them (see autoPaletteReady()); and the pictures
- * that would actually be sampled have to have moved.
- *
- * That last one is stricter than "something happened" on purpose: 'items' also
- * fires for a note, a drag, a duplicate, a text file, a board load - and for the
- * thirteenth picture on a board where only twelve are ever read. Re-running the
- * extraction to arrive at the same palette would repaint the whole interface and
- * mark the board dirty for nothing.
- *
- * Not awaited and its rejection swallowed: this is a decoration on an edit that
- * has already succeeded, and it has no business turning into an unhandled
- * rejection in somebody's console because one PNG would not decode.
- */
+// Auto-recolour on item changes. Skips if source set unchanged.
 function autoRecolour() {
   if (!autoOn(current)) return;
   const hashes = pictureHashes();
@@ -789,137 +340,53 @@ function autoRecolour() {
   recolourFromBoard({ silent: true, hashes }).catch(() => {});
 }
 
-/**
- * Take the colours off the board's own pictures.
- *
- * Quiet about *success* when it fires itself after the board changes, loud when
- * the switch asks for it: an edit that repaints the board has already shown you
- * what it did, while the switch was turned on by somebody waiting for an answer.
- *
- * Failure is announced either way, which it was not, and that cost an evening:
- * a switch sitting on with nothing happening looks identical to a switch that
- * is on and working on a board whose palette happens to be stable. Said once
- * per reason - `lastFailure` - so a board that genuinely has no colour in it
- * does not nag on every single edit.
- */
+// Extract palette from board pictures. Silent on auto-success, loud on user request.
 async function recolourFromBoard(
   { silent = false, hashes = pictureHashes() }: { silent?: boolean, hashes?: string[] } = {},
 ) {
-  // The hashes are a parameter so autoRecolour() can hand over the single walk
-  // it already made rather than have this one repeat it - the same one-pass
-  // design sourceKey()'s header states. Only a caller with none makes the walk.
-  // Sliced before the URLs are resolved, not after: a picture past the count is
-  // never read, and minting a blob URL for it would hold the whole board's
-  // pictures open for the session to sample twelve of them.
-  // The predicate is spelled out because the list is what samplePixels() takes:
-  // assetURL() answers null for a hash the store has lost, and those are what
-  // this drops - the same filter as before, saying which type comes out of it.
+  // Slice before resolving URLs — only the sampled pictures get blob URLs.
   const urls = hashes.slice(0, Math.min(sourceCount(), MAX_SOURCES)).map(assetURL)
     .filter((u): u is string => !!u);
-  // Recorded before the pixels are read, not after: the answer to "which
-  // pictures is the palette standing on" is these, whatever they turn out to
-  // say. Recording it afterwards would leave a board whose pictures have no
-  // colour in them re-running the whole extraction on every subsequent edit.
+  // Record before reading — avoids re-running on boards with colourless pictures.
   lastSources = sourceKey(hashes);
   const failed = (why: string) => {
     if (!silent || lastFailure !== why) toast(why);
     lastFailure = why;
     return false;
   };
-  // One picture is enough here. The three-picture floor lives on the automatic
-  // path alone - autoRecolour(), and autoPaletteReady() for why - because it is
-  // a rule about firing unasked. By the time control reaches this function
-  // either somebody chose Dynamic from the menu or the board is already
-  // colouring itself, and in both cases refusing to read the one picture there
-  // is would be the fault.
-  // An empty board has no colours of its own, so it stops wearing the ones it
-  // used to have. Leaving them standing was defensible while they were "the
-  // board's colours now" - but on a board you have just cleared they are the
-  // colours of pictures that are not there, which is the one case where the
-  // palette is provably not a representation of anything.
-  // Asked of the board, not of the slice: "no pictures here" is a fact about
-  // the board, and a dial turned down is not an empty board.
+  // No minimum here (the floor is only for the auto path). Empty board drops pigments.
   if (!hashes.length) {
     if (dropPigments()) {
       persist();
       syncControls();
-      // Said in terms of what the person did, not of what this module noticed.
-      // It used to read "No pictures left - back to the chosen palette", and the
-      // first tester outside this machine deleted a board's pictures and got a
-      // remark about colour: they had done one thing and the app had answered
-      // about another. The fact was correct and the sentence started in the
-      // wrong place. This one starts where they were - the pictures they just
-      // removed - and the colour follows from it, which is the actual causal
-      // order and also the order the board changes in front of them.
       return failed('The colours came from those pictures - back to your palette');
     }
-    // Empty or picture-less board with no derived palette to shed: a fresh
-    // board's resting state, not a fault. The automatic run (on load and on
-    // every edit) keeps quiet - it would otherwise nag an empty board with a
-    // message about pictures that were never there. Only the switch, turned on
-    // by someone waiting for an answer, is told why nothing happened.
     lastFailure = 'No pictures on the board to take colours from';
     if (!silent) toast(lastFailure);
     return false;
   }
 
   const pixels = await samplePixels(urls, sourceCount());
-  // One line per attempt, in the house style of main.ts's "ready". This is a
-  // feature whose every failure mode is a picture quietly not being read, and
-  // the count of pictures found against pictures actually decoded is the whole
-  // diagnosis - without it the answer to "why has nothing changed?" is a
-  // browser-by-browser guess, which is exactly what it was.
   console.info(`[mbrd] palette: ${hashes.length} picture${hashes.length === 1 ? '' : 's'} on the board, ${pixels.length} read`);
-  // Told apart from "no colour in them" on purpose. Pictures that are on the
-  // board and cannot be read at all is a fault in this app, not a fact about
-  // the photographs, and the two failures used to arrive as one message.
   if (!pixels.length) return failed(`Could not read ${urls.length === 1 ? 'the picture' : 'any of the pictures'} on the board`);
 
   const vars = extractPalette(pixels, { tier: current.whimsy });
   if (!vars) return failed('No colour to take from these pictures');
   lastFailure = null;
-  // The hues, not only the swatches: "is this the colour of my photographs?" is
-  // the question this feature is actually judged on, and two hex codes do not
-  // answer it. Read back off the palette rather than passed out of the
-  // extractor, so it costs nothing and cannot disagree with what was applied.
   const hueOf = (c: string) => Math.round(oklch(...parseHex(c)).h);
   console.info(`[mbrd] palette: sheet ${vars['--paper']} (hue ${hueOf(vars['--paper'])}), `
     + `accent ${vars['--accent']} (hue ${hueOf(vars['--accent'])}), `
     + `wash ${vars['--leafy']} (hue ${hueOf(vars['--leafy'])})`);
-  // Nothing written when the answer has not moved. Deleting one of twelve
-  // pictures usually leaves the same hues standing, and setPigments() persists
-  // - which marks the board dirty - so an extraction that agrees with what is
-  // already on screen would flag a board as edited for having been recounted.
+  // Skip if hues unchanged — avoids marking the board dirty for nothing.
   const moved = Object.entries(vars).some(([k, v]) => current.vars[k] !== v);
   if (moved) setPigments(vars);
   if (!silent) toast('Palette taken from the pictures');
   return true;
 }
 
-/**
- * Back to how the app ships: Middle, Papyrus, no overrides, extraction on.
- *
- * The look object is replaced rather than edited, so every key goes with it -
- * including `auto` and `derived`, which is what allows the extraction again,
- * since autoOn() reads an absent flag as on.
- *
- * And allowed is a promise the board then has to keep, on a board holding enough
- * pictures for it: leaving it there would go back to Papyrus and stay there
- * until the next import happened to move the source list, since the extraction
- * remembers what it last read and the same twelve pictures are not counted
- * twice. That memory is part of what is being reset, so it goes too, and the
- * count runs again. Through the automatic gate rather than around it - starting
- * over is not a request for colour, so a board under the floor stays Papyrus,
- * which is where starting over has just put it anyway.
- *
- * Silent because this is a button about the whole look rather than about
- * colour: somebody straightening the shapes and the type does not need a toast
- * explaining that the photographs they have not added yet have no colours in
- * them.
- */
+/** Reset to default look: Middle, Papyrus, no overrides, extraction re-enabled. */
 export function resetAppearance() {
   const was = current.whimsy;
-  // apply() takes the previous look's properties back off - see `applied`.
   current = {
     whimsy: DEFAULT_WHIMSY,
     palette: '',
@@ -928,10 +395,6 @@ export function resetAppearance() {
   apply(current);
   persist();
   syncControls();
-  // Reset is the other way out of a level, so it owes the axis the same
-  // announcement - but only when it actually moved. Guarded rather than
-  // unconditional so that resetting the pigments while already at the middle
-  // is not also a silent way to switch someone's snapping off.
   if (was !== DEFAULT_WHIMSY) axisMoved(DEFAULT_WHIMSY);
   lastSources = null;
   lastFailure = null;
@@ -940,25 +403,8 @@ export function resetAppearance() {
 
 // ---------------------------------------------------------------------------
 
-/**
- * Everything this module has written inline on :root.
- *
- * Kept because applying a look has to *replace* one, not add to it. An inline
- * property beats every stylesheet rule and nothing takes it back off, so a look
- * that simply set its own tokens left the previous one's behind: a board with a
- * hand-picked --accent went on tinting the next board that never asked for one,
- * and the controls would show the palette's value while the stale inline
- * property was what you could actually see.
- *
- * Seeded from what is already inline, not from nothing. The pre-paint guard in
- * index.html writes custom properties on :root before this module exists, and
- * its filter is *not* this one: it tests the key against `^--[a-z0-9-]+$` where
- * safeVars() tests it against TOKENS. So a saved look carrying a key the
- * allowlist has since dropped was written by the guard, rejected by cloneLook(),
- * and then never removed - the loop below iterated an empty set - and the
- * property survived every board load for the session with no control able to
- * clear it. Whatever the guard put there is this module's to take away.
- */
+// Track what is inline on :root so apply() can remove the previous look's leftovers.
+// Seeded from what the pre-paint guard in index.html already wrote.
 let applied = new Set<string>(
   typeof document === 'object'
     ? [...document.documentElement.style].filter(name => name.startsWith('--'))
@@ -966,10 +412,7 @@ let applied = new Set<string>(
 );
 
 function apply(look: Look) {
-  // Always written, including the default: the stylesheet's base *is* the
-  // middle, so an absent attribute already means 1 - but 0 is a real level
-  // with its own rules, and leaving the attribute off for it would silently
-  // land on the middle instead.
+  // Always written — level 0 has its own rules; absent would fall back to 1.
   root.dataset.whimsy = String(look.whimsy);
   if (look.palette) root.dataset.palette = look.palette;
   else delete root.dataset.palette;   // no attribute = the default, Papyrus
@@ -984,83 +427,34 @@ function apply(look: Look) {
   applied = new Set(Object.keys(vars));
   paintThemeColour();
   markDisplayFace();
-  // Every colour in the app that is a mix of two pigments, for the engines that
-  // cannot mix. A no-op on all of them but WebKit below 16.2, and it has to run
-  // here rather than once at boot: the mixes are functions of --accent, and
-  // this is the line after --accent has just moved. See ui/legacy-color.ts.
+  // Polyfill colour mixes for WebKit < 16.2.
   legacyBlends(root);
-  // Every other way a look changes wholesale - the palette menu, the axis, a
-  // board arriving with its own colours - and each of them is a change the
-  // canvas has to be walked through as well. Free at boot: main.ts has not
-  // wired onChange() yet, so the loop runs against a no-op.
   followFade();
+  // The embed watermark's viewBox is measured from the display face in JS, so a
+  // pure CSS var change does not refit it - the mark would keep the old face's
+  // box and mis-fill. Cheap: a no-op unless a player card is mounted.
+  refitEmbedMarks();
 }
 
-/**
- * Say whether the display face is a sans, for the one rule that cares.
- *
- * The wordmark is set as heavy as the face allows when it is a sans and left at
- * 400 when it is not - see `.wordmark h1` in base.css. CSS cannot ask what
- * family it ended up with, so the question is answered here and left on :root
- * as an attribute.
- *
- * The test is the *last* family in the stack, which is the one thing in a font
- * stack that is always a promise about the kind of face rather than the name of
- * one: every sans entry in the menus ends `sans-serif` and every serif entry
- * ends `serif`, and customFaces() appends `system-ui, sans-serif` to a dropped
- * face for exactly that reason. Read off the computed value rather than off
- * `current.vars`, because most of the time nobody has chosen a face at all and
- * the answer belongs to the whimsy level.
- *
- * Derived state, deliberately not a token: it is a fact *about* the look rather
- * than part of it, so it is recomputed on every change and never persisted,
- * never exported, and never carried inside somebody else's .mbrd.
- */
+// Set data-display-sans on :root so the wordmark can adjust weight for sans faces.
 function markDisplayFace() {
   const stack = readToken('--font-display');
   if (/sans-serif\s*$/i.test(stack)) root.dataset.displaySans = '';
   else delete root.dataset.displaySans;
 }
 
-/**
- * The installed-PWA title bar takes the paper colour, which moves with the
- * palette, the axis and any hand-set override - so it is repainted from the
- * computed value rather than left at whatever Papyrus happened to be when
- * index.html was written.
- */
+// Sync the PWA title-bar colour with --paper.
 function paintThemeColour() {
   if (!themeColour) return;
   const paper = readToken('--paper');
   if (paper) themeColour.setAttribute('content', paper);
 }
 
-/**
- * How long the stored copy of the look may lag behind the live one.
- *
- * Long enough that a drag writes about five times a second instead of sixty,
- * short enough that nothing a person could do between two writes loses
- * anything: the pending write reads `current` when it fires, not when it was
- * scheduled, so the value that lands is always the latest one.
- */
+// Throttle for pref writes during drags.
 const PREF_MS = 200;
 let prefTimer = 0;
 
-/**
- * Mirror the look into the user's preferences.
- *
- * `soon` is for setVar(), and setVar() alone. localStorage is synchronous I/O -
- * the write blocks the thread and, in some engines, reaches the disk - and
- * setVar runs on every frame of a colour drag, where it was doing a
- * JSON.stringify of the whole look and a blocking write per pointermove. The
- * picture does not need it: the colour on screen comes from the inline
- * properties setVar has already written, and the board's own copy still goes
- * through setAppearance() below on every frame. Only the preference lags, and
- * only by a fifth of a second.
- *
- * A throttle with a trailing write rather than a plain debounce, so a drag that
- * never pauses still saves as it goes - a tab closed mid-gesture keeps the
- * colour it was showing a moment ago rather than the one it started from.
- */
+// Write the look to localStorage. soon=true throttles (for mid-drag calls).
 function storeLook(soon: boolean) {
   if (!soon) {
     if (prefTimer) { clearTimeout(prefTimer); prefTimer = 0; }
@@ -1105,11 +499,17 @@ function setVar(name: string, value: string) {
     current.auto = false;
     syncPaletteMode();
   }
+  // The embed watermark's viewBox is measured from the display face in JS; a
+  // bare CSS var change here does not go through apply(), so refit it by hand.
+  // Guarded to the one token that matters — setVar runs every frame of a colour
+  // drag, and the marks read no pigment.
+  const refitFace = name === '--font-display';
   if (value === '') {
     delete current.vars[name];
     root.style.removeProperty(name);
     applied.delete(name);
     persist();
+    if (refitFace) refitEmbedMarks();
     return;
   }
   // The pigment carries the whole sheet with it. Paper, its three shades, the
@@ -1138,6 +538,7 @@ function setVar(name: string, value: string) {
   // the only control whose value changed is the one under the pointer. Nothing
   // else in the panel reads a pigment.
   if (sheet) paintThemeColour();
+  if (refitFace) refitEmbedMarks();
   persist({ soon: true });
 }
 

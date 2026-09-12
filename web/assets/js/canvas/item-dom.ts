@@ -1,74 +1,41 @@
-// What a card is made of: the elements, and nothing about when they exist.
-//
-// canvas/items.ts is the module that decides *which* cards are mounted - the
-// node map, the culling, the pooling, the placement arithmetic that turns an
-// item's world box into a transform. This is the other half of it: given an
-// item, hand back the tree of elements that draws it. The two used to be one
-// file of 1,648 lines with the seam running straight through the middle of it,
-// and the seam is a real one - almost nothing here needs to know that culling
-// exists, and almost nothing there needs to know a caption is a `<div>`.
-//
-// ── The line, precisely ──
-//
-// A function belongs here if it takes an item (or an element) and produces or
-// edits markup, and belongs in items.ts if it touches `nodes`, `shadows`, the
-// viewport, or where a card sits. build() is the one place the two meet, and it
-// is split at exactly that join: buildItem() below assembles the tree, and
-// items.ts's build() is what registers it, gives it a shadow, places it and
-// selects it. buildShadow() is the same shape - it makes the twin and does not
-// place it, because placeBox() is placement math and stayed behind.
-//
-// ── Why the accessible name and the far-zoom head are here ──
-//
-// itemAccessibleName(), wantsHead() and farKind() are pure functions over an
-// item and were always the tested part of items.ts (tests/items.test.js imports
-// all three). They are here because they are decisions about *what a card says*,
-// which is this file's subject, and items.ts re-exports them by name so nothing
-// that imported them had to move. Re-exported explicitly rather than with
-// `export *`, for the reason state.ts gives for the same choice.
-//
-// ── What must not move in here ──
-//
-// The node map and the culling. A builder that also remembered what it had built
-// would be the module this came out of.
-//
-// Placement. place(), placeBox(), itemTransform() and deviceSnap() are geometry
-// against the viewport, and they are items.ts's. The one thing this file writes
-// that looks like geometry - `--item-tilt` - is deliberately not geometry at all:
-// see restingTilt(), and the long note in items.ts about why a lean stays out of
-// item.rot.
-//
-// Content. What goes *inside* a card is canvas/renderers.ts, reached through
-// buildContent(). This builds the shell around it - the body, the bar, the
-// caption, the head, the grips, the title card's two buttons - and calls that
-// once. A per-type branch appearing in this file would be a second RENDERERS
-// table.
+// What a card is made of: elements, not when they exist. items.ts decides
+// which cards are mounted (culling, placement); this builds the tree for
+// a given item. Boundary: markup here, node map/viewport/placement there.
+// Content is canvas/renderers.ts; this builds the shell around it.
 
 import { extOf, shuffle } from '../util.ts';
 import { formatName } from '../import/formats.ts';
 import { adjustFilter, flipTransform, isFence, isLocked, itemBare } from '../state.ts';
 import { buildContent, fitMode } from './renderers.ts';
 import { noteTint } from './note-model.ts';
+import { embedFor } from './embed.ts';
 import type { Item } from '../board-model.ts';
 
 /**
- * Enough of a board item to draw one, which is the whole of one.
- *
- * This was a private re-declaration - id, type, name and a three-key meta - made
- * while board.items still inferred as never[] and there was nothing else to name.
- * board-model.ts states the shape now, so the alias is kept only so the eight
- * signatures below still read as "an item you can draw", and it points at the
- * one answer rather than holding a second.
+ * A link that is a player (YouTube, Spotify). Its card carries its own identity
+ * at every zoom - the watermark and the offer - so it takes no far-zoom headline
+ * over the top, the same way a picture card does not (item-chrome.css). embedFor
+ * reads the host and id; a bad URL throws out of new URL and is not one.
+ */
+function isEmbedLink(item: ItemLike): boolean {
+  if (item.type !== 'link') return false;
+  let u: URL;
+  try { u = new URL(String(item.meta?.url)); } catch { return false; }
+  return !!embedFor(u);
+}
+
+/**
+ * Enough of a board item to draw one. A leftover alias from when board.items
+ * inferred as never[]; kept only so signatures below read as "an item you can
+ * draw", pointing at board-model.ts's Item rather than holding a second shape.
  */
 export type ItemLike = Item;
 
 /**
- * Anything an item might be, for the three pure questions below.
- *
- * Wider than an Item on purpose: these three are called with fragments - by
- * tests/items.test.js with a bare `{}`, and by rebuild() with a live item - and
- * every one of them is written to answer for a card that has no name, no meta
- * and no type at all.
+ * Anything an item might be, for the three pure questions below. Wider than
+ * an Item on purpose: called with fragments (tests/items.test.js's bare `{}`,
+ * rebuild()'s live item), so each must answer for a card with no name, no
+ * meta, no type at all.
  */
 export interface ItemFragment {
   type?: string;
@@ -491,7 +458,7 @@ export function buildItem(item: ItemLike, tilt: string, picked: boolean): HTMLDi
   // bar is there rather than in the body: re-rendering an item calls
   // replaceChildren() on the body, and anything built in there would survive
   // until the first redraw and then quietly vanish.
-  if (wantsHead(item)) el.append(farHead(item));
+  if (wantsHead(item) && !isEmbedLink(item)) el.append(farHead(item));
 
   return el;
 }

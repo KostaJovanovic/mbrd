@@ -1,80 +1,22 @@
-// Small shared helpers. Deliberately dependency-free - and now actually small.
-//
-// This file said the same sentence for a year while holding seven unrelated
-// concerns, and forty-four modules imported it - tied with state.ts for the
-// highest fan-in in the codebase. Almost none of them wanted what was in here.
-// A module that wanted clamp() got a hand-written SHA-256, a toast renderer, a
-// progress bar, a localStorage wrapper and a waveform SVG builder along with
-// it, and every one of those was a thing a *specific* pair of layers needed and
-// the rest merely carried. Four of them have gone:
-//
-//   crypto.ts           the SHA-256 and the content id it makes (2 consumers)
-//   notify.ts           the announcement channel every layer speaks through
-//   ui/overlays.ts      the toast and the waiting strip, which draw it
-//   prefs.ts            everything that goes through localStorage
-//   media/transport.ts  the scrubber's wave
-//
-// What is left is the actual definition of this file, and the test for whether
-// something belongs in it: it is here if *most* of the graph wants it and it is
-// two lines long. Anything with a subject - assets, preferences, audio,
-// messages to the person - has a subject-shaped module waiting for it, and
-// adding it here instead is how this file got the way it was.
-//
-// Deliberately not a barrel. There are no re-export shims for the five that
-// left: unlike state.ts, which is a facade on purpose, this was never a door,
-// and a shim would let the fan-in stay exactly where it was while looking as
-// though it had been fixed. Every call site names the module it means.
-//
-// Two functions here do touch the document - el() and readToken() - and both do
-// it inside the call rather than at import time, which is what keeps every
-// module that imports this loadable outside a browser (tests/imports.test.js).
-// That is the one exception the "dependency-free" claim gets, and it is
-// justified by the same argument as everything else here: every layer looks
-// things up by id and by token name, and neither lookup has a subject.
-//
-// The one import below is the other exception, and it is emitter()'s alone.
-// "Dependency-free" was always a claim about *subjects* - this file carries no
-// assets, no preferences, no messages - and errors.ts is not a subject, it is
-// the place a thing that was caught goes so that it is not also lost. The
-// alternative was an injected reporter and a fifth setter, which would have
-// bought nothing: errors.ts imports notify.ts and nothing else, so the edge is
-// two modules deep and stays inside the base layer.
+// Small shared helpers: here if most of the graph wants it and it is short.
+// Dependency-free except errors.ts (for emitter's catch). Document access
+// (el, readToken) happens inside the call, not at import time, so everything
+// that imports this stays loadable outside a browser.
 
 import { reportCaught } from './errors.ts';
 
 export const clamp = (v: number, lo: number, hi: number) => v < lo ? lo : v > hi ? hi : v;
 
 /**
- * Positive remainder. `-3 % 512` is -3 in JavaScript, and a tile has no -3.
- *
- * Here rather than privately in the two files that want it, because both are
- * tiled background layers - canvas/grain.ts and canvas/grid.ts - and what they
- * are both working around is the same fact about the browser rather than a
- * coincidence of arithmetic. `background-position` is resolved to a LayoutUnit,
- * a 32-bit fixed-point number that runs out a little past 33 million CSS px,
- * and the board is infinite: pan far enough and an unwrapped offset stops
- * landing where it was asked to. Reducing into the tile first is exact, not a
- * mitigation - a tiled background is periodic in its own size, so `n` and
- * `wrap(n, tile)` are the same picture, one of them written in numbers the
- * browser can still hold.
- *
- * Branched rather than the `((n % tile) + tile) % tile` one-liner this started
- * as, for a reason a test found: that form puts *every* input through an
- * addition and a second remainder, the ones already in range included, and the
- * round trip does not always come back. `wrap(39.9, 40)` returned
- * 39.900000000000006. Harmless at the one decimal place the callers write, but
- * there is no reason to disturb a number that was already the answer.
+ * Positive remainder. Keeps tiled background offsets inside 32-bit LayoutUnit
+ * range. Branched (not the one-liner) to avoid floating-point drift on in-range values.
  */
 export function wrap(n: number, tile: number) {
   const r = n % tile;
-  // Taken first because `%` hands back -0 for every negative whole multiple of
-  // the tile - which is the origin itself, the one offset most worth getting
-  // right. -0 is not a position: it is 0 that prints a minus sign and fails a
-  // strict comparison against the 0 the tile above it produced.
+  // -0 from `%` on negative whole multiples — normalize to 0.
   if (r === 0) return 0;
   if (r > 0) return r;
-  // A very small negative remainder can round up to exactly `tile`, and a tile
-  // has no `tile` any more than it has a -3: that is the 0 of the next one.
+  // A small negative remainder + tile can round to exactly `tile`.
   const up = r + tile;
   return up < tile ? up : 0;
 }
@@ -82,10 +24,7 @@ export function wrap(n: number, tile: number) {
 /** The element with this id, or null. Every module wants this and no other. */
 export const el = (id: string) => document.getElementById(id);
 
-/**
- * Create an element, optionally with a class - the two lines half the UI
- * modules had written privately, under names like `make`, `el` and `div`.
- */
+/** Create an element, optionally with a class. */
 export function makeEl<K extends keyof HTMLElementTagNameMap>(
   tag: K, className = '',
 ): HTMLElementTagNameMap[K] {
@@ -97,15 +36,7 @@ export function makeEl<K extends keyof HTMLElementTagNameMap>(
 /** A `<div>` with a class - the commonest makeEl(), spelled once for its callers. */
 export const div = (className = '') => makeEl('div', className);
 
-/**
- * Make a non-button element behave as one: a role, keyboard focus, and the
- * click / Enter-or-Space pair that a real <button> gets for free.
- *
- * The five tiles that needed it - feed cards that open, play or link, a playlist
- * row - each carried the same four lines, where the keyboard half is the part
- * quietly dropped when it is written by hand. `role` is 'link' for the one that
- * navigates rather than acts.
- */
+/** Give a non-button element role, tabIndex, and click/Enter/Space handling. */
 export function actAsButton(node: HTMLElement, onActivate: () => void, role = 'button') {
   node.setAttribute('role', role);
   node.tabIndex = 0;
@@ -115,28 +46,14 @@ export function actAsButton(node: HTMLElement, onActivate: () => void, role = 'b
   });
 }
 
-/**
- * Turn an element into a plain-text contenteditable.
- *
- * `plaintext-only` keeps pasted markup out; not every engine has it, so a
- * failure falls back to `true`, and an element that ended up editable by
- * neither is set `true` so it is at least editable. Three sites carried this
- * verbatim - a card's name field, a note's rich column, the board title.
- */
+/** Set contentEditable, preferring plaintext-only with fallback to true. */
 export function makeEditable(node: HTMLElement) {
   try { node.contentEditable = 'plaintext-only'; }
   catch { node.contentEditable = 'true'; }
   if (!node.isContentEditable) node.contentEditable = 'true';
 }
 
-/**
- * Select the whole contents of an editable node - a rename or a title edit does
- * this so the first keystroke replaces the name rather than appends to it.
- *
- * getSelection() is typed nullable but answers null only for a document with no
- * browsing context, which a field this is called on - focused, just typed into -
- * is never in. Shared by a card's name, a note, and the board title.
- */
+/** Select the entire contents of a node so the first keystroke replaces them. */
 export function selectContents(node: Node) {
   const range = document.createRange();
   range.selectNodeContents(node);
@@ -156,43 +73,13 @@ export function caretToEnd(node: Node) {
 }
 
 /**
- * The value of a CSS custom property on :root, trimmed.
- *
- * The design tokens are the app's single source of truth for colour, spacing,
- * duration and corner radius, and eight modules read one back out at runtime -
- * to hand a duration to a JS-driven animation, to paint a canvas in the same
- * ink as the DOM, to seed a colour picker with the accent as it currently
- * stands. All eight had written `getComputedStyle(root).getPropertyValue(n)`
- * out by hand, in five slightly different spellings: some trimmed, some did
- * not, some cached the CSSStyleDeclaration and some re-read it, one called it
- * cssVar and another readVar.
- *
- * The trim is the part that matters and the part that was inconsistent. A
- * custom property keeps the whitespace after its colon, so `--dur-palette: 300ms`
- * reads back as ` 300ms`, and whether that is harmless depends entirely on what
- * the caller does with it next - parseFloat copes, string comparison does not,
- * and concatenating it into another declaration produces something that mostly
- * works. One spelling means one answer.
- *
- * Not cached. getComputedStyle is a style flush, so this is not free and must
- * not be called per frame - canvas/grid.ts says so at its own call site - but a
- * cache here would be wrong rather than merely slow: the tokens change under
- * the whimsy dial, the palette and the theme, and a stale value would be an
- * interface that is one look behind.
+ * Read a CSS custom property from :root, trimmed. Not cached — tokens change
+ * under the whimsy dial and palette. Not free (style flush) — do not call per frame.
  */
 export const readToken = (name: string) =>
   getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
-/**
- * Fisher-Yates, in place, returning the same array.
- *
- * Every shuffle in the app wants an unbiased one and there is exactly one way
- * to write it, so it is written here rather than a fourth time: dealing the
- * tilt bag in canvas/items.ts, re-dealing the layout order in main.ts/rearrange,
- * and the shuffle queue in canvas/playlist-queue.ts. `rnd` defaults to
- * Math.random; a seeded caller (a reproducible Rearrange in arrange/) passes its
- * own generator so the same board deals the same order twice.
- */
+/** Fisher-Yates in place. `rnd` accepts a seeded generator for reproducible shuffles. */
 export function shuffle<T>(arr: T[], rnd: () => number = Math.random): T[] {
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(rnd() * (i + 1));
@@ -208,27 +95,8 @@ export function uid(prefix = 'i') {
 }
 
 /**
- * Minimal string-keyed event bus. Handlers never throw into the emitter.
- *
- * The catch below is not defensive tidying, it is the contract: twenty
- * subscribers listen to 'geom' and one of them being broken must not stop the
- * other nineteen from repainting. That is right and it stays.
- *
- * What it used to do as well was lose the error. A subscriber that throws on
- * every geom - which is several a second while a card is being dragged - wrote
- * to a console nobody has open and reached window.onerror never, because the
- * throw was caught right here. It was the audit's own example of a board that
- * stops responding with nothing to read (Finding 6,
- * research/old/build-and-framework-audit-2026-08-12.md), and a global handler alone
- * would not have seen a single one of them. So the catch also says so, once:
- * errors.ts holds it to one toast per distinct fault however many times it
- * arrives, which is what makes this safe to call from the hot path at all.
- *
- * The type parameter is the bus's own event table - a plain object type mapping
- * each event name to what is handed to a handler of it (see BusEvents in
- * board-store.ts). It is the emitter that is generic and the caller that names
- * its events, because the two emitters in the app carry unrelated traffic and
- * neither should have to know about the other's.
+ * Minimal typed event bus. Handlers never throw into the emitter — caught
+ * errors go to reportCaught() (one toast per distinct fault, safe on hot paths).
  */
 export type Emitter<E = Record<string, unknown>> = {
   on<K extends keyof E & string>(evt: K, fn: (payload: E[K]) => void): () => void,
@@ -237,17 +105,10 @@ export type Emitter<E = Record<string, unknown>> = {
 };
 
 export function emitter<E = Record<string, unknown>>(): Emitter<E> {
-  // Handlers of different events have different payload types, and a Map has
-  // one value type for all of them. `never` in the parameter is what every
-  // handler signature has in common - a function that accepts a string is a
-  // function that accepts nothing narrower - so this stores all of them without
-  // widening any to any.
+  // `never` parameter is the common supertype of all handler signatures.
   const map = new Map<string, Set<(payload: never) => void>>();
   return {
     on(evt, fn) {
-      // Non-null twice: set() returns the Map, so get() straight after it finds
-      // the Set that line just put there; and the unsubscriber can only run
-      // after the same on() call registered the event.
       (map.get(evt) || map.set(evt, new Set()).get(evt)!).add(fn);
       return () => map.get(evt)!.delete(fn);
     },
@@ -255,10 +116,6 @@ export function emitter<E = Record<string, unknown>>(): Emitter<E> {
     emit(evt, payload) {
       for (const fn of map.get(evt) || []) {
         try {
-          // SAFETY: safe by construction - on() checked this handler against
-          // the payload type of this same event name, which is what the Map
-          // cannot remember. The catch is for what the handler does, not for
-          // this.
           (fn as (payload?: E[typeof evt]) => void)(payload);
         }
         catch (e) { reportCaught(e, 'handler for "' + evt + '"'); }
@@ -274,8 +131,6 @@ export function rafThrottle<A extends unknown[]>(fn: (...args: A) => void) {
   return function (...args: A) {
     lastArgs = args;
     if (id) return;
-    // Non-null: nothing clears lastArgs, and the line above set it before this
-    // frame was ever asked for.
     id = requestAnimationFrame(() => { id = 0; fn(...lastArgs!); });
   };
 }
@@ -298,143 +153,47 @@ export function formatBytes(n: number) {
   return (i === 0 ? n : n.toFixed(n < 10 ? 1 : 0)) + ' ' + u[i];
 }
 
-/**
- * Whether something is an object that may be looked into, key by key.
- *
- * Here for the same reason as everything else in this file: most of the graph
- * wants it and it is two lines long. Every module that reads a document it did
- * not write starts by asking this - the schema, the item reader, the quality
- * dial's saved override - and each had written `v && typeof v === 'object'` out
- * by hand, which says the same thing without narrowing anything. `null` is the
- * whole reason the second half exists.
- *
- * The values are `unknown`, not any: knowing that a key can be read is not the
- * same as knowing what came back, and the caller narrows what it takes.
- *
- * An array is not one. It used to be - `typeof [] === 'object'` and it is not
- * null - and every one of the ninety-odd callers then read named keys off a
- * list and got `undefined` back, which is the answer to a question nobody
- * asked. Where that mattered it mattered badly: a `.mbrd` whose `board.json` is
- * `[1,2,3]` passed the guard, spread into a board, and replaced the open one
- * with a blank. Nothing in the graph passes a list to this on purpose - the
- * comparators beside it compare four named fields, not elements - so the narrow
- * reading is the one every caller already meant.
- */
+/** Non-null, non-array object guard. Arrays excluded — callers read named keys, not elements. */
 export const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
-/**
- * Own-property test, written the long way round.
- *
- * `Object.hasOwn` is the modern spelling and says exactly this, but it landed in
- * **Safari 15.4** - and the six places that reached for it are guards on tables
- * anybody with a console can put a key into: a layout name, an embed kind, a
- * quality stop, a gesture, a renderer type, a sound cue. Every one of them runs
- * on an ordinary path and two of them run during boot, so on an older WebKit
- * this was a TypeError rather than a missing nicety.
- *
- * `Object.prototype.hasOwnProperty.call` is the same question asked of the same
- * object and is as old as the language. Called off the prototype rather than off
- * the value, which is the whole point of the exercise: the map being tested may
- * hold a key named `hasOwnProperty`, and asking it directly would be asking the
- * very thing under suspicion.
- */
+/** Own-property test via prototype — Safari 15.4+ has hasOwn, older WebKit does not. */
 export const hasOwn = <T extends object>(table: T, key: PropertyKey): boolean =>
   Object.prototype.hasOwnProperty.call(table, key);
 
-/**
- * Whether something is a content id of the shape sha256() produces.
- *
- * Here rather than beside sha256() in crypto.ts, and the distance is on
- * purpose: this is the *shape* of an id, asked by layers that never make one -
- * storage/mbrd.ts spelling a hash into an archive path, state.ts deciding
- * whether an item arriving from a file may claim one, board-schema.ts holding a
- * field to it. None of them should have to import a hundred and thirty lines of
- * FIPS 180-4 to ask a question about a string. Written twice, the two would
- * drift, which is why it is written once - just not in there.
- */
+/** Whether a value is a 64-char hex string (sha256 content id shape). */
 export const isHash = (v: unknown): v is string =>
   typeof v === 'string' && /^[0-9a-f]{64}$/.test(v);
 
-/**
- * A CSS family name a board is allowed to carry, for a face dropped into it.
- *
- * Here beside isHash for exactly the same reason: state.ts holds the field to
- * this shape on the way in from a file, ui/fonts.ts builds names that satisfy
- * it, and those two do not import each other.
- *
- * The alphabet is the point. This string is substituted into a real declaration
- * - `--font-display: "Name", serif` - and it is the only part of that
- * declaration that came out of a filename, which is to say out of a .mbrd
- * somebody else wrote. No quote to close the string early, no `;` or `}` to end
- * the declaration, no backslash to escape its way past either. Length-capped
- * because a family name is a name.
- */
+/** Safe CSS font family name: alphanumeric + space/dash/underscore, max 40 chars. */
 export const isFamily = (v: unknown): v is string =>
   typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9 _-]{0,39}$/.test(v);
 
 /**
- * Every content id an item depends on: its own bytes, the picture it was given
- * (see setItemCover in state.ts), and - for a model - the still that stands in
- * for it until somebody asks to turn it over (see canvas/model.ts).
+ * All content hashes an item claims: asset hash, cover, shot, thumb, preview,
+ * art, poster. Filtered for presence only — validity is the packer's job.
+ * Structurally typed so board-model.ts need not be imported.
  *
- * Here beside isHash for the same reason isHash is here - the packer, the
- * autosave sweep, that sweep's error message and the session restore all need
- * it, and they sit in layers that do not import one another. Four inline copies
- * of `item.asset?.hash` is exactly how a second id gets missed, and missing it
- * in the sweep is the expensive one: the sweep deletes whatever no item claims,
- * so an id it has not heard of is bytes deleted out from under a live card.
- *
- * Filtered for presence, not validity. makeItem() drops an id that is not a
- * digest, and the one caller that must not silently skip a malformed one is the
- * packer - it spells the id into an archive path and refuses the whole export
- * over a bad one. Filtering here would take that refusal away and write the
- * hole instead.
- *
- * Structurally typed rather than taking board-model.ts's Item, because
- * board-model.ts imports this file and the edge only goes one way. Anything
- * with the two fields answers, which is also what lets a half-built item from a
- * reader be asked.
- *
- * The predicate is filter(Boolean) with the answer written down: meta is
- * `unknown` per key on purpose (see board-model.ts), so the truthy ones have to
- * be called strings by hand. The one caller that would care if a key held
- * something else is the packer, which refuses a bad id rather than trusting it.
+ * This is the one list every asset walk is built on: storage/mbrd.ts's
+ * boardAssetHashes() and timeline.ts's timelineHashes() both come through here,
+ * so a class of reference added in this array reaches the cloud-sync upload for
+ * free - which is why meta.art (a link card's fetched album cover) is here and
+ * not only where it is written.
  */
 export const itemHashes = (
   item: { asset?: { hash?: string } | null, meta?: Record<string, unknown> | null } | null | undefined,
 ): string[] =>
   [
     item?.asset?.hash, item?.meta?.cover, item?.meta?.shot,
-    item?.meta?.thumb, item?.meta?.preview,
-    // `poster` is a legacy key - nothing writes it any more, and
-    // optimize/optimize.ts still resolves it. It was on neither this list nor
-    // META_HASHES, so on a board old enough to carry one the bytes were in
-    // neither the packer's reference union nor the autosave sweep's: the first
-    // sweep after opening such a board deleted them, and the next export
-    // omitted them. A key nothing writes is still a key files contain.
+    item?.meta?.thumb, item?.meta?.preview, item?.meta?.art,
+    // Legacy key — nothing writes it but old boards still carry it.
     item?.meta?.poster,
   ].filter((h): h is string => Boolean(h));
 
 /**
- * Running against the local dev server - server.bat on localhost, or a LAN IP
- * when testing from a phone. sw.js makes the same test to turn itself into a
- * pass-through; it cannot import this module, so the two are kept in step by
- * hand rather than shared.
- *
- * **Nothing calls this, and it stays anyway.** tests/sw.test.js reads the regex
- * straight out of this file and asserts sw.js carries the same one, so this is
- * the anchor half of a parity check rather than dead code - deleting it does
- * not fail a type check or a lint, it fails that test, and the failure mode it
- * guards against is a service worker that caches the dev server.
- *
- * A function, and memoised, rather than the constant this used to be. A
- * constant meant `location` was read the moment this module was imported, and
- * because almost everything imports util.ts that made the whole app impossible
- * to load anywhere without a `location` - which is to say, impossible to test
- * outside a browser. The answer cannot change within a document, so the read
- * still happens exactly once; it just happens on the first ask instead of on
- * import.
+ * Whether this is a dev server (localhost/LAN). Memoised — deferred to first
+ * call so util.ts stays loadable without a browser. Also the anchor half of
+ * sw.test.js's parity check (sw.js carries the same regex).
  */
 let devHost: boolean | null = null;
 

@@ -1,35 +1,13 @@
-// Boot: build the viewport, wire every subsystem to it, restore the last
-// session, and hand out the command set the sidebar and keyboard both drive.
-//
-// The wiring point and nothing else. What used to live here has moved out to
-// the modules that own it - `commands.ts` has the command surface,
-// `ui/hud.ts` the corner readouts, `ui/board-title.ts` the board's name,
-// `ui/board-actions.ts` the commands that needed more than a one-liner,
-// `ui/board-view.ts` the framing, `perf/view-perf.ts` the profiler. What is
-// left is the order things are brought up in, the subscriptions that cross
-// subsystems, and the lifecycle.
-//
-// The init order below is load-bearing and is commented where it is. About a
-// dozen of those comments are constraints rather than notes - "Before
-// initSidebar()", "After initAudio()" - and each of them is now a row in
-// tests/boot-order.test.js, which reads the real sequence out of this file and
-// checks it against them. That table *is* the boot order, the way
-// tests/layers.test.js's BASE list *is* the split: getting one of these wrong
-// fails silently and usually in one state rather than at boot, and there is no
-// browser-driven suite to notice. **Moving a call here means checking that
-// test, and adding one with an ordering requirement means adding a row to it.**
-//
-// This is one of only three modules allowed to touch a browser global at import
-// time (tests/imports.test.js); everything it calls exports an init*() for
-// exactly that reason.
+// Boot: build the viewport, wire every subsystem, restore the session, hand
+// out the command set. Init order is load-bearing and tested by
+// tests/boot-order.test.js — moving or adding a call means updating that test.
+// One of three modules allowed to touch browser globals at import time.
 
 import { el, rafThrottle } from './util.ts';
 import { toast } from './notify.ts';
 import { initErrors, setBoardProbe, reportCaught } from './errors.ts';
 import { setRiskPrompt } from './consent.ts';
-// Which shell this is, and the six questions it answers differently. Nothing is
-// wired here yet - the Electron adapter arrives in group E and reads
-// window.mbrdDesktop at exactly one place, which is this file.
+// The Electron adapter — window.mbrdDesktop is read only in this file.
 import { platform, isDesktop, refForHandle, setPlatform } from './platform/platform.ts';
 import { electronPlatform, electronStore } from './platform/electron.ts';
 import type { Bridge } from './platform/electron.ts';
@@ -53,9 +31,6 @@ import { initGrain, paintGrain } from './canvas/grain.ts';
 import { initFarLands } from './canvas/farlands.ts';
 import { initPaper } from './canvas/paper.ts';
 import { initMobileFrame } from './canvas/mobile-frame.ts';
-// The four painters under the cards, and the three caches they resolve out of
-// the look. Both sequences used to be written out here and again in
-// ui/board-actions.ts; see the head of canvas/ground.ts.
 import { repaintGround, forgetLookInk } from './canvas/ground.ts';
 import { initItems, resetItems } from './canvas/items.ts';
 import { resetModels } from './canvas/model.ts';
@@ -71,7 +46,8 @@ import {
 } from './storage/storage.ts';
 import { boardThumb } from './ui/snapshot.ts';
 import { flushNoteEdit, growNote, setNoteMenu } from './canvas/notes.ts';
-import { setMarkdownRenderer } from './canvas/renderers.ts';
+import { setMarkdownRenderer, setEmbedEnrich } from './canvas/renderers.ts';
+import { enrichEmbed } from './canvas/embed-meta.ts';
 import { renderMarkdown } from './ui/markdown.ts';
 import { initAssets, getAsset, forgetAssets } from './storage/assets.ts';
 import { forgetDisplay } from './canvas/display.ts';
@@ -111,135 +87,54 @@ import { initHud, paintZoom, paintSnap, paintCount } from './ui/hud.ts';
 import { initBoardTitle } from './ui/board-title.ts';
 import { initBoardActions, resetSave } from './ui/board-actions.ts';
 
-// Before anything else in this file, and before anything it imports can run:
-// the toast and the waiting strip are how the app reports that something went
-// wrong, which makes them the worst possible thing to wire late. notify.ts is
-// the door every layer below ui/ says things through - it has to be, since a
-// base or storage module importing ui/overlays.ts is a layering inversion
-// (tests/layers.test.js) - and until this call it forwards to nobody and every
-// message is silently dropped. Same injection shape as setAssetNameLookup() and
-// setPrompt() below; this one goes first because a lost toast is not an error,
-// it is worse, it is nothing at all.
+// First: wire the toast overlay so every module below can report errors.
+// Until this call, notify.ts forwards to nobody and messages are lost.
 
 initOverlays();
 
-// Which shell this is, decided here and nowhere else.
-//
-// **This is the only read of `window.mbrdDesktop` in the tree**, and the rule
-// is the whole design of platform/: the bridge is an *argument* to
-// electronPlatform(), so no module below this line depends on a global that
-// only one of two shells defines. In a browser the object is absent, both
-// setters take their defaults, and every port stays the code that was in these
-// files before any of it existed.
-//
-// **Before anything can touch the store.** restoreSession() runs much later in
-// boot, but autosave() is armed from a bus event and the shelf is read by the
-// library - so a backend swapped after the first read would mean the session
-// came out of one store and the writes went into another. Two lines, as high as
-// they can go: after initOverlays(), because a failure here should be sayable,
-// and before everything else.
+// The only read of window.mbrdDesktop. Before anything touches the store —
+// a backend swapped after the first read would mix two stores.
 const bridge = window.mbrdDesktop;
 if (bridge) {
   setPlatform(electronPlatform(bridge));
   setStoreBackend(electronStore(bridge));
-  // Anything the shell needs to say that the page could not have known. Today
-  // there is exactly one: a portable copy on a read-only medium, which keeps
-  // its data in AppData instead and has to say where it went - see plan §1,
-  // which chose "fall back and say so" over refusing to start. Empty on every
-  // ordinary run, and never awaited: a toast is not worth a boot delay.
+  // Shell startup messages (e.g. portable fallback path). Not awaited.
   void bridge.startupNotes()
     .then(note => { if (note) toast(note); })
     .catch(() => {});
 }
 
-/**
- * Which of the three pages this is, worked out once at the top and then only
- * read.
- *
- * The two questions - is this the changelog, is this an address the app does
- * not have - used to be derived here, in two IIFEs over document.baseURI. They
- * moved to page.ts when the changelog grew the app's real sidebar: the panel
- * has to know (it greys what needs a board) and so do the three View commands
- * (on the changelog they are the way back), and neither may import main.ts.
- * What that costs a reader is stated in the branch at the foot of this file and
- * in freezePrefs(): their session is never loaded, never written, and no
- * preference they nudge while reading is kept.
- *
- * Constants rather than calls, because a navigation would take the whole
- * document with it: within one run these are facts, not readings.
- */
+/** Page type, resolved once. Constants because a navigation replaces the document. */
 const isPatch = isPatchPage();
 const notFound = isNotFoundPage();
 
-// Before initSidebar() below, which reads the stored layout mode and puts it
-// back through the bus - a preference write. Nothing a visitor does while
-// reading the changelog may change what they own; suspendCache() in start() is
-// the other half of the same promise.
+// Before initSidebar() — no preference writes on the changelog page.
 if (isPatch) freezePrefs();
 
-// And immediately after it, for the same reason one step further on: an
-// exception that reaches the top of the stack, or a promise nobody was waiting
-// on, has no other way of being seen by the person it happened to. Everything
-// below this line - the viewport against real elements, every init*() in the
-// wiring block, the session restore - is inside its reach, which is the whole
-// point of it going second. See errors.ts; the toast it raises goes out through
-// the channel the line above just wired, so the order of these two is the order
-// they have to be in.
-//
-// The probe is what makes the message worth reading: storage/session.ts holds
-// the latches that know whether the autosave covered the last edit, and this
-// hands that question over without errors.ts ever learning what a save is.
+// After initOverlays() so error toasts have a channel. The probe lets errors.ts
+// report whether unsaved work exists without importing storage.
 initErrors();
 setBoardProbe(boardSafety);
 
-// The other half of dismissSplash()'s pairing with `started`, and armed here
-// rather than written beside it because it has to be in place before the first
-// line that can throw. `started` only exists if the module body got as far as
-// assigning it: a throw anywhere between this line and there - a renamed id in
-// index.html, a constructor that does not like what it was handed - aborts
-// evaluation with #splash still on the screen, fixed and full-screen, over the
-// toast initErrors() has just raised. Nothing can recover that boot, so this
-// does not try; it takes the cover off so the failure can be read. The function
-// is a declaration further down and hoisted, and it is safe to call twice.
+// Catch-all: a throw before `started` is assigned leaves #splash covering
+// the error toast. This removes it so the failure can be read.
 addEventListener('error', () => dismissSplash());
 
-// Every `el(...)!` in this file is one of the ids index.html declares. They are
-// part of the page's own markup rather than anything the app puts there, so an
-// absent one is a broken build and not a state to recover from - the same call
-// the rest of the app makes, and the same non-null it makes it with.
+// Non-null: these ids are in index.html's static markup.
 const vp = new Viewport(el('viewport')!, el('world')!, el('origin-mark')!);
 
-// The three modules that only need the viewport handed to them, before anything
-// that calls into them. None of these touches the DOM.
-//
-// ui/appearance.ts is handed to createCommands() rather than imported by it:
-// appearance is one of the three modules allowed a browser global at import
-// time, and commands.ts importing it would make that module unloadable without
-// a DOM. The same injection shape as setAssetNameLookup() and setPrompt() below.
+// Viewport-only modules, before anything calls into them.
+// appearance is injected into createCommands() to keep commands.ts DOM-free.
 initBoardView(vp);
 initBoardActions(vp);
-// The frame profiler. Made here rather than down beside the view-change frame
-// it times, because the command surface needs it: the Debug fold can arm it
-// now, and until it could, the only ways in were mbrd.perf.on() and the #perf
-// fragment - a tool with no door in the interface at all.
+// Profiler created here so cmds can arm it from the Debug fold.
 const viewPerf = createViewPerf(vp);
 const cmds = createCommands(vp, { resetAppearance, setWhimsy, perf: viewPerf });
 
-// The native menu, which is a second *surface* onto these commands and never a
-// second implementation of one. Every row in desktop/menu.ts names a key of
-// this object by string, and tests/desktop-menu.test.js asserts each one exists
-// - the same job tests/icons.test.js does for icon names, against the same
-// failure: a menu item wired to a name nothing defines draws, is clickable, and
-// does nothing at all.
-//
-// The optional call is not defensive about the table. It is defensive about the
-// *version*: an installed copy of the shell may be older than the bundle it is
-// loading, and a menu row naming a command this build removed should do nothing
-// rather than throw where nobody can see it.
+// Native menu maps command names to cmds. Optional chaining guards against an
+// older shell naming a command this build removed.
 bridge?.onCommand(name => {
-  // SAFETY: the index signature is only to look a name up in a table whose
-  // keys are known at compile time and whose lookup key is not. The `typeof`
-  // on the next line is the check, and nothing is called until it passes.
+  // SAFETY: runtime typeof check before calling.
   const run = (cmds as Record<string, unknown>)[name];
   if (typeof run === 'function') run();
   else console.warn('[mbrd] the menu asked for a command that is not here:', name);
@@ -250,26 +145,16 @@ bridge?.onCommand(name => {
 // ---------------------------------------------------------------------------
 
 initAssets();
-// Hand state the asset registry's filename lookup, which it cannot import
-// (storage sits above state - AUD-12). This is the original-filename fallback
-// renameItem() uses when a name is cleared.
+// Injected: storage sits above state. Fallback for renameItem() when a name is cleared.
 setAssetNameLookup((hash: string) => getAsset(hash)?.name);
-// And the destructive half of the same seam, for emptying the bin - the one
-// action in the app that throws bytes away rather than taking a card off the
-// board. Both stores go: the registry holds the originals, and canvas/display
-// holds the card-sized copies made from them, which nothing could ever ask for
-// again once the original is gone. The registry's answer - hash to size - is
-// what the tombstone cards print, so it is what comes back out.
+// Purge seam for emptying the bin — clears both the asset registry and display cache.
 setAssetPurge((hashes: Set<string>) => {
   forgetDisplay(hashes);
   return forgetAssets(hashes);
 });
-// And the note toolbar's face menu, for the same reason from the other side:
-// canvas/ may not import ui/, so the editor is handed the one verb it needs
-// rather than the module that answers it. See NoteMenu in canvas/notes.ts.
+// Note toolbar menu — injected because canvas/ may not import ui/.
 setNoteMenu((anchor, rows, current, pick) => {
-  // The second press on the button closes rather than reopening - the menu's
-  // outside-press listener has already shut it by the time the click lands.
+  // Second press closes instead of reopening — menu already shut by outside-press.
   if (justDismissed(anchor)) return;
   openAnchored(anchor.getBoundingClientRect(), rows.map(row => ({
     label: row.label,
@@ -277,241 +162,110 @@ setNoteMenu((anchor, rows, current, pick) => {
     check: row.value === current,
     action: () => pick(row.value),
   })), {
-    // Off the control rather than named here. Two of the bar's buttons open this
-    // now - the face and the marker - and a panel that called itself Font
-    // whichever one was pressed would be a screen reader announcing the wrong
-    // menu half the time. Each button already carries the word as its
-    // aria-label, because it needs one there anyway.
+    // Label from the button's own aria-label — two buttons share this menu.
     label: anchor.getAttribute('aria-label') || 'Font',
     focus: true,
-    // Which button this hangs off, so that the toggle question above is about
-    // *this* one. Font and Highlight are two buttons in one bar, and without
-    // this a press on the second while the first was open closed one and opened
-    // neither - see menuOwner in ui/menu.ts.
+    // Disambiguates which button owns this menu instance.
     owner: anchor,
   });
 });
-// And the Markdown parser to the card renderer, the third seam of that shape in
-// as many paragraphs and for the identical reason: ui/markdown.ts is interface
-// and canvas/renderers.ts is not, so a `.md` card is handed the one function it
-// needs. Unwired it falls back to showing the file's source, which is what a
-// text card did before this - see setMarkdownRenderer() in canvas/renderers.ts.
+// Markdown renderer injected into canvas/ (layering: ui/ above canvas/).
 setMarkdownRenderer(renderMarkdown);
-// The saved quality level onto <html>, before anything reads a flag off it.
-// The inline guard in index.html has already done this for the stylesheet; this
-// is the module half, and it is also what fills `quality` for canvas/*.
+// The one hook that fetches: a Spotify card fills in its title and cover on
+// load if it has none. Unwired (a test) this never runs and nothing is fetched.
+if (!isPatch) setEmbedEnrich(enrichEmbed);
+// Before anything reads a quality flag.
 armQuality();
-// The interface's own sounds. A different subsystem from initAudio() below and
-// the two never meet: that one plays the board's *content* - somebody's
-// recording, because it was asked for - through <audio> elements, and this
-// synthesises hundred-millisecond blips through Web Audio. (There is a third,
-// and it reaches no speaker at all: canvas/waveform.ts and optimize/opus.ts
-// render into an OfflineAudioContext.)
-//
-// Here rather than beside initAudio(), for the reason armQuality() is above
-// buildPanel(): the panel's Sounds dial paints itself from soundLevel() as it
-// is generated, and until this call that is the default rather than what was
-// stored. The volume slider one line down in the same section has the opposite
-// requirement - canvas/audio.ts takes that element *out* of the panel - which
-// is why the two sit either side of it.
-//
-// Skipped on the changelog, like initIdle() further down and for the reason
-// freezePrefs() is called at the top: /patch is a document rather than a
-// workspace, and it does not get to make noise at somebody reading release
-// notes. The engine is silent until this call, so the skip is the whole of the
-// mechanism - there is no page check inside it.
+// Interface sounds (Web Audio blips, not content playback). Before buildPanel()
+// so the Sounds dial reads the stored level. Skipped on /patch.
 if (!isPatch) initCuelume();
-// The panel's DOM, before every module that reaches into it by id:
-// ui/appearance.ts takes the whimsy slider, the palette menu and three hosts,
-// canvas/audio.ts takes the volume slider, and ui/sidebar.ts takes the board
-// name. None of them should have to learn that the panel is generated now.
+// Panel DOM, before modules that reach into it by id.
 buildPanel();
-// Before initAppearance, so the type menus are built once with the board's own
-// faces already in them rather than built empty and rebuilt a tick later.
+// Before initAppearance so type menus have the board's fonts already.
 initFonts();
-// The grid's marks at Harsh are drawn rather than composed from gradients, so
-// unlike every other tier they cannot follow a custom property on their own -
-// see canvas/grid.ts. Every edit to a look hands the resolved colours back and
-// repaints; the other tiers repaint for nothing, which is four gradients.
-// forgetLookInk() is all three of the caches that go stale together - the grid's
-// colours, the ink an uncoloured model card's still is stamped in (a slider drag
-// commits no setting, so without it the cards compare against a stale colour for
-// the whole gesture) and whether --grain resolves to anything. Then the two
-// paints, because a look that turns the grain back on has a layer standing at
-// whatever position it was left at when it went transparent.
+// Harsh grid marks are drawn (not CSS gradients), so appearance changes must
+// flush the resolved colour caches and repaint grid + grain.
 initAppearance({
   onChange: () => {
     forgetLookInk(); paintGrid(vp); paintGrain(vp);
   },
 });
 initGrain(vp);
-// Watches for the board's edge and marks it if anybody reaches it. Costs one
-// comparison per view frame and nothing at all to the rest of the app - what it
-// places is not an item. See canvas/farlands.ts.
+// Board-edge warning mark.
 initFarLands(vp);
 initAudio();
-// paintGrain too: the two layouts keep their stock on different surfaces - the
-// full-bleed layer on Desktop, the sheet itself on Mobile - so a mode switch
-// hands the grain to an element that has never been placed. See canvas/grain.ts.
-// And the hint cards are minted again for the layout that is now live. They are
-// the one thing on an empty board that cannot carry two geometry profiles: every
-// real item is completed into the profile it is missing from, but a hint is
-// seeded straight into whichever layout was live when the board turned out to be
-// empty, and is never in board.layouts at all because it is never saved. So a
-// switch used to drag the column's sizes onto the canvas - four cards at strip
-// width, stacked down the middle of an infinite board.
-//
-// Here rather than inside setBoardMode(), for the reason ensureGhostCards() is
-// called from this file at all: layout.ts is a floor under state.ts and may not
-// import it back, and seeding a hint is a state write. main.ts already owns both
-// of the other seeding sites.
+// Reseed hints on layout change (layout.ts may not import state.ts) and
+// repaint grain (Desktop/Mobile use different surfaces).
 bus.on('layout', () => { reseedGhostCards(); syncBoardMode(true); paintGrain(vp); });
 syncBoardMode();
 initSidebar(cmds);
 initMobileHeaderEditor(vp);
 initItems(el('world')!, vp);
 initWeb(el('world')!, vp);
-// One 'items' subscriber that sweeps the hint cards the first time the board
-// holds anything of the user's. After initItems, so the nodes it animates out
-// are mounted by the time it can fire. `cmds` is handed down because the fourth
-// hint carries the whimsy dial, and canvas/ may not reach into ui/ to set it.
+// Sweeps hint cards on first real content. After initItems so nodes are mounted.
+// cmds passed because canvas/ may not import ui/ (whimsy dial on the hint card).
 initGhosts(cmds);
 initStills(el('world')!, vp);
-// After both of those: moving the dial remounts every card (the shadow twin and
-// the display copy's size are decided at build time) and asks the freeze
-// question again, so it needs the two modules that answer.
+// After initItems + initStills: quality changes remount every card.
 watchQuality();
 initScaleBar(vp);
-// Its own listeners rather than a call from the paint block below: the sheet is
-// also a control - it is dragged by the corners to set the board's scale - so
-// it owns an event surface as well as a drawing, the way every other init* does.
+// The paper sheet is also a drag control, not just a drawing.
 initPaper(vp);
-// The Mobile sheet and masthead, which are screen-space chrome like the paper
-// sheet and are painted off the same event for the same reason.
+// Mobile sheet and masthead, painted off the same viewport event.
 initMobileFrame(vp);
-// The Mobile Playlist lens - a native-scrolling audio player shown over the
-// board's two mobile faces. The Feed is the masonry wall on #mobile-feed; the
-// Playlist is the audio player, filling #mobile-playlist as the Mobile board's
-// second lens and doubling as the floating window on the Desktop board. Each owns
-// its own surface and bus wiring, so its build is driven by the
-// 'layout'/'lens'/'board:load' events rather than by these lines, which only hand
-// each the DOM and the shared masthead styler.
+// Feed (masonry wall) and Playlist (audio player), each with own bus wiring.
 initFeed(vp, cmds, styleFeedMasthead);
 initPlaylist(vp, cmds, styleFeedMasthead);
-// One item, full size, on both layouts. Takes nothing: it reads the board and
-// the asset store directly and is opened by id, so there is no viewport and no
-// command surface in it - see the head of the module.
+// Full-size viewer. Reads board + assets directly; no viewport needed.
 initViewer();
-// The crop and the three dials, and it takes nothing for the same reason the
-// viewer does not: it is opened by id, reads the board and the asset store, and
-// writes back through state.ts.
+// Crop + adjustment dials. Same as viewer: opened by id, writes through state.ts.
 initDarkroom();
-// The board weighed and named, and - since a row of it is a way to the card
-// that holds the file - the camera. That is the only thing it takes: it reads
-// the board and the asset store itself and is opened by a cmd.
+// Inventory (board contents + sizes). Takes vp for the camera.
 initInventory(vp);
-// The tour runner. Takes the viewport and nothing else: the itinerary is on the
-// board, which it reads directly, and the index it walks is its own - see the
-// head of the module for why that is not a field on the board. Before
-// initInput, so the arrow and Escape keys have a runner to ask by the time the
-// handler can fire.
+// Before initInput so arrow/Escape keys have a tour runner to query.
 initTour(vp);
-// And the panel that builds one. Takes nothing at all: the list it draws is
-// board.tour, the mode it holds is its own, and the element it fills is the
-// slot the settings schema asks for - so it has to run after buildPanel(),
-// which is where that slot comes into the document.
+// After buildPanel(), which creates the slot this fills.
 initTourEdit();
 initInput(vp, cmds);
 initMenu(vp, cmds);
-// The offer that follows a rubber band. Takes the viewport and not cmds: the
-// action is handed in when the offer is made, so it never needs the command
-// surface - see the head of the module.
+// Fence prompt after rubber-band selection.
 initFencePrompt(vp);
 initSearch(vp);
-// Not on the changelog. The idle fade exists to get the board's furniture out
-// of the way of the board - fifteen still seconds and the chrome steps back so
-// what you are looking at is what you made. /patch has nothing behind the
-// chrome to look at: it is a page of prose, and reading a page of prose is
-// fifteen still seconds by definition. What it faded there was the one control
-// the page has, and a faded control takes pointer-events: none with it - so the
-// menu button went and the sidebar could not be opened at all. See the same
-// trap, from the other side, in research/old/ui-audit-2026-08-13.md.
+// Skipped on /patch: idle fade would hide the only controls on a prose page.
 if (!isPatch) initIdle(vp);
-// Video posters, made in the background from here on - see optimize/backfill.ts.
-// Not on the changelog either, and for a harder reason than the fade above: the
-// page freezes the cache and the preferences so a reader records nothing, and
-// this pass *writes to the board* (a poster and its thumbnail, then a dirty
-// mark). It is the one thing wired here that would turn reading the patch notes
-// into an edit.
+// Skipped on /patch: backfill writes to the board, which the changelog must not.
 if (!isPatch) initBackfill();
 initDrawer(vp);
-// After initAudio(), which is what reads the stored volume - the bar's slider
-// paints itself from that value on the way up.
+// After initAudio() so the slider shows the stored volume.
 initNowPlaying();
-// The Timeline. After the player, because the CSS rule that steps the player up
-// over the strip is a general sibling combinator and this is the order the two
-// elements sit in - see the note over #timeline-strip in index.html. Nothing is
-// drawn until it is asked for; this only wires the shell that is already in the
-// markup. The phone's face is a <dialog> and is wired on its first open.
+// After the player — CSS sibling combinator requires this DOM order.
 initTimeline();
 initDrop(vp);
-// The glass: the zoom cluster, undo/redo, and the readouts. After buildPanel()
-// (its controls are in the static markup, but the save button it does not own
-// is not) and after cmds exists, which it is handed.
+// HUD (zoom cluster, undo/redo, readouts). After buildPanel() and cmds.
 initHud(vp, cmds);
-// The toolbar, which is the other half of that glass and used to be two lines
-// inside initHud() as the phone's add bar. Handed cmds for the same reason: its
-// buttons are data-cmd and nothing else.
+// Toolbar: buttons are data-cmd, needs cmds.
 initToolbar(cmds);
-// The window's own frame, where the shell does not draw one - a drag band and
-// three buttons in the free top-right corner. Nothing at all in a browser: it
-// asks platform.frame.own() first and returns. No ordering requirement, which
-// is why there is no row for it in tests/boot-order.test.js; it reads two
-// elements that are in the static markup and takes `cmds` for the same reason
-// the toolbar above it does.
+// Custom title bar (Electron only; no-op in browser). No ordering requirement.
 initWindowChrome(cmds);
-// What is behind three of those buttons, shown by hovering them. After the
-// toolbar because it marks the bar's own markup with aria-haspopup, and after
-// initMenu() because the panel it opens is that module's and the close hook it
-// registers would otherwise be overwritten on init.
+// Flyouts behind toolbar buttons. After toolbar + initMenu().
 initFlyouts(cmds);
-// The sticker pad. After the toolbar, because the toolbar is what opens it, and
-// handed both the viewport and cmds: it turns a pointer position into a world
-// point itself (a drag ends over the board, not over a button) and then presses
-// the ordinary command with it.
+// Sticker pad. After toolbar (which opens it). Needs vp for world-space drop.
 initStickerWindow(vp, cmds);
-// The five buttons that follow a marked connection. After the toolbar because
-// it is the same kind of thing - chrome over the board driven by cmds - and it
-// needs the viewport to know where on the screen the line it is pinned to is.
+// Connection action chip. Needs vp for screen position of the line.
 initConnChip(cmds, vp);
-// The board's name, on the masthead and on the Desktop card.
+// Board name on masthead + Desktop title card.
 initBoardTitle();
-// Hand storage the confirmation prompt it cannot import (ui sits above storage
-// - AUD-12): the clear-everything dialog.
+// Injected: ui sits above storage. Clear-everything dialog.
 setPrompt(ask);
-// And the importer the one it cannot import either: the size of what has just
-// been dropped, before the minutes of hashing and decoding start. `danger: false`
-// because nothing is being destroyed - a red button here would be the dialog
-// telling somebody to be careful about opening their own file. See AskOptions.
+// Import confirmation. danger: false — opening a file is not destructive.
 setImportPrompt(opts => ask({ ...opts, danger: false }));
-// And every size ceiling in the app the same way (consent.ts), which is the same
-// question one tier deeper: not "this is big" but "this is past the number
-// somebody wrote down, here is what it may cost, still yes?". Three buttons
-// because there are three answers and the dialog has always had room for the
-// third - the useful one on a folder of forty large files being "yes, and stop
-// asking me". `danger: false` for the same reason as above: opening one's own
-// file is not destructive, and the warning already says what the risk is in
-// words. The default when this is *not* wired is to allow, which is deliberate
-// and argued in consent.ts.
+// Size ceiling prompt (consent.ts). Three answers: yes / yes-to-all / no.
+// Unwired default is allow (deliberate — see consent.ts).
 setRiskPrompt(async opts => {
   const answer = await ask({ ...opts, keep: 'Allow all', danger: false });
   return answer === 'go' ? 'go' : answer === 'keep' ? 'all' : 'no';
 });
-// And the board's own picture, for the same reason and through the same shape.
-// Every door onto "replace the board" now files the outgoing one on the shelf,
-// and two of those doors - a .mbrd dropped on the canvas, and the PWA file
-// handler - are below ui/ and could not have been handed a thumbnail as an
-// argument. See setBoardThumb() in storage/storage.ts.
+// Board thumbnail — injected because import paths sit below ui/.
 setBoardThumb(boardThumb);
 initStorage();
 
@@ -519,43 +273,22 @@ initStorage();
 // The view-change frame
 // ---------------------------------------------------------------------------
 
-// The grid is screen-space, so it repaints on every view change. Two tiers are
-// four CSS gradients; Harsh draws its lattice, but only over the canvas, which
-// is the viewport - so both are bounded by the screen rather than the board.
-
-// The view is board state and is saved with the board, but it changes on every
-// frame of a pan - so it is written here on each change and *announced* on a
-// trailing timer. Without the announcement nothing scheduled an autosave, and a
-// board closed after nothing but panning came back at the view it had before,
-// which is not where the user left it. Without the timer, every pan would queue
-// a snapshot per frame.
+// View is saved with the board but changes every pan frame. Written immediately,
+// announced on a trailing 400ms timer so autosave fires without per-frame snapshots.
 let viewSettle = 0;
-// Everything the view-change frame does after the grid. Named so the profiler
-// can time the grid alone against the rest without duplicating it.
+// Named so the profiler can time the grid separately.
 const afterGrid = () => {
-  // Inside the profiled listener rather than on a subscription of its own, and
-  // that is the whole reason it is called from here. canvas/grain.ts registers
-  // before this file does, so a self-subscribed paint would run ahead of the
-  // t0 below and land in neither half of the sample - the one full-screen
-  // re-raster on the pan path would have been the one thing mbrd.perf could not
-  // see. It belongs in restMs.
+  // Inside the profiled listener so the grain repaint lands in restMs.
   paintGrain(vp);
   board.view.pan = { x: vp.pan.x, y: vp.pan.y };
   board.view.zoom = vp.zoom;
   paintZoom();
   clearTimeout(viewSettle);
-  // Its own event rather than 'settings', which several modules repaint on -
-  // and deliberately not markDirty(): looking around a board is not editing it,
-  // and a pan that raised "unsaved changes" on the way out would be a lie.
+  // 'view' not 'settings', and not markDirty() — panning is not editing.
   viewSettle = setTimeout(() => bus.emit('view'), 400);
 };
 vp.onChange(() => {
-  // The fast path a shipped board always takes: one boolean read, then the same
-  // work as ever. The performance.now() pair only runs once the dev handle asks
-  // for it, so profiling costs nothing until turned on.
-  // paintGridOnView, not paintGrid: on this one path a view change that moves
-  // the grid less than a device pixel would repaint it into the same picture.
-  // Every other caller here means "the grid itself changed" and calls paintGrid.
+  // paintGridOnView (not paintGrid): skips repaint when the grid moved less than 1 device px.
   if (!viewPerf.active) { paintGridOnView(vp); afterGrid(); return; }
   const t0 = performance.now();
   paintGridOnView(vp);
@@ -569,9 +302,7 @@ vp.onChange(() => {
 // ---------------------------------------------------------------------------
 
 bus.on('settings', key => {
-  // The whimsy slider arrives here, and it moves the grid's colours as well as
-  // its mark - so the resolved copy the Harsh crosses hold has to go back, along
-  // with the two beside it. See canvas/ground.ts.
+  // Appearance changes invalidate the grid's resolved colour caches.
   if (key === 'appearance') forgetLookInk();
   if (key === 'gridStep' || key === 'mobileColumns') syncBoardMode();
   paintGrid(vp);
@@ -579,50 +310,26 @@ bus.on('settings', key => {
   if (key === 'snap') paintSnap();
 });
 
-// The title card's edit menu is that card's own: deselect the card and the panel
-// styling it closes with it. Desktop only - on Mobile the same panel belongs to
-// the masthead and has no selection to follow.
+// Close title-card editor when the card is deselected (Desktop only).
 bus.on('selection', () => {
   if (board.layoutMode !== 'mobile' && isHeaderPanelOpen() && !selection.has(TITLE_ID)) {
     closeHeaderPanel();
   }
 });
-// The standing sign for multi-select - the finger's Shift key, see
-// isMultiSelect() in board-store.ts. A board-wide class, the same shape as
-// is-connecting and for the same reason: the row that turned the mode on is a
-// menu that closed behind it, and the hand is at the other end of the screen
-// from anything that could have stayed pressed.
-//
-// Synced from the flag on every selection event rather than written where the
-// mode is toggled, because there are three ways out of it - the menu row,
-// Escape, and a board loaded under it - and only the first is a command. A mark
-// written by the way *in* is a mark that outlives the other two.
+// Sync is-picking class from the flag on every selection event (three exit paths).
 bus.on('selection', () => {
   document.documentElement.classList.toggle('is-picking', isMultiSelect());
 });
 bus.on('items', syncMobileBoardBounds);
 bus.on('geom', syncMobileBoardBounds);
 
-// A note can arrive with text already in it - pasted, duplicated, or loaded
-// from a file saved before it grew - so it is sized for what it says as soon
-// as it has a node to measure.
-//
-// Ids waiting for the next frame, and `null` for "every note on the board" -
-// what a payloadless emit means. They are gathered here rather than handed
-// straight to rafThrottle because the throttle keeps the last call's arguments
-// and drops the rest: importing 500 files emits far more often than a frame
-// lands, and the arrivals from every emit but the last would go unmeasured.
-// One frame, one pass, nothing missed - which is the whole reason a raf per
-// emit was the wrong shape. Each queued its own callback, so the run that most
-// needs coalescing was the one that got none.
+// Arriving notes need measuring. Ids are gathered across emits and grown in one
+// rAF pass — rafThrottle alone would drop all but the last emit's arrivals.
 let toGrow: Set<string> | null = new Set();
 const growArrivals = rafThrottle(() => {
   const ids = toGrow;
   toGrow = new Set();
-  // Only a note new to the board needs measuring - the rest already fit what
-  // they say. The delta names the arrivals; with none (a load) every note is new
-  // here, so all of them are grown. This used to re-grow every note on the board
-  // on every add, remove or reorder, which is the O(n)-per-event this delta ends.
+  // Delta names arrivals; null (board load) grows all notes.
   if (ids) {
     for (const id of ids) if (byId(id)?.type === 'note') growNote(id);
   } else {
@@ -631,8 +338,7 @@ const growArrivals = rafThrottle(() => {
 });
 bus.on('items', delta => {
   if (delta && delta.added) {
-    // Already sweeping the whole board this frame, so naming a few of them
-    // again would change nothing.
+    // null means full sweep — adding more ids changes nothing.
     if (toGrow) for (const id of delta.added) toGrow.add(id);
   } else {
     toGrow = null;
@@ -640,51 +346,26 @@ bus.on('items', delta => {
   growArrivals();
 });
 bus.on('board:load', () => {
-  // Seed the Desktop title card before the board is drawn. state.loadBoard()
-  // deliberately leaves it out (so its own tests load an exact item set); the
-  // app adds it here, and the payloadless 'items' emit that follows loadBoard()
-  // mounts it. A board that carries or deleted its card is left untouched.
+  // loadBoard() omits the title card so tests can load exact item sets.
   ensureTitleCard();
-  // And the hint cards, on the same terms and for the same reason: state.ts
-  // keeps loadBoard() free of both so its own tests can load and serialise an
-  // exact item set. A board arriving with anything on it gets none - the latch
-  // was set from its contents inside loadBoard().
+  // Same: hints seeded here, not in loadBoard().
   ensureGhostCards();
-  // A board can bring its own look, applied without going through persist() -
-  // so this is the other door the ground's resolved colours change behind. It
-  // used to give back the grid's alone and leave every model card stamped in the
-  // ink of the board you had open before; forgetLookInk() is all three.
+  // New board may bring its own look — flush resolved colour caches.
   forgetLookInk();
   resetItems();
-  // Parsed geometry is keyed by asset hash and the old board's assets are gone.
+  // Old board's asset hashes are gone.
   resetModels();
   syncBoardMode();
-  // No grow-all here: loadBoard() emits a payloadless 'items' right after this,
-  // whose else-branch above already re-grows every note in one rAF pass. Doing it
-  // in both places sized every note on the board twice on each load.
+  // No grow-all: the payloadless 'items' emit after loadBoard() handles it.
   openingView();
   el('hud')!.hidden = !board.settings.hud;
   paintSnap();
   paintCount();
-  // A different board has never been saved, whatever the last one's button
-  // said. Leaving the countdown up would be the new board claiming a write that
-  // happened to something else.
+  // A different board has never been saved.
   resetSave();
 });
 
-/**
- * The two globals this file is the only writer or reader of.
- *
- * `mbrd` is the console handle below - declared here rather than in a .d.ts
- * because this is the line that creates it, and a global whose only assignment
- * and only declaration are three lines apart cannot drift. Its type is read off
- * the object itself, so adding a key to the handle needs nothing here.
- *
- * `launchQueue` is the PWA file-handling entry point (see the block at the foot
- * of this file). It is not in lib.dom yet; only the two members used are named,
- * because a wider guess would be a claim about an API this app only ever asks
- * one thing of.
- */
+/** `mbrd` console handle + `launchQueue` PWA file-handling (not in lib.dom yet). */
 declare global {
   // eslint-disable-next-line no-var
   var launchQueue: {
@@ -692,40 +373,13 @@ declare global {
   } | undefined;
   interface Window {
     mbrd: typeof handle;
-    /**
-     * The desktop shell's bridge, where there is one.
-     *
-     * Optional because only one of the two shells defines it, and declared here
-     * rather than in platform/ for the reason the block below this one is: this
-     * is the only file in the tree that reads either global. Everything else
-     * takes the object as an argument - see the wiring at the head of this
-     * file, and platform/electron.ts's header.
-     */
+    /** Desktop shell bridge, if present. Only read from this file. */
     mbrdDesktop?: Bridge;
   }
 }
 
-// A console handle, deliberately public, and the list below is all of it:
-// `mbrd.board` to inspect state, `mbrd.cmds.fit()` to drive the app, `mbrd.vp`
-// for the coordinate model, `mbrd.bus` to listen to or fire an app event,
-// `mbrd.selection` for what is picked, `mbrd.perf.on()` to profile the pan/zoom
-// frame, `mbrd.debugGrips()` to see the resize hitboxes, and `mbrd.sound` for
-// the interface sounds.
-//
-// `bus` and `selection` were on the object and in no comment, which is how a
-// deliberate handle turns into an accidental one: seven keys are reachable from
-// any console on the deploy and the file describing it named five. Naming them
-// is the fix rather than removing them - both are exactly the kind of thing the
-// handle is for, and nothing here is a secret. It is a page anyone can read.
-//
-// `sound` is the eighth and it is the one whose value is diagnostic rather than
-// exploratory. `mbrd.sound.log()` starts a transcript of every cue that reaches
-// cuelume/engine.ts and what became of it - played, refused, and why - and
-// `mbrd.sound.dump()` prints the run as a table with the gap between neighbours
-// in its own column. **What it is for is the lines that are not there.** Three
-// separate "it skipped that one" reports were each a call site missing from a
-// branch rather than anything wrong in the engine, and the way to tell those
-// apart is to press the thing and see whether the log says anything at all.
+// Console handle: board, bus, vp, cmds, selection, perf, debugGrips, sound.
+// sound.log() transcripts every cue — its value is the lines that are missing.
 const handle = {
   board, bus, vp, cmds, selection, perf: viewPerf,
   debugGrips: cmds.debugGrips,
@@ -739,9 +393,7 @@ const handle = {
 };
 window.mbrd = handle;
 
-// The profiler can be armed from the URL as well as from the console, which is
-// the only way in on a phone - see initPerfHash. The grip overlay rides the same
-// trick with `#grips`.
+// URL-armed profiler (#perf) and grip overlay (#grips) — only way in on mobile.
 initPerfHash(viewPerf);
 if (location.hash.includes('grips')) cmds.debugGrips();
 
@@ -749,42 +401,10 @@ if (location.hash.includes('grips')) cmds.debugGrips();
 // Start
 // ---------------------------------------------------------------------------
 
-// A note being written is the one piece of board state that is not in `board`
-// yet: its text lives in contenteditable DOM until the blur that ends the edit.
-// So the page going away has to close the editor first, or the snapshot behind
-// it saves the note's new *height* with its old text - and a tab that is closed
-// or reclaimed mid-sentence loses the sentence.
-//
-// visibilitychange is the reliable one - a phone discarding the page may never
-// run pagehide. Both are cheap: flushNoteEdit() does nothing unless a note is
-// open, and autosave() is a no-op when nothing has changed since the last write.
-// The unconditional autosave matters now the background save is a 20s interval
-// rather than a per-edit debounce - without it, a tab closed mid-interval would
-// lose up to 20s of edits.
-//
-// Armed only once the session has been read, which it was not. These listeners
-// are registered while the module body runs and start() does not reach
-// restoreSession() until later - so for the whole of that read, `board` is
-// still the blank default. restoreSession() is one idbGet plus ceil(n/32)
-// chunked idbGetMany round trips, hundreds of milliseconds on a heavy board and
-// stated as such below; hide the tab or reload inside that window and this ran
-// autosave() over the empty board. The committedGen short-circuit does not
-// catch it, writeSnapshot() passes the cacheOk gate on an ordinary boot, and the
-// blank board is serialised over the stored one. Then the sweep runs
-// idbDelMany('assets', ...) against a `referenced` set built from no items, so
-// **every asset in the cache is deleted** - and the restore's remaining chunks
-// come back to nothing, leaving a board of empty frames.
-//
-// The latch is one-way and set in start(). Failing closed is the right
-// direction: a throw before the session is read means nothing is written, which
-// is what the visitor wants from a boot that did not finish.
-//
-// Registered through the lifecycle port rather than on the two events directly,
-// and unwired that is exactly what it still does - the web default in
-// platform.ts holds the same pair of listeners with the same visibility guard.
-// What the port buys is the one thing a browser tab could never offer: the
-// desktop holds the window's close open until this promise resolves, so the
-// flush below is *awaited* there instead of raced.
+// Flush in-flight note edits + autosave on page close. Latched until start()
+// finishes restoreSession() — without that, a close during the IDB read would
+// autosave the blank default over the real board and sweep its assets.
+// Wired through lifecycle port so the desktop can await the flush before quit.
 let sessionReady = false;
 const markSessionReady = () => { sessionReady = true; };
 const flushEdits = async () => {
@@ -795,104 +415,43 @@ const flushEdits = async () => {
 platform.lifecycle.onCloseRequested(flushEdits);
 
 /**
- * The moment a not-found board stops being one.
- *
- * A blank board at a dead address is a message, and a message you have started
- * dropping things onto is a board. So the first piece of real content hands the
- * whole thing over: the address becomes the app's own, the two cards are swept
- * the way any earned-away hint is, and the writer comes back on.
- *
- * The order below is the entire correctness argument, so:
- *
- * 1. The stored session is read FIRST, and what the visitor just made is put
- *    back on top of it. This is the part that would be easy to get wrong and
- *    expensive to get wrong: the not-found board never loaded their board, so
- *    simply switching the writer back on would autosave a board containing one
- *    dropped photograph over a board containing everything they own. Loading
- *    theirs and re-adding the new items means the drop lands on their board -
- *    which is also, as it happens, what somebody who dropped a file on mbrd
- *    was expecting to happen.
- * 2. The listener is detached before any of it, because restoreSession() emits
- *    'items' itself and would otherwise re-enter this on its way through.
- * 3. resetSessionLatches() is last. It is the one that undoes the suspendCache()
- *    at boot, and nothing may be written until the board underneath is the real
- *    one.
- *
- * replaceState rather than assign: a navigation would throw away the very thing
- * that triggered the handover. The address is corrected in place, so a reload
- * from here is an ordinary load of an ordinary board, and the wrong URL is not
- * left in the history for the back button to find.
+ * Hand a not-found board over to a real one when the user drops content.
+ * Restores the stored session first, then re-adds the dropped items on top —
+ * without that, autosave would overwrite their board with the blank.
+ * Order: detach listener → restore → re-add → resetSessionLatches (last,
+ * because it re-enables writes and the board underneath must be real by then).
  */
 async function leaveNotFound() {
   bus.off('items', onFirstContent);
   leaveNotFoundBoard();
-  // Before anything replaces the board, because an open composer holds its card
-  // outside #world: resetItems() would call el.remove() on a node living in
-  // #compose-mount, the blur re-parents it inside the browser's own removal
-  // step, and the throw takes the rest of the handover with it. This is the same
-  // synchronous close the way out of the page uses.
+  // Close composer before board replacement — its card lives outside #world.
   flushNoteEdit();
   history.replaceState(null, '', homePath() + location.search + location.hash);
-  // Everything the visitor has put here, collected *after* the await and not
-  // before. On this board that is all there is: the title card is furniture and
-  // the two cards are ghosts, so isContent() names exactly the new items and
-  // nothing else - but restoreSession() yields for a chunked asset read that can
-  // run for hundreds of milliseconds, and a second file dropped inside that
-  // window would otherwise go down with loadBoard()'s wholesale reassignment of
-  // board.items, undo entry and all. `held` keeps the pre-load array, which
-  // loadBoard() replaces rather than mutates, so late arrivals are still in it.
+  // Capture items before restore — restoreSession() replaces board.items and
+  // a second drop during the IDB read would be lost without this snapshot.
   const held = board.items;
   const had = await restoreSession();
   const mine = held.filter(isContent);
   if (had) {
-    // Straight onto the restored board, at the coordinates they already have.
-    //
-    // Not through addItems(), which commits - and the handover is not an edit
-    // somebody made, so it has no business in the undo history. And not nudged
-    // clear of what is already there either, which was tried and taken out
-    // again: two notes added on an ordinary board land on exactly the same
-    // spot, so an arrival sitting on top of a card is not a handover artefact,
-    // it is what this app does. Inventing a rule here that the board itself
-    // does not have would make the wrong-URL path the odd one out.
+    // Bypass addItems() — handover is not an undoable edit.
     board.items.push(...mine);
     bus.emit('items', { added: mine.map(i => i.id), removed: [] });
     toast('Moved to your board');
   } else {
-    // No stored board to merge into, so nothing overwrote the name the way
-    // loadBoard() does on the other branch. Left alone 'Not found' persists: the
-    // writer is about to come back on, that name fails isDefaultTitle(), and the
-    // board is called it on the title card, in the masthead and in the file
-    // Export would write.
+    // No stored board — clear the "Not found" title.
     setTitle(defaultBoardTitle());
   }
   dismissGhosts();
   resetSessionLatches();
-  // And write it, rather than leaving it to the next edit or the 20s tick.
-  //
-  // This is the one moment the board is at its most fragile: the visitor is
-  // three seconds into a page they arrived at by mistake, the odds of them
-  // closing the tab are high, and until this line runs there is a board in
-  // memory that has never been on disk. The commit that brought them here
-  // requested a save of its own, but that request was made while the writer was
-  // still suspended and its cooldown then holds the next one off for seconds.
-  // So the handover commits itself.
+  // Force-save now — the board has never been on disk and the tab may close.
   autosave().catch(() => {});
 }
 
-/** Bound once so it can be taken off again inside the handover. */
+/** Bound once — removed inside leaveNotFound() to prevent re-entry. */
 const onFirstContent = () => {
   if (!hasContent()) return;
-  // The one call in this file whose rejection has to be caught rather than left
-  // to the global handler, because the handover is not atomic: replaceState()
-  // runs before the await, so a throw after it leaves an address that is theirs,
-  // a board on the screen, and - with the promise dropped - a writer suspended
-  // for the rest of the session with nothing saying so. Every message they then
-  // get is the not-found one, about a board they no longer have.
-  //
-  // The listener is not re-armed. leaveNotFound() takes it off first, and a
-  // second run would replay a handover that has already moved the address and
-  // may have half-loaded their board underneath. One failure, one honest
-  // message, and the file in front of them is the way out.
+  // Must catch: a throw after replaceState() would leave the writer suspended
+  // with the address already corrected, silently losing all further edits.
   leaveNotFound().catch(e => {
     failHandover();
     reportCaught(e, 'the move to your own board');
@@ -900,37 +459,18 @@ const onFirstContent = () => {
 };
 
 const started = (async function start() {
-  // Before anything can fire a write. A not-found boot opens a blank board, and
-  // a blank board that autosaved would be the app quietly replacing whatever
-  // the visitor already had with nothing - the one outcome a wrong URL must not
-  // have. So the writer is stopped first and the session is never read: their
-  // board is not loaded here, not shown here, and cannot be lost here.
-  //
-  // The changelog is as much a stranger to the session as a dead address is:
-  // the page shows a document, the board behind it is hidden by patch.css and
-  // stays empty, and the visitor's own board is neither loaded nor shown nor -
-  // above all - written over. It seeds no title card and no hints either: those
-  // are furniture for an empty board somebody is about to use, and this is a
-  // board nobody is looking at.
+  // Suspend writes for not-found and patch pages — a blank board must never
+  // autosave over the stored one.
   if (notFound || isPatch) suspendCache();
   const restored = (notFound || isPatch) ? false : await restoreSession();
-  // The board in memory is now the board that was stored, so a page going away
-  // may write it. See flushEdits() for what the window before this cost.
+  // Session restored — safe to autosave on close now.
   markSessionReady();
-  // A restored or freshly-opened board runs ensureTitleCard() inside loadBoard();
-  // the very first blank session never calls loadBoard, so seed the title card
-  // here and mount it. initItems() has already run (module top), so its 'items'
-  // listener is live and this renders the card without a reload.
+  // First blank session never calls loadBoard(), so seed the title card here.
   if (isPatch) {
-    // The board behind the changelog stays empty - it is hidden, and nothing is
-    // going to be dropped on it - but it is still named, because the panel's
-    // Board tab shows that name in its field and an unnamed board would put the
-    // date there instead.
+    // Named so the panel's Board tab has something to show.
     setTitle('Patch notes');
   } else if (!restored) {
-    // The board's own name says it too, on the title card and in the Mobile
-    // masthead - the two places the board names itself. Through setTitle() so
-    // both hear about it; it marks nothing dirty, and the writer is off anyway.
+    // Through setTitle() so both title card and masthead hear it.
     if (notFound) setTitle('Not found');
     ensureTitleCard();
     const ghosts = ensureGhostCards({ notFound });
@@ -939,60 +479,21 @@ const started = (async function start() {
       ...ghosts,
     ];
     if (seeded.length) bus.emit('items', { added: seeded, removed: [] });
-    // A board has arrived, and this is the one arrival that has to be said from
-    // here. `arrive` is fired by loadBoard() for every other board this app
-    // shows - a restore, an open, a New, a dropped .mbrd - but the comment four
-    // lines above says why this branch is different: **the very first blank
-    // session never calls loadBoard at all.** So a visitor's first ever launch,
-    // which is the one launch most worth marking, was the single case that
-    // fired nothing.
-    //
-    // Not on a not-found boot. That page is a wrong address wearing a blank
-    // board, and a sound of arrival over it would be the app being pleased
-    // about a mistake.
+    // First blank session never calls loadBoard(), so cue 'arrive' manually.
+    // Not on not-found — a wrong address is not an arrival.
     if (!notFound) cue('arrive');
-    // Armed after the seeding, not before: mounting the cards emits 'items'
-    // itself, and a listener watching for the first content would have fired on
-    // the message announcing the message. hasContent() would have said no and
-    // it would have been harmless, but arming after the board is standing is
-    // the version that stays harmless when the seeding changes.
+    // After seeding — mounting cards emits 'items' and would re-enter.
     if (notFound) bus.on('items', onFirstContent);
   }
-  // Which of the board's three faces the URL asked for, which is the far end of
-  // goHome() in page.ts: the changelog's View row cannot switch a lens, because
-  // on that page there is no board to switch, so it navigates and leaves the
-  // face behind as a fragment for this line to pick up.
-  //
-  // After the session, because a lens belongs to a board and until the line
-  // above there was none. Before openingView(), because entering the mobile
-  // layout reframes the view itself and a frame taken first would be thrown
-  // away. Not on the two boards nobody owns - a dead address and the changelog
-  // both open a board that is not the visitor's, and neither has a face worth
-  // asking for.
+  // Restore the URL-requested lens (e.g. #timeline). After session, before
+  // openingView() — mobile reframes the view and an earlier read would be lost.
   const face = (notFound || isPatch) ? null : openingFace();
   if (face) cmds[face]();
   openingView();
-  // A board somebody sent as a link, fetched and opened over the top of what is
-  // on screen. Deliberately the last thing in the boot and deliberately not
-  // awaited: the fetch is a network round trip to somebody else's Drive, and
-  // holding the first paint behind it would put a blank app in front of every
-  // recipient for as long as their connection took.
-  //
-  // Nothing is replaced until the file is in hand, and the board that was here
-  // is filed on the shelf before it is - that policy is openFile()'s and this
-  // path ends in it rather than writing a second copy of it. Which is also why
-  // the ordinary boot below runs to completion regardless: a share link that
-  // never arrives leaves an ordinary working board, not a half-started one.
-  //
-  // Not on the two boards nobody owns, on exactly the terms the face above is
-  // not: a dead address and the changelog are pages showing something other than
-  // the visitor's board, and neither should have one land on it.
+  // Open a ?s= share link. Not awaited — the fetch is a network hop and must
+  // not block first paint. A failed fetch leaves the local board intact.
   if (!notFound && !isPatch) openIncomingShare();
-  // After the session, because the first thing this listens for is an autosave
-  // of a board that has to exist. Not on the two boards nobody owns, on the same
-  // terms as everything else in this run: the changelog and a dead address both
-  // suspend the writer, so `autosaved` never fires there anyway - and arming a
-  // listener that cannot fire is a line that reads as if it might.
+  // After session — needs a real board. Writer is suspended on not-found/patch.
   if (!notFound && !isPatch) initCloudSync();
   if (restored) toast('Restored your last board');
   el('hud')!.hidden = !board.settings.hud;
@@ -1005,44 +506,18 @@ const started = (async function start() {
 })();
 
 /**
- * Keep a board that asked to be kept, on the signal that already knows whether
- * anything happened.
- *
- * Hung off `autosaved` rather than a timer of its own, and that is the whole of
- * the cadence design. That event fires when the session was actually written,
- * which is to say when a person actually changed something - so this inherits an
- * answer that would otherwise have to be worked out again, and a board nobody is
- * touching is never uploaded. The stored versions used the same signal for the
- * same reason before they were removed.
- *
- * **It stops rather than retries, and says so once.** Three things can go wrong
- * and all three are permanent until somebody acts: the token expired (an hour is
- * all a browser-only OAuth token gets, and a popup cannot be reopened without a
- * gesture), the network is down, or another machine wrote the board and this is
- * a conflict nothing here may resolve silently. A background loop that kept
- * trying would produce a toast every ten minutes and fix none of them. So the
- * latch goes up, the person is told, and the row in the panel is how they come
- * back - pressing it is the gesture that a sign-in needs anyway.
- *
- * The latch is per-session and per-board, cleared when a board arrives, because
- * a new board's sync has nothing to do with the last one's failure.
+ * Push to cloud on autosave. Stops on any failure (expired token, network,
+ * conflict) and tells the user once — retry needs a gesture anyway.
+ * Latch is per-board, cleared on board:load / board:new.
  */
 let syncStopped = false;
 
 function initCloudSync() {
-  // Both doors a different board comes through - loaded from anywhere, or made
-  // from nothing. `arrive` is a *sound*, not an event on this bus, and reaching
-  // for it here was a mistake the typecheck caught: the cue is fired by the
-  // things below, which is why the two names look interchangeable and are not.
+  // Reset latch when a different board arrives.
   for (const arrival of ['board:load', 'board:new'] as const) {
     bus.on(arrival, () => {
       syncStopped = false;
-      // And re-read whether *this* board is a synced one, because the Cloud
-      // section reads a synchronous mirror and a board arriving is the one
-      // event that can change what it should say without anybody pressing
-      // anything. boardSyncState() writes the mirror on its way past; the
-      // repaint is what puts the new sentence on screen, since paintPanel()
-      // listens for four bus events and this is not one of them.
+      // Re-read sync state for the new board and repaint the panel.
       void boardSyncState().then(() => paintPanel()).catch(() => {});
     });
   }
@@ -1053,9 +528,7 @@ function initCloudSync() {
       if (!state) return;
       const { shareProvider } = await import('./storage/cloud/cloud.ts');
       const provider = shareProvider(state.provider);
-      // Not signed in is the ordinary case rather than a failure: the token is
-      // gone on every reload, and a board that syncs is not a board that nags.
-      // It says so once and waits to be asked.
+      // Token is gone on every reload — stop quietly, don't nag.
       if (!provider?.signedIn()) {
         syncStopped = true;
         toast('Signed out of Drive — this board is not syncing. Board → Sync to connect again');
@@ -1075,31 +548,9 @@ function initCloudSync() {
 }
 
 /**
- * Open the board a `?s=` link names, if this page was opened with one.
- *
- * Two cheap tests before anything else runs, and that ordering is the whole
- * design of this function. `openingShare()` reads the query string and imports
- * nothing; only a page that actually carries a reference evaluates
- * `parseShareRef()`, and only a reference that parses reaches the provider and
- * the network behind it. An ordinary board runs none of it.
- *
- * Cheap in work done, not in bytes fetched - the build does not split, so every
- * one of those modules is in the bundle either way. See storage/cloud/config.ts,
- * where the distinction is argued, because "loaded on demand" reads as a
- * download saving in this codebase and is not one.
- *
- * **The address is cleared before the board arrives, not after.** A reload of
- * `?s=...` would otherwise fetch and open the same board a second time, over
- * whatever the person had done to the first copy in the meantime - and a URL
- * left in the history for the back button to find is the same trap one press
- * further away. replaceState rather than a navigation, so nothing reloads and
- * the entry the visitor arrived on is corrected in place, which is the same
- * move leaveNotFound() makes for the same reason.
- *
- * A failure says so through storage.ts's own toast and leaves the board alone.
- * Nothing here retries: the two ordinary reasons a shared file will not come
- * back are that the sender revoked the link or deleted the file, and neither
- * improves on a second attempt.
+ * Open the board a ?s= share link names. Clears the param from the URL first
+ * (replaceState) so a reload does not re-fetch. No retry — a revoked or
+ * deleted link will not improve on a second attempt.
  */
 function openIncomingShare(): void {
   const raw = openingShare();
@@ -1114,9 +565,7 @@ function openIncomingShare(): void {
     try {
       history.replaceState(null, '', homePath() + location.hash);
     } catch (err) {
-      // A history API a browser will not let this page use is not a reason to
-      // refuse somebody their board. The cost is that a reload opens it again,
-      // which openFile() makes survivable by shelving what was there.
+      // Non-fatal: a reload just re-opens it; openFile() shelves what was there.
       console.warn('[mbrd] could not clear the share link from the address', err);
     }
     await openSharedBoard(ref);
@@ -1124,21 +573,8 @@ function openIncomingShare(): void {
 }
 
 /**
- * A quiet floor check, run once the board is up (Safari audit S4).
- *
- * The app has a modern baseline: it opens a .mbrd by inflating deflate-raw
- * streams, asks its one question through <dialog>.showModal(), and paints its
- * palette with color-mix() - and below roughly Safari 16.4 one or more of those
- * is missing. This does not block the app. Most of it still runs, and a person
- * on an old browser told "unsupported" and shown nothing is worse off than one
- * with a degraded board. So it names what will actually break, once, in the
- * console and - for the one hard failure - a toast, so a later error reads as
- * expected rather than as a bug.
- *
- * The one hard failure is file interchange: a modern .mbrd deflates its entries
- * and there is no JavaScript inflate fallback, so a browser without
- * DecompressionStream('deflate-raw') cannot open boards from a newer one. The
- * rest degrade inside optional paths and are logged, not toasted.
+ * Floor check for Safari 16.4+ baseline. Logs degraded features; toasts only
+ * for the hard failure (no DecompressionStream = cannot open .mbrd files).
  */
 function warnMissingCapabilities() {
   let inflate = false;
@@ -1162,30 +598,13 @@ function warnMissingCapabilities() {
 }
 
 /**
- * Take the boot cover off (index.html), now that there is a board under it.
- *
- * One frame later, not immediately: start() has just written the items, the
- * grid and the grain into the DOM and none of it has been painted yet, so
- * fading on this turn would uncover the same empty room the cover exists to
- * hide. A single rAF is enough - the fade itself is 400ms and the paint lands
- * inside it either way.
- *
- * The node is removed rather than left at opacity 0. It is fixed and
- * full-screen, so what it leaves behind is a compositing layer over the whole
- * board for the life of the session, and `transitionend` is not guaranteed to
- * arrive - a tab backgrounded mid-fade never fires it - hence the timer as
- * well. Both paths call remove(), which is safe twice.
+ * Remove the boot splash one frame later (rAF) so the board has painted.
+ * Timer backs up transitionend — a backgrounded tab may never fire it.
  */
 function dismissSplash() {
   const splash = el('splash');
   if (!splash) return;
-  // #load holds the cover up indefinitely so the boot animation can be watched
-  // at leisure - it is on screen for well under a second in the normal case,
-  // which is not long enough to judge it. A dev switch in the same shape as
-  // #grips and #perf, and like them it is not a state the app can reach on its
-  // own: it is in the URL, so the way out is the URL. Nothing dismisses it -
-  // deliberately, since a cover that lets go on a stray click or keypress is
-  // one that ends the moment you lean on the desk to look at it.
+  // #load in the URL holds the splash indefinitely (dev switch for the animation).
   if (location.hash.includes('load')) return;
   requestAnimationFrame(() => {
     splash.classList.add('is-done');
@@ -1194,31 +613,12 @@ function dismissSplash() {
     setTimeout(drop, 1200);
   });
 }
-// Both arms, deliberately: a boot that threw still has to give the page back.
-// Whatever went wrong, the board underneath is more use than a cover nobody
-// can dismiss - and the console already carries the failure. This covers a
-// throw inside start() only; the window 'error' listener near the top of this
-// file is what covers a throw in the module body, before `started` exists.
+// Both arms: a failed boot still has to dismiss the splash.
 started.then(dismissSplash, dismissSplash);
 
-// Installed as a PWA, "Open with mbrd" on a .mbrd hands us the file here
-// (manifest.json file_handlers). The desktop equivalent is
-// lifecycle.onOpenFiles below, wired from desktop/ - a double-clicked file, a
-// second launch's argv, or macOS's open-file event, all arriving as the same
-// call. `launchQueue` is never present there: the window loads the app from its
-// own scheme and nothing installs a PWA over it.
-//
-// Waits for start(), which is the whole of the fix. Both of these load a board
-// and both register assets, and start() yields at its first await - so the OS
-// handing over a file while IndexedDB was still being read had the two racing:
-// whichever loadBoard() finished last won the board, while the asset registry
-// ended up holding an interleaving of both. Restoring first and then opening
-// over the top is the same result the user would get by opening the file
-// themselves, which is what they asked for.
+// PWA file handler (manifest.json file_handlers). Waits for start() so the
+// session restore finishes before the file open — without that the two race.
 if ('launchQueue' in window) {
-  // Non-null because the line above is the feature test: the global is declared
-  // optional since a browser without it has no such name at all, which is also
-  // why the test is `in window` rather than a read of the binding.
   launchQueue!.setConsumer(async ({ files }) => {
     if (!files?.length) return;
     try {
@@ -1228,16 +628,8 @@ if ('launchQueue' in window) {
   });
 }
 
-// The same arrival, from the other shell. Same rule and the same reason: wait
-// for start() so a file handed over during the session read does not race the
-// restore. The web default never calls this, so the block above is not dead
-// code on either side - each shell has exactly one door and they are different
-// doors.
-//
-// The desktop reads the bytes in its main process and sends them over, so what
-// arrives here is a File and nothing about a path - the ref that names the file
-// is attached by the adapter, and no path ever becomes a string this module
-// holds.
+// Desktop file open (double-click, argv, macOS open-file). Same wait-for-start
+// rule as the PWA path above.
 platform.lifecycle.onOpenFiles(files => {
   const first = files[0];
   if (!first) return;
@@ -1249,33 +641,15 @@ platform.lifecycle.onOpenFiles(files => {
   })();
 });
 
-// Not on the desktop, where electron-updater is the updater and the shell serves
-// `web/` from its own scheme - a worker registered over that would be a second
-// cache in front of files that are already local. sw.js and SHELL are untouched;
-// the worker is simply never registered there, so its cache is never populated.
-// The desktop's half of the same sentence.
-//
-// The block below this one is the web's updater: a service worker self-promotes
-// and the toast says "reload to update". There is no worker here, so this says
-// the same thing with electron-updater behind it - and in one of two shapes,
-// because a portable copy and an unsigned macOS build cannot replace
-// themselves. Those are told the version and given the release page instead of
-// a button that cannot work, which is the honest half of plan §1's decision to
-// ship unsigned.
-//
-// Both the announcement and the check, because an update found before the
-// window existed would otherwise be lost: the shell pushes when it finds one,
-// and this asks once in case it already had.
+// Desktop update announcements (electron-updater). Two shapes: auto-install
+// builds get "will install when you quit"; portable/unsigned get the release URL.
+// Checks once on boot in case an update was found before the window existed.
 if (bridge) {
   const announceUpdate = (info: { version: string, canInstall: boolean } | null) => {
     if (!info) return;
     if (info.canInstall) {
       toast(`v${info.version} will install when you quit`);
     } else {
-      // No button. A toast in this app is a receipt, not a dialog - see
-      // notify.ts - and "go and download it" is a sentence, not an action this
-      // page can take: the shell opens the release page through the same
-      // external-link path every other outbound link in the app uses.
       toast(`v${info.version} is out — download it from the releases page`);
     }
   };
@@ -1284,11 +658,8 @@ if (bridge) {
 }
 
 if (!isDesktop() && 'serviceWorker' in navigator) {
-  // A new worker installing while a page is already controlled means a fresh
-  // build shipped mid-session. sw.js self-promotes (skipWaiting + claim), so
-  // the code swaps under the running tab; tell the user rather than reload out
-  // from under them (jarring mid-import or mid-edit). Guarded on an existing
-  // controller so the first-ever install stays silent.
+  // New worker mid-session = fresh deploy. Toast "reload to update" rather than
+  // reloading under the user. Silent on the first-ever install.
   const announce = (fresh: ServiceWorker | null) => {
     if (!fresh) return;
     const say = () => {
@@ -1296,29 +667,19 @@ if (!isDesktop() && 'serviceWorker' in navigator) {
         toast('New version ready — reload to update');
       }
     };
-    // Both, because a worker found this way may have finished installing before
-    // anybody looked: 'statechange' only fires on the next change, and for a
-    // worker already sitting in `waiting` there is not going to be one.
+    // Both: a worker already in `waiting` won't fire another statechange.
     say();
     fresh.addEventListener('statechange', say);
   };
   const registerWorker = () => {
     navigator.serviceWorker.register('sw.js').then(reg => {
       reg.addEventListener('updatefound', () => announce(reg.installing));
-      // register() resolves against a registration that may already be part-way
-      // through an update - a second tab started it, or this one was reloaded
-      // mid-install - and 'updatefound' fired for that before this listener
-      // existed. Without these two the update the block was written for is the
-      // one case it stays quiet about.
+      // Catch an already-in-progress update that 'updatefound' missed.
       announce(reg.installing ?? reg.waiting);
     }).catch(err => console.warn('[mbrd] sw:', err));
   };
-  // Deferred to 'load' so registration does not compete with the first paint -
-  // but only if there is still a load to wait for. This module is deferred and
-  // ordinarily runs before it; a dynamic import, or a script moved out of the
-  // parser's path, would put it after, and then a listener for an event that
-  // has already fired is a registration that silently never happens and a
-  // .catch() inside a callback nobody calls.
+  // Defer to 'load' so registration does not compete with first paint.
+  // Falls back to immediate if the event already fired.
   if (document.readyState === 'complete') registerWorker();
   else addEventListener('load', registerWorker);
 }

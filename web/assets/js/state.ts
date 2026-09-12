@@ -1,35 +1,13 @@
-// Central board state + selection + command-based undo/redo.
-//
-// Everything that mutates the board goes through here and emits an event, so
-// the renderer, HUD and sidebar stay in sync without knowing about each other.
-//
-// Events:
-//   items      - the item list itself changed (add/remove/reorder)
-//   geom       - existing items moved/resized (payload: array of ids)
-//   item       - one item's content/name changed (payload: id)
-//   selection  - the selection set changed
-//   settings   - a setting changed (payload: key)
-//   layout     - desktop/mobile geometry profile changed (payload: mode)
-//   board      - a whole new board was loaded, or the title/dirty flag changed
-//   trash      - something was thrown away, restored, or purged
-//   connections- a line between two cards was drawn or removed. Its own event
-//                rather than riding on 'items': every 'items' subscriber
-//                would repaint for a change that moved nothing.
+// Central board state + selection + command-based undo/redo. Everything
+// that mutates the board goes through here and emits an event (items,
+// geom, item, selection, settings, layout, board, trash, connections),
+// so renderer/HUD/sidebar stay in sync without knowing each other.
 
 import { isHash, isRecord, itemHashes } from './util.ts';
 import { toast } from './notify.ts';
 import { cue } from './cuelume/engine.ts';
-// Pure geometry, shared with the canvas and the input layer so "where is this
-// item and what does it cover" has one answer. At the top level rather than
-// under canvas/ because it depends on nothing and belongs to no one layer -
-// see geometry.ts.
 import { latticeBox } from './geometry.ts';
 import { splitAppearance, mergeAppearance } from './layout-settings.ts';
-// The .mbrd format, one level down - see board-schema.ts: what an arriving
-// board is held to and what a saved one is written as. serializeBoard() is
-// re-exported below under its old name; the four normalizers are this file's
-// own working set, since setSetting() writes the same board-level fields the
-// reader validates and the two must agree on what a legal value is.
 import {
   normalizeBoard, normalizeFonts, normalizeMediaFit, normalizeMobileHeader,
   normalizePaletteSources, serializeBoard,
@@ -37,10 +15,6 @@ import {
 
 export { serializeBoard };
 
-// The cards an empty board puts on itself, one level down - see onboarding.ts.
-// Hydration rather than mutation: no commit, no history, and two session
-// latches that must survive an undo of the import that cleared them. Every
-// name is re-exported below; callers have always reached them through here.
 import {
   GHOST_IDS, NOTFOUND_IDS, tapeFor, hasContent, hasGhosts, isNotFoundBoard,
   leaveNotFoundBoard, ensureGhostCards, dismissGhosts, resetGhostLatch,
@@ -53,10 +27,6 @@ export {
   reseedGhostCards,
 };
 
-// The internal clipboard, one level down - see clipboard.ts. Nothing in it
-// touches the board: the clipboard is not board state, is not saved and has
-// nothing to undo. The two commands that *do* touch the board - cut and
-// paste - stayed here.
 import {
   clearClipboard, clipboardBounds, clipboardHasOurs, clipboardSize, cloneItem,
   copyItems, itemCount, itemsIn, pasteCopies, takeItems,
@@ -64,14 +34,6 @@ import {
 
 export { clipboardBounds, clipboardHasOurs, clipboardSize, copyItems };
 
-// The bin, one level down - see trash.ts. Delete and restore are two
-// directions of one door. The bin's bound is in board-model.ts beside
-// MAX_ITEMS, because it is part of the board's shape and the file reader
-// applies it too.
-// setAssetPurge is the seam emptying it needs: the bin destroys the files it
-// was holding, and the registry that holds them is a layer above this one.
-// main.ts wires it, the same shape as setAssetNameLookup() below.
-// freezeClip is the bin's fourth route: another way an item leaves the board.
 import {
   removeItems, restoreItems, emptyTrash, setAssetPurge, freezeClip, clipHomeId,
   stuckHostId,
@@ -81,12 +43,6 @@ export {
   removeItems, restoreItems, emptyTrash, setAssetPurge, freezeClip, clipHomeId,
   stuckHostId,
 };
-// Downward: the catalogue is pure - geometry.ts and nothing else - and this is
-// the one thing state needs from it, which of the two lists a stored
-// arrangement id belongs to. See tests/layers.test.js, where it is BASE.
-// The floor this file stands on, re-exported below under exactly its old
-// names: "state.ts is the only door" is a rule about where mutations go, not
-// about which file a symbol is declared in. See board-store.ts.
 import {
   bus, selection, isDirty, markDirty, resetDirty,
   select, clearSelection, deselect, tagFilter, setTagFilter,
@@ -96,9 +52,6 @@ import {
   commit, undo, redo, historyState, historyDepth, historyWeight,
   clearHistory, lastCommand, takeBack,
 } from './history.ts';
-// The step ledger, one level down again - see timeline.ts. Nothing above this
-// file drives it: commit() records, undo() and redo() move the marker. What is
-// re-exported here is the reading half plus the two doors a *file* needs.
 import {
   adoptTimeline, timelineSteps, timelineAt, timelineStale, timelineHashes, goTo,
   nameStep, declareOp, registerOp, editStep, rebuildFrom, stepEditable,
@@ -118,10 +71,6 @@ export { tagFilter, setTagFilter };
 export { isMultiSelect, setMultiSelect };
 export { commit, undo, redo, historyState, historyDepth, historyWeight, lastCommand, takeBack };
 
-// The board's shape and its index, one level down - see board-model.ts. The
-// first group is re-exported because callers have always imported these from
-// state.ts; the second is this file's own working set, model internals the
-// mutation rules are written in terms of.
 import {
   NOTE_MAX, DEFAULT_MOBILE_HEADER, DEFAULT_SETTINGS, BOARD_MODES, BOARD_TITLE_MAX,
   MOBILE_COLUMNS, MOBILE_COLUMN_OPTIONS, MOBILE_TOP_ROWS, MOBILE_MIN_ROWS,
@@ -133,10 +82,6 @@ import {
   cloneSettings, layoutSettingsOf, dropIdIndex,
   MAX_CONNECTIONS, pairKey, normalizeAudioOrder, CONN_DIRECTIONS, CONN_STYLES,
 } from './board-model.ts';
-// The readers the per-item settings below are written in terms of. Each is the
-// *same* function the file reader and every consumer uses, which keeps "what
-// this app will store" and "what a reader will get back" one answer rather
-// than two that agree today - see setItemCrop().
 import {
   isLocked, isFiltered, itemCrop, itemAdjust, adjustFilter, itemFlip, flipTransform,
   itemRotate, itemMatte, itemBare,
@@ -152,11 +97,6 @@ export { itemRotate, itemMatte, itemBare };
 export { itemTags, boardTags, cleanTag };
 export { TAGS_PER_ITEM, TAG_MAX, MIN_CROP };
 
-// Every write to board.connections, one level down - see connections.ts. The
-// shape of a connection stayed in board-model.ts and the pruning in
-// board-schema.ts; only the mutation half had to sit beside commit().
-// Re-exported by name: callers have always drawn and parted lines through
-// state.ts.
 import {
   areConnected, connectedTo, toggleConnection, addConnections, clearConnections,
   updateConnection, connectionMeta,
@@ -167,54 +107,32 @@ export {
   updateConnection, connectionMeta,
 };
 
-// Stuckness, one level down - see sticky.ts. Questions about geometry; the
-// mutations that act on their answers are here.
 import {
   STICK_MIN, stuckTo, wouldStick, restick, seedSticks,
   stuckPlacement, isRider, stuckFollowers, isPinned, dragRoot, hostUnder, isSticky,
   startSettling, isSettling, settlesIn, SETTLE_MS,
 } from './sticky.ts';
 
-// Fence membership, one level down - see fences.ts. Same bargain as sticky.ts:
-// a question about where two things are, measured there, acted on here.
 import {
   isFence, fenceOf, fenceAt, fenceMembers, fenceFollowers, refence, refenceAround,
   refenceArrivals, seedFences, fenceBox, nextFenceName,
 } from './fences.ts';
 
-// The sticker catalogue - a leaf module of plain data, imported for the one
-// thing a mutator does with it: hold an arriving tint to the palette that
-// exists.
 import { stickerTint } from './stickers/catalogue.ts';
 
-// Where everything is - see layout.ts. The Mobile pack, the two geometry
-// profiles and the undoable geometry writes, which had to move as one piece
-// because the pack and the profiles call each other.
 import {
   activateLayoutSettings, applyGeom, baseStep, commitGeom, completeLayout, fitBoardMode, mobileBoardWidth, placeMobileItems, recheckBoardGeometry, repackMobileBoard, snapAll, snapshotGeom, travelling, unsnapAll, writeLayout,
 } from './layout.ts';
 
-// Board-wide snapping lives with the rest of the geometry writes - see the
-// tail of layout.ts. setSetting() still owns the `snap` key and hands the value
-// over; snapAll/unsnapAll take the flag as well as the sweep, because the two
-// are one command (an undo that put the board back and left the checkbox ticked
-// was the bug that made them one).
 export { recheckBoardGeometry };
 
-// Z-order - see stacking.ts. Sticky notes are ordered against their host rather
-// than against the board, which is why this is not a sort by z.
 export { raiseSelection, lowerSelection, stackOrder, visualStackOrder, stackLayerIds, selectionHasStackOverlap } from './stacking.ts';
 
-// Re-exported, not used here: these four are the layout module's public face
-// and callers have always reached for them through state.ts.
 export {
   setBoardMode, mobileBoardTop, mobileBoardBottom, mobileBoardWorldWidth,
 } from './layout.ts';
 
 export { baseStep, snapshotGeom, applyGeom, commitGeom, placeMobileItems, mobileBoardWidth, travelling };
-// applyGeom()'s argument type, through the same door as applyGeom itself: a
-// caller in ui/ that builds a patch must be able to name what it is building,
-// and layout.ts is below the line ui/ may import from.
 export type { GeomPatch } from './layout.ts';
 
 export {
@@ -238,13 +156,7 @@ export {
 
 
 
-// The filename an asset first arrived under lives in the asset registry, which
-// sits *above* state in the layering - storage depends on state, not the other
-// way. So renameItem's oldest fallback is injected rather than imported:
-// main.ts wires this to storage/assets.ts at startup. Left unset - in a test,
-// or before wiring - the fallback skips to the item's current name, the same
-// answer the registry gives for an asset it has never seen. See AUD-12.
-/** The filename an asset arrived under, from whoever holds the registry. */
+/** Injected by main.ts — asset registry is above state in the layer graph. */
 type AssetNameLookup = (hash: string) => string | undefined;
 
 let assetName: AssetNameLookup = () => undefined;
@@ -262,17 +174,8 @@ export function addItems(
   label = 'Add',
   options: { avoidOverlap?: boolean } = {},
 ) {
-  // The stack is dealt here rather than left to makeItem().
-  //
-  // makeItem() defaults `z` to topZ() + 1, which reads the *live* board - and
-  // the batch is not on it yet, so a group added in one call all read the same
-  // number and landed on one layer. That broke two things: duplicating a pile
-  // came back flat, defeating the sort in itemsIn(), and stuckTo() - which
-  // needs a *strictly* lower z - stopped recognising the pair, so a copied
-  // note attached itself to whatever happened to be underneath.
-  //
-  // An explicit z is still honoured, because loadBoard() and the bin restore
-  // items that already have one and must come back exactly where they were.
+  // Assign ascending z — a batch all reading topZ() would land flat.
+  // Explicit z is honoured (loadBoard, bin restore need exact positions).
   let z = topZ();
   let added = items.map(partial =>
     makeItem(partial.z != null ? partial : { ...partial, z: ++z }));
@@ -281,11 +184,7 @@ export function addItems(
   } else {
     added = added.map(item => fitBoardMode(onLattice(item)));
   }
-  // A fence arriving changes what everything under it belongs to, and only
-  // this says so - see refenceArrivals(). In the redo half for the reason
-  // commitGeom() gives: commit() runs redo immediately, so this covers the
-  // first add and every redo after it, while the undo half is a removal, which
-  // heals on its own.
+  // Fence membership recalc in redo — undo is a removal, which self-heals.
   commit(label,
     () => { const fresh = added.filter(a => !byId(a.id));
             board.items.push(...fresh);
@@ -295,35 +194,14 @@ export function addItems(
             board.items = board.items.filter(i => !ids.has(i.id));
             ids.forEach(id => selection.delete(id));
             bus.emit('items', { added: [], removed: [...ids] }); bus.emit('selection'); },
-    // Retains every item it added - a folder drop is the heavy case.
     added.length);
   return added;
 }
 
 /**
- * A new item laid on the lattice, if the board is snapped. Arriving is a
- * placement like any other: without this, a snapped board grew a photograph at
- * 320x240 sitting a few pixels off every line, fixable only by switching
- * snapping off and on again.
- *
- * Sizes as well as positions, because a box that is not a whole number of
- * cells is snapped along only two of its four edges, and it is the ragged
- * right and bottom that a person sees.
- *
- * The presnap memo makes this reversible: unsnapAll() puts every item carrying
- * one back to its pre-lattice geometry, and an imported item with no life
- * before the lattice would otherwise be stranded at its snapped size when
- * snapping is turned off. An existing memo is left alone - a duplicated or
- * pasted item brings its own, a memo of life before the *first* snap.
- *
- * Something arriving *on a card* is the exception, the same one snapAll()
- * makes: a sticker pressed onto a photograph belongs at that spot, not at the
- * nearest grid line. wouldStick() rather than stuckTo(), because the item is
- * not on the board yet - it is added a few lines below - and stuckTo() would
- * answer "stuck to nothing" and *remember* that, leaving the sticker unstuck
- * until somebody dragged it. The loose flag is read here because wouldStick()
- * does not: a note unstuck on purpose is governed by the lattice like any
- * other.
+ * Snap a new item to the lattice if the board is snapped. Saves a presnap memo
+ * so unsnapAll() can restore original geometry. Sticky items that would attach
+ * to a host skip the snap — they belong at their stick point, not the grid.
  */
 function onLattice(it: Item): Item {
   if (!board.settings.snap) return it;
@@ -339,19 +217,9 @@ function onLattice(it: Item): Item {
   };
 }
 
-/**
- * The Desktop title card: its fixed geometry and the two helpers that keep it a
- * singleton. Below the item plumbing, so it can lean on makeItem.
- */
-// Four grid spaces wide at the default 64px grid step, and 3:2 tall (256 * 2/3
-// = 170.67) - the Mobile masthead's own aspect (MOBILE_HEADER_ASPECT). The card
-// visual is held to an exact 3:2 in CSS; this is the item's footprint. Snapping
-// rounds it up to whole cells (4x3 = 256x192), and the card stays 3:2 and
-// top-aligned inside, so the extra height falls as slack below it.
+// Title card geometry — 4 grid cells wide, 3:2 aspect (matches MOBILE_HEADER_ASPECT).
 const TITLE_SIZE = Object.freeze({ w: 256, h: 171 });
-// Top-centre, above where a fresh board's items land: x centres it (item x is
-// the box centre), +y is up (world plane), so the card sits over the origin.
-// One grid space (64) higher than it first sat, to clear the content below.
+// Top-centre above origin.
 const TITLE_DEFAULT_POS = Object.freeze({ x: 0, y: 244 });
 
 function makeTitleItem(at: { x?: number, y?: number } | null = null) {
@@ -362,32 +230,13 @@ function makeTitleItem(at: { x?: number, y?: number } | null = null) {
     y: at?.y ?? TITLE_DEFAULT_POS.y,
     w: TITLE_SIZE.w,
     h: TITLE_SIZE.h,
-    // Anchored from the moment it appears, and this is the one card where that
-    // is the right default. It is the board's *name*: top-centre above where
-    // everything lands, the largest thing on a fresh board, so it is what a
-    // press aimed at the board behind it hits. Anchored, that press pans -
-    // what somebody reaching past the masthead meant - and a Rearrange lays
-    // the board out around it instead of dealing a slot underneath it.
-    //
-    // Nothing is lost: the pen and the T are buttons and claim their own press
-    // (see the widget branch in canvas/input.ts), a double click still drops
-    // into the rename, and Reset position goes through applyGeom rather than a
-    // drag, so it works anchored. Only the accidental drag is gone, and the
-    // menu row below Reset position gets it back.
-    //
-    // Only on a card this function makes. A board opened from a file carries
-    // whatever it saved, which is why ensureTitleCard() adds nothing to one
-    // that already has its card - an older board is not retro-anchored.
+    // Anchored by default — clicks pass through to pan, Rearrange skips it.
+    // Only for new cards; boards from files keep whatever they saved.
     meta: { locked: true },
   });
 }
 
-/**
- * Put the title card on the board if it belongs there and is missing. Board
- * hydration, not a user edit: no commit, no history - it runs on load and at
- * startup, the way default settings are present. A board that threw the card
- * away (titleHidden) keeps it away.
- */
+/** Hydrate the title card if not hidden and not already present. No undo. */
 export function ensureTitleCard() {
   if (board.titleHidden) return;
   if (board.items.some(i => i.type === 'title')) return;
@@ -397,13 +246,7 @@ export function ensureTitleCard() {
 /** Whether the Desktop title card is currently thrown away (bin shows its button). */
 export const isTitleHidden = () => !!board.titleHidden;
 
-/**
- * Send the title card back to its default spot (top-centre). The card is a
- * movable singleton with no other way home short of deleting and restoring it,
- * so this is its "Reset size" - one undoable step, a no-op if it is already
- * there. Same geometry funnel a drag uses, so it snaps and round-trips like
- * any move.
- */
+/** Reset the title card to top-centre. Undoable, no-op if already there. */
 export function resetTitlePosition() {
   const item = board.items.find(i => i.type === 'title');
   if (!item) return;
@@ -414,11 +257,7 @@ export function resetTitlePosition() {
   commitGeom('Reset title position', before, [item.id]);
 }
 
-/**
- * Bring the title card back from its deleted state - the bin's restore button.
- * Undoable, unlike ensureTitleCard(): this is a user action, so it earns a
- * history step the way restoring a binned item does.
- */
+/** Restore the title card from the bin. Undoable. */
 export function restoreTitleCard(at = null) {
   if (!board.titleHidden && board.items.some(i => i.type === 'title')) return;
   const item = makeTitleItem(at);
@@ -443,30 +282,12 @@ export function duplicateItems(ids: Iterable<string>, offset = { x: 28, y: -28 }
 }
 
 // ---------------------------------------------------------------------------
-// The two clipboard commands that touch the board
-//
-// Everything else about the clipboard is in clipboard.ts: what is held, what a
-// copy of an item is, the receipt that tells our own paste from somebody
-// else's. These two are here because they are board mutations - one deletes,
-// one adds - and every board mutation is one undoable command with a label.
-// See the head of clipboard.ts for the seam.
+// Clipboard commands that touch the board (cut + paste)
 // ---------------------------------------------------------------------------
 
-/**
- * Copy, then delete: one undo entry, because removeItems() is the only half
- * that touched the board. Cut items go to the bin like any other delete, so a
- * cut you never paste is still recoverable.
- *
- * The one of the three that needs a toast: copy and paste leave something on
- * screen, where cut makes things disappear and looks identical to a mistaken
- * delete. Naming the bin is the useful half - "gone" versus "over there".
- */
+/** Copy then delete. Cut items go to the bin (recoverable). */
 export function cutItems(ids: Iterable<string>) {
-  // Resolved once and reused for both the copy and the delete, rather than
-  // letting copyItems() resolve them again - two full board filters + sorts.
-  // Also why this calls takeItems() rather than copyItems(): the latter
-  // toasts, and two toasts in one turn are one message, since the second
-  // replaces the first inside a frame.
+  // takeItems() instead of copyItems() to avoid a double-toast.
   const src = itemsIn(ids);
   const text = takeItems(src);
   if (!text) return '';
@@ -476,14 +297,7 @@ export function cutItems(ids: Iterable<string>) {
   return text;
 }
 
-/**
- * Put the internal clipboard on the board.
- *
- * `at` is an optional world point to centre the pasted group on - see
- * pasteCopies(), which owns that arithmetic and the step that accumulates
- * across repeated pastes. This half is the undoable one: one command, one
- * label, one Ctrl+Z for the whole group however many items it holds.
- */
+/** Paste the internal clipboard. `at` optionally centres the group. */
 export function pasteItems(at: { x: number, y: number } | null = null) {
   const copies = pasteCopies(at);
   if (!copies.length) return [];
@@ -595,24 +409,9 @@ export function setNoteContent(id: string, rich: unknown, text: unknown) {
 }
 
 /**
- * Turn one item into an item of another kind, as a single undoable step.
- *
- * The item is replaced rather than edited, and the replacement gets a fresh id.
- * canvas/items.ts caches one node per id and writes the type onto that node
- * when it is *built*, and the stylesheet keys off it - so an item that changed
- * type under a node that stayed would wear the old type's clothes until
- * something unrelated forced a rebuild. Retiring the id retires the node with
- * it, without reaching into the renderer from here.
- *
- * Position, rotation and stacking carry over unless `next` overrules them:
- * this is the same thing seen differently, and it should not move or change
- * places in the pile. The selection follows the swap in both directions, so
- * whichever of the pair is on the board is selected, and an undo hands the
- * original back ready to be dragged.
- *
- * The slot to write into is found by identity when the command runs, not by an
- * index captured while it is being built. Undo may be pressed three edits
- * later, by which time an index recorded now points at somebody else.
+ * Replace an item with a new one (fresh id) when its type changes. New id
+ * forces the renderer to rebuild the node. Position/z carry over unless
+ * `next` overrules them. Selection follows the swap.
  */
 export function retypeItem(
   id: string, next: Record<string, unknown>, label = 'Change item',
@@ -633,95 +432,28 @@ export function retypeItem(
 }
 
 /**
- * Call an item something else.
- *
- * An empty name never sticks. A picture wears its name on the caption plate
- * that build() only draws `if (item.name)`, so clearing it would take away the
- * very handle you renamed it by and leave the item anonymous with no way back -
- * a one-way door, on the one edit people make by accident most. Blank therefore
- * means "put it back", and what goes back is the name the file arrived under:
- * the asset registry has held it since the import and a .mbrd carries it, so it
- * is still there a month later. An item with no asset behind it keeps the name
- * it had, and only one that never had a name can come out of this without one -
- * which costs it nothing, because it had no plate to lose.
- */
-/**
- * Rename an item, or clear the name to get the original filename back.
- *
- * The fallback order is the point. `meta.origName` is written at import and
- * travels in board.json, so it survives a save and reopen; the asset registry's
- * copy is the older path and only holds for assets registered this session,
- * because the archive carries bytes and hashes but no filenames. Consulting
- * only the registry meant that after a round trip, clearing the name of a
- * renamed item handed back the *renamed* value - the original had nowhere to
- * have been kept.
+ * Rename an item. Empty name falls back to meta.origName, then the asset
+ * registry, then the current name — so clearing restores the original filename.
  */
 export function renameItem(id: string, name: unknown) {
   const it = byId(id);
   if (!it) return;
-  // The two fallbacks are strings or nothing: `origName` is `unknown` per key
-  // like every meta field (see board-model.ts), and the registry answers
-  // undefined for an asset it has never seen.
   const orig = typeof it.meta?.origName === 'string' ? it.meta.origName : '';
   const next = String(name ?? '').trim() ||
                orig ||
                (it.asset?.hash ? assetName(it.asset.hash) : '') || it.name;
   if (it.name === next) return;
   const prev = it.name;
-  // byId() again inside the pair, and non-null: the item was on the board when
-  // this was built, and a command whose item has gone is not replayed - the
-  // removal that took it away is the entry above this one in the history.
   commit('Rename',
     () => { byId(id)!.name = next; bus.emit('item', id); },
     () => { byId(id)!.name = prev; bus.emit('item', id); });
 }
 
 /**
- * One undoable write to one key of one item's `meta`.
- *
- * Four setters below were the same fourteen lines with the key name changed -
- * cover, upAxis, fit and tint. The tell was setItemFit(), which had to rename
- * its destructured key to `fit: _drop` to keep the removal branch from
- * shadowing its own parameter: a rename that only exists because the shape was
- * copied rather than shared.
- *
- * `validate` is what each caller keeps for itself, and it is the only part that
- * genuinely differed. It runs twice - over the arriving value and over what the
- * item already holds - so the *same* rule decides both, which is what makes the
- * no-op check honest: a board out of a hand-written file may be carrying a
- * value this app would refuse, and comparing a validated `next` against a raw
- * `prev` would record a history entry for a change that never happened. Null
- * means "no value", and writing one removes the key rather than setting it to
- * null: the board should not hold a field it does not have.
- *
- * `label` may be a function of the validated value, for the one setter whose
- * two directions are different acts - setting a picture and removing one.
- *
- * `same` is how "no change" is decided, and it defaults to Object.is because
- * every value this started with was a scalar. Two of the later ones - a crop
- * rectangle and the three picture adjustments - are validated into fresh
- * objects, which are never identical however equal they are, so those hand in a
- * comparator of their own. Passing the comparator rather than canonicalising to
- * a string keeps the stored value the shape the rest of the app reads.
- *
- * The **type** guard stays at each call site rather than folding in here. It is
- * a different question: a validator says whether a value is legal, and the
- * guard says whether this item is the kind of thing the setting is about, and
- * running them together would let a bad value on the right kind of item look
- * like the wrong kind of item.
- *
- * The item is looked up again inside the write rather than captured, because
- * undo may be pressed long after the item was replaced - see retypeItem().
- *
- * Deliberately **not** used by setItemThumb() or setItemPoster(). Those two are
- * non-undoable on purpose and their headers say why; folding them in would make
- * the shared shape decide something it has no business deciding.
- *
- * Generic in what the validator answers, which is the one type here worth
- * naming. `raw` is unknown because it comes off a file or a console, but what
- * comes *out* of the validator is the setting's own type, and `label` and
- * `same` are both handed it - so a caller whose validator answers a tint and
- * whose comparison expects a rectangle is a mistake this signature catches.
+ * One undoable write to one key of one item's `meta`. Validates both the new
+ * and old value with the same rule (so the no-op check is honest even on hand-
+ * written files). Null removes the key. `same` defaults to Object.is; callers
+ * with object values pass a structural comparator.
  */
 function patchMeta<T>(
   id: string,
@@ -751,46 +483,14 @@ function patchMeta<T>(
 const oneOf = (...allowed: unknown[]) =>
   (value: unknown) => (allowed.includes(value) ? value : null);
 
-/**
- * Give an item a picture of its own, or take it away with a null.
- *
- * A card that is not itself a picture - a sound file, a text file, a named
- * card for something the browser cannot draw - has nothing to look at on a
- * board, and a board is looked at from a distance where a name is not legible.
- * So any of them can carry one: an album cover, a diagram, a frame grabbed by
- * hand. The picture is an ordinary asset, hashed and deduped like every other,
- * which is what makes "the same cover on nine tracks" cost one file.
- *
- * Wider than what the interface offers on purpose. The right-click menu asks
- * for a picture on a track and nowhere else (canCoverItem, commands.ts), and
- * the importer sets one from a file's own art or a video's poster frame - but
- * a cover put on any card by an older build, or by the console, is a valid
- * board and draws. Narrowing this as well would turn those into a repair job.
- *
- * Only the *reference* is undoable. The bytes stay in the registry either way,
- * because undo has to be able to put the picture back and the autosave sweep
- * is what eventually collects anything no item points at.
- */
+/** Set or remove an item's cover picture. Only the reference is undoable. */
 export function setItemCover(id: string, hash: unknown) {
   patchMeta(id, 'cover', hash,
     next => (next ? 'Set picture' : 'Remove picture'),
     value => (isHash(value) ? value : null));
 }
 
-/**
- * Attach the hundred-pixel copy the board draws when it is zoomed out.
- *
- * Not undoable, and unlike setItemCover() that is not an oversight. A cover is
- * a choice somebody made about what a card looks like; a thumbnail is a derived
- * copy of the picture the item already holds, and there is no state of the
- * board in which having one is a change worth being able to take back. Made at
- * import (import/drop.ts) and repaired by the optimiser (optimize/optimize.ts);
- * absent simply means the card draws full size at every zoom.
- *
- * Marks the board dirty, because the id has to be saved - the bytes are pinned
- * by itemHashes() and would otherwise be swept the next time the autosave
- * collected whatever nothing points at.
- */
+/** Attach a zoomed-out thumbnail. Not undoable (derived data, not a choice). */
 export function setItemThumb(id: string, hash: unknown) {
   const it = byId(id);
   if (!it || !isHash(hash) || it.meta?.thumb === hash) return;
@@ -800,30 +500,33 @@ export function setItemThumb(id: string, hash: unknown) {
 }
 
 /**
- * Give a video the frame it was cut from, if it has nothing to show yet.
- *
- * The same slot as setItemCover(), and deliberately not the same function. A
- * poster is derived output the way a thumbnail is - the clip's own first frame,
- * cut so a card is a picture of itself rather than a black rectangle before it
- * is played - so it is not undoable, for exactly the reasons spelled out above
- * setItemThumb(). Made at import (import/drop.ts) and repaired by the optimiser
- * for boards saved before posters existed.
- *
- * The refusal is the important half: a clip that already carries a cover keeps
- * it, whether that came from a previous cut or from somebody choosing a picture
- * by hand. This can add a picture to a card that has none; it can never replace
- * one, which is what keeps a non-undoable write safe to make.
- *
- * `dangling` is the one exception, and it is not a loosening of that rule - it
- * is the rule applied to what a cover *is*. A hash whose bytes are not in the
- * registry is not a picture, it is a reference to one: it draws nothing, and an
- * item restored from an archive that was missing a file carries one. Left
- * refused, such a card could never be repaired by anything - not by import, not
- * by the optimiser, not by the idle backfill - because all three ask "has it got
- * a cover" of the *hash* while the card on screen stays blank. Both repair
- * passes already establish the difference with getAsset() before they cut a
- * frame, which is why the caller says so rather than this asking: state.ts sits
- * under storage/ and may not look in the registry itself (tests/layers.test.js).
+ * Store a fetched embed's song title and album-art hash on a link card. Not
+ * undoable: it is fetched fact, not a choice the user made, the same footing as
+ * a thumbnail (setItemThumb above). meta.art rides the asset walk (itemHashes,
+ * util.ts) so cloud sync keeps the cover; meta.title is plain text. Written by
+ * canvas/embed-meta.ts, the one place in the app that reaches the network to
+ * decorate a card - guarded so it only ever runs for a card that lacks a title.
+ */
+export function setEmbedMeta(id: string, patch: { title?: unknown; art?: unknown }) {
+  const it = byId(id);
+  if (!it) return;
+  const title = typeof patch.title === 'string' && patch.title ? patch.title : null;
+  const art = isHash(patch.art) ? patch.art : null;
+  const setsTitle = title !== null && it.meta?.title !== title;
+  const setsArt = art !== null && it.meta?.art !== art;
+  if (!setsTitle && !setsArt) return;
+  const next = { ...it.meta };
+  if (setsTitle) next.title = title;
+  if (setsArt) next.art = art;
+  it.meta = next;
+  bus.emit('item', id);
+  markDirty();
+}
+
+/**
+ * Set a video poster (first frame) if the item has no cover. Not undoable.
+ * `dangling` overrides the refusal when the existing cover hash has no bytes
+ * behind it (repair path — state.ts cannot check the registry itself).
  */
 export function setItemPoster(id: string, hash: unknown, dangling = false) {
   const it = byId(id);
@@ -835,47 +538,10 @@ export function setItemPoster(id: string, hash: unknown, dangling = false) {
 }
 
 /**
- * Point a run of items at smaller copies of their own files, reversibly.
- *
- * One commit for the whole board rather than one per card, because that is what
- * the gesture was: you asked to optimise a board, and one Ctrl+Z has to undo a
- * board. Two hundred separate entries would also be two hundred of the history
- * limit, which is to say the rest of the session's undo thrown away to record a
- * single button press.
- *
- * Each swap is `{ id, asset, cover }`, and each field says one of three things:
- * a hash replaces what is there, `null` takes the reference away, and absent
- * leaves it exactly as it was. Items that were *considered* and left alone
- * belong in the list too, with neither field: they still get marked, and
- * marking them is the whole point of listing them.
- *
- * `null` is what the optimiser does with a file of zero bytes. That is a
- * removal rather than a re-encode - there is nothing to shrink and nothing to
- * draw - and it goes through here rather than through its own command so that a
- * run is still one undoable step, which is the promise below.
- *
- * One item's exchange, as the optimiser hands it over: the card, the bytes it
- * should point at now, and the picture it should wear. A hash swaps it, null
- * takes it away, and anything else - the field left out entirely - leaves that
- * half of the item alone.
- *
- * The id that was there goes into `meta.was` / `meta.wasCover`, and that is not
- * bookkeeping for undo's sake: undo closes over the old ids already. It is for
- * the *autosave sweep*, which deletes any bytes no item claims and would
- * otherwise collect the originals the moment the board saved itself - leaving an
- * undo entry that could only put back a hash with nothing behind it. See
- * referencedHashes() in storage/storage.ts, and packBoard() in storage/mbrd.ts,
- * which drops both fields on the way into a .mbrd so an export carries the small
- * files alone.
- *
- * `meta.opt` is the other half: the ids this item held when the optimiser last
- * looked at it. A second run compares against it and skips what it finds, which
- * is what keeps a re-encode from happening twice - once for the wasted minute,
- * and once because a lossy format encoded from its own output is a second
- * generation of loss for no gain. It is written *inside the commit*, so undoing
- * an optimisation takes the mark back with it and the restored originals are
- * offered again. Hashes rather than a flag, so replacing an item's picture by
- * hand also un-marks it, without anything having to remember to.
+ * Batch-swap items to optimised copies. One undo for the whole board.
+ * Each swap: hash replaces, null removes, absent = leave alone.
+ * Originals go to meta.was/wasCover so the autosave sweep keeps them for undo.
+ * meta.opt records what was optimised — prevents re-encoding on a second run.
  */
 export type AssetSwap = { id: string, asset?: string | null, cover?: string | null };
 
@@ -883,18 +549,12 @@ export function swapAssets(swaps: AssetSwap[] | null | undefined, label = 'Optim
   const list = (swaps || []).filter(s => s && byId(s.id));
   if (!list.length) return 0;
 
-  // Non-null throughout this function: the filter above kept only swaps whose
-  // item is on the board, and nothing between here and the commit removes one.
   const before = list.map(({ id }) => {
     const it = byId(id)!;
     return { id, asset: it.asset ? { ...it.asset } : null, meta: { ...it.meta } };
   });
 
-  // A run that found nothing worth rewriting still learned something, and the
-  // marks are how it remembers - but they are bookkeeping about work done, not
-  // a change to the board, so they go on outside the undo stack. Committing
-  // them would put an entry on the history that looks like nothing happened,
-  // because nothing did, and spend one of the steps the user has left.
+  // No actual swaps → mark items as seen outside the undo stack.
   const swapping = list.some(({ id, asset, cover }) => {
     const it = byId(id)!;
     return (isHash(asset) && it.asset?.hash && asset !== it.asset.hash) ||
@@ -905,8 +565,6 @@ export function swapAssets(swaps: AssetSwap[] | null | undefined, label = 'Optim
   if (!swapping) {
     for (const { id } of list) {
       const it = byId(id);
-      // No event: nothing about the item is drawn differently for having been
-      // looked at, and a rebuild per card would be a flicker for nothing.
       if (it) it.meta = { ...it.meta, opt: [...itemHashes(it)] };
     }
     markDirty();
@@ -918,18 +576,12 @@ export function swapAssets(swaps: AssetSwap[] | null | undefined, label = 'Optim
       const it = byId(id);
       if (!it) continue;
       const meta = { ...it.meta };
-      // null means take the reference away rather than point it somewhere else.
-      // The bytes are still pinned by `was` for as long as the undo can reach
-      // them, exactly as a re-encode pins its original - the sweep would
-      // otherwise collect them the next time the board saved, and undo would
-      // hand back a hash with nothing behind it.
+      // null = remove reference. Original pinned by `was` for undo.
       if (asset === null && it.asset?.hash) {
         if (!isHash(meta.was)) meta.was = it.asset.hash;
         it.asset = null;
       } else if (isHash(asset) && it.asset?.hash && asset !== it.asset.hash) {
-        // Only the first swap records an original. Optimising twice must not
-        // leave `was` pointing at the *previous* optimisation, or undoing once
-        // would restore a file that is itself already re-encoded.
+        // Only the first swap records the original.
         if (!isHash(meta.was)) meta.was = it.asset.hash;
         it.asset = { ...it.asset, hash: asset };
       }
@@ -941,7 +593,6 @@ export function swapAssets(swaps: AssetSwap[] | null | undefined, label = 'Optim
         meta.cover = cover;
       }
       it.meta = meta;
-      // Marked last, so what is recorded is what the item ended up holding.
       meta.opt = [...itemHashes(it)];
       bus.emit('item', id);
     }
@@ -1045,13 +696,7 @@ export function setItemUpAxis(id: string, axis: unknown) {
     () => write(prev, shot, shotInk));
 }
 
-/**
- * One image or video's own fit, overriding the board-wide default. 'cover' fills
- * and crops, 'contain' fits the whole picture in; both are explicit, so once set
- * the card no longer follows the board default (that is what an override is for).
- * Undoable and emits 'item', which rebuilds the node so canvas/renderers.ts's
- * fitMode() reads the new value - the same shape setItemUpAxis uses.
- */
+/** Per-item fit override (cover/contain). Undoable. */
 export function setItemFit(id: string, fit: unknown) {
   const it = byId(id);
   if (!it || (it.type !== 'image' && it.type !== 'video')) return;
@@ -1059,107 +704,29 @@ export function setItemFit(id: string, fit: unknown) {
 }
 
 /**
- * One image's card, on or off. True means *draw no card*: no paper, no
- * hairline, no shadow - just the picture.
- *
- * For a cut-out. A logo, a leaf, an arrow saved with a transparent background
- * was cut out precisely so it would sit *on* the board rather than in a box, and
- * the box was being drawn round its bounding rectangle, which for a cut-out is
- * mostly empty. The result is a frame round nothing with a picture somewhere
- * inside it.
- *
- * Nothing new is being drawn here: a sticker has had no card since stickers
- * existed. This is the flag that says which of the two an image is, and it is a
- * flag rather than a guess because the guess belongs at import (see drop.ts) and
- * has to be overridable. Whatever the person chooses wins and is what gets
- * saved.
- *
- * **Three types, and that is the type guard rather than an accident.** A note
- * without its paper is text lying on the board with nothing holding it, and a
- * video without its card loses the surface its controls sit on. A model is the
- * third and reads like the first: it is drawn on a transparent buffer, so what
- * a model card frames is already a silhouette with board showing through the
- * corners - the box round it is the same frame round nothing a cut-out had.
- *
- * The card that is removed is the *paint*. The box stays exactly where it was:
- * hit-testing, the marquee, the selection ring and the resize grips all measure
- * that rectangle, and an item you cannot select or resize would be a worse bug
- * than the one this fixes.
+ * Toggle the card (paper/shadow) off an item — for cut-outs and models.
+ * Only image, note, model. The box stays for hit-testing and selection.
  */
 export function setItemBare(id: string, bare: unknown) {
   const it = byId(id);
-  // The three types that have a card to lose - see canSetBare() in
-  // commands/item-meta.ts, which is the same list and says why. Guarded here as
-  // well because this is the door: a `bare` flag on a sticker or a fence would
-  // be a byte in the file that nothing draws and nothing can take off again.
   if (!it || (it.type !== 'image' && it.type !== 'note' && it.type !== 'model')) return;
-  // Stored only when true, which is what the null branch of patchMeta's write()
-  // is for: `bare: false` on every ordinary photograph would be a byte per card
-  // in every file to say that nothing is unusual.
+  // Only stored when true — false is the default and not worth a byte per card.
   patchMeta(id, 'bare', bare ? true : null,
-    // Named for what the control that sets it is called - the item menu's row
-    // is "No card" - rather than for the flag. "Remove card" put the word the
-    // menu uses for destroying an item onto a step that takes the paper backing
-    // off a photograph, so the timeline read "Remove card" for something still
-    // sitting on the board. Phrased to survive the "Undo " the history titles
-    // put in front of it.
     (next: unknown) => (next ? 'Take the card off' : 'Put the card back'),
     v => (v === true ? true : null));
 }
 
-/**
- * One sticker's colour. The palette is an override of the shape's own default,
- * not a lottery - see the head of stickers/catalogue.ts on why a heart is born
- * red rather than taking whatever came next off a cycle.
- *
- * Held to the palette that exists on the way in, because the value ends up as a
- * data-tint attribute the stylesheet keys eight rules off, and a number outside
- * that set is a sticker with no colour at all. Emits 'item', which rebuilds the
- * node - the same shape setItemFit uses, and the tint is read on the way out of
- * canvas/items.ts rather than by the renderer.
- */
+/** Sticker colour override. Clamped to the palette that exists. */
 export function setStickerTint(id: string, tint: unknown) {
   const it = byId(id);
   if (!it || it.type !== 'sticker') return;
-  // The one validator that always answers, so the removal branch of patchMeta()
-  // is unreachable here: a sticker with no tint of its own is a sticker wearing
-  // its shape's default, which is a colour and not an absence.
   patchMeta(id, 'tint', tint, 'Sticker colour',
     value => stickerTint(value, it.meta?.shape));
 }
 
 /**
- * Fix a selection's geometry in place, or let it go again.
- *
- * One history entry for the whole set, the shape unstickItems() uses and for
- * the same reason: locking nine cards is one thing somebody did, and nine
- * entries would make Ctrl+Z walk back through them one at a time.
- *
- * Written on any *type*: a fence, a note, a sticker and a photograph are all
- * things somebody may want to stop moving, so there is no narrowing by type
- * here. The two exclusions are about the item's situation rather than its kind.
- *
- * A **hint card**, which has no menu to ask from and whose geometry the app
- * owns. `type !== 'ghost'` rather than isFurniture(), which is the other half of
- * that pair and is deliberately not excluded: the title card is movable, it has
- * a menu of its own, and it is anchored by default (see makeTitleItem) - so it
- * is exactly the furniture this door has to let through. isFurniture()'s own
- * note in board-model.ts asks for this - a site that means one of the two keeps
- * its own test. lockable() in commands/item-meta.ts is the matching offer.
- *
- * And a **rider** - a note or a sticker stuck to a host - which has no geometry
- * of its own to fix: it is placed from its host every time the host moves. A
- * drag carries the riders of what it picked up and then drops the anchored ones
- * out of the travelling set, so an anchored sticky was left behind by the very
- * card it is stuck to. The exclusion is at this door as well as in lockable()
- * (commands/item-meta.ts), which is where the note explaining it lives, because
- * the menu row is not the only caller: lockSelection() hands over the whole
- * selection, so a photograph picked with its own sticky would otherwise anchor
- * both. Same rule at the door as in the offer - the arrangement setItemsTagged()
- * and taggable() already use.
- *
- * What a lock actually stops is in isLocked()'s note in board-model.ts: the
- * geometry, and nothing else. This function is the only writer.
+ * Anchor/unanchor items (fix geometry). One undo for the whole set.
+ * Excludes ghosts (app-owned) and riders (placed from their host).
  */
 export function setItemsLocked(ids: Iterable<string>, locked: boolean) {
   const affected = [...new Set(ids)].filter(id => {
@@ -1177,37 +744,15 @@ export function setItemsLocked(ids: Iterable<string>, locked: boolean) {
     }
   };
   const many = affected.length > 1 ? ` ${affected.length} items` : '';
-  // The words a person reads in the Timeline and in the undo toast, so they are
-  // the menu's words - Anchor, not Lock. `meta.locked` above is the stored key
-  // and stays: it is in every .mbrd ever written. See the note beside the menu
-  // row in ui/menu.ts for why the label moved and the key did not, and
-  // HISTORY_ICONS in ui/timeline-view.ts, which is keyed off these two strings
-  // and has to be changed in step with them.
+  // "Anchor"/"Unanchor" — the menu's word, not the stored key (meta.locked).
   commit((locked ? 'Anchor' : 'Unanchor') + many,
     () => write(locked), () => write(!locked));
 }
 
-/**
- * One picture's crop rectangle, or null to show the whole of it again.
- *
- * Four fractions of the source - see itemCrop() in board-model.ts for why
- * fractions and not pixels, and for why this never touches the bytes. The
- * validator is itemCrop() itself rather than a private copy, so the value that
- * reaches the file is exactly the value every reader will get back out of it;
- * it takes an item-shaped thing, so the raw rectangle is wrapped in one.
- *
- * Emits 'item', which rebuilds the card - the same route setItemFit() takes,
- * and the crop is applied one layer further down when the display copy is made
- * rather than by any renderer.
- */
+/** Set or clear an image's crop (four fractions of the source). */
 export function setItemCrop(id: string, crop: unknown) {
   const it = byId(id);
-  // Pictures only, where the three adjustments below take video too. The
-  // asymmetry is not a policy, it is what the two are made of: an adjustment is
-  // a CSS filter and the compositor will grade a video frame as happily as a
-  // still, while a crop is a rectangle drawn out of a decoded bitmap and there
-  // is no decoded bitmap for a clip until it is playing. Cropping video wants a
-  // second mechanism, not a wider guard here.
+  // Images only — video has no decoded bitmap to crop outside playback.
   if (!it || it.type !== 'image') return;
   patchMeta(id, 'crop', crop, next => (next ? 'Crop' : 'Undo crop'),
     value => itemCrop({ meta: { crop: value } }), sameRect);
@@ -1219,21 +764,10 @@ const sameRect = (a: unknown, b: unknown) => {
   return a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h;
 };
 
-/**
- * One picture's brightness, contrast and saturation, or null to put it back.
- *
- * Partial: what arrives is spread over what the item already carries, so the
- * three dials in the panel can each write their own without reading the other
- * two. itemAdjust() then decides whether what came out is an adjustment at all,
- * and a set that is neutral on all three removes the key rather than storing
- * three ones.
- */
+/** Brightness/contrast/saturation. Partial: each dial writes its own key. */
 export function setItemAdjust(id: string, adjust: unknown) {
   const it = byId(id);
   if (!it || (it.type !== 'image' && it.type !== 'video')) return;
-  // The incoming set is hoisted out of the literal rather than spread through a
-  // ternary: `adjust` is whatever a caller passed, and naming the non-record
-  // case is what says out loud that it contributes nothing.
   const patch = isRecord(adjust) ? adjust : {};
   const merged = adjust == null ? null : {
     ...(itemAdjust(it) || { brightness: 1, contrast: 1, saturation: 1 }),
