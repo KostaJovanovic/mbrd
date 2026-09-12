@@ -1,25 +1,8 @@
-// Autodesk 3D Studio (.3ds), the format that will not die.
-//
-// Late-eighties DOS software, superseded twice over, and still what half the
-// free model libraries on the internet hand you. It is worth reading because it
-// is trivially small: a tree of chunks, each a two-byte id and a four-byte
-// length, and the geometry is two of them.
-//
-// The thing to know about a .3ds is that **its vertices are already in world
-// space**. Each object block carries a `local coordinate system` chunk (0x4160)
-// describing its own axes, and it is a description rather than a transform to
-// apply - the points beside it are absolute. Multiplying by it, which looks like
-// the obvious thing to do with a matrix in a file, moves every object twice.
-//
-// The format's own ceilings do most of the bounds checking for free: a vertex
-// count is a `uint16`, so no object may have more than 65,535 of either
-// vertices or faces. That is also its real limitation - anything modern is a
-// scene of many small objects rather than one large one.
-//
-// What is read: every object's vertices and faces, and the diffuse colour of the
-// materials assigned to face groups. What is not: the keyframer track (0xB000),
-// which is animation; smoothing groups, which would let this shade a curved
-// surface smoothly rather than faceted; texture coordinates and maps.
+// Autodesk 3D Studio (.3ds). Chunk tree: 2-byte id + 4-byte length. Vertices
+// are already in world space (the 0x4160 matrix is descriptive, not a transform
+// to apply — multiplying by it moves objects twice). Vertex count is uint16, so
+// 65535 per object. Reads: vertices, faces, diffuse material colour per face
+// group. Not read: keyframer (animation), smoothing groups, textures.
 
 import {
   MeshError, MeshBuild, type Mesh, clamp01,

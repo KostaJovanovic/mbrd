@@ -1,27 +1,8 @@
-// The app is its own 404 page, and the deploy is the half of that design no
-// test could see until now.
-//
-// Locally serve.py decouples body from status: a miss gets index.html read off
-// disk and a 404 in the status line, so there is nothing to keep in sync. A
-// static host cannot do that. Cloudflare Workers answers a miss with whatever
-// file is called 404.html, at whatever status that file implies, and the only
-// way to say "the app, with a 404" is to put a second copy of the app there.
-//
-// So web/404.html exists and is index.html byte for byte. Nothing at runtime
-// notices when it stops being: the copy is the page nobody opens, and the way
-// it fails is that visitors arriving at a dead link get a build of the app from
-// whenever the two last agreed - the right shell name, older markup, and a
-// service worker that hands them a version of the document its cache has never
-// heard of. save.bat remakes the copy on every commit; this is the check that
-// the remake happened, and the reason a hand-edited 404.html is a mistake.
-//
-// The second test guards the setting that makes the file mean anything. Workers
-// serves 404.html only when told to - the default is a bare edge 404 the app
-// never sees, and the other option serves the shell with a 200, which is a soft
-// 404: a page saying "not found" while telling every crawler it is fine. That
-// used to be a `404` status line in web/_redirects, which Workers rejects
-// outright (the deploy fails, it does not degrade), which is why the rule moved
-// here.
+// web/404.html must be index.html byte for byte — the static host serves it
+// for any miss. A drift means stale markup + confused service worker. save.bat
+// remakes the copy; this test catches when it did not happen.
+// The second test checks the wrangler.jsonc setting that makes Workers serve
+// 404.html (not a bare 404 or a soft 200).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

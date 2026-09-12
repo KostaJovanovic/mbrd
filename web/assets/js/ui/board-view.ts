@@ -1,13 +1,6 @@
-// How the board is framed, and which geometry profile the viewport is on.
-//
-// Three functions that were loose in main.ts and are called from four places
-// between them - the boot, the layout event, a board arriving, and "Reload
-// board". They are here rather than in canvas/viewport.ts because each is a
-// decision about *this app's* framing (open on a fit, not on the stored view;
-// the title card is furniture) rather than part of the coordinate model.
-//
-// The viewport is handed in by initBoardView() rather than imported, so nothing
-// here touches a browser global at import time.
+// Board framing and geometry profile. Lives here (not viewport.ts) because
+// each decision is about the app's framing, not the coordinate model.
+// Viewport is injected, not imported — no browser global at import time.
 
 import { board, bus, mobileBoardWidth, mobileBoardTop, mobileBoardBottom } from '../state.ts';
 import { BASE_ZOOM } from '../canvas/viewport.ts';
@@ -23,12 +16,10 @@ export function initBoardView(viewport: Viewport): void {
 }
 
 /**
- * Which mobile lens is up: 'feed' (the masonry wall of everything) or 'playlist'
- * (the audio player). A session choice, not board state - the same status as
- * layoutMode, and kept beside it for the same reason. Mirrored onto
- * documentElement.dataset.feedLens, which mobile.css keys the canvas / feed /
- * playlist show-hide off, under data-board-mode="mobile". Removed entirely off
- * Mobile so it can never touch the Desktop canvas.
+ * Which mobile lens is up: 'feed' (the masonry wall) or 'playlist' (the audio
+ * player). A session choice, not board state. Mirrored onto
+ * documentElement.dataset.feedLens, which mobile.css keys the show/hide off;
+ * removed entirely off Mobile so it can never touch the Desktop canvas.
  */
 let lens: Lens = 'feed';
 
@@ -54,33 +45,24 @@ export function syncLens(): void {
 }
 
 /**
- * How a board is framed the moment it appears, wherever it came from - a
- * restored session, a file opened, a file dropped on the window.
+ * How a board is framed the moment it appears - a restored session, a file
+ * opened, a file dropped on the window.
  *
- * Fit, not the stored view. A saved pan and zoom is a record of where somebody
- * was standing when they stopped, and that is not the same question as where
- * to start: it can be a corner, a single card filling the screen, or - after a
- * board is opened on a narrower screen than it was saved on - somewhere off the
- * edge of everything, which reads as an empty board with the work missing.
- * Framing the whole thing always answers "what is on here", and getting back to
- * a detail is one gesture away.
+ * Fit, not the stored view: a saved pan/zoom is where somebody stopped, which
+ * after a resize can be off the edge of everything, reading as an empty board.
+ * Framing the whole thing always answers "what is on here". fit() falls back
+ * to the origin at 1:1 when there's nothing to frame, so a new board still
+ * opens right.
  *
- * fit() falls back to the origin at 1:1 by itself when there is nothing to
- * frame, so a brand new board still opens where a new board should.
- *
- * ms = 0 deliberately: the travel animation is for a Fit somebody *asked* for,
- * where the movement says which way the board went. There is nothing to travel
- * from at load.
+ * ms = 0 deliberately: the travel animation is for a Fit somebody *asked*
+ * for; there's nothing to travel from at load.
  */
 export function openingView(): void {
-  // An empty board - only the title card, which is furniture rather than
-  // content - opens at the origin at 100%, where a fresh board should. Fitting
-  // the title card alone would frame that one card and read as "this is all
-  // there is", which is exactly what a blank board is trying not to say.
-  // board-model.ts still carries its migration pragma, so `board.items` infers
-  // as an empty array and its element type is unknowable from here. The
-  // parameter names the one field this predicate reads and nothing more; it
-  // comes out when that module declares what an item is.
+  // An empty board - only the title card, which is furniture, not content -
+  // opens at the origin at 100%. Fitting the title card alone would frame
+  // that one card and read as "this is all there is". The inline item type
+  // below is because board-model.ts's migration pragma still leaves
+  // `board.items`'s element type unknowable from here.
   if (!vp!.isMobile && board.items.every((it: { type: string }) => it.type === 'title')) return vp!.recenter(0);
   // Capped at 100%: a small board opens at actual size, not magnified. A board
   // bigger than the window still zooms out to frame it - see fit()'s maxZoom.

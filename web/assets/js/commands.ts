@@ -17,13 +17,16 @@ import {
   isFurniture, isRider, isFence, isLocked, setArrangement,
   addItems,
   snapshotGeom, applyGeom, commitGeom,
-  declareOp, registerOp, setLinkURL,
+  declareOp, registerOp,
 } from './state.ts';
 import { alignTargets, distributeTargets, separateOverlaps } from './geometry.ts';
 // Needed here for zoomToSelection; the rest of the camera is in commands/view.ts.
 import { travelMs } from './canvas/viewport.ts';
 import { pickFiles, addNote, addSwatch, addLink, addSticker, addStyleTile } from './import/drop.ts';
-import { linkURL, SWATCH_DEFAULT, defaultSize } from './canvas/renderers.ts';
+import { linkURL, linkTyped, SWATCH_DEFAULT, defaultSize } from './canvas/renderers.ts';
+import { youTubeId } from './canvas/embed.ts';
+import { openViewer } from './ui/viewer.ts';
+import { openExternal } from './ui/leaving.ts';
 import { samplePixels, dominantColors } from './ui/pigments.ts';
 import { arrange } from './arrange/arrangements.ts';
 import { ask } from './ui/dialog.ts';
@@ -39,6 +42,7 @@ import {
   isPanelOpen as isHeaderPanelOpen,
 } from './ui/mobile-header.ts';
 import { composeNote, editNoteInComposer } from './canvas/notes.ts';
+import { editLinkProps } from './ui/link-props.ts';
 import { editTitleCard } from './ui/board-title.ts';
 import { armClear, rearrange } from './ui/board-actions.ts';
 import { fileCommands } from './commands/file.ts';
@@ -53,17 +57,9 @@ import type { Point } from './arrange/arrangements.ts';
 
 // Re-exported so tests/fences.test.js keeps its import.
 export { sharedFence };
-
-/**
- * Parse a typed address. Unlike linkURL(), prepends `https://` when no scheme
- * is present — intent is unambiguous from an "Add a link" dialog.
- */
-export function linkTyped(text: string) {
-  const direct = linkURL(text);
-  if (direct) return direct;
-  // Already has a scheme (including mailto: etc.) — don't double-prefix.
-  return /^[a-z][a-z0-9+.-]*:/i.test(text.trim()) ? null : linkURL('https://' + text.trim());
-}
+// linkTyped now lives beside linkURL in renderers.ts; re-exported so
+// tests/toolbar.test.js and any other caller keep importing it from here.
+export { linkTyped };
 
 /** Structural viewport subset this file needs — view centre for "add" commands, fit() for zoom. */
 export interface CommandsViewport extends CommandViewport {
@@ -165,34 +161,27 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
       addLink(vp.toWorld(vp.left + vp.cx, vp.top + vp.cy), url);
     },
     /** The address a link card points at, or null for anything that is not a
-     *  link carrying a valid http(s) URL. Guards the menu's Edit/Copy link rows. */
+     *  link carrying a valid http(s) URL. Guards the menu's Properties row. */
     linkURLOf: (id: string) => {
       const it = byId(id);
       if (!it || it.type !== 'link') return null;
       const u = linkURL(it.meta?.url);
       return u ? u.href : null;
     },
-    /** Change where a link card points, through the same box a new link is typed
-     *  in and the same validation. The edit is undoable (setLinkURL). */
-    editLink: async (id: string) => {
+    /** Open the link card's properties: its name and address, edited or copied
+     *  in one box. The whole flow lives in ui/link-props.ts (editLinkProps). */
+    linkProps: (id: string) => editLinkProps(id),
+    /** Right-click "Open" on a link. A YouTube link opens the viewer, which
+     *  draws its player; every other link opens in a new tab, through the leave
+     *  guard. YouTube is the one link that can be framed (see canvas/embed.ts),
+     *  so it is the one that becomes an embed rather than a visit. */
+    openLink: (id: string) => {
       const it = byId(id);
       if (!it || it.type !== 'link') return;
-      const current = linkURL(it.meta?.url)?.href
-        ?? (typeof it.meta?.url === 'string' ? it.meta.url : '');
-      const typed = await ask({
-        title: 'Edit link', go: 'Save',
-        field: { value: current, placeholder: 'https://example.com', type: 'url' },
-      });
-      if (typed == null) return;   // cancelled or emptied
-      const url = linkTyped(typed);
-      if (!url) { toast('That is not an address this can open', 'error'); return; }
-      setLinkURL(id, url.href);
-    },
-    /** Copy a link card's address to the system clipboard. */
-    copyLink: (id: string) => {
-      const u = linkURL(byId(id)?.meta?.url);
+      const u = linkURL(it.meta?.url);
       if (!u) return;
-      navigator.clipboard?.writeText(u.href).then(() => toast('Link copied'), () => {});
+      if (youTubeId(u)) openViewer(id);
+      else void openExternal(u.href);
     },
     // Extract dominant colours from a picture and add them as swatch cards.
     canExtractSwatches: (id: string) => {

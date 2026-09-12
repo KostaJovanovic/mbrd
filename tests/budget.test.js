@@ -82,12 +82,10 @@ test('a decode bomb is over the pixel budget; an ordinary photo is not', async (
 // ---------------------------------------------------------------------------
 // The four formats the budget could not read
 //
-// PHOTO_EXTS (import/formats.ts) carries BMP, ICO, AVIF and TIFF, and a browser
-// decodes all four - but imageDimensions() knew only PNG, GIF, WebP and JPEG,
-// so overPixelBudget() answered false for each. A sixty-byte BMP declaring
-// 30000x30000 reached createImageBitmap() and allocated about 3.6 GB - the
-// allocation this module exists to stop, from a file that fits in a chat
-// message.
+// PHOTO_EXTS carries BMP, ICO, AVIF and TIFF too, but imageDimensions() knew
+// only PNG, GIF, WebP and JPEG - so a sixty-byte BMP declaring 30000x30000
+// reached createImageBitmap() and allocated ~3.6 GB, from a file the size of
+// a chat message.
 // ---------------------------------------------------------------------------
 
 const bmp = (w, h) => {

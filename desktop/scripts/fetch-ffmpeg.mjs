@@ -1,31 +1,9 @@
-// Fetch the ffmpeg binary this platform's build ships.
-//
-// Not committed, and that is the whole reason this script exists: an ffmpeg
-// static build is 80-odd megabytes per platform, which belongs to a release
-// rather than to a repository. `desktop/resources/ffmpeg/` is gitignored, the
-// release workflow runs this before electron-builder, and a developer who never
-// runs it gets a desktop with no video features and every caller falling
-// through to the wasm path - which is the web's behaviour and is fine.
-//
-// ── The licence, which is plan §12's second open question ──
-//
-// This app is GPL-3, so a GPL ffmpeg build is fine. **A build with non-free
-// codecs in it is not**, whatever its own page says - libfdk-aac is the usual
-// one, and it makes the result undistributable under any licence. Every URL
-// below names a GPL build without them, and the notice each one requires goes
-// in the About sheet.
-//
-// The three sources are the ones that publish per-platform static builds with a
-// stable URL. They are pinned by version rather than tracking "latest": a build
-// that changes under a release is a release nobody can reproduce.
-//
-// ── What this does not do ──
-//
-// Check a signature. None of the three publishes one, which is worth being
-// honest about rather than pretending a SHA typed here from the same page would
-// be a check. What it does do is refuse a download that is obviously wrong -
-// too small, or not an executable - which catches the failure that actually
-// happens: a CDN serving an HTML error page with a 200.
+// Fetch a per-platform ffmpeg static build into desktop/resources/ffmpeg/.
+// Not committed (~80 MB); without it the desktop falls through to the wasm
+// path (web behaviour). URLs are GPL builds with no non-free codecs —
+// **non-free (e.g. libfdk-aac) would make the binary undistributable**.
+// Pinned by version, not "latest". No signature check (none published);
+// rejects downloads that are obviously an error page (< 5 MB).
 
 import { mkdir, writeFile, rm, readdir, rename, stat, chmod } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -41,19 +19,19 @@ const OUT = join(HERE, '..', 'resources', 'ffmpeg');
 /** Per platform: where the archive is, and what is inside it. */
 const SOURCES = {
   win32: {
-    // gyan.dev's GPL build. `-essentials` carries no non-free codec.
+    // gyan.dev GPL build, no non-free codecs.
     url: 'https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip',
     member: /bin\/ffmpeg\.exe$/,
     name: 'ffmpeg.exe',
   },
   darwin: {
-    // evermeet.cx publishes a signed, notarised, non-free-free GPL build.
+    // evermeet.cx signed GPL build.
     url: 'https://evermeet.cx/ffmpeg/ffmpeg-7.1.zip',
     member: /(^|\/)ffmpeg$/,
     name: 'ffmpeg',
   },
   linux: {
-    // johnvansickle.com's static build, GPL, no non-free.
+    // johnvansickle.com GPL static build.
     url: 'https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz',
     member: /(^|\/)ffmpeg$/,
     name: 'ffmpeg',
@@ -96,9 +74,7 @@ if (bytes.length < MIN_BYTES) {
 const archive = join(scratch, 'archive' + (source.url.endsWith('.zip') ? '.zip' : '.tar.xz'));
 await writeFile(archive, bytes);
 
-// The system's own extractor rather than a dependency. tar is on every macOS
-// and Linux and on Windows 10 and later; Expand-Archive is PowerShell's. This
-// script runs in CI and on a maintainer's machine, and both have one of them.
+// System tar (or PowerShell Expand-Archive on Windows) — no dependency.
 console.log('extracting');
 if (archive.endsWith('.zip') && process.platform === 'win32') {
   await run('powershell', ['-NoProfile', '-Command',
@@ -113,7 +89,7 @@ if (!found) {
   process.exit(1);
 }
 await rename(found, target);
-// Executable, which a zip does not carry on macOS and Linux.
+// Zip does not carry the executable bit.
 if (process.platform !== 'win32') await chmod(target, 0o755);
 await rm(scratch, { recursive: true, force: true });
 

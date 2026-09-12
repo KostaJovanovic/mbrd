@@ -1,9 +1,7 @@
-// The five players, and the rules they had each written down separately.
-//
-// There is no browser here and no <audio>, so most of this is the shape of a
-// repair held against the source - the same reading tests/menu-keyboard.js and
-// tests/font-tokens.js take. One of them runs for real, because it is
-// arithmetic: clock().
+// The five players, and rules each had written down separately. No
+// browser or <audio> here, so most of this checks the shape of a repair
+// against the source, as menu-keyboard.js and font-tokens.js do. clock()
+// runs for real, since it's arithmetic.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -17,10 +15,9 @@ const src = rel => code(read(join(JS, rel)));
 const sheet = name => read(join(WEB, 'assets', 'css', name)).replace(/\/\*[\s\S]*?\*\//g, '');
 
 test('the clock never reads NaN', () => {
-  // `Math.max(0, Math.floor(NaN))` is NaN, so the clamp let one straight
-  // through and the readout said "NaN:NaN". A duration is NaN until the
-  // metadata arrives, and ui/playlist.ts guards it with `typeof === 'number'`,
-  // which NaN passes.
+  // `Math.max(0, Math.floor(NaN))` is NaN, so the clamp let one through
+  // and the readout said "NaN:NaN". A duration is NaN until metadata
+  // arrives, and ui/playlist.ts's `typeof === 'number'` guard lets NaN pass.
   assert.equal(clock(Number.NaN), '0:00');
   assert.equal(clock(Number.POSITIVE_INFINITY), '0:00');
   assert.equal(clock(-5), '0:00');
@@ -30,12 +27,11 @@ test('the clock never reads NaN', () => {
 });
 
 test('every player reports a refused play instead of swallowing it', () => {
-  // canvas/transport.ts argued this at length - "an empty catch is why 'the
-  // cards are unplayable' once had nothing behind it in the console" - and then
-  // kept its own copy, while the queue, the playlist window, the now-playing
-  // bar and canvas/audio.ts all used an empty catch. Pressing Play on the
-  // playlist hero with autoplay blocked did nothing at all, silently, on the
-  // one path every playlist press takes.
+  // canvas/transport.ts argued this at length - an empty catch is why
+  // "the cards are unplayable" once had nothing in the console - yet kept
+  // its own copy while the queue, playlist window, now-playing bar and
+  // canvas/audio.ts all used an empty catch. Pressing Play on the
+  // playlist hero with autoplay blocked did nothing, silently.
   assert.match(src('media/transport.ts'), /export function reportPlayError/,
     'the shared reporter is gone');
   for (const rel of [
@@ -53,11 +49,11 @@ test('every player reports a refused play instead of swallowing it', () => {
 });
 
 test('the now-playing bar rebinds when the element changes under one track', () => {
-  // One track can play through two elements over its life: the queue's shared
-  // <audio> while the card is culled, and the card's own once it mounts.
-  // show() returned early on an unchanged item, so the bar kept its rAF, its
-  // seekTo and its listeners on the element the exclusivity rule had just
-  // paused - drawing 0:00 and showing Play while sound came out of the other.
+  // One track can play through two elements over its life: the queue's
+  // shared <audio> while the card is culled, and the card's own once
+  // mounted. show() returned early on an unchanged item, so the bar kept
+  // its rAF, seekTo and listeners on the element the exclusivity rule had
+  // just paused - drawing 0:00 while sound came from the other.
   const s = src('ui/nowplaying.ts');
   assert.match(s, /if \(current\.item === shown && current\.el === boundEl\) return;/,
     'show() compares only the item again');
@@ -67,9 +63,9 @@ test('the now-playing bar rebinds when the element changes under one track', () 
 });
 
 test('a frozen GIF gives its blob back when the card is discarded', () => {
-  // A blob URL is an entry in the document's URL store, not a property of the
-  // node - so throwing the node away threw away the string and left the blob
-  // for the life of the tab. The module header argued the opposite.
+  // A blob URL is an entry in the document's URL store, not a property
+  // of the node - discarding the node threw away the string and left the
+  // blob for the life of the tab.
   assert.match(src('canvas/stills.ts'), /export function releaseStills\(el: Element\)/,
     'releaseStills() is gone');
   assert.match(src('canvas/stills.ts'), /URL\.revokeObjectURL\(twin\._stillUrl\)/,
@@ -79,9 +75,9 @@ test('a frozen GIF gives its blob back when the card is discarded', () => {
 });
 
 test('a discarded audio card stops listening to the selection', () => {
-  // The per-card subscription unsubscribed only from inside its own handler, so
-  // a board panned past and then left alone kept one live closure per card -
-  // each holding the wave, the item, the element and the detached strip.
+  // The per-card subscription unsubscribed only from inside its own
+  // handler, so a board panned past and left alone kept one live closure
+  // per card, each holding the wave, item, element and detached strip.
   assert.match(src('canvas/transport.ts'), /export function releaseTransports\(el: Element\)/,
     'releaseTransports() is gone');
   assert.match(src('canvas/items.ts'), /releaseTransports\(el\);/,
@@ -89,10 +85,10 @@ test('a discarded audio card stops listening to the selection', () => {
 });
 
 test('the still sweep is not guarded on a count that misses a swap', () => {
-  // `world.childElementCount === mounted` is the wrong question asked cheaply:
-  // a pan across a large board mounts and discards in the same pass, so the
-  // count is often unchanged while the set is not - and a GIF that arrived in
-  // one of those passes kept animating with is-stilled on.
+  // `world.childElementCount === mounted` is the wrong question asked
+  // cheaply: a pan across a large board mounts and discards in the same
+  // pass, so the count is often unchanged while the set isn't - a GIF
+  // arriving in one of those passes kept animating with is-stilled on.
   const s = src('canvas/stills.ts');
   assert.ok(!/childElementCount === mounted/.test(s),
     'the sweep is back to guarding on the mounted count');
@@ -101,14 +97,14 @@ test('the still sweep is not guarded on a count that misses a swap', () => {
 });
 
 test('a deleted current track advances rather than restarting the queue', () => {
-  // indexOf answers -1 for a track that has gone, and writing that into
-  // queuePos made the next `ended` read `-1 >= length - 1` as false, step to 0
-  // and play the *first* track.
+  // indexOf answers -1 for a gone track, and writing that into queuePos
+  // made the next `ended` read `-1 >= length - 1` as false, stepping to 0
+  // and playing the *first* track.
   const s = src('canvas/playlist-queue.ts');
   assert.match(s, /if \(idx >= 0\) \{/,
     'rebuildOrder() writes indexOf() into queuePos again');
-  // ...and a track whose bytes have gone is skipped rather than stalling the
-  // queue in silence with no repaint.
+  // A track whose bytes have gone is skipped rather than stalling the
+  // queue silently with no repaint.
   assert.match(s, /function startCurrent\(skips = 0\)/,
     'startCurrent() no longer counts what it has skipped');
   assert.match(s, /startCurrent\(skips \+ 1\);/,
@@ -116,9 +112,9 @@ test('a deleted current track advances rather than restarting the queue', () => 
 });
 
 test('a marked line keeps its mark through a split and a paste', () => {
-  // buildNoteLine({tag, align, text}) copied alignment and nothing else, so
-  // pressing Enter in the middle of a marked line left the second half
-  // unmarked - a mark drawn across a sentence came apart where it was typed.
+  // buildNoteLine({tag, align, text}) copied alignment and nothing else,
+  // so pressing Enter mid-marked-line left the second half unmarked - a
+  // mark drawn across a sentence came apart where it was typed.
   const s = src('canvas/notes.ts');
   const builds = s.match(/buildNoteLine\(\{[\s\S]*?\}\)/g) || [];
   const fromLine = builds.filter(b => b.includes('align: lineAlign('));
@@ -131,10 +127,10 @@ test('a marked line keeps its mark through a split and a paste', () => {
 });
 
 test('the marker menu marks the lines that were selected when it opened', () => {
-  // The menu takes focus and ui/menu.ts closes it - handing focus back to the
-  // contenteditable - *before* running the row's action. A setWash that
-  // resolved the selection at that point resolved it against a caret the
-  // hand-back had left: three lines selected, one line marked.
+  // The menu takes focus and ui/menu.ts closes it, handing focus back to
+  // the contenteditable, *before* running the row's action. A setWash
+  // resolving the selection at that point resolved it against the caret
+  // the hand-back left: three lines selected, one marked.
   const s = src('canvas/notes.ts');
   assert.match(s, /setWash\(wash: NoteWash \| null, lines: Element\[\]\): void;/,
     'setWash() no longer takes the lines it is to mark');
@@ -143,23 +139,22 @@ test('the marker menu marks the lines that were selected when it opened', () => 
 });
 
 test('the note colour no longer collides with the whimsy multiplier', () => {
-  // tokens.css has owned --wash since long before as `1 / 1.4 / 0`, consumed by
-  // base.css as `calc(3% * var(--wash))`, and it is in the look allowlist - so
-  // a .mbrd carrying a --wash of "red" painted every unmarked marker chip red,
-  // and the chip's own transparent fallback was unreachable behind an
-  // inherited 1.
+  // tokens.css owned --wash as `1 / 1.4 / 0`, consumed by base.css as
+  // `calc(3% * var(--wash))`, and it's in the look allowlist - so a
+  // .mbrd's --wash of "red" painted every unmarked marker chip red, its
+  // transparent fallback unreachable behind an inherited 1.
   const cards = sheet('cards.css');
   assert.match(cards, /\[data-wash="amber"\]\s*\{ --note-wash:/,
     'cards.css is back to defining --wash as a colour');
   assert.ok(!/--wash:/.test(cards), 'cards.css still declares --wash somewhere');
-  // ...and nothing reads it as a colour any more. base.css's arithmetic is the
+  // Nothing reads it as a colour any more; base.css's arithmetic is the
   // one true consumer and stays.
   for (const name of ['cards.css', 'timeline.css']) {
     assert.ok(!/var\(--wash[,)]/.test(sheet(name)),
       `${name} reads --wash as a colour again - it is a number`);
   }
-  // The multiplier itself is untouched: tokens.css declares it and base.css
-  // does arithmetic with it, which is the meaning that was there first.
+  // The multiplier itself is untouched: tokens.css declares it and
+  // base.css does arithmetic with it, the meaning that was there first.
   assert.match(sheet('base.css'), /calc\(3% \* var\(--wash\)\)/,
     'the whimsy ornament multiplier lost its one consumer');
 });

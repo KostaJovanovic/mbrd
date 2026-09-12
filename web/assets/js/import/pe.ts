@@ -1,57 +1,8 @@
-// The icon inside a Windows program.
-//
-// An .exe and a .dll carry their picture in a resource directory - the same one
-// Explorer reads to draw the file in a folder - and it is reachable with
-// arithmetic and no decoding at all. That makes it the same bargain every other
-// reader in import/ strikes: a program on a board is a grey card saying "exe"
-// today, and the thing that would make it recognisable is already inside it.
-//
-// ── The walk, and why it is two resources rather than one ──
-//
-// An icon in a PE file is stored split, which is the part that surprises people:
-//
-//   RT_GROUP_ICON (14)  A directory. One record per size the icon comes in -
-//                       the pixel dimensions, the colour depth, and the *id* of
-//                       the resource holding that member's bytes.
-//   RT_ICON (3)         The members themselves, each a lone image with no
-//                       directory in front of it, one per id.
-//
-// So picking an icon means reading the group to choose a member, then finding
-// the RT_ICON whose id the group named, then putting a directory back in front
-// of the bytes - which is import/winimage.ts's wrapAsIco(). Reading RT_ICON
-// alone would find bytes but not their size, and a lone RT_ICON record is not a
-// file of any type a browser knows.
-//
-// Getting there is four hops, each of which is a length or an offset written by
-// a linker: MZ header -> e_lfanew -> PE signature -> optional header -> data
-// directory entry 2 -> the section table, which is what turns the directory's
-// *virtual* address into a file offset. The last one is the step that is easy to
-// forget: every offset inside the resource tree is an RVA, an address the file
-// would have once loaded into memory, and subtracting the section's own RVA is
-// what maps it back to bytes on disk.
-//
-// ── Two departures from the obvious reading ──
-//
-// **A PNG member is preferred over a larger DIB.** Since Vista the 256-pixel
-// member of an icon group is a PNG rather than a bitmap, and a PNG needs no
-// wrapper and decodes in every engine, while an ICO wrapped around a DIB is a
-// format some engines decode reluctantly. Ranking on pixels alone - which is the
-// obvious rule, and what the sibling analyser does - hands the fussiest engines
-// the fussiest bytes. So a PNG member at a usable size wins, and the DIB path is
-// the fallback rather than the default.
-//
-// **The lowest-numbered group, not the first in the tree.** A program with
-// several icons has several RT_GROUP_ICON resources, and Windows takes the one
-// with the lowest id as the application's own. Tree order is not id order - the
-// directory is sorted with named entries before numbered ones - so "the first
-// one" is a different icon from "the program's icon" often enough to matter.
-//
-// ── What it does not do ──
-//
-// No RT_VERSION, no imports, no section characteristics: this reads a picture
-// and nothing else. A .NET assembly with no unmanaged resource section, a packed
-// binary whose resources are compressed, and a 16-bit NE executable all come back
-// null and stay the grey card they were.
+// Extract the icon from a Windows PE (.exe/.dll). Walks the resource tree:
+// RT_GROUP_ICON picks the best member, RT_ICON holds its bytes, wrapAsIco()
+// reassembles them. PNG members preferred over DIB; lowest-numbered group (not
+// tree-first) matches Explorer. All offsets are RVAs — section base subtracted.
+// No RT_VERSION, no .NET, no NE: picture only.
 
 import { wrapAsIco, isPng, isDrawablePng } from './winimage.ts';
 import { oversize, isOversize, mb } from '../consent.ts';
@@ -65,30 +16,11 @@ const PE_EXTS = new Set(['exe', 'dll', 'scr', 'cpl', 'ocx', 'mun', 'ax', 'efi'])
 /** Whether this file is one this module will open. */
 export const isExecutable = (ext: string) => PE_EXTS.has(ext);
 
-/**
- * How much of the file the headers are allowed to live in.
- *
- * Everything up to and including the section table sits within the first few
- * kilobytes of every real PE; 1 MB is far past that and bounds the one read that
- * happens before anything has been validated.
- */
+/** Header budget — the section table is always in the first few KB. */
 const HEAD = 1024 * 1024;
 
-/**
- * How large a resource section this will read.
- *
- * The whole `.rsrc` section is pulled in one slice, because the tree is a graph
- * of offsets into itself and walking it against a Blob would be a read per node.
- * Icons and version data put this in the low megabytes; a program that ships its
- * artwork as resources can be much larger, and past this the allocation is worth
- * asking about.
- *
- * Asked rather than refused, per the ceiling contract in consent.ts: this throws
- * an Oversize the caller can put to whoever dropped the file, and `lift` is that
- * answer coming back. An installer whose resources are a hundred megabytes may
- * well hold a perfectly good icon; what it will certainly do is spend that memory
- * to find out, and that is not this module's call to make.
- */
+/** Resource section budget. Whole .rsrc is pulled in one slice (graph of
+ * self-offsets). Throws Oversize past this — caller decides via `lift`. */
 const MAX_RSRC = 24 * 1024 * 1024;
 
 /** Caps on the tree itself. Each is "this file is lying", not a correctness bound. */
@@ -116,12 +48,7 @@ type Leaf = { rva: number, size: number };
 /** One member of an icon group, as its 14-byte directory record states it. */
 type Member = { w: number, h: number, planes: number, bits: number, id: number };
 
-/**
- * The best icon inside `file`, as `{ blob, ext }`, or null.
- *
- * Shaped to be handed straight to a File the caller names, which is what
- * import/document.ts does with every other reader of this kind.
- */
+/** Best icon from the PE resource tree, or null. */
 export async function exeIcon(
   file: Blob,
   lift = false,
@@ -148,18 +75,12 @@ export async function exeIcon(
     if (!members.size) return null;
 
     const picked = groupsAt === undefined
-      // No group at all. Unusual, and the honest answer is still the biggest
-      // lone member rather than nothing - a resource-only DLL of icons is a real
-      // thing and its members are perfectly good pictures.
+      // No group — fall back to biggest lone PNG member (e.g. icon-only DLLs).
       ? bestLoose(bytes, rva, members)
       : bestFromGroups(bytes, rva, groupsAt, members);
     return picked;
   } catch (err) {
-    // A ceiling goes past, for the caller to ask about. Same shape as slide.ts.
     if (isOversize(err)) throw err;
-    // Every other reader of this kind says the same thing for the same reason:
-    // the card is the grey one either way, and only the console can tell "this
-    // program has no icon" from "the resource tree did not add up".
     console.warn('[mbrd] exe: no icon came out of the resource tree', err);
     return null;
   }
@@ -169,13 +90,7 @@ export async function exeIcon(
 // Getting to the resource section
 // ---------------------------------------------------------------------------
 
-/**
- * The `.rsrc` section's bytes and the virtual address they start at.
- *
- * The RVA is returned with them because every offset inside the tree is relative
- * to the *image*, not to the section, and subtracting this is the only way back
- * to a position in the buffer.
- */
+/** The .rsrc section bytes + its base RVA (needed to map tree offsets to buffer positions). */
 async function resourceSection(
   file: Blob,
   lift: boolean,
@@ -193,15 +108,11 @@ async function resourceSection(
   const optAt = peAt + 24;
   if (!sections || sections > 96 || optSize < 2 || optAt + optSize > head.length) return null;
 
-  // PE32 puts the data directory at 96 bytes into the optional header; PE32+
-  // widens five fields to 64 bits and puts it at 112. The magic is the only
-  // thing that says which, and reading the wrong one lands in the middle of a
-  // different field rather than failing.
+  // PE32 data directory at +96, PE32+ at +112 — magic distinguishes them.
   const magic = le16(head, optAt);
   const dirAt = magic === 0x20B ? optAt + 112 : magic === 0x10B ? optAt + 96 : -1;
   if (dirAt < 0) return null;
-  // Index 2 is the resource directory. A file with fewer entries than that has
-  // no resources at all, which is a fact rather than a fault.
+  // Index 2 = resource directory.
   const count = le32(head, dirAt - 4);
   if (count < 3 || dirAt + 24 > head.length) return null;
 
@@ -215,8 +126,7 @@ async function resourceSection(
     );
   }
 
-  // The section table follows the optional header. Each entry is 40 bytes and
-  // states both where the section lives in memory and where it lives on disk.
+  // Section table: 40 bytes each, maps virtual → file offsets.
   const tableAt = optAt + optSize;
   for (let i = 0; i < sections; i++) {
     const at = tableAt + i * 40;
@@ -226,8 +136,7 @@ async function resourceSection(
     const rawAt = le32(head, at + 20);
     if (wantRva < va || wantRva >= va + Math.max(rawSize, le32(head, at + 8))) continue;
 
-    // A section is padded on disk to a file alignment, so its raw size can exceed
-    // the virtual size it was given; the smaller of the two is what is really there.
+    // Raw size may exceed virtual size due to file alignment — take the smaller.
     const start = rawAt + (wantRva - va);
     const length = Math.min(wantSize, Math.max(0, rawSize - (wantRva - va)));
     if (!length || start + length > file.size) return null;
@@ -244,13 +153,8 @@ async function resourceSection(
 /** One entry of an IMAGE_RESOURCE_DIRECTORY. */
 type Entry = { id: number, named: boolean, isDir: boolean, off: number };
 
-/**
- * A directory's entries, at `at` bytes into the section.
- *
- * The header is 16 bytes and then two counts - names first, then ids. Both are
- * walked: a named type is not what an icon uses, but skipping the named block
- * would put every subsequent read 8 bytes out of step per entry.
- */
+/** Directory entries at `at`. Both named and id entries walked (skipping named
+ * entries would misalign the subsequent reads). */
 function readDirectory(b: Bytes, at: number): Entry[] | null {
   if (at < 0 || at + 16 > b.length) return null;
   const named = le16(b, at + 12);
@@ -265,11 +169,10 @@ function readDirectory(b: Bytes, at: number): Entry[] | null {
     const name = le32(b, p);
     const to = le32(b, p + 4);
     out.push({
-      // The high bit of the first word marks a *name* rather than an id; the rest
-      // of it is then an offset to a string nothing here needs.
+      // High bit = named entry (offset to string); clear = numeric id.
       id: name & 0x80000000 ? -1 : name,
       named: !!(name & 0x80000000),
-      // And the high bit of the second marks a subdirectory rather than a leaf.
+      // High bit of second word = subdirectory, else leaf.
       isDir: !!(to & 0x80000000),
       off: to & 0x7FFFFFFF,
     });
@@ -277,19 +180,13 @@ function readDirectory(b: Bytes, at: number): Entry[] | null {
   return out;
 }
 
-/**
- * The first leaf under `at`, descending at most `depth` more levels.
- *
- * The tree is type / name / language, and nothing here cares about the language -
- * a program with its icon in eleven locales has eleven identical pictures. So this
- * walks down the left edge until it finds data, which is the icon whatever locale
- * the linker happened to put first.
- */
+/** First leaf under `at`, descending up to `depth` levels. Walks the left edge
+ * — language level is irrelevant (same icon in every locale). */
 function firstLeaf(b: Bytes, at: number, depth: number): Leaf | null {
   if (depth < 0) return null;
   const entries = readDirectory(b, at);
   if (!entries) {
-    // Not a directory, so `at` is an IMAGE_RESOURCE_DATA_ENTRY: an RVA and a size.
+    // Leaf: IMAGE_RESOURCE_DATA_ENTRY (RVA + size).
     if (at + 8 > b.length) return null;
     const rva = le32(b, at);
     const size = le32(b, at + 4);
@@ -323,13 +220,8 @@ function payload(b: Bytes, rva: number, leaf: Leaf): Bytes | null {
 // Choosing which icon
 // ---------------------------------------------------------------------------
 
-/**
- * The best member across every icon group, lowest group id first.
- *
- * Lowest rather than first, which is what Windows does: a program's own icon is
- * the lowest-numbered group, and tree order puts named entries ahead of numbered
- * ones, so the two orderings genuinely differ.
- */
+/** Best member across all groups, lowest id first (matches Windows behaviour —
+ * tree order differs because named entries sort before numbered). */
 function bestFromGroups(
   b: Bytes,
   rva: number,
@@ -351,13 +243,7 @@ function bestFromGroups(
   return null;
 }
 
-/**
- * A GRPICONDIR's member records.
- *
- * Six bytes of header - reserved, type, count - then 14 per member. The two edge
- * fields are single bytes and 0 means 256, which is the format's way of fitting
- * the largest legal size into a byte.
- */
+/** Parse GRPICONDIR: 6-byte header + 14 per member. 0 in w/h means 256. */
 function readGroup(dir: Bytes): Member[] {
   if (dir.length < 6) return [];
   const count = Math.min(le16(dir, 4), MAX_MEMBERS);
@@ -376,14 +262,8 @@ function readGroup(dir: Bytes): Member[] {
   return out;
 }
 
-/**
- * The member worth drawing, and the bytes to draw it from.
- *
- * PNG first, for the reason in this file's header: a PNG member is already a file
- * every engine decodes, while an ICO around a bitmap is a format some decode
- * grudgingly. Only once no usable PNG is on offer does size alone decide, and
- * then the winner goes through wrapAsIco() to become something drawable.
- */
+/** Pick the best member. PNG preferred (universal decode); DIB fallback
+ * goes through wrapAsIco(). */
 function pick(
   b: Bytes,
   rva: number,
@@ -399,8 +279,7 @@ function pick(
     const bytes = payload(b, rva, leaves.get(m.id)!);
     if (!bytes || !bytes.length) continue;
     if (isPng(bytes)) {
-      // A CgBI PNG cannot appear in a PE file, but isDrawablePng is the one
-      // question worth asking of anything claiming to be a PNG in this codebase.
+      // CgBI impossible here, but isDrawablePng is the standard PNG gate.
       if (m.w >= PNG_ENOUGH && isDrawablePng(bytes)) {
         return { blob: new Blob([bytes], { type: 'image/png' }), ext: 'png' };
       }
@@ -414,15 +293,8 @@ function pick(
   return ico ? { blob: new Blob([ico], { type: 'image/x-icon' }), ext: 'ico' } : null;
 }
 
-/**
- * The biggest RT_ICON when there is no group to describe them.
- *
- * Only a PNG member can be used here and that is not a shortcut: a bare bitmap
- * member carries its size only in its own BITMAPINFOHEADER, where the height is
- * doubled to cover the AND mask, and a wrapper built from that number produces an
- * icon stretched to twice its height. The group record is what states the true
- * size, so without one the DIB members are honestly unreadable.
- */
+/** Biggest RT_ICON with no group. PNG only — bare DIB members lack true
+ * dimensions (BITMAPINFOHEADER height is doubled for the AND mask). */
 function bestLoose(
   b: Bytes,
   rva: number,

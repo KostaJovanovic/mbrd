@@ -1,22 +1,8 @@
-// Stanford PLY, ASCII and both binary byte orders.
-//
-// The format a 3D scanner writes, and the reason it is worth having: PLY is
-// where per-vertex colour actually lives. A photogrammetry scan or a Kinect
-// capture is a coloured point soup with faces over it, and read without the
-// colours it comes out as a grey lump that looks nothing like the thing.
-//
-// PLY is a small format with a self-describing header, which is what makes it
-// pleasant to read by hand: the header names every element, in order, with every
-// property of each and its type, and the body is exactly that. So the reader is
-// two parts - understand the header, then walk the body once with the plan the
-// header gave. Elements this does not care about (edges, materials, whatever a
-// tool invented) still have to be *stepped over* correctly, which is the whole
-// reason the property types of an unread element matter at all.
-//
-// What is not read: `material_index`, texture coordinates, and the "range grid"
-// element some scanners write instead of faces. A PLY with no `face` element is
-// a point cloud, and a point cloud is not something this app can draw - it says
-// so rather than showing an empty card.
+// Stanford PLY, ASCII and both binary byte orders. Self-describing header:
+// parse the plan, then walk the body once. Per-vertex colour is the reason this
+// format matters (scans without it are grey lumps). Unrecognised elements are
+// stepped over using their declared types. Not read: textures, range grids,
+// material_index. Point clouds (no face element) are rejected.
 
 import { oversize } from '../consent.ts';
 import {
@@ -47,15 +33,12 @@ const WIDTH: Record<ScalarType, number> = {
   i8: 1, u8: 1, i16: 2, u16: 2, i32: 4, u32: 4, f32: 4, f64: 8,
 };
 
-/** The names tools have used for the same three colour channels. `diffuse_red`
- *  is what the original Stanford tools wrote; `red` is what everything since
- *  writes; `r` is what a handful of exporters shorten it to. */
+/** Colour channel names across tools (Stanford: diffuse_red, modern: red, short: r). */
 const RED = new Set(['red', 'diffuse_red', 'r']);
 const GREEN = new Set(['green', 'diffuse_green', 'g']);
 const BLUE = new Set(['blue', 'diffuse_blue', 'b']);
 
-/** The names a face's index list has gone by. `vertex_index` is the spec's;
- *  `vertex_indices` is what everybody actually writes. */
+/** Face index list names (spec: vertex_index, common: vertex_indices). */
 const FACE_LIST = new Set(['vertex_indices', 'vertex_index']);
 
 export function parsePLY(bytes: ArrayBuffer): Mesh {
@@ -77,15 +60,8 @@ type Header = {
   start: number;
 };
 
-/**
- * Everything up to and including the `end_header` line.
- *
- * Decoded as latin1 rather than UTF-8, and only as far as it needs to be. The
- * header is ASCII by the spec but the *body* may be arbitrary bytes, and
- * decoding those as UTF-8 to find a line break either throws or silently
- * replaces bytes - so the search happens over the bytes and only the header is
- * ever turned into text.
- */
+/** Parse the header. Decoded as latin1 — the binary body may contain arbitrary
+ * bytes that would break a UTF-8 decoder. */
 function readHeader(u8: Uint8Array): Header {
   const limit = Math.min(u8.length, 1 << 20);
   let end = -1;
@@ -117,8 +93,7 @@ function readHeader(u8: Uint8Array): Header {
       else throw new MeshError('This PLY is in a format this cannot read');
     } else if (t[0] === 'element') {
       const count = Number(t[2]);
-      // A count that is not a whole number is a file that does not say what it
-      // means, and the loops below would run on it forever or not at all.
+      // Non-integer count would cause infinite or zero-length loops below.
       if (!Number.isSafeInteger(count) || count < 0) {
         throw new MeshError('This PLY declares an element count that is not a number');
       }
@@ -162,20 +137,14 @@ function vertexPlan(el: Element): VertexPlan {
     typeof want === 'string' ? p.name === want : want.has(p.name)
   ));
   const r = at(RED);
-  // Colour channels are `uchar` in every file that has them and `float` in a
-  // handful of research exports. 0..255 and 0..1 are not distinguishable from
-  // the numbers alone - a scan can legitimately be all-dark - so the *declared
-  // type* is what decides, which is the one thing the header is unambiguous
-  // about.
+  // uchar (0..255) vs float (0..1) distinguished by declared type, not values.
   const floatColour = r >= 0 && (el.props[r].type === 'f32' || el.props[r].type === 'f64');
   const scale = floatColour ? 1 : 1 / 255;
   return { x: at('x'), y: at('y'), z: at('z'), r, g: at(GREEN), b: at(BLUE), scale };
 }
 
 function faceListIndex(el: Element) {
-  // The first list property, preferring one of the known names. Some exporters
-  // write `vertex_indices` alongside a `texcoord` list, and the texcoord list
-  // comes second - but not always, which is why the name is tried first.
+  // Prefer known names; fall back to first list property.
   const named = el.props.findIndex(p => p.list && FACE_LIST.has(p.name));
   return named >= 0 ? named : el.props.findIndex(p => p.list);
 }
@@ -185,10 +154,7 @@ function faceListIndex(el: Element) {
 // ---------------------------------------------------------------------------
 
 function asciiBody(u8: Uint8Array, head: Header): Mesh {
-  // One tokenizer for the whole body. PLY's ASCII form says one element per
-  // line, and enough files break that promise (a face's indices wrapped over two
-  // lines) that reading by line is less robust than reading by token - the
-  // counts in the header say exactly how many numbers each element takes.
+  // Token-based, not line-based — some files wrap face indices across lines.
   const tokens = latin1(u8.subarray(head.start)).split(/\s+/);
   let at = 0;
   const next = () => {

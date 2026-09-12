@@ -1,9 +1,8 @@
 // Where an item is, and what it covers.
 //
-// These had been four separate implementations in four modules that could not
-// see each other, and they disagreed about rotation. The tests that matter
-// most here are the rotated ones - not because anything rotates today, but
-// because that is precisely why the disagreement survived so long unnoticed.
+// Was four separate implementations in four modules that disagreed about
+// rotation. The rotated tests matter most - not because anything rotates
+// today, but because that's why the disagreement went unnoticed so long.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -96,17 +95,14 @@ test('an item well outside the band is not', () => {
 });
 
 test('touching the band counts as caught', () => {
-  // Edge-inclusive: dragging a marquee exactly to an item's edge should take
-  // it, which is the forgiving half of a rough gesture.
+  // Edge-inclusive: dragging a marquee exactly to an item's edge takes it.
   assert.ok(itemInRect(item({ x: 55, y: 0, w: 10, h: 10 }), -50, -50, 50, 50));
 });
 
 test('the marquee sees a rotated corner that the unrotated box would miss', () => {
-  // The regression this consolidation exists to prevent. A square at (60, 0)
-  // sized 100 has its left edge at 10 when straight; turned 45 degrees it
-  // reaches out to 60 - 70.7 = -10.7. A band ending at 0 therefore touches the
-  // turned one and not the straight one, and the old marquee tested the
-  // straight extents whatever the item was actually doing.
+  // The regression this exists to prevent: a 100-square at (60,0) has its
+  // left edge at 10 straight, but at -10.7 turned 45 degrees - a band ending
+  // at 0 touches the turned one but not the straight one.
   const straight = item({ x: 60, y: 0, w: 100, h: 100 });
   const turned = { ...straight, rot: 45 };
   assert.ok(!itemInRect(straight, -200, -5, -5, 5), 'straight square should miss');
@@ -116,7 +112,7 @@ test('the marquee sees a rotated corner that the unrotated box would miss', () =
 test('containment is the strict reading of the same band', () => {
   const it = item({ x: 0, y: 0, w: 10, h: 10 });
   assert.ok(itemWithinRect(it, -50, -50, 50, 50));
-  // Overlapping is not enough, which is the whole difference between the two.
+  // Overlapping is not enough - the whole difference between the two.
   const over = item({ x: 52, y: 0, w: 10, h: 10 });
   assert.ok(itemInRect(over, -50, -50, 50, 50));
   assert.ok(!itemWithinRect(over, -50, -50, 50, 50));
@@ -144,10 +140,9 @@ test('a point beyond the edge is outside', () => {
 });
 
 test('the corner of a turned square is empty space', () => {
-  // A square turned 45 degrees draws a diamond. Its bounding box corner is
-  // half a diagonal out and contains nothing - the exact case an axis-aligned
-  // test gets wrong, and the reason a note parked there must not claim to be
-  // stuck to it.
+  // A square turned 45 degrees draws a diamond; its bounding-box corner is
+  // half a diagonal out and contains nothing - the case an axis-aligned test
+  // gets wrong.
   const diamond = item({ w: 100, h: 100, rot: 45 });
   assert.ok(!pointInItem(48, 48, diamond), 'bounding-box corner is not inside a diamond');
   assert.ok(pointInItem(0, 60, diamond), 'but the diamond does reach further up');
@@ -166,7 +161,7 @@ test('a point is inside the turned box exactly when it is inside the straight on
   const c = Math.cos(rad), s = Math.sin(rad);
   for (const [px, py] of [[0, 0], [55, 0], [0, 20], [70, 30], [59, 24], [61, 26]]) {
     const straight = pointInItem(px, py, item({ w, h }));
-    // The same offset, rotated into the turned item's frame.
+    // The same offset, rotated into the turned item's frame
     const turned = pointInItem(c * px - s * py, s * px + c * py, item({ w, h, rot }));
     assert.equal(turned, straight, `disagreed at (${px}, ${py})`);
   }
@@ -194,16 +189,16 @@ test('the top edge stays the same length whatever the rotation', () => {
 // ---------------------------------------------------------------------------
 //
 // This decides whether a sticky note is stuck, against a threshold of a
-// twentieth - so what matters is that it is *exact*, including under rotation.
-// A sampled or bounding-box answer would put the same note on either side of
-// the line depending on how it happened to be turned.
+// twentieth - so it must be exact, including under rotation. A sampled or
+// bounding-box answer would put the same note on either side of the line
+// depending on how it happened to be turned.
 
 test('the corners wind anticlockwise and sit where they should', () => {
   const c = corners(item({ x: 0, y: 0, w: 100, h: 40 }));
   assert.deepEqual(c.map(p => [p.x, p.y]),
     [[-50, -20], [50, -20], [50, 20], [-50, 20]]);
-  // Shoelace is positive for an anticlockwise polygon, which the clipper relies
-  // on to know which side of an edge is inside.
+  // Shoelace is positive for an anticlockwise polygon, which the clipper
+  // relies on to know which side of an edge is inside.
   let sum = 0;
   for (let i = 0, j = 3; i < 4; j = i++) sum += c[j].x * c[i].y - c[i].x * c[j].y;
   assert.ok(sum > 0, 'corners wound the wrong way');
@@ -213,8 +208,8 @@ test('an item lies entirely over a bigger one', () => {
   const small = item({ x: 0, y: 0, w: 50, h: 50 });
   const big = item({ x: 0, y: 0, w: 400, h: 400 });
   close(overlapFraction(small, big), 1, 'all of it');
-  // And the other way round is the ratio of the areas, which is what makes this
-  // a fraction *of the first argument* rather than a symmetric measure.
+  // The reverse is the ratio of areas - a fraction of the first argument,
+  // not a symmetric measure.
   close(overlapFraction(big, small), 2500 / 160000, 'a sixty-fourth of it');
 });
 
@@ -226,41 +221,36 @@ test('two items that miss overlap by nothing', () => {
 });
 
 test('a partial overlap is measured, not guessed', () => {
-  // x and y are the centre, so a 100-wide note at 0 spans -50 to 50 and a photo
-  // at 70 spans 20 to 120. The right 30 of the note sits on it: 30 x 100.
+  // x/y are the centre, so a 100-wide note at 0 spans -50..50 and a photo
+  // at 70 spans 20..120 - the right 30 of the note sits on it: 30x100.
   const note = item({ x: 0, y: 0, w: 100, h: 100 });
   const pic = item({ x: 70, y: 0, w: 100, h: 100 });
   close(overlapFraction(note, pic), 0.3, 'three tenths');
-  // One corner: 30 across and 40 up, which is 0.12 and not 0.3 x 0.4 read as a
-  // sum. Both the note and the photo are square, so a fraction of the note is
-  // the product of the two spans over its own area.
+  // One corner: 30 across and 40 up is 0.12, not 0.3 x 0.4 read as a sum -
+  // both squares, so the fraction is the product of the two spans over its own area.
   close(overlapFraction(note, item({ x: 70, y: 60, w: 100, h: 100 })), 0.12, 'a corner');
 });
 
 test('a square turned 45 degrees over another is exact, not its bounding box', () => {
-  // The diamond's corner reaches sqrt(2)*50 = 70.7 along each axis while its
-  // bounding box reaches the same - so a bounding-box answer would say these two
-  // overlap far more than they do.
+  // The diamond's corner reaches sqrt(2)*50 = 70.7 along each axis, same as
+  // its bounding box - so a bounding-box answer overstates the overlap.
   const diamond = item({ x: 0, y: 0, w: 100, h: 100, rot: 45 });
   const square = item({ x: 100, y: 100, w: 100, h: 100 });
-  // The diamond is every point with |x| + |y| <= 70.71. The square's nearest
-  // corner is (50, 50), where that sum is 100. Nothing of one is inside the
-  // other - while their bounding boxes, both reaching to 70.71 and starting at
-  // 50, overlap by a 20x20 square.
+  // The diamond is every point with |x| + |y| <= 70.71; the square's nearest
+  // corner (50,50) sums to 100. Nothing of one is inside the other, while
+  // their bounding boxes overlap by a 20x20 square.
   assert.equal(overlapFraction(diamond, square), 0);
 
-  // Turned the same way, a diamond centred on a square of equal size keeps the
-  // part of itself inside: an octagon. Checked against the closed form rather
-  // than a number somebody read off a screenshot.
+  // Turned the same way, a diamond centred on an equal square keeps an
+  // octagon inside - checked against the closed form, not a screenshot reading.
   const same = item({ x: 0, y: 0, w: 100, h: 100 });
   const area = 2 * (Math.SQRT2 - 1) * 100 * 100;   // the classic 8-sided figure
   close(overlapFraction(diamond, same), area / 10000, 'octagon');
 });
 
 test('overlap is never more than all of it', () => {
-  // Floating point on a clip that came back a hair larger than the box it
-  // started as would report just over 1, and this is compared against a
-  // threshold rather than used as an area.
+  // A clip a hair larger than its starting box would report just over 1 in
+  // floating point - compared against a threshold, not used as an area.
   for (const rot of [0, 13, 45, 90, 137, 271]) {
     const a = item({ x: 3, y: -7, w: 100, h: 60, rot });
     assert.ok(overlapFraction(a, a) <= 1);
@@ -275,12 +265,9 @@ test('a degenerate item overlaps nothing', () => {
 });
 
 test('the ends of the top edge lie on the item', () => {
-  // Probed a hair inside rather than exactly on the corner. A corner sits on
-  // the boundary by construction, and pointInItem compares with <=, so whether
-  // it lands in or out is decided by whether the trig rounds to 49.999... or
-  // 50.000...1 - which is a question about floating point, not about geometry.
-  // The app is indifferent either way: a note is stuck or not stuck by a
-  // margin far wider than this.
+  // Probed a hair inside, not exactly on the corner - whether the trig
+  // rounds to 49.999... or 50.000...1 is a floating-point question, not a
+  // geometry one, and the app is indifferent either way.
   const inset = 0.9999;
   for (const rot of [0, 30, 45, 120]) {
     const it = item({ w: 100, h: 40, rot });
@@ -294,8 +281,7 @@ test('the ends of the top edge lie on the item', () => {
 // ---------------------------------------------------------------------------
 // segmentMeetsRect - what the web culls threads with
 //
-// The reason it is not a bounding-box test is the whole of what these check.
-// A box test and an exact one agree on everything axis-aligned; they part
+// A box test and an exact one agree on everything axis-aligned but part
 // company on the diagonal, and a web is mostly diagonals.
 // ---------------------------------------------------------------------------
 
@@ -323,11 +309,10 @@ test('a segment wholly beyond one edge does not', () => {
 });
 
 test('the diagonal a box test gets wrong', () => {
-  // The line x+y = -2, which passes clean under the rect's near corner without
-  // ever reaching it. Its bounding box is (-10,-22)-(20,8), which overlaps the
-  // rect on both axes - so the box test the web used to do says yes, and the
-  // thread was emitted on every frame of every pan without ever touching the
-  // screen.
+  // The line x+y=-2 passes clean under the rect's near corner. Its
+  // bounding box (-10,-22)-(20,8) overlaps the rect on both axes, so the
+  // old box test said yes and drew the thread every frame without it ever
+  // touching the screen.
   const a = { x: 20, y: -22 }, b = { x: -10, y: 8 };
   const boxSays = Math.max(a.x, b.x) >= R.x0 && Math.min(a.x, b.x) <= R.x1 &&
                   Math.max(a.y, b.y) >= R.y0 && Math.min(a.y, b.y) <= R.y1;
@@ -342,11 +327,10 @@ test('touching an edge or a corner counts', () => {
 });
 
 test('it never loops, however far out the ends are', { timeout: 5000 }, () => {
-  // Cohen-Sutherland settles in four turns; a wrong loop condition hangs rather
-  // than failing, and the timeout above is what turns that hang into a failure.
-  // It used to be asserted as `typeof seg(...) === 'boolean'`, which seg()
-  // cannot fail whatever it computes - so the six cases ran and their answers
-  // went unread. They have answers, so they are asserted.
+  // Cohen-Sutherland settles in four turns; a wrong loop condition hangs
+  // rather than fails, and the timeout turns that hang into a failure. Used
+  // to be asserted as `typeof seg(...) === 'boolean'`, which can't fail
+  // whatever seg() computes, so the six answers went unread.
   const far = 1e9;
   for (const [ax, ay, bx, by, want] of [
     [-far, -far, far, far, true],       // the diagonal, straight through it
@@ -365,10 +349,10 @@ test('it never loops, however far out the ends are', { timeout: 5000 }, () => {
 // viewShift - "did that view change move anything anybody can see?"
 // ---------------------------------------------------------------------------
 //
-// The grid repaints full-viewport on every view frame, and two very ordinary
-// gestures hand it a stream of frames that move nothing: the tail of an
-// inertial pan, and a trackpad delivering zoom in fractions. Skipping those is
-// only safe if this function never says "settled" about a frame that moved.
+// The grid repaints full-viewport every view frame, and two ordinary
+// gestures - an inertial pan's tail, a trackpad zoom in fractions - hand it
+// frames that move nothing. Skipping those is safe only if this never says
+// "settled" about a frame that moved.
 
 const view = (px, py, zoom) => ({ pan: { x: px, y: py }, zoom });
 const RECT = { x0: -500, y0: -400, x1: 500, y1: 400 };
@@ -379,39 +363,38 @@ test('an unchanged view has shifted by nothing', () => {
 });
 
 test('a pure pan shifts by the pan distance times the zoom', () => {
-  // Pan is in world units, so the screen distance is scaled. 3 world units at
-  // 2x is 6 screen pixels, whichever corner you measure from.
+  // Pan is in world units, so screen distance is scaled: 3 world units at
+  // 2x is 6 screen pixels.
   assert.ok(near(viewShift(view(0, 0, 2), view(3, 0, 2), RECT), 6));
   assert.ok(near(viewShift(view(0, 0, 2), view(0, 3, 2), RECT), 6));
 });
 
 test('the sign flip on y does not lose the shift', () => {
-  // Screen y runs the other way from world y (viewport.ts toScreen). A y-pan
-  // that came out as zero here would let a vertical drag repaint nothing.
+  // Screen y runs opposite world y - a y-pan reading zero here would let a
+  // vertical drag repaint nothing.
   assert.ok(viewShift(view(0, 0, 1), view(0, -0.5, 1), RECT) > 0);
 });
 
 test('a zoom moves the far corners most and the centre not at all', () => {
-  // Zooming about the pan point leaves that point still: at pan (0,0) the
-  // rectangle's centre is the fixed point, and 500 world units out at a zoom
-  // step of 0.01 is 5 screen pixels.
+  // Zooming about the pan point leaves it still: at pan (0,0) the
+  // rectangle's centre is fixed, and 500 world units at a 0.01 zoom step is
+  // 5 screen pixels.
   const a = view(0, 0, 1), b = view(0, 0, 1.01);
   assert.ok(near(viewShift(a, b, RECT), 5));
   assert.equal(viewShift(a, b, { x0: 0, y0: 0, x1: 0, y1: 0 }), 0);
 });
 
 test('a zoom too small to see reports under a pixel', () => {
-  // The case the guard exists for: a precision wheel notch. Half a screen
+  // The case the guard exists for: a precision wheel notch, half a screen
   // pixel across a thousand-unit rectangle.
   const shift = viewShift(view(0, 0, 1), view(0, 0, 1 + 0.5 / 500), RECT);
   assert.ok(shift < 1, `expected sub-pixel, got ${shift}`);
 });
 
 test('a pan and a zoom that cancel at one corner still count at another', () => {
-  // The trap in measuring one point instead of four: zooming about a corner
-  // holds that corner still while the opposite one travels the full distance.
-  // Anchoring the zoom at (-500,-400) - the rect's near corner - leaves it
-  // fixed and moves the far corner by the whole 1000x800 extent times the step.
+  // The trap in measuring one point instead of four: zooming about a
+  // corner holds it still while the opposite one travels the full distance
+  // - here the far corner moves by the whole 1000x800 extent times the step.
   const a = view(-500, -400, 1), b = view(-500, -400, 1.01);
   assert.ok(near(viewShift(a, b, RECT), 10), 'the far corner moved 1000 * 0.01');
 });

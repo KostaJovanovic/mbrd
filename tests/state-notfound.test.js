@@ -1,22 +1,9 @@
-// The board at an address the app does not have, and the two destructive paths
-// that must not touch it.
-//
-// A not-found boot deliberately never reads the session slot: the visitor's own
-// board is not loaded, not shown, and - this is the part with teeth - not
-// *asked about*. So New and Clear everything are both aiming at a board that is
-// not on screen. New asked nothing at all, wiped the slot, and then re-armed the
-// writer so the blank replacement autosaved over the hole. That is a stranger's
-// wrong URL costing somebody their board, so it is refused here rather than
-// confirmed harder.
-//
-// The guard matters more since New stopped asking about unsaved work entirely
-// and started filing the outgoing board on the library shelf instead. On this
-// board that would file the blank not-found message under the visitor's own
-// board id - overwriting on the shelf what it used to only overwrite in the
-// session slot.
-//
-// Driven through a fake IndexedDB whose only job is to say whether a wipe was
-// reached. state.ts is a module singleton, so each case sets the latch it needs.
+// The board at an address the app does not have, and the two destructive
+// paths (New, Clear everything) that must not touch it. A not-found boot
+// never reads the session slot and never asks about it - New used to wipe
+// the slot unasked and autosave the blank replacement over the hole, a
+// stranger's wrong URL costing somebody their board. Driven through a fake
+// IndexedDB that records only whether a wipe was reached.
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -34,14 +21,10 @@ globalThis.indexedDB = {
   open() {
     const req = {};
     soon(() => {
-      // `clear` is the thing under test; the rest are stubs so that the code
-      // path *reaching* it can run. New files the outgoing board onto the
-      // library shelf before it wipes anything, and refuses outright if that
-      // write fails - which is the point of the change and is correct, but it
-      // means a store with only clear() on it now makes New decline before it
-      // gets anywhere near the wipe. These four say "the write worked" and
-      // nothing more; none of them records anything, because nothing here
-      // asserts on what was written.
+      // `clear` is the thing under test; the rest are stubs so the code path
+      // *reaching* it can run - New files the outgoing board on the shelf
+      // first and refuses if that write fails, so these four just say "the
+      // write worked" without recording anything.
       const store = {
         clear: () => { clears++; return makeRequest(); },
         put: () => makeRequest(),
@@ -106,9 +89,8 @@ test('Clear everything on a not-found board refuses before it asks', async () =>
   const ok = await clearAllData();
   assert.equal(ok, false);
   assert.equal(clears, 0);
-  // The dialog offers "Export first" over the board on screen, which on this
-  // board is a message. Refusing before the question is asked is the difference
-  // between a wrong answer and no question.
+  // The dialog would offer "Export first" over a message, not a real board -
+  // refusing before asking is the difference between a wrong answer and no question.
   assert.equal(asked, 0);
 });
 
@@ -122,19 +104,12 @@ test('the handover clears the latch, so the next New behaves normally', async ()
 });
 
 test('a not-found board that had no session to go back to loses the name too', () => {
-  // The name is set at boot so the title card and the Mobile masthead say what
-  // happened; on the branch where no stored board arrives, nothing else
-  // overwrites it, and 'Not found' would go on to be the board's name in the
-  // file Export writes.
-  //
-  // The reset lives in main.ts's leaveNotFound(), not in anything importable
-  // here - so this used to perform it (`setTitle(defaultBoardTitle())`) and then
-  // assert the value it had just written. Both assertions held whatever
-  // main.ts did, including deleting the line: the test proved that setTitle
-  // sets a title.
-  //
-  // Split in two. The half that is state's own is asserted by running it; the
-  // half that is main.ts's is asserted against main.ts, which is where it is.
+  // 'Not found' is set at boot; on the branch with no stored board to
+  // return to, nothing else overwrites it, and it would go on to be the
+  // name Export writes. The reset lives in main.ts's leaveNotFound(), not
+  // in anything importable here, so this asserts state's own half by
+  // running it and main.ts's half by reading main.ts's source directly -
+  // asserting the value this test just wrote would prove nothing.
   setTitle('Not found');
   ensureGhostCards({ notFound: true });
   addItems([{ type: 'note', w: 200, h: 200 }]);

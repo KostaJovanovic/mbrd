@@ -1,45 +1,7 @@
-// The toolbar's hover flyouts: what is behind a button, shown by hovering it.
-//
-// Every button on the bar is a single verb, and behind three of them there was
-// a choice you could not see. Arrange laid the board out under whatever layout
-// a <select> in the settings panel happened to be set to. Note gave you
-// whichever of the four sheets a counter in import/drop.ts was up to, and
-// nothing anywhere could ask it for a different one. Colour opened a picker on
-// grey. All three answers existed; none of them was on the bar.
-//
-// So: dwell on one of those three and the choices come down under it. The press
-// itself is untouched - Arrange still rearranges, Note still writes one, Colour
-// still opens the picker - because a flyout that swallowed the click would take
-// away a one-press action to reveal a menu nobody asked for. This is a shortcut
-// standing beside the button, not a gate in front of it.
-//
-// ── Why there is almost nothing here ──
-//
-// The panel is the right-click menu's, opened through openAnchored() in
-// ui/menu.ts. That module already measures and places, walks the rows with the
-// arrow keys, and closes on outside pointerdown, wheel, scroll, resize, blur
-// and Escape - which is the whole of what a flyout needs and the whole of what
-// a second implementation would have got wrong differently. What is left in
-// this file is the timing, the anchoring, and the three lists.
-//
-// ── Touch is excluded per gesture, not per device ──
-//
-// Note and Colour are on the phone's tier, and a tap there has to add a note:
-// `pointerover` fires on a touch too, so without a guard a phone would open a
-// menu instead of doing the thing, and the thing would need a second tap.
-// Arrange is data-desktop and is not on that tier at all.
-//
-// That guard is the `pointerType === 'touch'` test in onOver(), and it is the
-// only one. This used to bind the listeners behind `(hover: hover)` as well,
-// which asked the wrong question in a way that failed silently and totally: the
-// query describes the machine's *primary* pointer, not whether a pointer that
-// hovers exists. A laptop with a touchscreen in tablet mode, and a window with
-// device emulation left on in DevTools, both answer `none` - and on either of
-// them nothing was ever bound, so all three flyouts were simply gone with no
-// error to find. `any-hover` is the better-behaved spelling of the same idea and
-// is still the wrong shape: what matters is the pointer in your hand right now,
-// which is a question about the event and not about the hardware. So the event
-// is what answers it, and a finger is refused whatever it is attached to.
+// Toolbar hover flyouts. Dwell on Arrange/Note/Colour to see choices; the
+// click is untouched (still the default action). Uses openAnchored() from
+// menu.ts for placement and interaction. Touch excluded per event (pointerType),
+// not per device — (hover:hover) was wrong for tablet-mode laptops.
 
 import { openAnchored, close, setMenuCloseHook } from './menu.ts';
 import type { MenuEntry } from './menu.ts';
@@ -48,36 +10,14 @@ import { ARRANGEMENTS } from '../arrange/arrangements.ts';
 import { NOTE_TINTS } from '../import/drop.ts';
 import { swatchHex } from '../canvas/renderers.ts';
 
-/**
- * How long a pointer has to rest on a button before its flyout comes down.
- *
- * The bar sits along the top of the window, which is a place a pointer crosses
- * on its way to somewhere else. Without the wait, dragging a file towards the
- * board or reaching for the browser's own chrome would rake three menus open
- * behind it. Long enough to mean it; short enough that meaning it does not feel
- * like waiting.
- */
+/** Hover dwell before opening. Prevents accidental opens while crossing the bar. */
 const DWELL = 180;
 
-/**
- * And how long the pointer has to be off both the button and the panel before
- * it goes away again.
- *
- * Longer than the dwell, deliberately. Leaving is usually an accident - the
- * pointer clips a corner on the way from the button to the row it is aiming
- * at - and a menu that vanished on that would be a menu you had to approach in
- * a straight line.
- */
+/** Grace period after leaving — longer than dwell so clipping a corner does not close. */
 const LINGER = 250;
 
-/**
- * What the three builders below ask of the command surface, and nothing else.
- *
- * Named rather than borrowed from commands.ts on purpose: that module imports
- * this one, and the arrow may only go one way - the same reason `cmds` is handed
- * in rather than imported. It is also what lets a test call a builder with a
- * stub, which tests/flyout.test.js does.
- */
+/** Command surface for the three flyout builders. Own type (not imported from
+ * commands.ts) because commands.ts imports this module. */
 export interface FlyoutCommands {
   arrangement: () => string;
   arrangeAs: (id: string) => void;
@@ -97,15 +37,7 @@ let openFor: HTMLElement | null = null;
 let openTimer = 0;
 let closeTimer = 0;
 
-/**
- * data-cmd -> the rows to show. The whole of what "which buttons have one" is:
- * a button not named here is a plain button, and adding a fourth is one entry.
- *
- * The builders take `cmds` rather than closing over the module's copy, which
- * makes each of them a pure function of the command surface and so something a
- * test can call with a stub. Exported for that, and for tests/flyout.test.js to
- * check the keys against the markup.
- */
+/** data-cmd → entry builder. Builders are pure (take cmds) for testability. */
 export const FLYOUTS: Record<string, (cmds: FlyoutCommands) => MenuEntry[]> = {
   rearrange: arrangeEntries,
   'add-note': noteEntries,
@@ -117,91 +49,51 @@ export function initFlyouts(commands: FlyoutCommands) {
   bar = el('toolbar');
   if (!bar) return;
 
-  // Mark the three, so a screen reader is told the button has more behind it
-  // and so the stylesheet can say so as well. Written here rather than in
-  // index.html because FLYOUTS is the list, and a fourth entry there should not
-  // need somebody to remember the markup.
+  // Mark flyout buttons for a11y. Driven by FLYOUTS so a new entry needs no markup change.
   for (const cmd of Object.keys(FLYOUTS)) {
     const btn = bar.querySelector(`[data-cmd="${cmd}"]`);
     btn?.setAttribute('aria-haspopup', 'menu');
     btn?.setAttribute('aria-expanded', 'false');
   }
 
-  // The panel can go without this module asking - Escape, a press on the board,
-  // a right-click - and the button it belongs to still owes an aria-expanded.
+  // Menu can close externally — keep aria-expanded in sync.
   setMenuCloseHook(() => {
     openFor?.setAttribute('aria-expanded', 'false');
     openFor = null;
   });
 
-  // The keyboard route, and it is not the hover one with a different trigger.
-  // Enter and Space stay the button's own press; ArrowDown is the standard way
-  // into a menu hanging off a control, and it opens *with* focus so the arrows
-  // that got you there keep working.
+  // ArrowDown opens with focus (standard menu-button pattern).
   bar.addEventListener('keydown', e => {
     if (e.key !== 'ArrowDown') return;
-    // SAFETY: the listener is on the bar, so a key inside it comes from an
-    // element. Every match carries a data-cmd, which is what the selector asked
-    // for, and the optional call covers anything that somehow is not a node.
     const btn = (e.target as Element).closest?.<HTMLElement>('[data-cmd]');
     if (!btn || !FLYOUTS[btn.dataset.cmd!]) return;
     e.preventDefault();
     open(btn, true);
   });
 
-  // Bound unconditionally - see the head of this file. The gesture, not the
-  // machine, is what decides whether a flyout comes down, and onOver() turns a
-  // touch away on its first line.
-  //
-  // One listener on the window rather than a pair on each button, because the
-  // question is not "is the pointer on this button" but "is it anywhere it
-  // should keep the panel alive" - and one of those places is the panel, which
-  // is a child of <body> and not of the bar. pointerover, not pointerenter:
-  // enter does not bubble, and delegation is the whole point.
+  // One window-level pointerover (bubbles, unlike pointerenter) — checks both bar and panel.
   addEventListener('pointerover', onOver);
-  // A pointer that leaves the window entirely fires no `over` anywhere, so the
-  // panel would hang until something else closed it.
+  // Pointer leaving the window entirely — no over fires, so close on leave.
   addEventListener('pointerleave', () => { if (openFor) later(); });
 }
 
 function onOver(e: PointerEvent) {
-  // A touch that reports itself as one, on a machine whose primary pointer
-  // hovers - a laptop with a touchscreen. The gate above was about the device;
-  // this is about the gesture, and a finger is a press either way.
+  // Per-gesture touch exclusion.
   if (e.pointerType === 'touch') return;
 
-  // Inside the open panel - or inside a submenu flown out of it, which is the
-  // same panel as far as a pointer is concerned and was not treated as one.
-  //
-  // #ctx-child is a *sibling* of #ctx-menu on the body, not a descendant, so
-  // `closest('#ctx-menu')` missed it entirely and a pointer moving into a
-  // submenu fell through to the bottom of this function and started the 250 ms
-  // close timer - closing the panel out from under the hand that was reaching
-  // into it. Exactly the trap insideMenu() documents in ui/menu.ts, from the
-  // other side. Latent today, because no FLYOUTS builder uses `sub`; written
-  // now because the first one that does would not connect the two.
-  //
-  // SAFETY: the two reads below are on the window, so the target can be any
-  // node - the optional call is the guard it always was, and the cast only says
-  // that closest() is the thing being asked for. A target without it (the
-  // document, the window itself) answers undefined and falls through.
+  // Inside the panel or a submenu (sibling #ctx-child, not descendant) — hold it open.
   if ((e.target as Element).closest?.('#ctx-menu, #ctx-child')) { hold(); return; }
 
-  // SAFETY: as above.
   const btn = (e.target as Element).closest?.<HTMLElement>('#toolbar [data-cmd]');
   if (btn && FLYOUTS[btn.dataset.cmd!]) {
     hold();
     if (btn === openFor) return;
-    // Sliding along an open bar swaps at once. This is what a menu bar has
-    // always done, and the dwell would be actively wrong here: the pointer is
-    // already committed to the bar, and making it stop and wait at each button
-    // turns one row of menus into four separate decisions.
+    // Already open bar → swap at once (no dwell).
     open(btn, false, openFor ? 0 : DWELL);
     return;
   }
 
-  // Anywhere else. A button on the bar with no flyout counts as elsewhere - the
-  // panel under Arrange has no business staying up over Find.
+  // Elsewhere — close after grace period.
   clearTimeout(openTimer);
   openTimer = 0;
   if (openFor) later();
@@ -219,14 +111,7 @@ function later() {
   closeTimer = setTimeout(() => { closeTimer = 0; close(); }, LINGER);
 }
 
-/**
- * Bring one down.
- *
- * `delay` is 0 for the keyboard and for a swap along the bar, and DWELL for the
- * first hover. openAnchored closes whatever is up first, which fires the hook
- * above and clears openFor - so this writes the button in *after* the call, not
- * before it.
- */
+/** Open a flyout. delay=0 for keyboard/swap, DWELL for first hover. */
 function open(btn: HTMLElement, focus: boolean, delay = 0) {
   clearTimeout(openTimer);
   if (delay) {
@@ -235,29 +120,11 @@ function open(btn: HTMLElement, focus: boolean, delay = 0) {
   }
   openTimer = 0;
 
-  // The bar's outer edge, not the button's. They differ by the hairline the bar
-  // wears, and that hairline would be a one-pixel strip belonging to neither
-  // the button nor the panel - which is exactly the kind of gap a pointer
-  // crossing between them lands in.
+  // Bar edge (not button edge) — avoids a 1px dead zone from the hairline.
   const box = btn.getBoundingClientRect();
   const barBox = bar!.getBoundingClientRect();
-  // `top` is the button's own, and it is here because render() flips the panel
-  // above the anchor when below will not fit and reads `anchor.top` to do it.
-  // Left off, that arithmetic is NaN, the test is quietly false, and the flip
-  // never fires - which looks like nothing at all on a bar pinned to the top of
-  // the window, right up until a flyout is taller than the space under it.
-  //
-  // `bounds` is the bar's own left and right, and this call site is why the
-  // option exists at all: the bar was already being measured here for its
-  // bottom edge and the other two numbers were being thrown away. render()
-  // clamped to the window, the window is nowhere near, and Arrange - the
-  // rightmost of the three - hung 28px past the end of the bar it is drawn as
-  // part of. Note and Colour sit mid-bar and never showed it, which is why this
-  // belongs in render() rather than in a special case for one button.
-  // `right` is the button's, like `left` and unlike `bottom`: the panel grows
-  // out of the middle of the button it hangs off, and the middle is those two
-  // averaged. The bar's edges are in `bounds` and are a different question -
-  // where the panel may sit, not what it came out of.
+  // top: button's (needed for above-flip). bottom: bar's (avoids hairline gap).
+  // bounds: bar edges (clamp panel within bar). left/right: button's (for origin).
   const rect = {
     left: box.left,
     right: box.right,
@@ -266,8 +133,6 @@ function open(btn: HTMLElement, focus: boolean, delay = 0) {
     bounds: { left: barBox.left, right: barBox.right },
   };
   const label = btn.querySelector('span')?.textContent?.trim() || 'Menu';
-  // `cmds` is set by initFlyouts(), which is also what binds the listener that
-  // is the only way to get here.
   openAnchored(rect, FLYOUTS[btn.dataset.cmd!](cmds!), { label, focus });
   openFor = btn;
   btn.setAttribute('aria-expanded', 'true');
@@ -277,19 +142,7 @@ function open(btn: HTMLElement, focus: boolean, delay = 0) {
 // The three lists
 // ---------------------------------------------------------------------------
 
-/**
- * The layouts, and the two dials that go with them.
- *
- * One icon on all eight, the way stickerTintEntries() puts one i-swatch on all
- * eight tints: these are a radio, the tick is the state, and eight different
- * drawings for eight arrangements would be eight pictures nobody could read at
- * 15px. The list itself is arrange/arrangements.ts's, in its order, so the
- * flyout and the panel's <select> cannot come to hold different sets.
- *
- * Desktop's catalogue and not Mobile's, and that needs no test: Arrange is
- * data-desktop, so the button this hangs off does not exist on the tier where
- * MOBILE_ARRANGEMENTS applies.
- */
+/** Layout choices from ARRANGEMENTS, plus spacing slider. Desktop only (Arrange is data-desktop). */
 export function arrangeEntries(cmds: FlyoutCommands) {
   const now = cmds.arrangement();
   return [
@@ -300,10 +153,7 @@ export function arrangeEntries(cmds: FlyoutCommands) {
       action: () => cmds.arrangeAs(a.id),
     })),
     { sep: true },
-    // Hidden rather than greyed when nothing is selected, which is this menu's
-    // idiom throughout (see the item fold's `hidden: !tintable`). A row that
-    // cannot do anything is a row explaining a rule; a row that is not there is
-    // a menu that fits what you are holding.
+    // Hidden when no selection — menu fits what you are holding.
     { label: 'Rearrange selection', icon: 'i-select-all',
       hidden: !cmds.hasSelection(), action: () => cmds.rearrangeSelection() },
     // The gap the layouts pack at. Live, and it does not lay the board out on

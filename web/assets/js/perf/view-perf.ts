@@ -1,56 +1,22 @@
-// The view-change frame, profiled - a dev tool and nothing else.
-//
-// Lifted out of main.ts, where it was a 340-line IIFE in the middle of the
-// wiring point. Nothing here runs on a board that never opens the console: the
-// view listener reads `.active` and skips its two performance.now() marks while
-// this is off, so the shipped path pays one boolean read per frame.
-//
-// The point it measures is the whole premise of the grid performance work: on a
-// pan or zoom, how much of a frame is paintGrid() and how much is everything
-// else? `mbrd.perf.on()`, pan/zoom for a few seconds, `mbrd.perf.report()`.
-//
-// A factory rather than a module-level singleton, for the reason every module
-// under this tree is one: it needs the Viewport, and reaching for a browser
-// global at import time is what tests/imports.test.js exists to prevent.
+// Dev-only view-frame profiler. Measures paintGrid() vs everything else
+// during pan/zoom. `mbrd.perf.on()`, move, `mbrd.perf.report()`.
+// Factory to avoid touching browser globals at import time.
 
 import { board } from '../state.ts';
 import { cullProfile, viewStats } from '../canvas/items.ts';
 import { mobilePerfFlags } from '../canvas/viewport.ts';
 
-/**
- * One session's profiler, as its callers know it.
- *
- * Inferred from the factory rather than written out, because the object below
- * is thirty lines of methods and a hand-kept second copy of that shape would be
- * wrong within a release. It exists at all because the profiler is now injected
- * into the command surface (main.ts hands it to createCommands), and an
- * injection needs a name for what is being handed over.
- */
+/** Inferred from the factory to avoid a hand-kept duplicate. */
 export type ViewPerf = ReturnType<typeof createViewPerf>;
 
-/**
- * @param vp  the live Viewport - only `mobile()` touches it, to re-apply after
- *            a kill switch is thrown, which is the whole of what is asked of it
- *            and so the whole of what the parameter names.
- */
 export function createViewPerf(vp: { apply(): void }) {
   let on = false, raf = 0, lastRaf = 0, moved = false;
-  // An on-screen readout, built lazily the first time it is asked for. The
-  // point of it is the phone: a device with no console the median frame rate can
-  // be read off, so a real touch device can be measured on the glass instead of
-  // over a debugging cable. Desktop gets it too - a live number beside the
-  // gesture is worth more than one printed after it.
+  // On-screen HUD, built lazily; exists for phones with no console.
   let hud: HTMLDivElement | null = null, hudText: HTMLDivElement | null = null, hudAt = 0;
-  // JS cost of the main.ts view listener, per view frame.
   let gridMs = 0, restMs = 0, frames = 0, worstFrame = 0;
-  // True frame cadence: the interval between animation frames, but recorded only
-  // on frames where the view actually moved (a sample() landed since the last
-  // rAF). Idle frames between two gestures would otherwise read as enormous
-  // stalls and drown the real in-motion cadence - which was the trap in the
-  // first cut of this. Held as raw intervals so report() can take percentiles;
-  // the median is the honest frame rate, the tail is the jank.
+  // Frame gaps recorded only on moved frames; idle frames are excluded.
   const gaps: number[] = [];
-  const CAP = 8000;                 // ~a minute of 120fps motion; then it wraps
+  const CAP = 8000;
   const reset = () => {
     gridMs = restMs = frames = worstFrame = 0; gaps.length = 0; lastRaf = 0; moved = false;
     cullProfile.reset();

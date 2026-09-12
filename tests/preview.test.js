@@ -1,20 +1,17 @@
-// The embedded-preview reader: a TIFF walk over a file the app did not write.
+// The embedded-preview reader: a TIFF walk over a file the app did not
+// write - one of the hand-written binary readers CLAUDE.md requires to
+// bounds-check before allocating, and the one with the widest hostile
+// surface: a RAW is a directory of offsets and lengths written by
+// somebody else, and every one is chased.
 //
-// import/preview.ts is one of the six hand-written binary readers CLAUDE.md
-// names as "must bounds-check before allocating", and until this file it had no
-// test and was imported by no test. It is also the reader with the widest
-// hostile surface of the six: a RAW is a directory of offsets and lengths, all
-// of them written by somebody else, and every one of them is chased.
+// Built by hand out of bytes rather than round-tripped through the app's
+// own writer, since there is none and a self-produced fixture would only
+// prove agreement with itself.
 //
-// Everything here is built by hand out of bytes rather than by round-tripping
-// the app's own writer - the app has no TIFF writer, and a fixture produced by
-// the code under test proves only that it agrees with itself.
-//
-// The module returns null for everything malformed by design, which makes the
-// fixtures below easy to get wrong: a test that asserts null passes when the
-// reader is broken *and* when the fixture is. So every "refuses" case is paired
-// with a working fixture built the same way, and the working one is asserted
-// first. If the pair ever both return null, the fixture is what moved.
+// The module returns null for everything malformed, which makes fixtures
+// easy to get wrong: a null-only test passes when the reader is broken
+// *and* when the fixture is. So every refusal is paired with a working
+// fixture asserted first - if the pair both return null, the fixture moved.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -37,11 +34,10 @@ function jpeg(len) {
 }
 
 /**
- * A little-endian TIFF with one IFD.
- *
- * `entries` is a list of [tag, type, count, value] written in order; the header
- * is 8 bytes, the IFD lands at 8, and `payload` is appended after it at the
- * offset the builder reports back so a fixture can point an entry at it.
+ * A little-endian TIFF with one IFD. `entries` is [tag, type, count,
+ * value] written in order; the header is 8 bytes, the IFD lands at 8, and
+ * `payload` is appended after it at the offset reported back so a
+ * fixture can point an entry at it.
  */
 function tiff(entries, payload = new Uint8Array(0), opts = {}) {
   const count = opts.declaredEntries ?? entries.length;
@@ -113,8 +109,8 @@ test('a JPEG-compressed strip is the other way in', async () => {
 });
 
 test('the largest candidate wins, not the first one listed', async () => {
-  // A camera writes a postage-stamp thumbnail and a full-screen preview. The
-  // big one is the picture worth showing, and it is not always written first.
+  // A camera writes a postage-stamp thumbnail and a full-screen preview.
+  // The big one is worth showing, and it's not always written first.
   const small = jpeg(1500);
   const big = jpeg(9000);
   const payload = new Uint8Array(small.length + big.length);
@@ -153,17 +149,16 @@ test('the largest candidate wins, not the first one listed', async () => {
 // Counts and offsets the file made up
 // ---------------------------------------------------------------------------
 
-// Note on the three below. `embeddedPreview` falls back to the marker scan
-// whenever the TIFF walk comes back empty, and these fixtures carry a real JPEG
-// in their payload for the walk to point at - so the scan finds it and the call
-// returns a preview rather than null. That is the designed behaviour and worth
-// having tested; what these assert is the invariant underneath it, which is that
-// nothing the container claims is ever believed past the end of the file.
+// Note on the three below: `embeddedPreview` falls back to the marker
+// scan whenever the TIFF walk comes back empty, and these fixtures carry
+// a real JPEG in their payload for the walk to point at, so the scan
+// finds it. What's asserted is the invariant underneath: nothing the
+// container claims is ever believed past the end of the file.
 
 test('an entry count past MAX_ENTRIES is not looped on', { timeout: 5000 }, async () => {
   const t = goodTiff();
-  // 60000 entries declared over an IFD that holds two. Without the ceiling this
-  // is 60000 twelve-byte reads off the end of a 4 KB buffer.
+  // 60000 entries declared over an IFD that holds two. Without the
+  // ceiling this is 60000 twelve-byte reads off the end of a 4KB buffer.
   new DataView(t.bytes.buffer).setUint16(8, 60000, true);
   const found = await embeddedPreview(new Blob([t.bytes]));
   assert.ok(!found || found.size <= t.bytes.length,
@@ -194,8 +189,9 @@ test('a JPEG offset past the end of the file is never sliced', async () => {
 });
 
 test('a TIFF whose candidates all lie, and no JPEG anywhere, yields nothing', async () => {
-  // The same three lies with nothing for the fallback to rescue: the payload is
-  // filler, so a null here is the walk refusing rather than the scan failing.
+  // The same three lies with nothing for the fallback to rescue: the
+  // payload is filler, so a null here is the walk refusing, not the scan
+  // failing.
   const filler = new Uint8Array(4096).fill(0x41);
   const shape = tiff([[JPEG_OFFSET, LONG, 1, 0], [JPEG_LENGTH, LONG, 1, 0]], filler);
   for (const [off, len] of [
@@ -220,8 +216,8 @@ test('a candidate under MIN_JPEG is not a preview', async () => {
 });
 
 test('a candidate that is not a JPEG where it claims to be is refused', async () => {
-  // The container's word against the file's own bytes: the length and offset
-  // are perfectly valid, and what is there is not a JPEG.
+  // The container's word against the file's own bytes: length and offset
+  // are perfectly valid, and what's there isn't a JPEG.
   const art = new Uint8Array(4096).fill(0x41);
   const shape = tiff([[JPEG_OFFSET, LONG, 1, 0], [JPEG_LENGTH, LONG, 1, 0]], art);
   const t = tiff([
@@ -232,9 +228,9 @@ test('a candidate that is not a JPEG where it claims to be is refused', async ()
 });
 
 test('an IFD chain that points at itself terminates', { timeout: 5000 }, async () => {
-  // MAX_IFDS bounds the walk and `seen` bounds it again. Without either, a
-  // next-IFD pointer back to byte 8 is a loop with an await in it, which does
-  // not even burn the CPU visibly - the import just never finishes.
+  // MAX_IFDS bounds the walk and `seen` bounds it again. Without either,
+  // a next-IFD pointer back to byte 8 is a loop with an await in it that
+  // doesn't even burn CPU visibly - the import just never finishes.
   const t = goodTiff();
   new DataView(t.bytes.buffer).setUint32(10 + 2 * 12, 8, true);
   const found = await embeddedPreview(new Blob([t.bytes]));
@@ -248,8 +244,8 @@ test('a truncated header is not a TIFF and not a crash', async () => {
 });
 
 test('a file that is not a TIFF falls through to the marker scan', async () => {
-  // The HEIC case: not a TIFF, but with a JPEG thumbnail sitting near the
-  // front, which is exactly what the fallback is for.
+  // The HEIC case: not a TIFF, but with a JPEG thumbnail near the front -
+  // exactly what the fallback is for.
   const lead = new Uint8Array(64).fill(0x20);
   const art = jpeg(3000);
   const buf = new Uint8Array(lead.length + art.length);
@@ -267,14 +263,12 @@ test('a file with an SOI and no EOI yields nothing', async () => {
 });
 
 test('a file full of starts and no end does not hang the tab', { timeout: 10000 }, async () => {
-  // The measured one. classify() calls a .heic an image, measureSize() reports
-  // it undecodable, and the marker scan is the fallback - so 12 MB of repeating
-  // FF D8 FF with no FF D9 anywhere gave about four million matching offsets,
-  // each running an inner scan to the end of the buffer. Roughly 5x10^13
-  // comparisons, on the main thread, with no cap and no way to cancel.
-  //
-  // 2 MB here rather than the full 12: the old code is quadratic, so this
-  // fixture took long enough to make the point without making the suite slow.
+  // The measured one. classify() calls a .heic an image, measureSize()
+  // reports it undecodable, so the marker scan runs on 12MB of repeating
+  // FF D8 FF with no FF D9, giving about four million matching offsets,
+  // each scanning to the buffer's end - roughly 5x10^13 comparisons on
+  // the main thread with no cap. 2MB here rather than the full 12: the
+  // old code is quadratic, so this is enough to make the point.
   const n = 2 * 1024 * 1024;
   const buf = new Uint8Array(n);
   for (let i = 0; i + 2 < n; i += 3) { buf[i] = 0xff; buf[i + 1] = 0xd8; buf[i + 2] = 0xff; }
@@ -285,8 +279,8 @@ test('a file full of starts and no end does not hang the tab', { timeout: 10000 
 });
 
 test('the scan still finds the last and largest JPEG among several', async () => {
-  // The linear cursor must not cost the answer: a camera writes a thumbnail and
-  // a full preview, and the big one is the picture worth showing.
+  // The linear cursor must not cost the answer: a camera writes a
+  // thumbnail and a full preview, and the big one is worth showing.
   const small = jpeg(1200);
   const big = jpeg(9000);
   const buf = new Uint8Array(64 + small.length + 32 + big.length);
@@ -299,19 +293,19 @@ test('the scan still finds the last and largest JPEG among several', async () =>
 
 test('a TIFF truncated exactly at its last IFD entry still reaches the fallback', async () => {
   // `bytes()` clamps to file.size, so the block comes back at precisely
-  // entries * 12, the `<` guard passes, and reading the next-IFD pointer went
-  // four bytes past the DataView. The RangeError escaped fromTiff() and was
-  // caught by embeddedPreview()'s outer catch - which threw away every
-  // candidate already collected and skipped the marker scan too, so a truncated
-  // file lost its preview twice.
+  // entries * 12, the `<` guard passes, and reading the next-IFD pointer
+  // went four bytes past the DataView. The RangeError escaped fromTiff()
+  // and was caught by embeddedPreview()'s outer catch, throwing away
+  // every candidate already collected and skipping the marker scan too -
+  // a truncated file lost its preview twice.
   const art = jpeg(3000);
   const full = tiff([
     [JPEG_OFFSET, LONG, 1, 0],
     [JPEG_LENGTH, LONG, 1, 0],
   ], art);
-  // Cut the four-byte next-IFD pointer off the end of the directory, keeping
-  // the entries themselves. The payload goes with it, so the marker scan is
-  // what has to answer - which is the point.
+  // Cut the four-byte next-IFD pointer off the end of the directory,
+  // keeping the entries. The payload goes with it, so the marker scan
+  // has to answer - which is the point.
   const cut = full.bytes.slice(0, 8 + 2 + 2 * 12);
   const whole = new Uint8Array(cut.length + art.length);
   whole.set(cut, 0);
@@ -325,11 +319,11 @@ test('a TIFF truncated exactly at its last IFD entry still reaches the fallback'
 // X3F  -  the RAW that is not a TIFF
 // ---------------------------------------------------------------------------
 //
-// A Foveon file is read backwards: the last four bytes point at a directory,
-// and the directory points at the pictures. The reason it gets its own reader
-// rather than falling to the marker scan is in the fixtures below - the sensor
-// block is written here the way a real one looks, full of stray FF D8 and FF D9
-// pairs, and the scan picks the largest span between any two of them.
+// A Foveon file is read backwards: the last four bytes point at a
+// directory, and the directory points at the pictures. It gets its own
+// reader rather than falling to the marker scan because the sensor block
+// is full of stray FF D8/FF D9 pairs, and the scan picks the largest span
+// between any two.
 
 const LE32 = n => [n & 0xff, (n >>> 8) & 0xff, (n >>> 16) & 0xff, (n >>> 24) & 0xff];
 const A4 = s => [...s].map(c => c.charCodeAt(0));
@@ -344,11 +338,10 @@ function sensorNoise(len) {
 }
 
 /**
- * An X3F: 'FOVb', a run of sections, and a SECd directory at the end whose
- * offset is the file's last four bytes.
- *
- * `images` is a list of { format, cols, rows, bytes } - format 18 is a JPEG and
- * anything else is Foveon sensor data this app cannot decode.
+ * An X3F: 'FOVb', a run of sections, and a SECd directory at the end
+ * whose offset is the file's last four bytes. `images` is a list of
+ * { format, cols, rows, bytes } - format 18 is a JPEG, anything else is
+ * Foveon sensor data this app can't decode.
  */
 function x3f(images, { magic = 'FOVb', dirTag = 'SECd', type = 'IMA2', count = null,
                        dirAt = null, sensor = 0 } = {}) {
@@ -385,8 +378,8 @@ test('an X3F gives up the JPEG its directory points at', async () => {
 });
 
 test('the largest preview wins, not the first', async () => {
-  // A camera writes a screen-sized thumbnail and a full-size preview, in that
-  // order. The card wants the second one.
+  // A camera writes a screen-sized thumbnail then a full-size preview.
+  // The card wants the second one.
   const small = jpeg(2048);
   const big = jpeg(9000);
   const found = await embeddedPreview(x3f([
@@ -397,8 +390,8 @@ test('the largest preview wins, not the first', async () => {
 });
 
 test('sensor sections are skipped rather than handed over as a picture', async () => {
-  // Format 3 and 11 are the Foveon data itself. Reading one as a JPEG is the
-  // failure this reader exists to prevent, and there is no preview here at all.
+  // Format 3 and 11 are the Foveon data itself. Reading one as a JPEG is
+  // the failure this reader exists to prevent; there's no preview here at all.
   const found = await embeddedPreview(x3f([
     { format: 3, cols: 2640, rows: 1760, bytes: sensorNoise(40000) },
   ]));
@@ -406,9 +399,9 @@ test('sensor sections are skipped rather than handed over as a picture', async (
 });
 
 test('the directory is preferred over the marker scan, which would pick noise', async () => {
-  // The whole argument for this branch: 200 kB of sensor data with false JPEG
-  // bookends 200 kB apart, and a real 4 kB preview behind it. The scan takes
-  // the longest span, which is the noise; the directory takes the picture.
+  // The whole argument for this branch: 200KB of sensor data with false
+  // JPEG bookends 200KB apart, and a real 4KB preview behind it. The scan
+  // takes the longest span, the noise; the directory takes the picture.
   const art = jpeg(4096);
   const found = await embeddedPreview(x3f(
     [{ format: 18, cols: 640, rows: 480, bytes: art }], { sensor: 200_000 }));
@@ -422,18 +415,18 @@ test('an X3F pointing its directory into nowhere answers null', async () => {
     'at a directory that is not one': x3f([{ format: 18, cols: 8, rows: 8, bytes: art }], { dirTag: 'SECx' }),
   };
   for (const [what, blob] of Object.entries(cases)) {
-    // Null, and specifically not the marker scan's answer: for this one format
-    // the directory is the whole authority, so a directory that does not read
-    // is a file with no preview rather than a file to go guessing in.
+    // Null, and specifically not the marker scan's answer: for this
+    // format the directory is the whole authority, so a directory that
+    // doesn't read is a file with no preview, not one to go guessing in.
     assert.equal(await embeddedPreview(blob), null, what);
   }
 });
 
 test('a section count larger than the file is bounded, not believed', async () => {
-  // Four thousand sections claimed and one written. The count is capped before
-  // the table is read and the walk stops where the bytes do, so the picture
-  // that really is in there still comes out - the failure this guards against
-  // is the allocation, not the answer.
+  // Four thousand sections claimed, one written. The count is capped
+  // before the table is read and the walk stops where the bytes do, so
+  // the real picture still comes out - the guard is against the
+  // allocation, not the answer.
   const art = jpeg(4096);
   const found = await embeddedPreview(
     x3f([{ format: 18, cols: 640, rows: 480, bytes: art }], { count: 4000 }));

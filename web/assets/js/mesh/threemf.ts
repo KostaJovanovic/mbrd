@@ -1,35 +1,10 @@
-// 3MF - the format a slicer saves, and the one a printed part actually arrives in.
-//
-// A 3MF is an OPC package: a ZIP holding an XML model, its relationships, and
-// usually a thumbnail. What makes it worth reading properly rather than
-// grabbing the first `<mesh>` is that a real one - anything out of PrusaSlicer,
-// Bambu Studio, Cura or Fusion - is a *build*, not a mesh. The resources declare
-// objects; an object is either a mesh or a list of components pointing at other
-// objects, each with its own transform; and `<build>` names which of them are
-// actually on the plate and where. A plate of six parts read naively is one part
-// six times in the same place.
-//
-// So this walks the build. Every item is resolved to the meshes under it, each
-// with the composed transform of the chain that reached it, and they are emitted
-// into one mesh the way the plate looks.
-//
-// The **production extension** is handled too, because it is what the big
-// slicers write for anything with more than a few objects: a component may name
-// `p:path="/3D/Objects/part.model"`, a whole second model document inside the
-// same package. Those are loaded from the ZIP on demand and cached, with a
-// bounded recursion - a package whose parts refer to each other in a circle is a
-// package, not a stack overflow.
-//
-// Colour comes from the property groups: `<basematerials>` carries a
-// `displaycolor` per base and `<colorgroup>` (the materials extension) carries a
-// colour per entry. A triangle names a group and up to three indices into it, so
-// this resolves per corner where the file gives three and per face where it gives
-// one. What is not read: textures, composite and multi-property materials, beam
-// lattices, slices, and the `<metadata>` a slicer stuffs its own settings into.
-//
-// Vertices and triangles are read with the scanner rather than a tree, for the
-// reason mesh/xml.ts's header gives: a 3MF writes one element per vertex, and a
-// tree of objects for a half-million of them costs more than the geometry does.
+// 3MF — OPC package (ZIP of XML). Walks the <build> to resolve object →
+// component → mesh chains with composed transforms (naively reading the first
+// <mesh> draws six-part plates as one part six times). Production extension
+// handled (p:path loads secondary model documents from the ZIP). Colour from
+// <basematerials> and <colorgroup>, per-corner or per-face.
+// Not read: textures, composite materials, beam lattices, slices, metadata.
+// Vertices scanned (not tree-built) — one element per vertex is too many nodes.
 
 import {
   MeshError, MeshBuild, type Mesh, hexRGB,

@@ -18,10 +18,9 @@ test('filenames become readable board names when they supply the title', () => {
 });
 
 test('a stored title is taken as typed, underscores included', () => {
-  // cleanBoardTitle() permits underscores, so a board named `my_board` is named
-  // `my_board` - however it was saved, and whatever the file ended up called.
-  // The unconditional repair this replaced rewrote it on the first reopen and
-  // made the change durable.
+  // cleanBoardTitle() permits underscores, so `my_board` stays `my_board`
+  // however the file ended up named. The unconditional repair this replaced
+  // rewrote it on first reopen and made the change durable.
   const now = 'mbrd 0.110';
   assert.equal(titleForOpenedBoard('my_board', 'my_board.mbrd', now), 'my_board');
   assert.equal(titleForOpenedBoard('my_board', 'Different_name.mbrd', now), 'my_board');
@@ -30,9 +29,9 @@ test('a stored title is taken as typed, underscores included', () => {
 });
 
 test('a file written before v0.51 still has its packed filename decoded', () => {
-  // Up to v0.50 a Save As renamed the board to the picker-safe filename, so the
-  // underscores in those files are the mapping's and not the author's. The
-  // manifest's `app` field is what tells the two apart.
+  // Up to v0.50 Save As renamed the board to the picker-safe filename, so
+  // those underscores are the mapping's, not the author's. manifest.app
+  // tells the two apart.
   assert.equal(
     titleForOpenedBoard('Summer_references', 'Summer_references.mbrd', 'mbrd 0.50'),
     'Summer references',
@@ -50,7 +49,7 @@ test('a file written before v0.51 still has its packed filename decoded', () => 
 });
 
 test('a file naming no build is believed rather than repaired', () => {
-  // Nothing this app writes lacks manifest.app, so the only way here is by hand.
+  // Nothing this app writes lacks manifest.app, so this only happens by hand.
   assert.equal(titleForOpenedBoard('my_board', 'my_board.mbrd'), 'my_board');
   assert.equal(titleForOpenedBoard('my_board', 'my_board.mbrd', 'something else'), 'my_board');
 });
@@ -61,17 +60,14 @@ test('a file with no stored title falls back to a readable filename', () => {
 });
 
 test('the sidebar title field carries the shared thirty-two-character limit', async () => {
-  // In the settings table rather than in index.html now that ui/panel.ts builds
-  // the panel. Same assertion, one file along: the field the board is renamed in
-  // must stop where cleanBoardTitle() stops, or a name typed to the field's
-  // limit comes back cut.
+  // In the settings table now that ui/panel.ts builds the panel: the field
+  // must stop where cleanBoardTitle() stops, or a full-length name comes
+  // back cut.
   const schema = await readFile(
     new URL('../web/assets/js/ui/settings-schema.ts', import.meta.url), 'utf8');
-  // The control, then its own maxlength - rather than "a maxlength of 32
-  // somewhere in the next 200 characters", which the next control's would
-  // satisfy just as well. And compared against BOARD_TITLE_MAX rather than
-  // against a 32 typed here, so the pair moves together: the whole point is
-  // that the field stops where cleanBoardTitle() stops.
+  // The control, then its own maxlength - not "a maxlength of 32 somewhere
+  // nearby", which a neighbouring control could satisfy. Compared against
+  // BOARD_TITLE_MAX, not a literal 32, so the two move together.
   const control = /\{[^{}]*id: 'board-title'[\s\S]*?\n\s*\},/.exec(schema);
   assert.ok(control, "no 'board-title' control in settings-schema.ts");
   const max = /maxlength:\s*(\d+)/.exec(control[0]);

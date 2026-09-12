@@ -1,50 +1,10 @@
-// The things that follow the person rather than the board.
-//
-// The look, the volume, whether a panel is open, which sticker page was last
-// open - as against everything in `board.settings`, which travels inside the
-// .mbrd and belongs to the document rather than to the machine it is being
-// read on. That line is the whole reason this module exists as a concept: a
-// value on the wrong side of it either fails to follow a board to another
-// computer or follows it when it should not, and both are the kind of bug
-// nobody reports because it looks like the app simply forgot.
-//
-// ── Why every access is wrapped ──
-//
-// localStorage is not merely *empty* in a private window - touching it throws
-// outright, and some managed browsers refuse it on an ordinary one too. An
-// uncaught throw on the way through boot would take the entire app down over a
-// remembered slider position: a blank page, no board, no message, because of a
-// preference. So there is no bare `localStorage` anywhere in the app; there is
-// this. The wrapper was written out by hand six times in six modules before it
-// was written down once here.
-//
-// The reads return the fallback and the writes return false. Deliberately not
-// a throw and not a promise: a preference that cannot be read is a preference
-// that was not set, and every caller's correct response to that is the same
-// one - carry on with the default - so making them each handle it would only
-// give six chances to handle it differently.
-//
-// ── What must not move in here ──
-//
-// The keys themselves. Each stays with the module that owns it, named at the
-// point it is read, because a table of every key in the app would be a second
-// place to remember a new preference and would drift from the first. PREF_PREFIX
-// is the one exception and it is not a key: it is the shape all of them share,
-// and it is here because clearPrefs() below sweeps by it.
-//
-// Nor anything that *interprets* a stored value. A number that has to be held
-// to a range, a JSON blob that has to match a schema - those belong to whoever
-// owns the key, since only that module knows what a sensible value is. This
-// module's promise stops at "the string that was stored, or nothing".
-//
-// Nor IndexedDB. storage/ owns the asset registry and the session snapshot;
-// those are the *board*, not the person, and they are large, asynchronous and
-// evictable in ways nothing here is.
+// Per-person preferences via localStorage (vs board.settings, which travels in
+// the .mbrd). Every access is wrapped: localStorage throws in private windows
+// and some managed browsers, and an uncaught throw during boot would blank the
+// app. Reads return the fallback; writes return false. Keys stay with their
+// owning modules — this file stores and retrieves, it does not interpret.
 
-/**
- * The string stored under `key`, or `fallback` when there is none - or when
- * storage refused to answer at all.
- */
+/** Read a preference, returning fallback if absent or storage refused. */
 export function readPref(key: string, fallback: string | null = null): string | null {
   try {
     const raw = localStorage.getItem(key);
@@ -55,76 +15,37 @@ export function readPref(key: string, fallback: string | null = null): string | 
 }
 
 /**
- * Every write from here on is a no-op, until the page is reloaded.
- *
- * The counterpart to suspendCache() in storage/session.ts, and it exists for
- * the same reason at the other end of the app. /patch runs the real app so it
- * can carry the real sidebar - the whole panel, every tab - which means a
- * visitor reading the changelog can move the whimsy dial, switch to Canvas,
- * change the quality tier. Every one of those writes a preference, and none of
- * them was a decision about *their* app: it was somebody reading the release
- * notes. Coming back to a board wearing a palette they never chose, because
- * they touched something on a changelog, is the kind of small betrayal nobody
- * would ever trace.
- *
- * So the page that is a document rather than a workspace turns the writer off,
- * exactly as it turns the autosave off, and for the same one-sentence reason:
- * nothing you do while reading may change what you own.
- *
- * Reads are untouched. The page still arrives wearing whatever look the visitor
- * already set, which is the half worth keeping - and is what makes the
- * changelog print itself three different ways.
+ * Suppress all writes until reload. Used by /patch so browsing the changelog
+ * cannot overwrite the visitor's real preferences. Reads are untouched.
  */
 let frozen = false;
 
 export function freezePrefs() { frozen = true; }
 
-/**
- * Store a value. False when storage refused - full quota, a private window, or
- * freezePrefs() having been called - and every caller already treats those the
- * same way, which is why the freeze needs no separate signal.
- */
+/** Store a value. False if frozen, quota full, or storage unavailable. */
 export function writePref(key: string, value: unknown): boolean {
   if (frozen) return false;
   try { localStorage.setItem(key, String(value)); return true; }
   catch { return false; }
 }
 
-/**
- * The same, for a value stored as JSON. Two ways to get nothing back - storage
- * refused, or what came out will not parse - and they want the same answer,
- * because a preference that cannot be read is a preference that was not set.
- */
+/** Read a JSON preference. Parse failure returns fallback, same as absence. */
 export function readPrefJSON<T = unknown>(key: string, fallback: T | null = null): T | null {
   try {
     const raw = localStorage.getItem(key);
-    // SAFETY: T is the caller's word for what it wrote, and this is the read
-    // half of writePref() - the two are a pair, keyed by the same string. What
-    // is *not* checked is that the bytes still parse to that shape, because
-    // localStorage is editable and an older build may have written something
-    // else; every caller in this app treats the answer as a suggestion and
-    // falls back, which is what the `fallback` parameter is for. The catch
-    // below turns a parse failure into that fallback rather than a throw.
+    // T is unchecked — callers treat the result as a suggestion and fall back.
     return raw === null ? fallback : JSON.parse(raw) as T;
   } catch {
     return fallback;
   }
 }
 
-/** Every key this app writes wears it. The only reason it is named here. */
+/** Shared prefix for all app keys. Named here because clearPrefs() sweeps by it. */
 const PREF_PREFIX = 'mbrd.';
 
 /**
- * Forget every preference, whichever module happens to own it.
- *
- * Swept by prefix rather than from a list, and that is deliberate: a list is a
- * second place to remember a new preference, and the one time it is read - a
- * user asking for everything to be deleted - is the one time being one key out
- * of date is a promise broken rather than a small bug. Each key's owner keeps
- * naming its own; nothing has to register anywhere.
- *
- * Collected before anything is removed, because removing from a live Storage
- * while walking it by index skips every other key.
+ * Remove all app preferences. Swept by prefix, not a list — no registration needed.
+ * Collected first: removing while walking by index skips every other key.
  */
 export function clearPrefs(): boolean {
   try {

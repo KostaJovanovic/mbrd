@@ -1,36 +1,8 @@
-// The sidebar, built from ui/settings-schema.ts.
-//
-// index.html used to carry every control as markup and ui/sidebar.ts wired each
-// one by id, which is how a panel ends up with a setting in two files and a
-// section order nobody chose. Now the markup is a head, an empty tab strip, an
-// empty body and a foot, and everything between them is made here.
-//
-// Three properties this file exists to hold:
-//
-//   Built once, never rebuilt. Other modules - ui/appearance.ts, canvas/audio.ts
-//   - look their controls up by id at boot and keep the element. Rebuilding a
-//   section would leave them holding a node no longer in the document, with no
-//   error to say so. So the panel is constructed in one pass and paint() only
-//   ever writes values and toggles `hidden`.
-//
-//   Absence, not disabling. A control that does not apply to the current layout
-//   is hidden, and a section with nothing left to show goes with it - otherwise
-//   Mobile grows an empty "Board & grid" heading over a rule. The one exception
-//   is the changelog, where the panel is over a document with no board under
-//   it: there the rows that would act on a board are shown and greyed, because
-//   the whole point of that sidebar is that it is this one and not a likeness
-//   of it. `needsBoard` in ui/settings-schema.ts says which, and why.
-//
-//   The ids are the contract. Every id here is the id that was in index.html,
-//   because three other modules and a handful of tests reach for them.
-//
-// Tabs are three panels that are all in the document at once, `hidden` bar one.
-// That is what keeps each tab's scroll position while the app is open, and it
-// is why the panel can be built once: switching tabs moves no DOM.
+// Sidebar panel, built from ui/settings-schema.ts. Built once, never rebuilt.
+// paint() writes values and toggles `hidden`. Controls that do not apply are
+// hidden (not disabled). Three tab panels all in the DOM, one visible at a time.
 
-// The one thing here that is not a control: which layout the board is in
-// decides what is on screen. ui/sidebar.ts owns the subscriptions and calls
-// paintPanel() - there is one paint, not two racing.
+// Layout mode decides what is on screen — ui/sidebar.ts owns the subscription.
 import { board } from '../state.ts';
 import { makeEl as make } from '../util.ts';
 import { cue } from '../cuelume/engine.ts';
@@ -48,12 +20,11 @@ import type {
 } from './settings-schema.ts';
 
 /**
- * One built control: its spec, the heading it came from, what to hide, and what
- * to write into.
+ * One built control: its spec, the heading it came from, what to hide, and
+ * what to write into.
  *
- * `owner` is here for one question and one only - whether the control needs a
- * board, which a section may answer on behalf of everything under it. Nothing
- * else in the painting reads it.
+ * `owner` exists for one question only - whether the control needs a board,
+ * which a section may answer on behalf of everything under it.
  */
 type Built = {
   c: Control,
@@ -74,13 +45,10 @@ const tabs = new Map<string, { tab: HTMLButtonElement, panel: HTMLElement }>();
 let currentTab = TABS[0].id;
 
 /**
- * Which heading is being built, for the length of buildSection() and no longer.
- *
- * The eight builders each call register() at the end and none of them is handed
- * the section - they take the control and nothing else, which is what keeps the
- * table of them honest. Threading a second argument through all eight to answer
- * one question about the *heading* would be paying in every builder for a fact
- * that belongs to the loop above them, so the loop leaves it here instead.
+ * Which heading is being built, for the length of buildSection() and no
+ * longer. None of the eight builders is handed the section directly - only
+ * the control - so this is where the loop above them leaves the one fact
+ * about the *heading* they'd otherwise all need threaded through.
  */
 let building: Section | null = null;
 
@@ -92,10 +60,10 @@ const ctx = (): Ctx => ({
 /**
  * Build the whole panel into a sidebar shell.
  *
- * Called from main.ts *before* initAppearance() and initAudio(), because both
- * of those look up controls this makes. Everything that needs a command surface
- * - every button - carries `data-cmd` and is answered by the one delegated
- * listener in ui/sidebar.ts, so nothing here needs `cmds`.
+ * Called from main.ts *before* initAppearance() and initAudio(), since both
+ * look up controls this makes. Every button carries `data-cmd` and is
+ * answered by the delegated listener in ui/sidebar.ts, so nothing here needs
+ * `cmds`.
  */
 export function buildPanel(root = document.getElementById('sidebar')) {
   const strip = root?.querySelector<HTMLElement>('.side-tabs');
@@ -127,11 +95,8 @@ export function buildPanel(root = document.getElementById('sidebar')) {
   }
 
   strip.setAttribute('role', 'tablist');
-  // Removed first, so a second build does not leave two of them on one strip.
-  // replaceChildren() above drops the tab buttons and their listeners, but
-  // `strip` itself survives every rebuild - and this function is exported, and
-  // re-exported through ui/sidebar.ts. Idempotent today because nothing calls
-  // it twice; a no-op line is a cheaper guarantee than a convention.
+  // Removed first, so a second build does not leave two listeners on one
+  // strip. `strip` itself survives every rebuild, unlike its children.
   strip.removeEventListener('keydown', onTabKey);
   strip.addEventListener('keydown', onTabKey);
 
@@ -145,10 +110,9 @@ export function buildPanel(root = document.getElementById('sidebar')) {
 }
 
 /**
- * The tab strip's keyboard, which is the whole of what makes it a tablist
- * rather than three buttons. Arrows move and select in one go - with three tabs
- * and no expensive panel to build, a separate Enter to commit would be a step
- * that buys nothing.
+ * The tab strip's keyboard, which is what makes it a tablist rather than
+ * three buttons. Arrows move and select in one go - with three tabs and no
+ * expensive panel to build, a separate Enter to commit buys nothing.
  */
 function onTabKey(e: KeyboardEvent) {
   const order = TABS.map(t => t.id);
@@ -191,8 +155,7 @@ function buildSection(spec: Section) {
   }
 
   // The fold is assembled first and appended last, so a section reads in the
-  // schema in the order it reads on screen without `advanced` having to be a
-  // nesting level in the data.
+  // schema's order without `advanced` needing to be a nesting level in the data.
   let fold: HTMLDetailsElement | null = null;
   building = spec;
   for (const c of spec.controls) {
@@ -210,11 +173,9 @@ function buildSection(spec: Section) {
 
 function buildFold(spec: Section) {
   const details = make('details', 'advanced');
-  // A section with no heading is one whose every control is advanced, so the
-  // summary is the only thing standing where an h2 would - and it has to be
-  // spaced like one rather than like a tail hanging off a list of rows above
-  // it. The condition is drawn from the absence of a title rather than from a
-  // flag, because that absence *is* the situation.
+  // A section with no heading has every control advanced, so the summary
+  // stands where an h2 would and needs that spacing, not a tail hanging off
+  // a list of rows.
   if (!spec.title) details.classList.add('is-head');
   if (spec.foldId) details.id = spec.foldId;
   const summary = make('summary');
@@ -224,15 +185,12 @@ function buildFold(spec: Section) {
 }
 
 function buildControl(c: Control, _spec: Section) {
-  // The table is keyed by the same discriminant that narrows `c`, and each
-  // builder below takes the member carrying its own key - but TypeScript cannot
-  // carry that correlation through an index, so the pair is asserted here once
-  // rather than at each of the eight.
-  //
-  // SAFETY: BUILDERS is a mapped type over Control['type'], so the value under
-  // `c.type` is by construction the builder for that member. The `| undefined`
-  // is kept and the call below is optional, so a control type with no row in
-  // the table draws nothing rather than throwing.
+  // SAFETY: BUILDERS is a mapped type over Control['type'], so the value
+  // under `c.type` is by construction the builder for that member -
+  // TypeScript can't carry that correlation through an index lookup, so the
+  // pair is asserted here once rather than at each of the eight. The
+  // `| undefined` is kept and the call is optional, so an unhandled type
+  // draws nothing rather than throwing.
   const build = BUILDERS[c.type] as ((spec: Control) => HTMLElement) | undefined;
   const node = build?.(c);
   if (!node) return null;
@@ -273,17 +231,11 @@ function buildCheck(c: CheckControl) {
   label.append(input, document.createTextNode(' ' + c.label));
   const set = c.set;
   if (!c.external && set) {
-    // `pick` and not `on`/`off`, which is the one place that distinction earns
-    // its keep. Every control in the app says `pick` when it is pressed and
-    // whatever it changed says its own thing on top - and a board setting
-    // *does*, from setSetting() in state.ts, which is the door every route to a
-    // setting comes through. Saying `on` here as well would be the same recipe
-    // twice at a zero gap, which is not two events, it is one louder one.
-    //
-    // The quality overrides have no such second voice, so they say only that
-    // they were pressed. That is honest rather than tidy: nothing downstream of
-    // them speaks, and inventing a toggle sound here would be this file
-    // guessing at what its setter did.
+    // `pick`, not `on`/`off`: every control says `pick` when pressed, and
+    // whatever it changed speaks on top of that from setSetting() - saying
+    // `on` here too would be the same cue twice at a zero gap, not two
+    // events but one louder one. Quality overrides have no second voice, so
+    // they say only that they were pressed.
     input.addEventListener('change', () => { cue('pick'); set(input.checked); });
   }
   register(c, label, input, null);
@@ -292,9 +244,7 @@ function buildCheck(c: CheckControl) {
 
 function buildRange(c: RangeControl) {
   // `silent` is a dial whose stops are named underneath rather than a value
-  // worth printing: whimsy and quality both read as words, not numbers. Those
-  // get the plain label and no readout - .field > span is the head, and a span
-  // inside a span is a level of nothing.
+  // worth printing (whimsy, quality) - plain label, no readout.
   const { label, out } = field(c.label, { out: !c.silent });
   if (c.fieldId) label.id = c.fieldId;
   if (out) {
@@ -305,8 +255,7 @@ function buildRange(c: RangeControl) {
   const input = make('input');
   input.type = 'range';
   if (c.id) input.id = c.id;
-  // Numbers in the table, strings on the element - the conversion was the
-  // assignment's own before it was written down.
+  // Numbers in the table, strings on the element.
   if (c.min != null) input.min = String(c.min);
   if (c.max != null) input.max = String(c.max);
   if (c.step != null) input.step = String(c.step);
@@ -315,8 +264,7 @@ function buildRange(c: RangeControl) {
 
   if (c.stops?.length) {
     // `stopsId` where a stylesheet reaches for the row by name - the whimsy
-    // stops are specimens of the three tiers and are set in three different
-    // faces, pinned by that id and by nothing else.
+    // stops are specimens of the three tiers, pinned by that id alone.
     const stops = fieldStops(c.stops, { id: c.stopsId || `${c.id}-stops` });
     input.setAttribute('aria-describedby', stops.id);
     label.append(stops);
@@ -328,20 +276,14 @@ function buildRange(c: RangeControl) {
       writeOut(c, input, out);
       set(+input.value);
     });
-    // The tick is tickSlider()'s, not this builder's. It was written inline
-    // here and that was the bug: it covered the six sliders this file makes and
-    // silently missed every one wired by its owning module - Whimsy, the
-    // palette count, the masthead's four, the volume, the hint card's dial.
+    // The tick is tickSlider()'s, not this builder's - written inline once,
+    // that silently missed every slider wired by its own module (Whimsy,
+    // palette count, masthead, volume, hint card).
     //
-    // **After the setter, and that ordering is load-bearing for exactly one
-    // control.** Listeners on one element run in the order they were added, and
-    // the Sounds dial is a slider whose setter is the volume the tick is about
-    // to be played at. Ticking first meant every stop of that dial was heard at
-    // the level you had just left - drag it from Off to High and you hear four
-    // ticks, none of them at the level under the thumb, and the last thing you
-    // hear on the way down to Off is a tick at Low. There is nothing a slider
-    // can say about itself except how loud it is, so it has to say it after it
-    // has changed. Every other dial here is indifferent to the order.
+    // **After the setter, load-bearing for exactly one control.** Listeners
+    // fire in add order, and the Sounds dial's setter is the volume the tick
+    // is about to play at - ticking first meant every stop was heard at the
+    // level you'd just left. Every other dial is indifferent to the order.
     tickSlider(input);
   }
   register(c, label, input, out);
@@ -366,22 +308,16 @@ function buildSelect(c: SelectControl) {
 /**
  * A select that shows what it is choosing between.
  *
- * A button and ui/menu.ts's anchored panel, not a <select>, and the reason is
- * flat: no browser will paint anything inside a native dropdown list, so the
- * one row in this panel whose options *are* colours could not show them. The
- * schema entry is otherwise identical to a select's - same `options`, same
- * `get`/`set`, same `external` - which is what made this a second builder
- * rather than a second control model.
+ * A button and ui/menu.ts's anchored panel, not a <select>: no browser
+ * paints anything inside a native dropdown, so the one row whose options
+ * *are* colours could not show them. Otherwise identical to a select's
+ * schema entry (`options`, `get`/`set`, `external`).
  *
- * ui/menu.ts renders it because CLAUDE.md says every menu in this app is drawn
- * by that module and a second implementation is the thing that rule forbids.
- * `openAnchored()` is its non-cursor door, and `swatch` rows and the tick on the
- * current value both come free with it.
- *
- * The value lives in `data-value` rather than in a property, so that a sync
- * (syncPaletteMode) and a paint read the same place, and a `pick` CustomEvent
- * carries the choice out - which keeps this builder ignorant of what a palette
- * is, exactly as buildSelect is.
+ * ui/menu.ts renders it, since CLAUDE.md reserves every menu to that module.
+ * The value lives in `data-value` rather than a property, so a sync
+ * (syncPaletteMode) and a paint read the same place, and a `pick`
+ * CustomEvent carries the choice out - keeping this builder ignorant of what
+ * a palette is, exactly as buildSelect is.
  */
 function buildPicker(c: PickerControl) {
   const { label } = field(c.label);
@@ -390,78 +326,61 @@ function buildPicker(c: PickerControl) {
   btn.type = 'button';
   if (c.id) btn.id = c.id;
   btn.dataset.value = c.get?.() ?? '';
-  // Rebuilt on every press rather than once: options() takes the live context,
-  // and the tick has to follow a value that anything else may have changed.
+  // Rebuilt on every press rather than once: options() takes live context and
+  // the tick has to follow a value anything else may have changed.
   btn.addEventListener('click', () => {
-    // A second press closes rather than reopening. The same asking-rather-than-
-    // testing that the More button needs, and for the same reason: the menu's
-    // outside-press listener has already shut it by the time this click runs.
+    // A second press closes rather than reopening - the menu's outside-press
+    // listener has already shut it by the time this click runs.
     if (justDismissed(btn)) return;
     const now = btn.dataset.value ?? '';
     const entries = (c.options?.(ctx()) || []).map(o => ({
       label: o.label,
-      // On the trailing edge, because these are specimens of whole palettes
-      // rather than icons for them, and the act this menu exists for is
-      // comparing them down a column. See MenuEntry.swatchEnd.
+      // Trailing edge: these are specimens of whole palettes, not icons for
+      // them, and the point is comparing them down a column.
       swatchEnd: c.swatches?.(o.value) ?? [],
       check: o.value === now,
       action: () => {
         btn.dataset.value = o.value;
         paintPicker(btn);
-        // The event rather than a direct call, so this builder never learns what
-        // it is picking. `external` controls have no `set` at all - the palette
-        // is one, because choosing Dynamic is a different act from choosing a
-        // palette and only ui/appearance-controls.ts knows that.
+        // The event, not a direct call, so this builder never learns what it
+        // is picking. `external` controls have no `set` at all.
         btn.dispatchEvent(new CustomEvent('pick', { detail: o.value }));
         c.set?.(o.value);
       },
     }));
-    // focus: true, because this one was opened by a press on a control and a
-    // press is somebody choosing to be here. openAnchored() defaults it off for
-    // the hover flyout - a panel that took the keyboard because a pointer
-    // drifted over a button would move the caret out of whatever was being
-    // typed - and that default was left standing on the click route too, so a
-    // keyboard user got a panel Tab could not reach.
+    // focus: true, since this was opened by a press, not a hover flyout -
+    // openAnchored() defaults it off there so a drifting pointer can't steal
+    // the caret out of a text field.
     openAnchored(btn.getBoundingClientRect(), entries, { owner: btn, focus: true });
   });
-  // The other direction: ui/appearance-controls.ts writes `data-value` when the
-  // look changes underneath and asks for the face to follow. An event rather
-  // than a call, because a call would be that module importing this one, which
-  // imports the schema, which imports the chips - a ring tests/imports.test.js
-  // refuses. See syncPaletteMode() there.
+  // The other direction: ui/appearance-controls.ts writes `data-value` and
+  // fires this event rather than calling in, since a call would import this
+  // module's chain into a cycle tests/imports.test.js refuses.
   btn.addEventListener('repaint', () => paintPicker(btn));
   paintPicker(btn);
   label.append(btn);
-  // `null` for the input slot: that field is typed as the <input>/<select> the
-  // painting writes values into, and a picker's value is an attribute this
-  // module writes itself. pickerOf() below is how the face finds its spec again.
+  // `null` for the input slot: a picker's value is an attribute this module
+  // writes itself, not the <input>/<select> painting writes into.
   register(c, label, null, null);
   return label;
 }
 
 /**
- * The schema entry behind a built picker, by id.
- *
- * By id rather than by identity, because paintPicker() is called from outside
- * this module with nothing but the element - syncPaletteMode() writes
- * `data-value` and asks for the face to follow. Every picker has an id; a
- * control without one cannot be reached from outside in the first place.
+ * The schema entry behind a built picker, by id - paintPicker() is called
+ * from outside with nothing but the element (syncPaletteMode()), so lookup
+ * has to be by id rather than identity.
  */
 function pickerOf(el: HTMLElement): PickerControl | null {
   const hit = built.find(b => b.c.type === 'picker' && b.c.id && b.c.id === el.id);
-  // SAFETY: the find() tested `type === 'picker'`, which is the discriminant -
-  // so anything it answered is a PickerControl. TypeScript loses that across
-  // the optional chain, not across the predicate.
+  // SAFETY: the find() tested `type === 'picker'`, the discriminant, so
+  // anything it answered is a PickerControl.
   return (hit?.c as PickerControl) ?? null;
 }
 
 /**
- * Write a picker's face from its stored value: the option's own label, and its
- * chips.
- *
- * Module-private, and reached from outside through the `repaint` event the
- * builder listens for. It re-reads the schema entry through the registry rather
- * than being handed one, so the listener only needs the element.
+ * Write a picker's face from its stored value: the option's own label, and
+ * its chips. Module-private, reached from outside through the `repaint`
+ * event the builder listens for.
  */
 function paintPicker(el: HTMLElement) {
   const c = pickerOf(el);
@@ -486,12 +405,10 @@ function paintPicker(el: HTMLElement) {
 /**
  * Fill a select from the table, and answer whether anything changed.
  *
- * The panel is built once and never rebuilt, so a list that depends on the
- * layout - Layout itself, whose two catalogues have no ids in common past three
- * of them - has to be refilled rather than rebuilt. Compared before it is
- * written, so the ordinary case (Units, Paper outline, the quality steps: lists
- * that never move) costs one join and no DOM at all, and so that a select the
- * user has open is not emptied under the pointer for no reason.
+ * The panel is built once, so a list that depends on layout has to be
+ * refilled rather than rebuilt. Compared before writing, so the ordinary
+ * case costs one join and no DOM, and a select the user has open is not
+ * emptied under the pointer.
  */
 function fillSelect(c: SelectControl, select: HTMLSelectElement, ctxValue: Ctx) {
   const want = c.options?.(ctxValue) || [];
@@ -509,12 +426,11 @@ function fillSelect(c: SelectControl, select: HTMLSelectElement, ctxValue: Ctx) 
 }
 
 /**
- * A row of buttons. None of them is wired here: every one carries `data-cmd`
- * and is answered by the delegated listener in ui/sidebar.ts, which is the one
- * place the command surface is reached from. The paper orientation pair is the
- * exception and carries `data-orient` instead - ui/sidebar.ts wires those two
- * directly, because choosing an orientation with no sheet up also puts a sheet
- * up, which is a rule about paper and not a command.
+ * A row of buttons. None wired here - every one carries `data-cmd` and is
+ * answered by ui/sidebar.ts's delegated listener. The paper orientation pair
+ * is the exception, carrying `data-orient` instead, since choosing an
+ * orientation with no sheet up also raises a sheet - a rule about paper, not
+ * a command.
  */
 function buildButtons(c: ButtonsControl) {
   const row = make('div', 'btn-row');
@@ -528,14 +444,12 @@ function buildButtons(c: ButtonsControl) {
     if (b.id) btn.id = b.id;
     if (b.cmd) btn.dataset.cmd = b.cmd;
     if (b.orient) btn.dataset.orient = b.orient;
-    // Stamped rather than looked up: the listener that reads it already has the
-    // element and would otherwise have to find its way back to the schema by
-    // command name, which is a second index over a table that has no key.
+    // Stamped rather than looked up: the listener already has the element
+    // and would otherwise need a second index by command name.
     if (b.closesPanel) btn.dataset.closesPanel = b.closesPanel === true ? '' : b.closesPanel;
     if (b.ariaPressed != null) btn.setAttribute('aria-pressed', b.ariaPressed);
-    // The app's name in the app's face, if this label says it - "Reload mbrd"
-    // is the button that started this. See ui/wordmark.ts; for a label with no
-    // occurrence in it this is textContent by another name.
+    // The app's name in the app's face, if this label says it. See
+    // ui/wordmark.ts.
     setMarked(btn, b.label);
     row.append(btn);
     nodes.push(btn);
@@ -555,8 +469,8 @@ function buildSlot(c: SlotControl) {
 function buildHint(c: HintControl) {
   const p = make('p', 'hint');
   if (c.id) p.id = c.id;
-  // `html` is a literal in settings-schema.ts and never anything a board or a
-  // file carried - it exists so a hint can italicise one word.
+  // `html` is a literal in settings-schema.ts, never file or board content -
+  // it exists so a hint can italicise one word.
   if (c.html) p.innerHTML = c.html;
   register(c, p, null, null);
   return p;
@@ -592,8 +506,8 @@ function register(
   nodes: HTMLElement[] | null = null,
 ) {
   // `building` is set for the whole of buildSection() and nothing registers
-  // outside one, so the fallback is a shape for the typechecker rather than a
-  // case that happens.
+  // outside one, so the fallback is a shape for the typechecker, not a case
+  // that happens.
   built.push({ c, owner: building ?? { tab: '', controls: [] }, wrap, input, out, nodes });
 }
 
@@ -610,12 +524,11 @@ function writeOut(c: RangeControl, input: HTMLInputElement | HTMLSelectElement, 
 
 /**
  * Push state back into the controls: after an undo, a board load, a layout
- * switch, or any setting changed from somewhere else.
+ * switch, or any setting changed elsewhere.
  *
- * External controls are read *only* for visibility. Their owning module writes
- * their value, and writing it here as well would fight - the pigment input in
- * particular is animated mid-fade, and assigning to a control somebody is
- * inside is how a value jumps back under the pointer.
+ * External controls are read *only* for visibility - their owning module
+ * writes their value, and writing it here too would fight it (the pigment
+ * input is animated mid-fade; assigning here would jump it under the pointer).
  */
 export function paintPanel() {
   if (!built.length) return;
@@ -625,8 +538,8 @@ export function paintPanel() {
     const el = spec.id ? sections.get(spec.id) : null;
     if (!el) continue;
     el.hidden = !sectionVisible(spec, c);
-    // The heading greys with its rows, so a whole inert section reads as one
-    // thing switched off rather than as a live title over dead controls.
+    // The heading greys with its rows, so an inert section reads as one
+    // thing switched off, not a live title over dead controls.
     el.classList.toggle('is-inert', !!(c.patch && spec.needsBoard));
     paintFold(el);
   }
@@ -636,27 +549,19 @@ export function paintPanel() {
 /**
  * A fold whose every row is hidden comes down with them.
  *
- * The same rule sectionVisible() states for a heading, one level in, and it was
- * missing for as long as no fold had a conditional row in it. buildSection()
- * makes the <details> the moment any control carries `advanced`, and `when` is
- * answered here at paint time by hiding the row - so a fold holding one
- * conditional control renders as an **empty Advanced dropdown** on every board
- * where that condition is false. It opens onto nothing, which reads as a broken
- * panel rather than as a fold with nothing to say.
- *
- * The Sync section is what found it: its Stop syncing row only exists on a board
- * that is actually being synced, which is not the ordinary case.
- *
- * Run after the controls are painted, never before - it is reading the `hidden`
- * they have just been given.
+ * The same rule sectionVisible() states for a heading, one level in - missed
+ * until a fold got a conditional row, which rendered as an **empty Advanced
+ * dropdown** whenever the condition was false (the Sync section's "Stop
+ * syncing" row found it). Run after controls are painted, since it reads the
+ * `hidden` they were just given.
  */
 function paintFold(section: HTMLElement) {
   for (const fold of section.children) {
     if (!(fold instanceof HTMLDetailsElement)) continue;
     let any = false;
     for (const row of fold.children) {
-      // The summary is the fold's own label rather than one of its rows, so it
-      // is never what keeps one open.
+      // The summary is the fold's own label, not one of its rows, so it
+      // never keeps one open.
       if (row instanceof HTMLElement && row.tagName !== 'SUMMARY' && !row.hidden) any = true;
     }
     fold.hidden = !any;
@@ -664,25 +569,19 @@ function paintFold(section: HTMLElement) {
 }
 
 function paintControl({ c: spec, owner, wrap, input, out, nodes }: Built, c: Ctx) {
-  // `ownVisibility` is a control whose owner decides when it is on screen for a
-  // reason this table does not know - see the palette source count, which comes
-  // down with the switch above it.
+  // `ownVisibility` is a control whose owner decides when it's on screen for
+  // a reason this table doesn't know - see the palette source count.
   if (!spec.ownVisibility) wrap.hidden = !controlVisible(spec, c);
-  // Whether it may be touched, which off the changelog is always yes and writes
-  // nothing. `disabled` is what actually stops the click - the class only makes
-  // it look stopped - and it goes on the control rather than `pointer-events`
-  // on the row, so the reason travels to a screen reader with it.
+  // Whether it may be touched (always yes, writing nothing, off the
+  // changelog). `disabled` on the control itself, not `pointer-events` on
+  // the row, so a screen reader gets the reason too.
   const live = controlEnabled(spec, owner, c);
   wrap.classList.toggle('is-inert', !live);
   if (input) input.disabled = !live;
-  // `nodes` is only ever filled for a buttons row - see register() - so the two
-  // tests are one question asked from both ends.
+  // `nodes` is only ever filled for a buttons row - see register().
   if (spec.type === 'buttons' && nodes) {
     for (let i = 0; i < nodes.length; i++) {
       const b = spec.buttons[i];
-      // Bound before the test rather than indexed at each use: the instanceof
-      // then narrows it properly, which is what the assertion here used to be
-      // standing in for.
       const node = nodes[i];
       if (node instanceof HTMLButtonElement) node.disabled = !live;
       if (typeof b.pressed === 'function') node.setAttribute('aria-pressed', String(b.pressed(c)));
@@ -694,51 +593,39 @@ function paintControl({ c: spec, owner, wrap, input, out, nodes }: Built, c: Ctx
     if (typeof spec.text === 'function') wrap.textContent = spec.text(c);
     return;
   }
-  // The three kinds that carry a value to write back. The others were already
-  // returned above or have no `get` at all, which is what this test says now
-  // that the table declares which keys each kind may have.
+  // The three kinds that carry a value to write back.
   if (spec.type !== 'check' && spec.type !== 'range' && spec.type !== 'select') return;
   if (spec.external || typeof spec.get !== 'function' || !input) return;
-  // Never into a control that is being used: a select being reassigned while
-  // its list is open, or a range mid-drag, both fight the hand on them.
+  // Never into a control being used: a select with its list open, or a
+  // range mid-drag, both fight the hand on them.
   if (document.activeElement === input) return;
-  // The list before the value, so that a select whose options depend on the
-  // layout has somewhere to put the value it is about to be given. Refilling
-  // clears the selection, which is why this cannot happen the other way round.
-  // The element is the one buildSelect() made for this same spec, which is what
-  // the two assertions here and below say.
+  // The list before the value, so a select whose options depend on layout
+  // has somewhere to put the value it's about to get - refilling clears the
+  // selection, so this can't happen the other way round.
   //
-  // SAFETY: `input` and `spec` were paired when the row was built - a 'select'
-  // spec got a <select> from buildSelect() and a 'check' got an <input>, and
-  // the pair is stored together in `built`. The discriminant test on each line
-  // is what picks the branch; the assertion is the element that came with it.
+  // SAFETY: `input` and `spec` were paired when the row was built - a
+  // 'select' spec got a <select> from buildSelect(), a 'check' got an
+  // <input>. The discriminant test on each line picks the branch.
   if (spec.type === 'select') {
-    // SAFETY: see above - this spec's element came from buildSelect().
     fillSelect(spec, input as HTMLSelectElement, c);
   }
   const value = spec.get();
   if (spec.type === 'check') {
-    // SAFETY: see above - a 'check' spec's element is the <input> built for it.
     (input as HTMLInputElement).checked = !!value;
   } else if (spec.type === 'range') { input.value = String(value); writeOut(spec, input, out); }
-  // The String() is the coercion the assignment did on its own; what reaches
-  // here is a select's value, which is text already.
   else input.value = String(value ?? '');
 }
 
 /**
  * The first *visible* section in a tab draws no rule above it.
  *
- * `.side-sec:first-child` cannot answer this: on Mobile the first section of a
- * tab may be hidden, and a hidden element is still the first child - so the
- * panel drew a rule across the top of its first heading.
+ * `.side-sec:first-child` can't answer this: on Mobile the first section of
+ * a tab may be hidden, and a hidden element is still the first child.
  */
 function paintRules() {
   for (const { panel } of tabs.values()) {
     let first = true;
-    // SAFETY: every child of a tab panel is a <section> this file built - see
-    // buildSection(). Nothing else appends to one, and `hidden` below is the only
-    // thing read off them.
+    // SAFETY: every child of a tab panel is a <section> this file built.
     for (const el of panel.children as HTMLCollectionOf<HTMLElement>) {
       if (el.hidden) continue;
       el.classList.toggle('is-first', first);

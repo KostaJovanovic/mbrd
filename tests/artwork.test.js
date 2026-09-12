@@ -1,14 +1,10 @@
 // Cover art out of the three container formats.
 //
-// Built rather than fixtured: a checked-in .mp3 would be a copyrighted file in
-// the repository to test four bytes of header handling, and a hand-built tag
-// says in the test what the parser is being asked to believe. Each builder here
-// is the format's own spec written forwards, so a failure points at the parser
-// rather than at a binary nobody can read.
-//
-// The pictures are real magic bytes and nothing more - coverArt() identifies a
-// picture by sniffing it, never by trusting the tag's own MIME field, so four
-// honest bytes exercise that path exactly as a whole JPEG would.
+// Built rather than fixtured: a checked-in .mp3 would be a copyrighted file
+// just to test header handling, and each builder here is the format's own
+// spec written forwards, so a failure points at the parser. The pictures are
+// real magic bytes only - coverArt() sniffs them rather than trusting the
+// tag's MIME field.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -111,9 +107,8 @@ test('reads v2.2, v2.3 and v2.4 alike', async () => {
 });
 
 test('steps over a description, in latin1 and in UTF-16', async () => {
-  // The terminator is a null *in the description's own encoding*, so a UTF-16
-  // description ends on a pair of zero bytes and a single one inside a
-  // character is not the end of it. Getting this wrong slices into the picture.
+  // The terminator is a null in the description's own encoding, so UTF-16 ends
+  // on a zero pair, not a single zero byte - getting this wrong slices the picture.
   for (const enc of [0, 1]) {
     const art = await coverArt(audio(mp3({ enc, desc: 'front cover' }), 'song.mp3'));
     assert.ok(art, `encoding ${enc} found nothing`);
@@ -122,8 +117,8 @@ test('steps over a description, in latin1 and in UTF-16', async () => {
 });
 
 test('undoes tag-level unsynchronisation', async () => {
-  // A JPEG begins 0xFF 0xD8, so an unsynchronised tag is exactly where a parser
-  // that ignores the flag returns bytes that are not a picture.
+  // A JPEG begins 0xFF 0xD8 - a parser that ignores the unsync flag returns
+  // bytes that aren't a picture.
   const art = await coverArt(audio(mp3({ tagUnsync: true }), 'song.mp3'));
   assert.ok(art, 'no art found');
   assert.deepEqual(new Uint8Array(await art.arrayBuffer()), JPEG);
@@ -167,8 +162,8 @@ test('a FLAC with no picture yields nothing', async () => {
 // ---------------------------------------------------------------------------
 
 test('finds a covr atom with the moov at the end of the file', async () => {
-  // The case that matters: anything written for streaming puts moov after the
-  // audio, so a parser that only reads the front of the file finds nothing.
+  // Anything written for streaming puts moov after the audio, so a
+  // front-only reader finds nothing.
   const art = await coverArt(audio(m4a({ moovLast: true }), 'song.m4a'));
   assert.ok(art, 'no art found');
   assert.equal(art.type, 'image/jpeg');
@@ -181,9 +176,8 @@ test('finds it with the moov at the front too', async () => {
 });
 
 test("steps over meta's four bytes of version and flags", async () => {
-  // 'meta' is the one container here whose children do not start immediately.
-  // A walk that misses it reads ilst's size out of the middle of the version
-  // field, which lands nowhere - so finding the picture at all proves this.
+  // 'meta' is the one container whose children don't start immediately - a
+  // walk that misses it reads ilst's size out of the version field instead.
   const art = await coverArt(audio(m4a(), 'song.m4a'));
   assert.ok(art, 'the meta version field was not skipped');
 });
@@ -198,16 +192,16 @@ test('an MP4 with no covr yields nothing', async () => {
 // ---------------------------------------------------------------------------
 
 test('nothing at all is not an error', async () => {
-  // Every path answers null rather than throwing: most audio carries no art,
-  // and the importer treats "no cover" as ordinary rather than as a failure.
+  // Every path answers null rather than throwing - most audio carries no art,
+  // and "no cover" is ordinary, not a failure.
   for (const junk of [new Uint8Array(0), new Uint8Array(4), bytes('not a music file at all')]) {
     assert.equal(await coverArt(audio(junk, 'song.mp3')), null);
   }
 });
 
 test('a picture the browser cannot draw is refused', async () => {
-  // A TIFF, declared as one. Sniffing does not recognise it, so it never
-  // becomes a cover that would mount as a broken image.
+  // A TIFF, declared as one - sniffing doesn't recognise it, so it never
+  // mounts as a broken image.
   const tiff = Uint8Array.from([0x49, 0x49, 0x2a, 0, 8, 0, 0, 0, 1, 2, 3, 4, 5, 6]);
   const art = await coverArt(audio(mp3({ mime: 'image/tiff', pic: tiff }), 'song.mp3'));
   assert.equal(art, null);
@@ -226,10 +220,9 @@ test('only the extensions that can carry art are worth reading', () => {
 // ADTS  -  the duration of a raw .aac
 // ---------------------------------------------------------------------------
 //
-// The one reader here that walks the audio rather than the metadata, and the
-// only field in this module a browser would otherwise supply - badly. Built the
-// same way as the tags above: frames written forwards from the spec, so the
-// numbers below are arithmetic anybody can check rather than a fixture.
+// The one reader here that walks the audio rather than metadata - a browser
+// would otherwise supply this badly. Frames built forwards from the spec, so
+// the numbers below are checkable arithmetic, not a fixture.
 
 /** One ADTS frame: a 7-byte header stating its own length, then filler. */
 function adts({ len = 200, rate = 4, blocks = 1 } = {}) {
@@ -252,10 +245,9 @@ const aac = (n, opts = {}) =>
 const secs = n => (n * 1024) / 44100;
 
 /**
- * Seconds against seconds. The walk adds a frame at a time so that a stream can
- * change rate mid-file, which costs it the last bit or two of a float against
- * the same count divided once - a microsecond over an hour, and not part of
- * what any of these tests is claiming.
+ * Seconds against seconds. The walk sums frame by frame so a stream can
+ * change rate mid-file, at the cost of a microsecond over an hour versus one
+ * division - not what these tests are claiming.
  */
 const lasts = async (file, want, what = '') =>
   assert.ok(Math.abs(await streamDuration(file) - want) < 1e-6,
@@ -266,15 +258,14 @@ test('counts the frames of a raw AAC stream', async () => {
 });
 
 test('a frame straddling the read window is not split', async () => {
-  // 4000 frames of 400 bytes is 1.6 MB against a 256 KB window, so the walk
-  // re-reads six times and every one of those boundaries lands mid-frame.
+  // 1.6 MB against a 256 KB window - the walk re-reads six times, and every
+  // boundary lands mid-frame.
   await lasts(aac(4000, { len: 400 }), secs(4000));
 });
 
 test('a variable bitrate is counted, not extrapolated', async () => {
-  // The failure this whole reader exists for: fifty near-empty frames at the
-  // front, and an engine dividing the file size by what it saw there puts a
-  // 90-minute file at 7000. Frames are frames whatever they weigh.
+  // The failure this reader exists for: an engine dividing file size by what
+  // it saw in the near-empty front frames puts a 90-minute file at 7000.
   const quiet = Array.from({ length: 50 }, () => adts({ len: 12 }));
   const loud = Array.from({ length: 250 }, () => adts({ len: 900 }));
   await lasts(audio(bytes(...quiet, ...loud), 'song.aac'), secs(300));
@@ -285,8 +276,8 @@ test('a frame carrying two blocks counts as two', async () => {
 });
 
 test('the sampling rate is read per frame', async () => {
-  // 22050 for the first half, 44100 for the second - what a concatenated
-  // stream looks like, and the reason the sum is not one division at the end.
+  // 22050 then 44100, as a concatenated stream looks - why the sum isn't one
+  // division at the end.
   const slow = Array.from({ length: 100 }, () => adts({ rate: 7 }));
   const fast = Array.from({ length: 100 }, () => adts({ rate: 4 }));
   const want = (100 * 1024) / 22050 + (100 * 1024) / 44100;
@@ -300,7 +291,7 @@ test('a tag in front of the audio is stepped over', async () => {
 });
 
 test('a trailer ends the walk without losing the count', async () => {
-  // An ID3v1 tag on the end, and a last frame the file stops in the middle of.
+  // A trailing ID3v1 tag, plus a last frame cut off mid-way.
   const frames = Array.from({ length: 100 }, () => adts());
   const v1 = bytes('TAG', new Uint8Array(125));
   await lasts(audio(bytes(...frames, v1), 'song.aac'), secs(100), 'a tagged stream');
@@ -309,8 +300,8 @@ test('a trailer ends the walk without losing the count', async () => {
 });
 
 test('anything that is not a raw stream answers null', async () => {
-  // Null and not zero: the caller falls back to the engine on a null, and every
-  // one of these is a file whose container states a duration the engine reads.
+  // Null, not zero: the caller falls back to the engine, and each of these is
+  // a file whose container states a duration the engine reads instead.
   const cases = {
     'an MP3 frame': bytes([0xff, 0xfb, 0x90, 0x00], new Uint8Array(1000)),
     'an MP4': m4a(),
@@ -326,7 +317,7 @@ test('anything that is not a raw stream answers null', async () => {
 });
 
 test('a header that names no sampling rate is refused', async () => {
-  // Indices 13 to 15 are reserved. A frame claiming one is a file this reader
-  // cannot count, and half a count is worse than none.
+  // Indices 13-15 are reserved - a frame claiming one can't be counted, and
+  // half a count is worse than none.
   assert.equal(await streamDuration(aac(20, { rate: 13 })), null);
 });

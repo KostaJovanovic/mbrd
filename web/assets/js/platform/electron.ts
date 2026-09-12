@@ -1,70 +1,17 @@
-// The Electron shell, as this app's six ports.
-//
-// One function of a bridge object, and that is the whole design. `electron.ts`
-// reads no global, imports nothing but its neighbour, and would run against any
-// object of the right shape - which is what lets it be tested with a fake and
-// what keeps the rule the plan is built on: **`window.mbrdDesktop` is read in
-// exactly one place in this tree**, and that place is `main.ts`, which hands
-// the object in here as an argument.
-//
-// If this module reached for the global itself, every module below main.ts
-// would depend on a name that only one of two shells defines, and the whole
-// point of the injection is that they cannot tell.
-//
-// ── Blobs do not cross the bridge ──
-//
-// Electron's IPC is structured clone, which handles ArrayBuffer and does not
-// handle Blob. So the conversion is here, both directions, at exactly this
-// seam - and nowhere else. `session.ts` puts a Blob into `idbSet` and gets a
-// Blob back out of `idbGet`, unchanged and unaware, because this file turns
-// each one into bytes on the way down and back into a Blob on the way up.
-//
-// The MIME type travels with it. A Blob whose type was lost comes back as
-// `application/octet-stream`, and `storage/assets.ts` renders an asset by its
-// blob's own type - so losing it turns every picture on a restored board into a
-// download prompt. That is why the wrapper carries a `mime` field rather than
-// just bytes.
-//
-// ── What this file does not do ──
-//
-// Decide anything. Every question - is this a desktop, should Save write a
-// file, is this row a path row - is answered upstream by `isDesktop()` or by
-// the shape of the data. This is a translation layer: bytes to Blobs, a
-// callback registration to an IPC listener, a rejection shape to another
-// rejection shape. A branch in here would be a second place the desktop's
-// behaviour is decided.
+// Electron adapter: translates a Bridge object into the six Platform ports.
+// Reads no global -- main.ts hands the bridge in as an argument.
+// Blobs do not cross IPC; this seam converts ArrayBuffer+mime both ways.
 
 import type {
   Platform, FilesPort, FramePort, LifecyclePort, NativePort, UpdatesPort,
   DocumentRef, OpenedFile, PickSpec, TranscodeOpts,
 } from './platform.ts';
-// Note what is *not* imported here: `StoreBackend` from storage/idb.ts.
-//
-// It would be a type-only import, erased before anything runs, but
-// tests/layers.test.js reads the specifier and not its erasure - and it is
-// right to: a rule that made an exception for `import type` would be a rule
-// somebody has to check the spelling of. platform/ is BASE and storage/ sits
-// above it, so the edge is an inversion however little of it survives to
-// runtime.
-//
-// So electronStore() below is checked structurally instead, at the one place
-// the two layers legitimately meet: `setStoreBackend(electronStore(bridge))` in
-// main.ts, which is above both and is where every other injection in this app
-// is wired. A method renamed on one side fails there.
+// StoreBackend is not imported: platform/ sits below storage/ in the layer
+// graph, so electronStore() is checked structurally at the wiring point.
 
-/**
- * What `desktop/preload.ts` exposes. Structural, not nominal.
- *
- * Declared here rather than imported from `desktop/` because the two are
- * separate packages with separate tsconfigs, and a web module importing across
- * that line would drag Node's types into a browser-only compilation - which is
- * the thing the root tsconfig's `types: []` exists to prevent. So the shape is
- * written twice, once on each side, and the bridge version below is what
- * catches them drifting.
- */
+/** What `desktop/preload.ts` exposes. Written here to avoid cross-package import. */
 export interface Bridge {
   bridge: number;
-  /** `process.platform` from the shell: 'darwin', 'win32', 'linux', … */
   platform: string;
   store: {
     get(store: string, key: string): Promise<unknown>;
@@ -94,10 +41,6 @@ export interface Bridge {
   updates: {
     check(): Promise<{ version: string, canInstall: boolean } | null>;
     install(): void;
-    // Typed rather than `unknown`, because the only sender is
-    // desktop/updates.ts and the only thing it sends is its own Available.
-    // Leaving it wide would push a cast onto main.ts for a shape both sides of
-    // this bridge already agree on.
     onFound(fn: (info: { version: string, canInstall: boolean }) => void): void;
   };
   win: {
@@ -114,33 +57,24 @@ export interface Bridge {
   onCommand(fn: (cmd: string) => void): void;
 }
 
-/** A file main read for us: bytes, and what it was called and where. */
+/** A file the main process read: bytes, name, and path. */
 export interface HandedFile {
   name: string;
   path: string;
   data: ArrayBuffer;
 }
 
-/**
- * The wrapper a Blob travels as.
- *
- * A tagged object rather than a bare ArrayBuffer, because the store holds both
- * kinds - JSON values and Blobs - and the far side has to be able to tell them
- * apart without guessing from the type. `desktop/store.ts` reads the same tag.
- */
+/** Tagged wrapper so the far side can tell a Blob from a JSON value. */
 interface Bytes {
   __bytes: true;
   data: ArrayBuffer;
   mime?: string;
 }
 
-// SAFETY: the truthy-object guard comes first, so the property read is off an
-// object, and the tag is compared rather than trusted - a value that is not a
-// wrapper compares false rather than throwing.
 const isBytes = (v: unknown): v is Bytes =>
   !!v && typeof v === 'object' && (v as Bytes).__bytes === true;
 
-/** The one throw a dismissed dialog makes, in the shape every caller reads. */
+/** Dismissed-picker error. */
 function abort(what: string): Error {
   const err = new Error(what);
   err.name = 'AbortError';
@@ -150,31 +84,9 @@ function abort(what: string): Error {
 const fileOf = (h: HandedFile) => new File([h.data], h.name);
 const refOf = (h: { name: string, path: string }): DocumentRef => ({ name: h.name, path: h.path });
 
-/**
- * Blobs to bytes, wherever they are in the value.
- *
- * **Not just at the top, and that is the whole of this function.** The `assets`
- * store holds `{ blob, ext, mime, name }` - a Blob one level down inside an
- * ordinary object - while `library` holds a packed Blob directly. A converter
- * that only looked at the top handled the second and quietly wrecked the first:
- * `JSON.stringify` turns a Blob into `{}`, so every asset landed on disk as
- * `{"blob":{},"ext":"png",...}` and came back as an item with no picture in it.
- * It was found by running the shell and looking at the file, which is the only
- * way it *could* be found - nothing throws, and restoreSession() reports it as
- * "N items came back without their data", which reads like a corrupt store
- * rather than a bug in the bridge.
- *
- * Arrays and plain objects are walked; everything else is passed through. No
- * cycle guard, deliberately: what goes into this store is a board snapshot and
- * an asset record, both acyclic by construction, and structured clone across
- * the bridge would refuse a cycle anyway. A guard here would be a defence
- * against a value this store cannot hold.
- */
+/** Recursively convert Blobs to `{ __bytes, data, mime }` for IPC. */
 async function down(value: unknown): Promise<unknown> {
   if (value instanceof Blob) {
-    // The type travels with the bytes. storage/assets.ts renders an asset by
-    // its blob's own MIME, so a Blob that came back as application/octet-stream
-    // would turn every picture on a restored board into a download prompt.
     return { __bytes: true, data: await value.arrayBuffer(), mime: value.type } satisfies Bytes;
   }
   if (Array.isArray(value)) return Promise.all(value.map(down));
@@ -186,7 +98,7 @@ async function down(value: unknown): Promise<unknown> {
   return value;
 }
 
-/** The same walk, back. */
+/** Reverse: bytes wrappers back to Blobs. */
 function up(value: unknown): unknown {
   if (isBytes(value)) return new Blob([value.data], { type: value.mime || '' });
   if (Array.isArray(value)) return value.map(up);
@@ -198,26 +110,14 @@ function up(value: unknown): unknown {
   return value;
 }
 
-/**
- * An object worth walking into, as opposed to one that would be damaged by it.
- *
- * The prototype test rather than `typeof === 'object'`: a Date, a Map, a
- * TypedArray and a Blob are all objects, and rebuilding one of them field by
- * field turns it into something else. Only a literal is walked.
- */
+/** Only plain objects are safe to walk; Date, Map, TypedArray etc. are not. */
 function isPlain(value: unknown): value is Record<string, unknown> {
   if (!value || typeof value !== 'object') return false;
   const proto: unknown = Object.getPrototypeOf(value);
   return proto === Object.prototype || proto === null;
 }
 
-/**
- * Keys are strings here and `IDBValidKey` elsewhere.
- *
- * Every caller in this app passes a string. Anything else is a caller that
- * would break the file backend's naming rules, so it is refused at the seam
- * rather than stringified into a filename nobody meant.
- */
+/** Assert string key; non-strings would break the file backend's naming. */
 function k(key: unknown): string {
   if (typeof key !== 'string') throw new Error('the desktop store keys by string');
   return key;
@@ -227,13 +127,7 @@ function k(key: unknown): string {
 // The store
 // ---------------------------------------------------------------------------
 
-/**
- * `idb.ts`'s eight functions, over files in the app's own data directory.
- *
- * Separate from the Platform below and wired separately in `main.ts`, because
- * `idb.ts` had its own setter before any of this existed - it was already a
- * port, which is the cheapest thing about the whole desktop plan.
- */
+/** idb.ts's eight functions, backed by files. Wired separately in main.ts. */
 export function electronStore(bridge: Bridge) {
   return {
     get: async (store: string, key: unknown) => up(await bridge.store.get(store, k(key))),
@@ -245,13 +139,6 @@ export function electronStore(bridge: Bridge) {
     getMany: async (store: string, list: unknown[]) =>
       (await bridge.store.getMany(store, list.map(k))).map(up),
     setMany: async (store: string, entries: [unknown, unknown][]) => {
-      // One message with every pair on it, not one per key. The renderer
-      // already treats a batch as a single round trip, and turning it into N
-      // would put the bridge's latency on every asset of a board.
-      // SAFETY: the assertion names the tuple an array literal of two elements
-      // would otherwise widen to `(string | unknown)[]`. Both elements are
-      // produced on this line - k() has already refused a non-string key - so
-      // there is no value being claimed about, only a shape being kept.
       const packed = await Promise.all(
         entries.map(async ([key, value]) => [k(key), await down(value)] as [string, unknown]));
       return bridge.store.setMany(store, packed);
@@ -266,14 +153,9 @@ export function electronStore(bridge: Bridge) {
 
 function electronFiles(bridge: Bridge): FilesPort {
   return {
-    // Always. The desktop has a real dialog, which is what this question means.
     canPick: () => true,
 
     async pickOpen(_spec: PickSpec) {
-      // The spec is the web's two spellings of an accept list and neither is
-      // what a native dialog wants - main builds its own filters, from the
-      // generated catalogue, because it is the side that has to name
-      // extensions to the operating system.
       const handed = await bridge.files.pickOpen();
       if (!handed) throw abort('Nothing picked');
       return { file: fileOf(handed), ref: refOf(handed) };
@@ -286,11 +168,7 @@ function electronFiles(bridge: Bridge): FilesPort {
     },
 
     async write(ref: DocumentRef, blob: Blob) {
-      // A ref with no path is "there is no document here" - saveBlob()'s
-      // derived artefacts, a PNG or a PDF of the board. On the web that is a
-      // download; here it is a dialog, because a desktop app that dropped a
-      // file into the downloads folder without asking would be a browser
-      // wearing a window.
+      // No path: prompt for one rather than downloading silently.
       const target = ref.path ?? (await bridge.files.pickSave(ref.name))?.path;
       if (!target) throw abort('Nothing picked');
       await bridge.files.write(target, await blob.arrayBuffer());
@@ -306,9 +184,6 @@ function electronFiles(bridge: Bridge): FilesPort {
     },
 
     async exists(ref: DocumentRef) {
-      // A ref with no path is one this shell did not make - a web ref restored
-      // from an older store, or a derived artefact. There is nothing to check
-      // and nothing to repair, so it answers the way the web does.
       if (!ref.path) return true;
       return bridge.files.exists(ref.path);
     },
@@ -318,11 +193,7 @@ function electronFiles(bridge: Bridge): FilesPort {
 function electronLifecycle(bridge: Bridge): LifecyclePort {
   return {
     onCloseRequested(fn) {
-      // The thing a browser tab could never do. Main holds the window's close
-      // until this resolves, so the flush actually finishes rather than racing
-      // the page going away - and `closeNow` is inside the same call, so a
-      // handler that throws still lets the window close. A shell that could not
-      // be quit because a save failed would be worse than a lost save.
+      // Main holds the close until this resolves; a throw still lets it close.
       bridge.onClose(async () => {
         try {
           await fn();
@@ -339,36 +210,15 @@ function electronLifecycle(bridge: Bridge): LifecyclePort {
   };
 }
 
-/**
- * The four native answers, and the one rule they all keep.
- *
- * **Null means "I cannot help; use your own path", and every caller has one.**
- * optimize/media.ts has the wasm encoder behind firstFrame, canvas/matte.ts has
- * its worker behind matte, import/drop.ts has the browser's own decoder behind
- * decode. So a build with no ffmpeg beside it, or a machine whose GPU refuses,
- * is a slower desktop and not a broken one - and none of those four modules
- * needs a branch that knows which shell it is in.
- *
- * A rejection would break that. Anything that goes wrong on the far side is
- * logged there and comes back as null here, including a channel that is not
- * registered at all, which is what an older shell loading a newer bundle looks
- * like.
- */
+/** Native port. Null on failure; callers always have a fallback. */
 function electronNative(bridge: Bridge): NativePort {
-  // Asked once, at boot, and remembered. The question the optimiser asks is
-  // synchronous - it is building a plan, not doing work - and the answer cannot
-  // change under a running process: a binary either shipped beside this app or
-  // it did not. False until the answer arrives, which is the safe direction: a
-  // feature that appears a moment late beats one that appears and then fails.
+  // Asked once at boot; false until the answer arrives (safe default).
   let canTranscode = false;
   bridge.native.can()
     .then(can => { canTranscode = can.transcode; })
     .catch(() => { /* an older shell with no such channel; false stands */ });
 
-  // A copy into a plain ArrayBuffer rather than the view as it arrived. Node's
-  // Buffer is a Uint8Array over a possibly-shared allocation, and a Blob wants
-  // a definitely-unshared one; the copy is also what stops the renderer holding
-  // a window onto whatever else was in the pool it crossed on.
+  // Copy into an unshared ArrayBuffer; Node's Buffer may share its allocation.
   const bytesToBlob = (data: Uint8Array | null, type: string): Blob | null => {
     if (!data?.length) return null;
     const buffer = new ArrayBuffer(data.length);
@@ -376,10 +226,7 @@ function electronNative(bridge: Bridge): NativePort {
     return new Blob([buffer], { type });
   };
 
-  // A failure here is a shell that cannot do the thing, which is the same
-  // answer as a shell that will not - so every one of these collapses to null
-  // rather than distinguishing them for a caller that would not use the
-  // difference.
+  // Collapse failures to null: callers do not distinguish can't from won't.
   const quiet = async <T>(work: Promise<T>): Promise<T | null> => {
     try {
       return await work;
@@ -403,25 +250,13 @@ function electronNative(bridge: Bridge): NativePort {
     decode: async (bytes: ArrayBuffer, name: string) => {
       const png = bytesToBlob(await quiet(bridge.native.decode(bytes, name)), 'image/png');
       if (!png) return null;
-      // Turned into a bitmap here rather than in main, because an ImageBitmap
-      // is a renderer object - it cannot cross the bridge, and the far side has
-      // no canvas to make one on. What travels is PNG bytes, which is the one
-      // format both sides certainly agree about.
+      // ImageBitmap cannot cross IPC; PNG bytes travel instead.
       return createImageBitmap(png);
     },
   };
 }
 
-/**
- * New versions, which on the web are the service worker's business and here
- * are electron-updater's.
- *
- * Two shapes, and `canInstall` is which. A portable copy and an unsigned macOS
- * build cannot replace themselves - the first because it wrote nothing an
- * installer could replace, the second because Squirrel.Mac refuses an unsigned
- * update - so both are told about the version and given a link rather than a
- * button that cannot work. desktop/updates.ts decides; this only carries it.
- */
+/** Update port via electron-updater. */
 function electronUpdates(bridge: Bridge): UpdatesPort {
   return {
     check: () => bridge.updates.check().catch(() => null),
@@ -429,22 +264,7 @@ function electronUpdates(bridge: Bridge): UpdatesPort {
   };
 }
 
-/**
- * The window, which this shell has no frame around.
- *
- * `own()` asks whether the bridge carries the window half at all, rather than
- * answering a flat true. The two halves of this app ship in one file and cannot
- * drift in an installed copy - but the *portable* copy is rebuilt out of band
- * (see save.bat), and a page from one build talking to a shell from another is
- * the one case where this can be false on a desktop. It is the right answer
- * there: no buttons drawn, no drag band, and a window that is missing its title
- * bar rather than a window whose buttons throw.
- *
- * `systemLeft()` is macOS and nothing else. Read off the platform string the
- * preload already knows rather than a userAgent sniff, because what the app
- * needs to know is where *this shell* put the traffic lights, which is a fact
- * about the shell and not about the engine.
- */
+/** Frame port. `own()` checks the bridge has the win channel (portable drift). */
 function electronFrame(bridge: Bridge): FramePort {
   return {
     own: () => !!bridge.win,
@@ -456,7 +276,7 @@ function electronFrame(bridge: Bridge): FramePort {
   };
 }
 
-/** The shell, assembled. `main.ts` calls this once with the bridge. */
+/** Assemble all ports from a bridge. Called once from main.ts. */
 export function electronPlatform(bridge: Bridge): Platform {
   return {
     files: electronFiles(bridge),

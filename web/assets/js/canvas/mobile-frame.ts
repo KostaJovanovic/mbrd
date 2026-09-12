@@ -1,47 +1,12 @@
-// The Mobile strip's sheet and masthead, in screen space.
-//
-// Both used to be positioned by canvas/viewport.ts, from five custom properties
-// written onto #viewport on every frame of every scroll. #viewport is an
-// ancestor of #world, and custom properties are inherited, so changing one of
-// them invalidated the computed style of the whole subtree - every mounted card
-// and everything inside it. That is the same cost --iz is documented as
-// carrying in viewport.ts, paid on the one layout that has no zoom at all and
-// therefore never writes --iz. Two elements read those properties; the entire
-// board paid for them.
-//
-// So nothing here touches #viewport. The two elements are treated differently
-// because they move differently:
-//
-//   The sheet does not move. It spans the whole board, which on a long feed is
-//   tens of thousands of pixels tall, so scrolling through the middle of one
-//   leaves both of its ends off screen and what is actually visible is a band
-//   of constant width at a constant x running the full height of the window -
-//   the same rectangle, frame after frame. Clipping it to the viewport and
-//   comparing against what was last written therefore costs nothing on the
-//   frames that matter and writes only at the two ends. canvas/grid.ts's
-//   inkBox()/placeInk() pair is the same idea for the lattice, including
-//   squaring off the radius on an edge that has scrolled away, and this follows
-//   it deliberately rather than inventing a second way to say it.
-//
-//   The masthead does move, for as long as it is on screen, and there is no
-//   caching that away. But it is small and bounded - mobileHeaderHeight() is
-//   the board width over 1.5 - so it can be promoted and moved by transform,
-//   which is a compositor move rather than a layout.
-//
-// The surround tint moved out of here entirely. It used to be a 100vmax spread
-// box-shadow on the sheet, which meant a full-screen repaint every time the
-// sheet moved; it is now #mobile-surround, a static wash under an opaque sheet.
-// The picture is identical - a shadow is clipped to outside its element's
-// border box, radius included, and a wash covered by an opaque rounded sheet is
-// clipped to exactly the same place - and this one never moves.
+// Mobile strip's sheet and masthead, positioned in screen space without touching
+// #viewport (which would invalidate the style of every mounted card). The sheet
+// is clipped to the window and cached — scrolling through the middle writes
+// nothing. The masthead is moved by transform on its own layer.
 
 import { mobilePerfFlags } from './viewport.ts';
 import type { Viewport, MobileScreenRect } from './viewport.ts';
 
-// The sheet rectangle is declared by the module that answers it - see
-// MobileScreenRect in canvas/viewport.ts - and passed straight through here,
-// because this file's exported functions take one and callers of theirs need to
-// be able to name it.
+// Re-exported so callers can name the type without importing viewport.ts.
 export type { MobileScreenRect };
 
 /** The sheet's clipped box, with a radius per end - see sheetBox(). */
@@ -61,13 +26,7 @@ let mastEl: HTMLElement | null = null;
 /** What was last written, so a scroll through the middle of a board writes none. */
 let lastSheet = '';
 let lastMast = '';
-/**
- * ...and the masthead's travel, which starts as null rather than as the empty
- * string. The empty string is a real value here - it is what an off-screen
- * masthead is written as - so a cache that began at it would skip the first
- * pass over a board opened anywhere but the top stop, and leave the band
- * standing at the top of the window with no transform on it.
- */
+/** null, not '' — empty string is a real value (off-screen masthead). */
 let lastShift: string | null = null;
 /** Whether the last pass was a Mobile one, so leaving the mode drops the cache. */
 let wasMobile: boolean | null = null;
@@ -75,17 +34,11 @@ let wasMobile: boolean | null = null;
 export function initMobileFrame(viewport: Viewport | null | undefined): void {
   vp = viewport || null;
   if (!vp || !vp.el) return;
-  // Queried off the viewport rather than the document, and tolerant of their
-  // absence, for the same reason canvas/grid.ts's ensureCanvas() is: the render
-  // harnesses mount a bare #viewport without the rest of the page around it.
-  // #mobile-surround needs no reference at all - it is a static wash that canvas.css
-  // shows in Mobile and hides everywhere else, and no frame ever touches it.
+  // Queried off viewport, tolerant of absence — render harnesses have no full page.
   frameEl = vp.el.querySelector<HTMLElement>(':scope > #mobile-board-frame');
   mastEl = vp.el.querySelector<HTMLElement>(':scope > #mobile-board-header');
   if (!frameEl || !mastEl) return;
-  // Straight onto the change event rather than through a throttle of its own -
-  // the event is already emitted from inside the viewport's rAF, so this paints
-  // on the same frame the grid and the axes do. See the same note in paper.ts.
+  // Runs inside viewport's rAF — same frame as grid and axes.
   vp.onChange(draw);
   draw();
 }
@@ -97,23 +50,19 @@ function draw() {
   if (!vp || !frameEl || !mastEl) return;
 
   if (!vp.isMobile) {
-    // The CSS hides all three off Mobile, so there is nothing to undo - only a
-    // cache to drop, so that coming back writes the geometry afresh rather than
-    // trusting numbers taken before the mode changed.
+    // Drop cache so coming back to Mobile writes fresh geometry.
     if (wasMobile !== false) { wasMobile = false; lastSheet = lastMast = ''; lastShift = null; }
     return;
   }
   wasMobile = true;
 
-  // The upper bound on what any of this can be costing - see mobilePerfFlags.
-  // main.ts's setter adds the class that hides the two elements; this skips the
-  // writes that would otherwise still be happening behind it.
+  // Perf flag — skip writes when chrome is hidden.
   if (!mobilePerfFlags.chrome) return;
 
   const r = vp.mobileScreenRect();
   const headerH = vp.mobileHeaderPx();
 
-  // The dev A/B for what this module replaced. Off in every shipped board.
+  // Dev A/B for the old approach. Off in shipped boards.
   if (mobilePerfFlags.legacyVars) {
     vp.el.style.setProperty('--mobile-board-left', `${r.left}px`);
     vp.el.style.setProperty('--mobile-board-width', `${r.width}px`);
@@ -127,23 +76,8 @@ function draw() {
 }
 
 /**
- * The sheet's box on the screen, clipped to the window.
- *
- * Clipped rather than left to overflow, because the whole point is that the
- * answer stops changing: an unclipped sheet is a box whose top edge moves with
- * every frame of a scroll, and a clipped one is the same rectangle for the
- * whole middle of a board. The browser was throwing the overflow away anyway -
- * #viewport carries `contain: layout paint` - so nothing is lost by not
- * describing it.
- *
- * Only a real board edge is rounded. When an edge has scrolled outside the
- * window the box must stay square there instead of inventing a second pair of
- * corners; this is the rule inkBox() states for the lattice, and the two have
- * to agree or the sheet and the marks drawn on it round differently.
- *
- * Pure, and exported, because the two stops and the middle are three different
- * answers with three different roundings and that is worth asserting without
- * standing up a browser to look at it.
+ * Sheet box clipped to window — stops changing during scroll through the middle.
+ * Only real board edges get a radius; scrolled-away edges stay square (matches inkBox).
  */
 export function sheetBox(r: MobileScreenRect, width: number, height: number): SheetBox {
   const x = Math.max(0, r.left);
@@ -161,17 +95,7 @@ export function sheetBox(r: MobileScreenRect, width: number, height: number): Sh
 /** Whether the masthead band is on screen at all, and where its top sits. */
 export type MastShift = { visible: boolean; y: number };
 
-/**
- * Where the masthead stands, and whether it is worth writing at all.
- *
- * The band sits on the board's top edge, so its own top is that edge less its
- * height. Nothing is written once it has scrolled away: a transform on a hidden
- * layer is still a transform the compositor has to carry, and the masthead is
- * off screen for all but the first screenful of a long board.
- *
- * Pure for the same reason as sheetBox() - "does the band go away when it
- * leaves the screen" is a question with a right answer at each end of a board.
- */
+/** Masthead position. Not written once scrolled off — even a hidden transform costs the compositor. */
 export function mastShift(
   r: Pick<MobileScreenRect, 'top'>,
   headerH: number,
@@ -183,7 +107,7 @@ export function mastShift(
 }
 
 function paintSheet(r: MobileScreenRect) {
-  // Only ever reached from draw(), which has already tested both.
+  // draw() already tested both.
   if (!vp || !frameEl) return;
   const box = sheetBox(r, vp.width, vp.height);
   const next = `${box.x},${box.y},${box.w},${box.h},${box.topRadius},${box.bottomRadius}`;
@@ -198,21 +122,9 @@ function paintSheet(r: MobileScreenRect) {
     `${box.topRadius} ${box.topRadius} ${box.bottomRadius} ${box.bottomRadius}`;
 }
 
-/**
- * The masthead, moved by transform on a layer of its own.
- *
- * Its width, height and the two custom properties #mobile-board-title reads are
- * written onto the masthead itself rather than onto #viewport. The title is a
- * child of it, so inheritance still reaches - and #viewport goes back to being
- * something a view frame never writes to, which is the point of the file.
- *
- * The geometry is cached separately from the travel because they change on
- * completely different clocks: the size answers to the window and the board's
- * column count, the position to every frame of a scroll.
- */
+/** Masthead: properties written onto itself (not #viewport). Size and position cached separately. */
 function paintMasthead(r: MobileScreenRect, headerH: number) {
-  // As in paintSheet() above: only ever reached from draw(), which has already
-  // tested both.
+  // draw() already tested both.
   if (!vp || !mastEl) return;
   const box = `${r.left},${r.width},${headerH}`;
   if (box !== lastMast) {

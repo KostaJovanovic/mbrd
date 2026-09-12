@@ -1,22 +1,12 @@
 /* =========================================================
-   mbrd - choosing a colour (pickColor, ui/color-picker.ts)
+   mbrd - the colour picker (pickColor, ui/color-picker.ts)
 
-   One of the eight sheets the old overlays.css was split into. The order they
-   load in IS the cascade and is listed in the banner at the top of base.css.
-
-   A sheet dressed exactly as #ask is - dialog.css, loaded above - holding a
-   saturation and brightness square, the hue under it as a real range input, and
-   the answer twice over: as the colour and as the number.
+   Sat/brightness square, hue slider, and the answer as swatch + hex.
+   Dressed as #ask (dialog.css, loaded above). Load order is the cascade.
    ========================================================= */
 
-/* The sheet. Everything about it being a sheet is #ask's, above - same paper,
-   same hairline, same arrival - and what is different is that the panel is a
-   stack rather than a sentence with a row under it, so it is laid out as one
-   instead of relying on the block flow of four unrelated children.
-
-   Narrower than the note composer and wider than the question box. The square
-   is the control, and a square much under three hundred points across is one
-   where a percent of saturation is less than a pixel of travel. */
+/* The sheet. Narrower than #compose, wider than #ask: the square needs
+   ~300px so that 1% of saturation is at least 1px of travel. */
 #pick {
   max-width: min(340px, calc(100vw - 32px));
   padding: 22px 24px 18px;
@@ -28,9 +18,7 @@
   margin: auto;
   animation: ask-in var(--dur-base) var(--ease-back);
 }
-/* Grid only once it is open: a <dialog> is display:none until then, and a
-   display set unconditionally here would win over that and leave the panel on
-   screen with nothing driving it. Same reason #compose[open] carries its flex. */
+/* Only when open: unconditional display would override <dialog>'s display:none. */
 #pick[open] { display: grid; gap: 14px; }
 #pick::backdrop {
   background: color-mix(in srgb, var(--ink) 42%, transparent);
@@ -46,15 +34,8 @@
   color: var(--ink);
 }
 
-/* The plane. Saturation across, brightness up, and the hue underneath it all -
-   which is the whole of why this is three layers and not a painted canvas: the
-   two gradients never change, so moving the hue slider is one custom property
-   and no repaint of anything the browser has to compute.
-
-   `touch-action: none` is not a nicety. Without it a drag across the square on
-   a phone is a scroll gesture the browser claims halfway through, and the
-   pointer capture ends with the colour somewhere it was passed through rather
-   than somewhere it was chosen. */
+/* The SB plane. Three CSS layers avoid repainting on hue change.
+   touch-action: none prevents the browser from claiming the drag as a scroll. */
 #pick-area {
   position: relative;
   aspect-ratio: 3 / 2;
@@ -73,9 +54,7 @@
   outline: var(--sel-line) solid var(--select);
   outline-offset: var(--sel-gap);
 }
-/* The handle. Two rings rather than one, because it has to be findable against
-   white in one corner and against black in the other, and a single ring in
-   either ink disappears into one of them. */
+/* Two rings so the handle stays visible against both white and black corners. */
 #pick-dot {
   position: absolute;
   width: 15px;
@@ -88,10 +67,7 @@
   pointer-events: none;
 }
 
-/* The hue, as the one axis the square cannot show. A real range input, so the
-   arrow keys, Home, End and the whole of what a slider means to a screen reader
-   arrive without any of it being written here - only the track and the thumb
-   are ours. */
+/* Real range input for hue: free keyboard and screen-reader semantics. */
 #pick-hue {
   width: 100%;
   height: 16px;
@@ -103,18 +79,12 @@
   -webkit-appearance: none;
      -moz-appearance: none;
           appearance: none;
-  /* Sixths, written out rather than rounded. The thumb sits at hue/360 of the
-     way along, so a stop at 17% instead of 16.667% puts the colour under the
-     handle a degree or two off the colour the square is actually showing -
-     small, and exactly the kind of small that reads as the control being
-     slightly broken. */
+  /* Exact sixths: rounding to 17% shifts the hue under the thumb by ~2 deg. */
   background: linear-gradient(to right,
     #f00 0%, #ff0 16.667%, #0f0 33.333%, #0ff 50%,
     #00f 66.667%, #f0f 83.333%, #f00 100%);
 }
-/* The gradient above is on the input itself, so both engines' own track has to
-   get out of its way - left alone, Firefox paints its default grey over the
-   whole thing and the slider is a plain bar. */
+/* Clear each engine's default track so the gradient on the input shows. */
 #pick-hue::-webkit-slider-runnable-track { height: 100%; background: transparent; }
 #pick-hue::-moz-range-track { height: 100%; background: transparent; }
 #pick-hue:focus { outline: none; }
@@ -122,9 +92,7 @@
   outline: var(--sel-line) solid var(--select);
   outline-offset: var(--sel-gap);
 }
-/* Two vendor spellings of one thumb, neither of which the other browser reads.
-   Held in step by hand: a thumb that is a different size in the two engines is
-   a slider that points at a different hue in each. */
+/* Two vendor thumbs, kept in step: different sizes = different hues. */
 #pick-hue::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
@@ -146,10 +114,7 @@
   cursor: pointer;
 }
 
-/* The answer, twice: as the colour and as the number. Side by side because they
-   are one fact - the chip is what lands on the board and the box is what you
-   would copy out of it - and a hex printed on its own line under a swatch reads
-   as a caption rather than as something you may edit. */
+/* Swatch + hex side by side: one fact, both editable. */
 .pick-foot { display: flex; align-items: center; gap: 10px; }
 #pick-well {
   flex: 0 0 auto;
@@ -159,9 +124,7 @@
   border: var(--hairline) solid var(--rule-2);
   background: var(--picked, var(--paper));
 }
-/* Dressed as #ask-field is, and given the rest of the row. Tabular figures
-   because the six digits change under the cursor while the square is dragged,
-   and proportional ones make the box twitch as they do. */
+/* Tabular figures: proportional ones twitch as digits change during drag. */
 #pick-hex {
   flex: 1 1 auto;
   min-width: 0;
@@ -177,8 +140,7 @@
 }
 #pick-hex:focus { outline: none; border-color: var(--accent-text); }
 
-/* Without color-mix(), for WebKit below 16.2 - section 7 of tokens.css carries
-   the argument and declares the channel-form tokens. */
+/* Fallback for WebKit below 16.2, which lacks color-mix(). */
 @supports not (color: color-mix(in srgb, red, blue)) {
   #pick::backdrop { background: rgb(var(--ink-c) / 42%); }
 }

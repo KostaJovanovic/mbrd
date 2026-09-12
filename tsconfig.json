@@ -1,80 +1,20 @@
 {
-  // TypeScript, strictly - and still no TypeScript in the browser.
+  // Strict TypeScript, check only (noEmit). esbuild builds, tsc checks.
   //
-  // This replaces jsconfig.json, which checked nine files of a hundred and
-  // said in its own header that widening the list was how it grew. It stopped
-  // growing where it was always going to: at state.js, canvas/input.js and
-  // commands.js, the large stateful modules where a wrong type is a silently
-  // wrong board, and where JSDoc costs more typing than a type annotation
-  // would. That is the whole argument for this file - see
-  // research/old/build-and-framework-audit-2026-08-12.md, Finding 2.
+  // erasableSyntaxOnly: Node 22.18 strips types natively. Enums, namespaces,
+  // parameter properties would break `npm test` without a loader. This flag
+  // makes tsc refuse them. verbatimModuleSyntax forces `import type`.
   //
-  // ── Nothing here compiles the app ──
+  // allowImportingTsExtensions: real .ts extensions keep two promises —
+  // `npm test` needs no install (Node resolves as written), esbuild needs no
+  // plugin.
   //
-  // `noEmit` is on and stays on. tsc is the checker; esbuild is the thing that
-  // builds web/assets/app.js, and the two never both write. So a type error is
-  // a red run rather than a broken artifact, and the artifact does not depend
-  // on tsc being right about anything.
+  // allowJs + checkJs false: three .js files remain (two workers + version.js).
+  // When the last .js is gone, both flags come out.
   //
-  // ── Why the source imports name .ts files ──
-  //
-  // `allowImportingTsExtensions` is on, and every import specifier in web/
-  // carries the real extension of the file it names. This is not a style
-  // choice, it is what keeps two promises at once:
-  //
-  //   - `npm test` needs no install. Node strips types natively from 22.18,
-  //     and resolves './foo.ts' as written. Without the real extension the
-  //     suite would need a loader, a loader needs an install, and the claim
-  //     that a stranger can clone this and get a green bar with nothing
-  //     fetched - which CI's first step exists to keep asking - would be gone.
-  //   - esbuild resolves the same specifiers with no plugin.
-  //
-  // ── erasableSyntaxOnly is the load-bearing one ──
-  //
-  // Node's stripper removes types and refuses anything that would need code
-  // generated: enums, namespaces, parameter properties, decorators,
-  // `import =`. Those are all legal TypeScript and any one of them would make
-  // the test suite unrunnable without a build - silently, at the moment
-  // somebody reached for an enum because it seemed tidy. This flag makes tsc
-  // refuse them first, so the constraint is enforced by the typechecker rather
-  // than remembered. Do not turn it off to gain an enum. A union of string
-  // literals is what this codebase already uses and it erases.
-  //
-  // `verbatimModuleSyntax` is its companion: it forces a type-only import to
-  // say `import type`, which is what lets the stripper drop it without having
-  // to work out whether the binding was a value.
-  //
-  // ── allowJs during the migration, and not after ──
-  //
-  // The tree is being converted a layer at a time and the two extensions have
-  // to coexist while that runs. `checkJs` is false so an unconverted module is
-  // carried rather than checked - it was not checked before either, so this
-  // loses nothing. When the last .js under web/assets/js is gone, both flags
-  // come out and this comment goes with them.
-  //
-  // Three files are on that list today: import/tiff-worker.js and
-  // optimize/media-worker.js, which are classic workers and reach for
-  // importScripts, and version.js, which save.bat stamps by regex.
-  //
-  // ── The browser's globals, and no others ──
-  //
-  // `types: []` is an empty list on purpose, not an omission waiting to be
-  // filled. Without it tsc discovers `@types/*` automatically, walking
-  // node_modules upwards from this directory - so a stray `@types/node` in a
-  // home folder, or in any parent somebody once ran `npm i` in, silently joins
-  // the compilation of a browser-only app. Nothing under web/assets/js imports
-  // a Node builtin or touches `process`; the browser's own environment is
-  // `lib` above, and this is what makes that line the whole of it.
-  //
-  // What it looked like before the list was closed: `setTimeout` resolved to
-  // Node's overload, which answers a `Timeout` object where the DOM answers a
-  // number, and 29 modules that keep a handle in a `number` field went red at
-  // once - every one of them correct. A check that depends on what is
-  // installed two directories above the repository is not a check, and CI,
-  // which installs cleanly, would never have reproduced any of it.
-  //
-  // Nothing needs adding here for the tests: they are .js, outside `include`
-  // below, and run under Node with no typechecking at all.
+  // types: [] is deliberate. Without it tsc walks @types/* upwards and a stray
+  // @types/node makes 29 setTimeout handles go red. Tests are .js outside
+  // `include` and need nothing here.
   "compilerOptions": {
     "strict": true,
     "erasableSyntaxOnly": true,

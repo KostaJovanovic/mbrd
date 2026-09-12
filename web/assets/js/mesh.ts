@@ -1,53 +1,7 @@
-// Reading a 3D model, by hand.
-//
-// Twelve formats now, and the door in front of all of them. It began as three,
-// chosen because between them they covered what actually lands on a moodboard -
-// an STL off a printer or a scanner, an OBJ out of almost any modeller, and a
-// GLB, which is what the web has settled on - and the argument for the other
-// nine is the same argument one step further: a dropped folder of somebody's
-// work has a .3mf from their slicer, a .ply off their scanner, a .fbx from
-// whoever they hired, and a .step from their machinist, and every one of those
-// was a grey card with a filename on it.
-//
-// No dependency, for any of them - the same reason storage/zip.ts inflates its
-// own entries and import/artwork.ts walks its own ID3 frames. That is the
-// project's one real property and it is what shapes the whole family: the
-// DEFLATE decoder in mesh/zip.ts exists because 3MF is a ZIP and parseMesh()
-// must stay synchronous, and the tessellator in mesh/brep.ts exists because a
-// STEP file contains no triangles at all and the alternative was twelve
-// megabytes of CAD kernel.
-//
-// **What lives where.** This file holds the door - meshKind(), parseMesh() and
-// the up-axis question - plus the three original readers, because they are the
-// three that need nothing but themselves. Everything shared moved down to
-// mesh/shared.ts, and each of the other nine formats is its own module beside
-// it. The layering is one way and shallow: mesh.ts imports mesh/*, and mesh/*
-// imports mesh/shared.ts and consent.ts and nothing else.
-//
-//   mesh/shared.ts   the Mesh shape, the ceilings, the arithmetic
-//   mesh/zip.ts      DEFLATE and the ZIP directory, synchronously
-//   mesh/xml.ts      enough XML to read a model out of one, with no DOM
-//   mesh/brep.ts     the CAD tessellator: trimmed surfaces to triangles
-//   mesh/ply.ts      Stanford PLY          mesh/off.ts       Geomview OFF
-//   mesh/threemf.ts  3MF                   mesh/amf.ts       AMF
-//   mesh/fbx.ts      Autodesk FBX          mesh/collada.ts   Collada
-//   mesh/tds.ts      3D Studio             mesh/step.ts      STEP
-//   mesh/iges.ts     IGES
-//
-// Everything returns the same shape, so canvas/model.ts only knows about one
-// thing:
-//
-//   { positions: Float32Array,   // xyz per vertex, triangles already expanded
-//     normals:   Float32Array,   // xyz per vertex, unit length
-//     count:     number,         // vertices, so count/3 triangles
-//     bounds:    { min: [x,y,z], max: [x,y,z] } }
-//
-// Indices are resolved rather than kept. A moodboard draws a model once at a
-// small size and never edits it, so the memory an index buffer saves is not
-// worth a second code path in the drawing.
-//
-// Nothing here touches the DOM or WebGL, which is what lets the whole family be
-// tested against real bytes under node.
+// 3D model parsing — twelve formats, zero dependencies, no DOM/WebGL.
+// meshKind() classifies, parseMesh() reads synchronously, readModel() adds
+// the async CAD-kernel path. STL/OBJ/glTF live here; the rest under mesh/.
+// All parsers must stay synchronous — the ceiling/lift mechanism depends on it.
 
 import { oversize, mb } from './consent.ts';
 import {
@@ -67,52 +21,17 @@ import { parseSTEP } from './mesh/step.ts';
 import { parseIGES } from './mesh/iges.ts';
 import { kernelMesh, usesKernel } from './mesh/occt.ts';
 
-// The shape and the ceilings are re-exported rather than moved outright, so that
-// `import { Mesh, MeshError } from './mesh.ts'` keeps meaning what it meant in
-// canvas/model.ts, commands/item-meta.ts and the tests. This module is still the
-// door; mesh/shared.ts is where the door's furniture is kept.
 export { MeshError, MAX_TRIANGLES, MAX_ELEMENTS };
 export type { Mesh, MeshBounds };
 
-/**
- * The most an accessor with no bufferView may declare.
- *
- * Such an accessor is defined as all zeroes and is how a sparse one starts, so
- * it is legal and it costs the file nothing to write - which is exactly the
- * problem: its size is bounded by no number in the document and by no byte on
- * disk. MAX_ELEMENTS is the right ceiling for data a file actually carries and
- * far too generous for data it merely claims.
- *
- * A sparse base is a handful of vertices in every real model that uses one.
- * This is three orders of magnitude above that and three below the ceiling
- * that made the finding, which leaves an honest file untouched and a 1.4 KB
- * one unable to ask for gigabytes.
- */
+// A viewless accessor claims size without carrying bytes — bound it tightly.
 const VIEWLESS_MAX = 100_000;
 
-/** Node-graph ceilings: a deep chain would overflow the walk, a dense DAG would
- *  revisit shared nodes far more often than any real scene. */
 const MAX_NODE_DEPTH = 4096;
 const MAX_NODE_VISITS = 1_000_000;
 
-// The per-parse ceilings live in mesh/shared.ts now, because twelve readers
-// share them rather than three. `CAPS` is the record, liftCaps() raises it for
-// the one caller entitled to - the one that asked - and resetCaps() puts it
-// back. The argument for holding them in module state at all is in that file's
-// header and rests entirely on **parseMesh() being synchronous end to end**;
-// nothing beneath this function may ever grow an `await`.
-
 // ---------------------------------------------------------------------------
-// The glTF document, as this reader reads one
-//
-// A description of the fields walked below, not a promise about a file: a .glb
-// is dropped in from outside and its JSON chunk can say anything at all. Every
-// field is optional because a file may leave any of them out, and the checks
-// that actually hold the reader together are in the code rather than here -
-// readAccessor() refuses a count that is not a plausible integer, addPrimitive()
-// refuses an index past the positions it has, and both bounds-check every read
-// against the buffer's own length. What this type buys is that the *walk* is
-// spelled out: which keys are read, at what depth, and as what.
+// glTF document shape — all fields optional (untrusted input).
 // ---------------------------------------------------------------------------
 
 type GLTFNode = {
@@ -154,23 +73,8 @@ type GLTF = {
   scene?: number;
 };
 
-/** A 4x4 or 3x3 matrix, column-major, as the helpers at the foot pass them. */
 type Matrix = number[];
 
-/**
- * Which parser a file wants, or null if it is not a model at all.
- *
- * Named by *kind* rather than by extension, because several extensions are one
- * reader - `.glb` and `.gltf`, `.step` and `.stp`, `.iges` and `.igs` - and the
- * kind is what everything downstream stores and switches on. `meta.upAxis` in a
- * saved board is keyed against it too, so a kind name is a thing that has to
- * keep meaning what it meant.
- *
- * `.mtl` is deliberately absent. A material library is not a model: it has no
- * geometry, and classifying it as one would put an undrawable card on the board
- * beside the .obj that wanted it. It is picked up by name instead - see paint()
- * in canvas/model.ts.
- */
 export type MeshKind =
   | 'stl' | 'obj' | 'glb' | 'ply' | 'off' | '3mf' | 'amf'
   | 'fbx' | 'dae' | '3ds' | 'step' | 'iges';
@@ -194,69 +98,17 @@ export function meshKind(name = ''): MeshKind | null {
   return KINDS[extOf(name)] || null;
 }
 
-/**
- * Which way is up, per format.
- *
- * **STL is Z-up and the viewer is Y-up**, which is why an unrotated STL comes
- * out lying on its back. The format has no header field saying so - it has no
- * header worth the name at all, and no units either - but the entire CAD and
- * 3D-printing world that writes STL is Z-up, so it is a fact about the format in
- * every way except being written down in it.
- *
- * glTF is the opposite and is written down: the spec fixes Y-up.
- *
- * The rest sort into the same two camps by who writes them. **Z-up** is the
- * manufacturing and CAD world: 3MF's build plate is the XY plane by definition,
- * AMF inherited STL's convention, and STEP and IGES come out of mechanical CAD
- * where Z has been up since drawing boards. **Y-up** is the rendering world:
- * Collada's spec default, 3D Studio's descendants, and PLY, which has no
- * convention at all but arrives from photogrammetry tools that mostly do not
- * either.
- *
- * Two formats say for themselves and are not in either camp: FBX carries
- * `UpAxis` in its global settings and Collada carries `<up_axis>`, and both
- * genuinely vary between the tools that write them. Those readers set
- * `Mesh.upAxis`, and parseMesh() prefers what the document said over anything
- * here - a reading beats a guess.
- */
-// `unknown` rather than string, so a kind that came back null from meshKind()
-// can be asked without a cast. A Set of strings never held anything else.
+// CAD/manufacturing formats are Z-up; rendering formats are Y-up.
+// FBX and Collada read it from the document and set Mesh.upAxis instead.
 const Z_UP: Set<unknown> = new Set(['stl', 'obj', '3mf', 'amf', 'step', 'iges']);
 
-/**
- * Which way a format's files usually point.
- *
- * OBJ is a guess and not the only one here any more. The format says nothing,
- * and both answers are common in the wild - the CAD and scanning tools that also
- * write STL are Z-up, and Blender's exporter converts to Y-up on the way out.
- * Z-up is the default because it is the company OBJ keeps on a board that also
- * takes STL, and because a guess that can be corrected in two clicks is a
- * better deal than one that cannot: see `meta.upAxis`. PLY and 3DS are guesses
- * on the same terms and with the same escape.
- */
 export const defaultUpAxis = (kind: string | null) => (Z_UP.has(kind) ? 'z' : 'y');
 
-/**
- * Whether this kind's up-axis is a guess, rather than something settled.
- *
- * Three formats settle it and are not in here. glTF fixes Y-up in its spec, so
- * offering to argue with it would be offering to break it; FBX and Collada each
- * carry the answer in the document, and the reader uses what it found there.
- * Everything else is the table above making an educated guess about who writes
- * the format, and a guess is a thing somebody should be able to overrule.
- *
- * This is what `canFlipUpAxis` in commands/item-meta.ts asks, and the reason it
- * asks rather than listing kinds itself: on a kind where the *file* had the
- * answer, `defaultUpAxis()` is not what was used, so a toggle built on it would
- * spend its first press setting the reading that was already on screen and
- * appear to do nothing.
- */
+// glTF, FBX, Collada know their axis — the rest are guesses the user can flip.
 const GUESSED: Set<unknown> = new Set(['stl', 'obj', 'ply', '3ds', '3mf', 'amf', 'step', 'iges']);
 
 export const upAxisIsGuessed = (kind: string | null) => GUESSED.has(kind);
 
-/** One kind, one reader. A table rather than a chain of `if`s because there are
- *  twelve of them now and a chain that long is a place to lose one. */
 const PARSERS: Record<MeshKind, (bytes: ArrayBuffer) => Mesh> = {
   stl: parseSTL,
   obj: parseOBJ,
@@ -272,46 +124,13 @@ const PARSERS: Record<MeshKind, (bytes: ArrayBuffer) => Mesh> = {
   iges: parseIGES,
 };
 
-/**
- * The same table, keyed by a plain string.
- *
- * `kind` reaches parseMesh() out of a stored item, so it is whatever a saved
- * board says - including a kind a newer version wrote and this build has never
- * heard of. Asking a Map answers `undefined` for those, which is the check;
- * indexing the record above would have needed an assertion that the string is a
- * MeshKind, which is exactly the thing that is not known. The record keeps its
- * type so that adding a MeshKind without a reader is a compile error.
- */
+// Map for runtime lookup — unknown kinds from saved boards return undefined.
 const BY_KIND = new Map<string, (bytes: ArrayBuffer) => Mesh>(Object.entries(PARSERS));
 
-/**
- * Parse by kind. `bytes` is an ArrayBuffer.
- *
- * `upAxis` overrides everything else - 'z' or 'y', anything else ignored. It
- * exists because most of these formats' defaults are guesses and a wrong guess
- * leaves a model on its back with no way out, which is worse than a menu entry.
- *
- * Three answers to "which way is up", in order of who is most likely to be
- * right: what the *person looking at it* said, then what the *file* said (FBX
- * and Collada both carry an axis and both vary), then what the format usually
- * means. The middle one is new and is the reason `Mesh.upAxis` exists.
- *
- * The conversion lives here rather than inside each parser on purpose: a
- * parser's job is to say what is *in the file*, and parseSTL() returning STL
- * coordinates is what makes it testable against a fixture somebody can compute
- * by hand. This function's job is to hand the viewer geometry in the app's own
- * space, which is a different question with a different answer.
- */
 export function parseMesh(
   kind: string | null,
   bytes: ArrayBuffer,
   upAxis?: unknown,
-  // Open it however large it turns out to be, because somebody has been told what
-  // that costs and said yes. The three ceilings this raises are argued in
-  // mesh/shared.ts; the ones it does not are the sanity checks on a *claim*
-  // nobody can weigh - a 356-byte file declaring six million MAT4 elements is not
-  // a large model, it is a file lying about its size, and there is no version of
-  // consent that covers being lied to.
   lift = false,
 ): Mesh {
   if (lift) liftCaps();
@@ -320,44 +139,18 @@ export function parseMesh(
     if (!read) throw new MeshError('Not a model file');
     return orient(kind, read(bytes), upAxis);
   } finally {
-    // Whichever way it ended, including the throw that starts the asking. A
-    // lifted ceiling that outlived its parse would silently apply to the next
-    // model on the board, which nobody agreed to.
     resetCaps();
   }
 }
 
-/**
- * Which way up, from the three people entitled to an opinion.
- *
- * In order of who is most likely to be right: what the *person looking at it*
- * said, then what the *file* said, then what the format usually means. Pulled
- * out of parseMesh() because the kernel path below reaches the same question by
- * a different road and must answer it the same way - a STEP file that stands up
- * one way through OpenCASCADE and another way through mesh/step.ts would be a
- * fallback nobody could tell had happened except by the model lying down.
- */
+// Up-axis priority: user override > file-stated > format default.
 function orient(kind: string | null, mesh: Mesh, upAxis?: unknown): Mesh {
   const said = mesh.upAxis === 'z' || mesh.upAxis === 'y' ? mesh.upAxis : null;
   const up = upAxis === 'z' || upAxis === 'y' ? upAxis : said || defaultUpAxis(kind);
   return up === 'z' ? standUp(mesh) : mesh;
 }
 
-/**
- * The one door a card comes in by, and the only asynchronous one.
- *
- * STEP and IGES go to the CAD kernel in mesh/occt.ts first, which is a worker
- * and therefore a promise; everything else, and either of those two when the
- * kernel is not available, goes to parseMesh() exactly as before. That is the
- * whole of the difference, and it is deliberately the whole of it: parseMesh()
- * stays synchronous, stays the reader every test drives, and stays what happens
- * when 7 MB of vendored WebAssembly does not load.
- *
- * The ceiling is passed to the kernel rather than lifted globally around it -
- * see the argument at kernelMesh(). Everything else about `lift` is unchanged:
- * it comes back as an Oversize throw, canvas/model.ts asks, and a yes calls this
- * again.
- */
+// Async entry point — tries the CAD kernel for STEP/IGES, falls back to parseMesh().
 export async function readModel(
   kind: string | null,
   bytes: ArrayBuffer,
@@ -371,20 +164,7 @@ export async function readModel(
   return parseMesh(kind, bytes, upAxis, lift);
 }
 
-/**
- * Z-up geometry turned Y-up: a -90 degree rotation about X, or (x, y, z) ->
- * (x, z, -y).
- *
- * Applied to the geometry rather than carried as a matrix into the renderer,
- * because `bounds` is what the viewer frames the model from - it takes the
- * centre and the radius off it - and a mesh whose points and whose box disagree
- * about which way is up would be framed from the wrong place while looking
- * right. Rotating both together keeps them one thing.
- *
- * In place: these arrays were minted by the parser a moment ago and have no
- * other owner, and a 2-million-triangle STL is 72MB of positions that nobody
- * needs a second copy of.
- */
+// Z-up → Y-up: rotate -90° about X, in place. Bounds rotated to match.
 function standUp(mesh: Mesh) {
   for (const a of [mesh.positions, mesh.normals]) {
     for (let i = 0; i < a.length; i += 3) {
@@ -393,9 +173,6 @@ function standUp(mesh: Mesh) {
       a[i + 2] = -y;
     }
   }
-  // The box is axis-aligned and the rotation is a right angle, so it stays
-  // axis-aligned and its corners simply change places. Note the swap on Z:
-  // negating turns the old maximum into the new minimum.
   const { min, max } = mesh.bounds;
   mesh.bounds = {
     min: [min[0], min[2], -max[1]],
@@ -408,15 +185,7 @@ function standUp(mesh: Mesh) {
 // STL
 // ---------------------------------------------------------------------------
 
-/**
- * Binary or ASCII, told apart by arithmetic rather than by the leading word.
- *
- * The usual sniff - does it start with "solid"? - is wrong often enough to
- * matter: plenty of exporters write "solid" into the binary format's 80-byte
- * header, which is free-form text, and the file then parses as ASCII and comes
- * out empty. A binary STL's length is exactly 84 + 50n for its own declared n,
- * and that is a coincidence no ASCII file survives.
- */
+// Binary vs ASCII: check 84+50n length, not "solid" — exporters write "solid" in binary headers.
 export function parseSTL(bytes: ArrayBuffer): Mesh {
   const view = new DataView(bytes);
   if (bytes.byteLength >= 84) {
@@ -433,9 +202,7 @@ function binarySTL(view: DataView, n: number) {
   const box = newBox();
 
   for (let t = 0; t < n; t++) {
-    // 50 bytes a facet: a normal, three vertices, and two bytes of attribute
-    // that carry a colour in some dialects and nothing in most.
-    const at = 84 + t * 50;
+    const at = 84 + t * 50; // 50 bytes per facet
     const nx = view.getFloat32(at, true);
     const ny = view.getFloat32(at + 4, true);
     const nz = view.getFloat32(at + 8, true);
@@ -448,17 +215,12 @@ function binarySTL(view: DataView, n: number) {
       normals[i] = nx; normals[i + 1] = ny; normals[i + 2] = nz;
       grow(box, positions[i], positions[i + 1], positions[i + 2]);
     }
-    // A facet normal of zero is legal and common - some exporters simply do not
-    // write them - so it is recomputed from the winding rather than trusted.
     fixFacet(positions, normals, t * 9);
   }
   return finish(positions, normals, box);
 }
 
 function asciiSTL(text: string) {
-  // One pass with a number-hungry regex rather than a line reader: an ASCII STL
-  // has no structure worth respecting beyond the order its numbers arrive in,
-  // and the line breaks are not reliable across exporters.
   const facets = text.match(/facet[\s\S]*?endfacet/g);
   if (!facets) throw new MeshError('This STL has no facets in it');
   if (facets.length > CAPS.tri) throw oversize('mesh-triangles', tooBig(facets.length));
@@ -469,14 +231,7 @@ function asciiSTL(text: string) {
   let t = 0;
 
   for (const facet of facets) {
-    // The full set of shapes a float is written in, which this did not have:
-    // `-?\d+(\.\d+)?` matched neither `.5` nor `1.` nor `+1`, all of which
-    // exporters emit. What it did instead was match the *digits* it could see -
-    // `vertex .5 -.25 1.` came out as 5, 25 and 1, three wrong coordinates
-    // accepted in silence, with the sign gone from the second.
     const nums = facet.match(/[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?/g);
-    // A normal (3) and three vertices (9). Fewer means a truncated facet, and
-    // a facet that is not a triangle is not one this can draw.
     if (!nums || nums.length < 12) continue;
     const n = nums.map(Number);
     const base = t * 9;
@@ -499,27 +254,7 @@ function asciiSTL(text: string) {
 // OBJ
 // ---------------------------------------------------------------------------
 
-/**
- * Wavefront OBJ: a text file of vertices and the faces that join them.
- *
- * Three things about the format that the code below is shaped by:
- *
- * - **Indices are one-based, and may be negative.** A negative index counts
- *   backwards from the vertices seen *so far*, which is why they are resolved
- *   as they are read rather than in a second pass.
- * - **A face may have any number of corners.** Quads are ordinary and n-gons
- *   happen, so every face is fanned into triangles from its first corner. That
- *   is correct for the convex faces a modeller emits and is the standard
- *   reading.
- * - **Normals are optional.** Where a face gives them they are used; where it
- *   does not, the facet's own is computed. Mixing the two within one file is
- *   legal and does happen.
- *
- * Materials, groups, smoothing and texture coordinates are read past. A card on
- * a moodboard is a silhouette and a bit of shading; none of the rest would
- * change a pixel of it without a .mtl beside the file, which a drop does not
- * carry.
- */
+// OBJ: 1-based indices (may be negative), n-gon fan triangulation, optional normals.
 export function parseOBJ(bytes: string | ArrayBuffer): Mesh {
   const text = typeof bytes === 'string' ? bytes : new TextDecoder().decode(bytes);
   const vx: number[] = [], vn: number[] = [], vc: number[] = [];
@@ -537,16 +272,8 @@ export function parseOBJ(bytes: string | ArrayBuffer): Mesh {
     if (tag === 'v') {
       const n = line.slice(sp + 1).trim().split(/\s+/);
       vx.push(+n[0], +n[1], +n[2]);
-      // The unofficial extension every scanner and photogrammetry tool writes:
-      // three more numbers on a vertex line are its colour. Not in the spec and
-      // universal in practice, which is the same standing "solid" has in STL.
-      //
-      // A vertex without them still gets an entry, so the array stays parallel
-      // to the positions - white, which is the identity when it is multiplied
-      // into a material or handed to a shader that is not using colours.
+      // Per-vertex colour (3 extra floats on the v line) — unofficial but universal.
       if (n.length >= 6) {
-        // First colour seen: backfill white for every triangle vertex already
-        // emitted while outC was being skipped, so it lines up with the positions.
         if (!hasVC) { for (let k = outC.length; k < outP.length; k++) outC.push(1); }
         hasVC = true;
         vc.push(clamp01(+n[3]), clamp01(+n[4]), clamp01(+n[5]));
@@ -557,45 +284,29 @@ export function parseOBJ(bytes: string | ArrayBuffer): Mesh {
     } else if (tag === 'usemtl') {
       material = line.slice(sp + 1).trim() || null;
     } else if (tag === 'mtllib') {
-      // The first one wins. Multiple libraries are legal and vanishingly rare,
-      // and resolving them needs a list where the caller has a single lookup.
       if (!mtllib) mtllib = line.slice(sp + 1).trim() || null;
     } else if (tag === 'f') {
       const corners = line.slice(sp + 1).trim().split(/\s+/);
       if (corners.length < 3) continue;
       for (let i = 1; i + 1 < corners.length; i++) {
         if (outP.length / 9 >= CAPS.tri) throw oversize('mesh-triangles', tooBig(CAPS.tri));
-        // outC only matters when the file carried vertex colours; until the
-        // first coloured `v` line flips hasVC it is left empty rather than grown
-        // and thrown away (near the triangle ceiling that is tens of MB of
-        // transient array). The flip backfills white for what came before.
         const wantC = hasVC ? outC : null;
         emitCorner(corners[0], vx, vn, vc, outP, outN, wantC, box);
         emitCorner(corners[i], vx, vn, vc, outP, outN, wantC, box);
         emitCorner(corners[i + 1], vx, vn, vc, outP, outN, wantC, box);
-        // Which material was in force, per triangle rather than per face, so it
-        // stays in step with the triangles a fan actually emitted.
         triMat.push(material);
-        // A corner that gave no normal gets the facet's own; corners that did
-        // keep theirs, so a face mixing explicit and missing normals (legal, e.g.
-        // `f 1//1 2//2 3`) is not flattened by one bare corner.
         fillFacetGaps(outP, outN, outP.length - 9);
       }
     }
   }
   if (!outP.length) throw new MeshError('This OBJ has no faces in it');
   const mesh = finish(new Float32Array(outP), new Float32Array(outN), box);
-  // Embedded colours are the file's own answer and need nothing else, so they
-  // are attached here. Material colours cannot be: they live in a second file
-  // this function has never seen. What is handed on instead is what it takes to
-  // ask - see applyMaterials().
   mesh.colors = hasVC ? new Float32Array(outC) : null;
   mesh.mtllib = mtllib;
   mesh.triMat = triMat.some(Boolean) ? triMat : null;
   return mesh;
 }
 
-/** One `v/vt/vn` corner, resolved against what has been read so far. */
 function emitCorner(
   spec: string, vx: number[], vn: number[], vc: number[],
   outP: number[], outN: number[], outC: number[] | null, box: MeshBounds,
@@ -607,9 +318,6 @@ function emitCorner(
   outP.push(x, y, z);
   if (ni >= 0) outN.push(vn[ni * 3] || 0, vn[ni * 3 + 1] || 0, vn[ni * 3 + 2] || 0);
   else outN.push(0, 0, 0);
-  // Expanded to the triangle-vertex order the position buffer is already in, so
-  // the two are one array length and the renderer needs no index of its own.
-  // `outC` is null until a coloured `v` line has appeared - see the caller.
   if (outC) {
     const c = pi * 3;
     outC.push(vc[c] ?? 1, vc[c + 1] ?? 1, vc[c + 2] ?? 1);
@@ -621,13 +329,7 @@ function emitCorner(
 // .mtl
 // ---------------------------------------------------------------------------
 
-/**
- * A material library, reduced to the one thing a card can show: diffuse colour.
- *
- * `map_Kd` and the rest of the PBR vocabulary are read past. A texture is
- * another file again, and a moodboard card is a silhouette and some shading -
- * the point of colour here is that a part which was authored red is red.
- */
+// Parse .mtl for diffuse colour (Kd) only — textures need a separate file.
 export function parseMTL(bytes: string | ArrayBuffer) {
   const text = typeof bytes === 'string' ? bytes : new TextDecoder().decode(bytes);
   const mats = new Map<string, number[] | null>();
@@ -643,9 +345,6 @@ export function parseMTL(bytes: string | ArrayBuffer) {
       if (cur) mats.set(cur, null);
     } else if (cur && tag === 'Kd') {
       const n = rest.split(/\s+/);
-      // `Kd` can also name a spectral curve or an xyz triple, which start with a
-      // keyword rather than a number. Those are not three floats and are left
-      // alone rather than parsed into NaN and drawn as black.
       if (n.length >= 3 && n.every(v => Number.isFinite(+v))) {
         mats.set(cur, [clamp01(+n[0]), clamp01(+n[1]), clamp01(+n[2])]);
       }
@@ -654,19 +353,7 @@ export function parseMTL(bytes: string | ArrayBuffer) {
   return mats;
 }
 
-/**
- * Bake a material library's diffuse colours into the mesh, one per triangle.
- *
- * Baked rather than kept as a per-triangle material index and a palette,
- * because the renderer draws the whole mesh in a single call and always will:
- * splitting by material would mean a draw call per material and a book-keeping
- * layer to go with it, for a card that is a couple of centimetres across.
- *
- * Returns whether anything was actually coloured. A library that resolved
- * nothing - a name that does not match, a material with no Kd - leaves the mesh
- * exactly as it was, so the card falls back to the palette's own ink rather than
- * to the grey a "default material" would give it.
- */
+// Bake Kd into per-vertex colours. Returns false if nothing matched.
 export function applyMaterials(
   mesh: Mesh | null | undefined,
   materials: Map<string, number[] | null> | null | undefined,
@@ -674,12 +361,7 @@ export function applyMaterials(
   if (!mesh?.triMat || !materials?.size) return false;
   const colors = new Float32Array(mesh.count * 3);
   let any = false;
-  // One pass: each triangle gets its material's Kd, or white where no material
-  // claimed it (zero would draw black; white is the neutral this file uses for an
-  // uncoloured vertex). If nothing matched at all the mesh is left untouched.
   for (let t = 0; t < mesh.triMat.length; t++) {
-    // A triangle with no material in force asks nothing: get(null) answered
-    // undefined, and parseMTL never files a nameless material.
     const name = mesh.triMat[t];
     const kd = name ? materials.get(name) : null;
     if (kd) any = true;
@@ -695,7 +377,6 @@ export function applyMaterials(
   return true;
 }
 
-/** One-based, or negative and counting back from the end. */
 function resolve(i: number, have: number) {
   if (!Number.isFinite(i) || i === 0) return 0;
   return i > 0 ? i - 1 : have + i;
@@ -709,22 +390,7 @@ const GLB_MAGIC = 0x46546c67;   // 'glTF', little-endian
 const CHUNK_JSON = 0x4e4f534a;  // 'JSON'
 const CHUNK_BIN = 0x004e4942;   // 'BIN\0'
 
-/**
- * A GLB is a three-part container - header, JSON chunk, binary chunk - around
- * a glTF document, and a .gltf is that document on its own.
- *
- * What is read: every primitive of every mesh reachable from a node, with its
- * POSITION and NORMAL accessors, transformed by the node's place in the scene
- * graph. What is not: materials, textures, animation, skins, morph targets,
- * cameras, and any buffer that lives in a separate file.
- *
- * That last one is a real limitation and it is deliberate. A .gltf pointing at
- * `scene.bin` beside it cannot be resolved from a dropped file - the browser
- * has one File and no directory to look in - and going and fetching it would
- * be a network request, which is the one thing this app does not do. So a
- * self-contained GLB works, a .gltf with embedded base64 buffers works, and a
- * .gltf with external buffers says so.
- */
+// GLB/glTF: reads POSITION+NORMAL through the scene graph. No external buffers.
 export function parseGLB(bytes: ArrayBuffer): Mesh {
   let json: GLTF | null = null;
   let bin: Uint8Array | null = null;
@@ -738,10 +404,6 @@ export function parseGLB(bytes: ArrayBuffer): Mesh {
       const body = at + 8;
       if (body + len > bytes.byteLength) throw new MeshError('This GLB is truncated');
       if (type === CHUNK_JSON) {
-        // Caught, like the .gltf branch below it. A truncated or scrambled JSON
-        // chunk threw a raw SyntaxError out of here, which reaches the user as
-        // whatever the caller makes of an unknown throw rather than as the
-        // sentence every other unreadable file in this module earns.
         try {
           json = JSON.parse(new TextDecoder().decode(new Uint8Array(bytes, body, len)));
         } catch {
@@ -749,7 +411,6 @@ export function parseGLB(bytes: ArrayBuffer): Mesh {
         }
       }
       else if (type === CHUNK_BIN) bin = new Uint8Array(bytes, body, len);
-      // Chunks are four-byte aligned, and an unknown one is skipped by spec.
       at = body + len + ((4 - (len % 4)) % 4);
     }
     if (!json) throw new MeshError('This GLB has no glTF in it');
@@ -759,23 +420,17 @@ export function parseGLB(bytes: ArrayBuffer): Mesh {
     } catch {
       throw new MeshError('This is not a glTF file');
     }
-    // A document that parsed to nothing is not a glTF either. `null` is valid
-    // JSON, so a file holding exactly that came through the catch above and
-    // read its first field off null one line later - a TypeError where every
-    // other malformed file here earns a sentence.
     if (!json) throw new MeshError('This is not a glTF file');
   }
 
   const buffers = (json.buffers || []).map(b => {
-    if (!b.uri) return bin;                       // the GLB's own binary chunk
+    if (!b.uri) return bin;
     if (b.uri.startsWith('data:')) return dataURIBytes(b.uri);
     throw new MeshError('This glTF keeps its data in a separate file, which a drop cannot reach');
   });
 
   const outP: number[] = [], outN: number[] = [];
   const box = newBox();
-  // Every root of every scene, or - for a document with no scene at all, which
-  // is legal - every node, so a single-mesh export still draws.
   const roots = json.scenes?.length
     ? (json.scenes[json.scene ?? 0]?.nodes ?? [])
     : (json.nodes || []).map((_, i) => i);
@@ -787,7 +442,6 @@ export function parseGLB(bytes: ArrayBuffer): Mesh {
 
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
-/** One node on the walk below: where it is, and how far through it the loop is. */
 type Frame = {
   index: number;
   parent: Matrix;
@@ -797,23 +451,13 @@ type Frame = {
   ci: number;
 };
 
-// Iterative with an explicit stack, not recursion. A deep acyclic chain used to
-// spend one JavaScript frame per node and could overflow the call stack; a
-// hostile file is exactly where that happens. `seen` holds the current path -
-// added on enter, removed on exit - which is the same per-path cycle guard the
-// recursion had (a shared node reached down two branches is fine; a node that is
-// its own ancestor is not). The depth ceiling bounds a long chain and the visit
-// ceiling a dense DAG. See AUD-06.
+// Iterative scene-graph walk with cycle detection and depth/visit ceilings.
 function walkNode(
   json: GLTF, buffers: (Uint8Array | null)[], root: number,
   outP: number[], outN: number[], box: MeshBounds,
 ) {
   const seen = new Set<number>();
   let visits = 0;
-  // Every field is on the frame from the moment it is made, rather than being
-  // grown onto it in phase 0. The three that phase 0 fills are read only after
-  // it has run - it is the same pass, and every early exit pops the frame - so
-  // the values below are placeholders in the same sense the loop always had.
   const stack: Frame[] = [{ index: root, parent: IDENTITY, phase: 0, world: IDENTITY, children: [], ci: 0 }];
   while (stack.length) {
     if (stack.length > MAX_NODE_DEPTH) throw new MeshError('This model is nested too deeply');
@@ -824,21 +468,12 @@ function walkNode(
       if (++visits > MAX_NODE_VISITS) throw new MeshError('This model has too many nodes in it');
       seen.add(frame.index);
 
-      // Checked, not taken on trust. `node.matrix` came straight out of the
-      // file and went straight into mul(), so `"matrix": [1, 2]` made every
-      // read past index 1 undefined, the subtree's vertices NaN, and - because
-      // grow() ignores NaN and so `bounds` kept whatever a sibling set -
-      // finish()'s finiteness guard passed. The model rendered as garbage where
-      // it should have earned the same clear refusal every other malformed
-      // field here earns.
       const local = isMatrix(node.matrix) ? node.matrix : trs(node);
       frame.world = mul(frame.parent, local);
 
       if (node.mesh !== undefined) {
         for (const prim of json.meshes?.[node.mesh]?.primitives || []) {
-          // mode 4 is TRIANGLES and is the default. Strips, fans, lines and
-          // points are legal and are not what a solid model exports.
-          if (prim.mode !== undefined && prim.mode !== 4) continue;
+          if (prim.mode !== undefined && prim.mode !== 4) continue; // TRIANGLES only
           addPrimitive(json, buffers, prim, frame.world, outP, outN, box);
         }
       }
@@ -870,16 +505,10 @@ function addPrimitive(
   if (n % 3) return;
   if (outP.length / 9 + n / 3 > CAPS.tri) throw oversize('mesh-triangles', tooBig(CAPS.tri));
 
-  // Normals transform by the inverse transpose, not the matrix - a non-uniform
-  // scale would otherwise leave them off the surface and the shading wrong.
-  const nm = normalMatrix(m);
+  const nm = normalMatrix(m); // inverse transpose for correct normals under non-uniform scale
   const verts = pos.length / 3;
   for (let k = 0; k < n; k++) {
     const v = idx ? idx[k] : k;
-    // An index accessor is untrusted: a value past the POSITION accessor would
-    // read undefined -> NaN coordinates, which grow() ignores and finish() does
-    // not reject, so the model would render as garbage rather than earn the clear
-    // refusal every other bounds check in this file gives a broken file.
     if (v < 0 || v >= verts) throw new MeshError('This model refers to vertices it does not contain');
     const p = xform(m, pos[v * 3], pos[v * 3 + 1], pos[v * 3 + 2]);
     outP.push(p[0], p[1], p[2]);
@@ -901,22 +530,7 @@ function addPrimitive(
 const COMPONENTS: Record<string, number | undefined> =
   { SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4, MAT4: 16 };
 
-/**
- * Per glTF component type: how wide one component is, and how to read one.
- *
- * The reader is a function rather than the name of a DataView method looked up
- * per element. Same six reads, and the 8-bit pair take no endianness argument
- * because there is nothing to order in one byte - which is exactly what passing
- * `true` to them meant before.
- */
-// `signed` is what the value is written *into*, not how it is read out. The
-// readers were always right - getInt8 and getInt16 return negatives - and the
-// destination was a Uint32Array for everything that was not a float, so every
-// negative component wrapped to around 4.29 billion. A conformant glTF 2.0 file
-// with a normalized SHORT NORMAL accessor - core glTF, no extension, and what
-// every quantising exporter emits - had one face of the model lit from the
-// wrong side; with quantized POSITION the geometry came out as noise rather
-// than being refused.
+// `signed` selects Int32Array vs Uint32Array for the output buffer.
 const READERS: Record<number, {
   size: number, signed?: boolean, read: (view: DataView, at: number) => number,
 } | undefined> = {
@@ -928,14 +542,7 @@ const READERS: Record<number, {
   5126: { size: 4, read: (v, at) => v.getFloat32(at, true) },
 };
 
-/**
- * One accessor, flattened.
- *
- * Copied out element by element rather than wrapped as a typed array over the
- * buffer, because an accessor may be *strided* - interleaved with other
- * attributes - and because its byteOffset need not be aligned to its own
- * component size, which a typed array view requires and would throw on.
- */
+// Element-by-element copy — handles strides and unaligned offsets.
 function readAccessor(json: GLTF, buffers: (Uint8Array | null)[], index: number | undefined) {
   if (index === undefined) return null;
   const acc = json.accessors?.[index];
@@ -944,68 +551,26 @@ function readAccessor(json: GLTF, buffers: (Uint8Array | null)[], index: number 
   const reader = acc.componentType ? READERS[acc.componentType] : undefined;
   if (!comps || !reader) return null;
   const size = reader.size;
-  // Validate the count before allocating from it. It is attacker-controlled and
-  // the multiplication below feeds a typed-array length; an implausible or
-  // non-integer count is refused rather than turned into a giant allocation.
-  // See AUD-06.
-  // The typeof leads, and rejects exactly what Number.isInteger() already
-  // rejected: an absent count, or one that is not a number at all.
   const count = acc.count;
-  // Split in two, because two different things used to come out of here as one
-  // message. A count that is absent, fractional or negative is a broken file and
-  // stays a flat refusal - there is no quantity being asked for, so there is
-  // nothing to consent to. A count that is a perfectly good integer and merely
-  // enormous is the triangle ceiling arriving early, and it has to be offered like
-  // any other: a five-million-triangle GLB trips this line long before it reaches
-  // the check in addPrimitive(), and reporting it as "implausible" would be the
-  // one path where a large model is still refused out of hand.
   if (typeof count !== 'number' || !Number.isInteger(count) || count < 0) {
     throw new MeshError('This model declares an implausible amount of geometry');
   }
   if (count > CAPS.elem) throw oversize('mesh-triangles', manyElements(count));
-  // The *elements*, which is what gets allocated - not the count.
-  //
-  // The guard above bounds `count` and the line below allocates `count *
-  // comps`, and comps is 16 for a MAT4. So the ceiling was off by up to
-  // sixteen times its own stated intent: a 356-byte GLB whose POSITION accessor
-  // says `{type:'MAT4', componentType:5126, count:6000000}` allocated
-  // 384,000,000 bytes - measured at 366 MiB of arrayBuffers - before the
-  // per-element bounds check below could throw. On a phone the tab is simply
-  // gone, and the file that did it fits in a text message.
+  // Also check count*comps — MAT4 multiplies the allocation by 16.
   if (count * comps > CAPS.elem) throw oversize('mesh-triangles', manyElements(count * comps));
 
   const bv = json.bufferViews?.[acc.bufferView ?? -1];
-  // An accessor with no bufferView is defined as all zeroes, and is how a
-  // sparse one starts. Sparse substitution itself is not read.
-  //
-  // Allocated *after* the bufferView is known, which is the other half of the
-  // same finding. An accessor with no view returns a full zero-filled array
-  // without touching a buffer, so the file's own size bounded the allocation
-  // not at all - and because the array is built before this line ran, the cost
-  // was paid once per primitive that named the accessor. A 1.4 KB GLB listing
-  // forty primitives against one `{type:'MAT4', count:6000000}` accessor asked
-  // for 384 MB forty times over, and the triangle cap never came near it: with
-  // `n = pos.length / 3` not divisible by 3, the `if (n % 3) return;` above
-  // sends the loop round again before MAX_TRIANGLES is consulted.
-  // Float, signed integer, unsigned integer - three destinations, because two
-  // was one too few. Int32Array holds every signed component type this reads
-  // and is equally correct for an index, which is never signed.
   const Arr = acc.componentType === 5126 ? Float32Array
     : reader.signed ? Int32Array
     : Uint32Array;
   const alloc = () => new Arr(count * comps);
   if (!bv) {
-    // A view-less accessor is legal and is zeroes, but a *large* one is a
-    // claim the file has not paid for in bytes. Bounded against what a real
-    // sparse base looks like rather than against nothing at all.
     if (count * comps > VIEWLESS_MAX) {
       throw new MeshError('This model declares data it does not contain');
     }
     return alloc();
   }
   const out = alloc();
-  // A bufferView with no `buffer` names none: `buffers[undefined]` was already
-  // undefined, and the line below is what turns that into the refusal.
   const buf = bv.buffer === undefined ? null : buffers[bv.buffer];
   if (!buf) throw new MeshError('This model refers to data that is not in the file');
 
@@ -1029,10 +594,6 @@ function dataURIBytes(uri: string) {
   if (comma < 0) throw new MeshError('This model has a malformed data URI in it');
   const head = uri.slice(0, comma);
   const body = uri.slice(comma + 1);
-  // Cap before decoding. Base64 expands to about three quarters of its length,
-  // and atob() allocates the whole binary string in one go, so a huge embedded
-  // buffer is refused from the string length rather than after the allocation.
-  // See AUD-06.
   if (body.length / 4 * 3 > CAPS.buf) {
     throw oversize(
       'mesh-buffer',
@@ -1047,11 +608,9 @@ function dataURIBytes(uri: string) {
   return out;
 }
 
-/** Sixteen finite numbers, which is the only thing mul() can be handed. */
 const isMatrix = (m: unknown): m is number[] =>
   Array.isArray(m) && m.length === 16 && m.every(n => typeof n === 'number' && Number.isFinite(n));
 
-/** Translation, rotation (a quaternion) and scale, in that order, as a matrix. */
 function trs(node: GLTFNode): Matrix {
   const [tx, ty, tz] = node.translation || [0, 0, 0];
   const [qx, qy, qz, qw] = node.rotation || [0, 0, 0, 1];
@@ -1060,7 +619,6 @@ function trs(node: GLTFNode): Matrix {
   const xx = qx * x2, xy = qx * y2, xz = qx * z2;
   const yy = qy * y2, yz = qy * z2, zz = qz * z2;
   const wx = qw * x2, wy = qw * y2, wz = qw * z2;
-  // Column-major, which is what glTF's own `matrix` is, so both paths agree.
   return [
     (1 - (yy + zz)) * sx, (xy + wz) * sx, (xz - wy) * sx, 0,
     (xy - wz) * sy, (1 - (xx + zz)) * sy, (yz + wx) * sy, 0,
@@ -1091,15 +649,11 @@ const xform3 = (m: Matrix, x: number, y: number, z: number) => [
   m[2] * x + m[5] * y + m[8] * z,
 ];
 
-/** The upper 3x3, inverted and transposed - the correct transform for a normal. */
 function normalMatrix(m: Matrix): Matrix {
   const a = [m[0], m[1], m[2], m[4], m[5], m[6], m[8], m[9], m[10]];
   const det = a[0] * (a[4] * a[8] - a[5] * a[7])
             - a[3] * (a[1] * a[8] - a[2] * a[7])
             + a[6] * (a[1] * a[5] - a[2] * a[4]);
-  // A degenerate transform (a scale of zero on some axis) has no inverse; the
-  // upper 3x3 is then as good an answer as exists and the shading is wrong on
-  // geometry that is already flat.
   if (!det) return a;
   const inv = 1 / det;
   return [
@@ -1109,18 +663,6 @@ function normalMatrix(m: Matrix): Matrix {
   ];
 }
 
-// The bounding box, the normals and finish() moved to mesh/shared.ts when this
-// stopped being three readers and became twelve. They are imported at the top,
-// and there is nothing left down here but the glTF-specific wording below.
-
-/**
- * The same ceiling, met a step earlier and in the units the file states it in.
- *
- * A glTF accessor counts elements, not triangles, and the ratio between them
- * depends on whether the primitive is indexed and how - so this says what was
- * actually read rather than dividing by three and claiming a triangle count the
- * file has not committed to yet.
- */
 const manyElements = (n: number) =>
   `This model declares ${n.toLocaleString()} vertex values in one array, more than the `
   + `${MAX_TRIANGLES.toLocaleString()}-triangle ceiling leaves room for.`;

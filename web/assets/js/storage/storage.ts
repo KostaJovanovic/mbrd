@@ -1,37 +1,12 @@
-// Board persistence, in two halves answering two questions.
-//
-//   Save   - "keep this". Writes the board into this browser, where it
-//            already autosaves to and is picked up on the next visit. No
-//            dialog, no file, no folder: the common case is wanting the work
-//            kept, not a document filed.
-//   Export - "give me the file". Packs a .mbrd out through the File System
-//            Access API where there is one, a download where there is not.
-//            The copy you email, archive, or move to another machine.
-//
-// Different failure modes: a browser store can be cleared by the browser
-// itself; a file cannot, but only exists if you asked for one. So Save is the
-// cheap frequent one, Export the deliberate one, and the interface says which.
-//
-// Both serialise the same board through mbrd.ts. The IndexedDB side also runs
-// on a 20s timer (and flushes on the way out of the page), so an unsaved board
-// survives a closed tab.
-//
-// This file is the *file* half - the picker, Save, Export, Open and New. The
-// browser's own copy is session.ts; the split answers **who owns the file
-// handle.** This module. A handle is about the document somebody chose on
-// disk; a session is the copy this browser keeps for them - so session.ts is
-// handed the handle, the created-stamp, Export and the discard prompt through
-// initSession() at the foot of this file, and never imports back.
-//
-// Every caller still asks here. The façade at the foot re-exports what moved,
-// which kept the split from reaching main.ts, ui/board-actions.ts, commands.ts
-// and four tests.
+// Board persistence, file half: picker, Save, Export, Open, New. The browser's
+// own copy (IndexedDB autosave, restore) is session.ts — split on "who owns
+// the file handle" (this module does). session.ts gets what it needs through
+// initSession() at the foot and never imports back. Re-exports at the foot
+// keep the split invisible to callers.
 
 import { uid, isRecord } from '../util.ts';
 import { toast, busy } from '../notify.ts';
-// Which shell this is running in, and how it answers "where does the file go".
-// Unwired - which is every browser - each of these is the code that used to be
-// in this file, moved rather than rewritten. See platform.ts's header.
+// Platform abstraction — browser vs desktop file handling.
 import { platform, isDesktop, fileNameOf } from '../platform/platform.ts';
 import type { DocumentRef, PickSpec } from '../platform/platform.ts';
 import { idbGet, idbSet, idbKeys, idbGetMany } from './idb.ts';
@@ -50,9 +25,7 @@ import { packBoard, unpackBoard, MIME } from './mbrd.ts';
 import { allAssets, clearAssets } from './assets.ts';
 import type { Asset } from './assets.ts';
 import { fileNameFor, titleFromFileName, titleForOpenedBoard } from './naming.ts';
-// The browser's own copy of the board. Handed what it needs through
-// initSession() below rather than importing it back - see session.ts's header
-// for why the file handle stays on this side.
+// Session engine — handed deps through initSession(), never imports back.
 import {
   initSession, autosave, drainSave, clearSession,
   initSessionStorage, lastSaveFailure, suspendCache,
@@ -60,102 +33,46 @@ import {
 } from './session.ts';
 import type { PromptOptions } from './session.ts';
 
-/**
- * The question this module asks, shaped as ui/dialog.ts's ask() answers it:
- * one of the three button names, or null where a field was involved (never
- * here - none of these questions has a box).
- */
+/** Dialog answer: one of the button names, or null. */
 export type Prompt = (opts: PromptOptions) => Promise<string | null>;
 
-/**
- * Why a thrown thing failed, for a toast. These messages interpolate
- * `err.message`; a throw that is not an object has none and reads as
- * "undefined", exactly as it did before there were types.
- */
+/** Extract error message for toasts. */
 const detailOf = (err: unknown) => String(isRecord(err) ? err.message : undefined);
 
 /** The one throw every picker and share sheet makes when it is dismissed. */
 const isAbort = (err: unknown) => isRecord(err) && err.name === 'AbortError';
-// The clear-everything dialog is the one thing this module still needs from
-// the interface, and ui/ sits *above* storage in the layering (AUD-12). So the
-// prompt is injected rather than imported: main.ts wires setPrompt() to
-// ui/dialog's ask() at startup. Unset - in a test, or before wiring - it
-// answers 'cancel': nothing is wiped without a real answer.
-//
-// There is no second question. "You have unsaved changes, discard them?" in
-// front of Open and New is gone: both file the outgoing board onto the library
-// shelf instead, which needs no answer. See shelveCurrent().
+// Prompt injected (ui/ sits above storage in layering). Unset = 'cancel'.
+// No "discard unsaved?" — Open/New shelve the outgoing board instead.
 let prompt: Prompt = async () => 'cancel';
 export function setPrompt(fn: Prompt | null | undefined) {
   prompt = typeof fn === 'function' ? fn : async () => 'cancel';
 }
 
-/**
- * The board's own picture, for the shelf. Injected for the same reason the
- * prompt above is: ui/snapshot.ts renders it and ui/ sits above storage.
- *
- * An injection rather than an argument because every door onto "replace the
- * board" stashes the old one first: openFile() too, which is called by
- * import/drop.ts (also barred from ui/) and by main.ts's file handler. An
- * argument would thread through all three; this is one wire in main.ts.
- *
- * Unwired it answers null, which is what LibraryEntry.thumb already means. A
- * shelf row without a picture is a shelf row.
- */
+/** Board thumbnail for the shelf. Injected (ui/ sits above storage).
+ *  Unwired → null, which is a shelf row without a picture. */
 type ThumbMaker = () => Promise<string | null>;
 let makeThumb: ThumbMaker = async () => null;
 export function setBoardThumb(fn: ThumbMaker | null | undefined) {
   makeThumb = typeof fn === 'function' ? fn : async () => null;
 }
 
-/**
- * What a board looks like to a file picker, in both spellings a browser needs.
- *
- * Handed to the port rather than known by it: the MIME type is mbrd.ts's one
- * exported constant, and platform.ts sits underneath this file, so a copy down
- * there would be the second place the format is written down.
- *
- * The two lists differ on purpose. `.mbrd` is an extension no operating system
- * has heard of, and iOS resolves an accept attribute to UTIs rather than
- * matching the string - an unrecognised entry there can leave the Files
- * browser showing every file greyed out, this app's own boards included.
- * octet-stream is the widest honest thing to say about a binary container and
- * keeps that door open; the list only ever *widens* what can be picked, so it
- * cannot hide a file that used to be selectable.
- */
+/** File picker spec for .mbrd. Two accept lists because iOS UTI resolution
+ *  greys out unknown extensions — octet-stream keeps the door open. */
 const PICK_SPEC: PickSpec = {
   types: [{ description: 'mbrd board', accept: { [MIME]: ['.mbrd'] } }],
   accept: '.mbrd,application/zip,application/octet-stream',
   mode: 'mbrd',
 };
 
-/**
- * The file this board is, when it is one.
- *
- * A DocumentRef rather than a FileSystemFileHandle, and that difference is the
- * whole of what the desktop needed from this file. On the web it is a name
- * with a handle kept beside it in platform.ts; on the desktop a name and a
- * path; in Safari a name and nothing, which is what a download is. Every
- * question this module used to ask of the handle - is there one, what is it
- * called, write to it - is now the port's, with the same answers.
- */
+/** The file this board is, when it is one. A DocumentRef (not a raw handle) —
+ *  web: name + handle in platform.ts; desktop: name + path; Safari: name only. */
 let doc: DocumentRef | null = null;
 /** First-created timestamp, carried across saves of the same board. */
 let created: string | null = null;
 
-/**
- * Tell the shell which document is on screen, whenever that changes.
- *
- * The window's title bar and, on macOS, its proxy icon and close-dot are the
- * desktop's way of saying "this is the file, and it has unsaved changes". The
- * page cannot say that: `document.title` is the browser tab's, and this app
- * has never set one.
- *
- * Fired from the `board` bus event - state.ts emits it for a title change
- * *and* for a dirty-flag flip, both of which the title bar shows - and once
- * directly wherever `doc` itself moves, since a document changing is not a
- * board event. On the web every call is a no-op.
- */
+/** Sync the shell's title bar / proxy icon with the current document.
+ *  Fired from `board` bus (title or dirty-flag change) and directly when
+ *  `doc` itself moves. No-op on web. */
 function reportDocument() {
   platform.setDocument({ title: board.title, ref: doc, dirty: isDirty() });
 }
@@ -166,21 +83,10 @@ bus.on('board:load', reportDocument);
 // Save
 // ---------------------------------------------------------------------------
 
-/**
- * Ask the engine to keep this origin's storage durable, once.
- *
- * WebKit stores an origin in best-effort mode by default and may evict it
- * under overall quota pressure, device storage pressure, or inactivity - so a
- * board a person was told was "saved in this browser" can later be gone with
- * no application-level delete (Safari audit S1). navigator.storage.persist()
- * asks the engine to exempt this origin; WebKit grants it on heuristics such
- * as installed-web-app use.
- *
- * Asked on the first explicit Save rather than at boot, so the request is tied
- * to a real intent to keep something. Its answer only changes what the receipt
- * claims - never whether the save succeeded - because the durable copy is, and
- * remains, the exported .mbrd file.
- */
+/** Ask the engine for durable storage, once, on first explicit Save.
+ *  WebKit may evict best-effort origins under pressure (Safari audit S1).
+ *  The answer affects the receipt, never whether the save itself succeeded —
+ *  the durable copy is always the exported .mbrd file. */
 let persistent: boolean | null = null;   // null: not asked yet; else the engine's answer
 
 async function ensurePersistence() {
@@ -195,17 +101,9 @@ async function ensurePersistence() {
   return persistent;
 }
 
-/**
- * What the engine said about durability, and how much room it thinks there is.
- *
- * Reported rather than asked: `persisted` is whatever ensurePersistence()
- * settled on, and null means nobody has saved yet - a real answer, not a
- * missing one. Asking here would make a Debug row request a permission.
- *
- * The estimate is the browser's and is vague - engines round it, and some
- * report the whole origin group - so it is worth showing and not worth
- * computing anything from. Absent where the API is not there.
- */
+/** Durability answer + storage estimate. Reports only — asking here would
+ *  make a Debug row request a permission. Estimate is the engine's (vague,
+ *  rounded); null `persisted` means nobody has saved yet. */
 export async function storageReport() {
   const est = await navigator.storage?.estimate?.().catch(() => null) || null;
   return {
@@ -215,33 +113,13 @@ export async function storageReport() {
   };
 }
 
-/**
- * Where the bytes are: one source, what it holds, how many records hold it.
- *
- * `what` is the source's own name and not a phrase - `idb:library`,
- * `cache:mbrd-v263` - because the wording belongs to whoever prints it, and
- * the only printer is a Debug row in commands/file.ts. This module knows which
- * stores exist, not what to call them in a sentence.
- */
+/** One storage source (e.g. `idb:library`, `cache:mbrd-v263`).
+ *  `what` is a machine name, not a label — the Debug row formats it. */
 export type StorageSlice = { what: string, bytes: number, count: number };
 
-/**
- * Roughly how many bytes a stored value holds.
- *
- * Every store here is mostly Blobs, and a Blob out of IndexedDB is a *handle*:
- * `.size` answers without a byte being read, which makes walking a 300 MB
- * shelf cheap. The rest is the index records around them, so the rest of this
- * is a structured-clone-shaped walk: strings by length (the thumbnails are
- * ASCII data URLs and the only strings big enough to matter), numbers at
- * eight, keys counted because a hundred thousand two-character keys are not
- * free either.
- *
- * Approximate on purpose: the engine's own accounting includes per-record
- * overhead nothing in a page can see, so this is for *which store is the big
- * one*, never for reconciling against estimate().usage. Map, Set and Date
- * clone fine and weigh nearly nothing here; nothing this app writes uses them,
- * and a wrong answer for one is a small number in a readout, not a bug.
- */
+/** Approximate byte size of a stored value. Blobs answer via `.size` (no read);
+ *  the rest is a structured-clone walk. Approximate on purpose — this identifies
+ *  which store is the big one, not for reconciling against estimate().usage. */
 function weigh(value: unknown, seen: Set<object>): number {
   if (value == null) return 1;
   if (typeof value === 'string') return value.length;
@@ -277,20 +155,10 @@ async function weighStore(store: StoreName): Promise<StorageSlice> {
   }
 }
 
-/**
- * Cache Storage, one slice per cache.
- *
- * Origin-wide by definition, and that is the point rather than a leak: Cache
- * Storage is shared across every worker on the host, so on a dev server
- * serving more than one project these rows are where an unexplained few
- * hundred megabytes is. The service worker keeps exactly one of its own (the
- * activate sweep in web/sw.js drops the rest), so more than one `mbrd-*` row
- * means a worker that never activated.
- *
- * `content-length` where the response carries one, the body only where it does
- * not - reading a cached body back is the one part of this readout that moves
- * real bytes, and the shell is small enough to be worth the accuracy.
- */
+/** Cache Storage, one slice per cache. Origin-wide — on a dev server with
+ *  multiple projects these rows show the unexplained megabytes. More than one
+ *  `mbrd-*` row means a worker that never activated. Uses content-length when
+ *  present, reads the body only when it doesn't. */
 async function weighCaches(): Promise<StorageSlice[]> {
   const store = globalThis.caches;   // absent on an insecure origin
   if (!store) return [];
@@ -310,21 +178,9 @@ async function weighCaches(): Promise<StorageSlice[]> {
   return out;
 }
 
-/**
- * What is taking the room the estimate reports.
- *
- * storageReport() prints the browser's number, which is the whole origin -
- * every database and cache any script on this host ever wrote, rounded and
- * padded by the engine. On a dev server it can be mostly somebody else's
- * project. This walks what this app owns and says how much of the total it
- * accounts for, so "306 MB" stops being a number nobody can act on.
- *
- * `rest` is unnamed: the estimate minus what was measured - engine padding,
- * per-record overhead, and any database this could not size, which `others`
- * names. A page cannot weigh a database without opening it at a version, and
- * opening a stranger's database at a guessed version triggers somebody else's
- * upgrade handler.
- */
+/** Per-store breakdown of what the estimate reports. `rest` is the estimate
+ *  minus what was measured (engine padding, per-record overhead, other DBs).
+ *  Can't weigh a stranger's DB without opening it at a version. */
 export async function storageBreakdown() {
   const { persisted, used, quota } = await storageReport();
   const stores: StoreName[] = ['kv', 'assets', 'library', 'matte'];
@@ -347,28 +203,18 @@ export async function storageBreakdown() {
   return { slices, measured, others, persisted, used, quota, rest: used == null ? null : used - measured };
 }
 
-/**
- * Keep the board in this browser. Nothing leaves the machine and no file is
- * written - the same IndexedDB store the autosave uses, flushed now rather
- * than in a second and a bit, and the board marked clean.
- */
+/** Save to IndexedDB (same store as autosave, flushed immediately). */
 export async function saveBoard() {
   const ok = await autosave();
   if (!ok) {
-    // Always an answer. autosave() says a thing like this once per run of
-    // trouble - it fires after every edit and would otherwise hold a red toast
-    // on screen for the session - and once cacheOk has gone false it returns
-    // before saying anything at all. Both are right for a background save and
-    // wrong here: pressing Save is a question, and the answer to a question is
-    // never silence, nor "we mentioned it earlier".
+    // autosave() throttles its own errors for background use. Save is explicit —
+    // always give an answer.
     toast(lastSaveFailure() || 'Could not save in this browser', 'error');
     return false;
   }
   markDirty(false);
-  // The receipt tells the truth about how safe "saved" is. Where the engine
-  // granted persistence the browser copy will not be evicted from under the
-  // user; where it did not - the common case on default Safari - saying so
-  // keeps the export as the copy they can rely on.
+  // Receipt reflects actual durability — non-persistent (common on Safari)
+  // tells the user to export for a durable copy.
   const durable = await ensurePersistence();
   toast(durable
     ? 'Saved in this browser'
@@ -376,75 +222,35 @@ export async function saveBoard() {
   return true;
 }
 
-/**
- * Write the board out as a `.mbrd`.
- *
- * With a file picker, the handle is remembered, so exporting the same board a
- * second time overwrites the file you chose instead of asking again - pass
- * `pickNew` for a Save-as. Without one, every export is a download.
- *
- * **`history` defaults to true, and Export never passes it.** The "leave the
- * ledger out?" question belongs to Share, where the file goes to somebody else
- * by definition; an export is a file you write for yourself, and there the
- * history is the difference between a file that *is* the board and a file that
- * is a photograph of it. An export without one opens as a board that has never
- * been touched, and nothing at the far end can put back what was dropped.
- *
- * The parameter is still here because shareBoard() falls through to this
- * function where files cannot be shared, and the answer somebody gave that
- * dialog has to survive the fallback. Without it, saying "leave it out" on a
- * browser that refuses to share files would write the history to disk anyway.
- */
+/** Export as .mbrd. Handle remembered for overwrite; `pickNew` forces re-pick.
+ *  `history` defaults true (Export never asks; Share does, and falls through
+ *  here when Web Share is unavailable — the answer must survive the fallback). */
 export async function exportBoard({ pickNew = false, history = true } = {}) {
-  // Whether there is a dialog at all, asked once and not re-read. On the
-  // desktop always true, with a native dialog; in Safari and Firefox false,
-  // and every export is a download.
+  // Desktop: native dialog. Safari/Firefox: no picker, every export is a download.
   const picking = platform.files.canPick();
   try {
-    // The picker runs *before* anything is serialised, and that ordering is
-    // the fix. The board's title is packed - into manifest.json and
-    // board.json - and choosing a filename renames the board to match.
-    // Packing first built the file around the old title and renamed after, so
-    // the first export of an untitled board wrote "Untitled board" *inside*
-    // example.mbrd; opened elsewhere it comes back untitled, because
-    // board.json outranks the filename.
-    //
-    // Nothing is written and no state moves until the picker returns, so
-    // cancelling leaves the board as it was: the AbortError below is thrown
-    // from here, ahead of everything.
+    // Picker runs first: choosing a filename renames the board, and the packed
+    // title must match. Cancel throws AbortError before any state moves.
     if (picking && (pickNew || !doc)) {
       doc = await platform.files.pickSave(fileNameFor(board.title), PICK_SPEC);
       reportDocument();
     }
-    // Non-null: with a picker there was either a document already or the
-    // branch above has just put one here.
+    // Non-null: either had a doc or the branch above just set one.
     if (picking) setTitle(titleFromFileName(doc!.name));
 
-    // Everything past the picker is the slow half - deflating every asset on
-    // the board into one archive - and on a board of video it is long with no
-    // other sign of life. The strip goes up after the picker: while that
-    // dialog is open the app is waiting on a person, not on itself, and saying
+    // Busy strip after the picker — packing is the slow half, and showing
     // "working" over a file browser would be a lie.
     const job = busy('Packing the board');
     try {
       const data = serializeBoard();
-      // Dropping the key rather than serialising differently: a file without a
-      // timeline is what an older build writes when it does not understand the
-      // key, so this is a shape the format already survives rather than a
-      // second way of writing a board.
+      // Drop the key — a file without a timeline is already a valid older-build shape.
       if (!history) delete data.timeline;
       const { blob, manifest } = await packBoard(data, { created });
       created = manifest.created;
 
-      // One call for both endings. The port streams to the handle where there
-      // is one and downloads where there is not; on the desktop it is a temp
-      // file and a rename. `data.title` rather than `board.title` for the
-      // fallback name: without a picker nothing renamed the board, so the name
-      // comes from what was packed.
-      // `picking &&` rather than `doc ??` keeps the two endings apart: with a
-      // picker the document is written, without one the file is named from
-      // what was packed. A stale document reached on the second branch would
-      // write back to a file the person was never shown a dialog for.
+      // Port writes to handle or downloads. `data.title` for the fallback name
+      // (no picker = no rename). `picking &&` keeps the two paths distinct —
+      // a stale doc must not write to a file the user never picked.
       if (picking) job.label('Writing the file');
       await platform.files.write(
         picking && doc ? doc : { name: fileNameFor(data.title) }, blob);
@@ -452,8 +258,7 @@ export async function exportBoard({ pickNew = false, history = true } = {}) {
       job.end();
     }
 
-    // Exporting is also a save: the bytes are on disk, and saying "unsaved
-    // changes" right after writing a file would be a lie.
+    // Exporting is also a save — bytes are on disk.
     markDirty(false);
     toast('Exported ' + fileNameFor(board.title));
     return true;
@@ -465,47 +270,25 @@ export async function exportBoard({ pickNew = false, history = true } = {}) {
   }
 }
 
-/**
- * Write any blob to disk under `name`, through the same write the exporter
- * uses. For the derived artefacts - a PNG or PDF of the board - which are not
- * .mbrd files and so never touch the document or the picker spec, but do want
- * the one Safari-safe download in this app rather than a second copy.
- *
- * A ref with a name and nothing else means "there is no document here", which
- * the web answers with a download and the desktop with its own dialog.
- */
+/** Write a non-.mbrd blob to disk (PNG, PDF). Uses the same write path as
+ *  export but never touches the document or picker spec. */
 export function saveBlob(blob: Blob, name: string) {
   return platform.files.write({ name }, blob);
 }
 
-/**
- * Hand the packed .mbrd to the operating system's share sheet.
- *
- * The mobile answer to Export. On a phone there is no folder to file a
- * download into that another app can reach; the share sheet is how a file gets
- * to Messages, mail, AirDrop or another board. So this packs the same archive
- * Export writes - same serializeBoard()/packBoard() pipeline, so a shared
- * board and an exported one are byte-for-byte the same file - and offers it to
- * navigator.share() instead of writing it to disk.
- *
- * Falls through to exportBoard() wherever sharing a file is not on offer, so
- * the button never dead-ends: a desktop that has canShare but refuses files,
- * or a browser without the API, still gets the download. A dismissed sheet is
- * an AbortError, swallowed like the picker's - nothing here changes state.
- */
+/** Share via the OS share sheet (mobile answer to Export). Same pack pipeline
+ *  as exportBoard(). Falls through to exportBoard() when file sharing is
+ *  unavailable, so the button never dead-ends. */
 export async function shareBoard({ history = true } = {}) {
   try {
     const data = serializeBoard();
-    // Share is the one path that asks - commands/file.ts, askHistory() -
-    // because the file is going to somebody else by definition. Export does
-    // not ask and does not drop; see exportBoard().
+    // Share is the one path that asks about history (file goes to someone else).
     if (!history) delete data.timeline;
     const { blob, manifest } = await packBoard(data, { created });
     created = manifest.created;
     const file = new File([blob], fileNameFor(board.title), { type: MIME });
-    // canShare({files}) is the honest probe: a browser can have
-    // navigator.share for text and still refuse files, and share() would then
-    // throw. Where files are not shareable, export is the fallback, not error.
+    // canShare({files}) is the real probe — a browser can have share() for
+    // text but refuse files.
     if (navigator.canShare?.({ files: [file] })) {
       await navigator.share({ files: [file], title: board.title });
       return true;
@@ -519,26 +302,9 @@ export async function shareBoard({ history = true } = {}) {
   }
 }
 
-/**
- * The same archive Export and Share write, handed back instead of filed.
- *
- * For the share *link*, which needs the bytes in memory rather than a place on
- * disk. A third caller of one pipeline, not a third way to write a board: same
- * serializeBoard(), same packBoard(), same created-stamp bookkeeping, so a
- * board sent as a link and the same board exported to disk are byte-for-byte
- * the same file.
- *
- * `history` is passed through and never defaulted here. Every other door has
- * an opinion - Export keeps it, Share asks - and this is the door where the
- * file is most certainly going to somebody else, so a default would answer the
- * one question the caller exists to ask. commands/file.ts asks it through
- * askHistory().
- *
- * It throws rather than toasting, unlike its two neighbours. Uploading is a
- * multi-step job with a progress strip and three later steps that can fail on
- * their own; one caller catching all four failures says one sentence, where a
- * pack that reported itself would say two.
- */
+/** Pack for the share-link path (bytes in memory, not on disk). Same pipeline
+ *  as Export/Share. `history` not defaulted — the caller decides. Throws on
+ *  failure (unlike Export/Share) so the upload caller catches once for all steps. */
 export async function packForShare({ history }: { history: boolean }) {
   const data = serializeBoard();
   if (!history) delete data.timeline;
@@ -551,22 +317,11 @@ export async function packForShare({ history }: { history: boolean }) {
 // Open
 // ---------------------------------------------------------------------------
 
-/**
- * Choose a .mbrd and open it.
- *
- * The picker runs before anything is asked, which is the other way round from
- * how this read. Confirming first meant being asked to throw away an hour's
- * work and *then* being shown a file dialog you might well cancel - a question
- * about a thing that had not been requested yet. Nothing here replaces the
- * board until a file is actually in hand, so the question waits until there is
- * one, and openFile() is where it gets asked.
- */
+/** Pick and open a .mbrd. Picker runs first — no confirmation until a file
+ *  is actually in hand (openFile() handles that). */
 export async function openBoard() {
   try {
-    // Both doors - the File System Access picker and the hidden <input> - are
-    // behind this one call now, and both report a dismissal the same way. That
-    // is the seam: this function used to have to know that one of them returned
-    // null and the other threw.
+    // Both picker implementations (FSA and hidden <input>) are behind this call.
     const { file, ref } = await platform.files.pickOpen(PICK_SPEC);
     return await openFile(file, ref);
   } catch (err) {
@@ -577,42 +332,18 @@ export async function openBoard() {
   }
 }
 
-/**
- * Open a .mbrd File. The one door onto "replace the board with this", and so
- * the one place the board being replaced is put somewhere safe.
- *
- * It used to be the one place the unsaved-work *question* belonged, and it used
- * to ask. It does not any more: the board leaving the screen is filed on the
- * shelf a moment before the next one arrives, so there is nothing to lose and
- * nothing to ask about. See shelveCurrent(), which carries the argument.
- *
- * The stash happens *before* unpacking, deliberately, and for the same reason
- * the question used to: withFreshAssets() sets the current board's assets aside
- * and registers the new file's in their place, so a stash after that had run
- * would be packing the outgoing board against the incoming board's bytes.
- *
- * A fresh board id is minted on the way past. Without it the arriving board
- * would inherit the shelf row of the one just put away and overwrite it on the
- * next stash - two boards, one row, and the older of them gone.
- */
+/** Open a .mbrd File — the one door to "replace the board". Shelves the
+ *  current board first (before unpack, because withFreshAssets() swaps the
+ *  asset store). Mints a fresh id so the new board doesn't overwrite the
+ *  outgoing shelf row. */
 export async function openFile(file: File, ref: DocumentRef | null = null) {
   try {
-    // Refused rather than risked: if the outgoing board could not be filed,
-    // opening this one would destroy it. shelveCurrent() has already said so.
+    // If the outgoing board couldn't be shelved, refuse — opening would destroy it.
     if (!(await shelveCurrent())) return false;
-    // Unpack *and* load inside the transaction. Loading used to sit outside
-    // it, on the reading that unpacking was the risky half - but the board is
-    // only actually replaced by loadBoard(), and a file can be a perfectly
-    // valid ZIP carrying a board.json that is not a board. Committing the
-    // assets first meant that failure landed between the two: the old board's
-    // object URLs revoked, the new file's bytes registered, and the old items
-    // still on screen pointing at nothing. Now nothing is committed until the
-    // board itself is in.
+    // Unpack and load inside the same transaction — committing assets before
+    // loadBoard() succeeds would leave the old items pointing at revoked URLs.
     const job = busy('Opening ' + file.name);
-    // Set inside the transaction, read in the finally. `ref` is null on two
-    // of the three doors into here, so it cannot tell a completed open from a
-    // failed one - and what the finally decides is whether the arriving board
-    // takes a new shelf row or the outgoing one keeps its old one.
+    // Set inside the transaction, read in finally to decide shelf-row ownership.
     let opened = false;
     try {
       return await withFreshAssets(async () => {
@@ -633,13 +364,10 @@ export async function openFile(file: File, ref: DocumentRef | null = null) {
       });
     } finally {
       job.end();
-      // After the load and outside the transaction: an open that failed leaves
-      // the old board on screen, and that board must keep the id its shelf row
-      // is filed under. Only a board that actually arrived gets a new one.
+      // Only a successfully opened board gets a new id — a failed open keeps
+      // the old board's shelf row.
       if (opened) await setCurrentBoardId(uid('brd'));
-      // The latches belong to the board that has just left - a quota error its
-      // photographs raised, an asset it had lost. Same reasoning switchBoard()
-      // and New both give.
+      // Latches belong to the outgoing board (same as switchBoard/New).
       resetSessionLatches();
     }
   } catch (err) {
@@ -649,41 +377,17 @@ export async function openFile(file: File, ref: DocumentRef | null = null) {
   }
 }
 
-/**
- * Open a board somebody shared as a link: fetch the file, then open it.
- *
- * **The whole design of the incoming path is that it ends in openFile().** A
- * person following a share link may have an hour of their own work on the
- * screen, and openFile() already holds the right policy for that and the
- * reasoning behind it - the outgoing board is filed on the shelf before
- * anything is replaced, and nothing is replaced until the file is actually in
- * hand. A second door with its own confirm would be a second place that policy
- * could drift from.
- *
- * The provider module is loaded here rather than imported, which keeps this
- * module off the OAuth flow in tests/layers.test.js's graph and keeps that flow
- * from being evaluated on every boot. It is not a download saving - the build
- * does not split - and page.ts's openingShare() is the test that decides whether
- * any of it runs at all.
- *
- * **No token, and that is the feature.** The recipient's half is an anonymous
- * fetch of a file the sender marked readable by anyone with the link. Nobody
- * signs in to receive a board, which is what makes a link a link.
- *
- * A failure here is one toast and a board left exactly as it was. There is no
- * retry: the two ordinary reasons a shared file will not come back are that the
- * sender revoked it and that they deleted it, and neither improves on a second
- * attempt.
- */
+/** Open a board from a share link: fetch, then openFile(). Funnels through
+ *  openFile() so the shelve/swap policy is in one place. Provider loaded
+ *  dynamically (keeps this module off the OAuth graph). Anonymous fetch —
+ *  no sign-in to receive. No retry on failure (revoked or deleted). */
 export async function openSharedBoard(ref: { provider: string, id: string }) {
   const job = busy('Fetching the shared board');
   try {
     const { shareProvider } = await import('./cloud/cloud.ts');
     const provider = shareProvider(ref.provider);
     if (!provider) {
-      // Not an error about the link. Either it names a service this build has
-      // never heard of, or this build was deployed without that service's
-      // identifiers - and the person holding the link can act on neither.
+      // Unknown provider — either this build doesn't know it or it's not configured.
       toast('This app cannot open that kind of share link', 'error');
       return false;
     }

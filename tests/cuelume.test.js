@@ -1,31 +1,17 @@
 // The interface sounds, checked everywhere they can be checked without ears.
 //
-// Two halves, and they fail in completely different ways.
+// Two halves. The **cue map**: a recipe name that doesn't exist resolves to
+// `undefined` and nothing happens, silently - the walk below runs both ways,
+// every cue reaches a recipe and every recipe is reached by a cue or recorded
+// in IDLE_SOUNDS as a spare (nine of seventeen now).
 //
-// The **cue map** is the icons.test.js case exactly: a recipe name that does not
-// exist resolves to `undefined`, the engine hands `undefined` to the audio
-// graph, and what happens is *nothing* - on one cue, silently. No exception, no
-// console line, nothing on screen; only somebody who happened to press that one
-// thing would find it, and they would assume the feature was like that. So the
-// walk below is the whole of the protection, and it runs in both directions:
-// every cue reaches a recipe, and every recipe is either reached by a cue or on
-// record in IDLE_SOUNDS as a spare. The second half is not pedantry - nine of
-// the seventeen are spare now, and a list that is allowed to grow silently stops
-// being the record of a decision.
+// The **engine** is checked against a stub of Web Audio - what matters is not
+// what a sine sounds like but when this module refuses to make one: before a
+// user gesture, at Off, under reduced motion, before initCuelume() has run.
 //
-// The **engine** is checked against a stub of Web Audio, because the thing worth
-// asserting is not what a sine wave sounds like - it is when this module refuses
-// to make one. Before the first user gesture, with the dial at Off, under
-// reduced motion, before initCuelume() has run: four different reasons to be
-// silent, each of which would otherwise be found by a browser throwing at
-// somebody, or not found at all.
-//
-// Upstream ships 439 lines of runtime test that stubs the same surface and
-// re-imports the module with a cache-busting query to reset it. That trick is
-// what this file does not need: the fork has stopCuelume(), which exists for
-// this and for the same reason setOverlays(null) does - a module that can be
-// wired has to be unwirable, or the second test in a process inherits the
-// first one's fake.
+// Uses stopCuelume() to reset between tests rather than re-importing with a
+// cache-busting query - a module that can be wired has to be unwirable, or
+// the next test inherits this one's fake.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -55,12 +41,9 @@ test('every cue resolves to a real recipe', () => {
 });
 
 test('every cue sounds the same whatever the whimsy dial says', () => {
-  // The axis carried sound for a day and does not any more - see the head of
-  // CUES. This is the half of that decision worth asserting rather than
-  // trusting: voiceFor() takes no tier, so a reader cannot reintroduce one by
-  // adding a column and forgetting a row. If sound ever gets a character axis
-  // again it should be its own control, and this test is what it has to argue
-  // with.
+  // The whimsy axis carried sound for a day and no longer does (see the head
+  // of CUES). voiceFor() takes no tier, so a reader can't reintroduce one by
+  // adding a column and forgetting a row.
   assert.equal(voiceFor.length, 1, 'voiceFor() has grown an argument');
 });
 
@@ -71,17 +54,14 @@ test('every recipe is either named by a cue or on record as spare', () => {
     'a recipe nothing plays has to be a line in IDLE_SOUNDS with the reason - '
     + 'either put it back in the table, take it out of the palette, or say why '
     + 'it is being kept. The one thing it may not do is quietly stop sounding.');
-  // The other direction, and the one that rots: a spare can be given a job
-  // again. Its line in IDLE_SOUNDS is then a comment describing something that
-  // is no longer true.
+  // The direction that rots: a spare given a job again leaves a stale line.
   const claimed = IDLE_SOUNDS.filter(name => used.has(name));
   assert.deepEqual(claimed, [], `listed as spare but a cue plays it: ${claimed.join(', ')}`);
 });
 
 test('the pairs are one recipe played both ways, not two similar noises', () => {
-  // The strongest claim the design makes, and the cheapest one to break by
-  // hand: someone assigns `off` a different recipe from `on` because it sounded
-  // better on its own, and the two stop being a pair without anything saying so.
+  // Easy to break by hand: assigning `off` a different recipe from `on`
+  // because it sounded better alone, silently breaking the pair.
   for (const [up, down] of [['on', 'off'], ['rise', 'fall']]) {
     const a = voiceFor(up), b = voiceFor(down);
     assert.equal(b.sound, a.sound, `${up}/${down} are different recipes`);
@@ -106,9 +86,8 @@ test('inverting swaps the glide and mirrors the offsets', () => {
   assert.equal(layer.frequency, RECIPES.droplet.layers[0].glideTo);
   assert.equal(layer.glideTo, RECIPES.droplet.layers[0].frequency);
 
-  // An ascending arpeggio has to come out descending, which is the offsets and
-  // not the glide - `sparkle` has no glide at all, so reversing only the pitch
-  // ramp would leave it climbing through the same four notes in the same order.
+  // An ascending arpeggio must come out descending via offsets, not glide -
+  // `sparkle` has no glide, so reversing only the pitch ramp wouldn't reorder it.
   const flipped = invert(RECIPES.sparkle);
   const before = RECIPES.sparkle.layers.map(l => l.frequency);
   const after = [...flipped.layers]
@@ -118,9 +97,8 @@ test('inverting swaps the glide and mirrors the offsets', () => {
 });
 
 test('inverting leaves the envelopes and the gain alone', () => {
-  // A reversed attack and decay is a different *kind* of sound rather than the
-  // same one going the other way, and at these durations it is heard as a
-  // smear. See the note over invert().
+  // A reversed attack/decay is a different kind of sound, heard as a smear at
+  // these durations - see the note over invert().
   for (const name of SOUND_NAMES) {
     const back = invert(RECIPES[name]);
     assert.equal(back.masterGain, RECIPES[name].masterGain, name);
@@ -133,11 +111,8 @@ test('inverting leaves the envelopes and the gain alone', () => {
 });
 
 test('inverting twice is the recipe again', () => {
-  // Offsets are compared to the nearest microsecond rather than exactly: a
-  // mirror is a subtraction, and 0.1 - (0.1 - 0.025) is not 0.025 in binary
-  // floating point. Twenty-five nanoseconds of drift is not a sound anyone can
-  // hear, and rounding here says that rather than pretending the arithmetic is
-  // exact.
+  // Offsets compared to the nearest microsecond, not exactly: a mirror is a
+  // subtraction, and floating point drifts by nanoseconds nobody can hear.
   const shape = layer => ({ ...layer, offset: Math.round((layer.offset ?? 0) * 1e6) });
   for (const name of SOUND_NAMES) {
     assert.deepEqual(
@@ -148,10 +123,8 @@ test('inverting twice is the recipe again', () => {
 });
 
 test('inverting never touches the table it was handed', () => {
-  // RECIPES is `as const` in TypeScript and an ordinary object at runtime, so
-  // the only thing standing between a mutating invert() and a palette that
-  // drifts over a session is that it copies. Frozen would say the same thing
-  // and would cost a walk of the whole table at import time.
+  // RECIPES is `as const` in TypeScript but an ordinary object at runtime, so
+  // the only guard against a mutating invert() is that it copies.
   const before = JSON.stringify(RECIPES);
   invert(RECIPES.chime);
   invert(invert(RECIPES.arrival));
@@ -169,12 +142,9 @@ const levelled = recipe => loudnessOf(recipe) * trimFor(recipe);
 const dB = (a, b) => 20 * Math.log10(a / b);
 
 test('loudness is not peak, which is the whole reason this exists', () => {
-  // The fault every version of the table walked into, and the one thing about
-  // it a reader will otherwise measure wrongly: `press` has the higher peak of
-  // the two by a clear margin and cannot be heard beside `chime`. Twenty-one
-  // milliseconds of band-limited noise against a third of a second of two
-  // sines. If this assertion ever inverts, the model has stopped modelling a
-  // listener and is back to reading the tallest number in the table.
+  // `press` has the higher peak by far but can't be heard beside `chime` - 21ms
+  // of noise against a third of a second of two sines. If this ever inverts,
+  // the model has stopped modelling a listener.
   const peak = r => r.masterGain * Math.max(...r.layers.map(l => l.peak));
   assert.ok(peak(RECIPES.press) > peak(RECIPES.chime),
     'the table has moved under this test - pick another pair for it');
@@ -184,10 +154,8 @@ test('loudness is not peak, which is the whole reason this exists', () => {
 });
 
 test('every recipe is trimmed to one loudness', () => {
-  // The palette was tuned a recipe at a time and came out spanning
-  // twenty-three decibels: undo was a doorbell and a button press was almost
-  // inaudible, and both were defensible on their own because nothing in the
-  // table ever compares two of them. This is the thing that compares them.
+  // Tuned one recipe at a time, the palette spanned 23dB - undo a doorbell,
+  // a press nearly inaudible - because nothing ever compared two at once.
   const off = SOUND_NAMES.map(name => ({
     name, gap: dB(levelled(RECIPES[name]), TARGET_LOUDNESS),
   }));
@@ -200,8 +168,7 @@ test('every recipe is trimmed to one loudness', () => {
 });
 
 test('a trim never redesigns the sound it is levelling', () => {
-  // The clamp, from the other side. It is a guard rather than a lever: it bites
-  // on two recipes today and both are within a decibel of it.
+  // A guard, not a lever - bites on two recipes today, both within a decibel.
   for (const name of SOUND_NAMES) {
     const trim = trimFor(RECIPES[name]);
     assert.ok(trim > 0 && Math.abs(dB(trim, 1)) <= 10 + 1e-9,
@@ -210,10 +177,8 @@ test('a trim never redesigns the sound it is levelling', () => {
 });
 
 test('a pair comes out level with itself', () => {
-  // `on`/`off` and `rise`/`fall` are one recipe dealt out both ways, and the
-  // levelling measures each direction separately - so this is the assertion
-  // that it does not hear a difference where a listener cannot. A pair whose
-  // halves were a decibel apart would read as a switch that is louder one way.
+  // Levelling measures each direction of a pair separately - asserting it
+  // doesn't hear a difference where a listener can't (a switch louder one way).
   for (const [up, down] of [['on', 'off'], ['rise', 'fall']]) {
     const gap = dB(levelled(recipeFor(voiceFor(down))), levelled(recipeFor(voiceFor(up))));
     assert.ok(Math.abs(gap) < 0.5, `${up}/${down} come out ${gap.toFixed(2)} dB apart`);
@@ -221,8 +186,7 @@ test('a pair comes out level with itself', () => {
 });
 
 test('levelling never touches the table it measures', () => {
-  // trimFor() memoises on the recipe object, which is a WeakMap and not a
-  // property - the same claim invert() has to make, and for the same reason.
+  // trimFor() memoises via a WeakMap, not a property - same claim as invert().
   const before = JSON.stringify(RECIPES);
   for (const name of SOUND_NAMES) trimFor(RECIPES[name]);
   assert.equal(JSON.stringify(RECIPES), before);
@@ -276,15 +240,13 @@ class StubContext {
     built.oscillators++;
     const node = Object.assign(new StubNode('osc'), {
       type: '', frequency: param(), detune: param(),
-      // Recorded here as well as on a buffer source: a recipe is tones, noise or
-      // both, so a spacing test that watched only one of the two would silently
-      // measure nothing the day a cue was reassigned to the other kind. That is
-      // exactly what happened when `pick` moved from a noise burst to a tone.
+      // Recorded here as well as on a buffer source, since a recipe can be
+      // tone, noise, or both - watching only one silently breaks when a cue
+      // is reassigned (as happened when `pick` moved from noise to tone).
       start(at) { built.starts.push(at); },
       stop() {},
     });
-    // Kept, not just counted: the repeat detune is written onto this node and
-    // is the only evidence a run is being varied at all.
+    // Kept, not just counted - the repeat detune lives on this node.
     built.oscNodes.push(node);
     return node;
   }
@@ -296,10 +258,8 @@ class StubContext {
   }
   createBuffer(channels, length, sampleRate) {
     built.buffers++;
-    // A real shape, because renderNoise() reads `duration` back off it to work
-    // out how far into the shared buffer a burst may start. A stub answering
-    // `undefined` there would make the offset NaN and every noise layer silent,
-    // which is exactly the class of fault this file exists to catch.
+    // A real shape - renderNoise() reads `duration` back off it to place a
+    // burst; `undefined` here would make the offset NaN and every noise silent.
     return {
       length, sampleRate, duration: length / sampleRate,
       getChannelData: () => new Float32Array(length),
@@ -308,10 +268,8 @@ class StubContext {
   createBufferSource() {
     return Object.assign(new StubNode('source'), {
       buffer: null,
-      // Recorded, because when a source is told to start is the whole of the
-      // spacing rule and there is nothing else to look at. The offset is the
-      // second argument and is what keeps one shared buffer from being one
-      // repeated burst.
+      // When a source starts is the whole spacing rule; the offset (second
+      // arg) is what keeps one shared buffer from being one repeated burst.
       start(at, offset) { built.starts.push(at); built.offsets.push(offset); },
       stop() {},
     });
@@ -346,9 +304,8 @@ test('the dial defaults to Medium and clamps whatever it is given', t => {
   stubBrowser();
 
   assert.deepEqual([...SOUND_STOPS], ['Off', 'Low', 'Medium', 'High']);
-  // On by default is the decision that makes the feature worth building. If
-  // this line ever reads 0, somebody has turned the whole thing off for
-  // everybody who never opens the panel, which is most people.
+  // On by default is what makes the feature worth building - 0 here means
+  // it's off for everybody who never opens the panel, which is most people.
   assert.equal(initCuelume(null), 2, 'the default is Medium, which is to say on');
 
   assert.equal(initCuelume('0'), 0);
@@ -368,9 +325,8 @@ test('the dial defaults to Medium and clamps whatever it is given', t => {
 test('nothing is built before initCuelume has run', t => {
   t.after(restoreGlobals);
   stubBrowser();
-  // The whole of how /patch stays silent: main.ts skips the call there, and
-  // there is no page check inside the engine to get wrong. It is also what lets
-  // state.ts and four base modules be imported in a test with no Web Audio.
+  // How /patch stays silent: main.ts skips the call there, no page check
+  // inside the engine to get wrong. Also lets base modules import with no Web Audio.
   cue('tap');
   cue('fail');
   assert.equal(built.contexts, 0, 'an unwired engine reached for an AudioContext');
@@ -378,19 +334,16 @@ test('nothing is built before initCuelume has run', t => {
 
 test('a cue before the page has been touched tries, and is logged if refused', t => {
   t.after(restoreGlobals);
-  // There was a check on navigator.userActivation.hasBeenActive here and this
-  // test asserted it. It is gone, and this is the behaviour that replaced it:
-  // `hasBeenActive` is false on any fresh load, so refusing on it refused every
-  // case a browser would in fact have allowed - a high media-engagement score,
-  // a granted permission, an installed PWA. The board arriving at launch is the
-  // one cue that legitimately speaks before anything is pressed, and it is the
-  // exact case that guard blocked.
+  // A check on hasBeenActive used to refuse here, but it's false on any fresh
+  // load - refusing on it blocked every case a browser would actually allow
+  // (high media-engagement, a granted permission, an installed PWA), including
+  // the board arriving at launch, the one cue that legitimately speaks first.
   stubBrowser({ activated: false });
   initCuelume(null);
   cue('arrive');
   assert.equal(built.contexts, 1, 'the engine declined to even try');
 
-  // And where the browser does refuse, it refuses quietly and says so. A
+  // Where the browser does refuse, it refuses quietly and says so - a
   // rejected resume is the ordinary shape of that.
   restoreGlobals();
   const info = console.info;
@@ -454,9 +407,8 @@ test('nothing is ever dropped, and no cue waits for the one before it', t => {
   stubBrowser();
   initCuelume('2');
 
-  // Forty taps back to back, in the same tick - which is faster than any hand
-  // and is the point: a run of presses must not be able to outpace this. Each
-  // one starts on top of its predecessor, and the overlap is the stutter.
+  // Forty taps in the same tick, faster than any hand - a run of presses must
+  // not outpace this.
   let last = built.gains.length;
   for (let i = 0; i < 40; i++) {
     cue('tap');
@@ -464,9 +416,8 @@ test('nothing is ever dropped, and no cue waits for the one before it', t => {
     last = built.gains.length;
   }
 
-  // The two rules that used to live here are gone and this is what replaced
-  // them, so both directions are asserted rather than assumed: a different cue
-  // arriving in the same breath plays too.
+  // Both directions asserted: a different cue arriving in the same breath
+  // plays too.
   cue('fail');
   assert.ok(built.gains.length > last, 'a different cue was dropped');
   last = built.gains.length;
@@ -481,16 +432,11 @@ test('two cues in one tick start apart rather than on the same sample', t => {
   stubBrowser();
   initCuelume('2');
 
-  // The thing that made "a press and its result" read as one event rather than
-  // two. Both were scheduled at the identical currentTime, and two transients
-  // that start on the same sample are one transient - which is not a failure of
-  // overlapping, it is what perfect overlap sounds like.
+  // Two transients starting on the same sample are one transient - not a
+  // failure of overlap, but what perfect overlap sounds like.
   //
-  // The earliest start of each cue rather than the nth entry, because a recipe
-  // is however many layers it is and that changes whenever the table is
-  // retuned. This test broke three times on exactly that before it was written
-  // this way: it is about *when a cue begins*, and the layer count is none of
-  // its business.
+  // Uses the earliest start of each cue, not the nth entry, since layer count
+  // varies as the table is retuned - this is about when a cue begins.
   built.starts.length = 0;
   cue('pick');
   const first = Math.min(...built.starts);
@@ -508,16 +454,12 @@ test('a burst never becomes a queue', t => {
   stubBrowser();
   initCuelume('2');
 
-  // The backstop on the spacing above. Something firing a hundred cues in one
-  // tick must not stretch them into a one-second arpeggio; past the lookahead
-  // they pile up rather than queue, which is the behaviour asked for.
+  // The backstop on the spacing above: a hundred cues in one tick must not
+  // stretch into a one-second arpeggio - past the lookahead they pile up.
   built.starts.length = 0;
   for (let i = 0; i < 100; i++) cue('pick');
-  // A layer's own offset rides on top of the cue's start - `toggle`'s second
-  // burst is 24ms behind its first, by the recipe rather than by the spacing -
-  // so the ceiling being asserted is the lookahead plus whatever the recipe
-  // carries. Read off the table rather than written down, because a retune
-  // changes it and this test is not about which recipe `pick` happens to use.
+  // A layer's own offset rides on the cue's start, so the ceiling is lookahead
+  // plus whatever the recipe carries. Read off the table since a retune changes it.
   const layers = recipeFor(voiceFor('pick')).layers;
   const tail = Math.max(...layers.map(l => l.offset ?? 0));
   const last = Math.max(...built.starts);
@@ -532,9 +474,8 @@ test('the log records refusals as loudly as it records sounds', t => {
   t.after(() => { setCueLog(false); restoreGlobals(); });
   stubBrowser();
   initCuelume('2');
-  // The console is the log's whole output and a test does not want it. Restored
-  // by the same hook, since a swallowed console.info would follow this file into
-  // every test after it.
+  // Restored by the same hook, since a swallowed console.info would follow
+  // this file into every test after it.
   const info = console.info;
   console.info = () => {};
   t.after(() => { console.info = info; });
@@ -566,18 +507,14 @@ test('the noise buffer is made once and played from a different place each time'
   stubBrowser();
   initCuelume('2');
 
-  // Upstream allocates and fills a buffer per noise layer per cue - six
-  // thousand Math.random() calls for a press, on every press. One buffer for
-  // the session is the whole of this optimisation, and the thing that could go
-  // wrong with it silently is that it stops being one.
+  // One buffer for the session, not a refill per press - the risk is that it
+  // silently stops being one.
   for (let i = 0; i < 20; i++) cue('pick');
   assert.equal(built.buffers, 1,
     `${built.buffers} buffers for twenty cues - the noise is meant to be made once`);
 
-  // And the half that keeps one buffer honest: every burst is taken from a
-  // different offset, or forty identical bursts sum coherently and read as one
-  // sound with an amplitude problem. The stub records the offset as the second
-  // argument to start().
+  // The half that keeps one buffer honest: every burst takes a different
+  // offset, or forty identical bursts sum coherently into one loud sound.
   const offsets = built.offsets.filter(o => o !== undefined);
   assert.ok(offsets.length >= 20, `only ${offsets.length} offsets recorded`);
   assert.equal(new Set(offsets).size, offsets.length, 'two bursts took the same window');
@@ -590,14 +527,10 @@ test('a run detunes alternately rather than climbing', t => {
   stubBrowser();
   initCuelume('2');
 
-  // The only thing keeping forty overlapping copies of one waveform from
-  // phase-locking into a single sustained tone. Alternating and not climbing,
-  // because a run of forty that walked one way would be a melody going
-  // somewhere rather than a texture.
-  // Picked off the table rather than named, because the detune is written onto
-  // an *oscillator* and half the palette is noise: whichever cue is asserted
-  // here has to be one whose recipe carries exactly one tone layer, and which
-  // cue that is changes every time the table is retuned. This picks one.
+  // What keeps forty overlapping copies of one waveform from phase-locking
+  // into a sustained tone: alternating detune, not climbing. Picked off the
+  // table rather than named, since which cue has exactly one tone layer
+  // changes as the table is retuned.
   const tone = CUE_NAMES.find(name => {
     const layers = recipeFor(voiceFor(name)).layers;
     return layers.filter(l => l.kind === 'tone').length === 1;
@@ -614,9 +547,8 @@ test('the bench can play a recipe the table does not carry', t => {
   t.after(restoreGlobals);
   stubBrowser();
   initCuelume('2');
-  // web/lab-sound.html tunes a copy of a recipe on sliders, which is a shape
-  // no cue name can reach. It goes through the same mute rules as everything
-  // else, which is the half worth asserting.
+  // web/lab-sound.html tunes a recipe on sliders, a shape no cue name reaches
+  // - it still goes through the same mute rules as everything else.
   const tuned = { masterGain: 0.5, layers: [{ kind: 'tone', waveform: 'sine', frequency: 440, attack: 0.01, decay: 0.1, peak: 0.05 }] };
   playRecipe(tuned);
   assert.equal(built.oscillators, 1);
@@ -644,10 +576,8 @@ test('a locked context queues nothing and plays nothing late', async t => {
   console.info = () => {};
   t.after(() => { console.info = info; setCueLog(false); });
 
-  // A page that has not been touched may not make a sound, so a context built
-  // at boot starts suspended and its resume() does not settle until the browser
-  // decides to unlock it - which may be the next gesture or ten seconds later.
-  // This is that browser.
+  // A context built at boot starts suspended, and its resume() doesn't
+  // settle until the browser unlocks it - next gesture, or ten seconds later.
   let resumes = 0;
   let unlock = () => {};
   class Locked extends StubContext {
@@ -658,11 +588,8 @@ test('a locked context queues nothing and plays nothing late', async t => {
     }
   }
 
-  // A clock this test owns. The engine stamps a cue's arrival off
-  // performance.now(), so this is what lets the wait below be ten seconds
-  // without taking ten seconds - and, more to the point, what keeps the second
-  // half from going stale because a loaded machine stalled for a fifth of a
-  // second rather than because the engine decided anything.
+  // A clock this test owns, since the engine stamps arrival off
+  // performance.now() - lets the ten-second wait not take ten seconds.
   let clock = 0;
   stubBrowser();
   setGlobal('window', { AudioContext: Locked });
@@ -670,10 +597,8 @@ test('a locked context queues nothing and plays nothing late', async t => {
   initCuelume('2');
   setCueLog(true);
 
-  // The board arriving, and then a drag of the whimsy dial - which is exactly
-  // the sequence that was reported: silence while the thumb moved, and then the
-  // whole drag plus the boot chime arriving at once, long afterwards, as one
-  // noise with nothing to explain it.
+  // The reported sequence: the board arriving, then a whimsy-dial drag -
+  // silence while the thumb moved, then everything arriving at once, late.
   cue('arrive');
   for (let i = 0; i < 6; i++) cue('pick');
   assert.equal(resumes, 1,
@@ -692,10 +617,8 @@ test('a locked context queues nothing and plays nothing late', async t => {
   assert.deepEqual(new Set(cueLog().map(r => r.outcome)), new Set(['stale']),
     'and it has to say so, or a dropped cue and a cue nobody made look the same');
 
-  // The other half, which is what keeps this from being a mute button: a
-  // context that wakes when it is asked still speaks. Our own idle suspend is
-  // this case and takes single-digit milliseconds, which is what the clock
-  // standing still says here.
+  // What keeps this from being a mute button: a context that wakes promptly
+  // still speaks - our own idle suspend, at single-digit milliseconds.
   restoreGlobals();
   clock = 0;
   stubBrowser();
@@ -719,8 +642,8 @@ test('a browser with no Web Audio is silent rather than broken', t => {
   initCuelume('3');
   assert.doesNotThrow(() => cue('done'));
 
-  // And one that throws on construction, which is what a locked-down or
-  // out-of-handles browser does.
+  // One that throws on construction, as a locked-down or out-of-handles
+  // browser does.
   restoreGlobals();
   built = { contexts: 0, gains: [], oscillators: 0, limiters: 0, oscNodes: [], starts: [], offsets: [], buffers: 0 };
   setGlobal('window', { AudioContext: class { constructor() { built.contexts++; throw new Error('blocked'); } } });

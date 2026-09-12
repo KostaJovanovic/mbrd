@@ -1,19 +1,11 @@
 // What a media container states about itself, checked against files built here.
 //
-// Every parser in import/containers.ts reads a handful of fields at fixed - and
-// in three cases very much not fixed - offsets into somebody else's format. The
-// failure mode is not a crash: it is a number that comes out plausible and
-// wrong, a two-minute song reported as forty seconds because a field was read
-// four bytes early. Nothing on a card would look broken.
-//
-// So each container is written forwards here from its own specification, with
-// the duration chosen to be arithmetic anybody can check, and the parser is
-// asked to read back what was written. The builders are as small as the format
-// allows - a WAV with no data in it, an MP4 with no frames - because what is
-// being tested is the header walk and nothing else.
-//
-// Same shape as tests/artwork.test.js, and for the same reason: a checked-in
-// .mkv would be a binary nobody can read in a repository that has none.
+// The failure mode is not a crash - it's a plausible, wrong number: a
+// two-minute song reported as forty seconds from a field read four bytes
+// early, with nothing on screen to say so. Each container is written forwards
+// from its own spec, duration chosen as checkable arithmetic, builders kept
+// minimal (a WAV with no data, an MP4 with no frames). Same reasoning as
+// tests/artwork.test.js: a checked-in .mkv is a binary nobody can read.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -97,9 +89,8 @@ function mp3Frame({ frames = 0, mono = false } = {}) {
 // ---------------------------------------------------------------------------
 
 test('a WAV states its length in bytes and its rate in the fmt chunk', async () => {
-  // 44100 Hz, stereo, 16-bit: 176400 bytes a second. Half a megabyte of it is
-  // 2.97... seconds, and the point is that the parser divides rather than
-  // guesses.
+  // 44100 Hz stereo 16-bit is 176400 bytes/sec - the parser divides rather
+  // than guesses.
   const fmt = chunk('fmt ', [...le16(1), ...le16(2), ...le32(44100), ...le32(176400), ...le16(4), ...le16(16)]);
   const data = chunk('data', zeros(176400 * 3));
   const wav = bytes('RIFF', le32(4 + fmt.length + data.length), 'WAVE', fmt, data);
@@ -127,8 +118,8 @@ test('an AVI states its frame count and its picture size', async () => {
 });
 
 test('an AIFF sample rate is read out of its 80-bit float', async () => {
-  // The one field in any of these formats that is an extended-precision float,
-  // and the one most likely to be read wrong: 44100 frames is one second.
+  // The one field here that's an extended-precision float, and most likely to
+  // be read wrong: 44100 frames is one second.
   const comm = chunk('COMM', [...be16(2), ...be32(44100 * 5), ...be16(16), ...ext80(44100)], false);
   const aiff = bytes('FORM', be32(4 + comm.length), 'AIFF', comm);
   const f = await facts(aiff, 'take.aiff');
@@ -149,12 +140,9 @@ test('an AIFC is read by the same walk as an AIFF', async () => {
 // ---------------------------------------------------------------------------
 
 test('FLAC counts its own samples in STREAMINFO', async () => {
-  // 44100 Hz, 2 channels, 16-bit, 441000 samples = ten seconds, packed across
-  // eight bytes on no byte boundary at all.
+  // 44100 Hz, 2 channels, 16-bit, 441000 samples = ten seconds, all packed
+  // across eight bytes with no byte boundary aligned to any field.
   const info = zeros(34);
-  // sample rate (20 bits), channels (3), bit depth (5), total samples (36):
-  // 0x0AC44 is 44100, then 2 channels and 16 bits, then the count as a nibble
-  // and four bytes. Not one of them starts on a byte boundary.
   info[10] = 0x0a; info[11] = 0xc4; info[12] = 0x42;
   info[13] = 0xf0;                                        // bit depth's low bits
   info[15] = 0x06; info[16] = 0xba; info[17] = 0xa8;      // 441000
@@ -175,8 +163,8 @@ test('an Ogg Vorbis stream is measured from its last granule', async () => {
 });
 
 test('Ogg Theora states the picture, and no duration it cannot count', async () => {
-  // The frame is rounded up to whole macroblocks - 1088 for a 1080-line clip -
-  // and the picture fields after it are the real size.
+  // The frame rounds up to whole macroblocks (1088 for 1080 lines); the
+  // picture fields after it are the real size.
   const id = bytes([0x80], 'theora', [3, 2, 1], be16(120), be16(68),
     [0, 7, 0x80], [0, 4, 0x38], zeros(20));
   const f = await facts(ogg(id, 999999), 'clip.ogv');
@@ -187,8 +175,8 @@ test('Ogg Theora states the picture, and no duration it cannot count', async () 
 });
 
 test('Opus counts granules at 48 kHz and drops its pre-skip', async () => {
-  // 312 samples of encoder warm-up, which every player subtracts and which is
-  // the difference between agreeing with the player and being 6 ms long.
+  // 312 samples of warm-up every player subtracts - the difference between
+  // agreeing with the player and being 6ms long.
   const head = bytes('OpusHead', [1, 2], le16(312), le32(44100), le16(0), [0]);
   const f = await facts(ogg(head, 48000 * 2 + 312), 'song.opus');
   assert.equal(f.container, 'Opus');
@@ -226,8 +214,8 @@ test('an ID3 tag in front of the audio is stepped over', async () => {
 // ---------------------------------------------------------------------------
 
 test('an MP4 states its duration in mvhd and its picture in tkhd', async () => {
-  // timescale 600, duration 3600 = six seconds; 1920x1080 as 16.16 fixed point
-  // at the far end of the atom, behind the display matrix.
+  // timescale 600, duration 3600 = six seconds; 1920x1080 as 16.16 fixed
+  // point, behind the display matrix.
   const mvhd = atom('mvhd', [0, 0, 0, 0], be32(0), be32(0), be32(600), be32(3600), zeros(80));
   const tkhd = atom('tkhd',
     [0, 0, 0, 7], be32(0), be32(0), be32(1), be32(0), be32(3600),
@@ -266,8 +254,8 @@ test('a 64-bit mvhd is read as one', async () => {
 // ---------------------------------------------------------------------------
 
 test('a Matroska file states its duration in scaled ticks', async () => {
-  // TimecodeScale is a million nanoseconds - a millisecond a tick - and the
-  // Duration is a float, which is unlike every other duration here.
+  // TimecodeScale is a million nanoseconds (a millisecond a tick); Duration
+  // is a float, unlike every other duration here.
   const dur = new Uint8Array(8);
   new DataView(dur.buffer).setFloat64(0, 8500);
   const info = ebml(0x1549a966, bytes(
@@ -304,8 +292,7 @@ const ASF_VIDEO = [0xc0, 0xef, 0x19, 0xbc, 0x4d, 0x5b, 0xcf, 0x11,
   0xa8, 0xfd, 0x00, 0x80, 0x5f, 0x5c, 0x44, 0x2b];
 
 test('an ASF play duration has its preroll taken off', async () => {
-  // 100-nanosecond units, less a preroll in milliseconds: every player
-  // subtracts it, so a file that does not is three seconds long by itself.
+  // 100ns units minus a preroll in ms, which every player subtracts.
   const props = bytes(ASF_PROPS, le64(24 + 80),
     zeros(16), le64(0), le64(0), le64(0), le64(30e7), le64(0), le64(3000), zeros(16));
   const stream = bytes(ASF_STREAM, le64(24 + 62),
@@ -341,8 +328,7 @@ test('an FLV is read out of its onMetaData', async () => {
 // ---------------------------------------------------------------------------
 
 test('AC-3 is constant bitrate, so one frame header measures the file', async () => {
-  // fscod 0 is 48 kHz; frmsizecod 20 is 384 words - 768 bytes - a frame, and a
-  // frame is 1536 samples. Twenty frames is 0.64 seconds.
+  // fscod 0 is 48kHz; frmsizecod 20 is 768 bytes/frame, 1536 samples/frame.
   const frame = bytes([0x0b, 0x77], be16(0), [(0 << 6) | 20], [0], [0x00 | (2 << 5)], zeros(762));
   const ac3 = bytes(...Array.from({ length: 20 }, () => frame));
   const f = await facts(ac3, 'track.ac3');
@@ -352,9 +338,8 @@ test('AC-3 is constant bitrate, so one frame header measures the file', async ()
 });
 
 test('the AC-3 low-frequency bit is counted to, not guessed at', async () => {
-  // acmod 7 is 3/2 - five channels - and both mix-level fields are present
-  // before the LFE bit, which puts it at the very bottom of the byte. A reader
-  // that assumed a fixed position calls this 5 instead of 5.1.
+  // acmod 7 is 3/2 (five channels), with both mix-level fields before the LFE
+  // bit - a reader assuming a fixed position calls this 5 instead of 5.1.
   const bsi = (7 << 5) | 0b00000001;              // acmod 7, cmixlev, surmixlev, lfe on
   const frame = bytes([0x0b, 0x77], be16(0), [20], [0], [bsi], zeros(762));
   const f = await facts(bytes(frame, frame), 'film.ac3');
@@ -366,8 +351,7 @@ test('the AC-3 low-frequency bit is counted to, not guessed at', async () => {
 });
 
 test('DTS reads its block count and frame size across byte boundaries', async () => {
-  // nblks 15 is 16 blocks of 32 samples - 512 - and fsize is the frame length
-  // less one. 48 kHz, 2048-byte frames, eight of them.
+  // nblks 15 is 16 blocks of 32 samples (512); fsize is frame length less one.
   const bits = (15 << 18) | (2047 << 4);
   const dts = bytes(
     [0x7f, 0xfe, 0x80, 0x01], be32(bits >>> 0), [(13 << 2)], zeros(2048 * 8 - 9),
@@ -379,8 +363,7 @@ test('DTS reads its block count and frame size across byte boundaries', async ()
 });
 
 test('AMR is counted frame by frame at fifty a second', async () => {
-  // Mode 7 is 32 bytes a frame, mode 15 carries nothing and is one byte, and
-  // both are twenty milliseconds - which is the whole reason this walks.
+  // Mode 7 is 32 bytes/frame, mode 15 is one empty byte - both 20ms, why this walks.
   const speech = bytes([7 << 3], zeros(31));
   const quiet = bytes([15 << 3]);
   const amr = bytes('#!AMR\n', ...Array.from({ length: 50 }, (_, i) => (i % 2 ? quiet : speech)));
@@ -438,7 +421,7 @@ function ts(from, to, { w = 1280, h = 720, packets = 12 } = {}) {
 const TS_PACKET = 188;
 
 test('a transport stream is measured between its first and last stamps', async () => {
-  // 90 kHz: nine hundred thousand ticks is ten seconds.
+  // 90kHz: 900,000 ticks is ten seconds.
   const f = await facts(ts(90000, 90000 + 900000), 'clip.mts');
   assert.equal(f.container, 'MPEG-TS');
   assert.equal(f.duration, 10);
@@ -447,8 +430,7 @@ test('a transport stream is measured between its first and last stamps', async (
 });
 
 test('a timestamp past the 32-bit mark is read whole', async () => {
-  // The counter is 33 bits, so the top of it is past what a shift can hold -
-  // and a reader that shifts comes out negative here rather than long.
+  // 33 bits is past what a shift can hold - a shifting reader goes negative.
   const base = 8_000_000_000;
   const f = await facts(ts(base, base + 90000 * 30), 'clip.ts');
   assert.equal(f.duration, 30);
@@ -465,8 +447,8 @@ test('a program stream is the same walk without the packets', async () => {
 });
 
 test('a stream whose stamps run backwards states no duration', async () => {
-  // A 33-bit counter wraps about every 26 hours, and a stream that crosses the
-  // wrap would otherwise report a negative length - or, worse, a plausible one.
+  // A 33-bit counter wraps every ~26 hours - crossing it would report a
+  // negative, or worse, a plausible length.
   const f = await facts(ts(900000, 1000), 'clip.ts');
   assert.equal(f.duration, undefined);
   assert.equal(f.width, 1280);
@@ -501,8 +483,8 @@ function avcSps(w, h, profile = 66) {
   const r = new BitWriter();
   r.u(8, profile).u(8, 0).u(8, 40);
   r.ue(0);                    // seq_parameter_set_id
-  // The high profiles carry four more fields and a scaling-list flag before
-  // anything else - the one branch the reader has, so the one worth writing.
+  // High profiles carry four more fields plus a scaling-list flag first - the
+  // one branch the reader has.
   if (profile === 100) {
     r.ue(1);                  // chroma_format_idc: 4:2:0
     r.ue(0).ue(0);            // bit depths
@@ -537,13 +519,12 @@ function hevcSps(w, h) {
 }
 
 test('an H.264 stream states its picture in its parameter set', async () => {
-  // 1080 out of a grid that codes 1088, which is what the cropping window is
-  // for and what every phone video in the world needs read correctly.
+  // 1080 out of a grid that codes 1088 - what the cropping window is for.
   const f = await facts(bytes(avcSps(1920, 1080), zeros(2048)), 'clip.264');
   assert.equal(f.container, 'H.264');
   assert.equal(f.width, 1920);
   assert.equal(f.height, 1080);
-  // A bare bitstream carries no timing at all, and saying so is the point.
+  // A bare bitstream carries no timing at all - saying so is the point.
   assert.equal(f.duration, undefined);
 });
 
@@ -561,17 +542,15 @@ test('an HEVC stream states its picture outright', async () => {
 });
 
 test('a start code with no parameter set behind it answers null', async () => {
-  // Three bytes of anything can be a start code. Answering "H.264" for a file
-  // that merely contains one would be claiming a recognition that did not happen.
+  // Three bytes of anything can be a start code - answering "H.264" here
+  // would claim a recognition that didn't happen.
   assert.equal(await facts(bytes([0, 0, 1, 0x41], zeros(4096)), 'clip.264'), null);
 });
 
 test('a truncated parameter set answers nothing absurd', async () => {
   // A parameter set cut short and padded is, byte for byte, a different and
-  // perfectly readable one - so the claim here is not that the answer is right,
-  // it is that there is an answer at all and that it is a picture size rather
-  // than a number with eight digits in it. That bound is clean()'s, and this is
-  // what walks it: the bit reader, the padding and the ceiling together.
+  // readable one - the claim isn't that the answer is right, only that it's a
+  // picture size and not an eight-digit number. That bound is clean()'s.
   const whole = avcSps(1920, 1080);
   for (let cut = 5; cut < whole.length; cut++) {
     const f = await facts(bytes(whole.slice(0, cut), zeros(64)), 'clip.264');
@@ -599,10 +578,9 @@ test('a file that is not a container answers null', async () => {
 });
 
 test('a header that states no duration leaves the field absent, not zero', async () => {
-  // A WAV with a fmt chunk and no data: everything about it parses and none of
-  // it is a duration. The callers read the field they want and fall back where
-  // it is missing, so a zero here would be a track claiming to be empty - which
-  // is a claim, where an absence is not.
+  // A WAV with a fmt chunk and no data parses fine but has no duration.
+  // Callers fall back where the field is missing - a zero would claim the
+  // track is empty, which absence does not.
   const fmt = chunk('fmt ', [...le16(1), ...le16(2), ...le32(0), ...le32(0), ...le16(4), ...le16(16)]);
   const wav = bytes('RIFF', le32(4 + fmt.length), 'WAVE', fmt);
   const f = await facts(wav, 'broken.wav');
@@ -612,8 +590,8 @@ test('a header that states no duration leaves the field absent, not zero', async
 });
 
 test('a duration nobody could have recorded is refused', async () => {
-  // A sample rate of one turns a small file into a hundred days. Ten days is
-  // the ceiling, and past it the field is dropped rather than shown.
+  // A sample rate of one turns a small file into a hundred days; past the
+  // ten-day ceiling the field is dropped rather than shown.
   const info = zeros(34);
   info[10] = 0x00; info[11] = 0x00; info[12] = 0x12;      // rate 1, 2 channels
   info[14] = 0xff; info[15] = 0xff; info[16] = 0xff;
@@ -623,8 +601,8 @@ test('a duration nobody could have recorded is refused', async () => {
 });
 
 test('a truncated container is a container that says less', async () => {
-  // Every one of these is a real header cut off mid-field. None may throw and
-  // none may answer a number it did not read.
+  // Each is a real header cut mid-field - none may throw or answer a number
+  // it didn't read.
   const mvhd = atom('mvhd', [0, 0, 0, 0], be32(0), be32(0), be32(600), be32(3600), zeros(80));
   const full = bytes(atom('ftyp', 'isom', be32(512), 'isom'), atom('moov', mvhd));
   for (let cut = 8; cut < full.length; cut += 7) {

@@ -100,11 +100,14 @@ export interface MenuCommands {
   canKeepFrame: (id: string) => boolean;
   canTintSticker: (id: string) => boolean;
   canViewItem: (id: string) => boolean;
-  // Link cards: the address is the whole point, so editing and copying it sit at
-  // the top of the menu. linkURLOf returns the address, or null for a non-link.
+  // Link cards: the address is the whole point, so its Properties row (edit the
+  // name, edit or copy the address) sits at the top of the menu. linkURLOf
+  // returns the address, or null for a non-link.
   linkURLOf: (id: string) => string | null;
-  editLink: (id: string) => void;
-  copyLink: (id: string) => void;
+  linkProps: (id: string) => void;
+  /** "Open" on a link: the site in a new tab, or - for YouTube - the viewer
+   *  with its player. Non-link items use openViewer instead. */
+  openLink: (id: string) => void;
   canUnstick: () => boolean;
   canTag: () => boolean;
   boardTags: () => { tag: string, count: number }[];
@@ -494,13 +497,12 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
   ];
   // Hide the fold row if every entry inside it is hidden.
   const editable_picture = pictureEdits.some(e => !e.hidden);
-  // A link card leads its menu with the two things you do to an address: change
-  // where it goes, and take a copy of it. Single-item only - a group has no one
-  // address. Above everything else because it is the reason this card exists.
+  // A link card leads its menu with Properties: the one box where its name and
+  // address are edited or the address copied. Single-item only - a group has no
+  // one address. Above everything else because the address is why the card exists.
   const linkURL = !many ? cmds!.linkURLOf(id) : null;
   const linkTop: MenuEntry[] = linkURL ? [
-    { label: 'Edit link', icon: 'i-link', action: () => cmds!.editLink(id) },
-    { label: 'Copy link', icon: 'i-duplicate', action: () => cmds!.copyLink(id) },
+    { label: 'Properties', icon: 'i-link', action: () => cmds!.linkProps(id) },
     { sep: true },
   ] : [];
   return [
@@ -515,8 +517,11 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // Duplicated from canvas menu — a hold on a card is how touch starts collecting.
     ...(mobile ? [] : multiSelectEntry()),
     // No accel on notes — double-click belongs to Edit text there.
+    // A link opens its site (or, for YouTube, the viewer's player) - see
+    // openLink. Every other viewable item opens in the viewer.
     { label: 'Open', icon: 'i-expand', accel: editable ? '' : 'dbl-click',
-      hidden: !viewable, action: () => cmds!.openViewer(id) },
+      hidden: !viewable && !linkURL,
+      action: () => linkURL ? cmds!.openLink(id) : cmds!.openViewer(id) },
     // Copy/Paste instead of Duplicate — paste lands where the cursor is, on any
     // board. Ctrl+D still duplicates. i-duplicate icon on Copy deliberately.
     { label: many ? `Copy ${count} items` : 'Copy', icon: 'i-duplicate', accel: 'Ctrl C',

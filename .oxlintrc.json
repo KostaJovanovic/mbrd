@@ -1,95 +1,20 @@
-// Correctness only. Nothing here is about taste.
+// Correctness only, no formatter. oxlint + vendored anti-slop plugin.
 //
-// This repository had exactly one author for its whole life, so "match the
-// surrounding style" worked. It does not survive a second author, and the answer
-// is a linter that catches mistakes rather than one with opinions about layout.
-// There is deliberately NO formatter: Prettier would rewrite all 31,000 lines
-// and destroy the blame this project's module headers make worth keeping.
+// anti-slop fires on TypeScript patterns that hide mistakes (double casts,
+// unknown returns, index signatures standing in for types), not on layout.
 //
-// oxlint rather than ESLint because it is a single binary with no plugin graph,
-// which is closer to what this repo is. It is a devDependency; the app still
-// ships nothing and `npm test` still needs no install.
+// Five rules are off because the flagged syntax IS the boundary in this repo:
+//   no-runtime-typeof         feature detection + .mbrd parsing are correct typeof
+//   no-unknown-parameters     coercers/type guards ARE the boundary
+//   no-unsafe-dictionary-type Record<string, unknown> is pre-validation
+//   no-shape-in-symbol-names  "shape" is a domain noun (stickers)
+//   no-known-value-widening   dispatch tables need runtime-string indexing
 //
-// no-undef earns its place on its own: the same class of bug it catches was
-// sitting in web-graph.js, which called two geometry helpers it had never
-// imported and threw out of threads() for the life of the module.
+// no-unknown-returns is on except for idb.ts, errors.ts, desktop/store.ts,
+// desktop/format.mts, platform/electron.ts — those return genuinely unknown
+// bytes from older builds or Proxy traps.
 //
-// The anti-slop/* block is the one departure from "correctness only", and it is
-// a narrow one: every rule in it fires on a way of writing TypeScript that hides
-// a mistake rather than on a way of laying code out. `as X as Y`, a signature
-// that promises `unknown` back, an index signature standing in for a type - each
-// is a place where the checker was talked out of an answer it had. The plugin is
-// vendored at tools/oxlint/anti-slop and loaded through jsPlugins, so it costs
-// the repo a devDependency and no plugin graph. It is still not a formatter and
-// Prettier is still not coming.
-//
-// Four of the plugin's fifteen rules are off, and the reason is the same in each
-// case: they read a syntax as evidence of a missing boundary, and in this repo
-// that syntax IS the boundary. They are listed here rather than deleted so that
-// nobody turns one back on without reading why it went off.
-//
-//   no-runtime-typeof         245 hits. Two populations, both correct. One is
-//                             feature detection - `typeof document === void`,
-//                             `typeof MutationObserver !== 'function'` - which
-//                             is how browser-support.md says to ask. The other
-//                             is storage/ and board-schema.ts reading a .mbrd a
-//                             stranger wrote, where a typeof IS the parse.
-//   no-unknown-parameters     173 hits, almost all coercers and type guards:
-//                             clampScale(n: unknown), safeVars, isFamily. The
-//                             rule wants input parsed at the boundary; these are
-//                             the boundary, and their headers say so.
-//   no-unsafe-dictionary-type  47 hits, nearly all in board-schema.ts, where
-//                             Record<string, unknown> is the type of a file
-//                             BEFORE validation. A named type there would be a
-//                             claim about bytes we have not checked yet.
-//   no-shape-in-symbol-names  159 hits, every one of them the word "shape" -
-//                             stickerShape, DEFAULT_SHAPE, addStickerAt(shape).
-//                             Stickers have shapes. The rule is looking for
-//                             type-jargon names and finding a domain noun.
-//   no-known-value-widening    85 hits, and this one earned its keep before it
-//                             went off: 39 were real and are fixed. Thirty were
-//                             a function or a `let` wearing an inline object
-//                             type, and each of those is a named type now -
-//                             ConnectStep, SplitLook, AxisMemo, Taps. Nine more
-//                             were closed-key tables that took `satisfies`
-//                             instead of an annotation, which is strictly
-//                             better: CUES now fails to compile if a cue is
-//                             missing a row. What is left is 46 hits on the
-//                             dispatch tables this app is built out of - VIEWS,
-//                             LAYOUTS, ORDERS, FLYOUTS, READERS, RENDERERS -
-//                             every one of them looked up with a string that
-//                             arrived in a .mbrd file or on a data-cmd. The rule
-//                             wants `satisfies` there and `satisfies` cannot be
-//                             indexed by a runtime string. CLAUDE.md tells you
-//                             to add a row to those tables; this rule would tell
-//                             you off for the table.
-//
-// A fifth, no-unknown-returns, is on everywhere but four files - see the
-// override at the foot of this config. It found eighty real ones: the injected
-// command interfaces said `=> unknown` where they meant `=> void`, and two of
-// them were hiding a value the caller then read. The exemptions are the only
-// places where the return genuinely is unknown - idb.ts hands back bytes some
-// older build of this app wrote, and errors.ts reads a property off something
-// that may be a Proxy with a throwing getter. Both headers say so at length.
-//
-// The other three are the same exemption travelling with the same contract.
-// desktop/store.ts and desktop/format.mts are idb.ts's *second* implementation,
-// reading files some older build of this app wrote; platform/electron.ts is the
-// seam between them, turning Blobs into bytes and back for values it is not
-// allowed to have an opinion about. A named return type in any of the three
-// would be a claim about bytes nothing has checked. That the exemption had to
-// travel is the point - without it, the desktop store would have been held to a
-// stricter contract than the interface it implements.
-//
-// ── desktop/ is linted, and is not in the root tsconfig ──
-//
-// The two are separate on purpose and in opposite directions. The typecheck is
-// split because desktop/ needs Node's types and the root config closes them
-// (`types: []`, argued in its own header). The lint is *not* split, because
-// nothing about a lint rule is browser-specific: the same anti-slop rules
-// should catch the same mistakes in a main process as in a renderer, and a
-// second config would be a second place they could drift. All desktop/ needs is
-// the Node env, which it shares with tests/ and tools/ below.
+// desktop/ is linted (same rules) but not in the root tsconfig (needs Node types).
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "env": {

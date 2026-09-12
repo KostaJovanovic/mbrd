@@ -1,18 +1,12 @@
 // The whole desktop store path, without Electron.
 //
-// tests/store-backend.test.js drives session.ts over a backend made of Maps,
-// which proves the seam is a seam. This drives it over the *real* two halves of
-// the desktop one: platform/electron.ts turning Blobs into bytes for the
-// bridge, and desktop/format.mts turning those bytes into a file and back. Only
-// the IPC hop and the filesystem are faked, and neither of them was ever where
-// the bug was.
-//
-// It exists because the bug was in the join. Each half looked right on its own:
-// the adapter converted a Blob, and the format wrote bytes. What neither of
-// them did was carry a Blob that was one level down inside an asset record -
-// so every picture on a restored board came back empty, silently, and the only
-// way to see it was to run the shell and read a file on disk. A test of either
-// half alone would still pass today with that bug in place.
+// tests/store-backend.test.js proves the seam is a seam over a Map backend;
+// this drives the real two halves - platform/electron.ts and
+// desktop/format.mts - faking only IPC and the filesystem. It exists because
+// the bug was in the join: each half looked right alone, but neither carried
+// a Blob nested one level inside an asset record, so every picture on a
+// restored board came back empty, silently. Neither half tested alone would
+// have caught it.
 
 import { test, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -32,11 +26,9 @@ const PHOTO = hash('photo');
 /**
  * A bridge whose store is the desktop's file format in memory.
  *
- * Every value goes through encode() on the way in and decode() on the way out,
- * which is exactly what desktop/store.ts does around a writeFile and a
- * readFile. What is left out is the write itself and the IPC hop - one is the
- * operating system's and the other is structured clone, and neither can lose a
- * Blob that the two ends have already agreed about.
+ * Every value goes through encode()/decode(), same as desktop/store.ts around
+ * a writeFile/readFile. Left out: the write and the IPC hop, neither of which
+ * can lose a Blob the two ends already agreed about.
  */
 function fakeBridge() {
   const files = new Map();
@@ -115,9 +107,8 @@ test('a picture survives the round trip as a Blob, with its bytes', async () => 
 });
 
 test('the picture keeps its MIME type across the bridge', async () => {
-  // canvas/display.ts renders an asset from a blob: URL, and a browser draws
-  // that by the blob's own type. A round trip that lost it would leave every
-  // photograph on a restored board as a file the app offers to download.
+  // A browser draws a blob: URL by the blob's own type - losing it would
+  // leave every restored photograph as a download prompt.
   putAsset(PHOTO, photo(), { ext: 'png', mime: 'image/png', name: 'p.png' });
   addItems([item()]);
   await autosave();
@@ -128,9 +119,8 @@ test('the picture keeps its MIME type across the bridge', async () => {
 });
 
 test('what lands on disk is not a JSON object with an empty blob in it', () => {
-  // The bug, stated as the artefact it produced. `{"blob":{}}` is what a
-  // stringify of an asset record writes, and it is what this whole format
-  // exists to stop being written.
+  // The bug as artefact: `{"blob":{}}` is what a plain stringify writes, and
+  // what this format exists to stop.
   const record = { blob: { __bytes: true, data: PIXELS.buffer, mime: 'image/png' }, ext: 'png' };
   const written = encode(record).toString('latin1');
   assert.doesNotMatch(written, /"blob":\{\}/, 'the Blob was not stringified away');

@@ -1,58 +1,15 @@
-// Tiny IndexedDB wrapper for the working-state cache.
+// IndexedDB wrapper for the working-state cache (crash recovery, not durable storage).
+// Stores: kv (board snapshot), assets (blobs by hash), library (saved .mbrd), matte (cut-out cache).
 //
-// Two stores: `kv` holds the board snapshot and bookkeeping, `assets` holds the
-// raw Blobs keyed by content hash. This is the crash-recovery layer only - the
-// durable artefact is always the .mbrd file the user saves.
-//
-// ── This file is already a port ──
-//
-// The eight exports at the foot are the entire surface session.ts, library.ts
-// and matte-cache.ts are written against, and none of them says the word
-// IndexedDB. So making recovery live somewhere else is not a change to those
-// three files: it is a second implementation of eight functions, wired through
-// setStoreBackend(). The desktop writes `userData/store/<store>/<key>` from its
-// main process for exactly that reason - Chromium's IndexedDB partition is the
-// browser's to evict, and app data is not. See research/electron-2026-09-06.md
-// §4 *store*.
-//
-// **The batch forms lose "all land or none" on a backend that is not a
-// database, and that is safe because of an order somebody already argued.** A
-// file backend writes keys one at a time, so a crash can land three of five.
-// writeSnapshot() in session.ts writes the assets first, the snapshot second
-// and sweeps last, precisely so a half-finished write is never a snapshot
-// pointing at bytes that are not there - the worst a torn batch leaves is an
-// asset nobody references yet, which is what the sweep is for. Read that
-// function's header before changing this one's contract.
-//
-// **`clear()` is the exception and must be all-or-nothing on every backend.**
-// It is not covered by the paragraph above, because the ordering argument is
-// about writes. clearAllData() in session.ts drops the write latch, drains the
-// writer and *reports a failed wipe* rather than reloading over it - that was
-// PERSIST-03 and it is the reason a partial wipe has to come back as a
-// rejection. A backend whose clear() deletes what it can and resolves anyway
-// turns a reported failure into a silent half-erased store.
-//
-// **Keys are strings on a backend that is not IndexedDB.** The signatures below
-// say IDBValidKey because they always did and forty callers pass strings; a
-// file backend has to reject anything else rather than coerce it, since a path
-// is where the key ends up. Case is the other half of that: NTFS and APFS fold
-// it, so a backend keying files by name needs its keys lowercase or hashed.
-// Asset keys are lowercase hex out of crypto.ts and are safe as they are.
+// The eight exports are the only surface; setStoreBackend() swaps the implementation
+// (desktop uses files instead of IDB). Batch forms may tear on non-DB backends —
+// callers write assets-first so a torn batch never leaves a dangling reference.
+// clear() must be all-or-nothing on every backend. Keys are strings outside IDB.
 
 const DB_NAME = 'mbrd';
-// v2 adds the `library` store, v3 the `matte` one. Both are purely additive -
-// the upgrade below only creates stores that are absent, so an existing
-// database keeps every byte it had and simply gains an empty one. See
-// storage/library.ts and storage/matte-cache.ts.
+// v2: library store, v3: matte store. Upgrades only create missing stores.
 const DB_VERSION = 3;
 
-/**
- * The four stores this database has, spelled out rather than left as `string`.
- *
- * Every store is created in the upgrade below, so the set is closed and a typo
- * in a caller is a compile error rather than a transaction that throws
- * NotFoundError at the moment somebody tries to save.
- */
 export type StoreName = 'kv' | 'assets' | 'library' | 'matte';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -137,19 +94,9 @@ function open(): Promise<IDBDatabase> {
   return dbPromise;
 }
 
-// Resolve from `transaction.oncomplete`, never from `request.onsuccess`. A put,
-// delete or clear reports request success once the operation is *accepted*; the
-// transaction can still abort afterwards. Resolving early would let the caller
-// (autosave, cache sweep, "clear everything") treat not-yet-durable bytes as
-// saved. The request result is captured and handed back only once the whole
-// transaction commits. Reads take the same path - completion follows success,
-// so the captured value is ready.
-// `fn` may issue one request or an array of them. Many requests in one
-// transaction is the whole point of the batch calls below: a transaction is not
-// free - it is opened, scheduled and committed - and doing one per asset made
-// putting a photo board away a few hundred sequential round trips, each waiting
-// on the last because the caller awaited it. Issued together they are one
-// commit, and IndexedDB was built to be driven this way.
+// Resolve on transaction.oncomplete, not request.onsuccess — a put can
+// still abort after request success. Batch calls issue many requests in
+// one transaction (one commit instead of hundreds of sequential round trips).
 /**
  * The four members of a request this module touches, named structurally rather
  * than as `IDBRequest<unknown>`.

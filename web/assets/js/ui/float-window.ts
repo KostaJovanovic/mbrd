@@ -1,39 +1,14 @@
-// Moving and resizing a floating window, for the two of them the Desktop board
-// has: the Playlist's player and the sticker pad.
-//
-// Written for the player and lifted out when the second one wanted the same
-// behaviour, which is the whole justification - a window you can drag by its
-// title bar and pull bigger by its corner is not a fact about music. Nothing
-// here knows what is inside the window or who opened it; it is handed the
-// element and the handle and wires the pointer.
-//
-// Both take the same shape, and it is worth naming once rather than twice: the
-// first grab reads the window's current rectangle and pins it to explicit
-// left/top, because a window opens anchored to an edge (right/bottom) and an
-// anchored box cannot be dragged away from that edge. From then on the pointer
-// writes coordinates. Clamped to the viewport with a small margin, so a window
-// dragged at speed cannot be parked off the screen with no way back.
-//
-// Touches `document` only inside the two functions, both of which run from a
-// panel's open path - so this module is safe to import at the top of anything.
+// Drag-by-titlebar and corner-resize for floating windows (playlist player,
+// sticker pad). First grab pins to explicit left/top (anchored windows cannot
+// be dragged otherwise). Clamped to viewport with MARGIN.
 
 import { clamp } from '../util.ts';
 
 /** How much of the window stays on screen, in px. */
 const MARGIN = 8;
 
-/**
- * Bind one grab's move-and-release listeners on `window`, and hand back the
- * detach that takes them off again.
- *
- * They live on `window` rather than the handle for the reason each caller's own
- * comment below gives: a captured pointer that leaves a title bar or a
- * twenty-pixel grip still has to be heard from. What matters here is their
- * *lifetime*. Both floating windows are rebuilt on every open, so three
- * window-scope listeners closing over a detached element are stranded on every
- * open/close cycle unless something takes them off. The returned detach is that
- * something; the caller holds it and calls it on close.
- */
+/** Bind move/release on window for one grab; returns detach (must be called on
+ * close — windows are rebuilt on each open). */
 function grab(
   onMove: (e: PointerEvent) => void,
   onEnd: (e: PointerEvent) => void,
@@ -48,15 +23,8 @@ function grab(
   };
 }
 
-/**
- * Drag a window by a handle - in practice its title bar.
- *
- * Presses on buttons inside the handle are left alone, and not merely so the
- * button still works: setPointerCapture on the bar retargets the eventual click
- * to the bar itself, so a captured press over a button never reaches it at all.
- * In the player the close button was exempt and the view toggle was not, which
- * is how "Album view" came to do nothing whatsoever.
- */
+/** Drag a window by its title bar. Buttons inside the handle are not captured
+ * — setPointerCapture retargets clicks to the bar and breaks them. */
 export function makeWindowDrag(win: HTMLElement, handle: HTMLElement): () => void {
   /** The grab: where in the window the pointer took hold, and how big it was. */
   let d: { dx: number; dy: number; w: number; h: number } | null = null;
@@ -98,15 +66,8 @@ export function makeWindowDrag(win: HTMLElement, handle: HTMLElement): () => voi
   return grab(move, end);
 }
 
-/**
- * Resize a window by its bottom-right grip.
- *
- * Like the move drag, the first grab pins the window to top/left so the corner
- * is free to travel, then pointer moves set an explicit width and height,
- * clamped to a floor and to what stays on screen. The height cap the stylesheet
- * puts on an unsized window is lifted the moment a size is set by hand -
- * otherwise the grip would refuse to grow it downwards and look broken.
- */
+/** Resize by bottom-right grip. Pins to top/left on first grab. Lifts the CSS
+ * max-height when a manual size is set. */
 export function makeWindowResize(
   win: HTMLElement,
   handle: HTMLElement,
@@ -127,8 +88,7 @@ export function makeWindowResize(
     win.classList.add('is-resizing');
     e.preventDefault();
   });
-  // On the window, for the reason the move drag above gives: the grip is
-  // twenty pixels square and a resize leaves it almost immediately.
+  // On window — the 20px grip is left almost immediately.
   const move = (e: PointerEvent) => {
     if (!d) return;
     win.style.width =

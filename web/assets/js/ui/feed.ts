@@ -16,7 +16,7 @@ import { mobileOrder } from '../arrange/arrangements.ts';
 // that file for why the two walls are one rule and two surfaces.
 import { packColumns } from '../arrange/columns.ts';
 import { assetURL, readText } from '../storage/assets.ts';
-import { linkURL, buildContent, swatchHex, MARKDOWN, enrichEmbedCard, linkGlyph } from '../canvas/renderers.ts';
+import { linkURL, buildContent, swatchHex, MARKDOWN, enrichEmbedCard, linkGlyph, fitMode } from '../canvas/renderers.ts';
 import { openExternal } from './leaving.ts';
 import { embedFor, frameFor, offerButton } from '../canvas/embed.ts';
 import type { EmbedSpec } from '../canvas/embed.ts';
@@ -310,8 +310,15 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
   bus.on('geom', scheduleLayout);
   bus.on('board', paintMasthead);
   bus.on('fonts', paintMasthead);
+  // A per-item Fill/Fit change arrives as 'item', the same as on the canvas
+  // (canvas/items.ts): only the object-fit attribute changes, so the tile is
+  // repainted in place rather than rebuilt.
+  bus.on('item', id => { const t = tiles.get(id); if (t) writeTileFit(t); });
   bus.on('settings', key => {
     if (key === 'arrangement' || key === 'profile') render();
+    // The board-wide Fill/Fit default. Nothing about a tile is rebuilt - each
+    // media tile re-reads its effective fit, exactly as canvas/items.ts does.
+    else if (key === 'mediaFit') { for (const t of tiles.values()) writeTileFit(t); }
     else if (key === 'mobileHeader' || key === 'appearance') paintMasthead();
   });
   onNowPlaying(markPlaying);
@@ -609,7 +616,21 @@ function fillImage(t: Tile) {
     });
   }
   applyGrade(img, t.item);
+  writeTileFit(t);
   t.el.appendChild(img);
+}
+
+/**
+ * The effective object-fit for a photo or video tile, as the data-fit attribute
+ * the CSS keys off - the same choice the canvas card makes through fitMode()
+ * (canvas/renderers.ts): the item's own meta.fit, else the board-wide
+ * board.mediaFit, else fill. So a picture set to Fit on the board is Fit here,
+ * and the Feed stops being the one view that always fills. Only image and video
+ * tiles are steerable; nothing else carries the attribute, and neither does the
+ * poster-only branch of a video with no clip mounted (it is still an image).
+ */
+function writeTileFit(t: Tile) {
+  if (t.kind === 'image' || t.kind === 'video') t.el.dataset.fit = fitMode(t.item);
 }
 
 /**
@@ -647,6 +668,7 @@ function fillVideo(t: Tile) {
   const badge = div('feed-play');
   badge.innerHTML = PLAY_ICON;
   t.el.appendChild(badge);
+  writeTileFit(t);
   actAsButton(t.el, () => mountVideo(t));
 }
 

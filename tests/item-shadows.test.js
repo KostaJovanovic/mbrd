@@ -18,11 +18,10 @@ test('board item shadows are mirrored into one layer below every item', async ()
   assert.match(css, /#web\s*\{[^}]*z-index:\s*-2;/s);
   assert.match(css, /\.item-shadow\s*\{[^}]*box-shadow:\s*var\(--item-shadow\);/s);
   assert.match(css, /\.item\s*\{[^}]*box-shadow:\s*none;/s);
-  // Built, placed and filed under the item's own id. Three lines rather than
-  // one since the builder moved to canvas/item-dom.ts, which hands the twin back
-  // unplaced - placeBox() is arithmetic against the viewport and stayed in
-  // items.ts. Asserted as three because the middle one is the part that would
-  // otherwise go missing silently: an unplaced twin is a shadow at the origin.
+  // Built, placed and filed under the item's own id - three steps since
+  // canvas/item-dom.ts hands the twin back unplaced. The middle one (placeBox)
+  // is the part that would otherwise go missing silently, leaving a shadow at
+  // the origin.
   assert.match(items, /const twin = buildShadow\(item,\s*tilt\)/);
   assert.match(items, /placeBox\(twin,\s*item\)/);
   assert.match(items, /shadows\.set\(item\.id,\s*twin\)/);
@@ -30,12 +29,10 @@ test('board item shadows are mirrored into one layer below every item', async ()
 });
 
 test('the fence band is sunk below the underlay its cards cast onto', async () => {
-  // A fence has a face like any other item (.item carries the paper), and the
-  // shadow underlay is below the item layer so that no card casts across another
-  // - so a fence left in the item stack painted out the shadow of every card
-  // inside it, and the region read as a page with its cards printed flat on it.
-  // Ground goes under the shadows. Both underlays refuse the pointer, which is
-  // what makes passing beneath them free.
+  // A fence left in the item stack painted out the shadow of every card
+  // inside it, since the shadow underlay sits below the item layer so no card
+  // casts across another. Ground goes under the shadows; both underlays
+  // refuse the pointer so passing beneath them is free.
   const items = await readFile(new URL('web/assets/js/canvas/items.ts', root), 'utf8');
   const css = appCss();
   assert.match(css, /#web\s*\{[^}]*pointer-events:\s*none;/s);

@@ -1,47 +1,10 @@
-// A frame off a `<video>`, through WebGL, because 2D will not do it on Android.
-//
-// This file exists for one browser bug, and it is worth writing down properly
-// because it took a long time to place and every guess about it was wrong.
-//
-// **Firefox for Android cannot draw a video onto a 2D canvas.**
-// `ctx.drawImage(videoElement, ...)` leaves the canvas exactly as it was - no
-// throw, no warning, nothing in the console. Mozilla bug 1526207, filed in 2019,
-// still open, "wontfix" against every release since; it began life throwing
-// NS_ERROR_NOT_AVAILABLE and became a silent no-op, which is the version this
-// app met. Gecko decodes video on Android through MediaCodec into a
-// SurfaceTexture, and a SurfaceTexture allows exactly one GL consumer at a time
-// - the compositor already is that consumer, so there is nothing left for the
-// 2D context to read. In Jamie Nicol's words on the bug: "we need 2, one for
-// reading the pixels for the canvas, and another for compositing".
-//
-// Two consequences worth knowing, both of which explain things that looked like
-// other faults:
-//
-//   - **It is the hardware codecs only.** H.264 and VP9 go through MediaCodec
-//     and fail; AV1 is decoded in software and works. So a phone's own camera
-//     footage is the exact case that breaks, and a test clip might not be.
-//   - **The same clip on the same phone works in any Chromium browser.** That is
-//     not a difference in the file, in this app, or in the canvas - Samsung
-//     Internet simply does not have this bug.
-//
-// **WebGL is the way through, and it is the *only* one that does not cost thirty
-// megabytes.** `gl.texImage2D` with a video source takes the SurfaceTexture path
-// Gecko does support - bug 1655101, fixed in Firefox 123 - so the frame that
-// will not come out through drawImage comes out through a texture upload. What
-// this module does is upload the frame, draw it to a WebGL canvas, and hand that
-// canvas back; a canvas *is* a legal drawImage source everywhere, so the caller
-// blits it into the 2D surface it already had and everything downstream - the
-// flat test, the encoder, the poster - is unchanged.
-//
-// It is a fallback and never the first choice. A GL context is an expensive
-// thing to hold and the ordinary 2D path is fine on every other engine, so
-// canvas/poster.ts only comes here when a frame has already come back blank.
-//
-// One context for the session, rebuilt if it is ever lost: a board of fifty
-// clips must not build fifty of these, and a phone will drop the context on a
-// background/foreground cycle without asking.
+// WebGL video-frame grab — workaround for Firefox Android (bug 1526207) where
+// ctx.drawImage(video) silently returns blank for hardware-decoded codecs.
+// gl.texImage2D takes the SurfaceTexture path Gecko does support (bug 1655101).
+// Fallback only: poster.ts comes here when a 2D frame comes back empty.
+// One context for the session, rebuilt on context loss.
 
-/** The canvas this module draws into, and the machinery for one upload. */
+/** GL context, texture and canvas for one upload. */
 type Rig = {
   canvas: HTMLCanvasElement,
   gl: WebGLRenderingContext,
@@ -50,49 +13,30 @@ type Rig = {
 
 let rig: Rig | null = null;
 
-/**
- * The video's current frame on a canvas, or null if this engine will not do it
- * either.
- *
- * `w` and `h` are the size wanted, which is the poster's, not the clip's - the
- * upload is the whole frame however small this is, and the quad scales it.
- *
- * Null rather than a throw for every failure, because the caller's answer to
- * all of them is the same: this was the last door, try ffmpeg or leave the clip
- * without a picture. No WebGL at all, a context that will not build, a shader
- * that will not compile, a video with nothing decoded yet - all one answer.
- */
+// Returns the video's current frame on a canvas, or null on any failure.
 export function glFrame(v: HTMLVideoElement, w: number, h: number): HTMLCanvasElement | null {
   const r = rigFor(w, h);
   if (!r) return null;
   const { gl, tex, canvas } = r;
   try {
     gl.bindTexture(gl.TEXTURE_2D, tex);
-    // Flipped on upload rather than in the shader: a video's rows run top-down
-    // and a GL texture's run bottom-up, so without this the poster is a
-    // perfectly good frame upside down - which no test here would catch, since
-    // an upside-down picture is not a flat one.
+    // Video rows are top-down, GL textures bottom-up.
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-    // RGBA rather than RGB, and it is not cosmetic: bug 1709726 found the
-    // SurfaceTexture fast path is the RGBA one, and RGB fell back to a readback
-    // that ran at a tenth the speed.
+    // RGBA takes the SurfaceTexture fast path; RGB falls back to slow readback.
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, v);
     gl.viewport(0, 0, w, h);
     gl.clearColor(0, 0, 0, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
-    // Nothing is read back here. The caller draws this canvas into its own 2D
-    // surface, which is a canvas-to-canvas drawImage - the operation Gecko has
-    // no trouble with, and the reason this indirection works at all.
+    // Caller blits this canvas into its 2D surface — canvas-to-canvas drawImage works fine.
     return canvas;
   } catch {
-    // texImage2D throws where the element has no frame yet, which is a "not
-    // this time" rather than a fault.
+    // texImage2D throws when no frame is decoded yet.
     return null;
   }
 }
 
-/** The rig, built once and sized to this call. Null on an engine without WebGL. */
+// Returns (or builds) the rig, sized to w×h. Null if no WebGL.
 function rigFor(w: number, h: number): Rig | null {
   if (rig && rig.gl.isContextLost()) rig = null;
   if (!rig) rig = build();
@@ -104,19 +48,8 @@ function rigFor(w: number, h: number): Rig | null {
   return rig;
 }
 
-/**
- * A one-triangle rig: a context, a program, a buffer and a texture.
- *
- * One triangle rather than two, which is the ordinary way to cover a viewport
- * and avoids the seam a quad's diagonal can leave. Its vertices run off the
- * viewport on two sides; the rasteriser clips them and every pixel is covered
- * once.
- *
- * `preserveDrawingBuffer` is load-bearing: without it the drawing buffer may be
- * cleared as soon as control returns to the browser, and the caller's drawImage
- * would take a blank canvas - which is indistinguishable from the bug this file
- * is here to get round.
- */
+// Build a one-triangle rig. preserveDrawingBuffer is required or the caller
+// reads a blank canvas after control returns to the browser.
 function build(): Rig | null {
   if (typeof document === 'undefined') return null;
   const canvas = document.createElement('canvas');
@@ -126,18 +59,13 @@ function build(): Rig | null {
     antialias: false,
     depth: false,
     stencil: false,
-    // A frame grab is not a game: a low-power adapter is likelier to be the one
-    // that is already awake, and there is no per-frame budget here at all.
+    // Low-power adapter is likelier already awake; no per-frame budget here.
     powerPreference: 'low-power' as const,
   };
   let gl: WebGLRenderingContext | null = null;
   try {
     const got = canvas.getContext('webgl', opts) || canvas.getContext('experimental-webgl', opts);
-    // SAFETY: the two spellings answer the same interface - 'experimental-webgl'
-    // is the pre-standard name for it and is still what a couple of old Android
-    // builds have. TypeScript types the second as RenderingContext, which is
-    // every context type at once, and there is nothing to narrow it by but the
-    // name that was asked for.
+    // 'experimental-webgl' returns RenderingContext, same interface as 'webgl'.
     gl = got as WebGLRenderingContext | null;
   } catch {
     return null;
@@ -158,9 +86,7 @@ function build(): Rig | null {
   const tex = gl.createTexture();
   if (!tex) return null;
   gl.bindTexture(gl.TEXTURE_2D, tex);
-  // CLAMP_TO_EDGE and LINEAR without mipmaps, which is what a
-  // non-power-of-two texture is allowed in WebGL 1 - and a video frame is
-  // almost never a power of two.
+  // NPOT textures in WebGL 1 require CLAMP_TO_EDGE and no mipmaps.
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -195,9 +121,7 @@ function link(gl: WebGLRenderingContext): WebGLProgram | null {
   gl.attachShader(program, vs);
   gl.attachShader(program, fs);
   gl.linkProgram(program);
-  // Deleted whether or not the link worked: the program holds its own copy once
-  // linked, and these are two objects per session otherwise leaked on the path
-  // where it did not.
+  // Program holds its own copy after linking; delete the originals.
   gl.deleteShader(vs);
   gl.deleteShader(fs);
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {

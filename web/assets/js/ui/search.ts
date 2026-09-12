@@ -1,23 +1,6 @@
-// Finding something on a board you cannot see all of.
-//
-// An infinite canvas has one failure mode that a list does not: a thing can be
-// *on* the board, saved, intact, and still lost, because it is four screens up
-// and eleven to the left at a zoom you last used a week ago. Zoom to fit shows
-// you everything at once, which for a full board means everything too small to
-// read. So the board needs a way to be asked a question.
-//
-// A palette over the canvas rather than a field in the sidebar, for two
-// reasons. The sidebar is a drawer you have to open, and a search you have to
-// open a drawer to reach is one you stop using; and the sidebar's own shape is
-// still an open question (the roadmap's sidebar reform), so putting a new
-// permanent thing in it would be building on a floor somebody is about to lift.
-// A palette owns the top of the screen for as long as it is up and then gives
-// it back.
-//
-// The answer to a query is a *place*, not a row. Picking a result selects the
-// item and flies the viewport to it, because on a spatial board "where is it"
-// and "what is it" are the same question - a list of names with no positions
-// would tell you the thing exists, which you already suspected.
+// Board search palette (Ctrl+K). Picks a result → selects the item and flies to it.
+// Built per query, no index. Items are renamed/edited constantly; rebuilding
+// a few hundred string reads per keystroke is cheaper than invalidation bugs.
 
 import { board, byId, itemTags, select } from '../state.ts';
 import { cue } from '../cuelume/engine.ts';
@@ -28,12 +11,9 @@ import { kindName, kindTag } from '../canvas/item-dom.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 import type { Item } from '../board-model.ts';
 
-/** Rows drawn at once. Past this the answer is "narrow it", not "scroll". */
 const MAX_HITS = 12;
-/** How much of a note's text a row shows around the match. */
 const SNIPPET = 90;
 
-/** What one item offers a query, flattened - see fields() below. */
 type Fields = {
   name: string,
   text: string,
@@ -43,31 +23,21 @@ type Fields = {
   tags: string[],
 };
 
-/** One answer: the item, what was matched against, and how well. */
 type Hit = { item: Item, f: Fields, s: number };
 
-// The palette's three nodes exist exactly while it is open, and close() drops
-// all three together. Everything below run() is only ever reached from an event
-// on one of them or from open() itself, which is why they are read with `!`
-// there rather than guarded a second time.
 let vp: Viewport | null = null;
-let node: HTMLElement | null = null;      // the palette, or null when closed
+let node: HTMLElement | null = null;
 let field: HTMLInputElement | null = null;
 let list: HTMLElement | null = null;
 let hits: Hit[] = [];
-let at = 0;           // index of the highlighted row
+let at = 0;
 
 export function initSearch(viewport: Viewport) {
   vp = viewport;
 
-  // Capture, so this beats the canvas's own key handling rather than racing
-  // it - canvas/input.ts binds Ctrl+A, Ctrl+D and the arrows on the same
-  // window, and a search that only opened when the canvas happened not to
-  // want the key would be a search that opened sometimes.
+  // Capture phase to beat the canvas key handling.
   addEventListener('keydown', e => {
-    // Cmd on a Mac, Ctrl everywhere else. metaKey is not folded into one test
-    // with ctrlKey, because Ctrl+K on a Mac is "delete to end of line" in every
-    // text field on the system and taking it would be rude.
+    // Ctrl+K on Mac is "delete to end of line"; use Cmd+K there.
     const hotkey = e.key === 'k' && (e.ctrlKey || e.metaKey) && !e.altKey;
     if (hotkey) {
       e.preventDefault();
@@ -90,21 +60,9 @@ export function initSearch(viewport: Viewport) {
     }
   }, true);
 
-  // Anything that makes the board move out from under the answers.
   addEventListener('pointerdown', e => {
-    // SAFETY: a pointerdown reaching the window came off this document, so the
-    // target is a Node - and `contains()` answers false for a null, which
-    // closes the palette, which is the safe direction to be wrong in.
     if (!node || node.contains(e.target as Node | null)) return;
-    // Recorded before the close, which is what clears the state this is a fact
-    // about - the same shape justDismissed() has in ui/menu.ts, and here for
-    // the same reason. This listener is in the capture phase, so a tap on the
-    // Find button has already closed the palette by the time the click reaches
-    // open(): the query somebody had typed was thrown away and a fresh empty
-    // palette was built in its place, and open()'s own `if (node)` branch -
-    // the one that keeps the query and selects the field - was unreachable
-    // from any button in the app.
-    // SAFETY: as above - the same target, from the same event.
+    // Record before close so open() can detect the same press (justDismissed pattern).
     dismissedBy = e.target as Node | null;
     dismissedAt = performance.now();
     close();
@@ -113,25 +71,11 @@ export function initSearch(viewport: Viewport) {
   addEventListener('blur', () => close());
 }
 
-/**
- * What closed the palette last, and when. See the pointerdown listener above.
- *
- * A record rather than a flag, and timestamped for the reason justDismissed()
- * gives: the pair being reconciled is one press and its own click, and a stale
- * record would make the *next* press on that button do nothing.
- */
 let dismissedBy: Node | null = null;
 let dismissedAt = -Infinity;
 const DISMISS_MS = 400;
 
-/**
- * Open the palette, or leave it shut when this press is what closed it.
- *
- * `from` is the button being pressed, where there is one - the toolbar's Find
- * and the mobile header's. Without it the button is not a toggle: a second tap
- * discards the query and rebuilds an empty palette, because the capture-phase
- * closer above has already run by the time the click gets here.
- */
+// `from`: the button, so a second tap toggles instead of rebuilding.
 export function open(from: Element | null = null) {
   if (node) { field!.select(); return; }
   if (from && dismissedBy && performance.now() - dismissedAt <= DISMISS_MS
@@ -152,9 +96,6 @@ export function open(from: Element | null = null) {
   field.placeholder = 'Find a picture, a note, a link…';
   field.autocomplete = 'off';
   field.spellcheck = false;
-  // A combobox that owns a listbox, which is what this is. Without the role
-  // pair a screen reader announces a text field and then silently swaps the
-  // rows underneath it.
   field.setAttribute('role', 'combobox');
   field.setAttribute('aria-expanded', 'false');
   field.setAttribute('aria-controls', 'search-hits');
@@ -184,21 +125,10 @@ export function close() {
 // Matching
 // ---------------------------------------------------------------------------
 
-/**
- * Everything about an item that is worth asking about, flattened.
- *
- * Built per query rather than kept as an index. A board is hundreds of items,
- * not hundreds of thousands, and a stale index is a class of bug this does not
- * need to have: items are renamed, notes are typed into, links are pasted and
- * covers are set, and every one of those would have to remember to invalidate.
- * Rebuilding is a few hundred string reads against a keystroke's worth of time.
- */
 function fields(item: Item): Fields {
   const name = item.name || '';
   const meta = item.meta || {};
-  // A note's name *is* its first line, so searching both would score it twice
-  // for one match. The body is what the name does not already cover.
-  // `meta` is open, so a note's body is narrowed here rather than trusted.
+  // Note body minus first line (name already covers it).
   const body = typeof meta.text === 'string' ? meta.text : '';
   const text = item.type === 'note' ? afterFirstLine(body) : '';
   const url = typeof meta.url === 'string' ? meta.url : '';
@@ -207,26 +137,9 @@ function fields(item: Item): Fields {
     name,
     text,
     url,
-    // "what is this" in words: what the file's own format is called, plus what
-    // the catalogue files it under - so "solidworks", "raw" and "subtitles"
-    // find things whose names say none of that. kindName() rather than
-    // item.type, so the haystack holds words a person can see and not the word
-    // `generic`, which is one nobody would type on purpose and which would have
-    // matched every unrenderable file on the board at once.
     kind: [kindName(item), kind?.label, kind?.categoryLabel, extOf(name)].filter(Boolean).join(' '),
-    // The same knowledge said out loud. Kept apart from `kind` because that
-    // one is a bag of words to match against and reads like one - "audio
-    // Waveform audio Sound" is a fine haystack and a terrible caption.
-    //
-    // The format's name leads, and it is the one thing on the row that the
-    // 68px kind column cannot show: a hit found by kind reads "SolidWorks part
-    // · 3D / CAD" under a name that says neither. Deduped because the two
-    // halves agree often enough - a .zip is an "Archives / Archives" - and a
-    // word printed twice in a caption reads as a bug.
     kindLabel: [...new Set([formatName(extOf(name)), kind?.label, kind?.categoryLabel]
       .filter(Boolean))].join(' · '),
-    // Already lowercased and already clean - itemTags() does both - so nothing
-    // here has to fold case the way the four fields above do.
     tags: itemTags(item),
   };
 }
@@ -236,21 +149,7 @@ const afterFirstLine = (s: string) => {
   return i < 0 ? '' : s.slice(i + 1);
 };
 
-/**
- * Score one item against a lowercased query, or 0 for no match.
- *
- * Ordered by how much the match tells you it is the thing you meant. A name
- * that starts with what you typed is almost certainly it; a name that merely
- * contains it is probably it; a word buried in a note is a maybe; and the file
- * kind is last, because "image" matches half the board and is a filter rather
- * than an identification.
- *
- * A tag scores second, above everything but the name, and that placing is the
- * whole argument for tags being searchable at all: a tag is the one field on an
- * item that somebody typed *in order to find it again*. An exact one beats a
- * name that merely contains the query, because typing a whole tag is a
- * deliberate act and nothing else in the list is.
- */
+// name-starts > exact tag > name-contains > partial tag > url > note body > kind.
 function score(f: Fields, q: string) {
   const name = f.name.toLowerCase();
   if (name.startsWith(q)) return 1000 - name.length;   // shortest exact-ish first
@@ -313,9 +212,6 @@ function draw(q: string) {
 
     const kind = document.createElement('span');
     kind.className = 'search-kind';
-    // The short form: this column is 68px wide and set in capitals. The words
-    // are still in reach - they are what the row matched on, and context()
-    // prints them underneath when that is why the row is here.
     kind.textContent = kindTag(h.item);
 
     const name = document.createElement('span');
@@ -327,9 +223,6 @@ function draw(q: string) {
     where.textContent = context(h.f, q);
 
     row.append(kind, name, where);
-    // Selecting on hover would fight the keyboard: an arrow key moves the
-    // highlight, the pointer happens to be resting over row four, and the
-    // highlight jumps back the moment anything reflows.
     row.addEventListener('click', () => { cue('pick'); commit(h); });
     list!.append(row);
   });
@@ -337,20 +230,15 @@ function draw(q: string) {
   field!.setAttribute('aria-activedescendant', 'search-hit-' + at);
 }
 
-/** The line under a name: where the match actually was. */
 function context(f: Fields, q: string) {
   if (f.name.toLowerCase().includes(q)) return '';
   if (f.url.toLowerCase().includes(q)) return f.url;
   const i = f.text.toLowerCase().indexOf(q);
   if (i >= 0) {
-    // Windowed on the match rather than taken from the start, so searching a
-    // word that appears on line nine of a note shows line nine.
     const from = Math.max(0, i - SNIPPET / 3);
     const cut = f.text.slice(from, from + SNIPPET).replace(/\s+/g, ' ').trim();
     return (from > 0 ? '…' : '') + cut + (from + SNIPPET < f.text.length ? '…' : '');
   }
-  // Only reachable when the match was on the kind, so this line is the answer
-  // to "why is this here" rather than a repeat of the badge beside it.
   return f.kindLabel;
 }
 
@@ -373,18 +261,7 @@ function move(step: number) {
   field!.setAttribute('aria-activedescendant', 'search-hit-' + at);
 }
 
-/**
- * Take the answer: select the item and go there.
- *
- * The palette closes first. It sits over the top of the canvas, and flying to
- * an item only to leave it underneath the thing you searched from would be a
- * strange kind of arrival.
- *
- * byId() again rather than trusting the item captured at query time, because a
- * board can change between typing and pressing Enter - an autosave sweep, an
- * undo, a delete from the other end of a rename. A result that no longer names
- * anything simply does nothing.
- */
+// Re-looks up the item; board may have changed between query and commit.
 function commit(hit: Hit | undefined) {
   if (!hit) return;
   const id = hit.item.id;

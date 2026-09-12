@@ -1,43 +1,13 @@
-// A coarse uniform grid over world space, so "which items are near the screen"
-// stops being a walk over the whole board.
-//
-// Culling has to answer that question every frame the view moves, and it used to
-// answer it the only way it could without an index: by testing every item in
-// board.items against the viewport rectangle. That is fine at a hundred items
-// and a real cost at two thousand - the scan is O(board), redone whenever the
-// visible rectangle leaves what the last scan covered, which on a zoom is every
-// frame. This turns it into O(items near the viewport) by bucketing item ids
-// into square cells and visiting only the cells the padded viewport overlaps.
-//
-// It is deliberately the bottom of the layering: it imports neither state nor the
-// DOM and knows nothing about what an item *is*. Its whole vocabulary is a box -
-// `{ id, x, y, w, h }`, centre and full size, the same sense item geometry uses -
-// and a query rectangle. The caller decides what a box means (canvas/items.ts
-// hands it a circumscribed square so a rotated card is registered by the corner
-// it actually reaches, not its unrotated footprint) and re-tests the handful the
-// query returns against the true rectangle. The grid only narrows the field; it
-// never claims to be exact, and a cell shared with the viewport is enough to be
-// returned. That is why the query dedupes - a box spanning four cells is listed
-// in all four - and why a false positive here costs one precise test there, not
-// a missing card.
+// Coarse uniform grid over world space for spatial queries. Turns "which items
+// are near the screen" from O(board) into O(nearby) by bucketing ids into square
+// cells. Returns a superset — the caller re-tests against the true rectangle.
+// No imports from state or DOM; vocabulary is a box {id, x, y, w, h} and a rect.
 
-/**
- * Cell edge in world units.
- *
- * The one number to tune. Too small and a large item is registered in a great
- * many cells and every rebuild walks them all; too large and the query drags in
- * most of the board and buys nothing. A few hundred world units puts a typical
- * viewport across a handful of cells and a typical card inside one or four,
- * which is the balance this is after. It is not delicate - anything of this
- * order behaves the same - and rebuild() can override it per board if a future
- * caller wants to scale it to the item size in play.
- */
+/** Cell edge in world units. ~512 puts a viewport across a few cells and a
+ * typical card inside 1–4. Not delicate — anything of this order behaves the same. */
 const DEFAULT_CELL = 512;
 
-/**
- * A box in the index: an item id and its centre-and-full-size footprint. The
- * whole vocabulary of this module - see the header on what the caller owes.
- */
+/** A box in the index: item id and its centre-and-full-size footprint. */
 export type SpatialBox = { id: string; x: number; y: number; w: number; h: number };
 
 /** A world rectangle to query with, as two opposite corners. */
@@ -52,23 +22,8 @@ const placed = new Map<string, string[]>();
 const keyOf = (cx: number, cy: number) => cx + ',' + cy;
 const cellIndex = (v: number) => Math.floor(v / cell);
 
-/**
- * How many cells one item may be filed under.
- *
- * The loop below is one iteration per overlapped cell with nothing bounding the
- * box, and this module's own header says it "knows nothing about what an item
- * *is*" - which is the argument for clamping here rather than trusting whoever
- * called. MIN_SIZE and MAX_SIZE are enforced by the resize gesture and by
- * latticeSide, neither of which a hand-edited or corrupt .mbrd goes through: an
- * item arriving with `w = 1e9, h = 1e9` is (2 x 1e9 / 512) squared, about
- * 1.5x10^13 iterations pushing string keys, and the tab is gone before anything
- * is drawn.
- *
- * A real item spans a handful of cells; a thousand is a card the size of a
- * town. Past it the item is filed under the corner it starts in, which makes
- * the index approximate for an item nothing legitimate produces rather than
- * making the app stop.
- */
+/** Max cells per item. A corrupt .mbrd with huge dimensions would loop ~10^13
+ * times without this. Past the cap, the item is filed under its corner only. */
 const MAX_CELLS = 1024;
 
 /** The cell keys a centre-and-size box overlaps, one per cell it touches. */
@@ -100,12 +55,7 @@ export function remove(id: string): void {
   placed.delete(id);
 }
 
-/**
- * Register (or re-register) one box under its id.
- *
- * Idempotent by way of remove() first, so the geom path can call it per moved id
- * without tracking whether the item was indexed before. A null box just removes.
- */
+/** Register or re-register a box. Idempotent (remove + re-add). Null box = remove. */
 export function update(id: string, box: SpatialBox | null | undefined): void {
   remove(id);
   if (!box) return;
@@ -126,14 +76,8 @@ export function rebuild(boxes: Iterable<SpatialBox>, cellSize = DEFAULT_CELL): v
   for (const box of boxes) update(box.id, box);
 }
 
-/**
- * The ids whose cells overlap a world rectangle `{ x0, y0, x1, y1 }`.
- *
- * A superset of what actually intersects the rectangle - every returned id is
- * near it, but the caller still owes a precise test, because a cell is wider than
- * the rectangle's edge. Deduped: an id listed in several of the visited cells
- * comes back once.
- */
+/** Ids whose cells overlap a world rectangle. A superset — caller must re-test
+ * precisely. Deduped: multi-cell items come back once. */
 export function queryRect(rect: SpatialRect): Set<string> {
   const out = new Set<string>();
   const cx0 = cellIndex(rect.x0);

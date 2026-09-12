@@ -6,9 +6,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-// The fake lives in helpers.js with its documentation: storage/matte-cache.ts
-// - another cache on this wrapper - needs one too, and two copies are two
-// definitions of what IndexedDB does.
+// The fake lives in helpers.js: storage/matte-cache.ts needs one too, and two
+// copies would be two definitions of what IndexedDB does.
 import { fakeIndexedDB, soon } from './helpers.js';
 
 // Each test needs its own module instance: idb.ts caches the open connection
@@ -37,10 +36,10 @@ test('a failed open does not poison the connection: a later operation reconnects
   assert.equal(await idbGet('kv', 'missing'), undefined);
 });
 
-// `blocked` is not terminal: the request stays live and can still succeed once
-// the blocking tab closes. We reject - failing loudly beats hanging on another
-// window - but the connection that arrives after has no owner, and an idle
-// connection nobody holds blocks the next tab's upgrade. Close it.
+// `blocked` is not terminal: the request can still succeed once the blocking
+// tab closes. We reject rather than hang, but the connection that arrives
+// after has no owner - and an unclosed idle connection blocks the next
+// tab's upgrade.
 test('an open blocked and then succeeding does not leave an orphan connection', async () => {
   let closed = 0;
   let succeed;
@@ -69,10 +68,9 @@ test('an open blocked and then succeeding does not leave an orphan connection', 
   assert.equal(closed, 1, 'the late connection must be closed, not retained');
 });
 
-// The batch calls replace one transaction per asset in the autosave sweep and
-// the restore: five hundred photographs meant five hundred sequential round
-// trips before a board the user was told was saved. Must hold: genuinely one
-// transaction, nothing resolves before the commit, all-or-nothing.
+// The batch calls replace one transaction per asset with a single one - five
+// hundred photographs used to mean five hundred sequential round trips. Must
+// hold: genuinely one transaction, nothing resolves before commit, all-or-nothing.
 
 test('a batch write is one transaction, and every value round-trips', async () => {
   const fake = fakeIndexedDB();

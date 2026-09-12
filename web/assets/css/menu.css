@@ -1,36 +1,17 @@
 /* =========================================================
-   mbrd - the panels that open over the board to be answered
-
-   One of the eight sheets the old overlays.css was split into. The order they
-   load in IS the cascade and is listed in the banner at the top of base.css.
-
-   Five things wearing one set of clothes: Find (Ctrl+K), the right-click menu
-   and the toolbar flyouts that are the same panel hung off a bar (ui/menu.ts,
-   ui/flyout.ts), the fence offer (ui/fence-prompt.ts) and the marked
-   connection's chip (ui/conn-chip.ts). Every one of them is card paper, a
-   hairline, the menu's shadow and `ctx-in` on the way in, and the last two say
-   so in their own comments below. That is why they are one file rather than
-   four: the stock is only shared if it is written once, and #fence-prompt
-   borrows .ctx-item outright.
-
-   The tick's hover and the separator are at the end of the menu block rather
-   than beside the entries they qualify. They were stranded in the middle of the
-   board switcher in the file this came out of; both are more specific than what
-   they override, so nothing turns on where in here they land.
+   mbrd - Find, context menu, fence offer, and connection chip
+   Split from overlays.css. Five panels sharing one set of clothes:
+   card paper, hairline, shadow, ctx-in entrance.
    ========================================================= */
 
 /* ---------------------------------------------------------
    Find (Ctrl+K)
-
-   Pinned near the top rather than centred, and that is the one layout decision
-   here worth defending: the answers are places on the board, and the moment a
-   row is picked the viewport flies to it. A panel in the middle of the screen
-   would be sitting on the very thing it is about to show you. Up here it takes
-   the strip of board you are least likely to be looking at, and gives it back.
+   Pinned near the top so it does not sit on the destination it is
+   about to fly to.
    --------------------------------------------------------- */
 #search {
   position: fixed;
-  z-index: var(--z-search);  /* over the context menu, which it can be opened from */
+  z-index: var(--z-search);
   top: 12vh;
   left: 50%;
   translate: -50% 0;
@@ -46,12 +27,8 @@
   width: 100%;
   padding: 11px 13px;
   border: 0;
-  /* max(0px, ...) because --ogee is 0px on the plain tier and a bare subtraction
-     lands at -6px, which is not a valid radius - so the browser threw the whole
-     declaration away rather than clamping it. It happened to look right there
-     (square inside square), which is why it went unnoticed; it is still the
-     rule being dropped rather than applied. Same guard as the card's inner rule
-     in items.css. */
+  /* max(0px) because --ogee is 0 on the plain tier and a bare
+     subtraction gives -6px, which the browser drops entirely. */
   border-radius: max(0px, calc(var(--ogee) - 6px));
   background: none;
   font-family: var(--font-display);
@@ -60,9 +37,7 @@
 }
 #search-field::placeholder { color: var(--ink-3); font-style: var(--display-italic); }
 #search-field:focus { outline: none; }
-/* Cleared by pressing Escape, which this palette already answers to. The
-   engine's own X is a second, differently-shaped affordance for the same verb,
-   drawn in a style no token here can reach. */
+/* Escape already closes this palette. */
 #search-field::-webkit-search-cancel-button { display: none; }
 
 #search-hits {
@@ -78,19 +53,13 @@
 
 .search-hit {
   display: grid;
-  /* The kind column is fixed so the names line up down the list - a ragged
-     left edge on a list you are scanning is what makes you read it twice.
-     Wide enough for "sticker", the longest word that reaches it: the column
-     holds a type word or an extension, never a format's full name. kindTag()
-     in canvas/item-dom.ts is where that is decided, and says why. */
+  /* Fixed kind column so names line up. Wide enough for "sticker". */
   grid-template-columns: 68px 1fr;
   align-items: baseline;
   gap: 2px 10px;
   width: 100%;
   padding: 7px 9px;
   border: 0;
-  /* The same nested radius as .ctx-item, against #search's own outer corner and
-     its own 6px of padding. See the note there. */
   border-radius: max(0px, calc(var(--ogee) - 6px));
   background: none;
   text-align: left;
@@ -122,15 +91,9 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* One highlight, driven by the keyboard, and hover only *shows* it rather than
-   moving it - the pointer is usually resting wherever it was left, and letting
-   that win would drag the selection back every time the list reflowed. */
+/* Keyboard-driven highlight; hover only shows it rather than moving it. */
 .search-hit.is-at { background: var(--paper-2); }
-/* The one hover in the app that is deliberately at the press step, and the line
-   above is why: the keyboard's highlight already owns --paper-2 here, so a hover
-   drawn in it would be indistinguishable from "this is the one Enter takes".
-   Two states, two washes, and the pointer gets the louder one because it is the
-   transient of the two. */
+/* Hover uses the louder wash to distinguish it from the keyboard's. */
 @media (hover: hover) {
   .search-hit:hover { background: var(--paper-3); }
 }
@@ -144,27 +107,14 @@
   color: var(--ink-3);
 }
 
-/* #ctx-child is the hover submenu, and it is named here rather than given
-   rules of its own for the reason every menu in this app is one node: a second
-   panel with a second description of what a menu looks like is two menus by the
-   end of the quarter. It is a separate element only because two boxes cannot be
-   one id - everything it is made of is fillPanel's rows and this block. See
-   openChild in ui/menu.ts. */
+/* #ctx-child is the hover submenu -- a separate element only because
+   two boxes cannot be one id. See openChild in ui/menu.ts. */
 #ctx-menu, #ctx-child {
   position: fixed;
   z-index: var(--z-menu);
   min-width: 208px;
-  /* The 8px the placement keeps at each edge (ui/menu.ts). A picture card's
-     menu is a dozen entries, which is taller than a phone held sideways - so
-     the overflow scrolls rather than hanging off the bottom where the last
-     entries could not be reached at all.
-
-     dvh, not vh, which is the same correction the timeline sheet already
-     carries: on a phone `vh` is the *large* viewport - the window as it would
-     be with the address bar retracted - so a menu measured against it runs
-     under the address bar or the home indicator in the state where it is
-     actually open, and the last entries are unreachable again by a different
-     route. dvh follows the window it is in. */
+  /* dvh, not vh -- vh is the large viewport and runs under a phone's
+     address bar. */
   max-height: calc(100dvh - 16px);
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -177,124 +127,43 @@
   -webkit-user-select: none;
   user-select: none;
 }
-/* The menu takes focus when it opens so the keyboard has somewhere to land;
-   the ring belongs on the entry the arrows reach, not round the whole stock. */
+/* Focus ring belongs on the entry, not the whole panel. */
 :is(#ctx-menu, #ctx-child):focus { outline: none; }
-/* The child sits *beside* its row rather than under the pointer, so it arrives
-   from the side. Same duration, same easing - only the direction says which of
-   the two panels it is. */
+/* Arrives from the side. */
 #ctx-child { animation-name: ctx-in-side; }
-/* The scale is what makes the origin mean anything, and the origin is written
-   from script - ui/menu.ts sets transform-origin from the anchor once the panel
-   has been placed and the flip has been decided. Without a scale there is
-   nothing for an origin to be the origin *of*, which is why these two lines and
-   that one arrived together: a panel that only slides three pixels grows from
-   nowhere in particular however carefully you name the point.
-   0.97 and not less. This is a panel arriving over a board, not a thing being
-   thrown at the screen - and the rows inside it are text, which at a smaller
-   scale spends the first half of the animation re-hinting. */
+/* 0.97 scale makes the transform-origin (set from script) meaningful.
+   Less would re-hint the text mid-animation. */
 @keyframes ctx-in { from { opacity: 0; transform: translateY(-3px) scale(0.97); } }
 @keyframes ctx-in-side { from { opacity: 0; transform: translateX(-4px) scale(0.97); } }
-/* And the way back out, along the path it came in on.
-   A menu used to arrive as an object and leave as a deletion: five surfaces
-   share `ctx-in` and every close was a bare remove(). The exit is the entrance
-   reversed rather than a fade, because the entrance is now making a spatial
-   promise - I came out of this button - and a panel that vanished from the
-   middle of the screen would break it on the way out.
-   `forwards`, because the last frame is what the panel has to hold until
-   ui/menu.ts takes it away: without it the panel snaps back to full opacity for
-   however long the removal takes to land. */
-/* Id-qualified, and that is not tidiness. The block that sets `animation:
-   ctx-in` names both panels by id, so a bare `.is-leaving` is a class losing to
-   an id and the exit would simply never play - the panel would sit there
-   replaying its entrance until the removal landed. */
+/* Exit reverses the spatial entrance. `forwards` holds the last frame
+   until ui/menu.ts removes the node. Id-qualified so it beats the
+   `animation: ctx-in` rule above. */
 :is(#ctx-menu, #ctx-child).is-leaving {
   animation-name: ctx-out;
   animation-fill-mode: forwards;
-  /* Not optional. A panel mid-exit that could still be hovered is a row
-     somebody can press on a menu that has already answered. `inert` on the node
-     says the same thing about the keyboard and the accessibility tree; this is
-     the pointer half, and it is here as well as there so that the rule holds on
-     an engine too old for the attribute. */
+  /* Pointer-events off so nothing fires on a panel mid-exit. */
   pointer-events: none;
 }
 #ctx-child.is-leaving { animation-name: ctx-out-side; }
 @keyframes ctx-out { to { opacity: 0; transform: translateY(-3px) scale(0.97); } }
 @keyframes ctx-out-side { to { opacity: 0; transform: translateX(-4px) scale(0.97); } }
-/* The row a child is hanging off stays lit while it is up. Without it the menu
-   has two panels open and nothing saying which row the second one belongs to -
-   and the hover highlight has already left the row by then, because the pointer
-   is in the child. */
+/* The parent row stays lit while its child is open. */
 .ctx-item.is-open { background: var(--paper-3); }
 
-/* ── One shape, wherever the panel is opened ───────────────────────────────
+/* ── One shape, wherever the panel is opened ─────────────────────────── */
 
-   There were two shapes here and there is now one. A panel hung off the
-   toolbar (ui/flyout.ts) used to square the two corners on the side it was
-   attached to and drop that border, so it read as the underside of a bar
-   already drawn rather than as a second object landed on the first - and a
-   second rule wrote the whole thing out again for a panel flipped above a bar
-   at the *bottom* of the window, where the same argument applies to the other
-   edge. Two variants of one panel, held in step by hand.
-
-   They are gone, and what took them out was finding the treatment somewhere it
-   made no sense: openAnchored() applied it to everything anchored, so the
-   palette picker in the settings panel - which hangs off a *field*, with no bar
-   within two hundred pixels of it - was drawn as a box with one edge missing.
-
-   The fix could have been an opt-in, and was for about an hour. One shape is
-   the better answer: a menu in this app is a closed panel with four corners and
-   four sides, whatever it was opened from, and there is now nothing to know,
-   nothing to pass, and no second variant to keep in step. The bar and the panel
-   under it are two objects, which is what they are.
-
-   The max-height is not here either. It counted down from --toolbar-h, the bar
-   at the *top* of the window, which was right for the three desktop hover
-   flyouts and wrong for the phone's More button on the bar at the bottom. It is
-   measured off the panel's own anchor in ui/menu.ts now - see the note over the
-   measurement there. */
-
-/* Three columns: the icon, the label, and whatever sits on the trailing edge -
-   an accel key, a tick, or nothing.
-
-   A grid rather than the flex row this was, because the middle column is the
-   only one that should take the slack. Under space-between an entry with no
-   accel pushed its label out to the right-hand edge, which was invisible while
-   every row was words but is not once there is a column of marks to line up
-   against. `1fr` on the label and `auto` on the two ends says that outright.
-
-   And centred rather than baseline-aligned: an icon has no baseline to share
-   with the text, so it was sitting a pixel or two low against every label. */
+/* Grid: icon, label, trailing indicator, optional swatch. */
 .ctx-item {
   display: grid;
-  /* Four now, not three. The fourth is the trailing swatch column - see
-     MenuEntry.swatchEnd - and it collapses to nothing on every row that has no
-     specimen in it, which is every row in the app but the palette picker's. A
-     row with a tick *and* a specimen needs both to have somewhere to go, and
-     three columns made the second of them wrap onto a line of its own. */
+  /* Fourth column for palette swatches; collapses when empty. */
   grid-template-columns: auto 1fr auto auto;
   align-items: center;
   gap: 10px;
   width: 100%;
   padding: 7px 10px;
   border: 0;
-  /* Outer radius minus the gap, which is the whole of the nested-radius rule and
-     is what makes a highlighted first or last row sit *concentrically* inside
-     the menu's corner rather than cutting across it.
-
-     It was --radius-sm, which is a fixed ratio of --radius and not a function of
-     the padding, so it was only ever right by coincidence. At the middle whimsy
-     tier the coincidence held - 13px outer, 5px padding, 8px wanted, and
-     --radius-sm is 8. At the low tier it does not: 26px outer wants 21 and
-     --radius-sm gives 16, so the bottom row's highlight had a five-pixel bite
-     taken out of each corner by a curve it was supposed to follow. Which is why
-     this only ever looked wrong on the softest setting.
-
-     max(0px, ...) because --radius is 0 on the sharp tier and a bare subtraction
-     lands at -5px, which is not a valid radius - the browser throws the whole
-     declaration away rather than clamping it, and square-inside-square happens
-     to look right, so the rule being dropped goes unnoticed. Same guard as
-     #search-field above and the card's inner rule in items.css. */
+  /* Nested radius: outer minus padding, so highlights sit concentric.
+     max(0px) because --radius is 0 on the sharp tier. */
   border-radius: max(0px, calc(var(--radius) - 5px));
   background: none;
   color: var(--ink);
@@ -311,10 +180,7 @@
 }
 .ctx-item.is-danger:hover,
 .ctx-item.is-danger:focus-visible { color: var(--danger); }
-/* A row that reads rather than acts - "Showing 4 of 61". Greyed, and it takes
-   no hover: the pointer must not suggest it is a thing to press, and the
-   button's own `disabled` is what actually stops it. The arrow-key walk skips
-   it for the same reason - see moveFocus() in ui/menu.ts. */
+/* Informational row -- greyed, no hover, skipped by arrow keys. */
 .ctx-item.is-inert {
   color: var(--ink-3);
   cursor: default;
@@ -325,34 +191,14 @@
   background: none;
   padding: 0;
   color: var(--ink-3);
-  /* One step below --t-tiny, and off the scale on purpose. An accelerator is a
-     legend rather than text: it is read once while learning a menu and skipped
-     for ever afterwards, so it sits in a register below the smallest step the
-     scale offers. The other members of that register are the other kbd rule
-     (sidebar.css), the menu's own hint column below, .wordmark .sub and
-     .drawer-when - all 10px, all captions on something else rather than content.
-     A sixth --t- step for them would be a scale step nothing composes with.
-     (Sorted deliberately-off-scale by research/old/visual-audit-2026-08-12.md
-     item 2.) */
+  /* 10px: the sub-tiny caption register, off the scale on purpose.
+     See research/old/visual-audit-2026-08-12.md item 2. */
   font-size: 10px;
-  /* The third column, whether it is reached in two children or three. */
   grid-column: 3;
   justify-self: end;
 }
 
-/* The icons (assets/icons.svg, built by ui/menu.ts).
-
-   Dimmed at rest and up to the row's colour when the row is hovered or focused:
-   the same grey the accel keys wear, on the same reasoning. A menu is read by
-   its words, and a column of marks at full ink beside them competes with the
-   thing it is there to help you find. Warmed one row at a time, the column is
-   quiet until you are looking at a particular line, and then it is not.
-
-   `color`, not `stroke` or `fill` - every symbol in the sprite draws in
-   currentColor, so this one property moves the whole drawing, including the
-   parts of it that are filled. It is also what puts the bin in the danger
-   colour on hover without a rule of its own: .is-danger:hover sets the row's
-   colour, and the icon is already following it. */
+/* Menu icons: dimmed at rest, inherit the row colour on hover. */
 .ctx-item .ico {
   width: 15px;
   height: 15px;
@@ -362,10 +208,7 @@
 .ctx-item:hover .ico,
 .ctx-item:focus-visible .ico { color: inherit; }
 
-/* The tick. On the trailing edge, in the accel keys' column and never beside
-   one - the two settings that carry it have no shortcut, which is what made the
-   move possible. Held there whether it is drawn or not, so a toggle's row does
-   not change width as it flips and the two settings stay a matched pair. */
+/* Tick on the trailing edge. Space held whether drawn or not. */
 .ctx-item .ctx-tick {
   grid-column: 3;
   justify-self: end;
@@ -375,9 +218,7 @@
   visibility: hidden;
 }
 .ctx-item.is-checked .ctx-tick { visibility: visible; }
-/* The submenu marker, in the same trailing column as the tick. A row that opens
-   a fold points right; it warms with the row like every other action icon,
-   because unlike the tick it is a picture of what the row does. */
+/* Submenu chevron in the same trailing column. */
 .ctx-item .ctx-chevron {
   grid-column: 3;
   justify-self: end;
@@ -385,15 +226,9 @@
   height: 13px;
 }
 
-/* A colour standing in the icon column, for the rows whose subject *is* one -
-   the four sheets of note paper and the board's own pigments (ui/flyout.ts).
-   Sized to the icons beside it and set in the same column, so a menu that
-   mixes the two still reads as one column of marks.
-
-   Sitting *in* a hairline rather than beside one: --note-4 is a hair off the
-   paper it is drawn on, and an unbordered chip of it would be a blank gap in
-   the column where the other three had colours. inset, so the ring does not
-   change the chip's footprint and nudge its row's label out of line. */
+/* Colour chip in the icon column -- note-paper and board pigments.
+   Inset ring so --note-4 (near-paper) shows an edge without changing
+   the chip's footprint. */
 .ctx-chip {
   width: 13px;
   height: 13px;
@@ -401,33 +236,15 @@
   box-shadow: inset 0 0 0 var(--hairline) color-mix(in srgb, var(--ink) 22%, transparent);
 }
 
-/* The same chip on the trailing edge, for the rows whose colour is a specimen
-   rather than an icon - the palette picker's, and so far only those.
-
-   Wider, because it is showing several bands of a palette and a thirteen-pixel
-   square divides into bands of two.
-
-   And a near-square corner, capped at three pixels rather than taken from a
-   token. Every other radius in this file follows the whimsy dial, and this is
-   the one place that must not: --radius-xs is 8px on the softest tier, which on
-   a 14px bar is a full pill, and a pill eats the outermost band at both ends -
-   the two a palette is most identified by. min() rather than a literal so the
-   sharp tier, where every radius is 0, still gets a square. */
+/* Trailing swatch for the palette picker. Near-square corner capped at
+   3px so the outermost bands are not eaten by a pill radius. */
 .ctx-chip.is-end {
   width: 30px;
   height: 14px;
   border-radius: min(3px, var(--radius-xs));
 }
 
-/* The one row here that is a dial and not an action - Spacing, under Arrange.
-   A <label> rather than a .ctx-item, so it is out of the arrow-key walk (Left
-   and Right belong to the slider) and is not announced as one of the menu's
-   commands. Laid out on the same three columns all the same, with the name
-   where the labels are and the reading where the accel keys sit, because a row
-   that broke the column would look like a piece of a different menu.
-
-   cursor is the default and not a pointer: nothing happens if you click the
-   words, and the whole row is not the target - the track is. */
+/* Slider row (Spacing, under Arrange). Same column grid as ctx-item. */
 .ctx-range {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -442,28 +259,20 @@
   grid-column: 2;
   justify-self: end;
   color: var(--ink-3);
-  /* The sub-tiny caption register - see .ctx-item kbd above for the whole of
-     the argument. A slider's current reading is a caption on the control, not
-     content. */
+  /* Sub-tiny caption register. */
   font-size: 10px;
-  /* A number that changes as the thumb moves must not shove the label about as
-     it goes from 8px to 108px. Wide enough for the widest reading. */
+  /* Fixed width so the label does not shift as the thumb moves. */
   min-width: 34px;
   text-align: right;
 }
-/* Where the slider sits, and nothing about what it looks like. The ruled track
-   and the terracotta lozenge are in sidebar.css, named for .ctx-range along
-   with .field and .np-volume - a slider looks the same on this paper wherever
-   it is, and the browser default riding a menu row was the one thing on this
-   panel that came from somewhere else. */
+/* Slider appearance is in sidebar.css, shared with .field and .np-volume. */
 .ctx-range input[type="range"] {
   grid-column: 1 / -1;
   margin: 0;
 }
 
-/* Unlike every other icon here it does not warm with the row: it is a reading
-   of the current state rather than a picture of the action, and the accent is
-   the whole of what it says. */
+/* Tick does not warm with the row -- it is a state reading, not an
+   action icon. */
 .ctx-item:hover .ctx-tick,
 .ctx-item:focus-visible .ctx-tick { color: var(--accent-text); }
 
@@ -473,12 +282,8 @@
   background: var(--rule);
 }
 
-/* The fence offer (ui/fence-prompt.ts).
-   The context menu's stock and the context menu's items, because it is the same
-   kind of thing appearing in the same way - but snug rather than a column, since
-   it holds exactly one entry and a 208px minimum would make a two-word button
-   look like a menu with everything missing. Above #ctx-menu in the stack: the
-   two cannot both be up, and a right-click while the offer stands closes it. */
+/* Fence offer (ui/fence-prompt.ts). Same stock as the menu, but snug --
+   it holds one entry so a 208px minimum would look empty. */
 #fence-prompt {
   position: fixed;
   z-index: calc(var(--z-menu) + 1);
@@ -493,19 +298,8 @@
 }
 #fence-prompt .ctx-item { white-space: nowrap; }
 
-/* The marked connection's own five buttons (ui/conn-chip.ts).
-
-   The same stock again - hairline, card paper, the menu's shadow and the menu's
-   entrance - because it is the third thing in the app that appears over the
-   board to be answered, and a fourth appearance would be a fourth thing to
-   recognise. What it is not is a menu: a row of icons rather than a column of
-   labelled rows, because every one of these is either a cycle whose icon is
-   also its readout or a single verb, and a 208px column of five words hanging
-   over a hairline would be the menu it exists to save.
-
-   Below #ctx-menu and the offer in the stack, and above the board. The menu can
-   be opened *from* this chip and then covers it, which is the right order: the
-   thing just opened is the thing being used. */
+/* Connection chip (ui/conn-chip.ts). A row of five icon buttons; same
+   stock as the menu. Below it in the stack so the menu covers it. */
 #conn-chip {
   position: fixed;
   z-index: calc(var(--z-menu) - 1);
@@ -524,9 +318,6 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  /* Square, and the app's one icon-button square. It was 30 x 28 - the only
-     non-square icon button in the codebase, and 30 read as a measurement
-     somebody took rather than a size somebody chose. */
   width: var(--icon-button);
   height: var(--icon-button);
   padding: 0;
@@ -537,8 +328,7 @@
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
-/* A seam rather than a gap, the toolbar's idiom: the chip is one small object,
-   and five buttons floating apart inside it would read as five. */
+/* Seams, not gaps -- the chip is one small object. */
 #conn-chip button + button { border-left: var(--hairline) solid var(--rule); border-radius: 0; }
 #conn-chip button:last-child {
   border-radius: 0 max(0px, calc(var(--radius-sm) - 2px))
@@ -546,10 +336,8 @@
 }
 #conn-chip button:focus-visible { background: var(--paper-2); color: var(--accent-deep); }
 #conn-chip button.is-danger:focus-visible { color: var(--danger); }
-/* Guarded, and the chip is the case that makes the point: it sits on the board
-   beside the connection it belongs to and stays there after the tap, so an
-   unguarded hover left one of its five buttons lit for as long as the chip was
-   up - on the one control where "which of these did I just press" matters. */
+/* Guarded: the chip stays on the board after a tap, so an unguarded
+   hover would leave one button lit for as long as it was up. */
 @media (hover: hover) {
   #conn-chip button:hover { background: var(--paper-2); color: var(--accent-deep); }
   #conn-chip button.is-danger:hover { color: var(--danger); }
@@ -565,24 +353,9 @@
   #conn-chip button.is-danger:hover .ico { color: var(--danger); }
 }
 
-/* The region the offer is about, held on the board for as long as the offer is.
-
-   The band that asked the question is the marquee's and ends with the gesture,
-   so without this the offer names an area that is no longer drawn anywhere -
-   "Fence these 5" over a board that looks exactly as it did before the drag. It
-   is the fence's own box rather than the band's; see drawGhost().
-
-   Faint, and deliberately fainter than the thing it stands for: this is not a
-   fence yet, and one that looked finished would read as though the work were
-   already done and the button an undo. The tone and the dashed rule are a real
-   fence's, at a third of its weight, so what fades in on the accept is the same
-   rectangle arriving rather than a second one replacing it.
-
-   Inside #viewport beside #marquee, at the same z-index and for the same reason:
-   it is board furniture, so the toolbar and the panels have to stay over it. It
-   takes no pointer at all - the offer is the only thing here that can be
-   answered, and a rectangle that could be clicked would be a second target for
-   the same question. */
+/* Ghost of the region the fence offer is about. Faint preview of what
+   Accept will create -- same tone and dashes as a real fence, at a third
+   of the weight. Takes no pointer; only the offer can be answered. */
 #fence-ghost {
   position: absolute;
   z-index: 5;
@@ -593,16 +366,10 @@
   opacity: 0.34;
   animation: ctx-in var(--dur-fast) var(--ease);
 }
-/* The flat tone of whatever a region is made of at this end of the axis, for the
-   same reason the ghost exists at all: it is a promise about what the accept
-   will make, and a grey one over a board whose fences are cork would be showing
-   the wrong thing. The tile itself is not repeated here - at a third of full
-   weight the chips would be a texture nobody can read, and the colour is the
-   part that carries the promise. */
+/* Matches the cork tone at the whimsy-0 tier. */
 :root[data-whimsy="0"] #fence-ghost { background: var(--cork); }
 
-/* Without color-mix(), for WebKit below 16.2 - section 7 of tokens.css carries
-   the argument and declares the channel-form tokens. */
+/* Fallback without color-mix() -- see tokens.css section 7. */
 @supports not (color: color-mix(in srgb, red, blue)) {
   .ctx-chip { box-shadow: inset 0 0 0 var(--hairline) rgb(var(--ink-c) / 22%); }
 }

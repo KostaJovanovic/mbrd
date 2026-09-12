@@ -71,12 +71,9 @@ test('a rectangle counts whichever corner it was dragged from', () => {
   assert.equal(drewRectangle({ x0: 200, y0: 200, x1: 0, y1: 0 }, 1), true);
 });
 
-// A fence carries what is inside it when it is resized, the way a card carries
-// the notes stuck to it - so nothing can be left outside by a moving edge, and
-// the floor that used to say so is gone. What is left is a different question
-// with the same shape: a card keeps its *fraction* of the region but not its
-// size, so past a point the cards are at the right places and hanging over the
-// border anyway. carryFloor() is where the region stops shrinking.
+// A fence keeps cards at the same fraction of the region rather than the same
+// size, so past a point they hang over the border anyway. carryFloor() is
+// where the region stops shrinking.
 
 const BOX = { x: 0, y: 0, w: 1000, h: 1000 };
 
@@ -132,9 +129,8 @@ test('the floor never asks for growth', () => {
   assert.ok(floor.h <= BOX.h);
 });
 
-// A band catches a card by overlap and a fence only by covering it. A fence is
-// always larger than what is drawn inside it, so one rule for both meant every
-// band drawn within a region also caught the region.
+// A band catches a card by overlap but a fence only by covering it - one rule
+// for both meant every band drawn inside a region also caught the region.
 
 const card = extra => ({ type: 'photo', x: 0, y: 0, w: 100, h: 100, ...extra });
 const fence = extra => ({ type: 'fence', x: 0, y: 0, w: 1000, h: 800, ...extra });
@@ -161,15 +157,11 @@ test('a card is still caught by the corner it pokes into a band', () => {
 // The gesture machine
 // ---------------------------------------------------------------------------
 //
-// "Exactly one gesture is active at a time" is the property the whole input
-// module exists to protect, and until the modes were written down it was
-// asserted nowhere - it was kept by every branch of a 230-line pointerdown and a
-// 270-line pointermove remembering to. A runner cannot press a pointer, so what
-// it can check is the rule those branches follow: which mode may become which.
-//
-// The illegal cases below matter more than the legal ones. Every one of them was
-// reachable in the old shape, because a bag of booleans has no opinion about
-// which combinations exist.
+// "Exactly one gesture is active at a time" is what input.ts exists to
+// protect; it used to rest on every branch of a giant pointerdown/pointermove
+// remembering to keep it. A runner cannot press a pointer, so this checks the
+// transition rule those branches follow instead - the illegal cases matter
+// more than the legal ones, since a bag of booleans had no opinion on them.
 
 const MODES = ['idle', 'press', 'pan', 'pinch', 'marquee', 'move', 'resize'];
 
@@ -193,9 +185,9 @@ test('a press decides between the five things a press can be', () => {
 });
 
 test('a resize only ever begins from a press that crossed the slop', () => {
-  // A grip press waits: it is a candidate until the pointer travels, which is
-  // what keeps a plain tap on a corner from touching snapped geometry. So there
-  // is no way into `resize` that does not go through `press`.
+  // A grip press waits until the pointer travels, which keeps a plain tap on
+  // a corner from touching snapped geometry - so `resize` always goes through
+  // `press`.
   assert.equal(gestureTransition('press', 'resize'), 'resize');
   assert.equal(gestureTransition('idle', 'resize'), null);
   assert.equal(gestureTransition('move', 'resize'), null);
@@ -203,8 +195,8 @@ test('a resize only ever begins from a press that crossed the slop', () => {
 });
 
 test('a waiting press becomes the band or the resize, and nothing else', () => {
-  // The two intents `press` carries - a grip, and the second tap of a touch
-  // double-tap. It cannot turn into a pan or a move on the way.
+  // The two intents `press` carries: a grip, or the second tap of a
+  // double-tap. Neither can turn into a pan or a move.
   assert.equal(gestureTransition('press', 'marquee'), 'marquee');
   assert.equal(gestureTransition('press', 'pan'), null);
   assert.equal(gestureTransition('press', 'move'), null);
@@ -212,10 +204,9 @@ test('a waiting press becomes the band or the resize, and nothing else', () => {
 });
 
 test('a second finger drops the gesture rather than converting it', () => {
-  // This is what "a second finger always wins" means mechanically: the drag is
-  // aborted - uncommitted, since nothing was finished - and the pinch is entered
-  // from idle. A pan that turned straight into a pinch would be a move whose
-  // geometry was never committed and never put back.
+  // "A second finger always wins": the drag aborts uncommitted and the pinch
+  // enters from idle, rather than converting a pan straight into a pinch and
+  // leaving its geometry neither committed nor put back.
   assert.equal(gestureTransition('pan', 'pinch'), null);
   assert.equal(gestureTransition('move', 'pinch'), null);
   assert.equal(gestureTransition('marquee', 'pinch'), null);
@@ -236,9 +227,9 @@ test('every gesture can end, and only by ending', () => {
   for (const from of MODES.filter(m => m !== 'idle')) {
     assert.equal(gestureTransition(from, 'idle'), 'idle', `${from} must be releasable`);
   }
-  // A press on the middle button in the middle of a left-drag used to replace
-  // the standing gesture where it lay - no commit, no cleanup. It is still the
-  // pipeline's own bug to fix; what changed is that the machine now says so.
+  // A middle-button press mid-drag used to replace the standing gesture in
+  // place, with no commit or cleanup - still the pipeline's bug, but the
+  // machine now says so.
   assert.equal(gestureTransition('move', 'pan'), null);
   assert.equal(gestureTransition('move', 'marquee'), null);
   assert.equal(gestureTransition('marquee', 'move'), null);
@@ -246,17 +237,15 @@ test('every gesture can end, and only by ending', () => {
 });
 
 test('a gesture cannot be released twice', () => {
-  // finishGesture() and abortGesture() both return early when nothing is
-  // standing, so the machine is never asked to do this. If it ever is, the pair
-  // have drifted apart and something committed a gesture that was already gone.
+  // finishGesture()/abortGesture() both return early with nothing standing,
+  // so the machine is never asked this. If it is, they've drifted apart.
   assert.equal(gestureTransition('idle', 'idle'), null);
 });
 
 test('the machine answers rubbish without throwing', () => {
-  // The only caller is a pointer handler. A wedged pointer is a worse failure
-  // than a wrong answer, so nothing here may throw - inherited property names
-  // included, which is what a bare lookup would have turned into a call on
-  // undefined.
+  // A wedged pointer is worse than a wrong answer, so nothing here may throw
+  // - including on inherited property names, which a bare lookup would turn
+  // into a call on undefined.
   assert.equal(gestureTransition('nonsense', 'pan'), null);
   assert.equal(gestureTransition('idle', 'nonsense'), null);
   assert.equal(gestureTransition('toString', 'pan'), null);
@@ -288,11 +277,10 @@ test('a pointer invalidated during capture release is already released', () => {
 });
 
 test('taking capture survives a pointer that has already gone', () => {
-  // The other half of the pair. setPointerCapture() throws NotFoundError for a
-  // pointer that is no longer active - a finger that left the glass between the
-  // event being queued and the handler running - and it was called bare, so
-  // that race threw out of pointerdown before the gesture was entered and left
-  // a press that selected a card and then did nothing.
+  // setPointerCapture() throws NotFoundError for a pointer that left the
+  // glass between the event queuing and the handler running; called bare,
+  // that race threw out of pointerdown before the gesture was entered,
+  // leaving a press that selected a card and then did nothing.
   const gone = {
     setPointerCapture: () => { throw new DOMException('Invalid pointer id', 'NotFoundError'); },
   };
@@ -304,22 +292,19 @@ test('taking capture survives a pointer that has already gone', () => {
   assert.equal(capturePointerSafely({ setPointerCapture: id => { asked = id; } }, 9), true);
   assert.equal(asked, 9);
 
-  // A failure that is not the race is still a failure - the same line
-  // releasePointerSafely() draws, so the two cannot drift.
+  // A failure that isn't the race is still a failure - same line
+  // releasePointerSafely() draws, so the two can't drift.
   assert.throws(() => capturePointerSafely({
     setPointerCapture: () => { throw new TypeError('not a DOMException'); },
   }, 7), TypeError);
 });
 
 test('every pointer the pipeline tracks is one it can take capture of', async () => {
-  // The pinch leak, held down where the pipeline itself cannot be reached from
-  // here: onDown returned for `pointers.size === 2` *before* the line that
-  // takes capture, so only the first finger was ever captured. Lift the second
-  // over the toolbar, the sidebar or the window edge and its pointerup went to
-  // that element instead of a descendant of #viewport - endPointer never ran
-  // and the id stayed in `pointers` for the life of the page, so every later
-  // single-finger press found two pointers, entered a pinch against a finger
-  // that was not there, and a plain tap panned and zoomed the board.
+  // The pinch leak: onDown returned for `pointers.size === 2` before the line
+  // that takes capture, so only the first finger was ever captured. Lift the
+  // second finger over the toolbar or window edge and its pointerup missed
+  // #viewport, so endPointer never ran and the id stayed in `pointers`
+  // forever - every later single-finger press then entered a phantom pinch.
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../web/assets/js/canvas/input.ts', import.meta.url), 'utf8')
     .replace(/\/\*[\s\S]*?\*\//g, '')
@@ -335,27 +320,22 @@ test('every pointer the pipeline tracks is one it can take capture of', async ()
 });
 
 test('a drag with nothing to carry is not entered at all', async () => {
-  // The wedge. A pinned sticker on a *locked* photograph passed the press
-  // check as an unlocked sticker, and startMove()'s two filters then resolved
-  // it to its locked host and dropped it - so `origin` came out empty, the
-  // first movement past the slop read `drag.origin[0]` as undefined and threw
-  // on `lead.x`, inside the handler and before applyGeom. The gesture stayed
-  // standing with capture held and every later pointermove threw again until
-  // the button came up: one press wedged the pipeline for the session.
+  // The wedge: a pinned sticker on a locked photo passed the press check as
+  // unlocked, then startMove()'s filters resolved it to its locked host and
+  // dropped it - `origin` came out empty, and the first move past the slop
+  // threw on `lead.x`, wedging the pipeline until the button came up.
   //
-  // Read off the source because the pipeline is a closure over #viewport and
-  // there is no browser here. What is asserted is the shape of the repair - the
-  // function may answer "nothing to take hold of", and the press branch that
-  // calls it looks.
+  // Read off the source since the pipeline is a closure over #viewport with
+  // no browser here. Asserts the shape of the repair: startMove() may answer
+  // "nothing to take hold of", and the press branch checks for it.
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../web/assets/js/canvas/input.ts', import.meta.url), 'utf8');
   assert.match(src, /function startMove\([^)]*\): MoveGesture \| null/,
     'startMove() can no longer say there is nothing to pick up');
   assert.match(src, /if \(!before\.length\) return null;/,
     'startMove() builds a gesture out of an empty snapshot again');
-  // The id's local name is not the point and has already changed once - the
-  // cascade carries it as `cardId` since pressIntent() started handing the four
-  // card branches their own id. What is asserted is that the call is looked at.
+  // The id's local name isn't the point (it's `cardId` in the cascade now) -
+  // what matters is that the call's result is checked.
   assert.match(src, /const move = startMove\(e, \w+\);[\s\S]{0,400}?if \(!move\) startPan\(e\);/,
     'the press branch stopped checking whether startMove() found anything');
 });
@@ -364,11 +344,10 @@ test('a drag with nothing to carry is not entered at all', async () => {
 // Telling a touchpad from a mouse wheel
 // ---------------------------------------------------------------------------
 //
-// One event, two devices, opposite meanings - a heuristic, so the cases it has
-// to get right are written down rather than trusted. `at` is the event's
-// timeStamp and matters as much as the deltas: the answer is latched for the
-// length of a burst, which is what stops a fast swipe being re-read as a wheel
-// halfway through.
+// One event, two devices, opposite meanings - a heuristic, so its cases are
+// written down rather than trusted. `at` (the event's timeStamp) matters as
+// much as the deltas: the answer latches for a burst, so a fast swipe isn't
+// re-read as a wheel halfway through.
 
 const wheel = (props = {}) => readWheel({
   deltaX: 0, deltaY: 0, deltaMode: 0, ctrlKey: false, shiftKey: false, timeStamp: 0, ...props,
@@ -387,8 +366,8 @@ test('a mouse wheel still zooms, whatever it counts in', () => {
 });
 
 test('two fingers on a pad pan, in both axes at once', () => {
-  // The case this was written for: a swipe on a laptop used to zoom the board,
-  // and its sideways half was thrown away entirely.
+  // The case this was written for: a laptop swipe used to zoom the board,
+  // throwing away its sideways half entirely.
   const w = wheel({ deltaX: -8, deltaY: 6 });
   assert.equal(w.kind, 'pan');
   assert.deepEqual([w.dx, w.dy], [-8, 6], 'both axes survive');
@@ -406,9 +385,9 @@ test('two fingers on a pad pan, in both axes at once', () => {
 });
 
 test('a burst keeps the device it started as', () => {
-  // A swipe starts slow, so its first event is small and reads as a pad. What
-  // follows can be as fast and as square as any wheel notch and must not be
-  // re-read: the board would zoom in the middle of somebody scrolling it.
+  // A swipe starts slow, so its first event reads as a pad. What follows can
+  // be as fast as any wheel notch and must not be re-read, or the board
+  // zooms mid-scroll.
   assert.equal(wheel({ deltaY: 3, timeStamp: 1_000 }).kind, 'pan');
   assert.equal(wheel({ deltaY: 100, timeStamp: 1_040 }).kind, 'pan');
   assert.equal(wheel({ deltaY: 220, timeStamp: 1_080 }).kind, 'pan');
@@ -424,15 +403,10 @@ test('a pinch zooms from either device, and takes nothing with it', () => {
   assert.equal(pinch.kind, 'zoom');
   assert.ok(pinch.factor > 1, 'fingers apart is closer in');
 
-  // Worth more per unit than a wheel notch: the two devices count in different
-  // sizes, and at the wheel's rate a pinch would move almost nothing.
-  //
-  // Compared per unit of delta, over a notch big enough to *be* a zoom. It used
-  // to read `pinch.factor > notch.factor || notch.kind === 'pan'` against a
-  // notch of -6 - and |6| is under WHEEL_NOTCH, so that notch is classified
-  // 'pan' every time and the right-hand disjunct carried the assertion by
-  // itself. The pinch rate could have been dropped below the wheel's and this
-  // went on passing.
+  // Compared per unit of delta, over a notch big enough to be a zoom. A past
+  // version compared against a notch of -6, under WHEEL_NOTCH, so that notch
+  // always classified 'pan' and the assertion passed on the wrong disjunct
+  // even if the pinch rate had dropped below the wheel's.
   resetWheelKind();
   const notch = wheel({ deltaY: -240, timeStamp: 9_000 });
   assert.equal(notch.kind, 'zoom', 'the fixture has to clear WHEEL_NOTCH to be a zoom at all');
@@ -441,16 +415,15 @@ test('a pinch zooms from either device, and takes nothing with it', () => {
     `a pinch unit is worth ${per(pinch, 6)} and a wheel unit ${per(notch, 240)} - `
     + 'at the wheel rate a pinch across the whole pad would move almost nothing');
 
-  // And a pinch does not latch: it is also what ctrl+wheel on a real mouse
-  // looks like, and a modifier must not change what the next plain notch means.
+  // A pinch does not latch: it also looks like ctrl+wheel on a real mouse,
+  // and a modifier must not change what the next plain notch means.
   resetWheelKind();
   wheel({ deltaY: -6, ctrlKey: true, timeStamp: 1_000 });
   assert.equal(wheel({ deltaY: 100, timeStamp: 1_020 }).kind, 'zoom');
 });
 
-// A swipe, as a burst of events a few milliseconds apart - which is the only
-// way to exercise the lean, since it is measured over a gesture and not read off
-// one event. Returns what the last event came out as.
+// A swipe, as a burst of events a few milliseconds apart - the lean is
+// measured over a gesture, not one event. Returns the last event's result.
 function swipe(steps) {
   resetWheelKind();
   let out;
@@ -463,10 +436,9 @@ function swipe(steps) {
 const times = (n, step) => Array.from({ length: n }, () => step);
 
 test('an axis the platform is withholding is given back', () => {
-  // The recorded case: a swipe down the board with a curve in it arrived as
-  // 5257px of vertical against 973px of sideways, four events in five carrying
-  // no sideways at all. The fingers went one way and the platform reported a
-  // fifth of it, which is what "it takes over too much" is.
+  // Recorded case: a curved downward swipe arrived as 5257px vertical against
+  // 973px sideways, four events in five carrying no sideways at all - the
+  // platform reported a fifth of what the fingers actually did.
   const out = swipe([...times(40, [0, 15]), [13, 15]]);
   assert.equal(out.kind, 'pan');
   assert.ok(out.dx > 13 * 2, `a withheld sideways step is lifted, got ${out.dx}`);
@@ -474,13 +446,10 @@ test('an axis the platform is withholding is given back', () => {
 });
 
 test('a swipe delivered whole is left alone, however lopsided', () => {
-  // Both from the same pad within a minute of each other, and this is the pair
-  // the measure has to tell apart. 791 by 1147 with the sideways half in 58 of
-  // 59 events, and 54 by 793 with it in all 36: the platform is reporting what
-  // the fingers did in both, so a hand on either must feel nothing added. Only
-  // the second is lopsided, which is exactly why lopsidedness cannot be the
-  // test - reading it that way multiplied a sideways flick's little drift by
-  // nearly three and slid the board out from under the gesture.
+  // Two swipes the platform reports faithfully in both axes - one even, one
+  // lopsided - and the measure must leave both alone. Reading lopsidedness
+  // itself as evidence of withholding used to multiply a sideways flick's
+  // little drift by nearly three and slide the board out from under it.
   const even = swipe(times(40, [19, 13]));
   assert.deepEqual([even.dx, even.dy], [19, 13]);
 
@@ -489,18 +458,16 @@ test('a swipe delivered whole is left alone, however lopsided', () => {
 });
 
 test('a swipe the platform railed outright cannot be rescued', () => {
-  // Straight sideways reports vertical of exactly zero - not a small number, a
-  // zero - and no multiple of zero is a lean. Said out loud because it is the
-  // limit of what this can do, and Shift is the answer instead.
+  // Straight sideways reports vertical as exactly zero, and no multiple of
+  // zero is a lean - the limit of what this can do. Shift is the answer.
   const out = swipe(times(30, [25, 0]));
   assert.equal(out.dy, 0);
   assert.equal(out.dx, 25, 'the axis that did arrive is not amplified either');
 });
 
 test('nothing is lifted on the strength of one event', () => {
-  // Both measures start out saying "delivered whole", so evidence of a rail has
-  // to accumulate before anything is handed back. The opening of a swipe is
-  // where the evidence is thinnest and a wrong answer is most visible.
+  // Both measures start out saying "delivered whole", so evidence of a rail
+  // must accumulate - a swipe's opening is where it's thinnest.
   const first = swipe([[0, 15]]);
   assert.deepEqual([first.dx, first.dy], [0, 15]);
   const second = swipe([[0, 15], [4, 15]]);
@@ -508,9 +475,8 @@ test('nothing is lifted on the strength of one event', () => {
 });
 
 test('a lump released in one event is not multiplied into a jerk', () => {
-  // The failure mode a cap on top would have been for, and it needs none: a
-  // delta the driver held back raises its own axis's measure as it lands, which
-  // levels the two and takes the lift off the very event that would have jerked.
+  // Needs no cap: a delta the driver held back raises its own axis's measure
+  // as it lands, taking the lift off the very event that would have jerked.
   const lump = swipe([...times(40, [0, 15]), [48, 15]]);
   const trickle = swipe([...times(40, [0, 15]), [6, 15]]);
   assert.ok(lump.dx >= 48, 'never less than the platform reported');
@@ -520,31 +486,28 @@ test('a lump released in one event is not multiplied into a jerk', () => {
 
 test('the lean is measured over a burst and forgotten with it', () => {
   // A gesture, then a pause, then a gesture the other way. Carrying the first
-  // one's shape into the second lifts the wrong axis for as long as it takes the
-  // measure to catch up - which is the whole of the first swipe on that pad.
+  // one's shape into the second lifts the wrong axis until the measure
+  // catches up.
   //
-  // Lopsided on purpose. This used to be 20 by 20, which passed on a tie: with
-  // equal magnitudes `axisX < axisY` is false either way, so the reset of those
-  // two was enough and the presence measures - the ones the gain actually reads,
-  // and the ones a rail drives to nearly zero - were never asked about. One unit
-  // of difference is enough to name a minor axis and so to see them.
+  // Lopsided on purpose: an even 20-by-20 fixture passed on a tie, since
+  // `axisX < axisY` is false either way and never exercised the presence
+  // measures a rail drives to near zero. One unit of difference is enough to
+  // name a minor axis and see them.
   swipe(times(40, [0, 15]));
   const later = wheel({ deltaX: 20, deltaY: 21, timeStamp: 90_000 });
   assert.deepEqual([later.dx, later.dy], [20, 21], 'the new swipe starts even');
 });
 
 test('shift is the way across a railed pad, from either device', () => {
-  // The platform decides at the start of a two-finger swipe which axis you
-  // meant and suppresses the other until you lift, so a gesture that begins
-  // straight down reports deltaX of exactly zero however far sideways the
-  // fingers then go. Shift moves the whole delta onto the horizontal, which is
-  // the one way across that works from inside the rail.
+  // The platform decides which axis you meant at the start of a two-finger
+  // swipe and suppresses the other until you lift, so a gesture starting
+  // straight down reports deltaX of exactly zero forever. Shift moves the
+  // whole delta onto the horizontal - the one way across from inside the rail.
   const railed = wheel({ deltaY: 12, shiftKey: true });
   assert.equal(railed.kind, 'pan');
   assert.deepEqual([railed.dx, railed.dy], [12, 0]);
 
-  // Some browsers do the swap themselves on the way past. Doing it twice would
-  // put the movement back where it started.
+  // Some browsers do the swap themselves; doing it twice would undo it.
   resetWheelKind();
   const swapped = wheel({ deltaX: 12, deltaY: 0, shiftKey: true, timeStamp: 5_000 });
   assert.deepEqual([swapped.dx, swapped.dy], [12, 0]);
@@ -557,10 +520,9 @@ test('shift is the way across a railed pad, from either device', () => {
 });
 
 test('holding shift does not leave a mouse latched into panning', () => {
-  // Shift is an override on what a wheel event *does*, applied after the device
-  // is decided and never as part of deciding it. Latching it would mean the
-  // notch after somebody let go of the key scrolled the board instead of
-  // zooming it, for as long as they kept scrolling.
+  // Shift overrides what a wheel event does, applied after the device is
+  // decided, not as part of deciding it - latching it would keep panning the
+  // board after the key was released.
   assert.equal(wheel({ deltaY: 100, shiftKey: true, timeStamp: 1_000 }).kind, 'pan');
   assert.equal(wheel({ deltaY: 100, timeStamp: 1_040 }).kind, 'zoom');
 });
@@ -588,10 +550,8 @@ test('safe pointer release does not hide ordinary programming errors', () => {
 // The two rules that used to be unreachable
 //
 // resizeAxisOn() and nudgeDelta() were closures inside initInput(), so the
-// snap-anchor derivation and the "flush already" branch - the two riskiest
-// pieces of arithmetic in the file - had no coverage at all, while every
-// trivial predicate around them had plenty. They take their step and seam as
-// arguments now, which was the whole of what kept them inside.
+// riskiest arithmetic in the file had no coverage while trivial predicates
+// around it had plenty. Taking step and seam as arguments is what freed them.
 // ---------------------------------------------------------------------------
 
 const STEP = 64;
@@ -609,9 +569,8 @@ test('unsnapped, the extent follows the pointer exactly', () => {
 });
 
 test('snapped, it is the moving edge that lands on a grid line', () => {
-  // The rule the docstring turns on: the *edge* is quantised, not the extent.
-  // A width rounded to the step would leave both edges off the lattice, since
-  // the pinned edge was never on it.
+  // The edge is quantised, not the extent - rounding the width would leave
+  // both edges off the lattice, since the pinned edge was never on it.
   const centre = 100, extent = 150;
   for (const sign of [1, -1]) {
     for (const travel of [-40, -7, 0, 3, 41, 90]) {
@@ -619,8 +578,8 @@ test('snapped, it is the moving edge that lands on a grid line', () => {
       if (size === MIN_SIZE || size === MAX_SIZE) continue;   // clamped, not snapped
       const anchor = centre - sign * extent / 2;
       const edge = anchor + sign * size;
-      // The moving edge sits a seam short of its line going one way and a seam
-      // past it going the other, which is what the signed bias is for.
+      // The moving edge sits a seam short of its line one way and a seam
+      // past it the other - what the signed bias is for.
       const k = (edge + sign * INSET) / STEP;
       assert.ok(Math.abs(k - Math.round(k)) < 1e-9,
         `sign ${sign} travel ${travel}: the edge landed at ${edge}, off the lattice`);
@@ -629,9 +588,8 @@ test('snapped, it is the moving edge that lands on a grid line', () => {
 });
 
 test('the size limits hold even where one step spans the whole band', () => {
-  // The closing clamp, and the case it exists for: a step coarser than the
-  // range between floor and ceiling leaves no grid line inside it, so the
-  // repair by one line cannot land legally and the clamp has to.
+  // The case the closing clamp exists for: a step coarser than the
+  // floor-to-ceiling range leaves no grid line to land on legally.
   const huge = MAX_SIZE * 4;
   for (const sign of [1, -1]) {
     for (const travel of [-1e6, -100, 100, 1e6]) {
@@ -661,11 +619,9 @@ test('unsnapped, a bare arrow key moves one unit and shift moves a step', () => 
 });
 
 test('snapped and already flush, an arrow key moves exactly one cell', () => {
-  // The "flush already" branch, and the tolerance it needs: a board's
-  // coordinates come out of divisions and accumulated drags, so an item on a
-  // line is routinely at 3.9999999 cells rather than 4. Without ON_LINE the
-  // next line along is the one it is standing on, which reads as a key that
-  // did nothing.
+  // The "flush already" branch's tolerance: board coordinates come from
+  // divisions and accumulated drags, so an item on a line is routinely at
+  // 3.9999999 cells rather than 4. Without ON_LINE the key reads as a no-op.
   const low = 4 * STEP + INSET;
   for (const drift of [0, 1e-9, -1e-9]) {
     const lead = { x: low + drift + 50, y: 0, w: 100, h: 100 };
@@ -678,8 +634,8 @@ test('snapped and adrift, the first press comes aboard rather than overshooting'
   const lead = { x: 4 * STEP + INSET + 20 + 50, y: 0, w: 100, h: 100 };
   const right = nudgeDelta(1, 0, false, lead, true, STEP, INSET);
   const left = nudgeDelta(-1, 0, false, lead, true, STEP, INSET);
-  // Right goes to the next line up, left to the one just below - both less than
-  // a full cell away, because the item was between them.
+  // Right goes to the next line up, left to the one just below - both under a
+  // full cell, since the item was between them.
   assert.ok(right.dx > 0 && right.dx < STEP, `came aboard by ${right.dx}`);
   assert.ok(left.dx < 0 && left.dx > -STEP, `came aboard by ${left.dx}`);
   // And having come aboard, it is on the lattice.
@@ -704,11 +660,10 @@ test('an axis with no direction pressed does not move', () => {
 // What a press means
 // ---------------------------------------------------------------------------
 //
-// The eight branches of the pointerdown cascade, which until pressIntent()
-// existed could not be asked anything: the decision was interleaved with the
-// select, the pointer capture and the enter() each branch performs, so the only
-// way to find out what a press on an unpicked card under a finger does was to
-// press one. Every case below is a sentence out of that handler's own comments.
+// The eight branches of the pointerdown cascade. Before pressIntent() existed
+// the decision was interleaved with the select, capture and enter() each
+// branch performs, so the only way to know what a press does was to press
+// one. Every case below comes from that handler's own comments.
 
 /** A press on bare board with a mouse, nothing held, nothing selected. */
 const press = (over = {}) => ({
@@ -747,12 +702,11 @@ test('a widget inside a card owns the press, unless the press means pan', () => 
 });
 
 test('nothing on the board moves or pans while a tour is running', () => {
-  // The board is being shown, not worked on: the press takes hold of nothing
-  // and drives nothing. A nudged photograph during a presentation is a mistake
-  // that gets saved; a panned-off stop is a reading nobody can follow.
+  // The board is being shown, not worked on: a nudged photo during a
+  // presentation is a mistake that gets saved.
   assert.deepEqual(pressIntent(press({ touring: true, onCard: 'a' })), { kind: 'frozen' });
-  // Including by its corners - a card that was selected when the tour started
-  // still has grips on screen, and they must not resize it either.
+  // Including by its corners - grips still on screen from before the tour
+  // started must not resize it either.
   assert.deepEqual(
     pressIntent(press({ touring: true, onCard: 'a', onGrip: true, wasSelected: true, selectionSize: 1 })),
     { kind: 'frozen' });
@@ -760,16 +714,15 @@ test('nothing on the board moves or pans while a tour is running', () => {
   assert.deepEqual(
     pressIntent(press({ touring: true, onCard: 'a', pointerType: 'touch', needsTapFirst: true })),
     { kind: 'frozen' });
-  // Space and the middle button are ways of driving the board, so the freeze is
-  // above them too - unlike the widget branch, which is above the freeze.
+  // Space and the middle button drive the board, so the freeze is above them
+  // too - unlike the widget branch, which is above the freeze.
   assert.deepEqual(pressIntent(press({ touring: true, onCard: 'a', spaceDown: true })),
     { kind: 'frozen' });
   assert.deepEqual(pressIntent(press({ touring: true, button: 1 })), { kind: 'frozen' });
   assert.deepEqual(pressIntent(press({ touring: true, onCard: 'a', onWidget: true })),
     { kind: 'widget' });
-  // Bare board is frozen too. That press is still the one that walks the tour
-  // on, but it is answered on the lift rather than here - see tourClick in
-  // input.ts - and the pan it used to start with it is gone.
+  // Bare board is frozen too; that press still walks the tour on, but is
+  // answered on the lift (tourClick in input.ts), and no longer pans.
   assert.deepEqual(pressIntent(press({ touring: true })), { kind: 'frozen' });
   assert.deepEqual(pressIntent(press({ touring: true, additive: true })), { kind: 'frozen' });
 });
@@ -780,16 +733,15 @@ test('a grip is a resize only with one card picked or none', () => {
     { kind: 'resize', id: 'a' });
   assert.deepEqual(pressIntent(press({ ...grip, selectionSize: 0 })),
     { kind: 'resize', id: 'a' });
-  // With more than one it is not a resize at all - there is no defined answer
-  // for what a corner drag means across a selection, so it picks the selection
-  // up like a press anywhere else on the card.
+  // With more than one selected it's not a resize at all - a corner drag has
+  // no defined meaning across a selection, so it just picks it up.
   assert.deepEqual(pressIntent(press({ ...grip, selectionSize: 2 })),
     { kind: 'move', id: 'a', additive: false, wasSelected: true });
 });
 
 test('a locked card has no grips and does not move', () => {
-  // It still selects - its menu, its name, its colour and the unlock are all one
-  // click away. Only the grab is gone, and the press pans as bare board does.
+  // It still selects - menu, name, colour and unlock are one click away.
+  // Only the grab is gone; the press pans as bare board does.
   assert.deepEqual(
     pressIntent(press({ onCard: 'a', locked: true, onGrip: true, wasSelected: true })),
     { kind: 'lockedPan', id: 'a', additive: false, wasSelected: true },
@@ -797,11 +749,9 @@ test('a locked card has no grips and does not move', () => {
 });
 
 test('a pinned sticky has no grips, and a press on one takes its host', () => {
-  // Its size is the card it is fixed to, the way its place already is. So the
-  // grip press is not a resize - it falls through to the move below and does
-  // what every other press on a pinned sticky does, which is take hold of the
-  // host (dragRoot, sticky.ts). Not lockedPan: a pinned sticky is not immovable,
-  // it moves with the thing under it.
+  // Its size is the card it's fixed to, so the grip press isn't a resize -
+  // it falls through to the move below and takes hold of the host
+  // (dragRoot, sticky.ts). Not lockedPan: a pinned sticky moves with its host.
   assert.deepEqual(
     pressIntent(press({ onCard: 'a', pinned: true, onGrip: true, wasSelected: true })),
     { kind: 'move', id: 'a', additive: false, wasSelected: true },
@@ -815,11 +765,11 @@ test('a pinned sticky has no grips, and a press on one takes its host', () => {
 
 test('an unpicked card is the two-step gate under a finger and on Mobile', () => {
   const unpicked = { onCard: 'a', needsTapFirst: true };
-  // A finger navigates more than it drags, so this pans now and selects on lift.
+  // A finger navigates more than it drags, so this pans now, selects on lift.
   assert.deepEqual(pressIntent(press({ ...unpicked, pointerType: 'touch' })),
     { kind: 'tapGate', id: 'a', additive: false });
-  // The Mobile board is a feed you scroll far more than you rearrange, whatever
-  // the pointer is.
+  // The Mobile board is scrolled far more than it's rearranged, whatever the
+  // pointer is.
   assert.deepEqual(pressIntent(press({ ...unpicked, isMobile: true })),
     { kind: 'tapGate', id: 'a', additive: false });
   // A mouse on the Desktop board has no such tension: a left press is a grab.
@@ -845,8 +795,8 @@ test('the second tap of a touch double tap is a band, not a pan', () => {
 });
 
 test('what the lift needs to tell a selection edit from a pick is carried', () => {
-  // `additive` and `wasSelected` are read by endPointer() to decide whether a
-  // modified press that did not move should drop the card again.
+  // `additive`/`wasSelected` let endPointer() decide whether a modified press
+  // that didn't move should drop the card again.
   assert.deepEqual(
     pressIntent(press({ onCard: 'a', additive: true, wasSelected: true })),
     { kind: 'move', id: 'a', additive: true, wasSelected: true },
@@ -854,8 +804,8 @@ test('what the lift needs to tell a selection edit from a pick is carried', () =
 });
 
 test('space beats every branch below it', () => {
-  // "middle-drag or space+drag ... pan, from anywhere" - the gesture map at the
-  // head of the module, held to.
+  // "middle-drag or space+drag ... pan, from anywhere" - the gesture map at
+  // the head of the module.
   for (const over of [
     { onCard: 'a' }, { onGrip: true, onCard: 'a' }, { onCard: 'a', needsTapFirst: true },
     { doubleTapDrag: true }, { additive: true }, { onCard: 'a', locked: true },

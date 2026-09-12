@@ -1,55 +1,7 @@
-// The bar along the foot: what is playing, and the controls for it.
-//
-// A board is a wall of clips you can only operate by looking at them. The
-// transport is drawn on the card, so steering away from the card takes the
-// pause button with it - and on an infinite canvas "away" is one flick. This is
-// the transport again, pinned to the glass, so the thing making a noise can
-// always be stopped by whoever is listening to it.
-//
-// Audio and video both. A video that has left the screen is still running, and
-// whether the thing you can hear also had a picture is not a reason to withhold
-// a pause button for it - if anything the case is stronger, since a clip you
-// cannot see is one you cannot reach for. What differs is only the notation:
-// video gets the plain line its own card carries and audio gets the measured
-// waveform. This used to point at buildTransport's `line` option for that, an
-// option nothing ever passed and which is now gone; the bar draws both forms
-// itself, out of the pieces named in the paragraph below.
-//
-// It is deliberately not a second player. The <audio> in the card is still the
-// engine; this builds its own strip over that same element - bindScrub() and
-// clock() from media/transport.ts, not a second buildTransport() - so the card
-// and the bar are two views of one clip and stay in step without a line of
-// syncing code between them. Seek from either and both move, because there is
-// only one thing to move.
-//
-// Two rAF loops run while a clip plays, one per view. That is the price of not
-// writing a second transport with its own idea of what a waveform looks like,
-// and it is one loop for one clip - the exclusive-playback rule in
-// canvas/audio.ts means there is never a second.
-//
-// What keeps the sound going once the card is gone is not here: it is
-// sounding() in canvas/items.ts, which exempts a playing card from the cull.
-// Removing a media element from the document pauses it, so without that the bar
-// would be a remote for something the browser had already stopped.
-//
-// It stays through a pause. A paused track is still the track you were
-// listening to, and a bar that vanished the moment you stopped it would mean
-// finding the card again to start it back up - which is the problem this exists
-// to solve. It goes when you close it, or when the clip itself goes away.
-//
-// It also stays while the sidebar is open, alone among the corner furniture.
-// The bin and the add bar act on the board the panel is covering, so they have
-// nothing to do while it is up; a player does not stop being a player because
-// somebody opened the settings, and hiding it meant the only way to silence a
-// track was to close the panel you had just gone to. The CSS moves it clear of
-// the panel rather than taking it away - see the #sidebar.is-open rule there.
-//
-// Arriving and leaving are CSS, and the only reason this file knows about them
-// is [hidden]: display:none leaves no box for a transition to happen in, so the
-// element has to come out of it a frame before it rises, and go into it a fade
-// after it has gone. raise() and hide() are those two orderings and nothing
-// else - what the movement looks like is four custom properties per whimsy
-// tier, at the foot of the CSS.
+// Now-playing bar along the foot — pins a transport to the glass so
+// whatever is making noise can always be stopped. Not a second player:
+// builds its strip over the card's own <audio>/<video> via bindScrub(),
+// so card and bar stay in step with no sync code.
 
 import {
   nowPlaying, onNowPlaying, clearNowPlaying,
@@ -67,17 +19,16 @@ import { seekInnerHTML, sizeSeekWave, reportPlayError } from '../media/transport
 import type { NowPlaying } from '../canvas/audio.ts';
 import type { Item } from '../board-model.ts';
 
-// The bar and everything in it, taken once in initNowPlaying(). It returns
-// early without #nowplaying, and every path below that reads one of these is
-// reached either from that function or from an event bound inside it - which is
-// why they are read with `!` rather than guarded a second time.
+// The bar and everything in it, taken once in initNowPlaying(). Read with `!`
+// rather than guarded again, since every path that reads one is reached from
+// that function or from an event bound inside it.
 let bar: HTMLElement | null = null;
 let caption: HTMLElement | null = null;
 let controls: HTMLElement | null = null;
 let volume: HTMLInputElement | null = null;
 let closeBtn: HTMLElement | null = null;
-// The seek line, its ends' times, and the play button - the bar's own transport,
-// bound to whatever element is playing (a card's <audio>, or the shared queue).
+// The seek line, its ends' times, and the play button - the bar's own
+// transport, bound to whatever element is playing.
 let seekWrap: HTMLElement | null = null;
 let lineEl: HTMLElement | null = null;
 let elapsedEl: HTMLElement | null = null;
@@ -85,8 +36,8 @@ let totalEl: HTMLElement | null = null;
 let playBtn: HTMLElement | null = null;
 /** The skip, which is only there while there is a list to skip through. */
 let nextBtn: HTMLElement | null = null;
-// The wave's own svg and path, sized to the bar's pixel width so the frequency
-// does not stretch with it - see sizeWave() and the WAVE_HALF note above.
+// The wave's own svg and path, sized to the bar's pixel width so the
+// frequency does not stretch with it - see sizeWave().
 let waveSvg: SVGSVGElement | null = null;
 let wavePathEl: SVGPathElement | null = null;
 // The playback follow loop and the current seek handler, per bound element.
@@ -107,22 +58,19 @@ let abort: AbortController | null = null;      // its listeners on the <audio>
 /**
  * The exit, in flight: the function that calls it off, or 0.
  *
- * [hidden] is display:none, so a bar that took it the moment a track ended
- * would vanish rather than leave - there would be no box left for the fade to
- * happen in. So the class comes off first, the CSS plays, and only then does
- * the element go. Held here because a track starting mid-fade has to be able to
- * call the whole thing off, rather than let it finish and hide the bar it has
- * just filled.
+ * [hidden] is display:none, so hiding immediately would leave no box for a
+ * fade to happen in - the class comes off first, CSS plays, then the element
+ * goes. Held here so a track starting mid-fade can call the whole thing off
+ * rather than let it finish and hide the bar it just filled.
  */
 let leaving: (() => void) | 0 = 0;
 
 /**
- * Long enough for any tier's exit, which is --dur-fast even at the slow end.
+ * Long enough for any tier's exit (--dur-fast even at the slow end).
  *
- * A backstop rather than the timing: transitionend is what normally ends the
- * exit. It is here because that event is not guaranteed - a bar that is already
- * display:none for some other reason never transitions, and a bar left at
- * opacity 0 with pointer-events still on would be a row of invisible buttons
+ * A backstop, not the timing - transitionend normally ends the exit, but is
+ * not guaranteed (e.g. a bar already display:none for another reason), and a
+ * bar stuck at opacity 0 with pointer-events on would be invisible buttons
  * over the board.
  */
 const EXIT_CAP = 600;
@@ -135,31 +83,24 @@ export function initNowPlaying() {
   seekWrap = bar.querySelector('.np-seek');
   // #np-volume is the range input in the bar's markup.
   volume = bar.querySelector<HTMLInputElement>('#np-volume');
-  // Handed over like every range in the app. It runs 0 to 100 in ones, so
-  // tickSlider() will decline it - a hundred ticks across one drag is a buzz,
-  // not a dial. Wired anyway so the rule is *every slider*, with the helper
-  // making the judgement rather than this file making an exception.
+  // Handed to tickSlider() like every range in the app; it runs 0-100 in ones
+  // and the helper will decline it (a hundred ticks in one drag is a buzz).
   tickSlider(volume);
   closeBtn = bar.querySelector('.np-close');
 
   // The same iPhone Safari case the sidebar's slider makes: writes to media
-  // volume are ignored there, so a slider that appeared to set it would be a
-  // lie. The sidebar replaces itself with the instruction; there is no room for
-  // a sentence down here, so this simply goes.
+  // volume are ignored there, so the slider is removed rather than lie.
   if (volumeLocked()) {
     volume?.closest('.np-volume')?.remove();
     volume = null;
   } else if (volume) {
-    // Held as a const so the `else if (volume)` above still counts inside the
-    // two closures: the module binding is reassigned on the branch beside this
-    // one, so the narrowing would not follow it in.
+    // Held as a const so narrowing survives inside the closures below - the
+    // module binding `volume` is reassigned on the other branch.
     const slider = volume;
-    // Both halves go through the curve in canvas/audio.ts: the position is not
-    // the amplitude, and the two mappers are exact inverses, so a whole-number
-    // position survives the round trip back through paint() and the thumb never
-    // walks under a thumb that is being dragged. The percentage a screen reader
-    // is read is the position, which is the thing being moved and the thing on
-    // screen - the amplitude behind it is not a number anybody wants spoken.
+    // Both halves go through the curve in canvas/audio.ts (position is not
+    // amplitude); the two mappers are exact inverses so the thumb never
+    // walks under a drag. The value announced to a screen reader is the
+    // position, since that's what's on screen and being moved.
     const paint = () => {
       const pct = Math.round(volumeToSlider(getVolume()) * 100);
       if (slider.value !== String(pct)) slider.value = String(pct);
@@ -172,37 +113,20 @@ export function initNowPlaying() {
 
   closeBtn?.addEventListener('click', close);
 
-  // ---------------------------------------------------------------------------
-  // Two clusters, and the split between them is what each thing acts on.
+  // Two clusters, split by what each acts on. The lead (left, both rows) is
+  // Play/pause and Next: the one control anyone comes here to press, sized
+  // and placed to say so. The cluster (right) is playlist/volume/close - the
+  // three things that are not this track.
   //
-  // ── The lead, at the left, across both rows ──
-  //
-  // Play/pause, and Next behind it when there is a list. This is the transport:
-  // the one control anybody comes to this bar to press, and it is now the size
-  // and the place that says so - a big round button at the head of the bar,
-  // beside the name it is playing and above the line it is running along, rather
-  // than a 25px disc in a row of four small ones at the far end. A player's play
-  // button is not one of its options.
-  //
-  // ── The cluster, at the right ──
-  //
-  // The playlist, the volume, close: the three things that are not this track.
-  // The playlist is where you go for the list, the volume is a property of the
-  // room rather than of the queue - which is why it is here and not a window
-  // away - and close is how the bar is dismissed, which is not a transport
-  // control at all but is the only way to put it away.
-  //
-  // Previous is deliberately not here, and it is the one asymmetry. Next is
-  // where a list is going; previous is where it has been, which is a thing you
-  // can see on the list itself. One button says "carry on without me", which is
-  // what a bar over a board is for; two buttons make the bar a place you steer
-  // from, and steering wants the list in front of you.
-  // ---------------------------------------------------------------------------
+  // Previous is deliberately absent: Next says "carry on without me", which
+  // is what a bar over a board is for; a Previous button would make the bar
+  // a place to steer from, and steering wants the list in front of you.
+
   // The way in to the full player: the Playlist lens on a narrow screen, the
   // floating window where there is room for one.
   const listBtn = ctlBtn('np-qbtn np-list', 'Open the playlist', LIST_ICON, openPlaylist);
-  // Before the volume, which is already in the markup along with close - so the
-  // built and the written halves interleave in one order.
+  // Before the volume, already in the markup along with close - so built and
+  // written halves interleave in one order.
   controls!.insertBefore(listBtn, controls!.querySelector('.np-volume') || closeBtn);
 
   playBtn = ctlBtn('np-play', 'Play', PLAY_ICON, togglePlay);
@@ -210,30 +134,26 @@ export function initNowPlaying() {
   const lead = document.createElement('div');
   lead.className = 'np-lead';
   lead.append(playBtn, nextBtn);
-  // First child of the bar, which the grid in chrome.css puts down the left of
-  // both rows. Prepended rather than written into index.html because everything
-  // that varies with what is playing is built here, and Next is the most varying
-  // thing on the bar - see paintNext().
+  // First child of the bar, which chrome.css's grid puts down the left of
+  // both rows - prepended because everything that varies with what is
+  // playing is built here, and Next varies the most (see paintNext()).
   bar.prepend(lead);
-  // Whether Next belongs on the bar is a question about the queue, so it is
-  // asked again whenever the queue moves. The other two moments are a track
-  // change (show) and the playlist being opened or shut from this bar.
+  // Whether Next belongs on the bar is a question about the queue, re-asked
+  // whenever the queue moves, on a track change, and when the playlist opens
+  // or shuts from this bar.
   onQueue(paintNext);
   paintNext();
 
-  // A track that ends hands over only while the playlist is up - see
-  // playlistOpen(). By injection rather than an import, because canvas/audio.ts
-  // sits below ui/ and may not reach back up into it; the same seam
-  // setAssetNameLookup and setPrompt use, and tests/layers.test.js is what keeps
-  // it one-way.
+  // A track that ends hands over to the next only while the playlist is up -
+  // see playlistOpen(). By injection, not import: canvas/audio.ts sits below
+  // ui/ and may not reach back up (tests/layers.test.js enforces this).
   setAdvanceGate(playlistOpen);
 
-  // The seek line under both rows: a muted base, an accent fill clipped to the
-  // played fraction (--np-progress), and the times at its ends. The fill carries
-  // both a straight line and a wave; the CSS shows one per whimsy tier.
-  // The line itself is seekInnerHTML's, shared with the playlist window and the
-  // video card so all three scrubbers are one shape - see media/transport.ts.
-  // Only the two time labels either side of it are the bar's own.
+  // The seek line under both rows: a muted base, an accent fill clipped to
+  // the played fraction (--np-progress), times at its ends. The line itself
+  // is seekInnerHTML's, shared with the playlist window and video card so all
+  // three scrubbers are one shape - see media/transport.ts. Only the two time
+  // labels are the bar's own.
   seekWrap!.innerHTML =
     '<span class="np-time np-elapsed">0:00</span>'
     + '<div class="np-line" role="slider" tabindex="0" aria-label="Seek" aria-valuemin="0">'
@@ -246,13 +166,12 @@ export function initNowPlaying() {
   waveSvg = seekWrap!.querySelector('.np-line-wave-svg');
   wavePathEl = seekWrap!.querySelector('.np-line-fill-wave');
   sizeWave();
-  // The bar's width follows the window and the two time labels, both of which
-  // change without a track change, so the wave is re-laid whenever the line
-  // resizes rather than only when a track is bound.
+  // The bar's width follows the window and the two time labels, both of
+  // which can change without a track change, so re-lay on resize too.
   if (typeof ResizeObserver === 'function') new ResizeObserver(sizeWave).observe(lineEl!);
   bindScrub(lineEl!, (clientX: number) => seekTo?.(clientX));
 
-  // The keys the canvas also wants. A bar you can reach with Tab must not also
+  // The keys the canvas also wants. A bar reachable by Tab must not also
   // nudge the selection behind it; the seek line answers the arrows itself.
   bar.addEventListener('keydown', e => {
     if (e.key === 'Escape') { close(); e.stopPropagation(); }
@@ -266,28 +185,22 @@ export function initNowPlaying() {
 /**
  * Put a track in the bar, or take the bar away.
  *
- * Re-bound per track rather than repointed: the fill, the times and the play icon
- * are driven off the element that is playing, and swapping the element underneath
+ * Re-bound per track rather than repointed: swapping the element underneath
  * a live follow loop would leave the last track's listeners on the new one.
  */
 function show(current: NowPlaying | null) {
   if (!bar) return;
   if (!current) { hide(); return; }
-  // The element as well as the item, which ui/playlist.ts has always compared
-  // and this did not.
-  //
-  // One track can be playing through two different elements over its life: the
-  // queue uses a shared <audio> while a card is culled, and the card's own the
-  // moment it mounts. Pressing that card's play button fires setNowPlaying()
-  // with the same item and a different element, and the early return here kept
-  // every listener, the rAF and `seekTo` on the element the exclusivity rule in
-  // canvas/audio.ts had just paused and rewound. The bar drew 0:00, showed
-  // Play while sound was coming out of the other one, and scrubbing seeked
-  // something silent.
+  // The element, not just the item: one track can play through two different
+  // elements over its life (a shared <audio> while its card is culled, the
+  // card's own once it mounts). Without this test, pressing that card's play
+  // button kept every listener and `seekTo` on the element exclusivity had
+  // just paused - the bar showed 0:00 and Play while sound played elsewhere,
+  // and scrubbing seeked something silent.
   if (current.item === shown && current.el === boundEl) return;
 
-  // Whatever was on its way out is not going any more - the box it was leaving
-  // is about to hold a different track.
+  // Whatever was leaving is not going any more - the box it was leaving is
+  // about to hold a different track.
   cancelExit();
   teardown();
   shown = current.item;
@@ -298,8 +211,8 @@ function show(current: NowPlaying | null) {
   caption!.title = current.item.name || '';
   paintNext();
   raise();
-  // The bar was display:none until raise(), where the line read zero width and
-  // the ResizeObserver had nothing to size against; now it has a box.
+  // The bar was display:none until raise(), where the line had zero width;
+  // now it has a box to size against.
   sizeWave();
 }
 
@@ -307,11 +220,12 @@ function show(current: NowPlaying | null) {
 function sizeWave() { sizeSeekWave(lineEl!, waveSvg, wavePathEl); }
 
 /**
- * Drive the bar off one element: the play button, the seek line and the times.
+ * Drive the bar off one element: the play button, the seek line and the
+ * times.
  *
- * A frame loop moves the fill while it plays (timeupdate fires four times a
- * second, nowhere near enough for a line that should glide); the events cover a
- * seek, a stall or a currentTime written from elsewhere. Its listeners are on an
+ * A frame loop moves the fill while playing (timeupdate is only 4/sec,
+ * nowhere near enough for a line that should glide); the events cover a
+ * seek, a stall, or currentTime written elsewhere. Listeners are on an
  * AbortController so teardown() drops them in one call.
  */
 function bind(sound: HTMLMediaElement) {
@@ -331,8 +245,8 @@ function bind(sound: HTMLMediaElement) {
   const follow = () => { paint(); frame = sound.paused ? 0 : requestAnimationFrame(follow); };
   const setIcon = () => {
     const playing = !sound.paused;
-    // .is-paused stops the wave scrolling and flattens it to a straight line; the
-    // CSS animates both back when it comes off.
+    // .is-paused stops the wave scrolling and flattens it; CSS animates both
+    // back when it comes off.
     bar!.classList.toggle('is-paused', !playing);
     playBtn!.innerHTML = playing ? PAUSE_ICON : PLAY_ICON;
     playBtn!.setAttribute('aria-label', playing ? 'Pause' : 'Play');
@@ -342,8 +256,8 @@ function bind(sound: HTMLMediaElement) {
   on('play', () => { setIcon(); if (!frame) frame = requestAnimationFrame(follow); });
   on('pause', () => { setIcon(); paint(); });
   on('loadedmetadata', paint);
-  // See canvas/transport.ts: a guessed duration is corrected by its own event
-  // and by nothing else while the track sits paused.
+  // See canvas/transport.ts: a guessed duration is corrected by its own
+  // event and nothing else while paused.
   on('durationchange', paint);
   on('timeupdate', paint);
   on('seeked', paint);
@@ -380,20 +294,15 @@ function onSeekKey(e: KeyboardEvent) {
 }
 
 /**
- * Whether the bar carries a Next button, which is to say whether the thing
- * playing is running through a list.
+ * Whether the bar carries a Next button - whether what's playing is running
+ * through a list.
  *
- * Three conditions, and each is a way of not being one. The queue has to be what
- * is sounding at all (a video card is not); there has to be more than one track
- * in it to move to; and the track has to have been started *as* a list, or the
- * list has to be on screen - which are exactly the two cases where the track
- * after this one will start on its own. See advanceQueue() in
- * canvas/playlist-queue.ts, which asks the same pair of questions to decide it.
- *
- * That agreement is the point. A Next button on a track that will stop dead at
- * the end is a button promising a queue that is not there, and the argument
- * against prev/next on this bar always was that they steer something you cannot
- * see. When the list *is* what is playing, one of them is honest.
+ * Three conditions: the queue has to be what's sounding (a video card
+ * isn't), there has to be more than one track to move to, and the track was
+ * either started *as* a list or the list is on screen - the same pair
+ * advanceQueue() in canvas/playlist-queue.ts asks to decide whether to
+ * advance. Agreement is the point: a Next button on a track that will stop
+ * dead would promise a queue that isn't there.
  */
 function paintNext() {
   if (!nextBtn) return;
@@ -403,22 +312,20 @@ function paintNext() {
 
 /**
  * Open the full player: the Playlist lens on a narrow screen, the floating
- * window where there is room for one - and on a Mobile board that is not narrow,
- * the lens too, since a window would float over a surface that has the list.
+ * window where there is room for one - and on a Mobile board that isn't
+ * narrow, the lens too, since a window would float over a surface that
+ * already has the list. Same reading cmds.playlist takes.
  *
- * The same reading cmds.playlist takes, for the same reason, and its header is
- * where the argument is written. What is not the same is the toggle: on the lens
- * this button steps back to the Feed rather than doing nothing, because it is
- * *this bar's* button and the bar is up over whatever you were doing - a way
- * back out of the list is the thing it is for.
+ * The toggle differs on the lens: this button steps back to Feed rather than
+ * doing nothing, since it's this bar's button and a way back out is what
+ * it's for.
  */
 function openPlaylist() {
   if (board.layoutMode === 'mobile') {
     setLens(currentLens() === 'playlist' ? 'feed' : 'playlist');
   } else if (onNarrowScreen()) {
-    // Off the canvas and into the lens. setLens first, so the mode switch lands
-    // on the lens that was asked for rather than on whichever one was last up -
-    // the order cmds.feed and cmds.playlist both take.
+    // Off the canvas and into the lens. setLens first, so the mode switch
+    // lands on the lens asked for rather than whichever was last up.
     setLens('playlist');
     setBoardMode('mobile');
   } else {
@@ -428,24 +335,18 @@ function openPlaylist() {
 }
 
 /**
- * Whether that full player is up right now.
+ * Whether that full player is up right now - the other half of
+ * openPlaylist(), spanning the same two cases (a lens on Mobile, a window on
+ * Desktop) since "is it open" is a different module's question in each.
  *
- * The other half of openPlaylist(), and it has to span the same two answers for
- * the same reason: the full player is a lens on a Mobile board and a floating
- * window on the Desktop, and "is it open" is a different question of a different
- * module in each case. This file is where both are already known.
+ * Read by the queue's hand-over rule: a track that ends only starts the next
+ * one while this is true, since with the list visible the next track is one
+ * you can see coming and stop, and with it shut the bar is a remote for one
+ * clip.
  *
- * What reads it is the queue's hand-over rule - a track that ends only starts
- * the next one while this is true. The argument is that unattended playback is
- * a thing you asked for or a thing that happened to you, and the list being on
- * screen is the difference: with it up, the next track is the one you can see
- * coming and stop. With it shut, the bar is a remote for one clip, and a board
- * that quietly moves on to another track twenty minutes after you stopped
- * looking is a board making noise on its own account.
- *
- * Note it is read at the moment a track ends, not when one starts - so closing
- * the playlist mid-track is enough to stop the queue at the end of it, and
- * opening it mid-track is enough to let it carry on. There is nothing to arm.
+ * Read at the moment a track ends, not when one starts, so closing the
+ * playlist mid-track stops the queue at the end of it and opening it
+ * mid-track lets it carry on.
  */
 const playlistOpen = () => (board.layoutMode === 'mobile'
   ? currentLens() === 'playlist'
@@ -462,10 +363,9 @@ function togglePlay() {
 /**
  * Build one round icon button.
  *
- * `className` is the whole list rather than a suffix on `np-qbtn`, because the
- * play button is not one of the quiet ones any more: it is the lead, it is a
- * size and a colour of its own, and a shared class it then had to out-specify
- * would be a rule fighting a rule for the sake of a shorter call.
+ * `className` is the whole list rather than a suffix on `np-qbtn`, since the
+ * play button is the lead, not one of the quiet ones, with its own size and
+ * colour that a shared class would then have to out-specify.
  */
 function ctlBtn(className: string, label: string, icon: string, onClick: () => void) {
   const b = document.createElement('button');
@@ -481,11 +381,10 @@ function ctlBtn(className: string, label: string, icon: string, onClick: () => v
 /**
  * Out of display:none and into place, in that order and not in one go.
  *
- * A transition needs two computed styles to run between, and an element that
- * was display:none has no first one - set both in the same frame and the
- * browser has nothing to animate from, so the bar would appear at full opacity
- * with no arrival at all. Reading offsetWidth is what forces the intermediate
- * style to be resolved; it is the one place in this file where a layout flush
+ * A transition needs two computed styles to run between, and a display:none
+ * element has no first one - setting both in the same frame gives the
+ * browser nothing to animate from. Reading offsetWidth forces the
+ * intermediate style to resolve; the one place in this file a layout flush
  * is the point rather than the cost.
  */
 function raise() {
@@ -495,14 +394,13 @@ function raise() {
 }
 
 /**
- * Stop what is playing and put the bar away. Both, because either alone is half
- * an answer to a close button on a player.
+ * Stop what is playing and put the bar away. Both, because either alone is
+ * half an answer to a close button on a player.
  *
- * It goes through canvas/audio.ts rather than calling hide() here, and that is
- * not ceremony: the record of what is playing has to be let go of too, or the
- * next press of that same card's play button announces a track that is already
- * on record and the bar never comes back. Clearing it comes back round as
- * show(null), which is the one path that hides this thing.
+ * Goes through canvas/audio.ts rather than calling hide() directly: the
+ * record of what is playing has to be cleared too, or the next press of that
+ * card's play button announces a track already on record and the bar never
+ * comes back. Clearing it comes back round as show(null).
  */
 function close() {
   nowPlaying()?.el?.pause();
@@ -510,11 +408,9 @@ function close() {
 }
 
 /**
- * Play the exit, then clear up behind it.
- *
- * The transport stays in the bar for the length of the fade. Emptying it first
- * would show the bar going blank and *then* leaving, which reads as two events
- * where there is one.
+ * Play the exit, then clear up behind it. The transport stays in the bar for
+ * the length of the fade - emptying it first would read as two events
+ * (going blank, then leaving) instead of one.
  */
 function hide() {
   if (!bar || bar.hidden) { teardown(); return; }
@@ -522,8 +418,8 @@ function hide() {
 
   bar.classList.remove('is-up');
 
-  // One property, or this fires once per transitioned property and finishes on
-  // whichever of opacity and transform the engine happens to end first.
+  // One property, or this fires once per transitioned property and finishes
+  // on whichever of opacity/transform the engine ends first.
   const onEnd = (e: TransitionEvent) => { if (e.target === bar && e.propertyName === 'opacity') done(); };
   const done = () => { cancelExit(); bar!.hidden = true; teardown(); };
 
@@ -537,12 +433,9 @@ function hide() {
 }
 
 /**
- * Call off an exit in flight.
- *
- * Both halves, and the listener is the half that matters. A timer left running
- * would hide a bar that had come back; a `transitionend` left attached is
- * worse, because the next thing it hears is the *entry* fade finishing, and it
- * would take the bar away at the exact moment it finished arriving.
+ * Call off an exit in flight. The listener half matters most: left attached,
+ * the next thing it hears is the *entry* fade finishing, which would hide
+ * the bar the instant it finished arriving.
  */
 function cancelExit() {
   if (leaving) leaving();
@@ -559,19 +452,19 @@ function teardown() {
   if (elapsedEl) elapsedEl.textContent = '0:00';
   if (totalEl) totalEl.textContent = '0:00';
   if (playBtn) { playBtn.innerHTML = PLAY_ICON; playBtn.setAttribute('aria-label', 'Play'); }
-  // Nothing is playing, so there is nothing to be next after. Left to paintNext()
-  // to bring back, which the next track's show() calls.
+  // Nothing is playing, so there is nothing to be next after - paintNext()
+  // brings it back on the next track's show().
   if (nextBtn) nextBtn.hidden = true;
 }
 
 /**
- * What to call it. baseName() drops the extension, the same reading the trash
- * list takes - "Interview 3" and not "Interview 3.m4a", because the card beside
- * it does not say the extension either.
+ * What to call it. baseName() drops the extension, the same reading the
+ * trash list takes, since the card beside it does not say the extension
+ * either.
  */
 function name(item: Item): string {
-  // The two tags come out of a file's own metadata, so they are held to being
-  // text here - `meta` promises nothing about what is under a key.
+  // Metadata off a file, so held to being text - `meta` promises nothing
+  // about what is under a key.
   const str = (v: unknown) => (typeof v === 'string' ? v : '');
   const title = str(item.meta?.trackTitle)
     || (item.name ? baseName(item.name) || item.name : (item.type === 'video' ? 'Video' : 'Audio'));

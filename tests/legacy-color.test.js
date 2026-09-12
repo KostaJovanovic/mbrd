@@ -1,18 +1,9 @@
-// The palette without color-mix(), which is the whole of what WebKit below 16.2
-// can render of this app's colour.
-//
-// Two halves, and both of them exist because the failure is silent. A stylesheet
-// that has fallen out of step with its fallback looks perfect on every machine
-// anybody here runs, and wrong only on a phone that is not in the room - so
-// nothing about editing tokens.css would tell you that the block at the foot of
-// it now says something different from the block at the top.
-//
-// The first half holds the two lists against each other: every channel-form
-// token against the hex it was taken from, in both directions, and every
-// color-mix() in the app against a fallback that covers it. The second half is
-// the evaluator in ui/legacy-color.ts, which is arithmetic and can simply be
-// run - including the premultiplied-alpha identity that the whole rgb() spelling
-// rests on.
+// The palette without color-mix(), the whole of what WebKit below 16.2 can
+// render. The failure is silent - a stylesheet out of step with its
+// fallback looks perfect on every machine here and wrong only on a phone
+// not in the room. First half: the channel tokens and color-mix() calls
+// against their fallbacks. Second half: the evaluator in ui/legacy-color.ts,
+// run directly.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -98,9 +89,8 @@ test('every channel token is the colour it was taken from', () => {
 });
 
 test('no colour in a palette has been given a channel token and then lost it', () => {
-  // The other direction, and the one that actually bites: a repalette adds
-  // --accent-warm to a block and nothing here fails, so the fallback quietly
-  // keeps painting the old palette's amber.
+  // The direction that actually bites: a repalette adds --accent-warm to a
+  // block and nothing fails, so the fallback quietly keeps the old amber.
   const hexes = channelsByScope(tokens);
   const source = hexesByScope(tokens);
   const base = hexes.get(':root');
@@ -151,8 +141,8 @@ test('every stylesheet that mixes a colour also says what to do without it', () 
 });
 
 test('nothing inside a fallback block reaches for color-mix again', () => {
-  // The mistake that would make the whole exercise pointless, and an easy one:
-  // copy a rule down into the block and forget to convert one of its colours.
+  // Easy mistake that would make the whole exercise pointless: copy a rule
+  // into the block and forget to convert one of its colours.
   for (const file of sheets) {
     const body = uncommented(read(join(CSS_DIR, file)));
     const at = body.indexOf(CONDITION);
@@ -164,10 +154,9 @@ test('nothing inside a fallback block reaches for color-mix again', () => {
 });
 
 test('a fallback never names a channel token that no palette declares', () => {
-  // rgb(var(--nonexistent) / 40%) is invalid at computed-value time, which on
-  // the browser this is for means the property silently computes to nothing -
-  // the exact failure the fallback was written to prevent, reintroduced by a
-  // typo. Nothing in a browser would report it.
+  // rgb(var(--nonexistent) / 40%) silently computes to nothing on the
+  // browser this is for - the exact failure the fallback prevents,
+  // reintroduced by a typo nothing in a browser would report.
   const declared = new Set();
   for (const map of channelsByScope(tokens).values()) {
     for (const name of map.keys()) declared.add(`--${name}-c`);
@@ -194,9 +183,9 @@ test('every --lc- token a stylesheet reads is one the script writes', () => {
 });
 
 test('every --lc- token is read with a fallback colour behind it', () => {
-  // A blend token is written by script, and script may not have run - at first
-  // paint, or at all. These are mostly backgrounds on chrome that sits over the
-  // board, so resolving to nothing is not a quiet degradation.
+  // A blend token is written by script, which may not have run yet, or at
+  // all. Mostly backgrounds over the board, so resolving to nothing is not
+  // a quiet degradation.
   const css = uncommented(appCss());
   for (const match of css.matchAll(/var\(\s*(--lc-[a-z0-9-]+)\s*([,)])/g)) {
     assert.equal(match[2], ',', `${match[1]} is read with no fallback behind it`);
@@ -204,13 +193,10 @@ test('every --lc- token is read with a fallback colour behind it', () => {
 });
 
 test('the script retakes a channel token for every one the stylesheet declares', () => {
-  // The stylesheet can only carry the four named palettes. A pigment picked in
-  // the Appearance panel, or one ui/pigments.ts pulled out of a photograph, is
-  // written inline as --accent alone - so --accent-c has to be retaken from the
-  // resolved colour or every tint in the app keeps following the palette the
-  // board is no longer wearing. Both directions: a channel token nobody retakes
-  // goes stale, and one retaken for a colour that has no channel form is a
-  // property written for nothing.
+  // The stylesheet only carries the four named palettes. A hand-picked or
+  // photo-extracted pigment is written inline as --accent alone, so
+  // --accent-c must be retaken from the resolved colour or every tint keeps
+  // following the palette the board no longer wears.
   const declared = new Set();
   for (const map of channelsByScope(tokens).values()) {
     for (const name of map.keys()) declared.add(`--${name}`);
@@ -226,8 +212,8 @@ test('the script retakes a channel token for every one the stylesheet declares',
 });
 
 test('the tokens the script fixes up are the ones tokens.css mixes', () => {
-  // Both directions. A new two-colour token in tokens.css that nobody adds to
-  // MIXED_TOKENS is a colour that resolves to nothing below the floor.
+  // A new two-colour token in tokens.css not added to MIXED_TOKENS resolves
+  // to nothing below the floor.
   const mixed = new Set();
   for (const line of uncommented(tokens).split('\n')) {
     const decl = line.match(/^\s*(--[a-z0-9-]+):\s*color-mix\(([^;]*)\)\s*;/);
@@ -257,9 +243,8 @@ const { parse, evaluate, css } = _internals;
 
 test('a colour mixed with transparent is that colour at that alpha', () => {
   // The identity the entire rgb() spelling rests on: mixing is done on
-  // premultiplied values, transparent premultiplies to nothing, so what comes
-  // back is the original colour and nothing but its alpha has moved. If this
-  // ever stopped being true, ninety-nine fallbacks would be wrong at once.
+  // premultiplied values, transparent premultiplies to nothing, so only the
+  // alpha moves.
   const got = evaluate('in srgb, #31261b 42%, transparent');
   assert.deepEqual([got.r, got.g, got.b], [49, 38, 27]);
   assert.ok(Math.abs(got.a - 0.42) < 1e-9);
@@ -273,9 +258,8 @@ test('a two-colour mix lands where the arithmetic says', () => {
 });
 
 test('a nested mix resolves from the inside out', () => {
-  // Harsh's actual shape: the sheet is a mix of the accent into stock, and the
-  // wells are a mix of the ink into that. The engine hands the whole nest back
-  // as one string, which is the property this module is built on.
+  // Harsh's actual shape: the sheet mixes accent into stock, the wells mix
+  // ink into that. The engine hands the whole nest back as one string.
   const got = evaluate(
     'in srgb, color-mix(in srgb, #b94900 13%, #000) 9%, color-mix(in srgb, #b94900 4%, #fafbfc)');
   assert.ok(got, 'a nested mix must resolve');
@@ -306,8 +290,8 @@ test('rgb() parses in both spellings', () => {
 });
 
 test('something that is not a colour is not guessed at', () => {
-  // The caller leans on null meaning "leave this token alone", so a wrong guess
-  // here would write a colour over one somebody picked by hand.
+  // The caller leans on null meaning "leave this token alone" - a wrong
+  // guess would write over a hand-picked colour.
   assert.equal(parse('var(--accent)'), null);
   assert.equal(parse('inherit'), null);
   assert.equal(parse(''), null);

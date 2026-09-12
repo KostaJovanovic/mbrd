@@ -1,56 +1,12 @@
-// Build the changelog page, from patch-notes.md at the repository root.
+// Build web/patch.html from patch-notes.md.
 //
-//   node tools/gen-patch-page.mjs
+//   node tools/gen-patch-page.mjs [output-path]
 //
-// One output, and it is not hand-editable:
-//
-//   web/patch.html   index.html's entire body, the app running on it, and the
-//                    changelog as the thing it shows instead of a board.
-//
-// ── The app's cascade, not the app ──
-//
-// **This page is a document and nothing else.** It takes index.html's head -
-// the fonts, the twenty stylesheets in cascade order, and the pre-paint script
-// that puts the reader's saved look on <html> - and then its own prose. No
-// sidebar, no toolbar, no viewport, no bundle.
-//
-// It was not always. The page used to be index.html's entire *body*, copied
-// verbatim, so that the app booted on it and the panel over the changelog was
-// the app's real panel rather than a likeness that drifts. That argument was
-// sound and the thing it bought is gone: the sidebar has been taken off this
-// page, and once it is off, everything the copy was for goes with it. What the
-// copy left behind was a changelog shipping half a megabyte of script to boot
-// an empty board nobody could see, and #grain - the app's fixed, full-window
-// paper texture - sitting still behind a page whose own texture scrolls, which
-// is two sheets of stock over one another and was visible as exactly that.
-//
-// The head is still lifted rather than listed, and that half of the old design
-// is the half worth keeping: a stylesheet added to the app dresses this page in
-// the same commit and still in the right place in the cascade, and the look
-// restore is the same bytes and therefore the same CSP hash.
-//
-// ── Nothing you do while reading may change what you own ──
-//
-// Now trivially true, since nothing here runs. main.ts keeps its isPatch branch
-// all the same and it is not dead code: sw.js precaches patch.html, so a
-// returning visitor can be handed a cached copy of the page from back when it
-// did boot the app. That branch reads no session, stops the writer and freezes
-// the preference store, and it is what keeps that copy harmless.
-//
-// ── The whimsy axis is the design ──
-//
-// tokens.css carries three personalities keyed off one attribute on <html>:
-// 0 Softish is a scrapbook, 1 Middle is that room with the furniture
-// straightened, 2 Harsh is a spec sheet. The app writes that attribute from the
-// look the visitor set, before first paint, in an inline script this file
-// copies out of index.html byte for byte - which is why the copy costs no new
-// CSP hash, and why a changed pre-paint script reaches this page in the same
-// commit that changes it.
-//
-// So the changelog arrives dressed the way that visitor's own board is dressed,
-// and patch.css says what each of the three printings looks like. There is no
-// dial on this page to move it with - that lived in the sidebar - and there is
-// nothing here that could write a preference if there were.
+// Takes index.html's <head> (fonts, cascade, pre-paint script) and appends the
+// changelog as prose. No sidebar, no toolbar, no bundle — a document only.
+// The pre-paint script is copied byte-for-byte (same CSP hash). The whimsy
+// axis dresses the page in the reader's saved look; patch.css defines the three
+// printings. main.ts's isPatch branch is not dead — sw.js precaches this page.
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
@@ -59,9 +15,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const SOURCE = join(ROOT, 'patch-notes.md');
 const SHELL = join(ROOT, 'web', 'index.html');
-// An argument overrides where the page lands. save.bat and every hand run pass
-// nothing and write web/patch.html; a path argument writes elsewhere, which is
-// how the output can be inspected without writing over the committed file.
+// Optional path argument writes elsewhere (for inspection without overwriting).
 const OUT = process.argv[2] ? resolve(process.argv[2]) : join(ROOT, 'web', 'patch.html');
 
 const SITE = 'https://mbrd.valjdakosta.com';
@@ -70,13 +24,7 @@ const SITE = 'https://mbrd.valjdakosta.com';
 // The source
 // ---------------------------------------------------------------------------
 
-/**
- * Everything under "## Releases", as a list of releases.
- *
- * The prose above that heading is the guide for whoever writes the next entry
- * and is not part of the changelog; splitting on it rather than on the first
- * `##` is what lets that guide use `##` headings of its own.
- */
+/** Split on "## Releases" — prose above it is the writing guide, not content. */
 function parseSource(text) {
   const cut = text.indexOf('\n## Releases\n');
   if (cut < 0) throw new Error('patch-notes.md has no "## Releases" heading');
@@ -117,8 +65,7 @@ function parseSource(text) {
     // in, and a paragraph could only be revised by retyping all of it.
     //
     // Folded with a single space, which is the whole of the rule: the wrap is a
-    // property of the file and not of the sentence, and the page decides its own
-    // line breaks from the width it is being read at.
+    // Continuation line — join to previous bullet (the page handles wrapping).
     if ((m = line.match(/^\s+(\S.*)$/))) {
       const bullets = current.parts.at(-1).bullets;
       if (!bullets.length) throw new Error(`continuation before any bullet in "${current.name}": ${line}`);
@@ -140,28 +87,11 @@ function parseSource(text) {
 /** The tag word as it is printed. */
 const TAG_WORD = { new: 'New', fix: 'Fix', faster: 'Faster' };
 
-/**
- * The anchor for a release, derived from its codename rather than counted.
- *
- * So /patch#r-under-the-floor is stable across every release added above it.
- * Nothing on the page links to one - there is no index - so these are for a
- * link somebody else wrote: a release quoted in an issue, or a bookmark.
- */
+/** Stable anchor from codename (not a counter — stays valid as releases are added). */
 const idOf = name => 'r-' + name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
 
-/**
- * How many commits a release covers.
- *
- * A version here is a commit count - `0.187` is the 187th commit, see save.bat
- * - so a span is arithmetic and not a guess, and "0.156 - 0.187" really is
- * thirty-two commits of work. That number is the one piece of information this
- * page has that the prose does not, which is why it is printed in the margin
- * beside each release rather than left implied.
- *
- * A release naming one version covers one commit. A span that will not parse
- * gets nothing printed, because a wrong number in a margin is worse than an
- * empty margin.
- */
+/** Commit count from the version span (version = commit count, see save.bat).
+ * Null if unparseable — an empty margin beats a wrong number. */
 function commitsIn(version) {
   const ends = [...version.matchAll(/(\d+)\.(\d+)/g)]
     .map(m => Number(m[1]) * 100 + Number(m[2]));

@@ -1,48 +1,7 @@
 /* =========================================================
    mbrd - the download page
 
-   An external sheet rather than a <style> block in download.html, and that is
-   a policy decision rather than a preference: style-src is 'self' plus two
-   hashes and carries no 'unsafe-inline', so an inline block would need a third
-   hash in web/_headers and an entry in tests/csp.test.js, and would then break
-   the deploy silently on any edit that changed one character of it. A file
-   costs one request and none of that. See the style-src section of _headers.
-
-   It loads tokens.css and nothing else of the app's, exactly as privacy.css
-   does. The page is a document, not the app: base.css pins the app to the
-   window with everything fixed inside it, which is exactly wrong for something
-   you scroll and read.
-
-   ── It is /privacy's page, which is /patch's page ──
-
-   Three documents on this site now, and three documents that look like three
-   sites is the thing worth avoiding - so everything below is privacy.css's
-   shape under a dl- prefix, which is patch.css's shape under a pv- prefix: the
-   sticky pill back to the board, the display title over a lede and a tracked
-   line of facts, the plates down a spine with a mark on it and the subject of
-   each in the margin, the rule-topped foot. The tokens are doing all of it,
-   which is why so few numbers appear below.
-
-   Restating a shape rather than sharing one is the standing trade between
-   these three files, and privacy.css argues it: what is common between them is
-   a handful of shapes, and a shape is cheaper to restate than a dependency
-   between a document that boots the app and two that do not.
-
-   ── What is new here, and is not in either of them ──
-
-   The three download buttons. Nothing on /patch or /privacy is a call to
-   action, so .dl-picks and .dl-button have no counterpart to copy - they are
-   struck from the same tokens as everything else, and are the app's primary
-   button at document scale rather than a second idea about what a button looks
-   like.
-
-   ── One tier, not three ──
-
-   No whimsy dial here and no pre-paint restore script, which means :root
-   carries no data-whimsy - and tokens.css is written so that an unset
-   data-whimsy and data-whimsy="1" are the same thing, so the page renders in
-   the middle of the axis for everyone. Same as /privacy, and the same reason a
-   :root[data-whimsy="0"] block below would never match anything.
+   External (CSP hash). Loads tokens.css only. dl- prefix, whimsy 1 always.
    ========================================================= */
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -55,16 +14,13 @@ body {
   font-size: var(--t-body);
   line-height: 1.62;
   text-wrap: pretty;
-  /* The containing block for the grain below, which is the height of the page
-     and not the height of the window. */
+  /* Containing block for the grain. */
   position: relative;
   min-height: 100vh;
   background-attachment: scroll;
 }
 
-/* The stock. Same tile, same blend and the same dial as #grain in base.css and
-   as the other two documents, so all three are printed on the same stuff.
-   Absolute rather than fixed, so the tooth runs the length of the sheet. */
+/* Paper grain. Absolute so the texture scrolls with the page. */
 body::before {
   content: "";
   position: absolute;
@@ -78,10 +34,7 @@ body::before {
   opacity: calc(0.8 * var(--grain));
 }
 
-/* The wordmark, restated from base.css because this page does not load it -
-   two declarations against a stylesheet that pins the app to the window. The
-   override below is the one the sidebar mark takes: a sans has nothing to give
-   a name except weight. See .wm in base.css, which is where the argument is. */
+/* Wordmark, restated from base.css (not loaded here). */
 .wm {
   font-family: var(--font-display);
   font-weight: var(--display-weight);
@@ -93,7 +46,7 @@ body::before {
   z-index: 1;
 }
 
-/* The measure, the same 880 the other two use. */
+/* The measure, matching the other documents' 880. */
 .dl-inner {
   max-width: 880px;
   margin: 0 auto;
@@ -104,10 +57,7 @@ body::before {
    The way back
    --------------------------------------------------------- */
 
-/* Sticky rather than fixed, and inside the column rather than over the window,
-   so it rides the measure and cannot land somewhere different on a phone. It
-   has to be opaque and outrank the plates, or it is a word with a paragraph
-   scrolling through it. */
+/* Sticky pill. Opaque to prevent content scrolling through it. */
 .dl-back {
   position: sticky;
   top: 14px;
@@ -135,11 +85,10 @@ body::before {
 .dl-back:hover {
   color: var(--accent-deep);
   border-color: var(--accent-text);
-  /* Towards the board, which is the direction the arrow is pointing. */
+  /* Towards the board. */
   translate: -2px 0;
 }
-/* The arrow rides in the body face: the display face sets it as an italic
-   glyph leaning away from the direction it means. */
+/* Body face: the display italic leans the arrow the wrong way. */
 .dl-arrow {
   font-family: var(--font-body);
   font-style: normal;
@@ -151,13 +100,8 @@ body::before {
 
 .dl-head { margin-bottom: clamp(34px, 6vw, 56px); }
 
-/* Struck from --t-display rather than written as a number, so it moves with a
-   look that changes the display scale.
-
-   One step below /patch's and /privacy's clamp ceiling, at 1.8 rather than
-   2.1: those two titles are one word and this one is six, so the same size
-   gives four lines of display face on a phone before the reader has been told
-   anything. The tracking rule is theirs unchanged - see .pv-title. */
+/* Lower ceiling than /patch and /privacy (1.8 vs 2.1): this title is six
+   words and the same size would wrap too much on a phone. */
 .dl-title {
   margin: 0;
   font-family: var(--font-display);
@@ -176,9 +120,7 @@ body::before {
   color: var(--ink-2);
 }
 
-/* /patch states three counts here and /privacy three absences; this page names
-   the three systems and the one fact about the licence. Divided by hairlines
-   rather than by punctuation, the same join the sidebar makes. */
+/* Three systems and the licence, divided by hairlines. */
 .dl-tally {
   display: flex;
   flex-wrap: wrap;
@@ -197,12 +139,7 @@ body::before {
 }
 
 /* ---------------------------------------------------------
-   The three downloads
-
-   The one thing on this page with no counterpart on the other two documents.
-   Three cells, each a button over the sentence that says what pressing it
-   gets - the sentence under the button rather than beside it, so a column on a
-   phone is the same reading order as a row on a desktop.
+   The three downloads — button over description, same order at any width
    --------------------------------------------------------- */
 
 .dl-picks {
@@ -220,9 +157,7 @@ body::before {
   gap: 12px;
 }
 
-/* The app's primary button at document scale. Filled rather than outlined,
-   which is the whole reason it looks different from .dl-back: there are four
-   links on this page and three of them are the reason somebody came. */
+/* Primary button. Filled to distinguish from the outline-only back pill. */
 .dl-button {
   display: block;
   padding: 15px 18px;
@@ -246,10 +181,7 @@ body::before {
   .dl-button:hover {
     background: var(--accent-deep);
     box-shadow: var(--shadow-2);
-    /* The lift every control on the board answers a pointer with, through the
-       same token - real at Softish, small in the middle, and nothing at all at
-       Harsh, where --lift-hover is 0 and this quietly stops meaning anything.
-       The token is already negative, so it is used as it is. */
+    /* --lift-hover: no-ops at Harsh where the token is 0. */
     translate: 0 var(--lift-hover);
   }
 }
@@ -265,11 +197,7 @@ body::before {
 }
 
 /* ---------------------------------------------------------
-   The spine
-
-   The margin cells of consecutive sections touch, so one border down their
-   right-hand side draws a single line the length of the page with no element
-   of its own. Each section marks it once, at its own head.
+   The spine — one continuous border-right across touching margin cells
    --------------------------------------------------------- */
 
 .dl-list {
@@ -280,8 +208,7 @@ body::before {
 
 .dl-sec {
   display: grid;
-  /* /privacy's 116px rather than /patch's 74px, because what stands in the
-     margin here is a subject and not a version number. */
+  /* 116px like /privacy: subjects, not version numbers. */
   grid-template-columns: 116px minmax(0, 1fr);
   column-gap: clamp(18px, 3vw, 34px);
 }
@@ -293,7 +220,7 @@ body::before {
   text-align: right;
 }
 
-/* The mark sits *on* the line, which is what the negative offset is for. */
+/* Sits on the spine line via the negative right offset. */
 .dl-mark {
   position: absolute;
   top: 0.72em;
@@ -304,10 +231,7 @@ body::before {
   background: var(--accent);
 }
 
-/* What the plate beside it is about. Set against the line rather than under
-   the mark, so it reads as a margin note and not as a heading the prose sits
-   under - which is the point: somebody arriving here with a refused download
-   is looking for the word "macOS", not reading the page. */
+/* Margin label: reads as a note beside the plate, not a heading above it. */
 .dl-label {
   display: block;
   padding-top: 0.34em;
@@ -344,19 +268,14 @@ body::before {
 .dl-plate p { margin: 0; }
 .dl-plate p + p { margin-top: 0.9em; }
 
-/* The spine is drawn by the margin cells, which are as tall as their rows - so
-   the gap under the last plate would hang thirty pixels of line below the end
-   of the page, pointing at nothing. */
+/* Prevents the spine from dangling below the last plate. */
 .dl-sec:last-child .dl-plate { margin-bottom: 0; }
 
 /* ---------------------------------------------------------
    Links, code and the foot
    --------------------------------------------------------- */
 
-/* Named by their containers rather than as `.dl a`, which would also be a
-   selector for the pill and for the three buttons - one type more specific
-   than either, so their colours would lose to it and only under hover, which
-   is exactly the kind of thing that ships. */
+/* Scoped to containers, not `.dl a`, to avoid overriding pill and button colours. */
 .dl-plate a, .dl-foot a {
   color: var(--accent-text);
   text-decoration-color: color-mix(in srgb, var(--accent-text) 45%, transparent);
@@ -368,7 +287,7 @@ body::before {
   outline-offset: 3px;
   border-radius: var(--radius-xs);
 }
-/* The pill is already a shape, so it keeps its own corner. */
+/* Keeps the pill's own border-radius. */
 .dl-back:focus-visible {
   outline: 2px solid var(--accent-text);
   outline-offset: 3px;
@@ -383,10 +302,7 @@ body::before {
   color: var(--ink);
 }
 
-/* The one line on this page somebody has to type correctly, so it gets its own
-   block rather than sitting in the prose: full width, scrollable rather than
-   wrapped, and no `code` padding doubled inside it. A wrapped shell command is
-   a shell command somebody pastes with a line break in it. */
+/* Scrollable code block: wrapping a shell command inserts line breaks. */
 .dl-cmd {
   margin: 0.9em 0;
   padding: 12px 14px;
@@ -422,24 +338,9 @@ body::before {
 }
 
 /* ---------------------------------------------------------
-   Narrow
-
-   The margin goes rather than shrinks, the way the other two documents do: a
-   hundred-odd pixels of gutter on a phone is a third of the measure spent on
-   one word.
-
-   **The label does not go with it, and that is where this page parts company
-   with /privacy.** There the labels are a finding aid for a page you can see
-   the whole of, so losing them on a phone costs nothing. Here they are the
-   words "Windows", "macOS" and "Linux" - the only thing on the page somebody
-   arriving with a refused installer is actually looking for, and a phone is
-   where they are most likely to be looking. So the margin becomes a line above
-   its plate instead of a column beside it: same label, same voice, no gutter.
-   The mark goes, because there is no longer a spine for it to sit on.
-
-   The three downloads become one column at the same width, and that is the
-   more important half: three buttons across a phone is three buttons with one
-   word each on two lines.
+   Narrow — margin collapses to a line above each plate (label stays,
+   unlike /privacy, because "Windows/macOS/Linux" is what people look for).
+   Downloads become a single column.
    --------------------------------------------------------- */
 
 @media (max-width: 640px) {
@@ -464,8 +365,7 @@ body::before {
   }
 }
 
-/* Without color-mix(), for WebKit below 16.2 - section 7 of tokens.css carries
-   the argument and declares the channel-form tokens. */
+/* Fallback for WebKit below 16.2, which lacks color-mix(). */
 @supports not (color: color-mix(in srgb, red, blue)) {
   .dl-plate a, .dl-foot a { text-decoration-color: rgb(var(--accent-c) / 45%); }
 }

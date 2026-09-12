@@ -1,15 +1,12 @@
-// What the CAD kernel's worker does with what the kernel hands it.
+// What the CAD kernel's worker does with what the kernel hands it -
+// colouring, missing colour, oversized files - none of which need seven
+// megabytes of WebAssembly to check. Run here as the classic script it
+// is, with a fake `occtimportjs` and canned kernel output. The vendored
+// build itself is occt-vendor.test.js's business.
 //
-// mesh/occt-worker.js is half plumbing and half a set of decisions - which
-// colour a solid gets, what happens to a solid that has none, when a file is
-// too big to open - and none of those need seven megabytes of WebAssembly to
-// check. So the worker is run here as the classic script it is, with a fake
-// `occtimportjs` in place of the real one, and driven with canned kernel
-// output. The vendored build itself is tests/occt-vendor.test.js's business.
-//
-// This is the only way to test the file at all: a classic worker installs
+// The only way to test the file at all: a classic worker installs
 // `self.onmessage` at the top level and exports nothing, which is why
-// tests/imports.test.js lists it as an entry point rather than a unit.
+// imports.test.js lists it as an entry point rather than a unit.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -21,11 +18,9 @@ import { JS, read } from './helpers.js';
 const SOURCE = read(join(JS, 'mesh', 'occt-worker.js'));
 
 /**
- * The worker, running, with one message put through it.
- *
- * `meshes` is what the kernel is pretending to have found. The reply comes back
- * as whatever the worker posted - the same object canvas/model.ts's side of the
- * port would receive.
+ * The worker, running, with one message put through it. `meshes` is what
+ * the kernel pretends to have found. The reply is whatever the worker
+ * posted - the same object canvas/model.ts's side of the port receives.
  */
 async function run(meshes, { kind = 'step', maxTriangles = 1e6, success = true } = {}) {
   let reply = null;
@@ -47,11 +42,9 @@ async function run(meshes, { kind = 'step', maxTriangles = 1e6, success = true }
 
 /**
  * One solid: a single triangle, indexed, optionally with a colour.
- *
- * The colour is attached in a second statement rather than spread in
- * conditionally, and here that is the difference the tests turn on: the worker
- * asks whether the property is *there*, so a solid carrying `color: undefined`
- * is not the same fixture as one carrying no colour at all.
+ * Attached in a second statement rather than spread in conditionally -
+ * the worker asks whether the property is *there*, so `color: undefined`
+ * isn't the same fixture as no colour at all.
  */
 function solid(color, at = 0) {
   const made = {
@@ -73,16 +66,17 @@ test('the kernel output comes back as a flat triangle soup', async () => {
     0, 0, 0, 1, 0, 0, 0, 1, 0,
     5, 0, 0, 6, 0, 0, 5, 1, 0,
   ]);
-  // Rebuilt rather than compared whole: the worker runs in its own realm, so the
-  // object it posted has that realm's prototypes and a strict deep-equal against
-  // a literal written here fails on identity rather than on any value.
+  // Rebuilt rather than compared whole: the worker runs in its own realm,
+  // so its posted object has that realm's prototypes, and a strict
+  // deep-equal against a literal here fails on identity, not on value.
   assert.deepEqual(Array.from(reply.bounds.min), [0, 0, 0]);
   assert.deepEqual(Array.from(reply.bounds.max), [6, 1, 0]);
 });
 
 test('an index is expanded, not passed through', async () => {
-  // The kernel answers with shared vertices; the app draws unshared triangles.
-  // An index read in the wrong order is a shuffled model, which still draws.
+  // The kernel answers with shared vertices; the app draws unshared
+  // triangles. An index read in the wrong order is a shuffled model that
+  // still draws.
   const shape = solid(null);
   shape.attributes.position.array = [0, 0, 0, 1, 0, 0, 0, 1, 0, 9, 9, 9];
   shape.index.array = [3, 1, 0];
@@ -91,21 +85,19 @@ test('an index is expanded, not passed through', async () => {
 });
 
 /**
- * The colour rule, which is the one that showed on screen.
- *
- * The kernel answers per solid, and an assembly styled a part at a time comes
- * back with some of them unanswered - six of eight on the file this was found
- * on. Filling the gaps with white drew an assembly with blank parts in it;
- * dropping every colour instead drew it in the board's ink, which is a still
- * that goes stale on the next palette change. See flatten() in the worker.
+ * The colour rule that showed on screen. The kernel answers per solid, and
+ * an assembly styled a part at a time comes back with some unanswered -
+ * six of eight on the file this was found on. Filling gaps with white drew
+ * blank parts; dropping every colour instead draws the board's ink, which
+ * goes stale on the next palette change. See flatten() in the worker.
  */
 test('a colour the answered solids agree on is the file speaking', async () => {
   const all = await run([solid([0.5, 0.5, 0.5]), solid([0.5, 0.5, 0.5], 5)]);
   assert.ok(all.colors, 'both solids carry a colour and the mesh came back with none');
   assert.equal(all.colors.length, all.positions.length, 'a colour per vertex, like the positions');
 
-  // The case from the file: one style over the whole assembly, reported for
-  // some of its solids and not the rest.
+  // The case from the file: one style over the whole assembly, reported
+  // for some solids and not the rest.
   const some = await run([solid([0.5, 0.5, 0.5]), solid(null, 5)]);
   assert.ok(some.colors, 'the file names one colour and the model came back with none');
   const first = Array.from(some.colors.slice(0, 3));
@@ -114,9 +106,9 @@ test('a colour the answered solids agree on is the file speaking', async () => {
 });
 
 test('solids that disagree, with a gap between them, take the board ink', async () => {
-  // Two colours and a solid with neither is a file this cannot draw faithfully
-  // either way round - there is one uOwnColor for the whole mesh, so the choice
-  // is every solid's own colour or none of them.
+  // Two colours and a solid with neither can't draw faithfully either way
+  // - one uOwnColor for the whole mesh, so it's every solid's own colour
+  // or none of them.
   const mixed = await run([solid([0.5, 0.5, 0.5]), solid([0.1, 0.2, 0.3], 5), solid(null, 10)]);
   assert.equal(mixed.colors, null);
 
@@ -125,9 +117,9 @@ test('solids that disagree, with a gap between them, take the board ink', async 
 });
 
 test('two solids of one style are one colour, not two near-misses', async () => {
-  // The colours arrive as doubles out of a per-solid linear conversion, so one
-  // STEP presentation style can come back differing in the last bits. Comparing
-  // exactly would call that two colours and drop both.
+  // Colours arrive as doubles from a per-solid linear conversion, so one
+  // STEP style can differ in the last bits. Comparing exactly would call
+  // that two colours and drop both.
   const a = [0.35153260827064514, 0.35153260827064514, 0.35153260827064514];
   const b = [0.35153260827064520, 0.35153260827064510, 0.35153260827064500];
   const reply = await run([solid(a), solid(b, 5), solid(null, 10)]);
@@ -135,15 +127,15 @@ test('two solids of one style are one colour, not two near-misses', async () => 
 });
 
 test('a colour is handed over in the space the renderer draws in', async () => {
-  // OCCT converts a presentation colour to linear light on the way in, so a
-  // STEP file saying 0.6275 arrives as 0.3515. canvas/model.ts has no gamma in
-  // it at all, and mesh/step.ts takes the number the file wrote - so without the
-  // encode this reader draws the same file darker than the other one does.
+  // OCCT converts a presentation colour to linear light, so a STEP file
+  // saying 0.6275 arrives as 0.3515. canvas/model.ts has no gamma at all,
+  // and mesh/step.ts takes the number the file wrote - without the
+  // encode this reader draws the same file darker.
   const reply = await run([solid([0.35153260827064514, 0.35153260827064514, 0.35153260827064514])]);
   for (const v of reply.colors.slice(0, 3)) {
     assert.ok(Math.abs(v - 0.6275) < 1e-3, `expected the file's own 0.6275, got ${v}`);
   }
-  // The toe, which a plain 2.2 power gets wrong and which is where black lives.
+  // The toe, where a plain 2.2 power goes wrong and where black lives.
   const dark = await run([solid([0.001, 0.001, 0.001])]);
   assert.ok(Math.abs(dark.colors[0] - 0.01292) < 1e-5, `linear toe: got ${dark.colors[0]}`);
 });

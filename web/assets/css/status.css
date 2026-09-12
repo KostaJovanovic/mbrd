@@ -1,19 +1,8 @@
 /* =========================================================
-   mbrd - what the app says while it is working
+   mbrd - status surfaces: drop overlay, busy strip, toast
 
-   One of the eight sheets the old overlays.css was split into. The order they
-   load in IS the cascade and is listed in the banner at the top of base.css.
-
-   Three surfaces that report and do not detain: the drop target a file is let
-   fall onto (import/drop.ts), the waiting strip at the top edge and the toast
-   slips at the foot - busy() and toast(), both in ui/overlays.ts. None can be
-   answered, none takes the board away.
-
-   The global prefers-reduced-motion stop sits at the foot of this file. Its
-   single exception is the indeterminate bar - a strip stopped dead reads as a
-   progress figure, and a false one - so the rule and the thing it exempts are
-   kept together. It is a universal selector and an !important, so where it sits
-   among the other sheets settles nothing else.
+   Non-blocking feedback (import/drop.ts, ui/overlays.ts). The global
+   prefers-reduced-motion stop lives at the foot of this file.
    ========================================================= */
 
 #drop-overlay {
@@ -25,10 +14,9 @@
   background: color-mix(in srgb, var(--accent-warm) 14%, transparent);
   pointer-events: none;
 }
-/* An explicit display value beats the UA's [hidden] rule, so it needs saying. */
+/* Explicit display beats the UA [hidden] rule. */
 #drop-overlay[hidden] { display: none; }
-/* Same reason, for the three sidebar wrappers that carry one: a control hidden
-   by script (the Desktop-only paper block) would otherwise stay on screen. */
+/* Same: sidebar wrappers need explicit display:none when [hidden]. */
 .field[hidden], .check[hidden], .btn-row[hidden] { display: none; }
 #drop-overlay div {
   padding: 16px 30px;
@@ -36,11 +24,7 @@
   border-radius: var(--ogee);
   background: var(--paper-card);
   box-shadow: var(--shadow-2);
-  /* Off the scale on purpose. The one line of type on screen while a file is
-     over the window - a banner, sized to be read at a glance by somebody whose
-     attention is on the drag. Between --t-title and --t-display and belongs to
-     neither: it heads nothing. (Sorted off-scale by
-     research/old/visual-audit-2026-08-12.md item 2.) */
+  /* Off the type scale on purpose: a banner read at a glance during a drag. */
   font-size: 19px;
   font-style: var(--display-italic);
   color: var(--accent-deep);
@@ -50,27 +34,12 @@
 
 /* ---------------------------------------------------------
    The waiting strip (busy() in ui/overlays.ts)
-
-   A card of the same stock as everything else, slid down from the top edge
-   while the app cannot answer. Not a modal, not a veil, not a centre-screen
-   spinner: none of the work it covers stops you panning, reading, or writing a
-   note while it finishes.
-
-   Top centre, opposite the toast at the foot - see the note in index.html.
    --------------------------------------------------------- */
 #busy {
   position: fixed;
   z-index: var(--z-toast);
-  /* Below the toolbar, which holds the same middle of the same edge. This strip
-     is over it in the stack and would land on top of the button that very often
-     started the import it is reporting. Each term names a thing rather than a
-     literal, so the bar moving takes this with it: the bar's height and a gap.
-     The hairlines are not added on - box-sizing is border-box and the bar
-     carries its own height, so --toolbar-h is the whole of it. mobile.css hands
-     the plain inset back at the width where the toolbar leaves this edge for
-     the foot. --frame-bar-h is the fourth term and is 0px until a desktop
-     window gets narrow enough to draw its own title bar, which pushes the
-     toolbar down by exactly that much and has to push this with it. */
+  /* Below the toolbar. mobile.css resets this when the bar moves to the foot.
+     --frame-bar-h accounts for the custom title bar on narrow desktop windows. */
   top: calc(max(14px, env(safe-area-inset-top)) + var(--toolbar-h) + 10px
     + var(--frame-bar-h));
   left: 50%;
@@ -80,8 +49,7 @@
   border-radius: var(--leaf);
   background: var(--paper-card);
   box-shadow: var(--shadow-2);
-  /* Entrance and exit are one declaration: is-up moves it to rest, removing
-     the class sends it back under the top edge it came from. */
+  /* .is-up moves to rest; removing the class slides it back offscreen. */
   translate: -50% -14px;
   opacity: 0;
   transition: translate var(--dur-base) var(--ease-back),
@@ -99,10 +67,9 @@
 }
 #busy-label {
   min-width: 0;
-  /* Grows to fill so the count and the cancel button sit together at the right. */
+  /* Grows to push count and cancel to the right. */
   flex: 1 1 auto;
-  /* One line, and the end cut rather than wrapped: the strip is a fixed shape
-     and a filename long enough to wrap would change its height mid-job. */
+  /* One line, truncated: wrapping would change the strip's height mid-job. */
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -117,8 +84,7 @@
   font-variant-numeric: tabular-nums;
   color: var(--ink-3);
 }
-/* Only up for a cancellable job (a large import). A quiet text button, not
-   chrome competing with the label. */
+/* Only shown for cancellable jobs (large imports). */
 #busy-cancel {
   flex: none;
   margin: -2px -2px -2px 0;
@@ -148,18 +114,9 @@
   background: var(--accent);
 }
 
-/* Not counting: a short bar sliding the length of the track and back.
-
-   A CSS animation rather than anything this app drives, and that is why this
-   element has two modes. Most of what the strip covers - hashing a video by
-   hand where crypto.subtle is missing, decoding a folder of images, packing an
-   archive - is synchronous work on the thread that draws. Anything animated
-   from JavaScript stops dead underneath it, at the moment somebody is watching
-   the bar to find out whether the app has hung. A transform animation is the
-   compositor's to run, so it keeps moving while this thread is occupied.
-
-   Which decides the shape: `translate` and nothing else. Animating width or
-   left would put it back on the main thread and undo the point. */
+/* Indeterminate mode: CSS transform animation so it runs on the compositor
+   and keeps moving during synchronous main-thread work. Using width or left
+   instead of translate would put it back on the main thread. */
 #busy:not(.is-counting) #busy-fill {
   width: 38%;
   animation: busy-slide 1.15s var(--ease) infinite;
@@ -170,19 +127,13 @@
   100% { translate: -100% 0; }
 }
 
-/* Counting: a width this app sets, eased so a batch that finishes several files
-   between frames fills smoothly instead of jumping. */
+/* Determinate mode: JS-driven width, eased so batch jumps fill smoothly. */
 #busy.is-counting #busy-fill {
   width: 0%;
   transition: width var(--dur-base) var(--ease);
 }
 
-/* A slip of paper, pinned briefly at the foot of the sheet.
-
-   The toast host: a column of stacked lines anchored by its bottom edge, so a
-   new line appended at the foot lifts the older ones rather than pushing the
-   stack off screen. Transparent and click-through; only the lines are
-   furniture. */
+/* Toast host: bottom-anchored column, click-through; only the lines are solid. */
 #toast {
   position: fixed;
   z-index: var(--z-status);
@@ -209,11 +160,8 @@
   transform: rotate(-0.5deg);
   pointer-events: auto;
   animation: rise var(--dur-base) var(--ease-back);
-  /* Paired with TOAST_FADE_MS in ui/overlays.ts, which decides when the line is
-     removed. A literal on both sides rather than a token: a duration the axis
-     could flatten to zero would leave the JS timer holding an invisible line on
-     screen for its own 300ms, and the two disagreeing is worse than neither
-     following the axis. */
+  /* Literal 300ms, paired with TOAST_FADE_MS in ui/overlays.ts. Not a token:
+     the JS timer and the CSS duration must agree exactly. */
   transition: opacity 300ms var(--ease);
 }
 .toast-line.is-going { opacity: 0; }
@@ -223,12 +171,8 @@
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 
-  /* One exception, about honesty rather than motion. The indeterminate bar
-     means "something is happening" only because it is travelling; stopped dead
-     by the rule above it becomes a block sitting at 38%, a false progress
-     reading. With motion off it is drawn as a full dim track instead - the
-     label and the strip's presence carry the message. The counting bar is
-     unaffected: its width is a fact and can stand still. */
+  /* Exception: a stopped indeterminate bar reads as false progress at 38%.
+     Draw it as a full dim track instead; the counting bar can stand still. */
   #busy:not(.is-counting) #busy-fill {
     width: 100%;
     opacity: 0.4;
@@ -236,8 +180,7 @@
   }
 }
 
-/* Without color-mix(), for WebKit below 16.2 - section 7 of tokens.css carries
-   the argument and declares the channel-form tokens. */
+/* Fallback for WebKit below 16.2, which lacks color-mix(). */
 @supports not (color: color-mix(in srgb, red, blue)) {
   #drop-overlay { background: rgb(var(--accent-warm-c) / 14%); }
 }

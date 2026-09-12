@@ -1,24 +1,14 @@
 // The desktop store's file format, and the bug it was written after.
 //
-// The desktop keeps recovery in `userData/store/<store>/<key>` instead of in
-// Chromium's IndexedDB partition, which the browser is free to evict. Each file
-// is a JSON envelope, a newline, and the raw bytes of every Blob the value
-// held - see desktop/format.mts, which is pure and is why this can run in the
-// root suite with nothing installed.
+// The desktop keeps recovery in `userData/store/<store>/<key>` rather than
+// Chromium's evictable IndexedDB. Each file is a JSON envelope, a newline,
+// and the raw bytes of every Blob the value held (desktop/format.mts).
 //
-// **The format exists because JSON does not hold a Blob.** The obvious
-// implementation stringifies the value, a Blob becomes `{}`, and every asset
-// lands on disk as `{"blob":{},"ext":"png"}`. Nothing throws. The board comes
-// back with an item for every picture and no picture in any of them, and
-// restoreSession() reports it as "N items came back without their data" -
-// which reads like a corrupt store rather than a bug in the writer. It was
-// found by running the shell and looking at a file, and this is what stops it
-// coming back.
-//
-// The nesting is the part that made it easy to get wrong. `library` holds a
-// packed Blob directly, at the top of the value where a shallow check finds it;
-// `assets` holds `{ blob, ext, mime, name }`, one level down, where it does
-// not. Both are here.
+// The format exists because JSON does not hold a Blob - a naive stringify
+// turns one into `{}` with nothing throwing, so every picture comes back
+// silently empty. The nesting made this easy to miss: `library` holds a
+// packed Blob at the top, where a shallow check finds it; `assets` holds
+// `{ blob, ext, mime, name }` one level down, where it doesn't. Both are here.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -41,8 +31,8 @@ test('bytes at the top of a value round-trip - the shelf keeps a packed board th
 });
 
 test('bytes one level down round-trip - this is the case that was broken', () => {
-  // The asset record's real shape. A converter that only looked at the top
-  // wrote `{"blob":{}}` here and lost the picture.
+  // The asset record's real shape - a top-only converter wrote `{"blob":{}}`
+  // here and lost the picture.
   const value = { blob: bytesOf(9, 8, 7), ext: 'png', mime: 'image/png', name: 'p.png' };
   const out = back(value);
   assert.deepEqual(read(out.blob), [9, 8, 7]);
@@ -51,8 +41,8 @@ test('bytes one level down round-trip - this is the case that was broken', () =>
 });
 
 test('several byte fields in one value keep their own bytes', () => {
-  // Two placements into one body, which is where an off-by-one in the offsets
-  // would show up as one asset holding another's pixels.
+  // Two placements in one body - an off-by-one here shows up as one asset
+  // holding another's pixels.
   const value = {
     a: { __bytes: true, data: new Uint8Array([1, 1, 1]).buffer },
     b: { __bytes: true, data: new Uint8Array([2, 2]).buffer },
@@ -65,9 +55,8 @@ test('several byte fields in one value keep their own bytes', () => {
 });
 
 test('the MIME type travels with the bytes', () => {
-  // storage/assets.ts renders an asset by its blob's own type. Losing it turns
-  // every picture on a restored board into a download prompt, which is a
-  // failure nothing reports.
+  // Losing it turns every restored picture into a download prompt, a failure
+  // nothing reports.
   const out = back({ __bytes: true, data: new Uint8Array([1]).buffer, mime: 'image/webp' });
   assert.equal(out.mime, 'image/webp');
 });
@@ -79,9 +68,9 @@ test('empty bytes are bytes, not an absent value', () => {
 });
 
 test('a string full of newlines does not end the envelope early', () => {
-  // The envelope is terminated by the first raw newline, which is safe only
-  // because JSON escapes one inside a string. If it did not, a board whose
-  // note text had a line break in it would truncate its own record.
+  // The envelope terminates on the first raw newline, safe only because JSON
+  // escapes one inside a string - otherwise a note with a line break would
+  // truncate its own record.
   const value = { note: 'first\nsecond\n\nfourth', blob: bytesOf(5) };
   const out = back(value);
   assert.equal(out.note, 'first\nsecond\n\nfourth');
@@ -89,18 +78,16 @@ test('a string full of newlines does not end the envelope early', () => {
 });
 
 test('a Uint8Array is left alone, because only a literal is walked', () => {
-  // A typed array rebuilt field by field comes back as `{0:1,1:2}`. Nothing in
-  // this store holds one today; the prototype check is what keeps that a fact
-  // rather than an assumption.
+  // A typed array rebuilt field by field comes back as `{0:1,1:2}` - the
+  // prototype check keeps that a fact rather than an assumption.
   const out = back({ view: new Uint8Array([1, 2]) });
   assert.ok(!('__bytes' in (out.view ?? {})), 'not mistaken for a placement');
 });
 
 test('a truncated file is refused rather than read short', () => {
-  // The failure this store exists to survive is a crash mid-write, so a file
-  // that stops early is the expected kind of damage. Node slices past the end
-  // silently, which would hand the renderer a Blob of the wrong size - so the
-  // length is checked against the body rather than trusted.
+  // A crash mid-write is the expected damage. Node slices past the end
+  // silently, which would hand the renderer a wrong-sized Blob - so length is
+  // checked against the body, not trusted.
   const whole = encode({ blob: bytesOf(1, 2, 3, 4, 5, 6, 7, 8) });
   assert.throws(() => decode(whole.subarray(0, whole.length - 4)), /past the end/);
 });

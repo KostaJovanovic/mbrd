@@ -1,89 +1,33 @@
-// The web: the lines between cards, drawn behind everything.
-//
-// **These are drawn, not derived** - a list of pairs somebody drew
-// (`board.connections`). The spanning tree that used to compute them survives as
-// a generator: see web-graph.ts and cmds.connectSelection.
-//
-// Do not rename the module or `settings.web`: an older build reads that key, and
-// renaming costs the SHELL list, the layers test, three passages of
-// research/docs/architecture.md, and a silent change to every board with the web on.
-//
-// Drawn inside #world, so pan and zoom come free from the layer transform. The
-// stroke is non-scaling, so a line stays a line at 8x rather than a beam.
-//
-// Two jobs, deliberately separated: `build` decides which lines exist and where
-// their ends are, `paint` decides which go into the `d` string. Only build reads
-// the board and only paint reads the viewport, so panning never rebuilds the
-// geometry and moving an item never waits on the view.
+// Connection lines between cards, drawn behind everything in #world. Stored as
+// pairs in board.connections (not derived). Two jobs: build() resolves geometry,
+// paint() culls to the viewport and writes the SVG `d` string. Non-scaling
+// stroke. Do not rename the module or `settings.web` — older builds read that key.
 
-// baseStep is the board's own lattice, and it is here for one reason: at Harsh
-// the cards are snapped to it (see axisMoved in ui/appearance.ts), so a route
-// that turns anywhere else is the axis half-applied. Read here and handed to
-// the router, which may not read anything - see look().
 import {
   board, bus, byId, isRider, isJoinEnd, baseStep, selection, pairKey, stuckFollowers,
   itemBare,
 } from '../state.ts';
-// How a styled connection is drawn, straight off the board's own model. Named
-// from there rather than restated here, which is the whole of why it is
-// exported: ui/conn-chip.ts had grown a private copy of this and of the two
-// closed lists behind it, and two spellings of a closed list is how the list
-// stops being closed.
 import type { ConnMeta, Item } from '../board-model.ts';
 import { rafThrottle, readToken } from '../util.ts';
 import { polyMidpoint, polyMeetsRect, distToSegment } from '../geometry.ts';
-// Point, Box and Bounds are geometry.ts's, and they are what this file has
-// always meant by a point, a card and a rectangle - the same three names
-// web-route.ts takes from there, so the two halves of the connector cannot
-// drift apart over what a rectangle is.
 import type { Point, Box, Bounds } from '../geometry.ts';
-// Where a line runs when there are cards in the way - see web-route.ts. Pure,
-// and deliberately not in this file for the same reason web-graph.ts is not:
-// the algorithm is the half that can be tested without a browser.
 import {
-  routeConnection, pathData, blockOf, endOf, intoMiddles, CLEARANCE,
+  routeConnection, pathData, curvePoints, blockOf, endOf, intoMiddles, portDir, bestFaces,
+  CLEARANCE, DRAG_HANDLE,
 } from '../web-route.ts';
-import type { Slot } from '../web-route.ts';
-// Which cards are near enough to be in the way. The index is kept current by
-// canvas/items.ts on every add, remove and move.
 import { queryRect } from './spatial.ts';
-// The card under the pointer, and the mark that says the draft is aimed at it.
-// Both live in items.ts because that module owns the card's DOM - a mark
-// written from here would be undone by the next rebuild of that node.
 import {
   itemIdFromEvent, setConnectAim, setBoardLift, tiltOf, onHoverItem,
 } from './items.ts';
-// Only for the visible rect and the zoom - see the note over `vp`, which is the
-// whole of what this module wants from the view.
 import type { Viewport } from './viewport.ts';
 import { cullMargin } from './viewport.ts';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
-/**
- * A card as this layer sees it: geometry.ts's Box, plus the id it came from and
- * the rotation it is drawn at.
- *
- * `rot` is not optional here where Box leaves it so. Everything in this file
- * works in the layer's own coordinates, where y points down and the lean the
- * card rests at is already folded in - see centres(). A missing rotation would
- * be a card that had not been through that conversion, which this file never
- * holds.
- *
- * `bare` is not geometry. It changes where a line may stop: an item drawn
- * without a card has no outline to stop on. See endOf() in web-route.ts.
- */
+/** Box in this layer's y-down coords, with lean folded in. `bare` = no card outline. */
 type Card = Box & { id: string, rot: number, bare: boolean };
 
-/**
- * One drawn line: where it runs, and everything that decides how it looks.
- *
- * `sig` is the two end boxes as a string and `routed` says whether the points
- * are the router's answer or the straight stand-in a moving card gets - together
- * they are "straight while dragging, routed on the drop", see build() and
- * scheduleRoute(). `meta` and `ends` are written as the seg goes into `wanted`,
- * and are optional only because the literal that makes a fresh one predates both.
- */
+/** One drawn line. `sig` = end-box fingerprint; `routed` = true after the route pass. */
 type Ends = { a: string, b: string };
 type Seg = {
   a: Card,
@@ -93,12 +37,9 @@ type Seg = {
   routed?: boolean,
   meta?: ConnMeta | null,
   ends?: Ends,
-  // Which of the lines meeting each end's card this one is, as `index/count` -
-  // see fanOut(). Held on the seg rather than recomputed at draw time because it
-  // is what the route was found with: a seg whose slot has changed is a seg
-  // whose stored points are the answer to a different question, and routePass()
-  // reads these to notice.
-  slot?: string,
+  // Outward face normals at the two endpoints — the router's chosen sides. The
+  // Softish spline leaves and enters along these, so any side can meet any side.
+  norms?: [Point, Point],
 };
 
 /** A seg with a look of its own: what decoLayer draws, and the bulk path never. */
@@ -111,127 +52,46 @@ type FadeDir = 'in' | 'out';
 /** A thread mid-fade: its own element, its direction, and the timer that lands it. */
 type Fade = { el: SVGPathElement, dir: FadeDir, seg: Seg, timer: number };
 
-/**
- * The box the geometry describes, in the min/max spelling the `<svg>` is sized
- * from. Not geometry.ts's Bounds, which is the x0/x1 spelling the *culling* uses:
- * same rectangle, different question, and one name for both is how a paint comes
- * to cull against the box it was drawing.
- */
+/** SVG sizing box (min/max), distinct from geometry.ts's Bounds (x0/x1). */
 type Extent = { minX: number, minY: number, maxX: number, maxY: number };
 
 /** What the whimsy axis asks of a connection - see look(). */
-type RouteLook = { shape: string, step?: number, clearance: number, radius: number };
+type RouteLook = { shape: string, step?: number, clearance: number, radius: number, curve?: boolean };
 
-/**
- * Connections belong to the spatial Desktop arrangement only, and only when the
- * board asks to see them. `settings.web` is layout-local (Desktop's own
- * checkbox) and defaults to **on**: a line somebody drew and cannot see is a
- * bug, where the automatic web this replaced defaulted to off because an effect
- * nobody asked for is an imposition. `!== false` carries that default to a board
- * whose settings never went through normalizeSettings().
- *
- * The quality dial can no longer take this away. Its `threads` flag existed
- * because a planar graph over every card on every drag frame is more than a
- * tired phone should be asked for. A stored list of pairs is not, so the flag
- * had become a switch that silently hid the user's work. Gone from quality.ts
- * rather than left inert.
- */
+/** Desktop only, default on. `!== false` carries the default for un-normalised boards. */
 export const webVisible = (mode = board.layoutMode) =>
   mode !== 'mobile' && board.settings.web !== false;
 
-// The cull margin (a screen-px band the thread cull keeps beyond the viewport,
-// for the frame-or-two of lead a pan needs) is cullMargin() in canvas/viewport.ts
-// now, shared with canvas/items.ts - the two had drifted apart.
-
-/**
- * A thread fades in and out. Identity is the pair of item ids, never the pair of
- * indices: indices shift on any add or remove, so a thread would silently become
- * a different thread and never fade.
- *
- * A line gets its own element only while fading, and returns to the bulk path
- * when it lands. Giving every thread an element would undo the reason this is one
- * path - build() runs on every frame of a drag, and a few hundred elements to
- * reconcile is a different order of cost from one `d` string. Steady state,
- * including a whole drag: one path, one attribute write.
- */
+/** Fade durations. Lines get their own element only while fading, then return to bulk path. */
 const FADE_IN_MS = 400;
 const FADE_OUT_MS = 300;
 
-// ---------------------------------------------------------------------------
-// Why the web has no zoom floor
-//
-// Threads are drawn at every zoom. They used to fade out below the board's
-// detail rung, but that argument was about the derived web: the far view is the
-// only one showing the whole graph, so it is where a drawn line is worth most.
-// The View checkbox is the way to turn them off.
-//
-// Cost: the furthest-out view holds every thread inside the visible rect, so
-// nothing is culled and the `d` string is at its longest. One string swap on a
-// static view, and paint() returns early while the screen stays inside the last
-// culled rect - but a board of many hundreds of connections pays for that string
-// on the frame it lands there.
-// ---------------------------------------------------------------------------
-
-// Every one of the elements below is null until initWeb() runs and non-null for
-// the whole of the life of the page afterwards - they are made in one breath and
-// nothing ever puts one back. So `svg` standing in for the set of them is the
-// honest reading of the guards below, and the few places that assert it say so.
+// All elements below are null until initWeb(), non-null for the page lifetime.
 let svg: SVGSVGElement | null = null;
-let path: SVGPathElement | null = null;         // every settled thread, as subpaths of one `d`
-let fadeLayer: SVGGElement | null = null;       // <g> holding only the threads currently fading
-// The styled connections - the ones given a direction, a dash or a label - each
-// drawn as its own element. Kept out of the bulk path because a dash and an
-// arrowhead are per-line where the bulk path is one shared stroke, and they are
-// rare enough (a handful a board against hundreds of plain lines) that a full
-// rebuild of this layer on each paint costs nothing.
+let path: SVGPathElement | null = null;
+let fadeLayer: SVGGElement | null = null;
+// Styled connections (direction/dash/label) — own elements, outside bulk path.
 let decoLayer: SVGGElement | null = null;
-// The line under the pointer, brightened so a connection reads as a thing you
-// can click. One highlight path, redrawn as the pointer moves over the board -
-// see onHoverMove and hoverConnectionAt.
 let hoverPath: SVGPathElement | null = null;
 let hoveredKey: string | null = null;
-// The line a press landed on, kept lit until something else is pressed. See the
-// note over activeConnection() for why it is a key here rather than a member of
-// the selection.
 let activePath: SVGPathElement | null = null;
 let activeKey: string | null = null;
-// The threads of the selected cards, lifted out of everything else - see
-// setFocus(). One more path and one class on the <svg>; nothing is stored.
 let focusPath: SVGPathElement | null = null;
 let focusIds: Set<string> | null = null;
-/** The cards the pointer is resting on, which focus when nothing is selected. */
 let hoverIds: Set<string> | null = null;
-/**
- * The focus that has just ended, kept drawn until the board comes back up - the
- * whole of the fix for a flash.
- *
- * The lift is two things at once: the bulk path drops to 0.18, and the focused
- * lines are redrawn over it at full strength. Letting go used to undo those at
- * different speeds - the copy is an attribute and vanished on the frame, the
- * dimming is a CSS transition and took `--dur-fast` to climb back. For that tenth
- * of a second the card's own lines were the *dimmest* on screen, then rose with
- * everything else: a flash, on the lines the gesture was about.
- *
- * Held as the id set rather than the `d` string, because a card can be dragged
- * during those frames and a frozen string would be a line detached from its
- * cards. Clearing it is invisible: by then the bulk path is at full strength and
- * the copy is the same geometry at the same weight.
- */
+// Focus held past deselect to cover the CSS transition — prevents a flash where
+// the focused lines briefly become the dimmest on screen.
 let heldFocus: Set<string> | null = null;
 let lastFocus: Set<string> | null = null;
 let holdTimer = 0;
-// The line in flight: the connector tool has one end and the pointer the other.
-// See setDraftFrom - the whole of the tool's feedback.
 let draftPath: SVGPathElement | null = null;
-let draftFrom: string | null = null;    // the picked item's id, or null when nothing is armed
-let draftBox: Card | null = null;       // that item's box in this layer's coordinates
-let draftPoints: Point[] | null = null; // what is drawn: straight while moving, routed on the settle
+let draftFrom: string | null = null;
+let draftBox: Card | null = null;
+let draftPoints: Point[] | null = null;
+let draftEnds: [Point, Point] | null = null;
 let draftTimer = 0;
 let viewportEl: HTMLElement | null = null;
-// The box origin paint() last drew against, so the hover highlight can be laid
-// in the same coordinates between paints without recomputing the whole box.
 let originX = 0, originY = 0;
-// for the visible rect; absent in tests, which then draw everything
 let vp: Viewport | null = null;
 
 /** The box the built geometry describes, kept by build() so paint() need not re-derive it. */
@@ -245,39 +105,17 @@ let paintedRect: Bounds | null = null;
 const animating = new Map<string, Fade>();
 /** Keys currently drawn in the bulk path. */
 const settled = new Set<string>();
-/**
- * key -> the last known geometry of each line, so one whose item has gone can
- * fade out from where it was rather than vanishing the instant it loses a centre.
- *
- * `points` is the whole path: two entries straight, more routed. `sig` is the two
- * end boxes as a string - build() reuses a route whose ends have not moved and
- * drops one whose ends have, the mechanism behind "straight while dragging,
- * routed on the drop". See scheduleRoute().
- */
+/** Last known geometry per line. Kept so removed lines can fade out from where they were. */
 const lastSeg = new Map<string, Seg>();
 
-/**
- * Both jobs share one frame.
- *
- * A rebuild always repaints, but a repaint must never silently drop a rebuild
- * that was asked for in the same frame - hence the flag rather than two
- * throttles. Two would race: the paint throttle could fire first and draw the
- * old edges, and the build throttle would then have to schedule a third frame.
- */
+/** Build and paint share one rAF. Flag prevents a paint from swallowing a pending build. */
 let wantBuild = false;
 /** A repaint that has to happen whatever the view is doing - see paint(). */
 let wantPaint = false;
 let frame: () => void = () => {};
 const requestBuild = () => { wantBuild = true; wantPaint = true; frame(); };
 const requestPaint = () => { wantPaint = true; frame(); };
-/**
- * The eye moved, which on its own may well leave the drawing untouched.
- *
- * It does restart the route pass, though, and for the same reason a drag does:
- * a pan is a thing in motion, and a line coming on screen during one should
- * arrive resolved rather than resolve under the hand. routePass() is cheap when
- * nothing is owed, which is the steady state.
- */
+/** View moved — may need repaint, and restarts route pass for newly visible lines. */
 const viewMoved = () => { frame(); scheduleRoute(); };
 
 function tick() {
@@ -287,49 +125,17 @@ function tick() {
   paint(forced);
 }
 
-// ---------------------------------------------------------------------------
-// The performance rule
-//
-// **Nothing is routed while anything is moving.** Routing is expensive where a
-// spanning-tree edge was two points and a comparison, and this is the one place
-// the feature can go wrong. build() reuses a stored route whose two ends have not
-// moved and drops one whose ends have, so a dragged card trails straight lines
-// for the gesture - the same bargain items.css strikes. A route pass is scheduled
-// on every build and every view change and restarted each time, so it runs once
-// the hand comes off rather than sixty times on the way there.
-//
-// ROUTE_SETTLE_MS is a settling time, not a debounce: long enough that a drag
-// never reaches it, short enough that a drop feels resolved.
-// ---------------------------------------------------------------------------
+// Nothing is routed while anything is moving — straight lines during drag,
+// routed on settle. ROUTE_SETTLE_MS is a settling time, not a debounce.
 const ROUTE_SETTLE_MS = 110;
 
-/**
- * How many lines will be routed in one pass before the rest are left straight.
- *
- * A ceiling, not a target: a board with more connections on screen than this has
- * other problems, and the honest failure is some staying straight rather than a
- * visible pause. On-screen ones go first, so what stays straight is unwatched.
- */
+/** Max lines per route pass. On-screen first; excess stays straight. */
 const ROUTE_BUDGET = 200;
 
-/**
- * How far past its own two ends a route looks for lines to avoid lying on.
- *
- * A route may go a long way round, so its ends' box is not the box it ends in -
- * but a line it will *coincide* with runs the same corridor, and a corridor a
- * card-width outside both ends is one this route has no reason to be in.
- * Generous enough to catch the fan around a shared card.
- */
+/** Search radius past endpoints for nearby lines to avoid overlapping. */
 const AVOID_MARGIN = 240;
 
-/**
- * How many of them one route is charged against.
- *
- * Search cost grows with this, once per lattice edge, so it caps the one thing in
- * the router that scales with connections rather than cards. Eight is more than
- * can plausibly share one corridor, and the ninth was going to be drawn on top of
- * something regardless.
- */
+/** Max nearby lines one route considers. Caps the per-edge search cost. */
 const AVOID_LIMIT = 8;
 
 let routeTimer = 0;
@@ -345,16 +151,10 @@ export function initWeb(worldEl: HTMLElement, viewport?: Viewport | null) {
 
   path = document.createElementNS(SVG_NS, 'path');
   path.setAttribute('fill', 'none');
-  // Named so the focus rule can dim this path without dimming the highlights
-  // drawn over it - `#web path` matches every one of them.
   path.setAttribute('class', 'web-bulk');
   fadeLayer = document.createElementNS(SVG_NS, 'g');
 
-  // One arrowhead marker, reused at both ends. orient="auto-start-reverse" lets
-  // it serve as marker-start too, flipped to point back at the first card. Built
-  // element by element rather than through innerHTML: an <svg> written as an HTML
-  // string is parsed into the HTML namespace, where it looks right and draws
-  // nothing (see assets/icons.svg).
+  // Arrowhead marker, reused at both ends via orient="auto-start-reverse".
   const defs = document.createElementNS(SVG_NS, 'defs');
   const marker = document.createElementNS(SVG_NS, 'marker');
   marker.id = 'web-arrow';
@@ -370,49 +170,29 @@ export function initWeb(worldEl: HTMLElement, viewport?: Viewport | null) {
   marker.append(head);
   defs.append(marker);
 
-  // The hover, under the bulk lines beside the active mark: both are haloes
-  // rather than overpaints, so the line under the pointer keeps its own dash and
-  // colour while it is being pointed at. See the rules in canvas.css.
   hoverPath = document.createElementNS(SVG_NS, 'path');
   hoverPath.setAttribute('class', 'web-hover');
   hoverPath.setAttribute('fill', 'none');
 
-  // The focused card's own threads, drawn over the dimmed bulk path at full
-  // strength. Below the hover and the active mark, which are about the pointer
-  // rather than about the board.
   focusPath = document.createElementNS(SVG_NS, 'path');
   focusPath.setAttribute('class', 'web-focus');
   focusPath.setAttribute('fill', 'none');
 
-  // The active line, above the hover: the two are the same shape and the
-  // difference between them is that one of them survives the pointer moving on.
   activePath = document.createElementNS(SVG_NS, 'path');
   activePath.setAttribute('class', 'web-active');
   activePath.setAttribute('fill', 'none');
 
-  // The draft, above everything: it is the only line on the board that is not
-  // there yet, and the one the eye is following.
   draftPath = document.createElementNS(SVG_NS, 'path');
   draftPath.setAttribute('class', 'web-draft');
   draftPath.setAttribute('fill', 'none');
 
   decoLayer = document.createElementNS(SVG_NS, 'g');
-  // The active mark goes *under* everything - legibility, not layering; see the
-  // rule in canvas.css. Everything else stacks as it is read: bulk lines, the
-  // focused copy, the hover, the fading ones, the styled ones with arrows and
-  // labels, and the draft over the lot.
   svg.append(defs, activePath, hoverPath, path, focusPath, fadeLayer, decoLayer, draftPath);
 
-  // First child of #world, and it never claims a pointer - the web is a
-  // backdrop for the items, not a thing you can catch hold of.
   worldEl.prepend(svg);
 
   vp = viewport || null;
 
-  // Hover lives on #viewport rather than in the input pipeline: it is a read, not
-  // a gesture, so the one-active-gesture rule in input.ts stays intact. Only over
-  // bare board (e.target is the viewport, not a card) and only when no drag or
-  // pan is in flight, so it never fights the cursor those set. See onHoverMove.
   viewportEl = typeof document !== 'undefined' ? document.getElementById('viewport') : null;
   if (viewportEl) {
     viewportEl.addEventListener('pointermove', onHoverMove);
@@ -423,79 +203,47 @@ export function initWeb(worldEl: HTMLElement, viewport?: Viewport | null) {
   bus.on('geom', requestBuild);
   bus.on('board:load', requestBuild);
   bus.on('layout', requestBuild);
-  // A line drawn or removed. Its own event rather than 'items', which fires for
-  // a drag, a delete and an undo as well - see the note beside it in state.ts.
   bus.on('connections', requestBuild);
-  // Which cards are selected decides which threads are lifted. A repaint, never
-  // a rebuild: nothing about the geometry changes when the selection does.
   bus.on('selection', () => { focusIds = null; requestPaint(); });
-  // And the pointer resting on a card - see focusSet(). Dropped while a gesture
-  // runs: a pan drags every card under the cursor, and each arrival would re-dim
-  // every line on screen.
+  // Card hover — dropped while panning/moving to avoid re-dimming every frame.
   onHoverItem(ids => {
     const busy = !!viewportEl && (viewportEl.classList.contains('is-panning') ||
       viewportEl.classList.contains('is-moving'));
     const next = busy || !ids?.size ? null : new Set(ids);
     if (!next && !hoverIds) return;
     hoverIds = next;
-    // Only when it can be seen. With something selected the hover has nothing
-    // to say, and a repaint per card crossed would be the cost of saying it.
     if (!selection.size) requestPaint();
   });
-  // Only the web toggle changes what is drawn; other settings (spacing, units)
-  // fire the same event and must not drag a rebuild in with them. The whimsy
-  // axis is the exception, and it arrives on this event as 'appearance' - see
-  // reshape() for why it cannot be ignored and cannot be a rebuild either.
   bus.on('settings', key => {
     if (key === 'web') requestBuild();
     else if (key === 'appearance') reshape();
   });
-  // Panning and zooming change which threads are worth drawing and nothing
-  // else, so they ask for a paint and never for a build.
   if (vp) vp.onChange(viewMoved);
 
   build();
   paint(true);
 }
 
-/**
- * Send a thread towards visible or towards gone.
- *
- * Reverses a fade in flight rather than restarting it: a thread that flickers out
- * and back - constant while dragging an item past its neighbours - picks up from
- * the opacity it reached instead of snapping to an end state first.
- */
+/** Fade a thread in or out, reversing in-flight if needed. */
 function fadeTo(key: string, entry: Fade, dir: FadeDir) {
   clearTimeout(entry.timer);
   entry.dir = dir;
   const ms = dir === 'in' ? FADE_IN_MS : FADE_OUT_MS;
   entry.el.style.transitionDuration = ms + 'ms';
   entry.el.style.opacity = dir === 'in' ? '1' : '0';
-  // A shade past the transition, so the element is only reclaimed once the
-  // paint has certainly finished rather than on the same tick as its last frame.
   entry.timer = setTimeout(() => land(key), ms + 40);
 }
 
 function begin(key: string, seg: Seg | undefined, dir: FadeDir) {
   if (!seg) return;
-  // A <path>, not a <line>. A routed connection bends, so the fading copy has
-  // to be able to draw the same shape the bulk path draws - and the two share
-  // one rule in canvas.css, which is what keeps a line landing out of a fade
-  // from changing appearance as it does.
   const el = document.createElementNS(SVG_NS, 'path');
   el.setAttribute('class', 'thread');
   el.setAttribute('fill', 'none');
   el.style.opacity = dir === 'in' ? '0' : '1';
-  // Non-null: every caller of begin() is downstream of a guard on `svg`, and
-  // the layer was made in the same breath as it - see the note by the
-  // declarations.
   fadeLayer!.append(el);
   const entry: Fade = { el, dir, seg, timer: 0 };
   animating.set(key, entry);
-  // The element has to sit in the document at its starting opacity for one
-  // frame before the target is written. Set both in the same tick and there is
-  // no previous value to interpolate from, so the change simply applies and
-  // the thread appears at full strength - which is the bug this exists to fix.
+  // Must sit at starting opacity for one frame before transition target is set.
   requestAnimationFrame(() => {
     if (animating.get(key) === entry) fadeTo(key, entry, entry.dir);
   });
@@ -509,26 +257,10 @@ function land(key: string) {
   entry.el.remove();
   if (entry.dir === 'in') settled.add(key);
   else lastSeg.delete(key);
-  // The thread moved between the two layers; which threads exist did not
-  // change, so this needs the `d` rewritten and nothing more.
   requestPaint();
 }
 
-/**
- * One board item as a card in this layer's coordinates.
- *
- * y is flipped because world y points up and this layer lays it down. The lean
- * the card is drawn with - sign and all, not the tier's maximum - is folded into
- * the rotation; the sign matters because the point a line stops at on a card's
- * edge depends on which way it leans. No negation on the lean where item.rot gets
- * one: rot is world geometry, the lean is a CSS rotation already in the layer's
- * sense. `maxLean` is drawnTilt() lifted out so a whole-board pass reads it once.
- *
- * Shared rather than written twice: boxOf once omitted the lean, so the connect
- * draft clipped against a different rectangle from the line it became, and at any
- * non-zero --tilt-max the line jumped by the lean's overhang on landing - what
- * aimDraft()'s edge clip exists to prevent.
- */
+/** Item → Card in y-down coords, with CSS lean folded into rotation. */
 function cardOf(it: Item, maxLean: number): Card {
   const lean = it.type === 'fence' ? 0 : tiltOf(it.id) * maxLean;
   return {
@@ -538,56 +270,40 @@ function cardOf(it: Item, maxLean: number): Card {
 }
 
 
-/**
- * Item centres in #world's coordinates.
- *
- * World y points up and CSS y points down, so a centre at world (x, y) is laid
- * out at (x, -y) - the same negation items.ts/place() applies.
- */
+/** All join-eligible items as Cards (y-down). Excludes riders, ghosts, stickers,
+ *  and fences — a fence is a region, not a card, so it is neither an endpoint nor
+ *  an obstacle. Left in, its box encloses the cards inside it and every route
+ *  between them reads as blocked. Matches the export in ui/snapshot.ts. */
 function centres(): Card[] {
-  // A stuck note is part of the thing it is pinned to, not an end of its own: it
-  // sits on top of its host, so a line out to it would double back on the host's
-  // own and read as a tether. Riders are left out and the host carries the
-  // connection for the pair, so a note stuck to a card it is joined to stops
-  // showing that line while stuck and starts again when pulled off.
-  // Size and rotation ride along, read by routeConnection() in web-route.ts: a
-  // card is an obstacle to route around, not only a point to reach. World y points
-  // up and this layer lays y down, so a card turned by `rot` in the world is
-  // turned by `-rot` here.
-  // Ghost cards and stickers are not ends either - see isJoinEnd() in
-  // board-model.ts. A rider is left out here rather than there because being
-  // stuck is not a fact about the item.
-  // How far a card may lean at this look, once for the whole pass - see
-  // drawnTilt(), and cardOf() for the sign.
   const maxLean = drawnTilt();
   return board.items
-    .filter(i => !isRider(i) && isJoinEnd(i))
+    .filter(i => !isRider(i) && isJoinEnd(i) && i.type !== 'fence')
     .map(i => cardOf(i, maxLean));
 }
 
-/**
- * The most a card leans at this look, in degrees. Multiplied by each card's dealt
- * fraction (items.ts/tiltOf) to get the lean it is drawn with.
- *
- * The bug this exists for: hovering a card revealed the end of a line hidden
- * underneath it. Cards away from the hard end of the axis rest crooked -
- * `--item-tilt` times `--tilt-max`, up to three degrees - and that lean is
- * presentational, so it is not in `item.rot`. A route therefore ended on the
- * *untilted* box, which a tilted card's corners stick out past, so the last units
- * of the line sat under the picture until the hover lift moved the card off it
- * and left a stub floating in the gap.
- *
- * Padding the box outward was the first attempt and traded a stub on hover for a
- * gap that was there all the time. A card's drawn outline is exactly knowable, so
- * the line stops exactly on it - see exitTowards() in web-route.ts, which clips
- * against the leaning rectangle. endOf() beside it gives the opposite answer for
- * items drawn with no card at all.
- *
- * The tier is read rather than the token alone: Harsh zeroes `rotate` on `.item`
- * in quality.css and a snapped board does the same in items.css, so both would
- * otherwise pay for a lean nothing is drawn with. The token is cached and dropped
- * by reshape(), the event that can change it.
- */
+/** The straight, middle-anchored line shown before a route settles — and while a
+ *  card is moving. Endpoints sit at the face centres, with a gentle curve handle
+ *  each way, so a line in motion leaves the middle of a side like a settled one,
+ *  never aimed diagonally at the far card. */
+function straightSeg(pa: Card, pb: Card, sig: string): Seg {
+  // Any side to any side, the same face search the settled curve uses — never a
+  // locked facing pair. Bare ends draw from their centre (the line hides under
+  // the subject), so they take no face.
+  const f = bestFaces(pa, pb);
+  const ea = pa.bare ? { x: pa.x, y: pa.y } : f.a;
+  const eb = pb.bare ? { x: pb.x, y: pb.y } : f.b;
+  const h = DRAG_HANDLE * (Math.hypot(eb.x - ea.x, eb.y - ea.y) || 1);
+  const da = pa.bare ? portDir(pa, pb) : f.na;
+  const db = pb.bare ? portDir(pb, pa) : f.nb;
+  return {
+    a: pa, b: pb, sig,
+    points: [ea, eb],
+    norms: [{ x: da.x * h, y: da.y * h }, { x: db.x * h, y: db.y * h }],
+  };
+}
+
+/** Max lean in degrees. Routes clip against the tilted box so lines end exactly
+ * on the drawn edge. Zeroed at Harsh and when snap is on (CSS zeroes rotation). */
 let leanDeg: number | null = null;
 function drawnTilt() {
   if (leanDeg === null) {
@@ -597,14 +313,7 @@ function drawnTilt() {
   return leanDeg;
 }
 
-/**
- * Let go of every line: the fading elements, the settled set, the stored routes
- * and the box they described.
- *
- * build() runs it when the layout or the checkbox says there is nothing to draw,
- * releasing rather than hiding, so a large board holds no geometry this layout
- * never shows. resetWeb() runs it to make the next build start from nothing.
- */
+/** Release all lines — fades, geometry, routes. Called on layout change or resetWeb(). */
 function release() {
   for (const entry of animating.values()) {
     clearTimeout(entry.timer);
@@ -619,38 +328,19 @@ function release() {
   draftPoints = null;
   clearTimeout(draftTimer);
   activeKey = null;
-  // The one signal ui/conn-chip.ts has for "the mark went away", and this was
-  // the one place that dropped the mark without firing it - so switching to
-  // Mobile or running Reload board left the chip on screen editing a line that
-  // is no longer drawn.
   activeMoved?.();
-  // Ditto the hover state, which release() left standing in all three of its
-  // parts: the key, the drawn path, and #viewport's `over-connection` class -
-  // so the cursor stayed in the connection-under-pointer shape over a board
-  // with no connections on it.
   hoveredKey = null;
   if (hoverPath) hoverPath.setAttribute('d', '');
   viewportEl?.classList.remove('over-connection');
-  // The lean is read once from --tilt-max and memoised for the life of the page.
-  // reshape() drops it when the slider moves, and nothing dropped it when a
-  // *board* arrived - so opening a .mbrd that sets its own --tilt-max routed every
-  // line against the previous board's maximum lean. release() runs on board load.
   leanDeg = null;
   focusIds = null;
   hoverIds = null;
-  // The hold goes with them. A board arriving is not a focus ending, so there is
-  // nothing to cover, and a timer left running would fire into the next board.
   if (holdTimer) { clearTimeout(holdTimer); holdTimer = 0; }
   heldFocus = null;
   lastFocus = null;
-  // The board's step back is written on item nodes and on the root rather than
-  // into this `<svg>`, so nothing here takes it down on its own.
   setBoardLift(null);
   if (focusPath) focusPath.setAttribute('d', '');
   if (svg) svg.classList.remove('is-focused');
-  // Off the root as well as off the `<svg>`. release() runs on a board load, and
-  // a flag left standing there would open the next board with its axes already
-  // faded and nothing on screen lit to explain why.
   document.documentElement.classList.remove('web-lifted');
   if (activePath) activePath.setAttribute('d', '');
   if (draftPath) draftPath.setAttribute('d', '');
@@ -658,19 +348,7 @@ function release() {
   if (decoLayer) while (decoLayer.firstChild) decoLayer.removeChild(decoLayer.firstChild);
 }
 
-/**
- * The look moved: every route is owed again, and no line has changed.
- *
- * A route is cached on `sigOf()` - the two end boxes - and a slider move does not
- * move a card, so every signature still matches and build() would hand back the
- * shape each line had at the *old* level. Dropping the `routed` flag says the
- * geometry is owed again without saying the lines are.
- *
- * Not resetWeb(), which also releases the settled set and the fading elements, so
- * every line would blink out and back on a slider move. The paint is asked for
- * straight away because the corner radius is read there and applies immediately;
- * the shapes follow when the pass lands, on the same settle a drop uses.
- */
+/** Whimsy axis moved — invalidate routes without releasing lines. */
 function reshape() {
   leanDeg = null;
   for (const seg of lastSeg.values()) seg.routed = false;
@@ -678,46 +356,20 @@ function reshape() {
   scheduleRoute();
 }
 
-/**
- * Draw the lines again from nothing - the web's half of "Reload board".
- *
- * Unlike the other reset* calls in ui/board-actions.ts, this one exists because a
- * route is *cached*: build() keeps a stored path for as long as its two ends have
- * not moved, so a route that came out wrong stays wrong through the one command
- * meant to put things right.
- *
- * Dropping the stored routes is the substance of this, not a side effect of
- * clearing the drawing. Everything is rerouted on the settle after the rebuild.
- */
+/** Full reset — drop cached routes, rebuild from scratch. "Reload board" calls this. */
 export function resetWeb() {
   if (!svg) return;
   release();
   requestBuild();
 }
 
-/**
- * The two end boxes, as a string. Two lines with the same signature have the same
- * route, and a changed signature is a route to work out again. Rounded to a tenth
- * of a world unit: a route does not change because a card moved a thousandth of a
- * pixel, and a signature turning on the last float bit would never match twice.
- */
+/** End-box fingerprint, rounded to 0.1 world units. Same sig = same route. */
 const sigOf = (a: Card, b: Card) =>
   [a.x, a.y, a.w, a.h, a.rot, b.x, b.y, b.w, b.h, b.rot]
     .map(n => Math.round(n * 10) / 10).join(',')
-  // Both cards' "is there a card here" on the end of it, because taking the card
-  // off moves this line's endpoint without moving either end - see endOf().
-  // Without them the cached route survives the toggle and the line goes on
-  // stopping in the paper until something else happens to disturb it.
   + `,${a.bare ? 1 : 0}${b.bare ? 1 : 0}`;
 
-/**
- * The whole obstacle field as one number, for the invalidation in build().
- *
- * A number and not a string, because this runs on every build - a frame of a pan
- * on a board of four hundred cards - and joining four hundred boxes into a string
- * is the allocation this avoids. A rolling 32-bit mix over the same rounded values
- * sigOf() uses; two fields can collide, and the cost is a route one settle late.
- */
+/** Rolling 32-bit hash of all card boxes — detects when any obstacle has moved. */
 function fieldSig(where: Map<string, Card>): number {
   let h = where.size | 0;
   for (const c of where.values()) {
@@ -739,53 +391,25 @@ function stretchBox(p: Point) {
   if (p.y > settledBox.maxY) settledBox.maxY = p.y;
 }
 
-/**
- * Which lines exist and where their ends are. Runs when an item has moved,
- * arrived or gone, and when a connection is drawn or removed.
- */
+/** Rebuild the connection set — runs on item move/add/remove or connection change. */
 function build() {
   if (!svg) return;
-  // Mobile is a reading-order feed, not a spatial map. Do not merely hide the
-  // lines: release the settled/fading geometry so a large board spends no time
-  // holding on to connections that this layout never shows.
   if (!webVisible()) {
     release();
     svg.style.display = 'none';
     return;
   }
-  // id -> where that card is, for the ends of every stored pair. Cards this
-  // layer does not node - a rider, a hint - are simply absent from the map, and
-  // a pair naming one is skipped below along with a pair naming a card that has
-  // been deleted. That is the whole of the dangling story on this side: not
-  // drawn, no bookkeeping, and it comes back when the item does.
   const where = new Map<string, Card>(centres().map(p => [p.id, p]));
-  // A route is owed again when *anything* has moved, not only this line's own two
-  // ends. The seg cache below is keyed on sigOf(pa, pb) - the pair's own boxes -
-  // so A—B routed around C stayed routed around C after C was dragged away, and
-  // stayed drawn *through* C after C was dragged onto the line. Every card is an
-  // obstacle, so the field is every card. Dropping the flag is reshape()'s narrow
-  // invalidation: the lines keep their points and re-route on the next settle,
-  // rather than blinking straight the moment anything twitches.
+  // Any card moving invalidates all routes (every card is a potential obstacle).
   const field = fieldSig(where);
   if (field !== lastField) {
     lastField = field;
     for (const seg of lastSeg.values()) seg.routed = false;
     scheduleRoute();
   }
-  // The picked end can move under a draft that is already up - an undo, a
-  // rearrange, a card arriving from a paste - and the draft is drawn from a
-  // cached box because the pointer asks for it sixty times a second.
   if (draftFrom) draftBox = where.get(draftFrom) || null;
 
   const wanted = new Map<string, Seg>();
-  // The box the geometry describes, worked out here rather than in paint(): it is
-  // a property of where the connected cards are, and they do not move when the
-  // view does, so re-deriving it was a loop over the board on every pan frame to
-  // reach last frame's number.
-  //
-  // Over the ends actually used, not every card. A board of four hundred items
-  // with two joined describes a box the size of the two, and sizing the <svg> to
-  // the whole board would be an element the size of the board holding one line.
   settledBox = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
   for (const conn of board.connections) {
     const [a, b] = conn;
@@ -793,57 +417,29 @@ function build() {
     const pb = where.get(b);
     if (!pa || !pb) continue;
     const key = pairKey(a, b);
-    // A stored route is kept exactly as long as both of its ends are where they
-    // were. The moment either moves, the route is thrown away and the line
-    // falls back to a straight one until the pass scheduled below runs - which
-    // is the whole of "no routing while anything is moving".
     const sig = sigOf(pa, pb);
     const held = lastSeg.get(key);
-    const seg: Seg = held && held.sig === sig
-      ? held
-      // Edge to edge, not centre to centre. A line drawn from a middle runs half
-      // a card deep under each end - invisible while the card is flat, revealed
-      // as a stub when the hover lift raises it. It also aims at the two middles,
-      // which is what the routed line replacing it will do. Which edge, and the
-      // one card where the edge is the wrong answer, are both endOf()'s.
-      : {
-        a: pa, b: pb, sig,
-        points: [endOf(pa, pb), endOf(pb, pa)],
-      };
-    // The display settings ride on the seg, refreshed every build even when the
-    // route is reused: an edit changes the look without moving an end, so the sig
-    // is unchanged and the held seg must still pick up the new meta. Direction is
-    // read against a and b in their stored order. A connection is a pair or a pair
-    // and a look (board-model.ts's Connection), so the third slot is asked for by
-    // length rather than indexed blind.
+    const seg: Seg = held && held.sig === sig ? held : straightSeg(pa, pb, sig);
+    // Meta refreshed every build — an edit changes the look without moving an end.
     seg.meta = (conn.length === 3 ? conn[2] : null) || null;
     seg.ends = { a, b };
     wanted.set(key, seg);
-    // Over the path, not only over the two ends: a route that bends out around
-    // a card reaches past both of them, and an <svg> clips at its own edge.
     for (const p of seg.points) stretchBox(p);
   }
   scheduleRoute();
 
-  // A fade costs an element, a transition and a timer, none of it worth spending
-  // on a thread nobody can see. Opening a 400-item board used to mint eleven
-  // hundred <line> elements at once, almost all outside the viewport. Off screen a
-  // thread now simply is or is not.
+  // Off-screen threads skip the fade — just appear/disappear.
   const vis = visibleBox(cullMargin(vp));
   const onScreen = (seg: Seg | undefined) => !vis || !seg ||
     !(Math.max(seg.a.x, seg.b.x) < vis.x0 || Math.min(seg.a.x, seg.b.x) > vis.x1 ||
       Math.max(seg.a.y, seg.b.y) < vis.y0 || Math.min(seg.a.y, seg.b.y) > vis.y1);
 
-  // Threads that should be visible: settled ones just move, the rest start or
-  // reverse a fade towards visible.
   for (const [key, seg] of wanted) {
     lastSeg.set(key, seg);
     if (settled.has(key)) continue;
     const live = animating.get(key);
     if (!live) {
-      // A styled line skips the fade and settles straight in: it is drawn by its
-      // own element in decoLayer, not by the bulk path a fade hands back to, so
-      // there is no shared stroke for it to fade against.
+      // Styled lines skip the fade (drawn by own element in decoLayer).
       if (onScreen(seg) && !seg.meta) begin(key, seg, 'in');
       else settled.add(key);
       continue;
@@ -851,8 +447,6 @@ function build() {
     live.seg = seg;
     if (live.dir === 'out') fadeTo(key, live, 'in');
   }
-  // Threads that should not: settled ones need an element to fade with, and
-  // ones already fading in turn around from wherever they had got to.
   for (const key of [...settled]) {
     if (wanted.has(key)) continue;
     settled.delete(key);
@@ -865,84 +459,7 @@ function build() {
   }
 }
 
-/**
- * Which of the lines meeting a card's face each connection is.
- *
- * Every line into a card used to arrive at the middle of its face: right for the
- * only line, wrong for the fifth, since five routes from one point run the same
- * corridor and read as one heavy line. Spread across the face, a fan reads as a
- * fan.
- *
- * The face is the same arithmetic anchorsFor() does - dominant axis, ties
- * sideways. A router that escalates to a different face loses the slot, which is
- * fine and rare. Sorted by where the far end sits along the spread axis, which
- * keeps the fan from crossing itself at the card it leaves.
- */
-type Fan = { from: Slot, to: Slot, sig: string };
-
-function fanOut(): Map<string, Fan> {
-  // card id and face -> the lines leaving it that way, in no order yet.
-  const faces = new Map<string, { key: string, end: 'a' | 'b' }[]>();
-  const faceOf = (from: Card, to: Card) => {
-    const dx = to.x - from.x;
-    const dy = to.y - from.y;
-    return Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'x+' : 'x-') : (dy >= 0 ? 'y+' : 'y-');
-  };
-  const push = (id: string, face: string, key: string, end: 'a' | 'b') => {
-    const at = `${id}|${face}`;
-    const list = faces.get(at);
-    if (list) list.push({ key, end });
-    else faces.set(at, [{ key, end }]);
-  };
-  for (const [key, seg] of lastSeg) {
-    push(seg.a.id, faceOf(seg.a, seg.b), key, 'a');
-    push(seg.b.id, faceOf(seg.b, seg.a), key, 'b');
-  }
-
-  const out = new Map<string, Fan>();
-  const slotOf = (key: string, end: 'a' | 'b'): Slot =>
-    (end === 'a' ? out.get(key)?.from : out.get(key)?.to) || { index: 0, count: 1 };
-  for (const [at, list] of faces) {
-    const sideways = at.endsWith('x+') || at.endsWith('x-');
-    // The far end's position along the axis the fan spreads across: a route
-    // leaving a side is placed by how high the card it goes to sits, one leaving
-    // the top or bottom by how far along it sits.
-    const along = ({ key, end }: { key: string, end: 'a' | 'b' }) => {
-      const seg = lastSeg.get(key)!;
-      const far = end === 'a' ? seg.b : seg.a;
-      return sideways ? far.y : far.x;
-    };
-    list.sort((p, q) => along(p) - along(q));
-    list.forEach(({ key, end }, index) => {
-      const slot = { index, count: list.length };
-      const from = end === 'a' ? slot : slotOf(key, 'a');
-      const to = end === 'b' ? slot : slotOf(key, 'b');
-      out.set(key, { from, to, sig: `${from.index}/${from.count}:${to.index}/${to.count}` });
-    });
-  }
-  // A slot that changed since a line was routed is a line whose stored points
-  // answer a question nobody is asking - a card that gained a second connection
-  // moves the first one, which is not otherwise going anywhere. Owed here rather
-  // than in build(), which watches the end boxes and would see nothing move.
-  for (const [key, seg] of lastSeg) {
-    if (seg.slot !== out.get(key)?.sig) seg.routed = false;
-  }
-  return out;
-}
-
-/**
- * The lines already drawn near this one, for the router to be charged for
- * running along.
- *
- * Routed ones only, and never this one. A straight stand-in is where a line is
- * *not* - what a dragged card trails until the hand comes off - so treating one
- * as an obstacle would push this route away from a place nothing will occupy.
- *
- * Order-dependent by construction: a line routed earlier in this pass is in here
- * and a later one is not, so two lines that would coincide are separated by
- * whichever settles second. The alternative is rerouting the whole board whenever
- * anything moves, which is the rule this module exists to keep.
- */
+/** Nearby already-routed lines — the router avoids lying along them. */
 function linesNear(self: string, seg: Seg): Point[][] {
   const x0 = Math.min(seg.a.x, seg.b.x) - AVOID_MARGIN;
   const x1 = Math.max(seg.a.x, seg.b.x) + AVOID_MARGIN;
@@ -965,25 +482,7 @@ function linesNear(self: string, seg: Seg): Point[][] {
   return out;
 }
 
-/**
- * Work out where every line actually runs, once things have stopped moving.
- *
- * On-screen first, so a budget that bites leaves straight lines where nobody is
- * looking. A line whose ends have not moved keeps its path - build() decides that
- * - so the common case is a handful of lines around one dragged card.
- *
- * Obstacles come from the spatial index rather than a board scan: the query is the
- * two ends' bounding box grown by the clearance, so a line between neighbours
- * never considers the other four hundred cards. The index answers with a
- * *superset*, which is right here because the router does its own precise work
- * against the boxes it is handed.
- *
- * Two things this pass knows that the router cannot, and hands down: which of the
- * lines meeting a card's face each one is, so a fan of five arrives spread rather
- * than all at the middle (fanOut), and which lines are already drawn nearby, so a
- * route can be charged for lying along one. Both are facts about *more than one
- * connection* - web-route.ts sees a single route and is told.
- */
+/** Route all owed lines, on-screen first. Runs once things stop moving. */
 function routePass() {
   if (!svg || !webVisible()) return;
   const where = new Map<string, Card>(centres().map(p => [p.id, p]));
@@ -992,63 +491,34 @@ function routePass() {
     !(Math.max(seg.a.x, seg.b.x) < vis.x0 || Math.min(seg.a.x, seg.b.x) > vis.x1 ||
       Math.max(seg.a.y, seg.b.y) < vis.y0 || Math.min(seg.a.y, seg.b.y) > vis.y1);
 
-  // Before anything is owed, because this is one of the things that owes it: a
-  // card that gained a second line changes where the first one lands, and the
-  // first one is not otherwise moving.
-  const slots = fanOut();
-
   const owed = [...lastSeg.entries()].filter(([, seg]) => !seg.routed);
-  // On screen first. A stable partition rather than a sort: the order within each
-  // half does not matter.
   const order = [...owed.filter(([, s]) => near(s)), ...owed.filter(([, s]) => !near(s))];
 
-  // One read of the axis for the whole pass. Every route in it is being worked
-  // out against the same look, and a slider moved half way through a pass would
-  // otherwise leave a board carrying two shapes at once.
   const opts = look();
   let spent = 0;
   for (const [key, seg] of order) {
     if (spent++ >= ROUTE_BUDGET) break;
-    // seg.a and seg.b already carry the id and the box - centres() puts both on
-    // every point - so there is nothing to look up here.
     const { a, b } = seg;
-    const fan = slots.get(key);
+    // No fan slots: every line leaves and enters at the middle of a side.
     const routed = routeConnection(a, b, obstaclesBetween(a, b, where, opts.clearance), {
       ...opts,
-      fromSlot: fan?.from,
-      toSlot: fan?.to,
       avoid: linesNear(key, seg),
     });
     seg.points = intoMiddles(routed.points, a, b);
+    seg.norms = routed.ends;
     seg.routed = true;
-    seg.slot = fan?.sig;
     for (const p of seg.points) stretchBox(p);
   }
-  // Forced: the geometry changed without the *set* of lines changing, which is
-  // the one case paint()'s own "has the view left the rectangle it culled
-  // against" shortcut would otherwise talk it out of.
   requestPaint();
 }
 
-/**
- * The cards a line between these two might have to go around.
- *
- * World coordinates in, this layer's out. The index is built from item geometry
- * where y points up and everything here lays y down, so the query rectangle flips
- * and the ids that come back are looked up in the already-flipped map.
- */
+/** Cards between a and b that the route may need to avoid. Flips y for the spatial query. */
 function obstaclesBetween(a: Card, b: Card, where: Map<string, Card>, clearance = CLEARANCE): Card[] {
-  // Twice whatever room the route is keeping, not twice the constant: at
-  // Softish the clearance is raised so a curve has somewhere to be drawn, and a
-  // query still sized to the plain figure would hand the router a card list
-  // that stopped just short of the cards it now has to go round.
   const pad = clearance * 2;
   const box = {
     x0: Math.min(a.x, b.x) - pad, x1: Math.max(a.x, b.x) + pad,
     y0: Math.min(a.y, b.y) - pad, y1: Math.max(a.y, b.y) + pad,
   };
-  // The two ends themselves have to be inside the query or a route out of a
-  // card that is entirely past the other would have no room to start.
   for (const end of [blockOf(a, pad), blockOf(b, pad)]) {
     box.x0 = Math.min(box.x0, end.x0); box.x1 = Math.max(box.x1, end.x1);
     box.y0 = Math.min(box.y0, end.y0); box.y1 = Math.max(box.y1, end.y1);
@@ -1060,20 +530,13 @@ function obstaclesBetween(a: Card, b: Card, where: Map<string, Card>, clearance 
     const p = where.get(id);
     if (!p) continue;                       // a rider or a hint: not an obstacle
     const k = blockOf(p, 0);
-    // The index is a superset by design, so this is the precise re-test it owes
-    // - a plain box overlap, which is all an axis-aligned router can use.
     if (k.x1 < box.x0 || k.x0 > box.x1 || k.y1 < box.y0 || k.y0 > box.y1) continue;
     out.push(p);
   }
   return out;
 }
 
-/**
- * The visible rect in the web's own coordinates, widened by `margin` world px.
- *
- * World y points up and this layer is laid out with y down, so the rect flips:
- * the top edge of the box is the *largest* world y.
- */
+/** Visible rect in y-down coords, widened by `margin`. */
 function visibleBox(margin = 0): Bounds | null {
   if (!vp) return null;
   const r = vp.visibleRect(margin);
@@ -1085,20 +548,8 @@ const within = (inner: Bounds, outer: Bounds) =>
   inner.x0 >= outer.x0 && inner.x1 <= outer.x1 &&
   inner.y0 >= outer.y0 && inner.y1 <= outer.y1;
 
-/**
- * Which threads are drawn. Runs on a build and on every view change.
- *
- * A thread is kept if the thread itself meets the visible rect, not if its
- * bounding box does. The two differ on the case a web is full of: the long
- * diagonal, whose bounding box is most of the board, so a box test passes it from
- * almost anywhere and emits it into `d` every pan frame without it ever nearing
- * the screen. On a dense board that is most of the path string, rebuilt each
- * frame to draw nothing.
- *
- * Still conservative where it matters: the test is exact about the segment and the
- * rect is already widened by cullMargin(), so a thread arrives a few hundred world
- * units before it is needed rather than popping in at the edge.
- */
+/** Cull threads to the visible rect and write the SVG `d` string. Per-segment
+ * test (not bounding box) so long diagonals skip correctly. */
 function paint(forced = false) {
   if (!svg) return;
   // Non-null on both: initWeb() makes the bulk path and the focus copy in the same
@@ -1189,6 +640,7 @@ function paint(forced = false) {
   // below, and drawing a line in both places at once would leave a fading one
   // with a solid twin under it.
   const r = cornerRadius();
+  const curved = curveOn();
   const lit = focusSet();
   // What is drawn into the lifted copy: the live focus, or the one that has just
   // ended (see heldFocus). Whether the *board* dims is `lit` alone, further down -
@@ -1205,10 +657,6 @@ function paint(forced = false) {
   // never enters `d`, so a card whose connections all carry a colour or an arrow
   // lit an empty string and the board did not dim at all.
   let litAny = false;
-  // The far ends, collected while the lit lines are being found, and only when the
-  // pointer lit them. A selection already marks its cards with a ring and grips,
-  // so corner marks on the cards *around* one would read as "these are selected
-  // too"; under the pointer nothing else is marked.
   const byPointer = !selection.size;
   let joined: Set<string> | null = null;
   for (const key of settled) {
@@ -1216,15 +664,8 @@ function paint(forced = false) {
     if (!seg) continue;
     if (vis && !polyMeetsRect(seg.points, vis)) continue;
     const isLit = !!(shown && seg.ends && (shown.has(seg.ends.a) || shown.has(seg.ends.b)));
-    // Counted off the live focus, never off the held one. `shown` is `lit`
-    // whenever there is a `lit`, so this is the same count it always was - and
-    // during a hold it is zero, which is the board being told to come back up.
     if (isLit && lit) {
       litAny = true;
-      // Before the styled-line `continue` below, so a card reached by a line
-      // that carries a colour or an arrow is marked like any other. Both ends
-      // are tested rather than one: a pair is unordered, and which of the two
-      // is under the pointer is not a thing this loop knows.
       if (byPointer && seg.ends) {
         joined ||= new Set();
         if (lit.has(seg.ends.a)) joined.add(seg.ends.b);
@@ -1235,7 +676,7 @@ function paint(forced = false) {
     // arrow is per-line and this path is one shared `d`. drawDecorations marks
     // the lit ones with .web-lit, which is how they stay at full strength.
     if (seg.meta) continue;
-    const sub = pathData(seg.points, r, minX, minY);
+    const sub = pathData(seg.points, r, minX, minY, curved, curved ? seg.norms : undefined);
     d += sub;
     // The same subpath twice, in the one case where that is cheaper than the
     // alternative: the focused threads are drawn again over the dimmed bulk
@@ -1276,7 +717,8 @@ function paint(forced = false) {
     // A line styled while it was mid-fade is drawn by decoLayer instead, so its
     // fading element is left blank rather than showing a solid twin under the
     // styled one. The fade timer still removes the empty element on its own.
-    el.setAttribute('d', seg.meta ? '' : pathData(seg.points, r, minX, minY));
+    el.setAttribute('d', seg.meta ? ''
+      : pathData(seg.points, r, minX, minY, curved, curved ? seg.norms : undefined));
   }
 
   drawDecorations(minX, minY, r, vis, lit);
@@ -1302,6 +744,7 @@ function drawDecorations(
   // Non-null: the only caller is paint(), past its guard on `svg` - and this
   // layer is one of the elements initWeb() makes with it.
   const layer = decoLayer!;
+  const curved = curveOn();
   while (layer.firstChild) layer.removeChild(layer.firstChild);
   // Only the styled ones, which is what isStyled() says in a form that carries
   // the `meta` through: everything below reads it, and a plain line never
@@ -1327,7 +770,7 @@ function drawDecorations(
     const focus = lit && seg.ends && (lit.has(seg.ends.a) || lit.has(seg.ends.b))
       ? ' web-lit' : '';
     line.setAttribute('class', 'web-styled' + colour + weight + focus);
-    line.setAttribute('d', pathData(seg.points, r, minX, minY));
+    line.setAttribute('d', pathData(seg.points, r, minX, minY, curved, curved ? seg.norms : undefined));
     const style = seg.meta.style;
     if (style === 'dashed') line.setAttribute('stroke-dasharray', '7 5');
     else if (style === 'dotted') line.setAttribute('stroke-dasharray', '0.5 5');
@@ -1337,7 +780,7 @@ function drawDecorations(
     layer.append(line);
 
     if (seg.meta.label) {
-      const mid = polyMidpoint(seg.points);
+      const mid = polyMidpoint(curved ? curvePoints(seg.points, seg.norms) : seg.points);
       const text = document.createElementNS(SVG_NS, 'text');
       text.setAttribute('class', 'web-label');
       text.setAttribute('x', (mid.x - minX).toFixed(2));
@@ -1349,17 +792,7 @@ function drawDecorations(
   }
 }
 
-/**
- * The connection whose drawn line runs nearest a world point, or null.
- *
- * The one concession to connections being clickable, kept as small as
- * state.ts/toggleConnection's note asked: no selection model, no per-line element
- * to hit-test, just the routed points build() already holds. `tolPx` is a reach in
- * *screen* pixels, so a hairline is as easy to hit zoomed out as in.
- *
- * World y points up and this layer lays y down (see centres()), so the point is
- * flipped before it is measured.
- */
+/** Nearest line to a world point, within `tolPx` screen px. Flips y. */
 function nearestSeg(wx: number, wy: number, tolPx: number) {
   if (!svg || !webVisible()) return null;
   const py = -wy;
@@ -1367,45 +800,24 @@ function nearestSeg(wx: number, wy: number, tolPx: number) {
   let best: Seg | null = null, bestKey: string | null = null, bestD = tol;
   for (const [key, seg] of lastSeg) {
     if (!seg.ends) continue;
-    // Settled lines only. `lastSeg` keeps a removed connection for its whole 340ms
-    // fade-out, so this could hand back a pair no longer on the board -
-    // deleteActiveConnection() then ran toggleConnection(), found it absent, and
-    // *created* it. A line on its way out is not a line you can point at.
+    // Exclude fading-out lines — hitting one would re-create the deleted connection.
     if (!settled.has(key)) continue;
-    const pts = seg.points;
+    // Walk the drawn curve, not the chord under it, so the hitbox follows the line.
+    const pts = curveOn() ? curvePoints(seg.points, seg.norms) : seg.points;
     for (let i = 1; i < pts.length; i++) {
       const d = distToSegment(wx, py, pts[i - 1], pts[i]);
       if (d < bestD) { bestD = d; best = seg; bestKey = key; }
     }
   }
-  // Non-null: the key and the seg are only ever written together, so a `best`
-  // is a `bestKey`.
   return best ? { key: bestKey!, seg: best } : null;
 }
 
 export function connectionAt(wx: number, wy: number, tolPx = 10): Ends | null {
-  // The ends taken first: the loop above skips a seg that has none, so a hit
-  // always carries them - and reading them through one binding is how that is
-  // said without an assertion.
   const ends = nearestSeg(wx, wy, tolPx)?.seg.ends;
   return ends ? { a: ends.a, b: ends.b } : null;
 }
 
-// ---------------------------------------------------------------------------
-// The line the board is pointing at
-//
-// A press on a line makes it *active*: it stays lit, Delete removes it, and a
-// double click asks for its label. Before that, a connection could only be edited
-// by right-clicking it - a complete editor behind the button most people never
-// press, on the one element with no other affordance, while the line lit under
-// the pointer promising that pressing it does something.
-//
-// Deliberately not part of the selection. `selection` in state.ts is a set of item
-// ids and every consumer assumes so - band-select, group drag, arrange, align,
-// delete, the trash, the sidebar's count - so widening it would put an "is this an
-// item" clause in all of them. One key, held here beside the hover, costs nothing
-// anywhere else.
-// ---------------------------------------------------------------------------
+// === Active connection (pressed line) — not part of item selection ===
 
 /** The connection currently pointed at, as its two ends, or null. */
 export function activeConnection(): Ends | null {
@@ -1423,57 +835,19 @@ export function setActiveConnection(a: string | null, b: string | null) {
 
 export function clearActiveConnection() { setActiveConnection(null, null); }
 
-/**
- * Where the marked line's middle is, in *world* coordinates, or null.
- *
- * For ui/conn-chip.ts, which pins a small editor over the line. The midpoint by
- * arc length rather than the average of the two ends - polyMidpoint, the same one
- * a label sits at - so on a route bending round three cards the chip is on the
- * line rather than beside it.
- *
- * This layer lays y down and the world points up (see centres()), so the answer is
- * flipped on the way out.
- */
+/** World-space midpoint of the active line (arc-length midpoint, y flipped). */
 export function activeConnectionAnchor(): Point | null {
   const seg = activeKey ? lastSeg.get(activeKey) : null;
   if (!seg?.points?.length) return null;
-  const mid = polyMidpoint(seg.points);
+  const mid = polyMidpoint(curveOn() ? curvePoints(seg.points, seg.norms) : seg.points);
   return { x: mid.x, y: -mid.y };
 }
 
-/**
- * Be told when the marked line has been redrawn, so something pinned to it can
- * follow.
- *
- * One subscriber, deliberately: a callback and not a bus event because it fires on
- * paints, and a bus event is a thing every module can hear and one will eventually
- * answer with a rebuild.
- */
+/** Single callback when active line redraws — for conn-chip.ts to follow. */
 let activeMoved: (() => void) | null = null;
 export function onActiveConnectionMove(fn: () => void) { activeMoved = fn; }
 
-/**
- * The cards whose threads are lifted, or null for "no focus at all".
- *
- * A board with a few hundred lines draws them all at one weight, and the far view
- * - the reason the web has no zoom floor - is where that is least readable.
- * Selecting a card lifts its own threads and drops everything else back.
- *
- * Two triggers, and the order is the rule: a selection wins, and the pointer only
- * speaks when there is no selection. Selection is the deliberate one - quiet,
- * survives the pointer moving away, and is the state somebody is in when they are
- * actually asking what a card connects to. Hover is the one nobody has to be
- * taught, which is why it is second rather than absent.
- *
- * Hover is fenced twice: ignored while a gesture runs, since a pan drags the whole
- * board under the cursor and every card arriving would re-dim every line, and
- * ignored whenever anything is selected, so it never argues with a lift somebody
- * asked for. The opacity transition in canvas.css does the rest.
- *
- * Nothing is stored either way, and the selected set is derived rather than kept
- * beside the selection. The memo is dropped whenever the selection changes and
- * rebuilt on the next paint, once per change rather than once per pan frame.
- */
+/** Cards whose threads are lifted. Selection wins over hover. */
 function focusSet(): Set<string> | null {
   if (selection.size) {
     if (!focusIds) focusIds = new Set(selection);
@@ -1482,30 +856,13 @@ function focusSet(): Set<string> | null {
   return hoverIds;
 }
 
-/**
- * The two sets, joined, with everything stuck to any of them added.
- *
- * The riders are what makes this a function rather than a spread. A sticker is a
- * remark about the card under it and a note is pinned to what it annotates, so a
- * pile reads as one object - and a pile with the photograph lit and the sticker
- * dimmed reads as the photograph taken apart. `stuckFollowers()` is transitive and
- * is the walk a drag uses.
- *
- * Memoised on the two sets, because that walk filters every item and this is
- * called from the paint. Hover is dropped while a gesture runs, so a pan never
- * reaches here - but a zoom does, with the pointer resting on a card.
- * `board:load` and `items` drop the memo: what is stuck to what is measured, not
- * stored, and a note dragged off its host changes it without changing either set.
- */
+/** Join two id sets with all stuck followers. Memoised per paint. */
 let riderMemo: { key: string, out: Set<string> } | null = null;
 bus.on('items', () => { riderMemo = null; });
 bus.on('board:load', () => { riderMemo = null; });
 
 function withRiders(a: Set<string>, b: Set<string>): Set<string> {
   const ids = [...a, ...b];
-  // Sorted, so the key names the set rather than the order the paint happened
-  // to walk it in - `settled` is a Set and its order is insertion order, which
-  // a rebuild can change without anything about the board having changed.
   const key = ids.sort().join(',');
   if (riderMemo?.key === key) return riderMemo.out;
   const out = new Set(ids);
@@ -1514,14 +871,7 @@ function withRiders(a: Set<string>, b: Set<string>): Set<string> {
   return out;
 }
 
-/**
- * Open, keep or close the hold on a focus that has just ended - see heldFocus.
- *
- * Called once a paint, with whatever the live focus is. A focus arriving cancels
- * any hold outright rather than letting it run out: the copy is about to be
- * drawn from the live set anyway, and a timer left standing would clear it under
- * a lift that was in the middle of happening.
- */
+/** Manage the held focus that bridges the transition after deselect. */
 function holdFocus(lit: Set<string> | null): void {
   if (lit) {
     if (holdTimer) { clearTimeout(holdTimer); holdTimer = 0; }
@@ -1539,18 +889,7 @@ function holdFocus(lit: Set<string> | null): void {
   }, liftMs());
 }
 
-/**
- * How long the board takes to come back up, read off the token the transition
- * is written in.
- *
- * Read rather than written down twice: `--dur-fast` is not one number - the whimsy
- * axis moves it, and reduced motion takes it to a hundredth of a millisecond. A
- * constant would hold the copy for a tenth of a second on exactly the setting that
- * asked for no animation.
- *
- * getComputedStyle is a style flush, so this is read when a hold opens and never
- * per frame - see readToken's own note.
- */
+/** Read --dur-fast for the hold duration. Varies with whimsy/reduced-motion. */
 function liftMs(): number {
   const raw = readToken('--dur-fast');
   const n = parseFloat(raw) || 0;
@@ -1561,7 +900,9 @@ function liftMs(): number {
 function drawActive() {
   if (!activePath) return;
   const seg = activeKey ? lastSeg.get(activeKey) : null;
-  activePath.setAttribute('d', seg ? pathData(seg.points, cornerRadius(), originX, originY) : '');
+  activePath.setAttribute('d', seg
+    ? pathData(seg.points, cornerRadius(), originX, originY, curveOn(), curveOn() ? seg.norms : undefined)
+    : '');
   // After the draw, not before: whatever follows this line is placed against where
   // it has just been put, and the mark going away is as much a move as it moving.
   activeMoved?.();
@@ -1571,14 +912,12 @@ function drawActive() {
 function drawHover() {
   if (!hoverPath) return;
   const seg = hoveredKey ? lastSeg.get(hoveredKey) : null;
-  hoverPath.setAttribute('d', seg ? pathData(seg.points, cornerRadius(), originX, originY) : '');
+  hoverPath.setAttribute('d', seg
+    ? pathData(seg.points, cornerRadius(), originX, originY, curveOn(), curveOn() ? seg.norms : undefined)
+    : '');
 }
 
-/**
- * Point the hover at whatever line is under a world point, and say whether one
- * is. Repaints the highlight only when the hovered line actually changes, so a
- * pointer sliding along one line is not a stream of identical redraws.
- */
+/** Update hover to the line under (wx, wy). Returns true if one was found. */
 function hoverConnectionAt(wx: number, wy: number, tolPx = 12) {
   const hit = nearestSeg(wx, wy, tolPx);
   const key = hit ? hit.key : null;
@@ -1586,35 +925,14 @@ function hoverConnectionAt(wx: number, wy: number, tolPx = 12) {
   return !!key;
 }
 
-// ---------------------------------------------------------------------------
-// The line in flight
-//
-// The connector tool used to draw nothing: arming it and pressing a card put a
-// ring round that card, and until the second press the board said no more than
-// "this one is picked". The one gesture that makes a *drawing* had no drawing in
-// it.
-//
-// So: one more path in the SVG this module already owns, from the picked card to
-// wherever the pointer is. Same layer, same transform, same non-scaling stroke,
-// and the same routing rule - straight while the pointer moves, worked out
-// properly once it stops. A draft is a drag by another name.
-//
-// ui/toolbar.ts owns the pick and calls setDraftFrom; this module owns the
-// pointer, because it already listens for one (see onHoverMove) and because
-// canvas/input.ts holds exactly one active gesture and a draft is not one.
-// ---------------------------------------------------------------------------
+// === Draft line (connector tool in flight) ===
 
-/**
- * Aim the draft at a card, or put it away.
- *
- * Called by ui/toolbar.ts whenever the pick changes - including the null that
- * arrives when the tool is disarmed, a pair is completed, or Escape is pressed,
- * which is what makes those three put the line away without knowing they have.
- */
+/** Set or clear the draft origin. null puts the draft away. */
 export function setDraftFrom(id: string | null) {
   draftFrom = id || null;
   draftBox = draftFrom ? boxOf(draftFrom) : null;
   draftPoints = null;
+  draftEnds = null;
   clearTimeout(draftTimer);
   setConnectAim(null);
   if (!draftFrom) requestPaint();
@@ -1623,55 +941,33 @@ export function setDraftFrom(id: string | null) {
 /** One item's box in this layer's coordinates - centres() for a single id. */
 function boxOf(id: string): Card | null {
   const it = byId(id);
-  if (!it || isRider(it) || !isJoinEnd(it)) return null;
+  if (!it || isRider(it) || !isJoinEnd(it) || it.type === 'fence') return null;
   return cardOf(it, drawnTilt());
 }
 
-/**
- * Follow the pointer with the draft line.
- *
- * The far end is the card under the pointer when there is one and the pointer
- * itself when there is not, so the draft is the line that would actually be drawn.
- * The card it would join is marked while it is under there, because a line
- * arriving at a card and one passing over it look the same until it lands.
- */
+/** Move the draft line to follow the pointer. Marks the target card. */
 function aimDraft(e: PointerEvent) {
   if (!draftFrom || !vp || !webVisible()) return;
   if (!draftBox) draftBox = boxOf(draftFrom);
   if (!draftBox) return;
   const w = vp.toWorld(e.clientX, e.clientY);
-  // Not the card it started from: pressing that is how somebody changes their
-  // mind. And only a card this tool will actually join - boxOf() answers null for
-  // a rider, a sticker and a ghost, which is what connectTap()'s canJoin()
-  // refuses, so the "will join" ring used to land on a sticker and the press after
-  // it was refused with a toast.
   const overId = itemIdFromEvent(e.target);
-  // The box is built once and reused: it is both the test for whether this is a
-  // card the tool will join and the far end of the draft line.
   const overBox = overId && overId !== draftFrom ? boxOf(overId) : null;
   const aim = overBox ? overId : null;
   setConnectAim(aim);
-  // The pointer, when it is over nothing, is a point and not a card - so it is
-  // never bare and the draft ends exactly on it, which is what a line being
-  // aimed should do.
   const to = overBox || { id: '', x: w.x, y: -w.y, w: 1, h: 1, rot: 0, bare: false };
-  // From the edge of the picked card towards the far end, and to the far card's
-  // edge when there is one - the same clip the drawn lines take, so the draft does
-  // not jump when it lands. endOf() is the one answer both use, including for a
-  // cut-out card, where the line runs into the middle.
+  draftEnds = [portDir(draftBox, to), portDir(to, draftBox)];
   draftPoints = [endOf(draftBox, to), aim ? endOf(to, draftBox) : { x: to.x, y: to.y }];
   requestPaint();
-  // Routed on the settle, exactly as a dropped card is. The straight line in
-  // the meantime is not a placeholder for the route - it is what a line looks
-  // like while it is still being aimed.
   clearTimeout(draftTimer);
   draftTimer = setTimeout(() => {
     if (!draftFrom || !draftBox) return;
     const where = new Map<string, Card>(centres().map(p => [p.id, p]));
     const opts = look();
-    draftPoints = intoMiddles(routeConnection(
-      draftBox, to, obstaclesBetween(draftBox, to, where, opts.clearance), opts).points,
-    draftBox, to);
+    const routed = routeConnection(
+      draftBox, to, obstaclesBetween(draftBox, to, where, opts.clearance), opts);
+    draftPoints = intoMiddles(routed.points, draftBox, to);
+    draftEnds = routed.ends ?? draftEnds;
     requestPaint();
   }, ROUTE_SETTLE_MS);
 }
@@ -1679,7 +975,9 @@ function aimDraft(e: PointerEvent) {
 /** Draw the draft where paint() has just laid the box out, or clear it. */
 function drawDraft(minX: number, minY: number, r: number) {
   if (!draftPath) return;
-  draftPath.setAttribute('d', draftPoints ? pathData(draftPoints, r, minX, minY) : '');
+  draftPath.setAttribute('d', draftPoints
+    ? pathData(draftPoints, r, minX, minY, curveOn(), curveOn() && draftEnds ? draftEnds : undefined)
+    : '');
 }
 
 /** Drop any hover highlight - the pointer left the board, or a gesture began. */
@@ -1692,20 +990,9 @@ function endHover() {
   if (viewportEl) viewportEl.classList.remove('over-connection');
 }
 
-/**
- * Track the line under the pointer as it moves over bare board.
- *
- * Gated hard: only when the pointer is on the viewport itself rather than a card
- * (a line passing behind a card is not what the pointer is on), and only when no
- * pan or drag is running.
- */
+/** Hover or draft-aim on pointer move. Only on bare board, not during pan/drag. */
 function onHoverMove(e: PointerEvent) {
-  // The connector has an end picked: the pointer is drawing, not reading. The
-  // draft takes the move whether it is over bare board or over a card, which is
-  // the one case the gate below deliberately refuses.
   if (draftFrom) { aimDraft(e); return; }
-  // Non-null: this listener is only added inside the `if (viewportEl)` in initWeb,
-  // on that element, and nothing clears the variable.
   const view = viewportEl!;
   const root = document.documentElement;
   const busy = view.classList.contains('is-panning') ||
@@ -1716,48 +1003,34 @@ function onHoverMove(e: PointerEvent) {
   view.classList.toggle('over-connection', on);
 }
 
-/**
- * How far a Softish route stands off the cards it passes, over and above the
- * clearance every route keeps.
- *
- * It is the corner radius, and the same number twice on purpose. A fillet cuts
- * *inside* the corner it rounds, and a corner in a route is where the path is
- * hugging a card at the clearance - so smoothing a path routed at plain clearance
- * draws the curve through the card. The room the curve needs is bought before the
- * search, and the two figures have to match.
- */
-const SOFT_RADIUS = 22;
+/** A little extra room for the Softish curve to bow into as it passes a card,
+ * so the spline does not clip one it routed around. Small: the curve hugs close. */
+const CURVE_ROOM = 8;
 
-/**
- * What the whimsy axis asks of a connection: its shape, the room it needs, and how
- * round its corners are - one read of the attribute ui/appearance.ts writes on the
- * root element, the source every other tier decision comes from.
- *
- * The *shape* is the tier decision; the corner is a detail of it. This used to say
- * it about the corner alone, so Harsh squared every edge and snapped cards to the
- * lattice, Softish rounded everything, and the connectors ran between them as the
- * same right-angled staircase at three radii.
- *
- *   Harsh    orthogonal, turning on the board's own grid, square corners
- *   Middle   taut - straight where it can be, and no obligation to 90 degrees
- *   Softish  the same taut path, given room to curve round what it passes
- *
- * The router is pure and reads none of this; see its header. This is the half that
- * may read the DOM and the board.
- */
+/** Rounded-corner radius for the Middle tier's orthogonal wires. */
+const MIDDLE_RADIUS = 16;
+
+/** Route options from the whimsy tier: Harsh=grid right angles, Middle=orthogonal
+ *  rounded corners, Softish=a taut route drawn as a flowing spline. */
 function look(): RouteLook {
   const level = document.documentElement.dataset.whimsy;
   if (level === '2') {
     return { shape: 'grid', step: baseStep(), clearance: CLEARANCE, radius: 0 };
   }
   if (level === '0') {
-    return { shape: 'taut', clearance: CLEARANCE + SOFT_RADIUS, radius: SOFT_RADIUS };
+    return { shape: 'curve', clearance: CLEARANCE + CURVE_ROOM, radius: 0, curve: true };
   }
   // Middle, and the fallback before the dial has been read.
-  return { shape: 'taut', clearance: CLEARANCE, radius: 9 };
+  return { shape: 'square', clearance: CLEARANCE, radius: MIDDLE_RADIUS };
 }
 
 /** How round a corner is - the half of look() that paint() and the hover want. */
 function cornerRadius() {
   return look().radius;
 }
+
+/** Whether the current tier draws its lines as flowing curves (Softish). */
+function curveOn() {
+  return !!look().curve;
+}
+

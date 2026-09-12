@@ -1,39 +1,19 @@
-// The .mbrd container: a ZIP holding a manifest, the board, and every asset's
-// bytes, so a board is one self-contained file you can email or drop back in.
-//
-//   myboard.mbrd            (ZIP, renamed)
-//   |- mimetype             application/vnd.mbrd+zip, first and stored
-//   |- manifest.json        { format, version, app, created, modified, title }
-//   |- board.json           { view, settings, arrangement, items[], trash[] }
-//   |- assets/<slug>--<hash>.<ext>  bytes, deduped by content hash
-//   |- notes/<slug>--<id>.md    one sticky note, as Markdown
-//   \- waveforms/<hash>.json    one audio file's measured readings
-//
-// Items reference bytes as `asset: { hash, embedded: true }`. The schema also
-// reserves `asset: { external: { path } }` for a later link-instead-of-embed
-// setting - unpack tolerates it, pack simply has no bytes to write for it.
+// The .mbrd container — a ZIP holding manifest.json, board.json, and
+// content-addressed assets/, notes/, waveforms/. One self-contained file.
+// Items reference bytes as `asset: { hash, embedded: true }`.
 
 import { writeZip, readZip } from './zip.ts';
 import type { ZipEntry } from './zip.ts';
 import { getAsset, putAsset } from './assets.ts';
 import type { Asset } from './assets.ts';
 import { sha256 } from '../crypto.ts';
-// Aliased on the way in: this module already has a `fileKey()` (the name an item
-// is stored under inside the archive) and a `nameOf()`, and both mean something
-// else here. The consent pair is about the archive being opened, not its contents.
+// Aliased — this module has its own fileKey() and nameOf().
 import { lift, fileKey as consentKey, nameOf as blobName } from '../consent.ts';
 import { isHash, isRecord, itemHashes } from '../util.ts';
-// Read out of the stored document rather than off the live ledger, the way
-// every other reference class in here is: what this function must not miss is
-// what *this file* will carry, and that is the document in front of it.
+// Read from stored document, not live ledger — must match what the file carries.
 import { timelineHashes } from '../timeline.ts';
 import { VERSION } from '../version.js';
-// The note text model, and the only thing this module takes from canvas/. Both
-// are pure functions of a string - the format's own Markdown flavour, which the
-// renderer happens to also be the main reader of - and the sidecar reconciliation
-// in unpackBoard() cannot be written without them. Copying twenty lines of block
-// splitting in here to avoid the import would give the format a second answer to
-// what `# ` means, which is the one thing worth avoiding more than the edge.
+// Pure functions of the format's Markdown flavour — needed for sidecar reconciliation.
 import { parseNoteText, flattenNoteRich } from '../canvas/note-model.ts';
 import type { Item, TrashEntry, FontSpec } from '../board-model.ts';
 
@@ -41,76 +21,30 @@ const FORMAT = 'mbrd';
 const FORMAT_VERSION = 1;
 export const MIME = 'application/vnd.mbrd+zip';
 
-/**
- * Features a reader must understand before it is allowed to open a file, and
- * the answer to a problem `version` cannot solve.
- *
- * The trap is written up in research/docs/mbrd-format.md and is worth the
- * summary: bumping `version` protects nothing, because no reader in the world
- * *refuses* a higher one - the check is a console warning and the load carries
- * on. So a build that meets a field it has never heard of drops that field on
- * load and then writes it back out missing, and the only signal anybody gets is
- * that their work is quietly gone. `version` says "this is newer than you";
- * `requires` says "this is newer than you **and you will lose something**", and
- * only the second is actionable.
- *
- * **Empty, and that is the intended state.** Everything in the format today
- * degrades honestly in a reader that skips it - an unknown item type draws as a
- * plain card, an unknown `meta` key rides along untouched, a history nobody
- * reads is a history nobody shows. None of that is worth refusing a file over,
- * and a `requires` that cried wolf would be turned off by the third
- * implementer. What it is for is the field that comes later and cannot degrade:
- * put its name in here in the same commit that writes it, and every reader
- * built from now on refuses the file instead of flattening it.
- *
- * It has to exist *before* there is anything to protect, which is the whole
- * reason it is here while it is empty. A gate added the day it is first needed
- * is a gate no existing reader checks.
- */
+/** Features a reader must support to open the file safely. Unlike `version`
+ *  (which no reader actually refuses), an unsupported `requires` entry makes
+ *  the reader refuse rather than silently drop unknown fields. Empty today —
+ *  nothing in the current format degrades destructively. Exists now so every
+ *  reader already checks the gate before a breaking field is ever added. */
 const SUPPORTED_FEATURES: ReadonlySet<string> = new Set<string>();
 
 const ASSETS_DIR = 'assets/';
 
-/**
- * What a content id is allowed to be, enforced in both directions.
- *
- * A hash is not just a label here - it is interpolated into a path, both on the
- * way out (`assets/<hash>.<ext>`) and on the way back in, and a ZIP entry name
- * is a string that some other program will eventually treat as a filename. A
- * board claiming a hash of `../escape` opened perfectly happily and then packed
- * back out as `assets/../escape.bin`: harmless to this app, which never writes
- * the archive to disk, and a directory traversal in any extractor that does.
- *
- * The shape is also the load-bearing half of content addressing. Dedup, the
- * waveform sidecars and the autosave sweep all assume a hash names its bytes
- * and nothing else, so an id that was never a digest quietly breaks three
- * things that look unrelated.
- *
- * The shape itself is util.ts/isHash, which is also what state.ts holds items
- * to on the way in - the two ends of the same rule.
- */
+// Hash shape (util.ts/isHash) enforced in both directions: it is interpolated
+// into ZIP paths, so a malformed id like `../escape` would be a path traversal.
+// Also load-bearing for dedup, waveform sidecars, and the autosave sweep.
 
 /** Extensions we will put in a path. Long enough for `jpeg`, `webm`, `tiff`. */
 const ASSET_EXT = /^[a-z0-9]{1,12}$/;
 
-/**
- * Ids safe to spell inside a filename. `uid()` always produces one; anything
- * that does not is something a hand-written board.json invented, and it loses
- * its readable .md rather than being allowed to name a file (see noteFile).
- */
+/** Ids safe in a filename. uid() always produces one; anything else loses its
+ *  readable .md sidecar rather than naming a file. */
 const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 // ---------------------------------------------------------------------------
-// The two directions, as two types
-//
-// They are deliberately not the same type. On the way *out* the board has just
-// come through board-schema.ts/serializeBoard(), so every item is a real Item
-// and this module may read `meta.text` and `asset.hash` as the app spells them.
-// On the way *in* nothing has validated anything yet - a .mbrd is a renamed ZIP
-// anybody can hand-edit, and normalizeBoard() is the thing that holds it to a
-// shape, several steps later. So the reader's view of a board is `unknown` per
-// field, narrowed at each use; what this module *does* check strictly is the
-// part it turns into an identity - hashes, extensions and the bytes under them.
+// Two directions, two types. Out: serializeBoard() guarantees real Items.
+// In: a .mbrd is a renamed ZIP anyone can edit — fields are `unknown`,
+// narrowed at each use; only hashes/extensions/bytes are checked strictly.
 // ---------------------------------------------------------------------------
 
 /** The board as serializeBoard() hands it over, of which the packer reads four. */
@@ -147,33 +81,12 @@ const enc = new TextEncoder();
 const dec = new TextDecoder();
 const json = (obj: unknown) => enc.encode(JSON.stringify(obj, null, 2));
 
-/**
- * Every asset hash a board points at, in one set.
- *
- * The same four classes of reference packBoard() walks below - the live items,
- * the bin, the faces the board is set in, and the pictures the step history
- * names - and it exists because a *second* thing now needs that answer: the
- * cloud sync, which uploads assets individually and has to know exactly which
- * ones a board still claims.
- *
- * **The two are not allowed to disagree, and the thing keeping them honest is a
- * test rather than shared code.** Extracting the walk out of packBoard() was the
- * obvious move and is the wrong one: that loop does three things this cannot -
- * it captures a readable label off the item that named the bytes, it refuses a
- * malformed hash outright, and it distinguishes a missing photograph (fatal)
- * from a missing face or step (not) - and a function serving both would have to
- * carry all of that to answer a question that is one line. So `tests/mbrd.test.js`
- * packs a board and asserts that the `assets/` entries in the archive are
- * exactly this set. Two implementations bound by an assertion, which is the same
- * bargain SHELL and the CSP hashes already make in this repository.
- *
- * A malformed hash is skipped here rather than thrown on, and that is the one
- * deliberate difference. packBoard() is writing a file somebody will be handed
- * and is right to refuse; this is deciding what to upload, and refusing to sync
- * a whole board over one bad id would strand it. The bad id is not a valid file
- * name in either destination, so skipping it is the same outcome by a quieter
- * route.
- */
+/** Every asset hash the board references (items, bin, fonts, timeline).
+ *  Used by cloud sync. Kept in sync with packBoard() via tests/mbrd.test.js —
+ *  shared code was rejected because pack needs labels, error handling and
+ *  fatal/non-fatal distinction this function does not.
+ *  Malformed hashes skipped (not thrown) — refusing to sync a whole board over
+ *  one bad id would strand it. */
 export function boardAssetHashes(boardData: PackedBoard): Set<string> {
   const out = new Set<string>();
   for (const item of [...boardData.items, ...(boardData.trash || []).map(t => t.item)]) {
@@ -204,48 +117,26 @@ export async function packBoard(
     created: created || now.toISOString(),
     modified: now.toISOString(),
     title: boardData.title || 'Untitled board',
-    // Written even though it is empty, and written as a list rather than left
-    // out. A field that only appears when it is non-empty is a field an
-    // implementer reading a real file never learns exists - and this one is
-    // useless unless it is read by everybody, from the first reader onward. Two
-    // dozen bytes to make the mechanism visible in every board is the cheapest
-    // part of it. See SUPPORTED_FEATURES.
+    // Always present (even empty) so every implementer sees it exists.
+    // See SUPPORTED_FEATURES.
     requires: [...SUPPORTED_FEATURES],
   };
 
-  // Binned items count as referenced. Their bytes are the whole reason the bin
-  // is worth anything after a save - dropping them would leave the panel
-  // listing things that can no longer come back.
+  // Binned items count — without their bytes the bin lists things that
+  // can no longer be restored.
   const referenced = [
     ...boardData.items,
     ...(boardData.trash || []).map(t => t.item),
   ];
 
-  // Gathered before board.json is serialised, because those are not two
-  // decisions but one: a hash whose readings get a file of their own is a hash
-  // whose readings come out of the board. See the waveform block below.
+  // Before serialisation — waveform peaks are stripped from board.json when
+  // they get their own sidecar file.
   const waveforms = collectWaveforms(referenced);
 
   const entries: ZipEntry[] = [
-    // The archive saying what it is, in the one place a program that has never
-    // heard of this format can find it: first entry, stored, no extra field, so
-    // the media type sits at a fixed offset. A local file header is 30 bytes
-    // plus the name, so offset 30 is the eight bytes `mimetype` and the media
-    // type itself begins at 38 - which is the offset a file(1) magic rule wants
-    // and is not the 30 this comment and research/docs/mbrd-format.md both used
-    // to give. That is the ODF and EPUB convention and it is what lets `file(1)`
-    // name a .mbrd instead of shrugging and saying "Zip archive data".
-    //
-    // It replaces a claim rather than adding a capability. The format document
-    // said the MIME type was "written into the archive's header" and it was not:
-    // the only thing carrying it was the Blob's own `type`, which is a fact
-    // about an object in a tab and evaporates the moment the file reaches a
-    // disk. So a .mbrd on disk had no self-description at all, and `looksLikeMbrd`
-    // had nothing but the extension to go on for a file that had been renamed.
-    //
-    // Not a second source of truth: `manifest.format` is still the only thing
-    // this reader believes, and unpackBoard deliberately does not check this
-    // entry - see the note there. Written for other software, not for us.
+    // First entry, stored, no extra field — MIME at fixed offset (ODF/EPUB
+    // convention) so file(1) can identify a .mbrd. Written for other software;
+    // this reader trusts manifest.format, not this entry.
     { name: 'mimetype', data: enc.encode(MIME), compress: false },
     { name: 'manifest.json', data: json(manifest), compress: true },
     {
@@ -255,33 +146,19 @@ export async function packBoard(
     },
   ];
 
-  // Every distinct hash the board refers to, in one pass, before a single byte
-  // is written.
-  //
-  // The check has to come first and it has to be fatal. This used to warn to
-  // the console and carry on, which meant a board missing an asset packed
-  // *successfully*: the .mbrd was written, "Exported" appeared, the board was
-  // marked clean - and the file had a hole in it where a photograph should
-  // have been. Every signal the user had said the work was safe. A refused
-  // export leaves them with the board still open and still dirty, which is the
-  // honest answer and the recoverable one.
+  // Gather all referenced assets before writing. Fatal on missing — a board
+  // with a hole must not claim success (used to silently export holes).
   const missing = [];
   const seen = new Set();
-  // `label` is what the entry's readable half is made from, captured here rather
-  // than looked up at write time: by then the item that named these bytes is out
-  // of reach, and a hash referenced from three cards has to settle on one name.
-  // First reference wins, and `referenced` is built in a fixed order, so the
-  // archive is reproducible rather than dependent on iteration order.
+  // First-reference label captured here — by write time the naming item is
+  // out of reach. Fixed order keeps archives reproducible.
   const assets: { hash: string, asset: Asset, label: string }[] = [];
   for (const item of referenced) {
-    // Plural: an item can name two lots of bytes, its own and the picture it
-    // was given (see setItemCover in state.ts). Both have to be in the archive
-    // or the board comes back with a card that has lost its cover.
+    // An item can reference multiple hashes (own asset + cover).
     for (const hash of itemHashes(item)) {
       if (seen.has(hash)) continue;
       seen.add(hash);
-      // Checked here as well as on the way in, because this is the line that
-      // turns a hash into a path. Nothing this app produces can fail it.
+      // This is where the hash becomes a path — must be valid.
       if (!isHash(hash)) {
         throw new Error(
           `"${nameOf(item, String(hash))}" has a malformed content id. ` +
@@ -294,65 +171,31 @@ export async function packBoard(
     }
   }
 
-  // The faces the board is set in, which are the one lot of bytes no item names.
-  //
-  // Missing here is not fatal, and that is the difference from the loop above.
-  // A photograph whose bytes are gone is a hole in the board where a picture
-  // should be; a face whose bytes are gone is a board that opens in the
-  // fallback stack, which is exactly what happens on any machine that never had
-  // the face - so the archive is written without it and the look degrades the
-  // way it was always going to degrade.
+  // Fonts — missing is non-fatal (degrades to fallback stack, same as any
+  // machine that never had the face).
   for (const font of boardData.settings?.fonts || []) {
     if (!isHash(font?.hash) || seen.has(font.hash)) continue;
     seen.add(font.hash);
     const asset = getAsset(font.hash);
-    // The family, not the filename: a face is the one asset whose useful name is
-    // what it is set in rather than what it arrived as, and `Inter.woff2` on
-    // disk is often `Inter-var-latin-subset-v13.woff2`.
+    // Family name, not filename (Inter.woff2 on disk is often a long variant name).
     if (asset) assets.push({ hash: font.hash, asset, label: font.family || '' });
   }
 
-  // And the pictures the history points at, which are the third and last class
-  // of reference after the board and the bin.
-  //
-  // A step records the items on both sides of one change, so a step that
-  // deleted a photograph is the only thing left naming it - and stepping back
-  // through that step has to put it on the board again. Without this the
-  // archive packs successfully and the history comes back with holes in it.
-  //
-  // **Missing is not fatal here**, which is the difference from the item loop
-  // and matches the fonts above rather than the photographs. Two reasons, and
-  // the second is the real one: a step can name bytes the optimiser legitimately
-  // discarded, and refusing to export somebody's *board* because of an entry in
-  // its *history* would be the tail wringing the neck of the dog. A step whose
-  // asset is gone is a step that cannot replay, which the strip already has a
-  // way to say - it goes red and the rest carry on.
+  // Timeline assets — a step that deleted a photo is the only thing naming it.
+  // Missing is non-fatal: a step can reference bytes the optimiser discarded,
+  // and refusing to export the board over a history entry would be backwards.
   for (const hash of timelineHashes(boardData.timeline)) {
     if (!isHash(hash) || seen.has(hash)) continue;
     seen.add(hash);
     const asset = getAsset(hash);
-    // No item to ask - these bytes are named only by a step - so the stored
-    // filename is the whole of what is left to call them.
+    // No item to ask — stored filename is all we have.
     if (asset) assets.push({ hash, asset, label: assetLabel(null, asset) });
   }
 
-  // `allowMissing` is the shelf, and only the shelf.
-  //
-  // The refusal above is right about a *file*: a .mbrd with a hole in it,
-  // written under an "Exported" toast onto a board marked clean, is the worst
-  // outcome this module has. But shelveCurrent() packs through here too, and
-  // every door out of a board - Open, New, Switch - calls it first. So one
-  // photograph whose bytes had gone took the whole board hostage: it could not
-  // be opened away from, switched, replaced or exported, and the only escape
-  // the interface offered was Clear everything, which is the one thing that
-  // cannot be undone.
-  //
-  // The shelf is not a file somebody is handed; it is the app's own working
-  // copy of a board it is about to put down, and a working copy that is one
-  // picture short is worth incomparably more than no copy at all. The item
-  // stays on the board with its hash intact, exactly as restoreSession() leaves
-  // it, so if the bytes turn up again the card comes back. What the caller must
-  // do is say so, which is why the count is returned rather than swallowed.
+  // `allowMissing` is for the shelf only. An export must refuse on missing
+  // assets, but shelving (called by Open/New/Switch) must not — one lost photo
+  // used to take the whole board hostage with no escape except Clear everything.
+  // A shelf copy one picture short is worth more than no copy at all.
   if (missing.length && !allowMissing) {
     const shown = missing.slice(0, 3).join(', ');
     const rest = missing.length > 3 ? ` and ${missing.length - 3} more` : '';
@@ -365,30 +208,19 @@ export async function packBoard(
 
   for (const { hash, asset, label } of assets) {
     const ext = ASSET_EXT.test((asset.ext || '').toLowerCase()) ? '.' + asset.ext.toLowerCase() : '';
-    // The readable half, on the same terms the note sidecars use: the slug is
-    // for the person who unzipped this, the hash is for the reader. Without it
-    // a board of forty photographs unzips to forty files named in hex, which
-    // satisfies every promise this format makes except the one about being able
-    // to read it. Omitted where there is nothing to say, leaving the bare
-    // `<hash>.<ext>` that every reader must accept anyway.
+    // Slug for human readability when unzipped; hash for the reader.
     const slug = slugify(label);
     entries.push({
       name: `${ASSETS_DIR}${slug ? slug + '--' : ''}${hash}${ext}`,
-      // The Blob itself, not its bytes. This loop used to be an await-in-loop of
-      // arrayBuffer() calls that ended with every asset on the board resident at
-      // once - and then writeZip held each payload a second time until the final
-      // Blob was assembled, so a board's worth of video was two boards' worth of
-      // heap. writeZip takes a Blob and never reads it whole; see its header.
+      // Pass Blob, not bytes — avoids loading every asset into memory at once.
       data: asset.blob,
       // Media is already compressed; deflating it burns time for ~0 bytes.
       compress: shouldCompress(asset.mime, asset.ext),
     });
   }
 
-  // Every sticky note also goes in as a file you can read without this app.
-  // A note whose id could not be spelled in a filename simply does not get one:
-  // the .md is a convenience copy, the text itself is in board.json either way,
-  // and unpack already falls back to it where no sidecar exists.
+  // Sticky notes as readable .md sidecars. Unsafe ids skip the sidecar —
+  // board.json always has the text.
   for (const item of referenced) {
     if (item.type !== 'note' || !SAFE_ID.test(item.id)) continue;
     entries.push({ name: noteFile(item), data: enc.encode(noteMarkdown(item)), compress: true });
@@ -402,21 +234,10 @@ export async function packBoard(
   return { blob: await writeZip(entries, { date: now, mime: MIME }), manifest };
 }
 
-/**
- * A note's own words, as this file may spell them into a filename, a heading or
- * an error. `meta` is `unknown` per key by design (see board-model.ts) and the
- * three readers below all want the same string, so the narrowing is done once
- * here: anything that is not text reads as none, which is what every one of
- * them already falls back to for a note that has not been written in yet.
- */
+/** The note's text from meta, narrowed once for the three readers below. */
 const noteTextOf = (item: Item) => (typeof item.meta?.text === 'string' ? item.meta.text : '');
 
-/**
- * What to call an item in an error the user has to act on. Its name if it has
- * one, the first words of a note if it does not, and the bare hash only as a
- * last resort - "3 items have no stored data (photo.jpg, ...)" is something
- * you can go and look for on the board; a list of SHA-256 digests is not.
- */
+/** Human label for an item in error messages: name > note text > hash prefix. */
 function nameOf(item: Item, hash: string) {
   if (item.name) return item.name;
   if (item.type === 'note') {
@@ -427,18 +248,8 @@ function nameOf(item: Item, hash: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Notes as Markdown
-//
-// A note is one string in board.json and that is still where it is *edited*
-// from - but board.json is a machine's file, and a sticky note is the one kind
-// of thing on a board that is purely the user's own writing. So each one is
-// written out again as its own .md: unzip a .mbrd and your notes are a folder
-// of readable files, greppable, diffable, openable in anything.
-//
-// The named half of the filename is for you and the id half is for the reader
-// below, which is why both are there. Unpack prefers the .md over the copy in
-// board.json, so editing one of those files by hand and reopening the board
-// does what you would expect it to do.
+// Notes as Markdown — each note gets a .md sidecar (readable, greppable).
+// Unpack prefers the sidecar over board.json, so hand-edits round-trip.
 // ---------------------------------------------------------------------------
 
 const NOTES_DIR = 'notes/';
@@ -446,21 +257,9 @@ const NOTES_DIR = 'notes/';
 /** As long as a slug may be, in either directory. Long enough to be a sentence. */
 const SLUG_MAX = 48;
 
-/**
- * A string as it may be spelled into a filename: lowercase, hyphenated, capped.
- *
- * Shared by the note sidecars and the asset names rather than written twice,
- * because two answers to "what is a slug here" drift the first time one of them
- * grows a rule - and the two halves of the `--` separator only work if the left
- * one can never contain it.
- *
- * The character class is an **allow-list**, which is the load-bearing part: this
- * runs over a card's name and a note's first line, both of which are somebody's
- * text out of a file, and the result is interpolated into a ZIP entry name that
- * some other program will eventually treat as a path. Nothing survives that is
- * not a-z, 0-9 or a dash, so there is no traversal to get wrong by construction
- * - the same reasoning as the hash rule above, one layer out.
- */
+/** Lowercase, hyphenated slug for ZIP entry names. Allow-list only (a-z, 0-9,
+ *  dash) — the result is interpolated into paths, so no traversal by construction.
+ *  Shared by note sidecars and asset names so `--` separator stays unambiguous. */
 function slugify(text: string, fallback = '') {
   return (text || '').toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
@@ -470,48 +269,24 @@ function slugify(text: string, fallback = '') {
     .replace(/-+$/, '') || fallback;
 }
 
-/**
- * What an asset's file is named after: what the card calls it, then what the
- * file was called before mbrd saw it.
- *
- * That order and not the other way round. `item.name` is *seeded* from the
- * filename at import, so for a card nobody has renamed the two are the same
- * string and the choice does not arise. Where they differ, somebody has
- * deliberately renamed the card - and the deliberate name is the better one to
- * file their work under. The stored name is the fallback for bytes no item
- * names: a cover, a paste, a face.
- */
+/** Label for an asset entry: card name (user's rename wins) > stored filename. */
 const assetLabel = (item: Item | null, asset: Asset) => {
   const label = item?.name || asset.name || '';
   const ext = (asset.ext || '').toLowerCase();
-  // Drop the extension the entry is about to be given anyway, so the common
-  // case is `kitchen-window--9f2c.jpg` rather than `kitchen-window-jpg--9f2c.jpg`
-  // - a card's name is seeded from its filename at import, extension and all.
-  //
-  // Matched against the asset's *own* `ext` rather than against a pattern for
-  // what an extension looks like, which is the difference between exact and
-  // nearly: `\.[a-z0-9]{1,12}$` would also eat the tail of a card somebody
-  // named "Notes v1.2".
+  // Drop the extension that the entry will get anyway (avoid `photo-jpg--hash.jpg`).
+  // Matched against the asset's own ext, not a pattern — avoids eating "Notes v1.2".
   return ext && label.toLowerCase().endsWith('.' + ext)
     ? label.slice(0, -(ext.length + 1)) : label;
 };
 
 function noteFile(item: Item) {
-  // Two dashes: the slug has had its own runs collapsed to one, and a uid
-  // carries a single dash, so this separator appears nowhere else in the name.
+  // `--` separator: slug has single dashes only, uid has one dash.
   const first = noteTextOf(item).split('\n')[0];
   return `${NOTES_DIR}${slugify(first, 'note')}--${item.id}.md`;
 }
 
-/**
- * First line as a heading, the rest as the body.
- *
- * The marker is not added when the line already carries one. meta.text has been
- * Markdown-flavoured since meta.rich arrived - a block writes its own `# ` or
- * `## ` - so prefixing unconditionally exported a rich note's first line as
- * `# # buy the smaller one`. Harmless coming back, since parseNote() eats a run
- * of hashes, and wrong in the file, which is the half a person reads.
- */
+/** First line as heading, rest as body. Skips `# ` prefix when the line
+ *  already has one (rich notes store their own markers). */
 function noteMarkdown(item: Item) {
   const [title, ...rest] = noteTextOf(item).split('\n');
   const head = title.trim();
@@ -520,25 +295,10 @@ function noteMarkdown(item: Item) {
   return (head ? marker + head + '\n' : '') + (body ? '\n' + body + '\n' : '');
 }
 
-/**
- * ...and back. Tolerant on the way in, because by design these are files a
- * person may have typed into: the heading marker is optional, so is the blank
- * line under it, and trailing whitespace is nobody's content.
- *
- * The marker is *kept*, which it was not. Stripping it here made this the
- * inverse of nothing: noteMarkdown() writes `# title` and this returned
- * `title`, so the sidecar text never equalled flattenNoteRich(rich) and the
- * reconciliation below rebuilt every note's blocks from plaintext on an
- * ordinary export and re-import. What that costs is everything the plaintext
- * cannot carry - each block's alignment reset to left, and every `wash` key
- * gone, which is the whole highlighter feature. Nobody edited anything; the
- * file simply went out and came back.
- *
- * Tolerance is unaffected: a note typed by hand with no marker still parses,
- * and still differs from the flattened model, and is still rebuilt - which is
- * the right answer, because that file really has been edited. What this fixes
- * is the file the app itself wrote ten seconds earlier.
- */
+/** Parse a note sidecar back. Tolerant — heading marker is optional, blank
+ *  line under it optional, trailing whitespace stripped. The `# ` marker is
+ *  preserved (not stripped) so rich note reconciliation does not rebuild blocks
+ *  on a plain round-trip (stripping it destroyed alignment and wash keys). */
 function parseNote(text: string) {
   const lines = text.replace(/\r\n/g, '\n').split('\n');
   const title = (lines.shift() || '').trim();
@@ -556,56 +316,16 @@ function noteId(name: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Waveforms as sidecars
-//
-// Drawing an audio card's bars means decoding the entire file - a few hundred
-// milliseconds for a long track, times every audio card on the board, all at
-// once on the way in. What comes out of that is tiny: a couple of hundred RMS
-// readings in [0, 1], which is why canvas/audio.ts caches them on the item, and
-// why they have been riding along inside board.json. This gives them a file,
-// for the reason notes have one and for a second reason of their own.
-//
-// They are keyed by the hash of the audio, not by the id of the card. A
-// waveform is a property of a recording rather than of the thing showing it -
-// drop the same clip on the board twice and the two cards are the same shape,
-// once - and assets/ is already named by content hash, so this is not a new
-// naming scheme, it is the one already in the archive.
-//
-// JSON, and the size argument against it turns out not to survive contact
-// with the ZIP. Packed 16-bit samples would be 512 bytes against 1858 of text,
-// which sounds decisive until both go through deflate: 426 against 582. Three
-// decimal digits and a comma are a six-character alphabet, and that is exactly
-// the redundancy deflate exists to remove, so the whole saving is 156 bytes -
-// per audio file, beside the megabytes of audio it was measured from. (Eight
-// bits per sample would beat it properly, at a resolution of 1/255, which is
-// four times coarser than the thousandths measure() goes out of its way to
-// keep - see the note about quiet passages there.)
-//
-// So the readable form costs a rounding error, and readable is the point of a
-// container that is a folder of files: a few hundred numbers laid out sixteen
-// to a line is something a person can open, diff, and edit, and this format's
-// whole pitch is that you can unzip it and find your work in there.
-//
-// Because the file is now the copy, the copy in board.json goes - see
-// withoutPeaks(). Storing it twice would have been the same bytes for nothing
-// and two places to disagree. Reading back is the notes rule again: the
-// sidecar outranks board.json where there is one, board.json still works where
-// there is not (a board written before this existed), and a file that has been
-// truncated or typed into is ignored rather than fatal - the card can always
-// fall back to measuring the audio again, which is what it did before any of
-// this was here.
+// Waveforms as sidecars — keyed by audio hash (not card id), one file per
+// distinct audio. JSON (text deflates nearly as well as binary: 582 vs 426 B,
+// and readability is the point of a ZIP-as-folder format). Sidecar outranks
+// board.json; board.json copy stripped (withoutPeaks). Unreadable sidecar →
+// re-measure from audio (a few hundred ms), never fatal.
 // ---------------------------------------------------------------------------
 
 const WAVES_DIR = 'waveforms/';
 
-/**
- * The readings to write, hash -> peaks, one entry per distinct audio file.
- *
- * First valid set wins. Two cards on the same hash should hold the same
- * readings - they were measured from the same bytes - and where they somehow
- * do not, one file per hash is the answer that keeps being true afterwards:
- * on the way back in both cards are given the file's.
- */
+/** Collect hash→peaks, one per distinct audio. First valid set wins. */
 function collectWaveforms(items: Item[]) {
   const out = new Map<string, number[]>();
   for (const item of items) {
@@ -659,22 +379,12 @@ const waveformFile = (hash: string) => `${WAVES_DIR}${hash}.json`;
 function waveformHash(name: string) {
   if (!name.startsWith(WAVES_DIR) || !name.endsWith('.json')) return null;
   const hash = name.slice(WAVES_DIR.length, -'.json'.length);
-  // Same rule as assets/: this half of the name is a content id, and one that
-  // is not shaped like one belongs to no recording we could be holding.
+  // Content id must be a valid hash, same rule as assets/.
   return isHash(hash) ? hash : null;
 }
 
-/**
- * Hand-laid out rather than run through JSON.stringify, which would give
- * either one unreadable line or one number per line for several hundred lines.
- * Sixteen to a row makes it a block of sixteen columns you can scan down and
- * see the shape in, the quiet stretches showing up as runs of leading zeros.
- * It is still perfectly ordinary JSON either way.
- *
- * `res` is the count again, in the one place a reader looks first. It also
- * catches the edit that deletes a row: a file whose header and body disagree
- * is a file that has lost something, and is dropped on the way in.
- */
+/** Hand-formatted JSON (16 per row for visual scanning). `res` = count,
+ *  so a deleted row is caught on read (header/body disagree → dropped). */
 function waveformJSON(peaks: number[]) {
   const rows = [];
   for (let i = 0; i < peaks.length; i += 16) rows.push('    ' + peaks.slice(i, i + 16).join(', '));
@@ -696,32 +406,18 @@ function parseWaveform(text: string): number[] | null {
   }
 }
 
-/**
- * Whether something is a plausible set of readings, in the loose sense this
- * layer can judge: normalised amplitudes, none of them a string, a NaN or a
- * negative number. Deliberately not a check for one exact length - the
- * resolution is canvas/audio.ts's business, and a board written at some other one
- * should arrive there to be rejected on its own terms rather than be thrown
- * away here. The ceiling is only so that a hand-written file cannot ask this
- * to carry a million numbers around.
- */
+/** Plausible readings: normalised [0,1] numbers, 2–4096 long. Resolution is
+ *  canvas/audio.ts's business; ceiling only prevents absurd hand-edited files. */
 function isReadings(v: unknown): v is number[] {
   return Array.isArray(v) && v.length >= 2 && v.length <= 4096
     && v.every(n => typeof n === 'number' && n >= 0 && n <= 1);
 }
 
-// A `versions/<id>.json` entry used to sit beside these: one whole board.json
-// per stored version, written out of the version index board.json carried. Both
-// went in v0.198 with the feature itself - see board-model.ts. A .mbrd written
-// by v0.197 may still hold that directory, and this reader walks straight past
-// it: the entries are not assets, not notes and not waveforms, so every loop
-// below simply does not match them and the board opens without its history.
+// Old `versions/<id>.json` entries (removed in v0.198) are silently skipped —
+// they match no loop below, so the board opens without that history.
 
-/**
- * Every item in a just-parsed board, on the board and in the bin alike. The
- * sidecar readers all want both: a note or a waveform belonging to something
- * you threw away is still yours until the bin is emptied.
- */
+/** All items (board + bin). Sidecar readers need both — binned items keep
+ *  their notes and waveforms until the bin is emptied. */
 function* allItems(board: FileBoard): Generator<FileItem> {
   // isRecord where this used to be a bare truthiness test. Every reader below
   // asks an object question of what comes out - a type, a hash, a meta - and a
@@ -735,20 +431,8 @@ function* allItems(board: FileBoard): Generator<FileItem> {
  * returns `{ manifest, board }` ready for state.loadBoard().
  */
 export async function unpackBoard(blob: Blob) {
-  // Read once, and if the archive is past what an open is sized for, say what it
-  // declares and read it again. The asking end of the retry contract in
-  // consent.ts - readZip() cannot ask from inside a directory walk, and storage/
-  // may not open the interface (tests/layers.test.js), so the question is
-  // injected and the decision is the person's whose board this is.
-  //
-  // Worth being clear about what a yes buys here, because it is not the same
-  // trade as the importer's. Every other ceiling in the app fails soft: a
-  // declined document is a named card and nothing is lost. This one is the board
-  // itself, so declining means not opening it at all - which is the strongest
-  // reason of any of them for the answer not to be the app's to give.
-  //
-  // Keyed by name and size like a dropped file, so a board that will not open
-  // asks once rather than on every attempt in a session.
+  // Read, and if oversized, ask the user and retry with `lift`. Keyed by name
+  // + size so a declined board does not re-prompt in the same session.
   const name = blobName(blob, 'This board');
   let files;
   try {
@@ -761,9 +445,7 @@ export async function unpackBoard(blob: Blob) {
   const boardBytes = files.get('board.json');
   if (!boardBytes) throw new Error('Not an .mbrd file (no board.json inside)');
 
-  // Whatever the file says, read one key at a time. A manifest that is not an
-  // object at all is the same as no manifest, which is what reading `.format`
-  // off a number always came to.
+  // Read manifest one key at a time — non-object is treated as empty.
   let manifest: Record<string, unknown> = {};
   const manifestBytes = files.get('manifest.json');
   if (manifestBytes) {
@@ -775,31 +457,14 @@ export async function unpackBoard(blob: Blob) {
   if (manifest.format && manifest.format !== FORMAT) {
     throw new Error(`Unknown board format "${String(manifest.format)}"`);
   }
-  // The `mimetype` entry packBoard writes is deliberately not read here, and it
-  // is worth saying so where somebody would otherwise add the check. It exists
-  // for programs that are not this one - `file(1)`, an archive browser, anything
-  // sniffing bytes rather than parsing a manifest. Believing it would give the
-  // format two answers to "what is this", and the two would disagree the first
-  // time somebody rezipped a board by hand and got the entry order wrong: the
-  // fixed-offset trick needs it written first, which no ordinary zip tool
-  // guarantees. `manifest.format` is the answer, it is checked above, and a file
-  // that has been through `zip -r` with its parts in a different order still
-  // opens.
-  // Number() rather than a typeof guard, to keep the loose comparison this has
-  // always made: a hand-written `"version": "2"` still warns, and every value
-  // that is not a number at all is NaN, which is false against anything.
+  // `mimetype` entry deliberately NOT read — it exists for file(1) and archive
+  // browsers, not this reader. manifest.format is the single source of truth.
+  // Number() for loose comparison — hand-written `"2"` still warns.
   if (Number(manifest.version) > FORMAT_VERSION) {
     console.warn('[mbrd] file was written by a newer version; loading anyway');
   }
-  // ...and the one thing that does not merely warn. A file naming a feature
-  // this build has never heard of is a file this build would open *lossily* -
-  // reading it, dropping what it cannot see, and writing that loss back the next
-  // time it is saved. Refusing is the whole point: the person still has the
-  // file, and an error they can act on beats a board that looks fine and is not.
-  // See SUPPORTED_FEATURES for why this is checked while nothing ever fails it.
-  //
-  // Non-strings are ignored rather than refused. The list is a claim like every
-  // other key here, and a number in it names no feature, so it can gate nothing.
+  // Unsupported features → refuse rather than silently drop data.
+  // Non-strings ignored (a number names no feature).
   const required = (Array.isArray(manifest.requires) ? manifest.requires : [])
     .filter((f): f is string => typeof f === 'string' && !SUPPORTED_FEATURES.has(f));
   if (required.length) {
@@ -810,12 +475,8 @@ export async function unpackBoard(blob: Blob) {
     );
   }
 
-  // Parsed and then *checked*, which the bare `JSON.parse` here was not doing.
-  // A zip whose board.json holds `"hello"`, `[1,2,3]` or `null` is a valid zip
-  // and got this far: the string spread into loadBoard() as indexed keys and
-  // the open board was replaced by a blank one under an "Opened <name>" toast,
-  // and null threw a bare TypeError several frames later. Every other malformed
-  // file in this reader earns a sentence, and so does this one.
+  // Parse and type-check board.json (a string or null here used to silently
+  // produce a blank board or a bare TypeError).
   let parsed: unknown;
   try {
     parsed = JSON.parse(dec.decode(boardBytes));
@@ -823,18 +484,11 @@ export async function unpackBoard(blob: Blob) {
     throw new Error('The board inside this file is not readable (board.json will not parse)');
   }
   if (!isRecord(parsed)) throw new Error('The board inside this file is not a board (board.json is not an object)');
-  // SAFETY: a cast, not a check - FileBoard says `items?: unknown[]` on purpose,
-  // and what holds that claim up is the loop below throwing on a file whose
-  // items are not a list. See the type.
+  // Cast, not check — FileBoard uses `unknown[]` and the loops below validate.
   const board = parsed as FileBoard;
   if (manifest.title && !board.title) board.title = manifest.title;
 
-  // Notes come back from their own files, which outrank the copy in
-  // board.json - see the block above packBoard's note writer.
-  //
-  // Keyed by whatever the file called the item, which is not necessarily a
-  // string: the lookup is by the id spelled in a sidecar's filename, so an item
-  // whose id is not one simply never matches.
+  // Note sidecars outrank board.json. Keyed by item id from the filename.
   const notes = new Map<unknown, FileItem>();
   for (const item of allItems(board)) if (item.type === 'note') notes.set(item.id, item);
   for (const [name, bytes] of files) {
@@ -844,16 +498,9 @@ export async function unpackBoard(blob: Blob) {
     const text = parseNote(dec.decode(bytes));
     const meta: Record<string, unknown> = { ...(isRecord(item.meta) ? item.meta : null), text };
     item.meta = meta;
-    // The .md outranks board.json, and meta.rich is *part of* board.json. Left
-    // alone it kept winning on screen while meta.text took the edit, so a
-    // hand-edited note came back showing the old words while Find matched the
-    // new ones - and the next keystroke in the editor flattened the stale rich
-    // back over text and destroyed the edit for good.
-    //
-    // Re-derived rather than dropped: the sidecar carries words, not looks, so
-    // the note keeps its face, its size and its vertical placement and only the
-    // blocks are rebuilt. Nothing happens when the two already agree, which is
-    // every file this app wrote.
+    // Rebuild rich blocks from sidecar text when they disagree — stale rich
+    // used to show old words on screen while Find matched the new ones.
+    // Re-derived (not dropped) so the note keeps formatting metadata.
     const rich = meta.rich;
     if (isRecord(rich) && flattenNoteRich(rich) !== text) {
       meta.rich = { ...rich, blocks: parseNoteText(text) };
@@ -877,31 +524,21 @@ export async function unpackBoard(blob: Blob) {
     if (!holders) continue;
     const peaks = parseWaveform(dec.decode(bytes));
     if (!peaks) {
-      // Nothing to fail over. The card falls back to whatever board.json gave
-      // it and, failing that, to measuring the audio again - slower by a few
-      // hundred milliseconds, which is the entire stake here.
+      // Non-fatal — falls back to board.json or re-measuring.
       console.warn('[mbrd] unreadable waveform', name, '- will re-measure');
       continue;
     }
     for (const item of holders) item.meta = { ...(isRecord(item.meta) ? item.meta : null), peaks };
   }
 
-  // Assets last, and strictly. Everything above reads content out of the
-  // archive; this is the part that takes a name *from* the archive and lets it
-  // become an identity the rest of the app trusts - so the name has to be
-  // exactly the one this format defines, and the bytes have to be the ones the
-  // name claims. See the HASH comment above for what the loose version cost.
+  // Assets last, strictly validated — this is where archive names become
+  // trusted identities. Hash must match content (see HASH comment above).
   const registered = new Set<string>();
   for (const [name, bytes] of files) {
     if (!name.startsWith(ASSETS_DIR)) continue;
     const file = name.slice(ASSETS_DIR.length);
-    // The slug is discarded unread, and that is the point of the split rather
-    // than a shortcut through it. Everything up to and including the last `--`
-    // is a courtesy to whoever unzipped the archive; the content id is what
-    // follows, and it is the only half that becomes an identity. So a slug that
-    // lies about what the bytes are costs nothing - the digest below still has
-    // to match them - and a file with no slug at all is the ordinary case for
-    // an archive some other program wrote.
+    // Slug (before `--`) is discarded — it is for human readers only.
+    // Content id (after `--`) is what becomes the identity.
     const sep = file.lastIndexOf('--');
     const tail = sep >= 0 ? file.slice(sep + 2) : file;
     const dot = tail.lastIndexOf('.');
@@ -910,16 +547,12 @@ export async function unpackBoard(blob: Blob) {
     if (!isHash(hash) || (ext && !ASSET_EXT.test(ext))) {
       throw new Error(`Not a readable .mbrd: "${name}" is not a valid asset path`);
     }
-    // One hash, one file. Two entries for the same content under different
-    // extensions would leave which bytes you get down to directory order.
+    // One hash, one file — duplicates would make the result order-dependent.
     if (registered.has(hash)) {
       throw new Error(`Not a readable .mbrd: content ${hash.slice(0, 8)} is stored twice`);
     }
-    // The name says what these bytes are; this is the only thing that checks
-    // whether that is true. Without it the archive gets to choose an id
-    // independently of the content, which is precisely what content addressing
-    // is supposed to make impossible - and dedup, waveform sidecars and the
-    // autosave sweep all key off that promise.
+    // Verify content matches its claimed hash — the only enforcement of
+    // content addressing (dedup, waveforms, sweep all depend on it).
     if (await sha256(bytes) !== hash) {
       throw new Error(`"${name}" does not contain the data its name claims`);
     }
@@ -939,21 +572,8 @@ export function looksLikeMbrd(file: File) {
 const ALREADY_COMPRESSED = /^(image\/(?!svg|bmp|x-)|video\/|audio\/)|zip|gzip|compressed/i;
 const RAW_EXT = new Set(['bmp', 'svg', 'txt', 'md', 'json', 'csv', 'xml', 'html', 'wav', 'tif', 'tiff']);
 
-/**
- * Formats that carry their own compression where the MIME test cannot see it.
- *
- * Fonts are the whole list and the reason for it. `font/woff2` matches none of
- * the media patterns above, so every face on a board fell through to `true` and
- * took a full pass through CompressionStream to produce a result the writer then
- * discarded for being no smaller - WOFF2 keeps its tables under Brotli and WOFF
- * under zlib, so there is nothing left in either for deflate to find. The bytes
- * were never at risk (writeZip only keeps the compressed form when it wins); the
- * cost was time, eight times over, on every save of a board that carries faces.
- *
- * TTF and OTF are deliberately *not* here. Their tables are uncompressed and
- * deflate roughly halves them, which is the largest single win the packer gets
- * on a board with an embedded face.
- */
+/** Already-compressed font formats (WOFF/WOFF2 use Brotli/zlib internally).
+ *  TTF/OTF deliberately excluded — deflate halves their uncompressed tables. */
 const SELF_COMPRESSED_EXT = new Set(['woff', 'woff2']);
 
 function shouldCompress(mime: string, ext: string) {
@@ -964,8 +584,7 @@ function shouldCompress(mime: string, ext: string) {
   return true;
 }
 
-// Blob type is what drives <img>/<video>/<audio> playback, and the ZIP does not
-// carry MIME types - so it is rebuilt from the extension on the way back in.
+// MIME rebuilt from extension on unpack — ZIP does not carry MIME types.
 const MIME_BY_EXT: Record<string, string> = {
   png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
   webp: 'image/webp', avif: 'image/avif', bmp: 'image/bmp', ico: 'image/x-icon',

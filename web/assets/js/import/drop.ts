@@ -1,9 +1,5 @@
-// Getting things onto the board: drag-and-drop, clipboard paste, the "Add
-// files" picker, and dropping a .mbrd to open it.
-//
-// Every path funnels into importFiles(), which hashes the bytes, classifies
-// each file, and asks the arrangement engine where to put them - so a drop of
-// forty photos lands as a spiral around the cursor rather than a stack.
+// Getting things onto the board: drop, paste, picker, .mbrd open.
+// All paths funnel into importFiles() — hash, classify, arrange, add.
 
 import { extOf } from '../util.ts';
 import { platform } from '../platform/platform.ts';
@@ -40,12 +36,7 @@ import type { Point } from '../arrange/arrangements.ts';
 import type { Size } from '../canvas/renderers.ts';
 import type { Item, ItemMeta } from '../board-model.ts';
 
-/**
- * A card on its way onto the board: everything makeItem() needs and nothing it
- * does not. `x` and `y` are a placeholder until the arrangement answers - see
- * importFiles(), which fills both before addItems() is ever called, and coord()
- * in board-model.ts, which reads an absent one as the same zero.
- */
+/** Pre-layout item draft. x/y are placeholders until the arrangement fills them. */
 type Draft = {
   type: string;
   name: string;
@@ -53,62 +44,52 @@ type Draft = {
   y: number;
   w: number;
   h: number;
-  asset: { hash: string, embedded: boolean };
+  // Absent on a link, which points at an address rather than carrying bytes -
+  // the same shape linkDraft() makes for a pasted URL.
+  asset?: { hash: string, embedded: boolean };
   meta: ItemMeta;
 };
 
-/**
- * What prepareFile() settles on for a card's box.
- *
- * Wider than renderers.ts's MeasuredSize because two of the branches answer
- * with a bare defaultSize(), which says nothing about decodability or about
- * where the numbers came from - and the reads below are written for exactly
- * that: an absent `decodable` is the falsy answer they already took.
- */
+/** Wider than MeasuredSize: absent `decodable` is the falsy default the reads below rely on. */
 type DraftSize = Size & { decodable?: boolean, measured?: boolean, natural?: Size };
 
-/**
- * What a dropped entry is, said as a narrowing.
- *
- * `isFile` and `isDirectory` are plain booleans on FileSystemEntry, so neither
- * tells the checker which of the two subtypes it is holding - and the two
- * subtypes are where `file()` and `createReader()` live. The pair is exhaustive
- * by spec: every entry is one or the other.
- */
+/** Narrow FileSystemEntry to its subtypes (where file()/createReader() live). */
 const isFileEntry = (e: FileSystemEntry): e is FileSystemFileEntry => e.isFile;
 const isDirEntry = (e: FileSystemEntry): e is FileSystemDirectoryEntry => e.isDirectory;
 
-/**
- * Extensions a browser can turn into a FontFace.
- *
- * Here rather than in ui/fonts.ts because this is the question "what kind of
- * file is this", which is this layer's job - and because naming it there and
- * importing it from here is the import edge the bus exists to avoid. Not in
- * formats.ts either: that file is generated from the sibling catalog and would
- * lose a hand-written addition on the next run.
- */
+/** Extensions a browser can turn into a FontFace. Here (not ui/fonts.ts) to avoid a layer edge. */
 const FONT_EXTS = new Set(['woff2', 'woff', 'ttf', 'otf']);
+
+/** Internet-shortcut files: Windows .url (INI text), macOS .webloc (plist). */
+const SHORTCUT_EXTS = new Set(['url', 'webloc']);
+
+/**
+ * The address inside an internet-shortcut file, or null.
+ *
+ * A Windows .url is INI text with a `URL=` line under [InternetShortcut]; a
+ * macOS .webloc is a plist whose one useful value is a `<string>` under the key
+ * URL. Both are read as text and pattern-matched - no parser, since a shortcut
+ * holds nothing else - and the address goes through linkURL(), so it is held to
+ * the same standard as a pasted one. A binary .webloc or any file that names
+ * nothing openable returns null, and the caller falls back to a named card.
+ */
+async function shortcutURL(file: File): Promise<URL | null> {
+  const text = await file.text().catch(() => '');
+  if (!text) return null;
+  const url = text.match(/^\s*URL\s*=\s*(\S.*?)\s*$/im)?.[1]
+    ?? text.match(/<key>\s*URL\s*<\/key>\s*<string>([\s\S]*?)<\/string>/i)?.[1]
+    ?? text.match(/<string>\s*(https?:\/\/[\s\S]*?)\s*<\/string>/i)?.[1];
+  return url ? linkURL(url) : null;
+}
 
 /** Guard against someone dropping a whole photo library by accident. */
 export const MAX_FILES = 500;
 
 /**
- * How the importer asks before bringing in something large, handed in rather
- * than imported.
- *
- * The dialog is ui/dialog.ts and `ui/` sits above `import/` in the layering
- * (tests/layers.test.js, whose DEBT map is empty and may only shrink) - so this
- * is the fourth of the seams the codebase already keeps for exactly this:
- * setOverlays(), setAssetNameLookup(), setNoteMenu(), and now this one. main.ts
- * wires it at startup.
- *
- * **Unwired it asks nothing and the import proceeds**, which is the opposite
- * default to storage's setPrompt() and is the right one for the same reason
- * that one is right. There, the unanswered question is "may I destroy this?"
- * and silence has to mean no. Here it is "this is big, still want it?" - a
- * courtesy in front of something the person has already asked for twice, by
- * choosing the file and by dropping it. A test with no DOM importing nothing
- * would be the seam inventing a refusal nobody made.
+ * Injected confirmation prompt for large imports. Layering seam like
+ * setOverlays() — ui/ sits above import/. Unwired it allows everything:
+ * unlike storage's setPrompt(), the unanswered question here is a courtesy,
+ * not a destructive-action guard.
  */
 export type ImportPrompt =
   (opts: { title: string, body: string, go: string }) => Promise<string>;
@@ -122,24 +103,9 @@ export function setImportPrompt(fn: ImportPrompt | null | undefined) {
 const mb = (bytes: number) => Math.round(bytes / 1024 ** 2) + ' MB';
 
 /**
- * Run one of the readers, and if it stops at a ceiling, ask and run it again.
- *
- * The asking end of the retry contract in consent.ts. Four readers below reach a
- * size they cannot decide about on their own - the container a document's preview
- * is inside, the deck being composited, the JPEG a camera left in a RAW, the
- * artwork in a tag - and none of them can ask: they run six at a time under the
- * work pool, and import/ has no way to reach a dialog and no business having one.
- * So each throws Oversize, this catches it, and a yes calls the reader again with
- * its ceiling lifted.
- *
- * Every one of these fails soft. A `null` means the card is the card it would
- * have been anyway - a named document, a grey deck, a track with no cover - which
- * is why the second attempt swallows its own errors and why declining costs
- * nothing but the picture. The importer carries on either way.
- *
- * Keyed by the file, so a document that is both an enormous container and an
- * enormous inflate is one question. Anything already allowed - here, or by the
- * byte budget before the work started - is not asked again.
+ * Run a reader; if it throws Oversize, ask and retry with the ceiling lifted.
+ * Fails soft: null means the card stays what it was without the picture.
+ * Keyed by file, so one document is one question however many ceilings it hits.
  */
 async function asking<T>(file: File, read: (lift: boolean) => Promise<T | null>): Promise<T | null> {
   try {
@@ -150,38 +116,13 @@ async function asking<T>(file: File, read: (lift: boolean) => Promise<T | null>)
   }
 }
 
-/**
- * The one hidden <input type="file"> on the page.
- *
- * Three entry points reach for it - the "Add files" button, the picker fallback
- * and "Choose a picture" - and they take turns with it through `dataset.mode`,
- * which is why there is one rather than three.
- */
-// SAFETY: #file-input is written out in index.html as <input type="file">, and
-// the `!`-free assertion is deliberate: unlike the panel's controls this one is
-// not optional. A page without it cannot import at all, and a throw at the first
-// press is the honest failure - a null-checked no-op would be a button that
-// silently does nothing.
+/** The shared hidden file input. Three entry points take turns via `dataset.mode`. */
 const fileInput = () => document.getElementById('file-input') as HTMLInputElement;
 
-/**
- * How many files are prepared at once.
- *
- * Small on purpose. Each one holds a whole file in memory while it is hashed
- * and measured, so this is the number that decides the peak cost of a big
- * drop - and a drop can be 500 videos. Six keeps the two-second measurement
- * timeouts overlapping, which is where all the wall-clock went, without
- * turning a folder of video into a folder of video decoded simultaneously.
- */
+/** Concurrency for prepareFile(). Low: each holds a whole file in memory while hashing/measuring. */
 const IMPORT_WORKERS = 6;
 
-/**
- * The half of the Viewport this module asks for: a screen point turned into a
- * world one, and where the middle of the view is for a paste with no cursor.
- * Structural for the reason commands/view.ts gives: naming a whole Viewport
- * would be asserting a shape this file never touches, and this module is held
- * to loading without a browser at all (tests/imports.test.js).
- */
+/** Minimal viewport surface — screen-to-world and view centre. Narrow to stay loadable without a browser. */
 export interface DropViewport {
   toWorld(x: number, y: number): Point;
   cursor?: Point | null;
@@ -192,21 +133,15 @@ export interface DropViewport {
 }
 
 export function initDrop(vp: DropViewport) {
-  // Both ids below are declared in index.html; an absent one is a broken build
-  // rather than a state to recover from, which is what the rest of the app says
-  // about its own markup too.
+  // Both ids declared in index.html — absent = broken build.
   const overlay = document.getElementById('drop-overlay')!;
-  let depth = 0;                       // dragenter/dragleave fire per element
+  let depth = 0;                       // dragenter/dragleave fire per child element
   let lastPoint: Point | null = null;
 
   const show = () => { overlay.hidden = false; };
   const hide = () => { depth = 0; overlay.hidden = true; };
 
-  // Files or a link. Both are "something from outside landing on the board",
-  // and the overlay says the same thing for either.
-  // A predicate rather than a boolean, so the handlers below can read the
-  // payload they have just agreed to take without asking again whether it is
-  // there. "Carries something" and "is not null" are the same sentence here.
+  // Type-guard predicate: narrows dt so handlers can read the payload they accepted.
   const takes = (dt: DataTransfer | null): dt is DataTransfer => hasFiles(dt) || hasLink(dt);
 
   addEventListener('dragenter', e => {
@@ -234,9 +169,7 @@ export function initDrop(vp: DropViewport) {
     hide();
     const pt = lastPoint || { x: e.clientX, y: e.clientY };
     const at = vp.toWorld(pt.x, pt.y);
-    // Files first. A drag can carry both - dragging an image out of a page
-    // offers the picture *and* the address it came from - and in that case the
-    // picture is what was being dragged, with the URL along for the ride.
+    // Files first: a drag can carry both files and a URL; files are the intent.
     if (hasFiles(e.dataTransfer)) {
       const incoming = await filesFrom(e.dataTransfer);
       await importFiles(incoming.files, at, {
@@ -246,10 +179,7 @@ export function initDrop(vp: DropViewport) {
       return;
     }
     const urls = urlsFrom(e.dataTransfer);
-    // The overlay has already said yes by this point - it has to, since a drag's
-    // contents cannot be read until it lands - so a payload that turns out to
-    // hold nothing we will open needs saying out loud. Silently swallowing it
-    // would look exactly like the drop having missed.
+    // Overlay already accepted (drag contents unreadable until drop), so toast on empty.
     if (!urls.length) { toast('That link is not one this can open'); return; }
     addLinks(at, urls);
   });
@@ -257,9 +187,7 @@ export function initDrop(vp: DropViewport) {
   addEventListener('paste', async e => {
     const target = e.target;
     if (target instanceof HTMLElement && (target.isContentEditable || /INPUT|TEXTAREA/.test(target.tagName))) return;
-    // Under the cursor when there is one (a mouse has moved over the board),
-    // the centre of the view otherwise - a touch device, or a paste before the
-    // pointer has been anywhere. vp.cursor is screen space, set by input.ts.
+    // Under cursor if known, otherwise centre of view (touch device or no prior pointer).
     const centre = vp.cursor
       ? vp.toWorld(vp.cursor.x, vp.cursor.y)
       : vp.toWorld(vp.left + vp.cx, vp.top + vp.cy);
@@ -272,52 +200,34 @@ export function initDrop(vp: DropViewport) {
     const text = e.clipboardData?.getData('text/plain');
     if (text && text.trim()) {
       e.preventDefault();
-      // A pasted address is a link, not a document about a link. Tested before
-      // the branch below because that one is the fallback for "some text
-      // arrived" and a bare URL is the one shape of text that means something
-      // narrower than that. linkURL() is strict, so a paragraph that merely
-      // mentions a link still lands as the document it is.
+      // Strict: linkURL() only accepts a bare URL, not a paragraph mentioning one.
       const url = linkURL(text);
       if (url) { addLink(centre, url); return; }
-      // An `<iframe>` block is the second shape of text that means a link and
-      // nothing else. YouTube and Spotify both hand out markup rather than an
-      // address from their Share menus, so pasting that block is a thing people
-      // do - and landing it as a card full of angle brackets is the app
-      // refusing to understand something it plainly understands. See
-      // iframeURL(): the pasted string is never parsed as HTML, only searched.
-      //
-      // Canonicalised here and *only* here. A pasted address is left exactly as
-      // written, on linkURL()'s principle that guessing at what somebody meant
-      // silently rewrites it - a `?t=90` on a YouTube link is the timestamp
-      // they wanted. An embed URL is different: nobody typed it, it is the
-      // machine-facing half of a share block, and a card whose address reads
-      // open.spotify.com/embed/track/… is showing plumbing.
+      // Pasted <iframe> embed block (YouTube/Spotify share markup). Canonicalised
+      // to its page URL here — an embed address is plumbing, unlike a typed URL
+      // which is left as-is.
       const framed = iframeURL(text, linkURL);
       if (framed) addLink(centre, embedPage(framed));
       else await importFiles([pastedFile(text)], centre);
     }
   });
 
-  // The "Add files" button and the picker fallback share one hidden input.
+  // Shared hidden input — Add files, picker fallback, and cover picker.
   const input = fileInput();
   input.addEventListener('change', async () => {
     const mode = input.dataset.mode;
-    // Not ours. Either nobody set one, or storage.ts has it open for a .mbrd and
-    // said so - both are the same answer here, and asking positively means a
-    // future third owner is refused rather than mistaken for content.
+    // Not ours — storage.ts uses the same input for .mbrd opens.
     if (mode !== 'content' && mode !== 'cover') return;
     const files = [...(input.files || [])];
     input.value = '';
     delete input.dataset.mode;
-    // Back to the defaults the content picker wants, so the next opening of it
-    // is not still filtered to images or limited to one.
+    // Reset so the next "Add files" is not still filtered to images.
     input.accept = '';
     input.multiple = true;
     if (mode === 'cover') {
       const id = coverFor;
       coverFor = null;
-      // `id` is set by pickCover() at the same moment the mode is, so a change
-      // in cover mode has one; the check is what says so rather than a claim.
+      // coverFor is set by pickCover() at the same moment as mode.
       if (id && files[0]) await applyCover(id, files[0]);
       return;
     }
@@ -326,35 +236,13 @@ export function initDrop(vp: DropViewport) {
 }
 
 /**
- * Text off the clipboard, as a file.
- *
- * A paste used to become a sticky note, and a sticky note is the wrong
- * container for something that arrived from outside. NOTE_MAX cuts it, the card
- * is 120 world units square, and what came out of pasting three pages was a
- * yellow square holding the first paragraph of them. Text from elsewhere is a
- * *document* - usually the thing somebody meant to keep - so it lands as one,
- * down the same path a dropped file takes: hashed, shared by content with any
- * identical paste already on the board, packed into the archive, openable in
- * the viewer, and still a readable file to anyone who unzips the .mbrd. Nothing
- * downstream needs to know it was pasted rather than dropped.
- *
- * `.md`, and for every paste rather than for the ones that look like it.
- * Markdown *is* plain text - prose with no markers in it renders as the prose
- * it is - so the extension only decides what happens when there *are* markers,
- * and pasted text is full of them: a bullet list off a page, a heading out of a
- * document, a fenced block out of a chat with a machine. Sniffing the content
- * to choose between two extensions would file the same paste two different ways
- * on two different days, which is the guess this module refuses everywhere else
- * (see linkURL, which will not add a scheme to `example.com`). One answer, and
- * it is the one that reads.
- *
- * The sticky note has not gone anywhere: the Note button still mints one, which
- * is the door for something you are writing rather than something you brought.
+ * Pasted text as an .md file. Lands as a document (hashed, archived, viewable),
+ * not a sticky note — pasted text is something brought, not something written.
+ * Always .md: markdown is plain text, and the extension only decides rendering
+ * when markers are present.
  */
 function pastedFile(text: string): File {
-  // Normalised on the way in rather than at every read, the same fold
-  // renderMarkdown() opens with: a paste out of a Windows editor carries CRLF,
-  // and this is the moment the file is being written for the first time.
+  // Normalise CRLF on the way in, same as renderMarkdown().
   const body = text.replace(/\r\n?/g, '\n').trim();
   return new File([body], `${pastedName(body)}.md`, { type: 'text/markdown' });
 }
@@ -363,25 +251,8 @@ function pastedFile(text: string): File {
 const PASTE_NAME_MAX = 48;
 
 /**
- * What a pasted document is called: its first line, tidied.
- *
- * The first line of a piece of prose is the closest thing it has to a title,
- * and it is what the sticky note this replaces took its name from too. The
- * Markdown marker comes off the front - a heading pasted as `## Findings` is a
- * card called "Findings" - because the marker is punctuation *about* the line
- * rather than part of what it says.
- *
- * The *first* line with words in it, not the first line: a paste that opens
- * with a fence or a rule opens with punctuation, and neither has a title in it.
- * A fence is the case worth naming, because it has something on it and the
- * something is wrong - ```` ```js ```` would call the file "js", which is the
- * language it is written in rather than anything about the paste.
- *
- * The sweep after that is the filename half, and it is not cosmetic. This
- * string becomes a zip entry's name on save (storage/mbrd.ts) and the suggested
- * name in a Save dialog, so a slash in it would read as a directory and a
- * control character would make a name no filesystem will take. What survives is
- * somebody's own words, in whatever script they wrote them in.
+ * First non-fence, non-rule line as a filename-safe title. Strips markdown
+ * markers and filesystem-hostile characters. Becomes the zip entry name on save.
  */
 function pastedName(text: string): string {
   for (const line of text.split('\n')) {
@@ -395,51 +266,26 @@ function pastedName(text: string): string {
       .trim();
     if (title) return title;
   }
-  // Nothing but punctuation, or nothing at all. Reached only from the clipboard,
-  // where the caller has already refused an empty paste.
+  // All punctuation or empty — caller already refused empty pastes.
   return 'Pasted text';
 }
 
 /** A fence or a thematic break: a line of Markdown with no words in it. */
 const PASTE_NAME_SKIP = /^ {0,3}(```|~~~|((\*\s*){3,}|(-\s*){3,}|(_\s*){3,})$)/;
 
-/**
- * Open the OS file picker for content (not for .mbrd - that's storage.ts).
- *
- * Every attribute the pickers disagree about is written here rather than
- * assumed, and the reason is the one path with no event at the end of it: a
- * cancelled picker never fires `change`, so the reset in the change handler
- * never runs. Leaving the last opening's `accept` on the shared input would
- * mean that cancelling "Choose a picture" once made "Add files" a picture
- * button for the rest of the session.
- */
+/** Open OS file picker for content. Attributes set explicitly: a cancelled picker fires no change. */
 export function pickFiles() {
   const input = fileInput();
   input.accept = '';
   input.multiple = true;
   input.dataset.mode = 'content';
-  // With accept and multiple, and for the reason above: `mode` was the one
-  // attribute the reset in the change handler owned alone, so a cancelled cover
-  // picker left mode='cover' and coverFor pointing at a card - and the *next*
-  // Add files then handed its first file to that card as a cover and dropped the
-  // rest. Cleared at open time here, which is the only moment every path passes
-  // through.
+  // Also clear coverFor: a cancelled cover picker left it armed, causing the
+  // next Add files to route its first file as a cover.
   coverFor = null;
   input.click();
 }
 
-/**
- * The item waiting for a picture, between opening the picker and it answering.
- *
- * Module state rather than a closure because the one hidden input is shared
- * three ways - content here, .mbrd in storage.ts, and this - and `mode` on
- * the element is how they stay out of each other's way.
- *
- * Cleared when it is read, *and* at the head of pickFiles(). Only the first was
- * ever true, which left the arming to survive a cancel: a cancelled picker fires
- * no `change`, so the card stayed armed until something opened the picker again
- * - and the next Add files gave that card its first file as a cover.
- */
+/** Item awaiting a cover picture. Cleared on read and in pickFiles() (cancelled pickers fire no change). */
 let coverFor: string | null = null;
 
 /** Choose a picture for one card. See setItemCover() in state.ts. */
@@ -452,17 +298,7 @@ export function pickCover(id: string) {
   input.click();
 }
 
-/**
- * Attach a chosen picture to a card.
- *
- * Decodability is checked rather than assumed, and that is the whole of the
- * work here. `accept="image/*"` is a filter on a dialog, not a promise: it lets
- * through HEIC out of a phone and camera RAW out of a folder, both of which
- * this browser may well be unable to draw. Setting one anyway would replace a
- * card that looked like something with a card showing a broken image - a worse
- * result than the one being fixed, and undoable only if the user works out
- * what happened.
- */
+/** Attach a chosen picture. Checks decodability — accept="image/*" lets through HEIC/RAW. */
 async function applyCover(id: string, file: File) {
   if (classify(file) !== 'image') {
     toast(`${file.name} is not a picture`, 'error');
@@ -489,31 +325,14 @@ export async function importFiles(
   files = [...files].filter(f => f && (f.size > 0 || f.type));
   if (!files.length) return [];
 
-  // A board file is not a thing to put on a board, it is a board. Two things can
-  // be meant by dropping one, and which is meant depends entirely on what is
-  // already here - so it is asked rather than guessed.
-  //
-  // On an empty board there is no question: merging into nothing and opening are
-  // the same result, and a dialog offering two words for one outcome is a dialog
-  // that teaches people to stop reading them. So the question is only asked when
-  // there is something to lose the sense of.
-  //
-  // Asked here rather than offered as a button in the panel, and that is the
-  // whole placement of the feature: "open or merge" only ever comes up when a
-  // file arrives, and a Merge button would have to open a picker to ask again
-  // what the drop already knows.
+  // A .mbrd is a board, not content. openOrMergeFile() asks "open or merge?"
+  // when the current board is non-empty.
   if (files.length === 1 && looksLikeMbrd(files[0])) {
     await openOrMergeFile(files[0]);
     return [];
   }
 
-  // A font is not a thing to put on a board, it is a thing to set the board in.
-  // Taken out here rather than turned into a card and reclassified later,
-  // because everything below this line is about producing items.
-  //
-  // Announced rather than handled: registering a face means FontFace and
-  // document.fonts, and this module has to stay loadable without a browser -
-  // see tests/imports.test.js. ui/fonts.ts is listening.
+  // Fonts are board settings, not content. Announced via bus — ui/fonts.ts handles registration.
   const fonts = files.filter(f => FONT_EXTS.has(extOf(f.name)));
   if (fonts.length) {
     bus.emit('fonts:add', fonts);
@@ -521,49 +340,24 @@ export async function importFiles(
     if (!files.length) return [];
   }
 
-  // Anything big, said once before any of the work starts.
-  //
-  // After the two branches above and not before them, which is a statement about
-  // what this question is for. A .mbrd is not being imported, it is being opened,
-  // and that path asks its own question a moment later; a font is not a file on
-  // the board at all. This is about bytes that are going to be hashed, decoded
-  // and thumbnailed, and the whole value of asking is that it happens before any
-  // of that rather than two minutes into it.
-  //
-  // One question for the whole drop, however many files are merely *large*. A
-  // dialog per file is not a warning, it is a queue - and the answer to "are
-  // these forty videos meant" is one answer. This is the courtesy at 60 MB, and
-  // it stayed a single question when the ceilings below it became per-file ones,
-  // because that argument is about a question with no numbers in it: forty files
-  // over a soft line have nothing to tell somebody one at a time.
+  // One warning for the whole drop if anything is over warnBytes.
+  // After .mbrd and font extraction — those are not imported as content.
   const big = files.filter(f => (f.size || 0) > IMPORT_LIMITS.warnBytes);
   if (big.length && confirmImport) {
     const answer = await confirmImport({
       title: big.length === 1 ? 'Large file' : 'Large files',
-      // The name and the size when there is one file, because that is the whole
-      // of what is being asked about. A count when there are several: forty
-      // file names is not a shorter way of saying forty.
+      // Name+size for one file, count for several.
       body: big.length === 1
         ? `${big[0].name} is ${mb(big[0].size)}.`
         : `${big.length} files are over ${mb(IMPORT_LIMITS.warnBytes)}.`,
       go: 'Import',
     });
-    // Everything, not just the big ones. The question was about this drop, and
-    // answering it "no" while the small half of it landed anyway would be the
-    // app doing something nobody agreed to.
+    // Cancel means the whole drop, not just the big files.
     if (answer !== 'go') return [];
   }
 
-  // Seeded from what the walk reported, because by the time the list arrives
-  // here the cut has already happened: filesFrom() stops *at* MAX_FILES, so the
-  // comparison below can only ever fire for a caller that did not cap - the
-  // picker, and the paste path.
-  //
-  // Asked about rather than done quietly. The cut itself has to happen before
-  // the walk can stop walking, so what is on offer here is the rest: a drop of
-  // 900 files arrives as 500 and somebody can say "no, all of it" - which is a
-  // real answer, because the reason for the cap is time rather than memory and
-  // time is theirs to spend.
+  // filesFrom() already capped at MAX_FILES; `truncated` reports whether it did.
+  // The user can override and take all of them.
   let trimmed = truncated || files.length > MAX_FILES;
   if (trimmed) {
     const wanted = files.length;
@@ -581,35 +375,14 @@ export async function importFiles(
     if (keepAll) trimmed = false;
   }
 
-  // Byte budget. Measured in file order so the questions are deterministic, and
-  // charged only once the answer is in.
-  //
-  // The 500-file cap above is a UX guard, not a memory boundary - five files can
-  // be five 4K videos. This is the memory boundary, and it is the place where
-  // "one warning per file, with the reasoning" is actually implemented: a file
-  // over either ceiling is described - its size, the number it passed, what the
-  // decode will cost - and the answer decides that file alone. A folder with one
-  // giant video still brings the rest in whichever way that goes, which is what
-  // this did before; the difference is that the giant video now gets a hearing
-  // instead of a line in a receipt.
-  //
-  // Sequential on purpose, and this is the one place in the importer that is. The
-  // work pool below runs six at a time, but a queue of dialogs is not work - two
-  // questions on screen at once is one of them being answered by accident, and
-  // ui/dialog.ts serialises them anyway. See import/budget.ts and AUD-05.
+  // Byte budget: the memory boundary (the 500-file cap is UX only). Sequential —
+  // budget questions must be answered one at a time. See import/budget.ts.
   const budget = makeByteBudget();
   let overBudget = 0;
   const keep: File[] = [];
   for (const f of files) {
     const reasons = budget.check(f.size || 0);
-    // The decode bomb, folded into the same question rather than left for the
-    // measurement two hundred lines below. It is knowable here - the dimensions
-    // are in the first few hundred bytes - and a file that is both enormous and
-    // enormously large is one decision, not two dialogs a minute apart.
-    //
-    // Only for something that will actually be decoded as a picture: classify()
-    // has not run yet, so this asks the cheap half of the same question the
-    // header-reader answers, and a file with no image header returns null.
+    // Decode-bomb check from header dimensions, folded into the same question.
     const px = await pixelCrossing(f).catch(() => null);
     if (px) reasons.push(px);
     if (!reasons.length || await allow(fileKey(f), `${f.name} - ${consentMb(f.size || 0)}`, reasons)) {
@@ -622,44 +395,22 @@ export async function importFiles(
   files = keep;
   if (!files.length) {
     budget.release();
-    // No tone, and no longer an error: nothing went wrong here. Every file in
-    // this drop was described and declined, which is somebody choosing - and an
-    // app that says "error" back at a choice it asked for is arguing.
+    // Not an error — every file was described and the user declined.
     toast(overBudget ? 'Nothing imported' : 'Those files are too large to import', overBudget ? '' : 'error');
     return [];
   }
 
-  // Prepared several at a time, in order.
-  //
-  // This was a plain sequential loop, and every file in it waits on two slow
-  // things: hashing its bytes and measuring it. Measurement is the bad one - a
-  // video the browser cannot read sits on the two-second timeout in
-  // measureSize() before giving up, so a folder of 500 of them took something
-  // like a thousand seconds before a single item appeared on the board, with
-  // nothing on screen to suggest anything was happening.
-  //
-  // Bounded rather than unbounded: each of these holds a whole file in memory
-  // while it works, so Promise.all over the lot would turn a folder of video
-  // into a folder of video decoded all at once. Six is enough to keep the
-  // timeouts overlapping without that.
-  //
-  // Results land by index, so the order the arrangement sees is the order the
-  // files arrived in rather than the order they happened to finish.
+  // Bounded work pool (IMPORT_WORKERS at a time). Results land by index
+  // so the arrangement sees file order, not completion order.
   const prepared: (Draft | null)[] = new Array(files.length).fill(null);
   const failed: string[] = [];
-  // Photos this browser cannot decode that had no embedded preview to fall back on,
-  // so they came in as named cards rather than pictures - counted to say so once at
-  // the end rather than per file (prepareFile fills it).
+  // Undecodable photos that fell back to named cards — counted for one final toast.
   const stats = { undecodable: 0 };
   let firstError: unknown = null;
   let next = 0;
-  // Counted rather than indexed: six of these run at once and finish out of
-  // order, so `next` is how many have been *started* and says nothing about how
-  // many are done.
+  // How many started (not finished) — workers finish out of order.
   let settled = 0;
-  // A big drop (a folder of videos, each able to sit on the 2 s measureSize timeout)
-  // is otherwise minutes of unstoppable work. The cancel button on the busy strip
-  // aborts this: no new file is started, whatever finished is kept and laid out.
+  // Cancel button on the busy strip: stop starting new files, keep what finished.
   const control = new AbortController();
   let cancelled = false;
   const job = busy(files.length > 1 ? `Reading ${files.length} files` : 'Reading',
@@ -685,15 +436,8 @@ export async function importFiles(
       Array.from({ length: Math.min(IMPORT_WORKERS, files.length) }, worker)
     );
   } finally {
-    // In a finally, and every busy() in this app is: a throw that skipped it
-    // would leave the strip up over a board that is doing nothing, for the rest
-    // of the session, with no way to take it down.
     job.end();
-    // And the shared byte account, here for the same reason and at the same
-    // moment: this is where the preparing stops and the memory goes back. The
-    // budget was per call, so two folder drops a second apart each claimed a
-    // fresh gigabyte and the two together hashed, decoded and thumbnailed two
-    // gigabytes at once - each import under budget, and the tab over it.
+    // Release the byte budget so overlapping imports do not double-count.
     budget.release();
   }
   const drafts = prepared.filter((d): d is Draft => !!d);
@@ -703,11 +447,8 @@ export async function importFiles(
     return [];
   }
   if (!drafts.length) {
-    // When every single file failed the same way it is almost never the files,
-    // and the bare sentence sent people looking at their photos. It is worth
-    // the console: one of these was `crypto.subtle` missing on a page served
-    // over plain http, which broke every import on a phone and said nothing at
-    // all about why. Truncated because a toast is a line, not a stack.
+    // Show the reason when every file failed the same way (e.g. crypto.subtle
+    // missing on plain HTTP).
     const why = String((firstError instanceof Error && firstError.message) || '').slice(0, 80);
     toast(why ? `Nothing could be imported - ${why}` : 'Nothing could be imported', 'error');
     return [];
@@ -715,38 +456,26 @@ export async function importFiles(
 
   const desktop = board.layoutMode !== 'mobile';
   if (!desktop) {
-    // Mobile lays nothing out here. placeMobileItems() below packs the column
-    // and the arrangement's whole remaining job is the sequence it packs in, so
-    // running a 2D layout first only to sort its output away was work thrown
-    // out - and, once the two catalogues split, work done under a name that no
-    // longer names a shape. No seed: a drop is reproducible, and Shuffle
-    // unseeded is the order the files arrived in.
-    // SAFETY: mobileOrder() mints nothing - it returns the very objects it was
-    // handed, in another order (see ORDERS in arrangements.ts), so every element
-    // here is one of the drafts that went in.
+    // Mobile: only reorder (mobileOrder returns the same Draft objects), no 2D layout.
     const ordered = mobileOrder(drafts, { name: board.arrangement }) as Draft[];
     drafts.length = 0;
     drafts.push(...ordered);
   }
-  // "Free" preserves existing positions, but fresh imports have none - so a
-  // drop under Free falls back to the grid instead of stacking at one point.
+  // "Free" preserves positions, but fresh imports have none — fall back to grid.
   const name = board.arrangement === 'free' ? 'grid' : board.arrangement;
   if (desktop) {
     const spots = arrange(drafts, {
       name,
       center: centre,
       spacing: board.settings.spacing,
-      // A snapped Desktop drop is snapped item-by-item on the way in (onLattice
-      // in state.ts), so the layout has to reserve whole cells or the same
-      // rounding that overlaps a tight Rearrange overlaps a tight drop - see
-      // arrange().
+      // Snapped drops need whole-cell reservations to avoid overlap after rounding.
       cellStep: board.settings.snap ? baseStep() : 0,
-      // A folder dropped onto a Desktop board flows around what is already there
-      // rather than landing on top of it. The Mobile board packs around existing
-      // items itself (placeMobileItems), so this is Desktop's half of the same
-      // promise; a paste or a bare-file drop still stacks at the cursor as before.
+      // Folder drops flow around existing items. Mobile does this in placeMobileItems().
+      // Ghosts excluded: the hint cards leave the moment content lands, so flowing
+      // around them reserves a void where they used to be. Same filter as the
+      // Mobile pack's obstacles in layout.ts.
       obstacles: avoidOverlap
-        ? board.items.map(it => ({ x: it.x, y: it.y, w: it.w, h: it.h }))
+        ? board.items.filter(it => it.type !== 'ghost').map(it => ({ x: it.x, y: it.y, w: it.w, h: it.h }))
         : undefined,
     });
     drafts.forEach((d, i) => { d.x = spots[i].x; d.y = spots[i].y; });
@@ -761,84 +490,36 @@ export async function importFiles(
 
   let msg = `${cancelled ? 'Stopped — kept' : 'Added'} ${added.length} item${added.length === 1 ? '' : 's'}`;
   if (trimmed) msg += ` (capped at ${MAX_FILES})`;
-  // "Skipped", not "too large". Nothing was too large for this app to take any
-  // more - these are the ones somebody was shown the numbers for and said no to,
-  // and reporting their own answer back to them as a limit would be the receipt
-  // taking credit for a decision it did not make.
+  // "Skipped" — these were declined by the user, not refused by the app.
   if (overBudget) msg += `, ${overBudget} skipped`;
   if (failed.length) msg += `, ${failed.length} failed`;
-  // The undecodable photos still came in - as named cards - so this rides the
-  // ordinary receipt, not the error tone, and only when nothing worse happened.
+  // Undecodable photos came in as named cards — info tone, not error.
   if (stats.undecodable && !failed.length) {
     msg += `, ${stats.undecodable} shown as cards (this browser can’t decode ${stats.undecodable === 1 ? 'it' : 'them'})`;
   }
-  // One cue for the whole import, never one per card: forty files arriving at
-  // once is one thing finishing. The toast on the next line says `note` on top
-  // of this, which is two things having happened and is meant to overlap.
+  // One cue for the whole import, not per card.
   cue(failed.length ? 'fail' : 'done');
   toast(msg, failed.length ? 'error' : '');
 
-  // Announced rather than acted on, and that is a layering constraint rather
-  // than a preference: ui/appearance.ts reaches for `document` at import time,
-  // and tests/imports.test.js holds this file to loading without a browser -
-  // which is what keeps the import pipeline testable in node at all. So this
-  // says what happened and ui/ decides what that is worth.
-  //
-  // Its own event rather than riding on 'items', which fires for a drag, an
-  // undo and a delete as well: "an import happened, and this is what it
-  // brought" is a thing worth being able to hear on its own. The palette no
-  // longer listens for it - a delete changes the board's colours as surely as
-  // an import does, so ui/appearance.ts watches 'items' and compares the
-  // pictures itself - but the announcement stands on its own terms.
+  // Layering: import/ cannot touch document, so it announces and ui/ acts.
   bus.emit('imported', added);
   return added;
 }
 
-/**
- * A picture's thumbnail, registered as an asset, or null.
- *
- * The import module is held to loading without a browser (tests/imports.test.js)
- * and makeThumb() reaches for OffscreenCanvas - which is fine, because it does
- * so inside the call rather than at module scope. Same bargain the rest of this
- * file makes with `document`.
- */
+/** Register a thumbnail asset. Returns hash and cutout flag, or null. */
 export async function thumbFor(blob: Blob, naturalWidth = 0) {
   const small = await makeThumb(blob, naturalWidth);
   if (!small) return null;
   const hash = await addFile(derivedFile(small.blob, 'thumb'));
-  // `cutout` rides back with the hash because it was measured on the way past.
-  // It is the thumbnail pass that has a decoded picture in hand, so asking the
-  // question anywhere else would mean decoding the file a second time to learn
-  // something this one already knows.
+  // cutout is measured while the thumbnail is decoded — avoids a second decode.
   return { hash, cutout: small.cutout };
 }
 
 /**
- * A still out of a clip, registered as an asset. Two routes, one answer.
- *
- * Every video gets one, not only the unplayable ones. That used to be the rule
- * and it left the common case looking broken: a phone shows a video card with
- * no source attached at all until it is tapped - the decoder ceiling makes that
- * necessary, see the video renderer - so a perfectly playable clip sat on a
- * mobile board as an empty black box. Desktop hid the problem by loading
- * metadata at `#t=0.1` and painting the frame it got. A poster is what gives
- * the phone the same picture without holding a decoder open for it.
- *
- * The browser's own decoder is tried first and answers for almost everything,
- * at the cost of one seek. Two things fall through to ffmpeg: a clip this
- * browser cannot open at all - H.265 is the case - and a browser that cannot
- * draw *any* clip onto a canvas, which is a different fault and was not covered
- * until a phone found it. See videoDrawsBlank() and the note at the fall-through
- * below.
- *
- * That route is dynamically imported for a reason: the core is thirty megabytes
- * off a CDN, most boards never need it, and a machine without it answers "no"
- * from a HEAD request before anything is loaded. An import of ordinary MP4s on
- * an ordinary browser never touches it.
- *
- * Everything about this is allowed to fail. No decoder, no frame, a format the
- * encoder will not write - all of them come back null, and null means the clip
- * is exactly what it was before: a video card with nothing to show yet.
+ * Extract a poster frame from a clip. Every video gets one (mobile holds back
+ * the source until tapped). Browser decoder first; falls through to ffmpeg
+ * (dynamically imported, 30 MB) for H.265 or engines that draw blank canvases.
+ * All failures return null — the card just has no poster.
  */
 async function posterFor(file: File, decodable: boolean | undefined) {
   if (decodable) {
@@ -851,35 +532,20 @@ async function posterFor(file: File, decodable: boolean | undefined) {
         return { hash: await addFile(named), w: frame.w, h: frame.h, file: named };
       }
     } catch { /* fall through - a clip with no poster is what it was before */ }
-    // Normally the end of it. The browser opened this clip, so thirty megabytes
-    // would be spent to answer a question it can already answer; that it
-    // declined to hand over one frame is a decoder quirk, not a format this app
-    // cannot read.
-    //
-    // **Unless the quirk is the whole browser**, which that reasoning did not
-    // cover. On an engine where no clip will ever draw onto a canvas - and where
-    // WebGL did not rescue it either, see canvas/gl-frame.ts - "it can already
-    // answer" is false, and the sentence above quietly means "so no clip on this
-    // phone gets a picture", on the devices where the card's own source is
-    // parked until it is tapped. videoDrawsBlank() is only true once a clip has
-    // demonstrated it.
+    // Fall through to ffmpeg only if the *entire engine* draws blank canvases
+    // (videoDrawsBlank()), not just this one clip.
     if (!videoDrawsBlank()) return null;
   }
   try {
     const { firstFrame } = await import('../optimize/media.ts');
     const frame = await firstFrame(file, msg => toast(msg));
     if (!frame) return null;
-    // A clip the browser opened reaches here because every frame drew blank, and
-    // the uncommon reading of that is that the film really does open on black -
-    // which ffmpeg answers with a black picture. Storing it is what poster.ts
-    // refuses to do: `meta.cover` naming real bytes makes every repair pass skip
-    // the card forever. Only on this route; a clip the browser could not open at
-    // all has no other source of a picture whatever is in it.
+    // Reject a flat (all-black) poster for decodable clips — storing it would
+    // make repair passes skip this card forever.
     if (decodable && await pictureIsFlat(frame)) return null;
     const named = new File([frame], 'poster.' + (frame.type === 'image/png' ? 'png' : 'jpg'),
                            { type: frame.type });
-    // Measured as a picture, which it now is, and hashed like any other asset -
-    // so two copies of the same clip share one poster.
+    // Deduplicated like any other asset.
     const [shape, hash] = await Promise.all([measureSize('image', named), addFile(named)]);
     return {
       hash,
@@ -892,83 +558,50 @@ async function posterFor(file: File, decodable: boolean | undefined) {
   }
 }
 
-/**
- * A PDF, by its declared type or its extension.
- *
- * `.ai` is in here, and it is not a mistake. Every Illustrator file written this
- * century is a PDF - Adobe stopped using its own container and started writing a
- * PDF with the editable artwork tucked inside it as private data, which is why
- * a browser, a printer and every viewer on a phone will open one. So an .ai gets
- * page one rendered like any other PDF, and a design file that used to land as a
- * grey named card now lands showing its own artwork.
- *
- * The pre-2000 EPS-based .ai is not a PDF and pdf.js declines it; that comes back
- * null and the card is what it always was.
- */
+/** .ai is a PDF since ~2000 (artwork tucked inside as private data). Pre-2000 EPS-based .ai falls through. */
 const isPdf = (file: File) => file.type === 'application/pdf'
   || PDF_EXTS.has(extOf(file.name));
 
 const PDF_EXTS = new Set(['pdf', 'ai']);
 
-/** One file, classified, measured, hashed and turned into a draft item. `stats`
- *  collects soft outcomes worth reporting once for the whole drop (see importFiles). */
+/** Classify, measure, hash one file into a Draft. `stats` accumulates soft outcomes for importFiles. */
 async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draft> {
+  // An internet shortcut is a pointer, not content: open it as the link it names
+  // rather than a card holding the .url file. The filename is kept as the card's
+  // name - a saved shortcut is titled with the page, which beats the bare host
+  // linkDraft() would pick. Falls through to a normal card when nothing parses.
+  if (SHORTCUT_EXTS.has(extOf(file.name))) {
+    const url = await shortcutURL(file);
+    if (url) {
+      const draft = linkDraft(url);
+      const stem = file.name.replace(/\.[^.]+$/, '').trim();
+      return { ...draft, name: stem || draft.name, x: 0, y: 0 };
+    }
+  }
   let type = classify(file);
   let size: DraftSize | undefined;
-  // A decodable stand-in pulled out of a picture the browser cannot draw (HEIC,
-  // RAW), and the file it came from. Both stay null for everything else. See the
-  // undecodable branch below and import/preview.ts.
+  // Decodable stand-in from an undecodable picture (HEIC, RAW). Null otherwise.
   let previewHash: string | null = null;
   let previewFile: File | null = null;
-  // A PDF is the same shape of problem as an undecodable photo: the app cannot
-  // draw it, but it can produce a picture of its first page (import/pdf.ts, which
-  // loads the vendored pdf.js on demand). Handled exactly like the
-  // embedded-preview path - the original PDF stays asset.hash and is still what a
-  // click opens, while the rendered page becomes meta.preview and is what the card
-  // shows. Any failure - a parse error, a page that will not draw, a first PDF on
-  // a fresh install with no network - leaves size unset, so it falls through to
-  // the named card it would otherwise have been, and says so in the console. This
-  // is the app's second outside-code dependency; see the header of import/pdf.ts.
+  // PDF: render page one via pdf.js (dynamic import). Original stays asset.hash;
+  // rendered page becomes meta.preview. Failure falls through to a named card.
   if (isPdf(file)) {
     const { firstPageRaster } = await import('./pdf.ts');
     const page = await firstPageRaster(file).catch(() => null);
     if (page?.blob) {
-      // derivedFile() rather than a hand-written 'page.webp': the raster is WebP
-      // where the engine writes one and a PNG where it does not, and the name
-      // should follow the bytes like every other derived picture here.
+      // derivedFile() picks the right extension from the actual blob type.
       previewFile = derivedFile(page.blob, 'page');
       previewHash = await addFile(previewFile);
       type = 'image';
       size = { ...fitToBox('image', page.w, page.h), measured: true, decodable: true };
     }
   }
-  // And the same trade for every other document that carries a picture of
-  // itself. A Word file, a spreadsheet, a Krita painting, a Procreate canvas, a
-  // Keynote deck and a PSD all ship a rendered thumbnail their own application
-  // wrote for the file browser, at a known path inside a zip or in a known
-  // record near the front of the file - so this costs a container read and no
-  // renderer, no library and no network. See import/document.ts.
-  //
-  // After the PDF branch and gated on `size` for the reason it is: a hit here
-  // has already decided what the card is, and nothing below should measure it a
-  // second time. A miss is silent and leaves the card exactly as it was.
+  // Documents with baked-in thumbnails (OOXML, ODF, Krita, PSD, etc.).
+  // Gated on !size so a PDF hit above is not re-measured.
   if (!size && hasBakedPreview(file)) {
     const baked = await asking(file, l => bakedPreview(file, l));
-    // Budgeted, like every other picture. This path sets `size` itself, so it
-    // runs *before* the overPixelBudget() branch below and skipped it entirely -
-    // and what it hands to measureSize() came out of a container somebody else
-    // wrote. A .docx whose docProps/thumbnail.png is a hundred-byte PNG with an
-    // IHDR of 65535x65535 is accepted on its signature by document.ts and then
-    // decoded here, twice: once to measure and once by makeThumb() further
-    // down. A preview that is over budget is not a preview - the card falls
-    // back to the document it always was.
-    // Under the file's own answer, not its own. A preview is not a thing anybody
-    // chose - it is a picture somebody else's exporter put inside the container -
-    // so there is nothing here to ask about that the person could weigh, and the
-    // fallback costs them nothing: the card is still the document it was. What
-    // this does honour is a yes already given for the file it came out of, since
-    // somebody who has agreed to decode a 900-megapixel scan has answered this
-    // question too.
+    // Pixel-budget the baked preview too — a crafted thumbnail could be a decode
+    // bomb. A prior allow on the file itself carries over.
     const bakedOk = baked && (isAllowed(fileKey(file)) || !(await overPixelBudget(baked)));
     const shot = bakedOk ? await measureSize('image', baked) : null;
     // `baked` again rather than only `shot`: without a preview there is no

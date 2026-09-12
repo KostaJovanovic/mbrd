@@ -1,35 +1,12 @@
-// The offer that follows a rubber band: "make these a fence?"
-//
-// Stardock's Fences puts a small button under the cursor the moment you finish
-// dragging a rectangle on the desktop, and it is the right shape for this because
-// the gesture has already been made. Dragging a band round five photographs is
-// somebody saying *these five*, in the only gesture on the board that already
-// means it; a menu asking about it afterwards makes them say it twice. So the
-// rectangle is the question and this is the answer, offered where their hand
-// already is and taken away when they move on.
-//
-// Which is the whole design constraint: an offer nobody accepted must cost
-// nothing. A modal would have to be dismissed, a toolbar button would sit there
-// being ignored, and a menu entry is the thing this replaces. This appears
-// beside the cursor, and walking away from it *is* declining it - see reach
-// below. Nothing is selected, nothing is changed, and no key has to be pressed.
-//
-// One at a time, built fresh on each open, torn down on close: the same
-// arrangement ui/menu.ts uses, for the same reason - the label depends on what
-// the band caught, and there is nothing worth keeping hidden between two of them.
+// "Fence these N?" prompt after a rubber-band selection. Appears beside the
+// cursor and withdraws on distance or any view change — declining costs nothing.
+// Built fresh on each open, torn down on close.
 
-// The menu's icon builder, for the menu's icon. This module wears .ctx-item and
-// takes the menu's stock; wearing the row and then not the mark on it would
-// have made the offer read as a lesser copy of the entry it stands in for.
+// Uses menu.ts's icon builder — the offer wears .ctx-item.
 import { icon } from './menu.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 
-/**
- * canvas/viewport.ts still carries its migration pragma, so the class type it
- * exports has the methods but not the fields the constructor assigns. The
- * intersection names the two this module reads, and comes out the day that
- * module is annotated.
- */
+/** Viewport fields this module reads — intersection until viewport.ts is fully typed. */
 type PromptViewport = Viewport & { el: HTMLElement; zoom: number };
 
 /** A rectangle in world space, as the marquee hands it over. */
@@ -40,19 +17,8 @@ interface WorldBox {
   h: number;
 }
 
-/**
- * How far the pointer may stray before the offer is withdrawn, in CSS pixels.
- *
- * ~2.5cm at CSS's nominal 96dpi, which is the middle of the range Fences itself
- * uses. Measured from the popup's *edges* rather than from where it was opened,
- * so the button is its own dead zone and moving towards it can never dismiss it -
- * a threshold measured from the anchor point would shrink as the pointer crossed
- * the button, which is the one direction that must be safe.
- *
- * A nominal centimetre is not a real one on a scaled display, and that is fine:
- * this is a comfortable arm's reach, not a measurement. The board's own scale
- * bar is the thing here that has to be honest about millimetres.
- */
+/** Max distance from popup edges before dismissal, in CSS px (~2.5cm). Measured
+ * from edges, not anchor — moving toward the button can never dismiss it. */
 export const REACH = 95;
 
 /** The offer's wording. Plural, singular, and the empty region get their own. */
@@ -62,15 +28,7 @@ export function fencePromptLabel(count: number): string {
   return `Fence these ${count}`;
 }
 
-/**
- * Is (x, y) further than `reach` from the rectangle?
- *
- * Distance to the *box*, which is zero anywhere inside it: each axis contributes
- * only its own overshoot, so a pointer level with the button and off to one side
- * is judged by that sideways distance alone rather than by a diagonal to the
- * nearest corner. The corner distance would make the popup harder to keep alive
- * from above and below than from either side, for no reason a user could see.
- */
+/** Whether (x, y) is further than `reach` from the rectangle (edge distance, not corner). */
 export function outOfReach(
   rect: { left: number; right: number; top: number; bottom: number },
   x: number,
@@ -92,22 +50,15 @@ let offView: (() => void) | null = null;
 export function initFencePrompt(viewport: PromptViewport | null): void {
   vp = viewport;
 
-  // Withdrawn by distance, and by everything that makes the spot it is pinned to
-  // stop meaning what it meant. The pointer rule is the mouse's; the rest are
-  // what a touch board has instead, since a finger that has lifted never moves.
+  // Dismiss on distance (mouse) or on any gesture/blur/resize (touch fallback).
   addEventListener('pointermove', e => {
     if (!node || !box) return;
-    // A pointer that is *down* is in the middle of doing something else - a pan,
-    // a second band - and that gesture's own dismissal is the pointerdown below.
-    // Judging it by distance as well would withdraw the offer halfway through a
-    // drag that started on top of it.
+    // Pointer down = mid-gesture (pan, second band) — don't dismiss by distance.
     if (e.buttons) return;
     if (outOfReach(box, e.clientX, e.clientY, REACH)) close();
   }, { passive: true });
   addEventListener('pointerdown', e => {
-    // SAFETY: a pointerdown reaching the window came off this document, so the
-    // target is a Node - and `contains()` answers false for the null anyway,
-    // which closes the prompt, which is the safe direction to be wrong in.
+    // Click outside the prompt closes it.
     if (node && !node.contains(e.target as Node | null)) close();
   }, true);
   addEventListener('keydown', e => {
@@ -127,32 +78,15 @@ export function close(): void {
   offView = null;
 }
 
-/**
- * The region the offer is about, drawn faintly where it would land.
- *
- * The band is gone by the time the offer is up - it is the marquee's, and the
- * marquee ends with the gesture - so without this the question "fence these 5?"
- * is asked about an area nobody can see any more, and the answer is a rectangle
- * that arrives where you have to take it on trust.
- *
- * It shows the **fence's** box and not the band's, and that is the point of
- * putting it here rather than leaving the marquee up: the two are not the same
- * rectangle. A marquee catches what it overlaps, so a card can be caught with
- * half of it outside the band, and the fence opens unioned out to hold what it
- * was drawn to hold (fenceBox). Leaving the band up would have promised the
- * smaller of the two.
- *
- * Screen space, converted once. The offer closes on any view change, so the
- * board cannot move under this while it is up, and a rectangle that cannot go
- * stale does not need to be re-placed on a frame.
- */
+/** Draw the fence's box faintly where it would land. Shows the fence's unioned
+ * box, not the marquee's — they differ when items extend past the band.
+ * Screen space, converted once (offer closes on any view change). */
 function drawGhost(world: WorldBox | null): HTMLDivElement | null {
   if (!vp?.el || !world) return null;
   const el = document.createElement('div');
   el.id = 'fence-ghost';
   el.setAttribute('aria-hidden', 'true');
-  // World y points up and CSS y points down, so the top-left corner is the one
-  // at +h/2.
+  // World y up, CSS y down — top-left is at +h/2.
   const at = vp.toScreen(world.x - world.w / 2, world.y + world.h / 2);
   el.style.left = `${Math.round(at.x)}px`;
   el.style.top = `${Math.round(at.y)}px`;
@@ -162,15 +96,7 @@ function drawGhost(world: WorldBox | null): HTMLDivElement | null {
   return el;
 }
 
-/**
- * Offer to fence `count` items, beside the pointer at (clientX, clientY), with
- * `world` shown faintly where the fence would land.
- *
- * `action` is run on the press. The caller keeps hold of what a fence would be
- * drawn over, and hands the box in already worked out, so this module still
- * never learns what a fence is - it is a button with a label, a rectangle to
- * draw and one thing to do.
- */
+/** Offer to fence `count` items beside the pointer. `action` runs on press. */
 export function openFencePrompt(
   clientX: number,
   clientY: number,
@@ -180,9 +106,7 @@ export function openFencePrompt(
 ): void {
   close();
 
-  // Before the button, so the offer is never the thing painted under: the two go
-  // up in the same frame and the button is placed beside the pointer, which is
-  // usually just inside the region it is asking about.
+  // Ghost before button so the prompt is never painted under the ghost.
   ghost = drawGhost(world);
 
   node = document.createElement('div');
@@ -191,9 +115,7 @@ export function openFencePrompt(
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'ctx-item';
-  // Icon then label, in that order and in a <span> - .ctx-item is a three
-  // column grid, and a bare text node would take the icon's column instead of
-  // the label's.
+  // .ctx-item is a 3-column grid — label must be in a <span>.
   btn.append(icon('i-fence'));
   const label = document.createElement('span');
   label.textContent = fencePromptLabel(count);
@@ -204,11 +126,8 @@ export function openFencePrompt(
   });
   node.append(btn);
 
-  // Measure hidden, then place - the width depends on the wording. Down and to
-  // the right of the release point by a hair, so the offer is beside the cursor
-  // rather than under it, and flipped rather than clamped at an edge for the
-  // reason ui/menu.ts gives: a popup pinned to the edge ends up under the
-  // pointer, and gets pressed by accident.
+  // Measure hidden, then place. Flipped at edges (not clamped) to avoid landing
+  // under the pointer.
   node.style.visibility = 'hidden';
   document.body.append(node);
   const { width, height } = node.getBoundingClientRect();
@@ -223,10 +142,6 @@ export function openFencePrompt(
   node.style.visibility = '';
   box = node.getBoundingClientRect();
 
-  // The board moving under a popup pinned to the screen is the same problem the
-  // context menu closes on a wheel for, and a pan or a fling is the commoner way
-  // to cause it here: the rectangle this offer is about would slide out from
-  // under its own button. Unsubscribed on close, so a board being panned with no
-  // offer up pays nothing.
+  // Close on view change — the ghost would drift from the actual fence region.
   offView = vp?.onChange(close) || null;
 }

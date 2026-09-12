@@ -1,40 +1,10 @@
-// The shape every mesh parser returns, and the arithmetic they all repeat.
-//
-// This file exists because mesh.ts stopped being one reader and became twelve.
-// STL, OBJ and glTF were three parsers in one module and the helpers below were
-// private to it; PLY, OFF, 3MF, AMF, FBX, Collada, 3DS, STEP and IGES are nine
-// more, and nine more copies of "grow the box, unit the normals, refuse past the
-// ceiling" is nine more places for the ceiling to be forgotten.
-//
-// So the pieces every reader needs sit here, one floor below all of them, and
-// mesh.ts re-exports the public half so that `import { Mesh } from './mesh.ts'`
-// keeps meaning what it meant. Nothing in here knows about any format. It
-// imports consent.ts and nothing else, which is what keeps the whole family
-// loadable in a test with no DOM - the same property mesh.ts has always had and
-// the reason its parsers can be fed real bytes under node.
-//
-// The one thing to be careful with is CAPS. It is module state that a parse
-// mutates, which is usually the wrong answer and is argued at length in
-// mesh.ts's own header: **every parser under here is synchronous end to end**,
-// so one parse cannot begin while another is in progress, and parseMesh()'s
-// `finally` puts the defaults back whichever way a parse ended. If any reader in
-// this family ever grows an `await`, that argument is gone and the caps have to
-// be threaded instead.
+// Shared types and helpers for every mesh parser. Format-agnostic.
+// CAPS is mutable module state — safe only because every parser is synchronous.
+// If any reader adds an `await`, CAPS must be threaded instead.
 
 import { oversize, mb } from '../consent.ts';
 
-/**
- * A parsed model, in the app's own space.
- *
- * The first four fields are what every parser returns. The last three came from
- * OBJ and are now shared: a colour per vertex is what PLY, 3MF, AMF, Collada and
- * 3DS carry too, `mtllib` is still OBJ's alone, and `triMat` is the material name
- * per triangle that applyMaterials() resolves against a library.
- *
- * Indices are resolved rather than kept. A moodboard draws a model once at a
- * small size and never edits it, so the memory an index buffer saves is not
- * worth a second code path in the drawing.
- */
+// Indices are expanded — a card draws once at small size, no index buffer needed.
 export type MeshBounds = { min: number[]; max: number[] };
 export type Mesh = {
   positions: Float32Array;
@@ -44,55 +14,17 @@ export type Mesh = {
   colors?: Float32Array | null;
   mtllib?: string | null;
   triMat?: (string | null)[] | null;
-  /**
-   * Which way this *file* says is up, where it says at all.
-   *
-   * Only two formats do: FBX carries `UpAxis` in its global settings and
-   * Collada carries `<up_axis>`, and both genuinely vary - Maya writes Y-up and
-   * 3ds Max writes Z-up, and neither is a fact about the format. So the reader
-   * states what the document said and parseMesh() prefers it over
-   * defaultUpAxis(), which is a guess about the format rather than a reading of
-   * the file. A user's own `meta.upAxis` still beats both.
-   */
+  // From the file (FBX/Collada only); parseMesh() prefers it over the format default.
   upAxis?: 'y' | 'z' | null;
 };
 
-/**
- * The ceiling, in triangles.
- *
- * A 3D file has no natural size limit and a dropped folder is not vetted, so
- * this is the same kind of guard zip.ts puts on an inflated entry: past it the
- * file is not opened without being asked about first, rather than being allowed
- * to take the tab down unannounced. Two million triangles is roughly a 100MB
- * binary STL and far more detail than a card a few hundred pixels wide can show -
- * the honest failure is "too big to look at", not a black canvas after forty
- * seconds.
- *
- * "Too big to look at" is the part that made this a question rather than a
- * refusal. It is an argument about what the *card* can use, and somebody opening
- * a 6M-triangle scan on a machine that can hold it is not wrong about their own
- * machine - they are answering a question about detail, and the answer is theirs.
- * What they are owed is the number and what it costs, which is what the warning
- * carries.
- */
+// ~100 MB binary STL. Past this the user is asked, not refused.
 export const MAX_TRIANGLES = 2_000_000;
 
-/**
- * The most elements an accessor may declare, before any buffer is touched.
- *
- * `acc.count` is a number out of an untrusted file, and readAccessor() used to
- * allocate `count * components` up front - so a lie of a few bytes bought a
- * multi-gigabyte typed array. A 2M-triangle mesh needs at most 6M vertices, so
- * nothing legitimate declares more than this. See AUD-06.
- *
- * PLY, FBX and 3DS all declare their counts the same way and are held to the
- * same number, which is the reason this moved down here from mesh.ts.
- */
+// Pre-allocation guard: prevents a bogus count from buying a multi-GB array.
 export const MAX_ELEMENTS = MAX_TRIANGLES * 3;
 
-/** Decoded bytes of one embedded (data-URI, or inflated) buffer. atob() and the
- *  inflater both allocate the whole result, so this is checked from the stated
- *  or encoded length *before* decoding rather than after. */
+// Checked before decoding — atob/inflate allocate the full result at once.
 export const MAX_BUFFER_BYTES = 512 * 1024 ** 2;
 
 export class MeshError extends Error {}
@@ -100,37 +32,20 @@ export class MeshError extends Error {}
 // ---------------------------------------------------------------------------
 // The ceilings, for one parse
 // ---------------------------------------------------------------------------
-//
-// Every number above is a warning, not a refusal: a model past MAX_TRIANGLES is
-// offered to whoever dropped it, with what it will cost, and opened if they say
-// yes. See consent.ts, and the retry contract in its header - this family throws
-// Oversize and canvas/model.ts asks and calls back with `lift`.
-//
-// Held in one mutable record rather than threaded through every parser. The
-// alternative is a cap parameter on some forty functions across ten modules, a
-// boolean carried down call chains that have no branches in them, and every one
-// of them a place for a future caller to forget it.
-//
-// Read through the object rather than copied into locals at the top of a parse:
-// a local is a snapshot, and lift() is answered *between* the two parses, not
-// during one.
 export const CAPS = {
   tri: MAX_TRIANGLES,
   elem: MAX_ELEMENTS,
   buf: MAX_BUFFER_BYTES,
 };
 
-/** Open it however large it turns out to be, because somebody has been told what
- *  that costs and said yes. Only parseMesh() is entitled to call this. */
+// Called by parseMesh() after the user accepts the oversize warning.
 export function liftCaps() {
   CAPS.tri = Infinity;
   CAPS.elem = Infinity;
   CAPS.buf = Infinity;
 }
 
-/** Back to the defaults, whichever way the parse ended. A lifted ceiling that
- *  outlived its parse would silently apply to the next model on the board, which
- *  nobody agreed to. */
+// Restore defaults in parseMesh()'s finally — a lifted cap must not leak.
 export function resetCaps() {
   CAPS.tri = MAX_TRIANGLES;
   CAPS.elem = MAX_ELEMENTS;
@@ -157,7 +72,7 @@ export function grow(box: MeshBounds, x: number, y: number, z: number) {
 // Normals
 // ---------------------------------------------------------------------------
 
-/** Replace a facet's normals with the one its winding implies, if it has none. */
+// Fill missing normals from the triangle winding.
 export function fixFacet(positions: Float32Array, normals: Float32Array, base: number) {
   if (normals[base] || normals[base + 1] || normals[base + 2]) return;
   const n = faceNormal(
@@ -171,7 +86,7 @@ export function fixFacet(positions: Float32Array, normals: Float32Array, base: n
   }
 }
 
-/** The same, for the plain arrays most of the readers build into. */
+// Same as fixFacet, for plain number[] arrays.
 export function fixFacetArrays(p: number[], nrm: number[], base: number) {
   const n = faceNormal(p[base], p[base + 1], p[base + 2],
                        p[base + 3], p[base + 4], p[base + 5],
@@ -183,11 +98,7 @@ export function fixFacetArrays(p: number[], nrm: number[], base: number) {
   }
 }
 
-/**
- * Fill only the corners of the last triangle that carry no normal (0,0,0) with
- * the facet's own, leaving supplied per-corner normals intact. The face normal
- * is computed lazily, so a triangle that already has all three costs nothing.
- */
+// Fill zero-normal corners with the face normal, leaving supplied normals intact.
 export function fillFacetGaps(p: number[], nrm: number[], base: number) {
   let n: number[] | null = null;
   for (let v = 0; v < 3; v++) {
@@ -211,8 +122,7 @@ export function faceNormal(
   const y = uz * vx - ux * vz;
   const z = ux * vy - uy * vx;
   const len = Math.hypot(x, y, z);
-  // A degenerate triangle - three collinear points, which real files do carry -
-  // has no normal at all. Up is a lie, but it is a lie that shades.
+  // Degenerate triangle (collinear points) — fallback so it still shades.
   return len ? [x / len, y / len, z / len] : [0, 0, 1];
 }
 
@@ -222,36 +132,18 @@ export function faceNormal(
 
 export function finish(positions: Float32Array, normals: Float32Array, box: MeshBounds): Mesh {
   if (!Number.isFinite(box.min[0])) throw new MeshError('This model has no geometry in it');
-  // Unit length, once, here - so the shader never has to normalise and a file
-  // whose own normals were not unit does not come out shaded differently from
-  // one whose were.
+  // Normalize once so the shader never has to.
   for (let i = 0; i < normals.length; i += 3) {
     const len = Math.hypot(normals[i], normals[i + 1], normals[i + 2]);
-    // `!(len > 0)` rather than `!len`, so a NaN component (a malformed file whose
-    // normals ran short of its positions) collapses to a clean (0,0,1) too - `!NaN`
-    // is true but only ever set z, leaving NaN in x/y for the shader.
+    // !(len > 0) catches NaN from malformed files, where !NaN would leave x/y dirty.
     if (!(len > 0)) { normals[i] = 0; normals[i + 1] = 0; normals[i + 2] = 1; continue; }
     normals[i] /= len; normals[i + 1] /= len; normals[i + 2] /= len;
   }
   return { positions, normals, count: positions.length / 3, bounds: box };
 }
 
-/**
- * The common tail of every indexed reader: a vertex table, a triangle list into
- * it, and optionally a colour per vertex.
- *
- * Nine of the eleven formats in this family arrive in exactly this shape - PLY,
- * OFF, 3MF, AMF, Collada, 3DS, FBX and both CAD tessellators - because an
- * indexed mesh is what everybody who is not STL writes. Expanding it is the same
- * fifteen lines each time, and the ceiling check has to happen *before* the
- * allocation rather than after, which is the part that is easy to write in the
- * wrong order.
- *
- * `verts` is xyz per vertex, `tris` is three indices per triangle, `cols` is rgb
- * per vertex in 0..1 or null. An index outside the table is a file that does not
- * say what it means, and is a plain Error rather than a ceiling - see the
- * distinction in consent.ts's header.
- */
+// Expand an indexed mesh (verts xyz, tris 3-per-face, optional cols rgb 0..1)
+// into the flat buffers every reader returns. Ceiling checked before allocation.
 export function fromIndexed(
   verts: ArrayLike<number>,
   tris: ArrayLike<number>,
@@ -270,9 +162,7 @@ export function fromIndexed(
     const base = t * 9;
     for (let c = 0; c < 3; c++) {
       const vi = tris[t * 3 + c];
-      // Checked rather than clamped. A model that names a vertex it does not
-      // carry is not a large model or an old one, it is a file whose indices do
-      // not mean what the format says they mean.
+      // Out-of-range index = corrupt file, not oversize — throw Error, not Oversize.
       if (!(vi >= 0 && vi < vertN)) {
         throw new MeshError('This model refers to vertices it does not contain');
       }
@@ -294,13 +184,7 @@ export function fromIndexed(
   return mesh;
 }
 
-/**
- * Fan an n-gon into triangles from its first corner, pushing indices.
- *
- * Correct for the convex faces a modeller emits and the standard reading, the
- * same one parseOBJ() takes. OFF, PLY, Collada and 3MF's production extension
- * all allow polygons, and every one of them means a convex one in practice.
- */
+// Fan a convex n-gon into triangles from its first corner.
 export function fanInto(tris: number[], corners: ArrayLike<number>) {
   for (let i = 1; i + 1 < corners.length; i++) {
     if (tris.length / 3 >= CAPS.tri) throw oversize('mesh-triangles', tooBig(CAPS.tri));
@@ -308,22 +192,8 @@ export function fanInto(tris: number[], corners: ArrayLike<number>) {
   }
 }
 
-/**
- * A mesh under construction, for the readers that emit triangles rather than
- * an index table.
- *
- * The formats that need this are the ones where a triangle's colour is the
- * triangle's and not its corners' - 3MF's property groups, 3DS's material
- * assignments, the per-face material of a Collada `<triangles>` - and the ones
- * that generate geometry rather than reading it, which is both CAD tessellators.
- * fromIndexed() cannot serve them: it colours per vertex, and a face colour on
- * shared vertices has no per-vertex answer.
- *
- * Colours are held back until the first coloured triangle arrives and then
- * backfilled with white, the same trick parseOBJ() plays with `hasVC`: near the
- * triangle ceiling an unused colour array is tens of megabytes of transient
- * allocation, and most files never colour anything.
- */
+// Incremental mesh builder for formats with per-face colour (not per-vertex).
+// Colours are lazily allocated — most files never use them.
 export class MeshBuild {
   p: number[] = [];
   n: number[] = [];
@@ -331,7 +201,6 @@ export class MeshBuild {
   coloured = false;
   box = newBox();
 
-  /** One triangle, with an optional rgb in 0..1 for all three of its corners. */
   tri(
     ax: number, ay: number, az: number,
     bx: number, by: number, bz: number,
@@ -347,8 +216,7 @@ export class MeshBuild {
     grow(this.box, cx, cy, cz);
     fixFacetArrays(this.p, this.n, base);
     if (rgb) {
-      // First colour seen: white for every corner already emitted, so the array
-      // stays in step with the positions.
+      // Backfill white up to here so the colour array stays aligned.
       if (!this.coloured) { for (let k = this.c.length; k < base; k++) this.c.push(1); }
       this.coloured = true;
       for (let v = 0; v < 3; v++) this.c.push(rgb[0], rgb[1], rgb[2]);
@@ -357,8 +225,7 @@ export class MeshBuild {
     }
   }
 
-  /** The corner normals of the last triangle, where the file supplied them.
-   *  Called straight after tri(), which has already filled in the facet's own. */
+  // Override corner normals on the last triangle (call after tri()).
   normals(a: number[], b: number[], c: number[]) {
     const base = this.n.length - 9;
     if (base < 0) return;
@@ -390,15 +257,7 @@ export const tooBig = (n: number) =>
 
 export const clamp01 = (v: number) => (Number.isFinite(v) ? (v < 0 ? 0 : v > 1 ? 1 : v) : 1);
 
-/**
- * `#rgb`, `#rrggbb` or `#rrggbbaa` to three numbers in 0..1, or null.
- *
- * Alpha is parsed and dropped. The renderer draws a model opaque - there is no
- * blend state and no depth sort in canvas/model.ts - so a translucent material
- * would come out as its own colour at full strength either way, and returning
- * the alpha would only invite somebody to multiply it into the colour and render
- * a red part pink.
- */
+// Hex colour to [r, g, b] in 0..1. Alpha is parsed and dropped (no blend state).
 export function hexRGB(raw: string | undefined | null): number[] | null {
   const s = (raw || '').trim().replace(/^#/, '');
   if (!/^[0-9a-fA-F]+$/.test(s)) return null;
@@ -408,8 +267,7 @@ export function hexRGB(raw: string | undefined | null): number[] | null {
   return null;
 }
 
-/** Ext of a filename, lowercased, no dot. Empty for a name with no extension -
- *  a dotfile has none, which is why the index must be past zero. */
+// Lowercase extension without dot. Empty if none (dotfiles excluded).
 export function extOf(name: string) {
   const i = name.lastIndexOf('.');
   return i > 0 ? name.slice(i + 1).toLowerCase() : '';

@@ -1,26 +1,13 @@
-// The drawing surface, on an engine that has half of one.
-//
-// canvas/surface.ts is the single door to every picture this app derives: the
-// display copy, the optimiser's shrink and its thumbnails, a video poster, a
-// model's still and a GIF's freeze frame. So a fault in it is never one missing
-// picture - it is all of them at once, silently, because every one of those call
-// sites treats "no surface" as "leave the original alone".
-//
-// The fault this file was written for is the second kind of absence. The module
-// used to fall back to an element only when `new OffscreenCanvas()` *threw*,
-// which is the failure an engine without OffscreenCanvas has. The other one -
-// the constructor works, the object exists, `getContext('2d')` answers null -
-// went straight past the fallback and answered "no surface", which every caller
-// reads as "leave the original alone".
-//
-// No engine has been confirmed to do that here. It was added while chasing
-// missing PDF and video previews that turned out to be two other bugs entirely
-// (shownHash in board-model.ts, and canvas/gl-frame.ts), and it is kept because
-// the gap is real and cheap to close - not because it was the fault.
-//
-// Every stub here is an *uncooperative* engine rather than a helpful one, for
-// the reason tests/picture.test.js gives about the same module's encoders: a
-// stub that answers everything is exactly why none of this was caught.
+// The drawing surface, on an engine that has half of one. canvas/surface.ts
+// is the single door to every picture this app derives, so a fault here is
+// never one missing picture - it's all of them, silently, since every
+// caller treats "no surface" as "leave the original alone". This file
+// guards the second kind of absence: the module used to fall back to an
+// element only when `new OffscreenCanvas()` *threw*, missing the case where
+// the constructor works but `getContext('2d')` answers null. No engine has
+// been confirmed to do that; kept because the gap is real and cheap to close.
+// Every stub is deliberately uncooperative - a stub that answers everything
+// is exactly why none of this was caught.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -29,12 +16,9 @@ import { surface, surfaceToBlob, canvasReads } from '../web/assets/js/canvas/sur
 
 /**
  * A 2D context with the members the Surface type names, and nothing else.
- *
- * `reads` is what getImageData does with what was drawn: 'blank' is the
- * fingerprinting protection that answers with nothing, 'noise' is the form that
- * perturbs the low bits, 'throws' is a tainted canvas, and 'true' is a browser
- * behaving. Nothing here is cooperative by default - a stub that always handed
- * back the fill colour would agree with any implementation at all.
+ * `reads` is what getImageData does: 'blank' is fingerprinting protection
+ * answering with nothing, 'noise' perturbs the low bits, 'throws' is a
+ * tainted canvas, 'true' is a browser behaving.
  */
 const fakeCtx = (reads = 'blank') => {
   let fill = '#000000';
@@ -63,12 +47,10 @@ const fakeCtx = (reads = 'blank') => {
 };
 
 /**
- * Install an engine for the length of one call.
- *
- * `offscreen` is what `new OffscreenCanvas()` does - 'none' for an engine
- * without the global, 'throws' for one that refuses to build it, 'no-2d' for
- * Firefox on Android, and 'works' for everything else. `element` is whether
- * there is a document to make a `<canvas>` in.
+ * Install an engine for the length of one call. `offscreen`: 'none' has no
+ * global, 'throws' refuses to build it, 'no-2d' is Firefox on Android,
+ * 'works' is everything else. `element` is whether a document exists to
+ * make a `<canvas>` in.
  */
 function engine({
   offscreen = 'works', element = true, encodes = ['image/png'], reads = 'blank',
@@ -125,9 +107,9 @@ function engine({
 }
 
 test('an OffscreenCanvas that gives no 2D context falls through to an element', () => {
-  // The regression. Firefox on Android: the constructor works and the context
-  // does not, and the old shape stopped there and answered null - which every
-  // caller reads as "leave it alone", so the app derived no pictures at all.
+  // The regression: Firefox on Android's constructor works but the context
+  // does not, and the old code stopped there and answered null - every
+  // caller reads that as "leave it alone", so the app derived no pictures at all.
   const eng = engine({ offscreen: 'no-2d' });
   try {
     const face = surface(64, 64);
@@ -169,7 +151,7 @@ test('no OffscreenCanvas at all is the element path', () => {
 });
 
 test('with neither there is no surface, and that is a null rather than a throw', () => {
-  // Which is this module in a Node test, and is what keeps it importable by
+  // This is this module in a Node test - keeps it importable by
   // tests/imports.test.js like every other module.
   const eng = engine({ offscreen: 'none', element: false });
   try {
@@ -208,9 +190,9 @@ test('smoothing is set on whichever surface came back', () => {
 // ---------------------------------------------------------------------------
 
 test('a type the engine cannot write comes back as PNG rather than as nothing', async () => {
-  // convertToBlob rejects an unsupported type where toBlob silently substitutes,
-  // and a caller written against the second loses the picture on the first. No
-  // version of Safari writes WebP from a canvas; this is that engine.
+  // convertToBlob rejects an unsupported type where toBlob silently
+  // substitutes; a caller written for the second loses the picture on the
+  // first. No version of Safari writes WebP from a canvas - this is that engine.
   const eng = engine({ offscreen: 'works', encodes: ['image/png', 'image/jpeg'] });
   try {
     const out = await surfaceToBlob(surface(8, 8), 'image/webp', 0.8);
@@ -232,9 +214,9 @@ test('the element path substitutes for itself, and the type says which', async (
 });
 
 test('a canvas with neither method answers null instead of throwing', async () => {
-  // The same half-an-engine as the first test, one method further on: calling
-  // the method the other kind of canvas has is a TypeError out of a promise
-  // nobody expected to reject.
+  // The same half-an-engine one method further on: calling the method the
+  // other kind of canvas has is a TypeError out of a promise nobody expected
+  // to reject.
   const out = await surfaceToBlob({ canvas: { width: 8, height: 8 }, ctx: fakeCtx() }, 'image/webp', 0.8);
   assert.equal(out, null);
 });
@@ -243,16 +225,13 @@ test('a canvas with neither method answers null instead of throwing', async () =
 // Whether the pixels come back
 // ---------------------------------------------------------------------------
 //
-// Firefox's fingerprinting protection, and Safari's Lockdown Mode, answer a
-// canvas read with blank or randomised data rather than with an error. Nothing
-// throws and nothing is logged, so a poster's flat-frame check would discard
-// every frame of every clip and the palette would find no colour in a board
-// full of pictures. canvasReads() is the one question standing in for all of
-// that; see its docstring for why it has never actually been seen to fire.
-//
-// canvasReads() remembers a yes and re-asks after a no - Firefox prompts, and
-// somebody who allows it mid-session should not have to reload - so the order
-// of these tests does not matter *except* that the yes must come last.
+// Firefox's fingerprinting protection and Safari's Lockdown Mode answer a
+// canvas read with blank or randomised data, not an error - nothing throws
+// or logs, so a poster's flat-frame check would discard every frame and the
+// palette would find no colour anywhere. canvasReads() stands in for that
+// check; see its docstring for why it's never actually been seen to fire.
+// It remembers a yes and re-asks after a no (Firefox prompts mid-session),
+// so test order does not matter *except* the yes must come last.
 
 test('a browser that hands back blank pixels is not readable', () => {
   const eng = engine({ reads: 'blank' });
@@ -282,9 +261,8 @@ test('no canvas at all reads as not readable rather than throwing', () => {
 });
 
 test('the randomising form of the protection is not treated as blocking', () => {
-  // It perturbs a few least-significant bits, which is harmless to a flat-frame
-  // check and to a palette. Reading it as "blocked" would turn a browser that
-  // works into one this app refuses to derive anything on.
+  // It perturbs a few least-significant bits, harmless to a flat-frame check
+  // or a palette. Reading it as "blocked" would refuse a browser that works.
   const eng = engine({ reads: 'noise' });
   try {
     assert.equal(canvasReads(), true);
@@ -294,8 +272,7 @@ test('the randomising form of the protection is not treated as blocking', () => 
 });
 
 test('a yes is remembered, so the loops that ask do not pay for it', () => {
-  // Last on purpose: the yes above has already settled it, and this is the
-  // assertion that it *stays* settled once the engine is gone.
+  // Last on purpose: asserts the yes above *stays* settled once the engine is gone.
   const eng = engine({ offscreen: 'none', element: false });
   try {
     assert.equal(canvasReads(), true, 'a browser that reads once was asked again');

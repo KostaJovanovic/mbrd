@@ -1,18 +1,11 @@
 // Stickers, and the two things about them that can go wrong quietly.
-//
-// The first is *completeness*. A sticker is a note in every way sticky.ts cares
-// about, and the whole of that claim is one predicate - isSticky() - read from
-// five places. A kind that sticks in stuckTo() but is not recognised by
-// stuckFollowers() is a sticker that gets left behind when the card underneath
-// it moves, and nothing about that fails: the star simply stays where it was
-// while the photograph walks off. So the relation is exercised end to end here
-// rather than at the predicate.
-//
-// The second is the *catalogue*. A shape id is written straight into a
-// `<use href>`, where a name that matches nothing draws nothing at all - no
-// warning, no failed request, a hole where the sticker was. The same hazard
-// tests/icons.test.js exists for, and checked the same way: both directions,
-// against the sprite.
+// *Completeness*: a sticker is a note in every way sticky.ts cares about, via
+// one predicate (isSticky()) read from five places - a kind recognised by
+// stuckTo() but not stuckFollowers() is left behind silently when its host
+// moves, so the relation is exercised end to end rather than at the predicate.
+// *The catalogue*: a shape id feeds a `<use href>` where a bad name draws
+// nothing at all, silently - the same hazard tests/icons.test.js checks for,
+// checked the same way: both directions, against the sprite.
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -58,30 +51,21 @@ test('the sprite carries no shape the catalogue does not offer', () => {
 });
 
 test('no comment in the sprite holds two hyphens in a row', () => {
-  // SVG is XML, so this is a parse error - and a parse error takes down the
-  // *whole file*, not the comment. Every shape on every board then draws
-  // nothing at once, with no console warning and no failed request to say why:
-  // the browser fetches the sprite, fails to build a document out of it, and
-  // every <use href> resolves to an id in a file that no longer exists.
-  //
-  // Not hypothetical. The section headings in this sprite were first written as
-  // rules of hyphens, in the house style the rest of the codebase uses for
-  // exactly that job, and forty-five shapes went invisible together.
-  //
-  // Matched loosely on purpose: a file that is already broken this way does not
-  // tokenise into clean comments, so the check looks at everything between the
-  // openers and the first closer rather than trusting the structure.
+  // SVG is XML, so this is a parse error that takes down the *whole file* -
+  // every shape on every board draws nothing, silently. Not hypothetical:
+  // this sprite's section headings were first written as hyphen rules, the
+  // house style elsewhere, and all forty-five shapes went invisible together.
+  // Matched loosely: a file already broken this way does not tokenise into
+  // clean comments.
   for (const [, inner] of sprite.matchAll(/<!--([\s\S]*?)-->/g)) {
     assert.ok(!inner.includes('--'), `two hyphens inside a comment: "${inner.trim().slice(0, 48)}"`);
   }
 });
 
 test('every symbol is drawn to the box the renderers wrap it in', () => {
-  // Five places build a <svg class="sticker-art"> around a <use> and set this
-  // viewBox on the wrapper (STICKER_VIEWBOX). A symbol drawn to a different one
-  // is scaled to that wrapper anyway and so arrives at a different weight from
-  // every other sticker on the board - which is exactly the failure the icon
-  // sprite's own box check exists for.
+  // Five places wrap a <use> in this viewBox (STICKER_VIEWBOX); a symbol
+  // drawn to a different one is scaled to that wrapper anyway and arrives at
+  // a different weight - the same failure the icon sprite's box check guards.
   const boxes = [...sprite.matchAll(/<symbol id="([^"]+)" viewBox="([^"]+)"/g)];
   assert.equal(boxes.length, defined.size, 'a symbol without a viewBox');
   for (const [, id, box] of boxes) {
@@ -90,16 +74,11 @@ test('every symbol is drawn to the box the renderers wrap it in', () => {
 });
 
 test('a shape only ever opts out of the paint in the one declared way', () => {
-  // fill is inherited, and items.css sets it on the <svg> in the host document
-  // because nothing there can select into an external <use>. A presentation
-  // attribute on the path beats the inherited value, which is how the outline
-  // over a body says it is ink - and also how a shape could accidentally be
-  // pinned to one colour for good. So the only value allowed is currentColor,
-  // which still follows the tint.
-  //
-  // Phosphor's own files also put fill="currentColor" on the root <svg> and
-  // opacity="0.2" on the duotone background; the generator strips both, and
-  // a stray one surviving would mean every shape came out one flat colour.
+  // fill is inherited from items.css since nothing there can select into an
+  // external <use>. A presentation attribute on the path beats that - the
+  // only value allowed is currentColor, or a shape gets pinned to one colour.
+  // Phosphor's own files also carry fill="currentColor" on the root <svg> and
+  // opacity="0.2" on the duotone background; the generator strips both.
   for (const [, value] of sprite.matchAll(/\sfill="([^"]+)"/g)) {
     assert.equal(value, 'currentColor', `fill="${value}" pins a shape to one paint`);
   }
@@ -109,13 +88,10 @@ test('a shape only ever opts out of the paint in the one declared way', () => {
 });
 
 test('every shape has an ink layer', () => {
-  // A duotone symbol is a paper body and an inked outline; a single-weight one
-  // is the mark alone. Either way at least one path has to carry the ink, or
-  // the shape is a paper silhouette on paper - invisible on the board, and
-  // invisible in a way no test of the *sprite* would otherwise notice.
-  // Attribute order is the author's, and the count is asserted: this used to
-  // require id to be the first attribute and to assert only inside the walk, so
-  // a sprite the regex could not read was a sprite with nothing wrong with it.
+  // A duotone symbol is a paper body plus an inked outline; a single-weight
+  // one is the mark alone. Either way at least one path must carry the ink,
+  // or the shape is invisible on the board. The count is asserted separately
+  // so a sprite the regex fails to read is not silently "nothing wrong".
   const drawings = [...sprite.matchAll(/<symbol\b[^>]*\bid="([^"]+)"[^>]*>([\s\S]*?)<\/symbol>/g)];
   assert.equal(drawings.length, STICKERS.length,
     `the sprite walk found ${drawings.length} symbols and the catalogue has ${STICKERS.length}`);
@@ -131,11 +107,9 @@ test('every catalogue tint is one the palette actually has', () => {
 });
 
 test('every tint the palette has is one the menu can name', () => {
-  // The menu's colour row is STICKER_TINT_NAMES by index, and the number it
-  // writes into meta.tint is that index plus one. Nothing but the ordering ties
-  // the words to the tokens, so a ninth --sticker-* with no name would be a
-  // colour nothing could choose and a ninth name would set a colour that is not
-  // there.
+  // The menu's colour row is STICKER_TINT_NAMES by index; meta.tint is that
+  // index plus one. Only ordering ties words to tokens, so a stray extra on
+  // either side is a colour nothing can choose or a name that sets nothing real.
   assert.equal(STICKER_TINT_NAMES.length, STICKER_TINTS);
   const css = readFileSync(join(WEB, 'assets', 'css', 'tokens.css'), 'utf8');
   for (let n = 1; n <= STICKER_TINTS; n++) {
@@ -165,8 +139,8 @@ test('a sticker over a photo is stuck to it and travels with it', () => {
 
 test('a sticker may stick to a fence, where a note may not', () => {
   const [f] = addItems([fence({ x: 0, y: 0, w: 800, h: 600 })]);
-  // Kept apart, or the sticker measures the note as the nearest thing under it
-  // and the fence never comes into the question.
+  // Kept apart, or the sticker would measure the note as nearest and the
+  // fence would never enter the question.
   const [n] = addItems([note({ x: -200, y: 0 })]);
   const [star] = addItems([sticker({ x: 200, y: 0 })]);
   assert.equal(stuckTo(byId(n.id)), null);
@@ -176,8 +150,8 @@ test('a sticker may stick to a fence, where a note may not', () => {
 test('a sticker may stick to the title card, where a note may not', () => {
   ensureTitleCard();
   const title = byId(TITLE_ID);
-  // Both over the card and clear of each other, so each is measured against the
-  // title rather than against the other.
+  // Both over the card and clear of each other, so each measures against the
+  // title, not against the other.
   const [n] = addItems([note({ x: title.x - 70, y: title.y })]);
   const [star] = addItems([sticker({ x: title.x + 70, y: title.y })]);
   assert.equal(stuckTo(byId(n.id)), null);
@@ -207,11 +181,10 @@ test('a sticker survives a save and a reload still stuck', () => {
 // ---------------------------------------------------------------------------
 
 test('deleting a card takes everything stuck to it', () => {
-  // Stickers alone used to travel, on the argument that a star is a remark about
-  // the photograph and a note is something somebody wrote. Nothing is lost
-  // either way - a delete files it in the drawer - and what leaving the note
-  // behind actually produced was a note hovering over the gap, re-measured onto
-  // whatever happened to be under it. See riderCascade() in trash.ts.
+  // Stickers alone used to travel, on the argument that a star is a remark
+  // about the photograph while a note is somebody's own words. Leaving the
+  // note behind actually left it hovering over the gap, re-measured onto
+  // whatever was underneath. See riderCascade() in trash.ts.
   const [pic] = addItems([photo({ x: 0, y: 0, w: 400, h: 400 })]);
   const [n] = addItems([note({ x: -100, y: -100 })]);
   const [star] = addItems([sticker({ x: 100, y: 100 })]);
@@ -222,8 +195,8 @@ test('deleting a card takes everything stuck to it', () => {
   assert.equal(byId(pic.id), undefined);
   assert.equal(byId(star.id), undefined);
   assert.equal(byId(n.id), undefined);
-  // In the drawer, not gone: three entries, and the two riders remember what
-  // they were on so the restore can put the pile back together.
+  // In the drawer, not gone: the two riders remember what they were on so
+  // the restore can put the pile back together.
   assert.equal(board.trash.length, 3);
   const binned = id => board.trash.find(t => t.item.id === id).item;
   assert.equal(binned(n.id).meta.stuckOf, pic.id);
@@ -232,11 +205,10 @@ test('deleting a card takes everything stuck to it', () => {
 });
 
 test('a delete that already names the whole pile still records the pile', () => {
-  // Select All, or a marquee thrown round a photograph and its notes: the walk
-  // has nothing to add, because everything is already going. The stamp is
-  // measured over the finished set for exactly this - it used to be a by-product
-  // of the walk, and a board cleared in one press arrived in the drawer as loose
-  // cards while the same board cleared card by card arrived as piles.
+  // Select All, or a marquee round a photograph and its notes: the walk has
+  // nothing to add since everything is already going. The stamp is measured
+  // over the finished set for this reason - used to be a walk by-product, so
+  // a board cleared in one press arrived as loose cards, unlike card by card.
   const [pic] = addItems([photo({ x: 0, y: 0, w: 400, h: 400 })]);
   const [n] = addItems([note({ x: -100, y: -100 })]);
   const [star] = addItems([sticker({ x: 100, y: 100 })]);
@@ -248,16 +220,15 @@ test('a delete that already names the whole pile still records the pile', () => 
   assert.equal(binned(star.id).meta.stuckOf, pic.id);
   assert.equal(binned(pic.id).meta.stuckOf, undefined, 'the host rides on nothing');
 
-  // And it comes back as a pile from one id, which is what the drawer drags.
+  // Comes back as a pile from one id, which is what the drawer drags.
   restoreItems([pic.id], { x: 1000, y: 700 });
   assert.equal(board.trash.length, 0, 'all three came back on one restore');
   assert.equal(byId(n.id).x - byId(pic.id).x, -100, 'the note kept its place on the picture');
 });
 
 test('the cascade stops at a host that is not going', () => {
-  // The walk takes what is stuck to something *being deleted*, and nothing else.
-  // A second photograph standing beside the first, with its own note, is not
-  // part of this delete and neither is anything on it.
+  // The walk takes only what is stuck to something *being deleted*. A second
+  // photograph beside the first, with its own note, is not part of this delete.
   const [pic] = addItems([photo({ x: 0, y: 0, w: 400, h: 400 })]);
   const [other] = addItems([photo({ x: 900, y: 0, w: 400, h: 400 })]);
   const [mine] = addItems([note({ x: 0, y: 0 })]);
@@ -272,16 +243,16 @@ test('the cascade stops at a host that is not going', () => {
 });
 
 test('a pile comes back out of the drawer on its card, where it was on it', () => {
-  // The other direction of the same rule, and the reason meta.stuckOf exists:
-  // stuckness is geometry, and two entries in the drawer have no geometry to
-  // measure against each other. See ridersInBin() and stuckPlacement().
+  // The reason meta.stuckOf exists: stuckness is geometry, and two entries
+  // in the drawer have none to measure against each other. See
+  // ridersInBin() and stuckPlacement().
   const [pic] = addItems([photo({ x: 0, y: 0, w: 400, h: 400 })]);
   const [n] = addItems([note({ x: 100, y: 50, w: 80, h: 80 })]);
   assert.equal(stuckTo(byId(n.id))?.id, pic.id);
 
   removeItems([pic.id]);
-  // Only the photograph is asked for, and it is dropped a long way from where it
-  // was deleted - which is the ordinary case, since the drag is what says where.
+  // Only the photograph is asked for, dropped far from where it was deleted -
+  // the ordinary case, since the drag says where.
   const back = restoreItems([pic.id], { x: 1000, y: 700 });
   assert.equal(back.length, 2, 'the note came back with it');
 
@@ -290,19 +261,18 @@ test('a pile comes back out of the drawer on its card, where it was on it', () =
   assert.ok(card && sticky);
   assert.equal(card.x, 1000);
   assert.equal(card.y, 700);
-  // The offset it held on the card, kept: it was a quarter of the way right of
-  // centre and an eighth down, and it still is.
+  // The offset it held on the card is kept.
   assert.equal(sticky.x - card.x, 100);
   assert.equal(sticky.y - card.y, 50);
   assert.equal(stuckTo(byId(n.id))?.id, pic.id, 'and still stuck to it');
-  // The drawer link is a drawer link. On the board the measurement is the truth.
+  // The drawer link is a drawer link; on the board the measurement is truth.
   assert.equal(sticky.meta.stuckOf, undefined);
   assert.equal(board.trash.length, 0);
 });
 
 test('a rider left in the drawer stays there', () => {
-  // Restoring the note alone must not drag its host back out. The relation is
-  // one-way on the way out: a host brings its riders, a rider brings nothing.
+  // Restoring the note alone must not drag its host out too - one-way: a
+  // host brings its riders, a rider brings nothing.
   const [pic] = addItems([photo({ x: 0, y: 0, w: 400, h: 400 })]);
   const [n] = addItems([note({ x: 0, y: 0 })]);
   removeItems([pic.id]);
@@ -357,12 +327,10 @@ test('a stuck item is pinned and Unstick sets it loose', () => {
 // ---------------------------------------------------------------------------
 
 /**
- * Run `fn` as though `ms` had passed.
- *
- * The settle window is a comparison against Date.now() and nothing else - no
- * timer, no event - which is what makes it testable this cheaply. Restored in a
- * finally, so a throwing assertion cannot leave the clock wound forward for
- * every case after it.
+ * Run `fn` as though `ms` had passed. The settle window is a comparison
+ * against Date.now() alone, no timer or event, which is what makes this
+ * cheap. Restored in a finally so a throwing assertion cannot leave the
+ * clock wound forward for later cases.
  */
 function later(ms, fn) {
   const real = Date.now;
@@ -375,8 +343,7 @@ test('a freshly dropped item is stuck but not yet pinned', () => {
   const [star] = addItems([sticker({ x: 0, y: 0 })]);
   startSettling([star.id]);
 
-  // Stuck immediately, and that half must not wait: dragging the photograph
-  // now has to take the star along.
+  // Stuck immediately - dragging the photograph now must take the star along.
   assert.equal(stuckTo(byId(star.id))?.id, pic.id);
   assert.deepEqual(stuckFollowers([pic.id]), [star.id]);
 
@@ -403,8 +370,8 @@ test('a drop restarts the window rather than topping it up', () => {
   const [star] = addItems([sticker({ x: 0, y: 0 })]);
   startSettling([star.id]);
 
-  // Nine seconds in, moved again: the clock goes back to the top, so a sticker
-  // you keep adjusting never sets under your hand.
+  // Moved again before the window is up: the clock resets, so a sticker
+  // still being adjusted never sets under your hand.
   later(SETTLE_MS - 1000, () => {
     const before = snapshotGeom([star.id]);
     applyGeom([{ ...before[0], x: 20 }]);
@@ -415,8 +382,8 @@ test('a drop restarts the window rather than topping it up', () => {
 });
 
 test('Unstick reaches an item that has not set yet', () => {
-  // The window is exactly when you want this: it is how you say "leave it here
-  // but do not fix it", without waiting for it to fix itself so you can unfix it.
+  // Lets you say "leave it here but do not fix it" without waiting for it to
+  // fix itself first.
   addItems([photo({ x: 0, y: 0, w: 400, h: 400 })]);
   const [star] = addItems([sticker({ x: 0, y: 0 })]);
   startSettling([star.id]);
@@ -428,9 +395,8 @@ test('Unstick reaches an item that has not set yet', () => {
 });
 
 test('a board that has just loaded is already set', () => {
-  // Absence of a stamp means set, not settling - a saved board has been sitting
-  // still however long ago it was written, and opening one must not hand every
-  // sticky on it ten seconds of being loose.
+  // No stamp means set, not settling: opening a saved board must not hand
+  // every sticky on it ten seconds of being loose.
   addItems([photo({ x: 0, y: 0, w: 400, h: 400 })]);
   const [star] = addItems([sticker({ x: 0, y: 0 })]);
   startSettling([star.id]);
@@ -455,8 +421,8 @@ test('a drop that finds a host clears the loose flag', () => {
   unstickItems([star.id]);
 
   // What the pointer gesture does on release: move it, resettle, commit. The
-  // before snapshot carries loose:true and the after one carries it cleared,
-  // which is what gives undo something to put back.
+  // before snapshot carries loose:true, the after one clears it, giving undo
+  // something to put back.
   const before = snapshotGeom([star.id]);
   assert.equal(before[0].loose, true);
   applyGeom([{ ...before[0], x: 40 }]);
@@ -495,23 +461,14 @@ test('the loose flag survives a save and a reload', () => {
 // ---------------------------------------------------------------------------
 // The lattice: a rider rides, it never lands on a grid line
 //
-// Whimsy's plain end turns Desktop snapping on (see axisMoved() in
-// ui/appearance.ts), so a slide from the middle to Harsh is a board-wide snap
-// sweep - and a person who has just pressed a star onto a photograph and then
-// reached for the slider watched the star jump to a grid line and leave the
-// picture. Three separate holes said yes to that, and each of them is quiet:
-//
-//  - snapAll()/unsnapAll() skipped `isPinned`, which is stuck *and set*, so the
-//    ten seconds between a drop and its pin were ten seconds in which a stuck
-//    sticker was swept onto the lattice like a loose card;
-//  - and then it stayed there, because by the time the slider came back the
-//    sticker *was* pinned, so unsnapAll() skipped it and the memo it had been
-//    given was never spent;
-//  - onLattice() (state.ts) laid every arrival on the grid, so a star pressed
-//    onto a card while the board was already Harsh never got to be on the card.
-//
-// The invariant underneath all three is one sentence: a rider's place is a
-// fraction of its host, and neither sweep may change that fraction.
+// Whimsy's plain end turns Desktop snapping on (axisMoved(), ui/appearance.ts),
+// so sliding to Harsh sweeps the whole board - and a star just pressed onto a
+// photo would jump to a grid line and leave the picture. Three quiet holes
+// caused that: snapAll()/unsnapAll() skipped isPinned (stuck but not yet set)
+// during the ten-second settle window; unsnapAll() then skipped an already-
+// pinned sticker, leaving its memo unspent; and onLattice() (state.ts) laid
+// every arrival on the grid regardless. One invariant covers all three: a
+// rider's place is a fraction of its host, and no sweep may change that fraction.
 // ---------------------------------------------------------------------------
 
 /** Where a rider sits on its host, as the fraction sticky.ts measures. */
@@ -527,7 +484,7 @@ function assertRides(riderId, hostId, was, message) {
     `${message}: ${JSON.stringify(now)} is not ${JSON.stringify(was)}`);
 }
 
-// Deliberately off every grid line, so a sweep that touched them would show.
+// Off every grid line on purpose, so a sweep that touched them would show.
 const CARD = { x: 13, y: 17, w: 300, h: 300 };
 
 test('a settled sticker rides its host onto the grid rather than snapping', () => {

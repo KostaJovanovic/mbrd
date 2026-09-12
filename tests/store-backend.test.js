@@ -1,22 +1,11 @@
 // The recovery store, driven through the seam rather than through IndexedDB.
-//
-// storage/idb.ts is a port now: eight functions over four named stores, with the
-// IndexedDB code as one implementation and the desktop's directory of files as
-// the other. Everything above it - session.ts's snapshot writer, its asset
-// sweep, its wipe - is written against those eight and nothing lower, and this
-// file is the evidence for that claim. If any of it round-trips here, on a
-// backend made of Maps, it round-trips on a backend made of files.
-//
-// It is also where the two contracts idb.ts's header states are held to:
-//
-//   the batch forms may tear     - so writeSnapshot()'s order has to survive a
-//                                  setMany() that only half landed
-//   clear() may not              - a partial wipe has to come back as a
-//                                  rejection, because clearAllData() reports a
-//                                  failed wipe rather than reloading over it
-//
-// The second is PERSIST-03 and is the one that would be a privacy failure: a
-// person asked for everything to be gone and would have been told it was.
+// storage/idb.ts is a port - eight functions over four stores, IndexedDB one
+// implementation and the desktop's file directory the other - and session.ts
+// is written against only those eight, so a round trip on a Maps-backed
+// fake proves it round-trips on files too. Also holds idb.ts's two
+// contracts: batch writes may tear (writeSnapshot()'s order must survive a
+// half-landed setMany()), and clear() may not (a partial wipe must reject -
+// PERSIST-03, the privacy failure of reporting a wipe that did not happen).
 
 import { test, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -33,10 +22,9 @@ import { putAsset, clearAssets, getAsset } from '../web/assets/js/storage/assets
 const PHOTO = hash('photo');
 const GONE = hash('unreferenced');
 
-// A real Blob, unlike the stub session.test.js uses. restoreSession() tests
-// `rec.blob instanceof Blob` before rebuilding a card - the check that stops a
-// hand-edited store putting a string on the board - so a round-trip test has to
-// put back something that passes it.
+// A real Blob, unlike the stub session.test.js uses: restoreSession() tests
+// `rec.blob instanceof Blob` before rebuilding a card, so the round trip
+// needs something that passes it.
 const blob = () => new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'image/jpeg' });
 
 initSession({
@@ -46,9 +34,8 @@ initSession({
   exportBoard: async () => false,
   prompt: async () => 'cancel',
 });
-// The 20s tick would hold the runner's event loop open for the life of the
-// process, and every save here is asked for. Same stub session.test.js uses, and
-// for the same reason.
+// The 20s tick would hold the runner's event loop open for the process's
+// life. Same stub session.test.js uses, for the same reason.
 const realSetInterval = globalThis.setInterval;
 globalThis.setInterval = () => 0;
 initSessionStorage();
@@ -83,8 +70,8 @@ test('a board with an asset round-trips through a backend that is not a database
   addItems([asItem()]);
   assert.equal(await autosave(), true);
 
-  // Everything the app knows in memory goes, so the restore is a real read
-  // rather than a look at what is still lying about.
+  // Wipe in-memory state, so the restore is a real read, not a look at
+  // what's still lying about.
   clearAssets();
   loadBoard({ title: 'something else', items: [] });
 
@@ -95,9 +82,8 @@ test('a board with an asset round-trips through a backend that is not a database
 });
 
 test('the sweep still deletes what the snapshot stopped referring to', async () => {
-  // The dangerous half of writeSnapshot(), and the half a swapped backend could
-  // most easily break: it deletes every stored asset the snapshot it just wrote
-  // does not mention.
+  // The dangerous half of writeSnapshot(), and easiest for a swapped backend
+  // to break: it deletes every stored asset the new snapshot does not mention.
   putAsset(PHOTO, blob(), { ext: 'jpg', mime: 'image/jpeg', name: 'p.jpg' });
   putAsset(GONE, blob(), { ext: 'jpg', mime: 'image/jpeg', name: 'g.jpg' });
   addItems([asItem()]);
@@ -109,9 +95,8 @@ test('the sweep still deletes what the snapshot stopped referring to', async () 
 });
 
 test('the snapshot lands after the assets it names, so a torn write is survivable', async () => {
-  // Not a test of the writer's success but of its *order*, which is the whole
-  // reason a backend without transactions is allowed here. Recorded by watching
-  // the store rather than by mocking, so it is the real sequence.
+  // A test of *order*, not success - the reason a transaction-free backend
+  // is allowed here. Recorded by watching the store, not by mocking.
   const seen = [];
   const real = store.set;
   store.set = async (s, k, v) => { seen.push(s); return real(s, k, v); };
@@ -130,10 +115,9 @@ test('the snapshot lands after the assets it names, so a torn write is survivabl
 });
 
 test('a wipe that cannot finish rejects rather than reporting success', async () => {
-  // PERSIST-03, restated against the port. clearAllData() drops the write latch,
-  // drains the writer and surfaces a failed wipe; that only works if the backend
-  // says a partial clear failed. A backend that deleted what it could and
-  // resolved anyway would turn the report into a lie.
+  // PERSIST-03 against the port: clearAllData() surfaces a failed wipe only
+  // if the backend says a partial clear failed. One that deleted what it
+  // could and resolved anyway would turn the report into a lie.
   putAsset(PHOTO, blob(), { ext: 'jpg', mime: 'image/jpeg', name: 'p.jpg' });
   addItems([asItem()]);
   await autosave();

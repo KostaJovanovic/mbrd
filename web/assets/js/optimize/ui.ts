@@ -1,9 +1,5 @@
-// The button's half of optimising: what it says before, during and after.
-//
-// Separate from optimize.ts for the same reason ui/look.ts is separate from
-// ui/appearance.ts - that one is the work and has no business knowing there is
-// a screen, this one is the conversation and has no business knowing how a WebP
-// is made.
+// Optimize UI — dialog, progress, result toast. Separate from optimize.ts
+// (the work) for the same reason look.ts is separate from appearance.ts.
 
 import { ask } from '../ui/dialog.ts';
 import { formatBytes } from '../util.ts';
@@ -12,25 +8,14 @@ import { discardOriginals, originalsHeld } from '../state.ts';
 import { planOptimize, runOptimize, describeSaving, clipsWantingStills } from './optimize.ts';
 import { opusAvailable, OPUS_KBPS } from './opus.ts';
 
-/**
- * What the waiting strip calls each pass - what it is doing, and what one item
- * of it is called. Anything not listed is the main encoding pass.
- */
+/** Phase labels for the progress strip. Unlisted phases are the main encode. */
 const PHASE: Record<string, [string, string]> = {
   thumbs: ['Making thumbnails', 'Thumbnail'],
   posters: ['Taking video stills', 'Video still'],
 };
 const MAIN: [string, string] = ['Optimizing', 'Optimizing'];
 
-/**
- * Ask, run, and say what happened.
- *
- * The dialog is built out of the plan rather than out of a fixed sentence,
- * because the honest answer depends entirely on what is on the board: a board
- * of photographs and a board of one FLAC want different warnings, and a board
- * that has nothing worth touching should be told so instead of being asked a
- * question.
- */
+/** Ask, run, and report. Dialog text is built from the plan, not a fixed sentence. */
 export async function optimizeBoard() {
   const plan = planOptimize();
   const counts = [

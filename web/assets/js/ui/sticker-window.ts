@@ -1,34 +1,7 @@
-// The sticker pad: a little floating window of shapes you drag or tap onto the
-// board.
-//
-// Modelled on the Playlist's Desktop window and sharing its two gestures
-// outright (ui/float-window.ts) - draggable by its title bar, resizable by its
-// corner. What is different is what it is *for*: the player window shows you
-// the board's own contents, and this one is a drawer of things that are not on
-// the board yet. So it is a grid rather than a list, it is on both layouts
-// rather than Desktop alone, and it has favourites.
-//
-// Two ways out of it, and they are two because a mouse and a finger do not want
-// the same one:
-//
-//   - **Drag a tile onto the board.** A ghost follows the pointer and the card
-//     it would land on wears the same ring a dragged note's host wears, so the
-//     target is unmistakable before you let go. Desktop, in practice.
-//   - **Tap a tile, then tap the board.** The only one that works on a phone,
-//     and it works on both. The armed shape is visibly held down and the board
-//     says so too - a board that quietly places a star on your next click is a
-//     board that has been possessed - and Escape always puts it back.
-//
-// Deliberately absent: a recently-used row, and a keyboard shortcut. Favourites
-// cover the same want with less machinery, and the letter keys are worth
-// keeping free.
-//
-// **Favourites are app-wide and not part of the board.** A board you send
-// somebody carries your stickers and not your picks, which is the whole reason
-// they are in localStorage (readPrefJSON / writePref, the same door the volume
-// and the panel state use) rather than a key in the .mbrd. The last category is
-// remembered too, but only in a module variable: which shelf you were looking
-// at is a fact about this sitting, not about you.
+// Sticker pad: floating window of shapes (drag or tap-then-tap onto the board).
+// Shares move/resize gestures with float-window.ts. Favourites are app-wide
+// (localStorage, not .mbrd) because a board carries your stickers, not your
+// picks. Last category is session-only (module variable).
 //
 // Nothing here touches `document` at import time - every reach is inside
 // initStickerWindow() or a handler that runs after it.
@@ -48,10 +21,9 @@ import type { Sticker } from '../stickers/catalogue.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 
 /**
- * What this window asks of the command surface: one verb. Handed in by
- * initStickerWindow() rather than imported, the same seam ui/toolbar.ts and
- * ui/hud.ts state - commands.ts imports this module, and the arrow only goes
- * one way.
+ * What this window asks of the command surface: one verb. Handed in rather
+ * than imported, the same seam ui/toolbar.ts and ui/hud.ts use - commands.ts
+ * imports this module, and the arrow only goes one way.
  */
 export interface StickerCommands {
   addStickerAt: (shape: string, at: { x: number, y: number }) => void;
@@ -96,16 +68,14 @@ export function initStickerWindow(viewport: Viewport, commands: StickerCommands)
   cmds = commands;
   registerPanel('stickers', openStickerWindow, closeStickerWindow);
 
-  // A board swap takes the window with it. Not because the shapes change - the
-  // catalogue is the same on every board - but because everything else on
-  // screen is torn down and a window left floating over a board that no longer
-  // exists is the one thing that would look like a bug.
+  // A board swap takes the window with it - not because shapes change, but
+  // because everything else on screen tears down and a window left floating
+  // over a gone board would be the one thing that looked like a bug.
   bus.on('board:load', () => { disarm(); closeStickerWindow(); });
 
-  // The armed tap. On the viewport in the capture phase, so it lands before the
-  // ordinary press pipeline has a chance to select something or start a pan -
-  // an armed board is placing a sticker and doing nothing else, which is the
-  // whole of what "armed" means.
+  // The armed tap. Capture phase on the viewport, so it lands before the
+  // ordinary press pipeline can select something or start a pan - an armed
+  // board is placing a sticker and doing nothing else.
   const surface = document.getElementById('viewport');
   surface?.addEventListener('pointerdown', e => {
     if (!armed || e.button !== 0) return;
@@ -116,8 +86,8 @@ export function initStickerWindow(viewport: Viewport, commands: StickerCommands)
     cmds!.addStickerAt(shape, vp!.toWorld(e.clientX, e.clientY));
   }, true);
 
-  // Escape gets out, always. Capture, and before anything else can read the
-  // key: a mode you cannot leave is the reason this app has never had one.
+  // Escape gets out, always. Capture, before anything else reads the key - a
+  // mode you cannot leave is the reason this app has never had one.
   addEventListener('keydown', e => {
     if (e.key !== 'Escape' || !armed) return;
     e.stopPropagation();
@@ -195,10 +165,9 @@ function closeStickerWindow() {
 /**
  * Build the whole body: the favourites row, then every category in order.
  *
- * Rebuilt whole rather than patched when a favourite changes, because the
- * favourites row is a *second* place a shape appears and keeping two copies of
- * one tile in step through a toggle is more code than making forty-five
- * buttons again. It happens on a click, not on a frame.
+ * Rebuilt whole rather than patched on a favourite toggle - the favourites row
+ * is a *second* place a shape appears, and keeping two tiles in step is more
+ * code than remaking forty-five buttons. Happens on a click, not a frame.
  */
 function renderBody() {
   if (!body) return;
@@ -206,11 +175,9 @@ function renderBody() {
 
   const favs = favourites();
   if (favs.length) {
-    // No heading text of its own beyond the word - the row is at the top, which
-    // is most of what "favourites" has to say, and a shelf of six shapes under
-    // a paragraph would be more explanation than shelf.
-    // stickerShape() answers null for an id the catalogue no longer carries;
-    // favourites() has already dropped those, and this keeps the type honest.
+    // No heading text beyond the word - being at the top says most of what
+    // "favourites" needs to. stickerShape() answers null for a retired id;
+    // favourites() has already dropped those, so this just keeps the type honest.
     const pinned: Sticker[] = [];
     for (const id of favs) {
       const shape = stickerShape(id);
@@ -226,31 +193,20 @@ function renderBody() {
     body.append(h, gridOf(shapes, false));
   }
 
-  // Back to the shelf this session was last using. Instant rather than smooth:
-  // the window has only just appeared, and a body that scrolls itself while you
-  // are looking at it reads as the app doing something rather than as it
-  // remembering something.
+  // Back to the shelf this session was last using. Instant, not smooth - the
+  // window just appeared, and scrolling while you watch reads as the app
+  // doing something rather than remembering something.
   //
-  // Measured against the first child rather than against `body`, and guarded on
-  // being the first child at all. Two things were wrong with the difference of
-  // the two offsetTops. The smaller one is that neither offset is relative to
-  // the other - both are measured from .sticker-window, the only positioned
-  // ancestor - so the subtraction carried the body's own padding and the
-  // heading's margin into a number that is supposed to be a scroll distance.
-  //
-  // The larger one is that it ran at all on a fresh window. `lastCategory`
-  // starts at STICKER_CATEGORIES[0][0], so with no favourites the target *is*
-  // the first heading, already at the top, and the pad opened a few pixels down
-  // with the tops of the letters of "Marks" sliced off - which reads as a font
-  // problem rather than a scroll one, and is why it survived so long.
-  //
-  // Not a blanket scrollTop = 0: that would delete the feature to hide the
-  // symptom, and would be wrong the moment somebody has a favourite, because the
-  // Favourites shelf then sits above Marks and scrolling to it is correct.
+  // Measured against the first child, not `body`: both offsetTops are
+  // relative to .sticker-window, so subtracting them directly baked in the
+  // body's padding and heading's margin, opening the pad a few pixels down
+  // with "Marks" sliced off the top even on a fresh window - looked like a
+  // font bug, which is why it survived so long. Not a blanket scrollTop = 0
+  // either: that breaks the moment a favourite exists and the Favourites
+  // shelf sits above Marks.
   const at = body.querySelector<HTMLElement>(`[data-cat="${lastCategory}"]`);
-  // SAFETY: every child of the window's body is a shelf this module built with
-  // div(), so the first of them is an HTMLElement. The null is kept for a body
-  // with nothing in it, and the `&&` below is what reads it.
+  // SAFETY: every child of the window's body is a shelf built with div(), so
+  // the first is an HTMLElement. Null kept for an empty body.
   const first = body.firstElementChild as HTMLElement | null;
   if (at && first && at !== first) body.scrollTop = at.offsetTop - first.offsetTop;
 }
@@ -271,10 +227,9 @@ function gridOf(shapes: Sticker[], inFavourites: boolean) {
 /**
  * One shape, as a tile.
  *
- * A div with role="button" rather than a real <button>, and for one reason: the
- * favourite star is a button of its own in the corner, and a button inside a
- * button is not markup any browser agrees about. The keyboard is wired by hand
- * below to make up for it.
+ * A div with role="button", not a real <button>: the favourite star is a
+ * button of its own in the corner, and a button inside a button is markup no
+ * browser agrees about. Keyboard support is wired by hand to make up for it.
  */
 function tile(entry: Sticker, inFavourites: boolean) {
   const el = div('sticker-tile');
@@ -294,11 +249,11 @@ function tile(entry: Sticker, inFavourites: boolean) {
   fav.setAttribute('aria-label', on ? `Unpin ${entry.name}` : `Pin ${entry.name}`);
   fav.title = on ? 'Remove from favourites' : 'Keep at the top';
   // pointerdown as well as click: the tile's own press handler is on
-  // pointerdown, and without stopping it here a press on the star would start
+  // pointerdown, and without stopping it here a star press would start
   // dragging the shape out of the window.
   fav.addEventListener('pointerdown', e => e.stopPropagation());
-  // A star is a toggle rather than an action, so it says which way it went -
-  // the same pair the checkboxes in the panel use.
+  // A toggle, not an action, so it says which way it went - same pair the
+  // panel's checkboxes use.
   fav.addEventListener('click', e => { e.stopPropagation(); cue(on ? 'off' : 'on'); toggleFavourite(entry.id); });
   el.append(fav);
   if (inFavourites) el.classList.add('is-favourite');
@@ -313,12 +268,10 @@ function tile(entry: Sticker, inFavourites: boolean) {
 }
 
 /**
- * An <svg> showing one shape out of the sprite.
- *
- * The tint goes on the artwork rather than on whatever holds it, because that
- * is where items.css reads it from - one rule per colour, shared by all five
- * places a sticker is drawn. A tile shows the shape's own default, which is
- * the whole promise of the pad: the sticker you place is the one you saw.
+ * An <svg> showing one shape out of the sprite. Tint goes on the artwork
+ * itself, matching where items.css reads it from - one rule per colour,
+ * shared by all five places a sticker is drawn. A tile shows the shape's own
+ * default, the whole promise of the pad: the sticker you place is the one you saw.
  */
 function shapeArt(id: string, tint: number) {
   const svg = stickerArt(id);
@@ -331,12 +284,10 @@ function shapeArt(id: string, tint: number) {
 // ---------------------------------------------------------------------------
 
 /**
- * The pinned shapes, as ids.
- *
- * Read through the catalogue rather than trusted: localStorage is same-origin
- * storage anybody with a console can edit, and an id from it would otherwise be
- * written into a `<use href>`. An entry naming nothing is dropped, which also
- * quietly tidies up after a shape being renamed or retired.
+ * The pinned shapes, as ids. Read through the catalogue rather than trusted:
+ * localStorage is same-origin storage anybody with a console can edit, and a
+ * bad id would otherwise land in a `<use href>`. Also tidies up after a
+ * renamed or retired shape.
  */
 function favourites(): string[] {
   const raw = readPrefJSON<unknown>(FAV_KEY, []);
@@ -365,10 +316,9 @@ function arm(entry: Sticker) {
   if (same) return;                       // tapping the armed tile puts it down
   armed = { shape: entry.id, tint: entry.tint };
   lastCategory = entry.cat;
-  // Two marks, because two things have to say it. The tile stays held down, so
-  // the window shows what is in your hand; the root class is what lets the
-  // board carry a loaded cursor. Either alone leaves half the app looking
-  // ordinary while it is waiting to place a star.
+  // Two marks, because two things have to say it: the held-down tile shows
+  // what's in your hand, the root class lets the board carry a loaded cursor.
+  // Either alone leaves half the app looking ordinary while armed.
   markArmed();
   document.documentElement.classList.add('sticker-arming');
 }
@@ -394,10 +344,9 @@ function markArmed() {
 /**
  * A press on a tile, which may still turn out to be either gesture.
  *
- * Nothing is decided here. The ghost is not made until the pointer has moved
- * past the slop, and a press that never does is a tap - so the same press arms
- * the shape on a phone and carries it on a desktop, without the window having
- * to guess which one it is looking at.
+ * Nothing decided here: the ghost isn't made until the pointer clears the
+ * slop, and a press that never does is a tap - so the same press arms on a
+ * phone and drags on a desktop without guessing which one it is.
  */
 function startTileDrag(e: PointerEvent, entry: Sticker) {
   if (e.button !== 0) return;
@@ -412,18 +361,12 @@ function startTileDrag(e: PointerEvent, entry: Sticker) {
     if (!drag || ev.pointerId !== drag.id) return;
     if (!drag.ghost) {
       if (Math.hypot(ev.clientX - drag.x, ev.clientY - drag.y) < DRAG_SLOP) return;
-      // It has become a drag, and the window gets out of the way for good. It
-      // used to fade to 55% instead, which is a window still standing over the
-      // board you are aiming at - and on a phone the board it covers is most of
-      // the board there is.
-      //
-      // Safe to close mid-gesture, in three parts worth naming because none of
-      // them is obvious. The pointer listeners are on `window`, not on the tile,
-      // so the drag survives its own tile being removed. closeStickerWindow()
-      // plays the slide-out and only removes the element on transitionend or a
-      // 500ms backstop, so the tile is still in the document when the drag ends
-      // and releases its capture. And it calls disarm() itself, which is what
-      // the line here used to do.
+      // It has become a drag, and the window gets out of the way for good -
+      // it used to fade to 55% instead, still standing over most of the
+      // board on a phone. Safe to close mid-gesture: pointer listeners are
+      // on `window`, not the tile, so the drag survives; closeStickerWindow()
+      // slides out and only removes the element on transitionend or a
+      // 500ms backstop, so the tile is still there when the drag ends.
       closeStickerWindow();
       drag.ghost = makeGhost(entry);
       document.body.append(drag.ghost);
@@ -437,10 +380,8 @@ function startTileDrag(e: PointerEvent, entry: Sticker) {
     const { ghost } = drag;
     const dropped = ev.type === 'pointerup' && ghost && overBoard(ev.clientX, ev.clientY);
     ghost?.remove();
-    // The window may have closed under this tile the moment the drag started, and
-    // a release for a pointer the element no longer captures throws rather than
-    // no-opping. The capture is dropped with the element either way; this is only
-    // about not throwing on the way past the rest of the cleanup.
+    // The window may have closed under this tile already, and releasing a
+    // pointer the element no longer captures throws rather than no-opping.
     try { drag.el.releasePointerCapture?.(ev.pointerId); } catch { /* already gone */ }
     drag = null;
     showStickTarget(null);
@@ -455,10 +396,9 @@ function startTileDrag(e: PointerEvent, entry: Sticker) {
     else if (!ghost && ev.type === 'pointerup') arm(entry);
   };
 
-  // On the window rather than on the tile, even though the tile holds the
-  // capture: the capture keeps the events coming to the tile, and these listen
-  // for them on the way past. A drag that ends over the board still has to be
-  // heard, and the board is not inside the tile.
+  // On the window, not the tile, even though the tile holds capture: capture
+  // keeps events coming to the tile, and these listen for them on the way
+  // past - a drag ending over the board still has to be heard.
   addEventListener('pointermove', move);
   addEventListener('pointerup', end);
   addEventListener('pointercancel', end);
@@ -483,20 +423,18 @@ function overBoard(clientX: number, clientY: number) {
 }
 
 /**
- * What the shape would stick to if it were let go here, or null.
- *
- * The same question the note drag asks mid-flight, of a box that is not on the
- * board yet - which is exactly what wouldStick() is for. The rider is a bare
- * `{ type }` stub because there is no item yet and its type is the only thing
- * the answer turns on: a sticker may land on a fence and on the title card,
- * where a note may not.
+ * What the shape would stick to if it were let go here, or null - the same
+ * question the note drag asks mid-flight, of a box not on the board yet
+ * (wouldStick()). The rider is a bare `{ type }` stub, since there's no item
+ * yet and type is all the answer turns on: a sticker may land on a fence or
+ * the title card, where a note may not.
  */
 function hostUnderPointer(clientX: number, clientY: number) {
   if (!overBoard(clientX, clientY)) return null;
   const at = vp!.toWorld(clientX, clientY);
-  // Every sticker is the same fixed square, whatever defaultSize says it is, so
-  // the box the measurement gets is the box the drop will make. The day a shape
-  // carries a size of its own, this is where that stops being true.
+  // Every sticker is the same fixed square (defaultSize), so the measured box
+  // is the box the drop will make. Stops being true the day a shape gets a
+  // size of its own.
   const size = defaultSize('sticker');
   // No id to exclude: there is no item yet, which is the whole point of asking.
   const host = wouldStick(

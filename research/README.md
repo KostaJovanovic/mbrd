@@ -240,6 +240,19 @@ their work does; the other three do not, and those are the ones to argue about:
   and this is the record of what to do, and neither is the code. Goes to `old/`
   with the plan.
 
+- `capacitor-2026-09-12.md` — **the plan for a mobile app, and why it is short.**
+  The Electron work left two seams — the `Platform` port and the `StoreBackend`
+  behind `idb.ts` — and Capacitor is a third adapter behind them, not a rewrite.
+  Its §1 is a decision table the maintainer has not ratified yet, so it is a
+  proposal rather than a schedule; no `capacitor-tasks` split exists until it is.
+  Two things in it are worth knowing without building anything. **It does not fix
+  the jank** the app was wrapped to escape — the WebView is the same renderer as
+  the browser, so pan/zoom framerate is unchanged, and §9 says so plainly. And
+  the one real decision in it is the store (§4): IndexedDB already works inside
+  the WebView, so v1 keeps it, and the durable native backend is a measured
+  fast-follow the seam is ready for. Goes to `old/` on the last commit of the
+  work it schedules — if it is ever ratified.
+
 `patch-notes-full.md` sits at this level too and is **not open work** - it is an
 archive, and the only file here that argues nothing. It holds every release at
 the length it was first written at, internal work included, and it was split off

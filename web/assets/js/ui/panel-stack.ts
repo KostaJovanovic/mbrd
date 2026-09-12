@@ -1,44 +1,27 @@
-// A stack of the exclusive right-side panels, so they hide and come back rather
-// than replacing each other.
-//
-// The header edit bar and the sticker drawer dock on the same right edge and
-// only one can hold it. Opening the second hides the first; closing it brings
-// the first back where it was - the one underneath is waiting, not gone.
-//
-// Those two are the whole membership: registerPanel() is called once each, in
-// ui/mobile-header.ts and ui/sticker-window.ts. The Playlist player left when it
-// stopped being docked - a Desktop window, a Mobile lens, neither taking the
-// right edge - and ui/playlist.ts imports resetPanels() alone.
-//
-// It owns no DOM. Each panel registers open and close and reports when it
-// becomes visible or closes; that keeps the stack and the screen in step. A
-// `busy` guard stops the echo: a panel the coordinator closed to make way for
-// another still reports "I closed", which is the coordinator's doing, not a
-// user action.
+// Exclusive right-side panel stack. Header edit bar and sticker drawer
+// share one edge; opening one hides the other, closing it restores.
+// Owns no DOM — each panel registers open/close callbacks. The `busy`
+// guard prevents echo when the coordinator itself closes a panel.
 
-/** What one panel has to be able to do to take part. */
+/** A panel's open/close callbacks. */
 interface PanelDriver {
   open: () => void;
   close: () => void;
 }
 
-/** name -> { open, close } */
+/** name → { open, close } */
 const reg = new Map<string, PanelDriver>();
 /** Open panels, oldest first; the last is the one on screen. */
 const stack: string[] = [];
 /** True while the coordinator is itself opening or closing a panel. */
 let busy = false;
 
-/** Teach the stack how to drive one panel. Called once, at the panel's init. */
+/** Register one panel. Called once at init. */
 export function registerPanel(name: string, open: () => void, close: () => void): void {
   reg.set(name, { open, close });
 }
 
-/**
- * A panel became visible. Hide whoever was on screen (remembering it) and put
- * this one on top. A no-op when this panel is already top - reopening the
- * visible one must not hide it from itself.
- */
+/** A panel appeared. Hides the current top (remembering it) and pushes this one. */
 export function panelShown(name: string): void {
   if (busy) return;
   const top = stack[stack.length - 1];
@@ -49,11 +32,7 @@ export function panelShown(name: string): void {
   stack.push(name);
 }
 
-/**
- * A panel has closed. Drop it from the stack, and if it was the one on screen, bring
- * back the one that was under it. A panel closed while already hidden (it was not the
- * top) just leaves the stack quietly.
- */
+/** A panel closed. Restores the one beneath it if it was on top. */
 export function panelHidden(name: string): void {
   if (busy) return;
   const i = stack.lastIndexOf(name);
@@ -65,7 +44,7 @@ export function panelHidden(name: string): void {
   if (top) { busy = true; reg.get(top)?.open(); busy = false; }
 }
 
-/** Forget everything is open - for a board swap, where every panel is torn down. */
+/** Clear the stack on board swap. */
 export function resetPanels(): void {
   stack.length = 0;
 }

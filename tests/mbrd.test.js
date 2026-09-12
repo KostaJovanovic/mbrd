@@ -1,11 +1,8 @@
-// The .mbrd container: what goes into the archive, and what comes back out.
-//
-// Exercised end to end - pack, then unpack - rather than against the private
-// helpers, because the interesting rules are all about the seam between the
-// two. A note is written as Markdown and read back from it in preference to
-// board.json; a waveform is written per audio hash and shared by every card
-// holding that hash; a board whose bytes have gone missing must not pack at
-// all. None of those are visible from one side alone.
+// The .mbrd container: what goes in, what comes out. Exercised end to end
+// (pack, then unpack) rather than against private helpers, since the
+// interesting rules are about the seam between the two - a note preferring
+// its Markdown sidecar over board.json, a shared waveform, a board with
+// missing bytes refusing to pack.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -29,10 +26,10 @@ const boardOf = (items, extra = {}) => ({
 });
 
 /**
- * Register bytes the way an import would, and hand back the id they were filed
- * under. Really hashed, not labelled: unpack verifies that an entry contains
- * the data its name claims, so a stub whose id did not match its bytes would
- * be rejected as a corrupt archive rather than exercising anything.
+ * Register bytes the way an import would, handing back the filed id.
+ * Really hashed, not labelled: unpack verifies an entry's data matches its
+ * name, so a mismatched stub would be rejected as corrupt rather than
+ * exercising anything.
  */
 async function stubAsset(label, { ext = 'png', mime = 'image/png', body = 'bytes' } = {}) {
   const data = enc.encode(body);
@@ -68,9 +65,8 @@ test('the failure names the items rather than the hashes', async () => {
 });
 
 test('a missing asset in the bin also fails the export', async () => {
-  // Binned items are packed too - their bytes are the only thing that makes
-  // the bin worth anything after a save - so they can be missing in the same
-  // way and must be caught in the same way.
+  // Binned items are packed too - their bytes are what make the bin worth
+  // anything after a save - so a missing one must be caught the same way.
   clearAssets();
   const board = boardOf([], { trash: [{ at: 1, item: withAsset(hash('gone'), { id: 'i9', name: 'binned.png' }) }] });
   await assert.rejects(() => packBoard(board), /binned\.png/);
@@ -96,8 +92,8 @@ test('the archive holds a manifest, a board, and the referenced bytes', async ()
 
   assert.ok(files.has('manifest.json'));
   assert.ok(files.has('board.json'));
-  // Named for the card, then the digest. The slug is what makes an unzipped
-  // board readable; the hash is what makes it verifiable.
+  // Named for the card, then the digest: the slug makes an unzipped board
+  // readable, the hash makes it verifiable.
   assert.ok(files.has(`assets/a--${id}.png`));
   assert.equal(manifest.format, 'mbrd');
   assert.equal(manifest.title, 'Test board');
@@ -112,27 +108,20 @@ test('the same asset used twice is stored once', async () => {
   ]);
   const files = await readZip((await packBoard(board)).blob);
   const assetFiles = [...files.keys()].filter(n => n.startsWith('assets/'));
-  // One entry, and it takes its name from the first card to reference it -
-  // otherwise which of the two names won would come down to iteration order.
+  // One entry, named after the first card to reference it - otherwise which
+  // name won would come down to iteration order.
   assert.deepEqual(assetFiles, [`assets/a--${id}.png`]);
 });
 
 // ---------------------------------------------------------------------------
 // The second reader of the reference union
 //
-// boardAssetHashes() answers "what does this board point at" for the cloud sync,
-// which uploads assets one at a time and has to know exactly which ones a board
-// still claims. packBoard() answers the same question for itself, in a loop that
-// also captures readable labels and sorts fatal misses from tolerable ones - so
-// the two are separate implementations on purpose (the reasoning is in the
-// function's own header), and this is the assertion that stops them drifting.
-//
-// The drift it exists to catch is one-directional and quiet: a fourth class of
-// reference added to the packer and not to the walk would mean the sync silently
-// stops uploading a whole category of asset, and the board comes back on the
-// second machine with holes in it. That is precisely what happened when the
-// stored versions arrived in v0.197 and three separate reference readers had to
-// learn about them at once.
+// boardAssetHashes() answers "what does this board point at" for the cloud
+// sync; packBoard() answers the same question for itself in a loop that also
+// captures labels. Deliberately separate implementations (see the
+// function's own header), so this test stops them drifting - a reference
+// class added to one and not the other silently drops a whole asset
+// category from sync, as happened when stored versions arrived in v0.197.
 // ---------------------------------------------------------------------------
 
 /** The digest out of an `assets/<slug>--<hash>.<ext>` entry, either spelling. */
@@ -144,10 +133,9 @@ const hashFromEntry = (name) => {
 
 test('boardAssetHashes names exactly what the packer writes', async () => {
   clearAssets();
-  // One of every class the packer walks: a live item, its cover, a binned item,
-  // a face, and a picture named only by a step in the history. A board short of
-  // any one of them would let that class drift unnoticed, which is the whole
-  // failure this test is here for.
+  // One of every class the packer walks: a live item, its cover, a binned
+  // item, a face, a picture named only by a history step. Missing any one
+  // would let that class drift unnoticed.
   const live = await stubAsset('live');
   const cover = await stubAsset('cover', { body: 'cover-bytes' });
   const binned = await stubAsset('binned', { body: 'binned-bytes' });
@@ -181,9 +169,8 @@ test('boardAssetHashes names exactly what the packer writes', async () => {
     [...written].sort(),
     'the sync would upload a different set of assets than the packer writes',
   );
-  // The guard on the guard: five distinct classes, five distinct digests. Two
-  // empty sets are deepEqual, and a stubAsset() that stopped registering
-  // anything would make this test pass while proving nothing.
+  // The guard on the guard: two empty sets are deepEqual, so a stubAsset()
+  // that stopped registering anything would pass while proving nothing.
   assert.equal(written.size, 5);
 });
 
@@ -197,8 +184,8 @@ const soleAsset = async board =>
     .find(n => n.startsWith('assets/'));
 
 test('the extension is not slugged into the name', async () => {
-  // item.name is seeded from the filename at import, extension and all, so the
-  // ordinary case would read `kitchen-window-jpg--<hash>.jpg` without this.
+  // item.name is seeded from the filename including extension, so without
+  // this it would read `kitchen-window-jpg--<hash>.jpg`.
   clearAssets();
   const id = await stubAsset('kitchen-window', { ext: 'jpg', mime: 'image/jpeg' });
   const name = await soleAsset(boardOf([withAsset(id, { id: 'i1', name: 'kitchen-window.jpg' })]));
@@ -206,8 +193,8 @@ test('the extension is not slugged into the name', async () => {
 });
 
 test('a dot that is not the extension is kept', async () => {
-  // Matched against the asset's own ext rather than against a pattern for what
-  // an extension looks like, so a version number survives being filed.
+  // Matched against the asset's own ext, not a pattern for what an
+  // extension looks like, so a version number survives filing.
   clearAssets();
   const id = await stubAsset('doc', { ext: 'png', mime: 'image/png' });
   const name = await soleAsset(boardOf([withAsset(id, { id: 'i1', name: 'Notes v1.2' })]));
@@ -215,8 +202,7 @@ test('a dot that is not the extension is kept', async () => {
 });
 
 test('the card name wins over the stored filename', async () => {
-  // The two are the same string until somebody renames the card, and a
-  // deliberate rename is the better name to file the work under.
+  // A deliberate rename is the better name to file the work under.
   clearAssets();
   const id = await stubAsset('IMG_4821', { ext: 'jpg', mime: 'image/jpeg' });
   const name = await soleAsset(boardOf([withAsset(id, { id: 'i1', name: 'the kitchen window' })]));
@@ -224,7 +210,7 @@ test('the card name wins over the stored filename', async () => {
 });
 
 test('bytes no item names fall back to the stored filename', async () => {
-  // A cover is the ordinary case: nothing on the board is called by its name.
+  // A cover is the ordinary case: nothing on the board is named by it.
   clearAssets();
   const cover = await stubAsset('album-art', { ext: 'jpg', mime: 'image/jpeg' });
   const files = await readZip((await packBoard(
@@ -241,8 +227,8 @@ test('a name with nothing spellable in it writes the bare hash', async () => {
 });
 
 test('a hostile name cannot become a path', async () => {
-  // The slugifier is an allow-list, so this is safe by construction rather than
-  // by having thought of `../`. The same reasoning as the hash rule, one out.
+  // The slugifier is an allow-list, so this is safe by construction rather
+  // than by having thought of `../`.
   clearAssets();
   const id = await stubAsset('x', { ext: 'png', mime: 'image/png' });
   const name = await soleAsset(boardOf([
@@ -262,8 +248,8 @@ test('a slugged archive round-trips', async () => {
 });
 
 test('a bare-hash archive still reads', async () => {
-  // What another implementation writes. Computing a slug is a courtesy, and
-  // requiring one would mean requiring everybody to reproduce our slug function.
+  // What another implementation writes: a slug is a courtesy, not a
+  // requirement everybody must reproduce.
   clearAssets();
   const data = enc.encode('bytes');
   const id = await realHash(data);
@@ -277,8 +263,8 @@ test('a bare-hash archive still reads', async () => {
 });
 
 test('one digest under two slugs is still stored twice', async () => {
-  // The dedup refusal keys off the hash, so decorating the name must not give
-  // an archive a way to smuggle the same content id in twice.
+  // The dedup refusal keys off the hash, so decorating the name must not
+  // smuggle the same content id in twice.
   clearAssets();
   const data = enc.encode('bytes');
   const id = await realHash(data);
@@ -294,11 +280,10 @@ test('one digest under two slugs is still stored twice', async () => {
 // ---------------------------------------------------------------------------
 // What the archive looks like to something that is not this app
 //
-// readZip() is the wrong instrument for the two rules below, and deliberately
-// not used: it hands back decompressed bytes in a Map, which is precisely the
-// two facts under test - the order entries were written in, and whether each
-// one was deflated - already thrown away. So these walk the local file headers
-// the way any other ZIP reader does.
+// readZip() is deliberately not used below: it hands back decompressed
+// bytes in a Map, throwing away exactly the two facts under test here -
+// entry order and whether each was deflated. So these walk the local file
+// headers the way any other ZIP reader does.
 // ---------------------------------------------------------------------------
 
 /** Every local file header, in the order the archive actually carries them. */
@@ -326,10 +311,9 @@ const packedBytes = async board => new Uint8Array(await (await packBoard(board))
 test('the media type sits where file(1) looks for it', async () => {
   clearAssets();
   const bytes = await packedBytes(boardOf([]));
-  // No parsing at all, which is the entire point: a local header is 30 bytes,
-  // so the first entry's name starts at 30 and its content at 38. This is the
-  // rule libmagic already carries for EPUB and ODF, and the reason the entry has
-  // to be first, stored, and free of an extra field.
+  // No parsing at all, which is the point: a local header is 30 bytes, so
+  // the first entry's name starts at 30 and content at 38 - the rule
+  // libmagic already carries for EPUB and ODF.
   const dec = new TextDecoder();
   assert.equal(dec.decode(bytes.subarray(30, 38)), 'mimetype');
   assert.equal(dec.decode(bytes.subarray(38, 38 + MIME.length)), MIME);
@@ -345,8 +329,8 @@ test('the mimetype entry is first, stored, and carries no extra field', async ()
 });
 
 test('a board with no mimetype entry still opens', async () => {
-  // Every file written before the entry existed looks like this, and the reader
-  // must not have grown a requirement the format cannot make retroactively.
+  // Every file written before the entry existed looks like this - the
+  // reader must not grow a requirement the format can't make retroactively.
   clearAssets();
   const { blob } = await packBoard(boardOf([item({ id: 'i1', name: 'kept' })]));
   const files = await readZip(blob);
@@ -358,10 +342,9 @@ test('a board with no mimetype entry still opens', async () => {
 
 test('a WOFF2 face is stored rather than deflated', async () => {
   clearAssets();
-  // Bytes that would compress enormously, so this cannot pass by accident on
-  // writeZip's own "only keep the deflate when it wins" guard. What is under
-  // test is the decision not to attempt it, which is about the format carrying
-  // its own Brotli rather than about the outcome for these particular bytes.
+  // Bytes that would compress enormously, so this can't pass by accident on
+  // writeZip's "only keep the deflate when it wins" guard - what's tested
+  // is the decision not to attempt it, since WOFF2 carries its own Brotli.
   const id = await stubAsset('face', { ext: 'woff2', mime: 'font/woff2', body: 'A'.repeat(4000) });
   const entries = localEntries(await packedBytes(
     boardOf([], { settings: { fonts: [{ hash: id, family: 'Face' }] } }),
@@ -372,9 +355,8 @@ test('a WOFF2 face is stored rather than deflated', async () => {
 });
 
 test('a TTF face is still deflated', async () => {
-  // The other half of the same rule. TTF tables are uncompressed, and this is
-  // the largest single win the packer gets on a board carrying a face - a skip
-  // list that caught it would cost more than the WOFF2 skip saves.
+  // TTF tables are uncompressed, and this is the largest single win the
+  // packer gets on a board carrying a face.
   clearAssets();
   const id = await stubAsset('face', { ext: 'ttf', mime: 'font/ttf', body: 'A'.repeat(4000) });
   const entries = localEntries(await packedBytes(
@@ -405,15 +387,11 @@ async function roundTrip(board) {
   return (await unpackBoard(blob)).board;
 }
 
-// The heading marker below is the change. parseNote() used to strip it, so a
-// note came back as `Shopping\nbread` where meta.text is Markdown and
-// flattenNoteRich() writes `# Shopping\nbread` - which meant the sidecar never
-// equalled the flattened model and the reconciliation rebuilt every note's
-// blocks from plaintext on an untouched export and re-import. These fixtures
-// pass meta.text with no marker, which is a legacy note's shape; what comes
-// back is the canonical one. The parsed model is identical either way, since an
-// unmarked first line is h1 too - so nothing on screen moves, and the two halves
-// of the file now agree.
+// The heading marker below is the change. parseNote() used to strip it, so
+// the sidecar never equalled flattenNoteRich()'s output and every note's
+// blocks got rebuilt from plaintext on export/re-import. These fixtures
+// pass meta.text unmarked (a legacy note's shape); an unmarked first line
+// is h1 too, so nothing on screen moves and the two halves now agree.
 
 test('a note round-trips through its own .md file', async () => {
   clearAssets();
@@ -422,11 +400,9 @@ test('a note round-trips through its own .md file', async () => {
 });
 
 test('the blank line under the title is structure, not content', async () => {
-  // The writer always puts one there because that is what Markdown wants
-  // under a heading, and the reader always takes it back off. So a note whose
-  // body happens to start with a blank line comes back without it - the one
-  // deliberate asymmetry in this round trip, and the reason the case above is
-  // written without one.
+  // The writer always adds a blank line under a heading (what Markdown
+  // wants) and the reader always removes it - the one deliberate asymmetry
+  // in this round trip.
   clearAssets();
   const back = await roundTrip(noteBoard('Shopping\n\nbread'));
   assert.equal(back.items[0].meta.text, '# Shopping\nbread');
@@ -453,10 +429,9 @@ test('a note that already carries its marker is not given a second one', async (
 });
 
 test('an untouched rich note keeps its alignment and its markers', async () => {
-  // The defect this whole change is about, stated as the thing a user would
-  // notice: export a board of marked-up notes, open the file again, and every
-  // highlighter mark is gone and every centred line is left-aligned. No edit,
-  // no hand-editing, no warning - the file simply went out and came back.
+  // The user-visible defect: export a board of marked-up notes, reopen it,
+  // and every highlighter mark is gone and every centred line left-aligned
+  // - no edit involved, the file just went out and came back.
   clearAssets();
   const rich = {
     font: 'serif', size: 1.4, valign: 'middle',
@@ -489,8 +464,8 @@ test('the note file is named after what it says', async () => {
 });
 
 test('a hand-edited note file wins over board.json', async () => {
-  // The whole promise of the format: unzip it, edit a note in any editor, zip
-  // it back, and the board shows what you typed.
+  // The whole promise of the format: unzip, edit a note in any editor, zip
+  // back, and the board shows what you typed.
   clearAssets();
   const { blob } = await packBoard(noteBoard('original'));
   const files = await readZip(blob);
@@ -508,14 +483,11 @@ test('a hand-edited note file wins over board.json', async () => {
 });
 
 test('a hand-edited note file wins over meta.rich as well', async () => {
-  // The same promise, against the half that had never been asked. meta.rich is
-  // part of board.json, and normalizeNoteRich() prefers it whenever it is
-  // well-formed - so the sidecar took meta.text, the card went on showing the
-  // words in meta.rich, Find matched the ones nobody could see, and the next
-  // keystroke in the editor flattened the stale rich back over the edit.
-  //
-  // Every note in the file above carries meta.text and no meta.rich, which is
-  // why none of them caught it.
+  // meta.rich is part of board.json, and normalizeNoteRich() prefers it
+  // whenever well-formed - so a hand edit to the .md sidecar took meta.text
+  // while the card kept showing meta.rich, until the next keystroke
+  // flattened the stale rich back over the edit. The notes above carry no
+  // meta.rich, which is why none of them caught it.
   clearAssets();
   const rich = {
     font: 'serif', size: 1.4, valign: 'middle',
@@ -543,16 +515,16 @@ test('a hand-edited note file wins over meta.rich as well', async () => {
   assert.equal(meta.text, '# edited by hand\nwith a body');
   assert.deepEqual(meta.rich.blocks.map(b => b.text), ['edited by hand', 'with a body'],
     'the blocks are re-derived from the sidecar');
-  // Words, not looks: the .md has no way to carry a face or a size, so the note
-  // keeps the ones it had rather than being reset to the defaults.
+  // Words, not looks: the .md can't carry a face or size, so the note keeps
+  // what it had rather than resetting to defaults.
   assert.equal(meta.rich.font, 'serif');
   assert.equal(meta.rich.size, 1.4);
   assert.equal(meta.rich.valign, 'middle');
 });
 
 test('a note whose first line is already a heading is not marked twice', async () => {
-  // meta.text has been Markdown-flavoured since meta.rich arrived, so the '# '
-  // the writer added unconditionally landed on top of the block's own marker.
+  // meta.text has been Markdown-flavoured since meta.rich arrived, so an
+  // unconditional '# ' would land on top of the block's own marker.
   clearAssets();
   const board = boardOf([item({
     id: 'i1', type: 'note',
@@ -591,8 +563,8 @@ test('a waveform is written per audio hash and read back', async () => {
 });
 
 test('the readings leave board.json when they get a file of their own', async () => {
-  // Stored twice would be the same bytes for nothing and two places to
-  // disagree, so the packer strips them from the board on the way out.
+  // Storing twice would be two places to disagree, so the packer strips
+  // them from the board on the way out.
   clearAssets();
   const id = await song();
   const board = boardOf([audioCard('i1', id, { peaks: peaks(256) })]);
@@ -650,11 +622,10 @@ test('a ZIP with no board.json is refused', async () => {
 });
 
 // A board.json that parses and is not a board. `JSON.parse` used to be the
-// whole check here, so a document holding a string spread into loadBoard() as
-// indexed keys and the open board was replaced by a blank one under an
-// "Opened <name>" toast - a data-loss path reached by opening a file. `null`
-// threw a bare TypeError instead, several frames from the file that caused it.
-// Every other malformed file this reader meets earns a sentence.
+// whole check, so a string spread into loadBoard() as indexed keys, and the
+// open board was silently replaced by a blank one. `null` threw a bare
+// TypeError several frames from the cause. Every malformed file now earns
+// a sentence.
 for (const [what, text] of [
   ['a string', '"hello"'],
   ['a list', '[1, 2, 3]'],
@@ -687,10 +658,9 @@ test('a board.json that is not JSON at all is refused the same way', async () =>
 // ---------------------------------------------------------------------------
 // Asset paths and content ids
 //
-// The archive gets to choose these names, and this app then treats them as
-// identities and writes them back out as paths. Both halves of that have to be
-// checked or a .mbrd can name a file outside its own directory in whatever
-// extractor opens it next, and can hand any bytes it likes to any id.
+// The archive chooses these names, and this app treats them as identities
+// and writes them back out as paths. Both halves must be checked, or a
+// .mbrd can name a file outside its own directory, or hand any bytes to any id.
 // ---------------------------------------------------------------------------
 
 /** A .mbrd built by hand, so the entry names can be anything. */
@@ -703,7 +673,7 @@ const boardJSON = items =>
   enc.encode(JSON.stringify({ title: 'crafted', items, trash: [] }));
 
 test('an asset path that climbs out of assets/ is refused', async () => {
-  // Opened happily once, and then packed back out as `assets/../escape.bin`.
+  // Would otherwise be packed back out as `assets/../escape.bin`.
   const crafted = await archiveOf([
     { name: 'board.json', data: boardJSON([{ id: 'i1', asset: { hash: '../escape', embedded: true } }]) },
     { name: 'assets/../escape.bin', data: enc.encode('payload') },
@@ -720,10 +690,8 @@ test('an asset id that is not a digest is refused', async () => {
 });
 
 test('bytes that do not match the id they are filed under are refused', async () => {
-  // Content addressing is a promise the archive is in no position to make on
-  // its own: dedup, the waveform sidecars and the autosave sweep all assume a
-  // hash names its bytes, so this is where that gets checked rather than
-  // assumed.
+  // Dedup, waveform sidecars and the autosave sweep all assume a hash names
+  // its own bytes - checked here rather than assumed.
   const wrong = await realHash(enc.encode('something else'));
   const crafted = await archiveOf([
     { name: 'board.json', data: boardJSON([]) },
@@ -744,8 +712,8 @@ test('the same content stored twice under two extensions is refused', async () =
 });
 
 test('a note whose id could not be a filename still keeps its text', async () => {
-  // No sidecar for it - the id is not something we will spell into a path -
-  // but board.json carries the text either way, so nothing is lost.
+  // No sidecar for it since the id can't be spelled into a path, but
+  // board.json carries the text either way.
   clearAssets();
   const board = boardOf([item({ id: '../../etc/passwd', type: 'note', meta: { text: 'hello' } })]);
   const { blob } = await packBoard(board);
@@ -765,10 +733,9 @@ test('a board written by another format is refused', async () => {
 });
 
 test('a board requiring a feature this build lacks is refused, not flattened', async () => {
-  // The one rule in the format that fails rather than degrades. A reader that
-  // opened this would drop the field it cannot see and write the loss back on
-  // the next save, reporting success the whole way - which is the failure the
-  // list exists to convert into an error somebody can act on.
+  // The one rule in the format that fails rather than degrades - opening
+  // and re-saving would otherwise drop the field it can't see, reporting
+  // success the whole way.
   const newer = await writeZip([
     {
       name: 'manifest.json',
@@ -785,9 +752,8 @@ test('a board requiring a feature this build lacks is refused, not flattened', a
 });
 
 test('a requires list this build satisfies opens normally', async () => {
-  // Empty is the intended state, and the check has to be a no-op in it: every
-  // board this app writes carries `"requires": []`, so a gate that tripped on
-  // its own output would stop the app opening its own files.
+  // Empty is the intended state and must be a no-op: every board this app
+  // writes carries `"requires": []`.
   clearAssets();
   const { blob, manifest } = await packBoard(boardOf([item({ id: 'i1', name: 'here' })]));
   assert.deepEqual(manifest.requires, [], 'written, and written empty');
@@ -796,9 +762,8 @@ test('a requires list this build satisfies opens normally', async () => {
 });
 
 test('a non-string in the requires list gates nothing', async () => {
-  // The list is a claim like every other key in the manifest. A number names no
-  // feature, so it can withhold none - refusing on one would make a hand-mangled
-  // manifest unopenable for no gain.
+  // A number names no feature, so it can withhold none - refusing here
+  // would make a hand-mangled manifest unopenable for no gain.
   const odd = await writeZip([
     {
       name: 'manifest.json',
@@ -815,12 +780,10 @@ test('a non-string in the requires list gates nothing', async () => {
 // A file from v0.197, which carried stored versions
 // ---------------------------------------------------------------------------
 //
-// For one release a board held a ring of whole copies of itself, in a `versions`
-// key and in a `versions/<id>.json` directory beside board.json. Both are gone
-// (see board-model.ts). What has to go on being true is that a file written by
-// that release still *opens*: the key is read past, the directory is walked
-// past, and what somebody gets back is their board without its snapshots rather
-// than an error.
+// For one release a board held a ring of whole copies of itself, in a
+// `versions` key and a `versions/<id>.json` directory. Both are gone (see
+// board-model.ts), but a file from that release must still open - past the
+// key, past the directory - with the board intact minus its snapshots.
 
 test('a board written with stored versions still opens', async () => {
   clearAssets();
@@ -836,9 +799,8 @@ test('a board written with stored versions still opens', async () => {
 });
 
 test('a versions/ entry in an archive is walked past, not read as an asset', async () => {
-  // The one thing that would be worse than dropping the snapshots: a file with
-  // a versions/ directory in it failing the read outright, or its entries being
-  // mistaken for something the reader does trust.
+  // Worse than dropping the snapshots: failing the read outright, or
+  // mistaking a versions/ entry for something the reader trusts.
   clearAssets();
   const live = await stubAsset('live');
   const { blob } = await packBoard(

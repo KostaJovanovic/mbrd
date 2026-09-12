@@ -1,15 +1,13 @@
-// The six ports, and the one promise they all make: unwired is the web.
-//
-// Every module below main.ts asks platform.* rather than asking the browser, so
-// the thing that has to be true is that asking changed nothing. A port that
-// threw where the old code returned, or resolved where the old code threw, would
-// be a behaviour change shipped to every browser visitor in the name of a
-// desktop build that does not exist yet.
+// The six ports, and the promise they all make: unwired is the web. Every
+// module below main.ts asks platform.* rather than the browser directly,
+// so asking must change nothing - a port throwing where old code
+// returned, or vice versa, ships a behaviour change to every browser
+// visitor in the name of a desktop build that doesn't exist yet.
 //
 // The second half wires a fake shell and checks the other direction: that
-// isDesktop() follows the wiring and not a capability, and that exportBoard()
-// really does end at platform.files.write() - the seam group E's adapter plugs
-// into, tested here where there is no Electron to confuse the question.
+// isDesktop() follows the wiring, not a capability, and that
+// exportBoard() ends at platform.files.write() with no Electron to
+// confuse the question.
 
 import { test, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -40,8 +38,8 @@ test('unwired, this is a browser and says so', () => {
 });
 
 test('every native port answers null, so every caller falls through', async () => {
-  // The whole protocol of NativePort: ask first, fall through on null. If any
-  // of these threw instead, four modules that currently have no desktop branch
+  // The whole protocol of NativePort: ask first, fall through on null. If
+  // any of these threw instead, four modules with no desktop branch
   // would need one.
   const bytes = new ArrayBuffer(8);
   assert.equal(await platform.native.firstFrame(bytes, 'clip.mov'), null);
@@ -52,15 +50,15 @@ test('every native port answers null, so every caller falls through', async () =
 
 test('the updates port answers null, because the service worker is the web updater', async () => {
   assert.equal(await platform.updates.check(), null);
-  // Safe to call and does nothing, so a toast wired to it cannot throw on a web
-  // build that somehow reached the button.
+  // Safe to call and does nothing, so a toast wired to it can't throw on
+  // a web build that somehow reached the button.
   assert.doesNotThrow(() => platform.updates.install());
 });
 
 test('a picker that is not there is a dismissal, not a crash', async () => {
-  // There is no `window` here at all, which is the strongest form of "this
-  // browser has no File System Access API". Callers read err.name - see isAbort()
-  // in storage.ts - so the name is the contract and not the class.
+  // There is no `window` at all, the strongest form of "no File System
+  // Access API". Callers read err.name (see isAbort() in storage.ts), so
+  // the name is the contract, not the class.
   await assert.rejects(() => platform.files.pickOpen({ types: [], accept: '', mode: 'x' }),
     err => err.name === 'AbortError');
   await assert.rejects(() => platform.files.pickSave('b.mbrd', { types: [], accept: '', mode: 'x' }),
@@ -78,9 +76,9 @@ test('a document the web made always exists, because there is no path to go stal
 });
 
 test('the web lifecycle never hands over a file on its own', () => {
-  // launchQueue is main.ts's own block and stays there. This port exists so the
-  // desktop has a door; the web default must not invent one, or the two would
-  // both fire on a PWA.
+  // launchQueue is main.ts's own block and stays there. This port exists
+  // so the desktop has a door; the web default must not invent one, or
+  // both would fire on a PWA.
   let called = 0;
   platform.lifecycle.onOpenFiles(() => { called++; });
   assert.equal(called, 0);
@@ -97,11 +95,9 @@ test('fileNameOf reads both separators, because a path is the OS spelling', () =
 // ---------------------------------------------------------------------------
 
 /**
- * A shell that records what it was asked to do.
- *
- * Only the methods the tests below reach are real; the rest keep the web
- * defaults' shape so a mistake shows up as a wrong answer rather than as a
- * TypeError somewhere unrelated.
+ * A shell that records what it was asked to do. Only the methods the
+ * tests below reach are real; the rest keep the web defaults' shape so a
+ * mistake shows up as a wrong answer, not a TypeError somewhere unrelated.
  */
 function fakeShell({ canPick = true } = {}) {
   const calls = { picked: [], written: [], documents: [], relaunched: 0 };
@@ -140,9 +136,9 @@ test('isDesktop follows the wiring, not a capability', () => {
 });
 
 test('the port object reads the current shell, not the one it was imported beside', () => {
-  // `platform` is held at module scope by a dozen callers, all of which imported
-  // it long before main.ts wires anything. A snapshot rather than getters would
-  // freeze every one of them onto the web defaults.
+  // `platform` is held at module scope by a dozen callers, all imported
+  // long before main.ts wires anything. A snapshot rather than getters
+  // would freeze every one onto the web defaults.
   const shell = fakeShell();
   setPlatform(shell);
   platform.relaunch();
@@ -164,10 +160,10 @@ test('exportBoard ends at platform.files.write, and writes the board', async () 
   assert.equal(data.title, 'Ported', 'and the bytes are the board');
 });
 
-// `pickNew: true` to establish the document rather than relying on there being
-// none. storage.ts holds it at module scope for the life of the page, which is
-// right for an app and means these tests share one - so each pins its own
-// starting point instead of assuming the previous test left none behind.
+// `pickNew: true` establishes the document rather than relying on there
+// being none. storage.ts holds it at module scope for the page's life, so
+// these tests share one - each pins its own starting point instead of
+// assuming the previous test left none behind.
 test('a second export reuses the document instead of asking again', async () => {
   const shell = fakeShell();
   setPlatform(shell);
@@ -186,10 +182,9 @@ test('Save As asks again even though there is a document', async () => {
 });
 
 test('without a picker the write still happens, under the packed name', async () => {
-  // Safari and Firefox. The old code branched here between a handle and a
-  // download; now both endings are write()'s, and the one thing the caller still
-  // decides is the name - which comes from what was packed, because nothing
-  // renamed the board.
+  // Safari and Firefox. The old code branched between a handle and a
+  // download; now both endings are write()'s, and the caller only decides
+  // the name, which comes from what was packed since nothing renamed the board.
   loadBoard({ title: 'No picker', items: [] });
   const shell = fakeShell({ canPick: false });
   setPlatform(shell);
@@ -210,9 +205,9 @@ test('an export is a save: the board goes clean', async () => {
 });
 
 test('a ref made from a handle is the document, so Save writes back to it', async () => {
-  // The launchQueue path. Its handle used to become `fileHandle` directly; if
-  // the ref were dropped, "Open with mbrd" would open the file and then be
-  // unable to save over it.
+  // The launchQueue path. Its handle used to become `fileHandle` directly;
+  // dropping the ref would let "Open with mbrd" open the file and then
+  // fail to save over it.
   const handle = { name: 'Handed_over.mbrd' };
   const ref = refForHandle(handle);
   assert.equal(ref.name, 'Handed_over.mbrd');
@@ -231,8 +226,8 @@ test('openFile takes the document it was opened as', async () => {
   await exportBoard({ pickNew: true });
   const packed = shell.calls.written[0].blob;
 
-  // Reopening it with a ref means the next export writes back there rather than
-  // asking - which is the whole of what a document ref is for.
+  // Reopening it with a ref means the next export writes back there
+  // rather than asking - the whole point of a document ref.
   const opened = await openFile(new File([packed], 'Second.mbrd'),
     { name: 'Second.mbrd', path: '/tmp/Second.mbrd' });
   assert.equal(opened, true);
@@ -245,9 +240,9 @@ test('openFile takes the document it was opened as', async () => {
 });
 
 test('the shell is told which document is on screen, and whether it is dirty', async () => {
-  // The window's title bar and, on macOS, its proxy icon and close-dot. There
-  // is no way to say this from inside the page: document.title is the browser
-  // tab's, and this app has deliberately never set one - so a report is the
+  // The window's title bar and, on macOS, its proxy icon and close-dot.
+  // There's no way to say this from inside the page - document.title is
+  // the browser tab's, and this app never sets one - so a report is the
   // only shape it can take.
   const shell = fakeShell();
   setPlatform(shell);

@@ -1,20 +1,8 @@
-// The corner readouts and the three control clusters on the glass.
-//
-// Everything the board says about itself without being asked: the zoom
-// percentage and its buttons, the undo/redo pair and what they would undo, the
-// coordinate and size readout, the autosave mark, and the snap flag published
-// to CSS. Lifted out of main.ts as one piece because it is one piece - every
-// function here writes to `#hud` or to a control beside it, and nothing here
-// decides anything.
-//
-// The three click surfaces live here rather than in ui/sidebar.ts because they
-// are chrome on the glass and not part of the panel, and they all route through
-// `cmds` rather than calling state directly - the keyboard, the context menu and
-// these buttons press the same button.
-//
-// `vp` and `cmds` are handed in by initHud() rather than imported: the viewport
-// because it is built at boot, and the command surface because commands.ts
-// imports *this* module (for paintZoom) and the arrow may only go one way.
+// The corner readouts and three control clusters on the glass: zoom
+// percentage/buttons, undo/redo, the coordinate/size readout, autosave mark,
+// and the snap flag published to CSS. Routes clicks through `cmds` rather
+// than state directly, so keyboard, menu and these buttons agree. `vp`/`cmds`
+// are injected by initHud() to avoid an import cycle with commands.ts.
 
 import { el } from '../util.ts';
 import { cue } from '../cuelume/engine.ts';
@@ -23,26 +11,16 @@ import { board, bus, selection, byId, historyState, isContent } from '../state.t
 import { MIN_ZOOM, MAX_ZOOM, BASE_ZOOM, zoomMs, travelMs } from '../canvas/viewport.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 
-/**
- * The three fields of the viewport this module reads, beside its methods.
- *
- * This intersection was written when canvas/viewport.ts still carried a
- * migration pragma and the class type it exported had the methods but not the
- * fields the constructor assigned. That module is annotated now and declares all
- * three, so the intersection restates what Viewport already carries and can come
- * out.
- */
+/** The three Viewport fields this module reads, beside its methods. Now
+ *  restates what Viewport itself declares; could be removed. */
 type HudViewport = Viewport & {
   pan: { x: number, y: number },
   zoom: number,
   zoomLocked: boolean,
 };
 
-/**
- * The command surface, as this module sees it: three names it presses and
- * nothing else. The same bargain ui/toolbar.ts states - the glass knows what a
- * button is called and not what it does.
- */
+/** The command surface, as this module sees it: names it presses, nothing
+ *  else - same bargain as ui/toolbar.ts. */
 export interface HudCommands {
   fit: () => void;
   recenter: () => void;
@@ -55,12 +33,10 @@ const ZOOM_STEP = 1.3;
 /** The autosave mark's dwell. Restarted rather than stacked - see below. */
 const SAVED_MS = 1500;
 
-// Every el() below is read with `!`: all of these ids are static markup in
-// index.html, this module has always read them straight through, and an absent
-// one is a broken build rather than a state to paint around. The `e.target as
-// Element` in the two delegated handlers is safe for the same reason - the
-// listener is on an element, so the target of a click inside it is one too, and
-// closest() is only asked whether an ancestor matches.
+// el() below is read with `!`: these ids are static markup in index.html, so
+// an absent one is a broken build, not a state to handle. Same reasoning for
+// the `e.target as Element` casts in the delegated handlers below - the
+// click target is always an Element, closest() just checks an ancestor.
 let vp: HudViewport | null = null;
 /** The readout last written, so a pan does not rewrite it sixty times a second. */
 let zoomShown = '';
@@ -68,19 +44,13 @@ let zoomShown = '';
 let xyShown = '';
 let savedTimer = 0;
 
-/**
- * Wire the glass controls and subscribe the readouts.
- *
- * Called once, from main.ts, after the viewport exists and the panel has been
- * built. Everything it touches is static markup in index.html.
- */
+/** Wire the glass controls and subscribe the readouts. Called once from
+ *  main.ts, after the viewport exists and the panel is built. */
 export function initHud(viewport: HudViewport, cmds: HudCommands) {
   vp = viewport;
 
   el('zoom-ctl')!.addEventListener('click', e => {
-    // SAFETY: the listener is on an element, so the target of a click inside it
-    // is one too, and closest() is only asked whether an ancestor matches - see
-    // the paragraph over `vp` above, which covers this and the pair below.
+    // SAFETY: see the note above `vp` - click target is always an Element.
     const btn = (e.target as Element).closest<HTMLElement>('[data-zoom]');
     if (!btn) return;
     cue('pick');
@@ -95,39 +65,27 @@ export function initHud(viewport: HudViewport, cmds: HudCommands) {
     }
   });
 
-  // The phone's add bar used to be wired here, beside the zoom controls, with
-  // its own data-add attributes and a two-branch switch over them. It is the
-  // toolbar now (ui/toolbar.ts), every button on it is an ordinary data-cmd,
-  // and the one-off went with it - which is the whole reason that surface was
-  // folded in rather than joined by a second one.
+  // The phone's add bar used to be wired here with its own data-add switch.
+  // It moved to ui/toolbar.ts as ordinary data-cmd buttons; the one-off is gone.
 
-  // Undo and redo on the glass, next to the bin. Here beside the zoom controls
-  // rather than in ui/drawer.ts: they share that corner but not its subject, and
-  // the bin module has no business knowing about the history.
-  //
-  // Through cmds, not through state's undo() directly - the keyboard, the
-  // context menu and these three now all press the same button.
+  // Undo/redo live here, not ui/drawer.ts: they share the corner with the bin
+  // but not its subject. Routed through cmds, not state's undo() directly, so
+  // keyboard, context menu and these buttons all press the same button.
   el('history-ctl')!.addEventListener('click', e => {
     // SAFETY: as at the zoom controls above.
     const btn = (e.target as Element).closest<HTMLElement>('[data-history]');
     if (!btn) return;
-    // The press, and then history.ts says `fall` or `rise` for what it did -
-    // the same two-sound shape every other button on the glass has.
+    // Press sound here; history.ts plays `fall`/`rise` for the result - the
+    // same two-sound shape every other button on the glass has.
     cue('pick');
     if (btn.dataset.history === 'undo') cmds.undo(); else cmds.redo();
   });
 
   /**
-   * The autosave, acknowledged.
-   *
-   * A mark rather than a toast, and that is the whole design decision here. The
-   * board saves itself about once a second while you are working, and a toast
-   * per save would be the interface talking over the work continuously to
-   * report that nothing is wrong. This appears where the board's other state
-   * lives, says one word, and leaves.
-   *
-   * The timer is restarted rather than stacked, so a run of edits holds the
-   * mark up throughout instead of flickering once per save.
+   * The autosave, acknowledged with a quiet mark, not a toast - saves happen
+   * about once a second, and a toast per save would talk over the work just
+   * to say nothing is wrong. Timer restarts rather than stacks, so a run of
+   * edits holds the mark up instead of flickering once per save.
    */
   bus.on('autosaved', () => {
     const mark = el('saved')!;
@@ -137,15 +95,14 @@ export function initHud(viewport: HudViewport, cmds: HudCommands) {
   });
 
   bus.on('history', paintHistory);
-  // A board arriving replaces the stacks wholesale, and clearHistory() announces
-  // that - but 'board:load' is also what a fresh New has to be heard through.
+  // A board arriving replaces the stacks wholesale (clearHistory() announces
+  // it), but 'board:load' also covers a fresh New.
   bus.on('board:load', paintHistory);
   paintHistory();
 
   bus.on('items', paintCount);
-  // The readout's right-hand slot is the count *or* the selected item's real
-  // size, so the three things that can change which of those it is all repaint
-  // it: what is on the board, what is picked, and how the board is measured.
+  // Right-hand slot is count or selected item's size, so all three things
+  // that can change which applies repaint it: items, selection, measurement.
   bus.on('selection', paintCount);
   bus.on('geom', paintCount);
   bus.on('settings', paintCount);
@@ -155,11 +112,9 @@ export function initHud(viewport: HudViewport, cmds: HudCommands) {
     const { scale, units } = board.settings;
     const text =
       `${px(p.x)}, ${px(p.y)} px · ${formatLength(p.x, scale, units)}, ${formatLength(p.y, scale, units)}`;
-    // Keyed and returned, the way paintZoom() below is and ui/scalebar.ts is.
-    // This fires at the pointer's rate - a hundred times a second on a
-    // trackpad - and the readout is rounded to whole pixels, so most of those
-    // events carry the string already on screen. Writing it anyway is a layout
-    // per event for nothing, on the surface a drag is happening over.
+    // Keyed and returned like paintZoom() below. Fires at pointer rate (up to
+    // 100/s on a trackpad); most events match the already-rounded string, so
+    // skip the layout write when nothing changed.
     if (text === xyShown) return;
     xyShown = text;
     el('hud-xy')!.textContent = text;
@@ -167,18 +122,15 @@ export function initHud(viewport: HudViewport, cmds: HudCommands) {
 }
 
 /**
- * What the pair can do, and what it would do.
- *
- * The label is the point of naming it rather than only enabling it: "Undo Add 3
- * items" tells you whether the thing you are about to take back is the thing
- * you meant, which on a board where the last four actions were drags is the
- * only way to know without trying it.
+ * What undo/redo can do, and what they would do. The label matters, not just
+ * the enabled state - "Undo Add 3 items" lets you confirm it's the action
+ * you meant before pressing it.
  */
 function paintHistory() {
   const state = historyState();
   for (const btn of el('history-ctl')!.querySelectorAll<HTMLButtonElement>('[data-history]')) {
-    // The markup carries exactly two values here, and the pair below reads the
-    // one it is not as the other - which is what the click handler does too.
+    // Markup carries exactly two values; reading "not undo" as redo mirrors
+    // the click handler above.
     const kind = btn.dataset.history === 'undo' ? 'undo' : 'redo';
     const label = state[kind];
     btn.disabled = !label;
@@ -206,15 +158,12 @@ export function paintZoom(force = false) {
   // Locked, the two ends stop being the reason a button is dead - the lock is.
   const maxed = locked || vp!.zoom >= MAX_ZOOM - 1e-6;
   const mined = locked || vp!.zoom <= MIN_ZOOM + 1e-9;
-  // This runs on every view change, and a pan is a view change that cannot
-  // possibly have moved the zoom - so on the whole of a drag the answer is the
-  // corner already on screen, and writing it again is a layout per frame for
-  // nothing.
+  // Runs on every view change, but a pan can't move the zoom, so most calls
+  // during a drag match the key already on screen - skip the write.
   //
-  // The two buttons are in the key rather than behind the readout, because the
-  // readout is rounded and they are not: the last hundredth of the way to the
-  // floor reads as 2.0% for a while before it arrives, and hanging their state
-  // off the text alone would leave the button enabled at the end of its travel.
+  // Buttons are in the key, not just the readout, because the readout is
+  // rounded and they aren't: near the floor it reads "2.0%" well before
+  // arriving, so text alone would leave a button enabled past its limit.
   const key = text + (maxed ? '+' : '') + (mined ? '-' : '') +
     (vp!.zoomLocked ? 'L' : '') + (fixed ? 'M' : '');
   if (key === zoomShown && !force) return;
@@ -223,24 +172,20 @@ export function paintZoom(force = false) {
   for (const btn of el('zoom-ctl')!.querySelectorAll<HTMLButtonElement>('[data-zoom]')) {
     if (btn.dataset.zoom === 'in') btn.disabled = maxed;
     if (btn.dataset.zoom === 'out') btn.disabled = mined;
-    // The readout is a button too - it goes back to 100% - so under the lock it
-    // is as dead as the two beside it, and says so rather than sitting there
-    // looking pressable. Fit and Back to 0,0 stay live: with the zoom held they
-    // are journeys rather than zooms, which is still the thing you want when
-    // you have lost the board at a magnification you have chosen to keep.
+    // The readout is a button too (resets to 100%), so it's dead under the
+    // lock like its neighbors. Fit and recenter stay live - under a held
+    // zoom they're journeys, not zooms, and still useful when you're lost.
     if (btn.dataset.zoom === 'reset') btn.disabled = locked;
   }
-  // Both are <button>s in index.html - see the zoom cluster there - which is
-  // what the element types below assert; a `disabled` written onto anything
-  // else would be a silent no-op rather than a type error.
+  // Both are <button>s in index.html; asserted below since `disabled` on
+  // anything else would fail silently rather than as a type error.
   const fit = el('zoom-ctl')!.querySelector<HTMLButtonElement>('[data-zoom="fit"]')!;
   fit.title = fixed ? 'Back to the top  F'
     : locked ? 'Bring everything into view  F' : 'Zoom to fit  F';
   fit.setAttribute('aria-label', fixed ? 'Back to the top'
     : locked ? 'Bring everything into view' : 'Zoom to fit');
-  // SAFETY: #zoom-lock is a <button> in index.html, like every other id this
-  // module reads with `!` - see the paragraph over `vp`. `disabled` is the only
-  // thing asked of it, and it is why the tag has to be named.
+  // SAFETY: #zoom-lock is a <button>, like the ids read with `!` above -
+  // typed here because `disabled` needs it.
   const lock = el('zoom-lock') as HTMLButtonElement;
   lock.disabled = fixed;
   lock.setAttribute('aria-pressed', String(vp!.zoomLocked));
@@ -251,33 +196,19 @@ export function paintZoom(force = false) {
 }
 
 /**
- * Snapping, published to CSS.
- *
- * The setting has a look as well as a behaviour: a snapped board stands its
- * cards up square, because a lattice is about edges and a lean spoils the one
- * thing lining everything up was for. That is a stylesheet's decision to make,
- * not a renderer's, so the flag goes on the root element and the stylesheets
- * take it from there - the same shape as data-palette and data-whimsy.
+ * Snapping, published to CSS. A snapped board stands its cards square - a
+ * stylesheet decision, not a renderer's, so the flag goes on the root
+ * element like data-palette and data-whimsy.
  */
 export function paintSnap() {
   document.documentElement.toggleAttribute('data-snap', !!board.settings.snap);
 }
 
 /**
- * Both readings, always, in that order.
- *
- * Board units first and the real measurement after, because they answer two
- * different questions and neither replaces the other. The units are what the
- * board is actually made of - what a nudge moves, what the grid step counts,
- * what a size typed anywhere else in the app means - and for a board that is
- * not about physical objects they are the only meaningful number there is. The
- * real measurement is the one you can hold a tape up to.
- *
- * They were briefly not both here: the physical reading replaced the raw floats
- * when the scale feature went in, on the argument that an offset from an origin
- * nobody chose tells you nothing. That was half right. Rounded and labelled,
- * the raw pair is the board's own coordinate system, and hiding it made the app
- * lie about what it is - a canvas of unitless floats with a lens over it.
+ * Both readings, always: board units first (what a nudge moves, what the
+ * grid counts) then the real measurement (what you'd hold a tape to). The
+ * physical reading briefly replaced raw units when scale shipped, but hiding
+ * the board's own coordinates made the app lie about what it is.
  */
 const px = (n: number) => Math.round(n);
 

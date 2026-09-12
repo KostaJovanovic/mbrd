@@ -1,103 +1,8 @@
-/* =========================================================
-   mbrd - the reset, the page, and the sheet it is printed on
-
-   FIRST OF TWENTY. This was one 6,000-line app.css until it became the file
-   every interface change had to touch at once. It is now split by subsystem, and
-   index.html loads the parts in this order - which IS the cascade, so the order
-   is not cosmetic:
-
-     base      this file: reset, type, the page, paper, grain, the boot cover
-     canvas    #viewport, #world, the transform layer, the grid, the threads,
-               the paper outline, the Mobile sheet and masthead in screen space
-     items     the item box, its selection ring, and the plate a filed card
-               is printed on
-     ghosts    the hint cards a brand-new board opens with
-     fences    a region drawn on the board, not a card lying on it
-     media     cover art, the audio card, the video player, both transports
-     cards     notes, links, stickers, models, embeds
-     item-chrome  what is drawn over a card rather than in it: the caption
-               plate, the far-zoom head, cheap mode and the resize grips
-     sidebar   the panel: tabs, sections, folds, .field and its variants
-     chrome    the HUD, the toolbar, the now-playing bar
-     trash     the bin and its panel, and the fly-out a deleted card plays
-     menu      Find, the right-click menu, the flyouts, and the two offers
-               that appear over the board to be answered
-     library   the board switcher
-     status    the drop target, the waiting strip, the toast slips
-     dialog    the question sheet, the note composer, the credits roll
-     viewer    one item as big as the window allows, documents included
-     color-picker  the saturation square and the hue
-     sticker-pad   the drawer of shapes
-     mobile    touch, small screens, the Mobile sheet and masthead
-     quality   the whimsy axis and the quality dial - MUST STAY LAST, because
-               [data-whimsy] and [data-quality] have the same specificity as
-               what they override and win only on document order
-
-   The eight from trash to sticker-pad were one overlays.css until that file had
-   grown eleven unrelated subsystems and become the thing this split was for.
-   The six from items to item-chrome were one items.css for the same reason, and
-   the two ends of that run are load-bearing rather than tidy: items.css declares
-   .card before the type sheets redress it, and item-chrome.css settles three
-   ties on document order. Its own banner names them.
-
-   A new rule goes next to the subsystem it styles. A new *file* has to be added
-   to index.html and to SHELL in sw.js - tests/sw.test.js walks this directory
-   and will say so.
-
-   Structure only. Every colour, corner, duration, typeface and ornament comes
-   from a custom property in tokens.css - nothing below names a hue, and the
-   handful of values that are written literally here are proportions rather
-   than style (a 50% centre, a 100% fill).
-
-   That is what lets the whimsy slider re-skin the whole interface at runtime
-   without touching these files, and what lets the board re-skin itself from the
-   pictures dropped on it. The rules gated on [data-whimsy] in quality.css are
-   the exceptions: the few decisions that are structural rather than numeric,
-   and so cannot live in a token.
-   ========================================================= */
+/* === Reset, page, paper, grain, boot cover === */
 
 * { box-sizing: border-box; }
 
-/* ---------------------------------------------------------
-   The stacking ladder: what is in front of what, written once
-
-   These were fourteen bare integers spread over ten stylesheets - 20, 21, 24,
-   25, 30, 40, 41, 50, 55, 59, 60, 61, 70, 90 - with nothing naming the ladder
-   and nothing testing it, in a codebase that tests icon names and element ids
-   precisely because those fail silently. This fails silently too, and worse: a
-   surface one rung short of another is invisible only in the one combination
-   that puts the two on screen together.
-
-   Every number below is the number that was already there, so this is a rename
-   and not a re-order. Read it as the order things pile up in:
-
-     chrome      the furniture on the glass - toolbar, corner, bin, menu
-     chrome-over the strips that lift clear of it - tour, player, timeline
-     sweep       #exit-layer, where a deleted card is animated away
-     drop        the "let it fall" cover, while files are over the window
-     panel       the sidebar and the header panel, which cover the chrome
-     overlay     a window that takes the board over - library, sticker pad
-     status      the busy line, which must clear a working overlay
-     toast       what the app says back, over everything working
-     menu        a context menu, which can be opened from any of the above
-     search      opened *from* the menu, so one rung over it
-     splash      the boot cover, which is in front of an app not yet drawn
-
-   A surface that has to sit one over its own rung says so in arithmetic -
-   `calc(var(--z-menu) + 1)` - rather than writing 61 and leaving the next
-   reader to work out which 60 it was answering.
-
-   **Here and not in tokens.css, and that is load-bearing.** Everything in
-   tokens.css is a look: a board file carries its palette and its corners, and
-   tests/appearance.test.js holds ui/look.ts's allowlist to exactly what that
-   file declares - so a token born there is a token a saved board may set. A
-   colour, yes. A stacking order, no: `--z-menu: -1` drops the right-click menu
-   below #viewport, which has no z-index of its own, and the menu is gone until
-   another board is opened. That is the app rearranged rather than repainted,
-   and the way to make it impossible is for these names never to be look tokens
-   in the first place. This file's banner already says "Structure only"; this is
-   structure. tests/stacking.test.js is what keeps the ladder honest.
-   --------------------------------------------------------- */
+/* --- Z-index ladder. Here not in tokens.css so a .mbrd cannot rearrange the app. --- */
 :root {
   --z-chrome:      20;
   --z-chrome-over: 21;
@@ -112,54 +17,25 @@
   --z-splash:      90;
 }
 
-/* Selected text, in this board's own pigment rather than the browser's blue.
-   Unqualified on purpose: it covers the canvas, the sidebar and the menus in
-   one rule, because a highlight is a property of the board's palette and not
-   of any one surface on it. See --highlight in tokens.css for why it is a
-   wash at two of the three whimsy levels and a solid block at the third. */
+/* Selected text in the board's pigment. */
 ::selection {
   background: var(--highlight);
   color: var(--highlight-ink);
 }
 
-/* ---------------------------------------------------------
-   Scrollbars, in the board's own ink
-
-   Unqualified, like ::selection above and for the same reason: a scrollbar is a
-   property of the board's palette and not of any one surface. Six sheets used
-   to each ask for `scrollbar-width: thin` and `scrollbar-color` on their own
-   scroller, which is one decision written six times and a seventh scroller
-   getting the operating system's.
-
-   **The two standard properties and ::-webkit-scrollbar cannot both be used.**
-   Chromium takes `scrollbar-color` or `scrollbar-width` on an element as the
-   whole answer and stops applying the pseudo-elements to it, so the six
-   declarations that used to be spread about were not a fallback for this - they
-   were what would have switched it off. Hence the split: the pseudo-elements
-   are the app's scrollbar, and the standard pair is inside an @supports that
-   only Firefox, which has no ::-webkit-scrollbar to test for, enters.
-
-   The thumb is inset by a transparent border rather than made narrow, which is
-   what gives it air on both sides without a track drawn behind it. `overlay` is
-   deliberately not asked for: it is non-standard, it is gone from Chromium, and
-   a bar that floats over content it does not reserve room for is a bar that
-   sits on the last character of every line.
-   --------------------------------------------------------- */
+/* --- Scrollbars. Webkit pseudos for Chromium; @supports block for Firefox only
+   (Chromium drops the pseudos if it sees the standard properties). --- */
 
 ::-webkit-scrollbar {
   width: 11px;
   height: 11px;
 }
-/* No track. The surfaces that scroll in this app are panels and sheets that
-   already have a paper of their own, and a channel drawn down the side of one
-   is a second edge beside the edge it already has. */
+/* No track — surfaces have their own edge. */
 ::-webkit-scrollbar-track,
 ::-webkit-scrollbar-corner { background: transparent; }
 ::-webkit-scrollbar-thumb {
   background: var(--rule-2);
-  /* The inset. background-clip is what makes the border show the paper behind
-     rather than the thumb's own colour - without it the border is simply part
-     of the thumb and the bar is 11px of solid ink. */
+  /* Transparent border + padding-box clip = inset thumb. */
   border: 3px solid transparent;
   background-clip: padding-box;
   border-radius: 999px;
@@ -167,13 +43,9 @@
 @media (hover: hover) {
   ::-webkit-scrollbar-thumb:hover { background: var(--ink-3); background-clip: padding-box; }
 }
-/* Dragging it. Held one step darker than the hover so the bar says it is being
-   moved by you rather than passed over, which is the one moment anybody is
-   actually looking at a scrollbar. */
+/* One step darker than hover. */
 ::-webkit-scrollbar-thumb:active { background: var(--ink-2); background-clip: padding-box; }
-/* The two arrow buttons at the ends. Gone rather than styled: nothing else in
-   this app is driven a line at a time by a button held down, and Chromium only
-   draws them at all once ::-webkit-scrollbar is written. */
+/* Chromium draws arrow buttons once ::-webkit-scrollbar exists; hide them. */
 ::-webkit-scrollbar-button { display: none; }
 
 @supports not selector(::-webkit-scrollbar) {
@@ -191,74 +63,28 @@ html, body {
   font-family: var(--font-body);
   font-size: var(--t-body);
   -webkit-font-smoothing: antialiased;
-  /* Kill rubber-band / pull-to-refresh: every gesture on this page is ours. */
   overscroll-behavior: none;
   -webkit-tap-highlight-color: transparent;
-  /* Double-tap zooms the *page* on a touch browser, and this app is full of
-     controls somebody taps twice in a second on purpose - a zoom button, Undo,
-     a stepper, the clear button in a field. Every one of them was zooming the
-     page in and out underneath the press.
-     `manipulation` is the narrow word for it: it drops double-tap zoom and the
-     300ms click delay that comes with it, and leaves panning and *pinch* zoom
-     alone. That distinction is the whole reason this is not `none` - the
-     viewport tag next door deliberately keeps browser zoom, because it is how
-     a low-vision reader reads the sidebar and the menus, and the canvas's own
-     zoom does not touch those. #viewport takes `none` on top of this, since
-     the board claims every gesture over it for itself. */
+  /* `manipulation` not `none`: kills double-tap zoom but keeps pinch. */
   touch-action: manipulation;
 }
 
-/* The small print goes in the display face.
-   Every selector here is an aside - a caption, a section head, a keyboard
-   legend, a toast - and an aside is the display voice's job, not the body's.
-   In the middle of the whimsy axis, where the two tokens name different
-   families, this is the split doing its work; at either end both name the
-   same family and the whole rule is a no-op. Grouped rather than repeated
-   thirteen times, and kept next to the body rule it is the counterweight to. */
+/* Asides in the display face. */
 .card-icon, .card-meta, .item-label, .wordmark :is(h1, h2), .wordmark .sub,
 .side-sec h2, .field > span, .dk-dial > span, .hint, .keys li, .side-foot,
 .drawer-none, .drawer-hint, #drop-overlay div, #toast {
   font-family: var(--font-display);
 }
 
-/* The app's name wherever it is said in running text - on a button, in a
-   dialog, at the foot of the changelog. ui/wordmark.ts is what puts the span
-   there; see its header for why the name being set in the sentence's own face
-   was a real misreading rather than a tidiness complaint.
-
-   The face and the weight, and deliberately *not* the tracking. The sidebar
-   mark carries 0.14em, which is right for a name standing alone at 30px and
-   wrong inside a 15px sentence - at that size it stops reading as a word and
-   starts reading as a logo somebody pasted mid-paragraph. So this is the mark's
-   voice at conversational volume: same face, same weight, ordinary spacing.
-
-   Inherits its size rather than setting one, which is what keeps it usable in
-   all three places at once - a button, a dialog body and a footer are three
-   different sizes and the name should be each of them. */
+/* App name in running text — display face, no tracking. */
 .wm {
   font-family: var(--font-display);
   font-weight: var(--display-weight);
 }
-/* The same override the sidebar mark takes, and for the same reason - see the
-   note on :root[data-display-sans] .wordmark in sidebar.css, which explains why
-   900 is a question about the axis rather than a number. A sans has nothing to
-   give a name except weight. */
+/* A sans face has nothing to distinguish a name except weight. */
 :root[data-display-sans] .wm { font-weight: 900; }
 
-/* Present but not drawn: read aloud, found by a crawler, and out of the flow.
-
-   Not display:none and not visibility:hidden - both of those take the text out
-   of the accessibility tree too, which is the one thing this must not do. The
-   recipe is the standard one and every line of it is load-bearing: a 1x1 box so
-   it cannot be clicked into, the negative margin so it contributes nothing,
-   inset(50%) rather than the old clip rect, and overflow:hidden so the clipped
-   text cannot paint outside. The same recipe is inlined once in mobile.css for
-   the toolbar labels at the narrowest width; that one is inside a media query
-   and stays where it is.
-
-   Its only user today is the tail of the sidebar wordmark, which says what the
-   app is to a screen reader and to a search engine while the eye reads the four
-   letters the mark is. */
+/* Visually hidden but accessible. Standard clip-path recipe. */
 .vh {
   position: absolute;
   width: 1px; height: 1px;
@@ -268,100 +94,18 @@ html, body {
   white-space: nowrap;
 }
 
-/* The sheet. #viewport paints the grid on top of this and stays transparent,
-   so the paper shows through at every zoom without the grid painter having to
-   know about it.
-   Blooms, a vignette and the stock's own tooth, in that order. What this rule
-   still refuses is *hatching*: fine repeating lines under a dot grid read as a
-   second, competing grid, and at fractional zoom the two beat against each
-   other into moire. The grain below scales with the board, so it does sweep its
-   frequency past the grid's - what keeps that survivable is that it is
-   isotropic noise rather than a lattice, and noise has no single period to beat
-   against. See canvas/grain.ts, which owns both halves of that trade. */
+/* Blooms, vignette, grain. #viewport is transparent over this. */
 body {
   background-color: var(--paper);
-  /* --wash scales the two colour blooms and --vignette the ink shading, so the
-     whimsy axis can flatten the paper to nothing - or decorate it without
-     darkening it - with no second background declaration to keep in sync.
-
-     The first bloom is the palette's own accent, and 3% rather than the 5% the
-     other pigments here take. It used to be --accent-warm, which is a warm
-     yellow in three of the four palettes - so whatever the board's colour, the
-     corner came out the same amber smudge, and on Orca's teal sheet it was a
-     gold blob 107 degrees off the palette (which is what --accent-warm is *for*
-     there; see its block in tokens.css). The accent tracks the theme instead,
-     including a palette ui/pigments.ts has extracted from a picture.
-
-     The share drops because the accent is the darker pigment: measured against
-     plain paper, --accent-warm at 5% costs the corner 1.86 levels of lightness
-     and --accent at 5% costs 3.70, which reads as a stain rather than a bloom.
-     3% lands at 1.76 - the weight this always had - while carrying more chroma
-     than the warm did. */
+  /* --wash and --vignette let the whimsy axis flatten the paper. */
   background-image:
     radial-gradient(58% 44% at 18% 12%, color-mix(in srgb, var(--accent) calc(3% * var(--wash)), transparent), transparent 70%),
     radial-gradient(52% 40% at 84% 78%, color-mix(in srgb, var(--leafy) calc(4% * var(--wash)), transparent), transparent 72%),
     radial-gradient(120% 100% at 50% 50%, transparent 55%, color-mix(in srgb, var(--ink) calc(5% * var(--vignette)), transparent));
 }
 
-/* The tooth of the stock: a 512px seamless tile of 300gsm grain, multiplied
-   over the finished sheet.
-
-   Multiply and not soft-light, which is the mode a grey texture usually wants.
-   Both soft-light and overlay are defined so that a backdrop of white comes
-   back unchanged, and this sheet is 98% light: measured against --paper, the
-   whole tile collapses into about two levels out of 255, and against
-   --paper-card into less than one. Multiply is subtractive and so has the whole
-   range below the sheet to work in. It also keeps the palettes honest for free
-   - scaling all three channels by the same grey leaves hue exactly where it
-   was, so an extracted pigment stays the colour ui/pigments.ts derived.
-
-   The tile is baked high-key for the same reason: its levels run 236-255, so
-   the brightest fibres take nothing off the sheet and the darkest take about
-   7%. A tile centred on mid-grey would have spent most of its range darkening
-   uniformly and only the remainder on texture. Lossless WebP, because 19 levels
-   of grain is inside the quantisation noise of any lossy setting and the
-   banding is worse than the weight it saves.
-
-   Its own layer rather than a fourth background-image on the rule above,
-   because a background-blend-mode is fixed at authoring time and this wants the
-   whimsy dial the blooms and the vignette have.
-
-   A real element rather than a body::before, and that is forced. The layer has
-   to travel with the board - canvas/grain.ts writes its background-position on
-   every view change - and a pseudo-element cannot be written to from script; it
-   would have to read a custom property off body instead. Body is an ancestor of
-   #world, and an inherited custom property written there once a frame
-   invalidates the computed style of every card on the board. That is the same
-   trap canvas/mobile-frame.ts was built to get out of.
-
-   The 512px below is the tile at 100%. grain.ts scales it with the zoom and
-   carries the same number, so what is written here is only what the layer
-   wears between first paint and the first view change. */
-/* Three surfaces, one stock. Desktop's paper is the window, so the grain is a
-   full-bleed layer under #viewport. Mobile's paper is the *sheet* - a finite,
-   deliberately opaque strip - so on Mobile the full-bleed one is covered by the
-   board and shows only in the surround around it, which is the board wearing
-   its texture inside out. The sheet therefore carries its own, and the
-   full-bleed layer is taken off; see the two rules below the shared block.
-
-   There are two Mobile sheets because there were two Mobile boards.
-   #mobile-board-frame is the world-space strip; .feed-sheet is the Feed that
-   replaced it (mobile.css), and it did not inherit the tooth on the way - so
-   the phone board has been printing on untextured stock since that migration.
-   Joining it to this selector rather than writing a second texture is the whole
-   argument for the rule being shared: one image, one blend, two dials, and a
-   change to the look reaches every surface that is meant to be paper.
-
-   All three read their placement from custom properties rather than being
-   written directly, because two of them are pseudo-elements. That is safe here
-   in a way it would not be on <body>: #grain is childless, and
-   #mobile-board-frame and .feed-sheet each have only this one pseudo-element
-   reading them, so an inherited custom property invalidates nothing but itself.
-
-   The Feed writes neither property: it has no zoom, so there is no tile to
-   scale and no fade to run, and the 512px fallback in the shared block is the
-   whole answer. Position 0 0 against the sheet is what makes the grain travel
-   with the board rather than sit still behind a scrolling one. */
+/* Paper grain. Multiply because soft-light collapses at 98% lightness.
+   Real element because grain.ts writes background-position per frame. */
 #grain,
 #mobile-board-frame::after,
 .feed-sheet::before {
@@ -371,11 +115,7 @@ body {
   background-size: var(--grain-tile, 512px 512px);
   mix-blend-mode: multiply;
   pointer-events: none;
-  /* Two dials multiplied. --grain is the look's, from tokens.css; --grain-fade
-     is the zoom's, written onto the surface by canvas/grain.ts as the board
-     goes below 40% - see fadeFor() there. The fallback of 1 is what the layer
-     wears before the first view change, and is also what keeps it visible if
-     script never runs. */
+  /* --grain (look) * --grain-fade (zoom, grain.ts fades below 40%). */
   opacity: calc(0.8 * var(--grain) * var(--grain-fade, 1));
 }
 
@@ -384,32 +124,7 @@ body {
   inset: 0;
 }
 
-/* ---------------------------------------------------------
-   Icons (assets/icons.svg)
-
-   The one place the set's drawing spec is written. Every icon in the app is a
-   <symbol> in assets/icons.svg and reaches its button as
-
-     <svg class="ico"><use href="assets/icons.svg#i-note"/></svg>
-
-   and these five properties are what make forty separate drawings read as one
-   set. They are here rather than on the symbols because all five are inherited
-   properties, and inherited properties are the one thing that crosses into the
-   shadow tree a <use> renders into - so a rule written once on the wrapper
-   reaches every shape inside it. Nothing else can: no selector in this file can
-   match a path *within* a symbol, which is the constraint the sprite is built
-   around and is explained where the symbols are.
-
-   A symbol that is deliberately filled - the colour chips, the speaker's cone,
-   the grid's dots - says `fill="currentColor"` on the shape itself. That is a
-   presentation attribute on the element, and an element's own declaration beats
-   a value inherited from an ancestor, so it wins over the `fill: none` here
-   without either having to know about the other.
-
-   The size is a floor, not the size: every surface that had an opinion before
-   the sprite existed still has it, and every one of those rules is an id
-   selector (#toolbar svg, #zoom-ctl svg, #saved svg...) which outranks this. So
-   this is what an icon is in a context that has never said. */
+/* --- Icons (assets/icons.svg). Inherited props cross into the <use> shadow tree. --- */
 .ico {
   width: 16px;
   height: 16px;
@@ -420,30 +135,10 @@ body {
   stroke-linejoin: round;
 }
 
-/* ---------------------------------------------------------
-   The boot cover (index.html, dismissed by main.ts)
-
-   Third layer of the sheet and the last one painted, which is why it sits here
-   rather than with the chrome: paper, then grain, then the thing over both.
-
-   It repaints the paper instead of being transparent over it, because what it
-   is covering is the chrome - the menu button, the add bar, the zoom pill are
-   all in the document at first paint and would otherwise sit on an empty board
-   while it loaded. Only the flat colour, though, not the blooms and the
-   vignette: the wash is 3-5% of an ink over near-white, so the seam when this
-   fades is under two levels, and duplicating the three gradients here would be
-   a second copy of the sheet to keep in step with the first.
-
-   Everything below is a token, so the cover comes up in the board's own palette
-   and whimsy level - both restored by the inline script in <head> before first
-   paint, which is the whole reason this can be themed at all.
-   --------------------------------------------------------- */
+/* --- Boot cover (dismissed by main.ts). Flat --paper hiding chrome during load. --- */
 #splash {
   position: fixed;
   inset: 0;
-  /* Above the sidebar (40), the dialogs (70) and the toast (50) - a cover that
-     something can appear over is not a cover. Under the debug overlay, which is
-     the only thing in the app that outranks the app. */
   z-index: var(--z-splash);
   display: flex;
   align-items: center;
@@ -451,8 +146,7 @@ body {
   background-color: var(--paper);
   transition: opacity var(--dur-base) var(--ease);
 }
-/* main.ts adds this once there is a board, then removes the node. Pointer
-   events go first so a click during the fade lands on the board under it. */
+/* Fades out then removed. Pointer events go first so clicks land through. */
 #splash.is-done {
   opacity: 0;
   pointer-events: none;
@@ -463,16 +157,10 @@ body {
   align-items: center;
   gap: 14px;
   padding: 0 24px;
-  /* The name sits a little above centre. Optical centring, not arithmetic: a
-     block of type centred by its box reads as low, and this one is short
-     enough for that to show. */
+  /* Optical centring — box-centred reads low. */
   transform: translateY(-4%);
 }
-/* The sidebar's wordmark, larger. Same face, same full stop - a cover that
-   showed a different mark from the one behind it would be someone else's app.
-   Sized against the window rather than in points, because at this size it is
-   the only thing on the screen and has a whole phone or a whole desktop to sit
-   in; the clamp keeps it off both walls. */
+/* Sized in vw (clamped) because it owns the whole screen at this point. */
 .splash-word {
   font-family: var(--font-display);
   font-weight: var(--display-weight);
@@ -480,10 +168,7 @@ body {
   line-height: 0.95;
   letter-spacing: calc(0.02em * var(--ls-scale));
   color: var(--ink);
-  /* Hidden until the inline script in index.html reports the face has loaded,
-     so the name is never set in the fallback and swapped mid-cover. The sub
-     line is not held back with it: it is set in the body face, which at two
-     levels out of three is the sans that has already painted the chrome. */
+  /* Hidden until the display face loads. */
   opacity: 0;
   transition: opacity var(--dur-fast) var(--ease);
 }
@@ -495,20 +180,7 @@ body {
   letter-spacing: calc(0.04em * var(--ls-scale));
   color: var(--ink-3);
 }
-/* A board building itself: three cards drop in and threads snap between them,
-   left to right, then the row lets go and does it again.
-
-   Every value in here is a token the whimsy axis already moves, which is the
-   point - the loader is not decorated to match the tier, it is built out of the
-   tier. Softish gets round cards on a real overshoot at 3 degrees of tilt;
-   Harsh gets square ones, no shadow, no tilt worth the name and an --ease-back
-   that is plain `ease`, so the same six declarations come out as a Swiss
-   diagram. Nothing here has to know which level it is on.
-
-   The stagger is one animation-delay per child rather than five keyframe sets:
-   same duration, constant offsets, so the phase between them never drifts
-   however long the cover is up. Transform and opacity only - see the note on
-   the markup for why this cannot be driven from JavaScript. */
+/* Boot loader: three cards + two threads. Whimsy tokens shape the animation. */
 .splash-thread {
   display: flex;
   align-items: center;
@@ -525,10 +197,7 @@ body {
   box-shadow: var(--item-shadow);
   animation: splash-card 2.8s var(--ease-back) infinite both;
 }
-/* Each card lands at its own angle, as a share of the tier's own maximum - so
-   the row is hand-laid at the soft end and lines up square at the plain one,
-   off a single token. The middle card is the accent, because three cards in
-   paper is a diagram and one of them in colour is a board. */
+/* Per-card tilt; middle card is the accent. */
 .splash-thread .splash-card:nth-child(1) { --splash-tilt: calc(var(--tilt-max) * -1); }
 .splash-thread .splash-card:nth-child(3) {
   --splash-tilt: var(--tilt-max);
@@ -541,23 +210,17 @@ body {
   height: 2px;
   background: var(--accent);
   border-radius: var(--radius-pill);
-  /* Reaches from the card that has just landed towards the next one, so it
-     grows from its left end. --ease and not --ease-back: a thread that
-     overshoots is a thread that pokes out the far side of the card it just
-     arrived at. The cards are the springy half; these are pulled taut. */
+  /* --ease not --ease-back — no overshoot on threads. */
   transform-origin: left center;
   animation: splash-line 2.8s var(--ease) infinite both;
 }
-/* One step per element, in document order, which is what makes the row read as
-   a sequence rather than five things pulsing together. */
+/* Staggered delays. */
 .splash-thread > :nth-child(1) { animation-delay: 0s; }
 .splash-thread > :nth-child(2) { animation-delay: 0.16s; }
 .splash-thread > :nth-child(3) { animation-delay: 0.34s; }
 .splash-thread > :nth-child(4) { animation-delay: 0.5s; }
 .splash-thread > :nth-child(5) { animation-delay: 0.68s; }
-/* Drops in, sits, and is taken away smaller than it arrived. The tilt is only
-   worn while it is up: it turns square on the way out, so the row leaves as
-   tidily as a board being cleared. */
+/* Drop in, hold, shrink out. */
 @keyframes splash-card {
   0%   { opacity: 0; transform: scale(0.2) rotate(0deg); }
   16%  { opacity: 1; transform: scale(1) rotate(var(--splash-tilt, 0deg)); }
@@ -573,21 +236,14 @@ body {
   80%  { opacity: 0; transform: scaleX(1); }
   100% { opacity: 0; transform: scaleX(0); }
 }
-/* The finished picture, held. Not "no animation" but the last frame of one -
-   an empty row where the loader was says the app has stopped, which is the one
-   thing a loader must never say. Quality is deliberately not consulted: the
-   cover is a handful of composited layers either way, and a Light board is
-   being spared repaints on a board it does not have yet. */
+/* Reduced motion: hold the last frame, not no-animation (reads as stalled). */
 @media (prefers-reduced-motion: reduce) {
   .splash-card,
   .splash-line { animation: none; }
   .splash-card { transform: rotate(var(--splash-tilt, 0deg)); }
 }
 
-/* Clipped to the sheet by the sheet, radius included - which is why this is a
-   pseudo-element on the frame rather than a third layer positioned to match it.
-   canvas/mobile-frame.ts rewrites that radius as each end of the board scrolls
-   in and out of the window, and `inherit` follows it for free. */
+/* Grain pseudo on the mobile frame. */
 #mobile-board-frame::after {
   content: "";
   position: absolute;
@@ -595,43 +251,25 @@ body {
   border-radius: inherit;
 }
 
-/* The surround is not paper. It is the mat the sheet is lying on, and giving it
-   the board's tooth is what made the texture read as inverted. */
+/* Mobile surround is not paper — grain reads inverted there. */
 :root[data-board-mode="mobile"] #grain { display: none; }
 
 button, input, select, textarea { font: inherit; color: inherit; }
 
-/* Windows High Contrast and other forced-colors modes.
- *
- * In forced-colors the browser throws out the palette: paper fills, hairlines and
- * accents all collapse to a handful of system colours, so any control the design
- * distinguishes by its fill alone (most of the furniture on the glass) loses its
- * edge and any state carried by a background tint (a pressed toolbar tool, a
- * shuffle that is on) goes invisible. This restores the two things that break:
- * a real border on the floating furniture so it reads as an object over the board,
- * and an outline for focus and for the on/pressed states. Kept deliberately small -
- * the query itself is the guard, so it cannot touch the ordinary palette. */
+/* Forced-colors: borders for floating chrome, outlines for tint-based states. */
 @media (forced-colors: active) {
   #menu-btn, #mobile-header-edit-btn, #mobile-find-btn, #drawer-dock, #drawer-btn,
   #history-ctl, #zoom-ctl, #toolbar, #nowplaying, #busy,
   #sidebar, #header-panel, .player-window, #drawer-window, #search, #ctx-menu, #ctx-child, #pick {
     border: 1px solid CanvasText;
   }
-  /* Keyboard focus stays obvious even where the app draws its own accent ring. */
+  /* Focus. */
   :focus-visible { outline: 2px solid Highlight; outline-offset: 2px; }
-  /* States the design shows by fill: make them an outline instead. */
+  /* States shown by fill. */
   [aria-pressed="true"], .is-on, .is-selected { outline: 2px solid Highlight; }
 }
 
-/* Without color-mix(), for WebKit below 16.2 - section 7 of tokens.css carries
-   the argument and declares the channel-form tokens.
-
-   The whole background-image has to be restated rather than the three colours
-   inside it, because a shorthand is one declaration: there is no way to reach
-   the colour of the second gradient on its own. It is otherwise character for
-   character what is above, including the calc()s - rgb() takes a calc in the
-   alpha slot, so --wash and --vignette keep flattening the sheet at Harsh
-   exactly as they do everywhere else. */
+/* color-mix() fallback for WebKit < 16.2. Entire shorthand restated. */
 @supports not (color: color-mix(in srgb, red, blue)) {
   body {
     background-image:

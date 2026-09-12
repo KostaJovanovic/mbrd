@@ -1,63 +1,19 @@
-// The toolbar: the surface that says a board is made by putting things on it.
-//
-// Three jobs. It presses commands - every button in the markup carries a
-// data-cmd and this module resolves it against the command surface, exactly as
-// ui/sidebar.ts does for the panel. On a phone it owns the open/closed state of
-// the tier the buttons live in, because at that width the bar is a drawer
-// rather than a strip. And it holds the connector tool's armed state, which is
-// the one thing on this bar that is a *mode* rather than an action.
-//
-// It deliberately knows nothing about what any of those commands do. A tool is
-// added by writing a button in index.html and an entry in commands.ts; nothing
-// here needs to hear about it, which is the same bargain the panel makes and
-// the reason a new user-facing action is one entry rather than three.
-//
-// The armed state is the exception, and it is worth being honest that it is
-// one. mbrd has never had a mode: every gesture in the app means the same thing
-// whatever came before it, and "why is clicking not selecting?" is a question
-// nobody has ever had to ask. Four things exist to keep it that way - the
-// button says so with aria-pressed, the board says so with a cursor of its own,
-// Escape always gets out, and **a completed pair puts the tool down by itself**.
-//
-// That last one used to be the opposite, and the reversal is the whole of what
-// changed here. Staying armed made connecting five things one trip to the
-// toolbar, which is a real saving for the person who came to draw five lines -
-// and it was the loudest complaint the first tester outside this machine had
-// (see research/tester-feedback-2026-08-21.md). They drew one line, carried on
-// clicking, and could not work out why the board had stopped selecting. The
-// saving was for the rarer half and the confusion was for everyone: a mode you
-// have to remember you are in is a mode that gets left on.
-//
-// The run of joins is not gone, it moved onto a modifier: **hold Shift while
-// making the pair and the tool stays armed**. That is the same bargain the rest
-// of the app strikes with Shift - press means the ordinary thing, Shift means
-// "and again" - and it puts the cost on the person doing the unusual thing
-// rather than on the person doing it once.
-//
-// `cmds` is handed in by initToolbar() rather than imported, for the reason
-// ui/hud.ts states: commands.ts imports *this* module (Escape closes the
-// drawer, and the connector tool is driven from there), and the arrow may only
-// go one way.
+// Toolbar: data-cmd dispatch, mobile drawer, and the connector tool's armed
+// state. A completed pair disarms (Shift to stay armed). cmds is injected
+// because commands.ts imports this module — the arrow may only go one way.
 
 import { el } from '../util.ts';
 import { board, bus, isJoinEnd, toggleConnection } from '../state.ts';
 import { toast, runCommand } from '../notify.ts';
 import { cue } from '../cuelume/engine.ts';
 import { setConnectPick } from '../canvas/items.ts';
-// The line that follows the pointer out of the picked card. Written from the
-// same place as the ring, because they are one state: a pick with no draft is
-// the tool saying it has an end and not saying what it would do with it.
+// Draft line from the picked card — same state as the ring.
 import { setDraftFrom } from '../canvas/web.ts';
 
 /** data-cmd="add-files" -> cmds.addFiles. The panel's own mapping. */
 const camel = (s: string): string => s.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
 
-/**
- * The command surface, as this module sees it: a lookup by name and nothing
- * else. Every button on the bar carries a data-cmd, so the index signature is
- * the whole of the contract - see the note above about knowing nothing of what
- * any of them do.
- */
+/** Command lookup by name — same shape sidebar.ts uses. */
 export interface ToolbarCommands {
   [name: string]: ((...args: never[]) => void) | undefined;
 }
@@ -69,66 +25,32 @@ export function initToolbar(cmds: ToolbarCommands): void {
   bar = el('toolbar');
   toggle = el('toolbar-toggle');
 
-  // Both ids are declared in index.html; this module has always read them
-  // straight through, and an absent one is a broken build.
+  // Both ids from index.html.
   toggle!.addEventListener('click', () => setOpen(!isOpen()));
 
   bar!.addEventListener('click', e => {
-    // SAFETY: the listener is on #toolbar, so a click delivered to it landed on
-    // an element inside it - closest() is only being asked whether an ancestor
-    // carries a data-cmd, and a target that is not a node cannot reach here.
     const btn = (e.target as Element).closest<HTMLElement>('[data-cmd]');
     if (!btn) return;
     const fn = cmds[camel(btn.dataset.cmd!)];
     if (!fn) return;
-    // Every tool on the bar says so, from the one place that knows a button was
-    // pressed - the same line ui/sidebar.ts carries, and there because these are
-    // the two delegated data-cmd dispatchers in the app.
     cue('pick');
-    // See notify.ts: the returned promise was dropped, so an async command that
-    // rejected read as a button that did nothing at all.
     runCommand(fn(), btn.getAttribute('aria-label') || (btn.textContent || '').trim() || 'That');
-    // Except the one command whose whole result is a menu hanging off the bar.
-    // The three tools behind More are still on the tier - they are only hidden
-    // from it - and closing the drawer would take the button the menu is pointing
-    // at out from under it, leaving a panel in mid-air over a bar that is gone.
-    // The rest of the row is unchanged: everything here makes something, and a
-    // drawer left standing over the thing you just made is in the way of it.
+    // more-tools opens a menu hanging off the bar — closing the drawer would orphan it.
     if (btn.dataset.cmd === 'more-tools') return;
-    // A drawer that stays open over the board after you have used it is in the
-    // way of the thing you just made. Harmless on a desktop, where the bar is
-    // always out and the class means nothing.
-    //
-    // After fn(), not before: the connector tool arms itself inside its own
-    // command, and closing the drawer must not be able to look like disarming
-    // it. setOpen() touches the drawer and nothing else, for exactly that
-    // reason - it is closeToolbar() that also puts the tool down.
+    // Close drawer after action. After fn() so arming the connector is not mistaken for disarming.
     setOpen(false);
   });
 
-  // A board arriving, or the layout switching under it, both leave a drawer
-  // standing over something it no longer describes - and an armed tool pointing
-  // at a card that is no longer there.
+  // New board or layout change: close drawer and disarm.
   bus.on('board:load', () => { setOpen(false); setArmed(false); });
   bus.on('layout', () => { setOpen(false); setArmed(false); });
-  // A card being deleted while it is the picked end. Cheaper to drop the pick
-  // than to check it: the pick is one id and the alternative is a lookup on
-  // every add, remove and load.
+  // Items changed — drop pick (cheaper than checking whether it survived).
   bus.on('items', () => setPick(null));
 }
 
 export const isOpen = () => !!bar?.classList.contains('is-open');
 
-/**
- * Open or shut the phone's tier.
- *
- * The class and aria-expanded are written together, and that is not
- * bookkeeping: the class is what the stylesheet moves the tier and the player
- * with, and the attribute is the only thing that tells a screen reader the
- * button did anything at all. Written here rather than in the toggle's own
- * listener because three other things close this - a command firing, a board
- * loading, Escape - and each of them owes both halves.
- */
+/** Open/close the mobile drawer. Class + aria-expanded always written together. */
 export function setOpen(open: boolean): void {
   if (!bar) return;
   bar.classList.toggle('is-open', !!open);
@@ -148,18 +70,7 @@ let armed = false;
 /** The first end, once one has been chosen. Null between pairs. */
 let pick: string | null = null;
 
-/**
- * What one press of the connect tool decides: which card is now held, which pair
- * is finished, whether the press was turned down, and whether the tool is now
- * done.
- *
- * Named because five returns build it and the four fields are not independent -
- * a `connect` and a `pick` together would be a state nothing draws, a `refused`
- * with a fresh `pick` would say the tool both declined and advanced, and
- * `disarm` without a `connect` would be the mode ending on a press that did
- * nothing. Reading them off one type is what makes the five lines below
- * comparable.
- */
+/** Result of one connect press. Fields are interdependent — see connectStep(). */
 export type ConnectStep = {
   pick: string | null;
   connect: [string, string] | null;
@@ -167,48 +78,10 @@ export type ConnectStep = {
   disarm: boolean;
 };
 
-/**
- * What one press does, as a total function of the state and what was hit.
- *
- * Pure, and lifted out for that reason: this is the whole of the interaction,
- * it is five cases, and every one of them is a sentence somebody has to be able
- * to check. `id` is the card that was pressed, or null for empty canvas.
- *
- *   nothing picked, a card      pick it
- *   one picked, a different card    join them, and clear the pick
- *   one picked, the same card       clear the pick - a card joined to itself
- *                                   is not a connection, and pressing the card
- *                                   you just picked is how you change your mind
- *   anything, empty canvas          clear the pick
- *   anything, a card no line can    refuse it, and *keep the pick*
- *   reach
- *
- * The one press that ends the mode is the one that finishes a pair, and only
- * that one. Clicking empty canvas is "not that one" rather than "stop", and a
- * refusal is a slip of the hand - neither is somebody saying they are finished,
- * so neither disarms. Escape and the button remain the two ways to put the tool
- * down with nothing drawn, and both are unmistakable.
- *
- * `sticky` is Shift held on the press that completes the pair: the run of joins,
- * kept as a modifier rather than as the default. It is read here rather than in
- * the caller so that "what this press means" stays one function - a caller that
- * decided about disarming itself would be a second copy of these five cases,
- * and the two would disagree the first time a case was added.
- *
- * `joinable` is the fifth case and the reason this function grew a parameter
- * rather than an import. It stays pure: the caller answers "may this id be an
- * end", because the answer needs the board and this file is four lines of
- * arithmetic that a test can drive with strings. Passing it *false* is not the
- * same as passing empty canvas, and the difference is the whole point - empty
- * canvas is "not that one" and clears the pick, while a sticker is a slip of the
- * hand and must cost nothing. Losing a standing pick to a mis-tap means pointing
- * at the first card again.
- *
- * `refused` is separate from the pick because the caller has to say something.
- * Silence here is what the defect was: the pair went into the board, saved,
- * survived a reload, and was never drawn, and the only way to find out was to
- * read the file.
- */
+/** Pure state machine for one connect press. Five cases: pick, join, same-card
+ * clear, empty-canvas clear, unjoinable refuse. `sticky` = Shift keeps the tool
+ * armed after a completed pair. `joinable` false keeps the pick (unlike null id
+ * which clears it). */
 export function connectStep(
   from: string | null,
   id: string | null,
@@ -216,37 +89,20 @@ export function connectStep(
   sticky = false,
 ): ConnectStep {
   if (!id) return { pick: null, connect: null, refused: false, disarm: false };
-  // Before every other case, including `from === id`: a sticker you picked by
-  // mistake cannot have been picked in the first place, so there is no
-  // "pressing it again to change your mind" to honour.
+  // Unjoinable check before from===id: a sticker cannot have been a valid pick.
   if (!joinable) return { pick: from, connect: null, refused: true, disarm: false };
   if (!from) return { pick: id, connect: null, refused: false, disarm: false };
   if (from === id) return { pick: null, connect: null, refused: false, disarm: false };
-  // The only line that ends the mode, and it ends it for the pair being *made*
-  // as well as for the pair being unmade: toggleConnection() reads the same
-  // press both ways, and somebody parting two cards has finished the same
-  // sentence somebody joining them has.
+  // Completed pair disarms (unless sticky). Works for both make and unmake.
   return { pick: null, connect: [from, id], refused: false, disarm: !sticky };
 }
 
-/**
- * Arm or disarm. Written through here so the button and the mark never drift.
- *
- * `from` is the end to arm *on*, for the one caller that has an answer already:
- * a card that was selected when the tool was pressed is a card you have already
- * pointed at, and making you point at it again is the tool pretending not to
- * have seen. Ignored when disarming - putting the tool down cannot leave a pick
- * standing - which is why the two are one write rather than an arm and a
- * separate seed that a `bus.on('items')` could land between.
- */
+/** Arm/disarm. `from` pre-seeds the pick when arming (selected card). */
 export function setArmed(on: boolean, from: string | null = null): void {
   armed = !!on;
   setPick(armed ? from : null);
   bar?.querySelector('[data-cmd="connect"]')?.setAttribute('aria-pressed', String(armed));
-  // A board-wide cursor, and the honest half of saying the app is in a mode:
-  // the button is at the top of the screen and the hand is on a card at the
-  // bottom of it. Same shape as data-snap and data-whimsy - the flag goes on
-  // the root element and the stylesheets take it from there.
+  // Board-wide cursor via class on <html>, like data-snap and data-whimsy.
   document.documentElement.classList.toggle('is-connecting', armed);
 }
 
@@ -258,50 +114,22 @@ function setPick(id: string | null): void {
   setDraftFrom(pick);
 }
 
-/**
- * A press on the board while the tool may be armed.
- *
- * Returns whether the connector took the press. False is the answer on every
- * ordinary board and on every press of an unarmed one, which is what keeps this
- * to a single boolean read on the pointer path in canvas/input.ts.
- *
- * `sticky` is that press's Shift key, handed in rather than read here: this
- * module has no event, and the pointer path already has the one that matters.
- * Shift is free to mean this while the tool is armed - the connector claims the
- * whole press before the selection branch ever sees it, so the additive-select
- * reading of Shift cannot be the one somebody got instead.
- */
+/** Handle a board press while armed. Returns true if the connector consumed it.
+ * `sticky` = Shift held (keeps the tool armed after a pair). */
 export function connectTap(id: string | null, sticky = false): boolean {
   if (!armed) return false;
   const next = connectStep(pick, id, !id || canJoin(id), sticky);
   setPick(next.pick);
   if (next.refused) toast('A sticker is already a remark about the card under it');
   if (next.connect) toggleConnection(next.connect[0], next.connect[1]);
-  // After the line is drawn, not before: setArmed() clears the pick and takes
-  // the draft line down, and doing that first would leave toggleConnection()
-  // committing a pair the board had already stopped showing an end for.
+  // Disarm after the line is drawn — setArmed clears the pick.
   if (next.disarm) setArmed(false);
-  // True even when the tap was refused, and deliberately: the press was the
-  // connector's, it has been answered, and falling through into selection would
-  // put the sticker in the selection as a consolation prize for a gesture that
-  // was about something else.
+  // True even on refusal — the press belongs to the connector, not to selection.
   return true;
 }
 
-/**
- * May a line reach this id?
- *
- * The same question the draw path asks, asked one gesture earlier. `centres()`
- * in canvas/web.ts filters the ends it places through isJoinEnd(), so a pair
- * naming anything else is skipped every frame - which is invisible, permanent,
- * and survives a save. The selection door already asked it (`joinable` in
- * commands/connections.ts); this is the tap door catching up.
- *
- * isRider() is deliberately *not* part of it, though the draw path refuses that
- * too. A rider is a note stuck to something right now; unstick it and the line
- * appears. Refusing here would turn a temporary display rule into a permanent
- * refusal, which is a bigger loss than the bug.
- */
+/** Can a line reach this id? Matches what the draw path in web.ts filters.
+ * isRider excluded — sticking is temporary, refusal here would be permanent. */
 function canJoin(id: string): boolean {
   return isJoinEnd(board.items.find(i => i.id === id));
 }

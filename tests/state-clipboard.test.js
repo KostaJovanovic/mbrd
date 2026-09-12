@@ -1,11 +1,7 @@
 // The internal clipboard, and the receipts it leaves on the system one.
-//
-// state.ts is a module singleton, which is right for an app with one board and
-// awkward for tests, so every case starts by loading an empty board. That is
-// the same door opening a .mbrd goes through, so it also exercises the reset.
-//
-// One of six files that were tests/state.test.js, split to mirror the modules
-// state.ts itself was split onto - see tests/layers.test.js for that list.
+// state.ts is a module singleton, so every case starts by loading an empty
+// board, exercising the reset too. One of six files split from
+// tests/state.test.js to mirror state.ts's own split; see tests/layers.test.js.
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -27,10 +23,8 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 test('the clipboard leaves its receipts without a screen to leave them on', () => {
-  // copy/cut/paste now toast, and state.ts is imported by tests that have no
-  // document at all. toast() no-ops when there is nothing to draw on - stated
-  // here because a regression in util.ts would otherwise fail this whole file
-  // with a ReferenceError far from its cause.
+  // copy/cut/paste toast, and state.ts is imported by tests with no document
+  // at all - toast() must no-op rather than throw far from its cause.
   assert.equal(typeof globalThis.document, 'undefined', 'this test is only meaningful headless');
   const [a] = addItems([note({ meta: { text: 'said to nobody' } })]);
   assert.doesNotThrow(() => {
@@ -52,7 +46,7 @@ test('copying nothing returns nothing', () => {
 });
 
 test('an unnamed selection still leaves a receipt', () => {
-  // The receipt only works while the string is never empty.
+  // The receipt works only while the string is never empty.
   const [a] = addItems([photo({ name: '' })]);
   const text = copyItems([a.id]);
   assert.ok(text.length > 0, 'a copy must always leave something on the clipboard');
@@ -90,9 +84,8 @@ test('a copy shares the original asset rather than duplicating bytes', () => {
 });
 
 test('an asset id that is not a content hash is dropped', () => {
-  // A hash is spelled into an archive path by storage/mbrd.ts, so an id that
-  // was never a digest is both a path this app would be writing on someone
-  // else's say-so and a reference that can never resolve to bytes. The card
+  // storage/mbrd.ts spells a hash into an archive path, so a non-digest id
+  // is a path this app would write on someone else's say-so. The card
   // survives as a plain one; the claim does not.
   const [a] = addItems([photo({ asset: { hash: '../escape', embedded: true } })]);
   assert.equal(a.asset, null);
@@ -158,9 +151,8 @@ test('duplicating several keeps their stacking order', () => {
 });
 
 test('items added in one call are dealt their own layer', () => {
-  // They used to share one. makeItem() reads topZ() off the live board and the
-  // batch is not on it yet, so a whole group came out on the same layer - see
-  // the note in addItems().
+  // They used to share one: makeItem() reads topZ() off the live board, and
+  // the batch is not on it yet - see the note in addItems().
   const [a, b, c] = addItems([photo(), photo(), photo()]);
   assert.ok(a.z < b.z && b.z < c.z, `got ${a.z}, ${b.z}, ${c.z}`);
 });
@@ -172,10 +164,9 @@ test('an explicit z is still honoured', () => {
 });
 
 test('a duplicated note stays stuck to the photo it was duplicated with', () => {
-  // The bug the layering fixed, and the one that actually showed: the pair
-  // tied on z, stuckTo() needs a strictly lower one, so the copied note
-  // skipped its own photo and latched onto whatever else was underneath -
-  // which was the *original* note. Dragging the copy left the note behind.
+  // The bug the layering fixed: tied on z, stuckTo() needs a strictly lower
+  // one, so a copied note skipped its own photo and latched onto the
+  // *original* note instead. Dragging the copy left the note behind.
   const [pic] = addItems([photo({ x: 0, y: 0, w: 300, h: 300 })]);
   const [n] = addItems([note({ x: 0, y: 0, w: 80, h: 80 })]);
   assert.equal(stuckTo(byId(n.id))?.id, pic.id, 'the original pair must be stuck');

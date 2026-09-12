@@ -1,15 +1,7 @@
-// What an item is called, and what a note says.
-//
-// Two readings that four surfaces were each making for themselves - the Feed,
-// the Playlist, the bin and the export. Both are pure and neither had a test,
-// which is how the two of them came apart: the same untitled MP3 read "Audio"
-// on the Feed and "Untitled" in the Playlist, and a note with a heading reached
-// the bin and the exported PNG still wearing the `# ` that only exists so a
-// note can round-trip as plaintext.
-//
-// The point of testing them here rather than through a surface is that the
-// surfaces are DOM and these are not. A fallback chain is exactly the kind of
-// thing a headless test can pin and a browser check will not notice is wrong.
+// trackTitle() and noteWords(): what an item is called, and what a note
+// says. Four DOM surfaces (Feed, Playlist, bin, export) used to compute
+// these separately and drifted - the same MP3 read "Audio" on one and
+// "Untitled" on another. Tested here as pure functions instead.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -37,10 +29,8 @@ test('an untagged track is its filename without the extension', () => {
 });
 
 test('the placeholder is the surface\'s, not this function\'s', () => {
-  // The whole reason it returns '' rather than a word: a row in a queue and a
-  // caption on a tile are not obliged to say the same thing, and the difference
-  // is now visible at the two call sites instead of buried at the end of two
-  // identical chains.
+  // Returns '' rather than a word: a queue row and a tile caption aren't
+  // obliged to say the same thing, so the fallback lives at the call site.
   assert.equal(trackTitle({ type: 'audio', name: '' }), '');
   assert.equal(trackTitle({ type: 'audio' }), '');
 });
@@ -71,23 +61,21 @@ test('a note stored as rich blocks reads as its words, with no markers', () => {
 });
 
 test('the same note stored as flat Markdown reads identically', () => {
-  // The property that made the three surfaces' copies look interchangeable when
-  // they were not: whichever way a note is stored, this answers the same.
+  // Whichever way a note is stored, this answers the same.
   assert.equal(noteWords({ text: '# Kitchen\nnorth wall' }), 'Kitchen\nnorth wall');
   assert.equal(noteWords({ text: '## Heading' }), 'Heading');
 });
 
 test('the storage markers never reach the reader', () => {
-  // The bug this fixes, stated as the two places it showed: a row in the bin
-  // and a note painted into an exported PNG.
+  // The bug this fixes: a `#` reaching the bin row or an exported PNG.
   assert.ok(!noteWords({ text: '# Kitchen' }).includes('#'));
   assert.ok(!noteWords({ rich: { blocks: [{ tag: 'h2', align: 'left', text: 'Sub' }] } })
     .includes('#'));
 });
 
 test('rich wins over text when both are there', () => {
-  // meta.text is what meta.rich flattens to, so they agree in practice - this
-  // pins which one is the truth when they do not.
+  // meta.text is what meta.rich flattens to, so they normally agree - this
+  // pins which one is the truth when they don't.
   const meta = {
     rich: { blocks: [{ tag: 'p', align: 'left', text: 'from the blocks' }] },
     text: 'from the flat copy',

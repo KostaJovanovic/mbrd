@@ -1,42 +1,29 @@
-// The cut-out cache is the one derived thing in this app that outlives the
-// session, and it earns that by being expensive: a matted card is a pass through
-// u2netp on the wasm backend, serialized against every other matted card, and
-// before this existed a board of cut-outs re-derived all of them on every single
-// load. See the header of web/assets/js/storage/matte-cache.ts.
-//
-// Three properties are worth a test, and they are not the same property:
-//
-//  - it survives a reload. Modelled by a second module instance reading what the
-//    first wrote, which is what a fresh page is: new module scope, same
-//    database.
-//  - it never serves the wrong picture. Every input that moves a pixel is in the
-//    variant string, and a variant that differs by one character must miss.
-//  - it lets go. Emptying the bin takes the cut-outs with it, because a cut-out
-//    is the photograph, and the eviction arithmetic bounds what one browser can
-//    accumulate.
+// The cut-out cache is the one derived thing that outlives the session,
+// earning that by being expensive (a wasm u2netp pass, serialized against
+// every other matted card). See the header of storage/matte-cache.ts.
+// Three properties: it survives a reload (modelled by a second module
+// instance over the same database); it never serves the wrong picture (any
+// variant string difference must miss); and it lets go (emptying the bin
+// takes the cut-outs, bounded by the eviction arithmetic).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { fakeIndexedDB } from './helpers.js';
-// Canonical, deliberately un-cache-busted, for the same reason display.test.js
-// imports the asset registry that way: matte-cache.ts resolves './idb.ts' with
-// no query, so a query-busted copy here would be a second wrapper holding a
-// second connection, and every assertion below would be about the wrong one.
+// Deliberately un-cache-busted, like display.test.js's asset registry
+// import: matte-cache.ts resolves './idb.ts' with no query, so a busted
+// copy here would be a second wrapper holding a second connection.
 import { idbSet, idbKeys } from '../web/assets/js/storage/idb.ts';
 
-// Installed before anything opens a connection. idb.ts reaches for the global
-// inside open() and nowhere else, so this lands in time even though the imports
-// above have already run.
+// Installed before anything opens a connection. idb.ts reaches for the
+// global inside open() only, so this lands in time despite the imports above.
 globalThis.indexedDB = fakeIndexedDB();
 
 /**
- * A new module instance over the same database - which is what a reload is.
- *
- * matte-cache.ts keeps its index in module scope, so a test that wants to prove
- * something crossed a page boundary has to cross a module boundary. The database
- * behind it is the one fake installed above and is deliberately shared, so each
- * test works on hashes nobody else uses.
+ * A new module instance over the same database - what a reload is.
+ * matte-cache.ts keeps its index in module scope, so proving something
+ * crossed a page boundary means crossing a module boundary. The database is
+ * the shared fake installed above; each test works on its own hashes.
  */
 let n = 0;
 const freshCache = () => import(`../web/assets/js/storage/matte-cache.ts?case=${n++}`);
@@ -69,8 +56,8 @@ test('eviction drops the oldest until the byte cap holds', async () => {
 });
 
 test('eviction keeps a single entry even if it is over the byte cap on its own', async () => {
-  // Writing a picture and deleting it in the next breath is a cache that cannot
-  // cache. The next write evicts it normally.
+  // A cache that can't hold even one entry can't cache. The next write
+  // evicts it normally.
   const { evict } = await freshCache();
   const list = entries(1, 200 * 1024 * 1024);
   assert.deepEqual(evict(list), []);
@@ -99,9 +86,9 @@ test('a cut-out written by one session is read back by the next', async () => {
 });
 
 test('a variant that differs at all misses', async () => {
-  // The sharpness ceiling, the crop, the turn, the model version - every one of
-  // them is in this string, and a hit on the wrong one is a picture drawn at a
-  // resolution or a rotation nobody asked for. A miss only costs time.
+  // Sharpness ceiling, crop, turn, model version - all in this string. A
+  // hit on the wrong one draws the wrong resolution or rotation; a miss
+  // only costs time.
   const cache = await freshCache();
   await cache.saveMatte('bb', '%~1280', blob(64));
   assert.equal(await cache.loadMatte('bb', '%~1024'), null, 'a different ceiling misses');
@@ -112,7 +99,7 @@ test('a variant that differs at all misses', async () => {
 test('a listed entry whose bytes are not a picture answers null rather than serving it', async () => {
   const cache = await freshCache();
   await cache.saveMatte('dd', '%~1280', blob(64));
-  // Something else under the key: an older build, or another tab mid-upgrade.
+  // Something else under the key, e.g. an older build or another tab mid-upgrade.
   await idbSet('matte', 'dd%~1280', 'not a picture');
   assert.equal(await cache.loadMatte('dd', '%~1280'), null);
   // And it is forgotten rather than asked for again on every mount.
@@ -137,9 +124,8 @@ test('emptying the bin takes the cut-outs of those pictures and nothing else', a
 });
 
 test('a blob nobody listed is collected on the next session', async () => {
-  // A write whose index write never landed, or another tab whose additions this
-  // tab overwrote. The store is the truth and the index is a hint, so the pass
-  // that reconciles them has to delete what nothing can reach.
+  // A write whose index write never landed. The store is the truth and the
+  // index is a hint, so reconciling deletes what nothing can reach.
   await idbSet('matte', 'orphan-key', blob(64));
   const cache = await freshCache();
   await cache.loadMatte('gg', '%~1280');   // any call reconciles

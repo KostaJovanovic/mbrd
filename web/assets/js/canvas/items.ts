@@ -1,19 +1,6 @@
-// Mounts board items into #world and keeps their DOM in sync with state.
-//
-// Culling keeps the DOM proportional to what is on screen rather than to the
-// size of the board. A node that scrolls out of view is detached, and then
-// either kept or thrown away: kept if its media is mid-playback, so a video
-// that leaves and re-enters the viewport carries on where it was, and thrown
-// away otherwise, because rebuilding a still card costs a few DOM nodes while
-// holding one costs whatever it had decoded. See disposable() and discard().
-//
-// What a card is *made of* is canvas/item-dom.ts, which this file calls and
-// which never calls back. The seam is when against what: this module owns the
-// node map, the culling, the pooling and the arithmetic that puts a card where
-// it goes; that one owns the elements. build() below is the single place they
-// meet, and its four lines after buildItem() are exactly the four things a
-// builder cannot know - that there is a map to register in, a shadow layer, a
-// viewport to be placed against, and a selection.
+// Mounts board items into #world. Culling keeps the DOM proportional
+// to what is on screen, not board size. item-dom.ts builds the tree;
+// this owns the node map, culling, pooling, placement and selection.
 
 import {
   board, byId, selection, bus, renameItem, visualStackOrder, travelling, isFence,
@@ -41,35 +28,24 @@ import { releaseTransports } from './transport.ts';
 import { releaseModels } from './model.ts';
 import * as spatial from './spatial.ts';
 
-// The three pure questions about what a card says. They were exported from here
-// before they moved down, and canvas/renderers.ts, ui/ and tests/items.test.js
-// all still ask this module - so they are re-exported by name, the way state.ts
-// re-exports what it has split downward and for the same reason: an export that
-// stops existing should break loudly at the door rather than quietly at a call
-// site.
+// Three pure questions about what a card says, moved down to item-dom.ts but
+// re-exported by name since canvas/renderers.ts, ui/ and tests still ask this
+// module - an export that stops existing should break loudly, not quietly.
 export { farKind, itemAccessibleName, wantsHead };
 
-/**
- * Above this many items in one delete, the fly-out is skipped: a fifty-item
- * delete should not spawn fifty animating clones, so past the cap they just
- * vanish the way every delete used to.
- */
+/** Above this many items in one delete, the fly-out is skipped - a fifty-item
+ *  delete shouldn't spawn fifty animating clones; past the cap they just vanish. */
 const EXIT_ANIM_CAP = 12;
 
 /** id -> element, including elements currently detached by culling. */
 const nodes = new Map<string, HTMLElement>();
 /** id -> lightweight geometry twin painted below the complete item stack. */
 const shadows = new Map<string, HTMLElement>();
-// The three things initItems() is handed, and the reason for the `!` on a
-// handful of reads below. They are null for exactly as long as it takes main.ts
-// to call it - before that this module has no board to mount into and every
-// entry point either returns early or is unreachable - and non-null together
-// for the rest of the session, since one call sets all three. Where a function
-// has already established one of them (`if (!worldEl) return`), the others are
-// read through `!` rather than re-tested, because a state with one of them set
-// and another not has never existed. cullMargin() (in viewport.ts) is the
-// exception and says so: it is reachable from a repaint scheduled before the
-// wiring, which is why it guards `vp` where the reads here do not.
+// The three things initItems() sets, together, once, for the rest of the
+// session - hence the `!` on reads below once one of them (e.g. worldEl) has
+// already been checked: a state with one set and another not never happens.
+// cullMargin() (viewport.ts) is the exception, since it's reachable from a
+// repaint scheduled before the wiring, so it guards `vp` where these don't.
 let worldEl: HTMLElement | null = null;
 let shadowLayerEl: HTMLElement | null = null;
 let vp: Viewport | null = null;
@@ -77,24 +53,15 @@ let vp: Viewport | null = null;
 /**
  * The set of ids currently carrying the hover lift.
  *
- * The group that lifts is the group that travels: a hover raises the item and
- * everything that a drag of it would carry - the stickies on a photo, the cards
- * in a fence - so what answers the pointer is the object you would pick up.
- * travelling() is exactly that set, and using it rather than a second reading of
- * the same two relations is what keeps the lift and the drag from ever
- * disagreeing about where one object stops.
+ * The group that lifts is the group travelling([id]) would carry with a drag -
+ * a photo's stickies, a fence's cards - so what answers the pointer is the
+ * object you'd pick up. travelling() only goes downward (to riders, never a
+ * host; to contents, never the fence around them), so a note lifts with its
+ * card but not the reverse, and a card inside a region lifts alone.
  *
- * It goes one way, which is the whole of the rule. Both halves of travelling()
- * are downward - to riders, never to a host, and to contents, never to the fence
- * around them - so pointing at one note in a stack lifts that note and its own
- * riders while the card beneath stays put, and pointing at a card inside a
- * region lifts the card and leaves the region where it is. Only the region
- * itself raises the region.
- *
- * The pointer never reaches a fence's face (it refuses events, see items.css),
- * so in practice this fires from the name plate: a hand on the label lifts the
- * area it names, which is the one gesture that says what a fence holds without
- * moving anything.
+ * The pointer never reaches a fence's face (items.css refuses events there),
+ * so in practice this fires from the name plate: a hand on the label lifts
+ * the area it names without moving anything.
  */
 let lastHoverId: string | null = null;
 let hoverGroup = new Set<string>();
@@ -105,31 +72,26 @@ function setHoverLift(id: string, on: boolean) {
 /**
  * Told which cards the pointer is on, whenever that changes.
  *
- * One subscriber, for canvas/web.ts, which lifts a card's connections out of the
- * rest of the board while the pointer is on it. A callback rather than an event
- * on the board's bus for the reason the web's own move hook gives: this fires on
- * pointer moves, and anything every module can hear is something one of them
- * will eventually answer with a rebuild.
+ * One subscriber (canvas/web.ts, which lifts a card's connections above the
+ * rest of the board). A callback, not a bus event: this fires on pointer
+ * moves, and anything every module can hear is something one will eventually
+ * answer with a rebuild.
  *
- * The *group*, not the id: a sticky rides on the card it is pinned to and lifts
- * with it, so a hand on the note is a hand on the photograph, and the
- * photograph is the end a connection is drawn to.
+ * The *group*, not the id: a sticky lifts with the card it's pinned to, since
+ * a connection is drawn to the photograph, not the note riding on it.
  */
 let hoverWatcher: ((group: Set<string>) => void) | null = null;
 export function onHoverItem(fn: (group: Set<string>) => void) { hoverWatcher = fn; }
 
 function setHoverGroup(id: string | null) {
   if (id === lastHoverId) return;
-  // The pin badge, and the reason it is worked out here rather than written
-  // onto the node when the item is built: pinning is a fact about two items and
-  // it changes without either of them being rebuilt - a host deleted, an undo,
-  // a card dragged out from under a note. Hover is the only moment the badge is
-  // visible, so hover is the only moment it has to be right, and asking then
-  // costs one measurement of one item instead of a class that can go stale.
+  // The pin badge is worked out here, not baked in at build: pinning is a fact
+  // about two items that changes without either being rebuilt (host deleted,
+  // undo, card dragged out from under a note), so it's asked fresh on the one
+  // moment it's visible rather than kept in a class that can go stale.
   //
-  // On the hovered item alone, not on the group. The lift already says "these
-  // move together"; this says "and this one is fixed to that one", which is
-  // only true of the thing under the pointer.
+  // Only on the hovered item, not the group - the lift already says "these move
+  // together"; this says "fixed to that one", true only of the pointer's target.
   if (lastHoverId) nodes.get(lastHoverId)?.classList.remove('is-pinned');
   clearTimeout(settleWatch);
   lastHoverId = id;
@@ -347,22 +309,9 @@ export function onViewChange(fn: (vp: Viewport) => void) { return vp?.onChange(f
 //
 // The square in a card's top-right corner while the tour editor is open: the
 // stop number the card is at, or a "+" that puts it on the tour. It is the
-// editor's whole surface on the board, and it is drawn here rather than by
-// ui/tour-edit.ts for one reason that is not tidiness.
-//
-// **A culled card is thrown away and rebuilt from nothing.** See the detach pass
-// in sync(): a node that leaves the padded viewport is discarded and dropped
-// from the map, and build() makes a new one when it comes back. A mark written
-// onto the node from outside therefore survives exactly until the card is panned
-// off screen and back, which is the one thing somebody building a tour on a
-// board bigger than the window does constantly. It is the same argument the
-// `isFiltered` and `selection` reads inside build() make, in the same words, and
-// the answer is the same: ask the question where the node is made.
-//
-// Injected rather than imported, because what it needs to know - is the editor
-// open, and which stop is this card at - is a ui/ fact and this is canvas/.
-// Unwired it draws nothing, which is what keeps this module loadable in a test
-// with no editor and no board.
+// Drawn here, not in tour-edit.ts, because a culled card is rebuilt from
+// nothing — a mark written from outside vanishes on pan-out and back.
+// Injected (not imported) because the editor state is a ui/ fact.
 
 /**
  * What the editor knows and this module has to ask it.

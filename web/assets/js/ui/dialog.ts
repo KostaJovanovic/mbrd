@@ -1,19 +1,6 @@
-// The one question this app stops to ask.
-//
-// It replaces confirm(), which was wrong here for three reasons. It is drawn by
-// the browser, so a board set in whatever palette and whimsy level you chose is
-// interrupted by a grey system box. It puts "localhost:6273 says" above the
-// sentence, which is the browser disclaiming the words rather than the app
-// saying them. And it offers exactly two answers to a question that has three -
-// the useful one being "no, let me keep this first", which confirm() cannot
-// express and which is the answer most people actually want.
-//
-// Kept in its own module rather than in ui/overlays.ts beside toast(), even though the
-// two are the same kind of thing - a small piece of interface anything may
-// reach for. toast() says something and returns; this one asks something and
-// waits, which is a different enough contract to be worth its own file and its
-// own name. Like toast(), it reaches for `document` only inside a function, so
-// storage.ts can import it and stay loadable without a browser.
+// Modal dialog replacing confirm(). Three answers (go / keep / cancel), styled
+// to the board, no "localhost says". Reaches document only inside ask(), so
+// storage.ts can import it without a browser.
 
 import { setMarked } from './wordmark.ts';
 import { cue } from '../cuelume/engine.ts';
@@ -38,17 +25,7 @@ export interface AskOptions {
   cancel?: string;
   keep?: string;
   field?: AskField | null;
-  /**
-   * Whether the `go` button wears the danger dressing.
-   *
-   * Defaults to "yes, unless there is a field", which is what this dialog did
-   * for as long as every question it asked was destructive - clear everything,
-   * discard unsaved work. It is a parameter now because there is a question
-   * that is neither: a .mbrd has been dropped on a board and the two answers
-   * are Open and Merge. Neither is destructive, both are ordinary, and a red
-   * button would be the dialog telling somebody to be careful about a choice
-   * they can undo.
-   */
+  /** Whether `go` is styled as danger. Defaults to true unless a field is present. */
   danger?: boolean;
 }
 
@@ -61,51 +38,18 @@ const DEFAULTS: Omit<AskSettled, 'danger'> = { title: 'Are you sure?', body: '',
 /** Nothing is open twice: a second ask() while one is up waits for it. */
 let current: Promise<Answer | string | null> | null = null;
 
-/**
- * Ask, and resolve to which button was pressed: 'go', 'keep' or 'cancel'.
- *
- * Escape, the backdrop and the close button are all 'cancel', because the one
- * thing that must be true of a destructive question is that every accidental
- * way out of it is the harmless answer.
- *
- * Without a document - node, a test - this resolves to 'cancel' rather than
- * throwing. Same bargain toast() makes, with the safe default chosen
- * deliberately: an unanswerable question about discarding somebody's work is
- * answered "don't".
- *
- * **With a `field`** the contract changes, and it changes on purpose rather
- * than by accident: the question is no longer "which of these" but "what", so
- * it resolves to the trimmed string that was typed, or to null for every way
- * out. A caller that passes a field knows it passed one, and null reads as "no
- * answer" in a way that a 'cancel' string sitting where a number should be does
- * not. `field` is `{ value, placeholder, type, maxLength }`, all optional.
- *
- * `type` is the input's type, so `'color'` makes this a colour picker rather
- * than a box - the same question shape either way, answered by pointing instead
- * of typing. A colour input always holds a value, so that question cannot be
- * answered blank; every way out of it is still null.
- *
- * A note is not asked for here, and was for a day. A note has a pad colour, a
- * shape, headings, an alignment, a font and a size, and a box that answers with
- * a string can express none of them - so what came back was a note that behaved
- * like a note everywhere except where it was written. See composeNote() in
- * canvas/notes.ts: it puts the real editor in a dialog rather than describing a
- * second one here.
- */
-// The two contracts the note above describes, said in the signature: without a
-// field this answers with a button, with one it answers with what was typed.
+/** Show the dialog. Without a field: resolves to 'go' | 'keep' | 'cancel'.
+ * With a field: resolves to the trimmed input string, or null on any exit.
+ * No document (test/node) resolves to 'cancel'. */
 export function ask(opts?: AskOptions & { field?: null }): Promise<Answer>;
 export function ask(opts: AskOptions & { field: AskField }): Promise<string | null>;
 export async function ask(opts: AskOptions = {}): Promise<Answer | string | null> {
   if (typeof document === 'undefined') return 'cancel';
-  // SAFETY: #ask is a <dialog> in index.html; the duck-type check below is the
-  // runtime half of that claim, and is what makes a browser without <dialog> -
-  // or a page that does not carry it - fall out here rather than throw.
+  // Duck-type check: missing <dialog> support falls through to 'cancel'.
   const el = document.getElementById('ask') as HTMLDialogElement | null;
   if (!el || typeof el.showModal !== 'function') return 'cancel';
 
-  // Queued rather than stacked. Two modals open at once is a focus trap fighting
-  // another focus trap, and there is no question here worth asking twice.
+  // Serialise: two competing focus traps is a trap.
   while (current) await current;
 
   const o = { ...DEFAULTS, ...opts };
@@ -119,52 +63,34 @@ export async function ask(opts: AskOptions = {}): Promise<Answer | string | null
 }
 
 function openWith(el: HTMLDialogElement, o: AskSettled): Promise<Answer | string | null> {
-  // index.html declares all six inside #ask itself, which ask() has already
-  // found; this module has always read them straight through, and an absent one
-  // is a broken build rather than a state to recover from.
+  // All six child elements live inside #ask in index.html.
   const title = document.getElementById('ask-title')!;
   const body = document.getElementById('ask-body')!;
   const go = document.getElementById('ask-go')!;
   const cancel = document.getElementById('ask-cancel')!;
   const keep = document.getElementById('ask-keep')!;
-  // SAFETY: #ask-field is the <input> inside #ask, and the dialog around it has
-  // already been found and duck-typed - a page carrying the prompt carries the
-  // whole of it, since it is one block of markup in index.html. The three `!`
-  // above say the same about the elements that need no tag.
+  // The <input> inside #ask — same markup block as the elements above.
   const field = document.getElementById('ask-field') as HTMLInputElement;
 
-  // setMarked() rather than textContent, on all five: it is textContent with
-  // the app's name set in the app's face - see ui/wordmark.ts. Every string a
-  // dialog can show goes through these lines, so a message written later is
-  // covered by having been shown rather than by somebody remembering.
+  // setMarked: textContent + the app name in its typeface (see wordmark.ts).
   setMarked(title, o.title);
   setMarked(body, o.body);
   body.hidden = !o.body;
   setMarked(go, o.go);
   setMarked(cancel, o.cancel);
   setMarked(keep, o.keep);
-  // The third way is optional, and a button with no words in it is still a
-  // button you can tab to and press.
+  // Keep button hidden when unused.
   keep.hidden = !o.keep;
 
   field.hidden = !o.field;
-  // type before value: an input reads its value through whatever type it
-  // currently has, and a colour input handed '' while it is still a text box
-  // sanitises the assignment to #000000 rather than to what was asked for.
+  // Set type before value — a colour input sanitises '' to #000000 otherwise.
   field.type = o.field?.type ?? 'text';
   field.value = o.field?.value ?? '';
   field.placeholder = o.field?.placeholder ?? '';
-  // A ceiling where the caller has one, and none where it does not - the shared
-  // element outlives every question asked through it, so a limit left behind by
-  // the last one would silently cut the next.
+  // Shared element outlives each question — clear stale maxLength.
   if (o.field?.maxLength) field.maxLength = o.field.maxLength;
   else field.removeAttribute('maxlength');
-  // A question that wants something typed is not a destructive one - nothing
-  // has been decided by the time it opens - so the "go" button loses the danger
-  // dressing it wears for the delete-everything cases this dialog was built
-  // for. Leaving it red would make "what size is this?" look like a threat.
-  // Destructive unless the caller says otherwise, and never on a question with
-  // a box in it - "what size is this?" was never a threat. See AskOptions.danger.
+  // Danger styling: on by default for button questions, off for field questions.
   go.classList.toggle('danger', o.danger ?? !o.field);
 
   return new Promise<Answer | string | null>(resolve => {
@@ -172,9 +98,7 @@ function openWith(el: HTMLDialogElement, o: AskSettled): Promise<Answer | string
 
     const close = (choice: Answer) => {
       answer = choice;
-      // One door for all five ways a dialog ends - the three buttons, the
-      // backdrop, Escape and Enter - so answering one says the same thing
-      // however it was answered.
+      // Single exit path for all five ways to close.
       cue('pick');
       el.close();
     };
@@ -182,19 +106,11 @@ function openWith(el: HTMLDialogElement, o: AskSettled): Promise<Answer | string
     const onCancel = () => close('cancel');
     const onKeep = () => close('keep');
 
-    // Clicking the backdrop. A <dialog> fills the top layer, so a click that
-    // lands on the element itself rather than on anything inside it landed
-    // outside the panel - which is what ::backdrop actually is here.
+    // Click on the <dialog> itself (not a child) = backdrop = cancel.
     const onClick = (e: MouseEvent) => { if (e.target === el) close('cancel'); };
 
-    // Escape is left to the browser: it fires `cancel` then `close`, and this
-    // dialog answers on `close` (onClose below). `answer` is already 'cancel'
-    // on every path that reaches here, so a `cancel` listener could only
-    // re-set what it already is - hence there is none.
-
-    // Enter in the field is the same press as the go button. Without it the
-    // only way to answer a one-box question is to reach for the mouse, having
-    // just been typing.
+    // Escape handled by the browser's cancel→close sequence; answer is already 'cancel'.
+    // Enter in the field acts as go.
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Enter') { e.preventDefault(); close('go'); } };
 
     const onClose = () => {
@@ -204,8 +120,7 @@ function openWith(el: HTMLDialogElement, o: AskSettled): Promise<Answer | string
       field.removeEventListener('keydown', onKey);
       el.removeEventListener('click', onClick);
       el.removeEventListener('close', onClose);
-      // A field question answers with what was typed; a button question answers
-      // with which button. See the note on ask().
+      // Field question → typed string or null; button question → Answer.
       resolve(o.field ? (answer === 'go' ? field.value.trim() : null) : answer);
     };
 
@@ -217,32 +132,13 @@ function openWith(el: HTMLDialogElement, o: AskSettled): Promise<Answer | string
     el.addEventListener('close', onClose);
 
     el.showModal();
-    // Focus lands on the harmless button, never on the destructive one. The
-    // dialog can arrive under a finger already on its way to Enter - it is
-    // opened by a keyboard shortcut as often as by a click - and the difference
-    // between the two buttons is a board.
-    //
-    // Unless there is a field, where the whole point is to type: nothing is
-    // destroyed by this kind of question, and landing on Cancel would mean
-    // every use of it began with a click into the box.
-    //
-    // And unless there is no keyboard, which is the case this reasoning had
-    // never met. Every word of it is about Enter, and on a phone there is no
-    // Enter to protect against - so all the focus did was put a highlight on
-    // Cancel that read as a button already chosen, on a dialog whose whole
-    // question is which button to press. Focus still has to land *inside* the
-    // modal (leaving it to showModal's own default would put it on whichever
-    // control comes first, which is the very thing the paragraph above is
-    // guarding against), so it lands on the dialog itself: nothing is
-    // highlighted, nothing is armed, and a screen reader still reads the
-    // question from the top.
+    // Focus: field → the input; touch → the dialog itself (no highlighted
+    // button on a device with no Enter key); desktop → cancel (safe default
+    // against an accidental Enter that would destroy work).
     if (o.field) {
       field.focus();
     } else if (onTouch()) {
-      // A <dialog> is not focusable of its own accord - showModal() can land on
-      // it, but focus() on an element with no tabindex is a no-op, so the -1
-      // is what makes the line below do anything at all. -1 rather than 0: this
-      // is a place for focus to rest, not a stop on the way round.
+      // -1 makes focus() work but keeps it out of the tab order.
       el.tabIndex = -1;
       el.focus();
     } else {

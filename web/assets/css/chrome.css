@@ -2,7 +2,7 @@
    HUD, toolbar, now-playing bar
    --------------------------------------------------------- */
 
-/* The corner stack: zoom controls over the coordinate readout. */
+/* Corner stack: zoom controls + coordinate readout. */
 #corner {
   position: fixed;
   z-index: var(--z-chrome);
@@ -30,12 +30,7 @@
   display: grid;
   place-items: center;
   min-width: 34px;
-  /* The same height as every other control on the glass. It was 32, which made
-     the one cluster you use constantly the one cluster that did not line up
-     with the bin, the history pair or the menu - and unlike the corner rounds,
-     eight pixels of height is a difference you can see without looking for it.
-     Only the height; the segments stay their own widths, since this is a pill
-     with a readout in the middle of it and not a row of square buttons. */
+  /* Match every other glass control in height. */
   height: var(--chrome-button-h);
   padding: 0 7px;
   border: 0;
@@ -45,29 +40,17 @@
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 #zoom-ctl button + button { border-left: 1px solid var(--rule); }
-/* Hover behind a query and press in front of it, and the split is the rule this
-   whole sheet now follows.
-   A hover is a pointer that can rest on a thing without committing to it, which
-   a finger cannot do: on touch the browser answers `:hover` from the last tap
-   and leaves it standing, so a tool pressed once stays lit until something else
-   is pressed. That is a wrong signal, and it is standing in for the right one.
-   A press is a thing every pointer does, so `:active` stays outside. */
+/* Hover behind a media query; press outside it. Touch :hover sticks. */
 @media (hover: hover) {
   #zoom-ctl button:hover { background: var(--paper-2); color: var(--accent-deep); }
 }
 #zoom-ctl button:active { background: var(--paper-3); }
-/* Keyboard focus in the app's own language rather than the browser's. Every
-   panel and menu already drew its own and none of the floating chrome did, so a
-   tab round the window changed focus language halfway. Mirroring the hover is
-   #conn-chip's answer and it is the right one here: these are icon buttons in a
-   segmented group, and an outline ring on a segment would draw a box round one
-   third of an object that has one outline. */
+/* Focus mirrors hover: an outline ring on one segment of a pill looks wrong. */
 #zoom-ctl button:focus-visible:not(:disabled) { background: var(--paper-2); color: var(--accent-deep); }
 #zoom-ctl button:disabled { color: var(--ink-3); cursor: default; background: none; }
 #zoom-ctl svg {
   width: 15px; height: 15px;
-  /* The glyph takes the reaction, not the button: scaling the button itself
-     would drag the hairline dividers between them around. */
+  /* Scale the glyph, not the button — avoids dragging hairline dividers. */
   transition: transform var(--dur-base) var(--ease-back);
 }
 @media (hover: hover) {
@@ -75,19 +58,10 @@
 }
 #zoom-ctl button:active:not(:disabled) svg {
   transform: scale(calc(var(--btn-press) - 0.08));
-  /* A press does not get the hover's curve, and this is the one line in the bar
-     that is about latency rather than about looks.
-     The rule above settles a glyph rising to meet a pointer, so it takes its
-     time and overshoots - which is right for a thing arriving on its own and
-     wrong for a thing being pushed. A press is the app saying it heard you, and
-     --dur-base is 0.4s at Softish: long enough that the reply reads as lag
-     arriving where there used to be nothing at all. --ease-in is the curve that
-     starts where it was and gathers speed, which is what being pushed looks
-     like; --dur-fast is the shortest step on the axis and still follows it. */
+  /* Press: fast ease-in, no overshoot — feedback, not decoration. */
   transition: transform var(--dur-fast) var(--ease-in);
 }
-/* The readout doubles as the reset-to-100% button, so it needs to be wide
-   enough that 12% and 1600% don't shove the + and - around as you zoom. */
+/* Wide enough that 12%–1600% does not shift the +/- buttons. */
 #zoom-level {
   min-width: 58px;
   font-family: var(--font-mono);
@@ -95,77 +69,41 @@
   color: var(--ink);
   letter-spacing: calc(0.02em * var(--ls-scale));
 }
-/* A hairline gap before the fit/home pair - they move the view, not the zoom. */
+/* Double rule before the view pair (fit/home) — different verb group. */
 #zoom-ctl button[data-zoom="fit"] { border-left-width: 3px; border-left-style: double; }
-/* And the same double rule again before the padlock, for the same reason read
-   the other way: everything to its left does something, and it decides whether
-   they can. Three groups in one pill - zoom, view, and the switch over both. */
+/* Third group in the pill: the zoom-lock toggle. */
 #zoom-lock { border-left-width: 3px; border-left-style: double; }
-/* Only one padlock is ever drawn.
-   Two whole icons rather than two shapes inside one, because these selectors
-   have to be able to reach what they hide. The drawings now come from
-   assets/icons.svg through <use>, which renders them into a shadow tree no rule
-   here can select into; the wrappers are still ordinary elements in this
-   document, so the switch moved out to them. See the note in index.html. */
+/* Toggle between two icons — wrappers, not shadow-DOM <use> targets. */
 #zoom-lock .lock-shut, #zoom-lock[aria-pressed="true"] .lock-open { display: none; }
 #zoom-lock[aria-pressed="true"] .lock-shut { display: inline; }
-/* Pressed is a state and not a hover, so it is the ink that carries it rather
-   than a wash: the accent at full strength against the muted grey the rest of
-   the row sits at, which is the same way the bin says it has something in it.
-   No fill behind it - the row is one pill on glass, and a filled segment in the
-   middle of it reads as a second object. */
+/* Pressed state: accent ink, no fill (a filled segment reads as a second object). */
 #zoom-lock[aria-pressed="true"] { color: var(--accent-deep); }
-/* The wash inside the shut padlock's body is drawn into i-lock-shut itself,
-   as currentColor at 18% - for the same reason as the rule above it, and it
-   costs nothing to say there: that symbol is only ever on screen while the
-   button is pressed, and pressed is the line above, so the colour it mixes
-   into is the accent either way. */
+/* The body wash is in i-lock-shut itself (currentColor 18%). */
 
 /* ---------------------------------------------------------
    The toolbar (ui/toolbar.ts)
    --------------------------------------------------------- */
 
-/* Top-centre, and the one piece of chrome on that edge. Why there rather than
-   down with the rest is in index.html, above the markup; what is here is only
-   the shape of it, plus the phone's drawer at the foot of this sheet.
-
-   The height is the glass's own button height, so the bar lines up with the
-   menu button in the opposite corner the way the zoom pill lines up with the
-   bin. That number is also what #busy is pushed down by in status.css - a
-   strip announcing an import has no business landing on top of the button that
-   started it - so it is published as a token rather than left implicit. */
+/* Height = glass button height, published as a token for status.css (#busy). */
 :root { --toolbar-h: var(--chrome-button-h); }
 
 #toolbar {
   position: fixed;
   z-index: var(--z-chrome);
-  /* --frame-bar-h is 0px unless the desktop window is too narrow to float its
-     own buttons in the corner, in which case a drawn title bar takes the top
-     strip and this row steps below it. See the frame section further down. */
+  /* Steps below the desktop title bar when present (--frame-bar-h). */
   top: calc(max(16px, env(safe-area-inset-top)) + var(--frame-bar-h));
   left: 50%;
   translate: -50% 0;
   display: flex;
   align-items: stretch;
-  /* On the bar, not only on its buttons. box-sizing is border-box everywhere
-     (base.css), so #menu-btn's height *includes* its hairline - and this had no
-     height of its own, so it came out as a 40px button plus its own two pixels
-     of border and sat two taller than the button in the opposite corner. The
-     height belongs to the object that wears the border. */
+  /* On the bar itself — border-box means border counts against height. */
   height: var(--toolbar-h);
   border: var(--hairline) solid var(--rule-2);
-  /* The zoom pill's corner and the bin's, not an ogee. This is a row of
-     segments behind one hairline, which is the same object the zoom cluster is,
-     and two rows of segments on one screen wearing two different corners read
-     as two unrelated things. */
+  /* Same corner as the zoom pill — both are segmented pills on glass. */
   border-radius: var(--leaf);
   overflow: hidden;
   background: var(--paper-card);
-  /* --shadow-1, the one every permanent control on the glass wears. It was
-     --shadow-2 for a moment, on the argument that a creation surface should
-     float above the view controls; it does not, it sits level with them, and a
-     deeper shadow only made the top of the screen look detached from the foot
-     of it. */
+  /* --shadow-1: same elevation as every other glass control. */
   box-shadow: var(--shadow-1);
   -webkit-user-select: none;
   user-select: none;
@@ -182,9 +120,7 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  /* The bar carries the height now; the segments fill whatever it leaves inside
-     its border. Writing --toolbar-h here as well would put the border back on
-     the outside of it. */
+  /* Fill the bar; the bar carries the height. */
   height: 100%;
   padding: 0 13px;
   border: 0;
@@ -195,38 +131,21 @@
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
-/* One object, so the seams are rules and not gaps - the zoom pill's own idiom.
-   Adjacency inside #toolbar-tools, which is the only place two buttons are ever
-   siblings: on a phone the toggle stands alone in the foot row and the tools
-   are a tier of their own above it, so there is no seam between the two to
-   draw. */
+/* Seam between adjacent buttons inside the pill. */
 #toolbar button + button { border-left: 1px solid var(--rule); }
 
-/* The phone's handle, off at every other width - see the foot of mobile.css,
-   which is where the tier it opens is laid out.
-
-   Two ids, and that is not decoration: written as a bare `#toolbar-toggle` this
-   rule is (1,0,0) against the `#toolbar button` block above at (1,0,1), so
-   `display: flex` won and the handle was drawn on the desktop bar - a plus and
-   the word Add, sitting in front of a Files button wearing the same plus. The
-   bug looked like a labelling mistake rather than a cascade one. */
+/* Two ids to beat the (1,0,1) specificity of `#toolbar button` above. */
 #toolbar #toolbar-toggle { display: none; }
 
-/* data-mobile is data-desktop's mirror (see the foot of mobile.css, where both
-   are answered): a tool that exists only on the phone's tier. There is one, the
-   More button, and it is absent here rather than greyed out - the same rule the
-   settings schema applies to its own layout-specific rows. Written the same way
-   as `#toolbar [data-desktop]` in mobile.css, and it outranks the display:flex
-   on `#toolbar button` above without needing to: an attribute beats a type. */
+/* Mobile-only tool (the More button); hidden on desktop. */
 #toolbar [data-mobile] { display: none; }
 
-/* Behind the query, for the reason #zoom-ctl gives. The rule below it is not,
-   and neither is the aria-expanded rule two down - see its own comment. */
+/* Hover behind media query; press and aria-expanded outside it. */
 @media (hover: hover) {
   #toolbar button:hover { background: var(--paper-2); color: var(--accent-deep); }
 }
 #toolbar button:active { background: var(--paper-3); color: var(--accent-deep); }
-/* Focus mirrors the hover - see #zoom-ctl's copy of this, one bar over. */
+/* Focus mirrors hover. */
 #toolbar button:focus-visible { background: var(--paper-2); color: var(--accent-deep); }
 /* A button whose flyout is down (ui/flyout.ts), held at the hover look while
    the pointer is off it and inside the panel.

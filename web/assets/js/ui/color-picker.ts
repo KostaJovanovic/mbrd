@@ -1,33 +1,6 @@
-// Choosing a colour, without leaving the app to do it.
-//
-// The dialog this replaces was one `<input type="color">` in ask(), and it had
-// the fault ask() itself was written to cure. That header says it plainly: a
-// board set in whatever palette and whimsy level you chose should not be
-// interrupted by a grey system box. But a colour input answers a click by
-// opening the operating system's own picker - so the app drew its dialog, and
-// the platform drew a second one on top of it, and the thing you actually chose
-// the colour in was the box ask() exists to avoid. Worse than the original,
-// because now there were two.
-//
-// So this is the same move canvas/notes.ts made for writing a note, for the same
-// reason and with the same shape: when the question is too big for one field,
-// the answer is not a bigger field, it is the real control in a dialog of its
-// own. ask() keeps its contract - one box, one string - and this keeps the
-// picking.
-//
-// HSV rather than OKLCH, which is the one choice here that goes against the
-// grain of the app. ui/pigments.ts is perceptual throughout and it is right to
-// be: it is *reading* colour off photographs, where the question is which two
-// hues a picture is made of and a perceptual space is the only one that answers
-// it honestly. This is the opposite job. Every colour in sRGB has to be
-// reachable and no square inch of the control may be dead, and the HSV square is
-// exactly the sRGB gamut with nothing outside it - an OKLCH plane at fixed hue
-// has corners that are not colours, and they would have to be greyed out or
-// silently clamped. A picker where part of the picture is a lie is worse than a
-// picker in a less uniform space.
-//
-// Only touches `document` inside a function, so this module is importable
-// without a browser like every other one here.
+// Colour picker — replaces <input type="color"> so the choice stays in
+// the app's dialog. HSV (not OKLCH) because every sRGB value must be
+// reachable and no region dead.
 
 import { clamp } from '../util.ts';
 // Only the six-digit parse, which is arithmetic and shared. The space this
@@ -79,11 +52,9 @@ function hsvToHex(h: number, s: number, v: number): string {
 /**
  * `#rrggbb` or `#rgb` to HSV, or null if it is not a colour.
  *
- * Null rather than a fallback, because the one caller that needs this is the
- * hex box being typed into, and "not yet a colour" is a different answer from
- * "grey". Half a hex is what a box looks like most of the time somebody is
- * using it, and moving the handle to grey on the way past `#f` would fight the
- * typing.
+ * Null rather than a grey fallback: the caller is the hex box being typed
+ * into, where half a hex is the normal state and snapping the handle to grey
+ * on the way past `#f` would fight the typing.
  */
 function hexToHsv(raw: unknown): Hsv | null {
   const s = String(raw ?? '').trim().toLowerCase();
@@ -110,21 +81,16 @@ function hexToHsv(raw: unknown): Hsv | null {
 /**
  * Ask for a colour, and resolve to `#rrggbb` or to null.
  *
- * Null for every way out - Cancel, Escape, the backdrop - on the same reasoning
- * ask() gives for the same choice: whatever the accident was, it should not
- * leave something on the board.
- *
- * Without a document, or without the markup, this resolves to null rather than
- * throwing. A caller in a test asking for a colour and getting "none" is a
- * caller that adds nothing, which is the harmless half of every branch here.
+ * Null for every way out - Cancel, Escape, the backdrop - same reasoning as
+ * ask(): an accident should not leave something on the board. Also null
+ * rather than throwing when there's no document or no markup, so a caller in
+ * a test gets "none" rather than an exception.
  */
 export async function pickColor(opts: PickOptions = {}): Promise<string | null> {
   if (typeof document === 'undefined') return null;
-  // #pick is the <dialog> in index.html. A cast rather than an instanceof
-  // SAFETY: the showModal test on the next line is the real guard, and it
-  // covers one more case than an instanceof could - an engine with no
-  // HTMLDialogElement at all, where the instanceof would be the thing that
-  // threw. Nothing is called on `el` before that test.
+  // #pick is the <dialog> in index.html. A cast rather than an instanceof:
+  // SAFETY the showModal test below covers one more case - an engine with no
+  // HTMLDialogElement at all, where instanceof would itself throw.
   const el = document.getElementById('pick') as HTMLDialogElement | null;
   if (!el || typeof el.showModal !== 'function') return null;
 

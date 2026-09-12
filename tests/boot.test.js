@@ -1,16 +1,10 @@
-// The boot window, and the three things that go wrong inside it.
+// The boot window, and the three things that go wrong inside it: the stored
+// board not yet read back, an address that may not be a board's, and the
+// writer deliberately off. Separate from errors.test.js, which is about after
+// something has already failed.
 //
-// A new file rather than an addition to errors.test.js, which is about what the
-// app says once something has already failed. This is about the seconds before
-// anything has happened at all: the stored board has not been read back, the
-// address may not be a board's, and the writer is deliberately off. Every claim
-// the app makes in that window is a claim about state nobody has looked at yet,
-// which is why they were the ones that were wrong.
-//
-// No DOM. page.ts reads two globals and reads them lazily - that is its own
-// stated rule (tests/imports.test.js) - so a plain object for each is the whole
-// of the setup, and it has to be in place before the module is imported because
-// homePath() memoises on the first ask.
+// No DOM - page.ts reads two globals lazily, so a plain object for each is
+// the whole setup, in place before import since homePath() memoises on first ask.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -30,12 +24,10 @@ const at = path => { globalThis.location.pathname = path; };
 // ---------------------------------------------------------------------------
 
 test('the changelog is the changelog however the host spells it', () => {
-  // The trailing slash is the one that was missing, and it is not tidiness. A
-  // host that redirects /patch to /patch/ - or one link written with it - fell
-  // through to isNotFoundPage(), and the not-found arm suspends the writer but
-  // does not freeze preferences. Every whimsy nudge and palette pick a reader
-  // made while reading the changelog was then written to their browser and
-  // followed them home to their own board.
+  // The trailing slash was missing, and it's not tidiness: a host redirecting
+  // /patch to /patch/ fell through to isNotFoundPage(), whose not-found arm
+  // suspends the writer but doesn't freeze preferences - so a reader's whimsy
+  // nudges while reading the changelog followed them home to their own board.
   for (const path of ['/patch', '/patch/', '/patch.html']) {
     at(path);
     assert.equal(isPatchPage(), true, path);
@@ -68,12 +60,9 @@ const DEPS = {
 };
 
 test('a board that has not been read back yet is not called saved', () => {
-  // The ladder is documented as falling towards 'unknown' rather than towards
-  // reassurance, and this rung fell the other way: at boot nothing is dirty
-  // because nothing has happened, so the clean-board rung answered 'saved'
-  // about a store nobody had opened. An error raised in that window is also the
-  // likeliest reason it never will be opened, which is exactly when the
-  // sentence matters.
+  // The ladder is documented as falling towards 'unknown', not reassurance -
+  // this rung fell the other way: at boot nothing is dirty, so the clean-board
+  // rung answered 'saved' about a store nobody had opened yet.
   initSession(DEPS);
   const during = boardSafety();
   assert.equal(during.state, 'unknown');
@@ -82,10 +71,9 @@ test('a board that has not been read back yet is not called saved', () => {
 
 test('once the store has been looked in, the ladder answers again', async () => {
   initSession(DEPS);
-  // There is no IndexedDB here, so this is the failing shape of the same call:
-  // it throws inside, catches, and reports that no board came back. The point
-  // is that it *went and looked* - the latch is set on every way out, not only
-  // on the way that finds something.
+  // No IndexedDB here, so this is the failing shape of the same call: it
+  // throws, catches, reports no board. The point is it went and looked - the
+  // latch is set on every way out, not only the one that finds something.
   const real = console.warn;
   console.warn = () => {};
   try {
@@ -101,16 +89,14 @@ test('once the store has been looked in, the ladder answers again', async () => 
 // ---------------------------------------------------------------------------
 
 test('a force-closed database is noticed and reconnected once', () => {
-  // Read off the source, because the behaviour needs an IndexedDB to have and
-  // node has none. What is being held here is a shape, and the shape is the
-  // whole fix: a `close` handler as well as `versionchange`, so an evicted
-  // connection stops being cached, and exactly one retry in tx() so the first
-  // save after an eviction reconnects instead of latching cacheOk = false for
-  // the rest of the session.
+  // Read off the source since node has no IndexedDB. The shape is the fix: a
+  // `close` handler as well as `versionchange` so an evicted connection stops
+  // being cached, and exactly one retry in tx() so the first save after an
+  // eviction reconnects instead of latching cacheOk = false forever.
   const src = readFileSync('web/assets/js/storage/idb.ts', 'utf8');
   assert.match(src, /db\.onclose = forget;/);
   assert.match(src, /InvalidStateError/);
-  // One retry, not a loop: `once` is named twice in tx() and nowhere else.
+  // One retry, not a loop - `once` named twice in tx() and nowhere else.
   const body = src.slice(src.indexOf('function tx<F extends Issued>'));
   assert.equal((body.match(/\bonce\(store, mode, fn\)/g) || []).length, 2);
 });

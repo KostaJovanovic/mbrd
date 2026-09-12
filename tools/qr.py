@@ -1,19 +1,6 @@
 #!/usr/bin/env python3
-"""Terminal QR code, in pure Python.
-
-Lifted out of serve.py, where it was 60% of the file: a dev server whose job is
-three routes and a MIME table had a Reed-Solomon encoder sitting in the middle
-of it. Nothing about it changed in the move.
-
-So a phone on the same Wi-Fi can join by pointing its camera at the console
-instead of typing the Network URL. Byte mode, error-correction level M,
-versions 1-10 - no third-party deps, matching the rest of this repo. Port of
-the well-trodden nayuki reference algorithm, trimmed to what a short
-"http://ip:port" URL needs; validated end-to-end against an OpenCV decoder
-across versions 2-10.
-
-Public surface is qr_matrix(text) and qr_terminal(text, quiet=3); everything
-prefixed with _qr_ is working machinery.
+"""Terminal QR code in pure Python — byte mode, EC level M, versions 1-10.
+Port of nayuki's reference algorithm. Public: qr_matrix(), qr_terminal().
 """
 
 # GF(256) log/antilog tables (primitive polynomial 0x11D).

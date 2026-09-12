@@ -1,81 +1,31 @@
-// The board library: several boards kept in this browser, not just the one.
-//
-// The working cache (session.ts) has always held exactly one board - the one on
-// screen - and "New" wiped it. This is the shelf beside it: each saved board is
-// packed into a self-contained .mbrd blob (the very archive Export writes) and
-// filed in its own IndexedDB store under a board id, with a small index in `kv`
-// carrying the title, the time and a thumbnail for the switcher to draw.
-//
-// Packed blobs rather than live rows, and that is the whole safety of it. The
-// live board's assets live in the shared `assets` store and are swept down to
-// just what that board references on every autosave; a library of boards sharing
-// that store would need the sweep taught about every board at once, and a sweep
-// that gets that wrong deletes a board's pictures out from under it. A packed
-// blob depends on nothing outside itself, so the sweep stays exactly as it was -
-// one board at a time - and a board on the shelf cannot be corrupted by whatever
-// the active one does. The cost is that a board's bytes are not deduplicated
-// across the shelf, which for a handful of boards is a trade worth making for a
-// persistence path that cannot eat your work.
-//
-// This module is only the store: the CRUD on the blobs and the index. The
-// orchestration that packs the current board, swaps the assets and loads another
-// lives in storage.ts, which already owns the file handle and the session
-// lifecycle a switch has to move through.
+// Board library: multiple boards in IndexedDB. Each is a packed .mbrd blob
+// (self-contained, like Export) under its own id, plus a lightweight index for
+// the switcher. Packed blobs (not shared asset rows) so the asset sweep stays
+// per-board and a shelved board cannot be corrupted by the active one.
+// CRUD only — orchestration (pack, swap, load) lives in storage.ts.
 
 import { idbGet, idbSet, idbDel, idbKeys, idbDelMany } from './idb.ts';
 
 const STORE = 'library';
 const INDEX_KEY = 'library-index';
 
-/**
- * One row of the shelf's index - everything the switcher draws a card from,
- * and nothing that would need the packed board opened to know.
- *
- * `thumb` is a data URL rather than a Blob because it goes straight into an
- * `<img>` src and is small by construction - see ui/snapshot.ts boardThumb().
- */
+/** One shelf entry. `thumb` is a data URL (goes straight into <img> src). */
 export type LibraryEntry = {
   id: string,
   title: string,
   at: number,
   thumb: string | null,
-  /**
-   * The file this row *is*, on a shell that has files. Desktop only.
-   *
-   * A row is one of two things and this field is which. With a path there is no
-   * blob: the file on disk is the board, opening the row reads it, and Save
-   * writes it. Without one the row is an unsaved board and the packed blob below
-   * is the only copy, exactly as every row on the web is.
-   *
-   * The second copy is the thing this avoids. A path row that also kept a blob
-   * would be a board in two places, and the moment either is written the shelf
-   * and the disk disagree with no way to say which is right - so a file that has
-   * moved shows as missing and offers to be found again, rather than silently
-   * opening a stale copy that looks fine. `path` is never set on the web.
-   */
+  /** Desktop only. With a path the file on disk *is* the board (no blob stored).
+   *  Without one the packed blob is the only copy. Never both — two copies
+   *  diverge on first write and there's no way to pick which is right. */
   path?: string,
 };
 
-/**
- * The shelf's index: `[{ id, title, at, thumb }]`, newest first.
- *
- * Kept in `kv` beside the session snapshot rather than derived from the blob
- * store, so drawing the switcher never unpacks a single board - the title and
- * the thumbnail a card needs are right here, and the megabytes of packed board
- * are only read when one is actually opened.
- */
+/** Shelf index, newest first. Stored in kv — the switcher never unpacks a board. */
 export async function libraryIndex(): Promise<LibraryEntry[]> {
   const list = await idbGet('kv', INDEX_KEY);
   if (!Array.isArray(list)) return [];
-  // Safe: writeIndex() below is the only thing that has ever written this key,
-  // and it writes exactly the rows putLibraryBoard() builds. The Array.isArray
-  // above is the one shape check worth making - a key holding something else
-  // entirely is the case a hand-edited database produces.
-  //
-  // SAFETY: the Array.isArray above is the check, and putLibraryBoard() is the
-  // only writer of this key - the rows are what it built. A row with a missing
-  // field reads as undefined through the `|| 0` on the next line rather than
-  // throwing, which is the failure mode a hand-edited database gets.
+  // Only putLibraryBoard() writes this key; Array.isArray is the shape check.
   const rows = list as LibraryEntry[];
   return [...rows].sort((a, b) => (b.at || 0) - (a.at || 0));
 }
@@ -89,87 +39,50 @@ export async function hasLibraryBoard(id: string) {
   return (await libraryIndex()).some(e => e.id === id);
 }
 
-/**
- * File a board on the shelf: its packed blob, and its row in the index. An id
- * already present is overwritten in place - this is how the active board's shelf
- * copy is kept current as it is worked on and switched away from.
- */
+/** Store a board on the shelf. Existing id is overwritten in place. */
 export async function putLibraryBoard(
   id: string, blob: Blob | null, { title, at, thumb, path }: Partial<Omit<LibraryEntry, 'id'>>,
 ) {
-  // Serialised against every other writer. The index is a read-modify-write
-  // over one key, so two overlapping stashes both read the same list, both
-  // append their own row, and the second write wins - leaving the first board's
-  // blob on disk with no row pointing at it. It is then unlistable and
-  // undeletable through the interface while still holding its megabytes of
-  // quota, and the quota error that eventually follows lands on
-  // writeSnapshot(), which latches cacheOk = false and stops the *live* board
-  // autosaving. Two overlapping stashes is not exotic: switchBoard() shelves
-  // the outgoing board and openFile() shelves on the way in.
-  //
-  // A lock rather than a transaction because the blob and the row live in two
-  // stores and idb.ts opens one transaction per call. What this cannot do is
-  // survive the tab closing between the two writes, which is what the sweep
-  // below is for.
+  // Serialised: two overlapping stashes race the read-modify-write index and
+  // the loser's blob becomes an orphan holding quota forever. A promise chain
+  // (not IDB transaction) because blob and index live in different stores.
+  // Tab-close between the two writes → orphan cleaned by sweepLibrary().
   return (writes = writes.then(async () => {
-    // A null blob is a path row, and the delete is not a tidy-up: it is the
-    // moment an unsaved board becomes a saved one. That row had a blob, the
-    // first Save gave it a file, and leaving the blob behind would leave the
-    // second copy this design exists to avoid - quietly, since nothing reads it
-    // once the row has a path.
+    // null blob = path row (file-backed). Delete the old blob — leaving it
+    // would create the two-copy divergence this design exists to avoid.
     if (blob) await idbSet(STORE, id, blob);
     else await idbDel(STORE, id).catch(() => {});
     const rest = (await libraryIndex()).filter(e => e.id !== id);
-    // `at` is when this board was last worked on, and the shelf is sorted by it
-    // - so a missing one is not 0. Zero is a real timestamp, 1970, and it sinks
-    // the board to the bottom of the shelf forever with a blank "when" beside
-    // it. A row with no time of its own is being filed *now*, which is the one
-    // thing that is certainly true about it.
+    // Default `at` to now, not 0 — 0 is 1970 and sinks the row to the bottom
+    // of the shelf forever.
     const entry: LibraryEntry = {
       id, title: title || 'Untitled board', at: at || Date.now(), thumb: thumb || null,
     };
-    // Set rather than spread, and absent rather than undefined: a web row and a
-    // desktop row whose file is gone are then the same shape in the stored
-    // index, and `'path' in entry` is a question with one answer.
+    // Absent (not undefined) so `'path' in entry` is unambiguous.
     if (path) entry.path = path;
     rest.push(entry);
     try {
       await writeIndex(rest);
     } catch (err) {
-      // The row is what makes the blob reachable, so a blob with no row is
-      // rubbish rather than a board. Cleaning up here is the difference between
-      // a failed stash and a permanent leak. Harmless on a path row, which has
-      // no blob to lose.
+      // A blob with no row is a permanent leak — clean it up on failure.
       await idbDel(STORE, id).catch(() => {});
       throw err;
     }
   }, () => {}).then(() => {}));
 }
 
-/**
- * The tail of the write chain, so index writes never interleave.
- *
- * One promise rather than a lock object: every writer below chains onto it and
- * the chain is never allowed to reject, so one failed stash does not wedge the
- * shelf for the session.
- */
+/** Write chain — serialises index writes. Never rejects, so one failed stash
+ *  does not wedge the shelf for the session. */
 let writes: Promise<void> = Promise.resolve();
 
-/**
- * Blobs on the shelf that no index row points at, removed.
- *
- * The gap the lock above cannot close: the blob is written first, so a tab shut
- * between the two writes leaves one behind. Cheap - a key walk over one store,
- * no blob is read - and it is the only thing that can ever reach these, since
- * the interface draws itself from the index.
- */
+/** Remove orphaned blobs (tab closed between blob write and index write).
+ *  Cheap — key walk only, no blob reads. */
 export async function sweepLibrary() {
   const known = new Set((await libraryIndex()).map(e => e.id));
   const keys = await idbKeys(STORE);
   const orphans = keys.filter(k => typeof k === 'string' && !known.has(k));
   if (orphans.length) {
-    // SAFETY: the filter above holds every element to a string, so what is
-    // asserted is what was just checked, element by element.
+      // SAFETY: filter above already narrowed to strings.
     await idbDelMany(STORE, orphans as string[]);
   }
   return orphans.length;
@@ -177,54 +90,29 @@ export async function sweepLibrary() {
 
 /** The packed blob for a board, or null if the shelf has no such id. */
 export async function getLibraryBoard(id: string): Promise<Blob | null> {
-  // SAFETY: putLibraryBoard() above is the only writer of this store, and what
-  // it puts under a board id is the packed .mbrd Blob. The `|| null` covers a
-  // key that is not there; a key holding something else is a hand-edited
-  // database, and the caller opens it as a zip, which refuses anything else.
+  // Only putLibraryBoard writes this store; caller opens as zip, so a
+  // hand-edited value is refused there.
   return ((await idbGet(STORE, id)) || null) as Blob | null;
 }
 
 /** Take a board off the shelf - both its blob and its index row. */
 export async function removeLibraryBoard(id: string) {
-  // On the same chain as putLibraryBoard, for the same reason: a remove that
-  // reads the index while a stash is between its two writes puts the stash's
-  // row back or drops it, depending on which lands last.
+  // Same write chain as put — avoids racing the index read-modify-write.
   return (writes = writes.then(async () => {
     await idbDel(STORE, id);
     await writeIndex((await libraryIndex()).filter(e => e.id !== id));
   }, () => {}).then(() => {}));
 }
 
-/**
- * How many boards the shelf keeps.
- *
- * There was no ceiling, and every Open, New and Switch files the outgoing board
- * through shelveCurrent() - so twenty opened photo boards is twenty complete
- * packed archives in IndexedDB, none of them ever evicted. What that eventually
- * produces is a QuotaExceededError, and it does not land on the shelf: it lands
- * on writeSnapshot(), which latches cacheOk = false and stops the board on
- * screen autosaving. The shelf filling up is not supposed to cost somebody the
- * board they are looking at.
- *
- * Twenty-four is generous for a switcher somebody actually reads - the panel
- * shows them as cards - and the oldest going first is the only rule that needs
- * no explanation. The board being worked on is never a candidate: it is
- * re-stashed on every switch, so its `at` is always the newest.
- */
+/** Max boards on the shelf. Without eviction, every Open/New/Switch accumulates
+ *  packed archives until QuotaExceededError hits writeSnapshot() and stops
+ *  autosave for the *live* board. 24 is generous; oldest first. */
 const SHELF_MAX = 24;
 
-/**
- * Drop the oldest boards past the ceiling. Returns how many went.
- *
- * Separate from putLibraryBoard so that filing a board and evicting from the
- * shelf are two things in the log rather than one surprising one, and so a
- * caller that wants to file without evicting can.
- */
+/** Drop oldest boards past the ceiling. Separate from put so filing and
+ *  eviction are distinct operations. */
 export async function trimLibrary(keep = SHELF_MAX) {
-  // On the `writes` chain like the two writers above, and one read/filter/write
-  // of the index rather than a removeLibraryBoard() per row - each of those
-  // re-read and rewrote the whole index, so dropping k boards was k reads and k
-  // writes where one of each will do. The payloads still go, together.
+  // One index read/write instead of removeLibraryBoard() per row.
   let dropped = 0;
   writes = writes.then(async () => {
     const index = await libraryIndex();          // newest first

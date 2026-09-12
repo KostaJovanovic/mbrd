@@ -1,13 +1,9 @@
 // The picture a document already has of itself (import/document.ts).
 //
-// One of the hand-written binary readers, so it is tested the way the others
-// are: mostly on input that is wrong. A .docx off somebody's disk is a file this
-// app did not write, and the whole contract of the module is that anything it
-// does not understand comes back null rather than throwing into the import.
-//
-// The zips are built with the app's own writeZip(), so the fixtures are real
-// archives rather than hand-assembled bytes - which also means these tests would
-// notice if the reader and the writer ever stopped agreeing.
+// A hand-written binary reader, tested mostly on wrong input: the contract is
+// that anything it doesn't understand comes back null rather than throwing.
+// Zips are built with the app's own writeZip(), so fixtures are real archives
+// that would also notice reader/writer drift.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,10 +11,10 @@ import assert from 'node:assert/strict';
 import { writeZip } from '../web/assets/js/storage/zip.ts';
 import { hasBakedPreview, bakedPreview } from '../web/assets/js/import/document.ts';
 
-// The two signatures the module will accept, padded past its 512-byte floor so
-// a real preview is not rejected for being small. Neither has to decode - the
-// module identifies by signature and hands the bytes on; deciding whether they
-// draw is measureSize()'s job, one layer up.
+// The two signatures the module accepts, padded past its 512-byte floor so a
+// real preview isn't rejected for being small. Neither has to decode - the
+// module identifies by signature and hands bytes on; drawing is
+// measureSize()'s job, one layer up.
 const png = (extra = 1024) => new Uint8Array([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, ...new Array(extra).fill(0x42),
 ]);
@@ -31,8 +27,7 @@ const emf = (extra = 1024) => new Uint8Array([
 ]);
 
 /** A File rather than the Blob writeZip() hands back: both entry points read
- *  the extension out of `file.name` before they touch a byte, so a fixture with
- *  no name is a fixture the module declines to look inside. */
+ *  the extension from `file.name` first, so a nameless fixture is declined. */
 async function zipFile(name, entries) {
   const blob = await writeZip(entries.map(([path, data]) => ({ name: path, data })));
   return new File([blob], name);
@@ -48,8 +43,8 @@ test('it claims the families it can read and nothing else', () => {
                       'a.sketch', 'a.f3d', 'a.psd', 'a.psb']) {
     assert.equal(hasBakedPreview({ name }), true, name);
   }
-  // Not a photograph, not a video, and emphatically not a PDF - that one has a
-  // renderer of its own (import/pdf.ts) and would otherwise be opened twice.
+  // Not a PDF especially - that has its own renderer (import/pdf.ts) and
+  // would otherwise be opened twice.
   for (const name of ['a.jpg', 'a.mp4', 'a.pdf', 'a.txt', 'a.zip', 'a']) {
     assert.equal(hasBakedPreview({ name }), false, name);
   }
@@ -81,8 +76,7 @@ test('an OOXML document gives up docProps/thumbnail when it has one', async () =
 });
 
 test('an OOXML document without one is not an error', async () => {
-  // The common case for a .docx that was not saved from a template: the option
-  // is off, there is no thumbnail, and the card stays a named card.
+  // The common case for a .docx not saved from a template: no thumbnail, card stays named.
   const file = await zipFile('plain.docx', [
     ['word/document.xml', new TextEncoder().encode('<w/>')],
   ]);
@@ -90,8 +84,7 @@ test('an OOXML document without one is not an error', async () => {
 });
 
 test('the full-size composite wins over the thumbnail', async () => {
-  // Krita writes both. The card is drawn far larger than a file browser's icon,
-  // so the order in the table is not arbitrary.
+  // Krita writes both - the card draws far larger than a file icon, so table order matters.
   const file = await zipFile('art.kra', [
     ['preview.png', png(600)],
     ['mergedimage.png', png(4096)],
@@ -102,9 +95,8 @@ test('the full-size composite wins over the thumbnail', async () => {
 });
 
 test('a picture is identified by its own bytes, not by the path it is at', async () => {
-  // OOXML allows docProps/thumbnail.emf, and a writer that emits one under a
-  // .jpeg name is not hypothetical. Handing it to an <img> would replace a grey
-  // card with a broken one, which is worse than the grey card.
+  // A writer emitting docProps/thumbnail.emf under a .jpeg name is not
+  // hypothetical - handing it to an <img> replaces a grey card with a broken one.
   const file = await zipFile('metafile.docx', [
     ['docProps/thumbnail.jpeg', emf()],
   ]);
@@ -132,8 +124,8 @@ test('a container that is not a container comes back null', async () => {
 test('a truncated archive comes back null rather than throwing', async () => {
   const whole = await zipFile('cut.odt', [['Thumbnails/thumbnail.png', png()]]);
   const bytes = new Uint8Array(await whole.arrayBuffer());
-  // Keep the end-of-directory record and destroy the middle: the archive still
-  // parses far enough to name its entries and then fails to inflate one.
+  // Keep the end-of-directory record, destroy the middle - the archive
+  // parses far enough to name entries, then fails to inflate one.
   for (let i = 40; i < bytes.length - 60; i++) bytes[i] ^= 0xff;
   assert.equal(await bakedPreview(new File([bytes], 'cut.odt')), null);
 });
@@ -143,11 +135,9 @@ test('a truncated archive comes back null rather than throwing', async () => {
 // ---------------------------------------------------------------------------
 
 /**
- * A Photoshop file with one Image Resources record.
- *
- * 26-byte header, an empty Colour Mode Data section, then the resources: an
- * '8BIM' signature, the resource id, an empty Pascal-string name, the record
- * length, and the record itself - a 28-byte thumbnail header followed by a JPEG.
+ * A Photoshop file with one Image Resources record: 26-byte header, empty
+ * Colour Mode Data, then '8BIM' signature, id, empty name, record length,
+ * and a 28-byte thumbnail header followed by a JPEG.
  */
 function psd({ id = 1036, format = 1, payload = jpeg(), signature = '8BPS', pad = true } = {}) {
   const head = new Uint8Array(26);
@@ -186,8 +176,8 @@ test('the older BGR thumbnail record is read too', async () => {
 });
 
 test('a raw-RGB thumbnail is declined', async () => {
-  // Format 0 is uncompressed RGB, which nothing here can draw. No writer emits
-  // it, which is exactly why a file claiming it is one to walk away from.
+  // Format 0 is uncompressed RGB, which nothing here draws - no writer emits
+  // it, so a file claiming it is one to walk away from.
   assert.equal(await bakedPreview(psd({ format: 0 })), null);
 });
 
@@ -204,16 +194,16 @@ test('a truncated PSD comes back null rather than reading past the buffer', asyn
   const bytes = new Uint8Array(await whole.arrayBuffer());
   for (const cut of [10, 26, 30, 40, 60, bytes.length - 100]) {
     const part = new File([bytes.subarray(0, Math.max(0, cut))], 'cut.psd');
-    // The assertion is that it returns at all - a walk that trusted the declared
-    // lengths would run off the end here.
+    // The assertion is that it returns at all - trusting declared lengths
+    // would run off the end here.
     assert.equal(await bakedPreview(part), null, `cut at ${cut}`);
   }
 });
 
 test('a PSD with a lying record length is declined', async () => {
   const bytes = new Uint8Array(await psd().arrayBuffer());
-  // The record length sits after the header, the empty colour-mode length, the
-  // resources length, the 8BIM signature, the id and the empty name.
+  // The record length sits after header, colour-mode length, resources
+  // length, 8BIM signature, id, and empty name.
   const at = 26 + 4 + 4 + 4 + 2 + 2;
   new DataView(bytes.buffer).setUint32(at, 0x7fffffff, false);
   assert.equal(await bakedPreview(new File([bytes], 'lying.psd')), null);
@@ -223,10 +213,8 @@ test('a PSD with a lying record length is declined', async () => {
 // PDN
 // ---------------------------------------------------------------------------
 
-/**
- * A Paint.NET file: 'PDN3', a 24-bit little-endian XML length, and the XML -
- * whose `thumb` attribute holds the flattened preview as base64 PNG.
- */
+/** A Paint.NET file: 'PDN3', a 24-bit little-endian XML length, and XML whose
+ *  `thumb` attribute holds the flattened preview as base64 PNG. */
 function pdn({ magic = 'PDN3', picture = png(), attr = 'png', wrap = false } = {}) {
   const b64 = Buffer.from(picture).toString('base64');
   const xml = `<pdnImage width="800" height="600" layers="3">`
@@ -250,8 +238,8 @@ test('a PDN gives up the flattened preview out of its XML header', async () => {
 });
 
 test('a base64 attribute wrapped across lines still decodes', async () => {
-  // XML may break an attribute over as many lines as it likes, and Paint.NET's
-  // own writer has - so the whitespace comes out before atob sees it.
+  // XML may break an attribute over lines, and Paint.NET's own writer does -
+  // whitespace comes out before atob sees it.
   assert.ok(await bakedPreview(pdn({ wrap: true })));
 });
 
@@ -260,8 +248,7 @@ test('a PDN with no thumbnail attribute is declined', async () => {
 });
 
 test('a thumbnail that is not a PNG is declined', async () => {
-  // The attribute says png and the bytes say otherwise; the bytes win, the same
-  // way they do everywhere else in this module.
+  // The attribute says png, the bytes disagree - bytes win, as everywhere else here.
   assert.equal(await bakedPreview(pdn({ picture: jpeg() })), null);
 });
 
@@ -271,16 +258,13 @@ test('anything that is not a PDN is declined on its signature', async () => {
 
 test('a declared XML length that is a lie is bounded, not believed', async () => {
   const whole = new Uint8Array(await pdn().arrayBuffer());
-  // Sixteen megabytes of header claimed, in a file that is kilobytes. The read
-  // is capped and a slice past the end of a Blob is simply shorter, so what
-  // comes back is the picture that really was in there - the point being that
-  // nothing allocated against the claim on the way.
+  // 16MB claimed in a kilobyte file. The read is capped and a slice past a
+  // Blob's end is just shorter, so nothing allocated against the claim.
   whole[4] = 0xff; whole[5] = 0xff; whole[6] = 0xff;
   assert.ok(await bakedPreview(new File([whole], 'lying.pdn')));
 
-  // And the lie in the other direction: a length that stops inside the
-  // attribute leaves no `thumb` to match, which is a null rather than half a
-  // picture decoded out of a truncated base64 string.
+  // The other lie: a length stopping inside the attribute leaves no `thumb`
+  // to match - null, not half a picture from truncated base64.
   const short = new Uint8Array(whole);
   short[4] = 60; short[5] = 0; short[6] = 0;
   assert.equal(await bakedPreview(new File([short], 'short.pdn')), null);

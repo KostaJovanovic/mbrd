@@ -1,13 +1,11 @@
-// The toolbar's hover flyouts, and the three ways they can quietly stop being
-// about the buttons they hang off.
+// The toolbar's hover flyouts, and the three ways they can quietly stop
+// being about the buttons they hang off.
 //
-// Almost none of this feature is testable: the dwell, the swap along the bar,
-// the grace period and the placement are all pointer behaviour, and the panel
-// itself is ui/menu.ts's, tested where it lives. What *is* checkable is the
-// wiring - that the table names buttons that exist, that the rows it builds
-// match the catalogues they claim to come from, and that the one behaviour
-// change underneath the feature (a note can now be asked for a colour) left the
-// old behaviour exactly where it was.
+// Almost none of this is testable - dwell, bar-swap, grace period and
+// placement are pointer behaviour, and the panel is ui/menu.ts's, tested
+// where it lives. What's checkable: the table names real buttons, its rows
+// match their catalogues, and the one behaviour change underneath (a note
+// can be asked for a colour) left the old behaviour untouched.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -37,10 +35,9 @@ test('every button the table names is a button on the bar', () => {
 });
 
 test('a button with a flyout carries no title', () => {
-  // A native tooltip appears about a second into a hover, which is half a
-  // second after the flyout has come down - so it draws a second box over the
-  // first, answering the same gesture. The word on the button is the label and
-  // aria-label carries the rest; see the note in index.html.
+  // A native tooltip appears about a second into a hover, half a second
+  // after the flyout - drawing a second box over the first for the same
+  // gesture. The button's word is the label; aria-label carries the rest.
   for (const cmd of Object.keys(FLYOUTS)) {
     const tag = bar.match(new RegExp(`<button[^>]*data-cmd="${cmd}"[^>]*>`))?.[0] ?? '';
     assert.ok(tag, `no <button> tag for ${cmd}`);
@@ -68,18 +65,15 @@ const stub = (over = {}) => ({
 });
 
 test('the layouts are the arrangement catalogue, in its order', () => {
-  // Not a list of seven written out here. If the two ever have to be kept in
-  // step by hand, an arrangement added to arrangements.ts is an arrangement the
-  // panel offers and the flyout silently does not.
+  // Not a list of seven written out here - kept in step by hand, an
+  // arrangement added to arrangements.ts is one the panel offers and the
+  // flyout silently doesn't.
   const rows = arrangeEntries(stub()).filter(e => e.check != null);
   assert.deepEqual(rows.map(r => r.label), ARRANGEMENTS.map(a => a.label));
 
-  // And the same set as the settings panel offers, which is the failure the
-  // comment above describes and the line above cannot see: arrangeEntries
-  // builds its rows *out of* ARRANGEMENTS, so comparing the two is comparing
-  // the implementation with itself. The pair that can actually drift is the
-  // flyout and the panel, and they drift by one of them being given its own
-  // list.
+  // The line above can't see this: arrangeEntries builds rows out of
+  // ARRANGEMENTS, so comparing the two compares the implementation with
+  // itself. The pair that can actually drift is the flyout and the panel.
   const schema = read(join(JS, 'ui', 'settings-schema.ts'));
   const opts = /id: 'arrangement'[\s\S]*?\boptions:([\s\S]*?)\bget:/.exec(schema);
   assert.ok(opts, "no 'arrangement' control in settings-schema.ts - has it moved?");
@@ -96,8 +90,8 @@ test('exactly one layout is ticked, and it is the one the board is in', () => {
 });
 
 test('a board set to something the catalogue does not have ticks nothing', () => {
-  // Rather than ticking the first row, which would say the board is in Spiral
-  // when it is not. A .mbrd is a file somebody can edit.
+  // Ticking the first row would falsely claim the board is in Spiral - a
+  // .mbrd is a file somebody can edit.
   const rows = arrangeEntries(stub({ arrangement: () => 'herringbone' })).filter(e => e.check != null);
   assert.equal(rows.filter(r => r.check).length, 0);
 });
@@ -126,13 +120,11 @@ test('the pad offers every sheet the notes are printed on, and only those', () =
   const rows = noteEntries(stub());
   assert.equal(rows.length, NOTE_TINTS);
 
-  // Against tokens.css, which is what the comment here always claimed and what
-  // it never did. The expectation used to be
-  // `Array.from({length: NOTE_TINTS}, (_, i) => \`var(--note-${i + 1})\`)` -
-  // character for character how noteEntries builds the row - so it held however
-  // many sheets NOTE_TINTS named, whether or not tokens.css declared them. The
-  // failure it is supposed to catch is a fifth sheet in one file and not the
-  // other, and that is exactly the pair it was not comparing.
+  // Against tokens.css, which the old expectation never actually checked -
+  // it was built character-for-character the same way noteEntries builds
+  // the row, so it held however many sheets NOTE_TINTS named regardless of
+  // what tokens.css declared. The failure to catch is a fifth sheet in one
+  // file and not the other.
   const tokens = read(join(WEB, 'assets', 'css', 'tokens.css'));
   const sheets = new Set([...tokens.matchAll(/^\s*--note-(\d+):/gm)].map(m => Number(m[1])));
   assert.ok(sheets.size > 0, 'no --note-N tokens found - has tokens.css moved?');
@@ -155,8 +147,8 @@ test('picking a sheet asks for that sheet by number', () => {
 });
 
 test('the colour flyout ends with the picker it used to be', () => {
-  // The flyout is a shortcut past the dialog, never a replacement for it: the
-  // five pigments are the board's, and any other colour still needs the picker.
+  // A shortcut past the dialog, never a replacement - any other colour
+  // still needs the picker.
   const rows = colourEntries(stub());
   const last = rows[rows.length - 1];
   assert.match(last.label, /^Pick a colour/);
@@ -167,10 +159,9 @@ test('the colour flyout ends with the picker it used to be', () => {
 // The one behaviour underneath the feature
 // ---------------------------------------------------------------------------
 //
-// addNote() grew a third argument so the pad could ask for a sheet. Everything
-// else in the app calls it with two, and the toolbar's own click handler calls
-// every command with none - so the value of these three is that the old
-// behaviour is still exactly the old behaviour.
+// addNote() grew a third argument so the pad could ask for a sheet.
+// Everything else calls it with two, so these tests confirm the old
+// behaviour is unchanged.
 
 test('a note asked for a sheet gets that sheet', () => {
   fresh();
@@ -185,9 +176,8 @@ test('a note asked for nothing still comes off the pad in order', () => {
 });
 
 test('a sheet the pad does not have falls back to the cycle', () => {
-  // Not clamped. Four tints are a set of sheets, not a scale, so there is no
-  // nearest one to round a 9 to - and a board file is something a person can
-  // edit by hand.
+  // Not clamped: four tints are a set of sheets, not a scale, so there's no
+  // nearest one to round a 9 to.
   fresh();
   addNote({ x: 0, y: 0 });                                   // takes tint 1
   for (const bad of [0, -1, 9, 1.5, null, undefined, 'red']) {
@@ -202,9 +192,9 @@ test('a sheet the pad does not have falls back to the cycle', () => {
 // ---------------------------------------------------------------------------
 
 test('ui/menu.js can draw the two row kinds these lists use', () => {
-  // The builders emit `swatch` and `range` entries, and menu.ts is what turns
-  // them into rows. Nothing else in the app uses either kind yet, so a tidy-up
-  // that removed them as dead code would leave the flyouts drawing blank lines.
+  // The builders emit `swatch` and `range` entries; menu.ts turns them into
+  // rows. Nothing else uses either kind yet, so a dead-code tidy-up would
+  // leave the flyouts drawing blank lines.
   const menu = read(join(JS, 'ui', 'menu.ts'));
   assert.match(menu, /entry\.swatch/, 'the renderer no longer handles a swatch row');
   assert.match(menu, /entry\.range/, 'the renderer no longer handles a range row');
@@ -212,12 +202,10 @@ test('ui/menu.js can draw the two row kinds these lists use', () => {
 });
 
 test('the flyout wears the menu panel and no shape of its own', () => {
-  // This used to assert the opposite: that menu.css carried an `.is-flyout`
-  // block squaring the two corners the panel hung off the bar by. That was one
-  // panel with two shapes, and the second shape escaped - openAnchored() applied
-  // it to every anchored menu, so the settings panel's palette picker was drawn
-  // as a box with one side missing beside a field with no bar near it. There is
-  // one shape now, so the check is that the variant has not come back.
+  // Used to assert the opposite: an `.is-flyout` block squaring two
+  // corners. That second shape escaped - openAnchored() applied it to every
+  // anchored menu, drawing the settings panel's colour picker with a side
+  // missing. One shape now; this checks the variant hasn't come back.
   const css = read(join(WEB, 'assets', 'css', 'menu.css'));
   assert.doesNotMatch(css, /\.is-flyout/, 'a second panel shape is back in menu.css');
   assert.match(css, /#ctx-menu, #ctx-child\s*\{/, 'the menu panel has no rule');
@@ -226,12 +214,10 @@ test('the flyout wears the menu panel and no shape of its own', () => {
 });
 
 test('the spacing dial is drawn as a slider on this paper, not the browser default', () => {
-  // The ruled track and the terracotta lozenge live in sidebar.css, named for
-  // every place a slider appears rather than for where the panel it is in
-  // lives. quality.css squares that lozenge at the plain end of the whimsy
-  // axis off the same list - so the two are one list in two files, and a
-  // .ctx-range that fell out of either would be a slider that either came from
-  // the browser or kept its diamond while the others went square.
+  // The ruled track and lozenge live in sidebar.css, named per slider rather
+  // than per panel. quality.css squares that lozenge at the plain whimsy end
+  // off the same list - one list in two files, so a .ctx-range missing from
+  // either is a slider from the browser or one that kept its diamond.
   const bar = /:is\(([^)]*)\)\s*input\[type="range"\]/;
   const named = css => css.match(bar)?.[1].split(',').map(s => s.trim()) ?? [];
 

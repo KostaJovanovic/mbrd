@@ -111,14 +111,11 @@ const boxesOverlap = (a, b) =>
   Math.abs(a.y - b.y) < (a.h + b.h) / 2 - 1e-6;
 
 test('a snapped layout does not overlap once every card is snapped to the grid', () => {
-  // The overlap that only ever showed with snapping on: the layout reserves the
-  // seam-inset body, then each card's edge is snapped to the lattice on its own,
-  // and two tight cards round toward the same cells and cross. `cellStep` makes
-  // the engine reserve whole cells, which survives the snap. Sizes are chosen
-  // *not* to be whole cells, so the rounding is exercised. The step is the
-  // board's default (64) - which, like any usable grid, is at least the smallest
-  // a card may be (MIN_SIZE 48), so a card always fills the cells it reserves.
-  // See arrange()/toCells and main.ts/rearrange.
+  // The overlap only showed with snapping on: each card's edge snaps to the
+  // lattice on its own, and two tight cards round toward the same cell.
+  // `cellStep` reserves whole cells, which survives the snap. Sizes chosen
+  // to not be whole cells, so rounding is exercised. See arrange()/toCells
+  // and main.ts/rearrange.
   const step = 64;
   const sizes = [[100, 80], [130, 90], [70, 70], [210, 140], [305, 240], [90, 190], [160, 60], [64, 96]];
   const src = sizes.map(([w, h], i) => item({ id: `s${i}`, w, h }));
@@ -140,8 +137,8 @@ test('a snapped layout does not overlap once every card is snapped to the grid',
 });
 
 test('obstacles keep a fresh block off what is already on the board', () => {
-  // A folder dropped onto a busy board flows around the existing items rather
-  // than landing on top of them. See arrange()/avoidObstacles and drop.ts.
+  // A folder dropped onto a busy board flows around existing items instead
+  // of landing on top of them. See arrange()/avoidObstacles and drop.ts.
   const obstacles = [
     { x: 0, y: 0, w: 300, h: 300 },
     { x: 260, y: -120, w: 200, h: 160 },
@@ -165,19 +162,15 @@ test('obstacles keep a fresh block off what is already on the board', () => {
 // ---------------------------------------------------------------------------
 // The seed
 //
-// A seed is a layout's licence to move the slots themselves, not just to fill
-// them in a new order - without that, Rearrange hands back the same shape with
-// the cards swapped, which from far enough out to see a whole board is the
-// same picture. What varies is each layout's own business; what is asserted
-// here is that something does, that it is reproducible, and that the layout is
-// still recognisably itself afterwards.
+// A seed is a layout's licence to move the slots themselves, not just fill
+// them in a new order - otherwise Rearrange hands back the same shape with
+// swapped cards. Asserted: something varies, it's reproducible, and the
+// layout stays recognisably itself.
 // ---------------------------------------------------------------------------
 
 test('every layout answers a seed with a different arrangement', () => {
-  // Some layouts vary in steps - a quarter turn, one column more or fewer -
-  // and one step in four is "the same again", which is a legitimate outcome
-  // rather than a failure. So the property is that *some* seed moves it, not
-  // that any particular one does.
+  // Some layouts vary in steps - one step in four can legitimately be "the
+  // same again" - so the property is that *some* seed moves it.
   const base = { center: { x: 0, y: 0 }, spacing: 32 };
   for (const name of named) {
     const src = items(17);   // not a square number, so grid's outer ring is partial
@@ -198,9 +191,8 @@ test('the same seed lays out the same way in every layout', () => {
 });
 
 test('a seeded grid is still a grid', () => {
-  // The rotation permutes integer cells, so every point must still land on the
-  // lattice and no two may share a cell. A grid that came out overlapping
-  // would be worse than one that never varied.
+  // The rotation permutes integer cells, so every point must still land on
+  // the lattice with no two sharing a cell.
   const out = arrange(items(17), { name: 'grid', center: { x: 0, y: 0 }, spacing: 32, seed: 3 });
   const [cw, ch] = [100 + 32, 80 + 32];
   for (const [i, p] of out.entries()) {
@@ -211,10 +203,9 @@ test('a seeded grid is still a grid', () => {
 });
 
 test('a seeded free shakes items loose without relocating them', () => {
-  // Free's whole promise is that it will not impose a shape, so a shaken item
-  // may move about half its own size and no further. Any more and the
-  // arrangement you built by hand stops being recognisable, which is the one
-  // thing this layout must not do.
+  // Free's promise is that it won't impose a shape, so a shaken item may
+  // move about half its own size and no further - any more and the
+  // hand-built arrangement stops being recognisable.
   const src = Array.from({ length: 12 }, (_, i) => item({ id: `i${i}`, x: i * 500, y: 0, w: 100, h: 80 }));
   const out = arrange(src, { name: 'free', center: { x: 0, y: 0 }, spacing: 32, seed: 5 });
   const travelled = out.map((p, i) => Math.hypot(p.x - src[i].x, p.y - src[i].y));
@@ -338,11 +329,9 @@ test('date breaks a tie on the name, naturally', () => {
 // ---------------------------------------------------------------------------
 // Room
 //
-// Two properties that used to be neither held nor tested. No layout may return
-// overlapping cards, and one big card must cost the board its own size rather
-// than multiplying every cell on it. `free` is the only exception, and only
-// because the positions it starts from are the ones you made: two cards you
-// deliberately stacked stay stacked, and there is nothing to make bigger.
+// Two properties: no layout may return overlapping cards, and one big card
+// must cost the board its own size, not multiply every cell on it. `free` is
+// the only exception, since it starts from positions you made.
 // ---------------------------------------------------------------------------
 
 /** A mixed board: notes, cards, one panorama, one poster. */
@@ -377,9 +366,8 @@ for (const name of placing) {
   });
 
   test(`${name} charges a big card for itself, not for the whole board`, () => {
-    // The failure this catches is a layout that gives every item a cell the
-    // size of the largest one: drop a poster on a board of notes and the notes
-    // spread out across a poster's worth of room each.
+    // Catches a layout giving every item a cell the size of the largest one:
+    // drop a poster on a board of notes and each note gets a poster's room.
     const small = Array.from({ length: 25 }, (_, i) => item({ id: `s${i}`, w: 100, h: 80 }));
     const giant = item({ id: 'giant', w: 1200, h: 900 });
     const area = out => {
@@ -390,9 +378,8 @@ for (const name of placing) {
     const opts = { name, center: { x: 0, y: 0 }, spacing: 24 };
     const without = area(arrange(small, opts));
     const with_ = area(arrange([...small.slice(0, 24), giant], opts));
-    // Generous, because a lattice pays for a wide card across its whole column
-    // and a tall one down its whole row. What it rules out is the old cost:
-    // twenty-five cells of 1200x900, which is nearly ninety times the board.
+    // Generous, since a lattice pays for a wide card across its whole column.
+    // Rules out the old cost: twenty-five cells of 1200x900.
     assert.ok(with_ < (without + 1200 * 900) * 4,
       `${name}: one big card took the board from ${(without / 1e6).toFixed(2)}M to ${(with_ / 1e6).toFixed(2)}M`);
   });
@@ -403,10 +390,9 @@ for (const name of placing) {
 // ---------------------------------------------------------------------------
 
 test('the on-screen grid step stays inside its band at any zoom', () => {
-  // The property that stops the grid becoming a solid fill zoomed out, or a
-  // single line zoomed in. Both bands, because a phone has its own - and the
-  // touch one is passed outright rather than detected, since node has no
-  // pointer to ask about.
+  // Stops the grid becoming a solid fill zoomed out, or a single line
+  // zoomed in. The touch band is passed outright, since Node has no
+  // pointer to detect.
   for (const [touch, min, max] of [[false, MIN_PX, MAX_PX], [true, MIN_PX_TOUCH, MAX_PX_TOUCH]]) {
     for (let z = 0.02; z <= 32; z *= 1.35) {
       const px = gridStep(64, z, touch) * z;
@@ -417,20 +403,17 @@ test('the on-screen grid step stays inside its band at any zoom', () => {
 });
 
 test('two grid dots are never closer than 1.41 cm under a finger', () => {
-  // The whole point of the touch band, stated in the unit it was chosen in. A
-  // CSS pixel is 1/96 inch by the spec, which is the only conversion a browser
-  // offers - so this is the nominal centimetre, the same one measure.ts uses.
+  // The whole point of the touch band, in the unit it was chosen in - a CSS
+  // pixel is 1/96 inch, the only conversion a browser offers, so this is the
+  // nominal centimetre measure.ts also uses.
   const cmPerPx = 2.54 / 96;
   assert.ok(MIN_PX_TOUCH * cmPerPx >= 1.41 - 1e-9,
     `${(MIN_PX_TOUCH * cmPerPx).toFixed(3)} cm is under the floor`);
   // And it really is a rise: the desktop band would have drawn them closer.
   assert.ok(MIN_PX_TOUCH > MIN_PX);
-  // The factor between the ends is MAJOR, and both bands keep it - so the minor
-  // lattice at its tightest is exactly as dense as the major lattice at its
-  // loosest, and the board never gets tighter than the tier below it. Asserted
-  // against MAJOR itself now that it is exported, rather than against the four
-  // it happens to be: the sentence above is the rule, and a band that kept a
-  // factor of four after MAJOR became five would be two grids.
+  // Both bands keep the same factor (MAJOR) between their ends, so the minor
+  // lattice at its tightest is as dense as the major lattice at its loosest.
+  // Asserted against MAJOR itself rather than the number it happens to be.
   assert.equal(MAX_PX / MIN_PX, MAJOR);
   assert.equal(MAX_PX / MIN_PX, MAX_PX_TOUCH / MIN_PX_TOUCH);
 });
@@ -464,45 +447,34 @@ test('a nonsense base falls back rather than looping', () => {
 // ---------------------------------------------------------------------------
 
 test('chrome and motion drop out at the same zoom', () => {
-  // These were 0.35 and 0.3 - two thresholds four hundredths apart that nobody
-  // could perceive as two, and that made "zoomed out" mean something slightly
-  // different depending on which module asked. They are one rung now. Two
-  // names because two modules import them for two purposes; if a future change
-  // means them to differ, that is a decision and this test is where to record
-  // it rather than a number to quietly edit.
+  // These were 0.35 and 0.3, imperceptibly different thresholds that made
+  // "zoomed out" mean two things depending on which module asked. One rung
+  // now, under two names for two purposes - if a future change means them
+  // to differ, this test is where to record that decision.
   //
-  // The web used to be on this ladder and is not any more: connections stopped
-  // leaving at far zoom, on the grounds that the far view is the only one that
-  // shows the whole graph at once. Recorded here because a missing name in this
-  // list should read as a decision rather than as a rung somebody forgot.
+  // The web left this ladder deliberately: the far view is the only one
+  // that shows the whole graph, so connections no longer leave at far zoom.
   //
-  // Read through the functions rather than off constants, because the rung is
-  // not one number any more: it sits higher on a phone than on a desk. Node has
-  // no matchMedia, so what these see is the desk rung - which is the point,
-  // since a fallback that quietly answered "phone" would move the whole ladder
-  // on every machine that runs the suite.
+  // Read through the functions, not off constants: the rung sits higher on
+  // a phone than a desk. Node has no matchMedia, so this sees the desk
+  // rung - a fallback quietly answering "phone" would move the whole ladder.
   assert.equal(farZoom(), stillZoom(), 'the ladder has grown a second rung');
   assert.equal(farZoom(), thumbZoom(), 'the ladder has grown a second rung');
   assert.ok(farZoom() > MIN_ZOOM && farZoom() < MAX_ZOOM, 'the rung is outside the zoom range');
 });
 
 test('the high rung is a phone, not a touchscreen', () => {
-  // This asked `(pointer: coarse)` alone and that was the wrong question asked
-  // for the right reason: every word of the argument for the high rung is about
-  // the screen being a third the width, and none of it is about fingers. Windows
-  // reports a coarse pointer on an ordinary touchscreen laptop whenever it
-  // decides the keyboard is folded away, so a desk machine ran the phone rung
-  // and dropped every card's detail at 55% instead of 40%.
+  // `(pointer: coarse)` alone was the wrong question: the argument for the
+  // high rung is about screen width, not fingers. Windows reports a coarse
+  // pointer on an ordinary touchscreen laptop with the keyboard folded away,
+  // so a desk machine ran the phone rung and dropped detail early.
   //
-  // Stubbed rather than reasoned about, because the failure this guards against
-  // is precisely a query that looks right and matches too much. The module reads
-  // its query lazily and caches it on first use, so this has to run before
-  // anything else here asks - which is why it is the only test in this file that
-  // touches matchMedia at all.
-  // The stub answers through a getter rather than a fixed field, so switching it
-  // off in the `finally` reaches the object the module has already cached. A
-  // plain { matches: true } would be held for the life of the process and every
-  // later test in this file would silently be running on a phone.
+  // Stubbed because the failure this guards against is a query that
+  // matches too much. The module caches its query on first use, so this
+  // must run before anything else here asks - the only test that touches
+  // matchMedia. The stub answers through a getter so switching it off in
+  // `finally` reaches the cached object; a plain field would leave every
+  // later test in this file silently running on a phone.
   const seen = [];
   let live = true;
   globalThis.matchMedia = q => { seen.push(q); return { get matches() { return live; } }; };
@@ -521,18 +493,16 @@ test('the high rung is a phone, not a touchscreen', () => {
 // ---------------------------------------------------------------------------
 // Mobile: the orders
 //
-// A Mobile board is a packed column, so a layout cannot decide where anything
-// goes - only what order the packer meets it in. These are that second
-// catalogue: `(items, opts) => items`, pure, and every one of them a
+// A Mobile board is a packed column, so a layout only decides what order the
+// packer meets items in. `(items, opts) => items`, pure, always a
 // permutation of what it was handed. See MOBILE_ARRANGEMENTS.
 // ---------------------------------------------------------------------------
 
 const ids = list => list.map(i => i.id);
 
 test('every Mobile order is a permutation, and only that', () => {
-  // The property the packer depends on: nothing invented, nothing dropped, and
-  // no geometry touched - fitMobile() and packMobileGrid() decide all of that
-  // afterwards, and an order that also moved things would be deciding it twice.
+  // The packer depends on this: nothing invented, dropped, or geometrically
+  // moved - fitMobile()/packMobileGrid() decide that afterwards.
   const src = mixed(23);
   for (const { id } of MOBILE_ARRANGEMENTS) {
     const out = mobileOrder(src, { name: id, seed: 4 });
@@ -548,9 +518,8 @@ test('every Mobile order is a permutation, and only that', () => {
 });
 
 test('a Mobile order with no seed is the same order twice', () => {
-  // What makes a drop reproducible: the same files land the same way. Shuffle
-  // is included on purpose - unseeded it is the order it was handed, exactly
-  // the bargain the Desktop layouts make with variation().
+  // What makes a drop reproducible: the same files land the same way.
+  // Shuffle included on purpose - unseeded it's the order it was handed.
   const src = mixed(17);
   for (const { id } of MOBILE_ARRANGEMENTS) {
     assert.deepEqual(
@@ -582,11 +551,10 @@ test('each Mobile order sorts on the thing it is named after', () => {
 });
 
 test('a stored Desktop arrangement reads as the nearest Mobile order', () => {
-  // Every board saved before the two catalogues split carries one of Desktop's
-  // seven for Mobile as well - 'spiral' by default, since that was the fallback
-  // for both. Three of the seven mean something in a column and carry over;
-  // scatter keeps the half of itself that a column can show; and the three that
-  // are pure geometry become the default rather than silently doing nothing.
+  // Every board saved before the two catalogues split carries one of
+  // Desktop's seven for Mobile too. Three mean something in a column and
+  // carry over; scatter keeps its column-showable half; pure-geometry ones
+  // become the default rather than silently doing nothing.
   assert.equal(mobileArrangement('free'), 'free');
   assert.equal(mobileArrangement('date'), 'date');
   assert.equal(mobileArrangement('type'), 'type');
@@ -599,15 +567,10 @@ test('a stored Desktop arrangement reads as the nearest Mobile order', () => {
 });
 
 test('the two catalogues share only the ids that mean the same thing', () => {
-  // `free`, `date`, `tag` and `type` are deliberately the same string in both,
-  // so a board switched to Mobile and back keeps the setting it had. Anything
-  // else appearing in both would be an id that reads as carried over and is not.
-  //
-  // The list grows only when an arrangement genuinely means the same thing on
-  // both surfaces - which for these four is "the same grouping, with the page
-  // taken away": Desktop lays the groups out as blocks side by side and Mobile
-  // reads them down a column, and the board's setting survives the trip either
-  // way. `tag` joined them when tags did.
+  // `free`, `date`, `tag` and `type` are deliberately the same string in
+  // both, so switching to Mobile and back keeps the setting. The list grows
+  // only when an arrangement genuinely means the same thing on both
+  // surfaces - "the same grouping, with the page taken away".
   const shared = MOBILE_ARRANGEMENTS
     .map(a => a.id)
     .filter(id => named.includes(id));
@@ -617,9 +580,8 @@ test('the two catalogues share only the ids that mean the same thing', () => {
 // ---------------------------------------------------------------------------
 // The web
 //
-// canvas/web.ts keeps its planarity pass module-private, so the rule is tested
-// through the geometry it guarantees: whatever threads() decides to draw, no
-// two of them may cross. The segments are reconstructed from the drawn path.
+// canvas/web.ts keeps its planarity pass module-private, so this tests the
+// geometry it guarantees instead: no two drawn threads may cross.
 // ---------------------------------------------------------------------------
 
 /** Do segments AB and CD properly cross? Shared endpoints do not count. */
@@ -636,16 +598,11 @@ function crosses(a, b, c, d) {
 }
 
 test('the crossing predicate agrees with obvious cases', () => {
-  // The test's own tool, checked before it is trusted below - except that
-  // nothing below ever came to use it. `threads()` is not imported in this
-  // file, no planarity suite follows, and this ended up asserting that a
-  // fifteen-line helper in a test file does what its own fifteen lines say.
-  //
-  // Kept rather than deleted, because the tool is correct and the assertions
-  // are the readable statement of what "crossing" means - but the property it
-  // was written to check lives in tests/web.test.js, where noCrossings() runs
-  // the same predicate over real threads(). This is that helper's unit test;
-  // web.test.js is the one that would notice a regression.
+  // The test's own tool - but nothing below uses it. `threads()` isn't
+  // imported here, so this just checks the helper against itself. Kept
+  // because it's a readable statement of "crossing"; the property it was
+  // written for lives in tests/web.test.js, where noCrossings() runs the
+  // same predicate over real threads().
   const p = (x, y) => ({ x, y });
   assert.ok(crosses(p(-1, 0), p(1, 0), p(0, -1), p(0, 1)), 'an X crosses');
   assert.ok(!crosses(p(-1, 0), p(1, 0), p(-1, 1), p(1, 1)), 'parallel lines do not');

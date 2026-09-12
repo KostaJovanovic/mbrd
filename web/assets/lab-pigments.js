@@ -463,15 +463,13 @@ function rolesFor(hues) {
     sheet: sheet.h,
     accent: ranked.length ? ranked[0] : sheet.h,
     // A third photographed hue if the board has one. With two, the wash sits
-    // *between* them rather than at a turn of its own: on a board of rose and
-    // magenta, +85 degrees is an olive that nothing on the board is, and the
-    // ornament is no better a place to invent a colour than the button was.
-    // Only a board with a single hue has nothing to sit between, and there the
-    // turn stands - a wash that is its own accent is not a second voice at all.
+    // *between* them rather than at its own turn - inventing a colour is no
+    // better a job for the ornament than it was for the button. Only a
+    // single-hue board turns.
     leafy: ranked.length > 1 ? ranked[1] : ranked.length ? midHue(sheet.h, ranked[0]) : (sheet.h + LEAFY_SOLO_TURN) % 360,
-    // --accent-warm has no photograph left to take by this point - the vote
-    // yields three hues at the most and the other two are spoken for - so it
-    // stays a relative of the sheet it washes.
+    // --accent-warm has no photograph left by this point (the vote yields at
+    // most three hues, the other two spoken for), so it stays a relative of
+    // the sheet it washes.
     warm: warmer(sheet.h)
   };
 }
@@ -649,11 +647,9 @@ function paletteFromAccent(picked, { tier = 1 } = {}) {
   if (C < NEUTRAL_C) return null;
   const vars = build(
     { sheet: h, accent: h, leafy: (h + LEAFY_SOLO_TURN) % 360, warm: warmer(h) },
-    // The axis applies to a colour chosen by hand exactly as it does to one
-    // read off the photographs - the sheet and the other pigments dress for
-    // the tier - but the pick itself stands, below, at every stop: dressing
-    // the chosen colour pastel or bold would be overruling the pick, which is
-    // the mistake this function exists not to make.
+    // The axis applies to a hand-picked colour exactly as to an extracted one
+    // - sheet and other pigments dress for the tier - but the pick itself
+    // stands at every stop; dressing it pastel or bold would overrule it.
     { tier }
   );
   vars["--accent"] = chosen;

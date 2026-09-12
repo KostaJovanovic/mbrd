@@ -1,35 +1,8 @@
-// The Content-Security-Policy, and the four ways it can go stale in silence.
-//
-// web/_headers is the only file in this repository that nothing in this
-// repository executes. tools/serve.py sends no headers, so the dev server runs
-// with no policy at all; the deployed host reads the file and enforces it. That
-// gap is the whole reason this file exists - between "it works locally" and "it
-// works on the deploy" there is no step that would tell anybody, and a CSP
-// failure is not a stack trace. It is a picture that does not draw, a font that
-// falls back, an embed that stays a link.
-//
-// Four things drift, and each one is checked in both directions here:
-//
-//   - the inline-script hashes. Change one byte inside <script> in index.html
-//     and the deployed page loses its pre-paint appearance restore: an
-//     installed PWA flashes the default pigment on every launch, and only on
-//     the deploy. The hashes are checked against the actual bytes, and the
-//     bytes against the hashes, so an edit to either side fails loudly.
-//   - the embed hosts. canvas/embed.ts is the only place in the app that talks
-//     to a third party; a provider added there and not here is a card whose
-//     "Watch here" button swaps in a frame that never loads.
-//   - the two remote hosts in connect-src, one from optimize/media.ts and one
-//     from storage/cloud/google.ts. The second is the one with teeth: a share
-//     that is refused by the policy dies part-way through an upload, having
-//     already written half a file into somebody's own Drive.
-//   - the worker exemption path, which is a URL written as a string in one file
-//     and as a path in another, with nothing between them.
-//
-// What this file cannot check is whether a directive is *too tight* - whether
-// some renderer needs a scheme nobody thought of. That is a browser question
-// and it is answered by opening the deploy, which is the same answer the suite
-// gives for pan and zoom. See the header of web/_headers for what each
-// directive is for and what tightening it further would cost.
+// Hold the CSP in web/_headers in step with the code it protects.
+// serve.py sends no headers, so violations are invisible locally — this
+// test is the substitute. Checks both directions for four drift surfaces:
+// inline-script hashes, inline-style hashes, embed hosts, connect-src
+// hosts, and worker exemption paths.
 
 import { readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -41,15 +14,7 @@ import { WEB, JS, read, walk } from './helpers.js';
 
 const HEADERS = join(WEB, '_headers');
 
-/**
- * The _headers file, parsed the way the host parses it.
- *
- * The format is three kinds of line: a comment starting with #, a rule path
- * starting at column 0, and an indented `Name: value` (or `! Name`, which
- * removes a header the broader rules set) belonging to the rule above it.
- * Anything else is a typo, and a typo in this file is not an error anywhere -
- * the host skips the line and serves the page with one fewer header on it.
- */
+/** Parse _headers: # comments, column-0 paths, indented Name: value or ! Name. */
 function parse(text) {
   const rules = [];
   const junk = [];
@@ -95,20 +60,16 @@ const tokens = [...directives.values()].flat();
 test('the policy is served to the whole site and parses', () => {
   assert.ok(existsSync(HEADERS), 'web/_headers is gone - the deploy has no CSP');
   assert.deepEqual(junk, [], `lines the host would skip: ${junk.join(' | ')}`);
-  // Guards the guard: every assertion below reads `directives`, and an empty
-  // map would let all of them pass while the deploy ran with no policy at all.
+  // An empty map would let every assertion below pass vacuously.
   assert.ok(site, 'no /* rule - the policy would only cover whatever path it names');
   assert.ok(directives.size >= 14,
     `only ${directives.size} directives parsed - has the header value been split across lines?`);
-  // A header value is one line. Folding it would not be a style choice; the
-  // host would send the first line and drop the rest.
+  // The host would send only the first line of a folded value.
   assert.ok(!policy.includes('\n'), 'the policy value spans lines');
 });
 
 test('every directive names at least one source', () => {
-  // An empty directive is not "unset", it is "'none'" - `img-src;` blocks every
-  // image on the board. The commonest way to write one is deleting the last
-  // source out of a list while tightening.
+  // An empty directive is an accidental 'none', not "unset".
   for (const [name, sources] of directives) {
     assert.ok(sources.length > 0, `${name} has no sources - that is an accidental 'none'`);
   }
@@ -129,21 +90,8 @@ test("'none' is never written beside something else", () => {
 // The inline scripts
 // ---------------------------------------------------------------------------
 
-/**
- * Every inline <script> the app ships, as [hash, where].
- *
- * Swept over web/*.html rather than listed, for the reason tests/icons.test.js
- * sweeps for <use href>: a list is only correct until the next page grows a
- * script. 404.html is a byte copy of index.html and contributes the same two
- * hashes, which is the right answer rather than a duplicate to filter - if it
- * ever stops matching, tests/notfound.test.js says so first.
- *
- * Newlines are normalised to \n before hashing because that is what a browser
- * hashes: the HTML parser rewrites CRLF in the input stream before the
- * tokeniser ever sees it, so a file checked out with CRLF endings still has to
- * produce these hashes. .gitattributes pins the tree to LF, which makes this
- * belt and braces - but the braces cost one call and the belt is a setting.
- */
+/** Every inline <script> as [hash, where]. Swept, not listed, so a new page
+ * is covered automatically. Newlines normalised to \n (browsers hash LF). */
 const INLINE = /<script(?![^>]*\ssrc=)([^>]*)>([\s\S]*?)<\/script>/g;
 
 const inlineScripts = readdirSync(WEB)
@@ -154,15 +102,8 @@ const inlineScripts = readdirSync(WEB)
       `${name} <script ${m[1].trim()}>`.replace(' >', '>'),
     ]));
 
-/**
- * The same for inline <style> blocks.
- *
- * These are hashed for the same reason the scripts are, and they became
- * hashable only once the last `style=` attribute in the tree was gone - a hash
- * covers an element, never an attribute, and a browser ignores 'unsafe-inline'
- * the moment any hash is present, so the two cannot be mixed. See the style-src
- * section of web/_headers.
- */
+/** Inline <style> blocks, same treatment. Hashable only because no style=
+ * attribute remains in markup (browsers ignore 'unsafe-inline' with hashes). */
 const INLINE_STYLE = /<style(?![^>]*\ssrc=)([^>]*)>([\s\S]*?)<\/style>/g;
 
 const inlineStyles = readdirSync(WEB)
@@ -188,21 +129,14 @@ test('the policy carries a hash for every inline script in the app', () => {
 });
 
 test('the policy carries no hash for a script that is gone', () => {
-  // The other direction, and the one that rots quietly: a stale hash allows
-  // nothing and costs nothing, so it survives every deploy and every reading,
-  // and the next person cannot tell which of five hashes is load-bearing.
+  // Stale hashes rot quietly — they allow nothing and nobody notices.
   const asked = new Set(inlineScripts.map(([hash]) => hash));
   const orphans = [...scriptHashes].filter(hash => !asked.has(hash));
   assert.deepEqual(orphans, [], `hashes matching no inline script: ${orphans.join(', ')}`);
 });
 
 test('the policy carries a hash for every inline style, and none for one that is gone', () => {
-  // Both directions in one test, because a style hash has a sharper failure
-  // than a script hash and the two halves are the same sentence. A block whose
-  // hash has drifted is not refused loudly - the browser simply declines to
-  // apply it, and the page renders unstyled. So this is the only thing standing
-  // between a one-character edit and a deploy that looks like a broken
-  // stylesheet.
+  // A drifted style hash silently drops the block — the page renders unstyled.
   assert.ok(inlineStyles.length >= 2,
     `only ${inlineStyles.length} inline style blocks found - has the regex stopped matching?`);
 
@@ -216,10 +150,7 @@ test('the policy carries a hash for every inline style, and none for one that is
 });
 
 test('style-src allows nothing but self and those hashes', () => {
-  // The directive this app spent a while unable to tighten. It is only holdable
-  // while nothing writes a style attribute: assigning .style through the CSSOM
-  // is outside CSP, but a `style="..."` parsed from markup is not, and one of
-  // those anywhere in web/ would silently stop applying under this policy.
+  // Holds only while no style= attribute exists in markup (CSSOM is fine).
   const sources = directives.get('style-src') ?? [];
   assert.ok(sources.includes("'self'"), 'style-src has no self - the stylesheets would not load');
   assert.ok(!sources.includes("'unsafe-inline'"),
@@ -243,18 +174,9 @@ test('nothing in web/ writes a style attribute', () => {
   for (const rel of walk(JS, ['.ts', '.js'])) {
     const src = read(join(WEB, rel));
     if (/setAttribute\(\s*['"]style['"]/.test(src)) offenders.push(`${rel} (setAttribute)`);
-    // The half the comment above promised and the check did not do. Scanning
-    // only for setAttribute left the shape it actually names - a template
-    // string interpolating into style="..." - completely uncovered, and
-    // innerHTML and insertAdjacentHTML are live in canvas/item-dom.ts,
-    // canvas/transport.ts and canvas/video.ts. Such an attribute is legal
-    // JavaScript, reaches the DOM, and is then dropped by style-src on the
-    // deploy and nowhere else, so it works in front of whoever wrote it.
-    //
-    // Comments come off first: this rule is discussed in prose in several
-    // module headers. Block comments in full, line comments only where the //
-    // opens the line, so that a 'https://...' inside a string literal survives
-    // for the connect-src check further down.
+    // Also check template strings with style= (innerHTML, insertAdjacentHTML).
+    // Strip block comments and line-leading // comments; keep inline // so
+    // 'https://...' in string literals survives the connect-src check below.
     const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
     if (/\bstyle\s*=\s*\\?["']/.test(code)) offenders.push(`${rel} (style= in a string)`);
   }
@@ -271,10 +193,8 @@ test('script-src allows nothing but self and those hashes', () => {
 });
 
 test("no directive allows 'unsafe-inline' for script", () => {
-  // A browser ignores 'unsafe-inline' for scripts the moment a hash is present,
-  // so adding it would not break the deploy - it would sit in the file reading
-  // like a permission the policy grants, and be honoured the day somebody
-  // removes the last hash.
+  // Browsers ignore it with hashes present, but it would be honoured the day
+  // somebody removes the last hash.
   for (const name of ['script-src', 'script-src-elem', 'script-src-attr', 'default-src']) {
     const sources = directives.get(name) ?? [];
     assert.ok(!sources.includes("'unsafe-inline'"), `${name} allows inline script`);
@@ -282,10 +202,8 @@ test("no directive allows 'unsafe-inline' for script", () => {
 });
 
 test('nothing in the policy allows eval', () => {
-  // Compared as whole tokens, not with includes(): 'wasm-unsafe-eval' has
-  // 'unsafe-eval' inside it and is a different and much narrower permission, so
-  // a substring check here would be right for the wrong reason and would go on
-  // being right if somebody swapped one for the other.
+  // Whole-token compare: 'wasm-unsafe-eval' contains 'unsafe-eval' as a
+  // substring but is a different, narrower permission.
   const evals = tokens.filter(t => t === "'unsafe-eval'" || t === "'wasm-unsafe-eval'");
   assert.deepEqual(evals, [],
     `${evals.join(' ')} in the policy - nothing in web/ calls eval, new Function or WebAssembly on the main thread`);
@@ -312,46 +230,18 @@ test('frame-src is exactly the hosts canvas/embed.ts frames', () => {
 });
 
 test('no module names a remote host the policy does not allow', () => {
-  // The general form of the check below, and the one that was missing.
-  // csp.test.js greps optimize/media.ts by name for its host, so a *second*
-  // module reaching for a CDN was invisible: import/pdf.ts loaded pdf.js from
-  // cdn.jsdelivr.net against `script-src 'self'` and pointed a worker at it
-  // against `worker-src 'self'`, so PDF import and viewing were dead on the
-  // deploy and alive under serve.py, which sends no headers. The catch turned
-  // both refusals into a grey card. The URL was in the committed bundle - it is
-  // what shipped.
-  //
-  // Comments are stripped first: half the modules here discuss hosts in prose,
-  // and _headers is itself quoted in a few of them. What is left is a URL that
-  // opens a string literal or a template, which is a URL the code will use.
+  // Sweep all modules for remote hosts the policy does not carry.
+  // Comments stripped first (modules discuss hosts in prose).
   const allowed = new Set(
     [...directives.values()].flat().filter(s => s.startsWith('http')).map(s => s.replace(/\/$/, '')));
 
-  /**
-   * Hosts that appear in a string and are never fetched.
-   *
-   * Each of these is here for a stated reason, which is the point: the check is
-   * worth nothing if the way past it is to add a name. A URL in a module is
-   * either something the app will load - and then the policy has to carry it -
-   * or one of these three shapes.
-   */
+  /** Hosts in code that are never fetched — each must have a stated reason. */
   const NOT_FETCHED = new Map([
-    // The XML and SVG namespaces, handed to createElementNS. A namespace is an
-    // identifier that happens to look like an address; nothing resolves it.
-    ['http://www.w3.org', 'an XML namespace, not an address'],
-    // Recognised, not requested: canvas/embed.ts matches a pasted watch link
-    // and rewrites it to youtube-nocookie.com, which frame-src does carry.
-    ['https://www.youtube.com', 'matched when a link is pasted, then rewritten'],
-    // A placeholder in a field.
+    ['http://www.w3.org', 'XML/SVG namespace, not an address'],
+    ['https://www.youtube.com', 'matched on paste, rewritten to nocookie host'],
     ['https://example.com', 'placeholder text'],
-    // Navigated to, never fetched. storage/cloud/google.ts opens Google's own
-    // login page in a popup and reads the fragment it comes back with; a
-    // top-level navigation is governed by no directive in this policy, and
-    // form-action does not apply because there is no form - the parameters are
-    // in the query string of a URL that gets opened. Adding it to connect-src
-    // would be a permission nothing uses, which is worse than an exemption with
-    // a reason beside it.
-    ['https://accounts.google.com', 'the sign-in page, navigated to in a popup'],
+    // Navigated in a popup, not fetched — no CSP directive governs navigation.
+    ['https://accounts.google.com', 'sign-in page, navigated to in a popup'],
   ]);
 
   const offenders = [];
@@ -369,15 +259,7 @@ test('no module names a remote host the policy does not allow', () => {
 });
 
 test('connect-src carries the host the converter is fetched from', () => {
-  // optimize/media.ts was for a long time the only outbound request mbrd makes
-  // on its own. The check is on the host rather than the whole URL because that
-  // is all CSP matches on, and the version in the path is expected to move.
-  //
-  // Matched only where the URL *opens a string literal*. It used to be the
-  // first `https://` anywhere in the file, which a sentence of prose in the
-  // module header could retarget - the check would then assert connect-src
-  // against a host the code never fetches, and pass while the real one was
-  // missing. A quote in front of it is what makes it code.
+  // Host only (CSP ignores path); match a string literal, not prose.
   const core = /['"`]https:\/\/([^/'"`]+)\//.exec(read(join(JS, 'optimize', 'media.ts')));
   assert.ok(core, 'no absolute URL in optimize/media.ts - has the core moved?');
   const sources = directives.get('connect-src') ?? [];
@@ -386,17 +268,7 @@ test('connect-src carries the host the converter is fetched from', () => {
 });
 
 test('connect-src carries the host a board is shared through', () => {
-  // The second outbound request, and the one that is somebody's board rather
-  // than a converter. Bound to the module that names it, exactly as the line
-  // above is bound to optimize/media.ts, so a provider added in code and not in
-  // the header fails in `npm test` rather than on the deploy - which for this
-  // feature means "the upload dies mid-way having half-written a file into
-  // somebody's Drive", a failure worth catching before it ships.
-  //
-  // The API constant only, deliberately. google.ts also names the sign-in page,
-  // which is navigated to and not fetched and is in NOT_FETCHED above with that
-  // reason; asserting the whole file against connect-src would demand a
-  // permission nothing uses.
+  // API constant only — google.ts also names the sign-in page (in NOT_FETCHED).
   const api = /\bconst API = '(https:\/\/[^/']+)'/.exec(read(join(JS, 'storage', 'cloud', 'google.ts')));
   assert.ok(api, "no `const API = 'https://...'` in storage/cloud/google.ts - has the host moved?");
   const sources = directives.get('connect-src') ?? [];
@@ -405,10 +277,7 @@ test('connect-src carries the host a board is shared through', () => {
 });
 
 test('no remote host reaches anything that renders a document', () => {
-  // The directives that would have caught a "renderer follows a URL out of a
-  // .mbrd" bug outright, whatever the code did. A board renders the same with
-  // the network off; these three are what make that a guarantee rather than a
-  // habit, and the only way to lose it is to add a host here.
+  // These directives guarantee a board renders with no network.
   for (const name of ['default-src', 'img-src', 'media-src', 'font-src', 'style-src']) {
     const remote = (directives.get(name) ?? []).filter(s => s.includes('//'));
     assert.deepEqual(remote, [], `${name} allows a remote host: ${remote.join(' ')}`);
@@ -416,9 +285,7 @@ test('no remote host reaches anything that renders a document', () => {
 });
 
 test('no source is a wildcard', () => {
-  // `*`, `https:`, `*.example.com` - each of them turns a directive into a
-  // sentence about a category rather than about this app, and each is the
-  // shape a tightening becomes when somebody is in a hurry.
+  // Wildcards turn a directive into a category rather than a policy.
   const wild = tokens.filter(t => t === '*' || t.startsWith('*.') || t.includes('://*') || /^https?:$/.test(t));
   assert.deepEqual(wild, [], `wildcard sources: ${wild.join(' ')}`);
 });
@@ -437,10 +304,7 @@ test('the plugin and form surfaces are shut', () => {
 });
 
 test("base-uri is 'self' and not 'none', for the reason index.html gives", () => {
-  // The one place the tight answer is the wrong one. <base href="/"> is
-  // load-bearing: the same document is served as the 404 at arbitrary paths,
-  // and 'none' would kill the tag and send the app looking for its modules in
-  // whatever directory the bad URL happened to name.
+  // NOT 'none': <base href="/"> is load-bearing for 404 routing.
   assert.deepEqual(directives.get('base-uri'), ["'self'"]);
   assert.match(read(join(WEB, 'index.html')), /<base href="\/">/,
     "index.html has lost its <base> - then base-uri could be 'none'; see wrangler.jsonc");
@@ -450,25 +314,9 @@ test("base-uri is 'self' and not 'none', for the reason index.html gives", () =>
 // The worker exemptions
 // ---------------------------------------------------------------------------
 
-/**
- * The four workers allowed to run without the site policy, each derived from
- * the code that names it rather than written out here.
- *
- * Two of them carry somebody else's wasm and compile it with something the
- * policy forbids: pdf.js's worker holds an Emscripten OpenJPEG build, so every
- * PDF with a JPEG 2000 image came back as a grey card while ordinary ones
- * rendered. Two are ours - canvas/matte-worker.js runs the background remover's
- * model on ONNX Runtime's wasm backend, and mesh/occt-worker.js runs the CAD
- * kernel that turns a STEP or IGES file into triangles. Both need the same
- * capability for the same reason. See the notes beside each rule in
- * web/_headers.
- *
- * Derived, because a URL written as a string in one file and as a path in another
- * with nothing between them is exactly the pair that drifts. A rename would leave
- * the rule pointing at nothing and the worker inheriting the site policy, which
- * forbids the one thing it exists to do - and the way that shows is a feature
- * quietly not being offered.
- */
+/** Derive the four exempted worker paths from the code that names them.
+ * A URL as a string in one file and a path in _headers is exactly the pair
+ * that drifts — deriving catches a rename before it silently breaks. */
 function spawnedWorkers() {
   const media = /new Worker\('([^']+)'\)/.exec(read(join(JS, 'optimize', 'media.ts')));
   assert.ok(media, 'optimize/media.ts no longer spawns a worker - is the exemption still needed?');
@@ -478,16 +326,11 @@ function spawnedWorkers() {
   const worker = /workerSrc = pdfURL\('([^']+)'\)/.exec(pdf);
   assert.ok(dir && worker, 'import/pdf.ts no longer points pdf.js at a worker of its own');
 
-  // Read off the constant rather than off the `new Worker(...)` call, because
-  // that call wraps it in a URL() against document.baseURI and there is no
-  // literal in it to match. The constant is why WORKER_URL must stay a plain
-  // string - a computed one would leave this rule unanchored.
+  // Read WORKER_URL constant, not the new Worker() call (which wraps in URL()).
   const matte = /WORKER_URL = '([^']+)'/.exec(read(join(JS, 'canvas', 'matte.ts')));
   assert.ok(matte, 'canvas/matte.ts no longer names a worker - is the exemption still needed?');
 
-  // On matte.ts's terms exactly, and for the same reason: a plain string, read
-  // off the constant rather than off the `new Worker(...)` call that wraps it in
-  // a URL().
+  // Same: read the constant, not the Worker() call.
   const occt = /WORKER_URL = '([^']+)'/.exec(read(join(JS, 'mesh', 'occt.ts')));
   assert.ok(occt, 'mesh/occt.ts no longer names a worker - is the exemption still needed?');
 
@@ -508,8 +351,7 @@ test('the exempted paths are the workers the app actually spawns', () => {
 test('nothing but those workers is exempted, and no page is', () => {
   for (const rule of rules) {
     if (!rule.removed.length) continue;
-    // .mjs as well as .js: the vendored pdf.js worker is an ES module, which is
-    // how pdf.js spawns it - new Worker(src, { type: 'module' }).
+    // .mjs: pdf.js worker is an ES module.
     assert.match(rule.path, /\.m?js$/, `${rule.path} drops a header and is not a script`);
     assert.ok(!rule.path.includes('*'), `${rule.path} exempts a whole tree, not one file`);
   }

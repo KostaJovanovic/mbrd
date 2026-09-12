@@ -3,55 +3,16 @@
  *
  *   node tools/gen-stickers.mjs [path-to-phosphor-core]
  *
- * With no argument it fetches from the pinned revision below; with one, it
- * reads `assets/<weight>/<name>-<weight>.svg` out of a local checkout of
- * https://github.com/phosphor-icons/core. Either way the output is committed,
- * so mbrd never needs the network or the sibling repo to build or run - the
- * same bargain tools/gen-formats.mjs makes with file-analyser.
+ * Fetches from a pinned revision (or reads a local checkout). Output is committed.
  *
- * ── Why a generator rather than forty-five hand-drawn shapes ──
+ * Weights:
+ *   duotone — body + outline (shapes with a body)
+ *   bold    — chunky line only (cross, plus, arrows — duotone gives them a plate)
+ *   fill    — solid silhouette (two shapes where bold reads as hollow)
  *
- * The sprite was hand-authored first, and the shapes were the largest single
- * lump of work in the feature and the one part that could not be hurried. What
- * Phosphor buys is not the drawing time: it is that nine thousand icons drawn
- * to one grid by people doing nothing else are more consistent with each other
- * than forty-five drawn here could be, and the consistency is most of what
- * makes a set read as a set.
- *
- * ── Two weights, and the rule for which ──
- *
- * Phosphor draws everything as *filled* paths - even the outline weights, whose
- * line is a closed path tracing the outline of a stroke. Nothing here is
- * stroked, which is why items.css sets `stroke: none` on the artwork and the
- * line weight is Phosphor's rather than ours.
- *
- *   duotone   two paths: a background silhouette (marked opacity="0.2" in the
- *             source, stripped here) and the outline over it. That is exactly
- *             the paper-body-and-inked-outline construction mbrd's stickers
- *             wanted, already drawn. Used for every shape that has a body.
- *
- *   bold      one path, a chunky line. Used for the marks that *are* a line -
- *             the cross, the plus, the arrows - because their duotone
- *             background is not the glyph at all: Phosphor gives a line glyph a
- *             generic rounded-square plate to sit on, and a plus sticker that
- *             came out as a paper card with a plus on it is a different object
- *             from the one anybody asked for.
- *
- *   fill      one path, a solid silhouette. Two shapes only, where the bold
- *             outline reads as a hollow version of a mark that should be solid.
- *
- * ── The paint convention the output has to honour ──
- *
- * A <use> renders its symbol into a shadow tree that inherited properties cross
- * and selectors do not, so no rule in items.css can reach a path in here. The
- * paint therefore arrives by inheritance and is opted out of by attribute:
- *
- *   no fill attribute      the paper body     (inherits the sticker-body token)
- *   fill="currentColor"    the ink            (color is the sticker-tint token)
- *
- * Phosphor's own files put fill="currentColor" on the root <svg> and mark the
- * duotone background with opacity="0.2". This inverts that: the background
- * loses both and inherits the paper, the foreground gains fill="currentColor".
+ * Paint convention (<use> shadow tree, so CSS cannot reach paths):
+ *   no fill attr         -> inherits sticker-body token (paper)
+ *   fill="currentColor"  -> inherits sticker-tint token (ink)
  */
 import fs from 'node:fs';
 import path from 'node:path';

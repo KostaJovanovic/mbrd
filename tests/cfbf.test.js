@@ -1,19 +1,10 @@
 // The compound file reader (import/cfbf.ts).
 //
-// This one is a filesystem, so the tests are mostly about the two ways a stream
-// can be stored and the several ways a file can lie about where its sectors are.
-// Everything is built here: a compound file cannot be committed, and one written
-// by Office would prove that Office's output reads rather than that the reader
-// is right about the format.
-//
-// The builder below writes 512-byte sectors, one FAT sector, one directory
-// sector and a mini stream, which is the shape every small compound file in the
-// wild actually has. That is deliberate - a synthetic file that exercises paths
-// no writer produces tests the test.
-//
-// Discipline as everywhere else here: **every refusal is paired with a working
-// fixture asserted first**, since null is the answer to every failure and a test
-// that only asserts null passes on a broken builder too.
+// A filesystem format, so tests cover the two ways a stream is stored and the
+// ways a file can lie about its sectors. Built here rather than committed -
+// Office's own output would only prove Office's output reads. The builder
+// writes the 512-byte-sector/FAT/mini-stream shape real small files have.
+// Every refusal is paired with a working fixture asserted first.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -58,9 +49,8 @@ function dib(bits = 24) {
  * A compound file holding `streams` as `{ name: bytes }`.
  *
  * Streams at or above the cutoff get whole sectors and their own FAT chain;
- * anything below goes into the mini stream, which is itself a normal stream owned
- * by the root entry. Both paths are built because both are real and a thumbnail
- * is usually small enough to be on the second one.
+ * smaller ones go into the mini stream owned by the root entry. Both paths
+ * are built because a thumbnail is usually small enough for the second one.
  */
 function compound(streams, opts = {}) {
   const names = Object.keys(streams);
@@ -227,8 +217,8 @@ test('a stream over the cutoff is read from whole sectors', () => {
 });
 
 test('a stream under the cutoff is read out of the mini stream', () => {
-  // This is the path that matters: a thumbnail is usually under 4096 bytes, so a
-  // reader that only handles whole sectors misses exactly what it came for.
+  // The path that matters: a thumbnail is usually under 4096 bytes, so a
+  // sectors-only reader misses exactly what it came for.
   const body = png(900, 0x62);
   const doc = readCompound(compound({ 'PreviewPNG': body }));
   assert.ok(doc);
@@ -324,9 +314,8 @@ test('a Thumbs.db is read out of its numbered streams', () => {
 
 test('the cache picks the largest stream that actually opens with a picture', () => {
   // A bigger stream with no signature must not shadow the smaller real
-  // thumbnail: fromCache() ranks by declared size and sniffs the head of each
-  // largest-first, so the unsigned giant is skipped rather than stopped at - and
-  // its bytes are never read in full, only its front.
+  // thumbnail: fromCache() ranks by declared size and sniffs each head
+  // largest-first, skipping the unsigned giant without reading it in full.
   const withHeader = (body) => {
     const b = new Uint8Array(body.length + 12);
     b.set(body, 12);
@@ -349,13 +338,12 @@ test('a numbered stream whose bytes cannot be read does not throw', () => {
     'Catalog': png(600, 0x90),
     '1': jpeg(9000, 0x95),   // a big stream, so it has its own FAT chain
   });
-  // Point the first FAT entry of the big stream's run at a sector past the file.
-  // Its head still sniffs as a JPEG, so the winner's *full* read is what fails.
+  // Point the first FAT entry of the big stream's run past the file - its head
+  // still sniffs as a JPEG, so the winner's full read is what fails.
   const dv = new DataView(bytes.buffer);
-  // Sectors: 0 FAT, 1 dir, 2 miniFAT, 3.. mini stream then big streams. The
-  // Catalog (600 < cutoff) is mini, so '1' is the only big stream and starts the
-  // first sector after the mini stream. Find it by walking is fussy; instead just
-  // assert the reader stays quiet however the chain is mangled.
+  // Sectors: 0 FAT, 1 dir, 2 miniFAT, 3.. mini stream then big streams. Rather
+  // than walk to find '1's exact start, just assert the reader stays quiet
+  // however the chain is mangled.
   for (let s = 3; s < 12; s++) dv.setUint32(512 + s * 4, 0xFFFF0, true);
   const doc = readCompound(bytes);
   if (doc) assert.doesNotThrow(() => compoundPicture(doc));

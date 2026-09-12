@@ -6,16 +6,8 @@
 #mobile-header-edit-btn,
 #mobile-find-btn {
   position: fixed;
-  /* --frame-bar-h is 0px on the web and the height of the drawn title bar in a
-     desktop window, where this whole row sits below it. Declared in chrome.css
-     beside the rest of the frame: it is a fact about the window this app is in
-     rather than a look, so it has no business in tokens.css where a board file
-     could set it. */
+  /* Below the drawn title bar (0px on the web, bar height in desktop). */
   top: calc(max(16px, env(safe-area-inset-top)) + var(--frame-bar-h));
-  /* No macOS term here any more. This button used to step right by
-     --frame-inset-left to clear the traffic lights, which shared its line; the
-     drawn title bar took that line and the lights are inside it now, a whole
-     bar above. The corner is the app's again on every platform. */
   left: max(16px, env(safe-area-inset-left));
   z-index: var(--z-panel);
   width: var(--chrome-button-w);
@@ -25,13 +17,7 @@
   justify-items: center;
   padding: 0;
   border: var(--hairline) solid var(--rule-2);
-  /* --leaf, the corner every control on the glass wears - the bin, the history
-     pair, the zoom pill, the add bar and the player. This was --radius-sm, the
-     panel corner, which made the one permanent button in the top left the only
-     piece of furniture on the board rounded differently from the rest. Two
-     pixels apart at Middle and identical at Harsh, so it never looked wrong;
-     it just meant there was no rule. There is now: on the glass is --leaf,
-     inside a panel is --radius-sm. */
+  /* --leaf: on the glass, not --radius-sm which is for inside panels. */
   border-radius: var(--leaf);
   background: var(--paper-card);
   box-shadow: var(--shadow-1);
@@ -40,24 +26,7 @@
               border-color var(--dur-fast) var(--ease),
               opacity var(--dur-base) var(--ease);
 }
-/* Background only, and no border change - which is what every other control on
-   the glass does. The zoom pill, the toolbar, the bin and the history pair all
-   answer a hover with `background: var(--paper-2)` and nothing else structural;
-   this one used to add `border-color: var(--accent)` as well, and it was the
-   only piece of furniture on the board that drew a coloured outline to say the
-   pointer was on it. At rest it wears the same hairline as its neighbours, so
-   lighting that hairline up read as a different kind of object rather than as
-   the same object being pointed at.
-
-   The accent has not gone anywhere - it is still what marks focus, and
-   :focus-visible is untouched. That distinction is the point: an outline is how
-   this interface says "the keyboard is here", and spending it on a hover left
-   the keyboard without a signal of its own. */
-/* Behind a hover query, and this sheet's three corner buttons are the ones that
-   most needed it: two of the three exist only on the Mobile board, where there
-   is no pointer to hover with and `:hover` is whatever the last tap left behind.
-   Same split chrome.css now makes and the same reasoning - the press below is
-   outside the query, because a press is a thing every pointer does. */
+/* Accent border reserved for :focus-visible (keyboard); hover is fill only. */
 @media (hover: hover) {
   #menu-btn:hover,
   #mobile-header-edit-btn:hover,
@@ -66,54 +35,22 @@
 #menu-btn:active,
 #mobile-header-edit-btn:active,
 #mobile-find-btn:active { background: var(--paper-3); color: var(--accent-deep); }
-/* The mark tints with it, which is the half that makes the hover visible at all.
-   --paper-2 over --paper-card is about a twelve-unit shift on a light sheet -
-   real, and not something an eye notices on a 46px button. Every other control
-   on the glass gets away with the same faint fill because it also tints its
-   icon: .ico strokes with currentColor (base.css), so the `color` above reaches
-   the pen and the magnifier for free.
-   The hamburger cannot use that. Its three bars are spans painted with
-   `background: var(--ink)`, not strokes taking currentColor, so `color` on the
-   button does nothing to them and the fill was carrying the whole signal alone.
-   Naming them here is what puts it back - and it is the same accent-deep the
-   toolbar and the bin already move to, rather than a second idea about what a
-   hover looks like. */
+/* The hamburger's bars are background-painted spans, not currentColor strokes,
+   so color on the button does not reach them — tint the spans explicitly. */
 @media (hover: hover) {
   #menu-btn:hover span { background: var(--accent-deep); }
 }
-/* And the press needs it for the same reason the hover does, which is the whole
-   of why this line is not just the rule above with a second selector on it: the
-   fill this button changes on `:active` is --paper-2 to --paper-3, and on a
-   phone - where this button always is and a hover never is - that shift is the
-   only thing a tap was answered with. The bars have to move with it or the
-   press is a twelve-unit change on a 46px square and nothing else. */
+/* Outside @media (hover) — :active must tint bars on touch too. */
 #menu-btn:active span { background: var(--accent-deep); }
-/* Find rides the top-left under the menu button - a stable second affordance on
-   the Mobile board, on either lens (ui/mobile-header.ts paintFind). It is not on
-   the [hidden] fade the pen uses: it toggles only on a layout change, not per
-   scroll, so a plain show/hide reads right. */
+/* Stacked below #menu-btn on Mobile (ui/mobile-header.ts paintFind). */
 #mobile-find-btn {
   top: calc(max(16px, env(safe-area-inset-top)) + var(--chrome-button-h) + 8px);
   left: max(16px, env(safe-area-inset-left));
 }
 #mobile-find-btn[hidden] { display: none; }
 #mobile-find-btn svg { width: 18px; height: 18px; color: var(--accent-text); }
-/* The far corner, level with the menu button rather than stacked under it. This
-   one comes and goes with the top of the Mobile board - paintButton() in
-   ui/mobile-header.ts - and a control that appears and vanishes directly below
-   the one control that is always there reads as the menu sprouting a second
-   row. The opposite corner is empty at that stop, #corner being the bottom one,
-   so it arrives where nothing else is claiming space.
-
-   And it fades, which is why `hidden` is dressed here rather than left to the
-   UA's display:none: display does not transition, and the id rule above
-   already outranks [hidden] anyway. visibility carries the delay, so the
-   button leaves the tab order and the accessibility tree only once the fade
-   has finished - the same bargain #toolbar makes in chrome.css.
-
-   0.3s flat rather than a multiple of --dur-base, which means this one fade
-   does not slow down or speed up with the whimsy axis the way the rest of the
-   furniture does. Asked for as a number. */
+/* Top-right corner on Mobile; fades with visibility delay (same as #toolbar).
+   0.3s flat — does not follow whimsy axis. */
 #mobile-header-edit-btn {
   right: max(16px, env(safe-area-inset-right));
   left: auto;
@@ -132,90 +69,32 @@
               visibility 0s 0.3s;
 }
 #mobile-header-edit-btn svg { width: 18px; height: 18px; color: var(--accent-text); }
-/* Three bars that have to look like three of the same bar, which is a harder
-   ask than it sounds: each one is rasterized on its own, so two bars render
-   identically only if they sit at the same phase against the device pixel grid.
-   That is a statement about the *pitch* - bar height plus gap - and not about
-   the height, which is where an earlier pass at this stopped. Going from a
-   1.5px bar to 2px fixed the 1x case and left the pitch at 6, and 6 is only
-   whole in device pixels when the ratio is a multiple of a sixth: 1x, 1.5x and
-   2x are clean, 1.25x and 1.75x are 7.5 and 10.5, and those two are precisely
-   Windows' 125% and 175%. The middle bar came out a shade thinner than its
-   neighbours on any laptop set that way.
-
-   8 is the pitch that survives: every device pixel ratio anyone ships is a
-   multiple of an eighth, so 8 is whole at all of them - 10 at 1.25x, 14 at
-   1.75x, 21 at the 2.625x a Pixel reports, 28 at 3.5x. The bar keeps its 2px
-   weight and the gap grows to 6 to pay for it.
-
-   A pitch of 4 was tried after this and reverted. It is the only other value
-   that works - the ratios are quarter-steps, so the pitch has to be a multiple
-   of four, which leaves 4 and 8 and nothing in between - and on the arithmetic
-   it costs only the eighth-step densities, where a bar is five device pixels
-   thick and half of one either way is invisible. What it actually cost was the
-   drawing: three bars 2px apart are a glyph of a menu, and this button is a
-   stack of rules on a board that is made of rules. The spacing is the whole
-   idea. Do not tighten it again for a rounding argument.
-
-   Both of the stack's own dimensions are then kept even, so the grid's centring
-   lands on a whole pixel rather than halfway across one. The button is 42x40
-   over a 1px border, so the box being centred in is 40x38: an 18px-wide bar
-   sits at x=11 where the old 17px one sat at 11.5 and wore soft edges down both
-   sides at every scale, and the 18px-tall stack (2+6+2+6+2) sits at y=10. The
-   touch sizes below hold the same two rules against a 44x44 box.
-
-   18x18 is also, not by accident, the size of the pen icon in the opposite
-   corner. The hamburger has been reading small next to it. */
+/* 2px bars, 6px gap → pitch of 8, which lands on whole device pixels at every
+   common DPR. Stack is 18×18, matching the pen icon in the opposite corner.
+   Do not tighten the gap — the spacing is the whole drawing. */
 #menu-btn { gap: 6px; }
 #menu-btn span {
   width: 18px;
   height: 2px;
   border-radius: var(--radius-xs);
   background: var(--ink);
-  /* Matched to the button's own background transition above, so the fill and the
-     bars arrive together rather than the mark snapping ahead of the sheet. */
+  /* Matches the button's own background transition. */
   transition: background var(--dur-fast) var(--ease);
 }
-/* The wordmark, set in whatever the display face is - and when that face is a
-   sans, set as heavy as it goes.
-
-   900 rather than 700, and it is not a typo. Asking a variable face for more
-   weight than its axis holds clamps to the axis, so this asks for "the top of
-   whatever this font has": 900 from a face that carries one, and the same
-   synthetic bold either number would have produced from a face with a single
-   master. There is no way to read a face's maximum in CSS, and this is the
-   question phrased so it does not need to be read.
-
-   It used to read 700 on Geist, and the note here said that was Geist's
-   ceiling. It was not - the file's fvar runs 100 to 900, and the ceiling was
-   the `font-weight: 300 700` descriptor in fonts.css, which clamps before the
-   axis is ever consulted. That descriptor now states the file's real range, so
-   this line finally gets what it always asked for and the wordmark sets a
-   genuine 900. Which is the general trap, and the reason the descriptor was
-   worth fixing: a narrow @font-face range is indistinguishable, from every
-   point downstream, from a font that simply has less.
-   ui/appearance.ts sets the attribute; see markDisplayFace() for how a stack is
-   judged to be a sans. */
+/* 900 asks for "the heaviest weight the face has" — a variable face clamps to
+   its axis maximum. ui/appearance.ts sets [data-display-sans]. */
 :root[data-display-sans] .wordmark :is(h1, h2) { font-weight: 900; }
 
 #sidebar.is-open ~ #menu-btn,
 #sidebar.is-open ~ #mobile-find-btn { opacity: 0; pointer-events: none; }
-/* The mobile Edit button stays reachable with the sidebar open - editing the
-   note is often why the sidebar was opened, so taking it away is a step back. It
-   shares the top-left corner the sidebar (z-index 40) slides over, so it rides
-   above the panel rather than being hidden under it. */
+/* Edit button stays reachable above the sidebar. */
 #sidebar.is-open ~ #mobile-header-edit-btn { z-index: calc(var(--z-overlay) + 1); }
 
-/* A panel of paper laid over the board. Deliberately NOT modal: no scrim, no
-   blocked canvas - you can pan, drop and drag with it open, which is the whole
-   point of putting the controls on a floating sheet instead of in a dialog. */
+/* Non-modal: the canvas stays interactive with the sidebar open. */
 #sidebar {
   position: fixed;
   z-index: var(--z-overlay);
-  /* Clear of the drawn title bar, which is 0px tall until there is one. A panel
-     is --z-overlay and the bar is down on --z-chrome, so without this term the
-     panel would cover the window's own buttons and there would be no way to
-     close the window with the sidebar open. */
+  /* Clear of the drawn title bar so its buttons stay reachable. */
   top: calc(max(14px, env(safe-area-inset-top)) + var(--frame-bar-h));
   bottom: max(14px, env(safe-area-inset-bottom));
   left: max(14px, env(safe-area-inset-left));
@@ -240,19 +119,12 @@
   transition-delay: 0s;
 }
 
-/* The masthead's panel: the same sheet, arriving from the other side.
-   Everything it is made of is shared - .side-head, .side-body, .side-sec, the
-   fields - so this rule is only the four things that make it a panel and the
-   one thing that makes it a different panel from the sidebar: which edge it
-   comes from. The right, because the pen that opens it is in that corner and a
-   sheet should arrive from where you pressed. That also settles what happens
-   when both are open, which is that both are open and neither is under the
-   other. */
+/* Same sheet as #sidebar, arriving from the right (where the pen that opens it
+   is). Shares .side-head, .side-body, .side-sec and all fields. */
 #header-panel {
   position: fixed;
   z-index: var(--z-overlay);
-  /* And this one for a sharper reason than #sidebar's: it opens against the
-     right edge, which is the corner the window's buttons are in. */
+  /* Clear of the drawn title bar — this panel opens against the window buttons. */
   top: calc(max(14px, env(safe-area-inset-top)) + var(--frame-bar-h));
   bottom: max(14px, env(safe-area-inset-bottom));
   right: max(14px, env(safe-area-inset-right));
@@ -276,46 +148,18 @@
   visibility: visible;
   transition-delay: 0s;
 }
-/* The panel stands where the pen stands, so the pen goes: leaving it lit under
-   a sheet that covers it would be a button pointing at itself. Its own fade
-   already runs at 0.3s - see the corner rule above - and this borrows it. */
+/* The pen hides under the panel it opened. */
 #header-panel.is-open ~ #mobile-header-edit-btn { opacity: 0; pointer-events: none; }
 
-/* ── Neither sheet is a document ──────────────────────────────────────────
-   Every word in these panels is a label, a heading or the face of a button.
-   None of it is content, so none of it should drag into a selection - and it
-   did: dragging a slider that the pointer slipped off, or double-pressing a
-   section heading, left half the panel highlighted in the selection colour and
-   nothing to press to clear it. Same reasoning as #toolbar, #timeline-strip,
-   the menus and the tour, all of which have carried this since they were
-   written; the panel simply predates the habit.
-
-   Both sheets, because they are one sheet. #header-panel is the same furniture
-   arriving from the other edge - .side-head, .side-body, .side-sec and every
-   field are shared - so a rule that took only #sidebar would leave the masthead
-   behaving differently for no reason anybody could see.
-
-   Selection is switched off here and back on below rather than listed control
-   by control: the panel is built from a schema (ui/settings-schema.ts) and grows
-   rows without this file hearing about it, so the default has to be the safe one
-   and the exceptions have to be the things that are actually typed in.
-
-   Not `pointer-events` and not `cursor` - this is about what a drag *leaves
-   behind*, not about what can be pressed. Everything in here stays clickable. */
+/* No text selection in panel chrome — re-enabled on inputs below.
+   Off by default because the schema grows rows this file does not know about. */
 #sidebar,
 #header-panel {
   -webkit-user-select: none;
   user-select: none;
 }
-/* And the exception, which is not optional: a text field whose text cannot be
-   selected is a field you can only edit by deleting backwards. An inherited
-   `none` reaches into an <input> in Chromium and has done for years - the
-   contenteditable case in canvas.css is exempt by accident of engine behaviour
-   and says so at length, and a form field is not exempt at all.
-
-   Written wide on purpose. `input` covers the checkboxes and ranges too, where
-   it is a no-op because there is no text in them to select, and that is cheaper
-   than a type list this file would have to keep in step with the schema. */
+/* Re-enable selection on editable fields — inherited `none` reaches into
+   <input> in Chromium. Written wide; checkboxes/ranges are a harmless no-op. */
 #sidebar :is(input, textarea, [contenteditable]),
 #header-panel :is(input, textarea, [contenteditable]) {
   -webkit-user-select: text;
@@ -332,24 +176,11 @@
   border-bottom: 1px solid var(--rule);
 }
 .wordmark { margin: 0; }
-/* h1 in the sidebar, h2 in the header panel: same mark, different rank. The
-   sidebar's is the document's heading and the panel's is a section head inside
-   a page that already has one, so the pair is matched here rather than being
-   two rules that would drift. */
+/* h1 in sidebar, h2 in header panel — same mark, different rank. */
 .wordmark :is(h1, h2) {
   margin: 0;
-  /* --t-display, which at the middle tier is exactly the 30px this used to say.
-     It is the app's own name, so it is the one piece of type that most obviously
-     ought to move with the axis - and being written as the token's value meant
-     it was the one that did not. Sorted on-scale by the visual audit's item 2;
-     the ends now step to 28 and 25 with everything else. */
   font-size: var(--t-display);
-  /* The tier's own display weight, unshifted - 400 at the soft and plain ends,
-     300 in the middle. Bolding a serif at 30px thickens the stems without
-     making it any more of a title, so the wordmark has never asked for more
-     than the text around it, and following --display-weight is what keeps that
-     true now the middle sets its serif lighter. A sans has nothing else to
-     give - see the override below. */
+  /* Tier's display weight, unshifted — see the sans override below. */
   font-weight: var(--display-weight);
   letter-spacing: calc(0.14em * var(--ls-scale));
   line-height: 1;
@@ -358,12 +189,7 @@
 .wordmark .sub {
   display: block;
   margin-top: 3px;
-  /* The sub-tiny caption register, one step below --t-tiny and off the scale on
-     purpose - see .ctx-item kbd in menu.css, which carries the argument for all
-     five members of it. Note this sits directly under a wordmark that *does*
-     follow the scale, which is the register doing its job: the name moves with
-     the axis and the line under it stays put, so the pair does not scale as one
-     lump. */
+  /* Sub-tiny register, off-scale on purpose (see .ctx-item kbd in menu.css). */
   font-size: 10px;
   font-style: var(--display-italic);
   letter-spacing: calc(0.22em * var(--ls-scale));
@@ -377,46 +203,28 @@
   display: grid; place-items: center;
   padding: 0;
   border: 0;
-  /* --radius-pill rather than a flat 50% - see the shape block in tokens.css.
-     Square button, not a disc, so it follows the corner axis with the panel it
-     sits in. */
+  /* --radius-pill: follows the corner axis, not always a circle. */
   border-radius: var(--radius-pill);
   background: none;
   color: var(--ink-3);
   cursor: pointer;
   transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease), transform var(--dur-base) var(--ease-back);
 }
-/* The cross is symmetric about the middle of its viewBox, so the default
-   50%/50% origin spins it in place. */
 #side-close svg,
 #header-close svg { width: var(--icon-glyph); height: var(--icon-glyph); display: block; }
-/* --accent-deep, not --accent-text: the ink a *control* turns, where
-   --accent-text is the ink a word is. tokens.css carries the split. The spin
-   stays - it is the one piece of character in a family of ten closes that are
-   otherwise now identical, and quality.css takes it off at the plain tier. */
+/* --accent-deep for controls, --accent-text for words.
+   The spin is quality.css's to remove at the plain tier. */
 @media (hover: hover) {
   #side-close:hover,
   #header-close:hover { color: var(--accent-deep); background: var(--paper-2); transform: rotate(90deg); }
 }
 #side-close:focus-visible,
 #header-close:focus-visible { color: var(--accent-deep); background: var(--paper-2); }
-/* Background alone, and deliberately not the spin. The rotate is the hover's
-   flourish and it runs at --dur-base on --ease-back - 0.4s at Softish, which is
-   longer than this button's own panel takes to start leaving. A press that
-   begins a spin nobody sees the end of is worse than a press that does not.
-   This is the same one-step-into-the-paper the round buttons on the player and
-   the toolbar answer with, and it is instant: the transition above already runs
-   background at --dur-fast. */
+/* No spin on :active — it would outlast the panel's exit transition. */
 #side-close:active,
 #header-close:active { color: var(--accent-deep); background: var(--paper-3); }
 
-/* The tab strip. Outside .side-body, so it holds still while a tab scrolls -
-   three headings that move away as you read are three headings you have to go
-   back for.
-
-   Not buttons in a row: a rule under the strip with the open tab's own segment
-   of it in the accent, which is the same trick the segmented corner controls
-   use and reads as one control rather than as three. */
+/* Tab strip — outside .side-body so it holds still while a tab scrolls. */
 .side-tabs {
   display: flex;
   flex: none;
@@ -445,10 +253,7 @@
 @media (hover: hover) {
   .side-tab:hover { color: var(--ink); }
 }
-/* Past --ink to the accent, which is where the tab is about to end up anyway -
-   this is the one control in the sheet whose press has an obvious destination,
-   so the press may as well point at it. Before .is-on rather than after, so a
-   press on the tab already open changes nothing. */
+/* Press anticipates the accent the active tab wears. Before .is-on in source. */
 .side-tab:active { color: var(--accent-text); }
 .side-tab.is-on { color: var(--accent-text); border-bottom-color: var(--accent-text); }
 .side-tab:focus { outline: none; }
@@ -463,21 +268,14 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 0 18px 16px;
-  /* The scrollbar is base.css's now, for every scroller in the app at once.
-     Asking for scrollbar-width here again would not have been a fallback - in
-     Chromium the standard properties *replace* ::-webkit-scrollbar on the
-     element that carries them, so this line was what would have switched the
-     app's own bar off on the one panel that scrolls most. */
 }
 
 .side-sec {
   padding: calc(15px * var(--density)) 0;
   border-top: 1px solid var(--rule);
 }
-/* Not `:first-child`: on Mobile the first section of a tab may be hidden, and a
-   hidden element is still the first child - so the panel drew a rule across the
-   top of its first visible heading. ui/panel.ts marks whichever one is actually
-   showing. */
+/* Not :first-child — a hidden first child still draws the border. ui/panel.ts
+   marks the first visible section. */
 .side-sec.is-first { border-top: 0; }
 .side-sec h2 {
   margin: 0 0 11px;
@@ -489,11 +287,7 @@
   color: var(--ink-3);
 }
 
-/* The board's name, which is also the field you rename it in.
-   Chromeless until you reach for it: an input that draws itself as a text field
-   at rest would make the panel's first line look like a form to fill in, when
-   almost always it is a label to read. The affordance arrives on hover and the
-   box on focus, which is the same bargain the item labels on the board make. */
+/* Chromeless input — affordance on hover, box on focus. */
 .board-title {
   display: block;
   width: 100%;
@@ -503,21 +297,13 @@
   border-radius: var(--radius-xs);
   background: none;
   font: inherit;
-  /* The board's name, typed into. Off the scale on purpose and *below* the
-     wordmark above it, which follows --t-display: this is a field somebody
-     edits, so it is sized to be comfortable to type in rather than to rank
-     against the heading. Sitting on a scale step would also make the caret jump
-     between tiers while a name was being typed. (Sorted deliberately-off-scale
-     by research/old/visual-audit-2026-08-12.md item 2.) */
+  /* Off-scale: sized for comfortable typing, not to rank against the heading. */
   font-size: 18px;
   color: inherit;
   cursor: text;
   transition: border-color var(--dur-fast) var(--ease),
               background-color var(--dur-fast) var(--ease);
 }
-/* An unnamed board reads as an aside, not as a filename. This is the placeholder
-   now rather than an <em>, so the field is empty and typing starts a name
-   instead of editing the words "Untitled board". */
 .board-title::placeholder { color: var(--ink-3); font-style: var(--display-italic); opacity: 1; }
 .board-title:hover { border-color: var(--rule); }
 .board-title:focus {
@@ -526,36 +312,18 @@
   background: var(--paper-card);
 }
 
-/* Two controls that are one decision. Equal columns rather than auto, so the
-   pair does not jump about as the face names change length - and `minmax(0,1fr)`
-   rather than `1fr`, because a grid track's default minimum is the content's
-   own width and a <select> holding "Times New Roman" would otherwise push the
-   column past its share and out of the panel. */
+/* Equal columns. minmax(0,1fr) prevents a long <select> value from blowing
+   out its column. */
 .field-pair {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 0 10px;
-  /* Bottoms aligned, not stretched.
-
-     The two labels above the pair are ordinary flex rows with no `nowrap`, so
-     at the narrow end of the sidebar slider (260px, about 115px a column) a
-     two-word label wraps to a second line and its neighbour does not. Stretched,
-     that leaves the two <select>s a line out of step with each other - which
-     reads as a broken row rather than as a long word. Aligned to the bottom,
-     the controls stay level and the label above one of them is simply taller.
-     Free at every width where nothing wraps. */
+  /* Bottoms aligned — keeps controls level when one label wraps. */
   align-items: end;
 }
 
-/* The palette row: a button that opens the app's own menu, not a <select>.
-
-   It is dressed to sit in the same column as the selects beside it - same
-   height, same border, same paper - because it is the same kind of choice and a
-   row that looked like a button would read as an action. The chevron is the one
-   thing that says it opens something; a <select> gets that from the platform.
-
-   The chips are the whole reason it is not a <select>: no browser paints
-   anything inside a native dropdown list. See buildPicker() in ui/panel.ts. */
+/* Palette picker — a button styled to match a <select>, because it needs colour
+   chips no native dropdown can paint. See buildPicker() in ui/panel.ts. */
 .field-picker {
   display: flex;
   align-items: center;
@@ -579,8 +347,6 @@
   outline: var(--sel-line) solid var(--select);
   outline-offset: var(--sel-gap);
 }
-/* The name takes the room and the chips are pushed to the trailing edge, which
-   is where the request put them and where a value belongs on a row like this. */
 .field-picker-name {
   flex: 1 1 auto;
   min-width: 0;
@@ -592,17 +358,13 @@
 .field-picker-chips > i {
   width: 11px;
   height: 11px;
-  /* Capped at 2 because the chip is 11 square and --radius-xs would round it
-     most of the way to a dot - but written against the token so it still goes
-     square at the plain tier, which a bare 2px did not. */
+  /* Capped at 2px so the 11px chip does not become a dot. */
   border-radius: min(2px, var(--radius-xs));
-  /* An inset ring rather than a border: a pale palette's paper chip against the
-     panel's own paper is otherwise a chip you cannot see the edge of. */
+  /* Inset ring — a border would not show a pale chip on pale paper. */
   box-shadow: inset 0 0 0 var(--hairline) color-mix(in srgb, var(--ink) 22%, transparent);
 }
 
-/* The fold. Everything here is something you set once - or never - and it was
-   crowding the three controls that get used. */
+/* Fold for rarely-used settings. */
 .advanced { margin-top: 4px; }
 .advanced > summary {
   display: flex;
@@ -620,8 +382,7 @@
 }
 .advanced > summary::-webkit-details-marker { display: none; }
 .advanced > summary:hover { color: var(--accent-text); }
-/* A drawn caret, so it turns with the disclosure rather than depending on a
-   glyph whose ink is not centred in its line box. */
+/* Drawn caret — rotates on open. */
 .advanced > summary::before {
   content: "";
   flex: none;
@@ -634,22 +395,13 @@
 .advanced[open] > summary::before { transform: rotate(90deg) translateX(1px); }
 .advanced[open] > summary { margin-bottom: 7px; }
 
-/* Some folds are a whole section rather than a tail inside one - the keyboard
-   legend and Paper - and their summary stands where an h2 stands: no 4px
-   lead-in above it, and the same 11px under it that .side-sec h2 sets.
-   Everything else - the face, the tracking, the caret - is already inherited
-   from .advanced. ui/panel.ts marks these, and marks them by the section having
-   no heading of its own, which is the same fact said the other way round. */
+/* A fold that IS the section heading (e.g. keyboard legend, Paper).
+   ui/panel.ts marks these when the section has no h2 of its own. */
 .advanced.is-head { margin-top: 0; }
 .advanced.is-head > summary { padding-top: 0; }
 .advanced.is-head[open] > summary { margin-bottom: 11px; }
 
-/* Wraps, because the buttons do not. Every one of these is `white-space:
-   nowrap` on purpose - a command broken across two lines reads as two commands -
-   and the row had no way to give, so a label longer than its share of the panel
-   pushed its neighbour out past the edge and clipped it. The panel is also
-   user-resizable down to 260px, which turns that from an unlucky label into a
-   drag anybody can do. Wrapping costs nothing while the row fits. */
+/* Wraps so nowrap buttons do not push each other off-screen. */
 .btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
 .btn-row:last-child { margin-bottom: 0; }
 .btn-row button {
@@ -667,9 +419,7 @@
               transform var(--dur-base) var(--ease-back),
               color var(--dur-fast) var(--ease);
 }
-/* Every control reacts by the same budget, set by the whimsy axis: it springs
-   towards you on hover and squashes under a press at the playful end, and does
-   neither at the plain end, without either end needing its own rule. */
+/* Lift/grow/press governed by whimsy-axis tokens. */
 @media (hover: hover) {
   .btn-row button:hover {
     background: var(--paper-2);
@@ -681,11 +431,7 @@
 .btn-row button:active {
   transform: scale(var(--btn-press));
   background: var(--paper-3);
-  /* The press comes off the hover's curve, the same edit #zoom-ctl and #toolbar
-     take and for the same reason: the transition above runs transform at
-     --dur-base on --ease-back, which is a spring settling towards a pointer.
-     Under a finger that is 0.4s of squash at Softish, and the panel these sit in
-     has usually answered before it finishes. */
+  /* Faster curve on press — the hover's spring is too slow for a click. */
   transition: transform var(--dur-fast) var(--ease-in),
               background var(--dur-fast) var(--ease);
 }
@@ -698,39 +444,23 @@
 @media (hover: hover) {
   .btn-row button.primary:hover { background: var(--accent-deep); color: var(--accent-fg); }
 }
-/* The same darkening on a press, and it has to be said again rather than left to
-   the rule above: `.btn-row button:active` takes the background to --paper-3,
-   and .primary outranks it, so without this line the one button in the panel
-   that is filled is the one button whose press does nothing to its fill. */
+/* Must restate — .btn-row button:active would override with --paper-3. */
 .btn-row button.primary:active { background: var(--accent-deep); color: var(--accent-fg); }
-/* Bounded in ink at the plain end, and this is the one place it is not
-   optional. The fill there is the accent at its hue's cusp - the lightness
-   where the colour is loudest - and for a chartreuse or a teal that is a few
-   units off the paper, so a filled button with a border struck from its own
-   family has no outside edge at all. Every other accent-filled control in the
-   app is already bounded in --accent-text, which is that same pigment at a
-   lightness that reads; these two are the exception because their border is
-   the pressed colour rather than the read one. Ink is also simply what this
-   tier draws an edge in - see --item-border under [data-whimsy="2"]. */
+/* At Harsh the accent fill can be close to the paper — ink border keeps an edge
+   visible on every hue. */
 :root[data-whimsy="2"] .btn-row button.primary,
 :root[data-whimsy="2"] .btn-row button[aria-pressed="true"],
 :root[data-whimsy="2"] .btn-row button[aria-pressed="true"]:hover {
   border-color: var(--ink);
 }
-/* A pair of buttons behaving as a radio group - Portrait / Landscape. Filled
-   rather than merely outlined, because the question these answer is "which of
-   these two is it", and an outline reads as a hover on the wrong one just as
-   readily as it reads as a selection. The hover rule above would otherwise
-   repaint the chosen one as unchosen the moment the pointer crossed it. */
+/* Radio-pair (e.g. Portrait / Landscape): filled to distinguish from hover. */
 .btn-row button[aria-pressed="true"],
 .btn-row button[aria-pressed="true"]:hover {
   background: var(--accent);
   border-color: var(--accent-deep);
   color: var(--accent-fg);
 }
-/* The same bargain the dialog's destructive button strikes, and worn for the
-   same reason: outlined until you are over it, so it reads as available rather
-   than as the thing the panel wants you to press. */
+/* Outlined until hover — reads as available, not as urged. */
 .btn-row button.danger { border-color: var(--danger); color: var(--danger); }
 @media (hover: hover) {
   .btn-row button.danger:hover {
@@ -739,21 +469,13 @@
     color: var(--paper-card);
   }
 }
-/* The press fills it too, and on a phone this is the *only* thing that does -
-   the bargain in the comment above is that it stays outlined until you are over
-   it, and there is no being over it on a touch screen. Which matters more here
-   than on any other button in the sheet: this is the destructive one, it arms
-   and counts down (armClear() in main.ts), and a press that gives nothing back
-   is a press somebody repeats. */
+/* Fills on press too — on touch this is the only feedback. */
 .btn-row button.danger:active {
   background: var(--danger);
   border-color: var(--danger);
   color: var(--paper-card);
 }
-/* Armed, with presses left to count down - see armClear() in main.ts. It fills
-   in and stays filled rather than pulsing: the label is already saying the
-   number out loud, and a button that flashes is a button people press again to
-   make it stop, which is exactly the reflex the countdown is there to break. */
+/* Armed state (armClear() in main.ts). Stays filled — no pulse. */
 .btn-row button.danger[data-arming] {
   background: var(--danger);
   border-color: var(--danger);
@@ -771,32 +493,13 @@
   margin-bottom: 5px;
 }
 .field output { font-family: var(--font-mono); font-style: normal; color: var(--ink); }
-/* A dial's head is centred over its track rather than ranged left with a
-   readout pushed to the right - there is no readout, because the stops named
-   under the track are the value. Worn by the whimsy card on the board (see
-   .ghost-dial); the panel's own rows keep the ordinary head.
-
-   The head alone, by position: .field-stops is a direct child span of the same
-   row, and centring that one would gather the three names into the middle
-   instead of leaving them spread across the track they mark. */
+/* Centred head for stop-labelled dials (e.g. whimsy card). */
 .field.is-dial > span:first-child { justify-content: center; }
-/* The chevron on a menu, drawn rather than left to the browser.
-
-   Padding was tried first and cannot do it: the native dropmarker is part of
-   the widget, and Firefox places it at its own fixed distance from the border
-   edge no matter what padding-right says. So it sat about eight pixels off the
-   frame - and at the soft end of the axis, where a 35px control with a 20px
-   radius is very nearly a pill, the curve is still turning at that point and
-   the arrow reads as falling out of the side of its own button.
-
-   `appearance: none` drops the widget's arrow and this puts one back where it
-   was asked for. A mask rather than a background image, because a data URI
-   cannot see currentColor and this app has four palettes: the mark is the
-   shape, and --ink-2 is the ink, so it belongs to whichever sheet it is on. */
+/* Custom chevron via mask (a data URI cannot see currentColor).
+   appearance:none drops the native arrow; this puts one back. */
 .field:has(select) {
   position: relative;
-  /* How far the mark's own box sits from the frame. Follows the corner, so the
-     rounder the control the further in it comes. */
+  /* Mark inset — follows the corner radius. */
   --lane: max(13px, calc(var(--leaf) * 0.75));
 }
 .field:has(select)::after {
@@ -810,7 +513,6 @@
   --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.5 2.4 6 6.2 10.5 2.4'/%3E%3C/svg%3E");
   -webkit-mask: var(--chevron) center / 11px 7px no-repeat;
   mask: var(--chevron) center / 11px 7px no-repeat;
-  /* The menu underneath still takes the click, including on the arrow. */
   pointer-events: none;
   transition: background var(--dur-fast) var(--ease);
 }
@@ -818,7 +520,6 @@
 .field select {
   width: 100%;
   min-height: calc(35px * var(--density));
-  /* The lane, the mark, and a word's worth of air before the text runs into it. */
   padding: 0 calc(var(--lane) + 19px) 0 10px;
   appearance: none;
   -webkit-appearance: none;
@@ -829,25 +530,9 @@
 }
 .field select:hover { border-color: var(--accent-text); }
 
-/* Ruled slider: a hairline track with a terracotta lozenge riding it.
-   Most sliders in the app are inside a .field. Three are not - the now-playing
-   bar's volume, which is a row of controls rather than a labelled setting; the
-   Spacing row in the toolbar's Arrange flyout (.ctx-range, menu.css), which is a
-   dial sitting in a menu; and the darkroom's three grade dials (.dk-dial,
-   dialog.css), which are a labelled setting in every sense but happen to be laid
-   out by that dialog rather than by the panel. Named here rather than given a
-   .field each would then have to undo, because what these rules describe is what
-   a slider looks like on this paper, not where it sits. :is() so the four stay
-   one rule and cannot drift - and there is a proof of each way it goes wrong.
-   The darkroom was written with `accent-color` and a native track and sat in an
-   otherwise on-brand dialog looking like a browser dialog. The Playlist lens
-   grew a volume of its own that was never added to this list, and printed a
-   stock blue Windows rail across the bottom of a warm paper sheet until the row
-   went away again. Both are the slider this rule was shaped to make impossible.
-   One other sheet carries the same list and has to be kept with it: quality.css
-   squares the lozenge at the plain end of the whimsy axis. (The slider rule in
-   mobile.css is not part of this - it is the panel dimming itself around a
-   slider being dragged on a phone, and it is scoped to #sidebar.) */
+/* Slider style shared by four hosts: .field, .np-volume, .ctx-range, .dk-dial.
+   :is() keeps them in one rule. quality.css squares the thumb at Harsh.
+   Add any new slider to this list or it prints a native track. */
 :is(.field, .np-volume, .ctx-range, .dk-dial) input[type="range"] {
   width: 100%;
   height: 22px;
@@ -855,19 +540,7 @@
           appearance: none;
   background: transparent;
   cursor: pointer;
-  /* The drag belongs to the slider, and saying so is not a nicety - #pick-area
-     in color-picker.css carries the same line for the same reason. Without it a
-     finger moving along a track on a phone is a gesture the browser is still
-     free to reinterpret as a scroll of the panel, and it does: the value stops
-     following the thumb partway through, the sheet moves under the finger
-     instead, and what the finger is over when it lifts is no longer the control
-     it was put down on. is-slider-focus (mobile.css) dims the panel around the
-     active track and cannot help with any of that - it is decoration over a
-     gesture the browser has already taken.
-     On all four families rather than on #sidebar's alone: the now-playing
-     volume and the darkroom dials are dragged with a thumb on the same phone,
-     and a rule that describes what a slider *is* has no business asking which
-     panel it landed in. */
+  /* Without this a finger drag gets reinterpreted as a panel scroll. */
   touch-action: none;
 }
 :is(.field, .np-volume, .ctx-range, .dk-dial) input[type="range"]::-webkit-slider-runnable-track {
@@ -880,25 +553,8 @@
   border-radius: var(--radius-pill);
   background: linear-gradient(90deg, var(--rule-2), var(--rule));
 }
-/* background-clip on both thumbs below, and it is the whole of the fix for a
-   third ring nobody drew.
-
-   The thumb is a fill inside a border: accent, then 1.5px of --paper-card to
-   lift it off the track. A background paints to the *border* box by default, so
-   the accent is laid under the white ring as well as inside it, and the ring is
-   painted on top. Wherever the two edges do not land on the same device pixel,
-   the fill shows past the border as a hairline of accent - which reads as a
-   deliberate third ring, and is nothing of the kind.
-
-   Where it shows is the tell, and it is different per engine because the seam
-   is an antialiasing one: Chromium leaks along the flat top and bottom at Harsh
-   (radius 0, and the thumb is unrotated there - see quality.css), Firefox leaks
-   around the corners at Softish and Middle, where the radius is largest and the
-   curve is where the rounding error lives. Same cause, two shapes.
-
-   padding-box stops the fill at the inner edge of the border, so there is
-   nothing underneath it left to show. Nothing else changes: the border is
-   opaque, so the pixels it covered were already white. */
+/* background-clip: padding-box on both thumbs — without it the accent fill
+   bleeds past the border as a hairline ring at sub-pixel seams. */
 :is(.field, .np-volume, .ctx-range, .dk-dial) input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 15px; height: 15px;
@@ -916,26 +572,8 @@
   background: var(--accent);
   background-clip: padding-box;
 }
-/* The ring the browser draws around the thumb, taken off - and replaced rather
-   than merely removed, which is the whole of the care needed here.
-
-   The thumb is three layers as drawn: the accent fill, the --paper-card border
-   that lifts it off the track, and then a third coloured ring that is nobody's
-   design. Firefox draws it as ::-moz-focus-outer, a border on the thumb itself;
-   Chromium draws its focus ring the same way. It was there at every tier and
-   simply not legible at most of them: at Middle the thumb is rotated 45deg, so
-   the ring rotates with it and reads as part of the diamond. Harsh sets
-   `transform: none` (see quality.css), the diamond becomes a square, and the
-   ring becomes an obvious second square around it. Hence "only at Harsh" - it
-   was always there, and Harsh is where it stopped hiding.
-
-   What replaces it matters more than what is removed. A slider is one of the
-   few controls here that a keyboard user *must* be able to find, since the
-   arrow keys are how it is operated at all - deleting the indicator outright
-   would be trading a cosmetic complaint for an unusable control. So the ring
-   goes on :focus-visible instead, drawn in the same --select / --sel-line the
-   sidebar tabs use, around the whole track where it belongs. A pointer drag no
-   longer paints anything; a Tab to the control still does. */
+/* Remove the browser's thumb focus ring; replace with :focus-visible on the
+   track so keyboard users can still find it. */
 :is(.field, .np-volume, .ctx-range, .dk-dial) input[type="range"]::-moz-focus-outer,
 #pick-hue::-moz-focus-outer { border: 0; }
 :is(.field, .np-volume, .ctx-range, .dk-dial) input[type="range"]:focus,
@@ -946,16 +584,8 @@
   outline-offset: 2px;
   border-radius: var(--radius-xs);
 }
-/* Colour wells.
-   A native colour input paints its swatch as an inner element that ignores the
-   host's border-radius, so a rounded well ends up with a square block of
-   colour poking into its corners. The two pseudo-elements below are the only
-   way to reach that inner element: drop its inset and its own border, then
-   give it the concentric inner radius (outer minus the frame it sits in). */
-/* The pigment control is a swatch button, not a native <input type="color">: it
-   opens the app's own picker (ui/color-picker.ts) so a hand-picked pigment goes
-   through the same modal every other colour choice does. The button's fill is the
-   current pigment, written inline by syncControls(). */
+/* Pigment swatch button — opens the app's colour picker (ui/color-picker.ts).
+   Fill is written inline by syncControls(). */
 .field .pigment-swatch {
   -webkit-appearance: none;
           appearance: none;
@@ -971,8 +601,7 @@
 }
 .field .pigment-swatch:hover { border-color: var(--accent-text); }
 
-/* The board's own dropped faces, listed under the type control so each can be
-   taken back off (ui/fonts.ts). The whole block is hidden until there is one. */
+/* Dropped font list (ui/fonts.ts). Hidden until a face is added. */
 #appearance-fonts {
   display: flex;
   flex-direction: column;
@@ -1016,12 +645,10 @@
 }
 .font-row-remove:active { background: var(--paper-3); }
 .font-row-remove:focus-visible { color: var(--accent-deep); background: var(--paper-2); }
-/* Smaller than --icon-button, and for .library-del's reason rather than by
-   drift: it rides the end of a row of installed fonts, and the row itself is
-   what you press to use one. */
+/* Smaller than --icon-button — a secondary action on a row. */
 .font-row-remove svg { width: 12px; height: 12px; }
 
-/* Checkboxes as inked boxes with a hand-drawn tick. */
+/* Checkboxes with SVG tick. */
 .check {
   display: flex;
   align-items: center;
@@ -1036,7 +663,10 @@
   width: 17px; height: 17px;
   margin: 0;
   border: 1.5px solid var(--rule-2);
-  border-radius: var(--radius-xs);
+  /* A circle on the soft tiers, a square on Harsh - a checkbox is a square with
+     a tick, not a circle carrying meaning, so it rides --radius-pill (see the
+     token's note in tokens.css). --radius-xs left it a rounded square at Softish. */
+  border-radius: var(--radius-pill);
   background: var(--paper);
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
@@ -1045,14 +675,7 @@
 .check input:checked {
   background-color: var(--accent);
   border-color: var(--accent-deep);
-  /* A real tick, as an SVG.
-     It was two clipped diagonal gradient bars before, which is a neat trick and
-     a bad checkmark: each bar is an infinite 45-degree line cropped to a box,
-     so the two strokes meet only at one exact size and drift apart into a pair
-     of disconnected slashes at any other. An SVG scales.
-     The stroke is white rather than var(--accent-fg) because a data URI cannot
-     read a custom property - and every palette's --accent-fg is a near-white
-     that is indistinguishable from it on a saturated chip this small. */
+  /* SVG tick. White because a data URI cannot read --accent-fg. */
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.6 8.4 6.6 11.4 12.4 4.9'/%3E%3C/svg%3E");
   background-size: 100% 100%;
   background-repeat: no-repeat;
@@ -1080,8 +703,7 @@
 kbd {
   font-family: var(--font-mono);
   font-style: normal;
-  /* The sub-tiny caption register - the keyboard legend, and the same argument
-     as .ctx-item kbd in menu.css, which is the other half of this pair. */
+  /* Sub-tiny register (see .ctx-item kbd in menu.css). */
   font-size: 10px;
   padding: 2px 6px;
   border: 1px solid var(--rule-2);
@@ -1101,21 +723,10 @@ kbd {
   color: var(--ink-3);
   display: flex;
   align-items: baseline;
-  /* The credit on the left, the version on the right, which is the arrangement
-     this row was built for before the version was briefly alone in it. */
   justify-content: space-between;
   gap: 10px;
 }
-/* Quiet by construction: the same size and colour as the version number beside
-   it, underlined only on the way past. Loud is one edit away - a mark in the
-   .side-head next to the wordmark - and that is a decision rather than a
-   default, so it is not taken here.
-
-   It is a <button> now and still dressed as the text it replaced: no box, no
-   fill, no padding of its own. A control shaped like a control would be the
-   loudest thing in a row built to be ignored, and the row's own font, size and
-   letter-spacing are what it should be wearing - which is what `inherit` on all
-   four of these is buying. */
+/* Button dressed as text — inherits the row's font/size/colour. */
 .side-foot .by {
   padding: 0;
   border: 0;
@@ -1128,8 +739,6 @@ kbd {
   transition: color var(--dur-fast) var(--ease);
 }
 .side-foot .by:hover { color: var(--accent-text); text-decoration: underline; }
-/* Tabbed to rather than clicked: the same ring the dialog buttons, the search
-   hits and the context menu use, and nothing at all for a plain click. */
 .side-foot .by:focus { outline: none; }
 .side-foot .by:focus-visible {
   outline: var(--sel-line) solid var(--select);
@@ -1137,27 +746,8 @@ kbd {
 }
 
 /* ---------------------------------------------------------------------------
-   Greyed, on the one page with no board under the panel
-
-   /patch is the app showing the changelog: the real sidebar, over a document
-   instead of a canvas. Everything on the Board tab, the grid, the paper sheet
-   and the three housekeeping buttons act on a board a reader has not got, so
-   they are shown and switched off rather than hidden - hiding two thirds of
-   the panel would turn the real sidebar back into a likeness of one, which is
-   the whole thing that page exists not to be. ui/settings-schema.ts marks
-   which with `needsBoard` and says why; ui/panel.ts sets `disabled` here, and
-   that - not this class - is what stops the click.
-
-   Only the fade and the cursor, then. `pointer-events` goes on the controls
-   and never on the row, so the labels stay selectable and the panel stays
-   scrollable with a finger anywhere on it. A fold's summary is left alone
-   deliberately: Paper and Debug are folds with nothing outside them, and a
-   summary that will not open is the greying turning back into hiding.
-
-   The nested rule is not decoration: a greyed section holds greyed rows, and
-   two multiplied opacities put the Board tab at a fifth of its ink - legible
-   as damage rather than as off. The section carries the fade and its rows
-   inherit it. */
+   Greyed on /patch (no board). ui/panel.ts sets disabled; this is only the
+   fade. Nested .is-inert resets to 1 so opacities do not multiply. */
 #sidebar .is-inert { opacity: 0.45; }
 #sidebar .is-inert .is-inert { opacity: 1; }
 #sidebar .is-inert :is(button, input, select) {
@@ -1165,16 +755,10 @@ kbd {
   cursor: default;
 }
 
-/* Without color-mix(), for WebKit below 16.2 - section 7 of tokens.css carries
-   the argument and declares the channel-form tokens. */
+/* Legacy fallback without color-mix() — see tokens.css §7. */
 @supports not (color: color-mix(in srgb, red, blue)) {
   .field-picker-chips > i {
     box-shadow: inset 0 0 0 var(--hairline) rgb(var(--ink-c) / 22%);
   }
 }
 
-/* The tour editor used to be a slot in the Board tab and its rules were here.
-   It is a mode over the board now - a mark on each card and one bar along the
-   foot - so what is left of it in this panel is the button that opens it, and
-   the rules moved to chrome.css beside the tour bar's. See the head of
-   ui/tour-edit.ts for the argument. */

@@ -125,21 +125,14 @@
     if (typeof s.palette === 'string' && /^[a-z0-9-]{1,24}$/i.test(s.palette)) {
       document.documentElement.dataset.palette = s.palette;
     }
-    /* The quality dial, for the same reason and from its own key: a phone left
-       on Light should not be shown one blurred, shadowed frame first. Held to
-       the three known stops rather than trusted, because this reaches the page
-       as an attribute selector - see quality.js. */
+    /* Quality dial: restore before first paint so no blurred frame shows.
+       Validated against known stops — reaches the page as an attribute selector. */
     var q = JSON.parse(localStorage.getItem('mbrd.quality') || '{}');
     if (q && /^(light|balanced|full)$/.test(q.level)) document.documentElement.dataset.quality = q.level;
-    /* The per-token overrides are the only part of a saved look that reaches the
-       page as CSS, and this runs before ui/look.js can filter them - so it
-       carries the same guard inline. A poisoned same-origin store could
-       otherwise apply { "display": "none" } or a token holding url(...) and fire
-       an outbound request before first paint; the module re-filters through
-       safeVars() a moment later, and this closes the window before it. Key must
-       be a custom property, value must match the token grammar, and every
-       function it calls must be an arithmetic or colour one. Held in step with
-       look.js by tests/appearance.test.js. See AUD-15. */
+    /* Per-token look overrides, inline-guarded before ui/look.js loads. Key must
+       be a custom property, value must match the token grammar, functions must be
+       arithmetic/colour only. Blocks url() injection from a poisoned store.
+       Kept in sync with look.js by tests/appearance.test.js. AUD-15. */
     var SAFE_VALUE = /^[-a-z0-9#%.,()/+*_'" ]{1,160}$/i;
     var SAFE_FN = /^(rgb|rgba|hsl|hsla|hwb|lab|lch|oklab|oklch|color|color-mix|calc|min|max|clamp|var|cubic-bezier|steps|linear)$/;
     var vars = s.vars || {};

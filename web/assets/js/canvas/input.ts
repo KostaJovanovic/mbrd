@@ -17,7 +17,7 @@ import { zoomMs } from './viewport.ts';
 import type { Viewport } from './viewport.ts';
 import {
   itemInRect, itemWithinRect, rotatedExtents,
-  latticeBox, latticeLow, cellInset, MIN_SIZE, MAX_SIZE,
+  latticeBox, latticeLow, cellInset, MIN_SIZE, MAX_SIZE, CARD_FLOOR_CELLS,
 } from '../geometry.ts';
 import type { Box, Bounds, Point } from '../geometry.ts';
 import {
@@ -51,6 +51,16 @@ const LONG_PRESS_CONTEXT_GUARD_PX = 24;
 // surfaces - a model stage, a picture, a note's editable body fill the card
 // corner to corner, and a corner over those is meant to resize. See onDown().
 const GRIP_YIELD = 'button, a[href], input, .wave';
+
+// Item types the card grid floor (CARD_FLOOR_CELLS) does not bind: a note and a
+// text card are walls of words sized by their content, a title is a masthead
+// with its own aspect, a swatch is a colour chip, a sticker is a mark, a ghost
+// is a drag preview with no grips, and a fence carries its own floor
+// (carryFloor). Everything else is a card and may not be dragged below three
+// cells across by two down. See the resize floor in onMove().
+const NO_GRID_FLOOR = new Set<string>([
+  'note', 'text', 'title', 'swatch', 'sticker', 'ghost', 'fence',
+]);
 
 /** A geometry snapshot as state.ts hands one back. Named off the function
  *  rather than imported from layout.ts, since state.ts re-exports
@@ -1272,6 +1282,22 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   const insetFor = (snap: boolean) => (snap ? cellInset(stepNow()) : 0);
 
   /**
+   * A minimum side raised so it does not fight the grid. A floor measured in
+   * pixels - a note's text, a player's frame (embedFloor) - rarely lands on a
+   * grid line, so `Math.max(snappedSide, floor)` bumps a snapped edge a few
+   * pixels off the lattice and the card rests between two cells. Rounded to the
+   * next whole cell instead (the same `cells*step - seam` shape latticeSide()
+   * gives, up rather than to the nearest, since down could fall under the
+   * floor), the floored size is itself a lattice size and stays flush. Off the
+   * grid the floor is returned untouched.
+   */
+  const snapFloorUp = (floor: number, snap: boolean) => {
+    if (!snap) return floor;
+    const step = stepNow(), gap = 2 * insetFor(snap);
+    return Math.ceil((floor + gap) / step) * step - gap;
+  };
+
+  /**
    * One axis of a resize, against this board's current step and seam.
    *
    * The arithmetic is resizeAxisOn() at module scope; this is the two readings
@@ -2373,13 +2399,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         // the nearest line could land under the floor, which is the one thing
         // the floor is for - and for the same reason it is not capped at
         // MAX_SIZE, which the floor is already allowed to overrule.
-        if (grip.snap) {
-          // A whole number of cells less a seam at each end - the same shape
-          // latticeSide() gives, rounded up rather than to the nearest.
-          // The grip's frozen answer, not the live setting - see insetFor().
-          const step = stepNow(), gap = 2 * insetFor(grip.snap);
-          floor = Math.ceil((floor + gap) / step) * step - gap;
-        }
+        floor = snapFloorUp(floor, grip.snap);
         // Raising `h` is the whole of it, and the fall-through below places the
         // note from whatever `h` ended up as.
         //
@@ -2392,6 +2412,20 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         // worse than no branch - the next person changes one of the two.
         if (floor > h) h = floor;
       }
+      // Every card sits at least three cells across and two down - a floor on
+      // the grid, scaled by the board's step so a coarser board keeps its cards
+      // proportionate rather than tiny. The exempt types (NO_GRID_FLOOR) are
+      // sized by what they carry, not by the grid. The player floor below is
+      // larger and overrules this by the same Math.max.
+      if (!NO_GRID_FLOOR.has(it.type)) {
+        // The footprint of whole cells: `cells*step` less a seam at each end when
+        // snapping, which is exactly the lattice side those cells occupy, so the
+        // floor is itself a grid size and a snapped card rests flush on it rather
+        // than a seam off. Off the grid the seam is zero and it is the raw cells.
+        const step = stepNow(), seam = 2 * insetFor(grip.snap);
+        w = Math.max(w, CARD_FLOOR_CELLS.w * step - seam);
+        h = Math.max(h, CARD_FLOOR_CELLS.h * step - seam);
+      }
       // A player card may not be dragged below the player it holds. Under the
       // width the player draws a sideways scrollbar this app cannot reach across
       // its origin; under the height it is clipped. The floor is the same box
@@ -2401,8 +2435,10 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         const spec = embedFor(linkURL(it.meta?.url));
         if (spec) {
           const floor = embedFloor(spec);
-          w = Math.max(w, floor.w);
-          h = Math.max(h, floor.h);
+          // Up to the next whole cell when snapping, so the player's minimum is a
+          // grid size rather than a few pixels off one - see snapFloorUp().
+          w = Math.max(w, snapFloorUp(floor.w, grip.snap));
+          h = Math.max(h, snapFloorUp(floor.h, grip.snap));
         }
       }
       // The opposite edge stays put, so the centre shifts by half the growth -

@@ -1,11 +1,7 @@
 // The undo/redo engine: what a command retains, and what the bin gives back.
-//
-// state.ts is a module singleton, which is right for an app with one board and
-// awkward for tests, so every case starts by loading an empty board. That is
-// the same door opening a .mbrd goes through, so it also exercises the reset.
-//
-// One of six files that were tests/state.test.js, split to mirror the modules
-// state.ts itself was split onto - see tests/layers.test.js for that list.
+// state.ts is a module singleton, so every case starts by loading an empty
+// board, exercising the reset too. One of six files split from
+// tests/state.test.js to mirror state.ts's own split; see tests/layers.test.js.
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -95,10 +91,9 @@ test('the bin has a ceiling', () => {
 });
 
 test('undo puts back what the bin dropped to make room', () => {
-  // A command has to reverse everything it did, and pushing the oldest entry
-  // out of a full bin is something a delete does. Undo used to remove only the
-  // items it had just binned, so on a full bin the entry that fell out the
-  // bottom - the one nearest to being unrecoverable already - was gone for good.
+  // A command must reverse everything it did, including the eviction a
+  // delete causes on a full bin. Undo used to remove only the items it had
+  // just binned, so the evicted entry was gone for good.
   const first = addItems(Array.from({ length: 60 }, (_, i) => photo({ x: i, name: `old${i}.png` })));
   removeItems(first.map(i => i.id));
   const oldest = board.trash[board.trash.length - 1].item.name;
@@ -129,11 +124,8 @@ test('redo evicts again rather than growing the bin', () => {
 // Taking back your own command
 // ---------------------------------------------------------------------------
 //
-// Not undo. Undo is a step the user takes through their own history; this is a
-// caller withdrawing something it did itself - composeNote(), which makes a real
-// note before there is anything written on it and has to be able to un-make it.
-// The whole value of it is the check: the caller holds the command it made and
-// asks whether that is still the newest thing, rather than assuming it.
+// Not undo - a caller (composeNote()) withdrawing something it made itself,
+// only if that command is still the newest thing in history.
 
 test('a command taken back is undone and leaves no trace on either stack', () => {
   const [a] = addItems([photo({ x: 0, y: 0 })]);
@@ -143,8 +135,7 @@ test('a command taken back is undone and leaves no trace on either stack', () =>
   assert.equal(takeBack(cmd), true);
   assert.equal(board.items.length, 0);
   assert.equal(byId(a.id), undefined);
-  // Neither half of the history knows it happened: nothing to redo, and the
-  // undo before it is untouched.
+  // Neither history stack knows it happened.
   assert.equal(redo(), false, 'a withdrawn command must not be redoable');
   assert.equal(undo(), false, 'and must not have left an entry to undo');
 });
@@ -160,8 +151,8 @@ test('a command is not taken back once something else has happened', () => {
 });
 
 test('taking back nothing is false rather than an error', () => {
-  // What a caller passes when whatever it did committed nothing at all - the
-  // case that would otherwise take back somebody else's command.
+  // What a caller passes when it committed nothing - otherwise this would
+  // take back somebody else's command.
   assert.equal(takeBack(null), false);
   assert.equal(takeBack(undefined), false);
 });
@@ -179,12 +170,9 @@ test('the last command is the one just committed, and null on a fresh board', ()
 // History is bounded by what it retains, not only by how many entries it has
 // ---------------------------------------------------------------------------
 //
-// The count cap says nothing about cost: a nudge of two cards and a nudge of
-// ten thousand both count as one, while the second retains two snapshots of the
-// whole board. Two hundred of those is a board's geometry held twenty times
-// over, and it is the boards big enough for that to matter that can least
-// afford it. So a command may declare its weight, and the stack evicts on the
-// total as well as on the count.
+// The count cap ignores cost: nudging two cards and nudging ten thousand both
+// count as one, though the second retains two whole-board snapshots. So a
+// command may declare its weight, and the stack evicts on total as well as count.
 
 test('an unweighted command counts as one, whatever it does', async () => {
   const { commit, clearHistory, historyWeight } =
@@ -201,7 +189,7 @@ test('a weighted command carries its weight, and undo gives it back', async () =
   clearHistory();
   commit('move the board', () => {}, () => {}, 1000);
   assert.equal(historyWeight(), 1000);
-  // Undo moves the entry to the redo stack, so the undo stack no longer holds it.
+  // Undo moves the entry to the redo stack.
   undo();
   assert.equal(historyWeight(), 0, 'an undone command is not held by the undo stack');
   redo();
@@ -213,7 +201,7 @@ test('the weight limit evicts the oldest, and never the last', async () => {
   const { commit, undo, clearHistory, historyWeight, historyState } =
     await import('../web/assets/js/history.ts');
   clearHistory();
-  // Four commands at 20000 apiece is 80000, past the 50000 ceiling.
+  // Four at 20000 apiece is 80000, past the 50000 ceiling.
   for (const label of ['first', 'second', 'third', 'fourth']) {
     commit(label, () => {}, () => {}, 20000);
   }
@@ -222,18 +210,16 @@ test('the weight limit evicts the oldest, and never the last', async () => {
   // The oldest went; walking back must not reach it.
   const seen = [];
   for (let i = 0; i < 4; i++) { if (historyState().undo) seen.push(historyState().undo); undo(); }
-  // An empty walk contains nothing, 'first' included, so `!seen.includes(...)`
-  // was satisfied by an eviction that took the whole stack - which is the other
-  // way this can go wrong and the worse one.
+  // An empty walk also satisfies `!seen.includes('first')` - guard against
+  // an eviction that took the whole stack, the worse failure mode.
   assert.ok(seen.length > 0, 'the eviction emptied the stack rather than trimming it');
   assert.ok(!seen.includes('first'), 'the oldest was evicted');
   clearHistory();
 });
 
 test('a single command heavier than the whole budget is still undoable', async () => {
-  // The one thing the user most likely wants back must not be the one thing
-  // that cannot be: evicting down to nothing would make the heaviest operation
-  // the only un-undoable one.
+  // Evicting down to nothing would make the heaviest operation - the one
+  // most likely wanted back - the only un-undoable one.
   const { commit, clearHistory, historyState } = await import('../web/assets/js/history.ts');
   clearHistory();
   commit('import everything', () => {}, () => {}, 500000);
@@ -247,9 +233,8 @@ test('a single command heavier than the whole budget is still undoable', async (
 // ---------------------------------------------------------------------------
 
 test('undoing snap-to-grid takes back the setting as well as the geometry', () => {
-  // The whole of A-01: the flag used to be written outside the command the
-  // geometry pushed, so one Ctrl+Z left the panel claiming a snapped board with
-  // nothing on it snapped - a state nobody could have produced by hand.
+  // A-01: the flag used to be written outside the geometry's command, so one
+  // Ctrl+Z left the panel claiming a snapped board with nothing snapped on it.
   fresh([photo({ id: 'card', x: 13, y: 27, w: 201, h: 137 })]);
   const before = { x: byId('card').x, y: byId('card').y, w: byId('card').w, h: byId('card').h };
 
@@ -285,8 +270,8 @@ test('undoing "leave the grid" puts the board back on it with the box ticked', (
 });
 
 test('the layout profile mirror of the snap flag tracks undo and redo', () => {
-  // settings.snap and layoutSettings[mode].snap are one value in two places, and
-  // a mirror left behind puts the lie back at the next layout switch.
+  // settings.snap and layoutSettings[mode].snap are one value in two places -
+  // a mirror left behind lies at the next layout switch.
   fresh([photo({ id: 'card', x: 13, y: 27, w: 201, h: 137 })]);
   setSetting('snap', true);
   assert.equal(board.layoutSettings.desktop.snap, true);
@@ -297,8 +282,8 @@ test('the layout profile mirror of the snap flag tracks undo and redo', () => {
 });
 
 test('an empty board can still be snapped and unsnapped', () => {
-  // Nothing moved is not nothing happened: there is no geometry to take back, so
-  // the flag is written outside history the way every other setting is.
+  // Nothing moved is not nothing happened: with no geometry to take back, the
+  // flag is written outside history like any other setting.
   fresh();
   setSetting('snap', true);
   assert.equal(board.settings.snap, true);
@@ -310,8 +295,8 @@ test('an empty board can still be snapped and unsnapped', () => {
 test('re-asserting the grid on load never touches the setting', () => {
   fresh([photo({ id: 'card', x: 13, y: 27, w: 201, h: 137 })]);
   setSetting('snap', true);
-  // A reload is not an edit by itself: the board is already flush, so this must
-  // neither move anything nor push a command that could flip the flag back.
+  // A reload is not an edit: the board is already flush, so this must not
+  // move anything or push a command that could flip the flag back.
   recheckBoardGeometry();
   assert.equal(board.settings.snap, true);
   undo();
@@ -320,15 +305,10 @@ test('re-asserting the grid on load never touches the setting', () => {
 
 test('a card deleted mid-gesture leaves the pair describing one set of cards', () => {
   // snapshotGeom() drops an id whose item is gone, so `after` is a subset of
-  // `before` - and commitGeom() paired the two arrays by index. Marquee-drag
-  // five cards, delete one mid-gesture, release: from the deleted card onwards
-  // each `after[i]` was compared against a different item's `before[i]`, so the
-  // change test, the presnap invalidation and the fence-resize detection all
-  // read unrelated items.
-  //
-  // What is checkable from here is the committed pair. `b` is the middle card,
-  // so an index pairing puts `c`'s new position against `b`'s old one - and the
-  // undo half then carries three entries for two cards.
+  // `before`, and commitGeom() paired the two arrays by index - deleting a
+  // card mid-gesture shifted every later `after[i]` against the wrong
+  // `before[i]`. `b` is the middle card, so this checks `c`'s new position
+  // is not compared against `b`'s old one.
   fresh([
     photo({ id: 'a', x: 0, y: 0 }),
     photo({ id: 'b', x: 100, y: 0 }),
@@ -336,14 +316,14 @@ test('a card deleted mid-gesture leaves the pair describing one set of cards', (
   ]);
   const before = snapshotGeom(['a', 'b', 'c']);
   for (const id of ['a', 'b', 'c']) byId(id).x += 40;
-  // Through the mutation door, so the id index goes with it - which is what
-  // makes snapshotGeom() answer two entries where `before` has three.
+  // removeItems() drops the id from the index, so snapshotGeom() below
+  // answers two entries where `before` has three.
   removeItems(['b']);
   commitGeom('Move', before, ['a', 'b', 'c']);
 
   assert.equal(byId('a').x, 40);
   assert.equal(byId('c').x, 240);
-  // The entry weighs what it actually holds - two cards, not three.
+  // Weighs what it actually holds - two cards, not three.
   assert.equal(lastCommand().weight, 4,
     'the committed pair still carries the card that left the board');
 });

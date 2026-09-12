@@ -1,16 +1,8 @@
-// The Markdown renderer, which parses files this app did not write.
-//
-// Two reasons it is tested and the other renderers are not. It is the only place
-// in the app that turns somebody else's text into a document tree, so the safety
-// rule - everything becomes a text node, nothing becomes markup - is a property
-// worth asserting rather than reading. And it is a parser: three of the four
-// bugs found while writing it were the kind that only show on input nobody
-// thought to try by hand, including one that did not terminate.
-//
-// The DOM is stubbed for the length of each call, the way tests/hud.test.js and
-// tests/drawer.test.js stub it. The stub records structure rather than pretending
-// to be a browser: a tag, a class, children, and text. That is enough to assert
-// everything below, and a real DOM would be a dependency for one file.
+// The Markdown renderer, which parses files this app did not write. Tested
+// because the safety rule - everything becomes a text node, nothing becomes
+// markup - is worth asserting, and because most of its bugs only showed on
+// input nobody thought to try by hand. DOM is stubbed (tag, class, children,
+// text) rather than a real browser, as in hud.test.js and drawer.test.js.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -32,12 +24,10 @@ class FakeNode {
 }
 
 /**
- * The tree as a string, tags and all.
- *
- * A text node prints as its own characters, which is what makes the escaping
- * assertions below readable: raw HTML in the source has to come out as a text
- * node, and a text node here is indistinguishable from any other run of text.
- * The `isText` flag is how the assertions tell them apart when it matters.
+ * The tree as a string, tags and all. A text node prints as its own
+ * characters, which is what makes the escaping assertions readable - a
+ * text node is otherwise indistinguishable from any other run of text.
+ * The `isText` flag tells them apart when it matters.
  */
 function show(node) {
   if (node.text !== undefined) return node.text;
@@ -53,8 +43,8 @@ async function render(src) {
   globalThis.document = {
     createElement(tag) {
       const el = new FakeNode(tag);
-      // className and href are plain properties on a real element too; recording
-      // them under attrs is only so show() can print them.
+      // className and href are plain properties on a real element too;
+      // recorded under attrs only so show() can print them.
       Object.defineProperty(el, 'className', {
         set(v) { el.attrs.class = v; }, get() { return el.attrs.class; },
       });
@@ -90,9 +80,8 @@ test('headings, both spellings', async () => {
   const { html } = await render('# One\n\n## Two\n\nSetext\n======\n\nUnder\n---\n');
   assert.match(html, /<h1>One<\/h1>/);
   assert.match(html, /<h2>Two<\/h2>/);
-  // A setext underline belongs to the paragraph above it. Absorbed as another
-  // line of prose - which is what happened before the paragraph loop learned to
-  // stop at one - both the heading and the underline are lost.
+  // A setext underline belongs to the paragraph above it. Before the loop
+  // learned to stop there, it got absorbed as prose and the heading was lost.
   assert.match(html, /<h1>Setext<\/h1>/);
   assert.match(html, /<h2>Under<\/h2>/);
 });
@@ -122,8 +111,8 @@ test('a task list is a disabled checkbox and its words', async () => {
   const boxes = walk(tree).filter(n => n.tag === 'input');
   assert.equal(boxes.length, 2);
   assert.deepEqual(boxes.map(b => b.checked), [true, false]);
-  // Not editable, because this is a rendering of a file and not an editor for
-  // one: a box that took a click and changed nothing on disk would be a lie.
+  // Not editable: this renders a file rather than editing one, and a box
+  // that took a click and changed nothing on disk would be a lie.
   assert.deepEqual(boxes.map(b => b.disabled), [true, true]);
 });
 
@@ -142,8 +131,8 @@ test('a table needs its delimiter row', async () => {
   const withRule = await render('| a | b |\n|---|---|\n| 1 | 2 |\n');
   assert.match(withRule.html, /<thead><tr><th>a<\/th><th>b<\/th><\/tr><\/thead>/);
   assert.match(withRule.html, /<tbody><tr><td>1<\/td><td>2<\/td><\/tr><\/tbody>/);
-  // Without one the pipes are characters in a sentence, which is what keeps a
-  // line of prose containing a pipe from becoming a one-row table.
+  // Without a delimiter row, pipes stay characters in a sentence rather
+  // than becoming a one-row table.
   const without = await render('a | b is not a table\n');
   assert.doesNotMatch(without.html, /<table>/);
 });
@@ -153,13 +142,12 @@ test('a ragged table row is padded to the header rather than shifting', async ()
   assert.match(html, /<tr><td>1<\/td><td><\/td><td><\/td><\/tr>/);
 });
 
-// An escaped pipe is a pipe, not a cell wall - and this is tested because the
-// code that decides it changed for a reason nothing about Markdown would
-// suggest. cells() split on `/(?<!\\)\|/`, and WebKit had no lookbehind before
-// Safari 16.4; an unsupported regex literal is an early SyntaxError, so that one
-// expression stopped the whole bundle parsing on every iOS below that. It is a
-// hand-written scan now (see tests/engine-floor.test.js for the guard), and this
-// is the behaviour the scan had to reproduce exactly rather than approximately.
+// An escaped pipe is a pipe, not a cell wall. Tested because the deciding
+// code changed for a reason unrelated to Markdown: cells() used
+// `/(?<!\\)\|/`, and WebKit had no lookbehind before Safari 16.4, so that
+// one regex literal stopped the whole bundle parsing on older iOS. Now a
+// hand-written scan (see tests/engine-floor.test.js) that must reproduce
+// the old behaviour exactly.
 test('an escaped pipe is content, not a cell wall', async () => {
   const { html } = await render('| a | b |\n|---|---|\n| x \\| y | z |\n');
   assert.match(html, /<tr><td>x \| y<\/td><td>z<\/td><\/tr>/,
@@ -167,9 +155,8 @@ test('an escaped pipe is content, not a cell wall', async () => {
 });
 
 test('a backslash that is not escaping a pipe is left alone', async () => {
-  // The case the old lookbehind and the scan have to agree on for a reason
-  // neither is obvious about: `\\|` is a backslash character followed by a pipe,
-  // and the pipe *is* preceded by a backslash - so it never split there either.
+  // `\\|` is a backslash character followed by a pipe, and the pipe *is*
+  // preceded by a backslash - so it never split there either.
   const { html } = await render('| a | b |\n|---|---|\n| C:\\ | z |\n');
   assert.match(html, /<td>C:\\<\/td>/, 'a trailing backslash survives as itself');
 });
@@ -184,10 +171,9 @@ test('a blockquote holds blocks, not just words', async () => {
 // ---------------------------------------------------------------------------
 
 test('emphasis, strong and strikethrough take their whole span', async () => {
-  // The bug this is written for: the backreferences in the alternation are
-  // absolute across the pattern, so the two emphasis rules said \1 and pointed
-  // at the code fence's group. An undefined backreference matches the empty
-  // string, and **bold** came out as a <strong> holding one letter.
+  // Backreferences in the alternation are absolute across the pattern, so
+  // the emphasis rules said \1 and pointed at the code fence's group -
+  // an undefined backreference matches empty, and **bold** lost letters.
   const { html } = await render('**bold** and *em* and ~~gone~~\n');
   assert.match(html, /<strong>bold<\/strong>/);
   assert.match(html, /<em>em<\/em>/);
@@ -212,10 +198,9 @@ test('emphasis inside a link works, and neither knows about the other', async ()
 });
 
 test('inline recursion does not restart the outer scan', async () => {
-  // The first bug found: one shared global regex, and inline() recurses through
-  // a link's label - so the inner call reset the outer call's lastIndex to zero
-  // and the outer loop matched the same text again, forever. It did not fail,
-  // it ran out of memory.
+  // One shared global regex, and inline() recurses through a link's label -
+  // the inner call reset the outer call's lastIndex to zero, so the outer
+  // loop matched the same text forever and ran out of memory.
   const { html } = await render('[one](https://a.test) then [two](https://b.test) end\n');
   assert.equal((html.match(/<a /g) || []).length, 2);
   assert.match(html, /end/);
@@ -226,10 +211,9 @@ test('inline recursion does not restart the outer scan', async () => {
 // ---------------------------------------------------------------------------
 
 test('raw HTML is text, not markup', async () => {
-  // The rule the whole module is built around: these are files the app did not
-  // write. Nothing here ever touches innerHTML, so the assertion is that the
-  // angle brackets arrive as a text node - which in a real DOM is escaped by
-  // construction and cannot execute.
+  // The rule the module is built around: these are files the app didn't
+  // write. Nothing touches innerHTML, so angle brackets arrive as a text
+  // node, escaped by construction in a real DOM.
   const { tree } = await render('<script>alert(1)</script>\n');
   const text = walk(tree).filter(n => n.isText).map(n => n.text).join('');
   assert.match(text, /<script>alert\(1\)<\/script>/);
@@ -243,9 +227,9 @@ test('a javascript: link is inert text', async () => {
 });
 
 test('an image is its alt text and fetches nothing', async () => {
-  // A path in a Markdown file points at somebody else's disk and a URL points at
-  // the network. Neither resolves here, and going to the network about a file
-  // somebody opened is not something this app does.
+  // A path points at somebody else's disk, a URL at the network - neither
+  // resolves here, since going to the network about an opened file is not
+  // something this app does.
   const { html } = await render('![a picture](secret.png)\n');
   assert.match(html, /<span class="md-image">a picture<\/span>/);
   assert.doesNotMatch(html, /<img/);
@@ -270,12 +254,9 @@ test('empty and whitespace-only input render nothing', async () => {
 });
 
 test('a document of markers terminates', { timeout: 5000 }, async () => {
-  // Every parser bug in this file so far has been a loop that did not advance,
-  // so the assertion that matters here is that the call returns at all - and
-  // the way to assert *that* is the timeout, not `typeof html === 'string'`.
-  // render() cannot resolve with anything but a string, so the old assertion
-  // held for any parser that finished and the suite simply hung for one that
-  // did not. A hang is a failure and should be reported as one.
+  // Every parser bug here has been a loop that didn't advance, so what
+  // matters is that the call returns at all - hence the timeout, not
+  // `typeof html === 'string'`, which held even while the suite hung.
   const src = '*'.repeat(200) + '\n' + '_'.repeat(200) + '\n' + '#'.repeat(200)
     + '\n> > > >\n- - - -\n|||||\n```\n';
   const { html } = await render(src);
@@ -289,11 +270,10 @@ test('CRLF is read the same as LF', async () => {
 });
 
 test('a paragraph of backticks does not block the thread', { timeout: 10000 }, async () => {
-  // Measured at 13.7 seconds on node 22 before this: `(`+)([\s\S]*?)\1`
-  // backtracks quadratically, and inline() is handed a whole paragraph up to
-  // TEXT_MAX = 200,000 characters. A leading run of three or more would be
-  // caught by FENCE - a run after any other character is not, which is what
-  // makes `x` the whole of the exploit.
+  // Measured at 13.7 seconds on Node 22 before this: `(`+)([\s\S]*?)\1`
+  // backtracks quadratically over a paragraph up to TEXT_MAX = 200,000
+  // characters. FENCE catches a leading run of three or more, but not one
+  // after another character - hence the leading `x`.
   const src = 'x' + '`'.repeat(200_000);
   const started = process.hrtime.bigint();
   const { html } = await render(src);
@@ -303,8 +283,8 @@ test('a paragraph of backticks does not block the thread', { timeout: 10000 }, a
 });
 
 test('code spans still work, and still suspend the markup inside them', async () => {
-  // The guard must not cost the feature: a backtick span is the one thing that
-  // turns everything else off inside it.
+  // The guard must not cost the feature: a backtick span still turns
+  // everything else off inside it.
   const { html } = await render('a `**not bold**` b');
   assert.match(html, /<code>\*\*not bold\*\*<\/code>/);
   assert.doesNotMatch(html, /<strong>/);
@@ -322,9 +302,8 @@ test('an unpaired backtick is left as a character', async () => {
 });
 
 test('a wall of blockquote markers renders rather than blanking the file', { timeout: 5000 }, async () => {
-  // blocks() recursed once per `>`, so 50,000 of them overflowed the stack -
-  // and the viewer's catch turns that into an empty holder, so the document
-  // rendered blank with nothing saying why.
+  // blocks() recursed once per `>`, so 50,000 of them overflowed the stack,
+  // and the viewer's catch turned that into a blank document with no error.
   const { html } = await render('>'.repeat(50_000) + ' deep\n');
   assert.ok(html.length > 0, 'the file rendered as nothing at all');
   assert.match(html, /blockquote/);

@@ -1,57 +1,10 @@
-// The `.mbrd` schema, in both directions: what a board looks like on the way in
-// from a file, and what it looks like on the way out to one.
-//
-// This is the app's whole contract with a document it did not necessarily
-// write. `board.json` arrives parsed but unvalidated - it may have been
-// hand-edited, truncated, produced by a build of this app that no longer
-// exists, or produced by something else entirely - and every field in it is a
-// claim rather than a fact. normalizeBoard() turns that claim into a complete,
-// well-shaped board or into a default, one field at a time, and **cannot
-// throw**. serializeBoard() is the same promise pointing the other way: what it
-// returns is exactly what lands in the file, already held to the same rules the
-// reader will apply to it.
-//
-// It sits here, below state.ts, for three reasons that are all the same reason.
-//
-//   1. These are pure `raw -> clean` functions over data. Nothing here mutates
-//      the board; normalizeBoard() *builds* a replacement and hands it back, and
-//      the assignments that swap it in stay in state.ts where the rest of the
-//      mutation door lives. That split is not cosmetic - it is what makes a
-//      failed open impossible to see, because there is no half-way point at
-//      which one of these can give up. See loadBoard().
-//   2. A format is testable in a way a mutation is not. Feeding this module a
-//      broken object and asserting the board it returns needs no bus, no
-//      history and no selection.
-//   3. state.ts was the only file that knew the format, which meant every
-//      change to the format was a change to the mutation door. The one door and
-//      the one schema are different jobs that happened to share a file.
-//
-// **What must not move in here.** Anything that writes to `board`. The
-// temptation is loadBoard() itself, since it is where normalizeBoard() is
-// called and it reads like the other half of this file - but it clears the
-// history, empties the clipboard, reseeds the stick and fence memos and fires
-// six events, none of which is schema work. state.ts keeps whole-board
-// replacement; this keeps the shape of what is being put there.
-//
-// Note also that serializeBoard() is not pure and is not pretending to be: it
-// calls captureLayout() and captureLayoutSettings() first, because a file has
-// to record where things are *now* rather than where the last layout switch
-// left them. That is the one write-shaped thing in here and it writes to the
-// layout profiles rather than to the board's content. It was tried as a
-// caller's responsibility and moved back: two call sites (the autosave and the
-// export) would each have had to remember, and the one that forgot would ship
-// files a day out of date.
-//
-// Nothing here imports state.ts - see tests/layers.test.js, where this is BASE.
+// .mbrd board schema: normalizeBoard() reads untrusted JSON into a valid board
+// (cannot throw), serializeBoard() writes the live board back out. Pure data
+// transforms — nothing here mutates board state. Below state.ts in the layer
+// graph (does not import it).
 
 import { clamp, isFamily, isHash, isRecord } from './util.ts';
-// The step ledger, for the one line of serializeBoard() that writes it out.
-// Downward: timeline.ts stands on board-model.ts and knows nothing about the
-// file format, which is why the format is what imports *it* rather than the
-// other way round.
 import { serializeTimeline, docFingerprint } from './timeline.ts';
-// The board's link to real-world sizes, and the sheet catalogue. A scale and a
-// paper id arriving from a file both have to be held to what the app can draw.
 import { clampScale, PAPERS } from './measure.ts';
 import { splitAppearance } from './layout-settings.ts';
 import {
@@ -65,16 +18,10 @@ import type {
   LayoutMode, MobileHeader,
 } from './board-model.ts';
 import type { Look } from './layout-settings.ts';
-// Geometry profiles. The reader has to fill in the layout a file does not carry
-// and the writer has to record both of them, so the whole of the profile
-// machinery is on this side of the door.
 import {
   captureLayout, captureLayoutSettings, completeLayout, geometryOf, layoutMap,
   normalizeLayout,
 } from './layout.ts';
-// The two durable relation records. Both are *measured* at write time from live
-// geometry rather than copied out of a stale field - see the notes at their use
-// below - which is why the writer reaches for these two modules at all.
 import { isSticky, stuckTo } from './sticky.ts';
 import { fenceOf } from './fences.ts';
 
@@ -82,26 +29,12 @@ import { fenceOf } from './fences.ts';
 // Reading a board
 // ---------------------------------------------------------------------------
 
-/**
- * A whole board, built from whatever arrived, with no way to fail.
- *
- * Every container is checked for the shape it is about to be used as rather
- * than assumed, so a hand-written or truncated board.json degrades to defaults
- * one field at a time instead of throwing half-way through a load.
- */
+// Builds a valid board from untrusted data. Cannot throw — every bad field degrades to its default.
 export function normalizeBoard(data: unknown): Omit<Board, 'settings' | 'arrangement' | 'layoutMode'> {
   const src: Record<string, unknown> = isRecord(data) ? data : {};
   const rawSettings: Record<string, unknown> = isRecord(src.settings) ? src.settings : {};
   const desktopSettings = normalizeSettings(rawSettings, 'desktop');
-  // The Mobile profile, as far as it can be read out of a Desktop-shaped file.
-  //
-  // Spacing is zeroed on the way through and that is a migration, not a rule:
-  // top-level `settings` describes Desktop (see research/docs/mbrd-format.md), so a file
-  // with no Mobile record of its own would hand the column Desktop's 12 - and
-  // for every board written before Mobile had a gap at all, zero is what it was
-  // actually saved looking like. A file that *does* carry a Mobile record keeps
-  // whatever gap that record names; normalizeLayoutSettings() spreads the
-  // record over this, so the record wins wherever it has an opinion.
+  // Zero spacing: top-level settings are Desktop; pre-Mobile files had no gap.
   const mobileSettings = { ...normalizeSettings(rawSettings, 'mobile'), spacing: 0 };
   const { shared: sharedAppearance } = splitAppearance(desktopSettings.appearance);
   const items = (Array.isArray(src.items) ? src.items : [])
@@ -110,42 +43,12 @@ export function normalizeBoard(data: unknown): Omit<Board, 'settings' | 'arrange
   const trash: Record<string, unknown>[] = (Array.isArray(src.trash) ? src.trash : [])
     .filter((t: unknown) => isRecord(t) && isRecord(t.item))
     .slice(0, TRASH_LIMIT);
-  // One id space across the live board and the bin: a restored item must not
-  // collide with a live one.
+  // Shared id space across live board and bin — restored items must not collide.
   const ids = new Set<string>();
-  // makeItem() defaults a missing `z` to topZ() + 1, which reads the *live*
-  // board - and the live board here is still the previous one, about to be
-  // thrown away. Harmless, and worth recording why rather than fixing: every
-  // file this app writes carries a z, and for one that does not,
-  // normalizeLayout()/completeLayout() below overwrite the geometry anyway. What
-  // it must never become is load-bearing.
   const normalizedItems = dedupeIds(items.map(makeItem), ids);
-  // Hoisted out of the literal below, where it used to be built inline, because
-  // two properties need it now: `trash` itself and the connection prune, which
-  // has to know what kind of item each binned id names. The order is the load-
-  // bearing part and is unchanged - the live board fills `ids` first, the bin
-  // second, so a binned item colliding with a live one is still the one that
-  // gets renamed.
-  // SAFETY: `trash` was filtered to records above, so every `t.item` is whatever
-  // the file put under that key - and makeItem() takes an unknown-per-key record
-  // and validates every field of it. The assertion is the shape, not the values.
   const trashItems = dedupeIds(trash.map(t => makeItem(t.item as Record<string, unknown>)), ids);
-  // The ids a connection may name, which is narrower than `ids` and narrower
-  // for a reason the id union cannot express: a line to a sticker or a ghost is
-  // one nothing will ever draw. centres() in canvas/web.ts filters the ends it
-  // places through isJoinEnd(), so such a pair is skipped every frame, forever,
-  // in silence - and boards written before the tool checked can already carry
-  // them. Pruning here is the only place that gets them out of the file.
-  //
-  // isJoinEnd() and *not* isRider(), though the draw path refuses both. A rider
-  // is a note that happens to be stuck to something at the moment; unstick it
-  // and its lines are drawable again, so pruning riders here would delete real
-  // connections the first time a board with a stuck note was opened. What this
-  // set holds is the ends that can never become valid, which is a property of
-  // the item's type and cannot change.
+  // Items that can never be connection endpoints (stickers, ghosts) — prune them.
   const joinEnds = new Set<string>();
-  // Two loops over the two lists rather than one over a fresh concatenation of
-  // them - the same set, without the intermediate array on the load path.
   for (const it of normalizedItems) if (isJoinEnd(it)) joinEnds.add(it.id);
   for (const it of trashItems) if (isJoinEnd(it)) joinEnds.add(it.id);
   const rawLayouts: Record<string, unknown> = isRecord(src.layouts) ? src.layouts : {};
@@ -156,8 +59,6 @@ export function normalizeBoard(data: unknown): Omit<Board, 'settings' | 'arrange
   const desktopById = layoutMap(desktop);
   const legacyArrangement = typeof src.arrangement === 'string' && src.arrangement
     ? src.arrangement : 'spiral';
-  // The view, read once. It may be missing, and so may its pan; the reads below
-  // then say exactly what the optional chains said when this was untyped.
   const rawView: { pan?: Record<string, unknown>, zoom?: unknown } = isRecord(src.view)
     ? { pan: isRecord(src.view.pan) ? src.view.pan : undefined, zoom: src.view.zoom }
     : {};
@@ -168,8 +69,7 @@ export function normalizeBoard(data: unknown): Omit<Board, 'settings' | 'arrange
       pan: { x: Number(rawView.pan?.x) || 0, y: Number(rawView.pan?.y) || 0 },
       zoom: Number(rawView.zoom) || 1,
     },
-    // Board-level now; a file written before it moved here carries the style
-    // under settings.mobileHeader, so that is the fallback source.
+    // Fallback: pre-move files store this under settings.mobileHeader.
     mobileHeader: normalizeMobileHeader(src.mobileHeader ?? rawSettings.mobileHeader),
     titleHidden: !!src.titleHidden,
     mediaFit: normalizeMediaFit(src.mediaFit),
@@ -188,48 +88,19 @@ export function normalizeBoard(data: unknown): Omit<Board, 'settings' | 'arrange
       mobile: mobileRecord.arrangement || legacyArrangement,
     },
     layouts: {
-      // `items` remains the Desktop-compatible representation. A file written
-      // before profiles existed therefore already contains its desktop layout,
-      // and an older reader opening a new file still sees the desktop board.
       desktop: normalizedItems.map(it => desktopById.get(it.id) || geometryOf(it)),
       mobile,
     },
     items: normalizedItems,
-    // The cast is the filter above written down: every entry kept has an object
-    // under `item`, which is what makeItem() takes.
     trash: trashItems.map((item, i) => ({ item, at: Number(trash[i].at) || 0 })),
-    // Against `joinEnds`, built above from the board *and* the bin - and from
-    // the ids as they ended up, so a pair naming a duplicate that was renamed on
-    // the way in is pruned rather than pointing at whichever card won the
-    // collision. A connection to a binned card is kept: restoring it has to
-    // bring its lines back with it. What is dropped on top of that is a pair
-    // naming something no line can ever reach; see the note on `joinEnds`.
     connections: normalizeConnections(src.connections, joinEnds),
-    // Held to the same id union as connections - the board's cards and the bin's -
-    // so a saved order that names a since-thrown-away track survives to be restored
-    // with it. The Playlist filters this to the audio it actually has.
+    // Pruned to board + bin ids so binned tracks survive restore.
     audioOrder: normalizeAudioOrder(src.audioOrder, ids),
-    // The same union again, and for the same reason one step further along: a
-    // stop whose card is in the bin has to come back when the card does, or
-    // deleting one card would silently renumber somebody's tour.
     tour: normalizeTour(src.tour, ids),
-    // `versions` is read past in silence. Files written by v0.197 carry one -
-    // a ring of copies of board.json - and this reader drops it on the floor
-    // rather than carrying it forward, which is deliberate and is the whole
-    // decision: preserving it would keep alive every reader that has to ask
-    // whether a version claims an asset, in exchange for data nothing in the
-    // app can reach. See the note in board-model.ts.
   };
 }
 
-/**
- * One layout profile as it sits in a file, before any of it is checked.
- *
- * Every field is still the file's word: `items` is an array of something,
- * `settings` is an object or nothing. Named so that the three returns below are
- * visibly the same answer, and so that "this has been read but not yet
- * validated" is a state with a spelling.
- */
+// Raw layout profile from a file, before validation.
 type FiledLayout = { items: unknown[], settings: unknown, arrangement: string };
 
 function layoutRecord(raw: unknown): FiledLayout {
@@ -260,23 +131,7 @@ function normalizeLayoutSettings(raw: unknown, mode: LayoutMode, fallback: Board
   }, mode));
 }
 
-/**
- * The settings a file may set, each held to the shape its default has.
- *
- * `...settings` used to spread the file's raw object straight over
- * DEFAULT_SETTINGS, so only the six fields re-validated below it were held to
- * anything at all. Everything else arrived from a foreign document untouched:
- * `gridStep: 1e300` makes baseStep() return it and latticeBox() collapse a
- * snapped board onto a single point, `spacing` and `scale` feed the same
- * arithmetic, and the five flags are read as booleans by every consumer.
- *
- * Written as a table rather than a chain of ifs so that a *new* setting is
- * covered by being added to DEFAULT_SETTINGS and named here - and an unknown
- * key is dropped, which is the half a spread cannot do. The three fields with
- * their own rules further down (appearance, fonts, mobileColumns) are left to
- * them; a value that fails here falls back to the default rather than to
- * nothing, because half a settings object is worse than a stock one.
- */
+// Allowed ranges for numeric settings. Unknown keys are dropped.
 const NUMERIC: Record<string, [number, number]> = {
   gridStep: [1, 4096],
   spacing: [0, 4096],
@@ -290,8 +145,6 @@ function cleanSettings(settings: Record<string, unknown>): Record<string, unknow
     if (!(key in settings)) continue;
     const value = settings[key];
     if (typeof fallback === 'boolean') {
-      // Exactly true or exactly false. A file saying `"grid": "yes"` is saying
-      // something this app does not read, and truthiness would make it mean on.
       if (typeof value === 'boolean') out[key] = value;
       continue;
     }
