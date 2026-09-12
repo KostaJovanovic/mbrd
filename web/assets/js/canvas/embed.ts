@@ -1,41 +1,11 @@
-// The links that can become players, if you ask them to.
-//
-// This is the only place in mbrd that will ever talk to a third party, and the
-// whole file is arranged around making that a choice rather than a default.
-//
-// The rule everywhere else is that a board renders the same with the network
-// off, and that opening one tells nobody. Link cards keep it by refusing to
-// fetch a title, a favicon or a preview - see the `link` renderer. An embed
-// cannot keep it: it is somebody else's page running somebody else's code, and
-// loading it says "this board has this track on it" to a server that logs it.
-//
-// So the trade is made explicitly and per click:
-//
-//   - Nothing loads on render. A YouTube or Spotify link is a link card like
-//     any other, with one extra button on it.
-//   - The choice is *not* remembered. A per-item `embed: true` in the .mbrd
-//     would be friendlier and is exactly wrong: it would turn one click today
-//     into a silent request every time the board is opened, on any machine it
-//     is ever copied to, and the person opening it would have no idea. If the
-//     click is the consent, the click has to happen each time.
-//   - The most private host each provider offers - youtube-nocookie.com - and
-//     `referrerpolicy=no-referrer` so the board's own address stays out of
-//     their logs, the same reason link anchors carry `rel=noreferrer`.
-//
-// Every id is validated before it is used, on the same principle as `linkURL`:
-// a .mbrd is a file anyone can edit by hand, and an iframe src is a place a
-// string out of one must never arrive unchecked. Each provider below states the
-// exact shape of its ids, the src is a fixed template with one hole in it, and
-// nothing else can reach the hole.
+// Embed players for YouTube and Spotify. Nothing loads until the user clicks;
+// the choice is not remembered. IDs are validated before reaching the iframe src.
+// Uses youtube-nocookie.com and no-referrer for privacy.
 
 import { byId, snapshotGeom, applyGeom, commitGeom } from '../state.ts';
 import type { Item } from '../board-model.ts';
 import { hasOwn } from '../util.ts';
 
-/**
- * Everything the offer and the frame need about one provider's player. One
- * shape for both, so the renderer asks one question - see embedFor().
- */
 export type EmbedSpec = {
   provider: 'youtube' | 'spotify';
   src: string;
@@ -44,33 +14,42 @@ export type EmbedSpec = {
   label: string;
   hint: string;
   allow: string;
-  /** The card height this player wants, given the width the card already has. */
-  heightFor: (w: number) => number;
+  // The narrowest the frame may be. A player has an internal minimum below which
+  // its own layout starts a horizontal scrollbar inside the frame - a thing no
+  // stylesheet of ours can reach across the origin to suppress - so the surface
+  // grows the frame to clear it. 0 for a player that is fully fluid (YouTube), a
+  // real floor for one that is not (Spotify's compact track player scrolls under
+  // about 340px of content width). The canvas card adds its own padding on top;
+  // the Feed spans as many columns as the raw width needs.
+  minWidth: number;
+  // The player's own height, in CSS pixels, at a given frame width. YouTube is
+  // 16:9 of the width; Spotify picks one of two flat layouts by kind and is
+  // therefore width-independent. Just the player - a surface adds its own
+  // furniture (chrome) around it.
+  playerHeight: (w: number) => number;
+  // The furniture a surface draws around the player. The canvas card carries a
+  // name row and padding above and below; the Feed mounts the bare frame and
+  // adds none. Read only by the canvas (fitToPlayer); the Feed sizes from
+  // playerHeight alone.
+  chrome: number;
 };
 
-/**
- * The height the card's own furniture needs above the frame: the name row and
- * the padding over it. Every provider adds it to whatever its player wants.
- */
-const CHROME = 38;
+// The canvas card's furniture around the frame, in CSS pixels: the padding
+// above and below (15 each), the slim provider-name strip that is the drag
+// handle, and the gap under it. Spotify's card closes that gap to 4 and
+// YouTube's keeps the has-embed 6 (see cards.css), so the two differ by two
+// pixels. The strip is small and tier-dependent, so these are close rather than
+// exact; the couple of pixels of slack land in the paper mat around the frame,
+// where a hairline of the card's own paper is wanted anyway.
+const YT_CHROME = 50;
+const SP_CHROME = 48;
 
 // ---------------------------------------------------------------------------
 // YouTube
 // ---------------------------------------------------------------------------
 
-/** Exactly what YouTube ids are: eleven characters of base64url. */
 const YT_ID = /^[\w-]{11}$/;
 
-/**
- * The video id in a URL, or null.
- *
- * Four shapes carry one: the watch page, the short domain, a /shorts/ and an
- * /embed/. Anything else on the domain - a channel, a playlist on its own, the
- * home page - is a link and stays a link.
- *
- * Takes a URL object, not a string, so the caller has already been through
- * `linkURL` and the scheme is known to be http(s).
- */
 export function youTubeId(u: URL | null | undefined): string | null {
   if (!u) return null;
   const host = u.hostname.replace(/^www\./, '').toLowerCase();
@@ -82,8 +61,6 @@ export function youTubeId(u: URL | null | undefined): string | null {
     else if (u.pathname.startsWith('/shorts/')) id = u.pathname.slice(8);
     else if (u.pathname.startsWith('/embed/')) id = u.pathname.slice(7);
   }
-  // A path can carry more after the id (`/shorts/ID/comments`), and the check
-  // below is what makes that safe to slice off rather than a reason to reject.
   if (id) id = id.split('/')[0];
   return id && YT_ID.test(id) ? id : null;
 }
@@ -92,22 +69,9 @@ export function youTubeId(u: URL | null | undefined): string | null {
 // Spotify
 // ---------------------------------------------------------------------------
 
-/** A Spotify id is 22 characters of base62. Nothing else is one. */
 const SP_ID = /^[A-Za-z0-9]{22}$/;
 
-/**
- * What Spotify will embed, and how tall each one wants to be.
- *
- * The heights are not arbitrary and they are not ours to choose freely: the
- * player decides its own layout from the height it is given, so these are the
- * two the layouts exist at. 152 is the compact bar - artwork, title, a play
- * button - which is what a single track is. 352 is the one with a track list
- * under it, which is the only sensible shape for a thing that has a track list.
- *
- * Resizing the card afterwards is not prevented and does the right thing: drag
- * a track's card taller and Spotify re-lays it out as the big player, because
- * the frame is 100% of the card and the player is reading its own box.
- */
+// Heights match the two layouts the Spotify player picks from its box.
 const SPOTIFY = {
   track: 152,
   episode: 152,
@@ -117,19 +81,10 @@ const SPOTIFY = {
   show: 352,
 };
 
-/** The kinds above, and the predicate that lets a path segment become one. */
 type SpotifyKind = keyof typeof SPOTIFY;
 const isSpotifyKind = (k: string): k is SpotifyKind => hasOwn(SPOTIFY, k);
 
-/**
- * The { kind, id } a Spotify URL carries, or null.
- *
- * Three prefixes have to come off before the interesting part: a locale
- * (`/intl-de/track/…`, which is what a share link from a non-English client
- * looks like), an `/embed`, and an `/embed-podcast`. They can appear together.
- * What is left is /kind/id, and both halves are checked against the tables
- * above rather than passed through.
- */
+// Strips /intl-xx/, /embed, /embed-podcast prefixes before extracting kind/id.
 export function spotifyRef(u: URL | null | undefined): { kind: SpotifyKind; id: string } | null {
   if (!u) return null;
   const host = u.hostname.replace(/^www\./, '').toLowerCase();
@@ -147,15 +102,6 @@ export function spotifyRef(u: URL | null | undefined): { kind: SpotifyKind; id: 
 // What a link turns out to be
 // ---------------------------------------------------------------------------
 
-/**
- * The player behind a URL, as everything the offer and the frame need, or null.
- *
- * One shape for both providers so the renderer asks one question and the button
- * has one thing to hold. `page` is the canonical link - what the card stores
- * and what the name row points at - which matters because a pasted embed URL
- * should leave a card that says open.spotify.com/track/… rather than
- * open.spotify.com/embed/track/….
- */
 export function embedFor(u: URL | null | undefined): EmbedSpec | null {
   const yt = youTubeId(u);
   if (yt) {
@@ -167,8 +113,11 @@ export function embedFor(u: URL | null | undefined): EmbedSpec | null {
       label: 'Watch here',
       hint: 'Loads the player from YouTube. Nothing is requested until you press this.',
       allow: 'accelerometer; encrypted-media; picture-in-picture; fullscreen',
-      // 16:9 for the picture, plus the card's own furniture.
-      heightFor: w => Math.round(w * 9 / 16) + CHROME,
+      // Fully fluid: it letterboxes to whatever box it is given, so the card
+      // keeps the width it already had and only its height is set.
+      minWidth: 0,
+      playerHeight: w => Math.round(w * 9 / 16),
+      chrome: YT_CHROME,
     };
   }
 
@@ -176,47 +125,38 @@ export function embedFor(u: URL | null | undefined): EmbedSpec | null {
   if (sp) {
     return {
       provider: 'spotify',
-      // theme=0 is Spotify's light variant. It is the one lever the player
-      // gives from outside, and it is worth pulling: the default is a black
-      // slab, and a black slab on a sheet of papyrus is the one thing on the
-      // whole board that looks like it was cut out of a different app.
-      src: `https://open.spotify.com/embed/${sp.kind}/${sp.id}?theme=0`,
+      // No theme parameter. `theme=0` was here for a light player and now does
+      // the opposite - it forces the dark variant, the black slab this card was
+      // shaped to avoid. The default player takes its colour from the artwork,
+      // which is the look every Spotify embed on the web wears, so the card is
+      // built around that rather than around a light option that no longer
+      // exists. `theme=1` is the same default; only `theme=0` differs, and only
+      // to go dark.
+      src: `https://open.spotify.com/embed/${sp.kind}/${sp.id}`,
       page: `https://open.spotify.com/${sp.kind}/${sp.id}`,
       title: `Spotify ${sp.kind} player`,
       label: 'Listen here',
       hint: 'Loads the player from Spotify. Nothing is requested until you press this.',
       allow: 'encrypted-media; clipboard-write; picture-in-picture; fullscreen',
-      // Flat, not a ratio: the player picks its layout from its height, so this
-      // is a layout being asked for rather than a shape being preserved.
-      heightFor: () => SPOTIFY[sp.kind] + CHROME,
+      // The compact player scrolls sideways under about 340px of frame width, so
+      // the frame is grown to clear it: on the canvas the card adds 16px padding
+      // each side (372 card), on the Feed the tile spans columns to reach 340.
+      minWidth: 340,
+      playerHeight: () => SPOTIFY[sp.kind],
+      chrome: SP_CHROME,
     };
   }
 
   return null;
 }
 
-/**
- * The src out of a pasted `<iframe>`, as a URL, or null.
- *
- * Every one of these providers hands out a block of HTML rather than a link,
- * and pasting that block is a thing people do - so it lands as the card the
- * link would have made instead of as a sticky note full of angle brackets.
- *
- * Read with a regular expression and never parsed as HTML, which is the whole
- * of the safety argument. Nothing here builds a node out of the pasted string,
- * so there is no markup to be executed and no attribute to be honoured; one
- * quoted value is pulled out as text and then has to survive `linkURL` - and,
- * if it is going to become a frame, a provider's id pattern as well.
- */
+// Extracts src from a pasted <iframe> via regex (never parsed as HTML).
 export function iframeURL<T>(text: unknown, parse: (raw: string) => T): T | null {
   const s = String(text ?? '').trim();
   if (!/^<iframe[\s>]/i.test(s)) return null;
   const m = /\ssrc\s*=\s*(?:"([^"]*)"|'([^']*)')/i.exec(s);
   const raw = m && (m[1] ?? m[2]);
   if (!raw) return null;
-  // The one entity that matters here: a `src` written out by any of these
-  // generators separates its query parameters with `&amp;`. Replaced by hand
-  // rather than by letting an HTML parser near the string.
   return parse(raw.replace(/&amp;/gi, '&'));
 }
 
@@ -224,38 +164,37 @@ export function iframeURL<T>(text: unknown, parse: (raw: string) => T): T | null
 // The offer, and the swap
 // ---------------------------------------------------------------------------
 
-/**
- * The button that offers the trade, and the swap it performs.
- *
- * Returned rather than appended so the renderer decides where it sits, and so
- * this file never has to know what a link card looks like.
- */
-export function embedOffer(item: Item, spec: EmbedSpec, card: HTMLElement): HTMLButtonElement {
+// The offer's visual, without behaviour: the same chip on the canvas card and
+// on a Feed tile, so the two surfaces make the same promise the same way. Each
+// attaches its own press - the canvas swaps the card in place, the Feed mounts
+// the frame and reflows the wall. `label` overrides the default ("Listen here")
+// - the canvas card passes the song title once it has one, so the button reads
+// the track next to the logo rather than a generic verb.
+export function offerButton(spec: EmbedSpec, label: string = spec.label): HTMLButtonElement {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'embed-go';
   btn.dataset.provider = spec.provider;
   btn.title = spec.hint;
-  btn.append(glyph(spec.provider), text(spec.label));
+  btn.append(glyph(spec.provider), text(label));
+  return btn;
+}
 
+export function embedOffer(item: Item, spec: EmbedSpec, card: HTMLElement): HTMLButtonElement {
+  // The song, once fetched (embed-meta.ts), reads on the button itself; until
+  // then the standing offer verb.
+  const title = typeof item.meta?.title === 'string' && item.meta.title ? item.meta.title : spec.label;
+  const btn = offerButton(spec, title);
   btn.addEventListener('click', e => {
     e.preventDefault();
     e.stopPropagation();
-    // The card's children first, the geometry second. fitToPlayer() commits a
-    // change and emits 'geom', and a subscriber that rebuilds this card's node
-    // in that emit would leave every line below working on an element no longer
-    // in the document - the swap would run, and the player would be appended to
-    // a card nobody can see. Swapping first means the node this handler closed
-    // over is the node that ends up holding the frame, whatever the emit does
-    // to the one on screen.
+    // Swap DOM before fitToPlayer: the geom emit could rebuild the card.
     card.classList.add('has-embed');
-    // The name row stays, and it is not decoration: an iframe is another
-    // origin, so every pointer event inside it belongs to the provider and
-    // never reaches this page. A card that was nothing but frame could not be
-    // dragged, selected, or even clicked to bring its resize grips up. The
-    // line above the player is the part of the card that is still ours.
+    // Keep the title row — it is the drag handle, the one surface still ours
+    // once the frame is in and eating every pointer over itself (renderers.ts,
+    // cards.css). The faint provider watermark goes with the rest.
     for (const el of [...card.children]) {
-      if (!el.classList.contains('card-name')) el.remove();
+      if (!el.classList.contains('embed-title')) el.remove();
     }
     card.append(frameFor(spec));
     fitToPlayer(item.id, spec);
@@ -263,41 +202,36 @@ export function embedOffer(item: Item, spec: EmbedSpec, card: HTMLElement): HTML
   return btn;
 }
 
-/**
- * A link card is 256x106 and a player is not. Resized on the way in, as one
- * undoable step, so the player is a player rather than a letterboxed strip.
- *
- * Only the resize is undoable. The swap to the iframe (embedOffer) is a DOM
- * change the item model does not carry, so undoing 'Fit the player' gives the
- * size back but not the link - the card stays a player in a link-sized box until
- * the next rebuild. Reversing the embed itself is not offered.
- *
- * The width is whatever the card already had, so an item deliberately made
- * large stays large; only the height is derived, by the provider, from the
- * layout its player is going to choose.
- */
+// The horizontal padding a card draws around the frame: --card-pad-x, both
+// sides (cards.css). The frame's minimum width plus this is the card's minimum.
+const CARD_PAD_X = 32;
+
+// The smallest a card holding this player may be drawn, width and height, in
+// world units. Below the width the player starts a sideways scrollbar it draws
+// itself and no stylesheet of ours can reach; below the height it is clipped.
+// canvas/input.ts holds a resize to this floor so neither can happen - the same
+// box fitToPlayer grows a card up to when the player is taken.
+export function embedFloor(spec: EmbedSpec): { w: number; h: number } {
+  const w = spec.minWidth + CARD_PAD_X;
+  return { w, h: spec.playerHeight(w - CARD_PAD_X) + spec.chrome };
+}
+
+// Resize the card to fit the player: the height always, and the width up to the
+// frame's floor plus the card's own padding when the card is narrower than the
+// player can be drawn. Never narrows a card the user already made wide - the
+// floor is a minimum, not a target. The resize is undoable.
 function fitToPlayer(itemId: string, spec: EmbedSpec) {
   const it = byId(itemId);
   if (!it) return;
-  const want = spec.heightFor(it.w);
-  if (Math.abs(it.h - want) < 2) return;
+  const w = Math.max(it.w, spec.minWidth + CARD_PAD_X);
+  const h = spec.playerHeight(w - CARD_PAD_X) + spec.chrome;
+  if (Math.abs(it.w - w) < 2 && Math.abs(it.h - h) < 2) return;
   const before = snapshotGeom([itemId]);
-  applyGeom([{ id: itemId, x: it.x, y: it.y, w: it.w, h: want, rot: it.rot, z: it.z }]);
+  applyGeom([{ id: itemId, x: it.x, y: it.y, w, h, rot: it.rot, z: it.z }]);
   commitGeom('Fit the player', before);
 }
 
-/**
- * The iframe.
- *
- * `src` was assembled from a template and an id that has already matched its
- * provider's pattern, so there is nothing in it a hand-edited board could
- * steer. Set as a property on a real element, never as markup - the same rule
- * the link renderer follows for `href`.
- *
- * No `autoplay` in the allow list: the click that got here asked for a player,
- * not for sound. The one inside the player is the second, deliberate one.
- */
-function frameFor(spec: EmbedSpec): HTMLIFrameElement {
+export function frameFor(spec: EmbedSpec): HTMLIFrameElement {
   const frame = document.createElement('iframe');
   frame.className = 'embed-frame';
   frame.dataset.provider = spec.provider;
@@ -307,10 +241,7 @@ function frameFor(spec: EmbedSpec): HTMLIFrameElement {
   frame.referrerPolicy = 'no-referrer';
   frame.allow = spec.allow;
   frame.allowFullscreen = true;
-  // Anything else would be a handle on this page: the frame is another origin
-  // and must stay one. allow-same-origin refers to *its* origin, not ours, and
-  // without it neither player can reach its own storage and both refuse to
-  // start.
+  // allow-same-origin is the frame's origin, not ours — without it neither player starts.
   frame.setAttribute('sandbox',
     'allow-scripts allow-same-origin allow-presentation allow-popups allow-popups-to-escape-sandbox');
   return frame;
@@ -324,37 +255,35 @@ function text(s: string) {
 
 const NS = 'http://www.w3.org/2000/svg';
 
-/**
- * One line-art mark per provider, drawn here rather than borrowed.
- *
- * Neither is the company's logo, and that is deliberate twice over: a brand
- * mark is theirs to license, and both of them are a filled roundel that would
- * be the only such thing on a board of hairline strokes. A triangle means play
- * and three bars mean sound in any drawing style, including this one.
- */
+// Spotify's own green. The one brand colour let onto the board, and only on the
+// mark inside the offer chip - the chip's own paper and type stay the board's,
+// so a logo is recognisably Spotify's while the card is recognisably ours.
+const SPOTIFY_GREEN = '#1ed760';
+
+// The Spotify wordless mark: the circle with three arcs, as one filled path
+// whose arcs are the shape's holes (the chip's paper reads through them). The
+// official single-colour icon, on its own 24x24 grid, drawn green rather than
+// in currentColor.
+const SPOTIFY_MARK = 'M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 '
+  + '17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899'
+  + '-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3'
+  + 'c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48'
+  + '.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 '
+  + '8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28'
+  + '-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z';
+
 function glyph(provider: EmbedSpec['provider']) {
   const svg = document.createElementNS(NS, 'svg');
-  svg.setAttribute('viewBox', '0 0 16 16');
   svg.setAttribute('aria-hidden', 'true');
   if (provider === 'spotify') {
-    // A rising then falling level meter. Round caps, so it belongs with the
-    // rest of the app's strokes rather than reading as a bar chart.
-    svg.setAttribute('fill', 'none');
-    svg.setAttribute('stroke', 'currentColor');
-    svg.setAttribute('stroke-width', '1.6');
-    svg.setAttribute('stroke-linecap', 'round');
-    for (const [x, h] of [[3, 4], [6.5, 9], [10, 6], [13, 2.5]]) {
-      const line = document.createElementNS(NS, 'line');
-      // String() rather than letting setAttribute coerce: same characters, and
-      // the coercion is now said where it happens.
-      line.setAttribute('x1', String(x));
-      line.setAttribute('x2', String(x));
-      line.setAttribute('y1', String(8 - h / 2));
-      line.setAttribute('y2', String(8 + h / 2));
-      svg.append(line);
-    }
+    svg.setAttribute('viewBox', '0 0 24 24');
+    const p = document.createElementNS(NS, 'path');
+    p.setAttribute('d', SPOTIFY_MARK);
+    p.setAttribute('fill', SPOTIFY_GREEN);
+    svg.append(p);
     return svg;
   }
+  svg.setAttribute('viewBox', '0 0 16 16');
   const p = document.createElementNS(NS, 'path');
   p.setAttribute('d', 'M5 3.4v9.2L13 8z');
   p.setAttribute('fill', 'currentColor');

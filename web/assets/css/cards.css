@@ -1,26 +1,8 @@
 /* =========================================================
-   mbrd - the cards whose face the app draws: notes, links, stickers,
-   models and embeds
-
-   One of the six sheets the old items.css was split into. The order they load
-   in IS the cascade and is listed in the banner at the top of items.css. It
-   comes after items.css because nearly every rule here is a per-[data-type]
-   correction to the .item box and the .card plate declared there.
-
-   Five renderers and their furniture: canvas/note-model.ts and
-   canvas/notes.ts (the sticky, its block lines and the formatting bar),
-   canvas/renderers.ts (link, sticker, feed sticker), canvas/model.ts (the
-   turned STL and the still it parks on) and canvas/embed.ts (the standing
-   offer, and the frame it becomes once it is taken).
-
-   Filed together because none of them is a picture. Each is a card this app
-   draws the whole of, which is what separates them from the two types in
-   media.css and from an image, whose only rule is to get out of the way.
-
-   Several class names here are built by string interpolation and no grep will
-   find them: canvas/note-model.ts builds `note-` + tag, canvas/notes.ts
-   builds `ntb-ico-` + icon. Do not delete a selector because nothing appears
-   to reference it.
+   Cards whose face the app draws: notes, links, stickers, models, embeds.
+   Loaded after items.css — per-[data-type] corrections to .item / .card.
+   Some class names are built by interpolation (note-* , ntb-ico-*) — do not
+   delete selectors just because no grep finds them.
    ========================================================= */
 
 /* Notes: the one item type born on the board, so it is drawn as a sticky
@@ -767,22 +749,37 @@
    The button is a standing offer, not a state: nothing has been requested from
    anyone until it is pressed, and it is styled to say so - the same accent a
    link wears, on the card's own paper, rather than the filled red of a control
-   that is already doing something. One rule for both providers: a card that
-   dressed itself in YouTube red or Spotify green would be two more palettes on
-   a board whose whole premise is that you chose the pigments. */
+   that is already doing something. The chip's own paper and type stay the
+   board's - a card that dressed the whole of itself in YouTube red or Spotify
+   green would be two more palettes on a board whose whole premise is that you
+   chose the pigments. The one brand colour let in is the logo itself, drawn in
+   embed.ts: a mark is recognisable by its colour and nothing else is, so the
+   green rides on the glyph alone and the chip around it stays ours. */
 .embed-go {
-  align-self: flex-start;
+  /* Centred both ways by soaking the free space into the margins. A card that
+     was ever played keeps that larger size, and the offer returns to it on
+     reload because nothing may load without a press - so the offer has to look
+     deliberate at any size, not a chip stranded in a corner of a big empty
+     card. `margin: auto` in a flex column does exactly that at every size. */
+  margin: auto;
+  /* Above the faint provider mark behind it (renderers.ts). The card is the
+     positioned ancestor, so this only needs a layer, not coordinates. */
+  position: relative;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  margin-top: auto;
-  padding: 5px 11px 5px 9px;
+  gap: 8px;
+  padding: 8px 16px 8px 13px;
   border: var(--board-hairline) solid var(--rule-2);
   border-radius: var(--leaf);
   background: var(--paper-2);
-  color: var(--accent-deep);
+  color: var(--ink);
   font-family: var(--font-display);
-  font-size: var(--t-tiny);
+  font-size: var(--t-small);
+  /* The display face rides high, and a tight line box lets a button trim its
+     ascenders (most visibly in Firefox). Room for the whole glyph, not the
+     x-height. */
+  line-height: 1.4;
   letter-spacing: calc(0.04em * var(--ls-scale));
   cursor: pointer;
   pointer-events: auto;   /* same bargain the anchor above makes */
@@ -791,15 +788,81 @@
 @media (hover: hover) {
   .embed-go:hover { background: var(--accent); border-color: var(--accent-text); color: var(--accent-fg); }
 }
-.embed-go svg { width: 11px; height: 11px; }
-/* Far out, the offer is unreadable and un-pressable, and it would be the only
-   thing left saying anything on a card whose text has already stood down. */
+.embed-go svg { width: 17px; height: 17px; flex: none; }
+/* A song title can be long; the button caps at the card and the label ellipses
+   rather than pushing the chip past the edge. min-width:0 lets the flex label
+   shrink below its text; the logo keeps its size (flex:none above). */
+.embed-go { max-width: 100%; }
+.embed-go span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Far out the button is too small to read or press, and a card zoomed away to a
+   tile wants nothing on it but the stretched mark. So the offer stands down and
+   the watermark is the whole of the card at that distance. */
 #world.zoom-far .embed-go { display: none; }
 
-/* Taken. The name row survives as the only part of the card still ours to
-   grab - see embed.ts - and the frame takes everything under it. */
+/* The provider's name, faint, behind the offer: filled to the card width and
+   pulled tall. Width from a container-unit font-size (a fraction of the card),
+   height from the scaleY on top of it - the stretch the reference asks for. A
+   fixed cqw is a different fraction of the word on each whimsy face, so this is
+   tuned near the widest (softish) and the card clips any overrun, which is the
+   printed-mark look. Not interactive: the press under it drags the card. */
+/* The mark fills the card's padding box - the inside margin - so the word
+   reaches the inner edges and not the card's bleed. An SVG sized to that box by
+   the four insets; its viewBox is the word's ink and preserveAspectRatio="none"
+   fills it (renderers.ts fitMark), so the word stretches to the margins on every
+   whimsy face with no crop and no guesswork. */
+.embed-mark {
+  position: absolute;
+  inset: var(--card-pad-y) var(--card-pad-x);
+  overflow: hidden;
+  opacity: 0.07;
+  pointer-events: none;
+  user-select: none;
+}
+.embed-mark svg { display: block; width: 100%; height: 100%; }
+.embed-mark text {
+  font-family: var(--font-display);
+  font-weight: calc(var(--display-weight) + 300);
+  /* Upright, not the display face's usual italic - a stamped mark stands
+     straight. Any size: the viewBox normalises it to the box (renderers.ts). */
+  font-style: normal;
+  font-size: 40px;
+  fill: var(--ink);
+}
+
+/* The song title lives on the button while the card is an offer (embed.ts), so
+   the top-left copy is only wanted once the player is in - where it is the drag
+   handle, the one surface still ours over a frame that eats every pointer. So
+   it is out of the offer entirely and appears with the frame. */
+.embed-title {
+  display: none;
+  position: relative;
+  z-index: 1;
+  align-self: flex-start;
+  max-width: 100%;
+  font-family: var(--font-display);
+  font-size: var(--t-small);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Taken. The title appears as the drag handle. Cursored as the grip it is; the
+   frame takes everything under it. */
 .card.has-embed { gap: 6px; }
-.card.has-embed .card-name { flex: none; }
+.card-embed.has-embed .embed-title {
+  display: block;
+  flex: none;
+  opacity: 0.7;
+  pointer-events: auto;
+  cursor: grab;
+}
+.card-embed.has-embed .embed-title:active { cursor: grabbing; }
 .embed-frame {
   flex: 1;
   min-height: 0;
@@ -817,17 +880,19 @@
    Only so much of this is ours to decide, and it is worth being exact about
    which: inside the frame is Spotify's document on Spotify's origin, and no
    stylesheet of ours reaches across that boundary - by design, and there is no
-   version of the web where it does not. `?theme=0` in the src is the one lever
-   the player offers, and it swaps their black slab for a light variant that at
-   least shares this board's brightness.
+   version of the web where it does not. There is no colour lever left to pull:
+   the player takes its own from the artwork, and the one query parameter that
+   changes it, `theme=0`, only makes it darker. So the card holds the player as
+   it comes.
 
    Everything else here is the ring around it, which is all ours: the card's own
    paper behind the frame so the corners are this app's radius and not the
-   twelve-pixel one their generator writes inline, the hairline that every other
-   card wears, and a height chosen so the player's own compact layout lands
-   exactly in the box with no dead band above or below it. The result is a
-   Spotify card that reads as one of ours holding a player, rather than a
-   rectangle of somebody else's interface pasted on top. */
+   twelve-pixel one their generator writes inline while the frame loads, the
+   hairline that every other card wears, and a width and height (embed.ts) sized
+   so the player's own compact layout lands in the box with no scrollbar across
+   it and no dead band above or below. The result is a Spotify card that reads
+   as one of ours holding a player, rather than a rectangle of somebody else's
+   interface pasted on top. */
 .embed-frame[data-provider="spotify"] {
   background: var(--paper-2);
   border-radius: var(--leaf);

@@ -1,28 +1,7 @@
-// The Feed: the Mobile board as a Pinterest-style masonry of everything on it.
-//
-// This is the Mobile board now. Where Mobile used to be the world-space canvas
-// run as a fixed-width column, it is a native-scrolling wall of DOM tiles - one
-// per item, laid shortest-column-first so the wall packs tight with nothing
-// wasted between. Images and video are pictures; notes, links, swatches and the
-// rest are the small cards they are on the canvas; audio is a cover that hands
-// off to the Playlist, the board's other lens. Everything the board holds is
-// here, which is why it is the Feed and not the Pictures.
-//
-// Handed the viewport, the command set and the masthead styler rather than
-// importing them, like initBoardView/initMobileFrame - so nothing here reaches a
-// browser global at import time. The module body only declares functions and
-// module state; every document reach is inside initFeed() or a handler after it.
-//
-// The masonry is absolute-positioned rather than CSS columns: column-count fills
-// one column top to bottom before starting the next, which throws reading order
-// away, and Grid masonry is not in the browser floor. So the boxes are computed
-// (feedMasonry) and written as a transform and a width per tile, the same shape
-// canvas/mobile-frame.ts uses for the sheet - a compositor move, not a reflow.
-//
-// Video owns its own release discipline: a clip's <video> lives here, outside
-// #world, so items.ts sounding() cannot see it. A clip scrolled well away and not
-// the now-playing one is released and its element dropped back to a poster; the
-// now-playing one is kept mounted wherever it has scrolled to.
+// The Feed: Mobile board as a masonry wall of every item. Absolute-positioned
+// tiles, shortest-column-first (CSS columns break reading order, Grid masonry
+// is not in the browser floor). Videos outside #world manage their own release.
+// Injected deps (viewport, commands, masthead) — no document reach at import.
 
 import {
   board, bus, isDefaultTitle, byId, itemAdjust, itemCrop, itemRotate, itemMatte,
@@ -37,7 +16,9 @@ import { mobileOrder } from '../arrange/arrangements.ts';
 // that file for why the two walls are one rule and two surfaces.
 import { packColumns } from '../arrange/columns.ts';
 import { assetURL, readText } from '../storage/assets.ts';
-import { linkURL, buildContent, swatchHex, MARKDOWN } from '../canvas/renderers.ts';
+import { linkURL, buildContent, swatchHex, MARKDOWN, enrichEmbedCard } from '../canvas/renderers.ts';
+import { embedFor, frameFor, offerButton } from '../canvas/embed.ts';
+import type { EmbedSpec } from '../canvas/embed.ts';
 import { kindName } from '../canvas/item-dom.ts';
 import { bindDial } from '../canvas/ghosts.ts';
 import { noteTint } from '../canvas/note-model.ts';
@@ -57,11 +38,9 @@ import type { Point } from '../geometry.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 
 /**
- * `meta` is open by design (see board-model.ts), so everything this file reads
- * out of it is narrowed here rather than trusted - the same pair ui/viewer.ts
- * and ui/nowplaying.ts keep. A key that is not the type it should be is treated
- * exactly as a missing one, which is what every one of these reads already did
- * by falling through a `||`.
+ * `meta` is open by design (see board-model.ts), so everything read out of it
+ * here is narrowed rather than trusted - the same pair ui/viewer.ts and
+ * ui/nowplaying.ts keep. A key of the wrong type is treated as missing.
  */
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 /** The object URL for a hash out of `meta`, or null for anything that is not one. */
@@ -72,10 +51,8 @@ type TileKind =
   | 'image' | 'video' | 'audio' | 'note' | 'link' | 'swatch' | 'text' | 'hint' | 'file';
 
 /**
- * One tile on the wall.
- *
- * `video` is the whole of this module's release discipline: it is the mounted
- * <video> for a clip that is playing, and null for a tile showing a poster. See
+ * One tile on the wall. `video` is the whole of this module's release
+ * discipline: the mounted <video> for a playing clip, null for a poster. See
  * mountVideo() and releaseOffscreen().
  */
 type Tile = {
@@ -85,45 +62,45 @@ type Tile = {
   kind: TileKind;
   video: HTMLVideoElement | null;
   /**
-   * How much of the wall's width this tile takes, as a fraction in (0, 1]. One
-   * for everything except a hint.
+   * How much of the wall's width this tile takes, as a fraction in (0, 1].
+   * One for everything except a hint.
    *
-   * A fraction rather than a column count, because the column count is not
-   * known when a tile is built - it comes out of the window width in layout() -
-   * and because a fraction is what was actually meant: the dial took the whole
-   * board and each sentence took half of it. feedMasonry() turns it into
-   * columns for whatever the wall is at now.
-   *
-   * A hint is a sentence, not a picture, and a sentence in a fifth of the
-   * screen is four words a line. The old mobile board sized these against the
-   * column - the dial across all of it, the three hints across half - and the
-   * Feed threw that away by packing every tile into exactly one of its two to
-   * five columns. This is that number carried back: onboarding.ts writes the
-   * fraction it seeded at into `meta.span` and fillHint() reads it here.
+   * A fraction, not a column count - the column count isn't known when a
+   * tile is built (it comes from the window width in layout()), and a
+   * fraction is what was actually meant: the dial took the whole board, each
+   * sentence took half. onboarding.ts writes it into `meta.span`; fillHint()
+   * reads it. Carries forward the old mobile board's per-column sizing that
+   * a naive "pack every tile into one column" would otherwise lose.
    */
   span: number;
   /**
    * A height in pixels this tile insists on, measured from its own content
    * rather than computed from `ratio`.
    *
-   * Only hints have one. Every other tile on the wall is a picture, a poster or
-   * a plate, and for those a shape is exactly the right thing to lay out by -
-   * they crop, they letterbox, they do not have a last line that can fall off
-   * the bottom. A hint does. So it is measured after it is built and the packer
-   * is given the answer, which is why layout() runs the masonry twice.
+   * Only hints have one. Every other tile is a picture/poster/plate, for
+   * which a shape is the right thing to lay out by - they crop or letterbox,
+   * with no last line that can fall off the bottom. A hint does, so it's
+   * measured after building and the packer given the answer - why layout()
+   * runs the masonry twice.
    */
   measured: number;
+  /**
+   * The player a link tile can become, or null for a link that is only a link
+   * and every non-link tile. Set once at build (linkEmbed) so spanFor, the
+   * embed sizing pass and fillLink all read the same answer without re-parsing
+   * the URL. Nothing loads from it until a tap - mountEmbed is the only thing
+   * that puts the frame in, and only then (see canvas/embed.ts on the promise).
+   */
+  embed: EmbedSpec | null;
 };
 
 /** One tile's box, as feedMasonry() packs it. */
 type TileBox = { t: Tile; x: number; y: number; w: number; h: number };
 
 /**
- * What the Feed asks of the command surface, and nothing else.
- *
- * Named here rather than borrowed from commands.ts for the reason
- * FlyoutCommands states in ui/flyout.ts - and it is why `cmds` is handed in by
- * initFeed() rather than imported.
+ * What the Feed asks of the command surface, and nothing else. Named here
+ * rather than borrowed from commands.ts, same reason FlyoutCommands states
+ * in ui/flyout.ts - why `cmds` is handed in by initFeed(), not imported.
  */
 export interface FeedCommands {
   addStickerAt: (shape: string, at: Point) => void;
@@ -134,25 +111,18 @@ export interface FeedCommands {
 /**
  * The types the Feed does not draw as tiles: furniture and stickers.
  *
- * The hint cards used to be on this list and should not have been. They are the
- * whole of what a brand-new board has on it - four cards saying what to do with
- * it - and hiding them left the one board that most needs them showing "Nothing
- * to show yet" instead. That is the Feed telling somebody their empty board is
- * empty, which they knew, in place of the four cards telling them what to do
- * about it. They are drawn as tiles now, through the same buildContent() the
- * canvas draws them with.
+ * Hint cards used to be on this list and shouldn't have been - they're the
+ * whole of what a fresh board offers, and hiding them left the board that
+ * most needs them showing "Nothing to show yet" instead of what to do about
+ * it. Drawn as tiles now, through the same buildContent() the canvas uses.
  *
- * A sticker is here for a different reason from the two above, and it is the
- * one worth stating. It is not hidden - a *pinned* one is drawn on its host's
- * tile, at the fraction of the host it holds on the canvas, because the board
- * you made should be the board you see. What it does not get is a tile of its
- * own, since a wall panel containing one star is not a thing anybody wants in
- * their feed.
- *
- * A *loose* sticker has no host tile to be drawn on, and so is not drawn at
- * all. That is the one place this view is knowingly not the board - see the
- * open questions in research/old/stickers-2026-08-12.md. Not drawing it is the safe
- * read: the alternative is that lone panel.
+ * A sticker is here for a different reason: a *pinned* one is drawn on its
+ * host's tile at the fraction of the host it holds on the canvas, so the
+ * board you made is the board you see - it just gets no tile of its own,
+ * since a wall panel holding one star helps nobody. A *loose* sticker has no
+ * host tile and is not drawn at all - the one place this view knowingly
+ * isn't the board (see research/old/stickers-2026-08-12.md); not drawing it
+ * is the safer read than a lone floating panel.
  */
 const HIDDEN = new Set(['title', 'fence', 'sticker']);
 
@@ -193,10 +163,8 @@ function cancelHold() {
 
 /** The item a press landed on, or null for the sheet between the tiles. */
 function tileIdAt(target: EventTarget | null) {
-  // The `as` is the reading ui/hud.ts states for its delegated handlers: the
   // SAFETY: the listener is on an element, so a press inside it lands on one
-  // too, and closest() is only being asked whether an ancestor matches. The
-  // optional calls are the ones that were already here.
+  // too, and closest() is only being asked whether an ancestor matches.
   return (target as HTMLElement | null)?.closest?.<HTMLElement>('.feed-tile')?.dataset.id || null;
 }
 
@@ -232,11 +200,10 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
 
   paintMasthead();
 
-  // Tap-to-place. Capture, and on the scroller rather than on each tile: the
-  // tiles are rebuilt whenever the board changes and a per-tile listener would
-  // be re-wired forty times for a gesture that fires once. Capture because an
-  // armed board is placing a sticker and doing nothing else - the tap must not
-  // also open a link card or start a track.
+  // Tap-to-place. Capture, on the scroller not each tile: tiles rebuild on
+  // every board change, so a per-tile listener would rewire forty times for
+  // a gesture that fires once. Capture so an armed tap can't also open a
+  // link or start a track.
   root.addEventListener('pointerdown', e => {
     if (!armedSticker() || e.button !== 0) return;
     e.preventDefault();
@@ -246,31 +213,26 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
     const shape = armedSticker()!.shape;
     const at = feedPointToWorld(e.clientX, e.clientY);
     disarm();
-    // A tap that missed every tile puts the shape down instead of placing it.
-    // There is nowhere for a loose sticker to go in the feed (see HIDDEN), so
-    // placing one on the background would make something the person then could
-    // not see - which is worse than doing nothing and saying so by disarming.
+    // A tap missing every tile disarms instead of placing: a loose sticker
+    // has nowhere to go in the feed (see HIDDEN), so placing it would make
+    // something nobody could then see.
     if (at) cmds?.addStickerAt(shape, at);
   }, true);
 
   /**
    * The tile's menu, aimed at the tile.
    *
-   * The retarget is the whole of it, and it was missing. Every selection-wide
-   * row this menu draws - Delete item, Copy, Tags, A tour stop, Anchor - acts
-   * on the *canvas* selection, which nothing in the Feed had ever set: select a
-   * card on the canvas, switch to Feed, long-press a different tile, tap Delete
-   * item, and the card you selected on the canvas died while the one under your
-   * thumb stayed. With nothing selected the row did nothing at all.
+   * The retarget is the whole of it, and it was missing: every selection-wide
+   * row this menu draws (Delete item, Copy, Tags, a tour stop, Anchor) acts on
+   * the *canvas* selection, which nothing in the Feed had set - select a card
+   * on the canvas, switch to Feed, long-press a different tile, tap Delete
+   * item, and the card selected on the canvas died while the one under your
+   * thumb stayed.
    *
-   * The same call openMenuAt() makes in canvas/input.ts, on the same rule every
-   * file manager follows: opening a menu outside the selection retargets it,
-   * opening inside one leaves the group. `selection.size` rather than a hardcoded
-   * 1 for the same reason - the menu draws different rows for a group.
-   *
-   * Not a second selection model, which is what a Feed-local "current tile"
-   * would have been. The Feed shows the board's items; the board's selection is
-   * what "this one" means.
+   * Same call openMenuAt() makes in canvas/input.ts, same rule every file
+   * manager follows: opening outside the selection retargets it, opening
+   * inside leaves the group. Not a second selection model - the Feed shows
+   * the board's items; the board's selection is what "this one" means.
    */
   function openTileMenu(x: number, y: number, id: string) {
     if (!selection.has(id)) select([id]);
@@ -279,18 +241,17 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
 
   // The right-click slot, which the Feed did not own.
   //
-  // There is exactly one contextmenu listener on the canvas side and it is bound
-  // to #viewport (canvas/input.ts). #mobile-feed is a fixed scroller at z-index 2
-  // that covers the viewport entirely, so a press here never reached it and the
-  // browser's own menu opened instead - on the surface that on a phone *is* the
-  // board. Same for the hold gesture: the long-press timer is in the pointer
-  // pipeline on #viewport, and a tile is not in it.
+  // The canvas's one contextmenu listener is bound to #viewport
+  // (canvas/input.ts). #mobile-feed is a fixed scroller at z-index 2 that
+  // covers it entirely, so a press here never reached it and the browser's
+  // own menu opened instead - on the surface that on a phone *is* the board.
+  // Same for the long-press timer, which lives in #viewport's pointer
+  // pipeline and never sees a tile.
   //
-  // Its own pair of listeners rather than an extension of that pipeline, and
-  // that is deliberate: canvas/input.ts is one pipeline with exactly one active
-  // gesture and must not be split (CLAUDE.md). This is a hold timer beside the
-  // sticker drag's own slop check, which is the same shape of decision in the
-  // same file.
+  // Its own pair of listeners, not an extension of that pipeline: input.ts is
+  // one pipeline with exactly one active gesture and must not be split
+  // (CLAUDE.md). This is a hold timer beside the sticker drag's own slop
+  // check, the same shape of decision in the same file.
   root.addEventListener('contextmenu', e => {
     const id = tileIdAt(e.target);
     // Off a tile the browser menu is welcome to it - there is nothing this app
@@ -307,13 +268,10 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
     // menu twice or open it on a drag that was going to scroll.
     if (e.pointerType !== 'touch') return;
     // Spend the suppression here, not only in the click that was supposed to
-    // consume it. A long press does not always synthesize one - iOS fires none
-    // at all, and neither does an engine that opened its own contextmenu - so a
-    // flag set at the menu and cleared only by a click could outlive its press
-    // and swallow the *next* tap on a tile, which reads as a dead thumb on the
-    // one surface a phone has. The click this exists to eat belongs to the
-    // press that opened the menu, so it can only arrive before this line runs
-    // again: clearing it on the following press is bounded and complete.
+    // consume it - a long press doesn't always synthesize one (iOS fires
+    // none at all), so a flag cleared only by a click could outlive its press
+    // and swallow the *next* tap. The click this eats belongs to the press
+    // that opened the menu, so clearing it on the following press is bounded.
     heldOpen = false;
     const id = tileIdAt(e.target);
     if (!id) return;
@@ -321,9 +279,8 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
     holdTimer = setTimeout(() => {
       holdTimer = 0;
       if (!holdFrom) return;
-      // Suppress the tap that would otherwise follow this press: the tile's own
-      // click handler opens the viewer, and a hold that opened a menu and an
-      // item is a press that did two things.
+      // Suppress the tap that would otherwise follow: the tile's own click
+      // handler opens the viewer, and a hold shouldn't open both a menu and an item.
       heldOpen = true;
       openTileMenu(holdFrom.x, holdFrom.y, holdFrom.id);
     }, HOLD_MS);
@@ -363,20 +320,19 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
     resizeObs.observe(root);
   }
 
-  // Is the title page on screen? The pen top-right edits *that page* and nothing
-  // else, so it has no business riding a wall of photographs a thousand pixels
-  // below it. It used to be gated on the world-space board being at its top stop
-  // (atMobileTop); the Feed replaced that board and the gate went with it.
+  // Is the title page on screen? The pen top-right edits *that page* and
+  // nothing else, so it has no business riding a wall of photographs a
+  // thousand pixels below. Used to be gated on the world-space board being at
+  // its top stop; the Feed replaced that board and the gate went with it.
   //
-  // An observer rather than a line in the scroll handler below, for the reason
-  // ui/mobile-header.ts's own latch gives: the answer changes exactly twice in a
-  // scroll, and asking on every frame to arrive at the state already there is the
-  // cost every view listener in this app is written to avoid. The observer is the
-  // browser answering instead of being asked.
+  // An observer rather than a line in scroll, the same latch ui/mobile-header.ts
+  // uses: the answer changes exactly twice in a scroll, so asking every frame
+  // just to re-arrive at the same state is a cost every view listener here
+  // avoids.
   //
-  // Announced rather than acted on. The button belongs to ui/mobile-header.ts and
-  // this module does not import it - same bargain initFeed() already makes with
-  // the viewport and the command set.
+  // Announced, not acted on - the button belongs to ui/mobile-header.ts, which
+  // this module does not import, the same bargain initFeed() makes with the
+  // viewport and command set.
   if (typeof IntersectionObserver === 'function') {
     mastheadObs = new IntersectionObserver(
       entries => {
@@ -400,9 +356,8 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
 
 /** Everything the Feed shows, in the board's arrangement order. */
 function feedItems(): Item[] {
-  // SAFETY: the reason board-actions.ts states at its own call - mobileOrder()
-  // hands back the very items it was given, in a new order, and ArrangeItem is
-  // only the narrower shape it reads them through.
+  // SAFETY: mobileOrder() hands back the very items it was given, in a new
+  // order - ArrangeItem is only the narrower shape it reads them through.
   return mobileOrder(
     board.items.filter(it => !HIDDEN.has(it.type)),
     { name: board.arrangement }) as Item[];
@@ -414,9 +369,8 @@ function feedItems(): Item[] {
  * in order, and drops any whose item has gone.
  */
 function render() {
-  // The `!` on the two nodes below is the `root` test on this line: initFeed()
-  // returns before it builds anything when there is no #mobile-feed, and builds
-  // all six in one run when there is - so a live root means a live wall.
+  // The `!` below follows from the `root` test: initFeed() builds all six
+  // nodes together or none, so a live root means a live wall.
   if (!root || board.layoutMode !== 'mobile') { teardown(); return; }
   paintMasthead();
 
@@ -451,15 +405,24 @@ function kindOf(item: Item): TileKind {
   if (item.type === 'note') return 'note';
   if (item.type === 'link') return 'link';
   if (item.type === 'swatch') return 'swatch';
-  // A text file shows its words here, as it does on the canvas. It used to fall
-  // through to the file card below and come out as a filename over the literal
-  // word "text" - which is a tile telling you the name of something you already
-  // know the name of, on the one item type whose whole value is what is inside
-  // it. classify() routes some fifty extensions to this, so it is most of the
-  // notes, code and prose anybody drops on a board.
+  // A text file shows its words here, as on the canvas - used to fall
+  // through to the file card below and show a filename over the literal
+  // word "text", on the one item type whose whole value is its contents.
+  // classify() routes some fifty extensions to this - most notes, code and
+  // prose anybody drops on a board.
   if (item.type === 'text') return 'text';
   if (item.type === 'ghost') return 'hint';
   return pictureURL(item) ? 'image' : 'file';
+}
+
+/**
+ * The player a link becomes, or null. The same door the canvas card uses
+ * (embedFor over the validated URL), so a link is a YouTube or Spotify player
+ * on both surfaces or on neither - one place decides what is embeddable.
+ */
+function linkEmbed(item: Item): EmbedSpec | null {
+  if (item.type !== 'link') return null;
+  return embedFor(linkURL(item.meta?.url));
 }
 
 /** The aspect (w/h) a tile is drawn at, clamped so nothing dominates a column. */
@@ -469,10 +432,10 @@ function ratioOf(item: Item) {
   if (kind === 'swatch') return 1;
   if (kind === 'audio') return 1;
   if (kind === 'file') return 1.4;
-  // A hint keeps the shape it was seeded at. ensureGhostCards() sizes these
-  // against the column when Mobile is the live layout - the dial takes the whole
-  // width, the three hints half of it - so the item's own box is already the
-  // right proportion and the clamp below would only fight it.
+  // A hint keeps the shape it was seeded at - ensureGhostCards() sizes these
+  // against the column on Mobile (the dial takes the full width, the three
+  // hints half), so the item's own box is already the right proportion and
+  // the clamp below would only fight it.
   if (kind === 'hint') return clamp(item.w / Math.max(1, item.h), 0.5, 3);
   // Taller than wide, because a page of words is a page. The canvas card is
   // 300x360 and this is the same proportion; anything squarer shows four lines
@@ -486,9 +449,9 @@ function ratioOf(item: Item) {
  * The derived stand-in alone, for a tile whose first choice would not load.
  *
  * Deliberately not pictureURL(): that starts with the preview, which is the
- * thing that has just failed, so it would hand the element back the source it
- * refused. These are all pictures some other path made, so whatever stopped the
- * first one is unlikely to have touched them.
+ * thing that has just failed, so it would hand back the source that just
+ * refused. These are all pictures made by some other path, so whatever
+ * stopped the first is unlikely to have touched them.
  */
 function spareURL(item: Item) {
   const m = item.meta || {};
@@ -511,11 +474,11 @@ function buildTile(item: Item): Tile {
   el.dataset.id = item.id;
   const t: Tile = {
     el, item, ratio: ratioOf(item), kind, video: null,
-    // Both are hints' business and both are settled by fillHint(), which runs
-    // below inside fillTile(): the span from the item's own seeded fraction,
-    // the height from measuring what it built. Everything else on the wall
-    // keeps the defaults and is laid out by its shape, as before.
+    // Both are hints' business, both settled by fillHint() inside fillTile():
+    // span from the item's own seeded fraction, height from measuring what it
+    // built. Everything else keeps the defaults, laid out by its shape.
     span: 1, measured: 0,
+    embed: linkEmbed(item),
   };
   fillTile(t);
   wireOpen(t);
@@ -525,16 +488,15 @@ function buildTile(item: Item): Tile {
 /**
  * A tap opens the item, for the kinds that have nothing else to do with one.
  *
- * The Feed had four tap meanings already and every one of them is left alone: a
- * link goes to its address, an audio tile hands off to the Playlist, a video
- * mounts and plays, and everything else did nothing at all. That last group is
- * the one this is for - a picture, a text file, a note, a named file - where the
- * only thing a tap could reasonably mean is "let me see that properly", and
- * until the viewer existed there was no properly to see it at.
+ * The Feed already had four tap meanings, left alone: a link goes to its
+ * address, audio hands off to the Playlist, video mounts and plays, and
+ * everything else did nothing. This is for that last group - a picture,
+ * text file, note, named file - where the only reasonable tap is "let me see
+ * that properly", which had nowhere to go before the viewer existed.
  *
- * Video is deliberately not in here even though it is viewable: on the wall a
- * tap plays it in place, which is the better answer for a clip somebody is
- * scrolling past. The viewer is where the right-click menu sends it.
+ * Video is deliberately excluded even though viewable: on the wall a tap
+ * plays it in place, the better answer for a clip being scrolled past. The
+ * viewer is where the right-click menu sends it.
  */
 function wireOpen(t: Tile) {
   if (!OPENS.has(t.kind) || !canView(t.item.id)) return;
@@ -559,46 +521,37 @@ function fillTile(t: Tile) {
 }
 
 /**
- * A hint card, drawn by the canvas's own renderer.
+ * A hint card, drawn by the canvas's own renderer (buildContent()), not a
+ * second hint card for this surface - one place knows what a hint says and
+ * how the whimsy dial is laid on it (canvas/renderers.ts, RENDERERS.ghost).
  *
- * buildContent() rather than a second hint card written for this surface. There
- * is one place that knows what a hint says, which of them carries the whimsy
- * dial and how the tape is laid on it (canvas/renderers.ts, RENDERERS.ghost),
- * and a copy here would be a second thing to remember every time the words
- * change. The fragment it hands back is the same one canvas/items.ts appends.
- *
- * Two things the canvas provides and this surface has to provide for itself.
- * --iz is the inverse of the board's zoom, which the ghost card's dashed border
- * is measured in so it stays one screen pixel at every zoom; the Feed has no
- * zoom, so the inverse is exactly 1. And the dial has to be wired: on the canvas
- * items.ts binds it after mounting, and a slider nobody bound is a slider that
- * moves and changes nothing.
+ * Two things the canvas provides that this surface has to provide itself:
+ * `--iz` (inverse zoom, keeping the ghost card's dashed border one screen
+ * pixel at every zoom - the Feed has no zoom, so it's exactly 1), and wiring
+ * the dial after mounting, the same as canvas/items.ts does.
  */
 function fillHint(t: Tile) {
-  // .ghost-mount is what the dial's own rules hang off, and it is why they
-  // apply here at all: every one of them used to be scoped to
-  // `.item[data-type="ghost"]`, which exists on the canvas and nowhere else, so
-  // on the Feed the whimsy card arrived with none of its layout - no sized row,
-  // no stop names, no track. That was the whole of what was wrong with it here.
-  // See the block above .ghost-dial in ghosts.css.
+  // .ghost-mount is what the dial's own rules hang off - every one of them
+  // used to be scoped to `.item[data-type="ghost"]`, which exists on the
+  // canvas and nowhere else, so on the Feed the whimsy card arrived with none
+  // of its layout (no sized row, no stop names, no track). See the block
+  // above .ghost-dial in ghosts.css.
   const host = div('feed-hint ghost-mount');
-  // The value the border width is computed from. Not inherited from anywhere on
-  // this surface - #world is where the canvas writes it.
+  // The value the border width is computed from. Not inherited from anywhere
+  // on this surface - #world is where the canvas writes it.
   host.style.setProperty('--iz', '1');
   host.append(buildContent(t.item));
   t.el.appendChild(host);
   const dial = host.querySelector<HTMLInputElement>('input[type="range"]');
   if (dial) bindDial(dial);
-  // The fraction of the board this hint was seeded at - 1 for the dial, a half
-  // for each of the three sentences - carried through as a column count by
-  // layout(). Absent on a hint from a board written before this existed, and
-  // one column is exactly what such a board already got.
+  // The fraction of the board this hint was seeded at - 1 for the dial, a
+  // half for each of the three sentences - carried through as a column count
+  // by layout(). Absent on a board written before this existed, where one
+  // column is exactly what it already got.
   const span = Number(t.item.meta?.span);
   t.span = Number.isFinite(span) && span > 0 ? Math.min(1, span) : 1;
-  // Re-measured on the next layout(), because the width it will be measured at
-  // is not known until the column count is. Zeroing it here is what makes a
-  // rebuilt hint - the whimsy dial moving rewrites the card - stop insisting on
-  // the height its previous wording happened to need.
+  // Re-measured on the next layout() (the whimsy dial moving rewrites the
+  // card), so a rebuilt hint stops insisting on its previous wording's height.
   t.measured = 0;
 }
 
@@ -608,58 +561,48 @@ function fillImage(t: Tile) {
   img.decoding = 'async';
   img.draggable = false;
   img.alt = t.item.name || '';
-  // The full-size picture, not the hundred-pixel thumb the card swaps in when the
-  // board is zoomed right out: a feed tile is far bigger than 100px, so the thumb
-  // reads as blurry. Thumb (via pictureURL) is only the fallback if there is no
-  // asset to show.
+  // The full-size picture, not the hundred-pixel thumb the card swaps in when
+  // zoomed out - a feed tile is far bigger than 100px. Thumb (pictureURL) is
+  // only the fallback with no asset to show.
   //
-  // Through shownHash(), which is the fix for a tile that drew its own filename:
-  // the asset behind a PDF, a RAW or a HEIC is not a picture, and only
-  // `meta.preview` is.
+  // Through shownHash(), the fix for a tile that drew its own filename: the
+  // asset behind a PDF, RAW or HEIC isn't a picture - only `meta.preview` is.
   const shown = shownHash(t.item);
   const url = (shown && assetURL(shown)) || pictureURL(t.item);
-  // A cropped picture is cropped here too, and by the same route the card and
-  // the viewer take: the display copy is where the rectangle is applied. The
-  // Feed is the whole board on a phone, so a tile showing the full frame of a
-  // picture that is cropped everywhere else would not be a small inconsistency -
-  // it would be the only view most phone users ever see.
+  // A cropped picture is cropped here too, via the same route the card and
+  // viewer take - the Feed is the whole board on a phone, so an uncropped
+  // tile here would be the only view most phone users ever see of a picture
+  // that's cropped everywhere else.
   const crop = itemCrop(t.item);
-  // The quarter turn and the background removal arrive by the same route, and
-  // the Feed wants them for the same reason it wants the crop: this tile is the
-  // whole picture on a phone, so a photograph lying on its side here and upright
-  // everywhere else is not a small inconsistency.
+  // Quarter turn and background removal, same reasoning as the crop.
   const rot = itemRotate(t.item);
   const matte = itemMatte(t.item);
-  // `shown` again, not the asset: a cropped PDF page has to be cropped from the
-  // page, and asking display.ts for a crop of the PDF's own bytes answers with
-  // nothing - which then left the tile on whatever it had, uncropped, on the one
-  // view where a wrong frame is most visible.
+  // `shown` again, not the asset: a cropped PDF page must be cropped from the
+  // page, and asking display.ts for a crop of the PDF's own bytes answers
+  // with nothing - which left the tile uncropped on the one view where a
+  // wrong frame is most visible.
   const edited = !!(crop || rot || matte) && !!shown;
   const ready = edited && shown ? displayURLReady(shown, crop, rot, matte) : null;
   // **An edited tile never shows the untouched file, not even for a moment.**
-  // This used to set `url` here unconditionally and let the copy replace it a
-  // tick later, which on a cut-out card is the background arriving and then
-  // being taken away again in front of the reader - the same flash the card
-  // renderer refuses when it declines to use a thumbnail as a stand-in. An empty
-  // tile for the moment it takes is the better of the two, and on a re-mount
-  // `ready` answers synchronously and there is no moment at all.
+  // Used to set `url` unconditionally and let the copy replace it a tick
+  // later, which on a cut-out card flashed the background in and out - the
+  // same flash the card renderer refuses. An empty tile for a moment is
+  // better, and on a re-mount `ready` answers synchronously so there's no moment.
   if (ready) img.src = ready;
   else if (!edited && url) img.src = url;
-  // And a source that will not load is answered rather than left as alt text -
-  // the same guard the card has. The fallback is the thumbnail, which is a
-  // different set of bytes made by a different path, so it survives whatever
-  // this one hit.
+  // A source that won't load is answered, not left as alt text - the same
+  // guard the card has. The fallback thumbnail is different bytes on a
+  // different path, so it survives whatever this one hit.
   img.addEventListener('error', () => {
     const spare = spareURL(t.item);
     if (spare && img.src !== spare) img.src = spare;
   });
   if (edited && shown && !ready) {
     ensureDisplay(shown, crop, rot, matte).then(u => {
-      // A copy that could not be made falls back to the untouched picture, which
-      // is wrong in the way the comment above describes and is still better than
-      // a tile drawing its own filename. `!img.src` alongside isConnected for
-      // the reason the card gives: the guard saves work on a discarded tile, it
-      // does not leave a live one blank.
+      // A copy that couldn't be made falls back to the untouched picture -
+      // still wrong, still better than a tile showing its own filename.
+      // `!img.src` alongside isConnected saves work on a discarded tile
+      // without leaving a live one blank.
       const src = u || url;
       if (src && (img.isConnected || !img.src)) img.src = src;
     });
@@ -681,11 +624,9 @@ function applyGrade(el: HTMLElement, item: Item) {
     el.style.filter =
       `brightness(${adjust.brightness}) contrast(${adjust.contrast}) saturate(${adjust.saturation})`;
   }
-  // And which way round it is hung, for the reason the crop above is honoured:
-  // on a phone this tile is the picture, and a photograph facing the other way
-  // here than on every other surface is not a small inconsistency. The string is
-  // board-model.ts's - see flipTransform() - because the card and the export
-  // both want the same one.
+  // And which way round it is hung, for the reason the crop above is
+  // honoured - this tile is the picture on a phone. The string is
+  // board-model.ts's (flipTransform()), shared with the card and export.
   const flip = flipTransform(item);
   if (flip) el.style.transform = flip;
 }
@@ -736,29 +677,26 @@ function fillAudio(t: Tile) {
     img.src = cover;
     art.appendChild(img);
   } else {
-    // No embedded art, which is most loose MP3s: a still waveform stands in - the
-    // same shape the canvas card draws for this file and the playlist row lights
-    // when it plays, so a track reads as a track across all three.
+    // No embedded art (most loose MP3s): a still waveform stands in, same
+    // shape as the canvas card and playlist row.
     art.classList.add('is-placeholder');
     art.appendChild(waveBars());
   }
-  // A tap plays the track right here on the Feed; the corner badge says so. The
-  // shared queue is the board's audio, so it plays into the now-playing bar and the
-  // Playlist follows along - but the Feed stays put, it does not jump to the Playlist.
+  // A tap plays the track here; the badge says so. Shared queue means it
+  // plays into the now-playing bar and the Playlist follows, but the Feed
+  // stays put.
   const badge = div('feed-tile-badge');
   badge.innerHTML = PLAY_ICON;
 
   const cap = div('feed-tile-cap');
   const title = div('feed-cap-title');
-  // The Playlist lists the same tracks and this chain used to be written out
-  // there too, differing only in the last word - so the same untitled MP3 read
-  // "Audio" here and "Untitled" there. See trackTitle() in board-model.ts.
+  // Same chain the Playlist uses, via trackTitle() (board-model.ts) - used
+  // to be written out twice, differing only in the fallback word.
   title.textContent = trackTitle(item) || 'Audio';
   cap.appendChild(title);
   const bits: string[] = [];
   if (str(item.meta?.artist)) bits.push(str(item.meta?.artist));
-  // A duration is written as a number by the importer; anything else is read as
-  // no duration at all, which is what the `!= null` test was standing in for.
+  // Duration is a number from the importer; anything else reads as absent.
   if (typeof item.meta?.duration === 'number') bits.push(clock(item.meta.duration));
   if (bits.length) {
     const sub = div('feed-cap-sub');
@@ -766,14 +704,11 @@ function fillAudio(t: Tile) {
     cap.appendChild(sub);
   }
   t.el.append(art, badge, cap);
-  // A tap plays the track, in place - it does not leave the Feed.
+  // A tap plays the track in place - Feed doesn't leave.
   //
-  // 'board', like a card, because that is what a Feed tile is: the Feed is the
-  // whole board pressed flat, in the board's arrangement, with this track
-  // between a photograph and a note. Pressing it means play *this*, and nothing
-  // about the tiles either side of it says a sequence. The Playlist next door is
-  // where the board's audio is a list, and a track started there runs on - see
-  // playTrack() and the note on `fromList`.
+  // 'board', like a card: the Feed is the board pressed flat, so pressing a
+  // track means play *this*, not "start a sequence". See playTrack() and
+  // the note on `fromList`.
   actAsButton(t.el, () => playTrack(item, 'board'));
 }
 
@@ -782,14 +717,12 @@ function fillAudio(t: Tile) {
 const WAVE_PATTERN = [38, 62, 90, 54, 78, 100, 46, 70, 58, 84, 42, 66];
 function waveBars() {
   const w = div('feed-bars');
-  // Built rather than written as markup, and the reason is the policy in
-  // web/_headers rather than safety: the pattern above is twelve literals and
-  // was never foreign, so the innerHTML this replaces was not the bug the
-  // no-innerHTML rule is about. But a `style=` attribute *parsed from markup* is
-  // exactly what style-src governs, and this one line was the whole of what
-  // forced 'unsafe-inline' into the policy for the entire site. Assigning
-  // .style through the CSSOM is not parsed from markup and is not covered by
-  // it, so the same bars cost nothing.
+  // Built rather than written as markup - the policy in web/_headers, not
+  // safety: the twelve literals above were never foreign. But a `style=`
+  // attribute *parsed from markup* is what style-src governs, and this one
+  // line was the whole reason 'unsafe-inline' had to be in the policy for
+  // the entire site. Assigning .style through the CSSOM isn't parsed from
+  // markup and isn't covered by it, so the same bars cost nothing.
   for (const h of WAVE_PATTERN) {
     const bar = document.createElement('i');
     bar.style.height = `${h}%`;
@@ -803,12 +736,11 @@ function fillNote(t: Tile) {
   const text = noteText(t.item);
   body.textContent = text;
   // The sheet the note is actually on, through the same validator the card
-  // uses. This read `meta.color`, which nothing in the app writes - notes carry
-  // `meta.tint`, an integer 1..4 - so a yellow note opened white on the Feed
-  // while its card was tinted on the canvas. And because normalizeMeta() passes
-  // unknown keys straight through, a hand-edited `meta.color:
-  // "url(https://attacker/beacon.png)"` went into the CSSOM and made the
-  // request.
+  // uses. This used to read `meta.color`, which nothing writes (notes carry
+  // `meta.tint`, an integer 1..4), so a yellow note opened white on the Feed
+  // while tinted on the canvas - and because normalizeMeta() passes unknown
+  // keys through, a hand-edited `meta.color: "url(https://attacker/beacon.png)"`
+  // went straight into the CSSOM and made the request.
   const tint = noteTint(t.item.meta?.tint);
   if (tint) body.style.background = `var(--note-${tint})`;
   t.el.appendChild(body);
@@ -817,11 +749,10 @@ function fillNote(t: Tile) {
 /**
  * The note's words, from the rich model if it has one, else the flat text.
  *
- * The read itself is canvas/note-model.ts's, which is the module that owns the
- * bargain between `meta.rich` and `meta.text` - three surfaces were making it
- * independently. What stays here is what this surface wants on top of it: the
- * name as a last resort, and a trim, because a tile is a fixed box and a leading
- * blank line in it is a tile that looks empty.
+ * The read itself is canvas/note-model.ts's, owner of the bargain between
+ * `meta.rich` and `meta.text` (three surfaces were making it independently).
+ * What this adds: the name as a last resort, and a trim, since a leading
+ * blank line makes a fixed-box tile look empty.
  */
 function noteText(item: Item) {
   return (noteWords(item.meta) || item.name || '').trim();
@@ -833,6 +764,27 @@ function fillLink(t: Tile) {
   // rather than a live window.open.
   const u = linkURL(t.item.meta?.url);
   const host = u ? u.hostname.replace(/^www\./, '') : '';
+
+  // A YouTube or Spotify link is a player waiting to be asked for. The offer,
+  // not the frame: nothing is requested from anyone until the tile is tapped,
+  // the same promise the canvas card makes - so the tap is the press, and it
+  // mounts the frame in place rather than leaving for the site.
+  if (t.embed) {
+    const spec = t.embed;
+    const card = div('feed-embed');
+    const hostEl = div('feed-link-host');
+    // The song once its title is stored, the site until then - the same order
+    // the canvas card reads (renderers.ts).
+    hostEl.textContent = str(t.item.meta?.title) || t.item.name || host;
+    card.append(hostEl, offerButton(spec));
+    t.el.appendChild(card);
+    actAsButton(t.el, () => mountEmbed(t, spec), 'link');
+    // On load if missing, the same hook the canvas card uses - so a title
+    // fetched on either surface shows on both.
+    enrichEmbedCard(t.item);
+    return;
+  }
+
   const card = div('feed-link');
   const name = div('feed-link-name');
   name.textContent = t.item.name || host || str(t.item.meta?.url) || 'Link';
@@ -845,16 +797,28 @@ function fillLink(t: Tile) {
   }
 }
 
+/**
+ * Swap a tapped embed offer for its player, in place. The height was already
+ * the player's (sizeEmbeds), so nothing on the wall moves; only the offer's
+ * chrome gives way to the frame. Guarded against a second tap, which on a
+ * mounted tile would otherwise tear the running player out and rebuild it.
+ */
+function mountEmbed(t: Tile, spec: EmbedSpec) {
+  if (t.el.querySelector('.embed-frame')) return;
+  const frame = frameFor(spec);
+  frame.classList.add('feed-embed-frame');
+  t.el.replaceChildren(frame);
+}
+
 function fillSwatch(t: Tile) {
   const block = div('feed-swatch');
-  // Through swatchHex(), which is the only thing that decides what a swatch is.
+  // Through swatchHex(), the only thing that decides what a swatch is.
   //
-  // This read `meta.color`, a key no swatch carries - they store `meta.hex` -
-  // and so fell through to `item.name` every time, straight into the CSSOM. Two
-  // consequences: every swatch on the Feed was coloured by its own *name*, so
-  // renaming one changed its colour and dropped it to #888; and a .mbrd
-  // carrying `{"type":"swatch","name":"url(https://attacker/x.png)"}` put that
-  // value into a background, which is the request swatchHex()'s
+  // This used to read `meta.color`, a key no swatch carries (they store
+  // `meta.hex`), falling through to `item.name` straight into the CSSOM -
+  // every swatch was coloured by its own *name* (renaming one dropped it to
+  // #888), and a .mbrd carrying a `name` like `url(https://attacker/x.png)`
+  // put that value into a background, exactly what swatchHex()'s
   // /^#[0-9a-f]{6}$/ exists to prevent.
   const color = swatchHex(t.item.meta?.hex);
   block.style.background = color;
@@ -866,25 +830,24 @@ function fillSwatch(t: Tile) {
 /**
  * How much of a text file a tile shows.
  *
- * Well under the canvas card's 20 000, and the difference is the point: a tile
- * is a few hundred pixels of a scrolling wall and will draw perhaps forty lines
- * of it. Reading a hundred kilobytes to lay out forty lines is work the feed
- * pays on every text file the board holds, at the moment it is trying to draw
- * everything at once. The rest of the file lives one tap away, in the viewer.
+ * Well under the canvas card's 20 000 - a tile is a few hundred pixels of a
+ * scrolling wall and draws perhaps forty lines. Reading a hundred kilobytes
+ * to lay out forty is work paid on every text file the board holds, right
+ * when the feed is trying to draw everything at once. The rest is one tap
+ * away, in the viewer.
  */
 const TILE_TEXT = 2000;
 
 /**
  * A text file, showing its words.
  *
- * The read is asynchronous and the tile is built synchronously, so the card goes
- * up with its name and the body arrives when it arrives - the same bargain
- * fillImage() makes with a lazily-decoded picture, and the same one the canvas
- * text renderer makes.
+ * The read is asynchronous, the tile built synchronously - the card goes up
+ * with its name, the body arrives when it arrives, the same bargain
+ * fillImage() makes with a lazily-decoded picture.
  *
- * <pre> and textContent, never innerHTML: half of what classify() routes here is
- * markup, and a tile that rendered the HTML file it is meant to be showing you
- * would be executing a file the app did not write.
+ * <pre> and textContent, never innerHTML: much of what classify() routes here
+ * is markup, and rendering an HTML file's own tags would execute a file the
+ * app did not write.
  */
 function fillText(t: Tile) {
   const md = MARKDOWN.has(str(t.item.meta?.ext));
@@ -902,10 +865,8 @@ function fillText(t: Tile) {
   const hash = t.item.asset?.hash;
   if (!hash) return;
   readText(hash, TILE_TEXT).then(text => {
-    // The tile may have been dropped or rebuilt while the read was out - a
-    // delete, a layout switch, an undo. Writing into a detached node is
-    // harmless and writing into a *rebuilt* one is not, so check the body is
-    // still the one this call built.
+    // The tile may have been dropped or rebuilt while the read was out -
+    // writing into a detached node is harmless, into a rebuilt one is not.
     if (!body.isConnected) return;
     if (md) body.append(renderMarkdown(text));
     else body.textContent = text;
@@ -929,13 +890,10 @@ function fillFile(t: Tile) {
 // ---------------------------------------------------------------------------
 
 /**
- * A finished masonry pass: where every tile goes, how wide a column came out,
- * and how tall the whole thing is.
- *
- * `colW` and `height` travel with the boxes because the caller needs both and
- * neither can be recovered from the boxes alone - a column nothing landed in
- * still has a width, and the tallest box is not the height when the last row is
- * ragged.
+ * A finished masonry pass: where every tile goes, the column width, and the
+ * total height. `colW`/`height` travel separately since neither is
+ * recoverable from the boxes alone - an empty column still has a width, and
+ * the tallest box isn't the height when the last row is ragged.
  */
 type FeedLayout = { boxes: TileBox[], colW: number, height: number };
 
@@ -943,37 +901,31 @@ type FeedLayout = { boxes: TileBox[], colW: number, height: number };
  * Shortest-column packing. `list` is the tiles in reading order; each lands in
  * whichever column is shortest so far, leftmost on a tie.
  *
- * The packing itself is arrange/columns.ts's, which is *the same call*
- * arrange/arrangements.ts's masonry() makes rather than the same rule written
- * out again beside it. They were two loops that had been written from each other
- * and had come apart in three places; two of the three are arguments now
- * (`span`, `tolerance`) and the third - one column width here, a width per
- * column on the board - is the half that stays in each surface, which is why
- * packColumns() answers in columns and tops rather than in x and y.
+ * The packing itself is arrange/columns.ts's - the same call
+ * arrange/arrangements.ts's masonry() makes, not the same rule written out
+ * again. They were two loops written from each other that had come apart in
+ * three places; two are arguments now (`span`, `tolerance`), and the third -
+ * one column width here, a width per column on the board - stays in each
+ * surface, why packColumns() answers in columns and tops rather than x and y.
  *
- * What is left here is exactly the screen-space half: how wide a column is, what
- * a span costs in pixels, and where a tile's box lands. Returns the boxes and
- * the height of the tallest column, which is the wall's height. Pure but for
- * reading `cols`.
+ * What's left here is the screen-space half: column width, what a span costs
+ * in pixels, where a box lands. Returns the boxes and the tallest column's
+ * height. Pure but for reading `cols`.
  */
 function feedMasonry(list: Tile[], width: number): FeedLayout {
   const colW = (width - (cols - 1) * GAP) / cols;
-  // Every tile's span and height, before anything is placed. Both are knowable
-  // up front - a span comes from the tile's kind and the column width, a height
-  // from the width that span buys - and packColumns() wants only the heights.
+  // Every tile's span and height, knowable up front - packColumns() only
+  // needs the heights.
   const sized = list.map(t => {
     const span = spanFor(t, colW);
     const w = span * colW + (span - 1) * GAP;
-    // A measured height wins over the shape, and only hints have one - see
-    // Tile.measured. Falling back to the ratio keeps every other tile, and a
-    // hint on the very first pass before it has been measured, exactly as they
-    // were.
+    // A measured height wins over the shape (only hints have one - see
+    // Tile.measured); otherwise fall back to the ratio.
     return { t, span, w, h: t.measured > 0 ? t.measured : w / t.ratio };
   });
 
-  // Half a pixel of tolerance: these heights are pixel arithmetic off measured
-  // elements, and two columns apart in the eighth decimal place are level to
-  // anybody looking at them. Without it a full-width tile wanders off x = 0.
+  // Half a pixel of tolerance: two columns apart in the eighth decimal place
+  // look level to anybody. Without it a full-width tile wanders off x = 0.
   const { spots, height } = packColumns(sized, { cols, gap: GAP, tolerance: 0.5 });
 
   const boxes: TileBox[] = sized.map((s, i) => ({
@@ -989,20 +941,24 @@ function feedMasonry(list: Tile[], width: number): FeedLayout {
 /**
  * How many columns a tile takes.
  *
- * **One, unless it is a hint**, and that guard is the whole function. Every
- * other tile on the wall - every photograph, clip, track, note and file card -
- * is one column wide and always has been; spanning is a thing hints do because
- * they are sentences rather than pictures, and nothing else on the Feed has a
- * reason to want more room than its neighbours.
+ * **One, unless it is a hint**, and that guard is the whole function - every
+ * other tile (photograph, clip, track, note, file card) is one column wide;
+ * spanning is a thing hints do because they are sentences rather than pictures.
  *
- * Said as a `kind` test rather than read off `Tile.span`, which is what the
- * first version did and got wrong: `span` defaults to 1 for every tile, 1 means
- * "the whole width" for a hint, and the two together silently made every track
- * and every photograph full width. A default that means something different
- * depending on the type carrying it is a default waiting to be misread, so the
- * type is asked first and `span` is only consulted for the type it describes.
+ * Said as a `kind` test rather than read off `Tile.span`, which the first
+ * version did and got wrong: `span` defaults to 1 for every tile, 1 means
+ * "the whole width" for a hint, and together that silently made every track
+ * and photograph full width. The type is asked first, `span` consulted only
+ * for the type it describes.
  */
 function spanFor(t: Tile, colW: number): number {
+  // A player spans as many columns as its frame's floor needs - a one-column
+  // Spotify tile would start the same sideways scrollbar a too-narrow card does
+  // on the canvas. A fully fluid player (YouTube, minWidth 0) stays one column.
+  if (t.embed && t.embed.minWidth > colW) {
+    const need = Math.ceil((t.embed.minWidth + GAP) / (colW + GAP));
+    return clamp(need, 1, cols);
+  }
   if (t.kind !== 'hint') return 1;
   // Its seeded fraction of the wall, and at least enough width to set a line of
   // prose in. On a two-column phone the floor does not bind and a half-width
@@ -1015,90 +971,104 @@ function spanFor(t: Tile, colW: number): number {
 /**
  * The narrowest a hint may be drawn, in pixels.
  *
- * A floor, not the intended width: what a hint actually asks for is the
- * fraction of the board it was seeded at, and this only stops that fraction
- * becoming absurd. It is set deliberately low - low enough that on a phone,
- * where the wall is two columns, a half-width hint stays half-width and the
- * three of them pair up exactly as they did on the old mobile board. Above
- * that it binds only on a wide wall, where a half of five columns would round
- * down to a strip too narrow to set a sentence in.
+ * A floor, not the intended width - a hint asks for the fraction of the board
+ * it was seeded at, and this only stops that fraction becoming absurd. Set
+ * deliberately low so a half-width hint on a two-column phone stays
+ * half-width, matching the old mobile board's pairing of the three hints.
+ * Above that it binds only on a wide wall, where a half of five columns would
+ * round down to a strip too narrow for a sentence.
  *
- * The height is not this function's problem. Every hint is measured before it
- * is packed (measureHints), so a narrow hint is a tall one rather than a
- * clipped one, which is what makes it safe for this number to be small.
+ * Height is not this function's problem - every hint is measured before
+ * packing (measureHints), so a narrow hint is a tall one, not a clipped one.
  */
 const HINT_MIN_W = 170;
 
 /**
  * Give every hint tile the height its own words need, before the wall is packed.
  *
- * The Feed lays out by *shape*: a tile is a fraction of a column wide and its
- * height falls out of an aspect ratio. That is right for a picture, which crops,
- * and wrong for a hint, which has a last line that either fits or does not - and
- * on a narrow wall it did not, so the three sentences and the whimsy dial were
- * being cut off at the bottom with nothing to say they had been.
+ * The Feed lays out by *shape*: a tile is a fraction of a column wide, its
+ * height falls out of an aspect ratio. Right for a picture, which crops;
+ * wrong for a hint, whose last line either fits or doesn't - on a narrow wall
+ * it didn't, cutting off the three sentences and the whimsy dial with no sign
+ * they'd been cut.
  *
- * So each hint is laid out once at the width it is about to be given, with its
- * height released, and asked how tall it came out. The answer goes on the tile
- * and feedMasonry() uses it instead of the ratio.
+ * So each hint is laid out once at the width it's about to get, height
+ * released, and asked how tall it came out. The answer goes on the tile;
+ * feedMasonry() uses it instead of the ratio.
  *
- * **This forces a layout flush**, which is the thing the rest of this module is
- * careful never to do per tile - see releaseOffscreen(), which hoists one
- * getBoundingClientRect out of a loop for exactly this reason. It is affordable
- * here and nowhere else: hints exist only on a board with nothing on it, there
- * are at most four of them, and the moment they stop being the whole board they
- * are gone. A wall of two hundred photographs measures nothing.
+ * **This forces a layout flush**, which the rest of this module is careful
+ * never to do per tile - see releaseOffscreen(), which hoists one
+ * getBoundingClientRect out of a loop for the same reason. Affordable here
+ * only: hints exist only on an otherwise-empty board, at most four of them,
+ * gone the moment they stop being the whole board. A wall of two hundred
+ * photographs measures nothing.
  */
 function measureHints(list: Tile[], width: number) {
   const colW = (width - (cols - 1) * GAP) / cols;
   for (const t of list) {
     if (t.kind !== 'hint') continue;
-    // The same width the packer is about to give it, from the same function, so
-    // the measurement cannot be taken at a width the tile never gets.
+    // Same width the packer is about to give it, from the same function.
     const span = spanFor(t, colW);
     const w = span * colW + (span - 1) * GAP;
-    // Width first and height auto, so what is read back is the height this card
-    // needs at the width it is about to get rather than the height it happens
-    // to have from the previous layout.
+    // Width first, height auto: reads back the height this card needs at
+    // its new width, not its previous layout's height.
     t.el.style.width = `${w}px`;
     t.el.style.height = 'auto';
-    // scrollHeight rather than getBoundingClientRect: the tile is the box being
-    // sized, so its own rect is the thing in question, and scrollHeight is the
-    // content's answer to it. Floored at a sensible minimum so a card whose
-    // fonts have not landed yet cannot collapse the tile to nothing.
+    // scrollHeight, not getBoundingClientRect: the tile's own rect is what's
+    // being sized. Floored so a card whose fonts haven't landed can't
+    // collapse to nothing.
     t.measured = Math.max(72, Math.ceil(t.el.scrollHeight));
     t.el.style.height = `${t.measured}px`;
+  }
+}
+
+/**
+ * Give every embed tile the exact height its player needs, before packing.
+ *
+ * Like measureHints, but computed rather than measured: a player's height is a
+ * known function of its frame width (canvas/embed.ts, playerHeight), so this
+ * forces no layout flush. The same height whether the tile still shows the
+ * offer or already holds the frame - so mounting the player on a tap grows
+ * nothing and the wall does not jump under the thumb.
+ */
+function sizeEmbeds(list: Tile[], width: number) {
+  const colW = (width - (cols - 1) * GAP) / cols;
+  for (const t of list) {
+    if (!t.embed) continue;
+    // The Feed mounts the bare frame full-bleed, so the tile width is the frame
+    // width - no card padding to subtract, unlike the canvas.
+    const span = spanFor(t, colW);
+    const w = span * colW + (span - 1) * GAP;
+    t.measured = Math.max(72, Math.round(t.embed.playerHeight(w)));
   }
 }
 
 // ---------------------------------------------------------------------------
 // Stickers on the wall
 //
-// The one mechanism in the Feed with no equivalent on the canvas, and the whole
-// of it is the function below. Everywhere else in the app a screen point
-// becomes a world point through vp.toWorld(), which is a pan and a zoom; the
-// Feed is not the world drawn small, it is a different arrangement of the same
-// items, and there is no transform between the two. So the way back is through
-// the *item*: which tile the tap landed on, where in that tile, and then the
-// same place in the item's own box.
+// The one mechanism in the Feed with no equivalent on the canvas. Elsewhere in
+// the app a screen point becomes a world point through vp.toWorld(), a pan and
+// a zoom; the Feed is a different arrangement of the same items with no
+// transform between the two. So the way back is through the *item*: which
+// tile the tap landed on, where in that tile, then the same place in the
+// item's own box.
 // ---------------------------------------------------------------------------
 
 /**
  * A tap on the wall, as a world point on the item it landed on - or null if it
  * landed on no tile at all.
  *
- * Two steps, and only the first is new. The tap becomes a fraction of the tile
- * it hit; the fraction becomes a point in the item's current-layout box, which
- * is the arithmetic stuckPlacement() already does for a rider crossing between
- * layouts. Item coordinates are centres and world y points up, which is where
- * the halves and the minus come from.
+ * The tap becomes a fraction of the tile it hit, then a point in the item's
+ * current-layout box - the arithmetic stuckPlacement() already does for a
+ * rider crossing between layouts. Item coordinates are centres and world y
+ * points up, hence the halves and the minus.
  *
- * The fraction is *approximate* and knowingly so: a tile's aspect is clamped to
- * between 1:2 and 2:1 (ratioOf) so no one picture can own a column, and a very
- * tall photograph is therefore drawn shorter here than it is on the board. A
- * star pressed onto the bottom of such a tile lands a little higher up the
- * photograph than the thumb did. The alternative is refusing to place on the
- * clamped tiles at all, which is a worse answer to a smaller problem.
+ * The fraction is *approximate*: a tile's aspect is clamped to 1:2..2:1
+ * (ratioOf) so no one picture can own a column, so a very tall photograph is
+ * drawn shorter here than on the board, and a star pressed near its bottom
+ * lands a little higher up the photograph than the thumb did. The
+ * alternative - refusing to place on clamped tiles at all - is a worse
+ * answer to a smaller problem.
  */
 function feedPointToWorld(clientX: number, clientY: number): Point | null {
   const el = document.elementFromPoint(clientX, clientY)?.closest<HTMLElement>('.feed-tile');
@@ -1114,14 +1084,14 @@ function feedPointToWorld(clientX: number, clientY: number): Point | null {
 /**
  * Draw every pinned sticker on its host's tile.
  *
- * Positioned as a percentage of the tile rather than in pixels, which is what
- * lets this run once per render and survive every relayout underneath it: the
- * columns are re-measured on every resize and the sticker's *fraction* of its
- * host does not change when the tile does.
+ * Positioned as a percentage of the tile, not pixels, which is what lets this
+ * run once per render and survive every relayout underneath: columns are
+ * re-measured on every resize, but the sticker's *fraction* of its host does
+ * not change when the tile does.
  *
- * A sticker on a note on a photograph is drawn on the note's tile, because the
- * note is what it is stuck to - the same walk stuckTo() gives everywhere else,
- * taken one step rather than to the root.
+ * A sticker on a note on a photograph is drawn on the note's tile - the note
+ * is what it's stuck to, the same walk stuckTo() gives everywhere, taken one
+ * step rather than to the root.
  */
 function paintStickers() {
   if (!gridEl) return;
@@ -1166,6 +1136,7 @@ function layout() {
   cols = clamp(Math.round(width / TILE_TARGET), 2, MAX_COLS);
   const list = feedItems().map(it => tiles.get(it.id)).filter(t => !!t);
   measureHints(list, width);
+  sizeEmbeds(list, width);
   const { boxes, height } = feedMasonry(list, width);
   for (const b of boxes) {
     b.t.el.style.width = `${b.w}px`;
@@ -1173,10 +1144,9 @@ function layout() {
     b.t.el.style.transform = `translate(${b.x.toFixed(2)}px, ${b.y.toFixed(2)}px)`;
   }
   gridEl.style.height = `${Math.max(0, height)}px`;
-  // Here rather than in render(), because a sticker's *fraction* of its host
-  // changes when the host is resized - which arrives as a bare 'geom' and never
-  // rebuilds a tile. layout() is what already listens for that, and it is
-  // rAF-throttled, so this cannot run twice in a frame however the event storms.
+  // Here, not render(): a sticker's fraction of its host changes on resize
+  // (a bare 'geom', no tile rebuild), and layout() already listens for that,
+  // rAF-throttled.
   paintStickers();
   releaseOffscreen();
 }
@@ -1195,9 +1165,8 @@ function releaseOffscreen() {
   const npEl = nowPlaying()?.el || null;
   const top = -root.clientHeight;
   const bottom = root.clientHeight * 2;
-  // Hoisted: the scroll container's own top does not move as fillTile swaps a
-  // child video for a poster, so reading it once keeps the loop from forcing a
-  // layout flush for the invariant rect on every mounted tile.
+  // Hoisted: the container's own top doesn't move as fillTile swaps video
+  // for poster, so reading it once avoids a layout flush per mounted tile.
   const rootTop = root.getBoundingClientRect().top;
   for (const t of tiles.values()) {
     if (!t.video || t.video === npEl) continue;
@@ -1234,9 +1203,8 @@ function scheduleMasthead() {
   mastheadRaf = requestAnimationFrame(() => {
     mastheadRaf = 0;
     const w = mastheadEl ? mastheadEl.clientWidth : 0;
-    // Both `!` are the two tests this frame was scheduled behind: the line above
-    // returns unless there is a title, and a width over zero is a masthead. The
-    // pair is built together in initFeed() and neither is ever cleared.
+    // Both `!` follow the two tests this frame was scheduled behind: a
+    // title must exist, and both are built together in initFeed().
     if (w > 0) {
       titleEl!.style.setProperty('--mobile-board-width', w + 'px');
       titleEl!.style.setProperty('--mobile-header-height',
@@ -1258,4 +1226,3 @@ function teardown() {
   for (const t of tiles.values()) dropTile(t);
   tiles.clear();
 }
-

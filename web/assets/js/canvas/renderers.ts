@@ -1,12 +1,8 @@
-// One renderer per item type: classification, a default size, and the DOM that
-// goes inside a card. Adding a new type means adding an entry to RENDERERS and
-// a branch in classify() - nothing else in the app needs to know about it.
-//
-// Both stay here: they are the pair a new type touches, and splitting them
-// would double that. What moved out was never type dispatch -
-// canvas/note-model.ts has the sticky-note formatting model (pure, read by the
-// editor as much as by the renderer), canvas/poster.ts the video first-frame
-// grab. Both are re-exported below so no caller had to learn they moved.
+// One renderer per item type: classification, a default size, and the DOM
+// that goes inside a card. Adding a new type means one entry in RENDERERS and
+// one branch in classify() - nothing else needs to know. note-model.ts (the
+// sticky-note model) and poster.ts (the video frame grab) moved out but are
+// re-exported below so no caller had to learn they moved.
 
 import { cue } from '../cuelume/engine.ts';
 import { extOf, baseName, formatBytes, hasOwn, isRecord } from '../util.ts';
@@ -49,33 +45,22 @@ export {
 export { videoFrame, videoDrawsBlank, pictureIsFlat } from './poster.ts';
 
 
-/**
- * How much of a text file a card shows.
- *
- * The same number readText() defaults to: a card is a preview, not a viewer.
- * Past this the body is marked clipped, so the card says so rather than
- * appearing to be the whole file.
- */
+/** How much of a text file a card shows - readText()'s own default. Past this
+ *  the body is marked clipped, so the card says so instead of looking whole. */
 const TEXT_PREVIEW = 20000;
 
-/**
- * A meta value read as the string it is meant to be, or ''.
- *
- * `meta` is unknown per key on purpose (see ItemMeta in board-model.ts) and
- * this file reads a dozen hash, mime and extension keys out of it. Narrowed
- * once here, and to '' rather than null so the `||` chains below still read.
- */
+/** A meta value read as the string it's meant to be, or ''. `meta` is unknown
+ *  per key on purpose (ItemMeta in board-model.ts); narrowed once here, to ''
+ *  rather than null so the `||` chains below still read. */
 const metaStr = (v: unknown): string => (typeof v === 'string' ? v : '');
 
 /** A card's box in world units - what defaultSize() and fitToBox() answer. */
 export type Size = { w: number; h: number };
 
-/**
- * What measureSize() answers: a box, whether the browser could decode the file,
- * and whether the box came from the file's own dimensions or the type's
- * placeholder. `measured` is optional because the two fallback paths return the
- * placeholder and say nothing about it - what import/drop.ts reads it for.
- */
+/** What measureSize() answers: a box, whether the browser could decode the
+ *  file, and whether the box is the file's own dimensions or the type's
+ *  placeholder. `measured` is optional because the fallback paths return the
+ *  placeholder and say nothing about it - what import/drop.ts reads it for. */
 export type MeasuredSize = Size & { decodable: boolean; measured?: boolean; natural?: Size };
 
 const TEXT_EXT = new Set([
@@ -85,29 +70,17 @@ const TEXT_EXT = new Set([
   'java', 'kt', 'swift', 'php', 'sh', 'bat', 'ps1', 'sql', 'srt', 'vtt',
 ]);
 
-/**
- * The extensions read as prose rather than shown as source.
- *
- * Three surfaces split on this set two tiers apart - the viewer, the Feed tile,
- * and the card built below - and canvas/ may not import ui/
- * (tests/layers.test.js). So it lives under all three. A second copy would
- * drift: one surface goes on printing hashes and asterisks after the others
- * stopped.
- */
+/** The extensions read as prose rather than shown as source. Shared by three
+ *  surfaces (the viewer, the Feed tile, the card below) that can't import one
+ *  another (canvas/ may not import ui/, tests/layers.test.js), so it lives
+ *  under all three rather than risk one drifting out of step. */
 export const MARKDOWN = new Set(['md', 'markdown', 'mdown', 'mkd']);
 
-/**
- * How a card draws Markdown, handed in rather than imported.
- *
- * The parser is ui/markdown.ts and this file is canvas/ - the one direction the
- * layering refuses. Same shape as setNoteMenu() next door, setOverlays() and
- * setAssetNameLookup(): the answer lives up the graph, the question is asked
- * from under it, main.ts joins them.
- *
- * **Unwired, a `.md` card shows its source.** A missing renderer is the old
- * behaviour, not a failure - that keeps this module buildable in a test with no
- * browser and no interface layer loaded.
- */
+/** How a card draws Markdown, handed in rather than imported: the parser is
+ *  ui/markdown.ts and this file is canvas/, the one direction layering
+ *  refuses. Same shape as setNoteMenu(), setOverlays(), setAssetNameLookup() -
+ *  main.ts wires it. **Unwired, a `.md` card shows its source** (old
+ *  behaviour, not a failure), so this module still builds with no DOM. */
 export type MarkdownRenderer = (src: string) => DocumentFragment;
 
 let renderMd: MarkdownRenderer | null = null;
@@ -117,28 +90,141 @@ export function setMarkdownRenderer(fn: MarkdownRenderer | null | undefined) {
 }
 
 /**
- * Item type for a dropped File. MIME first, extension as the fallback.
- *
- * Only four things render today - picture, moving picture, sound, text - what a
- * browser can draw with no help. Everything else becomes a named card;
- * formats.ts knows what ~1350 extensions *are*, so a .sldprt says "SolidWorks"
- * rather than "file". Real viewers can slot in later without this routing
- * changing.
+ * The one hook that reaches the network: fetch a Spotify card's title and cover
+ * and store them (canvas/embed-meta.ts), handed in rather than imported for the
+ * same reason the Markdown renderer is - to keep this module loadable with no
+ * DOM and no network in a test. **Unwired it is a no-op**, which is what lets a
+ * test build a link card without a request going out, and is also the whole of
+ * the local-first default: a board with this line un-run fetches nothing and
+ * shows the card exactly as it was stored. main.ts wires it.
  */
+export type EmbedEnrich = (item: Item) => void;
+
+let enrich: EmbedEnrich = () => {};
+
+export function setEmbedEnrich(fn: EmbedEnrich | null | undefined) {
+  enrich = typeof fn === 'function' ? fn : () => {};
+}
+
+/** Kick off the enrichment for a link that is a player. Exported so the Feed's
+ *  own tile builder (ui/feed.ts) reaches the same hook the card does. */
+export function enrichEmbedCard(item: Item) {
+  enrich(item);
+}
+
+/**
+ * The faint provider watermark behind the offer: the provider word stretched to
+ * fill the inner margin exactly, both axes. Fixed sizes cannot - the fraction of
+ * the box a word fills differs by whimsy face - so it is an SVG whose viewBox is
+ * set to the word's real ink box (fitMark), and preserveAspectRatio="none" fills
+ * that box. Upper-cased here; text-transform does not reach SVG text reliably.
+ */
+function providerMark(provider: string) {
+  // A div sized to the inner margin, with the SVG filling it at 100% x 100%.
+  // The SVG cannot size itself off `inset` alone - it keeps an intrinsic height
+  // and sits short - so the div is the box and the SVG is told to fill it.
+  const box = document.createElement('div');
+  box.className = 'embed-mark';
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('preserveAspectRatio', 'none');
+  svg.setAttribute('aria-hidden', 'true');
+  const t = document.createElementNS(SVG_NS, 'text');
+  t.textContent = provider.toUpperCase();
+  svg.append(t);
+  box.append(svg);
+  fitMark(svg, t);
+  return box;
+}
+
+// One offscreen 2D context for measuring the cap band; lazily made and guarded
+// so the module still loads where there is no canvas (a headless test).
+let markCtx: CanvasRenderingContext2D | null | undefined;
+function measureCtx(): CanvasRenderingContext2D | null {
+  if (markCtx !== undefined) return markCtx;
+  try { markCtx = document.createElement('canvas').getContext('2d'); }
+  catch { markCtx = null; }
+  return markCtx;
+}
+
+/**
+ * Set the mark's viewBox to the word's real ink box, so preserveAspectRatio=
+ * "none" stretches the ink to fill the element on both axes with no padding.
+ *
+ * Two rendering engines disagree about a font's ink, each in one direction, and
+ * neither alone fills every face in Firefox (measured, pixel-scanned):
+ *
+ * - getBBox is the SVG's own geometry, but Firefox returns the *advance* box, so
+ *   a static face's trailing side bearing shows as right-side padding.
+ * - canvas actualBoundingBox is tight ink for a static face, but overshoots a
+ *   *variable* face (Fraunces, the default display face): its measureText does
+ *   not apply the 40px optical size the SVG renders at, so its ink runs wide and
+ *   the mark sat 21px short on the right.
+ *
+ * The true edge is the tighter of the two: max() of the left edges, min() of the
+ * right edges. That fills Fraunces, Playfair, Geist, Georgia and Arial to <=1px
+ * each. The vertical span is the canvas cap band [-ascent, descent] - the caps,
+ * not Firefox's taller line box - about the baseline at y=0 (no y on the text).
+ * The two share one scale: same computed face, same font-size.
+ *
+ * Re-run on fonts.ready (the first reading can be a fallback face); guarded for
+ * a headless test, where getBBox throws / there is no canvas and it is unsized.
+ */
+function fitOne(svg: SVGSVGElement, t: SVGTextElement) {
+  const ctx = measureCtx();
+  const word = t.textContent || '';
+  if (!ctx || !word) return;
+  let b: DOMRect;
+  try { b = t.getBBox(); } catch { return; }
+  if (!(b.width > 0)) return;
+  const cs = getComputedStyle(t);
+  if (!cs.fontSize || cs.fontSize === '0px') return;
+  ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  const m = ctx.measureText(word);
+  const left = Math.max(b.x, -m.actualBoundingBoxLeft);
+  const right = Math.min(b.x + b.width, m.actualBoundingBoxRight);
+  const top = -m.actualBoundingBoxAscent;
+  const width = right - left;
+  const height = m.actualBoundingBoxAscent + m.actualBoundingBoxDescent;
+  if (width > 0 && height > 0)
+    svg.setAttribute('viewBox', `${left} ${top} ${width} ${height}`);
+}
+
+function fitMark(svg: SVGSVGElement, t: SVGTextElement) {
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => fitOne(svg, t));
+  else fitOne(svg, t);
+  document.fonts?.ready.then(() => fitOne(svg, t)).catch(() => {});
+}
+
+/**
+ * Re-fit every mounted watermark to the current display face. Called from
+ * ui/appearance.ts apply() on any look change: a whimsy or display-font switch
+ * changes --font-display under a card whose viewBox was measured for the old
+ * face, and nothing rebuilds the card DOM. A no-op where no mark is mounted.
+ */
+export function refitEmbedMarks() {
+  for (const box of document.querySelectorAll('.embed-mark')) {
+    const svg = box.querySelector('svg');
+    const t = box.querySelector('text');
+    if (svg && t) fitMark(svg as SVGSVGElement, t as SVGTextElement);
+  }
+}
+
+/** Item type for a dropped File. MIME first, extension as the fallback. Only
+ *  four things render natively - picture, moving picture, sound, text.
+ *  Everything else becomes a named card; formats.ts knows what ~1350
+ *  extensions *are*, so a .sldprt says "SolidWorks" rather than "file". */
 export function classify(file: File): ItemType {
   const mime = (file.type || '').toLowerCase();
   const ext = extOf(file.name);
   if (mime.startsWith('image/') || SVG_EXTS.has(ext)) return 'image';
   if (mime.startsWith('video/')) return 'video';
   if (mime.startsWith('audio/')) return 'audio';
-  // Before the text branch. An .obj and a .gltf are plain text and arrive as
-  // `text/plain` from half the systems that hand them over, so testing MIME
-  // first would route every model to the text renderer and print its vertex
-  // list.
+  // Before the text branch: .obj and .gltf arrive as text/plain from half the
+  // systems that hand them over, so testing MIME first would print a vertex list.
   if (meshKind(file.name)) return 'model';
   if (mime.startsWith('text/') || mime === 'application/json') return 'text';
-  // The catalog's sets are broader than the MIME types a browser bothers to
-  // set - .jxl, .avif and friends often arrive with an empty file.type.
+  // The catalog's sets are broader than what a browser bothers to set as MIME -
+  // .jxl, .avif and friends often arrive with an empty file.type.
   if (PHOTO_EXTS.has(ext)) return 'image';
   if (VIDEO_EXTS.has(ext)) return 'video';
   if (AUDIO_EXTS.has(ext)) return 'audio';
@@ -146,73 +232,55 @@ export function classify(file: File): ItemType {
   return 'generic';
 }
 
-/**
- * Starting size in world units. Media items refine this once they load.
- *
- * Every box except the two noted below was taken in by a fifth on each side - a
- * dropped folder arrived too heavy. Type stays fixed while the box shrinks, so
- * a smaller card is a smaller card and not a scaled photograph of one; the head
- * (badge, name, size) then costs proportionally more of it, which is why the
- * two types whose value is the body they show are left alone.
- */
+/** Starting size in world units. Media items refine this once they load. Every
+ *  box but the two noted below was taken in a fifth on each side - a dropped
+ *  folder arrived too heavy - while type stays fixed, so the head (badge,
+ *  name, size) costs proportionally more; the two types whose value is the
+ *  body they show are left alone. */
 export function defaultSize(type: string): Size {
   switch (type) {
     case 'image':   return { w: 256, h: 192 };
     case 'video':   return { w: 288, h: 162 };
     case 'audio':   return { w: 264, h: 157 };
-    // Not shrunk: a text card is a wall of words at a fixed size, so a fifth
-    // off each side would show a third less of the file - what it is for.
+    // Not shrunk: a text card is a wall of words, and a fifth off each side
+    // would show a third less of the file - what it's for.
     case 'text':    return { w: 300, h: 360 };
-    // Square-ish, because a model has no aspect of its own until it is read -
-    // it is framed from its bounding sphere, so it fills whatever box it gets.
+    // Square-ish: a model has no aspect of its own until read - it's framed
+    // from its bounding sphere, so it fills whatever box it gets.
     case 'model':   return { w: 224, h: 224 };
-    // Square: a sticky comes off a square pad. Small, too - a note is an
-    // annotation on the board, not a thing on it, and at the old 240 it
-    // outweighed the photos it was written about. Well clear of MIN_SIZE (48)
-    // in canvas/input.ts, so the resize floor is unchanged. Left at 120 while
+    // Square, off a square pad. Small: a note is an annotation, not a thing on
+    // the board, and at the old 240 it outweighed the photos it annotated.
+    // Left at 120 (well clear of MIN_SIZE 48 in canvas/input.ts) while
     // everything around it came down.
     case 'note':    return { w: 120, h: 120 };
-    // Square, and *fixed* - not a fraction of whatever it lands on, or the same
-    // star comes out three sizes on three photographs and its size means
-    // something about the picture under it. The one you place is the one you
-    // saw in the window. Smaller than a note: a note is something you wrote, a
-    // sticker is a mark you made. Resize grips cover the times that is wrong.
-    //
-    // 72, a quarter off the 96 this started at - it was arriving the size of
-    // the things it marks, and on a photograph it covered enough of the picture
-    // to be an object in its own right. Still well clear of MIN_SIZE (48).
+    // Square and *fixed*, not a fraction of whatever it lands on - else the
+    // same star comes out three sizes on three photographs. Smaller than a
+    // note: a note is written, a sticker is a mark. 72 (a quarter off the
+    // original 96) still clears MIN_SIZE (48); resize grips cover the rest.
     case 'sticker': return { w: 72, h: 72 };
-    // Wide and short: an address is a wide thing, and there is no body under
-    // it - a link card is a name, a URL, and nothing else.
+    // Wide and short: an address is a wide thing, and there's no body under it
+    // - a link card is a name, a URL, and nothing else.
     case 'link':    return { w: 256, h: 106 };
-    // Four grid spaces wide and 3:2 tall (256 * 2/3 = 170.67) - the masthead's
-    // aspect. Matches TITLE_SIZE in state.ts, where the singleton is minted; the
-    // card visual is held to an exact 3:2 in CSS and snapping adds slack below.
+    // Four grid spaces wide, 3:2 tall (256 * 2/3 = 170.67) - the masthead's
+    // aspect. Matches TITLE_SIZE in state.ts; CSS holds the visual to exact 3:2.
     case 'title':   return { w: 256, h: 171 };
-    // Four grid spaces by three at the default step, so a snapped board lays it
-    // down where it already is. Fixed: a ghost has no resize grips
-    // (canvas/items.ts), so this is the size, not a starting size. Matches
-    // GHOSTS in state.ts, where they are minted and the reasoning lives.
+    // Four grid spaces by three at the default step, so a snapped board lays
+    // it where it already is. Fixed - a ghost has no resize grips
+    // (canvas/items.ts) - matching GHOSTS in state.ts, where it's minted.
     case 'ghost':   return { w: 256, h: 192 };
-    // A colour and its number, and nothing else - so it is sized like the note
-    // next to it rather than like a card with a body. Two grid spaces square at
-    // the default step, plus the row the hex is printed in.
+    // A colour and its number - sized like the note beside it, not like a
+    // card with a body. Two grid spaces square plus the row the hex prints in.
     case 'swatch':  return { w: 128, h: 148 };
-    // Four grid spaces wide at the default step and a little over five tall.
-    // Portrait because it is three bands stacked - pictures, pigments, faces -
-    // and each of them wants the card's full width rather than a share of it.
+    // Four grid spaces wide, a little over five tall. Portrait: three bands
+    // stacked (pictures, pigments, faces) each want the card's full width.
     case 'style-tile': return { w: 256, h: 328 };
     default:        return { w: 200, h: 112 };
   }
 }
 
-/**
- * What a swatch starts as.
- *
- * A grey, not a colour. The content of a swatch is the colour you chose, so any
- * preset would be the app inventing one and calling it yours. Mid grey reads as
- * the absence of a choice rather than a decision already made.
- */
+/** What a swatch starts as: a grey, not a colour. The content of a swatch is
+ *  the colour you chose, so any preset would be the app inventing one and
+ *  calling it yours; mid grey reads as no choice yet, not a decision made. */
 export const SWATCH_DEFAULT = '#8a8a8a';
 
 /**
@@ -861,16 +929,47 @@ const RENDERERS = {
     const card = document.createElement('div');
     card.className = 'card card-link';
 
-    const icon = document.createElement('div');
-    icon.className = 'card-icon';
-    icon.textContent = 'link';
-
     // Validated again here rather than trusted from meta, every render. A
     // .mbrd is a file anyone can edit by hand, and this is the one place in
     // the app where a string out of one would otherwise become something the
     // browser navigates to. A URL that fails the check renders as inert text:
     // the card still shows what it is holding, and none of it is clickable.
     const u = linkURL(item.meta.url);
+
+    // A link that is a player is drawn as one from the first frame: no address,
+    // no anchor, just the provider's name faint behind the offer to press. The
+    // reason it carries no link of its own is that the player, once loaded,
+    // carries the site's own - so a second one here would be redundant, and its
+    // absence is what leaves the whole card grabbable (an <a> is a widget the
+    // drag gesture steps around - canvas/input.ts). The faint name doubles as
+    // the drag handle once the frame is in and eating every pointer over it.
+    const spec = u && embedFor(u);
+    if (spec) {
+      card.classList.add('card-embed');
+      card.dataset.provider = spec.provider;
+      // The provider's name, faint, filling the width behind the offer. Drawn
+      // as SVG text with a textLength so it fills exactly on every whimsy face -
+      // a fixed font-size cannot, the display faces differ in glyph advance and
+      // one that fits softish overflows the next.
+      card.append(providerMark(spec.provider));
+      // The song, at the top left: its fetched title once stored, the site
+      // until then. Doubles as the drag handle once the player is in and eating
+      // every pointer over the frame (embed.ts keeps this element on open).
+      const title = document.createElement('div');
+      title.className = 'embed-title';
+      title.textContent = metaStr(item.meta.title) || item.name || linkName(u) || spec.provider;
+      card.append(title, embedOffer(item, spec, card));
+      // On load if missing: fetch the title and cover and store them
+      // (embed-meta.ts, wired in main.ts). A no-op until wired, so a test that
+      // builds this card reaches no network.
+      enrich(item);
+      return card;
+    }
+
+    const icon = document.createElement('div');
+    icon.className = 'card-icon';
+    icon.textContent = 'link';
+
     const label = item.name || (u ? linkName(u) : '') || metaStr(item.meta.url) || 'link';
 
     const name = document.createElement(u ? 'a' : 'div');
@@ -911,15 +1010,6 @@ const RENDERERS = {
     }
 
     card.append(icon, name);
-
-    // The links that can be more than a link. The offer only - see
-    // canvas/embed.ts for why nothing is loaded until it is taken.
-    const spec = u && embedFor(u);
-    if (spec) {
-      card.classList.add('card-embed');
-      card.dataset.provider = spec.provider;
-      card.append(embedOffer(item, spec, card));
-    }
 
     const dest = u ? linkDest(u) : '';
     // Left off when it would only repeat the name - a bare hostname with

@@ -1,464 +1,157 @@
-# The Content-Security-Policy, and why every directive is exactly this wide.
+# Content-Security-Policy: why every directive is exactly this wide.
 #
-# This app opens files it did not write. A .mbrd is a renamed ZIP anybody can
-# hand-edit, a dropped .docx or .svg is somebody else's document, and an .md is
-# somebody else's markup. The XSS thinking for all of that is already done and
-# done in the code: ui/markdown.ts and ui/documents.ts build every node through
-# createElement and createTextNode so there is no escaping to get right, and the
-# one path that puts foreign markup on the page - SVG - is parsed detached and
-# walked against an allow-list. This file is that same reasoning written
-# somewhere the *browser* enforces it, so that the day somebody reaches for
-# innerHTML with a string out of a file, they get a console error rather than a
-# shipped bug.
-#
-# It is a second lock on a door that is already locked. That is the point: the
-# first lock is a convention, and a convention is only as good as the next
-# person to read the header comment.
+# Second lock on a door already locked in code (createElement/createTextNode
+# everywhere, SVG allow-listed). This file makes the browser enforce it too.
 #
 # ---------------------------------------------------------------------------
-# Why this file, and why it is not in wrangler.jsonc
+# Why _headers, not wrangler.jsonc
 # ---------------------------------------------------------------------------
 #
-# The same reasoning wrangler.jsonc gives for expressing the not-found rule as a
-# literal 404 page: _headers is the Netlify, Pages and Workers spelling of one
-# rule, so the deploy does not depend on which host is under it. Cloudflare
-# Workers static assets reads this file out of the assets directory and does not
-# serve it.
-#
-# It is also the reason a violation cannot be seen locally: tools/serve.py sends
-# no headers, so the dev server runs with no policy at all and the deploy is the
-# first place anything is enforced. tests/csp.test.js is the substitute - it
-# holds the hashes and the hosts below in step with the code they came from, so
-# a change that would break the deploy fails in `npm test` instead.
+# _headers is the Netlify/Pages/Workers spelling — deploy-host-agnostic.
+# serve.py sends no headers, so violations are invisible locally.
+# tests/csp.test.js is the substitute — it holds hashes and hosts in step
+# with the code, so a breaking change fails in `npm test`.
 #
 # ---------------------------------------------------------------------------
 # script-src 'self' + seven hashes
 # ---------------------------------------------------------------------------
 #
-# No 'unsafe-inline', which is the whole value of the directive: with hashes
-# present a browser ignores 'unsafe-inline' for scripts anyway, and an injected
-# <script> - inline or not - has nowhere to come from.
+# No 'unsafe-inline'. Hashes present means browsers ignore the keyword anyway.
 #
-# The six hashes are every inline script this app ships - three in index.html,
-# two more that only /patch has, and the bench - and none of the first three can
-# become a file:
+# Seven hashes cover every inline script the app ships:
+#   - index.html pre-paint restore (must run before first paint; cannot be a module)
+#   - index.html boot-cover rescue (failsafe when main.js never parses)
+#   - index.html JSON-LD (hash arguably unnecessary per spec, but implementations vary)
+#   - patch.html two JSON-LD blocks (breadcrumb + article; must not carry
+#     anything that changes per release — taken out at v0.195)
+#   - lab.html inline module
+#   - lab-sound.html inline module (cannot be a file: tests/imports.test.js
+#     holds the exception list closed)
 #
-#   - index.html's pre-paint appearance restore. Running before first paint is
-#     its entire purpose: it reads the saved whimsy level, palette and token
-#     overrides out of localStorage and puts them on <html> so an installed PWA
-#     never flashes the default pigment on launch. A module cannot do that - it
-#     is fetched, and a fetch is a frame. tests/appearance.test.js holds its
-#     token grammar in step with ui/look.ts; this file holds its bytes in step
-#     with the deploy.
-#   - index.html's boot-cover rescue. Its second job is to uncover the page when
-#     main.js never parses - a module 404 behind a stale service worker, a
-#     syntax error, a browser below the floor. A failsafe for "the modules did
-#     not load" cannot itself be a module.
-#   - index.html's application/ld+json block. The HTML spec returns out of
-#     "prepare the script element" for a data block before the CSP check ever
-#     runs, so by the letter of it this hash is unnecessary. It is here because
-#     implementations have not always agreed, the cost is one token, and a
-#     search-engine description that silently stops being parsed is exactly the
-#     kind of breakage nobody notices for a year.
-#   - patch.html's two application/ld+json blocks, the breadcrumb and the
-#     article. Exactly the reasoning one bullet up, at exactly the same cost of
-#     one token each. The changelog is a page whose whole job is to be found and
-#     read rather than used, so its structured data going quietly unparsed is
-#     the failure it can least afford - and unlike index.html, that data is the
-#     only thing telling a crawler this page belongs to the app rather than
-#     being a second, unrelated root.
+# patch.html shares the pre-paint and boot-rescue scripts byte-for-byte from
+# index.html (gen-patch-page.mjs copies them), so those need no extra hashes.
+# 404.html is a byte copy of index.html (save.bat). tests/csp.test.js
+# recomputes all hashes; tests/notfound.test.js checks 404.html.
 #
-#     Neither block may carry anything that changes when a release is written,
-#     and the article block used to: it named the newest version, so its hash
-#     rotated every time somebody added an entry to the changelog and the
-#     deployed page then refused its own metadata until this line was edited to
-#     match. A hash covering bytes that a routine edit changes is a trap, not a
-#     policy. It was taken out at v0.195; see the note above the block in
-#     tools/gen-patch-page.mjs.
-#
-#     Its other two inline scripts need no entry of their own, and the reason is
-#     worth knowing before somebody goes looking for the missing hashes: /patch
-#     IS the app. tools/gen-patch-page.mjs builds that page out of index.html's
-#     own body and load block, so the pre-paint restore and the boot-cover
-#     rescue arrive in it byte for byte and hash to the two values already
-#     listed above. A hash covers bytes, not a file, which is what makes a
-#     generated copy free here - and is also why editing either script means
-#     regenerating the page, or the copy drifts and the deploy stops applying
-#     it. tests/csp.test.js recomputes all of them and fails first.
-#   - lab.html's inline module. The pigment lab is one page with its script in
-#     it; it ships in web/ so it is covered by /* like everything else.
-#   - lab-sound.html's inline module, on exactly the same terms. It is two lines
-#     - import initSoundLab, call it - and it cannot be a file for a reason
-#     worth knowing: tests/imports.test.js holds every module under
-#     web/assets/js to loading without a browser, its list of exceptions is
-#     three names long and closed, and a bench is not an argument for a fourth.
-#     So the bundled module exports a function and the *page* is what starts it.
-#
-# 404.html is a byte copy of index.html (see save.bat), so it needs no hashes of
-# its own - it carries the same two, and if it ever stops doing so
-# tests/notfound.test.js fails first.
-#
-# What tightening further would cost: moving any of the three index.html blocks
-# into a file, which is the only way to drop a hash, breaks the thing each one
-# exists to do. Hashes are the tight answer here, not the loose one.
-#
-# No 'unsafe-eval' and no 'wasm-unsafe-eval': nothing in the app calls eval or
-# new Function, and neither piece of WebAssembly it can run is loaded into this
-# realm. Both run in workers with policies of their own - the vendored ffmpeg
-# core, and pdf.js's JPEG 2000 decoder. See the two rules at the foot of this
-# file.
-#
-# The second of those was found the hard way and is worth writing down, because
-# the shape of the failure is the reason this directive is easy to get wrong.
-# pdf.worker.min.mjs carries an Emscripten build of OpenJPEG - a base64 wasm
-# payload it compiles with `new WebAssembly.Module(...)` - and it reaches it
-# lazily, from JpxImage.decode. So a PDF with no JPEG 2000 image in it never
-# touches the codec and rendered perfectly, while a scan or a press-ready file
-# threw inside the render, was swallowed by firstPageRaster()'s catch, and came
-# back as the same grey card a PDF with nothing to show gets. The feature was not
-# broken and was not working: it was working on some documents, which is the
-# hardest version of this to notice from the outside.
+# No 'unsafe-eval' or 'wasm-unsafe-eval': nothing in the app calls eval.
+# Both wasm payloads (ffmpeg, pdf.js JPEG 2000) run in exempted workers below.
 #
 # ---------------------------------------------------------------------------
-# style-src 'self' + two hashes - no 'unsafe-inline'
+# style-src 'self' + three hashes — no 'unsafe-inline'
 # ---------------------------------------------------------------------------
 #
-# This was the one directive wider than it should be, and it is not any more.
-# The three things that forced 'unsafe-inline' were:
+# One hash per inline <style> block: index.html, lab.html, lab-sound.html.
+# Benches carry their look inline so tests/sw.test.js need not list a debug
+# sheet in SHELL. Browsers ignore 'unsafe-inline' when any hash is present.
 #
-#   - ui/feed.ts's waveform, which wrote `<i style="height:N%">` per bar into
-#     innerHTML. A hash cannot cover a value computed at runtime, so this was
-#     the blocker: it now builds the bars and assigns .style, which is CSSOM.
-#   - the style="..." attributes in lab.html's generated preview card, same fix.
-#   - the last static one, a font-size on a span in lab.html, now a class.
+# Editing a <style> block by one byte changes its hash and the deploy silently
+# refuses the block. tests/csp.test.js recomputes both directions.
 #
-# With the attributes gone the inline <style> blocks can be hashed, which is
-# what the three sha256 values below are - one for the block in index.html, one
-# for lab.html, one for lab-sound.html. The benches carry their look inline
-# rather than in a sheet of their own on purpose: tests/sw.test.js requires
-# every .css under assets/css to be in SHELL, and a debug harness has no
-# business in the offline shell. Hashes and 'unsafe-inline' cannot be mixed
-# anyway: a browser
-# ignores the keyword the moment a hash is present, which is exactly the
-# property being relied on here.
-#
-# The cost of this is a real maintenance edge and is worth stating plainly.
-# Editing either <style> block by one character changes its hash, and the
-# deploy will then refuse to apply that block - the page renders unstyled rather
-# than failing loudly. tests/csp.test.js recomputes both and fails first, which
-# is the only reason this is a reasonable trade rather than a trap.
-#
-# It does NOT cover ui/look.ts and ui/appearance.ts writing custom properties
-# onto :root, or the pre-paint script doing the same. Those go through
-# style.setProperty(), which is CSSOM and outside CSP by design.
+# CSSOM writes (style.setProperty) are outside CSP — ui/look.ts and the
+# pre-paint script both use that path and are unaffected.
 #
 # ---------------------------------------------------------------------------
-# img-src / media-src / font-src - 'self' plus the two local schemes
+# img-src / media-src / font-src — 'self' plus local schemes
 # ---------------------------------------------------------------------------
 #
-# There is no remote host in any of the three, and that is not an accident of
-# this file - it is a property of the app that this file pins down. **Nothing
-# that renders resolves a URL out of a document it opened**: link cards refuse to
-# fetch a favicon or a preview, and no picture, clip or face on a board is ever
-# addressed anywhere but here. These three directives are what make that a
-# guarantee instead of a habit, and they are the ones that would have caught a
-# "renderer follows a URL out of a .mbrd" bug outright, at the browser, whatever
-# the code did.
-#
-# This used to be stated as "a board renders the same with the network off", and
-# the share link makes that sentence half wrong in a way worth being exact about
-# rather than deleting. A board *that is already here* still renders with the
-# network off, and that is the property these three protect. A board arriving
-# from a share link does not: its bytes come over connect-src first, and only
-# once they are in the asset store do they become blob: URLs like everything
-# else - so from the first paint onwards it is an ordinary board with no remote
-# anything in it. The distinction is between fetching a file and rendering one,
-# and it is exactly the distinction these directives draw.
+# No remote host in any of the three. Nothing that renders resolves a URL out
+# of a document it opened — these directives make that a guarantee.
+# A shared board arrives over connect-src first, then becomes blob: URLs like
+# everything else, so from first paint it is an ordinary local board.
 #
 #   img-src 'self' blob: data:
-#     'self'  - assets/icons.svg, assets/img/*, the sticker sprite.
-#     blob:   - every picture on the board. Assets live in IndexedDB and reach
-#               an <img> as an object URL (storage/assets.ts, canvas/display.ts,
-#               canvas/renderers.ts, ui/documents.ts).
-#     data:   - two uses, both ours: the board thumbnails in the library, which
-#               ui/snapshot.ts makes with canvas.toDataURL, and the small SVG
-#               glyphs written into custom properties in items.css and
-#               sidebar.css. Dropping data: blanks the library grid and the pin
-#               and chevron marks.
-#
-#   media-src 'self' blob:
-#     Audio and video are the same object URLs. No data: - nothing produces a
-#     data URL for a clip and a 40 MB one would be absurd.
-#
-#   font-src 'self' blob:
-#     'self' is the bundled woff2 set. blob: is load-bearing and easy to miss:
-#     a font dropped on the board is registered with
-#     `new FontFace(family, 'url("blob:...")')` in ui/fonts.ts, and a FontFace
-#     built from a url() IS checked against font-src. Without blob: every
-#     imported font fails to load and the look silently falls back.
+#     blob: — board assets from IndexedDB as object URLs
+#     data: — library thumbnails (toDataURL) and CSS SVG glyphs
+#   media-src 'self' blob:  — audio/video object URLs
+#   font-src 'self' blob:   — blob: is load-bearing: FontFace('url("blob:...")')
+#                              IS checked against font-src
 #
 # ---------------------------------------------------------------------------
 # connect-src 'self' blob: https://cdn.jsdelivr.net https://www.googleapis.com
 # ---------------------------------------------------------------------------
 #
-# Exactly four origins are fetched from:
+#   'self'      — sw.js caching, stickers.svg fetch
+#   blob:       — pigments.ts fetches blob URLs for createImageBitmap
+#   jsdelivr    — ffmpeg core (optimize/media.ts probe + media-worker.js fetch)
+#   googleapis  — share link: upload to / download from Google Drive
 #
-#   'self'    - ui/snapshot.ts reads assets/stickers.svg as text, and sw.js
-#               fetches same-origin requests it is caching. The service worker
-#               steps aside for anything cross-origin, so it needs nothing else.
-#   blob:     - ui/pigments.ts fetches an asset's own object URL to get bytes
-#               for createImageBitmap, deliberately rather than pointing an
-#               <img> at it. A fetch of a blob: URL is a connect, not an image.
-#   jsdelivr  - the ffmpeg core, twice: optimize/media.ts probes it with a
-#               one-byte ranged GET before offering to download it, and
-#               optimize/media-worker.js then fetches ffmpeg-core.wasm itself
-#               rather than letting Emscripten resolve it (see the comment
-#               there). The worker's half was missing from this list, which
-#               mattered less than it might because the two share a host -
-#               named now so the count below is the truth.
+# accounts.google.com is NOT here — the sign-in popup is a navigation, not a
+# fetch, governed by no CSP directive. tests/csp.test.js NOT_FETCHED list.
+# No Google SDK: that would put a remote host in script-src.
 #
-#               pdf.js used to be a third user of this host, loaded from it by
-#               import/pdf.ts and never mentioned here; it is vendored into
-#               web/assets/vendor/pdfjs now and reaches nothing.
-#
-#   googleapis - the share link, both halves: storage/share/google.ts uploads a
-#               packed .mbrd into the sender's own Google Drive (a resumable
-#               session, so several requests), marks it readable by anyone with
-#               the link, and - on the other side - fetches one back with no
-#               account at all. One host for all of it.
-#
-#               This is the line that ended a claim this file used to make, and
-#               it is worth saying which. Until the share link there were no
-#               outbound requests except a converter fetched from a code mirror,
-#               and the sentence under img-src below said flatly that a board
-#               renders with the network off. **A shared board arrives over the
-#               wire before it renders**, which is a different thing from a board
-#               following a URL out of a file - see the note down there, which
-#               has been rewritten rather than left to be read as still true.
-#
-#               accounts.google.com is deliberately NOT here. The sign-in is a
-#               popup *navigated* to Google's own login page, and a navigation is
-#               governed by no directive in this policy - not connect-src, and
-#               not form-action, because there is no form. tests/csp.test.js
-#               carries it in its NOT_FETCHED list with that reason, which is the
-#               only way a URL in a module is allowed to be absent from here.
-#
-#               There is no SDK and there will not be one. Google's own answer is
-#               a script from accounts.google.com, which would put a remote host
-#               in script-src - the one directive this file argues hardest about,
-#               since a host there is a place an injected <script> can come from.
-#               A hundred lines of fetch is much the cheaper half of that trade.
-#
-# Pinned to the host, not the path: CSP has no useful path matching for this and
-# pretending otherwise would read as a promise the directive cannot keep.
-#
-# Dropping jsdelivr does not break anything hard - mediaAvailable() answers
-# false and video optimisation and HEVC posters are quietly not offered, the
-# same graceful skip the module already takes when the CDN is down. It is here
-# because "quietly not offered" is a bad way to find out about a header.
-#
-# Dropping googleapis breaks the share link outright, in both directions and
-# loudly - the upload fails with a message and a shared link opens nothing. That
-# is the right shape for it: unlike the converter, nothing about sharing degrades
-# into "quietly not offered", because somebody is standing there having pressed a
-# button.
+# Pinned to host, not path — CSP path matching is unreliable.
+# Dropping jsdelivr degrades gracefully (mediaAvailable() returns false).
+# Dropping googleapis breaks the share link outright.
 #
 # ---------------------------------------------------------------------------
-# frame-src - the two embed hosts, and nothing else
+# frame-src — the two embed hosts
 # ---------------------------------------------------------------------------
 #
-# canvas/embed.ts is the only place in mbrd that will ever talk to a third
-# party, and it builds its src from a fixed template with a validated id in the
-# hole - eleven characters of base64url for YouTube, twenty-two of base62 for
-# Spotify. These two hosts are those two templates:
-#
-#   https://www.youtube-nocookie.com  - the embed src, chosen as the most
-#                                       private host YouTube offers.
-#   https://open.spotify.com          - the embed src for every Spotify kind.
-#
-# No wildcard, and deliberately not play.spotify.com or youtu.be even though
-# spotifyRef and youTubeId accept those as *input*: what a user may paste and
-# what a frame may load are different lists, and only the second one belongs
-# here. tests/csp.test.js checks both directions against embed.ts, so adding a
-# provider without adding it here fails in the suite.
+# canvas/embed.ts builds src from a fixed template with a validated id.
+# youtube-nocookie.com (privacy host) and open.spotify.com only.
+# Not youtu.be or play.spotify.com — input hosts differ from frame hosts.
+# tests/csp.test.js checks both directions.
 #
 # ---------------------------------------------------------------------------
-# The deliberate 'none's
+# connect-src — the two decorate-a-Spotify-card hosts
 # ---------------------------------------------------------------------------
 #
-#   object-src 'none'      There is no <object>, <embed> or <applet> in this
-#                          app and there is never going to be. A plugin
-#                          document is the oldest way to get script onto a page
-#                          out of a file, which is precisely the thing this app
-#                          does all day.
+# canvas/embed-meta.ts fetches open.spotify.com/oembed for a track's title and
+# then i.scdn.co for its cover art. The only network this app reaches to
+# decorate a card, and only for one that has no title stored yet - see the
+# local-first note in canvas/renderers.ts. Fetched, not navigated and not shown
+# as a remote <img>: the cover is stored as an asset and drawn from blob:, which
+# is why i.scdn.co is here and not in img-src (which stays 'self' blob: data:).
+# YouTube has no equivalent - its oembed sends no CORS header, so no host of its
+# own is needed or would work.
 #
-#   form-action 'none'     There is not a single <form> in the tree - nothing is
-#                          ever posted anywhere, because there is no server.
-#                          'none' says that; 'self' would leave a submission
-#                          target for an injected form to aim at.
+# ---------------------------------------------------------------------------
+# The deliberate 'none's and explicit 'self's
+# ---------------------------------------------------------------------------
 #
-#   frame-ancestors 'none' Nobody may frame the app. There is no read-only or
-#                          embeddable mode, so a page that frames it is either
-#                          a mistake or a clickjack over a canvas where every
-#                          click moves somebody's work. If the marketing site
-#                          ever wants a live demo in an iframe, this is the line
-#                          to widen - to 'self' https://valjdakosta.com, not to
-#                          '*'. This also supersedes X-Frame-Options, which is
-#                          why there is no X-Frame-Options here.
+#   object-src 'none'      — no plugins, ever
+#   form-action 'none'     — no forms, no server
+#   frame-ancestors 'none' — no framing (clickjack risk on a canvas app).
+#                            To widen: 'self' https://valjdakosta.com, not '*'
+#   base-uri 'self'        — NOT 'none': <base href="/"> is load-bearing for
+#                            404 routing. 'none' would break all relative URLs
+#   default-src 'self'     — backstop for all unlisted directives
 #
-#   base-uri 'self'        NOT 'none', and this is the one place where the tight
-#                          answer is wrong: index.html carries <base href="/">
-#                          and it is load-bearing, because the same document is
-#                          served as the 404 at arbitrary paths and every
-#                          relative asset URL in it has to keep resolving from
-#                          the root. 'none' would kill that tag and the app
-#                          would fetch its modules from whatever directory the
-#                          bad URL happened to name. 'self' keeps the tag legal
-#                          and stops an injected <base> from pointing the whole
-#                          document's relative URLs at another origin.
+# worker-src and manifest-src are explicit 'self' (not left to default-src)
+# because both fail silently and a greppable directive is worth the characters.
 #
-#   default-src 'self'     The backstop for every directive not named above -
-#                          child-src, prefetch-src, and whatever CSP adds next.
-#                          Same-origin, which is what this app is.
-#
-# worker-src and manifest-src are 'self' rather than left to default-src for one
-# reason: they are the two that are easy to break by accident and hard to notice
-# (a worker that will not spawn is a feature that quietly stops being offered; a
-# manifest that will not load is an app that quietly stops installing), and a
-# directive somebody can grep for is worth four characters.
-#
-# Not here on purpose: 'unsafe-eval' and 'wasm-unsafe-eval' (nothing needs
-# either), upgrade-insecure-requests (there is not one http:// subresource in
-# the tree, so it would upgrade nothing), require-trusted-types-for (about
-# twenty innerHTML writes with constant icon markup would have to move first,
-# and that is a refactor, not a header), and report-to (there is no server to
-# report to, which is the whole architecture).
+# Omitted on purpose: 'unsafe-eval', 'wasm-unsafe-eval', upgrade-insecure-
+# requests, require-trusted-types-for, report-to (no server).
 
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-TXFmC+WkJ7pej6GG4eilTgWXAPfRfnxeO2p8iCMvh/k=' 'sha256-qxiwxtjeQUbsHr4op9ZRXOdxUq+CLu4QIJRuvidUe5c=' 'sha256-eJzJ8523EitoBKAS5A1tCSnraL7SAmf2gesGT63wGSk=' 'sha256-xihqZ8REZBqbhv/X2MkimJtn0Nf8Zo5L1SB1HnLyNew=' 'sha256-Q8ZzrQgcVPkApKR0qNf6mroKHffRQsjhyVVZIRu0QtU=' 'sha256-8ZGO4EWxaESz6+qYFa7Px/8iyW9D2UaZh/+P4/mg99Q=' 'sha256-W6Ek3VdZ0h8I8y6AJQrxOK0kORl/bq7s85k8oOrakjs='; style-src 'self' 'sha256-wkVFcbpQLLLncGzQDSypPX4g+PgpgKuYUfkJ3D7xrA8=' 'sha256-wNl32lMHz3gn4pEFjtTgfLAClE+QNsM0xnQ6sYtFEJo=' 'sha256-AL9WaAEqAR1J/jBnSEHAmJZsBz/eGk5SgKE4e+Z9lIY='; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'self' blob:; connect-src 'self' blob: https://cdn.jsdelivr.net https://www.googleapis.com; worker-src 'self'; manifest-src 'self'; frame-src https://www.youtube-nocookie.com https://open.spotify.com; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-TXFmC+WkJ7pej6GG4eilTgWXAPfRfnxeO2p8iCMvh/k=' 'sha256-IHNiUGcUOr6NelTq/uPBMjoUShciN3z/lAb4UJeNUZU=' 'sha256-Y54bV0qSvT/SjayyqBLRVo5YNx4RDDohESjalwLrmiU=' 'sha256-uvCBZcY4f9DxNUECjcV7ObPLKTkLMGe7JYQlf/0hOIw=' 'sha256-Q8ZzrQgcVPkApKR0qNf6mroKHffRQsjhyVVZIRu0QtU=' 'sha256-8ZGO4EWxaESz6+qYFa7Px/8iyW9D2UaZh/+P4/mg99Q=' 'sha256-W6Ek3VdZ0h8I8y6AJQrxOK0kORl/bq7s85k8oOrakjs='; style-src 'self' 'sha256-/Ky4tEy9rHoRMFnFuG73oUt7DZzJBqKlsnrdgKJT5sg=' 'sha256-oxU/eyeo5k8NDEY1uy+DN3ens/uVYDQxaaH6GEwI5Ls=' 'sha256-AL9WaAEqAR1J/jBnSEHAmJZsBz/eGk5SgKE4e+Z9lIY='; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'self' blob:; connect-src 'self' blob: https://cdn.jsdelivr.net https://www.googleapis.com https://open.spotify.com https://i.scdn.co; worker-src 'self'; manifest-src 'self'; frame-src https://www.youtube-nocookie.com https://open.spotify.com; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
 
-# The two exemptions, and the only interesting thing about the whole file.
-#
-# A dedicated worker does not inherit the document's policy. It gets its own,
-# from the headers on its own script response - and since the rule above is /*,
-# that response would carry the app's policy. The app's policy forbids exactly
-# the two things this worker exists to do: importScripts() a 32 MB Emscripten
-# core from jsdelivr, and compile the wasm inside it (which needs
-# 'wasm-unsafe-eval' in script-src). Under the rule above the encoder never
-# starts, and the way that shows is video optimisation and HEVC posters silently
-# not being offered - see the header of optimize/media.ts, where "the CDN is
-# down" and "the core would not load" are already the same outcome.
-#
-# So the header is removed for that one file and the worker runs as it does
-# today, with no policy. It is 60 lines that speak four messages and hold no
-# state but the core, it touches no DOM because it has none, and it can reach
-# nothing of this page.
-#
-# Removed rather than replaced, and that is not laziness: matching rules in a
-# _headers file are *cumulative*, and two Content-Security-Policy values are
-# joined with a comma - which a browser reads as two policies to satisfy at
-# once, not as one that replaces the other. A looser policy on this path would
-# therefore be intersected with the strict one above and change nothing.
-#
-# If a host ever ignores the removal, the worker keeps the strict policy and the
-# encoder is not offered. That is a degradation the module already handles by
-# design, which is what makes this safe to get wrong.
+# Worker exemptions — removed rather than replaced, because _headers rules are
+# cumulative and two CSP values are intersected, not overridden. Each worker
+# needs 'wasm-unsafe-eval' and/or cross-origin fetch that the site policy
+# forbids. If a host ignores the removal, the worker keeps the strict policy
+# and the feature degrades gracefully (the module already handles that).
+
+# ffmpeg core: importScripts from jsdelivr + wasm compile.
+# No DOM, no state, cannot reach the page.
 /assets/js/optimize/media-worker.js
   ! Content-Security-Policy
 
-# The second, on exactly the same terms and for exactly the same reason.
-#
-# pdf.js spawns this file as a module worker, and it carries an Emscripten build
-# of OpenJPEG that compiles itself with `new WebAssembly.Module(...)`. Under the
-# rule at the top of this file that compile throws, JpxImage.decode throws with
-# it, and every PDF holding a JPEG 2000 image - which is to say most scans -
-# comes back as a grey named card. See the note in the script-src section above
-# for why that read as "PDF thumbnails are unreliable" rather than as a policy.
-#
-# Narrower than it looks, and worth being precise about what is being given up.
-# The exemption is one file, not the vendor directory: pdf.min.mjs runs in the
-# *document* and must keep the document's policy, which it does - it holds no
-# WebAssembly, and the grep in tests/csp.test.js holds it to reaching no host.
-# What runs unpoliced is a worker with no DOM, spawned by us, from bytes
-# committed to this repository and pinned by version in import/pdf.ts and by
-# tests/pdf-vendor.test.js. It reads a Uint8Array we hand it over a message port
-# and answers with page geometry. It cannot reach this page.
-#
-# Removed rather than replaced, for the reason the first exemption gives: two
-# Content-Security-Policy values on one path are intersected, not overridden, so
-# a looser rule here would change nothing.
-#
-# The alternative was 'wasm-unsafe-eval' in script-src, which would hand the
-# capability to the document and to every worker in order to buy it for one
-# vendored file. That is the opposite of the trade the rest of this file argues
-# for, and it would have been the second time a policy was widened for pdf.js.
+# pdf.js JPEG 2000 decoder (Emscripten OpenJPEG, wasm compile).
+# One file only — pdf.min.mjs in the document keeps the document's policy.
+# Pinned by import/pdf.ts and tests/pdf-vendor.test.js.
 /assets/vendor/pdfjs/pdf.worker.min.mjs
   ! Content-Security-Policy
 
-# The third, and the only one of the three this app wrote itself.
-#
-# canvas/matte-worker.js runs u2netp - the model behind the darkroom's Remove
-# background - on ONNX Runtime's wasm backend. Compiling that runtime needs
-# 'wasm-unsafe-eval', which the rule at the top of this file does not grant and
-# should not: it would hand the capability to the document and to every worker
-# in order to buy it for one file.
-#
-# It was very nearly not needed. The first build of this used ORT's *WebGL*
-# backend, which is plain JavaScript - 454 KB, no wasm, no exemption, nothing to
-# add here at all. It does not work: every operator u2netp uses is supported by
-# that backend at opset 11, but it has no int64, and the model computes the
-# target size of all 38 of its Resize nodes as int64 at run time. That is a
-# dtype constraint an operator table does not express. See the header of
-# canvas/matte.ts, which keeps the whole of that reasoning so the cheap path is
-# not tried a second time.
-#
-# Narrower than it looks, and on the same terms as the two above. What runs
-# unpoliced is one file we wrote and one wasm binary committed to this
-# repository, pinned by ORT_VERSION in canvas/matte.ts and by
-# tests/matte-vendor.test.js. It has no DOM, it is spawned by us, and its whole
-# interface is one message in - a Float32Array of 307,200 numbers - and one
-# message out. It cannot reach this page, and it reaches no host: the model and
-# the runtime are both same-origin, so unlike the ffmpeg worker above this one
-# needs no CDN at all and would work with the network off.
-#
-# Removed rather than replaced, for the reason the first exemption gives: two
-# Content-Security-Policy values on one path are intersected, not overridden, so
-# a looser rule here would change nothing.
+# Background remover (u2netp on ONNX Runtime wasm backend).
+# WebGL backend does not work (no int64 for Resize nodes — see matte.ts).
+# Same-origin only, no CDN needed. Pinned by ORT_VERSION in canvas/matte.ts.
 /assets/js/canvas/matte-worker.js
   ! Content-Security-Policy
 
-# The fourth, and the last one this file expects to need.
-#
-# mesh/occt-worker.js runs Open CASCADE - the geometry kernel every CAD viewer
-# runs - over a STEP or IGES file. Those two formats hold no triangles at all,
-# only trimmed surfaces and the topology tying them together, so something has
-# to turn them into a model before anything can be drawn. Compiling that kernel
-# is a WebAssembly compile and wants 'wasm-unsafe-eval', on the terms the three
-# rules above already argue: granting it to the document would grant it to
-# everything, to buy it for one file.
-#
-# Narrower than the other three in one way that matters. This app can already
-# read both formats - mesh/step.ts and mesh/iges.ts are a boundary-representation
-# tessellator written here, and they stay - so what the exemption buys is
-# fidelity rather than the feature. If a host ignores the removal, the worker
-# keeps the strict policy, the compile throws, mesh/occt.ts returns null and the
-# card is read the way it was read before any of this existed. That is the
-# degradation the module is built around, which is what makes this safe to get
-# wrong.
-#
-# What runs unpoliced is one file we wrote and two files committed to this
-# repository, pinned by OCCT_VERSION in mesh/occt.ts and by
-# tests/occt-vendor.test.js. It has no DOM, it is spawned by us, its whole
-# interface is one message in - the bytes of a file - and one message out, and it
-# reaches no host: the kernel resolves its .wasm beside itself and both are
-# same-origin, so like the matting worker and unlike the ffmpeg one it needs no
-# network at all.
-#
-# The licence is the other reason those two files are served rather than bundled,
-# and it is not a CSP matter - see web/assets/vendor/occt/LICENSE.txt.
-#
-# Removed rather than replaced, for the reason the first exemption gives: two
-# Content-Security-Policy values on one path are intersected, not overridden, so
-# a looser rule here would change nothing.
+# Open CASCADE (STEP/IGES tessellation). Wasm compile.
+# Fallback: mesh/step.ts and mesh/iges.ts still read both formats (lower
+# fidelity). Same-origin, no network. Pinned by OCCT_VERSION in mesh/occt.ts.
+# Licence requires serving, not bundling — see web/assets/vendor/occt/LICENSE.txt.
 /assets/js/mesh/occt-worker.js
   ! Content-Security-Policy
