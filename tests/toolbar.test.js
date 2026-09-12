@@ -21,19 +21,18 @@ test('a typed address keeps whatever scheme it came with', () => {
 });
 
 test('a bare domain gets https, because there is no second reading of it', () => {
-  // The one place in the app that guesses at a scheme. linkURL() refuses this
-  // everywhere else and is right to - a pasted `example.com/things` is as
-  // likely to be a sentence - but here the user pressed Add a link and typed
-  // into a box showing https://example.com. See linkTyped().
+  // The one place in the app that guesses at a scheme. linkURL() refuses
+  // this everywhere else, rightly - a pasted `example.com/things` could be
+  // a sentence - but here the user typed into a box showing https://example.com.
   assert.equal(linkTyped('example.com')?.href, 'https://example.com/');
   assert.equal(linkTyped('www.example.com/things')?.href, 'https://www.example.com/things');
 });
 
 test('a scheme this cannot open is refused rather than rewritten', () => {
-  // Already carrying a scheme, so the guess never runs: whatever it is, the
-  // user said it, and prefixing https:// onto ftp://… would produce an address
-  // nobody typed. mailto and javascript are the two that matter - a link card
-  // becomes an iframe or an anchor per click, and neither should be able to.
+  // Already carries a scheme, so the guess never runs - prefixing https://
+  // onto ftp://... would produce an address nobody typed. mailto and
+  // javascript matter most: a link card becomes an iframe or an anchor per
+  // click, and neither should be able to.
   for (const bad of ['ftp://example.com', 'mailto:a@b.c', 'javascript://example.com/']) {
     assert.equal(linkTyped(bad), null, `${bad} should not become a card`);
   }
@@ -48,8 +47,8 @@ test('text that is not an address at all is refused', () => {
 // ---------------------------------------------------------------------------
 // The connector tool
 //
-// mbrd's only mode, so its five cases are asserted rather than described. Each
-// of these is a sentence somebody has to be able to check against the app.
+// mbrd's only mode, so its five cases are asserted, not just described.
+// Each is a sentence checkable against the app.
 // ---------------------------------------------------------------------------
 
 test('the first press picks an end and joins nothing', () => {
@@ -63,8 +62,8 @@ test('the second press on another card joins the pair and clears the pick', () =
 });
 
 test('pressing the card you just picked is how you change your mind', () => {
-  // Not a connection from a card to itself, which is a dot, and not a no-op
-  // either - the pick has to be droppable without reaching for Escape.
+  // Not a self-connection (a dot) and not a no-op either - the pick must be
+  // droppable without reaching for Escape.
   assert.deepEqual(connectStep('a', 'a'),
     { pick: null, connect: null, refused: false, disarm: false });
 });
@@ -77,11 +76,10 @@ test('empty canvas drops the pick and joins nothing', () => {
 });
 
 test('a card no line can reach is refused, and costs nothing', () => {
-  // The defect this case exists for: the tap path took any two ids, the draw
-  // path refuses stickers, and the pair went into the board and was never drawn.
-  // Refusing is half the fix; the other half is that it must be *free*. A
-  // sticker tapped by accident while a pick is standing has to leave the pick
-  // exactly where it was, or a slip costs you the card you already pointed at.
+  // The defect this exists for: the tap path took any two ids, the draw
+  // path refuses stickers, and the pair went into the board undrawn.
+  // Refusing is half the fix; the other half is that it must be *free* - a
+  // sticker tapped by accident must leave the pick exactly where it was.
   assert.deepEqual(connectStep('a', 'sticker', false),
     { pick: 'a', connect: null, refused: true, disarm: false });
   assert.deepEqual(connectStep(null, 'sticker', false),
@@ -89,27 +87,25 @@ test('a card no line can reach is refused, and costs nothing', () => {
 });
 
 test('refusing is not the same as pressing empty canvas', () => {
-  // Both leave no pair behind and the difference is the pick. Empty canvas is
-  // "not that one" and is a decision; a sticker is a slip of the hand.
+  // Both leave no pair behind; the difference is the pick. Empty canvas is
+  // a decision ("not that one"); a sticker is a slip of the hand.
   assert.equal(connectStep('a', null).pick, null);
   assert.equal(connectStep('a', 'sticker', false).pick, 'a');
 });
 
 test('an unjoinable end is refused before the same-card case', () => {
-  // Order matters where the two overlap: tapping the picked card again means
-  // "change my mind", but a sticker cannot have been picked in the first place,
-  // so there is no mind to change and nothing to drop.
+  // Order matters where the two overlap: tapping the picked card again
+  // means "change my mind", but a sticker can never have been picked, so
+  // there is no mind to change.
   assert.deepEqual(connectStep('s', 's', false),
     { pick: 's', connect: null, refused: true, disarm: false });
 });
 
 test('a finished pair is the only press that puts the tool down', () => {
-  // The rule the mode now hangs on, and it is the reverse of the one it shipped
-  // with: a tester who drew one line went on clicking and could not work out
-  // why the board had stopped selecting. So the press that completes the pair
-  // ends the mode, and nothing else does - clicking empty canvas is "not that
-  // one", a refusal is a slip of the hand, and neither is somebody saying they
-  // are finished.
+  // The reverse of the rule it shipped with: a tester drew one line, kept
+  // clicking, and could not tell why the board stopped selecting. Only the
+  // press that completes the pair ends the mode - empty canvas is "not that
+  // one", a refusal is a slip, neither is "I'm finished".
   assert.equal(connectStep('a', 'b').disarm, true);
   for (const [from, id, joinable] of
     [[null, 'a', true], ['a', 'a', true], ['a', null, true],
@@ -120,16 +116,16 @@ test('a finished pair is the only press that puts the tool down', () => {
 });
 
 test('Shift on the completing press keeps the tool armed', () => {
-  // The run of joins, kept as a modifier rather than as the default: the person
-  // drawing five lines holds a key, and the person drawing one does nothing.
+  // A modifier, not the default: drawing five lines holds a key, drawing
+  // one does nothing.
   assert.deepEqual(connectStep('a', 'b', true, true),
     { pick: null, connect: ['a', 'b'], refused: false, disarm: false });
 });
 
 test('Shift changes nothing about a press that was not a pair', () => {
-  // It is read on every press because the caller has no reason to know which
-  // press will complete a pair. Everywhere else it has to be inert, or holding
-  // Shift while picking the first end would mean something nobody asked for.
+  // Read on every press since the caller cannot know which one completes a
+  // pair. Everywhere else it must be inert, or holding Shift while picking
+  // the first end would mean something nobody asked for.
   for (const [from, id, joinable] of
     [[null, 'a', true], ['a', 'a', true], ['a', null, true], ['a', 'sticker', false]]) {
     assert.deepEqual(connectStep(from, id, joinable, true), connectStep(from, id, joinable),

@@ -1,16 +1,6 @@
-// Dialogs, and the reading and writing of the file a board is.
-//
-// The half of FilesPort that has to be here rather than in the renderer, for
-// one reason stated in main.ts's header and worth repeating where the paths
-// actually are: **a renderer cannot name a path.** Every path in this process
-// comes from a dialog this process opened or from argv, and every function
-// below either produces one or is handed one it produced earlier. Nothing here
-// takes a filename from the page and opens it.
-//
-// That is not a theoretical boundary. The app's whole job is opening documents
-// somebody else wrote - a .mbrd is a renamed ZIP anybody can hand-edit - and
-// the renderer parses all of them. A bridge function that read an arbitrary
-// path would turn a parser bug into a file-disclosure bug.
+// File dialogs and read/write for .mbrd boards.
+// A renderer cannot name a path. Every path here comes from a dialog, argv,
+// open-file, or the store. Anything else is refused.
 
 import { dialog, BrowserWindow } from 'electron';
 import { readFile, writeFile, rename, access } from 'node:fs/promises';
@@ -21,44 +11,20 @@ import {
 } from '../web/assets/js/import/formats.ts';
 import { log } from './log.ts';
 
-/** What a document is on this side: a name and the path that produced it. */
 export interface Ref {
   name: string;
   path: string;
 }
 
-/** A file on its way to the renderer. The bytes travel; the path does not. */
 export interface Handed {
   name: string;
   path: string;
   data: ArrayBuffer;
 }
 
-/**
- * Paths this process has handed out or been given.
- *
- * The other half of "a renderer cannot name a path". A ref crosses the bridge
- * with its path on it - the shelf's file rows need one to show, and the title
- * bar needs one to display - so the path does come back on the next write. This
- * set is what makes that safe: a path that arrives from the renderer is only
- * honoured if this process produced it. A page that invented one gets a
- * refusal, not a write.
- *
- * Three things legitimately put a path in here, and they are the three the plan
- * names: a dialog this process opened, a file the OS handed over (argv, or
- * macOS's open-file), and **the store**. That third one is not a loophole and
- * is easy to miss: the shelf's file rows outlive the process that made them, so
- * a board shelved yesterday arrives this morning as a path no dialog produced.
- * Those paths come out of userData, which this process owns and the renderer
- * cannot write to except through the store bridge - so they are as much this
- * process's own as the dialog's are. See vouchShelf() in main.ts.
- *
- * It grows for the life of the process and never shrinks, which is correct: a
- * board opened an hour ago is still a board this app may be asked to save.
- */
+// Paths this process produced (dialog, argv, store). Grows forever; never shrinks.
 const known = new Set<string>();
 
-/** Remember a path as ours. Called wherever one legitimately enters. */
 export function vouch(path: unknown): void {
   if (typeof path === 'string' && path) known.add(path);
 }
@@ -73,45 +39,17 @@ const checked = (path: unknown): string => {
   return path;
 };
 
-/** The .mbrd filter, the one filter this app has for its own documents. */
 const BOARD_FILTER = [{ name: 'mbrd board', extensions: ['mbrd'] }];
 
-/**
- * The three categories mbrd has a word of its own for.
- *
- * The catalogue's labels are a catalogue's - Images, Audio, Video - and three
- * of them name things this app calls something else everywhere a person reads
- * them. The other nine it has no word for, and inventing nine here would be a
- * second vocabulary kept in a file about paths.
- */
+// Friendly names for three catalogue categories.
 const OUR_WORD = new Map([
   ['images', 'Pictures'],
   ['audio', 'Sound'],
   ['video', 'Clips'],
 ]);
 
-/**
- * The routing sets, folded into the category each belongs to.
- *
- * Not redundancy, twice over.
- *
- * The catalogue does not contain all of them. `tif`, `jpe`, `heics`, `heifs`,
- * `aif`, `aifc`, `oga`, `wave`, `weba` and `m4v` are in the sets that decide
- * what gets *drawn* and in no family in the table, so a group built from the
- * table alone would be narrower than the app for the four kinds it actually
- * renders - a picker offering `.tiff` and not `.tif`.
- *
- * And `DOC_EXTS` straddles two categories: two thirds of it - `js`, `json`,
- * `py`, `csv` - is filed under Data & code rather than Documents, which is
- * where the table is right and where somebody who used the old Documents
- * filter to find a `.json` would stop finding it. Folding it back in costs a
- * few extensions listed under two groups, which nobody can see, and keeps that
- * group from narrowing under a person who was already using it.
- *
- * `svg` is the opposite case: one extension, filed under Design, which is right
- * about what it is and no help to somebody opening the picker to find a
- * picture. It is in both.
- */
+// Extensions that the app renders, grouped by category. Wider than the catalogue
+// alone (includes aliases like .tif, .jpe that have no family entry).
 const RENDERED = new Map([
   ['images', [PHOTO_EXTS, SVG_EXTS]],
   ['audio', [AUDIO_EXTS]],
@@ -119,26 +57,7 @@ const RENDERED = new Map([
   ['documents', [DOC_EXTS]],
 ]);
 
-/**
- * What Add files will show.
- *
- * Built from the generated catalogue rather than typed out - see
- * import/formats.ts, which is regenerated by tools/gen-formats.mjs and knows
- * about 1359 extensions across twelve categories. A list retyped here would be
- * a second answer to "what can this app open", and it would be wrong within a
- * release.
- *
- * One group per catalogue category, in the catalogue's order, under the
- * catalogue's label. That is the widening: this used to be the four *routing*
- * sets, which are the extensions a browser can draw, and a routing set is a
- * much smaller thing than a category - 48 pictures against 111, and nine of the
- * twelve categories had no group at all. A `.svg`, a `.stl`, a `.psd` and a
- * `.zip` were in no filter here, and the app draws the first two.
- *
- * `All files` is last and is not a courtesy: the app draws a named card for a
- * format it cannot render, which is often the point of putting one on a board,
- * and a picker that hid those would be narrower than the app.
- */
+// Build file-picker filters from the generated catalogue (import/formats.ts).
 function importFilters() {
   const groups = new Map<string, Set<string>>();
   for (const key of Object.keys(CATEGORIES)) {

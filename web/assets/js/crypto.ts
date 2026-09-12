@@ -1,74 +1,18 @@
-// The content id, and the hand-written digest that has to exist behind it.
-//
-// Every byte that becomes an item is hashed before it is stored: the hex of its
-// SHA-256 is the id an asset is filed under, the path it is written to inside a
-// .mbrd archive, and the thing two boards compare to decide they are carrying
-// the same picture. Exactly two modules ask for it - storage/assets.ts on the
-// way in and storage/mbrd.ts on the way out - which is why this is a file and
-// not a section of util.ts. It sat there for a year because util.ts was where
-// unrelated things went, and forty-four modules imported a hundred and thirty
-// lines of FIPS 180-4 to reach clamp().
-//
-// ── Why there is a second implementation at all ──
-//
-// `crypto.subtle` exists only in a secure context. An app served from `http://`
-// at anything other than localhost - a phone opening the dev server over the
-// LAN, a board shared off a machine on the desk - simply does not have it, and
-// since every import hashes its bytes before it becomes an item, the entire way
-// in fails at once and says "Nothing could be imported" on a page that
-// otherwise looks perfectly well. So the fallback is not a curiosity, it is the
-// difference between the app working on a phone and not.
-//
-// The two paths must produce the same digest. That is the point rather than a
-// nicety: a content id written into an archive on the phone has to equal what
-// the same file hashes to on the desktop, or the two boards disagree about
-// whether they hold one picture or two. tests/hash.test.js pins the fallback
-// against known vectors and against the native path for the same input.
-//
-// ── What must not move in here ──
-//
-// Nothing about *assets*. This module knows about bytes and hex and nothing
-// else - no registry, no archive layout, no idea that an item exists. The
-// predicate that says whether a string looks like one of these ids (isHash)
-// deliberately stays in util.ts, because the modules that ask that question -
-// the schema reader holding an arriving field to a shape, the mutation door
-// deciding whether an item may claim an id - have no business importing a
-// SHA-256 implementation to ask it. The shape of the answer and the making of
-// it are separate concerns with separate audiences.
-//
-// Nothing about *encryption*, either, despite the filename. There is none in
-// this app and adding some here would make the name a promise the module does
-// not keep; a cipher would be its own file with its own argument.
+// SHA-256 content ids for assets. Hand-written fallback for insecure contexts
+// (http:// on a phone over LAN) where crypto.subtle is absent. Both paths must
+// produce identical digests — tests/hash.test.js pins them against each other.
+// Nothing about assets lives here; isHash() stays in util.ts so callers need
+// not import a digest implementation to ask whether a string looks like one.
 
-/**
- * SHA-256 hex of an ArrayBuffer/Uint8Array - the content id for assets.
- *
- * The browser's own implementation where there is one, and the hand-written one
- * below where there is not.
- */
+/** SHA-256 hex of a buffer — the content id for assets. Native when available, fallback below. */
 export async function sha256(buf: ArrayBuffer | ArrayBufferView): Promise<string> {
-  // The cast is the one place this module widens a promise. A view's `buffer`
-  // is an ArrayBufferLike, which admits a SharedArrayBuffer, and WebCrypto's
-  // BufferSource does not - so tsc is right to object in general and wrong
-  // about every call this app makes, since nothing here is ever backed by
-  // shared memory. Narrowing the parameter instead would push the same cast out
-  // to five call sites that know even less about it than this one does.
-  // SAFETY: the instanceof on the first line picks the arm, so `buf` here is a
-  // view - and a view's `.buffer` is an ArrayBuffer unless it is a
-  // SharedArrayBuffer, which needs cross-origin isolation this app never asks
-  // for and which no caller here could produce. The offset and length are the
-  // view's own, so the window read is exactly the bytes it describes.
+  // SAFETY: view.buffer is ArrayBufferLike (admits SharedArrayBuffer), but this
+  // app never has cross-origin isolation, so the cast is always correct.
   const bytes = buf instanceof ArrayBuffer
     ? new Uint8Array(buf)
     : new Uint8Array(buf.buffer as ArrayBuffer, buf.byteOffset, buf.byteLength);
-  // `globalThis.crypto`, not the bare name. `crypto?.subtle` reads as a check
-  // and is not one: optional chaining guards a *property* being absent, and an
-  // undeclared identifier throws a ReferenceError before the `?.` is reached.
-  // Where `crypto` is a global that exists without a `subtle` - an http:// page
-  // on a phone, the case this fallback was written for - the two are the same.
-  // Where the global is not there at all, the bare name takes the whole import
-  // path down with an error naming neither hashing nor the file being read,
-  // while the fallback sitting right below it would have answered.
+  // globalThis.crypto — bare `crypto` throws a ReferenceError when the global
+  // is absent, before optional chaining can guard .subtle.
   const subtle = globalThis.crypto?.subtle;
   if (subtle) {
     const digest = await subtle.digest('SHA-256', bytes);
@@ -91,27 +35,10 @@ const SHA_K = Uint32Array.of(
 
 const rotr = (x: number, n: number): number => (x >>> n) | (x << (32 - n));
 
-/**
- * How much is hashed between breaths, in bytes.
- *
- * This runs about twenty-five times slower than the native digest, so a video
- * dropped on a board is seconds of work rather than a fraction of one, and all
- * of it on the thread that draws. A quarter of a megabyte is roughly a frame's
- * worth: small enough that the board still answers a pan while it thinks,
- * large enough that the yields cost nothing measurable.
- */
+/** Bytes hashed between yields. ~25x slower than native, so yield every ~frame. */
 const HASH_SLICE = 256 * 1024;
 
-/**
- * Hand the thread back for one turn.
- *
- * A message channel rather than setTimeout, and the difference is not academic:
- * a timeout nested more than five deep is clamped to four milliseconds by every
- * browser, and this loop nests one per slice - which on a twelve megabyte file
- * is more time spent waiting out the clamp than hashing. A posted message is
- * scheduled as a task like any other, so the frame still gets drawn between
- * slices, but nothing is added to the wait.
- */
+/** Yield via MessageChannel — setTimeout clamps to 4ms after 5 nesting levels. */
 function breathe(): Promise<void> {
   return new Promise<void>(done => {
     const { port1, port2 } = new MessageChannel();
@@ -120,14 +47,7 @@ function breathe(): Promise<void> {
   });
 }
 
-/**
- * FIPS 180-4, eight words out.
- *
- * Walked in place rather than over a padded copy - the input can be a video,
- * and a second three-hundred-megabyte array to write one 0x80 byte into is not
- * a thing to allocate. Only the final block, or the final two when the length
- * does not leave room for the count, is built separately.
- */
+/** FIPS 180-4. Walks in place — no padded copy, since the input can be hundreds of MB. */
 async function sha256Words(bytes: Uint8Array): Promise<Uint32Array> {
   const H = Uint32Array.of(0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
                            0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19);
@@ -140,8 +60,7 @@ async function sha256Words(bytes: Uint8Array): Promise<Uint32Array> {
     if (i && i % HASH_SLICE === 0) await breathe();
   }
 
-  // 0x80, then zeros, then the length in bits as a big-endian 64. Two blocks
-  // when the remainder leaves fewer than nine bytes for it.
+  // Pad: 0x80, zeros, big-endian 64-bit length. Two blocks when <9 bytes remain.
   const rest = n - whole;
   const tail = new Uint8Array(rest < 56 ? 64 : 128);
   tail.set(bytes.subarray(whole));

@@ -1,30 +1,12 @@
 /* =========================================================
-   mbrd - the sheets: a question, a note being written, the credits
-
-   One of the eight sheets the old overlays.css was split into. The order they
-   load in IS the cascade and is listed in the banner at the top of base.css.
-
-   #ask is ui/dialog.ts and #credits is ui/credits.ts, and they share every rule
-   about being a sheet - the same paper, hairline, leaf radius and arrival -
-   parting company only at their width. That shared block is the reason the two
-   are one file, and it has to stay above the credits rules below it: the two
-   selectors weigh the same, so document order is what settles the width.
-
-   The note composer (composeNote, canvas/notes.ts) is here as the exception
-   that proves it. It is the one dialog in the app that is not a sheet, because
-   the thing in the middle of it is a card and a card inside a card is two
-   pieces of paper - and a comment saying "unlike every other dialog in this
-   file" is only true while the other dialogs are in this file.
+   dialog.css — question, credits, darkroom and inventory dialogs.
+   Shared sheet dressing for #ask, #credits, #inventory, #timeline-sheet.
+   The note composer (#compose) is the exception: no card, no sheet.
    ========================================================= */
 
-/* The question dialog, and the credits sheet beside it. Dressed as the app
-   rather than as the browser: the same sheet, hairline, leaf radius and lift
-   budget every other surface uses, so the one moment this thing interrupts you
-   it still looks like the thing you were using.
-   The two share every rule below that is about being a sheet, and part company
-   only at their width - which is the point of writing them together rather than
-   twice. */
-#ask, #credits, #inventory, #timeline-sheet {
+/* Shared sheet dressing. The two selectors tie on specificity, so width
+   overrides below rely on document order. */
+#ask, #credits, #inventory, #timeline-sheet, #link-props {
   max-width: min(420px, calc(100vw - 32px));
   padding: 22px 24px 18px;
   border: var(--hairline) solid var(--rule-2);
@@ -32,23 +14,18 @@
   background: var(--paper-card);
   box-shadow: var(--shadow-2);
   color: var(--ink);
-  /* A <dialog> in the top layer is centred by its own margin:auto, which the
-     reset's `margin: 0` takes away. */
+  /* Restores the centering the reset's margin:0 removes from <dialog>. */
   margin: auto;
   animation: ask-in var(--dur-base) var(--ease-back);
 }
-#ask::backdrop, #credits::backdrop, #inventory::backdrop, #timeline-sheet::backdrop {
-  /* Tinted with the board's own ink rather than plain black, so the sheet
-     behind it dims into the palette instead of going grey. */
+#ask::backdrop, #credits::backdrop, #inventory::backdrop, #timeline-sheet::backdrop, #link-props::backdrop {
+  /* Ink-tinted so the scrim dims into the palette instead of going grey. */
   background: color-mix(in srgb, var(--ink) 42%, transparent);
   -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
 }
-/* #timeline-sheet is dressed by the three blocks above and styled in
-   timeline.css, which is where the rest of the Timeline is and which loads
-   after this file. Named here rather than given a copy of the dressing, the way
-   #inventory is: what a sheet looks like is one decision in one place. */
-#ask h2, #credits h2, #inventory h2, #timeline-sheet h2 {
+/* #timeline-sheet shares the dressing above; its layout is in timeline.css. */
+#ask h2, #credits h2, #inventory h2, #timeline-sheet h2, #link-props h2 {
   margin: 0 0 8px;
   font-family: var(--font-display);
   font-size: var(--t-title);
@@ -56,10 +33,7 @@
   font-weight: 400;
   color: var(--ink);
 }
-/* On the `text-wrap: pretty` and the Firefox warning it prints, see the note on
-   .ghost-line in items.css. Kept for the same reason: the question text is a
-   sentence or two at whatever width the dialog happens to be, and an orphan
-   under it reads as a mistake in a box that is asking for an answer. */
+/* text-wrap: pretty avoids orphans in short question text. */
 #ask p {
   margin: 0 0 18px;
   font-size: var(--t-body);
@@ -67,19 +41,10 @@
   text-wrap: pretty;
 }
 #ask p[hidden] { display: none; }
-/* The one question that is a paragraph rather than a sentence.
-   A crossed size ceiling (consent.ts) reads out what was measured and then what
-   it may cost, and several ceilings can be crossed by one file - so the body is
-   a few lines with blank lines between them, joined with \n by allow() and set
-   through textContent like every other body here. `pre-line` is what makes those
-   breaks visible; without it the whole explanation runs together into one block
-   and the reader cannot tell the measurement from the consequence. Collapsing
-   runs of spaces, which is the half of `pre` this does not want, stays. */
+/* pre-line makes \n breaks from consent.ts visible. */
 #ask-body { white-space: pre-line; }
-/* The box on the questions that want a value rather than a choice. Dressed as
-   the panel's own controls are, and given the row of buttons' full width -
-   there is only ever one of these, and a short box beside a long sentence reads
-   as an afterthought. */
+/* Input field for questions that want a value. Full width because there is
+   only ever one, and a short box beside a long sentence reads as an afterthought. */
 #ask-field {
   display: block;
   width: 100%;
@@ -94,18 +59,8 @@
 }
 #ask-field:focus { outline: none; border-color: var(--accent-text); }
 #ask-field[hidden] { display: none; }
-/* And the same box asked for a colour instead of a word. Taller than a line of
-   text, because what it is showing is the answer rather than holding a caret,
-   and undressed the way .swatch-well is undressed in items.css - a colour input
-   arrives wearing a platform border, a platform radius and its own inner
-   padding, and this sheet has none of those anywhere else in it. The four
-   pixels it keeps are a mount, so the colour sits inside the dialog's own
-   hairline rather than fighting it.
-
-   Two vendor spellings of the same two parts, neither of which the other
-   browser understands. Held in step with .swatch-well: the well on the card and
-   the picker in this dialog are the same control asked at different moments,
-   and a swatch that changes shape between the two reads as two features. */
+/* Colour picker variant. Undressed to match .swatch-well in items.css.
+   Two vendor spellings of the same two parts. */
 #ask-field[type="color"] {
   min-height: calc(52px * var(--density));
   padding: 4px;
@@ -125,9 +80,79 @@
 }
 
 
+/* ── Link properties ───────────────────────────────────────────────────────
+   Two labelled fields (name, address) stacked, the address paired with a Copy
+   button. Dressed as #ask above; the field look follows #ask-field. */
+.lp-label {
+  display: block;
+  margin: 0 0 4px;
+  font-family: var(--font-display);
+  font-size: var(--t-small);
+  font-style: var(--display-italic);
+  color: var(--ink-3);
+}
+/* The name field carries the gap down to the next label. */
+.lp-label + .lp-input { margin-bottom: 14px; }
+.lp-input {
+  display: block;
+  width: 100%;
+  min-height: calc(35px * var(--density));
+  padding: 0 10px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+}
+.lp-input:focus { outline: none; border-color: var(--accent-text); }
+/* The address field: a textarea that grows with its content and soft-wraps a
+   long URL, up to four lines and then scrolls. line-height is fixed so the
+   four-line cap is exact; ui/link-props.ts sets the live height on input, and
+   max-height caps it. overflow-wrap:anywhere breaks a URL with no spaces in it. */
+textarea.lp-url {
+  min-height: calc(35px * var(--density));
+  max-height: calc(1.5em * 4 + 12px + var(--hairline) * 2);
+  padding: 6px 10px;
+  line-height: 1.5;
+  resize: none;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+/* The address and its Copy button on one line; the field takes the slack and
+   the button stays at the top as the field grows below it. */
+.lp-url-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.lp-url-row .lp-input { flex: 1 1 auto; min-width: 0; margin-bottom: 0; }
+.lp-copy {
+  flex: none;
+  min-height: calc(35px * var(--density));
+  padding: 0 14px;
+  color: var(--ink);
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  background: var(--paper);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--dur-fast) var(--ease),
+              border-color var(--dur-fast) var(--ease),
+              color var(--dur-fast) var(--ease);
+}
+@media (hover: hover) {
+  .lp-copy:hover { background: var(--paper-2); border-color: var(--accent-text); color: var(--accent-deep); }
+}
+.lp-copy:active { background: var(--paper-3); }
+.lp-copy:focus { outline: none; }
+.lp-copy:focus-visible {
+  outline: var(--sel-line) solid var(--select);
+  outline-offset: var(--sel-gap);
+}
+
 .ask-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-/* Pushes the two paired answers to the far end, away from the one that keeps
-   your work. Collapses to nothing when the row wraps on a narrow screen. */
+/* Pushes paired answers to the far end; collapses when the row wraps. */
 .ask-gap { flex: 1 1 0; min-width: 0; }
 .ask-row button {
   min-height: calc(35px * var(--density));
@@ -143,8 +168,7 @@
               transform var(--dur-base) var(--ease-back),
               color var(--dur-fast) var(--ease);
 }
-/* Guarded: this one lifts as well as washing, so on a touch screen the answer
-   somebody tapped stayed raised off the panel until the dialog closed over it. */
+/* Guarded: the lift would stay raised on touch until the dialog closed. */
 @media (hover: hover) {
   .ask-row button:hover {
     background: var(--paper-2);
@@ -154,20 +178,15 @@
   }
 }
 .ask-row button:active { transform: scale(var(--btn-press)); background: var(--paper-3); }
-/* The dialog opens with a button already focused, so whatever ring this is
-   lands on screen every single time rather than only for people who tab - which
-   made the browser's default black outline the most prominent thing in the
-   panel. Suppressed for the plain case and drawn in the app's own ring when the
-   focus is one somebody navigated to. Same ring the search hits and the context
-   menu use. */
+/* The dialog opens focused, so the default ring shows every time. Suppressed
+   for mouse; drawn in the app's own ring for keyboard navigation. */
 .ask-row button:focus { outline: none; }
 .ask-row button:focus-visible {
   outline: var(--sel-line) solid var(--select);
   outline-offset: var(--sel-gap);
 }
 .ask-row button[hidden] { display: none; }
-/* The irreversible one is the only thing in the panel wearing the danger
-   colour, and it is not the one that has focus when the dialog opens. */
+/* The irreversible choice — danger colour, and never the one with focus. */
 .ask-row button.danger { border-color: var(--danger); color: var(--danger); }
 @media (hover: hover) {
   .ask-row button.danger:hover {
@@ -178,29 +197,9 @@
 }
 @keyframes ask-in { from { opacity: 0; transform: translateY(8px) scale(0.97); } }
 
-/* The dialog a new note is written in - and it is not a sheet, unlike every
-   other dialog in this file. There is no card, no border and no shadow here,
-   because the thing in the middle of it is a note card and a card inside a card
-   is two pieces of paper. All this element does is centre what is put into it,
-   hold the backdrop, and stack the formatting bar, the note and the buttons in
-   that order.
-
-   The bar comes from canvas/notes.ts and lands last in the DOM, so `order` is
-   what puts it back on top. Written on the three children rather than on the
-   bar alone, so the reading order of the rule is the reading order on screen.
-
-   **The width is the toolbar's.** A dialog is `width: fit-content` in the UA
-   stylesheet, so what this rule does is say how far that is allowed to go, and
-   it used to stop at 560px. The bar is about 640 with its six groups on one
-   line, so the cap was the whole reason it wrapped: it broke into two rows on a
-   4K monitor, not because the screen was short of room but because a number
-   here said the dialog was finished at 560. Nothing else in the dialog wants
-   560 either - the sheet sets its own width and the button row takes what it is
-   given.
-
-   So the only limit left is the window, and the wrap in .note-toolbar.is-inline
-   is what happens when that limit really does bite. One row by default, two on
-   a phone, and the line between them is the width of the glass. */
+/* Not a sheet: the note being composed is a card, and a card inside a card is
+   two pieces of paper. Width follows .note-toolbar — the bar sets fit-content,
+   and the only cap left is the window. */
 #compose {
   max-width: calc(100vw - 32px);
   margin: auto;
@@ -213,10 +212,8 @@
   overflow: visible;
   animation: ask-in var(--dur-base) var(--ease-back);
 }
-/* What hides a closed <dialog> is `display: none` in the UA stylesheet, and a
-   flat `display: flex` here outranks it - so the dialog stayed on screen after
-   close(), holding the board under a backdrop nothing could dismiss. The layout
-   belongs to the open state, and this is how it is written. */
+/* display:flex must be on [open], or it outranks the UA's display:none
+   and a closed dialog stays on screen. */
 #compose[open] { display: flex; }
 #compose::backdrop {
   background: color-mix(in srgb, var(--ink) 42%, transparent);
@@ -227,59 +224,25 @@
 #compose-mount { order: 2; }
 #compose .ask-row { order: 3; align-self: stretch; }
 
-/* The mount, and the one thing in the app that holds a live item outside the
-   world layer.
-
-   An item is absolutely positioned and carries its board coordinates inline -
-   canvas/items.ts writes left/top/width/height on the node itself - so the only
-   way to show one anywhere else is to take the positioning away. `static` does
-   that: the two coordinates stop meaning anything and the two sizes go on
-   meaning what any width and height mean, which is the size of the box. That is
-   what lets the dialog write its own pair over them, and what makes the sheet
-   grow downwards as it is typed.
-
-   The two sizes are openComposer()'s, not the note's: it writes EDIT_W across
-   and a height to fit the text, and puts the card's own pair back on the way
-   out. The mount needs no box of its own for that - a static child sizes its
-   parent, which is the whole reason the positioning comes off.
-
-   --iz is the inverse of the board's zoom, which the item chrome uses to hold
-   its size on screen. There is no zoom here, so it is 1: the sheet is drawn at
-   life size and anything hanging off it comes out the size it is on the board.
-   It was a magnification for as long as the sheet was the note's own box, since
-   a 120px note in the middle of a dimmed screen is a stamp. */
+/* The mount holds a live item outside the world layer. position:static takes
+   the board coordinates away so the dialog can write its own sizes. --iz is 1
+   because there is no zoom here. */
 #compose-mount {
   position: relative;
   --iz: 1;
 }
 #compose-mount .item {
   position: static;
-  /* placeBox() writes a transform inline on every item - a sub-pixel device
-     snap, and a rotate() on a note pinned to the board at an angle. Taken off
-     in JS, which is what an inline declaration takes; this is the resting state
-     it is taken off to. */
+  /* Clears the inline transform placeBox() writes (snap + rotation). */
   transform: none;
-  /* The board's own item transition would slide the card in from wherever it
-     was; it is not going anywhere, it is being written on. */
+  /* No board transition — the card is being written on, not moved. */
   transition: none;
 }
-/* The sheet and its counter, and nothing else. A note in the world layer is
-   also selected - the grips, the ring and the bottom bar belong to a thing you
-   can drag, resize, rotate and rename, and none of those are true of a note
-   being written in a dialog.
-   .item-body is what holds the card (see build() in canvas/items.ts); naming
-   .card here instead would hide the wrapper and leave the sheet with no box at
-   all, which is a zero-height contenteditable and a caret with nowhere to go. */
+/* Only the sheet and the counter survive; grips, ring and bar belong to a
+   thing you can drag, which a note being composed is not. */
 #compose-mount .item > :not(.item-body, .note-count) { display: none; }
 
-/* The counter, once editNote() has put it in the row rather than on the sheet.
-   Everything the board version needs is about hanging off a card inside a
-   scaled world - absolute placement, the --iz correction, a transform origin -
-   and none of it survives contact with a flex row, so all of it comes off.
-   What is left is a line of text at the left end of the button row.
-   Aligned to the buttons rather than to the top of the row: it is a label on
-   the same line as two controls, and a number floating above their centre reads
-   as a caption for the dialog instead of a reading off it. */
+/* Counter in the button row. Board positioning stripped; aligned to buttons. */
 #compose .ask-gap > .note-count {
   position: static;
   transform: none;
@@ -288,14 +251,8 @@
   text-align: left;
 }
 
-/* The bar, in a row of the dialog rather than floating over a board.
-
-   The wrap is a fallback and not the layout. The dialog takes its width from
-   this element (see #compose above), so on any screen with room the bar is one
-   line and the wrap never fires; it fires when the window itself is narrower
-   than the controls, which is the only time two rows are better than a row that
-   has run off the side of the glass. row-gap so the second line, when it does
-   come, is not sitting on the first. */
+/* The toolbar in the dialog. Wraps only when the window is narrower than the
+   controls — one row by default, two on a phone. */
 .note-toolbar.is-inline {
   position: static;
   max-width: 100%;
@@ -305,21 +262,13 @@
   transform: none;
 }
 
-/* And the landing. The card is put back into the world layer at the spot it was
-   made - the middle of the view, which is where the dialog just was - so this is
-   the end of a movement rather than a journey: it settles onto the board from
-   very slightly above it. */
+/* Landing: the card settles onto the board from slightly above. */
 .item.is-landing { animation: note-land var(--dur-base) var(--ease-back); }
 @keyframes note-land {
   from { transform: translateY(-10px) scale(1.06); }
 }
 
-/* The credits sheet. Everything about it being a sheet is shared with #ask
-   above; what is left here is the list, and the list is two rows of a face
-   beside a name.
-   Wider than the question dialog by sixty pixels and no more. A quote set on
-   two lines reads as a quote; set on four it reads as a paragraph, and a
-   paragraph is not what anybody opened this for. */
+/* Credits sheet — wider than the question to fit a quote on two lines. */
 #credits { max-width: min(480px, calc(100vw - 32px)); }
 #credits h2 { margin-bottom: 16px; }
 .credit-list {
@@ -335,15 +284,8 @@
   align-items: start;
   gap: 14px;
 }
-/* Round, and round at every whimsy level - the one radius in this stylesheet
-   that is not var(--leaf) or var(--ogee) and is not meant to become one. The
-   corner tokens travel with the dial, and a face that squares off as the board
-   gets sharper reads as a card with a photograph cropped into it; these are
-   people, not items, and the shape says so however the rest of the board is
-   set. object-fit covers because both sources are square but nothing promises
-   the next one will be.
-   Sized in one place: the width, the height and the intrinsic attributes on
-   the <img> all say 56, so the row never reflows as the file decodes. */
+/* Always round — faces are people, not items, so the radius ignores the
+   whimsy axis. object-fit covers because sources may not be square. */
 .credit-face {
   width: 56px;
   height: 56px;
@@ -355,12 +297,7 @@
   transition: border-color var(--dur-fast) var(--ease),
               transform var(--dur-base) var(--ease-back);
 }
-/* The face is a link to the same place the name is. `display: block` because an
-   inline anchor sits on the text baseline and leaves a strip of descender space
-   under a picture that has none.
-   No focus ring is written for it: it is out of the tab order (see the note in
-   index.html), so the only ring it could ever show would be one nobody asked
-   for. */
+/* display:block removes the baseline descender gap under the image. */
 .credit-face-link {
   display: block;
   border-radius: 50%;
@@ -370,10 +307,8 @@
   border-color: var(--accent-text);
   transform: translateY(var(--btn-lift)) scale(var(--btn-grow));
 }
-/* Hovering the picture lights the name, because the name is the half of this
-   row that says where the click goes and the picture is the half people aim
-   at. `~` rather than a hover on the whole row: the quote is in there too, and
-   passing over a sentence is not reaching for a link. */
+/* Hovering the picture lights the name — people aim at the picture but the
+   name says where the click goes. ~ avoids firing over the quote. */
 .credit-face-link:hover ~ .credit-who .credit-name {
   color: var(--accent-text);
   text-decoration: underline;
@@ -395,9 +330,6 @@
   outline: var(--sel-line) solid var(--select);
   outline-offset: var(--sel-gap);
 }
-/* The address under the name, in the voice every other aside in this app is
-   set in. Quiet enough to be scenery and legible enough to be typed out by
-   somebody who would rather not click a link. */
 .credit-site {
   display: block;
   font-family: var(--font-display);
@@ -406,9 +338,8 @@
   letter-spacing: calc(0.06em * var(--ls-scale));
   color: var(--ink-3);
 }
-/* Marked as a quotation by the rule down its left rather than by quote marks,
-   because one of the two lines below is a placeholder in square brackets and
-   nested punctuation around it reads as a mistake. */
+/* Border-left instead of quote marks — avoids nested punctuation around the
+   placeholder line. */
 .credit-quote {
   margin: 8px 0 0;
   padding-left: 10px;
@@ -416,20 +347,12 @@
   font-size: var(--t-small);
   font-style: var(--display-italic);
   color: var(--ink-2);
-  /* Again the note on .ghost-line in items.css. A pull quote is the worst place
-     on the page for a one-word last line, and this one is short enough that the
-     ragged edge is most of what you see. */
+  /* Avoids orphans in a short pull quote. */
   text-wrap: pretty;
 }
 
-/* What the app is standing on, folded away under the two names.
-
-   A <details>, so the open state is the element's own and ui/credits.ts stays
-   two listeners and no builder. The dressing is the app's: the summary is a
-   quiet row that behaves like every other button here on hover and focus, and
-   the marker is a chevron drawn with a border rather than the platform's
-   triangle, which is the one part of a <details> that looks like nobody chose
-   it. */
+/* Third-party credits, folded under a <details>. The summary is dressed as
+   the app's own button; the marker is a CSS chevron. */
 .credits-more {
   margin: 4px 0 18px;
   border-top: var(--hairline) solid var(--rule);
@@ -439,7 +362,6 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  /* The platform marker off, in both spellings that turn it off. */
   list-style: none;
   cursor: pointer;
   font-family: var(--font-display);
@@ -462,8 +384,7 @@
   outline: var(--sel-line) solid var(--select);
   outline-offset: var(--sel-gap);
 }
-/* The chevron: two borders on a square, turned. Points right when shut and down
-   when open, which is the one thing a disclosure has to say. */
+/* Chevron: two borders on a square. Right when shut, down when open. */
 .credits-more > summary::before {
   content: "";
   flex: none;
@@ -488,10 +409,8 @@
   font-size: 0.92em;
   color: var(--ink);
 }
-/* One borrowed thing per row: what it is, what it is under, and why it is here.
-   The licence sits on the same line as the name rather than under it, because
-   it is a two-word fact and a line of its own would make it look like a
-   heading for the sentence below. */
+/* One dependency per row: name, licence chip, creator. Licence inline with
+   the name so it reads as a label, not a heading for the sentence below. */
 .credits-deps {
   margin: 10px 0 0;
   padding: 0;
@@ -499,8 +418,6 @@
   display: grid;
   gap: 4px;
 }
-/* One line per dependency: name, licence chip, creator and a few words, all in
-   flow so the fold reads as a tight list rather than a stack of paragraphs. */
 .credits-deps > li {
   font-size: var(--t-small);
   line-height: 1.4;
@@ -520,8 +437,7 @@
   outline-offset: 2px;
   border-radius: var(--radius-xs);
 }
-/* A chip, not a word: the licence is metadata about the row and should read as
-   a label rather than as part of the sentence. */
+/* A chip, not a word — reads as metadata rather than part of the sentence. */
 .credits-lic {
   display: inline-block;
   margin-left: 6px;
@@ -550,10 +466,7 @@
 
 /* ═════════════════════════════════════════════════════════════════════════
    The darkroom: one picture, cropped and graded.
-
-   Here rather than in a sheet of its own because it is a dialog and this is the
-   sheet dialogs live in - and because its buttons are #ask's buttons (.ask-row
-   above), which is the whole reason it has no button styling at all.
+   Shares .ask-row button styling with #ask above.
    ═════════════════════════════════════════════════════════════════════════ */
 
 #darkroom {
@@ -569,9 +482,7 @@
   margin: auto;
   animation: ask-in var(--dur-base) var(--ease-back);
 }
-/* The flat display belongs to the open state, or it outranks the UA
-   stylesheet's `display: none` and leaves a closed dialog on screen - the same
-   thing #viewer and #compose both learned. */
+/* display:flex on [open] only — see #compose for why. */
 #darkroom[open] { display: flex; flex-direction: column; gap: 14px; }
 #darkroom::backdrop {
   background: color-mix(in srgb, var(--ink) 42%, transparent);
@@ -591,10 +502,7 @@
   flex: none;
   display: grid;
   place-items: center;
-  /* The one close that scales with the reading size, and it keeps doing so: a
-     dialog grows with --density the way .ask-row's buttons do, where a bar
-     pinned to the glass does not. The 30 it multiplied was its own number
-     though, and is --icon-button now like every other one. */
+  /* Scales with --density, unlike bar buttons pinned to the glass. */
   width: calc(var(--icon-button) * var(--density));
   height: calc(var(--icon-button) * var(--density));
   color: var(--ink-2);
@@ -610,10 +518,8 @@
 #darkroom-close:active { background: var(--paper-3); }
 #darkroom-close:focus-visible { color: var(--accent-deep); background: var(--paper-2); }
 
-/* The stage centres the plate; the plate *is* the picture. Nothing may size the
-   plate independently - the frame inside it is positioned in percentages, and a
-   plate wider than the photograph would put every one of those percentages off
-   by however much empty space sat beside it. See the note in index.html. */
+/* Stage centres the plate; the plate IS the picture. Nothing may size the
+   plate independently — the crop frame's percentages depend on it. */
 #darkroom-stage {
   display: flex;
   align-items: center;
@@ -627,10 +533,7 @@
   position: relative;
   display: inline-block;
   line-height: 0;
-  /* The ceiling the picture is drawn inside, named once so the turned plate
-     below can do arithmetic with it. Bounded against the window rather than
-     against the dialog, so a tall portrait picture cannot push the dials and
-     the buttons off the bottom. */
+  /* Bounded against the window so a tall portrait cannot push dials off-screen. */
   --dk-cap: min(56dvh, 560px);
 }
 #darkroom-image {
@@ -639,43 +542,17 @@
   max-height: var(--dk-cap);
   width: auto;
   height: auto;
-  /* Nothing here is a drag target except the frame, and a picture that could be
-     dragged away as a file mid-crop is a gesture fighting a gesture. */
+  /* Prevents drag-as-file from fighting the crop gesture. */
   -webkit-user-drag: none;
   -webkit-user-select: none;
   user-select: none;
 }
 
-/* ── A quarter turn, which is the one case the plate cannot shrink-wrap ──
-
-   A CSS rotation does not change an element's layout box: the turned picture
-   paints on its side and the box under it is still the shape it had before, so
-   the plate would be a landscape rectangle with a portrait picture sticking out
-   of the top and bottom of it, and every one of the frame's percentages would
-   be a percentage of the wrong thing.
-
-   So on a quarter turn the plate stops taking its size from the picture and
-   takes it from the picture's *ratio* instead - `--dk-ar`, which ui/darkroom.ts
-   writes as naturalHeight / naturalWidth, the width-over-height of the turned
-   picture. A ratio is a property of the photograph, so nothing here is a
-   measurement and nothing goes stale on a resize; the header of ui/darkroom.ts
-   is where that promise is made.
-
-   `width` is the definite dimension and `aspect-ratio` derives the height,
-   rather than the other way round with a `max-width` clamping it. Those two
-   fight: a specified height and a clamped width make a box that does not obey
-   its own ratio, and the picture inside it is then stretched. Taking the
-   smaller of the two candidate widths up front means the height that comes out
-   is inside the cap by construction.
-
-   The picture is then laid out at the plate's own box with the sides swapped -
-   100cqh by 100cqw, which is what `container-type: size` on the plate makes
-   available - so that turning it lands it exactly on the plate with nothing
-   over or under. That is also why it is taken out of flow and centred: a
-   transform turns about the centre, and the two only coincide when the element
-   is centred to begin with. The translate is written by ui/darkroom.ts as part
-   of the same transform, since a `transform` property has one value and the
-   turn has to be in it too. */
+/* ── Quarter turn: the plate cannot shrink-wrap a rotated picture ──
+   The plate takes its size from the turned ratio (--dk-ar, written by
+   ui/darkroom.ts as naturalHeight/naturalWidth). width is the definite
+   dimension; aspect-ratio derives the height. The picture is then laid out
+   at 100cqh x 100cqw via container-type:size, so the turn lands exactly. */
 #darkroom-plate.dk-quarter {
   container-type: size;
   display: block;
@@ -692,10 +569,8 @@
   max-height: none;
 }
 
-/* Everything outside the crop is dimmed by one enormous spread rather than by
-   four positioned panels: one shadow cannot disagree with itself about where
-   the edges are, and the plate's `overflow: hidden` is what stops it painting
-   the rest of the dialog. */
+/* The crop area. One enormous spread dims outside; the plate's overflow:hidden
+   clips it to the picture. */
 #darkroom-frame {
   position: absolute;
   box-shadow: 0 0 0 100vmax color-mix(in srgb, var(--ink) 55%, transparent);
@@ -705,20 +580,9 @@
 }
 #darkroom-frame[hidden] { display: none; }
 
-/* The background preview, filling the frame exactly - which costs nothing to
-   arrange, because the frame already is the region that survives.
-
-   The checkerboard behind it is the point of the whole element. A knocked-out
-   picture drawn straight over the plate would show the untouched photograph
-   through its own transparency, so the removal would be invisible; the board
-   behind it is what makes "gone" look like gone. Two gradients rather than an
-   image, at 10px, in the sheet's own inks so it reads at either end of the
-   whimsy axis.
-
-   `image-rendering: pixelated` is deliberately *not* here: the canvas is drawn
-   at preview resolution and stretched, and a smooth stretch of a soft-edged
-   matte is a fair picture of what the card will get, where a pixelated one
-   would show a staircase the card does not have. */
+/* Background-removal preview inside the crop frame. Checkerboard makes
+   transparency visible against the photograph beneath. No pixelated
+   rendering — the smooth stretch better previews the soft-edged matte. */
 #darkroom-cutout {
   position: absolute;
   inset: 0;
@@ -734,15 +598,7 @@
 }
 #darkroom-cutout[hidden] { display: none; }
 
-/* The model is running. A pulse on the plate rather than a spinner on the
-   button, because what is being waited for is the picture - and the button
-   keeps its pressed state throughout, since that state is what was asked for
-   rather than what has arrived.
-
-   It is on the plate and not on the frame so that it reads on the first run,
-   when there is no cut-out canvas on screen yet to pulse. Honours
-   prefers-reduced-motion by holding a steady dim instead, which says the same
-   thing without the movement. */
+/* Pulse on the plate while the model runs. Steady dim for reduced-motion. */
 @keyframes dk-working {
   50% { opacity: 0.62; }
 }
@@ -754,8 +610,7 @@
   #darkroom.dk-busy #darkroom-plate { animation: none; opacity: 0.62; }
 }
 
-/* Thirds, drawn as two lines each way. Decoration only - nothing snaps to
-   them - and aria-hidden in the markup for that reason. */
+/* Thirds grid — decoration only, nothing snaps to them. */
 .dk-grid {
   position: absolute;
   inset: 0;
@@ -768,10 +623,8 @@
     linear-gradient(to bottom, transparent calc(66.666% - 0.5px), var(--paper) calc(66.666% - 0.5px), var(--paper) calc(66.666% + 0.5px), transparent calc(66.666% + 0.5px));
 }
 
-/* The eight handles. Bigger than they look: the drawn square is 10px and the
-   grab is 22px, because a 10px target is a miss on a trackpad and a certainty
-   of a miss on a touchscreen. Same trade the board's own grips make with their
-   ::before. */
+/* Crop handles. The drawn square is 10px; the grab area is 22px via ::before,
+   because a 10px target misses on trackpads and touchscreens. */
 .dk-handle {
   position: absolute;
   width: 10px;
@@ -794,13 +647,8 @@
 .dk-handle[data-h="sw"] { bottom: -5px; left: -5px;  cursor: nesw-resize; }
 .dk-handle[data-h="w"]  { top: 50%; margin-top: -5px; left: -5px; cursor: ew-resize; }
 
-/* The two mirrors, above the dials and below the plate.
-
-   Dressed as the app's own small buttons rather than as anything new: paper, a
-   hairline, the pill radius the toolbar's controls carry. The pressed state is
-   the accent on paper-3 and it is keyed off aria-pressed rather than a class,
-   so the only thing that has to be right is the attribute a screen reader is
-   already reading - one state, not two that can disagree. */
+/* Tool buttons (flip, rotate). Pressed state keyed off aria-pressed so the
+   attribute a screen reader reads is the only state to keep in step. */
 #darkroom-tools { display: flex; flex-wrap: wrap; gap: 8px; }
 .dk-tool {
   display: inline-flex;
@@ -816,9 +664,7 @@
   cursor: pointer;
   transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
 }
-/* Guarded: the darkroom's tool rail stays on screen after the tap, so an
-   unguarded hover left the last tool touched looking as selected as the one
-   that actually is - on a rail whose whole job is saying which is which. */
+/* Guarded: unguarded hover left the last-tapped tool looking selected. */
 @media (hover: hover) {
   .dk-tool:hover { color: var(--ink); background: var(--paper-2); }
 }
@@ -829,23 +675,12 @@
   background: var(--paper-3);
 }
 .dk-tool .ico { width: 15px; height: 15px; }
-/* The left turn wears the right turn's glyph, mirrored. One <symbol> and a
-   transform rather than two nearly identical arcs in icons.svg: the pair has to
-   read as each other's opposite, and two hand-drawn arcs is exactly how that
-   stops being true after somebody nudges one of them. */
+/* Left turn wears the right turn's glyph mirrored — one symbol, so the pair
+   cannot drift apart. */
 .dk-tool .dk-mirror { transform: scaleX(-1); }
 
-/* Three dials in a column, each a label, a slider and its readout on one line.
-   The readout is monospace and a fixed width so the row does not jitter as the
-   number goes from 99% to 100%.
-
-   The slider itself is not drawn here and must not be. The ruled track and its
-   terracotta lozenge are one rule in sidebar.css, over a :is() list that names
-   every slider in the app - .dk-dial is the fourth entry on it. These three
-   carried `accent-color` and a native track instead, which is why the one dialog
-   that is otherwise dressed in the app's own paper had three browser controls
-   sitting in the middle of it. See the note over that rule; quality.css carries
-   the same list and squares the lozenge at the plain end of the whimsy axis. */
+/* Adjustment dials. The slider track itself is drawn in sidebar.css's :is()
+   list — .dk-dial is an entry on it. */
 #darkroom-dials { display: flex; flex-direction: column; gap: 8px; }
 .dk-dial {
   display: grid;
@@ -863,18 +698,9 @@
 }
 
 /* ── The inventory sheet ───────────────────────────────────────────────────
-
-   Dressed as #ask and #credits are, and added to their shared block above by
-   name rather than given a copy of it. What is below is only the things a
-   report needs and a question does not: a list of rows, and a width that fits
-   a file name against a size without either wrapping.
-
-   The list itself is deliberately without pictures. The rule of ui/inventory.ts
-   is that building the report may not decode an image - a board with two
-   thousand cards is exactly the board this gets opened on - so it is a table of
-   type, styled to be read down the right-hand column rather than admired. The
-   one picture in here is .inv-peek at the foot of this block, which is one row's
-   worth, drawn on hover, after the reading is already on screen. */
+   Dressed as #ask/#credits (shared block above). The list is deliberately
+   without pictures — building the report must not decode an image on a
+   board with thousands of cards. .inv-peek at the foot shows one on hover. */
 #inventory {
   max-width: min(460px, calc(100vw - 32px));
 }
@@ -906,12 +732,8 @@
   padding: 0;
   list-style: none;
 }
-/* The rule between rows belongs to the row; everything else about a row - the
-   flexing, the padding, the hit area - belongs to the line inside it, because
-   that line is a <button> when the file is under a card and a <div> when it is
-   not, and the two have to measure identically. A list where the rows that go
-   somewhere are a pixel taller than the rows that do not would be the report
-   flinching. */
+/* Border on the row, everything else on the line (<button> or <div>), so
+   the two measure identically and rows that link do not differ in height. */
 .inv-row { border-bottom: var(--hairline) solid var(--rule); }
 .inv-row:last-child { border-bottom: 0; }
 .inv-line {
@@ -938,9 +760,8 @@ button.inv-line:focus-visible {
   outline: var(--sel-line) solid var(--select);
   outline-offset: calc(var(--sel-gap) * -1);
 }
-/* Only ever drawn when the number is news - see assetRow(). One file under
-   several cards is the case this report exists to make visible, since it is
-   also the case where deleting a card frees nothing. */
+/* Shown only when a file is under several cards — the case this report
+   exists to make visible, since deleting a card then frees nothing. */
 .inv-used {
   flex: none;
   font-family: var(--font-display);
@@ -948,9 +769,7 @@ button.inv-line:focus-visible {
   font-style: var(--display-italic);
   color: var(--ink-3);
 }
-/* The name gives way and the size never does: the size is the column somebody
-   is scanning, and a long file name that pushed it off the edge would break the
-   one thing this list is for. */
+/* Name truncates; size never does — the size column is what is scanned. */
 .inv-name {
   flex: 1;
   min-width: 0;
@@ -965,23 +784,13 @@ button.inv-line:focus-visible {
   font-variant-numeric: tabular-nums;
   color: var(--ink);
 }
-/* Stored but claimed by no card. Marked rather than listed separately, so the
-   heaviest list stays one list ordered by weight - which is the order the
-   question "what is making this big" is asked in. */
+/* Orphans: stored but claimed by no card. Marked inline so the heaviest-first
+   order is kept in one list. */
 .inv-row[data-orphan] .inv-name { color: var(--ink-3); font-style: italic; }
 
-/* The peek: one row's picture, beside the sheet.
-
-   Square, with the picture contained inside it, and that is load-bearing rather
-   than a look - ui/inventory.ts places this box by arithmetic on one number
-   (PEEK, which must equal the width and the height here), and a box that sized
-   itself to the image could only be placed correctly after the image had
-   loaded, which is one frame after the pointer arrived.
-
-   It sits inside the <dialog>, so it is in the top layer with the sheet and
-   paints over the backdrop rather than under it. `position: fixed` is against
-   the window for the same reason, which is what the placement arithmetic
-   assumes. */
+/* The peek: one row's picture beside the sheet. Fixed size (168px = PEEK in
+   ui/inventory.ts) so placement arithmetic works before the image loads.
+   Inside the <dialog> so it paints over the backdrop. */
 .inv-peek {
   position: fixed;
   z-index: 1;
@@ -1004,19 +813,16 @@ button.inv-line:focus-visible {
   object-fit: contain;
 }
 
-/* Without color-mix(), for WebKit below 16.2 - section 7 of tokens.css carries
-   the argument and declares the channel-form tokens. The scrims matter more
-   here than most: a backdrop that falls back to its initial value is not a
-   dimmed board, it is no scrim at all, and the dialog then sits on a board that
-   still looks live. */
+/* Fallback without color-mix() (WebKit < 16.2). Scrims matter most here:
+   without them the backdrop is transparent and the dialog has no dimming. */
 @supports not (color: color-mix(in srgb, red, blue)) {
   #ask::backdrop,
   #credits::backdrop,
   #inventory::backdrop,
   #timeline-sheet::backdrop,
   #compose::backdrop,
+  #link-props::backdrop,
   #darkroom::backdrop { background: rgb(var(--ink-c) / 42%); }
   #darkroom-frame { box-shadow: 0 0 0 100vmax rgb(var(--ink-c) / 55%); }
   .dk-tool[aria-pressed="true"] { border-color: rgb(var(--accent-c) / 40%); }
 }
-

@@ -1,37 +1,7 @@
-// The sound palette, and the map from what happened to what is heard.
-//
-// Vendored from Cuelume (MIT, https://github.com/Danilaa1/cuelume, v0.2.2,
-// Copyright (c) 2026 Daniel Belyi) - see web/assets/cuelume-LICENSE.txt and
-// THIRD-PARTY.md. The seventeen recipes below are upstream's, number for
-// number; everything under "The cues" is this app's and has no counterpart
-// there.
-//
-// ── Why a table of numbers rather than a folder of .wav ──
-//
-// Every sound here is a handful of parameters - waveform, frequency, an
-// optional glide, an attack, a decay, sometimes a bed of filtered noise or a
-// feedback delay for a tail - rendered live by engine.ts. Nothing is fetched,
-// nothing is decoded, and the whole palette costs about six kilobytes of source
-// that minifies into the bundle.
-//
-// That is worth something on its own, but it is not the reason. The reason is
-// invert() at the foot of this file: because a sound is arithmetic, undo can be
-// redo played backwards and closing can be opening played backwards - the same
-// recipe with its glide swapped end for end and its layers dealt out in
-// reverse. Two sprites of audio can only ever be two sprites of audio that
-// somebody hoped would sound related.
-//
-// ── What must not move in here ──
-//
-// Any Web Audio node. This file is a table and a lookup; engine.ts owns the
-// graph, the context and the lifecycle, and the split is what lets the cue map
-// be tested in node with no browser at all (tests/cuelume.test.js).
-//
-// Nor a call site's name. Nothing outside this file may name a *recipe* - the
-// app says `cue('fall')` and this file decides what that is. Twenty modules
-// naming recipes is how a palette becomes unchangeable: reassigning one would
-// mean finding every caller, and the whole reason CUES below could be rewritten
-// twice in a day is that nothing outside it had an opinion.
+// Sound palette (vendored from Cuelume MIT v0.2.2, (c) 2026 Daniel Belyi)
+// and the map from app events to recipes (CUES).
+// No Web Audio here -- engine.ts owns the graph. Testable without a browser.
+// invert() lets undo sound like redo backwards; that is why these are numbers, not samples.
 
 /**
  * Own-property test. Written out here rather than imported from util.ts, and
@@ -272,32 +242,10 @@ export const SOUND_NAMES =
 /**
  * What the app is allowed to say happened.
  *
- * Eleven names over nine ideas, because two of them are pairs rather than
- * neighbours: `on`/`off` and `rise`/`fall` resolve to *the same recipe with the
- * glide inverted*, so closing is audibly the opposite of opening and redo is
- * audibly undo backwards. See invert() below - that relationship is the whole
- * argument for having taken a synthesiser instead of a folder of samples.
- *
- *   pick    a control is pressed - a toolbar or panel button, a menu row, a
- *           tab, a dropdown, or a press on the board that selects a card
- *   tap     a card is set down - it lands after a drag; a sticker is placed
- *   on/off  a boolean board setting - the grid, the axes, the readout
- *   rise    redo; a restore; a connection drawn
- *   fall    undo; a delete; a connection parted
- *   done    a board saved; an import finished
- *   fail    an error
- *   note    every other receipt - every toast, with no exceptions
- *   arrive  a board opened
- *   sweep   a marquee closing on a non-empty selection
- *
- * `pick` and `tap` are two names for one sound, and that was decided by ear.
- * They were built as a *down* and an *up* - `press` and `release`, a key
- * bottoming out and a key returning, which is what those two recipes were drawn
- * as - and it did not work: a drag ending on a different note read as a second
- * event rather than as the end of the one you were already doing. So a drag
- * opens and closes on the same note. They stay two cue names because the call
- * sites mean two different things, and because making them differ again is one
- * line in the table rather than an edit to canvas/input.ts.
+ * Eleven names, nine sounds. on/off and rise/fall are inversions of one
+ * recipe (see invert()). pick/tap sound the same — a different note on
+ * drag-end read as a second event; they stay two names because the call
+ * sites mean different things.
  */
 export type Cue =
   | 'pick' | 'tap' | 'on' | 'off' | 'rise' | 'fall'
@@ -307,120 +255,12 @@ export type Cue =
 export type Voice = { sound: SoundName, reverse?: boolean };
 
 /**
- * Cue -> voice. One entry each, and no tier dimension.
- *
- * ── Why the whimsy axis does not carry sound ──
- *
- * It did, and the argument was mine: the axis already moves shape, type, motion
- * and ornament together, so the interface at Softish is not a quieter interface
- * than at Harsh but a warmer one, and sound had to work the same way or it
- * would be the one thing on the dial that read as a loudness control. Every cue
- * had three entries and the three columns leaned on three ends of the palette -
- * the bell end, the mechanical end, the synthetic end. It also happened to give
- * all seventeen recipes a job, which was the second argument for it.
- *
- * Both arguments were made by reading, and listening threw them out.
- *
- * What thirty-three slots actually bought was thirty-three chances to be wrong,
- * chosen by matching adjectives to recipe names, with no way to hear more than
- * one third of the result at a time - because a person is only ever at one stop
- * on the dial. The two most-fired cues in the app ended up on the two least
- * audible recipes in the palette at two of the three tiers, and that went
- * unnoticed through several rounds of "it skips sometimes" precisely because it
- * looked like a plumbing fault rather than a choice. A table nobody can hear as
- * a whole is a table that cannot be judged.
- *
- * So: one voice per cue. Nine sounds, not thirty-three, and every one of them
- * is heard by everybody, which is the only condition under which the next one to
- * be wrong gets found.
- *
- * The axis keeps everything it was always better at. Nothing about how the app
- * *looks* changed, and if sound ever earns a character axis again it should be
- * its own control rather than a passenger on that one.
- *
- * ── How these nine were chosen ──
- *
- * By ear, over several passes, and the passes are worth recording because every
- * one of them that was made by *reading* was wrong.
- *
- * The first matched adjectives to recipe names and gave the most-fired cue in
- * the app the least audible sound in the palette - twice. The second corrected
- * that with arithmetic, which fixed audibility and nothing else. The third
- * restored a whole column of the old three-column table on the grounds that
- * somebody had liked it, which was closer and still not right in its parts.
- * What is here now is what was left after each of those was listened to.
- *
- * The arithmetic is still worth having in front of you, because it settles one
- * question completely - whether a sound can be heard at all - and it is the one
- * question intuition gets backwards. Peak amplitude through the output stage,
- * duration, and whether there is a pitch in it:
- *
- *     recipe     dBFS    ms   kind        recipe     dBFS    ms   kind
- *     ready      -17.9   354  pitched     error      -17.7   244  pitched
- *     chime      -19.3   356  pitched     page       -20.0   122  pitched
- *     droplet    -20.1   204  pitched     success    -21.5   304  pitched
- *     pulse      -21.9    87  pitched     bloom      -22.9   400  pitched
- *     arrival    -24.7   575  pitched     sparkle    -25.4   258  pitched
- *     loading    -26.0   205  pitched     scan       -26.4   162  pitched
- *     tick       -17.4    19  noise       press      -18.1    21  noise
- *     toggle     -18.8    45  noise       release    -18.8    57  noise
- *     whisper    -26.7   162  noise
- *
- * **The loudest recipes here are the shortest, and the longest are the
- * quietest.** The ear integrates loudness over something like a fifth of a
- * second, so a twenty-millisecond burst is heard well below its peak however
- * high that peak is, and an unpitched one gives nothing to hold on to at all.
- * `press` measures 2 dB *above* `chime` and cannot be heard beside it.
- *
- * **Those numbers no longer decide how loud anything is.** They are peaks, and
- * the column is kept because it is what a reader will otherwise measure first
- * and be misled by. What sets the level now is loudnessOf() at the foot of this
- * file, which measures the same seventeen the way a listener hears them - and
- * found them twenty-three decibels apart. See TARGET_LOUDNESS. A voice is still
- * chosen for its character; it is no longer chosen for how loud it happens to
- * come out.
- *
- * What the arithmetic cannot tell you is whether a sound will be *wanted*, and
- * that is what every rewrite of this table has actually turned on. `pick` and
- * `tap` have now been through four recipes on that question alone - `press` and
- * `whisper` could not be heard, `release` and `droplet` could and were disliked.
- * They were chosen by measurement each time. These two were chosen by name.
- *
- *   pick      `toggle`, 45ms - two bursts, 2200 then 3800. A card or a control
- *             being taken hold of. This is the most-fired cue by a wide margin:
- *             every press on every card, every button, every menu row.
- *   tap       `tick`, 19ms - bright at 5400 Hz, which is the only reason
- *             anything that short can be heard at all. A card being set down.
- *             The pair reads as a hold and a release rather than one sound
- *             twice, which is what a drag is.
- *   on/off    `pulse`, 87ms - a glide from 620 to 1240, inverting into a glide
- *             from 1240 to 620. A rise and a fall of one chirp, which is what a
- *             switch is.
- *   rise/fall `chime`, 356ms - two bells, 1046 then 1568, inverting into 1568
- *             then 1046. Undo and redo are the pair heard most often *as* a
- *             pair, so they get the clearest direction in the palette.
- *   done      `success`, 304ms - three notes resolving upward. Drawn for this.
- *   fail      `error`, 244ms - the loudest thing here, which is the right way
- *             round for the one cue that must not be missed.
- *   note      `page`, 122ms - a papery flick. Short enough for every toast, and
- *             it sounds like a thing arriving rather than a thing being decided.
- *   arrive    `arrival`, 575ms - the only portal here, rare enough to afford
- *             half a second.
- *   sweep     `ready`, 354ms - "a quick lock-on sweep resolving to a clear
- *             tone", which is a marquee closing said in other words.
- *
- * Every voice is distinct: no recipe answers two cues. That is not a rule and
- * was not aimed at - it is what fell out once each cue was chosen on its own
- * merits - but it is worth keeping, because the two collisions a previous
- * version carried (`page` on both undo and every toast, `release` on both a
- * press and a marquee) were the two things most likely to be reported next.
- * `pick` and `tap` are the one place two cues were deliberately given *related*
- * sounds rather than one sound, and they are still two recipes.
- *
- * Eight recipes are spare. IDLE_SOUNDS below describes each and what it measures,
- * so the next reassignment starts from a description rather than from these
- * names - and from the knowledge that a measurement says a sound will be heard
- * and says nothing whatever about whether it will be liked.
+ * Cue -> voice. One entry each, no tier dimension — the whimsy axis no
+ * longer carries sound (three columns hid inaudible assignments). Chosen
+ * by ear; measurement settles audibility but not desirability. Loudness
+ * is now normalized by loudnessOf() / TARGET_LOUDNESS, not peak dBFS.
+ * Every voice is distinct — no recipe answers two cues. Eight spare
+ * recipes are listed in IDLE_SOUNDS.
  */
 export const CUES = {
   pick:   { sound: 'toggle' },
@@ -436,13 +276,7 @@ export const CUES = {
   sweep:  { sound: 'ready' },
 } satisfies Record<Cue, Voice>;
 
-/**
- * Every cue name, for the bench and for the test that walks all of them.
- *
- * SAFETY: CUES `satisfies Record<Cue, ...>`, so it has a row for every Cue and
- * no rows besides - which is the whole reason that line is a `satisfies` and not
- * an annotation.
- */
+/** Every cue name. CUES satisfies Record<Cue, ...>, so this is exhaustive. */
 export const CUE_NAMES =
   // SAFETY: as above.
   Object.keys(CUES) as Cue[];
@@ -450,70 +284,15 @@ export const CUE_NAMES =
 export const isCue = (value: unknown): value is Cue =>
   typeof value === 'string' && own(CUES, value);
 
-/**
- * Recipes in the palette that no cue names, and what each is for.
- *
- * Eight of seventeen, and that is arithmetic rather than waste: eleven cues,
- * two of which are the inversion of another, is nine slots. The claim that
- * the whimsy axis gave all seventeen a job died with the axis, and this list is
- * what replaces it - tests/cuelume.test.js checks the table against these names
- * in both directions, so a recipe falling out of use is a deliberate line here
- * and a misspelled one is still a failure.
- *
- * Written as descriptions rather than as epitaphs, because the next
- * reassignment should start from what a thing sounds like and how loud it
- * measures rather than from reading the table above again. Two of the eight are
- * here because they were tried on the busiest cue in the app and *heard* to be
- * wrong, which is worth more than the rest of this list put together. In table
- * order, which is what the test compares against.
- *
- *   sparkle  -25.4 dBFS, 258ms. Four notes climbing to 3520 Hz. Genuinely
- *            celebratory and too much for anything that happens often; the one
- *            to reach for if a rare, unambiguously good event ever needs a
- *            sound of its own.
- *   droplet  -20.1 dBFS, 204ms. One warm sine falling 1200 to 550 with a tail.
- *            Loud, pitched and unmistakable - on the arithmetic the best spare
- *            here. **Tried on `pick` and disliked.**
- *   bloom    -22.9 dBFS, 400ms. A slow swell with a 60ms attack, which is what
- *            makes it soft rather than quiet. Right for something that has been
- *            waited for; wrong for anything with a transient in it.
- *   whisper  -26.7 dBFS, 162ms. The quietest thing in the table by some way and
- *            what its own comment says it is for. It held `pick` once, which is
- *            to say the most-fired cue in the app was assigned the least audible
- *            sound in the palette. Right for something genuinely incidental; a
- *            press is not that.
- *   press    -18.1 dBFS, 21ms, and the only recipe here with no tone layer.
- *            It measures louder than `chime` and cannot be heard beside it,
- *            which is the clearest thing in the palette about why peak is not
- *            loudness. Upstream drew it as the *down* half of a pair, heard
- *            against its partner tens of milliseconds later; alone it is a click
- *            in the room. **Tried on `pick` and inaudible.**
- *   release  -18.8 dBFS, 57ms. A bright burst at 4600 Hz with a short pitched
- *            tail - loud, short, and on the arithmetic the obvious answer for a
- *            cue that fires two hundred times an hour. **Tried on `pick` and
- *            disliked: it reads as hiss.** That is the entry in this list that
- *            most needs to survive, because everything measurable about it says
- *            it should have worked.
- *   loading  -26.0 dBFS, 205ms. A rising unresolved lift. The one recipe that
- *            says *started* rather than *finished*, so it is what a long import
- *            would open with if the busy strip ever wanted a voice.
- *   scan     -26.4 dBFS, 162ms. Three notes climbing, with a tail. Directional
- *            and quiet; it was `rise`/`fall` and lost them to `chime`, which is
- *            seven decibels louder and half as many notes.
- */
+/** Spare recipes — no cue names them. tests/cuelume.test.js checks both
+ *  directions. droplet/release/press were tried on `pick` and rejected
+ *  (disliked or inaudible despite high peak dBFS). */
 export const IDLE_SOUNDS: SoundName[] = [
   'sparkle', 'droplet', 'bloom', 'whisper', 'press', 'release', 'loading', 'scan',
 ];
 
-/**
- * The voice for one cue.
- *
- * A one-line lookup, and kept as a function rather than folded into the callers
- * because it is the seam: it took a tier until listening said the tiers were
- * not worth having, and whatever the next dimension turns out to be - a theme, a
- * per-cue override, nothing at all - this is where it lands rather than in
- * engine.ts.
- */
+/** The voice for one cue. Kept as a function — this is where a future
+ *  dimension (theme, per-cue override) would land. */
 export function voiceFor(cue: Cue): Voice {
   return CUES[cue];
 }

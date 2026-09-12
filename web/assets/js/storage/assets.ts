@@ -1,21 +1,11 @@
-// In-memory asset registry: content hash -> bytes + a lazily-created object URL.
-//
-// Items never hold a Blob or a URL, only `{ hash, embedded: true }`. Everything
-// that needs the actual data (renderers, the .mbrd packer, IndexedDB autosave)
-// comes through here, which is what makes dedupe-by-content free: the same photo
-// dropped twice is one entry and one object URL.
+// In-memory asset registry: content hash -> blob + lazy object URL.
+// Items reference assets by hash only; all actual data lookups go through here,
+// giving free content-based dedup.
 
 import { sha256 } from '../crypto.ts';
 import { extOf } from '../util.ts';
 
-/**
- * One registered asset: the bytes, and the object URL once something has asked
- * for one.
- *
- * `url` is null until assetURL() mints it and null again after a real pagehide
- * revokes it - see initAssets(), where the difference between "never made one"
- * and "made one and it is dead" is the whole point of writing the field back.
- */
+// `url` is null until assetURL() mints it, and null again after pagehide revokes it.
 export type Asset = {
   blob: Blob,
   url: string | null,
@@ -25,50 +15,24 @@ export type Asset = {
   name: string,
 };
 
-/** What a caller may say about an asset that the blob itself does not carry. */
 type AssetMeta = Partial<Pick<Asset, 'mime' | 'ext' | 'name'>>;
 
-/** hash -> { blob, url, mime, ext, size, name } */
 const store = new Map<string, Asset>();
 
-/**
- * The asset registered under a hash, or undefined for one that is not here.
- *
- * The parameter admits the two spellings of "no hash" because that is how it is
- * called: `getAsset(item.asset?.hash)` for an item that may carry no asset, and
- * `getAsset(thumbSource(it))` for a lookup that answers null. "There is nothing
- * under that hash" is the answer both want.
- *
- * SAFETY: a Map lookup does not care what it is handed - a key that cannot be
- * in the map finds nothing, which is the same undefined a missing hash gives.
- * The cast only satisfies the signature; nothing is written through it.
- */
+// Accepts null/undefined so callers can pass item.asset?.hash directly.
 export function getAsset(hash: string | null | undefined) {
-  // SAFETY: see above.
-  return store.get(hash as string);
+  return store.get(hash as string); // SAFETY: miss on null/undefined is the desired result
 }
 export function allAssets() { return store; }
 
-/**
- * How much the registry is holding, and in how many files.
- *
- * A total rather than a map, because the only question anybody asks of the whole
- * store is how big it is - the Debug fold's "what this board weighs" row, and
- * nothing else. Callers had to reduce over allAssets() to get it, which is the
- * same three lines written at the call site and one more place that has to know
- * an Asset carries `size`.
- *
- * `size` is the blob's own length, so this is the bytes on disk before the ZIP
- * deflates them - which is the honest number for "what is in memory", and an
- * over-estimate of what a saved .mbrd will weigh.
- */
+// Total bytes in memory (pre-deflate) and file count.
 export function assetBytes() {
   let bytes = 0;
   for (const a of store.values()) bytes += a.size;
   return { bytes, count: store.size };
 }
 
-/** Object URL for an asset, created on first use and reused after. */
+// Object URL for an asset, created on first call and reused after.
 export function assetURL(hash: string): string | null {
   const a = store.get(hash);
   if (!a) return null;
@@ -76,7 +40,7 @@ export function assetURL(hash: string): string | null {
   return a.url;
 }
 
-/** Register a blob under a known hash (used when unpacking a .mbrd). */
+// Register a blob under a known hash (used by .mbrd unpack).
 export function putAsset(hash: string, blob: Blob, meta: AssetMeta = {}): Asset {
   const existing = store.get(hash);
   if (existing) return existing;
@@ -92,23 +56,15 @@ export function putAsset(hash: string, blob: Blob, meta: AssetMeta = {}): Asset 
   return entry;
 }
 
-/** Hash a File/Blob and register it. Returns the hash (same bytes -> same hash). */
+// Hash a File/Blob and register it. Same bytes -> same hash.
 export async function addFile(file: File): Promise<string> {
   const buf = await file.arrayBuffer();
   const hash = await sha256(buf);
   if (!store.has(hash)) {
     const ext = extOf(file.name);
-    // An <img> renders a blob: URL by the blob's own MIME, and an SVG served with
-    // an empty type does not render at all. Some sources hand an .svg over with
-    // no File.type, so it is inferred from the extension here - narrowly, for the
-    // one format where the type is load-bearing rather than a hint.
+    // SVG blob URLs need an explicit MIME or <img> will not render them.
     const mime = file.type || (ext === 'svg' ? 'image/svg+xml' : '');
-    // `file.slice()` rather than `new Blob([buf])`, and the difference is a whole
-    // second copy of the file in memory. What arrived is already a Blob; the only
-    // reason a new one was ever built is the `mime` above, which sometimes has to
-    // differ from the File's own - and slice() with a content type is exactly
-    // "the same bytes, relabelled", with no copy. It matters here rather than
-    // anywhere: six imports run at once and each one is holding `buf` already.
+    // slice() relabels the MIME without copying bytes (unlike new Blob([buf])).
     putAsset(hash, mime === file.type ? file : file.slice(0, file.size, mime), {
       mime,
       ext,
@@ -118,34 +74,15 @@ export async function addFile(file: File): Promise<string> {
   return hash;
 }
 
-/**
- * A derived picture as a named File, labelled with the type it actually is.
- *
- * Six places in the app make a picture out of another picture - a thumbnail, a
- * video poster, a model's still - and register it here. Every one of them used
- * to write `something.webp` and `image/webp` outright, which was true for
- * exactly as long as the encoders refused to return anything else.
- *
- * They do not any more, and the label is not cosmetic: addFile() *relabels* the
- * blob with the type it is handed, and an <img> renders a blob: URL by that
- * type - so a PNG announced as WebP is a picture that does not draw, on
- * precisely the engine those changes were made for. No version of Safari
- * encodes WebP from a canvas, so that engine is every Safari.
- *
- * Here rather than in optimize/picture.ts, where the first two callers live:
- * canvas/ does not import optimize/ anywhere today and a naming helper is not
- * the right reason to open that edge. Every caller already imports addFile().
- *
- * The fallback is WebP rather than octet-stream because the only way to reach
- * it is a blob with no type at all, and every producer of one here asked for a
- * picture.
- */
+// Wrap a derived picture blob as a correctly-typed File.
+// The MIME must match the actual encoding or blob-URL <img> will not render
+// (Safari never encodes WebP, so it hands back PNG with no type).
 export function derivedFile(blob: Blob, stem: string): File {
   const type = /^image\/[a-z0-9.+-]+$/i.test(blob.type) ? blob.type.toLowerCase() : 'image/webp';
   return new File([blob], `${stem}.${type.slice('image/'.length)}`, { type });
 }
 
-/** Read an asset back as text - used by the text renderer. */
+// Read an asset as text (used by the text renderer).
 export async function readText(hash: string, limit = 20000): Promise<string> {
   const a = store.get(hash);
   if (!a) return '';
@@ -153,43 +90,22 @@ export async function readText(hash: string, limit = 20000): Promise<string> {
   return slice.text();
 }
 
-/** Drop everything and release the object URLs (board close / open). */
+// Drop everything and revoke all object URLs (board close/open).
 export function clearAssets() {
   for (const a of store.values()) if (a.url) URL.revokeObjectURL(a.url);
   store.clear();
 }
 
-// Deleted items keep their assets alive on purpose: undo has to be able to put
-// the item back, and a save only ever writes the hashes the live items still
-// reference. Assets are released wholesale by clearAssets() on board close.
+// Deleted items keep their assets for undo; clearAssets() frees them on board close.
 
-/**
- * Throw specific bytes away, and say how many went.
- *
- * The one door in this module that removes something without removing
- * everything, and it exists for exactly one caller: emptying the bin, which is
- * the only action in the app that means *this file is finished with* rather
- * than *this card is off the board*. Everything else that deletes leaves the
- * bytes here, because undo, the bin and the step ledger can all put the card
- * back and a card whose picture had been swept is worse than no card.
- *
- * So this is not called from here. trash.ts holds the decision - which hashes
- * nothing else claims, and what the board keeps in their place - and is handed
- * this function by main.ts, since storage/ sits above the base layer and may
- * not be imported from it (tests/layers.test.js).
- *
- * The answer is `hash -> size`, and it is the reason this returns anything at
- * all: the tombstone the bin leaves behind prints the size of what went, and
- * the only place that number exists is the entry being deleted on this line.
- * A hash that names nothing is simply absent from the answer.
- */
+// Remove specific assets (bin empty). Returns hash -> size for the tombstone.
+// Called via main.ts injection because storage/ cannot be imported from the base layer.
 export function forgetAssets(hashes: Iterable<string>): Map<string, number> {
   const freed = new Map<string, number>();
   for (const hash of hashes) {
     const a = store.get(hash);
     if (!a) continue;
-    // Before the delete, or the URL outlives the only reference to it - the
-    // same pairing clearAssets() makes one line apart.
+    // Revoke before delete or the URL outlives its only reference.
     if (a.url) URL.revokeObjectURL(a.url);
     freed.set(hash, a.size);
     store.delete(hash);
@@ -197,31 +113,9 @@ export function forgetAssets(hashes: Iterable<string>): Map<string, number> {
   return freed;
 }
 
-/**
- * Release the object URLs when the document goes away.
- *
- * They die with the document anyway; this is for the long-lived PWA session -
- * open all day, several boards - where nothing else would ever hand them back.
- *
- * `persisted` is the whole subtlety. A pagehide that reports it is going into
- * the back/forward cache is not a teardown at all: the document is frozen with
- * its DOM intact and may be handed back whole, every <img> still pointing at
- * the blob: URL it was built with. Revoking on the way into that cache breaks
- * every one of them, and the breakage only shows up on the way *back*, which
- * is the hardest place to notice it. So a persisted hide releases nothing.
- *
- * When it is a real teardown the URLs go, and the cached string goes with
- * them. Leaving a revoked URL in the entry would make assetURL() keep handing
- * out a dead address for the rest of the session, since it only mints a new
- * one when the field is empty - which is the same broken picture by a slower
- * route.
- *
- * Registered from main.ts rather than on import: a module that reaches for a
- * browser global the moment it loads cannot be loaded anywhere else, and this
- * one is imported right across the app - commands.ts, canvas/, import/,
- * optimize/ and ui/ all reach for it. Not state.ts, which sits in the base
- * layer under this one and may not import it (tests/layers.test.js again).
- */
+// Revoke object URLs on real pagehide (not bfcache).
+// Skips persisted hides: revoking into bfcache breaks every <img> on restore.
+// Registered from main.ts to keep this module loadable outside a browser.
 export function initAssets() {
   addEventListener('pagehide', event => {
     if (event.persisted) return;

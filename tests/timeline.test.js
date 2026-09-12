@@ -1,16 +1,11 @@
-// The step ledger: what gets written down, what collapses, and the one check
-// that matters.
-//
-// That check is the last test in this file, and it is the whole safety net for
-// the phase that follows. Phase 1 of research/old/timeline-2026-08-14.md leaves the
-// closure-based undo engine running beside the new record-based one *and asserts
-// they agree*, because there is no browser-driven suite here and "replay and
-// undo produce the same board" is the strongest thing that can be said about
-// this feature without somebody watching a screen. Phase 2 deletes one of the
-// two engines, and it is only safe to do that while this test is green.
-//
-// Everything above it is the small print: what makes two changes one step, what
-// makes them two, and what happens to a step nobody wanted.
+// The step ledger: what gets written down, what collapses, and the one
+// check that matters - the last test in this file, the safety net for the
+// phase that follows. Phase 1 of research/old/timeline-2026-08-14.md runs the old
+// closure-based undo beside the new record-based one *and asserts they
+// agree*, since "replay and undo produce the same board" is the strongest
+// claim possible without a browser-driven suite. Phase 2 deletes one
+// engine, safe only while this test is green. Everything else here is the
+// small print: what makes changes collapse into one step, and what doesn't.
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -80,7 +75,7 @@ test('moving the same card twice with nothing in between is one step', () => {
   move(a.id, 10, 0);
   move(a.id, 10, 0);
   move(a.id, 10, 0);
-  // One for the add, one for all three moves. Twelve taps of an arrow key are
+  // One for the add, one for all three moves - twelve arrow-key taps are
   // twelve commits and one intention; the strip shows the intention.
   assert.deepEqual(labels(), ['Add', 'Move']);
 });
@@ -106,8 +101,8 @@ test('moving a card and then renaming it is two steps', () => {
   const [a] = addItems([photo({ x: 0, y: 0 })]);
   move(a.id, 10, 0);
   renameItem(a.id, 'Renamed');
-  // Same card, different fields. Two intentions, and a strip that folded them
-  // together would be hiding one of them behind the other.
+  // Same card, different fields, two intentions - folding them together
+  // would hide one behind the other.
   assert.equal(timelineSteps().length, 3);
 });
 
@@ -115,8 +110,8 @@ test('a run that ends where it started leaves no step at all', () => {
   const [a] = addItems([photo({ x: 0, y: 0 })]);
   move(a.id, 40, 0);
   move(a.id, -40, 0);
-  // Not a step with nothing in it - no step. A dot on the strip for an action
-  // with no effect is worse than no dot.
+  // Not a step with nothing in it - no step. A dot for an action with no
+  // effect is worse than no dot.
   assert.deepEqual(labels(), ['Add']);
 });
 
@@ -125,15 +120,15 @@ test('a run closes when something else happens in between', () => {
   move(a.id, 10, 0);
   move(b.id, 10, 0);
   move(a.id, 10, 0);
-  // The middle move is the something else. Three steps, not two: a run only
-  // ever merges with the step immediately before it.
+  // The middle move is the something else. A run only ever merges with the
+  // step immediately before it.
   assert.deepEqual(labels(), ['Add', 'Move', 'Move', 'Move']);
 });
 
 test('an add is never folded into the move that follows it', () => {
   const [a] = addItems([photo({ x: 0, y: 0 })]);
   move(a.id, 10, 0);
-  // A card arriving has nothing on the before side of its pair, and collapsing
+  // A card arriving has nothing on the before side of its pair - collapsing
   // "added" into "moved" would lose the add.
   assert.deepEqual(labels(), ['Add', 'Move']);
 });
@@ -143,8 +138,8 @@ test('repeated renames of the same card collapse', () => {
   renameItem(a.id, 'One');
   renameItem(a.id, 'Two');
   renameItem(a.id, 'Three');
-  // The same shape as a colour slider dragged across its range: one field of
-  // one card written over and over, and one thing the person meant.
+  // Same shape as a colour slider dragged across its range: one field
+  // written over and over, one thing the person meant.
   assert.deepEqual(labels(), ['Add', 'Rename']);
 });
 
@@ -169,8 +164,8 @@ test('doing something new with the marker rolled back drops what was ahead', () 
   addItems([note({ x: 300, y: 0 })]);
   undo();
   addItems([photo({ x: 600, y: 0 })]);
-  // Truncation, the way undo behaves everywhere. Fusion inserts instead; that
-  // is a deliberate divergence and the design says why.
+  // Truncation, the way undo behaves everywhere - Fusion inserts instead, a
+  // deliberate divergence the design explains.
   assert.equal(timelineSteps().length, 2);
   assert.equal(timelineAt(), 2);
 });
@@ -182,8 +177,8 @@ test('taking back a command takes back its step', () => {
   const withdrawn = lastCommand();
   assert.equal(takeBack(withdrawn), true);
   assert.equal(timelineSteps().length, 1);
-  // The withdrawn one is gone from both engines, so the earlier command is the
-  // top of the stack again and can itself be taken back.
+  // Gone from both engines, so the earlier command is the top of the stack
+  // again and can itself be taken back.
   assert.equal(takeBack(cmd), true);
   assert.equal(timelineSteps().length, 0);
 });
@@ -211,26 +206,21 @@ test('a timeline that does not describe its board is marked stale', () => {
   const [a] = addItems([photo({ x: 0, y: 0 })]);
   move(a.id, 40, 0);
   const doc = serializeBoard();
-  // What an older build does: drop the timeline, keep the board, let it be
-  // edited, and hand it back here. The steps no longer add up to the board
-  // beside them, and a history that quietly describes the wrong board is worse
-  // than no history at all.
+  // What an older build does: drop the timeline, edit the board, hand it
+  // back. The steps no longer add up to the board beside them, and a
+  // history quietly describing the wrong board is worse than no history.
   doc.items[0].x = 999;
   loadBoard(doc);
   assert.equal(timelineStale(), true);
 });
 
-// A stored `base` that is not a snapshot.
-//
-// `raw.base as Snap` behind an isRecord() was the whole check, and every field
-// of a Snap is read without looking by restore(): the two orders are mapped
-// over, the five keyed maps are handed to JSON.parse. So a file whose base was
-// `{}` - or one whose `items` held a number where a serialised card belongs -
-// adopted cleanly and threw the first time anybody scrubbed the timeline,
-// several frames and one screenful from the file that caused it. Refusing the
-// ledger is the answer rather than repairing it: a base with half its sections
-// replays to a board nobody had, and this module's own rule is that a history
-// describing the wrong board is worse than no history.
+// A stored `base` that is not a snapshot. `raw.base as Snap` behind an
+// isRecord() was the whole check, and restore() reads every Snap field
+// without looking - so a file whose base was `{}`, or whose `items` held a
+// number where a card belongs, adopted cleanly and threw several frames
+// later, far from the file that caused it. Refusing the ledger, not
+// repairing it, is the answer: a half-broken base replays to a board
+// nobody had.
 for (const [what, base] of [
   ['an empty object', {}],
   ['no itemOrder', { items: {}, desktop: {}, mobile: {}, trash: {}, rest: {}, trashOrder: [] }],
@@ -255,9 +245,9 @@ test('an asset only a step names is still referenced', () => {
   const hash = 'a'.repeat(64);
   const [a] = addItems([photo({ x: 0, y: 0, asset: { hash } })]);
   removeItems([a.id]);
-  // The card is in the bin, which already counted. Empty the bin and the only
-  // thing left naming those bytes is the step that put it there - and stepping
-  // back through that step has to put the picture on the board again.
+  // The card is in the bin, which already counted. Emptying the bin leaves
+  // only the step that put it there naming those bytes - stepping back
+  // through it must put the picture on the board again.
   board.trash.length = 0;
   assert.equal(timelineHashes().has(hash), true);
 });
@@ -277,8 +267,8 @@ test('undo works on a board reopened with a history and no stack', () => {
   const [a] = addItems([photo({ x: 0, y: 0 })]);
   move(a.id, 40, 0);
   const doc = serializeBoard();
-  // The reload. loadBoard() clears the closure stacks - that is the whole
-  // reason undo has never survived a refresh - and then adopts the record.
+  // The reload: loadBoard() clears the closure stacks - the whole reason
+  // undo never survived a refresh - then adopts the record.
   loadBoard(doc);
   assert.equal(historyDepth().undo, 0);
   assert.equal(historyState().undo, 'Move');
@@ -302,9 +292,8 @@ test('the session stack answers before the record does', () => {
   const [a] = addItems([photo({ x: 0, y: 0 })]);
   move(a.id, 10, 0);
   move(a.id, 10, 0);
-  // One step on the strip, two commits in this session. Undo is the finer of
-  // the two engines while it still can be, so the first press takes back ten
-  // pixels rather than twenty.
+  // One step on the strip, two commits this session. Undo is the finer
+  // engine while it can be, so the first press takes back ten pixels, not twenty.
   assert.equal(timelineSteps().length, 2);
   assert.equal(undo(), true);
   assert.equal(byId(a.id).x, 10);
@@ -314,10 +303,9 @@ test('the session stack answers before the record does', () => {
 // Editing a step in the past - phase 4
 // ---------------------------------------------------------------------------
 
-// A stand-in for align or arrange: a rule with a parameter, which re-runs to a
-// different answer when the parameter changes. The real ones are registered in
-// commands.ts and need a viewport; what is being tested here is the machinery
-// they hang on, not the arithmetic of a layout.
+// A stand-in for align or arrange: a rule with a parameter that re-runs to
+// a different answer when the parameter changes. The real ones need a
+// viewport; this tests the machinery they hang on, not layout arithmetic.
 registerOp('shift-to', params => shiftTo(String(params.id), Number(params.to)));
 
 function shiftTo(id, to) {
@@ -329,9 +317,8 @@ function shiftTo(id, to) {
   commitGeom('Shift', before, [id]);
 }
 
-// A second rule doing the same thing under another name, which is the only way
-// to test that the rule's name keeps two runs apart. The real pair is align and
-// arrange: both move x and y of the same cards, and only their names differ.
+// A second rule doing the same thing under another name - the only way to
+// test that a rule's name keeps two runs apart, as align and arrange do.
 registerOp('nudge-to', params => nudgeTo(String(params.id), Number(params.to)));
 
 function nudgeTo(id, to) {
@@ -349,8 +336,7 @@ test('a step that carries a rule says so', () => {
   const [step] = timelineSteps().slice(-1);
   assert.equal(step.op.name, 'shift-to');
   assert.equal(stepEditable(step), true);
-  // And an ordinary one does not, which is the distinction the strip draws as a
-  // lock.
+  // An ordinary step does not - the distinction the strip draws as a lock.
   assert.equal(stepEditable(timelineSteps()[0]), false);
 });
 
@@ -360,23 +346,21 @@ test('editing a step in the past changes what came after it', () => {
   renameItem(a.id, 'Named later');
   assert.equal(byId(a.id).x, 100);
 
-  // Reach back into step 1 and tell it to do something else. Everything after it
+  // Reach back into step 1 and tell it something else. Everything after it
   // replays on top of the new answer.
   assert.equal(editStep(1, { to: 250 }), true);
   assert.equal(byId(a.id).x, 250);
-  // The later step is still there and still applied - which is the whole claim.
-  // A rebuild that dropped it would look like it worked.
+  // The later step is still there and still applied - a rebuild that
+  // dropped it would look like it worked.
   assert.equal(byId(a.id).name, 'Named later');
 });
 
 test('a jump to a step in the past takes the session stack with it', () => {
-  // goTo() is what a click on a dot in the strip calls, and nothing in this
-  // file exercised it. It moved the board by replay and left the closure stack
-  // standing: with three steps recorded, jumping to step one left two undo
-  // entries describing a board that no longer existed, and the next Ctrl+Z ran
-  // the last command's undo() - writing one era's geometry onto another's board
-  // and then moving the marker back as well. The result was a silent mix of
-  // two boards that markDirty() made saveable.
+  // goTo() (a click on a strip dot) moved the board by replay but left the
+  // closure stack standing: three steps recorded, jump to step one, and two
+  // stale undo entries remained. The next Ctrl+Z wrote one era's geometry
+  // onto another's board and moved the marker too - a silent mix markDirty()
+  // then made saveable.
   const [a] = addItems([photo({ x: 0, y: 0 })]);
   move(a.id, 40, 0);
   move(a.id, 40, 0);
@@ -386,8 +370,8 @@ test('a jump to a step in the past takes the session stack with it', () => {
   assert.equal(goTo(1), true);
   assert.equal(timelineAt(), 1);
   assert.equal(historyDepth().undo, 0, 'the closures from the discarded era are still there');
-  // The ledger is untouched - this is a move through the history, not an edit
-  // of it - so stepping forward again is still available.
+  // The ledger is untouched - a move through history, not an edit of it -
+  // so stepping forward again is still available.
   assert.equal(timelineSteps().length, top);
   assert.equal(goTo(top), true);
   assert.equal(byId(a.id).x, 80);
@@ -399,22 +383,16 @@ test('a rebuild adds nothing to the ledger and leaves no stale closures', () => 
   renameItem(a.id, 'X');
   const steps = timelineSteps().length;
   editStep(1, { to: 250 });
-  // The rule was run again by calling the command that made it, and that command
-  // commits. Without the pass-through in commit() this would be three steps
-  // longer, all of them describing a replay.
+  // The rule reruns via the command that made it, and that command commits.
+  // Without commit()'s pass-through, this would be three steps longer, all
+  // describing a replay.
   assert.equal(timelineSteps().length, steps);
-  // And the session's closure stack is gone, which is the half this used to
-  // assert the opposite of.
-  //
-  // It read `historyDepth().undo === depth` - the stack unchanged - on the
-  // reading that a rebuild should leave both engines alone. But a rebuild
-  // recomputes every step after the edited one, so those entries close over
-  // positions from a board that has been discarded: the next Ctrl+Z restored
-  // coordinates nobody had, onto a board built from a different answer, and
-  // markDirty() made the result saveable. goTo() had the same divergence from
-  // the other direction. Undo is not lost, it is *rebased* - with the stack
-  // empty it falls through to the ledger, which is the history that still
-  // describes this board.
+  // The session's closure stack is gone, the half this used to assert the
+  // opposite of. It read `historyDepth().undo === depth` on the assumption
+  // a rebuild should leave both engines alone - but a rebuild recomputes
+  // every later step, so those closures point at a discarded board.
+  // Ctrl+Z would restore coordinates nobody had. Undo is not lost, it is
+  // *rebased*: with the stack empty it falls through to the ledger.
   assert.equal(historyDepth().undo, 0);
   assert.equal(historyState().undo, 'Rename');
 });
@@ -424,12 +402,12 @@ test('a rule that cannot run is marked and skipped, and the rest still replay', 
   const [b] = addItems([photo({ x: 400, y: 0 })]);
   shiftTo(a.id, 100);
   renameItem(b.id, 'Survivor');
-  // Point the rule at a card that does not exist. The runner throws, which is
-  // what an editable step naming a card an earlier edit removed would do.
+  // Points the rule at a nonexistent card - what an editable step naming a
+  // card an earlier edit removed would do.
   assert.equal(editStep(2, { id: 'gone' }), true);
   const step = timelineSteps()[2];
   assert.equal(step.broken, true);
-  // Broken, not fatal: the board still builds and the step after it still ran.
+  // Broken, not fatal: the board still builds and the following step still ran.
   assert.equal(byId(b.id).name, 'Survivor');
   assert.equal(timelineSteps().length, 4);
 });
@@ -444,14 +422,14 @@ test('two rules in a row are one step carrying the later rule', () => {
   const [a] = addItems([photo({ x: 0, y: 0 })]);
   shiftTo(a.id, 100);
   shiftTo(a.id, 200);
-  // They touch the same card in the same field, which is what a run is, and a
-  // rule is not exempt from that. This used to assert three: the exemption meant
-  // cycling an arrangement to see which looked right left a mark per press.
+  // Same card, same field - what a run is, and a rule is not exempt. Used
+  // to assert three: cycling an arrangement to see what looked right left
+  // a mark per press.
   assert.equal(timelineSteps().length, 2);
   const [step] = timelineSteps().slice(-1);
-  // The parameters of the last press over the difference of the whole run, which
-  // is what makes the fold sound - editing this step re-runs the rule somebody
-  // settled on, and the difference it replaces already spans both presses.
+  // Parameters of the last press over the difference of the whole run: what
+  // makes the fold sound - editing re-runs the rule settled on, and the
+  // difference it replaces already spans both presses.
   assert.equal(step.op.params.to, 200);
   assert.equal(editStep(1, { to: 250 }), true);
   assert.equal(byId(a.id).x, 250);
@@ -461,9 +439,8 @@ test('two rules of different names over the same cards stay two steps', () => {
   const [a] = addItems([photo({ x: 0, y: 0 })]);
   shiftTo(a.id, 100);
   nudgeTo(a.id, 200);
-  // Same card, same field - so the subject matches and only the rule's name
-  // keeps them apart. Merged, the step would claim to be a nudge whose
-  // difference is half a shift.
+  // Same card, same field - only the rule's name keeps them apart. Merged,
+  // the step would claim to be a nudge whose difference is half a shift.
   assert.equal(timelineSteps().length, 3);
 });
 
@@ -472,9 +449,8 @@ test('a rule does not merge with an ordinary step that moved the same card', () 
   shiftTo(a.id, 100);
   move(a.id, 40, 0);
   shiftTo(a.id, 300);
-  // The empty key used to keep a rule away from a sealed step for free. The
-  // prefix is what does it now, and a sealed step in the middle closes the run
-  // besides.
+  // The empty key used to keep a rule away from a sealed step for free; the
+  // prefix does it now, and a sealed step in the middle closes the run too.
   assert.equal(timelineSteps().length, 4);
 });
 
@@ -495,7 +471,7 @@ test('old steps fold into the starting state and the board does not move', () =>
   const [a] = addItems([photo({ x: 0, y: 0 })]);
   move(a.id, 40, 0);
   renameItem(a.id, 'Kept');
-  // Age the first two. Written rather than waited for, which is the only way to
+  // Age the first two. Written rather than waited for - the only way to
   // test a thirty-day rule.
   const steps = timelineSteps();
   steps[0].at = Date.now() - 60 * DAY;
@@ -504,12 +480,12 @@ test('old steps fold into the starting state and the board does not move', () =>
   assert.equal(trimmable(), 2);
   const before = fingerprint();
   assert.equal(trimTimeline(), 2);
-  // The whole promise: the record gets shorter, the board is untouched. A trim
-  // that moved the board would be the app editing somebody's work to save space.
+  // The whole promise: the record gets shorter, the board is untouched. A
+  // trim that moved the board would be editing somebody's work to save space.
   assert.equal(fingerprint(), before);
   assert.equal(timelineSteps().length, 1);
   assert.equal(timelineAt(), 1);
-  // And the folded work is still there, because it went into the starting state
+  // The folded work is still there, since it went into the starting state
   // rather than being thrown away.
   assert.equal(byId(a.id).x, 40);
 });
@@ -520,9 +496,9 @@ test('a trim never crosses a step somebody named', () => {
   renameItem(a.id, 'Third');
   const steps = timelineSteps();
   for (const step of steps) step.at = Date.now() - 60 * DAY;
-  // A saved version sits on the second step. Everything is old enough to go and
-  // the count still stops short of it, because folding a named point away would
-  // destroy something somebody deliberately marked.
+  // A saved version sits on the second step. Everything is old enough to go,
+  // but the count stops short of it - folding a named point away would
+  // destroy something deliberately marked.
   steps[1].name = 'Before the redesign';
   assert.equal(trimmable(), 1);
   trimTimeline();
@@ -535,9 +511,9 @@ test('a trim never folds past where the board is standing', () => {
   for (const step of timelineSteps()) step.at = Date.now() - 60 * DAY;
   undo();
   undo();
-  // The marker is at the beginning, so there is nothing behind it to fold. A
-  // starting state that described a board the marker had not reached would be a
-  // starting state describing a future.
+  // The marker is at the beginning, so nothing behind it can fold - a
+  // starting state describing a board the marker had not reached would be
+  // describing a future.
   assert.equal(timelineAt(), 0);
   assert.equal(trimmable(), 0);
 });
@@ -547,13 +523,11 @@ test('a trim never folds past where the board is standing', () => {
 // ---------------------------------------------------------------------------
 
 test('replaying to a point produces the board undoing to it produces', () => {
-  // Marks are keyed by where the *marker* stood, not by how many operations had
-  // run, and that is deliberate. One user-level action is not reliably one step:
-  // a run collapses several into one, and one action can commit twice. Keying on
-  // the marker asks the question that actually matters - is the board at step
-  // five the same board however you arrived at it - without the test having to
-  // predict the ledger's arithmetic. It was written the other way first, and
-  // what that version measured was my guess about which operations commit.
+  // Marks are keyed by where the *marker* stood, not operation count - one
+  // user action is not reliably one step, since a run collapses several
+  // into one and an action can commit twice. Keying on the marker asks what
+  // actually matters - is the board at step five the same however you got
+  // there - without predicting the ledger's arithmetic.
   const start = fingerprint();
   assert.equal(timelineAt(), 0);
 
@@ -575,18 +549,17 @@ test('replaying to a point produces the board undoing to it produces', () => {
   const top = fingerprint();
   assert.ok(timelineSteps().length >= ops.length - 1);
 
-  // All the way back through the closures, and all the way forward again. The
-  // two ends are the strong claim: undo that does not land exactly where it
-  // started is a bug this suite could not otherwise see.
+  // All the way back through the closures and all the way forward again -
+  // the strong claim: undo not landing exactly where it started is a bug
+  // this suite could not otherwise see.
   while (undo());
   assert.equal(timelineAt(), 0);
   assert.equal(fingerprint(), start, 'undone to the beginning');
   while (redo());
   assert.equal(fingerprint(), top, 'redone to the end');
 
-  // And now the same journey through the records rather than the closures, in
-  // an order that goes both ways and crosses the marks more than once. This is
-  // the assertion phase 2 is allowed to lean on.
+  // The same journey through the records rather than the closures, crossing
+  // the marks more than once. This is the assertion phase 2 leans on.
   const points = [...marks.keys()];
   for (const target of [...points, ...points.slice().reverse(), 0, points.at(-1)]) {
     replayTo(target);
@@ -598,17 +571,13 @@ test('replaying to a point produces the board undoing to it produces', () => {
 // Where the two engines are allowed to disagree, and where they are not
 // ---------------------------------------------------------------------------
 //
-// The test above walks the closures to *both ends* and the records across every
-// mark, and it was green through a bug that permanently deleted cards. What it
-// could not see is the middle of a run: undo is finer than the strip on purpose,
-// so several entries in the stack collapse to one step, and the marker moved
-// once per entry rather than once per step. Three nudges undone walked it back
-// three steps, and it came to rest two steps behind the board. Everything after
-// that rebuilt an older board - and a card added and then left alone is the one
-// that never comes back, because no later step mentions it.
-//
-// The reason the end-to-end walk missed it: `at` is clamped at zero, so undoing
-// all the way hides any amount of over-counting. These check where it cannot.
+// The test above walks both ends and every mark, and was green through a
+// bug that permanently deleted cards. It could not see the middle of a run:
+// undo is finer than the strip on purpose, several stack entries collapse
+// to one step, and the marker moved once per entry, not once per step.
+// Three nudges undone walked back three steps but landed two steps behind
+// the board, rebuilding an older one where an untouched card never returns.
+// `at` clamped at zero hides this on a full undo; these check where it can't.
 
 const idsOnBoard = () => board.items.map(i => i.id).sort().join(',');
 
@@ -631,8 +600,8 @@ test('undo inside a run leaves the marker on the run it is inside', () => {
 });
 
 test('a card no step touched survives a replay after a partial undo', () => {
-  // Added first and never mentioned again - the shape of a card somebody puts
-  // at the top of a board and leaves there.
+  // Added first and never mentioned again - a card put at the top of a
+  // board and left there.
   const [keep] = addItems([note({ x: 0, y: 0 })]);
   const [a] = addItems([photo({ x: 400, y: 0 })]);
   move(a.id, 10, 0);
@@ -641,9 +610,9 @@ test('a card no step touched survives a replay after a partial undo', () => {
   undo();
   undo();
 
-  // Not the fingerprint: mid-run the board is deliberately finer than the step,
-  // so the two differ by two nudges and that is the design. Membership is not
-  // allowed to differ by anything, because a run never adds or removes a card.
+  // Not the fingerprint: mid-run the board is deliberately finer than the
+  // step, differing by two nudges by design. Membership must not differ at
+  // all, since a run never adds or removes a card.
   const seen = idsOnBoard();
   replayTo(timelineAt());
   assert.equal(idsOnBoard(), seen, 'the replay lost a card the board still had');
@@ -651,12 +620,11 @@ test('a card no step touched survives a replay after a partial undo', () => {
 });
 
 test('a run merged into a checkpointed step still replays', () => {
-  // CHECKPOINT_EVERY is 50 and private to the module; this lands exactly on it,
-  // because the bug is a picture filed under a mark whose step then changed.
+  // CHECKPOINT_EVERY is 50 and private to the module; this lands exactly on
+  // it, since the bug is a mark filed under a step that then changed.
   const [a] = addItems([photo({ x: 0, y: 0 })]);
-  // Bounded. `while (timelineSteps().length < 49)` with nothing else in it is a
-  // test that hangs rather than fails the moment recordStep() stops recording -
-  // and a suite that hangs reports nothing about the other 1300 tests either.
+  // Bounded: `while (timelineSteps().length < 49)` alone would hang rather
+  // than fail if recordStep() stopped recording, taking the whole suite with it.
   for (let guard = 0; timelineSteps().length < 49; guard++) {
     assert.ok(guard < 200, `${timelineSteps().length} steps after ${guard} adds - the ledger is not growing`);
     addItems([photo({ x: 0, y: 0 })]);

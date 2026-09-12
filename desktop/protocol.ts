@@ -1,42 +1,7 @@
-// Serving web/ over a scheme of its own, and why the app is not loaded from a
-// file.
-//
-// index.html carries `<base href="/">`, and two modules - mesh/occt.ts and
-// errors.ts - hold absolute `/assets/...` paths. Under `file://` a leading
-// slash resolves to the root of the filesystem, so every one of those 404s and
-// the app does not boot. The tag cannot simply be removed: the same document is
-// served as the 404 page at arbitrary paths on the deploy, and _headers'
-// base-uri note argues that at length.
-//
-// So the window loads `app://mbrd/index.html` instead. That is Electron's own
-// recommendation and it buys three things at once: `<base>` resolves to
-// `app://mbrd/` and nothing in web/ learns it moved; the page gets a real
-// origin, so IndexedDB, workers, `blob:` URLs and the CSP all behave exactly as
-// they do on the web; and `file://`'s peculiar security rules never apply to
-// anything.
-//
-// ── The policy is web/_headers, read rather than copied ──
-//
-// The deploy applies that file and this applies that file. Not a copy of it -
-// a copy is the thing tests/csp.test.js exists to prevent, since it holds the
-// hashes and hosts in that file in step with the code they came from and would
-// go on passing while a second copy here drifted. One policy, one place, two
-// enforcers.
-//
-// The four `! Content-Security-Policy` exemptions are read too. Each is a
-// worker that compiles WebAssembly - the ffmpeg core, pdf.js's JPEG 2000
-// decoder, the matting model, the CAD kernel - and _headers argues every one of
-// them where it is written. A dedicated worker does not inherit the document's
-// policy; it gets one from the headers on its own script response, which is
-// this handler's to send or to withhold.
-//
-// ── What this handler will not do ──
-//
-// Serve anything outside web/. The path is resolved and then checked to be
-// under the root, which catches `..` however it is spelled - percent-encoded,
-// doubled, or arriving as a Windows separator. A renderer cannot name a path in
-// this app at all (see main.ts), but a protocol handler is the one place a URL
-// becomes a filename, so it is the one place that check has to exist.
+// Serve web/ over app://mbrd/ so <base href="/"> resolves correctly,
+// IndexedDB/workers get a real origin, and file:// quirks never apply.
+// CSP is read from web/_headers (one policy, two enforcers — no copy).
+// Path traversal is checked after resolve(); nothing outside web/ is served.
 
 import { app, protocol } from 'electron';
 import { readFile } from 'node:fs/promises';
@@ -48,32 +13,11 @@ import { log } from './log.ts';
 const HOST = 'mbrd';
 export const APP_ORIGIN = `app://${HOST}`;
 export const APP_INDEX = `${APP_ORIGIN}/index.html`;
-/**
- * The changelog, which is the one address in this app that is not the app.
- *
- * Named here rather than spelled in main.ts because it is the same fact as
- * APP_INDEX - a path under this scheme - and because main.ts matches a
- * navigation against it. `homePath()` in web/assets/js/page.ts produces exactly
- * this, extensionless, and readPage() below is what resolves it to patch.html.
- */
+/** The changelog path. readPage() resolves this extensionless form to patch.html. */
 export const APP_PATCH = `${APP_ORIGIN}/patch`;
 
-/**
- * Register the scheme. Must run before `ready`, which is why it is not part of
- * serveWeb() below.
- *
- * `standard` is the load-bearing one: without it the scheme has no origin, and
- * a page with no origin gets no IndexedDB, no localStorage and no workers - the
- * three things this app is built on. `secure` puts it in the same bucket as
- * https for every "is this a secure context" test, which is what crypto.subtle
- * and the rest ask. `supportFetchAPI` lets the page fetch its own assets, which
- * ui/snapshot.ts does for the sticker sprite. `stream` lets the handler answer
- * with a body it has not finished reading.
- *
- * `corsEnabled: false` because there is nothing to be cross-origin *to*: one
- * origin serves the whole app, and turning it on would add preflight handling
- * for requests that cannot happen.
- */
+/** Register the scheme before `ready`. `standard` gives it a real origin;
+ * `secure` enables crypto.subtle; `supportFetchAPI` lets the page self-fetch. */
 export function registerSchemes(): void {
   protocol.registerSchemesAsPrivileged([{
     scheme: 'app',
@@ -81,18 +25,7 @@ export function registerSchemes(): void {
   }]);
 }
 
-/**
- * Answer `app://mbrd/...` out of web/. Must run after `ready`.
- *
- * `app.getAppPath()` is the packaged app's root - `resources/app.asar`, holding
- * `dist/**`, which is the whole of the `files` list in electron-builder.yml.
- * web/ is not in the archive at all: `extraResources` copies it to
- * `resources/web`, beside the asar rather than inside it, so it is one level up
- * from the app path. In development the app path is `desktop/` and web/ is one
- * level up from that too. The two are reconciled by looking for index.html
- * rather than by asking whether this is a packaged build, because "where is
- * web/" is a question with an answer on disk.
- */
+/** Answer `app://mbrd/...` out of web/. Must run after `ready`. */
 export function serveWeb(): void {
   const root = webRoot();
   const policy = readPolicy(root);
@@ -102,25 +35,18 @@ export function serveWeb(): void {
     const url = new URL(request.url);
     if (url.hostname !== HOST) return new Response('Not found', { status: 404 });
 
-    // decodeURIComponent rather than the raw pathname, so a percent-encoded
-    // separator is resolved *before* the containment check below sees it and
-    // cannot smuggle a segment past it.
+    // Decode before containment check so percent-encoded separators cannot bypass it.
     let rel: string;
     try {
       rel = decodeURIComponent(url.pathname);
     } catch {
       return new Response('Bad request', { status: 400 });
     }
-    // A directory is index.html, which is what a web server does and what the
-    // app's own routing expects: the share link and the not-found page are both
-    // paths that resolve to the same document.
+    // Directory → index.html, matching the web server and the app's routing.
     if (rel.endsWith('/')) rel += 'index.html';
 
     const file = resolve(join(root, rel));
-    // The one check. `resolve` has already collapsed every `..`, so this is a
-    // question about where the answer landed rather than about what the request
-    // looked like - which is the only form of this check that is not a game of
-    // spotting escapes.
+    // Containment check after resolve() has collapsed all `..` sequences.
     if (file !== root && !file.startsWith(root + sep)) {
       log('warn', 'refused a path outside web/', { requested: url.pathname });
       return new Response('Forbidden', { status: 403 });
@@ -128,18 +54,12 @@ export function serveWeb(): void {
 
     const found = await readPage(file);
     if (!found) {
-      // Not an error worth a log line at `error`: a 404 here is usually the app
-      // probing for something optional - a vendored decoder it can do without.
       log('info', 'not served', { path: url.pathname });
       return new Response('Not found', { status: 404 });
     }
 
     const headers = new Headers({ 'Content-Type': mimeOf(found.file) });
-    // Exempt paths get no policy at all rather than a looser one, for the
-    // reason _headers gives: two Content-Security-Policy values are
-    // intersected, not overridden, so a looser second one would change
-    // nothing. The comparison is on the URL path, which is how _headers
-    // spells them.
+    // Exempt paths get no CSP — two values are intersected, not overridden.
     if (policy.value && !policy.exempt.includes(url.pathname)) {
       headers.set('Content-Security-Policy', policy.value);
     }
@@ -147,27 +67,7 @@ export function serveWeb(): void {
   });
 }
 
-/**
- * The bytes behind a resolved path, with the host's one rewrite applied.
- *
- * A path carrying no extension is that name with `.html` on it. This is the
- * rule that makes `/patch` an address on the deploy - a static host resolves
- * the extensionless form, `page.ts` spells the changelog that way in three
- * places, and `homePath() + 'patch'` is what the What Changed row navigates to.
- * Without it the window asked for `web/patch`, got a 404 and painted the
- * response body: a blank screen, from a row that had worked on the web all
- * along.
- *
- * The extensionless spelling is tried *first* rather than as a fallback. A
- * directory named `patch` beside `patch.html` would otherwise be read as a file,
- * fail, and never reach the page - and a bare path has nothing else it could
- * mean here, since a directory is already rewritten to index.html above.
- *
- * Called after the containment check in the handler, and that order matters:
- * `.html` appended to a path already known to be under web/ cannot take it out,
- * where doing this first would hand the check a different string than the one
- * read.
- */
+/** Read the file, trying extensionless-as-.html first (makes `/patch` work). */
 async function readPage(file: string): Promise<{ file: string, body: Buffer } | null> {
   const named = /\.[a-z0-9]+$/i.test(file);
   for (const candidate of named ? [file] : [`${file}.html`, file]) {
@@ -184,36 +84,14 @@ async function readPage(file: string): Promise<{ file: string, body: Buffer } | 
 function webRoot(): string {
   const base = app.getAppPath();
   for (const candidate of [join(base, 'web'), join(base, '..', 'web')]) {
-    // Sync on purpose and twice at most: this runs at startup, before a window
-    // exists, and the alternative is threading a promise through the one call
-    // that has to happen synchronously anyway.
     if (existsSync(join(candidate, 'index.html'))) return resolve(candidate);
   }
-  // Neither is a broken build rather than a state to recover from - the same
-  // thing storage.ts says about #file-input. Returning the packaged guess makes
-  // the failure a 404 on index.html, which is legible in the log.
   log('error', 'no web/ found beside the app', { base });
   return resolve(join(base, 'web'));
 }
 
-/**
- * The policy and its exemptions, parsed out of web/_headers.
- *
- * The format is Cloudflare's and is two shapes: a path pattern on a column-zero
- * line, then indented `Header: value` lines under it, or `! Header` to remove
- * one. Only two things are wanted here - the `/*` rule's
- * Content-Security-Policy, and every path that removes it - so this reads those
- * and ignores the rest rather than becoming a general parser for a format with
- * one consumer.
- *
- * A file that cannot be read means no header rather than a guessed one. That is
- * the safe direction only because it is loud: the app runs with no policy, and
- * the log says so, which beats running with a policy nobody wrote.
- */
+/** Parse the CSP and its exemptions from web/_headers (Cloudflare format). */
 function readPolicy(root: string): { value: string, exempt: string[] } {
-  // SAFETY: an empty array literal has no element type to infer from, so this
-  // names the one the rest of the function fills it with. Nothing is being
-  // claimed about a value - there is no value yet.
   const empty = { value: '', exempt: [] as string[] };
   let text: string;
   try {
@@ -240,15 +118,7 @@ function readPolicy(root: string): { value: string, exempt: string[] } {
   return { value, exempt };
 }
 
-/**
- * The content type, from the extension.
- *
- * Short on purpose: this serves one directory whose contents are known, so the
- * list is what web/ actually holds rather than a MIME database. The three that
- * matter are the ones a browser refuses to *use* on a wrong type - a module
- * served as text/plain does not execute, a wasm binary served as anything but
- * application/wasm does not stream-compile, and a font is rejected outright.
- */
+/** Content type from extension. Only what web/ actually holds. */
 function mimeOf(file: string): string {
   const ext = /\.([a-z0-9]+)$/i.exec(file)?.[1].toLowerCase() ?? '';
   switch (ext) {

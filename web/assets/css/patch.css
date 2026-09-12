@@ -1,104 +1,22 @@
-/* =========================================================
-   mbrd - the changelog
+/* Changelog page. Loaded only by web/patch.html after the app's full cascade.
+   Whimsy tokens do most of the work — the two tier blocks at the bottom add
+   only what tokens cannot say (tape, marker swipe, tilt, tag column).
+   No ids — tests/element-ids.test.js checks every id in this directory.
+   IS in SHELL in sw.js. */
 
-   NOT ONE OF THE TWENTY, and last after all of them. web/patch.html loads
-   index.html's whole cascade - copied at build time by
-   tools/gen-patch-page.mjs, so this page wears the app's paper and the app's
-   ink rather than a second account of them - and then loads this. Everything
-   below is either the one correction a document has to make to a stylesheet
-   written for a board, or the page itself.
-
-   It IS in SHELL in web/sw.js. tests/sw.test.js walks this directory and
-   precaches every .css it finds, which is the right rule here too.
-
-   ── The whimsy axis is the design ──
-
-   tokens.css carries three personalities keyed off one attribute on <html>,
-   and the app writes that attribute before first paint from the look the
-   visitor set on their own board. So this page arrives already dressed, and
-   what it is dressed in is not a theme somebody picked for a changelog - it is
-   the reader's own board, printed.
-
-     0  Softish  a scrapbook. Deep corners, serif throughout, warm ornament,
-                 the plates pinned up a degree off square with tape on them.
-     1  Middle   the same room with the furniture straightened. Cards on paper.
-     2  Harsh    a spec sheet. Square, hairline, sans, no shadow, no tilt, the
-                 tags set as a fixed column so the bullets read as a table.
-
-   Almost none of that is declared here twice. --radius, --radius-pill,
-   --font-body, --font-display, --shadow-1, --lift-hover, --tilt-max, --grain,
-   --wash and --highlight all move on their own, so a rule written once in the
-   base reads three ways. What the two blocks at the foot of this file add is
-   only what a token cannot say: the tape, the marker swipe, the tilt, and the
-   tag column.
-
-   ── Only classes now ──
-
-   tests/element-ids.test.js walks this directory and asserts that every id a
-   selector names exists in index.html. This file names none: the page's own
-   elements are all classes, and the app's own furniture is no longer on the
-   page to be hidden.
-
-   ── There is no board on this page, and no app either ──
-
-   There used to be both. patch.html was index.html's entire body, the bundle
-   booted on it, and the sidebar over the changelog was the app's real sidebar -
-   with this file hiding the viewport, the toolbar, the HUD, the bin and the
-   corner furniture so that what showed through was a document. The sidebar has
-   been taken off the page, and the copy went with it, because everything the
-   copy was for was that sidebar.
-
-   Two things were wrong with it in the meantime and both are now gone by
-   construction rather than by a rule here. The page shipped half a megabyte of
-   script to boot a board nobody could see. And #grain - the app's paper tooth,
-   `position: fixed`, full window - stayed on the page and stayed still, behind
-   a sheet whose own texture scrolls: two grounds over one another, one of them
-   nailed to the window, which is exactly what it looked like.
-   ========================================================= */
-
-/* ---------------------------------------------------------
-   The document scrolls, and the paper goes with it
-
-   base.css is loaded here and it pins the app to the window - height 100%,
-   overflow hidden - because every gesture on a board belongs to the board. This
-   page is not a board and has nothing on it but prose, so the pin comes off and
-   the changelog scrolls the way a document scrolls.
-
-   An earlier version kept the pin and scrolled the changelog inside a fixed
-   surface of its own, the way the Feed does on the Mobile board. That works,
-   and this file argued for it at length - but it puts the paper outside the
-   thing that moves. The ground is painted on <body>, <body> never scrolls, and
-   so the blooms and the tooth of the stock sit dead still while the prose
-   slides over them. A texture that does not travel with the page it is printed
-   on is a backdrop, not stock; the whole claim of this page is that it is
-   printed on the reader's own board.
-
-   Taking the pin off is what lets one word - `scroll` - fix that, with the
-   sheet in base.css untouched. This file is loaded by web/patch.html and by
-   nothing else, so an unqualified `html, body` here reaches only this page.
-   --------------------------------------------------------- */
+/* --- Undo base.css viewport lock so the page scrolls normally --- */
 
 html, body {
   height: auto;
-  /* The only pairing `visible` is allowed to keep company with. Softish leans
-     its plates a fraction off square and tapes them down past the row, which
-     is a few pixels of horizontal overflow nobody should be able to scroll to. */
+  /* clip-x prevents horizontal scroll from Softish plate tilt */
   overflow-x: clip;
   overflow-y: visible;
 }
 
 body {
-  /* The containing block for the grain below, which is now as tall as the
-     changelog rather than as tall as the window. min-height keeps a short page
-     - one release, on a big screen - still covered to the foot. */
   position: relative;
   min-height: 100vh;
-  /* The ground travels with the page. base.css lays three radial gradients over
-     the paper, two colour blooms and a vignette, and every stop in them is a
-     percentage of the box they are painted in - so on a document a few thousand
-     pixels tall they would stretch into smears with no edge anywhere. Sized to
-     one screen and told not to repeat, they stay the wash they were drawn as
-     and leave over the top of the page like everything else. */
+  /* Size blooms to one screen so they do not stretch over a tall document */
   background-attachment: scroll;
   background-repeat: no-repeat;
   background-size: 100% 100vh;
@@ -109,19 +27,7 @@ body {
   z-index: 1;
 }
 
-/* The stock, and what makes this paper rather than a background colour. Same
-   tile, same blend and the same dial as #grain in base.css - --grain is 1.25 at
-   Softish and 0 at Harsh, so the tooth arrives and leaves with the rest of the
-   personality and this rule needs no level of its own.
-   Absolute rather than fixed, and against a body that is now the height of the
-   changelog: the tooth runs the length of the sheet and scrolls with it.
-
-   **This is the only grain on the page**, and it was not always. #grain in
-   base.css is the same tile, fixed to the window, and it used to come here with
-   the rest of index.html's body - so the page carried two, one scrolling with
-   the prose and one nailed behind it, multiplied over each other. Nothing in
-   this file could have hidden it without also admitting that the body copy was
-   the problem, which is what taking the copy away did instead. */
+/* Paper grain — same tile/blend as #grain in base.css, scrolls with the page */
 body.is-patch::before {
   content: "";
   position: absolute;
@@ -135,41 +41,15 @@ body.is-patch::before {
   opacity: calc(0.8 * var(--grain));
 }
 
-/* The measure of prose down the middle of the page, and now the whole of what
-   is on it. The top padding was clearing the board's menu button in the corner;
-   it stays at that value because the page reads better opening on paper than on
-   a headline flush to the top edge. */
 .pn-inner {
   max-width: 880px;
   margin: 0 auto;
   padding: clamp(76px, 11vw, 132px) clamp(18px, 5vw, 40px) 96px;
 }
 
-/* ---------------------------------------------------------
-   The column
+/* --- The column — prose with a commit-count margin --- */
 
-   One measure of prose with a margin down its left, and the margin is not
-   decoration: it carries the size of each release in the only unit this
-   project has. A version here is a commit count, so "0.156 - 0.187" is
-   thirty-two commits and the page can say so without anybody writing it down.
-   --------------------------------------------------------- */
-
-/* The way back.
-
-   Sticky rather than fixed, and inside the column rather than over the window.
-   It used to have to be, to stay clear of the board's own menu button in the
-   corner; that button is off the page now and it stays sticky anyway, because
-   riding the measure is what keeps it in the same place at every width and on a
-   phone rather than somewhere different on each.
-
-   It has to be opaque and it has to outrank the plates. A sticky element with a
-   transparent ground is a word with a changelog scrolling through it, and the
-   plates below carry their own paper - so this one carries paper too, and a
-   z-index above them. 3 rather than 2: .pn-mark in the margin already takes 2.
-
-   Everything about the shape is a token, so it arrives dressed in whatever the
-   reader's own board is wearing - a tape-and-scrapbook pill at Softish and a
-   square hairline chip at Harsh, with nothing here saying either. */
+/* Back link — sticky, opaque, z-index 3 (above .pn-mark at 2) */
 .pn-back {
   position: sticky;
   top: 14px;
@@ -197,7 +77,6 @@ body.is-patch::before {
 .pn-back:hover {
   color: var(--accent-deep);
   border-color: var(--accent-text);
-  /* Towards the board, which is the direction the chevron is pointing. */
   transform: translateX(-2px);
 }
 .pn-back .ico { width: 14px; height: 14px; }
@@ -206,31 +85,12 @@ body.is-patch::before {
   margin-bottom: clamp(38px, 7vw, 70px);
 }
 
-/* Bigger than any token names, because until this page nothing in the app was
-   a page title. Struck from --t-display rather than written as a number, so it
-   moves with a look that changes the display scale - Harsh sets it five points
-   smaller than Softish does, and the title follows. */
 .pn-title {
   margin: 0;
   font-family: var(--font-display);
   font-size: clamp(var(--t-display), 8vw, calc(var(--t-display) * 2.1));
   font-weight: var(--display-weight);
-  /* Tracking that follows the size, because the size moves and the old flat
-     0.01em did not.
-     Letters set at 30px want a little air between them and the same letters at
-     63px do not: the gaps grow with the type while the eye's tolerance for them
-     does not, so one value across a 2.1x clamp is loose at the top or cramped at
-     the bottom, and this was loose at the top. The line-height beside it has
-     always been doing the size-responsive half correctly - 1.04 is a large-type
-     leading, not a body one - which is what made the tracking stand out.
-     Driven by the same vw the font-size is, which is what keeps the two in step:
-     0.01em at a phone's width, crossing zero somewhere around 560px, and -0.02em
-     by the time the clamp has stopped growing.
-     This does not touch what --ls-scale is for. That knob is held at 1 at every
-     whimsy level because tracking was the one thing on the axis that moved type
-     sideways under a reader mid-sentence - a heading shifting when a slider is
-     nudged. Nothing here is nudged: the size is already moving, and this only
-     stops the spacing being wrong while it does. */
+  /* Tracking tightens as size grows — loose at phone, tight at desktop */
   letter-spacing: calc(clamp(-0.02em, 0.03em - 0.09vw, 0.01em) * var(--ls-scale));
   line-height: 1.04;
   color: var(--ink);
@@ -243,10 +103,7 @@ body.is-patch::before {
   color: var(--ink-2);
 }
 
-/* The three numbers the page can state without anybody keeping them in step:
-   counted from the source every time it is built. Divided by hairlines rather
-   than by punctuation, which is the same join the sidebar makes between its
-   own sections. */
+/* Three counters — computed from source at build time */
 .pn-tally {
   display: flex;
   flex-wrap: wrap;
@@ -264,13 +121,7 @@ body.is-patch::before {
   border-left: var(--hairline) solid var(--rule);
 }
 
-/* ---------------------------------------------------------
-   The spine
-
-   The margin cells of consecutive releases touch, so one border down their
-   right-hand side draws a single line the length of the changelog with no
-   element of its own. Each release marks it once, at its own head.
-   --------------------------------------------------------- */
+/* --- The spine — a continuous border drawn by adjacent margin cells --- */
 
 .pn-list {
   margin: 0;
@@ -291,10 +142,7 @@ body.is-patch::before {
   text-align: right;
 }
 
-/* The mark sits *on* the line, which is what the negative offset is for. A
-   pill at both other levels and a square at Harsh, because --radius-pill is
-   what the axis flattens - so the one shape this page draws follows the axis
-   like everything else. */
+/* Sits on the spine line via negative offset */
 .pn-mark {
   position: absolute;
   top: 0.72em;
@@ -305,9 +153,6 @@ body.is-patch::before {
   background: var(--accent);
 }
 
-/* How many commits the release covers. Quiet, in the display face, and set
-   against the line rather than under the mark - it is a measurement of the
-   thing beside it, so it reads as a scale and not as a caption. */
 .pn-count {
   display: block;
   padding-top: 0.34em;

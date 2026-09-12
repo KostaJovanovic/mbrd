@@ -1,87 +1,28 @@
 /* =========================================================
-   mbrd - design tokens
-
-   Nothing in the CSS hardcodes a colour, a corner, a duration or a typeface.
-   Everything resolves through a custom property declared here, which is what
-   makes the whole look swappable at runtime - by the Appearance panel, by a
-   board that travels with its own look, and eventually by the board itself
-   reading the pictures you drop on it.
-
-   Three layers, applied in this order (later wins on equal specificity, and
-   every selector below is exactly (0,2,0), so source order *is* the cascade):
-
-     1. :root                  the base look - Papyrus, the playful extreme
-     2. :root[data-palette=x]  a different set of pigments, same personality
-     3. :root[data-whimsy=n]   a different personality entirely
-
-   On top of all three sit inline properties on :root, written by the
-   Appearance panel. Inline always wins, so a hand-picked pigment survives a
-   palette switch or a slide along the whimsy axis - which is the behaviour you
-   want, and it falls out of the cascade for free.
+   Design tokens. Every colour, corner, duration and typeface in the CSS
+   resolves through a custom property declared here. Three layers, all (0,2,0):
+     1. :root               — base look (Middle / Papyrus)
+     2. :root[data-palette]  — pigment swap
+     3. :root[data-whimsy]   — personality swap
+   Inline properties from the Appearance panel win over all three.
    ========================================================= */
 
 /* =========================================================
-   1. Base - whimsy 1, "Middle". Papyrus & terracotta: warm paper, iron-gall
-   ink, corners in, nothing moving on its own.
-
-   The middle of the axis is the base rather than a variant because it is the
-   default look, and the default has to be what renders before any script has
-   run - so an unset data-whimsy and a data-whimsy="1" mean the same thing, and
-   a first paint needs no attribute at all.
-
-   Light only, on purpose: the whole thing reads as a sheet of paper you pin
-   things to, and a dark sheet of papyrus is a contradiction.
+   1. Base — whimsy 1, "Middle". Default look; renders before script runs.
    ========================================================= */
 
 :root {
-  /* ---- paper ----
-     The tint here is a whisper and is meant to be: OKLCh chroma 0.007 on the
-     sheet, rising to 0.015 by the time it is a pressed well. What the sheet
-     carries is warmth, not colour - a sheet dyed far enough into its hue to be
-     named stops reading as paper and starts reading as coloured card, and it
-     drags every photograph pinned to it towards the same cast. The colour is
-     spent on the pigments below instead, where it is what somebody is looking
-     at rather than what they are looking through.
-
-     Bright as well as neutral, and the pairing is the whole of it: taking
-     chroma out while leaving the sheet where it was made the paper look *more*
-     tinted, not less, because at equal chroma a darker sheet shows its hue
-     more. Less colour, more light. Either half alone is the wrong answer. */
+  /* ---- paper ---- */
   --paper:      #faf8f3;   /* the sheet */
   --paper-2:    #f1efe8;   /* insets, wells, and a hovered control */
   --paper-3:    #e6e3d8;   /* pressed, active */
   --paper-card: #fdfdfa;   /* items sit slightly brighter than the board */
 
-  /* ---- what a control does when you touch it ----
-     Three declarations, in this order, and the two steps above are the first
-     two of them. Written down because the app had drifted into three answers
-     for the hover alone, and one of the three was the press.
-
-       hover     background: var(--paper-2);  color: var(--accent-deep);
-       press     background: var(--paper-3);
-       disabled  color: var(--ink-3);         cursor: default;
-
-     **The hover is one step into the paper and the press is two.** A control
-     that hovers at --paper-3 has nowhere left to go under a finger, which is
-     what the mobile player and the sticker window were doing.
-
-     **--accent-deep is the ink a control turns, --accent-text is the ink a
-     *word* is.** They are the same pigment at two lightnesses and the app had
-     been picking between them by which file the rule was in. --accent-text is
-     also --select, which is the tell: it is tuned to be read against paper, so
-     it belongs to links, labels, a focused field's rule and the selection
-     outline. A hovered icon darkening towards its accent wants the deeper one.
-
-     **Disabled is --ink-3 and nothing else.** --ink-3 is already ink at 38%;
-     the six rules that stacked an extra `opacity: 0.4` or `0.45` on top of it
-     were making those controls twice as faint as the zoom cluster's, which had
-     it right. An opacity there also fades the *background*, so a disabled
-     button in a filled group dissolves a hole in its own bar.
-
-     A hover belongs inside `@media (hover: hover)`. A press does not: it is the
-     one of the three a finger can actually reach.
-
-     See research/design-audit-2026-08-25.md, findings A2 and B3 to B5. */
+  /* ---- control states ----
+     hover: --paper-2 + --accent-deep.  press: --paper-3.  disabled: --ink-3.
+     Hover is one step, press is two — a control at --paper-3 on hover has
+     nowhere to go on press. --accent-deep for controls, --accent-text for text.
+     Hover inside @media (hover: hover); press is not — fingers reach it. */
 
   /* ---- ink ---- */
   --ink:        #31261b;
@@ -90,98 +31,38 @@
   --rule:       #dad7cd;
   --rule-2:     #bab6a7;
 
-  /* ---- pigment ----
-     This is where the palette lives now. Chroma 0.185 on the accent against the
-     0.115 it used to carry - far enough that for most hues hex() is handing
-     back what the sRGB gamut allows rather than what was asked for, which is
-     the intended failure: at this end of the dial the answer to "how much
-     colour" is "as much as the screen has". */
+  /* ---- pigment ---- */
   --accent:      #b94900;  /* terracotta */
   --accent-warm: #e89100;  /* amber */
   --accent-deep: #7f2f00;  /* burnt sienna, for pressed states */
-  /* What sits on top of the accent. Mixed up out of this palette's own sheet
-     rather than fixed, so it is never a warm cream on a teal button. */
+  /* Label colour on filled accent — derived from sheet so it matches */
   --accent-fg:   color-mix(in srgb, var(--paper) 45%, #fff);
-  /* The accent when it is the thing being read rather than the thing being
-     filled: a tab label, a link, an underline, a focus ring, a hairline. Here
-     and at Softish it is simply the accent, and it is an alias rather than a
-     copy so that a board setting --accent inline moves both.
-
-     Only Harsh gives it a value of its own, and the reason is that end's
-     alone. There the accent goes to its hue's cusp - the lightness where it
-     holds the most colour there is - and an acid at L 0.9 is a fill you cannot
-     print words in. Splitting the token lets the button keep the acid, where
-     the label and the border carry the legibility, and lets the tab label take
-     the same pigment at a lightness that reads on paper. See section 3b. */
+  /* The accent for text (links, labels, focus rings). Alias of --accent here;
+     Harsh splits it to a readable lightness — see section 3b. */
   --accent-text: var(--accent);
   --leafy:       #66842b;  /* olive - secondary ornament */
-  /* Kept unmistakably red - a destructive action should not have to be
-     decoded - but pulled towards this palette's ink so it belongs to the board
-     it is printed on. */
   --danger:      color-mix(in srgb, #a83232 85%, var(--ink));
 
   /* ---- text highlight ----
-     What a selected run of text sits on - a note being written, a name being
-     renamed, an address being copied out of a link card. Left to the browser
-     this was the one colour on the whole page nobody chose: a flat system
-     blue, on a board whose entire premise is that you picked the pigments.
-
-     Translucent rather than solid, and that is the load-bearing decision. One
-     declaration then works on every surface the app has - a white card, a
-     coloured sticky, the sidebar's wells - because the surface shows through
-     it. A solid block would need a colour per surface and a text colour light
-     enough to read on the accent, which is a second decision that fights the
-     note tints the moment they are anything but pale.
-
-     So: a wash of this palette's own pigment, which reads as a marker drawn
-     over paper, with the ink underneath left as ink. --highlight-ink is named
-     anyway rather than left to inherit, because the plain end of the axis
-     wants a solid block and needs somewhere to say so. */
+     Translucent so it works on every surface (cards, notes, wells). */
   --highlight:     color-mix(in srgb, var(--accent) 26%, transparent);
   --highlight-ink: var(--ink);
 
-  /* ---- canvas grid ----
-     Derived from the ink, so one --grid-alpha slider drives both layers and
-     every palette gets a grid that matches its own ink. */
+  /* ---- canvas grid ---- */
   --grid-alpha: 0.14;
   --grid-minor: color-mix(in srgb, var(--ink) calc(var(--grid-alpha) * 100%), transparent);
   --grid-major: color-mix(in srgb, var(--ink) calc(var(--grid-alpha) * 190%), transparent);
-  /* The axes take the accent at full strength, unlike the lattice. They are not
-     another layer of grid - they are the one statement on the board about where
-     nought is, and a rule at half strength under a lattice of marks reads as the
-     heaviest of the marks rather than as a different kind of thing. */
   --grid-axis:  var(--accent-text);
   --grid-dot:   1.7px;
 
-  /* ---- the paper outline (canvas/paper.ts) ----
-     Derived from the ink rather than from the accent, and that is the whole
-     decision: a page is a surface the board is arranged *on*, so it has to sit
-     behind everything without competing with the accent the axes already own.
-     The fill is barely there - enough to read as a lit rectangle at a glance,
-     not enough to change the colour of anything laid on it. */
+  /* ---- paper outline (canvas/paper.ts) ---- */
   --sheet-line: color-mix(in srgb, var(--ink) 26%, transparent);
   --sheet-fill: color-mix(in srgb, var(--ink) 3.5%, transparent);
-  /* The corner handles the sheet is resized by. Small, because they sit on a
-     board full of things that are not them and are only aimed at deliberately;
-     a coarse pointer gets a bigger one further down this sheet. */
-  --sheet-grip: 11px;
+  --sheet-grip: 11px; /* coarse pointer gets a bigger one below */
 
-  /* ---- the web between items (canvas/web.ts) ----
-     Deliberately a true neutral grey rather than a mix of this palette's ink,
-     which is the one exception on this whole sheet. The threads run *under*
-     every item and behind whatever colours those items bring, and a tinted
-     thread crossing a photograph reads as an artefact of the photograph. Grey
-     reads as string. Screen px, because the stroke does not scale with zoom.
-
-     The alpha was 0.4, then 0.68: both were the weight for a web the board drew
-     for you, where an effect nobody asked for should sit under what it
-     decorates. These are lines somebody drew on purpose, and a deliberate line
-     reading fainter than the grid it crosses is the drawing apologising for
-     itself. It sits near-opaque now - a thread reads as string laid on the
-     board at a glance, over a photograph and at a distance, and it is still
-     the item stack rather than the alpha that keeps it behind the cards. The
-     fallback dash and the hover accent both derive from this, so they move
-     with it. */
+  /* ---- web between items (canvas/web.ts) ----
+     True neutral grey, not palette ink — a tinted thread crossing a photo
+     reads as an artefact. Screen px, stroke does not scale with zoom. */
   --web-line:   rgba(128, 128, 128, 0.95);
   --web-weight: 1.4px;
 
@@ -190,25 +71,8 @@
   --item-border: color-mix(in srgb, var(--ink) 16%, transparent);
 
   /* ---- ghost cards ----
-     The three hints a brand-new board opens with, and the only cards on the
-     board that are not the user's. At every tier they are ordinary cards whose
-     edge happens to be dashed; Softish additionally carries a candidate look
-     layered on in the CSS, which changes the edge or the mount and never the
-     type.
-
-     The edge is mixed out of --ink like every other item token, so the hints
-     belong to whatever palette the board is wearing rather than being a grey
-     box on it, and it sits weaker than --item-border - a real card earns a
-     firmer edge than one that is only a suggestion.
-
-     The text is an ordinary card's text - full ink for the title, secondary ink
-     for the line - because the dashed edge is the only thing that should be
-     saying "provisional". Fading the words as well was the first attempt and it
-     made a hint nobody could read at the middle of the axis, which is where
-     most boards are actually looked at.
-
-     The edge is the one thing allowed to be faint: it is a rectangle, and the
-     eye completes a rectangle from very little. */
+     Hint cards on a new board. Edge weaker than --item-border — dashed outline
+     alone says "provisional"; text stays full ink for readability. */
   --ghost-ink:    var(--ink);
   --ghost-ink-2:  var(--ink-2);
   --ghost-edge:   color-mix(in srgb, var(--ink) 38%, transparent);

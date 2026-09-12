@@ -84,9 +84,8 @@ test('panel width is exposed only by the Desktop appearance controls', () => {
 });
 
 test('a board colours itself at the third picture and not before', () => {
-  // The floor is the whole of the difference between a feature and a fault: the
-  // extraction is on by default, so without it the first photograph dropped onto
-  // a fresh board turns the entire interface over uninvited.
+  // Extraction is on by default, so without this floor the first photo
+  // dropped onto a fresh board turns the interface over uninvited.
   assert.equal(autoPaletteReady(0, false), false);
   assert.equal(autoPaletteReady(1, false), false);
   assert.equal(autoPaletteReady(2, false), false);
@@ -95,12 +94,10 @@ test('a board colours itself at the third picture and not before', () => {
 });
 
 test('a board already taking its colours from pictures follows them all the way down', () => {
-  // The floor is about starting, not about staying. A board that has been
-  // colouring itself since its third photograph must not freeze at two when you
-  // delete one - a colour thrown off the board would go on tinting the board it
-  // was thrown off, which is the one case where the palette is provably not a
-  // representation of the pictures any more. Zero included: an empty board hands
-  // the sheet back, and that decision belongs to the caller, not to the gate.
+  // The floor is about starting, not staying: a board already colouring
+  // itself must not freeze when a picture is deleted below the floor, or a
+  // colour it was thrown off would go on tinting it. Zero included: an empty
+  // board's fallback is the caller's decision, not the gate's.
   for (const n of [0, 1, 2, 3]) {
     assert.equal(autoPaletteReady(n, true), true, `${n} pictures, already dynamic`);
   }
@@ -116,21 +113,15 @@ test('the shared appearance allowlist contains only palette colors', () => {
 });
 
 test('every shared token is one a look is allowed to carry', () => {
-  // There are three token lists in this app and they are three *different*
-  // questions, which is worth stating because a reading of them as three homes
-  // for one question is what an audit reported:
+  // Three token lists, three different questions:
   //
-  //   look.ts TOKENS            what a board may name at all - the allowlist,
-  //                             held against tokens.css by appearance.test.js
-  //   PALETTE_TOKENS            which of those are one identity for the whole
-  //   + TYPOGRAPHY_TOKENS       board rather than per-layout (this file)
-  //   appearance.ts AXIS_TOKENS which of those the whimsy dial itself writes
+  //   look.ts TOKENS             what a board may name at all (appearance.test.js)
+  //   PALETTE_TOKENS/TYPOGRAPHY_TOKENS  which are shared across layouts (this file)
+  //   appearance.ts AXIS_TOKENS  which the whimsy dial itself writes
   //
-  // Each is in a defensible place. What was missing is the edge between the
-  // first two: a token added here and not to TOKENS would be declared shared by
-  // both layouts and then silently refused on the way in, so the setting would
-  // exist, be saved, travel in a .mbrd, and never once be applied. Nothing
-  // pointed that out, because each list is individually consistent.
+  // The missing edge was between the first two: a token added here but not
+  // to TOKENS would be declared shared, then silently refused on the way in
+  // - saved, carried in a .mbrd, never applied.
   for (const token of [...PALETTE_TOKENS, ...TYPOGRAPHY_TOKENS]) {
     assert.ok(TOKENS.has(token),
       `${token} is shared across layouts but is not on look.ts's allowlist, so a `
@@ -198,9 +189,9 @@ test('Desktop and Mobile retain independent settings and local appearance', () =
   assert.deepEqual(board.settings.fonts, [
     { family: 'Desktop Face', hash: desktopFontHash },
   ]);
-  // Mobile reads its stored id through its own catalogue: 'spiral' is a shape a
-  // column cannot make, and 'fit' is the order nearest to it. See
-  // MOBILE_ARRANGEMENTS in arrange/arrangements.ts.
+  // Mobile reads its stored id through its own catalogue: 'spiral' is a
+  // shape a column can't make, and 'fit' is the nearest order to it.
+  // See MOBILE_ARRANGEMENTS in arrange/arrangements.ts.
   assert.equal(board.arrangement, 'fit');
   assert.equal(board.settings.appearance.whimsy, 2);
   assert.equal(board.settings.appearance.palette, 'photo');
@@ -220,10 +211,9 @@ test('Desktop and Mobile retain independent settings and local appearance', () =
 
   setSetting('gridStep', 48);
   setSetting('mobileColumns', 8);
-  // Mobile's own gap, kept apart from Desktop's like every other layout-local
-  // setting. It starts at zero - a column packed tight is what every board
-  // written before this looked like - and it is not refused, which is the half
-  // of the old rule that was wrong: paper needs a page, a gap needs nothing.
+  // Mobile's own gap, kept apart from Desktop's like every layout-local
+  // setting. Starts at zero (a tight-packed column, as before) and isn't
+  // refused - paper needs a page, a gap needs nothing.
   setSetting('spacing', 20);
   assert.equal(board.settings.spacing, 20, 'Mobile has a gap of its own');
   setSetting('hud', false);
@@ -269,14 +259,9 @@ test('Desktop and Mobile retain independent settings and local appearance', () =
 });
 
 test('layout settings round-trip in the responsive .mbrd schema', () => {
-  // Its own board. This used to open on `serializeBoard()` with no setup at
-  // all, reading whatever the test above happened to leave in the module
-  // singleton - so it asserted another test's arrangement and proved nothing
-  // about a round trip, and running it on its own (`node --test
-  // --test-name-pattern "round-trip in the responsive"`, which CLAUDE.md
-  // documents as a supported workflow) failed at the first line: expected 80,
-  // actual 64. There is no beforeEach in this file, and the two tests that
-  // build a board build different ones, so the setup belongs in each.
+  // Its own board setup, not inherited: this used to read whatever the test
+  // above left in the module singleton, so it proved nothing about a round
+  // trip and failed when run alone. There's no beforeEach in this file.
   setBoardMode('desktop');
   loadBoard({ items: [] });
   setSetting('gridStep', 80);

@@ -1,10 +1,8 @@
-// The 'items' event carries a delta - { added, removed } lists of ids - so
-// listeners can act on what changed instead of rescanning the whole board. The
-// contract these tests pin is exactly that: every add, delete, restore and their
-// undos name the ids they touched, and only those; a load names nothing, which is
-// the agreed "rescan, extent unknown" signal. A listener that trusts a wrong
-// delta leaves stale nodes on the board or misses new ones, and nothing else
-// would catch it - the render path has no test coverage of its own.
+// The 'items' event's delta - { added, removed } lists of ids - so listeners
+// act on what changed rather than rescanning. Every add, delete, restore and
+// their undos must name only the ids they touched; a load names nothing,
+// the "rescan, extent unknown" signal. Nothing else catches a wrong delta -
+// the render path has no test coverage of its own.
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -16,7 +14,7 @@ import {
 const fresh = (items = []) => loadBoard({ title: 'T', items });
 const photo = (props = {}) => ({ type: 'image', w: 200, h: 200, ...props });
 
-// The payload of the most recent 'items' emit, and whether one has happened.
+// The most recent 'items' emit's payload, and whether one has happened.
 let last;
 let saw;
 bus.on('items', delta => { last = delta; saw = true; });
@@ -79,8 +77,8 @@ test('restoring from the bin names the restored ids as added', () => {
 });
 
 test('a fresh add reports only the newcomers, not the board', () => {
-  addItems([photo(), photo()]);          // two already on the board
-  const more = addItems([photo()]);      // one arrival
+  addItems([photo(), photo()]);          // already on the board
+  const more = addItems([photo()]);      // the new arrival
   assert.equal(last.added.length, 1, 'only the arrival, not the whole board');
   assert.deepEqual(last.added, more.map(i => i.id));
 });

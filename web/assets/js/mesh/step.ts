@@ -1,38 +1,7 @@
-// STEP (ISO 10303-21) - the format mechanical CAD actually exchanges in.
-//
-// A .step or .stp is not a mesh. It is a database: numbered records, each an
-// entity with typed arguments, referring to each other by number. A part is a
-// solid, which is a shell, which is a list of faces, each of which is a surface
-// trimmed by loops of edges, each of which is a curve between two points. There
-// is not a triangle anywhere in it.
-//
-// Which is why viewers ship a CAD kernel and why this does not. mesh/brep.ts is
-// the tessellator - given a surface and its boundary loops it produces triangles
-// - and this file is the half that reads the database and works out which
-// surfaces and which loops. The two are split because IGES needs the same
-// tessellator behind a completely different front end.
-//
-// **What is read.** ADVANCED_FACE and FACE_SURFACE, over planes, cylinders,
-// cones, spheres, tori, NURBS patches, extrusions and surfaces of revolution;
-// edges over lines, circles, ellipses, NURBS curves and polylines; the assembly
-// transforms that place one part's representation inside another's; and the
-// presentation colours a modeller assigned to a solid or a face.
-//
-// **What is not.** Everything that does not change the picture: tolerances,
-// dimensions, product structure metadata, materials in the engineering sense,
-// validation properties. And two things that do: `TESSELLATED_SHAPE_REPRESENTATION`
-// (AP242's optional pre-triangulated form, which almost nothing writes), and
-// exotic trimmed-surface types this has no formula for - those fall back to a
-// flat fill of the face's boundary rather than to a hole, which brep.ts's header
-// argues for at length.
-//
-// **The honest limitation.** This is an approximation of a boundary
-// representation, not an evaluation of one. A face whose boundary crosses a
-// surface's seam in more than one place, a spline patch whose parameter search
-// lands in the wrong basin, a hole bridged into a loop that another hole already
-// crossed - each produces a face that is slightly wrong rather than a file that
-// fails. At the size a card draws a model these are invisible. Scaled up, they
-// are not, and this is not a substitute for a CAD viewer.
+// STEP (ISO 10303-21) reader — B-rep database, not a mesh. Reads
+// ADVANCED_FACE over planes/cylinders/cones/spheres/tori/NURBS/extrusions/
+// revolutions, edges, assembly transforms, presentation colours.
+// brep.ts tessellates the result (shared with IGES).
 
 import { oversize } from '../consent.ts';
 import {
@@ -67,9 +36,7 @@ type Ref = { ref: number };
 type Typed = { type: string; args: Val[] };
 type Val = number | string | boolean | null | Ref | Val[] | Typed;
 
-/** One record. `parts` is set only for a complex instance - `#3=(A(..) B(..))` -
- *  which is how STEP expresses multiple inheritance, and how every rational
- *  spline and every transformed representation relationship is written. */
+/** One record. `parts` set for complex instances (STEP's multiple inheritance). */
 type Entity = { type: string; args: Val[]; parts: Typed[] | null };
 
 const isRef = (v: Val): v is Ref => !!v && typeof v === 'object' && 'ref' in v;
@@ -81,15 +48,8 @@ export function parseSTEP(bytes: string | ArrayBuffer): Mesh {
   return build(db);
 }
 
-/**
- * Every `#n = TYPE(args);` record in the data section.
- *
- * Scanned rather than matched with a regular expression, for one reason: a
- * string in this format may contain a semicolon, a parenthesis, or the text
- * `ENDSEC`, and any of the three would end the record early. So the scan carries
- * one piece of state - whether it is inside a quoted string - and that is enough
- * to make every delimiter below trustworthy.
- */
+/** Scan all `#n = TYPE(args);` records. String-aware scanner (not regex) because
+ * strings may contain `;`, `(`, or `ENDSEC`. */
 function readExchange(text: string) {
   const db = new Map<number, Entity>();
   // Comments first. They may appear anywhere, including inside an argument list,
@@ -328,14 +288,8 @@ function build(db: Db): Mesh {
   return build.done();
 }
 
-/**
- * The size of the whole model, from its points alone.
- *
- * Needed before anything is tessellated, because the chord tolerance in brep.ts
- * is relative - a file in metres and the same file in millimetres must come out
- * with the same number of triangles. Reading every CARTESIAN_POINT once is far
- * cheaper than it sounds next to the tessellation that follows.
- */
+/** Model bounding diagonal. Needed before tessellation — chord tolerance in
+ * brep.ts is relative to model size. */
 function modelSize(db: Db) {
   const lo = [Infinity, Infinity, Infinity];
   const hi = [-Infinity, -Infinity, -Infinity];
@@ -674,27 +628,10 @@ function readLoop(db: Db, v: Val, scaleHint: number): Vec[] {
   return out;
 }
 
-/**
- * One edge, from its start vertex to its end, as a polyline.
- *
- * **Two flags, and they answer two different questions.** The oriented edge's
- * says which of the edge's two vertices this loop reaches first, and it says so
- * on its own. The edge curve's `same_sense` says whether the curve's parameter
- * runs with the edge or against it, and it says nothing about the vertices - an
- * edge with `same_sense` false still runs from its start vertex to its end one,
- * along a curve that happens to be parameterised the other way.
- *
- * Multiplying the two together and using the product for both - which is the
- * mistake this had - walks every `.F.` edge backwards. That is not a face turned
- * inside out, which would be visible: it is a boundary that goes out along one
- * edge and back along the next, so the polygon crosses itself and the
- * triangulation of it is meaningless in a small region. On a retaining ring
- * whose profile is eight edges, two of them `.F.`, it put a hundred crossings
- * into a boundary of six hundred points.
- *
- * The product is still what the *parameter* runs on, and that is what decides
- * which way round a circle an arc goes.
- */
+/** Sample one edge as a polyline. Two independent flags: oriented_edge's says
+ * vertex order; edge_curve's same_sense says parameter direction. Multiplying
+ * both for vertex order (a past bug) walks .F. edges backwards, creating
+ * self-crossing boundaries. The product only governs arc direction. */
 function sampleEdge(db: Db, edge: Entity, forward: boolean, scaleHint: number): Vec[] {
   const args = partArgs(edge, 'EDGE_CURVE') || edge.args;
   const a = vertexPoint(db, args[1]);
@@ -774,36 +711,11 @@ function times(outer: Matrix, inner: Matrix): Matrix {
   return { m, t: applyTo(outer, inner.t) };
 }
 
-/**
- * Where each face ends up, once the assembly is put together.
- *
- * An assembly in STEP is a set of *representation relationships*: a component's
- * shape representation is related to its parent's, with an
- * ITEM_DEFINED_TRANSFORMATION saying where. The transformation is given as two
- * placements, and the transform is the one that carries the first onto the
- * second.
- *
- * A file with no such relationships - a single part, which is most of them -
- * gets nothing from this and every face is already where it belongs.
- *
- * The convention read here is the one every open reader uses: the *first*
- * representation of the relationship is the component and the second is the
- * assembly it sits in. Files written the other way round exist; the symptom is
- * an assembly whose parts are inside out of each other, which is the reason this
- * paragraph is here.
- *
- * **The representation a transform names is usually not the one holding the
- * geometry.** ST-Developer, Autodesk, SolidWorks and Creo all write the
- * component as a bare SHAPE_REPRESENTATION carrying nothing but its origin
- * placement, hang the ADVANCED_BREP_SHAPE_REPRESENTATION off it with a plain
- * SHAPE_REPRESENTATION_RELATIONSHIP - no transform, the two are in the same
- * place - and relate *that* bare one into the assembly. Reading only the
- * transformed relationships finds every placement and then applies it to a
- * representation with no faces under it, so every part draws at its own local
- * origin: an assembly collapsed into one heap, which looks like a mangled part
- * rather than like a file that failed. So the untransformed relationships are
- * read too, as identity links.
- */
+/** Assembly placement: ITEM_DEFINED_TRANSFORMATION between two placements.
+ * First rep = component, second = assembly (convention, not spec — reversed
+ * files produce inside-out parts). Untransformed SHAPE_REPRESENTATION_
+ * RELATIONSHIPs also read as identity links — the geometry often lives in a
+ * separate ADVANCED_BREP_SHAPE_REPRESENTATION chained through one. */
 function placements(db: Db) {
   /** Representation entity id -> its parent and the transform into it. */
   const parent = new Map<number, { to: number; m: Matrix }>();
@@ -830,10 +742,7 @@ function placements(db: Db) {
     parent.set(child.ref, { to: owner.ref, m: between(a, b) });
   }
 
-  // Which end of an untransformed pair is the one standing in the assembly is
-  // decided by which of the two has a transform of its own, not by the argument
-  // order - the order is written both ways round and carries no meaning here,
-  // the two representations being in the same place either way.
+  // Identify which end of an untransformed pair has a real transform above it.
   const alias = new Map<number, number>();
   for (const [a, b] of same) {
     if (parent.has(a) === parent.has(b)) continue;
@@ -913,19 +822,9 @@ function facesUnder(db: Db, root: Entity) {
 // Colour
 // ---------------------------------------------------------------------------
 
-/**
- * Face id -> the colour a modeller gave it.
- *
- * STEP's presentation layer is a chain six entities deep from a styled item to
- * an RGB triple, and every writer takes a slightly different route through it -
- * some style the solid, some style each face, some style a whole "presentation
- * layer assignment" holding a hundred items. Rather than encode all of them,
- * this finds the one COLOUR_RGB reachable from each styled item and applies it
- * to every face under the item that item names.
- *
- * A face styled twice keeps the first, which is the one nearest it: styled items
- * are written most-specific-first by every exporter this has been fed.
- */
+/** Face id → colour. Follows STYLED_ITEM → COLOUR_RGB (six entities deep,
+ * every exporter chains them differently). Applied to all faces under the
+ * styled target. First colour wins (most-specific-first in practice). */
 function styleColours(db: Db) {
   const out = new Map<number, number[]>();
   for (const e of db.values()) {

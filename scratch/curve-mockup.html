@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Softish curve slack — mockup</title>
+<style>
+  :root {
+    --paper: #f4efe6;
+    --card: #fbf8f2;
+    --ink: #3a352d;
+    --edge: #d8cfbe;
+    --line: #6f4a2f;
+    --block: #ece2d0;
+    --ghost: #c9beac;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 40px 24px 64px;
+    background: var(--paper);
+    font: 15px/1.5 -apple-system, "Segoe UI", system-ui, sans-serif;
+    color: var(--ink);
+  }
+  h1 { font-size: 22px; font-weight: 650; margin: 0 0 4px; }
+  .sub { color: #7a7266; margin: 0 0 32px; max-width: 760px; }
+  .row { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; }
+  .panel {
+    background: var(--card);
+    border: 1px solid var(--edge);
+    border-radius: 16px;
+    padding: 18px 18px 22px;
+    width: 300px;
+    box-shadow: 0 1px 2px rgba(0,0,0,.05), 0 8px 24px rgba(0,0,0,.04);
+  }
+  .panel h2 { font-size: 17px; margin: 0 0 2px; }
+  .panel p { margin: 0 0 8px; color: #7a7266; font-size: 13px; min-height: 54px; }
+  svg { display: block; width: 100%; height: auto; }
+  .scene-label {
+    font-size: 11px; letter-spacing: .04em; text-transform: uppercase; fill: #a89f90;
+  }
+  .card-box { fill: var(--card); stroke: var(--edge); stroke-width: 1.5; }
+  .block-box { fill: var(--block); stroke: var(--ghost); stroke-width: 1.5; }
+  .direct { fill: none; stroke: var(--ghost); stroke-width: 1.5; stroke-dasharray: 3 5; }
+  .thread { fill: none; stroke: var(--line); stroke-width: 3; stroke-linecap: round; }
+  .dot { fill: var(--line); }
+  .foot { text-align: center; margin-top: 30px; color: #7a7266; font-size: 13px; }
+</style>
+</head>
+<body>
+  <h1>Softish curves — how much should a line bow?</h1>
+  <p class="sub">Two scenes per panel. Top: the cards sit at different heights (where a curve's character
+    actually shows). Bottom: a card sits directly in the path and the line arches over it. Dashed grey is
+    the direct path for reference; brown is the real connection. When two cards are level and nothing is
+    between them, every option draws a straight line.</p>
+
+  <div class="row">
+
+    <!-- ===================== 1 · TAUT ===================== -->
+    <div class="panel">
+      <h2>1 · Taut</h2>
+      <p>Short, controlled bends. The line takes the most direct clean route and only curves as much as it
+        must. Tidy on a busy board.</p>
+      <svg viewBox="0 0 264 360" aria-label="Taut">
+        <text class="scene-label" x="8" y="16">Offset cards</text>
+        <rect class="card-box" x="8"   y="34" width="80" height="52" rx="12"/>
+        <rect class="card-box" x="176" y="70" width="80" height="52" rx="12"/>
+        <line class="direct" x1="88" y1="60" x2="176" y2="96"/>
+        <path class="thread" d="M88 60 C 116 60, 148 96, 176 96"/>
+        <circle class="dot" cx="88" cy="60" r="3.5"/>
+        <circle class="dot" cx="176" cy="96" r="3.5"/>
+
+        <text class="scene-label" x="8" y="196">Arch over a card</text>
+        <rect class="card-box"  x="8"   y="214" width="80" height="52" rx="12"/>
+        <rect class="card-box"  x="176" y="214" width="80" height="52" rx="12"/>
+        <rect class="block-box" x="112" y="226" width="40" height="30" rx="9"/>
+        <line class="direct" x1="88" y1="240" x2="176" y2="240"/>
+        <path class="thread" d="M88 240 C 106 240 114 216 132 216 C 150 216 158 240 176 240"/>
+        <circle class="dot" cx="88" cy="240" r="3.5"/>
+        <circle class="dot" cx="176" cy="240" r="3.5"/>
+      </svg>
+    </div>
+
+    <!-- ===================== 2 · RELAXED ===================== -->
+    <div class="panel">
+      <h2>2 · Relaxed</h2>
+      <p>A smooth, easy S between offset cards and a comfortable arch over an obstacle. Reads as a natural
+        cable without drawing attention.</p>
+      <svg viewBox="0 0 264 360" aria-label="Relaxed">
+        <text class="scene-label" x="8" y="16">Offset cards</text>
+        <rect class="card-box" x="8"   y="34" width="80" height="52" rx="12"/>
+        <rect class="card-box" x="176" y="70" width="80" height="52" rx="12"/>
+        <line class="direct" x1="88" y1="60" x2="176" y2="96"/>
+        <path class="thread" d="M88 60 C 132 60, 132 96, 176 96"/>
+        <circle class="dot" cx="88" cy="60" r="3.5"/>
+        <circle class="dot" cx="176" cy="96" r="3.5"/>
+
+        <text class="scene-label" x="8" y="196">Arch over a card</text>
+        <rect class="card-box"  x="8"   y="214" width="80" height="52" rx="12"/>
+        <rect class="card-box"  x="176" y="214" width="80" height="52" rx="12"/>
+        <rect class="block-box" x="112" y="226" width="40" height="30" rx="9"/>
+        <line class="direct" x1="88" y1="240" x2="176" y2="240"/>
+        <path class="thread" d="M88 240 C 106 240 114 202 132 202 C 150 202 158 240 176 240"/>
+        <circle class="dot" cx="88" cy="240" r="3.5"/>
+        <circle class="dot" cx="176" cy="240" r="3.5"/>
+      </svg>
+    </div>
+
+    <!-- ===================== 3 · NOODLE ===================== -->
+    <div class="panel">
+      <h2>3 · Noodle</h2>
+      <p>Long, sweeping handles like the cables in a node editor. Very organic and playful, but the loops
+        grow large and can look busy when a board has many lines.</p>
+      <svg viewBox="0 0 264 360" aria-label="Noodle">
+        <text class="scene-label" x="8" y="16">Offset cards</text>
+        <rect class="card-box" x="8"   y="34" width="80" height="52" rx="12"/>
+        <rect class="card-box" x="176" y="70" width="80" height="52" rx="12"/>
+        <line class="direct" x1="88" y1="60" x2="176" y2="96"/>
+        <path class="thread" d="M88 60 C 152 60, 112 96, 176 96"/>
+        <circle class="dot" cx="88" cy="60" r="3.5"/>
+        <circle class="dot" cx="176" cy="96" r="3.5"/>
+
+        <text class="scene-label" x="8" y="196">Arch over a card</text>
+        <rect class="card-box"  x="8"   y="214" width="80" height="52" rx="12"/>
+        <rect class="card-box"  x="176" y="214" width="80" height="52" rx="12"/>
+        <rect class="block-box" x="112" y="226" width="40" height="30" rx="9"/>
+        <line class="direct" x1="88" y1="240" x2="176" y2="240"/>
+        <path class="thread" d="M88 240 C 106 240 114 182 132 182 C 150 182 158 240 176 240"/>
+        <circle class="dot" cx="88" cy="240" r="3.5"/>
+        <circle class="dot" cx="176" cy="240" r="3.5"/>
+      </svg>
+    </div>
+
+  </div>
+
+  <h1 style="margin-top:48px">The other two tiers</h1>
+  <p class="sub">Softish is locked (Relaxed offset S, gentle arch). These two are orthogonal — straight
+    runs that turn at right angles. Middle rounds the corners; Harsh keeps them sharp and snapped to the
+    board grid. Same two scenes as above.</p>
+
+  <div class="row">
+
+    <!-- ===================== MIDDLE ===================== -->
+    <div class="panel">
+      <h2>Middle · rounded corners</h2>
+      <p>Straight horizontal and vertical runs, turning at softly rounded corners. Reads as a tidy
+        flowchart wire.</p>
+      <svg viewBox="0 0 264 360" aria-label="Middle">
+        <text class="scene-label" x="8" y="16">Offset cards</text>
+        <rect class="card-box" x="8"   y="34" width="80" height="52" rx="12"/>
+        <rect class="card-box" x="176" y="70" width="80" height="52" rx="12"/>
+        <line class="direct" x1="88" y1="60" x2="176" y2="96"/>
+        <path class="thread" d="M88 60 L124 60 Q132 60 132 68 L132 88 Q132 96 140 96 L176 96"/>
+        <circle class="dot" cx="88" cy="60" r="3.5"/>
+        <circle class="dot" cx="176" cy="96" r="3.5"/>
+
+        <text class="scene-label" x="8" y="196">Arch over a card</text>
+        <rect class="card-box"  x="8"   y="214" width="80" height="52" rx="12"/>
+        <rect class="card-box"  x="176" y="214" width="80" height="52" rx="12"/>
+        <rect class="block-box" x="112" y="226" width="40" height="30" rx="9"/>
+        <line class="direct" x1="88" y1="240" x2="176" y2="240"/>
+        <path class="thread" d="M88 240 L100 240 Q108 240 108 232 L108 222 Q108 214 116 214 L148 214 Q156 214 156 222 L156 232 Q156 240 164 240 L176 240"/>
+        <circle class="dot" cx="88" cy="240" r="3.5"/>
+        <circle class="dot" cx="176" cy="240" r="3.5"/>
+      </svg>
+    </div>
+
+    <!-- ===================== HARSH ===================== -->
+    <div class="panel">
+      <h2>Harsh · sharp, snapped</h2>
+      <p>The same orthogonal runs, but every corner is a hard 90 degrees and the path snaps to the board
+        grid. Strict and technical.</p>
+      <svg viewBox="0 0 264 360" aria-label="Harsh">
+        <text class="scene-label" x="8" y="16">Offset cards</text>
+        <rect class="card-box" x="8"   y="34" width="80" height="52" rx="12"/>
+        <rect class="card-box" x="176" y="70" width="80" height="52" rx="12"/>
+        <line class="direct" x1="88" y1="60" x2="176" y2="96"/>
+        <path class="thread" d="M88 60 L132 60 L132 96 L176 96"/>
+        <circle class="dot" cx="88" cy="60" r="3.5"/>
+        <circle class="dot" cx="176" cy="96" r="3.5"/>
+
+        <text class="scene-label" x="8" y="196">Arch over a card</text>
+        <rect class="card-box"  x="8"   y="214" width="80" height="52" rx="12"/>
+        <rect class="card-box"  x="176" y="214" width="80" height="52" rx="12"/>
+        <rect class="block-box" x="112" y="226" width="40" height="30" rx="9"/>
+        <line class="direct" x1="88" y1="240" x2="176" y2="240"/>
+        <path class="thread" d="M88 240 L108 240 L108 214 L156 214 L156 240 L176 240"/>
+        <circle class="dot" cx="88" cy="240" r="3.5"/>
+        <circle class="dot" cx="176" cy="240" r="3.5"/>
+      </svg>
+    </div>
+
+  </div>
+
+  <p class="foot">Say if Middle and Harsh read right, or what to change.</p>
+</body>
+</html>

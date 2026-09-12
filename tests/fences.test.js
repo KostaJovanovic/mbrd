@@ -1,13 +1,12 @@
 // Fences: which card is inside which region, and what travels when one moves.
 //
-// The sibling of tests/state-sticky.test.js, and worth reading beside it - the
-// two relations are deliberately parallel and differ in three places, each of
-// which has a case here: containment is by centre rather than by area,
-// membership is measured on Desktop geometry and nowhere else, and resizing a
-// fence re-measures where resizing a photo does not.
+// Sibling of tests/state-sticky.test.js - the two relations are deliberately
+// parallel and differ in three places, each with a case here: containment
+// by centre not area, membership measured on Desktop geometry only, and
+// resizing a fence re-measures where resizing a photo does not.
 //
 // state.ts is a module singleton, so every case starts by loading an empty
-// board, which is the same door opening a .mbrd goes through.
+// board, the same door a .mbrd opens through.
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -54,9 +53,9 @@ test('a card whose centre is inside a fence is in it', () => {
 });
 
 test('a card whose centre is outside is not, however much of it overlaps', () => {
-  // The straddle. Half a metre of this card is over the fence, which under
-  // sticky.ts's area rule would stick it - and a region has edges, so it has to
-  // land on exactly one side of this one.
+  // The straddle: half a metre of this card is over the fence, which under
+  // sticky.ts's area rule would stick it - a region has edges, so it lands
+  // on exactly one side.
   addItems([fence({ x: 0, y: 0, w: 800, h: 600 })]);
   const [pic] = addItems([photo({ x: 420, y: 0, w: 200, h: 200 })]);
   assert.equal(fenceOf(byId(pic.id)), null);
@@ -67,14 +66,14 @@ test('the smallest containing fence wins', () => {
   const [small] = addItems([fence({ x: 0, y: 0, w: 600, h: 600 })]);
   const [pic] = addItems([photo({ x: 0, y: 0 })]);
   assert.equal(fenceOf(byId(pic.id))?.id, small.id);
-  // And the small fence is itself inside the big one, which is what makes this
-  // a subsection rather than two fences arguing over a card.
+  // The small fence is itself inside the big one - a subsection, not two
+  // fences arguing over a card.
   assert.equal(fenceOf(byId(small.id))?.id, big.id);
 });
 
 test('two fences the same size cannot contain each other', () => {
-  // Containment needs strictly greater area. Without that the chain is not a
-  // strict order and every walk over it could loop.
+  // Containment needs strictly greater area, or the chain isn't a strict
+  // order and every walk over it could loop.
   const [a] = addItems([fence({ x: 0, y: 0, w: 800, h: 600 })]);
   const [b] = addItems([fence({ x: 0, y: 0, w: 800, h: 600 })]);
   assert.equal(fenceOf(byId(a.id)), null);
@@ -105,15 +104,15 @@ test('moving a fence carries the cards inside it', () => {
 });
 
 test('a fence dragged over a loose card does not swallow it', () => {
-  // The memo earning its keep. Without it a fence would hoover up everything it
-  // passed over, and the region you drew would not be the region you moved.
+  // The memo earning its keep - without it a fence hoovers up everything it
+  // passes over.
   const [f] = addItems([fence({ x: 0, y: 0, w: 800, h: 600 })]);
   const [stray] = addItems([photo({ x: 2000, y: 0 })]);
   assert.equal(fenceOf(byId(stray.id)), null);
 
   drag([f.id], 2000, 0, [f.id]);
   assert.equal(fenceOf(byId(stray.id)), null, 'it was passed over, not picked up');
-  // And it really is inside the rectangle now, so the memo is what kept it out.
+  // It really is inside the rectangle now - the memo is what kept it out.
   refence([stray.id]);
   assert.equal(fenceOf(byId(stray.id))?.id, f.id, 'asked again, it would have joined');
 });
@@ -151,9 +150,9 @@ test('something already moving is not also a follower', () => {
 });
 
 test('a note stuck to a card in a fence travels with the fence', () => {
-  // The fixed point. Neither relation can see this on its own: fenceFollowers
-  // does not know the note is stuck to the photo, and stuckFollowers does not
-  // know the photo is in the fence.
+  // The fixed point: neither relation sees this alone - fenceFollowers
+  // doesn't know the note is stuck to the photo, stuckFollowers doesn't know
+  // the photo is in the fence.
   const [f] = addItems([fence({ x: 0, y: 0, w: 900, h: 700 })]);
   const [pic] = addItems([photo({ x: 0, y: 0, w: 300, h: 300 })]);
   const [n] = addItems([note({ x: 0, y: 0, w: 80, h: 80 })]);
@@ -162,15 +161,15 @@ test('a note stuck to a card in a fence travels with the fence', () => {
 
   const moving = travelling([f.id]);
   assert.deepEqual([...moving].sort(), [f.id, pic.id, n.id].sort());
-  // Exactly once each - a double entry would move the note twice as far.
+  // Once each - a double entry would move the note twice as far.
   assert.equal(new Set(moving).size, moving.length);
 });
 
 test('and the closure goes down only - a card does not travel with its region', () => {
-  // The property both readers of travelling() stand on. A drag of one card must
-  // not tow the fence around it, and the hover lift in canvas/items.ts is the
-  // same statement in the other medium: pointing at a card in a region lifts the
-  // card, while pointing at the region lifts everything in it.
+  // The property both readers of travelling() stand on: a drag of one card
+  // must not tow the fence around it - the same statement canvas/items.ts's
+  // hover lift makes, pointing at a card lifts the card, pointing at the
+  // region lifts everything in it.
   addItems([fence({ x: 0, y: 0, w: 900, h: 700 })]);
   const [pic] = addItems([photo({ x: 0, y: 0, w: 300, h: 300 })]);
   const [n] = addItems([note({ x: 0, y: 0, w: 80, h: 80 })]);
@@ -182,10 +181,10 @@ test('and the closure goes down only - a card does not travel with its region', 
 // ---------------------------------------------------------------------------
 // When the band's offer stands down
 //
-// A rubber band inside a region is how you get at some of what is in it, so the
-// offer to fence what it caught has to know the difference between a grouping
-// somebody is making and one they are reaching into. sharedFence() is that test;
-// cmds.fencePrompt reads it and returns without opening anything.
+// A band inside a region is how you get at some of what's in it, so the
+// offer to fence what it caught must tell a new grouping from a reach-into.
+// sharedFence() is that test; cmds.fencePrompt reads it and returns without
+// opening anything.
 // ---------------------------------------------------------------------------
 
 test('cards all from one region propose nothing - the region is already there', () => {
@@ -213,8 +212,8 @@ test('two regions worth of cards are not one region', () => {
 });
 
 test('a band that swallowed the region itself still offers to fence it', () => {
-  // The region is one of the caught items, and its own fence is not itself - so
-  // the set does not share one and a fence round a fence stays available.
+  // The region is one of the caught items, and its own fence isn't itself -
+  // so the set shares none, and a fence round a fence stays available.
   const [f] = addItems([fence({ x: 0, y: 0, w: 800, h: 800 })]);
   const [pic] = addItems([photo({ x: 0, y: 0 })]);
   assert.equal(sharedFence([byId(f.id), byId(pic.id)]), null);
@@ -250,8 +249,7 @@ test('shrinking a fence lets go of what it no longer covers', () => {
 });
 
 test('resizing a fence leaves cards outside both rectangles alone', () => {
-  // The bound on the rule: a resize in one corner of the board must not
-  // re-parent the other corner.
+  // A resize in one corner of the board must not re-parent the other.
   const [near] = addItems([fence({ x: 0, y: 0, w: 400, h: 400 })]);
   const [far] = addItems([fence({ x: 5000, y: 0, w: 900, h: 900 })]);
   const [pic] = addItems([photo({ x: 5000, y: 0 })]);
@@ -262,8 +260,8 @@ test('resizing a fence leaves cards outside both rectangles alone', () => {
 });
 
 test('resizing a photo does not re-parent what is lying on it', () => {
-  // The other half of the same rule, kept honest: only a *fence* re-measures on
-  // resize. A photograph's edges are incidental to what is over it.
+  // Only a fence re-measures on resize - a photo's edges are incidental to
+  // what's over it.
   const [f] = addItems([fence({ x: 0, y: 0, w: 800, h: 600 })]);
   const [pic] = addItems([photo({ x: 0, y: 0, w: 200, h: 200 })]);
   const [stray] = addItems([photo({ x: 2000, y: 0, w: 200, h: 200 })]);
@@ -326,12 +324,9 @@ test('a board holding nothing but fences is holding nothing', () => {
 });
 
 test('a fences-only board still shows its hints after a save and a reload', () => {
-  // The same rule one door along. loadBoard() arms the ghost latch from what the
-  // arriving board holds, and it asked `type !== 'title'` rather than isContent()
-  // - so a board of nothing but regions came back off disk latched as though it
-  // had content, and the hints that the test above proves it has earned never
-  // appeared again for the session. Drift from the commit that introduced fences,
-  // which converted hasContent() and missed this one call.
+  // loadBoard() arms the ghost latch from `type !== 'title'` rather than
+  // isContent(), so a board of nothing but regions came back latched as
+  // though it had content, and the hints never appeared again that session.
   addItems([fence({ x: 0, y: 0 })]);
   const file = serializeBoard();
   loadBoard(file);
@@ -386,9 +381,8 @@ test('a fence id naming nothing falls through to measuring', () => {
   const [f] = addItems([fence({ x: 0, y: 0, w: 800, h: 600 })]);
   const [pic] = addItems([photo({ x: 0, y: 0 })]);
   const file = serializeBoard();
-  // The fence never made it into the file, which is what a hand-edit or a
-  // half-finished merge looks like. The layout records for it need no cleaning:
-  // normalizeLayout() drops any geometry naming an id the file does not carry.
+  // The fence never made it into the file, as a hand-edit or half-finished
+  // merge looks like - normalizeLayout() drops geometry naming an absent id.
   file.items = file.items.filter(i => i.id !== f.id);
 
   loadBoard(file);
@@ -396,10 +390,9 @@ test('a fence id naming nothing falls through to measuring', () => {
 });
 
 test('membership survives a Desktop to Mobile and back round trip with a save', () => {
-  // The rule that is easiest to get wrong and worst to get wrong. On Mobile a
-  // fence is a band with its members packed *under* it, so nothing is
-  // geometrically inside its fence there - a measurement taken in that layout
-  // would find every fence empty and then save that.
+  // On Mobile a fence is a band with members packed under it, so nothing is
+  // geometrically inside its fence there - measuring in that layout would
+  // find every fence empty and save that.
   const [f] = addItems([fence({ x: 0, y: 0, w: 900, h: 700 })]);
   const [pic] = addItems([photo({ x: 100, y: 50 })]);
   assert.equal(fenceOf(byId(pic.id))?.id, f.id);
@@ -418,7 +411,7 @@ test('membership survives a Desktop to Mobile and back round trip with a save', 
 // ---------------------------------------------------------------------------
 
 test('a board with no fences packs into one bandless run', () => {
-  // Every board saved until now is this board, and it must come back unchanged.
+  // Every board saved until now is this board - it must come back unchanged.
   const items = [photo({ id: 'a' }), photo({ id: 'b' })];
   const runs = mobileRuns(items);
   assert.equal(runs.length, 1);
@@ -445,8 +438,7 @@ test('a nested fence becomes its own band after its parent', () => {
   const [inner] = addItems([fence({ x: 0, y: 0, w: 800, h: 600 })]);
   const [deep] = addItems([photo({ x: 0, y: 0 })]);
 
-  // No trailing bandless run, because nothing here is loose - every card is in
-  // one of the two fences.
+  // No trailing bandless run - every card is in one of the two fences.
   const runs = mobileRuns(board.items);
   assert.deepEqual(runs.map(r => r.band?.id ?? null), [outer.id, inner.id]);
   assert.deepEqual(runs[0].items.map(i => i.id), [direct.id]);
@@ -454,8 +446,8 @@ test('a nested fence becomes its own band after its parent', () => {
 });
 
 test('a run ranks where its earliest member does, not where its fence does', () => {
-  // The fence is added last and still leads the column, because the card it
-  // holds is the first thing in the order handed in.
+  // The fence is added last but still leads the column, since the card it
+  // holds is first in the order handed in.
   const early = photo({ id: 'early' });
   const late = photo({ id: 'late' });
   const f = fence({ id: 'f', x: 0, y: 0, w: 900, h: 700 });
@@ -482,7 +474,7 @@ test('the band spans the column and every member sits below it', () => {
   const bottom = it => it.y - it.h / 2;
   assert.ok(top(byId(a.id)) <= bottom(band) + 1e-6, 'a is under the band');
   assert.ok(top(byId(b.id)) <= bottom(band) + 1e-6, 'b is under the band');
-  // The barrier: nothing outside the run may climb into a gap beside its cards.
+  // Nothing outside the run may climb into a gap beside its cards.
   const runFloor = Math.min(bottom(byId(a.id)), bottom(byId(b.id)));
   assert.ok(top(byId(loose.id)) <= runFloor + 1e-6, 'the loose card stayed below the run');
 });
@@ -496,7 +488,7 @@ test('two runs do not interleave', () => {
   setBoardMode('mobile');
   const bottom = it => it.y - it.h / 2;
   const top = it => it.y + it.h / 2;
-  // The second band, and everything under it, is entirely below the first run.
+  // The second band, and everything under it, sits entirely below the first run.
   assert.ok(top(byId(f2.id)) <= bottom(byId(big.id)) + 1e-6,
     'the second band did not fit itself beside the first run');
   assert.ok(top(byId(small.id)) <= bottom(byId(f2.id)) + 1e-6);
@@ -518,11 +510,10 @@ test('a stuck note rides its host instead of taking a slot in the run', () => {
 // ---------------------------------------------------------------------------
 // The box a new fence gets
 //
-// Pure arithmetic over two optional rectangles, and the one place where drawing
-// a fence and measuring one meet: whatever comes out of here has to satisfy the
-// containment rule at the top of this file on the very first question asked of
-// it. The cases that matter are the asymmetries - the drawn rectangle is taken
-// as drawn, the items get a margin, and neither is allowed to lose.
+// Pure arithmetic over two optional rectangles, where drawing a fence and
+// measuring one meet: what comes out must satisfy the containment rule
+// immediately. The asymmetries matter - the drawn rectangle is taken as
+// drawn, items get a margin, and neither is allowed to lose.
 // ---------------------------------------------------------------------------
 
 test('a drawn rectangle alone becomes exactly that rectangle', () => {
@@ -540,10 +531,10 @@ test('nothing to go on is not a fence', () => {
 });
 
 test('a card poking out of the band it was caught by is still enclosed', () => {
-  // The case the union exists for. itemInRect() catches anything the band
-  // *overlaps*, so a wide photo can be selected by a rectangle that ends well
-  // inside it - and a fence cut to the rectangle would open not containing its
-  // own contents, which is the one state the whole feature must not start in.
+  // The case the union exists for: itemInRect() catches anything the band
+  // overlaps, so a wide photo can be selected by a rectangle ending well
+  // inside it - a fence cut to the rectangle would open not containing its
+  // own contents.
   const box = fenceBox({ x0: 0, y0: 0, x1: 100, y1: 100 }, { x0: 0, y0: 0, x1: 400, y1: 100 }, 10);
   assert.equal(box.x + box.w / 2, 410, 'the fence reaches past the band to hold the card');
   assert.equal(box.x - box.w / 2, -10);
@@ -555,8 +546,8 @@ test('a band drawn wider than its catch keeps the width somebody drew', () => {
 });
 
 test('the box a selection gets holds every card it was measured from', () => {
-  // Straight through the real predicate rather than by arithmetic: what makes
-  // this box right is that fenceOf() agrees with it.
+  // Through the real predicate, not arithmetic: what makes this box right
+  // is that fenceOf() agrees with it.
   const [a] = addItems([photo({ x: -300, y: -200, w: 200, h: 200 })]);
   const [b] = addItems([photo({ x: 400, y: 250, w: 300, h: 100 })]);
   const box = fenceBox(null, itemBounds([byId(a.id), byId(b.id)]), baseStep());
@@ -586,8 +577,8 @@ test('a fence somebody named does not hold a number down', () => {
 });
 
 test('a deleted number is not handed out again', () => {
-  // One past the highest, not the lowest free. Filling the gap would give a new
-  // region a name a different region had last week.
+  // One past the highest, not the lowest free - filling the gap would give
+  // a new region a name a different region had last week.
   addItems([fence({ x: 0, y: 0, w: 400, h: 400, name: 'Untitled fence 1' })]);
   const [second] = addItems([fence({ x: 2000, y: 0, w: 400, h: 400, name: 'Untitled fence 2' })]);
   addItems([fence({ x: 4000, y: 0, w: 400, h: 400, name: 'Untitled fence 3' })]);
@@ -603,16 +594,15 @@ test('only fences are counted', () => {
 // ---------------------------------------------------------------------------
 // The fence band
 //
-// "A fence is behind its cards" used to be an arrangement - a new fence took a z
-// below every card it enclosed - and an arrangement is true when it is made and
-// not afterwards. visualStackOrder() puts every fence in a band under every card
-// instead, which cannot drift because there is nothing stored to drift.
+// "A fence is behind its cards" used to be an arrangement, true only when
+// made. visualStackOrder() puts every fence in a band under every card
+// instead, which can't drift because nothing is stored to drift.
 // ---------------------------------------------------------------------------
 
 test('a fence is painted behind a card that was already lower than it', () => {
-  // The bug this band exists for. The photo is at the bottom of the board and
-  // the fence is drawn over it later, so the fence has the higher raw z - and
-  // under the old rule it covered the very card it had just picked up.
+  // The bug this band exists for: the photo is at the bottom of the board,
+  // the fence drawn over it later has the higher raw z, and under the old
+  // rule it covered the very card it had just picked up.
   const [pic] = addItems([photo({ x: 0, y: 0, z: -50 })]);
   const [f] = addItems([fence({ x: 0, y: 0, w: 900, h: 700, z: 10 })]);
   assert.equal(fenceOf(byId(pic.id))?.id, f.id, 'it is in the fence');
@@ -621,8 +611,8 @@ test('a fence is painted behind a card that was already lower than it', () => {
 });
 
 test('a fence grown out over a card ends up behind it', () => {
-  // The gesture from the other end: the card is nowhere near the fence and has a
-  // z of its own, and the resize is what picks it up.
+  // The gesture from the other end: the card has its own z and the resize
+  // is what picks it up.
   const [f] = addItems([fence({ x: 0, y: 0, w: 400, h: 400 })]);
   const [pic] = addItems([photo({ x: 900, y: 0 })]);
   assert.equal(fenceOf(byId(pic.id)), null);
@@ -645,7 +635,7 @@ test('every fence is under every card, whatever their z says', () => {
 });
 
 test('a note still sits on top of everything', () => {
-  // Three bands, not two: the note band is above the card band exactly as it was.
+  // Three bands, not two: the note band is above the card band as it was.
   const [f] = addItems([fence({ x: 0, y: 0, w: 900, h: 700 })]);
   const [pic] = addItems([photo({ x: 0, y: 0, w: 300, h: 300 })]);
   const [n] = addItems([note({ x: 0, y: 0, w: 80, h: 80 })]);
@@ -653,10 +643,10 @@ test('a note still sits on top of everything', () => {
 });
 
 test('a fence inside a fence is painted in front of the one holding it', () => {
-  // z cannot express this: the inner fence needs to be under its own cards and
-  // over its parent, and on a board a whole number apart there is no such value -
-  // so both came out at the same z and which name you could read was a coin toss.
-  // Area settles it, because containment already requires strictly more of it.
+  // z can't express this: the inner fence needs to be under its own cards
+  // and over its parent, with no such value on a board a whole number
+  // apart - both came out at the same z, a coin toss. Area settles it,
+  // since containment already requires strictly more of it.
   const [outer] = addItems([fence({ x: 0, y: 0, w: 2000, h: 1600, z: -1 })]);
   const [inner] = addItems([fence({ x: 0, y: 0, w: 600, h: 400, z: -1 })]);
   assert.equal(fenceOf(byId(inner.id))?.id, outer.id, 'it is nested');
@@ -665,8 +655,7 @@ test('a fence inside a fence is painted in front of the one holding it', () => {
 });
 
 test('the fence band ignores raw z only where nesting decides it', () => {
-  // Same size, so neither can hold the other: raw z is still what orders them,
-  // and Bring to front still means something between two overlapping regions.
+  // Same size, so neither can hold the other - raw z still orders them.
   addItems([fence({ id: 'a', x: 0, y: 0, w: 800, h: 600, z: -5 })]);
   addItems([fence({ id: 'b', x: 100, y: 0, w: 800, h: 600, z: -2 })]);
   const order = visualStackOrder();

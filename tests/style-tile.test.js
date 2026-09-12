@@ -1,23 +1,9 @@
-// The style tile: the summary, rather than a photograph of the board.
-//
-// The drawing is a card now (canvas/renderers.ts) and is not tested here -
-// there is no document in a runner. What is tested is the part that decides
-// *what goes on it*, which is where the taste decisions this feature had to
-// take actually live:
-//
-//   whose colours    the board's own current palette, read off the live tokens
-//   which pictures   the selection when there is one, else the largest by area
-//   the whimsy dial  followed (a drawing decision, so not asserted here)
-//
-// The second is the one with a rule worth pinning. "The selection if there is
-// one" has to mean *pictures in the selection* - a selection of three notes is
-// not a curation of pictures, and falling through to the largest is the right
-// answer rather than making a tile with no images on it.
-//
-// Imported from style-tile.ts rather than from ui/snapshot.ts, which is where
-// this lived while a tile was a PNG you saved. The move is the layering rule:
-// the renderer is under canvas/ and canvas/ may not import from ui/, so the
-// choosing had to come down to a tier both it and this file can reach.
+// The style tile: the summary, rather than a photograph of the board. The
+// drawing is a card now (canvas/renderers.ts) and untested here (no document
+// in a runner); what is tested is *what goes on it* - the board's live
+// palette, and which pictures: the selection if it contains pictures, else
+// the largest by area. Imported from style-tile.ts, not ui/snapshot.ts,
+// because canvas/ may not import from ui/.
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -28,12 +14,9 @@ import { fresh, note, photo } from './state-fixtures.js';
 
 const HASH = c => c.repeat(64);
 /**
- * A picture of a given size.
- *
- * Every size here is above MIN_SIZE (48). Below it the board clamps, which
- * makes four differently-written cards the same size and the ordering below
- * comes out on the tie-break instead - which is correct behaviour and a
- * useless test.
+ * A picture of a given size. Every size here is above MIN_SIZE (48) -
+ * below it the board clamps all cards to the same size, and the ordering
+ * would come out on the tie-break instead of the thing under test.
  */
 const pic = (id, w, h) => photo({ id, w, h, asset: { hash: HASH(id[0]) } });
 
@@ -48,9 +31,8 @@ test('with nothing selected it takes the largest pictures', () => {
 });
 
 test('it takes at most TILE_IMAGES, largest first', () => {
-  // Asserted against the constant rather than against a literal, because the
-  // number came down from four to three when the tile became a card and the
-  // point of the test is the cap, not the value - see TILE_IMAGES.
+  // Against the constant, not a literal: the number changed once already,
+  // and the point of the test is the cap, not the value.
   addItems([pic('a', 60, 60), pic('b', 80, 80), pic('c', 100, 100),
     pic('d', 120, 120), pic('e', 140, 140), pic('f', 160, 160)]);
   assert.equal(styleTileContents(null).pictures.length, TILE_IMAGES);
@@ -65,9 +47,8 @@ test('a selection is the curation, and beats size', () => {
 });
 
 test('a selection with no pictures in it falls through to the board', () => {
-  // The rule worth pinning. Three notes selected is not a curation of pictures,
-  // and honouring it literally would export a tile with no images on it - which
-  // looks like the feature is broken rather than like the selection was wrong.
+  // Three notes selected is not a curation of pictures; honouring it
+  // literally would export a tile with no images, which looks broken.
   const [n] = addItems([note({ id: 'n1' })]);
   addItems([pic('a', 100, 100)]);
   const picked = styleTileContents(new Set([n.id])).pictures.map(p => p.id);
@@ -75,16 +56,15 @@ test('a selection with no pictures in it falls through to the board', () => {
 });
 
 test('cards with no bytes are not offered as pictures', () => {
-  // pixelHash() is what a picture is here: an image card whose asset never
-  // arrived would be an empty box on the tile.
+  // An image card whose asset never arrived would be an empty box on the tile.
   addItems([photo({ id: 'empty', w: 900, h: 900 }), pic('a', 10, 10)]);
   assert.deepEqual(styleTileContents(null).pictures.map(p => p.id), ['a']);
 });
 
 test('the tile is the same twice for an unchanged board', () => {
-  // Identically sized cards would otherwise come out in whatever order the item
-  // list happened to hold, and an export that shuffles between two presses is
-  // one nobody can check against the last one they sent.
+  // Identically sized cards would otherwise come out in item-list order, and
+  // an export that shuffles between two presses can't be checked against
+  // the last one sent.
   addItems([pic('a', 100, 100), pic('b', 100, 100), pic('c', 100, 100)]);
   const first = styleTileContents(null).pictures.map(p => p.id);
   assert.deepEqual(styleTileContents(null).pictures.map(p => p.id), first);

@@ -1,15 +1,10 @@
 // Naming a derived picture after what it actually is.
 //
-// Six places in the app make a picture out of another picture - a thumbnail, a
-// video poster, a model's still - and every one of them used to write
-// `something.webp` and `image/webp` outright. That was true for exactly as long
-// as the encoders refused to hand back anything else, and no version of Safari
-// writes WebP from a canvas, so they now do.
-//
-// The label is not cosmetic and that is the whole of why this file exists:
-// addFile() *relabels* the blob with the type it is given, and an <img> renders
-// a blob: URL by that type. A PNG announced as WebP is a picture that does not
-// draw, on precisely the engine every one of those changes was made for.
+// Six places make a picture out of another picture (thumbnail, video poster,
+// model still), and used to hardcode `image/webp` before Safari could produce
+// it from a canvas. The label matters: addFile() relabels the blob with the
+// type it's given, and an <img> renders a blob: URL by that type - a PNG
+// announced as WebP just doesn't draw.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -37,9 +32,8 @@ test('the stem is the caller\'s, so a model still keeps its id', () => {
 });
 
 test('a blob with nothing to say is treated as the picture it was asked for', () => {
-  // The only way to reach this is a blob with no type at all, and every producer
-  // here asked an encoder for a picture - so WebP is the honest guess rather
-  // than octet-stream.
+  // Reached only by a blob with no type at all; every producer here asked an
+  // encoder for a picture, so WebP is the honest guess.
   assert.equal(derivedFile(blob(''), 'thumb').type, 'image/webp');
   assert.equal(derivedFile(blob('nonsense'), 'thumb').type, 'image/webp');
   assert.equal(derivedFile(blob('text/html'), 'thumb').type, 'image/webp',

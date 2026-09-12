@@ -1,77 +1,24 @@
 /* ---------------------------------------------------------
-   Whimsy axis - the parts a token cannot express
-
-   Almost everything the slider moves is a value, and values live in
-   tokens.css. What is left here is the handful of decisions that are
-   *structural*: an ornament that has to stop existing rather than shrink to
-   zero, and a couple of shapes that are drawn rather than declared.
-
-   The middle needs none of it: it keeps its ornaments and just turns them
-   down, which the tokens already do on their own. Both ends have one thing
-   each that a number cannot say - the plain end wants ornaments gone rather
-   than small, and the soft end wants a photograph to become a print.
+   Whimsy axis — the structural parts a token cannot express.
+   Middle needs none of it; Softish and Harsh each have one
+   thing that is a property rather than a value.
    --------------------------------------------------------- */
 
 /* ---- 0: softish - a photograph becomes a print ---------------------------
-   White stock all round the picture, deeper at the foot, and the caption
-   written on that chin where a caption belongs. The tier was already most of
-   the way there: --tilt-max is 3deg at this end, so the cards sit crooked and
-   the scattered-prints reading was there with only the frame missing.
-
-   The mat is drawn *inside* the item's own box, by insetting the picture -
-   not by growing the card, and not on a pseudo-element hanging outside it.
-   Both of those were considered and both are worse. Growing the card would
-   mean the whimsy slider silently resized every item on a saved board, so
-   sliding to this end and back would not return you to the board you started
-   with. Drawing the mat outside would leave the white border outside the
-   item's hit area: the visible edge of a photograph would not be draggable,
-   the selection ring and all eight resize handles would trace the picture
-   rather than the print, and the item's shadow would fall from the picture's
-   edge into the middle of its own frame.
-
-   What insetting costs, said plainly: the picture keeps object-fit: cover and
-   the inner box is proportionally wider than the item, so a photograph loses
-   roughly a tenth of its height to the crop. That is the trade, and it is a
-   small one on a board that already crops on every resize.
-
-   Every measure is a fraction of --half-min (min(w, h) / 2, per item from
-   canvas/items.ts/place()). A fraction rather than a fixed border because a
-   print scales as a print: 12px of mat is a frame on a thumbnail and a
-   hairline on a photograph two thousand across. Taking it off the shorter
-   side is what makes the mat the same real width on all four edges. */
-/* :not([data-bare]) here and on the two rules below it, which is the whole of
-   what a cut-out has to say to this tier.
-
-   A print is the one thing a cut-out is not. The mat, the chin and the hairline
-   round the picture are a photograph *in* something, and "No card" means there
-   is nothing to be in - so on a leaf or a logo the print treatment drew the mat
-   as a band of empty board on three sides, the chin as a fourth, and then put a
-   pale rule round the whole rectangle: a frame round nothing, which is the fault
-   the cut-out exists to fix, arriving by another door at one whimsy tier only.
-   Exempting the rule is right rather than overriding it further down, because
-   what is true is that this tier's print does not apply to a shape. */
+   Mat drawn inside the item (insetting the picture, not growing the card —
+   growing would resize saved items when the slider moves; drawing outside
+   would leave the mat outside the hit area). Every measure is a fraction of
+   --half-min so the mat scales with the print. */
+/* :not([data-bare]): a cut-out has no card, so the print treatment does not
+   apply — it would draw a frame round nothing. */
 :root[data-whimsy="0"] .item[data-type="image"]:not([data-bare]) {
   --mat:  calc(var(--half-min, 120px) * 0.08);
   --chin: calc(var(--half-min, 120px) * 0.26);
-  /* A print has a cut edge, not a mathematical one - so not zero, but a long
-     way under this level's 26px, which would read as a rounded sticker. A
-     fraction of --radius rather than a literal, so the Corner radius slider
-     still moves it along with everything else. */
+  /* Fraction of --radius so the Corner slider still moves it. */
   --shape-radius: calc(var(--radius) * 0.12);
 }
-/* Absolute, positioned off the top-left corner and *sized* to the rest, rather
-   than stretched between four insets.
-   That distinction is the whole rule. An `inset: mat; bottom: chin` with auto
-   width and height is the obvious way to write this and it does not work: an
-   <img> is a replaced element, and an absolutely positioned replaced box with
-   auto width resolves it to the picture's own intrinsic size rather than to
-   the gap between the offsets - which leaves `right` and `bottom` merely
-   over-constrained and dropped. The picture then hangs off the corner at its
-   natural size and .item-body's clip cuts it at the item's edge, so the mat
-   comes out on the top and left only and the caption is back over the photo.
-   Widths written out are unambiguous for a replaced box.
-   Both pictures of an animated pair are matched, so a frozen GIF sits in its
-   frame exactly where the moving one did. */
+/* Absolute + explicit size, not inset offsets — a replaced element with auto
+   width resolves to intrinsic size, not the gap between offsets. */
 :root[data-whimsy="0"] .item[data-type="image"]:not([data-bare]) .item-body img {
   position: absolute;
   left: var(--mat);
@@ -79,47 +26,24 @@
   width:  calc(100% - var(--mat) * 2);
   height: calc(100% - var(--mat) - var(--chin));
   border-radius: 0;
-  /* The print fills its window whatever the board's fit setting says: a polaroid
-     is a cropped print, and the mat is already the "fit" gesture. Left to
-     contain, the picture would letterbox inside the window and the hairline
-     frame below - drawn on this box's edge - would stand off the photograph
-     instead of hugging it. Out-specifies .item[data-fit="contain"] .item-body
-     img, so it holds even when Fill is off. */
+  /* Always cover: the mat is the "fit" gesture. Out-specifies data-fit. */
   object-fit: cover;
-  /* A pale photograph on pale stock has no edge of its own. This is the one
-     the print would have. */
+  /* Hairline for pale photos on pale stock. */
   box-shadow: 0 0 0 var(--board-hairline) color-mix(in srgb, var(--ink) 10%, transparent);
 }
-/* ...but Fit in the card, asked for on this one photo, still wins. The board's
-   default fit is folded into data-fit, so keying off that would letterbox every
-   Softish image; data-fit-own carries only the choice made on this card (see
-   writeFit() in canvas/items.ts), so the polaroid holds by default and yields
-   only when someone reached for the menu. More specific than the cover above
-   (six classes to its five), so it holds whatever the source order. The picture
-   then letterboxes inside the mat window; the hairline traces the window, which
-   is the honest cost of a print that has been told not to crop. */
+/* Per-card Fit override still wins (data-fit-own, more specific). */
 :root[data-whimsy="0"] .item[data-type="image"][data-fit-own="contain"]:not([data-bare]) .item-body img {
   object-fit: contain;
 }
-/* The caption stops being a strip laid across the foot of the picture and
-   becomes what is written on the chin. It needs no moving to get there: the bar
-   sits against .item's own edges, not the picture's, so insetting the picture
-   has already left it on the mat. All it has to do is stop looking like a plate
-   - the translucent paper, the rule, the blur and the divider between caption
-   and handle were all there to hold the bar off a photograph, and there is no
-   photograph behind it now. */
+/* Caption sits on the chin — no translucent bar needed. Stays visible
+   (opacity: 1) where other tiers hide it until hover. */
 :root[data-whimsy="0"] .item[data-type="image"] .item-bar {
   background: none;
   border-top: 0;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
-  /* The name is written on the print's mat here, not laid over the picture, so
-     it is part of the photograph rather than a label reached for - it stays put
-     while the other tiers hide it until hover. Overrides the hover-only fade. */
   opacity: 1;
 }
-/* line-height rather than a flex centre, because the caption keeps its ellipsis
-   and its single line, and both of those want it to stay a block. */
 :root[data-whimsy="0"] .item[data-type="image"] .item-label {
   height: var(--chin);
   line-height: var(--chin);
@@ -128,15 +52,8 @@
   font-size: clamp(11px, calc(var(--half-min, 120px) * 0.09), 20px);
 }
 
-/* A card at radius 0 with a hairline border already reads as ruled - a second
-   rule inside it is just noise. */
-/* The origin takes the shape its tier gives everything else. The middle is a
-   rounded square, like the cards, and it is what the bare stylesheet renders
-   because an unset whimsy is the middle - so only the two ends speak up here:
-   Softish keeps the compass ring, and Harsh squares the corners off into a
-   registration mark to match the crosses the lattice is drawn with at that end
-   of the axis, taking the pip with it. The pip stays a dot until then; a dot is
-   a dot at any radius. Each shape is inert wherever it is not the chosen one. */
+/* Origin mark shape per tier: Softish keeps the compass ring, Harsh squares
+   it to a registration mark. Middle is the unset default (rounded square). */
 #origin-mark .om-ring,
 #origin-mark .om-ring-sq,
 #origin-mark .om-pip-sq { display: none; }
@@ -149,72 +66,29 @@
 
 :root[data-whimsy="2"] .card::after { content: none; }
 
-/* Nothing leans, and this is a rendering decision before it is a look.
-
-   The resting tilt is charm everywhere else on the axis and the note in
-   tokens.css defends it well: a lean is not the interface *doing* something, it
-   is what the board is made of. It costs nothing at Softish or Middle, where a
-   card is carried by a drop shadow and a soft border.
-
-   It costs everything here. Harsh sets --item-shadow to none and --item-border
-   to full-strength ink, so a card is a black one-pixel rectangle and nothing
-   else - and a black one-pixel rectangle turned a degree and a half has no crisp
-   edge anywhere on it. The line crosses a pixel row every forty pixels of its
-   own length, so it is drawn as two rows of grey the whole way round, and no
-   amount of snapping the card onto the device grid (deviceSnap in
-   canvas/items.ts) can recover it: there is no position at which a rotated edge
-   is aligned. Standing the cards up is what makes that snap mean something, and
-   between the two it is the edge that has to win at this tier - it is the entire
-   elevation model, and a spec sheet is set square in any case.
-
-   `rotate` outright rather than zeroing --tilt-max, for the reason the
-   [data-snap] rule in items.css gives: the tilt tokens are on the Appearance
-   panel's list and can be written inline on :root, which no selector can
-   outrank. This is on .item, where nothing inline competes, and it inherits the
-   rotate transition so moving the dial to Harsh straightens the board rather
-   than jumping it. */
+/* No lean at Harsh: a 1px black rectangle turned 1.5deg has no crisp edge.
+   `rotate` outright because tilt tokens can be set inline on :root. */
 :root[data-whimsy="2"] .item { rotate: 0deg; }
 
-/* Stickies go flat: no adhesive band showing through, just a ruled edge. */
+/* Stickies go flat: ruled edge, no adhesive band. */
 :root[data-whimsy="2"] .item[data-type="note"] .card {
   background: var(--note-paper);
   box-shadow: inset 0 0 0 var(--board-hairline) var(--ink);
 }
 
-/* Lozenges become squares. Same target size, no tilt. */
+/* Lozenges become squares. */
 :root[data-whimsy="2"] .grip,
 :root[data-whimsy="2"] :is(.field, .np-volume, .ctx-range, .dk-dial) input[type="range"]::-webkit-slider-thumb { transform: none; }
 
-/* The toast sits straight rather than tossed onto the page. */
+/* Toast sits straight. */
 :root[data-whimsy="2"] .toast-line {
   transform: none;
   animation-name: rise-plain;
 }
 @keyframes rise-plain { from { opacity: 0; transform: translateY(6px); } }
 
-/* How the player arrives, per tier. Four values, set here and read by the two
-   transitions where #nowplaying is styled - the shape of the movement is one
-   thing and its personality is another, and only the second belongs down here
-   with the rest of the axis. All three slide up from under the edge; what
-   differs is from how far, how they get there, and what they do on arrival.
-
-   Softish throws it: it starts further under and noticeably smaller, and comes
-   in off-square before settling - the same hand that tosses a card onto the
-   board and leaves it at an angle, and this tier's --ease-back is a real
-   overshoot rather than a suggestion. The angle is small and negative so it
-   settles clockwise into true, which is how something set down by hand comes
-   to rest.
-
-   Middle keeps the base above: up from under the edge, a whisper of scale, no
-   tilt, and only as much spring as its --ease-back has.
-
-   Harsh slides and does nothing else. Everything at this end of the axis stands
-   still on arrival - the grips do not tilt, the toast does not lean, the
-   buttons do not grow - so there is no overshoot and no scale, just the
-   distance covered on the plain curve. Motion as transport rather than as
-   character, which is the whole argument of this tier. It is not *no* movement:
-   a bar that simply existed where it had not been a frame earlier is the one
-   thing on this axis that would read as a glitch rather than as a decision. */
+/* Now-playing entrance per tier. Softish throws it (further under, smaller,
+   off-square before settling); Harsh slides only (no overshoot, no scale). */
 :root[data-whimsy="0"] #nowplaying {
   --np-under: calc(100% + 44px);
   --np-shrink: 0.93;
@@ -226,63 +100,14 @@
   --np-ease: var(--ease);
 }
 
-/* The close button stops spinning; it still lights up. */
+/* Close button stops spinning at Harsh. */
 :root[data-whimsy="2"] #side-close:hover,
 :root[data-whimsy="2"] #header-close:hover { transform: none; }
 
-/* The hamburger's three bars slide left and right on a sine while the pointer
-   rests on them, and only at Softish.
-
-   One wave, sampled three times. Each bar runs the same horizontal oscillation
-   and the two below it are a third and two thirds of a lap behind, so at any
-   instant the three are sitting at 0, 120 and 240 degrees of one sine - three
-   points evenly spaced along a single curve. The wave is not in any one bar; it
-   is the shape the three of them make together, and it travels because each bar
-   reaches a given offset a third of a lap after the one above it. Give them all
-   the same phase and the stack just slides back and forth in a block.
-
-   Sideways rather than up and down, which is the axis with room on it: the bar
-   is 18px inside a 40px box, so there are 11 clear pixels either side and three
-   of amplitude cost nothing. Vertically the bars have 6px of air between them
-   and any real amplitude closes it.
-
-   The keyframes are a sine and not an approximation of one. Eight samples a lap
-   at 45-degree steps, held together with linear timing - between neighbouring
-   samples a straight line departs from the true curve by about three percent of
-   the amplitude, which at three pixels is a tenth of one and invisible. Easing
-   between a crest and a trough instead gives motion that dwells at the ends,
-   which is the part that stops looking like a wave.
-
-   The delays are positive, so all three bars start from true and the lower two
-   wait their turn. A negative delay would have them out of phase from the first
-   frame, which means bars two and three jump to where the wave already is at
-   the moment the pointer arrives. This way the wave builds over its first lap
-   and then runs in steady state, and nothing snaps on the way in.
-
-   Softish alone, and it is the argument the whimsy axis makes everywhere else:
-   this tier throws cards down at an angle and lets the now-playing bar
-   overshoot. Middle keeps the plain background-and-border hover the shared rule
-   above gives every chrome button, and Harsh stands still, which is that tier's
-   entire position.
-
-   Behind (hover: hover) rather than cancelled in the coarse-pointer block the
-   way the other hover reactions are. A tap on a touch screen leaves :hover
-   latched until something else is tapped, and a wave that arrives on the first
-   tap and stays is worse than no wave; "does this pointer hover" is the actual
-   question, where the pointer block asks how wide the finger is. It also avoids
-   a specificity contest that block would win only on source order.
-
-   The lap reads off --dur-base so the wave keeps the tempo of the tier it
-   belongs to, and both rules that can silence it - the reduced-motion block and
-   quality's anim flag - are !important universals, so neither needs naming
-   here. 5.95 is one full oscillation, so it is the number that means "how fast
-   is this" and the only one to move to change that; the two delays are its
-   thirds and have to be recomputed with it.
-
-   Leaving costs at most three pixels: the animation is gated on :hover, and
-   removing it reverts the transform in one frame rather than easing out, which
-   is a thing CSS cannot do to a running animation. It is paid at the one moment
-   the button has stopped being the thing being looked at. */
+/* Hamburger wave: three bars sample one sine at 0/120/240 degrees, Softish
+   only. Eight keyframe samples at 45-degree steps with linear timing (error
+   ~0.1px). Positive delays so the wave builds over its first lap. Behind
+   (hover: hover) because a latched :hover on touch is worse than no wave. */
 @media (hover: hover) {
   :root[data-whimsy="0"] #menu-btn:hover span {
     animation: menu-wave calc(var(--dur-base) * 5.95) linear infinite;
@@ -294,10 +119,7 @@
     animation-delay: calc(var(--dur-base) * 3.96667);
   }
 }
-/* sin, at eight points around the circle, times three pixels. 2.121 is the
-   amplitude times the sine of 45 degrees, and it appears twice going out and
-   twice coming back because a sine is symmetric about both its crest and its
-   zero - which is why writing one out takes five lines. */
+/* sin(45deg) * 3px = 2.121px; symmetric about crest and zero. */
 @keyframes menu-wave {
   0%, 50%, 100% { transform: none; }
   12.5%, 37.5%  { transform: translateX(2.121px); }
@@ -306,25 +128,9 @@
   75%           { transform: translateX(-3px); }
 }
 
-/* The stop labels under the whimsy slider. Not a legend - the ends of a scale,
-   which is the only way a three-position slider says what it does.
-
-   Each name is a specimen of its own tier, so all three are pinned to a fixed
-   face and style: serif italic, sans italic, sans bold. None of them may read
-   off --font-display, --display-italic or --font-serif, because those are
-   exactly what the slider moves - at the plain end the whole row would collapse
-   into one font and the labels would stop showing the difference they name.
-
-   --font-serif joined that list when the axis grew a second serif, and it stays
-   on it now that both serif tiers name Fraunces again: --font-serif is still
-   whichever serif the *current* tier resolves to, and at the plain end that is
-   not what a board set to Softish would show. "Softish" is a specimen of
-   Fraunces, so it names --font-serif-text - the face itself.
-
-   The same reasoning is why the weights below are literals and must stay
-   literals. --display-weight is the tier's, and these three are specimens of
-   tiers you are not on; the 400 on "Softish" is that level's weight written
-   down, not a value to be read off the slider. */
+/* Whimsy stop labels: each name is a specimen of its tier, so faces and
+   weights are pinned (never --font-display or --display-weight, which are
+   what the slider moves). Both the panel row and the ghost card row. */
 .field-stops {
   display: flex;
   justify-content: space-between;
@@ -332,24 +138,6 @@
   color: var(--ink-3);
   font-size: var(--t-tiny);
 }
-/* Pinned to the whimsy dials, not to .field-stops at large. The row itself
-   is a general thing - any slider whose stops have names can print them, and the
-   masthead's weight dial does - but these three declarations are specimens of
-   the three whimsy tiers and belong to nothing else. Left unscoped, "Regular"
-   and "Bold" under the weight slider came out set in a serif italic and a sans
-   italic, which is the one thing a weight specimen must not do.
-
-   An id and a class, because there are two whimsy dials and one of them is not
-   unique: the panel's row is a singleton and is named by id (ui/panel.ts, from
-   the schema's stopsId), while the ghost card's row is built by
-   canvas/renderers.ts for the canvas *and* for the Feed, so it wears
-   .whimsy-stops and keeps its id for aria-describedby alone.
-
-   The card borrows the panel's slider whole, and
-   the specimens are the half of it that carries the most meaning - a stop that
-   is a word *and* an example of what choosing it does - so it borrows these too
-   rather than printing three names in one face. One block, both rows, so a
-   change to a specimen cannot reach one and miss the other. */
 #whimsy-stop-labels span:nth-child(1),
 .whimsy-stops span:nth-child(1) {
   font-family: var(--font-serif-text);
@@ -374,27 +162,19 @@
 /* ---------------------------------------------------------------------------
    Quality: the two things that are not tokens
 
-   The token half is at the foot of tokens.css. These two are properties rather
-   than custom properties, so they cannot be handed down and have to be
-   cancelled where they are set - and both are set in a dozen places, which is
-   why this is a universal selector and an !important, the same shape the
-   prefers-reduced-motion block above uses and for the same reason.
-
-   Pairs of selectors again: the level alone until ui/quality.ts has written the
-   flags out, then the flag, so a hand-set override outranks the stop.
+   Backdrop-filter and animation/transition durations are properties, not
+   custom properties, so they must be cancelled where set — universal selector
+   with !important, same shape as prefers-reduced-motion.
    --------------------------------------------------------------------------- */
 
-/* A backdrop blur cannot be composited once and reused - the pixels behind it
-   change on every frame of a moving board, so it is re-sampled every frame. It
-   is the most expensive thing on this page per pixel and the least missed. */
+/* Backdrop blur: re-sampled every frame, most expensive per pixel, least missed. */
 :root[data-quality="light"]:not([data-q-blur]) *,
 :root[data-q-blur="off"] * {
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
 }
 
-/* The durations are tokens and are already flattened next door; this catches
-   the animations and transitions written in milliseconds by hand. */
+/* Animations: catches hand-written durations the token flatten misses. */
 :root[data-quality="light"]:not([data-q-anim]) *,
 :root[data-q-anim="off"] * {
   animation-duration: 0.01ms !important;
@@ -402,23 +182,11 @@
 }
 
 /* ---------------------------------------------------------------------------
-   The two preferences the system holds, which the dial above does not answer
+   System preferences
 
-   The blur stop above is a *quality* decision - somebody, or the Light default,
-   deciding this machine should not spend a frame re-sampling a backdrop. This is
-   a different question with the same answer: somebody has told their operating
-   system they do not want translucency, and until now the app did not ask. The
-   two overlap and neither implies the other. A fast machine set to Full quality
-   still has to honour the preference, and a Light board still blurs nothing
-   whatever the system says.
-
-   Here rather than in base.css, where prefers-reduced-motion sits, because the
-   shape of the fix is this file's rather than that one's: `backdrop-filter` is a
-   property and not a custom property, so it cannot be handed down and has to be
-   cancelled where it is set - a universal selector and an !important, which is
-   the block above's whole argument for existing. Reduced motion had somewhere
-   better to go: the durations *are* tokens, so tokens.css flattens them at the
-   root and the cascade does the rest.
+   prefers-reduced-transparency: a different question from the quality blur
+   stop, with the same answer. Here (not base.css) because the fix is the
+   same universal+!important shape as the quality block above.
    --------------------------------------------------------------------------- */
 
 @media (prefers-reduced-transparency: reduce) {
@@ -428,34 +196,9 @@
   }
 }
 
-/* Contrast is the one that wants the opposite of a blanket.
-   Every scrim in the app is the board's own ink at 42% - tinted rather than
-   black, so a sheet dims into the palette instead of going grey, which
-   dialog.css argues where it sets it. At `more` that tint is doing the job
-   backwards: 42% leaves the board legible through it, and what a contrast
-   preference asks for is the sheet in front having an unmistakable edge. So the
-   same colour, further up. Not opaque - the scrim would stop saying there is a
-   board behind it at all, and losing that is losing the thing the dimming is
-   for.
-
-   Eight backdrops and one value, written once against the list. The list is
-   copied from dialog.css, color-picker.css and viewer.css, and a dialog added
-   since is a dialog missing from it - there is no test for this, because a
-   scrim's depth is not a thing a test can hold an opinion about.
-
-   #viewer is on the list and the *media* viewer still will not take it, which is
-   right rather than an oversight: `#viewer[data-media]::backdrop` is near-black
-   at 94% and outranks this on specificity whatever the order. It is already
-   darker than this asks for, and it is deliberately not the board's ink - a
-   photograph is judged against a neutral ground. What this reaches is the
-   viewer's other half, the one showing a document on paper.
-
-   color-mix(), like the rules it overrides. Below WebKit 16.2 the whole
-   declaration is dropped and the 42% scrim stands: less contrast than was asked
-   for, on a browser three years old, and still a working scrim. The channel-form
-   spelling is deliberately not reached for - tokens.css declares --ink-c *inside*
-   its @supports block precisely so that no current browser can see a second set
-   of colours, and this rule is not worth being the exception. */
+/* prefers-contrast: more — scrims from 42% to 78%. Not opaque, so the board
+   behind is still communicated. color-mix() only — below WebKit 16.2 the
+   42% scrim stands (less contrast, still working). */
 @media (prefers-contrast: more) {
   #ask::backdrop,
   #credits::backdrop,
@@ -469,52 +212,10 @@
   }
 }
 
-/* The two card types that have no `.card` inside them, and so no hairline of
-   their own: canvas/renderers.ts hands back the picture itself for an image and
-   a video, because they *are* the card. Every other type wears the inset ring
-   in `.card` and only needed --item-border firming up next door.
-
-   It matters most where you would least expect it: the default fit is `contain`,
-   so a portrait photograph is a letterboxed picture on a card-coloured field,
-   and with the shadow gone that field is the same near-white as the board. An
-   inset ring rather than a border, for the reason .card gives - the item clips
-   at its own radius and would shave a real border at the corners.
-
-   **Two axes can take that shadow away, and this list has to name both.** The
-   quality dial is one (the four selectors below it); the whimsy axis is the
-   other, and it was missing. At Harsh, tokens.css says "elevation is a hairline,
-   not a shadow" and sets --item-shadow to none along with --item-border to
-   full-strength ink - so every card with a `.card` in it drew a hard black edge
-   while photographs and clips beside them drew nothing at all, having lost the
-   shadow that was their only edge and never having had a ring to fall back on.
-   On a board of mixed types that reads as the borders being broken, because half
-   of them are: an audio card with a black hairline next to a photograph with no
-   edge is not two styles, it is one style and one omission.
-
-   Keyed on the tier rather than on --item-shadow because CSS cannot ask whether
-   a custom property resolved to `none`. If a third thing ever removes the
-   shadow, it belongs in this list, and the symptom to look for is this one. */
-/* On a pseudo-element, and that is the whole of why the first attempt at this
-   did nothing visible. `box-shadow: inset` paints beneath the element's own
-   children, and an image card's child is the picture, filling it at
-   object-fit: cover - so the ring was computed exactly as asked and the
-   photograph was laid straight over it. It only ever showed on a letterboxed
-   `contain` fit, where there was card field left around the picture for it to
-   land on, which is precisely the case the note above was written about.
-
-   ::after is the last child of .item, so it paints after .item-body and the
-   ring lands on top of the picture. Still an inset shadow rather than a border,
-   for the reason .card gives - the item clips at its own radius and a real
-   border would be shaved at the corners. */
-/* :not([data-bare]) on every one of them, and it is the same sentence the
-   hover ring and the far-zoom edge already say in items.css: a cut-out has no
-   card, so it has no edge for a ring to trace. Drawn anyway, this one was the
-   worst of the three - it is an *inset* ring on a pseudo-element that paints
-   over the picture, so on a leaf or a logo with a transparent background it
-   drew a rectangle straight across the shape, which is precisely the frame
-   round nothing that "No card" exists to take away. Written into the selectors
-   rather than undone by a rule underneath, because the honest statement is that
-   the tier's edge does not apply here, not that it applies and is then removed. */
+/* Image/video cards have no .card, so no hairline of their own. When shadow
+   is removed (Harsh or quality dial), an inset ring on ::after replaces it.
+   ::after paints over .item-body so the ring is not hidden under the picture.
+   :not([data-bare]) — a cut-out has no card edge to trace. */
 :root[data-whimsy="2"] .item[data-type="image"]:not([data-bare])::after,
 :root[data-whimsy="2"] .item[data-type="video"]:not([data-bare])::after,
 :root[data-quality="light"]:not([data-q-shadows]) .item[data-type="image"]:not([data-bare])::after,
@@ -530,8 +231,7 @@
   z-index: 1;
 }
 
-/* Without color-mix(), for WebKit below 16.2 - section 7 of tokens.css carries
-   the argument and declares the channel-form tokens. */
+/* color-mix() fallback for WebKit < 16.2 — see tokens.css section 7. */
 @supports not (color: color-mix(in srgb, red, blue)) {
   :root[data-whimsy="0"] .item[data-type="image"]:not([data-bare]) .item-body img {
     box-shadow: 0 0 0 var(--board-hairline) rgb(var(--ink-c) / 10%);

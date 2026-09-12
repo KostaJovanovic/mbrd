@@ -1,105 +1,33 @@
-// A viewable picture pulled out of one the browser cannot decode.
-//
-// HEIC, camera RAW (CR2/NEF/ARW/DNG and the rest) and a few others are formats
-// this app catalogues but no browser draws unaided - measureSize() asks the
-// engine to decode one, it refuses, and import/drop.ts turns the card into a
-// named placeholder. That is honest but bleak: a folder of RAWs lands as a wall
-// of grey cards.
-//
-// The saving grace is that almost every one of these files carries a *second*
-// copy of the same image in a format the browser does draw - a full-size JPEG
-// preview the camera wrote for its own screen, or a JPEG/Exif thumbnail. This
-// module goes and gets that copy. The original file is untouched and still the
-// one embedded in the .mbrd (see prepareFile), so the day a real decoder lands
-// the card upgrades itself; until then it shows the picture the camera already
-// made rather than a hole.
-//
-// The style is import/artwork.ts's, deliberately, because it is the same job -
-// walk a container written by something that is not this app, find one blob
-// inside it, and trust none of the numbers on the way. So: slice, never slurp;
-// cap every count read from the file before it is used to loop or allocate;
-// bound every offset against the file's real size; and identify the blob by its
-// own first bytes rather than by anything the container claimed. Every path
-// returns null on anything malformed - a preview that cannot be found is a named
-// card, which is exactly where the caller was headed anyway.
+// Extract an embedded JPEG preview from files the browser cannot decode (HEIC,
+// camera RAW, JPEG XL). Most carry a full-size JPEG the camera wrote for its
+// LCD. TIFF/RAW: IFD walk for JPEGInterchangeFormat or JPEG strip. X3F: own
+// directory. Fallback: bounded SOI/EOI marker scan. All offsets validated;
+// malformed files return null (grey card, same as before).
 
 import { oversize, isOversize, mb } from '../consent.ts';
 
-// Ceilings. None is a correctness bound - a real preview clears all of them by a
-// wide margin - they are the "this file is lying to us" backstops that keep a
-// hostile or truncated container from turning into an unbounded loop or a
-// gigabyte allocation.
+// Ceilings — "file is lying" backstops, not correctness bounds.
 const MAX_IFDS = 48;          // TIFF IFDs visited before we give up walking
 const MAX_ENTRIES = 4096;     // directory entries read from one IFD
 const MIN_JPEG = 1024;        // a "preview" under a kilobyte is not one
 const MAX_JPEG = 128 * 1024 * 1024;
 const SCAN_CAP = 12 * 1024 * 1024;   // window the marker-scan fallback reads
 
-/**
- * The one of those that is now a question, and why the other three are not.
- *
- * MAX_JPEG is a ceiling on something somebody might actually want: the camera's
- * own full-size preview, which for a medium-format RAW can honestly be enormous,
- * and which is the difference between a photograph on the board and a grey card
- * with a filename on it. So a candidate this turns away is offered instead - the
- * throw at the end of each picker, asked about by the caller, lifted with `lift`.
- *
- * MAX_IFDS, MAX_ENTRIES and SCAN_CAP stay absolute, and the distinction is not
- * squeamishness. None of the three is a limit on the file: they are how far a
- * walk walks and how far a scan scans. Nothing is refused for crossing them,
- * because crossing them is not a thing a file does - what happens is that a
- * heuristic gives up and the card falls back, and there is no evidence at that
- * point that looking harder would have found anything. "Read all 400 MB of this
- * HEIC in case there is a thumbnail further in" is not a risk somebody can weigh;
- * it is a coin toss with their memory, and offering it as a choice would be the
- * app dressing a guess up as consent.
- */
+/** MAX_JPEG is liftable (caller asks the user). The other three are absolute
+ * search bounds, not refusals — exceeding them just means the heuristic gave up. */
 const jpegTooBig = (len: number) =>
   `The preview picture stored inside this file claims to be ${mb(len)}, past the ${mb(MAX_JPEG)} `
   + 'one is taken at. That size is the container\'s own claim rather than anything measured here.';
 
-/**
- * Pictures this browser may well draw and another browser will not.
- *
- * The module above is written for the file *nothing* draws - a RAW, a JPEG XL -
- * and import/drop.ts asked for a preview only when the decode had already
- * failed. That question has an engine in it, and the answer changes with the
- * engine: Safari decodes HEIC and nothing else does, so on an iPhone the branch
- * never ran, the photograph went into the .mbrd as raw HEIC with no preview,
- * and the board looked perfect on the phone that made it and arrived on a
- * desktop as a wall of grey named cards.
- *
- * Masked, until now, by iOS converting HEIC to JPEG on its way through a file
- * input. **The Safari 27 beta lists that conversion as a bug and fixes it**, so
- * from iOS 27 the HEIC arrives as a HEIC and this becomes the ordinary case
- * rather than the exotic one.
- *
- * Short and closed on purpose. A format goes in here only when one engine draws
- * it and the others do not - AVIF is not a member, because everything draws
- * AVIF now, and adding it would cut a preview for every AVIF on every board to
- * solve nothing.
- */
+/** Formats one browser decodes but others do not. Safari draws HEIC natively,
+ * so on iOS the preview was never extracted and boards arrived on desktop as grey
+ * cards. Safari 27 stops converting HEIC→JPEG on input, making this the common
+ * case. Closed set — only formats with real cross-browser divergence. */
 export const NOT_PORTABLE = new Set(['heic', 'heif', 'hif', 'jxl']);
 
-/**
- * How big a preview has to be before it may stand in for a picture the browser
- * can already draw perfectly well.
- *
- * There are two quite different reasons to reach for an embedded JPEG, and only
- * one of them is unconditional. Where the original cannot be decoded at all,
- * any preview beats a grey card and no threshold applies. Where the original
- * draws fine here and the preview exists only so the board travels, the preview
- * becomes the pixels *this* device shows - and a HEIC's embedded JPEG is often
- * the camera's small thumbnail rather than a full-size copy. Swapping a twelve
- * megapixel photograph for a 320px thumbnail on the phone that took it would be
- * fixing another engine's problem with this one's picture.
- *
- * 1280 because that is the top stop of the display ceiling in canvas/display.ts:
- * at or above it the card draws exactly the same either way, so adopting the
- * preview costs the viewer nothing and buys the board its portability. Below
- * it, the original stays and the board is honestly less portable - which is a
- * limitation to write down rather than a picture to quietly degrade.
- */
+/** Min edge for a portability preview (original decodable here, not elsewhere).
+ * 1280 = display ceiling in canvas/display.ts — below this, adopting the preview
+ * would visibly degrade the card on the device that took the photo. */
 export const PORTABLE_MIN_EDGE = 1280;
 
 /** One candidate JPEG: where the container says it is, and how long it claims. */
@@ -108,27 +36,14 @@ type Candidate = { off: number, len: number };
 /** One TIFF directory entry, as much of it as the walk below reads. */
 type TiffEntry = { type: number, count: number, valueOff: number };
 
-/**
- * A viewable JPEG for a file the browser will not decode, or null.
- *
- * Tries the structured path first - a TIFF/RAW directory walk that finds the
- * camera's own embedded JPEG, usually the full-size one - and falls back to a
- * bounded scan for a JPEG's start-and-end markers, which is what reaches a
- * HEIC's thumbnail and anything else that simply carries a JPEG somewhere near
- * its front. Whatever comes back is verified to actually begin with JPEG's own
- * bytes before it is handed on, so a wrong offset yields null rather than a
- * broken picture.
- */
+/** Embedded JPEG from an undecodable file. TIFF IFD walk first, then SOI/EOI
+ * marker scan fallback. Every candidate verified by its own magic bytes. */
 export async function embeddedPreview(file: Blob, lift = false): Promise<File | null> {
   try {
     const head = await bytes(file, 0, 16);
     if (head.length < 12) return null;
-    // An X3F is answered by its own directory or not at all. The scan below is
-    // the fallback for every other container and is actively wrong for this
-    // one: a Foveon sensor block is full of stray FF D8 and FF D9 pairs, so
-    // "the longest span between them" is reliably several megabytes of noise,
-    // and a card drawing that is worse off than a card drawing nothing. See
-    // fromX3f().
+    // X3F only via its own directory — marker scan returns noise (Foveon sensor
+    // blocks are full of stray FF D8 / FF D9 pairs).
     if (isX3f(head)) {
       const only = await fromX3f(file, lift);
       return only ? new File([only], 'preview.jpg', { type: 'image/jpeg' }) : null;
@@ -138,10 +53,7 @@ export async function embeddedPreview(file: Blob, lift = false): Promise<File | 
     if (!found) return null;
     return new File([found], 'preview.jpg', { type: 'image/jpeg' });
   } catch (err) {
-    // Except a ceiling, which is a preview we found and did not take. The
-    // difference matters to the caller: everything else here is "there is nothing
-    // in this file", and this one is "there is something in this file and it is
-    // 200 MB". Only the second is a question, and only the caller can ask it.
+    // Oversize = preview found but too large — caller decides via lift.
     if (isOversize(err)) throw err;
     return null;   // a preview that throws is a preview we did not find
   }
@@ -164,13 +76,8 @@ const isJpeg = (b: Uint8Array) => b.length >= 3 && b[0] === 0xff && b[1] === 0xd
 // TIFF / RAW
 // ---------------------------------------------------------------------------
 //
-// A TIFF file - and every TIFF-based RAW, which is most of them - is a header
-// naming a byte order and pointing at the first Image File Directory, and each
-// IFD is a count followed by that many 12-byte entries and then the offset of
-// the next IFD. The camera's JPEG preview is reached one of two ways from an
-// entry: a JPEGInterchangeFormat/-Length pair that points straight at it, or a
-// strip whose Compression tag says JPEG. Previews hide in sub-directories as
-// often as in the main chain, so both SubIFDs and the next-IFD link are walked.
+// IFD chain walk. Preview found via JPEGInterchangeFormat/Length pair or a
+// JPEG-compressed strip. SubIFDs and next-IFD links both followed.
 
 const II = 0x4949, MM = 0x4d4d;
 
@@ -190,9 +97,7 @@ async function fromTiff(file: Blob, lift = false): Promise<Blob | null> {
   const dv0 = new DataView(head.buffer, head.byteOffset, head.byteLength);
   const first = dv0.getUint32(4, le);
 
-  // The candidates gathered across every directory, then the largest verified
-  // one wins: a camera writes both a postage-stamp thumbnail and a full-screen
-  // preview, and the big one is the picture worth showing.
+  // Largest verified JPEG wins (camera writes both thumbnail and full preview).
   const found: Candidate[] = [];
   const seen = new Set<number>();
   const queue: number[] = [first];
@@ -210,8 +115,7 @@ async function fromTiff(file: Blob, lift = false): Promise<Blob | null> {
     const entries = cdv.getUint16(0, le);
     if (entries <= 0 || entries > MAX_ENTRIES) continue;
 
-    // The whole directory in one read: the entry block plus the 4-byte pointer
-    // to the next IFD that follows it.
+    // Entry block + 4-byte next-IFD pointer in one read.
     const block = await bytes(file, at + 2, entries * 12 + 4);
     if (block.length < entries * 12) continue;
     const dv = new DataView(block.buffer, block.byteOffset, block.byteLength);
@@ -225,12 +129,7 @@ async function fromTiff(file: Blob, lift = false): Promise<Blob | null> {
       tags.set(tag, { type, count, valueOff: off + 8 });
     }
 
-    // The scalar in an entry's value slot. When the value fits in four bytes it
-    // sits inline; otherwise those four bytes are an offset into the file, which
-    // is only chased for single values (the counts and offsets this needs).
-    // Synchronous, and reads through the directory's own `dv`: there is no await
-    // in here, and the value always sits inside `block`, so a fresh DataView per
-    // call (this is asked six times an IFD) bought nothing.
+    // Inline value when ≤ 4 bytes, else file offset. Only single-count entries.
     const scalar = (e: TiffEntry | undefined): number | null => {
       if (!e) return null;
       const size = TYPE_BYTES[e.type] || 0;
@@ -240,18 +139,9 @@ async function fromTiff(file: Blob, lift = false): Promise<Blob | null> {
         : block[e.valueOff];
     };
 
-    // Chase this directory's sub-directories and its next-IFD link. SubIFDs
-    // (0x014A) may be a single inline offset or a pointer to a list of them;
-    // only the single-offset case is followed, which covers the RAW layouts
-    // that actually hide previews there.
-    // Only when the four bytes are actually there. `bytes()` clamps its read to
-    // file.size, so a .dng or .cr2 truncated exactly at the end of its last IFD
-    // entry gives a block of precisely `entries * 12` - the guard above uses
-    // `<` and passes - and this read went four bytes past the DataView. The
-    // RangeError escaped fromTiff() entirely and was caught by
-    // embeddedPreview()'s outer catch, which threw away every candidate already
-    // collected *and* skipped the scanForJpeg() fallback that would have found
-    // the picture. A truncated file lost its preview twice over.
+    // Next-IFD + SubIFDs. Guard: block may be exactly entries*12 if the file is
+    // truncated — reading past the DataView would RangeError and discard all
+    // candidates already found.
     const next = block.length >= entries * 12 + 4 ? dv.getUint32(entries * 12, le) : 0;
     if (next) queue.push(next);
     const sub = tags.get(0x014a);
@@ -271,14 +161,9 @@ async function fromTiff(file: Blob, lift = false): Promise<Blob | null> {
     }
   }
 
-  // Largest first, and take the first that is really a JPEG where it claims to
-  // be. The length is the container's claim; the sniff is the file's own word.
+  // Largest first; verify JPEG magic at each offset.
   found.sort((a, b) => b.len - a.len);
-  // The largest candidate the cap turned away, and nothing else about it. Kept so
-  // the throw at the bottom can say a number - and only consulted if no candidate
-  // succeeded, which is the whole point: a RAW carrying a 200 MB full-size preview
-  // *and* a sensible 2 MB thumbnail should take the thumbnail and say nothing. The
-  // cap costing somebody their preview is the only case worth a question.
+  // Track largest blocked candidate — only thrown if no smaller one succeeds.
   let blocked = 0;
   for (const { off, len } of found) {
     if (len < MIN_JPEG || off + len > file.size) continue;
@@ -292,22 +177,12 @@ async function fromTiff(file: Blob, lift = false): Promise<Blob | null> {
 }
 
 // ---------------------------------------------------------------------------
-// X3F  -  Sigma and Polaroid, the one RAW that is not a TIFF
+// X3F  -  Sigma/Polaroid, the one RAW that is not a TIFF
 // ---------------------------------------------------------------------------
 //
-// A Foveon file has its own container: a 'FOVb' header, the picture data, and a
-// directory at the very end - the last four bytes of the file point at it. So
-// the IFD walk above finds nothing in one, and the marker scan below finds
-// something worse than nothing: the sensor block is full of stray FF D8 and
-// FF D9 pairs, and "the longest span between them" is reliably a few megabytes
-// of noise rather than the picture. A card showing that is not a preview that
-// failed, it is a preview that lied.
-//
-// The directory is short and says exactly where the real one is, so it is read
-// instead. Every image section states its own format, and format 18 is a JPEG -
-// the full-size one the camera wrote for its screen. The other formats are the
-// Foveon sensor data itself, which needs a demosaic this app does not have and
-// is skipped rather than guessed at.
+// FOVb header, data, directory at EOF (last 4 bytes point to it). Image sections
+// with format 18 = JPEG. Marker scan is wrong here (Foveon sensor data is full
+// of stray SOI/EOI pairs), so X3F is handled exclusively by its own directory.
 
 const isX3f = (h: Uint8Array) => h[0] === 0x46 && h[1] === 0x4f && h[2] === 0x56 && h[3] === 0x62;
 
@@ -321,8 +196,7 @@ async function fromX3f(file: Blob, lift = false): Promise<Blob | null> {
   if (file.size < 16) return null;
   const foot = await bytes(file, file.size - 4, 4);
   const dirOff = le32(foot, 0);
-  // Bounded before it is read, like every other offset here: the last four
-  // bytes of a truncated or hostile file are a claim about where to look.
+  // Validate directory offset before reading.
   if (dirOff + 12 > file.size) return null;
   const dirHead = await bytes(file, dirOff, 12);
   if (dirHead.length < 12 || ascii(dirHead, 0, 4) !== 'SECd') return null;
@@ -330,8 +204,7 @@ async function fromX3f(file: Blob, lift = false): Promise<Blob | null> {
   if (count < 1) return null;
   const table = await bytes(file, dirOff + 12, count * 12);
 
-  // Every JPEG section, largest picture first - a camera writes a full-size
-  // preview and a screen-sized thumbnail, and the card wants the former.
+  // JPEG sections, largest pixel count first.
   const found: { off: number, len: number, px: number }[] = [];
   for (let i = 0; i + 12 <= table.length; i += 12) {
     const off = le32(table, i);
@@ -342,8 +215,7 @@ async function fromX3f(file: Blob, lift = false): Promise<Blob | null> {
     const sec = await bytes(file, off, 28);
     if (ascii(sec, 0, 4) !== 'SECi' || le32(sec, 12) !== X3F_JPEG) continue;
     const px = le32(sec, 16) * le32(sec, 20);
-    // The picture starts after the section header, and its length is what is
-    // left of the section.
+    // JPEG starts after the 28-byte section header.
     found.push({ off: off + 28, len: len - 28, px });
   }
   found.sort((a, b) => b.px - a.px);
@@ -371,34 +243,17 @@ const ascii = (b: Uint8Array, i: number, n: number) =>
 // Marker scan  -  the fallback
 // ---------------------------------------------------------------------------
 //
-// For a container this module does not parse - a HEIC, most of all, whose real
-// image is HEVC-coded and out of reach but which almost always carries a JPEG or
-// Exif thumbnail - the last resort is to look for a JPEG's own bookends: the
-// SOI marker FF D8 that opens one and the EOI marker FF D9 that closes it. Only
-// a window at the front of the file is read, both to bound the memory and
-// because a thumbnail lives in the metadata near the start, not past megabytes
-// of picture data.
+// For unparsed containers (HEIC especially): find SOI (FF D8) / EOI (FF D9)
+// bookends in a bounded window near the front of the file.
 
 async function scanForJpeg(file: Blob): Promise<Blob | null> {
   const buf = await bytes(file, 0, Math.min(file.size, SCAN_CAP));
   if (buf.length < MIN_JPEG) return null;
   let best: Candidate | null = null;
 
-  // The end marker at or after `from`, or -1 when there is none left.
-  //
-  // A cursor rather than a fresh inner loop, and that is the whole of the fix.
-  // The nested version was O(n squared) over a 12 MB window on the main thread,
-  // uncapped and uncancellable: a file whose extension makes classify() say
-  // image and whose bytes are 12 MB of repeating FF D8 FF with no FF D9 gave
-  // about four million matching offsets, each running the inner scan to the end
-  // of the buffer - roughly 5x10^13 comparisons, and the tab is gone for the
-  // rest of the afternoon. The `i += best.len - 1` skip below only ever fires
-  // when an end *was* found, so the pathological input never reached it, and
-  // the module header's promise to "cap every count read from the file before
-  // it is used to loop" was not kept for this loop.
-  //
-  // Ends are non-decreasing as `i` advances, so one pointer that never rewinds
-  // answers every question and the whole scan is linear.
+  // Monotonic cursor for EOI — keeps the whole scan O(n). The previous nested
+  // loop was O(n²) and froze the tab on pathological input (repeating FF D8 FF
+  // with no FF D9).
   let cursor = 0;
   let found = -1;
   const endFrom = (from: number): number => {
@@ -414,10 +269,8 @@ async function scanForJpeg(file: Blob): Promise<Blob | null> {
 
   for (let i = 0; i + 2 < buf.length; i++) {
     if (buf[i] !== 0xff || buf[i + 1] !== 0xd8 || buf[i + 2] !== 0xff) continue;
-    // Found a start; find its matching end. Scanning forward for FF D9 is not
-    // exact - a marker's byte pattern can occur inside compressed data - but a
-    // wrong end only makes the blob longer, and the browser stops decoding a
-    // JPEG at the first real EOI regardless, so an over-long slice still draws.
+    // FF D9 can appear in compressed data — a wrong match just makes the slice
+    // longer, and the browser stops at the first real EOI anyway.
     const j = endFrom(i + 3);
     if (j < 0) break;                       // no end anywhere ahead: nothing left to find
     const len = j + 2 - i;

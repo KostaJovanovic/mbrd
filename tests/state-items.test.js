@@ -1,11 +1,7 @@
 // Items on the board: what they are called, what they say, and what is picked.
-//
-// state.ts is a module singleton, which is right for an app with one board and
-// awkward for tests, so every case starts by loading an empty board. That is
-// the same door opening a .mbrd goes through, so it also exercises the reset.
-//
-// One of six files that were tests/state.test.js, split to mirror the modules
-// state.ts itself was split onto - see tests/layers.test.js for that list.
+// state.ts is a module singleton, so every case starts by loading an empty
+// board, exercising the reset too. One of six files split from
+// tests/state.test.js to mirror state.ts's own split; see tests/layers.test.js.
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -47,21 +43,19 @@ test('a video still fills an empty picture slot and never replaces a chosen one'
   const cut = hash('poster');
   const chosen = hash('chosen');
 
-  // The case the whole thing exists for: a clip with nothing to show, which on
-  // a phone is a black rectangle until it is tapped.
+  // The case this exists for: a clip with nothing to show, a black rectangle
+  // on a phone until tapped.
   const [a] = addItems([clip()]);
   setItemPoster(a.id, cut);
   assert.equal(byId(a.id).meta.cover, cut);
 
-  // Derived output, so no history entry of its own - the same bargain
-  // setItemThumb makes. If this were undoable, the optimiser's stills pass
-  // would spend one slot per clip on a board of video and throw the session's
-  // real undo away. One undo goes straight past it to the add.
+  // Derived output, no history entry of its own - undoable would spend one
+  // slot per clip on a video board and throw the real undo away.
   assert.ok(undo());
   assert.equal(board.items.length, 0, 'the still was not an entry between here and the add');
 
-  // A picture somebody chose outranks a frame cut from the clip, and this is
-  // what makes the non-undoable write safe: it can only ever add.
+  // A chosen picture outranks a frame cut from the clip - what makes the
+  // non-undoable write safe: it can only ever add.
   const [b] = addItems([clip()]);
   setItemCover(b.id, chosen);
   setItemPoster(b.id, cut);
@@ -82,9 +76,8 @@ test('a note is capped on the way in', () => {
   assert.equal(a.meta.text.length, NOTE_MAX);
 });
 
-// Both drive setNoteContent() with no `rich`, which is the plain-text case: it
-// is the only door that writes a note's words now, and these two assertions are
-// what a deleted setItemText() left behind.
+// Both drive setNoteContent() with no `rich`, the plain-text case and the
+// only door that writes a note's words now.
 test('editing a note is undoable', () => {
   const [a] = addItems([note({ meta: { text: 'before' } })]);
   setNoteContent(a.id, undefined, 'after');
@@ -115,10 +108,9 @@ test('clearing a name gives back the file it arrived as', () => {
 });
 
 test('the original filename survives a save and reopen', () => {
-  // It used to live only in the asset registry, which is rebuilt from the
-  // archive on every open - and the archive carries bytes and hashes, not
-  // filenames. So after a round trip, clearing a renamed item's name handed
-  // back the renamed value and the original was gone for good.
+  // It used to live only in the asset registry, rebuilt from the archive
+  // (bytes and hashes, no filenames) on every open - so a round trip lost
+  // the original name for good.
   const [a] = addItems([photo({ name: 'DSC_0431.JPG', meta: { origName: 'DSC_0431.JPG' } })]);
   renameItem(a.id, 'Sunset over the bay');
   const data = serializeBoard();
@@ -179,11 +171,9 @@ test('deleting an item drops it from the selection', () => {
 // ---------------------------------------------------------------------------
 // The card, on or off
 //
-// A cut-out - a logo or a leaf saved with a transparent background - was landing
-// in a box drawn round its bounding rectangle, which for a cut-out is mostly
-// empty. meta.bare is the flag that says this one is a shape rather than a
-// photograph. What is asserted here is the write; the paint is a stylesheet
-// question and the guess is import/drop.ts's.
+// A cut-out (transparent background) was landing in a box drawn round its
+// mostly-empty bounding rectangle. meta.bare says this one is a shape, not a
+// photograph. Asserted here is the write; the paint is a stylesheet question.
 // ---------------------------------------------------------------------------
 
 test('a picture can have its card taken away, and given back', () => {
@@ -197,10 +187,8 @@ test('a picture can have its card taken away, and given back', () => {
 });
 
 test('a note can lose its paper, and keeps its words', () => {
-  // Text lying straight on the board, which is what a caption over a photograph
-  // and a title across a corner both wanted and had to be faked with a
-  // transparent image. Only the paint goes - cards.css cancels the pad colour,
-  // the adhesive band and the inset line, and nothing about the box moves.
+  // Text lying straight on the board. Only the paint goes - cards.css cancels
+  // the pad colour, the adhesive band and the inset line; the box does not move.
   const [n] = addItems([note()]);
   setItemBare(n.id, true);
   assert.equal(byId(n.id).meta.bare, true);
@@ -209,9 +197,8 @@ test('a note can lose its paper, and keeps its words', () => {
 });
 
 test('a model can stand on the board without its card', () => {
-  // The picture reading of the same idea. canvas/model.ts draws on a transparent
-  // buffer, so the box round a part is mostly board already - the frame round
-  // nothing that made this flag exist for cut-outs in the first place.
+  // canvas/model.ts draws on a transparent buffer, so the box round a part
+  // is mostly board already - the same "frame round nothing" this flag exists for.
   const [m] = addItems([model()]);
   setItemBare(m.id, true);
   assert.equal(byId(m.id).meta.bare, true);
@@ -220,28 +207,24 @@ test('a model can stand on the board without its card', () => {
 });
 
 test('one reader answers whether an item has a card', () => {
-  // itemBare() exists because the question stopped having one asker. The
-  // stylesheet flag is written from it (canvas/item-dom.ts) and so is the
-  // connector's endpoint (canvas/web.ts, via endOf) - a line cannot stop on an
-  // outline that is not drawn - and two spellings of one question is how those
-  // two come to disagree about which items have a card.
+  // itemBare() exists because the stylesheet flag (canvas/item-dom.ts) and
+  // the connector endpoint (canvas/web.ts) both need this answer, and two
+  // spellings of one question is how they'd disagree.
   assert.equal(itemBare(null), false, 'nothing at all has a card by default');
   assert.equal(itemBare({}), false);
   assert.equal(itemBare({ meta: {} }), false);
   assert.equal(itemBare({ meta: { bare: true } }), true);
-  // Truthiness, the reading itemMatte() and isLocked() give their flags: this
-  // comes out of somebody else's file and a hand-written `"bare": 1` plainly
-  // means bare. The inline `=== true` this replaced would have ignored it.
+  // Truthy, like itemMatte() and isLocked(): a hand-written `"bare": 1` still
+  // plainly means bare, which the `=== true` this replaced would have missed.
   assert.equal(itemBare({ meta: { bare: 1 } }), true);
   assert.equal(itemBare({ meta: { bare: 0 } }), false);
 });
 
 test('standing a model up throws away its photograph', () => {
-  // A model card is a WebP of itself nearly all the time, and the one edit that
-  // makes that picture a picture of something else is which way up the file is
-  // read - the part is lying down in it. Nothing about writing `upAxis` makes
-  // the card notice, so the reference goes with it and the card falls back to
-  // live geometry, which re-reads the mesh and photographs it again.
+  // A model card is usually a WebP of itself, and upAxis changes which way up
+  // the mesh is read - so the still is now a picture of the wrong pose.
+  // Nothing about writing upAxis makes the card notice on its own, so the
+  // reference must be dropped, falling back to live geometry that re-shoots it.
   const [m] = addItems([model({ meta: { shot: hash('still'), shotInk: 'rgb(1, 2, 3)' } })]);
   setItemUpAxis(m.id, 'y');
   assert.equal(byId(m.id).meta.upAxis, 'y');
@@ -250,9 +233,8 @@ test('standing a model up throws away its photograph', () => {
 });
 
 test('undoing it puts the axis and the photograph back together', () => {
-  // One commit, not two. A history entry that restored the old reading and left
-  // the new photograph would show a model standing up in a picture of it lying
-  // down - which is the same fault as not dropping it, arrived at backwards.
+  // One commit, not two: restoring the old reading but leaving the new
+  // photograph is the same fault as not dropping it, arrived at backwards.
   const shot = hash('still');
   const [m] = addItems([model({ meta: { upAxis: 'z', shot, shotInk: 'rgb(1, 2, 3)' } })]);
   setItemUpAxis(m.id, 'y');
@@ -264,8 +246,8 @@ test('undoing it puts the axis and the photograph back together', () => {
 });
 
 test('setting the axis it already has changes nothing at all', () => {
-  // The refusal has to come before the shot is dropped, or asking for the
-  // reading a card already uses would cost it its picture and a mesh parse.
+  // Must refuse before the shot is dropped, or re-asking for the current
+  // reading would cost the card its picture and a mesh parse.
   const shot = hash('still');
   const [m] = addItems([model({ meta: { upAxis: 'z', shot } })]);
   setItemUpAxis(m.id, 'z');
@@ -273,10 +255,9 @@ test('setting the axis it already has changes nothing at all', () => {
 });
 
 test('clearing the override is a change of reading, so it costs the photograph too', () => {
-  // Anything that is not an axis clears the override and hands the decision back
-  // to the format's own default - which may or may not be the reading the card
-  // was using, so the picture cannot be assumed to still be of it. Same door,
-  // same answer.
+  // Clearing hands the decision to the format's own default, which may not
+  // match the reading the card was using - so the picture cannot be assumed
+  // to still be of it.
   const shot = hash('still');
   const [m] = addItems([model({ meta: { upAxis: 'z', shot } })]);
   setItemUpAxis(m.id, 'sideways');
@@ -288,10 +269,9 @@ test('clearing the override is a change of reading, so it costs the photograph t
 });
 
 test('nothing else can lose its card', () => {
-  // A video without its card loses the surface its controls sit on. The list is
-  // pictures, notes and models - see canSetBare() in commands/item-meta.ts,
-  // which is the same list and says why - and this is the door refusing
-  // everything off it, so a flag nothing draws never reaches a file.
+  // A video without its card loses the surface its controls sit on. The
+  // allowed list - pictures, notes, models - is canSetBare()'s
+  // (commands/item-meta.ts); this refuses everything off it.
   const [v] = addItems([clip()]);
   setItemBare(v.id, true);
   assert.equal(byId(v.id).meta?.bare, undefined);
@@ -309,16 +289,10 @@ test('taking the card away is undoable, and survives a file', () => {
 });
 
 test('the write door stores true or nothing, whatever it was handed', () => {
-  // Named for what it asserts. It was called "anything other than true is not a
-  // flag" and its comment quoted `v === true ? true : null` as though that were
-  // the door - but that validator is patchMeta's *fifth* argument, and the
-  // value reaching it is already `bare ? true : null` from the third. So a
-  // truthy junk value is coerced at the door and `true` is what lands in the
-  // file; nothing is ever stored as 'yes' or 1.
-  //
-  // The old name mattered: it described a stricter door than the code has, and
-  // anyone tightening the door to match the name would have reddened a suite
-  // that was pinning the opposite the whole time.
+  // The value reaching patchMeta's validator argument is already
+  // `bare ? true : null`, so any truthy junk coerces to `true` at the door -
+  // nothing is ever stored as 'yes' or 1. The old test name described a
+  // stricter door than the code has; renamed to match what it actually pins.
   const [p] = addItems([photo()]);
   for (const junk of ['true', 1, {}, [], 'yes']) {
     setItemBare(p.id, junk);
@@ -335,11 +309,9 @@ test('the write door stores true or nothing, whatever it was handed', () => {
 });
 
 test('undoing an Untag does not write the tag twice', () => {
-  // `was` is the tag list as it stood when the command was built, and on an
-  // Untag it already contains the tag - so the redo direction used to do
-  // `[...was, clean]` and store it twice. itemTags() dedupes on read, which is
-  // why nothing looked wrong on screen; the duplicate still spent a slot
-  // against TAGS_PER_ITEM and still went into the file.
+  // `was` already contains the tag on an Untag, so the redo direction used to
+  // do `[...was, clean]` and store it twice. itemTags() dedupes on read,
+  // which hid it on screen, but the duplicate still cost a TAGS_PER_ITEM slot.
   const [p] = addItems([photo()]);
   setItemsTagged([p.id], 'kitchen', true);
   assert.deepEqual(byId(p.id).meta.tags, ['kitchen']);

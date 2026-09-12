@@ -1,72 +1,12 @@
-// The three primitives everything else in the board layer is built on: the
-// event bus, the selection set, and whether there is anything unsaved.
-//
-// This exists to give state.ts a floor to stand on. state.ts is the app's one
-// mutation door and it grew to hold about ten separate concerns - history,
-// stacking, sticky relations, the clipboard, the Mobile pack, serialization -
-// each of which is a module waiting to be lifted out. None of them can be,
-// while the things they all reach for (the bus to announce on, the dirty flag
-// to raise, the selection to read) live in the file being split: a module
-// lifted out would have to import state.ts, and state.ts would have to import
-// it back.
-//
-// So these move down first. Nothing here imports anything above it, which is
-// what makes it safe for a module at any level to depend on. Everything is
-// re-exported by state.ts under its old name, because "state.ts is the only
-// door" is a rule about where mutations go, not about which file the symbol is
-// declared in, and no caller should have to care that it moved.
-//
-// What does *not* belong here: the board itself. `board` is data with a shape,
-// defaults, and a hundred rules about how it may change, and putting it under
-// the bus would make this the god-module instead of state.ts.
+// Event bus, selection set, dirty flag — the three primitives state.ts
+// stands on. Nothing here imports above it; everything is re-exported
+// by state.ts. `board` itself stays out — data with defaults belongs
+// in board-model.ts, not under the bus.
 
 import { emitter } from './util.ts';
 
-/**
- * Every event the one bus carries, and what a handler of it is handed.
- *
- * The list used to be the prose comment that is still half of it below, and the
- * prose had drifted: it named eleven events and the app emits twenty-one. As a
- * type it cannot drift, because an emit of something not on it does not compile
- * - which is the whole reason to write it down twice over.
- *
- * `void` means the event carries nothing and the handler takes no argument.
- * `items` is the one payload that is genuinely optional: the fine-grained
- * announcement says which ids arrived and which left, and the wholesale one -
- * a board load, a reload - says only that the list is not what it was.
- *
- * Ids, not items, everywhere it can be. This module is the bottom of the graph
- * and may not import board-model.ts (which imports *this*, for the bus), so
- * `imported` is stated structurally: anything with an id answers it, which is
- * what an Item is for this purpose.
- *
- *   items         - the item list itself changed
- *   geom          - existing items moved or resized
- *   item          - one item's content or name changed
- *   selection     - the selection set changed
- *   settings      - a setting changed (payload: which)
- *   layout        - desktop/mobile geometry profile changed (payload: mode)
- *   lens          - the mobile lens changed: the Feed or the Playlist
- *   board         - a whole new board was loaded, or the title/dirty flag changed
- *   board:load    - a board finished loading
- *   board:new     - the board was started over
- *   view          - the viewport settled after a pan or a zoom
- *   trash         - something was thrown away, restored, or purged
- *   trash:evicted - the bin overflowed and dropped its oldest (payload: how many)
- *   trash:purged  - the bin was emptied and the files went with it
- *                   (payload: how many, and how many bytes)
- *   history       - the undo or redo stack changed
- *   connections   - board.connections changed
- *   autosaved     - the session was written to IndexedDB
- *   filter        - the tag filter changed
- *   audioOrder    - the playlist order changed
- *   tour          - the tour's stops changed
- *   tour:at       - the tour moved to a stop, or ended (payload: the index, or -1)
- *   fonts         - the board's face list changed
- *   fonts:add     - fonts were dropped in and want loading (payload: the files)
- *   imported      - an import finished (payload: what it brought)
- *   feed:masthead - the Feed's masthead scrolled in or out of view
- */
+/** Every event the bus carries. void = no payload. Typed so an emit of
+ *  something unlisted fails to compile. See payloads in the type below. */
 export type BusEvents = {
   items: { added: string[], removed: string[] } | undefined,
   geom: string[],
@@ -87,11 +27,9 @@ export type BusEvents = {
   autosaved: void,
   filter: void,
   audioOrder: string[],
-  // board-model.ts's TourStop, spelled out rather than imported: this module is
-  // under that one - board-model.ts imports the bus from here - and a type-only
-  // import back is still an edge to tests/layers.test.js, which reads the
-  // specifier and not the keyword. Two lines that have to agree, and the shape
-  // is small enough to be the cheaper of the two costs.
+  // board-model.ts's TourStop, spelled out rather than imported: this module
+  // is below that one, and even a type-only import back would be an edge to
+  // tests/layers.test.js (which reads the specifier, not the keyword).
   tour: { cards: string[], caption?: string }[],
   'tour:at': number,
   fonts: void,
@@ -107,31 +45,24 @@ export type BusEvents = {
 export const bus = emitter<BusEvents>();
 
 /**
- * What is selected, by id. A live Set rather than a snapshot: the selection is
- * read on hot paths (every drag frame asks what it is moving) and copying it
- * per read would be the wrong trade.
+ * What is selected, by id. A live Set rather than a snapshot: read on hot
+ * paths (every drag frame asks what it's moving), so copying per read
+ * would be the wrong trade.
  */
 export const selection = new Set<string>();
 
 /**
- * The three writes to that Set that announce themselves.
+ * The three writes to that Set that announce themselves. Live beside the Set
+ * rather than in state.ts because they're not board mutations - nothing is
+ * dirtied, nothing to undo - so they never needed the mutation door.
  *
- * They live beside it rather than in state.ts because they are not board
- * mutations: nothing about the board changes, nothing is dirtied and there is
- * nothing to undo - which is exactly why they never needed the mutation door in
- * the first place. What they do need is the Set and the bus, and both are here.
+ * Callers wanting a *quiet* write (no announcement) still write to the Set
+ * directly - loadBoard() and a command's undo half both do. That's why these
+ * are three small functions rather than a Set wrapper: the quiet path must
+ * stay available.
  *
- * Callers that hold the Set directly and want *no* announcement still write to
- * it themselves - loadBoard() clears it in the middle of replacing everything
- * and emits 'selection' once at the end with the rest, and a command's undo half
- * drops ids while it is already emitting. That is deliberate and is why these
- * are three small functions rather than a wrapper around the Set: the quiet
- * write has to stay available, and making it impossible would mean an event per
- * id on every delete.
- *
- * `selectAll()` is not here, and cannot be: it needs the item list, which lives
- * in board-model.ts, which imports this module. It stays in state.ts as a
- * one-liner over this.
+ * `selectAll()` isn't here - it needs the item list from board-model.ts,
+ * which imports this module - so it stays in state.ts as a one-liner over this.
  */
 export function select(ids: Iterable<string>, additive = false) {
   if (!additive) selection.clear();
@@ -153,28 +84,18 @@ export function deselect(id: string) {
 }
 
 /**
- * Whether a tap adds to the selection instead of replacing it.
+ * Whether a tap adds to the selection instead of replacing it. Not board
+ * state (nothing dirtied, nothing to undo, deliberately not saved), but it
+ * changes what the three writers above mean, so it lives beside them.
  *
- * Here beside the selection for the same reason the tag filter below is: it is
- * not board state - nothing is dirtied, there is nothing to undo, and it is
- * deliberately not saved - but it changes what the three writers above mean, so
- * it belongs where they are rather than in the pipeline that reads it.
+ * **Exists because a finger has no Shift key.** A phone's only other ways to
+ * hold more than one card are a drag band or Select all, neither of which can
+ * say "these four" - so this mode lets a tap-per-card gesture work without
+ * breaking a normal tap's one-card meaning.
  *
- * **It exists because a finger has no Shift key.** Every other way of holding
- * more than one card is a modifier or a rectangle dragged with a mouse: on a
- * phone the only ways left were a double-tap-drag band and Select all, and
- * neither can say "these four". Tapping one card at a time can, which is what
- * every phone gallery already teaches - so this is the gesture people arrive
- * with, and the mode is what makes it available without breaking the one-tap
- * meaning of a tap on the board a finger normally gets.
- *
- * A mode, and modes are expensive, so what it costs is worth stating: while it
- * is on, a tap on a card toggles it rather than picking it alone, and nothing a
- * finger does to the *board* - a pan, a tap on bare ground, opening the menu -
- * clears the selection any more. The board is otherwise unchanged: dragging a
- * selected card still moves the group, an unselected one still pans, pinch still
- * zooms. It ends from the menu row it was started from, from Escape, and from a
- * board being loaded under it.
+ * While on: a tap toggles instead of replacing, and a pan/bare tap/menu no
+ * longer clears the selection. Otherwise unchanged - drag, pan, pinch all work
+ * as before. Ends from its menu row, Escape, or a board loading underneath it.
  */
 let multiSelect = false;
 
@@ -184,20 +105,15 @@ export function setMultiSelect(on: boolean) {
   const next = !!on;
   if (multiSelect === next) return;
   multiSelect = next;
-  // On 'selection' rather than an event of its own: what changed is how the
-  // selection behaves, every listener that cares about one cares about the
-  // other, and a second event would be a second thing to remember to emit.
+  // On 'selection' rather than a new event: every listener that cares about
+  // one cares about the other.
   bus.emit('selection');
 }
 
 /**
- * Put the mode down without announcing it, for a caller already emitting.
- *
- * loadBoard()'s reset, and the same shape as resetDirty() below and as the Set
- * being cleared directly beside it: a load is halfway through replacing the
- * board when it gets here, and an event from this point would have listeners
- * painting against a board that is not finished. It emits 'selection' itself at
- * the end, which is where the mark in main.ts catches up.
+ * Put the mode down without announcing it, for loadBoard()'s reset - it's
+ * mid-replace here, and an early event would have listeners paint against an
+ * unfinished board. loadBoard() emits 'selection' itself at the end instead.
  */
 export function resetMultiSelect() { multiSelect = false; }
 

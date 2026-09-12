@@ -1,34 +1,10 @@
-// Minimal ZIP reader/writer.
+// Minimal ZIP reader/writer — .mbrd is a ZIP. Hand-rolled because the browser
+// already ships DEFLATE via CompressionStream. STORE for compressed media,
+// DEFLATE for JSON. No ZIP64/encryption/multi-disk.
 //
-// A .mbrd *is* a ZIP (same trick as .3mf / .docx), so this is the whole storage
-// substrate. It is deliberately hand-rolled rather than a vendored library: the
-// browser already ships DEFLATE via CompressionStream('deflate-raw'), so all
-// that's left is the container format - a few headers and a CRC32.
-//
-// Written entries use STORE for anything already compressed (jpg/png/mp4/...)
-// and DEFLATE for the JSON, which is where the only real win is.
-//
-// Not supported (and not needed here): ZIP64, encryption, multi-disk, data
-// descriptors. Archives at or above 4 GB are rejected with a clear error rather
-// than silently written as corrupt.
-//
-// Two kinds of throw come out of readZip() and they are not the same kind of
-// thing, which is why one of them has its own class:
-//
-//   - **A ceiling.** LIMITS says how much memory an open may cost, and every one
-//     of those checks now throws `Oversize` (consent.ts) for a caller to ask
-//     about and, if told to, lift with `limits.lift`. None of them refuse
-//     anything on their own any more.
-//   - **A broken archive.** An offset past the end of the file, two entries
-//     under one name, a directory that overruns its own record, an entry that
-//     does not inflate to the length it declared. These stay plain Errors and
-//     stay absolute. There is no risk to accept here - the file does not say
-//     what it means, and continuing would mean reading bytes that are not
-//     there. `lift` does not reach them and must not be made to.
-//
-// The writer's 4 GB checks are the second kind for the same reason: a
-// non-ZIP64 header has 32 bits to say where an entry is, so past that the
-// format cannot express the archive at all. Nobody's consent makes it able to.
+// Two throw kinds: Oversize (consent.ts) for ceilings the user can lift, and
+// plain Error for corruption (bad offsets, duplicate names, inflate mismatch).
+// The 4 GB writer limit is also corruption-class — the format cannot express it.
 
 import { oversize, mb } from '../consent.ts';
 
@@ -165,8 +141,7 @@ async function inflateRaw(bytes: Bytes, cap: number, name: string): Promise<Byte
       chunks.push(value);
     }
   } finally {
-    // Releases the underlying source whichever way we left the loop. Cancelling
-    // an already-closed stream is a no-op, so this is safe on the happy path.
+    // Release the stream whichever way the loop ended.
     await reader.cancel().catch(() => {});
   }
   const out = new Uint8Array(total);
@@ -217,11 +192,8 @@ export async function writeZip(
   const central: Bytes[] = [];          // central-directory records
   let offset = 0;
 
-  // Every field below is written at a fixed width, so a value that does not fit
-  // is not an overflow that shows up later - it is a number silently truncated
-  // into a header that then describes a different archive. A writer that
-  // refuses ZIP64 owes it to the reader to refuse *everything* that would need
-  // ZIP64, not just the sizes that happen to be easy to check.
+  // Fixed-width fields: a value that does not fit silently truncates the header.
+  // Refuse everything that would need ZIP64.
   if (entries.length > 0xffff) {
     throw new Error(`Too many files for a non-ZIP64 archive (${entries.length}, limit 65535)`);
   }
@@ -229,9 +201,7 @@ export async function writeZip(
   for (const entry of entries) {
     const name = enc.encode(entry.name);
     if (name.length > 0xffff) throw new Error(`"${entry.name}" has too long a name for a ZIP entry`);
-    // A Blob stays a Blob all the way to the output; anything else is bytes.
-    // `size` and `length` are the same fact under two names, so they are read
-    // once here and the headers below use the numbers rather than the objects.
+    // Blob stays Blob to the output; read size once for the headers.
     const raw = isBlob(entry.data) || entry.data instanceof Uint8Array
       ? entry.data : new Uint8Array(entry.data);
     const rawLen = isBlob(raw) ? raw.size : raw.length;
@@ -306,23 +276,9 @@ export async function writeZip(
 
 // --- Reading ---------------------------------------------------------------
 //
-// A .mbrd arrives from outside: emailed, downloaded, dropped in from a USB
-// stick, or handed over by someone who made it in another app. Everything below
-// therefore treats the archive as hostile input rather than as a file this app
-// wrote, and that shapes the whole reader.
-//
-// Every field is an offset or a length that some other part of the file is
-// about to be indexed by, and an unchecked one is either an exception thrown
-// from inside a DataView - which reaches the user as an incomprehensible
-// RangeError - or a subarray quietly reading somebody else's bytes. So each is
-// bounds-checked at the point it is used, and the errors say what was wrong
-// with the file.
-//
-// The limits are the other half. Decompression is the classic asymmetry: a few
-// hundred kilobytes of DEFLATE expands to gigabytes, and the tab is gone long
-// before anything reports a problem. They are deliberately generous - a board
-// full of video is a large and perfectly legitimate file - and they are here to
-// stop the pathological case, not to police size.
+// Treats the archive as hostile input. Every offset/length is bounds-checked
+// where used. Limits are generous (video boards are large) but stop the
+// pathological case (decompression bombs, absurd entry counts).
 
 /**
  * What this reader will accept. Sized for a moodboard that might hold a few
@@ -387,48 +343,17 @@ function within(end: number, size: number, what: string) {
  */
 export async function readZip(
   source: Blob | ArrayBuffer | ArrayBufferView<ArrayBuffer>,
-  // The inflate ceiling for *this* read, when the caller knows something the
-  // defaults cannot. LIMITS is sized for a whole board archive; a caller
-  // opening one document knows its budget is three orders of magnitude
-  // smaller, and until this argument existed it had no way to say so -
-  // import/document.ts capped the *compressed* container at 96 MB and then
-  // inherited a 768 MB inflate ceiling at a 200:1 ratio, six of those running
-  // at once under the import pool.
-  // Every size ceiling in this function lifted, because the caller has asked
-  // whoever owns the file and been told to open it anyway.
-  //
-  // The retry contract in consent.ts: the checks below cannot ask - they are
-  // inside a directory walk, and this module has no way to reach a dialog and no
-  // business having one - so they throw Oversize instead of Error, the caller
-  // catches, asks, and calls this again with `lift`. Nothing else changes. The
-  // corruption checks are untouched and stay untouched: an entry that points past
-  // the end of the file is not a risk somebody can accept, it is an archive that
-  // does not say what it means, and `lift` deliberately does not reach them.
-  // `only` is a name filter, and it is the difference between opening a document
-  // and unpacking an application. Everything below inflates every entry, which is
-  // right for a .mbrd and for a .docx - the caller wants all of it, or wants one
-  // small thing out of something small. It is wrong for an .apk: a 90 MB package
-  // is unpacked in full to reach a 40 KB launcher icon, and six of those run at
-  // once under IMPORT_WORKERS.
-  //
-  // Names come from the central directory, so a filter costs nothing and is
-  // applied *before* the inflate rather than after - which is the only place it
-  // would be worth anything. Absent, this behaves exactly as it always has.
-  //
-  // Deliberately not a way around the ceilings: an entry that is skipped is not
-  // inflated and so does not count toward the total, but every entry the filter
-  // *admits* is checked exactly as before.
+  // Per-read overrides for inflate ceilings. `lift`: all Oversize ceilings
+  // bypassed (caller asked the user). `only`: name filter applied before
+  // inflate — skipped entries do not count toward total, but admitted ones
+  // are checked as before. Corruption checks (plain Error) are never lifted.
   limits: { entry?: number, total?: number, lift?: boolean, only?: (name: string) => boolean } = {},
 ) {
   const lift = !!limits.lift;
   const entryCap = limits.entry ?? LIMITS.entry;
   const totalCap = limits.total ?? LIMITS.total;
   const only = limits.only;
-  // Blob is what the app passes (a File, or one built by the packer). The
-  // typed-array and ArrayBuffer forms are for anything already in memory -
-  // notably the tests, which have no reason to wrap bytes in a Blob first.
-  // A view is honoured at its own offset rather than through its whole
-  // buffer, so a subarray of a larger allocation reads as itself.
+  // Blob (File or packer output), ArrayBuffer, or typed-array view.
   let bytes: Bytes;
   if (ArrayBuffer.isView(source)) {
     bytes = new Uint8Array(source.buffer, source.byteOffset, source.byteLength);

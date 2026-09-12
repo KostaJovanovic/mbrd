@@ -1,23 +1,11 @@
-// Emptying the bin, which is the one action in this app that destroys anything.
-//
-// Everything else that removes a card leaves its bytes exactly where they are,
-// because three separate things can put the card back - undo, the bin, and the
-// step ledger - and each of them is a claim on the asset. Emptying the bin is
-// the only action that ends all three claims at once, and until it did so the
-// file stayed: in the registry, in every .mbrd written afterwards, and in the
-// autosave sweep's keep-set, because the step that deleted the card still named
-// it. A board somebody had cleaned out went on weighing what it weighed before.
-//
-// So these are the two halves of the promise. The bytes actually go, and
-// nothing anywhere still points at them - which means the *ledger* has to be
-// rewritten, since it is the one place that deliberately remembers things the
-// board no longer has. What goes in their place is a tombstone: the name, the
-// kind of file and the size, on a card the board can still draw.
-//
-// The failure being guarded is silent in both directions. Purge without the
-// rewrite and every step that touched the picture replays a card pointing at a
-// dead blob URL. Rewrite without the purge and nothing is deleted at all, which
-// is the behaviour this replaced.
+// Emptying the bin, the one action here that destroys anything. Undo, the
+// bin and the step ledger each hold a claim on a removed card's asset;
+// emptying the bin ends all three at once, or the file stays in the
+// registry and the autosave keep-set even after cleanup. The bytes must
+// actually go, and the *ledger* must be rewritten to stop naming them - in
+// their place, a tombstone: name, kind and size, on a card the board can
+// still draw. Purge without rewrite replays a dead blob URL; rewrite
+// without purge deletes nothing, the behaviour this replaced.
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -55,8 +43,8 @@ const pic = (hash = HASH, props = {}) => ({
 
 beforeEach(() => {
   fresh();
-  // Unwired between cases, so a test that forgets to arrange one gets the
-  // no-registry behaviour rather than the previous case's leftovers.
+  // Unwired between cases: a test that forgets to arrange one gets the
+  // no-registry behaviour, not the previous case's leftovers.
   setAssetPurge(null);
 });
 
@@ -75,9 +63,8 @@ test('what is left is a tombstone carrying the name, the kind and the size', () 
   const [a] = addItems([pic()]);
   removeItems([a.id]);
   emptyTrash();
-  // Undo is the only way to look at what the emptying left behind, which is
-  // also the point of it: the entries come back, and what comes back is a
-  // record of a file rather than a file.
+  // Undo is the only way to look at what emptying left behind, which is
+  // also the point: the entries come back as a record of a file, not a file.
   undo();
 
   assert.equal(board.trash.length, 1, 'emptying the bin by accident is a bad afternoon');
@@ -96,8 +83,8 @@ test('the step ledger stops naming the bytes, on both sides of every step', () =
   fakeRegistry();
   const [a] = addItems([pic()]);
   removeItems([a.id]);
-  // Before: the delete carries the picture on its before side, which is exactly
-  // what stepping back is for and exactly what keeps the asset alive.
+  // Before: the delete carries the picture on its before side - exactly
+  // what stepping back is for, and what keeps the asset alive.
   assert.ok(timelineHashes(serializeTimeline()).has(HASH),
     'the ledger should be holding the picture until the bin is emptied');
 
@@ -108,8 +95,8 @@ test('the step ledger stops naming the bytes, on both sides of every step', () =
 });
 
 test('a file a live card is also standing on is not touched', () => {
-  // Two cards, one asset - what dropping the same photograph twice makes. The
-  // bin holding one of them says nothing about the one still on the board.
+  // Two cards, one asset - what dropping the same photograph twice makes.
+  // The bin holding one says nothing about the one still on the board.
   const { store } = fakeRegistry();
   const [a, b] = addItems([pic(), pic()]);
   removeItems([a.id]);
@@ -122,9 +109,8 @@ test('a file a live card is also standing on is not touched', () => {
 });
 
 test('what was never a file comes back whole', () => {
-  // A note is not a file and emptying the bin destroys nothing of it, so
-  // marking it deleted would be the app throwing away somebody's words to make
-  // a rule look uniform.
+  // A note is not a file, so emptying the bin destroys nothing of it -
+  // marking it deleted would throw away somebody's words for uniformity.
   fakeRegistry();
   const [n] = addItems([{ type: 'note', w: 100, h: 100, meta: { text: 'keep me' } }]);
   removeItems([n.id]);
@@ -136,9 +122,9 @@ test('what was never a file comes back whole', () => {
 });
 
 test('the optimiser memo goes too, since nothing can revert to it', () => {
-  // meta.was is the original a card was optimised away from, held alive so the
-  // change can be undone. On a card being destroyed it is the largest thing the
-  // bin is holding and the one nothing will ever ask for again.
+  // meta.was is the original a card was optimised away from, held alive so
+  // the change can be undone - the largest thing the bin holds for a
+  // destroyed card, and the one nothing will ask for again.
   const { store, asked } = fakeRegistry();
   const [a] = addItems([pic(HASH, { meta: { was: OTHER } })]);
   removeItems([a.id]);
@@ -149,10 +135,9 @@ test('the optimiser memo goes too, since nothing can revert to it', () => {
 });
 
 test('with no registry wired, the bin empties the way it always did', () => {
-  // The seam is injected, and unwired it frees nothing and says so. That is the
-  // honest default rather than a convenient one: a caller with no registry in
-  // scope gets the old behaviour instead of a board full of cards claiming
-  // their pictures were destroyed.
+  // Unwired, the seam frees nothing and says so - the honest default: a
+  // caller with no registry gets the old behaviour, not cards claiming
+  // pictures were destroyed.
   const [a] = addItems([pic()]);
   removeItems([a.id]);
   emptyTrash();

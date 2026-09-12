@@ -1,21 +1,6 @@
-// The board's name, in the places it is shown and edited.
-//
-// One editor, two hosts: the Mobile masthead and the Desktop title card. They
-// are the same string and the same edit, so they are one module - keeping the
-// two in step was the whole reason this was written once rather than twice.
-//
-// Two kinds of editor, though, and the second half of this file is the other
-// one: the inline caret on the name where it sits, and the ordinary text field
-// in a panel. The field is now in two panels - the sidebar's Board section and
-// the masthead's own - and the second one is why wireTitleField() and
-// paintTitleField() are here rather than in ui/sidebar.ts where they were
-// written. They were private to the sidebar for as long as there was one field;
-// a copy in the header panel would have been a second place for the sanitizer,
-// the commit-on-change rule and the placeholder trick to drift out of step,
-// which is the exact failure the top of this file exists to prevent.
-//
-// Lifted out of main.ts unchanged. Reached from `cmds` (the T button, F2, a
-// double-click on the card) and from the masthead tap wired below.
+// Board title — one editor, two hosts (mobile masthead + desktop title
+// card). Here rather than sidebar.ts so the sanitizer and commit-on-change
+// rule stay in one place.
 
 import { el, makeEditable, selectContents, caretToEnd } from '../util.ts';
 import {
@@ -26,21 +11,10 @@ import {
 /**
  * A tap on the name, told apart from a drag across it.
  *
- * Not a `click` listener, and that is the whole of this. A press anywhere the
- * canvas considers empty - which the masthead is, since it is not a card and
- * not one of the widgets input.ts knows by name - has #viewport take pointer
- * capture on the way down and start a pan. Capture retargets the rest of the
- * gesture, the compatibility mouse events with it, so the lift is delivered to
- * the viewport and the name is never clicked at all. It looked like the rename
- * had simply stopped working.
- *
- * So the two ends are heard separately: the press on the name itself, the lift
- * on the window in the capture phase, which runs before the viewport's own
- * handlers and cannot be redirected. The name is left out of input.ts's widget
- * list deliberately - a third of the screen that cannot be dragged is worse
- * than no shortcut at all - so the slop below is what separates the two: a
- * finger that travelled was panning, and a pan must not open an editor when it
- * happens to stop where it started.
+ * Not a `click` listener: the masthead is empty canvas to input.ts, so
+ * #viewport captures the pointer and starts a pan on press, and the click
+ * never fires there. So press and lift are heard separately here, and the
+ * slop below tells a stationary tap from a pan that stopped where it started.
  */
 const TITLE_TAP_SLOP = 6;
 /** The press half of a tap in flight: which pointer, and where it went down. */
@@ -49,15 +23,11 @@ let titleTap: { id: number, x: number, y: number } | null = null;
 /** Wire the masthead tap and subscribe the repaint. Called once, from main.ts. */
 export function initBoardTitle() {
   // #mobile-board-title and #mobile-board-header are static markup in
-  // index.html - this module has always read them straight through, and an
-  // absent one is a broken build rather than a state to paint around.
+  // index.html; an absent one is a broken build, not a state to paint around.
   el('mobile-board-title')!.addEventListener('pointerdown', e => {
-    // Already editing: the caret owns the pointer, and re-entering the edit
-    // would reselect the whole name out from under somebody aiming at one word
-    // of it.
-    //
-    // SAFETY: currentTarget is the element this listener was put on, which is
-    // the one target a handler can be sure of - it is the field itself.
+    // Already editing: don't reselect the whole name out from under someone
+    // aiming at one word. currentTarget is the field itself, the one target
+    // a handler here can be sure of.
     titleTap = (e.currentTarget as HTMLElement).isContentEditable
       ? null
       : { id: e.pointerId, x: e.clientX, y: e.clientY };
@@ -77,16 +47,10 @@ export function initBoardTitle() {
 }
 
 /**
- * The name across the Mobile masthead.
- *
- * The band itself is positioned by canvas/mobile-frame.ts, off the same view
- * change everything else in screen space paints on, so this is the only part
- * that needs saying here. Written whatever the mode: a header that is
- * display:none has nothing to gain from being stale when Mobile is switched
- * back on.
- *
- * A board with no name of its own still gets its page - see the [data-untitled]
- * rule in the stylesheets for why it is dressed down rather than left blank.
+ * The name across the Mobile masthead. The band itself is positioned by
+ * canvas/mobile-frame.ts; this just keeps the text current, in any mode, so
+ * a display:none header isn't stale when Mobile switches back on. See the
+ * [data-untitled] stylesheet rule for how an unnamed board is dressed down.
  */
 export function paintMobileTitle() {
   const header = el('mobile-board-header');
@@ -112,24 +76,19 @@ export function paintMobileTitle() {
 /**
  * Rename the board by typing in a panel's name field.
  *
- * `change` rather than `input`, so a rename is one undoable event and one dirty
- * flag rather than one per keystroke - it fires on Enter and on blur, and only
- * when the value actually moved.
+ * `change` rather than `input`, so a rename is one undoable event and one
+ * dirty flag rather than one per keystroke.
  *
- * The field edits `board.title` and paintTitleField() shows `board.title`, where
- * it used to prefer the open file's name. Those two only ever differed by an
- * extension - opening a .mbrd sets the title from the file's stem - right up
- * until somebody renames one, which is the whole of this feature. Preferring the
- * file name would have made the field look broken: you type, and the old name
- * stays on screen.
+ * Edits `board.title` directly rather than preferring the open file's name -
+ * the two only differ once somebody renames a board opened from a .mbrd,
+ * which is the whole point of the feature.
  *
- * setTitle() is deliberately not the thing that marks the board dirty. It is
- * also called by the save picker, straight after a save, where re-dirtying the
- * board it has just cleaned would be wrong.
+ * setTitle() deliberately doesn't mark the board dirty itself: the save
+ * picker also calls it, right after a save, where re-dirtying would be wrong.
  *
  * Takes the element rather than an id because the two callers own their own
- * markup: the sidebar's field is built from the settings schema, the masthead
- * panel's is written out in index.html.
+ * markup: the sidebar's field from the settings schema, the masthead's
+ * written out in index.html.
  */
 export function wireTitleField(input: HTMLInputElement | null) {
   if (!input) return;
@@ -173,20 +132,11 @@ export function paintTitleField(input: HTMLInputElement | null) {
 }
 
 /**
- * Rename the board by tapping its name on the masthead.
- *
- * The same bargain a sticky note and an item's caption strike - see
- * editItemName() in canvas/items.ts, which this follows down to the Escape
- * handling: the edit happens where you are already looking rather than in a
- * dialog thrown over the top of it, and on a phone the sidebar's name field is
- * three taps away behind a menu.
- *
- * A tap rather than a double click. The masthead is not a card, nothing else
- * can be done to it, and there is no drag or selection for a single tap to be
- * competing with - so the cheapest gesture is free to be the one that works.
- * Panning is not competing either: the field only takes the pointer while it is
- * standing still, and once it is editable input.ts recognises a contenteditable
- * and leaves the gesture alone.
+ * Rename the board by tapping its name on the masthead - the same bargain as
+ * editItemName() in canvas/items.ts: edit in place rather than in a dialog,
+ * since the sidebar's name field is three taps away behind a menu on a phone.
+ * A tap, not a double click, since nothing else competes for it; panning
+ * doesn't compete either, since the field only grabs the pointer once still.
  */
 function editMobileTitle() {
   editBoardName(el('mobile-board-title'));
@@ -267,32 +217,21 @@ function editBoardName(node: HTMLElement | null) {
   field.addEventListener('keydown', onKey);
   field.addEventListener('input', onInput);
   field.addEventListener('blur', finish);
-  // And the case none of the three can see: the node going away underneath the
-  // edit.
-  //
-  // On Desktop `field` is `.title-name` inside the title *card*, which
-  // canvas/items.ts culls when it scrolls out of view and rebuilds on a quality
-  // or whimsy change or any 'items' emit. A rebuilt card is a new node, so
-  // every listener above went with the old one: `finish()` never ran, the name
-  // somebody had typed was dropped on the floor with no sign that anything had
-  // happened, and `done` stayed false so the rAF below focused a node that was
-  // no longer in the document. The masthead is markup in index.html and is
-  // never culled, which is why this only ever went wrong on the card.
-  //
-  // Committing rather than cancelling: the letters were typed on purpose, and a
-  // remount is not somebody changing their mind. Checked rather than assumed,
-  // because most 'items' emits leave the node exactly where it was.
+  // The case none of the three listeners above can see: the node going away
+  // underneath the edit. On Desktop `field` is inside the title card, which
+  // canvas/items.ts culls and rebuilds on scroll-out, a quality/whimsy change,
+  // or any 'items' emit - a rebuilt card is a new node, so finish() would
+  // never run and the typed name would vanish silently. Commits rather than
+  // cancels: the letters were typed on purpose, a remount isn't a change of
+  // mind. Masthead markup is never culled, so this only ever bit the card.
   let offRebuild: (() => void) | null = bus.on('items', () => {
     if (!done && !field.isConnected) finish();
   });
-  // Focus on the next frame, not now. On the Desktop card this opens from the
-  // T button's pointerdown, and the <button> then takes focus itself on the click
-  // that follows - which would blur the field the instant it was focused, run
-  // finish(), and close the editor. That is exactly why a single click used to
-  // open the rename and shut it again, needing a second. Focusing past the click
-  // lets the field win. Harmless on the masthead tap, which has no button to
-  // steal from. Selected rather than merely focused: a rename usually replaces
-  // the name, and an untitled board is holding a placeholder nobody typed.
+  // Next frame, not now: on the Desktop card this opens from the T button's
+  // pointerdown, and the button would then steal focus on the click that
+  // follows, blurring and closing the editor before it could be typed in.
+  // Selected rather than merely focused, since a rename usually replaces the
+  // whole name.
   requestAnimationFrame(() => {
     if (done) return;
     field.focus();

@@ -1,24 +1,11 @@
 /* =========================================================
-   mbrd - the viewer, and the documents read inside it
-
-   One of the eight sheets the old overlays.css was split into. The order they
-   load in IS the cascade and is listed in the banner at the top of base.css.
-
-   ui/viewer.ts opens one item as big as the window will allow: a fixed head, a
-   scrolling body, and a set of rules for each kind of thing it can show.
-   ui/documents.ts turns a .docx, an .odt or a .pptx into ordinary elements
-   inside that body, which is why the two are one file - the document rules are
-   written in the viewer's own Markdown measure and face, and every one of them
-   reads against #viewer-body.
+   mbrd - the viewer, and the documents read inside it.
+   ui/viewer.ts opens one item full-window; ui/documents.ts turns
+   .docx/.odt/.pptx into elements inside it. Document rules share
+   the viewer's Markdown measure and face.
    ========================================================= */
 
-/* One item, as big as the window will allow. Not sized like #ask and #credits,
-   which are questions and fit their words: this is a thing being looked at, so
-   it takes the window less a margin and lets what is in it decide the rest.
-
-   A column with a fixed head and a scrolling body. The head does not move, so a
-   long file scrolls under a name that stays put and the way out is always in the
-   same corner. */
+/* Fixed head, scrolling body. */
 #viewer {
   width: min(1100px, calc(100vw - 32px));
   height: min(860px, calc(100dvh - 32px));
@@ -31,14 +18,11 @@
   box-shadow: var(--shadow-2);
   color: var(--ink);
   overflow: hidden;
-  /* A <dialog> in the top layer is centred by its own margin:auto, which the
-     reset's `margin: 0` takes away. */
+  /* Top-layer <dialog> needs margin:auto for centring. */
   margin: auto;
   animation: ask-in var(--dur-base) var(--ease-back);
 }
-/* The layout belongs to the open state - a flat `display: flex` outranks the UA
-   stylesheet's `display: none` and leaves a closed dialog on screen. Same rule
-   #compose learned the hard way. */
+/* display:flex on [open] only — a flat flex outranks UA display:none. */
 #viewer[open] { display: flex; flex-direction: column; }
 #viewer::backdrop {
   background: color-mix(in srgb, var(--ink) 42%, transparent);
@@ -60,8 +44,6 @@
   font-family: var(--font-display);
   font-size: var(--t-body);
   font-weight: 600;
-  /* One line, ellipsised. A filename can be any length and a head that wrapped
-     to three lines would take the room off the thing being looked at. */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -93,12 +75,8 @@
 #viewer-close:focus-visible { background: var(--paper-2); color: var(--accent-deep); }
 #viewer-close svg { width: var(--icon-glyph); height: var(--icon-glyph); }
 
-/* The body. One scroller, and the only one in here.
-
-   `display: grid; place-items: center` is what centres a picture smaller than
-   the window without stretching one larger than it - the media rules below cap
-   themselves at 100% of this box and keep their aspect. Text overrides the
-   centring, because a page of words starts at the top left. */
+/* Grid centres a picture without stretching it; media caps at 100% and keeps
+   aspect. Text overrides the centring (starts top-left). */
 #viewer-body {
   flex: 1 1 auto;
   min-height: 0;
@@ -114,8 +92,6 @@
 .viewer-media {
   max-width: 100%;
   max-height: 100%;
-  /* A tall picture in a short window and a wide one in a tall window are the
-     same rule from either side: fit the box, keep the shape. */
   object-fit: contain;
   border-radius: var(--leaf);
   background: var(--paper-3);
@@ -128,29 +104,9 @@
 .viewer-audio { width: min(640px, 100%); margin-top: 16px; }
 
 /* ── The lightbox: what the viewer becomes for a picture or a clip ─────────
-
-   Everything above dresses this dialog as a sheet of the app's own paper, which
-   is right for the six things in here made of words - a text file, a Markdown
-   page, a PDF, a .docx - because those are read and reading wants a page. It is
-   wrong for the two that are looked at. A photograph in a paper card 1100px
-   wide, on a monitor three times that, is the same complaint the board itself
-   answers with this dialog: the thing is smaller than the room it is in.
-
-   So a picture and a clip get the other treatment. ui/viewer.ts writes
-   `data-media` on the dialog when the view it dispatched to is one of those two,
-   and everything below hangs off that one attribute. Nothing here reaches a
-   document view, and no document rule below has to know this exists.
-
-   ── Why the fit was broken, which is not the same question ──
-
-   `.viewer-media` already says max-width and max-height 100%, and a large
-   picture still overflowed and scrolled. The reason is that #viewer-body is a
-   grid whose single row is `auto`: a percentage height resolves against a
-   *definite* containing block, an auto track is not one, so `max-height: 100%`
-   computed to none and the picture drew at its natural size. The row is pinned
-   below - `minmax(0, 1fr)` of a body that has a definite height because it is
-   the stretched item of a full-height column - and the same declaration that was
-   already there starts meaning what it says. */
+   A photo in a 1100px paper card on a wide monitor is too small for its room.
+   data-media switches to a full-window near-black stage; max-height: 100% now
+   works because the grid row is pinned to minmax(0, 1fr). */
 #viewer[data-media] {
   width: 100%;
   height: 100%;
@@ -159,26 +115,17 @@
   border: 0;
   border-radius: 0;
   box-shadow: none;
-  /* Near-black rather than the ink token: this is the one surface in the app
-     that is deliberately not paper, and a photograph is judged against a neutral
-     ground. A tinted scrim would put the board's palette into every picture
-     somebody opened to look at properly. */
+  /* Near-black, not the ink token — neutral ground for judging photos. */
   background: rgb(14 13 12 / 0.94);
-  /* The picture is the light in here, so the chrome over it is not ink. */
   color: rgb(255 255 255 / 0.92);
 }
-/* The backdrop still has to be dark, because the dialog does not quite cover
-   the visual viewport while a phone's address bar is retracting. */
+/* Covers the gap while a phone's address bar retracts. */
 #viewer[data-media]::backdrop {
   background: rgb(14 13 12 / 0.94);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
-/* The head stops being a bar and becomes a caption over the picture: no sheet
-   under it, no rule below it, and it does not take a strip of the window away
-   from the thing being looked at. It stays in the flow rather than going
-   absolute, so a portrait picture is centred in what is left rather than under
-   the name. */
+/* Head becomes a caption over the picture, not a bar. */
 #viewer[data-media] #viewer-head {
   border-bottom: 0;
   background: none;
@@ -189,24 +136,19 @@
   background: rgb(255 255 255 / 0.14);
   color: rgb(255 255 255 / 1);
 }
-/* The stage. One definite row and one definite column, which is the fix
-   described above; no scrolling, because a picture that fits has nothing to
-   scroll and a zoomed one is panned rather than scrolled. */
+/* Definite row/column so max-height:100% resolves. No scroll — zoomed
+   pictures are panned (attachZoomPan in ui/viewer.ts). */
 #viewer[data-media] #viewer-body {
   overflow: hidden;
   background: none;
   padding: 0 16px 20px;
   grid-template-rows: minmax(0, 1fr);
   grid-template-columns: minmax(0, 1fr);
-  /* The stage owns the wheel and the drag - see attachZoomPan in ui/viewer.ts -
-     so the browser must not also read them as a scroll or a page zoom. */
   touch-action: none;
 }
 #viewer[data-media] .viewer-media {
   border-radius: 0;
   background: none;
-  /* The zoom transform is written to .style by attachZoomPan; this is only the
-     origin it grows about and the cursor that says it can be. */
   transform-origin: center center;
   cursor: zoom-in;
   -webkit-user-select: none;
@@ -215,13 +157,10 @@
 }
 #viewer[data-media] .viewer-media.is-zoomed { cursor: grab; }
 #viewer[data-media] .viewer-media.is-panning { cursor: grabbing; }
-/* A clip keeps its controls, and controls are things you press - so it is never
-   put under the zoom cursor and never claims the drag. */
+/* A clip keeps its controls — no zoom cursor, no drag claim. */
 #viewer[data-media] video.viewer-media { cursor: default; }
 
-/* Words: top-left, monospaced, the whole file. The grid centring above is undone
-   per-item rather than turned off, because most of what this dialog shows is a
-   picture and centring is right for those. */
+/* Plain text: top-left, monospaced. */
 #viewer-body:has(> .viewer-text),
 #viewer-body:has(> .viewer-md) { place-items: start stretch; }
 .viewer-text {
@@ -235,14 +174,8 @@
   word-break: break-word;
 }
 
-/* Markdown, read as prose. Set in the board's own body face rather than in the
-   mono the source view uses, at a measure that stops before the line gets long
-   enough to lose - which is the whole reason to render it at all.
-
-   Everything below is one selector list per construct rather than a nested
-   `.viewer-md *` sweep: the parser (ui/markdown.ts) emits ordinary elements, so
-   these are ordinary element rules and a construct that is not there costs
-   nothing. */
+/* Rendered Markdown. Board's body face, comfortable measure. One selector per
+   construct — the parser emits ordinary elements. */
 .viewer-md {
   max-width: 74ch;
   color: var(--ink);
@@ -262,9 +195,7 @@
 .viewer-md h2 { font-size: 1.35em; }
 .viewer-md h3 { font-size: 1.15em; }
 .viewer-md h4, .viewer-md h5, .viewer-md h6 { font-size: 1em; }
-/* A rule under the top two, the way a printed page separates its sections. Not
-   under h3 and below: those are already close enough together that a line every
-   few paragraphs reads as a ladder. */
+/* Rule under h1/h2 only — h3+ would read as a ladder. */
 .viewer-md h1, .viewer-md h2 {
   padding-bottom: 0.25em;
   border-bottom: var(--hairline) solid var(--rule-2);
@@ -273,7 +204,6 @@
 .viewer-md ul, .viewer-md ol { margin: 0 0 1em; padding-left: 1.6em; }
 .viewer-md li { margin: 0.25em 0; }
 .viewer-md li > ul, .viewer-md li > ol { margin: 0.25em 0 0; }
-/* A task list drops the marker: the checkbox is the marker. */
 .viewer-md li.md-task { list-style: none; margin-left: -1.4em; }
 .viewer-md li.md-task input { margin-right: 0.5em; accent-color: var(--accent-text); }
 .viewer-md blockquote {
@@ -287,9 +217,7 @@
   border: 0;
   border-top: var(--hairline) solid var(--rule-2);
 }
-/* --radius-xs is 4.004px at the middle tier, so this is the corner it has always
-   drawn - written against the token so the plain tier squares it off with
-   everything else instead of leaving it the one rounded thing on the page. */
+/* Radius from token so Harsh squares it off with everything else. */
 .viewer-md code {
   padding: 0.12em 0.35em;
   border-radius: var(--radius-xs);
@@ -302,9 +230,7 @@
   padding: 12px 14px;
   border-radius: var(--leaf);
   background: var(--paper-3);
-  /* The one thing in a rendered document that may not wrap - a broken line of
-     code is a different line of code - so it scrolls inside its own box rather
-     than widening the page. */
+  /* Code must not wrap — scrolls inside its own box. */
   overflow-x: auto;
 }
 .viewer-md pre code { padding: 0; border-radius: 0; background: none; }
@@ -320,9 +246,7 @@
   text-align: left;
 }
 .viewer-md th { background: var(--paper-3); font-weight: 600; }
-/* An image in a Markdown file points at a path on somebody else disk. Nothing
-   fetches it (see ui/markdown.ts); this is what its alt text looks like when it
-   stands in for the picture. */
+/* Image alt text — the image itself is not fetched (see ui/markdown.ts). */
 .viewer-md .md-image {
   padding: 0.1em 0.45em;
   border: var(--hairline) dashed var(--rule);
@@ -333,15 +257,8 @@
 
 /* ---------------------------------------------------------
    Documents in the viewer (ui/documents.ts)
-
-   A document is read into ordinary elements - headings, paragraphs, lists,
-   tables, images - so these are ordinary element rules under one class. The
-   shape of the tree is the same whether it came out of a .docx, an .odt or a
-   .pptx, which is the point of reading them all into the same one.
-
-   Set in the viewer's Markdown measure and face, because a rendered document
-   and a rendered README are the same kind of thing to read and two type ramps
-   for that would be two answers to one question. --------------------------- */
+   .docx, .odt and .pptx read into ordinary elements. Shares
+   the viewer's Markdown measure and face. --------------- */
 
 #viewer-body:has(> .doc-flow),
 #viewer-body:has(> .doc-slide),
@@ -375,9 +292,8 @@
   border-left: 3px solid var(--rule);
   color: var(--ink-2);
 }
-/* A link out of a document is shown and not offered: an address inside a file
-   somebody sent is the last thing this app should make one click away. The words
-   are all there; the underline says it was a link where it came from. */
+/* Links shown but not clickable — an address in a foreign file should not be
+   one click away. */
 .doc-link { text-decoration: underline; text-decoration-style: dotted; }
 .doc-image {
   display: block;
@@ -388,8 +304,7 @@
 }
 .doc-missing { color: var(--ink-3); font-style: italic; }
 
-/* A slide and a sheet are the same object: a named part of a longer document,
-   with a rule above the name so the parts read as parts. */
+/* Slides and sheets: named parts with a rule above the name. */
 .doc-slide, .doc-sheet { margin: 0 0 28px; }
 .doc-part {
   margin: 0 0 10px;
@@ -403,9 +318,7 @@
   letter-spacing: 0.06em;
 }
 
-/* A table scrolls inside its own box rather than widening the page - a
-   spreadsheet is as wide as it is, and the alternative is a dialog with a
-   horizontal scrollbar under everything else in it. */
+/* A spreadsheet scrolls inside its own box, not the whole dialog. */
 .doc-table-wrap { max-width: 100%; overflow-x: auto; margin: 0 0 1em; }
 .doc-table {
   border-collapse: collapse;
@@ -419,9 +332,7 @@
 }
 .doc-table th { background: var(--paper-3); font-weight: 600; }
 
-/* Pages - a comic's, a PDF's - in one column, full width, the way a phone reads
-   one. A canvas needs the explicit height:auto as much as an image does: it has
-   intrinsic pixel dimensions and would otherwise be drawn at them. */
+/* Pages (comic, PDF) in one column. Canvas needs explicit height:auto. */
 .doc-pages { display: flex; flex-direction: column; gap: 10px; align-items: center; }
 .doc-page {
   max-width: 100%;
@@ -431,8 +342,7 @@
   box-shadow: var(--shadow-1);
 }
 
-/* Ask for the next batch. Centred under the pages, styled as the quiet button it
-   is - it is a continuation and not an action. */
+/* Load-more button, styled as a quiet continuation. */
 .viewer-more {
   display: block;
   margin: 14px auto 0;
@@ -445,12 +355,8 @@
   cursor: pointer;
 }
 .viewer-more:hover { background: var(--paper-2); color: var(--accent-deep); }
-/* The app's one disabled recipe. It was `opacity: 0.5` with no ink change - the
-   only dead control in the app that kept full-strength ink, so it read as
-   pressable and simply faint. */
 .viewer-more:disabled { color: var(--ink-3); cursor: default; }
 
-/* An SVG at its own size, or the box's, whichever is smaller. */
 .doc-svg { display: grid; place-items: center; }
 .doc-svg svg { max-width: 100%; max-height: 70dvh; height: auto; }
 
@@ -475,15 +381,29 @@
   text-align: center;
 }
 
+/* An embeddable link (YouTube, Spotify) played inside the viewer. YouTube is
+   16:9 and fills the width; Spotify's player is flat, so it takes a fixed
+   height. The frame stops loading when the body is emptied on close. */
+.viewer-embed {
+  width: min(100%, 960px);
+  margin: auto;
+}
+.viewer-embed[data-provider="youtube"] { aspect-ratio: 16 / 9; }
+.viewer-embed[data-provider="spotify"] { height: min(560px, 80dvh); }
+.viewer-embed .embed-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: var(--leaf);
+}
+
 .viewer-note {
   margin: 12px 0 0;
   color: var(--ink-3);
   font-size: var(--t-small);
 }
 
-/* Without color-mix(), for WebKit below 16.2 - section 7 of tokens.css carries
-   the argument and declares the channel-form tokens. */
+/* color-mix() fallback for WebKit < 16.2 — see tokens.css section 7. */
 @supports not (color: color-mix(in srgb, red, blue)) {
   #viewer::backdrop { background: rgb(var(--ink-c) / 42%); }
 }
-

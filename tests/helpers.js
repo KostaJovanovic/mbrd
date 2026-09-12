@@ -1,12 +1,5 @@
-// Shared bits for the test suite.
-//
-// The app has no build step and no dependencies, and neither does this. Tests
-// import the real modules out of web/ and run them under `node --test`.
-//
-// Anything a module needs from the browser is stubbed here rather than in the
-// module itself: the point of the refactor that introduced these tests was to
-// stop browser globals being reached for at import time, not to start writing
-// the app around a test runner.
+// Shared test helpers. Tests import real modules from web/ under `node --test`.
+// Browser globals are stubbed here, not in the modules themselves.
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve, relative, sep } from 'node:path';
@@ -16,15 +9,7 @@ export const ROOT = resolve(import.meta.dirname, '..');
 export const WEB = join(ROOT, 'web');
 export const JS = join(WEB, 'assets', 'js');
 
-/**
- * The licence manifest, which four tests read and none of them should have to
- * locate. It lives under .github/ beside CONTRIBUTING.md rather than at the
- * repo root - GitHub surfaces both from there, and the root is kept for the
- * files that have no choice about being in it.
- *
- * Named here because the alternative was the same `join` written four times,
- * and the next move would have fixed three of them.
- */
+/** Licence manifest under .github/, shared by four tests. */
 export const THIRD_PARTY = join(ROOT, '.github', 'THIRD-PARTY.md');
 
 /** Every file under `dir` matching one of `exts`, as paths relative to `from`. */
@@ -46,22 +31,8 @@ export function walk(dir, exts, from = WEB) {
 
 export const read = path => readFileSync(path, 'utf8');
 
-/**
- * The app's stylesheets in cascade order, concatenated - what used to be
- * app.css before it was split by subsystem.
- *
- * A test asserting that some rule exists is asking about the app's CSS, not
- * about which of eight files a rule happens to live in. Reading them as one
- * string keeps such a test true when a rule moves between subsystems, and stops
- * the split from being a thing every future assertion has to know about.
- *
- * The order is index.html's, which is the cascade - so a test that cares about
- * *precedence* (quality.css wins on document order, not specificity) still gets
- * an honest answer.
- *
- * tokens.css and fonts.css are deliberately out: they are the property table
- * and the @font-face set, and a test wanting either should say so.
- */
+/** App stylesheets in cascade order (index.html's order). Excludes tokens.css
+ * and fonts.css — those are the property table and @font-face set. */
 export const APP_CSS_ORDER = [
   'base.css', 'canvas.css',
   'items.css', 'ghosts.css', 'fences.css', 'media.css', 'cards.css',
@@ -76,11 +47,7 @@ export const appCss = () => APP_CSS_ORDER
   .map(name => readFileSync(join(WEB, 'assets', 'css', name), 'utf8'))
   .join('\n');
 
-/**
- * A board item, with the defaults the geometry helpers assume. Tests override
- * only the fields they care about, which keeps a case about rotation from
- * being buried in eight irrelevant properties.
- */
+/** Board item with geometry defaults. Tests override only what they test. */
 export function item(props = {}) {
   return { id: 'i1', type: 'generic', x: 0, y: 0, w: 100, h: 100, rot: 0, z: 1, name: '', asset: null, meta: {}, ...props };
 }
@@ -102,23 +69,9 @@ export const zeros = n => new Uint8Array(n);
 /** Next microtask. The fake below is asynchronous the way IndexedDB is. */
 export const soon = fn => Promise.resolve().then(fn);
 
-/**
- * An in-memory `StoreBackend` for storage/idb.ts's setStoreBackend().
- *
- * The other way to fake this layer, and the one to reach for first. fakeIndexedDB
- * below impersonates the *database*, which is what a test of idb.ts itself needs;
- * this impersonates the whole of idb.ts's contract, which is what a test of
- * anything built on it needs - session.ts, library.ts, matte-cache.ts. It is also
- * the shape the desktop's file backend has, so a test written against this is
- * testing the seam both real backends sit behind rather than one of them.
- *
- * A Map per store, genuinely separate, unlike the fake below - a caller that
- * shelves a board writes the blob to `library` and the row to `kv`, and a single
- * map would let those two collide.
- *
- * `stats.writes` counts every landed key, which is how a test says "a path row
- * stored no blob" rather than inspecting the store and hoping.
- */
+/** In-memory StoreBackend (the idb.ts contract, not the database itself).
+ * Use this for tests of session.ts, library.ts, matte-cache.ts.
+ * Separate Map per store name. stats.writes counts landed keys. */
 export function memoryStore() {
   const stores = new Map();
   const of = name => {
@@ -147,43 +100,23 @@ export function memoryStore() {
   return backend;
 }
 
-/**
- * A fake `indexedDB` that lets a test dictate how the transaction ends.
- *
- * `txOutcome` is one of 'complete' | 'abort' | 'error'. `openFailures` is how
- * many times `open()` should fail before it starts succeeding, which is what
- * exercises the reconnect path.
- *
- * Here rather than in tests/idb.test.js, where it was written, because a second
- * suite now needs one: storage/matte-cache.ts is a cache over this database and
- * cannot be tested against a stub of itself. Two copies of a fake is two
- * definitions of what IndexedDB does, and they would disagree the first time one
- * of them was taught something.
- *
- * One `data` Map behind every store name, which is enough for both callers and
- * is the one way this is not the real thing: a test that needs two stores to be
- * genuinely separate has to say so here first.
- */
+/** Fake indexedDB with controllable transaction outcome (complete/abort/error).
+ * `openFailures` exercises the reconnect path. Shared by idb and matte-cache tests. */
 export function fakeIndexedDB({ txOutcome = 'complete', openFailures = 0 } = {}) {
   const data = new Map();
   let remainingFailures = openFailures;
-  // How many transactions the fake has opened, so a test can assert that a
-  // batch call really is one round trip and not a loop wearing a new name.
+  // Transaction count lets tests assert batch calls are one round trip.
   const stats = { transactions: 0 };
 
   function makeRequest(result) {
     const t = makeRequest.tx;
-    // A transaction ends once, after the last request in it has succeeded - the
-    // real thing commits when its request queue drains, and a fake that ended
-    // after the *first* one would let a broken batch look like a working one.
+    // Transaction commits after the last request, not the first.
     t.pending++;
     const r = {};
     soon(() => {
       r.result = result;
       r.onsuccess && r.onsuccess();
-      // Only after request success does the transaction reach its outcome. An
-      // early-resolving wrapper would have already resolved by now - that is
-      // exactly the bug the abort case catches.
+      // Outcome fires after request success — the abort case catches early-resolve bugs.
       soon(() => {
         if (--t.pending > 0) return;
         if (txOutcome === 'abort') { t.error = new Error('aborted'); t.onabort && t.onabort(); }
@@ -231,17 +164,8 @@ export function fakeIndexedDB({ txOutcome = 'complete', openFailures = 0 } = {})
   };
 }
 
-/**
- * A content id of the right *shape*, from a short readable label.
- *
- * Tests used to write hashes as 'abc123', which read nicely and hid the fact
- * that a hash is a 64-character hex digest that the storage layer now checks
- * before letting it name a file. `hash('photo')` keeps a case readable while
- * being something the app would accept.
- *
- * Shape only - these do not digest to anything. Where the *content* has to
- * match the id, use realHash().
- */
+/** A 64-char hex hash from a readable label. Shape only — use realHash() when
+ * content must match. */
 export const hash = label => {
   const hex = [...label].map(c => c.charCodeAt(0).toString(16).padStart(2, '0')).join('');
   return (hex + 'f'.repeat(64)).slice(0, 64);

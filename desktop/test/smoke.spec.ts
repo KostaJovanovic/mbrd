@@ -1,43 +1,8 @@
-// The one test that drives the real application.
-//
-// Everything in tests/ at the root runs the app's modules under Node with fakes
-// underneath them - which is most of what is worth testing and is none of what
-// this is for. There is no browser-driven suite in this repository (CLAUDE.md
-// says so: pan and zoom, drag and marquee, save-refresh-recover and a clean boot
-// console are checked by launching the app and looking). This is the smallest
-// possible version of "launch it and look", run by a machine, for the one thing
-// the desktop added that nobody can check any other way: **that a board written
-// on one run comes back on the next.**
-//
-// The round trip is the whole point and every step of it is a different piece
-// of the shell:
-//
-//   launch      the protocol handler, the CSP, the preload bridge
-//   add a note  the renderer, unchanged from the web
-//   close       the close handler main holds the window open for
-//   relaunch    the file store, read back by session.ts
-//
-// ── What it does not do, and one thing it deliberately stopped doing ──
-//
-// Press anything. Playwright drives the *page*, and the parts of this app that
-// are not a page - a native menu item, a Save dialog, the Install-or-Portable
-// installer page - are outside what it can reach. Those are the hand checks the
-// checklist names, and this test does not pretend to cover them.
-//
-// It was going to cover Save-to-a-file too, which needs a real path, which
-// needs a native dialog nothing here can press. The way through was a test-only
-// bridge function that vouched for a path behind an environment variable - and
-// that is a hole in "a renderer cannot name a path", the one invariant the
-// whole of desktop/files.ts exists to keep, cut for the benefit of a test. It
-// was written and then taken out again. Saving to a file is a hand check.
-//
-// ── The waits ──
-//
-// No fixed sleeps. `research/old/ui-audit-2026-08-13.md` is about what a driven
-// browser gets wrong, and the short version is that a timeout that passes on a
-// fast machine is a flake on a slow one. Every wait below is on a condition -
-// `window.mbrd` existing, a board id changing - and the timeouts are ceilings
-// on a failure rather than pauses.
+// Smoke test: launch the real Electron app, write a board, relaunch, verify
+// it came back. Covers the protocol handler, CSP, preload bridge, close flush,
+// and file store round trip. The changelog test checks extensionless /patch
+// resolution. No fixed sleeps — every wait is on a condition, timeouts are
+// ceilings. Native dialogs and Save-to-file are hand checks, not driven here.
 
 import { test, expect, _electron as electron } from '@playwright/test';
 import type { ElectronApplication } from '@playwright/test';
@@ -45,47 +10,27 @@ import { mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-// `__dirname` rather than `import.meta.url`, and it is the same decision the
-// rest of this package makes for the same reason. desktop/package.json declares
-// no `"type": "module"` - a sandboxed preload cannot be ESM, so both bundles
-// are CommonJS and one rule is cheaper than two - and Playwright loads a spec
-// under that same package. `import.meta` there is a syntax error, and the
-// symptom is "No tests found", which points nowhere near the cause.
+// __dirname not import.meta.url: package is CJS (preload cannot be ESM).
 const DESKTOP = resolve(__dirname, '..');
 
-/**
- * The console handle, declared once rather than asserted at every call.
- *
- * `main.ts` documents `window.mbrd` as a deliberate public handle and names its
- * eight keys; this declares the three this file drives. Written out because the
- * alternative is a `window as unknown as {...}` at every `page.evaluate`, which
- * is six copies of the same claim and six places for it to drift from what the
- * app actually exposes.
- */
+/** The subset of window.mbrd this file drives (board + cmds). */
 declare global {
   interface Window {
     mbrd?: {
       board: { title: string, items: unknown[] };
-      // `void` rather than `unknown`: the commands this file drives are the
-      // ones it presses for their effect, and nothing here reads a return.
-      // Saying `unknown` would be claiming there is a value worth having.
+      // void: commands are pressed for effect, return is not read.
       cmds: Record<string, () => void>;
     };
   }
 }
 
-/**
- * A userData directory per run, so the test never reads a board a person made
- * and a person never reads one the test made. `--user-data-dir` is Chromium's
- * switch and Electron honours it for `app.getPath('userData')`, which is what
- * the file store is rooted at.
- */
+/** Fresh userData per run so the test and real boards never mix. */
 async function launch(userData: string): Promise<ElectronApplication> {
-  // The environment as it is, minus the keys Node types as possibly absent.
-  // Playwright wants a Record<string, string> and process.env is not one; the
-  // filter is the honest narrowing rather than an assertion.
+  // Playwright wants Record<string, string>; filter out undefined values.
   const env = Object.fromEntries(
     Object.entries(process.env).filter((pair): pair is [string, string] => pair[1] !== undefined));
+  // Electron-based editors set this, making the binary boot as plain Node.
+  delete env.ELECTRON_RUN_AS_NODE;
   return electron.launch({ args: [DESKTOP, `--user-data-dir=${userData}`], env });
 }
 
@@ -104,9 +49,7 @@ test('a board written on one run comes back on the next', async () => {
     let app = await launch(userData);
     let page = await ready(app);
 
-    // The title is the thing to check for afterwards: it is carried in
-    // board.json, so a board that comes back with it came back through the
-    // packer and the store rather than from anything still in memory.
+    // Title is in board.json — surviving a relaunch proves the store round trip.
     await page.evaluate(() => {
       window.mbrd!.board.title = 'Smoke test board';
       window.mbrd!.cmds.addNote();
@@ -115,9 +58,7 @@ test('a board written on one run comes back on the next', async () => {
     const noted = await page.evaluate(() => window.mbrd!.board.items.length);
     expect(noted, 'a note was added').toBeGreaterThan(0);
 
-    // Closed rather than killed. The close handler is the thing being tested:
-    // main holds the window open until the renderer says it has flushed, which
-    // is the one thing a browser tab could never do.
+    // Close (not kill) — tests the flush-before-close handler in main.
     await app.close();
 
     // ── Run two ───────────────────────────────────────────────────────────
@@ -143,21 +84,15 @@ test('the window boots with no error in the renderer', async () => {
   const app = await launch(userData);
   const page = await ready(app);
 
-  // A CSP violation arrives as a console error, which makes this the cheapest
-  // possible check that the policy the protocol handler attaches is the one the
-  // app can actually run under. It is also the check that would have caught
-  // every packaging mistake in group H.
+  // CSP violations surface as console errors — cheapest check that the policy works.
   const errors: string[] = [];
   page.on('console', msg => { if (msg.type() === 'error') errors.push(msg.text()); });
   page.on('pageerror', err => errors.push(String(err)));
 
-  // One full frame's worth of settling, on a condition rather than a sleep: the
-  // board has painted when the app has a board id, which is set at the end of
-  // the restore.
+  // Wait on a condition (board exists), not a fixed sleep.
   await page.waitForFunction(() => !!window.mbrd?.board, undefined, { timeout: 60_000 });
 
-  // The audio device is the one thing a headless runner genuinely has not got,
-  // and it is not this app's problem to solve.
+  // Headless runners have no audio device — not this app's problem.
   const real = errors.filter(e => !/AudioContext|audio device/i.test(e));
   expect(real, 'nothing failed on the way up').toEqual([]);
 
@@ -166,9 +101,7 @@ test('the window boots with no error in the renderer', async () => {
 });
 
 test('the store is a directory of files, and the board is in it', async () => {
-  // The claim plan §4 makes about where recovery lives: app data written by the
-  // main process, not Chromium's IndexedDB partition. This is what makes that
-  // observable rather than asserted.
+  // Verifies the store is real files in userData, not Chromium's IndexedDB.
   const userData = await mkdtemp(join(tmpdir(), 'mbrd-smoke-'));
   const app = await launch(userData);
   const page = await ready(app);
@@ -178,5 +111,36 @@ test('the store is a directory of files, and the board is in it', async () => {
   const session = await stat(join(userData, 'store', 'kv', 'session'));
   expect(session.size, 'a snapshot landed on disk as a file').toBeGreaterThan(0);
 
+  await rm(userData, { recursive: true, force: true }).catch(() => {});
+});
+
+test('What Changed opens the changelog in a window of its own', async () => {
+  const userData = await mkdtemp(join(tmpdir(), 'mbrd-smoke-'));
+  const app = await launch(userData);
+  const board = await ready(app);
+
+  // Drive the command programmatically — menu rows cannot be pressed by Playwright.
+  await board.evaluate(() => { window.mbrd!.cmds.patchNotes(); });
+  const notes = await app.waitForEvent('window', { timeout: 30_000 });
+  await notes.waitForLoadState('domcontentloaded');
+
+  // The whole point: protocol handler resolved extensionless /patch to patch.html.
+  await expect(notes.locator('h1')).toHaveText('Patch notes');
+
+  // Board stays open — this is a second window, not a navigation.
+  expect(await board.evaluate(() => !!window.mbrd), 'the board stayed put').toBe(true);
+
+  // Second press reuses the window, no stack.
+  await board.evaluate(() => { window.mbrd!.cmds.patchNotes(); });
+  const open = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length);
+  expect(open, 'the second press focused the window it already had').toBe(2);
+
+  // "Back to the board" (href="/") — main closes this window.
+  // Poll window count: the close event does not fire for main-initiated closes.
+  await notes.click('a[href="/"]');
+  await expect.poll(() => app.windows().length, { timeout: 10_000 }).toBe(1);
+  expect(await board.evaluate(() => !!window.mbrd), 'and the board is what is left').toBe(true);
+
+  await app.close();
   await rm(userData, { recursive: true, force: true }).catch(() => {});
 });

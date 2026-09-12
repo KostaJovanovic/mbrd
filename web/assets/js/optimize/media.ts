@@ -1,42 +1,7 @@
-// A still poster for a clip the browser cannot open, through ffmpeg.
-//
-// This module used to encode sound and video too. It no longer does: the browser
-// makes Opus by itself (opus.ts), and video is now deliberately left alone -
-// shrinking a clip needs a single-threaded wasm encoder that pins a core for the
-// length of the clip, hard enough on the machine that it is not a trade worth
-// making for a board you look at (see optimize.ts). What remains is the one job
-// worth ffmpeg's weight: pulling the first frame out of a video no browser here
-// can decode, so its card is a picture of itself instead of a black rectangle.
-//
-// The case is H.265. A phone shoots HEVC by default and every desktop browser
-// except Safari refuses it, so the clip saves fine and shows as a black
-// rectangle with a dead play button. firstFrame() extracts one frame as a
-// poster; the clip itself is never touched, so it still plays the day the
-// browser learns to.
-//
-// This is the one place in the whole app that depends on somebody else's code,
-// and it is written to keep that fact contained:
-//
-//   - it is **fetched from a CDN**, not vendored. The single-threaded ffmpeg
-//     core lives at jsdelivr and is pulled on first use. Nothing about a *board*
-//     is sent - only the request for the core itself - and the browser caches it
-//     (immutable, a year) so it is asked for once. Offline or CDN down, the
-//     poster is simply not made.
-//   - it is **loaded on demand**. Nothing here is touched until a clip the
-//     browser cannot open is imported, and it is deliberately *not* in sw.js's
-//     SHELL: thirty megabytes has no business in the cache of an app that is
-//     otherwise under two, and being cross-origin the service worker steps aside
-//     for it anyway.
-//   - it is **single-threaded**. The threaded core needs SharedArrayBuffer,
-//     which needs COOP/COEP, which would break the YouTube embeds - the one
-//     third-party thing the app does offer, and only on request. Slower and
-//     entirely worth it.
-//   - it runs in a **worker**. Even one frame is wasm, and wasm on the main
-//     thread is a frozen board.
-//
-// Everything degrades to "no poster": if the core cannot be reached or the frame
-// cannot be pulled, firstFrame() returns null and the card stays the rectangle
-// it already was.
+// Extract a poster frame from videos the browser cannot decode, via ffmpeg wasm.
+// The core case is H.265 from phones. Fetched from CDN on demand (~32 MB),
+// single-threaded (no SharedArrayBuffer — that would need COOP/COEP and break
+// embeds), run in a worker. Degrades to null (no poster) on any failure.
 
 import { extOf } from '../util.ts';
 import { platform } from '../platform/platform.ts';

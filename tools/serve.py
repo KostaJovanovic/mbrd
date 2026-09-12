@@ -1,27 +1,14 @@
 #!/usr/bin/env python3
 """Local dev server for mbrd.
 
-`python -m http.server` is almost enough, but not quite: it serves whatever
-directory it is launched from, it 404s any path that is not a literal file, and
-it serialises requests - which deadlocks the service worker's background
-revalidation fetches. This does the three things that matter:
+Threaded (service worker revalidation deadlocks a serial server). Routes:
+  /                 -> web/index.html
+  /assets/...       -> static from web/
+  /name             -> web/name.html if it exists
+  /anything-else    -> web/index.html with 404 status (the app is its own 404)
 
-  /                    -> web/index.html
-  /assets/...          -> served literally from web/, when the file is there
-  /name                -> web/name.html, when that file is there
-  /anything-else       -> web/index.html, with a **404 status** (_serve_notfound)
-
-The last line is the whole not-found design and not a fallback: there is no
-separate error page, the app is its own, and main.js works out that it is not at
-home by looking at the URL. The status stays a 404 because that is what a crawler
-reads - handing index.html back with a 200 is a soft 404, a page that says "not
-found" while swearing it is fine. A static host is asked for the same thing with
-web/404.html, a byte copy of index.html (see wrangler.jsonc).
-
-It binds 0.0.0.0 and prints a scannable QR for the LAN URL, so a phone on the
-same Wi-Fi can open the board without typing an IP.
-
-Run: python tools/serve.py [port] [lan-ip]  (defaults to 6273; server.bat passes both)
+Binds 0.0.0.0 and prints a QR for the LAN URL.
+Run: python tools/serve.py [port] [lan-ip]  (defaults to 6273)
 """
 import os
 import socket

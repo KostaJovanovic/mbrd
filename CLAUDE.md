@@ -12,9 +12,10 @@ the app. The reasoning lives elsewhere and is not repeated here:
   to say. It and `.github/THIRD-PARTY.md` sit there rather than at the root
   because GitHub surfaces both from `.github/`, and the root is kept for files
   that have no choice about being in it.
-- **Module headers.** Every file in this codebase argues its own design at the
-  top, often at length. **Read the top of a file before changing it**, and keep
-  that convention in anything you add.
+- **Module headers.** Every file opens with a 2–5 line comment: what the module
+  does, key constraint, self-contained. **Read the top of a file before changing
+  it**, and keep that convention in anything you add. Inline comments are short
+  and state WHY, not WHAT — proportional to the complexity they explain.
 
 There is deliberately no `AGENTS.md`: conventions stated in two places disagree
 within a quarter.

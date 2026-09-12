@@ -1,48 +1,7 @@
-// A tessellator for boundary-representation CAD.
-//
-// STEP and IGES do not contain triangles. They contain *surfaces* - a plane, a
-// cylinder, a NURBS patch - each trimmed by loops of *curves*, and the shape is
-// what is left. Every other format in this family says where its triangles are;
-// these two say what the object is and leave the triangles to whoever wants to
-// draw it. That is the entire reason a CAD viewer normally ships a geometry
-// kernel, and it is why this file exists: this project takes no dependencies,
-// and a kernel that can facet the surfaces that actually occur is a few hundred
-// lines rather than the twelve megabytes of OpenCASCADE.
-//
-// **What this is not.** It is not a kernel. It does not do booleans, it does not
-// heal a broken solid, it does not compute an exact surface-surface
-// intersection, and it will not tell you whether two parts collide. It converts
-// a trimmed surface into triangles that look like the part at the size a card
-// draws it. Every approximation below is chosen on that basis, and where one is
-// visible at a larger size, the comment says so.
-//
-// The method, per face:
-//
-//   1. **Sample the boundary.** Each edge of each loop becomes a 3D polyline -
-//      exactly two points for a line, many for a circle or a spline. This is the
-//      only place the curve geometry is used, and the sampling density is what
-//      decides how round a cylinder looks.
-//   2. **Project into the surface's own parameters.** Every surface here can
-//      answer "which (u,v) is this point?" in closed form except the splines,
-//      which answer it by search. A cylinder's face becomes a rectangle-ish
-//      polygon in (angle, height).
-//   3. **Unwrap.** A face that goes all the way round a cylinder crosses the
-//      seam where the angle jumps from +pi to -pi, and a polygon with that jump
-//      in it is not a polygon. Both the loop and the holes are unwrapped and
-//      then brought into the same turn.
-//   4. **Triangulate in 2D.** Holes are bridged into the outer loop and the
-//      result is ear-clipped. Plain, quadratic, and entirely fast enough - the
-//      polygons are tens of points, not thousands.
-//   5. **Subdivide where the surface bulges.** A boundary triangulation of a
-//      sphere is flat. So each triangle is checked against the surface at its
-//      own centre and split there if the two disagree, recursively. Splitting at
-//      the *centre* rather than at edge midpoints is deliberate: it never moves
-//      a boundary vertex, so two faces that share an edge still meet along it.
-//
-// The 3D positions of boundary points are the ones that were sampled, not the
-// ones the surface would give for their computed (u,v). Those differ by whatever
-// the projection got wrong, and using the sampled ones is what keeps adjacent
-// faces sharing their edges exactly.
+// Tessellator for boundary-representation CAD (STEP, IGES).
+// Converts trimmed analytic/NURBS surfaces into triangles by:
+// sample boundary → project to (u,v) → unwrap seams → ear-clip → subdivide sag.
+// Not a kernel: no booleans, no healing, no exact intersection.
 
 // ---------------------------------------------------------------------------
 // Vectors
@@ -65,23 +24,14 @@ export function unit(a: Vec): Vec {
   return len ? [a[0] / len, a[1] / len, a[2] / len] : [0, 0, 1];
 }
 
-/**
- * A right-handed frame: an origin and three axes.
- *
- * Both formats describe every placement this way - a point, a "z" direction and
- * a "x" reference direction - and both allow the reference direction to be
- * missing or not perpendicular. So the frame is always re-orthogonalised here
- * rather than trusted, which is the difference between a cylinder and a sheared
- * cylinder.
- */
+// Right-handed frame, always re-orthogonalised from the file's directions.
 export type Frame = { o: Vec; x: Vec; y: Vec; z: Vec };
 
 export function frame(origin: Vec, axis: Vec | null, ref: Vec | null): Frame {
   const z = unit(axis || [0, 0, 1]);
   let x = ref ? sub(ref, scale(z, dot(ref, z))) : [0, 0, 0];
   if (length(x) < 1e-12) {
-    // No usable reference direction. Any perpendicular will do, and this picks
-    // the one furthest from z so the cross product is well conditioned.
+    // No usable reference — pick the axis furthest from z.
     const alt: Vec = Math.abs(z[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
     x = sub(alt, scale(z, dot(alt, z)));
   }
@@ -89,13 +39,11 @@ export function frame(origin: Vec, axis: Vec | null, ref: Vec | null): Frame {
   return { o: origin, x, y: cross(z, x), z };
 }
 
-/** A point in the frame's own coordinates. */
 const local = (f: Frame, p: Vec): Vec => {
   const d = sub(p, f.o);
   return [dot(d, f.x), dot(d, f.y), dot(d, f.z)];
 };
 
-/** And back out of them. */
 const world = (f: Frame, x: number, y: number, z: number): Vec => [
   f.o[0] + f.x[0] * x + f.y[0] * y + f.z[0] * z,
   f.o[1] + f.x[1] * x + f.y[1] * y + f.z[1] * z,
@@ -106,15 +54,8 @@ const world = (f: Frame, x: number, y: number, z: number): Vec => [
 // Curves
 // ---------------------------------------------------------------------------
 
-/**
- * A curve, reduced to what sampling one needs.
- *
- * `param(p)` is the inverse: which parameter is this point at? Both formats give
- * an edge as a curve plus its two end *points* rather than its two end
- * parameters, so every curve here has to be invertible or the edge cannot be
- * trimmed. Where the inverse is a search rather than a formula it says so by
- * being slow, not by being absent.
- */
+// A curve with sampling and inverse. Both formats give edges as curve + endpoints,
+// so param(p) (the inverse) is required for trimming.
 export type Curve = {
   at(t: number): Vec;
   param(p: Vec): number;
@@ -135,9 +76,7 @@ export function lineCurve(origin: Vec, direction: Vec): Curve {
   };
 }
 
-/** How many straight segments a full turn is drawn with. Twenty-four is a
- *  degree and a half of chord error on a circle a card's width across, which is
- *  invisible; the cost of doubling it is a doubling of every round face. */
+// Segments per full turn — chord error invisible at card size.
 const FULL_TURN = 48;
 
 export function circleCurve(f: Frame, radius: number): Curve {
@@ -157,9 +96,7 @@ export function ellipseCurve(f: Frame, a: number, b: number): Curve {
     at: t => world(f, a * Math.cos(t), b * Math.sin(t), 0),
     param: p => {
       const l = local(f, p);
-      // Not the geometric angle: the *parameter*, which for an ellipse is the
-      // angle after undoing the two semi-axes. Using atan2 on the raw point puts
-      // every trim in the wrong place on anything but a circle.
+      // Parameter angle, not geometric — undo semi-axes before atan2.
       return Math.atan2(l[1] / (b || 1), l[0] / (a || 1));
     },
     period: Math.PI * 2,
@@ -170,8 +107,7 @@ export function ellipseCurve(f: Frame, a: number, b: number): Curve {
 const arcSegments = (span: number) =>
   Math.max(1, Math.min(FULL_TURN, Math.ceil(Math.abs(span) / (Math.PI * 2) * FULL_TURN)));
 
-/** A polyline, which is what both formats' composite and trimmed curves reduce
- *  to once this reader has stopped following them. Parameter is the index. */
+// Polyline fallback — composite/trimmed curves reduce to this. Parameter = index.
 export function polylineCurve(points: Vec[]): Curve {
   return {
     at: t => {
@@ -198,7 +134,6 @@ export function polylineCurve(points: Vec[]): Curve {
 // B-splines
 // ---------------------------------------------------------------------------
 
-/** Control points with weights, degree, and a full (expanded) knot vector. */
 export type Spline = {
   degree: number;
   knots: number[];
@@ -206,7 +141,6 @@ export type Spline = {
   weights: number[] | null;
 };
 
-/** STEP and IGES both give knots and multiplicities separately. */
 export function expandKnots(knots: number[], mults: number[]) {
   const out: number[] = [];
   for (let i = 0; i < knots.length; i++) {
@@ -216,7 +150,6 @@ export function expandKnots(knots: number[], mults: number[]) {
   return out;
 }
 
-/** The knot span containing `t`, clamped into the curve's own domain. */
 function span(s: Spline, t: number) {
   const n = s.ctrl.length - 1;
   const lo = s.knots[s.degree];
@@ -233,7 +166,7 @@ function span(s: Spline, t: number) {
   return mid;
 }
 
-/** de Boor, in homogeneous coordinates so the rational case falls out of it. */
+// de Boor in homogeneous coords (handles rational case).
 export function splineAt(s: Spline, t: number): Vec {
   const p = s.degree;
   const k = span(s, t);
@@ -259,11 +192,7 @@ export function splineAt(s: Spline, t: number): Vec {
 export const splineDomain = (s: Spline): [number, number] =>
   [s.knots[s.degree], s.knots[s.ctrl.length]];
 
-/**
- * A spline curve. The inverse is a sampled search followed by a few bisection
- * steps - there is no closed form, and a Newton step on a curve with an inflexion
- * near the point walks away from the answer often enough to be worse than this.
- */
+// Spline curve. Inverse by coarse sample + bisection (Newton unstable near inflections).
 export function splineCurve(s: Spline): Curve {
   const [lo, hi] = splineDomain(s);
   const coarse = Math.max(16, Math.min(512, s.ctrl.length * 6));
@@ -276,9 +205,6 @@ export function splineCurve(s: Spline): Curve {
         const d = length(sub(splineAt(s, t), p));
         if (d < bestD) { bestD = d; best = t; }
       }
-      // Golden-section-ish narrowing around the best sample. Twenty halvings of
-      // a span already one part in a few hundred is far past what the chord
-      // tolerance below can see.
       let step = (hi - lo) / coarse;
       for (let k = 0; k < 20 && step > 0; k++) {
         step /= 2;
@@ -291,8 +217,6 @@ export function splineCurve(s: Spline): Curve {
       return best;
     },
     period: 0,
-    // A spline is sampled by its control net: more control points mean more
-    // curvature to lose, and a straight two-point spline needs one segment.
     segments: (t0, t1) => {
       const frac = hi > lo ? Math.abs(t1 - t0) / (hi - lo) : 1;
       return Math.max(1, Math.min(256, Math.ceil(frac * Math.max(2, s.ctrl.length * 3))));
@@ -304,14 +228,7 @@ export function splineCurve(s: Spline): Curve {
 // Surfaces
 // ---------------------------------------------------------------------------
 
-/**
- * A surface, reduced to what triangulating one needs.
- *
- * `uv(p)` may return null for a point the surface cannot place, which is what a
- * spline patch says when its search does not converge. A face with too many of
- * those falls back to the flat triangulation, which is a face in roughly the
- * right place rather than a hole in the model.
- */
+// A surface: at(u,v)→3D, uv(p)→params (null if search fails), normalAt.
 export type Surface = {
   at(u: number, v: number): Vec;
   uv(p: Vec): number[] | null;
@@ -351,7 +268,6 @@ export function coneSurface(f: Frame, radius: number, halfAngle: number): Surfac
     },
     uv: p => { const l = local(f, p); return [Math.atan2(l[1], l[0]), l[2]]; },
     normalAt: u => {
-      // The outward normal of a cone leans away from the axis by the half-angle.
       const radial = add(scale(f.x, Math.cos(u)), scale(f.y, Math.sin(u)));
       return unit(sub(radial, scale(f.z, tan)));
     },
@@ -378,7 +294,6 @@ export function sphereSurface(f: Frame, radius: number): Surface {
         f.x[2] * c * Math.cos(u) + f.y[2] * c * Math.sin(u) + f.z[2] * Math.sin(v),
       ]);
     },
-    // v does not wrap: it runs pole to pole and stops.
     periodU: Math.PI * 2, periodV: 0, flat: false,
   };
 }
@@ -403,15 +318,13 @@ export function torusSurface(f: Frame, major: number, minor: number): Surface {
   };
 }
 
-/** A surface swept by dragging a curve along a straight line. */
 export function extrusionSurface(curve: Curve, direction: Vec, domain: [number, number]): Surface {
   const d = unit(direction);
   return {
     at: (u, v) => add(curve.at(u), scale(d, v)),
     uv: p => {
       const v = dot(sub(p, curve.at(domain[0])), d);
-      // Undo the sweep before asking the curve where the point is, or every
-      // parameter comes back as the one nearest the curve's own plane.
+      // Undo the sweep before projecting onto the curve.
       return [curve.param(sub(p, scale(d, v))), v];
     },
     normalAt: u => {
@@ -423,7 +336,6 @@ export function extrusionSurface(curve: Curve, direction: Vec, domain: [number, 
   };
 }
 
-/** A surface swept by spinning a curve about an axis. */
 export function revolutionSurface(curve: Curve, f: Frame, domain: [number, number]): Surface {
   const spin = (p: Vec, a: number): Vec => {
     const l = local(f, p);
@@ -436,7 +348,6 @@ export function revolutionSurface(curve: Curve, f: Frame, domain: [number, numbe
     uv: p => {
       const l = local(f, p);
       const a = Math.atan2(l[1], l[0]);
-      // Bring the point back to the generating curve's own turn, then ask it.
       const back = world(f, Math.hypot(l[0], l[1]), 0, l[2]);
       const zero = local(f, curve.at(domain[0]));
       return [curve.param(back), a - Math.atan2(zero[1], zero[0])];
@@ -452,11 +363,9 @@ export function revolutionSurface(curve: Curve, f: Frame, domain: [number, numbe
   };
 }
 
-/** A NURBS patch: a spline in each direction over a grid of control points. */
 export type SplineSurface = {
   uDegree: number; vDegree: number;
   uKnots: number[]; vKnots: number[];
-  /** Row-major: `ctrl[i * vCount + j]`. */
   ctrl: Vec[];
   weights: number[] | null;
   uCount: number; vCount: number;
@@ -466,10 +375,7 @@ export function splineSurface(s: SplineSurface): Surface {
   const uLo = s.uKnots[s.uDegree], uHi = s.uKnots[s.uCount];
   const vLo = s.vKnots[s.vDegree], vHi = s.vKnots[s.vCount];
 
-  // Evaluated the obvious way: run de Boor down each row of the control grid at
-  // the v parameter, then once across the results at u. The row curves are built
-  // per call rather than cached, which is the cost of not carrying a basis
-  // cache; a face is a few hundred evaluations and this is not the slow part.
+  // de Boor down each row at v, then across at u.
   const at = (u: number, v: number): Vec => {
     const uu = Math.max(uLo, Math.min(uHi, u));
     const vv = Math.max(vLo, Math.min(vHi, v));
@@ -484,9 +390,6 @@ export function splineSurface(s: SplineSurface): Surface {
       }
       const line: Spline = { degree: s.vDegree, knots: s.vKnots, ctrl, weights: s.weights ? weights : null };
       rows.push(splineAt(line, vv));
-      // The weight at (u,v) follows the same recursion as the point, which is
-      // what keeps the second pass rational too. Evaluated by running de Boor on
-      // the weights as a one-dimensional curve.
       rowW.push(s.weights ? splineAt({ degree: s.vDegree, knots: s.vKnots, ctrl: weights.map(w => [w, 0, 0]), weights: null }, vv)[0] : 1);
     }
     const outer: Spline = {
@@ -504,20 +407,10 @@ export function splineSurface(s: SplineSurface): Surface {
     return unit(cross(du, dv));
   };
 
-  // Inversion: nearest of a coarse grid, then repeated halving in both
-  // directions. A NURBS patch is not invertible in closed form and this is the
-  // reading that does not need derivatives to be well behaved.
+  // Inversion: nearest on a coarse grid, then bisection refinement.
   const GRID = 20;
 
-  /**
-   * The coarse grid, evaluated once for the patch rather than once per point.
-   *
-   * Every inversion starts from the same four hundred and forty-one places, and
-   * `at()` on a NURBS patch is a de Boor pass down every row of the control grid
-   * and one across - so doing it per point spent nearly all of the time this
-   * file takes on a mechanical model. A face's boundary is hundreds of points
-   * and a spline patch's is up to a thousand.
-   */
+  // Coarse grid evaluated once per patch — at() is expensive on NURBS.
   let coarse: Vec[] | null = null;
   const grid = () => {
     if (coarse) return coarse;
@@ -564,45 +457,26 @@ export function splineSurface(s: SplineSurface): Surface {
 // Faces
 // ---------------------------------------------------------------------------
 
-/** One boundary of a face, already sampled into 3D points in order. */
 export type Loop = { points: Vec[]; outer: boolean };
 
-/** A triangle of the result: three 3D points and three normals. */
 export type Facet = { p: Vec[]; n: Vec[] };
 
-/** How far a triangle's middle may sit from the surface before it is split, as
- *  a fraction of the model's own size. One part in four hundred is under half a
- *  pixel on a card a couple of hundred pixels across. */
+// Max sag as fraction of model size — sub-pixel at card scale.
 const SAG = 1 / 400;
 
-/** How many times one triangle may be bisected. Each split is a doubling, so
- *  eight levels is at most two hundred and fifty-six triangles from one - past
- *  which the face was not a good candidate for boundary triangulation in the
- *  first place. */
 const MAX_SPLIT = 8;
 
-/** The most triangles one face may produce. A face past this has gone wrong -
- *  a degenerate boundary, a projection that folded - and a card cannot show the
- *  difference between four thousand triangles and forty thousand anyway. */
 const MAX_PER_FACE = 4_000;
 
-/** Below this fraction of the parameter box, a loop encloses nothing: it is a
- *  seam walked out and back, which is how a fully closed surface is written. */
+// Below this, the loop is a degenerate seam (fully closed surface).
 const DEGENERATE = 1e-9;
 
-/**
- * Turn one trimmed face into triangles.
- *
- * `scaleHint` is the size of the whole model, used only to turn the relative sag
- * tolerance above into an absolute one - a tolerance in millimetres would be
- * meaningless on a file that measures in metres or in inches, and both occur.
- */
+// Triangulate one trimmed face. scaleHint converts relative sag to absolute.
 export function faceFacets(surface: Surface, loops: Loop[], scaleHint: number): Facet[] {
   const outer = loops.find(l => l.outer) || loops[0];
   if (!outer || outer.points.length < 3) return [];
 
-  // Step 2 and 3: project and unwrap. A loop that cannot be projected at all
-  // takes the whole face down the flat path, which is a face rather than a hole.
+  // Project and unwrap. Unprojectable loops fall back to flat triangulation.
   const rings: Ring[] = [];
   let outerRing: Ring | null = null;
   for (const loop of loops) {
@@ -616,24 +490,13 @@ export function faceFacets(surface: Surface, loops: Loop[], scaleHint: number): 
   const holes = rings.filter(r => r !== outerRing);
   align(outerRing, holes, surface);
 
-  // Step 3a: make the parameters isometric. This is the one step that is not in
-  // the header's list and is the one that decides whether any of the rest work.
-  //
-  // A cylinder's parameters are (radians, millimetres). A triangle that looks
-  // square in those numbers is a sliver a hundred times longer than it is wide
-  // on the actual surface, and *every* decision below - which ear to clip, how
-  // compact a triangle is, whether one needs splitting - is a decision about the
-  // surface rather than about the numbers. So both axes are scaled by how far a
-  // step in them actually moves, measured on the surface itself, and everything
-  // downstream works in a space where a unit is a unit.
+  // Make parameters isometric — a cylinder is (radians, mm) and needs equalizing.
   const scale = metric(surface, outerRing);
   for (const ring of rings) {
     for (const p of ring.uv) { p[0] *= scale[0]; p[1] *= scale[1]; }
   }
 
-  // A boundary that encloses nothing in parameter space is a seam, not a face -
-  // which is how a whole cylinder or a whole sphere gets written as one face.
-  // The band it seams is the face, and that is what is drawn.
+  // Degenerate boundary → seam on a closed surface. Draw as a grid band.
   if (Math.abs(area2(outerRing.uv)) < DEGENERATE * boxArea(outerRing.uv)) {
     return bandFacets(surface, outerRing, scale);
   }
@@ -652,22 +515,14 @@ export function faceFacets(surface: Surface, loops: Loop[], scaleHint: number): 
   return out;
 }
 
-/**
- * How far a step of one in each parameter moves on the surface, at the middle of
- * this face.
- *
- * One sample rather than a field: the whole point is to get the two axes into
- * the same units, and a surface whose stretch varies by more than a factor of a
- * few across one face is a surface whose face wanted splitting anyway.
- */
+// Surface stretch at the face centre — one sample to equalize the two axes.
 function metric(surface: Surface, ring: Ring): number[] {
   const u = centre(ring.uv, 0), v = centre(ring.uv, 1);
   const eu = extent(ring.uv, 0) / 64 || 1e-4;
   const ev = extent(ring.uv, 1) / 64 || 1e-4;
   const du = length(sub(surface.at(u + eu, v), surface.at(u - eu, v))) / (2 * eu);
   const dv = length(sub(surface.at(u, v + ev), surface.at(u, v - ev))) / (2 * ev);
-  // A stretch of zero is a degenerate direction - the pole of a sphere - and
-  // scaling by it would collapse the polygon.
+  // Zero stretch (sphere pole) would collapse the polygon.
   return [du > 1e-9 ? du : 1, dv > 1e-9 ? dv : 1];
 }
 
@@ -679,15 +534,7 @@ const extent = (uv: number[][], axis: number) => {
 
 const boxArea = (uv: number[][]) => Math.max(1e-30, extent(uv, 0) * extent(uv, 1));
 
-/**
- * A face whose only boundary is a seam: the whole band of the surface between
- * the seam and itself, one full period round.
- *
- * Written as a grid rather than by triangulating the boundary, because there is
- * no boundary to triangulate - the loop went out along the seam and back along
- * it, enclosing nothing. This is what a cylinder exported without a separate
- * seam edge looks like, and what every closed sphere looks like.
- */
+// Grid for a seam-only face (no boundary to triangulate).
 function bandFacets(surface: Surface, ring: Ring, scale: number[]): Facet[] {
   const period = surface.periodU ? surface.periodU * scale[0] : surface.periodV ? 0 : 0;
   if (!period) return [];
@@ -696,11 +543,7 @@ function bandFacets(surface: Surface, ring: Ring, scale: number[]): Facet[] {
   for (const p of ring.uv) { if (p[1] < vLo) vLo = p[1]; if (p[1] > vHi) vHi = p[1]; }
   if (!(vHi > vLo)) return [];
 
-  // Square-ish cells. The parameters are isometric here, so matching the step
-  // across the band to the step round it is the whole of the reasoning - and it
-  // is what keeps a short band (a cylinder) from being subdivided as finely
-  // along its length as round its circumference, which is where a grid over a
-  // whole sphere otherwise spends ten thousand triangles.
+  // Match across/round steps so short cylinders do not over-subdivide.
   const round = FULL_TURN;
   const across = Math.max(2, Math.min(FULL_TURN, Math.round(round * (vHi - vLo) / period)));
   const out: Facet[] = [];
@@ -719,7 +562,6 @@ function bandFacets(surface: Surface, ring: Ring, scale: number[]): Facet[] {
   return out;
 }
 
-/** A loop in parameter space, with the 3D point each parameter came from. */
 type Ring = { uv: number[][]; xyz: Vec[] };
 
 function project(surface: Surface, loop: Loop): Ring | null {
@@ -737,15 +579,7 @@ function project(surface: Surface, loop: Loop): Ring | null {
   return { uv, xyz };
 }
 
-/**
- * Undo the jump a periodic parameter makes at its seam.
- *
- * Walking a loop that goes all the way round a cylinder, the angle runs up to
- * +pi and then restarts at -pi. Adding a turn every time the step is more than
- * half a period turns that back into a monotone run, which is what the
- * triangulator needs and what the surface will still evaluate correctly - it
- * takes a cosine of it either way.
- */
+// Unwrap the +π/−π jump on periodic parameters into a monotone run.
 function unwrap(uv: number[][], axis: number, period: number) {
   if (!period) return;
   const half = period / 2;
@@ -756,9 +590,7 @@ function unwrap(uv: number[][], axis: number, period: number) {
   }
 }
 
-/** Bring each hole into the same turn as the outer loop. Unwrapping is relative
- *  to a loop's own start, so two loops on one cylinder can come out a full turn
- *  apart and the hole would be bridged to somewhere the face is not. */
+// Shift holes into the same winding as the outer loop.
 function align(outer: Ring, holes: Ring[], surface: Surface) {
   for (const [axis, period] of [[0, surface.periodU], [1, surface.periodV]] as const) {
     if (!period) continue;
@@ -782,28 +614,17 @@ const centre = (uv: number[][], axis: number) => {
 
 type Polygon = { uv: number[][]; xyz: Vec[] };
 
-/**
- * Cut each hole into the outer loop, producing one simple polygon.
- *
- * The classic bridge: take the hole's rightmost vertex, find the outer vertex
- * nearest it, and walk the hole into the loop and back out again along the same
- * pair - which leaves a zero-width channel the ear clipper walks straight past.
- * Not the most robust construction there is (two holes that both want the same
- * outer vertex can produce a self-touching polygon), and the failure is a face
- * with an extra sliver rather than a wrong shape.
- */
+// Bridge holes into the outer loop via zero-width channels.
 function bridge(outer: Ring, holes: Ring[]): Polygon {
   let uv = outer.uv.slice();
   let xyz = outer.xyz.slice();
   if (!ccw(uv)) { uv.reverse(); xyz.reverse(); }
 
-  // Rightmost first, so a hole inside another hole's bridge is cut later.
   const ordered = holes.slice().sort((a, b) => rightmost(b.uv)[0] - rightmost(a.uv)[0]);
 
   for (const hole of ordered) {
     if (hole.uv.length < 3) continue;
     const h = hole.uv.slice(), hx = hole.xyz.slice();
-    // A hole runs the other way round from the loop that contains it.
     if (ccw(h)) { h.reverse(); hx.reverse(); }
     const start = rightmostIndex(h);
     let bestAt = -1, bestD = Infinity;
@@ -833,16 +654,7 @@ function rightmostIndex(uv: number[][]) {
   return at;
 }
 
-/**
- * Twice the signed area, positive for a counter-clockwise ring.
- *
- * The shoelace, written over the edge from the *previous* vertex to this one -
- * which is the direction that makes the sign come out positive for
- * counter-clockwise. Written the other way round it is negative for
- * counter-clockwise, and every convexity test below is stated for
- * counter-clockwise, so the sign here is the difference between clipping ears
- * and clipping everything that is not one.
- */
+// Twice signed area (shoelace). Positive = CCW.
 function area2(uv: number[][]) {
   let sum = 0;
   for (let i = 0, j = uv.length - 1; i < uv.length; j = i++) {
@@ -853,23 +665,8 @@ function area2(uv: number[][]) {
 
 const ccw = (uv: number[][]) => area2(uv) > 0;
 
-/**
- * Ear clipping, plainly.
- *
- * The polygons here are a face's boundary, which is tens of points on anything
- * but a spline patch with a hundred-segment edge - or a hole bridged into a
- * loop, which is both loops at once and a slit joining them.
- *
- * **Only a reflex corner can block an ear**, and testing against those alone is
- * not an optimisation. Testing against every corner sounds safer and is wrong on
- * the one polygon this file makes on purpose: bridging writes the bridge's two
- * endpoints *twice*, so a duplicate sits exactly on the corner of every ear next
- * to the slit, and a containment test that counts its own boundary rejects them
- * all. What follows is a face that finds no ear, falls through to the escape
- * below, and comes out folded - with, and this is what made it hard to see, the
- * right number of triangles and the right signed area. It reads as a ring drawn
- * as a filled disc.
- */
+// Ear clipping. Tests only reflex corners — testing all corners falsely rejects
+// bridge duplicates (same position, different index) and produces folded faces.
 function earClip(uv: number[][]): number[][] {
   const n = uv.length;
   if (n < 3) return [];
@@ -877,8 +674,6 @@ function earClip(uv: number[][]): number[][] {
   if (!ccw(uv)) index.reverse();
 
   const out: number[][] = [];
-  // One vertex leaves per turn, so this bounds the loop rather than guessing at
-  // it.
   let guard = n + 16;
   while (index.length > 3 && guard-- > 0) {
     const m = index.length;
@@ -890,18 +685,7 @@ function earClip(uv: number[][]): number[][] {
       if (turn[i] < 0) reflex.push(index[i]);
     }
 
-    // Candidates in order of how square they are, and the first valid one wins.
-    //
-    // Taking the *first* ear rather than the best is the textbook version and it
-    // is wrong here for a specific reason: a face on a cylinder is a long strip,
-    // and clipping strictly in order eats it from one end, producing triangles
-    // that span the whole width and cut through the surface. Preferring compact
-    // ears makes the same strip come out as a zigzag of near-equilateral
-    // triangles, which is both a better shape and - because the sag test below
-    // then passes - an order of magnitude fewer of them.
-    //
-    // The parameters are isometric by the time they get here, so "compact" is a
-    // statement about the surface and not about the numbers. See faceFacets().
+    // Prefer the most compact (squarest) ear — avoids strip-spanning slivers.
     const order: { at: number; cost: number }[] = [];
     for (let i = 0; i < m; i++) if (turn[i] > 0) order.push({ at: i, cost: squat(uv, index, i, turn[i]) });
     order.sort((p, q) => p.cost - q.cost);
@@ -914,12 +698,7 @@ function earClip(uv: number[][]): number[][] {
       clipped = i;
       break;
     }
-    // No ear anywhere means the polygon touches itself. Taking the most compact
-    // *convex* corner keeps progress and stays inside the polygon's hull; the
-    // old escape took whatever corner happened to be first, and a reflex one is
-    // a triangle wound backwards - area the face does not have, facing the wrong
-    // way. With no convex corner at all there is nothing to clip and what has
-    // been found already is the answer.
+    // Self-touching polygon — take the most compact convex corner to keep progress.
     if (clipped < 0) {
       if (!order.length) break;
       const i = order[0].at;
@@ -932,8 +711,7 @@ function earClip(uv: number[][]): number[][] {
   return out;
 }
 
-/** Perimeter squared over twice the area: one for an equilateral triangle after
- *  scaling, unbounded for a sliver. */
+// Compactness: perimeter² / area. Low = equilateral, high = sliver.
 function squat(uv: number[][], index: number[], i: number, turn: number) {
   const m = index.length;
   const a = uv[index[(i + m - 1) % m]];
@@ -945,14 +723,7 @@ function squat(uv: number[][], index: number[], i: number, turn: number) {
   return perimeter * perimeter / turn;
 }
 
-/**
- * Whether any reflex corner sits inside the candidate ear.
- *
- * A corner that shares a *position* with one of the ear's own three does not
- * count, which is not the same test as sharing an index: bridging writes one
- * point twice on purpose, and the duplicate is a different corner at the same
- * place. See the header above.
- */
+// Skip bridge duplicates (same position, different index) in containment test.
 function blocked(uv: number[][], reflex: number[], a: number, b: number, c: number) {
   const A = uv[a], B = uv[b], C = uv[c];
   for (const i of reflex) {
@@ -967,48 +738,20 @@ function blocked(uv: number[][], reflex: number[], a: number, b: number, c: numb
 const samePoint = (p: number[], q: number[]) => p[0] === q[0] && p[1] === q[1];
 
 // ---------------------------------------------------------------------------
-// Making the triangulation a good one
+// Delaunay edge-flipping (interior edges only)
 // ---------------------------------------------------------------------------
-//
-// Ear clipping is correct and its output is often terrible, and on exactly the
-// shape that matters most here.
-//
-// A face on a cylinder is a *strip* in parameter space: a rectangle with fifty
-// points along the bottom, fifty along the top and one at each end. Every run of
-// points along the bottom is collinear, and three collinear points are never an
-// ear - so the only ears in the whole polygon are at the two ends, and clipping
-// them one after another fans the entire strip out from a single corner
-// vertex. A fan across a cylinder is a set of triangles that each cut straight
-// through it. The subdivision below then spends four thousand triangles
-// rescuing what a hundred would have drawn.
-//
-// The fix is the standard one and it is worth the hundred lines: flip interior
-// edges until the triangulation is Delaunay. A fan flips into a zigzag in one
-// pass, and a zigzag over a strip is exactly the tessellation somebody would
-// draw by hand. The parameters are isometric by this point (see faceFacets), so
-// the Delaunay criterion is a statement about the surface and not about the
-// numbering.
-//
-// Only interior edges are considered. The polygon's own boundary is where two
-// faces meet, and moving it would open the model up.
 
-/** The edge keys of the polygon's own boundary, which no flip may touch. */
 function boundaryEdges(n: number) {
   const out = new Set<number>();
   for (let i = 0; i < n; i++) out.add(edgeKey(i, (i + 1) % n));
   return out;
 }
 
-/** Two vertex indices as one number, order-independent. A polygon here is at
- *  most a few thousand points, so the pair fits a safe integer with room. */
 const edgeKey = (a: number, b: number) => (a < b ? a * 1e6 + b : b * 1e6 + a);
 
 function flipToDelaunay(tris: number[][], uv: number[][], fixed: Set<number>) {
   let guard = tris.length * 8 + 64;
   for (let pass = 0; pass < 16 && guard > 0; pass++) {
-    // Rebuilt per pass rather than maintained: a flip changes four edges and
-    // keeping an incremental index correct through that is more code than the
-    // rebuild costs on polygons this size.
     const shared = new Map<number, number[]>();
     tris.forEach((t, i) => {
       for (let e = 0; e < 3; e++) {
@@ -1019,15 +762,7 @@ function flipToDelaunay(tris: number[][], uv: number[][], fixed: Set<number>) {
       }
     });
 
-    // At most one flip per triangle per pass. The map above describes the
-    // triangles as they were when the pass began, and a flip rewrites two of
-    // them - so a second flip that named either one would look up its neighbour
-    // across an edge that no longer exists, and splice vertices the triangle no
-    // longer has. That produces a pair of overlapping triangles out of a valid
-    // pair, and it is silent: the triangle *count* never changes. It showed as a
-    // seven-sided face - the smallest that flips twice in one pass - coming out
-    // with a fold in it, and as every round face in a STEP model being subtly
-    // wrong while every square one was exact.
+    // At most one flip per triangle per pass — double-flipping produces folds.
     const done = new Set<number>();
     let flipped = false;
     for (const [key, list] of shared) {
@@ -1038,18 +773,10 @@ function flipToDelaunay(tris: number[][], uv: number[][], fixed: Set<number>) {
       const c = tris[i].find(v => v !== a && v !== b);
       const d = tris[j].find(v => v !== a && v !== b);
       if (c === undefined || d === undefined || c === d) continue;
-      // The quad has to be strictly convex or the flip produces two triangles
-      // that overlap - which is how a naive flipper turns a valid triangulation
-      // into a folded one.
+      // Must be strictly convex or the flip overlaps.
       if (!convexQuad(uv, a, c, b, d)) continue;
       if (!inCircle(uv[a], uv[c], uv[b], uv[d])) continue;
-      // Which of the two carries the edge *forwards* decides how the
-      // replacements are written. `a` and `b` come back from the key in
-      // numerical order, which says nothing about either triangle's winding - so
-      // writing the pair the same way round every time reverses one flip in two.
-      // A reversed triangle keeps its area and loses its facing: the face is
-      // still the right shape and is lit from inside, which reads as a dark
-      // patch rather than as a hole.
+      // Preserve winding — the key's numerical order says nothing about direction.
       const carriesAB = carries(tris[i], a, b);
       if (!carriesAB && !carries(tris[j], a, b)) continue;
       const [p, q] = carriesAB ? [i, j] : [j, i];
@@ -1063,11 +790,9 @@ function flipToDelaunay(tris: number[][], uv: number[][], fixed: Set<number>) {
   }
 }
 
-/** Whether the triangle runs `a` to `b`, rather than `b` to `a`. */
 const carries = (t: number[], a: number, b: number) =>
   (t[0] === a && t[1] === b) || (t[1] === a && t[2] === b) || (t[2] === a && t[0] === b);
 
-/** Whether `a c b d`, in that order, is a convex quadrilateral. */
 function convexQuad(uv: number[][], a: number, c: number, b: number, d: number) {
   const q = [uv[a], uv[c], uv[b], uv[d]];
   let sign = 0;
@@ -1082,9 +807,7 @@ function convexQuad(uv: number[][], a: number, c: number, b: number, d: number) 
   return true;
 }
 
-/** Is `d` strictly inside the circle through `a`, `b`, `c`? The determinant
- *  form, with the orientation of the triangle folded in so the sign is right
- *  whichever way round it was given. */
+// In-circle test (determinant form, orientation-aware).
 function inCircle(a: number[], b: number[], c: number[], d: number[]) {
   const ax = a[0] - d[0], ay = a[1] - d[1];
   const bx = b[0] - d[0], by = b[1] - d[1];
@@ -1120,43 +843,17 @@ function emit(
   emitPoints(surface, scale, [uvA, uvB, uvC], [pA, pB, pC], tolerance, depth, out);
 }
 
-/** Parameters are held scaled - see the metric argument in faceFacets() - and
- *  the surface only ever answers in its own, so every call across that boundary
- *  goes through here. */
+// Undo the isometric scaling before evaluating the surface.
 const unscale = (uv: number[], scale: number[]) => [uv[0] / scale[0], uv[1] / scale[1]];
 
-/**
- * Emit one triangle, splitting it first if it does not follow the surface.
- *
- * **Longest-edge bisection, not a centre split.** The first version of this cut
- * at the centre, on the argument that doing so never moves a boundary vertex and
- * so cannot open a crack between two faces. It was measurably the wrong choice.
- * A face on a cylinder is a long strip, and every triangle in it runs the full
- * height of the strip: the ones that follow the surface run straight up it, and
- * the ones that do not run *diagonally across* it - and it is the diagonal that
- * needs cutting, not the middle. Cutting at the centre halves nothing in
- * particular and takes four levels of recursion to fix what one bisection of the
- * long edge fixes outright. On a plain cylinder the difference was four thousand
- * triangles against two hundred.
- *
- * The crack argument survives in a weaker form and that is deliberate. The test
- * is a property of the edge's own two endpoints and nothing else, so two faces
- * sharing an edge reach the same verdict about it and split it in the same
- * place. What they do *not* agree on is the interior, so a T-junction can appear
- * where one face's split propagates into an edge the other face has already
- * finished with. A T-junction is a seam of sub-pixel width on a card a couple of
- * hundred pixels across; a face that follows the wrong path round a cylinder is
- * a visible wound.
- */
+// Longest-edge bisection when the chord deviates from the surface.
+// Two faces sharing an edge agree on the split point (same endpoints → same test).
 function emitPoints(
   surface: Surface, scale: number[], uv: number[][], xyz: Vec[],
   tolerance: number, depth: number, out: Facet[],
 ) {
   if (out.length >= MAX_PER_FACE) return;
   if (depth > 0) {
-    // The longest edge in 3D, which is the one whose chord can be furthest from
-    // the surface. Measured on the points rather than in parameters, because
-    // that is what the tolerance is about.
     let at = 0, best = -1;
     for (let i = 0; i < 3; i++) {
       const d = length(sub(xyz[i], xyz[(i + 1) % 3]));
@@ -1171,12 +868,7 @@ function emitPoints(
     ];
     const m = unscale(mid, scale);
     const curved = surface.at(m[0], m[1]);
-    // The middle of the triangle as well as the middle of its longest edge. A
-    // triangle whose three edges all hug the surface can still bulge away from
-    // it in the middle - a wide, short triangle across a cylinder is the case,
-    // and it is exactly the shape a good triangulation of a strip produces. The
-    // edge test alone lets it through, and what is left is a flat spot where the
-    // model should be round.
+    // Also check the triangle centre — edges can hug while the interior bulges.
     const inside = [(uv[0][0] + uv[1][0] + uv[2][0]) / 3, (uv[0][1] + uv[1][1] + uv[2][1]) / 3];
     const flat: Vec = [0, 1, 2].map(t => (xyz[0][t] + xyz[1][t] + xyz[2][t]) / 3);
     const c = unscale(inside, scale);

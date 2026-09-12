@@ -1,17 +1,12 @@
-// The icon walk through a Windows program (import/pe.ts), and the two headers
-// that make a headerless picture drawable (import/winimage.ts).
+// The icon walk through a Windows program (import/pe.ts), and the two
+// headers that make a headerless picture drawable (import/winimage.ts).
+// Arithmetic over a structure somebody else wrote, with no fixture to
+// check against - a real .exe would only prove one linker's output reads.
+// So the whole file builds PE containers byte by byte.
 //
-// Every one of these is arithmetic over a structure somebody else wrote, and
-// there is no fixture to check it against - a real .exe cannot be committed and
-// would prove only that one linker's output reads. So the whole file builds PE
-// containers byte by byte, which is the only way to state what each field is
-// supposed to do and then move it.
-//
-// The discipline is tests/preview.test.js's, for the same reason it gives there:
-// **every "it refuses X" case is paired with a working fixture asserted first.**
-// A null is the answer to every failure in this module, so a test that only
-// asserts null passes just as well when the fixture was built wrong - which is
-// the one way a test here can lie.
+// The discipline is preview.test.js's: every "it refuses X" case is
+// paired with a working fixture asserted first, since null is the answer
+// to every failure here and a null-only test passes on a broken fixture too.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -60,8 +55,8 @@ const u32 = (v) => [v & 255, (v >> 8) & 255, (v >> 16) & 255, (v >>> 24) & 255];
 const u16 = (v) => [v & 255, (v >> 8) & 255];
 
 /**
- * A resource directory: `entries` of `{ id, off, dir }`, where `off` is already
- * relative to the section and `dir` says whether the high bit is set.
+ * A resource directory: `entries` of `{ id, off, dir }`, where `off` is
+ * already relative to the section and `dir` says whether the high bit is set.
  */
 function resDir(entries) {
   const out = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ...u16(0), ...u16(entries.length)];
@@ -91,17 +86,16 @@ const RSRC_RVA = 0x4000;
 
 /**
  * A PE file whose `.rsrc` section holds one icon group over `members`.
- *
- * Laid out in one pass so every offset in the tree is a real position in the
- * section: the three directory levels first, then the leaves, then the payloads.
- * `opts` is how a test moves one field without rebuilding the file.
+ * Laid out in one pass so every offset in the tree is a real position:
+ * directory levels first, then leaves, then payloads. `opts` is how a
+ * test moves one field without rebuilding the file.
  */
 function pe(members, opts = {}) {
   const groups = opts.groups || [{ id: 1, members }];
   const all = groups.flatMap(g => g.members);
 
-  // Lay the section out back to front: payloads last, so their offsets are known
-  // before anything that points at them is written.
+  // Lay the section out back to front: payloads last, so their offsets
+  // are known before anything pointing at them is written.
   const parts = [];
   let at = 0;
   const push = (bytes) => { const off = at; parts.push({ off, bytes }); at += bytes.length; return off; };
@@ -151,10 +145,10 @@ function pe(members, opts = {}) {
 function wrapPe(section, opts = {}) {
   const peAt = 0x80;
   const optAt = peAt + 24;
-  // PE32+ widens five fields to 64 bits, which moves the data directory 16 bytes
-  // and the count that precedes it with them. `plus` builds the real thing rather
-  // than moving the magic on a PE32 body, so the branch under test is exercised
-  // by a file that is actually shaped that way.
+  // PE32+ widens five fields to 64 bits, moving the data directory 16
+  // bytes and its preceding count with them. `plus` builds the real
+  // thing rather than moving the magic on a PE32 body, so the branch is
+  // exercised by a file actually shaped that way.
   const plus = !!opts.plus;
   const dirOff = plus ? 112 : 96;
   const optSize = dirOff + 16 * 8;
@@ -225,8 +219,8 @@ test('a bitmap member comes back wrapped as a one-image .ico', async () => {
 });
 
 test('a PNG member wins over a physically larger bitmap', async () => {
-  // Ranking on pixels alone would take the 256px DIB. The PNG is the one every
-  // engine decodes, which is the whole reason for the preference.
+  // Ranking on pixels alone would take the 256px DIB. The PNG is the one
+  // every engine decodes, the whole reason for the preference.
   const got = await exeIcon(pe([
     { w: 256, h: 256, bits: 32, id: 1, bytes: dib(256, 256) },
     { w: 64, h: 64, bits: 32, id: 2, bytes: png(128) },
@@ -245,8 +239,8 @@ test('a PNG too small to be worth it loses to the bitmap', async () => {
 });
 
 test('the lowest-numbered group wins, not the first one in the tree', async () => {
-  // Tree order here puts group 9 first; Windows takes the lowest id as the
-  // application icon and so does this.
+  // Tree order here puts group 9 first; Windows takes the lowest id as
+  // the application icon, and so does this.
   const got = await exeIcon(pe([], {
     groups: [
       { id: 9, members: [{ w: 64, h: 64, bits: 32, id: 1, bytes: dib(64, 64) }] },
@@ -266,8 +260,9 @@ test('a 256-pixel edge is written as 0, which is what the format means', async (
 });
 
 test('a 64-bit PE reads, and its data directory is not where a 32-bit one is', async () => {
-  // The directory moves 16 bytes when the optional header widens, and reading the
-  // wrong one lands inside a different field rather than failing outright.
+  // The directory moves 16 bytes when the optional header widens, and
+  // reading the wrong one lands inside a different field instead of
+  // failing outright.
   const bits32 = await exeIcon(pe([{ w: 64, h: 64, id: 1, bytes: png(96) }]));
   assert.ok(bits32, 'PE32 works, so the PE32+ result below means something');
 
@@ -275,8 +270,8 @@ test('a 64-bit PE reads, and its data directory is not where a 32-bit one is', a
   assert.ok(bits64, 'a real PE32+ file reads');
   assert.equal(bits64.ext, 'png');
 
-  // And a PE32 body wearing the 64-bit magic is a file lying about its own shape.
-  // It must not read - which is what says the two offsets are really different.
+  // A PE32 body wearing the 64-bit magic lies about its own shape and
+  // must not read - confirming the two offsets are really different.
   assert.equal(
     await exeIcon(pe([{ w: 64, h: 64, id: 1, bytes: png(96) }], { magic: 0x20B })),
     null,
@@ -314,13 +309,13 @@ test('a resource RVA in no section finds nothing', async () => {
 });
 
 test('a resource section past the ceiling is asked about, not refused', async () => {
-  // The contract in consent.ts: no ceiling refuses on its own. A program whose
-  // resources are enormous may hold a perfectly good icon, and spending the
-  // memory to find out is the person's call rather than this module's.
+  // The contract in consent.ts: no ceiling refuses on its own. A program
+  // with enormous resources may hold a perfectly good icon, and spending
+  // the memory to find out is the person's call, not this module's.
   const big = pe([{ w: 64, h: 64, id: 1, bytes: png(64) }], { rsrcSize: 64 * 1024 * 1024 });
   await assert.rejects(() => exeIcon(big), isOversize, 'it must throw an Oversize, not answer null');
-  // And lifted, it reads - which is what says the throw was the ceiling talking
-  // and not the file being broken.
+  // Lifted, it reads - confirming the throw was the ceiling talking, not
+  // a broken file.
   assert.ok(await exeIcon(big, true));
 });
 
@@ -359,8 +354,8 @@ test('dibToBmp puts the pixels where the header says they are', () => {
 });
 
 test('dibToBmp counts the palette, which is where the pixels actually start', () => {
-  // The bug this guards is a file header whose offset lands inside the colour
-  // table: the picture then draws out of its own palette and looks like static.
+  // Guards a file header whose offset lands inside the colour table: the
+  // picture then draws out of its own palette and looks like static.
   const dv8 = dibToBmp(dib(8, 8, 8, 16));
   assert.ok(dv8);
   assert.equal(new DataView(dv8.buffer).getUint32(10, true), 14 + 40 + 16 * 4);

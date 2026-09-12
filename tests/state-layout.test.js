@@ -1,11 +1,7 @@
-// Snapping the whole board, and the two geometry profiles.
-//
-// state.ts is a module singleton, which is right for an app with one board and
-// awkward for tests, so every case starts by loading an empty board. That is
-// the same door opening a .mbrd goes through, so it also exercises the reset.
-//
-// One of six files that were tests/state.test.js, split to mirror the modules
-// state.ts itself was split onto - see tests/layers.test.js for that list.
+// Snapping the whole board, and the two geometry profiles. state.ts is a
+// module singleton, so every case starts by loading an empty board,
+// exercising the reset too. One of six files split from tests/state.test.js
+// to mirror state.ts's own split; see tests/layers.test.js.
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -25,10 +21,9 @@ beforeEach(() => {
 // Snapping the whole board
 // ---------------------------------------------------------------------------
 //
-// The promise has three halves, and it is the third that is easy to get wrong:
-// turning snapping on lays everything on the lattice, turning it off puts it
-// back, and anything placed by hand in between keeps where it was put rather
-// than being dragged back to a position the user has already overruled.
+// Three halves, and the third is easy to get wrong: on lays everything on
+// the lattice, off puts it back, and anything placed by hand in between
+// keeps that placement rather than being dragged back.
 
 const boxAt = (x, y, w = 100, h = 100) => ({ type: 'note', x, y, w, h, meta: { text: 'n' } });
 const geom = it => ({ x: it.x, y: it.y, w: it.w, h: it.h });
@@ -38,13 +33,12 @@ test('turning snapping on lays the board on the lattice', () => {
   const [a] = addItems([boxAt(17, -23, 100, 100)]);
   setSetting('snap', true);
   const it = byId(a.id);
-  // Low edges a seam past a grid line, sides a whole number of cells less a seam
-  // at each end - the resize rule, since laying out a board is the resize case,
-  // not the drag case.
+  // Low edges a seam past a grid line, sides a whole cell count less a seam
+  // at each end - the resize rule, since laying out is the resize case.
   const step = board.settings.gridStep;
   const inset = step * CELL_GAP;
-  // Math.abs, because a negative coordinate divides to -0 and assert.equal is
-  // strict enough to tell the two zeroes apart.
+  // Math.abs: a negative coordinate divides to -0, and assert.equal tells
+  // the two zeroes apart.
   assert.equal(Math.abs((it.x - it.w / 2 - inset) % step), 0, 'left edge off the lattice');
   assert.equal(Math.abs((it.y - it.h / 2 - inset) % step), 0, 'bottom edge off the lattice');
   assert.equal((it.w + 2 * inset) % step, 0);
@@ -76,10 +70,9 @@ test('a snapped item is inset by the same seam on all four sides', () => {
   setSetting('snap', true);
   const it = byId(a.id);
   const inset = step * CELL_GAP;
-  // Each edge's distance from the grid line just outside it. The old rule gave
-  // the whole seam to the high edges and nothing to the low ones, so an item was
-  // flush left and bottom and short right and top; every one of these is the
-  // same number now.
+  // Each edge's distance from the grid line just outside it. The old rule
+  // gave the whole seam to the high edges and nothing to the low ones; all
+  // four are the same number now.
   const off = (edge, sign) => {
     const line = Math.round((edge + sign * inset) / step) * step;
     return Math.abs(edge - line);
@@ -93,20 +86,17 @@ test('a snapped item is inset by the same seam on all four sides', () => {
 test('two snapped neighbours have a seam between them', () => {
   fresh();
   const step = board.settings.gridStep;
-  // Two boxes a cell apart, so they land in adjoining blocks of cells.
+  // A cell apart, so they land in adjoining blocks of cells.
   const [a, b] = addItems([boxAt(0, 0, step, step), boxAt(step, 0, step, step)]);
   setSetting('snap', true);
   const left = byId(a.id), right = byId(b.id);
   const seam = (right.x - right.w / 2) - (left.x + left.w / 2);
-  // The whole point of the seam: side by side is not the same as joined, or two
-  // photographs in adjoining cells read as one photograph with a crease in it.
+  // The point of the seam: side by side is not joined, or two adjoining
+  // photos read as one with a crease in it.
   assert.ok(seam > 0, 'neighbours are touching');
-  // Two halves of a seam, one from each item - which is the same total distance
-  // the whole-seam-on-one-edge rule used to leave, and that is deliberate: the
-  // change was to where the gap sits, not to how much of it there is.
-  //
-  // Within a rounding error: the seam is a fraction of the step and comes back
-  // through two subtractions, so it lands on the last bit rather than exactly.
+  // Two halves of a seam, one per item - the same total distance the old
+  // whole-seam-on-one-edge rule left; only where the gap sits changed.
+  // Within a rounding error, since the seam returns through two subtractions.
   assert.ok(Math.abs(seam - 2 * step * CELL_GAP) < 1e-6, `seam was ${seam}`);
 });
 
@@ -126,7 +116,7 @@ test('an item moved while snapped keeps its new place', () => {
   const bWas = geom(byId(b.id));
   setSetting('snap', true);
 
-  // A hand placement, committed the way a drag commits.
+  // A hand placement, committed as a drag would.
   const before = snapshotGeom([a.id]);
   const it = byId(a.id);
   it.x = 512; it.y = 512;
@@ -165,11 +155,9 @@ test('a board with nothing on it does not record an undo step', () => {
 });
 
 test('raising a card keeps its memory of where it sat before the lattice', () => {
-  // Bring to front rewrites z and nothing else. commitGeom() gave up the presnap
-  // memo on any GEOM_KEYS difference, and z is one of those - so raising a card
-  // on a snapped board silently threw away where it had been put, and turning
-  // snapping off later left it wherever the lattice had moved it. Undo restored
-  // the position and not the memo, so there was no way back.
+  // Bring to front rewrites only z, but commitGeom() gave up the presnap
+  // memo on any GEOM_KEYS difference, z included - so raising a card on a
+  // snapped board silently lost its pre-lattice place, with no way back.
   fresh();
   const [a] = addItems([boxAt(17, -23, 90, 140)]);
   setSetting('snap', true);
@@ -187,9 +175,8 @@ test('raising a card keeps its memory of where it sat before the lattice', () =>
 });
 
 test('moving a card on a snapped board does give up the memo', () => {
-  // The other half, so the fix above cannot be read as "never forget". A change
-  // in any of x, y, w, h is a placement, and a placement is the user overruling
-  // where the lattice had put the card.
+  // The other half - a change in x, y, w or h is a placement, the user
+  // overruling where the lattice put the card.
   fresh();
   const [a] = addItems([boxAt(17, -23, 90, 140)]);
   setSetting('snap', true);
@@ -203,8 +190,8 @@ test('moving a card on a snapped board does give up the memo', () => {
 });
 
 test('a memo that is not a box is ignored rather than written onto the item', () => {
-  // What a hand-edited .mbrd can carry. Restoring from it would otherwise put
-  // a string, or a zero size, straight onto the item's geometry.
+  // A hand-edited .mbrd could carry a string or a zero size here; restoring
+  // it must not write that straight onto the item's geometry.
   fresh([{ type: 'note', x: 40, y: 40, w: 100, h: 100,
            meta: { text: 'n', presnap: { x: 'left', y: 0, w: 100, h: 100 } } }]);
   const a = board.items[0];

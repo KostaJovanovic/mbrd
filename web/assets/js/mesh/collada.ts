@@ -1,35 +1,8 @@
-// Collada (.dae) - the open interchange format FBX won against.
-//
-// Still everywhere: SketchUp exports it, Blender imports it, every asset library
-// that predates glTF has it, and it is what a .kmz holds inside. Unlike the rest
-// of this family it is a *document* rather than a stream - the geometry is
-// reached by following references across the file, and an array may be declared
-// after the thing that uses it. That is the one format here that genuinely needs
-// a tree, and mesh/xml.ts's header says so.
-//
-// The chain from a triangle to a number is four links long and worth spelling
-// out once, because everything below is shaped by it:
-//
-//   <triangles> has <input semantic="VERTEX" source="#v" offset="0">
-//   <vertices id="v"> has <input semantic="POSITION" source="#s">
-//   <source id="s"> has a <float_array> and an <accessor> saying how to read it
-//   <p> holds one index per input per corner, interleaved by offset
-//
-// So a `<p>` of `0 0 1 1 2 2` with two inputs at offsets 0 and 1 is three
-// corners, not six. Getting the stride wrong reads a cube as a ribbon, which is
-// why the offsets are taken from the inputs rather than assumed.
-//
-// Up is read from the file, like FBX: `<up_axis>` is part of the asset block and
-// Z_UP is what SketchUp and most CAD exporters write while Y_UP is what the
-// spec's default and most game tooling use.
-//
-// What is read: `<triangles>`, `<polylist>` and `<polygons>`, positions,
-// normals, vertex colours, the node transforms of the visual scene, and the
-// diffuse colour of a bound material. What is not: `<trifans>` and
-// `<tristrips>` (rare enough that no exporter this project has seen writes
-// them), skinning, textures, and the `<unit>` scale - a card frames a model by
-// its own bounding sphere, so a millimetre file and a metre file look the same
-// either way.
+// Collada (.dae) parser. Geometry is reached by following id references across
+// an XML tree, so <p> indices are interleaved by input offset — the stride comes
+// from the inputs, not an assumption. Up axis read from <up_axis>.
+// Reads: triangles, polylist, polygons, normals, vertex colours, node transforms,
+// diffuse material colour. Does not read: trifans/tristrips, skinning, textures.
 
 import {
   MeshError, MeshBuild, type Mesh, clamp01,
@@ -49,9 +22,7 @@ export function parseCollada(bytes: string | ArrayBuffer): Mesh {
   const build = new MeshBuild();
   const materials = readMaterials(root, byId);
 
-  // The visual scene, where there is one. A .dae with geometry and no scene is
-  // ordinary - a library file - and every geometry in it is drawn at the origin,
-  // which is the only reading available.
+  // A .dae with no scene is a library file; draw every geometry at the origin.
   const scenes = findAll(root, 'visual_scene');
   if (scenes.length) {
     let visits = 0;
@@ -63,8 +34,7 @@ export function parseCollada(bytes: string | ArrayBuffer): Mesh {
         const geom = byId.get(ref(inst.attrs.url));
         if (geom) addGeometry(build, geom, byId, here, bound(inst, materials));
       }
-      // An `<instance_node>` is a reference to a node elsewhere in the document,
-      // which is how Collada writes an instanced assembly.
+      // <instance_node> = instanced assembly reference
       for (const inst of children(node, 'instance_node')) {
         const target = byId.get(ref(inst.attrs.url));
         if (target) walk(target, here, depth + 1);
@@ -86,14 +56,12 @@ export function parseCollada(bytes: string | ArrayBuffer): Mesh {
   return mesh;
 }
 
-/** Everything with an `id`, so a `#ref` is a lookup rather than a search. */
+/** Index all `id` attributes for O(1) `#ref` lookups. */
 function index(root: XmlNode) {
   const byId = new Map<string, XmlNode>();
   const walk = (node: XmlNode) => {
     const id = node.attrs.id;
-    // First declaration wins. Duplicate ids are invalid and do occur in files
-    // stitched together by a converter, and the first is the one the references
-    // above it were written against.
+    // First wins — duplicates occur in converter-stitched files.
     if (id && !byId.has(id)) byId.set(id, node);
     for (const kid of node.kids) walk(kid);
   };
@@ -109,14 +77,7 @@ const ref = (url: string | undefined) => (url || '').replace(/^#/, '');
 
 type Source = { data: number[]; stride: number };
 
-/**
- * A `<source>` reduced to numbers and a stride.
- *
- * The `<accessor>` is what says how to read the array - a source of positions
- * has stride 3 and a source of texture coordinates has stride 2, and both are
- * one flat `<float_array>`. Where the accessor is missing (which converters do
- * write) the stride is guessed from the semantic by the caller.
- */
+/** A <source> reduced to numbers + stride. Falls back to `fallbackStride` when <accessor> is missing. */
 function source(node: XmlNode | undefined, fallbackStride: number): Source | null {
   if (!node) return null;
   const array = find(node, 'float_array') || find(node, 'int_array');
@@ -126,8 +87,7 @@ function source(node: XmlNode | undefined, fallbackStride: number): Source | nul
   return { data: floats(array.text), stride: stride > 0 ? stride : fallbackStride };
 }
 
-/** The source an `<input>` points at, following the one indirection a VERTEX
- *  input has: it names a `<vertices>` element, which names the real source. */
+/** Resolve an <input> to its source, following the VERTEX→<vertices> indirection. */
 function inputSource(input: XmlNode, byId: Map<string, XmlNode>, fallbackStride: number) {
   let target = byId.get(ref(input.attrs.source));
   if (target?.name === 'vertices') {
@@ -142,7 +102,7 @@ function inputSource(input: XmlNode, byId: Map<string, XmlNode>, fallbackStride:
 // Geometry
 // ---------------------------------------------------------------------------
 
-/** The primitive elements this reads, in the order a file may hold them. */
+/** Supported primitive types. */
 const PRIMITIVES = ['triangles', 'polylist', 'polygons'];
 
 function addGeometry(
@@ -180,8 +140,7 @@ function addGeometry(
     if (!position || !position.data.length) continue;
     if (!stride) stride = 1;
 
-    // `<polygons>` holds one `<p>` per polygon; the other two hold one for the
-    // lot, with `<vcount>` saying where the polygons break in a polylist.
+    // <polygons> = one <p> per polygon; polylist uses <vcount> to split one <p>.
     const lists = children(prim, 'p');
     const vcount = find(prim, 'vcount');
     const counts = vcount ? floats(vcount.text) : null;
@@ -230,9 +189,7 @@ function addGeometry(
 
 function at3(src: Source, index: number) {
   const o = index * src.stride;
-  // An index past the array is a document that does not say what it means, and
-  // the NaN it would otherwise produce reaches the bounding box rather than the
-  // reader. Zero is wrong too, but it is wrong in a place that is visible.
+  // Out-of-bounds index = corrupt document; throw rather than produce NaN.
   if (!(index >= 0) || o + 3 > src.data.length) {
     throw new MeshError('This Collada document refers to data it does not contain');
   }
@@ -249,19 +206,7 @@ function rgbAt(src: Source, index: number) {
 // Materials
 // ---------------------------------------------------------------------------
 
-/**
- * Material id -> its diffuse colour, resolved through the effect it names.
- *
- * Collada's material chain is `<instance_material target>` to `<material>` to
- * `<instance_effect url>` to `<effect>` to whichever of `<lambert>`, `<phong>`,
- * `<blinn>` or `<constant>` the exporter chose. Every one of those has a
- * `<diffuse>` (or an `<emission>`, for constant), and inside it either a
- * `<color>` or a `<texture>`.
- *
- * Textures read as no colour rather than as black. A card falls back to the
- * board's own ink for an uncoloured model, which looks deliberate; a model that
- * came out black because its texture could not be loaded looks broken.
- */
+/** Material id → diffuse [r,g,b]. Textures yield no colour (board ink fallback looks better than black). */
 function readMaterials(root: XmlNode, byId: Map<string, XmlNode>) {
   const out = new Map<string, number[]>();
   for (const material of findAll(root, 'material')) {
@@ -283,8 +228,7 @@ function readMaterials(root: XmlNode, byId: Map<string, XmlNode>) {
   return out;
 }
 
-/** The symbol-to-colour bindings an `<instance_geometry>` carries, which is what
- *  a primitive's `material` attribute names. */
+/** Symbol→colour bindings from an <instance_geometry>. */
 function bound(instance: XmlNode, materials: Map<string, number[]>) {
   const out = new Map<string, number[]>();
   for (const bind of findAll(instance, 'instance_material')) {
@@ -298,11 +242,7 @@ function bound(instance: XmlNode, materials: Map<string, number[]>) {
 // Transforms
 // ---------------------------------------------------------------------------
 //
-// Collada writes 4x4 matrices row-major and column-vector, so a point is `M * p`
-// and the translation is the last *column*. A node may also carry any number of
-// `<translate>`, `<rotate>` and `<scale>` elements, and they compose **in
-// document order** - which is the part that is easy to get wrong, because the
-// order is the order they are applied outermost-first.
+// Row-major, column-vector (M * p). Transforms compose in document order (outermost-first).
 
 const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
@@ -326,7 +266,7 @@ function localMatrix(node: XmlNode) {
   return m;
 }
 
-/** Rodrigues, with the angle in degrees - which is what Collada writes. */
+/** Rodrigues rotation; angle in degrees (Collada convention). */
 function axisAngle(x: number, y: number, z: number, degrees: number) {
   const len = Math.hypot(x, y, z);
   if (!len) return IDENTITY;

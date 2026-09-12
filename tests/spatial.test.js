@@ -1,11 +1,8 @@
-// The cull index only has to be right about one thing: it must never drop an
-// item that overlaps the query. A false positive costs one precise test the
-// caller was going to run anyway; a false negative is a card that fails to mount
-// where the eye can see it should. So the load-bearing test here is the property
-// one - random boxes, random rectangles, and the assertion that the index's
-// answer is a *superset* of the boxes that truly overlap. Dedupe, update and
-// remove are checked besides, because a multi-cell item listed twice or a moved
-// item left in its old cell are the two ways the bookkeeping goes wrong.
+// The cull index must never drop an item that overlaps the query - a false
+// negative is a card that fails to mount where the eye can see it should. The
+// load-bearing test is the property one: random boxes and rectangles, and the
+// index's answer must be a *superset* of the true overlaps. Dedupe, update
+// and remove are checked too, for multi-cell double-listing and stale cells.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -16,7 +13,7 @@ import {
 
 const box = (id, x, y, w, h) => ({ id, x, y, w, h });
 
-/** The exact overlap test the index approximates: do the boxes' spans meet the
+/** The exact overlap the index approximates: do the boxes' spans meet the
  *  rectangle's on both axes. Centre-and-size boxes, an {x0,y0,x1,y1} rect. */
 function trulyOverlaps(b, rect) {
   return b.x + b.w / 2 >= rect.x0 && b.x - b.w / 2 <= rect.x1 &&
@@ -40,7 +37,7 @@ test('a box well outside the query is not returned', () => {
 });
 
 test('a box spanning several cells comes back exactly once', () => {
-  // Wider than any sane cell, so it is registered across a row of them.
+  // Wider than any sane cell, so it registers across a row of them.
   rebuild([box('wide', 0, 0, 4000, 50)], 200);
   const ids = [...queryRect({ x0: -3000, y0: -25, x1: 3000, y1: 25 })]
     .filter(id => id === 'wide');
@@ -71,7 +68,7 @@ test('the query never drops a box that truly overlaps (no false negatives)', () 
   const rand = lcg(20260727);
   const span = 8000;
   const coord = () => (rand() - 0.5) * span;
-  const size = () => 5 + rand() * 900;   // from tiny to several cells wide
+  const size = () => 5 + rand() * 900;   // tiny to several cells wide
 
   for (const cellSize of [50, 200, 512, 1500]) {
     const boxes = [];
@@ -99,7 +96,7 @@ test('after moves, the index still has no false negatives', () => {
   const boxes = [];
   for (let i = 0; i < 200; i++) boxes.push(box('m' + i, coord(), coord(), 100, 100));
   rebuild(boxes, 300);
-  // Shove half of them somewhere new, the way a drag or a rearrange would.
+  // Move half of them, the way a drag or a rearrange would.
   for (let i = 0; i < boxes.length; i += 2) {
     boxes[i] = box(boxes[i].id, coord(), coord(), 100, 100);
     update(boxes[i].id, boxes[i]);

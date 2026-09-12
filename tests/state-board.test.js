@@ -1,11 +1,8 @@
-// The board itself: loading, serialising, refusing a file that is not one, and the faces it carries.
-//
-// state.ts is a module singleton, which is right for an app with one board and
-// awkward for tests, so every case starts by loading an empty board. That is
-// the same door opening a .mbrd goes through, so it also exercises the reset.
-//
-// One of six files that were tests/state.test.js, split to mirror the modules
-// state.ts itself was split onto - see tests/layers.test.js for that list.
+// The board itself: loading, serialising, refusing a file that is not one,
+// and the faces it carries. state.ts is a module singleton, so every case
+// starts by loading an empty board - the same door an opened .mbrd goes
+// through, exercising the reset too. One of six files split from
+// tests/state.test.js to mirror state.ts's own split; see tests/layers.test.js.
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -57,21 +54,12 @@ test('serialising and reloading preserves the items', () => {
 });
 
 test('opening a second board on Mobile does not read the first board index', () => {
-  // byId()'s index is dropped on the 'items' event, which loadBoard() emits as
-  // its second-to-last statement - after seedSticks(), completeLayout() and the
-  // Mobile carry have all read the board through it. Until the index was dropped
-  // where the array is *replaced*, every one of those reads was answered from
-  // the board that had just left.
-  //
-  // On Mobile that threw: attachRiders() resolved the host through the live
-  // board and then looked it up again through the index, which did not have it,
-  // and stuckOffset() dereferenced undefined. The aftermath was the worse half -
-  // openFile() catches, but board.items and board.title are already the new
-  // board's with no event fired, so the old board's DOM sat over the new board's
-  // state and the next autosave wrote the mixture over the session copy.
-  //
-  // A phone is in this mode from first paint (ui/sidebar.ts reads the stored
-  // pref), so "open a second .mbrd holding a stuck note" is the whole repro.
+  // byId()'s index used to be dropped only on the 'items' event, which
+  // loadBoard() emits late - after seedSticks(), completeLayout() and the
+  // Mobile carry had already read the old board through it. On Mobile this
+  // threw: attachRiders() looked a host up through the stale index and
+  // stuckOffset() dereferenced undefined, leaving the old board's DOM over
+  // the new board's state. The index must drop where the array is *replaced*.
   fresh([photo({ id: 'only-in-a', x: 0, y: 0, w: 400, h: 300 })]);
   setBoardMode('mobile');
   byId('only-in-a');                       // populate the index against board A
@@ -88,12 +76,10 @@ test('opening a second board on Mobile does not read the first board index', () 
 });
 
 test('the id index can be dropped without announcing anything', () => {
-  // The tool loadBoard() reaches for, on its own. The lazy rebuild is keyed to
-  // the 'items' event, which is right everywhere else and is exactly what cannot
-  // be used at a swap: the emit comes at the end of the load and the reads come
-  // in the middle. Dropping it has to be available *without* an announcement,
-  // because announcing early would run every listener against a board that is
-  // only half assembled.
+  // The tool loadBoard() reaches for on its own. The lazy rebuild is keyed to
+  // the 'items' event, which fires at the end of the load while reads happen
+  // in the middle - so dropping the index must not announce anything, or
+  // every listener would run against a half-assembled board.
   fresh([photo({ id: 'a' })]);
   byId('a');
   const before = board.items;
@@ -106,11 +92,10 @@ test('the id index can be dropped without announcing anything', () => {
 });
 
 test('two items with the longest legal id both survive the load', () => {
-  // dedupeIds() suffixed and then truncated back to 64, so on an id already at
-  // the cap every candidate was the id itself, `seen` rejected all of them and
-  // the loop never ended - a hand-made or hand-edited file froze the tab on
-  // open. research/docs/mbrd-format.md declares 64 legal, so this is a file the format
-  // permits rather than a malformed one.
+  // dedupeIds() suffixed then truncated back to 64; at the cap every
+  // candidate was the id itself, so `seen` rejected all of them and the loop
+  // never ended - a hand-edited file froze the tab. 64 is legal per
+  // research/docs/mbrd-format.md, so this is a permitted file, not a malformed one.
   const long = 'a'.repeat(64);
   loadBoard({
     title: 'T',
@@ -288,8 +273,8 @@ test('the Mobile gap widens the seam and nothing else', () => {
   const batch = () => Array.from({ length: 12 }, (_, i) =>
     photo({ id: `gap-${i}`, x: 0, y: 0, w: 100, h: 100 }));
 
-  // Zero is the default a Mobile profile is born with, and at zero the packer
-  // is the one that shipped before the setting existed.
+  // Zero is Mobile's default; at zero the packer behaves as it did before
+  // the setting existed.
   assert.equal(board.settings.spacing, 0);
   const tight = placeMobileItems(batch(), []);
 
@@ -298,8 +283,8 @@ test('the Mobile gap widens the seam and nothing else', () => {
   assert.equal(board.settings.spacing, gap, 'Mobile takes a gap now');
   const loose = placeMobileItems(batch(), []);
 
-  // Still packed, still non-overlapping, and still on the lattice - the gap
-  // buys room around each card, it does not change what the packer is doing.
+  // Still packed, non-overlapping and on the lattice - the gap buys room
+  // around each card, it does not change what the packer is doing.
   for (let i = 0; i < loose.length; i++) {
     for (let j = i + 1; j < loose.length; j++) {
       assert.ok(overlapFraction(loose[i], loose[j]) < 1e-12,
@@ -307,8 +292,7 @@ test('the Mobile gap widens the seam and nothing else', () => {
     }
   }
   // Each card claims more of the column, so the same twelve run further down
-  // it. Measured on the lowest edge, which is the only thing a reader of a
-  // phone board would notice.
+  // it - measured on the lowest edge, the only thing a reader would notice.
   const bottom = list => Math.min(...list.map(it => it.y - it.h / 2));
   assert.ok(bottom(loose) < bottom(tight), 'a gap did not lengthen the column');
 
@@ -477,15 +461,13 @@ test('content is shared between both layouts, settings are not', () => {
   setSetting('spacing', 36);
   setBoardMode('desktop');
 
-  // One set of items under two arrangements: a rename made in either is a
-  // rename of the same note.
+  // One set of items under two arrangements: a rename in either is a rename
+  // of the same note.
   assert.equal(byId('shared').name, 'after');
   assert.equal(byId('shared').meta.text, 'same note');
 
-  // Spacing is layout-local, so each of the two keeps the gap it was given and
-  // neither can see the other's - see research/docs/layout-settings.md. Mobile starts at
-  // zero rather than at Desktop's 12, which is what every board saved before it
-  // had a gap of its own actually looked like.
+  // Spacing is layout-local (research/docs/layout-settings.md); Mobile starts at zero
+  // rather than Desktop's 12, matching what every pre-existing board looked like.
   assert.equal(board.settings.spacing, 12, 'Desktop keeps its own spacing');
   setBoardMode('mobile');
   assert.equal(board.settings.spacing, 36, 'Mobile keeps the gap it was given');
@@ -502,10 +484,9 @@ test('The board name style is board-wide, editable from either layout, and round
     italic: true,
     axes: { opsz: 72, BAD: 4, 'TOO-LONG': 9 },
   });
-  // Board-level now (board.mobileHeader), not per-layout: the Mobile masthead
-  // and the Desktop title card are one style. Bad or over-long axis tags are
-  // dropped; the unwritten fields land on their defaults - 100 is the face's own
-  // line height, wrap is on, offset centres. See DEFAULT_MOBILE_HEADER.
+  // Board-level (board.mobileHeader), not per-layout: the Mobile masthead and
+  // Desktop title card are one style. Bad/over-long axis tags are dropped;
+  // unwritten fields fall back to DEFAULT_MOBILE_HEADER.
   assert.deepEqual(board.mobileHeader, {
     font: 'Fraunces',
     size: 17.5,
@@ -520,16 +501,15 @@ test('The board name style is board-wide, editable from either layout, and round
 
   const data = serializeBoard();
 
-  // Shared, not per-layout: Desktop sees the very same style...
+  // Shared, not per-layout: Desktop sees the same style, and may edit it (the
+  // title card's pen), with Mobile then seeing the change.
   setBoardMode('desktop');
   assert.equal(board.mobileHeader.size, 17.5, 'Desktop sees the shared style');
-  // ...and may edit it (the title card's pen), with Mobile then seeing the change.
   setSetting('mobileHeader', { ...board.mobileHeader, size: 24 });
   assert.equal(board.mobileHeader.size, 24, 'Desktop can edit the shared style');
   setBoardMode('mobile');
   assert.equal(board.mobileHeader.size, 24, 'the edit crossed to the other layout');
 
-  // The serialised style comes back whole.
   loadBoard(data);
   assert.equal(board.mobileHeader.size, 17.5);
   assert.equal(board.mobileHeader.stretch, 135);
@@ -544,18 +524,17 @@ test('media fit is a board-wide default with an undoable per-item override', () 
     { id: 'pic', type: 'image', asset: { hash: hash('a'), embedded: true } },
     { id: 'clip', type: 'video', asset: { hash: hash('b'), embedded: true } },
   ]);
-  // Defaults to fit (fill is opt-in), whatever a caller passes that is not the
-  // one other value.
+  // Defaults to fit; fill is opt-in.
   assert.equal(board.mediaFit, 'contain');
 
-  // Board-wide, and one value for both layouts.
+  // Board-wide: one value for both layouts.
   setSetting('mediaFit', 'cover');
   assert.equal(board.mediaFit, 'cover');
   setBoardMode('mobile');
   assert.equal(board.mediaFit, 'cover', 'the default is board-wide, not per-layout');
   setBoardMode('desktop');
 
-  // A per-item override is undoable and independent of the default.
+  // Per-item override is undoable and independent of the default.
   setItemFit('pic', 'contain');
   assert.equal(byId('pic').meta.fit, 'contain');
   undo();
@@ -567,7 +546,6 @@ test('media fit is a board-wide default with an undoable per-item override', () 
   setItemFit('clip', 'sideways');
   assert.equal(byId('clip').meta.fit, undefined, 'a bad value is ignored');
 
-  // Both the default and the override survive a round-trip.
   const data = serializeBoard();
   loadBoard(data);
   assert.equal(board.mediaFit, 'cover', 'the board default round-trips');
@@ -584,13 +562,12 @@ test('paletteSources is a board-wide count, clamped and round-tripped', () => {
   assert.equal(board.paletteSources, 6, 'the count is board-wide, not per-layout');
   setBoardMode('desktop');
 
-  // Clamped to [1, 24] and rounded, whatever a caller or an edited file offers.
+  // Clamped to [1, 24] and rounded, whatever a caller or edited file offers.
   setSetting('paletteSources', 99);
   assert.equal(board.paletteSources, 24, 'held under the sampler ceiling');
 
-  // Except 0, which is the stop past the top of the dial: every picture on the
-  // board. It used to be clamped up to 1, which is the opposite reading - the
-  // dullest palette available rather than the fullest one.
+  // Except 0, the stop past the top of the dial: every picture on the board.
+  // It used to clamp up to 1, the opposite reading - dullest rather than fullest.
   setSetting('paletteSources', 0);
   assert.equal(board.paletteSources, 0, 'zero means every picture');
   setSetting('paletteSources', -3);
@@ -606,8 +583,7 @@ test('paletteSources is a board-wide count, clamped and round-tripped', () => {
 
 test('A board that stored the name style under settings still loads it', () => {
   fresh();
-  // Files written before the style moved to board level carry it inside
-  // settings; loadBoard reads that as the fallback source.
+  // Pre-migration files carry the style inside settings; loadBoard falls back to it.
   loadBoard({ settings: { mobileHeader: { font: 'Georgia', size: 20 } } });
   assert.equal(board.mobileHeader.font, 'Georgia');
   assert.equal(board.mobileHeader.size, 20);
@@ -615,7 +591,7 @@ test('A board that stored the name style under settings still loads it', () => {
 
 test('the title card is a singleton the app seeds and holds to one', () => {
   fresh();
-  // loadBoard leaves it to the app - a bare board of items carries none.
+  // loadBoard leaves it to the app: a bare board of items carries none.
   assert.equal(board.items.filter(i => i.type === 'title').length, 0);
   ensureTitleCard();
   const titles = board.items.filter(i => i.type === 'title');
@@ -747,8 +723,7 @@ test('a board whose items are not a list does not replace anything', () => {
   loadBoard({ title: 'poison', items: {} });
   assert.equal(board.title, 'poison', 'the load should still complete');
   assert.equal(board.items.length, 0);
-  // The failure mode this replaced: title taken from the new board, items left
-  // over from the old one, and no way back to either.
+  // Old failure: title taken from the new board, items left from the old one.
   assert.equal(serializeBoard().items.length, 0);
 });
 
@@ -866,7 +841,7 @@ const FONT_HASH_2 = 'b'.repeat(64);
 test('a board with no font list gets an empty one, not undefined', () => {
   fresh();
   assert.deepEqual(board.settings.fonts, []);
-  // And it survives the round trip out, so the packer has something to walk.
+  // Survives the round trip out too, so the packer has something to walk.
   assert.deepEqual(serializeBoard().settings.fonts, []);
 });
 
@@ -905,8 +880,8 @@ test('custom font axes survive but malformed axis metadata does not', () => {
 
 test('a font entry that could break a stylesheet is dropped', () => {
   // The family becomes a CSS family name inside a real declaration, out of a
-  // .mbrd somebody else wrote. One bad entry costs its own entry - the same
-  // bargain `vars` gets - rather than costing the board its other faces.
+  // .mbrd somebody else wrote - one bad entry costs itself, not the board's
+  // other faces.
   loadBoard({ title: 'T', items: [], settings: { fonts: [
     { hash: FONT_HASH, family: 'a", monospace; display: none; "' },
     { hash: FONT_HASH_2, family: 'Good' },
@@ -936,8 +911,8 @@ test('a board cannot carry a thousand faces', () => {
 });
 
 test('the defaults are not shared between boards', () => {
-  // DEFAULT_SETTINGS holds `fonts` by reference, so a board that pushed onto it
-  // in place would be editing the defaults every later board is built from.
+  // DEFAULT_SETTINGS holds `fonts` by reference; pushing onto it in place
+  // would edit the defaults every later board is built from.
   fresh();
   board.settings.fonts.push({ hash: FONT_HASH, family: 'Leaked' });
   fresh();

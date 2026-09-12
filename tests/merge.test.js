@@ -1,11 +1,8 @@
-// Folding one board into another.
-//
-// planMerge() is pure and takes no board, which is the whole reason it is
-// testable at all - and the reason it had to be. Every failure mode in a merge
-// is silent: a collision handled wrongly does not throw, it produces a board
-// where a note that arrived from somebody else's file is stuck to one of *your*
-// photographs, and moves with it, and looks entirely normal. So the cases below
-// are all about references surviving a rename.
+// Folding one board into another. planMerge() is pure and takes no board,
+// which is why it's testable at all - every merge failure is silent: a
+// mishandled collision doesn't throw, it produces a board where somebody
+// else's note is stuck to your photograph and looks entirely normal. So
+// these cases are about references surviving a rename.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -23,13 +20,10 @@ const incoming = (items, extra = {}) => ({
 });
 
 /**
- * A tour written the short way in a fixture: one stop per card.
- *
- * planMerge() is handed a board that has already been through
- * normalizeBoard(), so what reaches it is the stop shape - `{ cards }` per stop
- * - rather than the flat id list files may still carry. Nothing about the merge
- * is about the grouping, so every fixture here is one card per stop and this is
- * what says so once instead of at eight call sites.
+ * A tour written the short way: one stop per card. planMerge() receives a
+ * board already through normalizeBoard(), so it sees `{ cards }` per stop
+ * rather than a flat id list. The merge never cares about grouping, so this
+ * says "one card per stop" once instead of at eight call sites.
  */
 const tourOf = (...ids) => ids.map(id => ({ cards: [id] }));
 
@@ -53,8 +47,8 @@ test('a colliding id is renamed, and every reference to it follows', () => {
   const [photo, note] = plan.items;
   assert.notEqual(photo.id, 'photo', 'the collision is renamed');
   assert.equal(note.id, 'note', 'a name nobody else holds is kept');
-  // The four references, all pointing at the new id rather than at the string
-  // that now belongs to a card on the host board.
+  // The four references, all pointing at the new id, not the string that
+  // now belongs to a card on the host board.
   assert.equal(note.meta.stuckTo, photo.id);
   assert.deepEqual(plan.connections, [[photo.id, note.id]]);
   assert.deepEqual(plan.tour, [{ cards: [photo.id] }]);
@@ -72,10 +66,9 @@ test('a fence membership survives the rename too', () => {
 });
 
 test('a reference to something the file does not carry is dropped, not kept', () => {
-  // The case that would otherwise resolve against a host card by accident: the
-  // incoming note names a host id, so leaving it would pin the arrival to one of
-  // the boards it was merged into. An absent stuckTo sends the question back to
-  // the measurement, which is what sticky.ts already does for a loose note.
+  // The incoming note names a host id, so leaving it would pin the arrival
+  // to a board it was merged into by accident. An absent stuckTo sends the
+  // question back to the measurement, as sticky.ts does for a loose note.
   const plan = planMerge(incoming(
     [{ id: 'note', type: 'note', meta: { stuckTo: 'someone-elses-card' } }],
     { connections: [['note', 'someone-elses-card']], tour: tourOf('someone-elses-card') },
@@ -96,9 +89,9 @@ test('connection meta rides along with a remapped pair', () => {
 });
 
 test('a note stuck to itself is not made into a new kind of nonsense', () => {
-  // Hand-written .mbrd files exist and this is the shape a broken one takes.
-  // The rename must keep it self-referential rather than pointing it at a
-  // stranger; sticky.ts is what decides such a note is simply loose.
+  // Hand-written .mbrd files exist, and this is the shape a broken one
+  // takes. The rename must keep it self-referential, not point it at a
+  // stranger; sticky.ts decides such a note is simply loose.
   const plan = planMerge(incoming([
     { id: 'n', type: 'note', meta: { stuckTo: 'n' } },
   ]), ['n']);
@@ -113,12 +106,11 @@ test('the arriving block keeps its own shape and lands beside the host', () => {
   ]), ['h'], board);
 
   const [a, b] = plan.items;
-  // The composition is the thing being merged, so the gap between the two cards
-  // is exactly what it was in the file. This is the assertion that would fail if
-  // anybody ever "improved" the placement by running arrange() over the arrivals.
+  // The composition is what's being merged, so the gap between the cards is
+  // exactly what it was in the file - fails if arrange() ever "improves" it.
   assert.equal(b.x - a.x, 300, 'the block is translated, never re-laid-out');
   assert.equal(a.y, b.y);
-  // And it is clear of the host card, which sits at x = 0 with a half-width of 50.
+  // Clear of the host card, which sits at x = 0 with a half-width of 50.
   assert.ok(a.x - 50 > 50, `the block starts clear of the host (a.x = ${a.x})`);
 });
 
@@ -131,17 +123,16 @@ test('merging into an empty board leaves the arrivals where their file put them'
 });
 
 test('the bin counts as taken, so a restore cannot collide later', () => {
-  // The id union the caller passes is the live board's *and* the bin's. A card
-  // dragged back out of the trash comes back with the id it had, so an arrival
-  // that took that string would collide at the moment of the restore - long
-  // after the merge, with nothing to connect the two.
+  // The id union the caller passes is the live board's *and* the bin's. A
+  // restored card comes back with its old id, so an arrival taking that
+  // string would collide at restore time, long after the merge.
   const plan = planMerge(incoming([{ id: 'binned', type: 'note' }]), ['binned']);
   assert.notEqual(plan.items[0].id, 'binned');
 });
 
 test('content hashes are not ids and are never remapped', () => {
-  // meta.cover names bytes in the asset store, which is exactly the thing two
-  // boards are allowed to share - remapping it would break the picture.
+  // meta.cover names bytes in the asset store, which two boards are allowed
+  // to share - remapping it would break the picture.
   const hash = 'a'.repeat(64);
   const plan = planMerge(incoming([
     { id: 'track', type: 'audio', meta: { cover: hash } },
@@ -151,16 +142,11 @@ test('content hashes are not ids and are never remapped', () => {
 });
 
 test('a dangling reference does not latch onto a card the rename just created', () => {
-  // The failure this module's header says it exists to prevent, reached by the
-  // rename rather than in spite of it.
-  //
   // The host owns `a`. The incoming file has an image `a` and a note whose
-  // meta.stuckTo says `a~2` - a reference to nothing, in that file. dedupeIds()
-  // renames the image to `a~2` to clear the collision, and the guard used to
-  // ask whether the *renamed* id was among the arrivals: it is, because the
-  // rename had just made it. So the note came out pinned to a photograph it
-  // had never been on, silently, and the busier the host board the likelier
-  // the collision.
+  // meta.stuckTo says `a~2` - a reference to nothing in that file.
+  // dedupeIds() renames the image to `a~2`, and the guard used to ask
+  // whether the *renamed* id was among the arrivals - it is, because the
+  // rename just made it, silently pinning the note to a photo it never touched.
   const plan = planMerge(incoming([
     { id: 'a', type: 'image', w: 200, h: 200 },
     { id: 'note', type: 'note', meta: { stuckTo: 'a~2' } },

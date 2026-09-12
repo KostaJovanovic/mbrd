@@ -118,25 +118,25 @@ test('Mobile masthead leaves descender room and its finite board follows the sty
   const rule = id => css.match(new RegExp(`#${id}\\s*\\{([^}]+)\\}`))?.[1] || '';
 
   assert.match(rule('mobile-board-title'), /line-height:\s*normal;/);
-  // More below than above: overflow:hidden clips at the padding edge, and the
-  // descenders of g/j/y hang past the last line box - further when the Line
-  // height dial tightens it.
+  // More below than above: overflow:hidden clips at the padding edge, and
+  // g/j/y descenders hang past the last line box, further as the Line
+  // height dial tightens.
   assert.match(rule('mobile-board-title'), /padding-block:\s*0\.2em\s+0\.45em;/);
   assert.match(rule('mobile-board-title'), /overflow-wrap:\s*anywhere;/);
   assert.match(rule('mobile-board-frame'), /border-radius:\s*var\(--radius\);/);
   assert.match(rule('mobile-board-frame'),
     /background:\s*color-mix\(in srgb,\s*var\(--accent\)\s*var\(--mobile-board-accent\),\s*#fff\);/);
-  // The sheet is positioned from the live board rectangle, clipped to the
-  // window and written only when it changes - not from custom properties on
-  // #viewport, which invalidated every card on the board once a frame. What the
-  // clipping and the rounding come out as is asserted on sheetBox() itself
-  // below; this is only that the painter goes through it and keeps the cache.
+  // Positioned from the live board rectangle, clipped to the window and
+  // written only when it changes - not from custom properties on
+  // #viewport, which invalidated every card once a frame. sheetBox()
+  // itself is asserted below; this just checks the painter uses it and
+  // keeps the cache.
   assert.match(frame, /vp\.mobileScreenRect\(\)/);
   assert.match(frame, /sheetBox\(r, vp\.width, vp\.height\)/);
   assert.match(frame, /if \(next === lastSheet\) return;/);
-  // The surround is its own static wash now. It was a 100vmax spread shadow on
-  // the sheet, which repainted the whole window every time the board scrolled;
-  // the tone it states is the same 6% of ink.
+  // The surround is its own static wash now - was a 100vmax spread shadow
+  // on the sheet, repainting the whole window on every scroll; same 6% of
+  // ink either way.
   assert.match(rule('mobile-surround'),
     /background:\s*color-mix\(in srgb,\s*var\(--ink\)\s*6%,\s*transparent\);/);
   assert.doesNotMatch(rule('mobile-board-frame'), /box-shadow/);
@@ -150,7 +150,7 @@ test('Mobile masthead leaves descender room and its finite board follows the sty
 
 test('the Mobile sheet is clipped to the window and rounds only a real edge', () => {
   const W = 390, H = 800;
-  // A long board: top edge below the masthead, bottom edge far off the screen.
+  // A long board: top edge below the masthead, bottom edge far off screen.
   const atTop = sheetBox({ left: 16, width: 358, top: 260, bottom: 4000 }, W, H);
   assert.deepEqual(
     [atTop.x, atTop.y, atTop.w, atTop.h], [16, 260, 358, 540],
@@ -158,10 +158,9 @@ test('the Mobile sheet is clipped to the window and rounds only a real edge', ()
   assert.equal(atTop.topRadius, 'var(--radius)');
   assert.equal(atTop.bottomRadius, '0px', 'the far edge is off screen and stays square');
 
-  // Scrolled into the middle: both edges outside the window, so the box is the
-  // window - which is the whole saving. This answer does not change for as long
-  // as the scroll stays in the middle of the board, and the caller compares it
-  // against the last one and writes nothing.
+  // Scrolled into the middle: both edges outside the window, so the box is
+  // the window - the whole saving, since this answer does not change while
+  // the scroll stays in the middle and the caller writes nothing.
   const mid = sheetBox({ left: 16, width: 358, top: -900, bottom: 3100 }, W, H);
   assert.deepEqual([mid.x, mid.y, mid.w, mid.h], [16, 0, 358, H]);
   assert.equal(mid.topRadius, '0px');
@@ -176,8 +175,7 @@ test('the Mobile sheet is clipped to the window and rounds only a real edge', ()
   assert.equal(atBottom.topRadius, '0px');
   assert.equal(atBottom.bottomRadius, 'var(--radius)');
 
-  // A board scrolled entirely past the window has no box at all rather than a
-  // negative one.
+  // A board scrolled entirely past the window has no box, not a negative one.
   const gone = sheetBox({ left: 16, width: 358, top: -4000, bottom: -300 }, W, H);
   assert.equal(gone.h, 0);
 });
@@ -188,24 +186,23 @@ test('the Mobile masthead is written only while it is on screen', () => {
   assert.equal(top.visible, true);
   assert.equal(top.y, 20, 'the band stands on the board edge, its own height above it');
 
-  // Scrolled away for good: the board's top edge is above the window, so the
-  // band that hangs off it is further above still and is not written at all.
+  // Scrolled away for good: the board's top edge is above the window, so
+  // the band hanging off it is further above still and not written at all.
   assert.equal(mastShift({ top: -1 }, headerH, H).visible, false);
   assert.equal(mastShift({ top: 0 }, headerH, H).visible, false);
 
-  // ...and a board whose top edge has not reached the window yet - a very short
+  // A board whose top edge has not reached the window yet - a very short
   // board on a very tall window, scrolled to its bottom stop.
   assert.equal(mastShift({ top: H + headerH + 1 }, headerH, H).visible, false);
   assert.equal(mastShift({ top: H + headerH - 1 }, headerH, H).visible, true);
 });
 
 test('no view frame writes an inherited custom property onto #viewport', async () => {
-  // #viewport is an ancestor of #world, and custom properties are inherited, so
-  // writing one there on a pan frame invalidates the computed style of every
-  // mounted card and everything inside it. --iz is published to #world and is
-  // quantised for exactly this reason (see IZ_STEP); the five Mobile board
-  // properties used to be published here with no such guard, on a layout that
-  // has no zoom at all. They live on the two elements that read them now.
+  // #viewport is an ancestor of #world; a custom property written there on
+  // a pan frame invalidates every mounted card's computed style. --iz is
+  // published to #world and quantised for this reason (IZ_STEP); the five
+  // Mobile board properties used to be published here unguarded, on a
+  // layout with no zoom at all. They now live on the elements that read them.
   const viewport = await readFile(
     new URL('../web/assets/js/canvas/viewport.ts', import.meta.url), 'utf8');
   const paint = viewport.match(/_paint\(\)\s*\{[\s\S]*?\n  \}/)?.[0] || '';
@@ -215,8 +212,8 @@ test('no view frame writes an inherited custom property onto #viewport', async (
 });
 
 test('Mobile masthead title preserves a trailing space while it is edited', async () => {
-  // The shared inline board-name editor, which the masthead and the Desktop
-  // title card both use. Lifted out of main.ts into ui/board-title.ts.
+  // The shared inline board-name editor, used by both the masthead and the
+  // Desktop title card. Lifted out of main.ts into ui/board-title.ts.
   const mod = await readFile(
     new URL('../web/assets/js/ui/board-title.ts', import.meta.url), 'utf8');
   assert.match(mod, /cleanBoardTitleDraft\(field\.textContent\)/);
@@ -239,16 +236,16 @@ test('the top-stop pen opens persisted header typography controls', async () => 
     assert.match(html, new RegExp(`id="${id}"`));
   }
   assert.match(css, /#mobile-header-edit-btn\s*\{[\s\S]*var\(--chrome-button-h\)/);
-  // The pen shows over the Feed's masthead (the editable title page) and comes down
-  // on the Playlist lens - gated on the lens, not on the now-dormant canvas scroll
-  // stop it used to read (atMobileTop, moot behind a DOM lens).
+  // The pen shows over the Feed's masthead and hides on the Playlist lens -
+  // gated on the lens, not the now-dormant canvas scroll stop it used to
+  // read (atMobileTop, moot behind a DOM lens).
   assert.match(module, /dataset\.feedLens/);
   assert.match(css, /\[data-feed-lens="playlist"\]\s*#mobile-header-edit-btn\s*\{\s*display:\s*none/);
   assert.match(module, /headerFontAxes/);
   assert.match(module, /fontVariationSettings/);
-  // The title's vertical position dial rides ahead of the stretch, as a fraction
-  // of the band height, and the stretch keeps its hair-below-centre origin - see
-  // app.css. Off by more than that and the title walks along the band.
+  // The title's vertical position dial rides ahead of the stretch as a
+  // fraction of band height; the stretch keeps its hair-below-centre
+  // origin (app.css) - off by more than that and the title walks the band.
   assert.match(css,
     /transform:[\s\S]*translateY\(calc\(var\(--mobile-header-height[\s\S]*var\(--mobile-title-offset[\s\S]*scaleY\(var\(--mobile-title-stretch,\s*1\)\);[\s\S]*transform-origin:\s*50%\s*52%;/);
 });
@@ -298,8 +295,8 @@ test('Mobile viewport has side gutters and finite vertical bounds', () => {
     'the board cannot scroll past its bottom edge');
 });
 
-// The rubber band. Four properties, and the middle two are the ones that are
-// wrong in every implementation that does this by clamping a damped value.
+// The rubber band. Four properties; the middle two are the ones every
+// clamped-damped-value implementation gets wrong.
 test('a held Mobile board follows past its edge, by less and less', () => {
   const vp = new Viewport(element(), element());
   vp.setBoardMode('mobile', 384, 384, -1216);
@@ -345,8 +342,8 @@ test('nothing but a finger gets the soft edge', () => {
   vp.setBoardMode('mobile', 384, 384, -1216);
   vp.fit([]);
   const top = vp.pan.y;
-  // The wheel, a trackpad and a keyboard nudge all come through panByScreen and
-  // none of them is a gesture a boundary can tell anything.
+  // Wheel, trackpad and keyboard nudges all come through panByScreen, and
+  // none is a gesture a boundary can distinguish.
   vp.panByScreen(0, 100);
   assert.equal(vp.pan.y, top, 'the hard clamp is still the default');
 });
@@ -360,8 +357,8 @@ test('letting go past the edge brings the board back', () => {
   vp.panByScreen(0, 300);
   assert.ok(vp.pan.y > top);
 
-  // One frame, a long way into the settle: the curve has to have arrived rather
-  // than merely be heading there, which is what SETTLE_EPS decides.
+  // One frame, a long way into the settle: the curve must have arrived,
+  // not merely be heading there - what SETTLE_EPS decides.
   const rAF = globalThis.requestAnimationFrame;
   globalThis.requestAnimationFrame = cb => { cb(performance.now() + 2000); return 1; };
   try {
@@ -381,8 +378,8 @@ test('the Mobile masthead keeps a 3:2 ratio with the board, above its top edge',
   assert.equal(vp.mobileScreenRect().width, 328);
   assertNear(vp.mobileHeaderPx(), 328 / (3 / 2));
   assertNear(vp.mobileScreenRect().width / vp.mobileHeaderPx(), 3 / 2);
-  // The band stands on the top edge: its own top is the head of the viewport,
-  // a pad down, and the board begins where it ends.
+  // The band stands on the top edge: its top is the viewport's head, a pad
+  // down, and the board begins where it ends.
   assertNear(vp.toScreen(0, 384).y - vp.mobileHeaderPx(), 32);
 
   const shortVp = new Viewport(element(360, 300), element(360, 300));
@@ -406,8 +403,8 @@ test('Mobile viewport follows a changing content bottom', () => {
 });
 
 test('Mobile suppresses Desktop spatial guides without changing their settings', () => {
-  // Both have to be asked for - the web is off by default - or the assertions
-  // below would pass on a board that never wanted them in the first place.
+  // Both must be asked for - the web is off by default - or the
+  // assertions below would pass on a board that never wanted them.
   const settings = { axes: true };
   setSetting('web', true);
   assert.equal(axesVisible(settings, 'mobile'), false);
@@ -427,13 +424,12 @@ test('Mobile board mode hides the ruler and zoom controls at every screen width'
 });
 
 test('the Playlist lens shows the player and hides the canvas, outside any width query', async () => {
-  // Playlist is a lens on a Mobile board, entered by the switch - so its show is
-  // keyed on data-feed-lens="playlist" (under data-board-mode="mobile") and lives
-  // above every @media block in mobile.css, the same shape as the #zoom-ctl hide
-  // above. A width query would make a wide tablet asked for it get the canvas
-  // instead. Both lenses (Feed and Playlist) are DOM boards that cover the canvas,
-  // so the world-space viewport is hidden for the whole of Mobile, not only under
-  // Playlist - the hide is keyed on the mode, not the lens.
+  // Playlist is a lens on a Mobile board, entered by the switch - keyed on
+  // data-feed-lens="playlist" and living above every @media block, same
+  // shape as the #zoom-ctl hide above. A width query would give a wide
+  // tablet the canvas instead. Both lenses cover the canvas, so the
+  // world-space viewport is hidden for all of Mobile, keyed on the mode,
+  // not the lens.
   const css = await readFile(
     new URL('../web/assets/css/mobile.css', import.meta.url), 'utf8');
   const show = css.match(/:root\[data-board-mode="mobile"\]\[data-feed-lens="playlist"\] #mobile-playlist \{\s*display:\s*block;\s*\}/);
@@ -442,30 +438,29 @@ test('the Playlist lens shows the player and hides the canvas, outside any width
   const hide = css.match(/:root\[data-board-mode="mobile"\] #viewport \{\s*visibility:\s*hidden;\s*\}/);
   assert.ok(show, 'the playlist appears under the Playlist lens');
   assert.ok(hide, 'and the world-space canvas is hidden under it');
-  // '@media (' rather than '@media', so the prose in a comment that mentions the
-  // word does not count as the first query.
+  // '@media (' not '@media', so a comment mentioning the word does not
+  // count as the first query.
   const firstMedia = css.indexOf('@media (');
   assert.ok(css.indexOf(show[0]) < firstMedia && css.indexOf(hide[0]) < firstMedia,
     'the switch sits above every media query in mobile.css');
 });
 
 test('the feed surface is a sibling of #viewport, never a child of it', async () => {
-  // #viewport has paint containment and publishes --iz to its subtree; a feed
-  // nested inside would inherit that custom property and be caught by the
+  // #viewport has paint containment and publishes --iz to its subtree; a
+  // feed nested inside would inherit that property and hit the
   // whole-board invalidation canvas/mobile-frame.ts exists to avoid.
   const html = await readFile(new URL('../web/index.html', import.meta.url), 'utf8');
   const viewportClose = html.indexOf('<aside id="sidebar"');
   const feedAt = html.indexOf('id="mobile-feed"');
   assert.ok(feedAt > -1, 'the feed surface is in the markup');
   assert.ok(feedAt < viewportClose, 'and it stands before the sidebar, after #viewport');
-  // The div is not inside the #viewport block: everything from #viewport to its
-  // close comes before #mobile-feed.
+  // The div is not inside the #viewport block: everything from #viewport
+  // to its close comes before #mobile-feed.
   const viewportOpen = html.indexOf('<div id="viewport">');
   const worldClose = html.indexOf('<div id="marquee" hidden></div>');
-  // Found before ordered. Either indexOf returning -1 makes the chain below
-  // true for free, and -1 is exactly what a renamed or reformatted element
-  // returns - so the check would go green on the edit most likely to break the
-  // ordering it is guarding.
+  // Found before ordered: indexOf returning -1 - exactly what a renamed or
+  // reformatted element produces - would make the chain below true for
+  // free, passing on the edit most likely to break the ordering.
   assert.ok(viewportOpen > -1, 'no <div id="viewport"> in the markup');
   assert.ok(worldClose > -1, 'no #marquee - the end of the viewport block has moved');
   assert.ok(viewportOpen < worldClose && worldClose < feedAt,

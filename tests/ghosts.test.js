@@ -1,12 +1,11 @@
 // Ghost cards: the three hints a brand-new board opens with.
 //
-// They are real items - selectable, draggable, packed into a Mobile column like
-// anything else - and the whole feature is the three places where they are not.
-// So that is what this file is about: they never reach a file, they never reach
-// the bin, and once they have gone they do not come back.
+// Real items - selectable, draggable, packed into a Mobile column - except
+// for three places: they never reach a file, never reach the bin, and once
+// gone they don't come back. That's what this file is about.
 //
-// state.ts is a module singleton, so every case starts from a loaded board, the
-// same door opening a .mbrd goes through.
+// state.ts is a module singleton, so every case starts from a loaded board,
+// the same door a .mbrd opens through.
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -29,11 +28,9 @@ const ghosts = () => board.items.filter(i => i.type === 'ghost');
 /**
  * The hints, asserted to be there before anything walks them.
  *
- * Several tests in this file assert only *inside* a walk over the hints, so
- * `ensureGhostCards()` seeding nothing at all satisfied every one of them: no
- * hint is off the lattice, off the Mobile frame or badly taped when there are
- * no hints. `ghosts()` is left alone because six other tests here use it to
- * assert emptiness, which is the opposite thing and equally real.
+ * Several tests here assert only inside a walk over the hints, so
+ * ensureGhostCards() seeding nothing would satisfy them vacuously. ghosts()
+ * is left alone since six other tests use it to assert emptiness instead.
  */
 const someGhosts = () => {
   const out = ghosts();
@@ -85,9 +82,8 @@ test('every hint carries a key the copy knows something to say for', () => {
     assert.ok(g.meta.hint, 'the item carries its key');
     assert.ok(HINTS[g.meta.hint], `${g.meta.hint} has copy`);
     assert.ok(hintFor(g.meta.hint).title, 'and the copy has a title');
-    // A line or a legend, and the renderer prints whichever it finds - so what
-    // is being guarded is that a card is never a bare heading, not that the copy
-    // is prose. See Hint in canvas/ghosts.ts.
+    // A line or a legend, whichever the renderer finds - guards against a
+    // bare heading, not that the copy is prose. See Hint in canvas/ghosts.ts.
     const { line, rows } = hintFor(g.meta.hint);
     assert.ok(line || rows?.length, 'and a line or a row of keys');
     for (const r of rows ?? []) {
@@ -107,9 +103,9 @@ test('serializeBoard carries no hint, in items or in either layout', () => {
   ensureTitleCard();
   ensureGhostCards();
   addItems([photo({ id: 'p1' })]);
-  // addItems does not dismiss on its own - that is canvas/ghosts.ts's
-  // subscriber, which needs a DOM. Put them back to serialise the worst case:
-  // a board that holds both hints and content at once.
+  // addItems doesn't dismiss on its own - that's canvas/ghosts.ts's
+  // subscriber, needing a DOM. Put them back to serialise the worst case:
+  // hints and content at once.
   ensureGhostCards();
   board.items.push(...GHOST_IDS
     .filter(id => !board.items.some(i => i.id === id))
@@ -156,8 +152,8 @@ test('dismissal is not undoable, and re-seeding will not undo it either', () => 
   ensureGhostCards();
   assert.equal(ghosts().length, 0, 'the latch holds while the board has content');
 
-  // The import that triggered the sweep is undone. The board is empty again -
-  // and the hints still stay gone, which is the point of the latch.
+  // The import that triggered the sweep is undone - the board is empty
+  // again, and the hints still stay gone, the point of the latch.
   undo();
   assert.equal(board.items.some(i => i.id === 'p1'), false, 'the undo really ran');
   ensureGhostCards();
@@ -212,9 +208,9 @@ test('hasContent ignores the two kinds of furniture and nothing else', () => {
 });
 
 test('a hint leaves with the whimsy tier, like any other card', () => {
-  // Not a title card, so it takes the tier's own feel rather than the chip that
-  // falls to the bin. canvas/items.ts flies out every id in a removed delta,
-  // which is why canvas/ghosts.ts asks for no animation of its own.
+  // Not a title card, so it takes the tier's own feel rather than the
+  // bin-bound chip. canvas/items.ts flies out every id in a removed delta,
+  // so canvas/ghosts.ts asks for no animation of its own.
   assert.equal(exitKindFor('ghost', '0'), 'fall');
   assert.equal(exitKindFor('ghost', '1'), 'dissolve');
   assert.equal(exitKindFor('ghost', '2'), 'shatter');
@@ -234,11 +230,9 @@ test('a dismissed hint is dropped from the selection', () => {
 // ---------------------------------------------------------------------------
 
 test('the card prints the same stop names the sidebar does', async () => {
-  // The card borrows the sidebar's slider outright - same .field markup, same
-  // CSS - and the three names under it have to be the sidebar's too. They are
-  // duplicated rather than shared, because the panel's list lives in ui/ and
-  // canvas/ may not reach into it, so this is the thing that holds the two
-  // copies together. Including the full stop on "Harsh."
+  // The card borrows the sidebar's slider outright, so the three names
+  // under it must be the sidebar's too. Duplicated rather than shared,
+  // since the panel's list lives in ui/ and canvas/ may not reach into it.
   const { SECTIONS } = await import('../web/assets/js/ui/settings-schema.ts');
   const dial = SECTIONS.flatMap(s => s.controls || []).find(c => c.id === 'opt-whimsy');
   assert.ok(dial, 'the panel still has a whimsy dial');
@@ -248,8 +242,8 @@ test('the card prints the same stop names the sidebar does', async () => {
 });
 
 test('every level has a name to read out, and a bad one still does', () => {
-  // The printed stops are hidden from the accessibility tree, so this is what a
-  // screen reader hears instead of "1 of 2".
+  // The printed stops are hidden from the accessibility tree, so this is
+  // what a screen reader hears instead of "1 of 2".
   assert.deepEqual(STOPS.map((_, i) => stopName(i)), [...STOPS]);
   assert.equal(stopName(7), STOPS[1], 'out of range falls back to the default tier');
 });
@@ -259,10 +253,9 @@ test('every level has a name to read out, and a bad one still does', () => {
 // ---------------------------------------------------------------------------
 
 test('the dial is the one hint that is not taped down', () => {
-  // It stays an ordinary card at every tier - a working control does not want
-  // half a strip of tape across its track - and app.css keeps the rest of the
-  // Softish treatment off it. The tape is the half that has to be refused at
-  // minting, since it is rolled there rather than drawn from the tier.
+  // A working control doesn't want tape across its track, so it stays an
+  // ordinary card at every tier - refused at minting, since tape is rolled
+  // there rather than drawn from the tier.
   ensureGhostCards();
   const dial = board.items.find(i => i.meta?.hint === DIAL);
   assert.ok(dial, 'the dial card is one of the hints');
@@ -278,7 +271,7 @@ test('every hint is taped down once or twice, never to the same edge twice', () 
     assert.equal(new Set(tape.map(t => t.edge)).size, tape.length, 'one strip per edge');
     for (const t of tape) {
       assert.ok(['top', 'right', 'bottom', 'left'].includes(t.edge));
-      // Well inside the corners, so a strip never hangs off one.
+      // Well inside the corners, so a strip never hangs off one
       assert.ok(t.pos >= 24 && t.pos <= 76, `pos ${t.pos} is off the edge`);
       assert.ok(Math.abs(t.rot) <= 9, `rot ${t.rot} is past a press of the thumb`);
       assert.ok(t.len >= 56 && t.len <= 98, `len ${t.len} is not a strip`);
@@ -287,9 +280,9 @@ test('every hint is taped down once or twice, never to the same edge twice', () 
 });
 
 test('the roll happens once, at minting, so culling cannot move the tape', () => {
-  // The placement is item state, not a render-time decision: canvas/items.ts
+  // The placement is item state, not a render-time decision - canvas/items.ts
   // discards a culled card's node and rebuilds it, so anything rolled while
-  // drawing would land somewhere new every time the board panned past.
+  // drawing would land somewhere new on every pan past.
   ensureGhostCards();
   const before = ghosts().map(g => JSON.stringify(g.meta.tape));
   ensureGhostCards();
@@ -304,12 +297,12 @@ test('a pinned roll is reproducible, and both counts are reachable', () => {
 });
 
 test('a placement becomes a point on the edge it straddles', () => {
-  // Centred on that point by the stylesheet, so half the strip is off the card.
+  // Centred on that point by the stylesheet, so half the strip is off the card
   assert.deepEqual(tapeStyle({ edge: 'top', pos: 30, rot: 5, len: 80 }),
     { x: '30%', y: '0%', rot: '5deg', len: '80px' });
   assert.deepEqual(tapeStyle({ edge: 'bottom', pos: 60, rot: -4, len: 70 }),
     { x: '60%', y: '100%', rot: '-4deg', len: '70px' });
-  // The vertical edges add a quarter turn - a strip down the side runs with it.
+  // The vertical edges add a quarter turn - a strip down the side runs with it
   assert.deepEqual(tapeStyle({ edge: 'left', pos: 40, rot: 0, len: 60 }),
     { x: '0%', y: '40%', rot: '90deg', len: '60px' });
   assert.deepEqual(tapeStyle({ edge: 'right', pos: 50, rot: 3, len: 60 }),
@@ -322,10 +315,8 @@ test('a placement becomes a point on the edge it straddles', () => {
 
 test('a snapped board seeds its hints on the lattice', () => {
   // Harsh means snapping on Desktop, and a board saved there is snapped the
-  // moment it loads - before anything has been dragged. Hints are pushed
-  // straight onto board.items rather than going through addItems(), so nothing
-  // else would lay them down: they arrived at their own coordinates on a board
-  // where every other card sat flush in its cells.
+  // moment it loads. Hints are pushed straight onto board.items rather than
+  // through addItems(), so nothing else would have laid them flush already.
   fresh();
   setSetting('snap', true);
   ensureGhostCards();
@@ -340,11 +331,9 @@ test('a snapped board seeds its hints on the lattice', () => {
 });
 
 test('the hints are written in whole grid spaces, so snapping cannot move them', () => {
-  // The stronger half of the same rule: the geometry in GHOSTS is *itself* on
-  // the lattice, so a snapped board and an unsnapped one lay out identically
-  // and the size a paragraph was fitted to is the size it gets. Sides come back
-  // a seam short (geometry.ts CELL_GAP) - that sliver is the join between two
-  // neighbouring cells and is not a move.
+  // The geometry in GHOSTS is itself on the lattice, so a snapped and an
+  // unsnapped board lay out identically. Sides come back a seam short
+  // (CELL_GAP) - the join between neighbouring cells, not a move.
   fresh();
   ensureGhostCards();
   const unsnapped = someGhosts().map(g => ({ id: g.id, x: g.x, y: g.y, w: g.w, h: g.h }));
@@ -359,11 +348,9 @@ test('the hints are written in whole grid spaces, so snapping cannot move them',
 });
 
 test('the not-found cards are on the lattice too', () => {
-  // The same rule, and the set that broke it: the big card's left edge was at
-  // -416 and the small card's lower edge at -160, so a snapped board slid each
-  // of them half a step and the arrangement the header describes - a 64-unit
-  // channel, lower edges flush - was not the one on screen. Asserted rather than
-  // described, because the header describing it is what let it through.
+  // The set that broke this rule: the big card's left edge was at -416 and
+  // the small card's lower edge at -160, so a snapped board slid each half
+  // a step and the header's described arrangement wasn't what was on screen.
   fresh();
   ensureGhostCards({ notFound: true });
   const seam = 2 * 64 * CELL_GAP;
@@ -389,10 +376,9 @@ test('hints are packed into the Mobile column like real cards', () => {
 });
 
 test('a board born on Mobile packs its hints into the column', () => {
-  // A phone never switches modes - it opens in Mobile - and completeLayout()
-  // only fills in the profile that is *not* live. So this is the one case
-  // nothing else would have placed: seeded straight into the layout it is
-  // already in, with a Desktop arrangement 900 units wide on a board of 512.
+  // A phone never switches modes - it opens in Mobile - and
+  // completeLayout() only fills the non-live profile, so this is the one
+  // case nothing else would have placed.
   fresh();
   setBoardMode('mobile');
   ensureGhostCards();
@@ -401,8 +387,8 @@ test('a board born on Mobile packs its hints into the column', () => {
   for (const g of someGhosts()) {
     assert.ok(g.x - g.w / 2 >= -half && g.x + g.w / 2 <= half,
       `${g.meta.hint} is inside the Mobile frame`);
-    // The dial takes the whole width; a hint takes half of it, so two sit side
-    // by side. Both are measured against the seam the lattice leaves.
+    // The dial takes the whole width; a hint takes half, so two sit side by
+    // side, both measured against the lattice's seam.
     const want = g.meta.hint === DIAL ? width : half;
     assert.ok(Math.abs(g.w - want) <= 2 * 64 * CELL_GAP + 1e-6,
       `${g.meta.hint} is ${Math.round(g.w)}, not the ${want} it asked for`);

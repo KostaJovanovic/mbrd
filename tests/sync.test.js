@@ -1,23 +1,14 @@
 // Keeping a board in the cloud: what gets uploaded, and what does not.
-//
-// Against a fake store rather than a network, which the plan for this feature
-// asked for in as many words - "the provider modules should be pure enough to
-// test against a fake, and the upload path should be the only thing that is
-// not". The fake below is forty lines and implements the whole CloudStore
-// contract, which is itself the argument for the contract being that small.
-//
-// The two properties worth more than the rest of this file together:
-//
-//   - **a re-sync uploads board.json and nothing else.** That is the entire
-//     reason this feature splits a board into files instead of pushing the
-//     .mbrd the share path already builds. If it ever stops being true, syncing
-//     a board of video re-uploads hundreds of megabytes every ten minutes and
-//     the feature is worse than useless - and nothing about the app would look
-//     wrong, which is exactly the kind of regression a test has to hold.
-//   - **a remote nobody here wrote is a conflict, not an overwrite.** Item
-//     positions are absolute and there is no merge, so the only safe answer to
-//     "two machines edited this" is to stop and ask. The dangerous direction is
-//     silent success.
+// Against a fake store, not a network - the fake is forty lines and
+// implements the whole CloudStore contract, itself the argument for the
+// contract being that small. Two properties matter most:
+//   - **a re-sync uploads board.json and nothing else** - the reason this
+//     feature splits a board into files rather than pushing the .mbrd the
+//     share path builds. If this breaks, syncing a video board re-uploads
+//     hundreds of megabytes every ten minutes with nothing looking wrong.
+//   - **a remote nobody here wrote is a conflict, not an overwrite** - item
+//     positions are absolute, there is no merge, and the dangerous
+//     direction is silent success.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -31,12 +22,10 @@ import { item, realHash } from './helpers.js';
 const enc = new TextEncoder();
 
 /**
- * A Drive made of Maps.
- *
- * Faithful about the three things the engine actually reasons over: names are
- * unique per folder only by convention, `modifiedTime` moves on every write, and
- * a `put` with a file id replaces rather than adding. It counts writes per name,
- * which is how the "uploaded once, ever" property is asserted.
+ * A Drive made of Maps. Faithful to the three things the engine reasons
+ * over: names are unique per folder only by convention, `modifiedTime`
+ * moves on every write, and a `put` with a file id replaces rather than
+ * adds. Counts writes per name for the "uploaded once, ever" assertions.
  */
 function fakeStore() {
   let nextId = 1;
@@ -128,15 +117,15 @@ test('a first push writes every asset and the board', async () => {
   assert.equal(drive.writes(`${a}.png`), 1);
   assert.equal(drive.writes(`${b}.png`), 1);
   assert.equal(drive.writes('board.json'), 1);
-  // The row the caller has to persist, with the folder it found and the time the
-  // store reported *after* the write - never a local clock.
+  // The row the caller must persist: folder found, and the time the store
+  // reported *after* the write, never a local clock.
   assert.equal(out.row.provider, 'gdrive');
   assert.ok(out.row.folder);
   assert.ok(out.row.seen);
 });
 
 test('a second push re-uploads the board and not one asset', async () => {
-  // The property the whole split-by-hash design exists for.
+  // The property the split-by-hash design exists for.
   clearAssets();
   const drive = fakeStore();
   const a = await stubAsset('one');
@@ -169,9 +158,9 @@ test('a new asset on a synced board is the only thing that goes up', async () =>
 });
 
 test('board.json is written after the assets, never before', async () => {
-  // The only durability guarantee this design has: a push that dies part way
-  // leaves the previous board.json in place, so the remote is a complete older
-  // board rather than a newer one pointing at bytes that are not there.
+  // The only durability guarantee here: a push dying mid-way leaves the
+  // previous board.json in place, so the remote is a complete older board,
+  // not a newer one pointing at missing bytes.
   clearAssets();
   const drive = fakeStore();
   const a = await stubAsset('one');
@@ -192,8 +181,8 @@ test('progress counts files, and ends on the total it promised', async () => {
   await pushBoard(drive.provider, 'brd1', boardWith([a, b]), {
     onProgress: (done, total) => steps.push([done, total]),
   });
-  // Two assets plus the board, and the last call is always done === total, which
-  // is what stops a strip sitting at 90% after a job that finished.
+  // The last call is always done === total, so a finished job never leaves
+  // a strip sitting at 90%.
   assert.deepEqual(steps.at(-1), [3, 3]);
   assert.ok(steps.every(([done, total]) => done <= total));
 });
@@ -216,8 +205,7 @@ test('a remote written since we last saw it is a conflict, and uploads nothing',
   assert.equal(second.ok, false);
   assert.equal(second.conflict, true);
   assert.ok(second.theirs, 'the caller needs their timestamp to say when');
-  // Nothing was written, in either sense: the new asset did not go up and
-  // board.json was not replaced.
+  // Nothing was written: the new asset did not go up, board.json was not replaced.
   assert.equal(drive.writes(`${b}.png`), 0);
   assert.equal(drive.writes('board.json'), 1);
 });
@@ -236,15 +224,15 @@ test('force overwrites, and re-establishes the baseline', async () => {
   assert.ok(forced.ok);
   assert.notEqual(forced.row.seen, first.row.seen, 'the baseline must move on');
 
-  // And the next ordinary push is no longer a conflict, because the baseline is
-  // current again. A force that did not update `seen` would conflict forever.
+  // The next ordinary push is no longer a conflict, since the baseline is
+  // current again - a force that did not update `seen` would conflict forever.
   const after = await pushBoard(drive.provider, 'brd1', boardWith([a]), { known: forced.row });
   assert.ok(after.ok);
 });
 
 test('a board already up there that this machine has never pushed is a conflict', async () => {
-  // The second machine, opening a board it has a local copy of and has never
-  // synced. Overwriting silently is exactly the case the check exists for.
+  // A second machine opening a local board it has never synced - the case
+  // silent overwrite must not happen for.
   clearAssets();
   const drive = fakeStore();
   const a = await stubAsset('one');
@@ -278,8 +266,8 @@ test('a pull brings back the board and registers the bytes it names', async () =
   assert.equal(board.title, 'Synced board');
   assert.equal(board.items.length, 2);
   assert.ok(seen);
-  // The bytes, and the extension that tells a renderer what they are - dropping
-  // it is how an imported picture ends up as a blob: URL nothing will draw.
+  // The bytes, plus the extension that tells a renderer what they are -
+  // drop it and the picture becomes a blob: URL nothing will draw.
   assert.ok(getAsset(a));
   assert.equal(getAsset(a).ext, 'png');
   assert.equal(getAsset(a).mime, 'image/png');
@@ -299,16 +287,16 @@ test('a pull does not re-download bytes this browser already holds', async () =>
 
   const [remote] = await remoteBoards(drive.provider);
   await pullBoard(drive.provider, remote);
-  // board.json and nothing else: the asset is already in the store, which is the
-  // ordinary case of reopening your own board on the machine that made it.
+  // board.json alone: the asset is already in the store, the ordinary case
+  // of reopening your own board on the machine that made it.
   assert.equal(fetched, 1);
 });
 
 test('a pull takes bytes off the outgoing board instead of fetching them', async () => {
-  // The board swap empties the asset store before the pull, so without `reuse`
-  // reopening your own synced board re-downloads every photograph on it - not
-  // because the browser lacked them, but because nothing could reach them. The
-  // stash is handed in by withFreshAssets(); this is the half that uses it.
+  // The board swap empties the asset store before the pull, so without
+  // `reuse` reopening your own synced board re-downloads every photo - not
+  // for lack of the bytes, but because nothing could reach them.
+  // withFreshAssets() hands in the stash; this is the half that uses it.
   clearAssets();
   const drive = fakeStore();
   const a = await stubAsset('one');
@@ -316,7 +304,7 @@ test('a pull takes bytes off the outgoing board instead of fetching them', async
   const pushed = await pushBoard(drive.provider, 'brd1', boardWith([a, b]));
   assert.ok(pushed.ok);
 
-  // What withFreshAssets() would have set aside, and then the empty store the
+  // What withFreshAssets() would have set aside, then the empty store the
   // pull actually runs against.
   const stash = new Map([[a, getAsset(a)], [b, getAsset(b)]]);
   clearAssets();
@@ -329,15 +317,14 @@ test('a pull takes bytes off the outgoing board instead of fetching them', async
   await pullBoard(drive.provider, remote, { reuse: stash });
 
   assert.equal(fetched, 1, 'only board.json should have been fetched');
-  // Moved across whole: the bytes, and the extension a renderer needs to know
-  // what they are.
+  // Moved across whole: the bytes, and the extension a renderer needs.
   assert.equal(await getAsset(a).blob.text(), 'one');
   assert.equal(getAsset(b).ext, 'png');
 });
 
 test('a reused pull still fetches what the stash does not have', async () => {
-  // Half and half, which is the ordinary case: a board that shares some
-  // photographs with the one being closed and not others.
+  // The ordinary case: a board sharing some photographs with the one being
+  // closed and not others.
   clearAssets();
   const drive = fakeStore();
   const a = await stubAsset('one');
@@ -355,8 +342,8 @@ test('a reused pull still fetches what the stash does not have', async () => {
 });
 
 test('a folder with no board in it is not a board', async () => {
-  // A push that died before its last step leaves exactly this. It must not show
-  // up in the list as a board that then fails to open.
+  // What a push dying before its last step leaves. Must not show up in the
+  // list as a board that then fails to open.
   clearAssets();
   const drive = fakeStore();
   const root = await drive.provider.store.folder('mbrd', null);
@@ -365,9 +352,8 @@ test('a folder with no board in it is not a board', async () => {
 });
 
 test('a missing asset in the cloud is a hole, not a refusal', async () => {
-  // unpackBoard's own bargain: the item keeps its hash, the card comes back if
-  // the bytes ever do, and refusing the whole board over one picture helps
-  // nobody.
+  // unpackBoard's bargain: the item keeps its hash, the card comes back if
+  // the bytes ever do, and refusing the whole board over one picture helps nobody.
   clearAssets();
   const drive = fakeStore();
   const a = await stubAsset('one');
@@ -394,9 +380,9 @@ test('an adopted board is filed against the folder it came out of', async () => 
   assert.equal(row.provider, 'gdrive');
   assert.equal(row.folder, 'f9');
   assert.equal(row.seen, 'T');
-  // `file` is null on purpose: a pulled board has never been written from here,
-  // so there is no board.json id of ours to replace. The next push finds it in
-  // the listing.
+  // `file` is null on purpose: a pulled board was never written from here,
+  // so there is no board.json id of ours to replace - the next push finds
+  // it in the listing.
   assert.equal(row.file, null);
 });
 

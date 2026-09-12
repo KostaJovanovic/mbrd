@@ -1,37 +1,8 @@
-// Which note is stuck to what, and what travels when something moves.
-//
-// A note is stuck to whatever it is lying on, and a stuck note travels with its
-// host. Nothing about that is stored *in the board file* as a relation:
-// stuckness is a fact about where two things are, and a file that also recorded
-// it could disagree with its own geometry - a hazard with no upside, since the
-// geometry is right there and the answer falls out of it.
-//
-// It is not recomputed on demand either, and that is the part worth naming. The
-// relation is worked out from live geometry the first time anything asks, and
-// then *remembered* until the note itself is handled. Which means moving a
-// photo, resizing it, or dropping something else on top of it cannot quietly
-// re-parent the notes lying on it - the pile you built stays the pile you
-// built. Only picking up the note itself asks the question again.
-//
-// The memo is a runtime Map, not a field. It is seeded on load from each note's
-// durable meta.stuckTo (see seedSticks), which is what keeps the first render
-// after opening a board from measuring every note against every item; a note
-// from an older file, with no such record, falls through to measuring and is
-// the only thing that still pays for it.
-//
-// One thing *is* stored, and it is the exception that keeps the rule above
-// honest: meta.loose, the flag that says "I unstuck this on purpose". A stuck
-// item is now *pinned* - a drag on it takes hold of its host instead of itself -
-// and the way out has to be a decision rather than a measurement, because the
-// note you unstuck is almost always still lying on the card you unstuck it from.
-// That is the normal case, not the odd one: you unstick a note in order to nudge
-// it. So the positive relation stays measured, exactly as argued above, and only
-// the negative override is written down. Absent means the ordinary thing.
-//
-// Third concern out of state.ts, and the first that needed the board itself to
-// go down before it could follow - see board-model.ts. Nothing here commits or
-// announces: these are questions about geometry, and the mutations that act on
-// the answers stay in state.ts.
+// Note stickiness: which note is stuck to what, and what travels when
+// something moves. Stickiness is measured from live geometry and memoised
+// until the note itself is handled — moving a host does not re-parent.
+// meta.stuckTo seeds the memo on load; meta.loose is the only stored override
+// (the user unstuck it on purpose). Nothing here commits — mutations in state.ts.
 
 import { overlapFraction } from './geometry.ts';
 import { isRecord } from './util.ts';
@@ -42,157 +13,52 @@ import { isFence } from './fences.ts';
 /** Anything with a place and a size: an item, or one layout's record of one. */
 type Box = { x: number, y: number, w: number, h: number };
 
-/**
- * What the questions below actually need of an item: an id, a box, and - where
- * it has them - a place in the stack and a meta. Structural rather than Item,
- * so the box-shaped types two command modules still declare privately answer it
- * too; the *hosts* it returns are real items off the board.
- */
+/** Structural subset of Item so command modules' box-shaped types also fit. */
 type Stickable = Box & { id: string, rot?: number, z?: number, meta?: Record<string, unknown> };
 
 /**
- * What a note may not be stuck to: the app's own furniture, and a fence.
- *
- * The furniture half is argued at measureStick() below. A fence joins it for a
- * third reason, and the same one that keeps the title card out - a host is
- * something a note lies *on*, and a fence is a region a note lies *in*. A note
- * stuck to the fence around it would be pinned to a rectangle it was already
- * travelling with, so moving the fence would move it twice; and on Mobile, where
- * a fence is a full-width band, it would ride that band instead of taking its
- * place in the run. The note is in the fence already. It does not also stick.
+ * A note cannot stick to furniture or fences (double-move, Mobile band issues).
+ * Stickers are the exception — they may stick to fences and the title card
+ * (decoration that rides), but not to ghosts (deleted on first real content).
  */
 const cannotHost = (it: Item, rider: unknown) => {
-  // A sticker is the exemption, and it is a *sticker* exemption rather than a
-  // general loosening - the two reasons above are still the right answer for a
-  // note and are simply not answers about a sticker.
-  //
-  // The fence: a note on the fence around it would ride the full-width Mobile
-  // band instead of taking its place in the run, which is wrong for a note and
-  // exactly right for a sticker. A star on a region's face is decoration on the
-  // region, and it should go where the region goes.
-  //
-  // The title card: a note stuck to it landed in the packed Mobile first row as
-  // a rider nothing had treated as an obstacle. Same answer - a sticker is
-  // decoration and is not meant to be an obstacle. It rides, nothing packs
-  // around it, and layout.ts parks the title card clear of the Mobile board
-  // anyway, so a sticker on it goes along.
-  //
-  // A hint card is still refused. A hint is deleted the moment any real content
-  // arrives, so a sticker stuck to one is a sticker stuck to something about to
-  // stop existing - and unlike a note, whose delete leaves it behind, a sticker
-  // would go with it (see the delete cascade in state.ts).
-  // `unknown` in, read through isRecord, for the reason isFurniture() gives:
-  // the rider is an item, or a bare `{ type }` stub for a shape being dragged
-  // out of the sticker window, and no one shape names both.
   if (isRecord(rider) && rider.type === 'sticker') return it?.type === 'ghost';
   return isFurniture(it) || isFence(it);
 };
 
-/**
- * What kinds of thing stick: notes, and stickers.
- *
- * One predicate rather than the four separate `type === 'note'` tests this file
- * used to carry, and the same one is read in stacking.ts, state.ts's serializer
- * and layout.ts. Completeness is the whole reason it is exported: a kind that
- * sticks in stuckTo() but is not recognised by stuckFollowers() is a thing that
- * gets left behind when its host moves, which is the one failure this relation
- * cannot have. Keeping the list in one place is what makes "all of them or none
- * of them" checkable instead of hopeful.
- *
- * A sticker is a note in every way this module cares about - a small thing laid
- * on top of a bigger thing, travelling with it, ordered above it. What it is
- * *not* is a card you can type into, and nothing here asks about that.
- */
+/** Notes and stickers — the two types that stick. One list so stuckTo() and stuckFollowers() stay in sync. */
 export const isSticky = <T>(it: T | null | undefined): it is T & { type: 'note' | 'sticker' } =>
   isRecord(it) && (it.type === 'note' || it.type === 'sticker');
 
 // ---------------------------------------------------------------------------
 // Sticky notes that stick
 //
-// A note is stuck to whatever it is lying on, and a stuck note travels with its
-// host. Nothing about that is stored *in the board file*: stuckness is a fact
-// about where two things are, and a file that also recorded it could disagree
-// with its own geometry - a hazard with no upside, since the geometry is right
-// there and the answer falls out of it.
-//
-// It is not recomputed on demand either, and that is the part worth naming. The
-// relation is worked out from live geometry the first time anything asks, and
-// then *remembered* until the note itself is handled. Which means moving a
-// photo, resizing it, or dropping something else on top of it cannot quietly
-// re-parent the notes lying on it - the pile you built stays the pile you
-// built. Only picking up the note itself asks the question again.
-//
-// The memo is a runtime Map, not a field. A board that has just loaded has an
-// empty one and answers every question by measuring, which is exactly what the
-// old always-measure version did, so a .mbrd needs no new key and one written
-// by an older version is not missing anything.
+// Measured from geometry, memoised until the note is handled. Moving a host
+// does not re-parent its riders. The memo is a runtime Map — older .mbrd files
+// with no meta.stuckTo simply measure on first ask.
 // ---------------------------------------------------------------------------
 
-/**
- * How much of a note has to be over an item before it counts as stuck.
- *
- * A twentieth of the note. Low on purpose: a sticky pressed onto the corner of
- * a photograph is stuck to that photograph, and anybody who put it there thinks
- * so. The floor exists to rule out the note that merely *touches* while it is
- * being dragged past, which at zero would grab a host for one frame and let go
- * again.
- */
+/** 5% overlap floor — low so a corner-placed sticky counts, nonzero so a drag-past does not. */
 export const STICK_MIN = 0.05;
 
-/**
- * noteId -> hostId or null. Null is a real answer, "measured, and it is stuck to
- * nothing", and it has to survive as one: falling through to a fresh
- * measurement every time would make a loose note the one case that *does* get
- * re-parented by things moving underneath it.
- */
+/** noteId -> hostId or null. Null = measured, stuck to nothing (must not re-measure). */
 const sticks = new Map<string, unknown>();
 
 /**
- * The item a sticky note is stuck to, or null.
- *
- * Measured by area: more than STICK_MIN of the note's own surface lying over
- * the item. Area rather than the note's centre or its top corners, because
- * those are questions about three particular points and this is a question
- * about a sheet of paper lying on something - a note overlapping a photo's
- * corner by a third of itself is stuck to it, and no test of the centre will
- * ever say so.
- *
- * A host must be a real item. The title card and the hint cards are the app's
- * own furniture: a note stuck to the title card travelled with it and, on
- * Mobile, landed in the packed first row as a rider nothing had treated as an
- * obstacle - while a note stuck to a hint was stuck to something deleted the
- * moment any real content arrived. layout.ts parks the title card clear of the
- * Mobile board for the same reason, which fixed the obstacle end of it; this is
- * the stick end.
- *
- * Only notes stick, and only to something below them in the stack. A note
- * hidden behind the thing it claims to be stuck to would be a relationship
- * nobody could see, and being seen is the whole of the point. It costs nothing
- * to arrange, either: startMove() lifts whatever you drag to the top, so a note
- * dropped onto a photo is already above it. Where several candidates qualify -
- * a note on a note on a photo - the nearest one underneath wins, so a pile
- * hangs together in the order it was laid down.
+ * The item this note is stuck to, or null. Measured by overlap area (>STICK_MIN).
+ * Only real items below the note in z qualify — furniture and fences excluded.
+ * Memoised: only picking up the note itself re-measures.
  */
 export function stuckTo(note: Stickable | null | undefined): Item | null {
   if (!isSticky(note)) return null;
-  // Unstuck on purpose. Everything downstream - riders, travel, the Mobile
-  // placement, the stack order, the meta.stuckTo stamp - then treats this note
-  // exactly as it treats one lying over nothing, which is the whole of the
-  // implementation: no new code paths, one guard. The memo is deliberately not
-  // consulted or written here; the flag outranks it, and clearing the flag
-  // (see restick) is what lets the measurement speak again.
+  // meta.loose outranks the memo — user explicitly unstuck this.
   if (note.meta?.loose) return null;
   if (sticks.has(note.id)) {
     const id = sticks.get(note.id);
     if (id === null) return null;
-    // The typeof is what byId() used to do for nothing: a seeded record out of
-    // a file need not be a string, and a Map keyed by ids never had one under
-    // anything else. Same answer, asked before the lookup rather than after.
+    // Seeded value from a file may not be a string — guard before lookup.
     const host = typeof id === 'string' ? byId(id) : undefined;
-    // A remembered host that is no longer on the board - deleted, or undone
-    // back out of existence. Measuring again is the lesser evil: the note did
-    // not move, so the rule says leave it, but leaving it means a note that can
-    // never stick to anything again until somebody happens to drag it.
+    // Host deleted or undone — re-measure rather than leave the note permanently orphaned.
     if (host) return host;
     sticks.delete(note.id);
   }
@@ -212,27 +78,10 @@ function measureStick(note: Stickable): Item | null {
 }
 
 /**
- * The item a prospective note box would stick to if let go as given, or null.
- *
- * The same rule as measureStick - the topmost item more than STICK_MIN covered -
- * but asked of a box that is not on the board yet, so a drag can decide to skip
- * the grid *before* it commits the move. No z compare is needed: startMove()
- * raised the dragged note to the top when the gesture began, so every other item
- * is already below it, and the box carries no z to compare anyway.
- *
- * Deliberately *not* guarded by meta.loose, unlike stuckTo(). This is the
- * question a drag in flight asks, and a drag that finds a host is precisely the
- * way back from Unstick - a loose note dropped on a card sticks again and pins.
- * Guarding it would take that door away, and the highlight under the pointer
- * would stop promising what the release is about to do. It also takes a bare
- * box rather than an item, so there would be no flag here to read.
- *
- * `rider` is what is being dropped, and it is here for one question: what a
- * sticker may stick to is wider than what a note may (see cannotHost). It is
- * the item where there is one and a bare `{ type }` stub where there is not -
- * a shape being dragged out of the sticker window is not on the board yet, and
- * its type is the only thing about it this needs to know. Omitted, the rule is
- * the note's, which is what every caller predating stickers wanted.
+ * What a box would stick to if dropped here. Same rule as measureStick but for
+ * a box not yet on the board (drag preview). Not guarded by meta.loose — a
+ * loose note dropped on a card is the way back from Unstick. `rider` widens
+ * the host rules for stickers (see cannotHost).
  */
 export function wouldStick(
   box: { x: number, y: number, w: number, h: number, rot?: number },
@@ -248,16 +97,7 @@ export function wouldStick(
   return best;
 }
 
-/**
- * What this item would be stuck to if it were not loose - the measurement the
- * guard in stuckTo() skips.
- *
- * Exported for one caller: the mutation that clears meta.loose when a drop
- * finds a host (resettle(), in state.ts). It cannot ask stuckTo(), because the
- * flag it is deciding whether to remove is exactly what stuckTo() refuses to
- * look past. The memo is left alone - this reads live geometry and nothing else,
- * so the caller is free to clear the flag and restick() afterwards.
- */
+/** Measure without the meta.loose guard. For resettle() deciding whether to clear the flag. */
 export function hostUnder(it: Stickable | null | undefined) {
   return isSticky(it) ? measureStick(it) : null;
 }
@@ -265,57 +105,19 @@ export function hostUnder(it: Stickable | null | undefined) {
 // ---------------------------------------------------------------------------
 // Setting
 //
-// Stuck and pinned are the same relation a few seconds apart. An item is stuck
-// the instant it lands - it travels with its host, rides it through a reflow,
-// stacks above it - and that half cannot wait, because a photograph dragged
-// straight after a note was dropped on it has to take the note along.
-//
-// What waits is *pinning*: the rule that a press on the item takes hold of its
-// host instead. That one is a trap if it arrives instantly. You drop a sticky
-// on a photograph, see it is two millimetres off, reach for it - and the
-// photograph moves. Right-click, Unstick, nudge, and the thing you were doing
-// three seconds ago has cost you four steps.
-//
-// So a freshly dropped item *lies* on its host for ten seconds before it sets
-// to it. In that window it is stuck and free: pick it up, put it down, adjust
-// it, take it off entirely. After it, the pile is one object and Unstick is the
-// way back - which is what the pin was for in the first place, for the note you
-// placed on Tuesday and are dragging a photograph past on Thursday.
-//
-// Runtime only, and it has to be. A board that has just loaded is a board that
-// has been sitting still, however long ago it was written, so absence of a
-// record means *set* rather than settling - which is also why nothing here is
-// stored, and why seedSticks() clears it on load along with the memo.
-//
-// No timer, either, and that is worth saying because the obvious implementation
-// has one. Nothing needs to *happen* at the ten-second mark: the two things
-// that read this - the drag redirect and the hover badge - both ask at the
-// moment they run, so a comparison against a stamp is the whole mechanism. A
-// scheduled callback would only exist to tell the interface something it can
-// work out for itself, and would then have to be cancelled on delete, on undo,
-// on a board swap.
+// A freshly dropped note is stuck (travels with host) but not yet pinned
+// (press still grabs the note itself). After SETTLE_MS it "sets" and a press
+// redirects to the host. No timer — readers compare against a drop timestamp.
+// Runtime only: a loaded board is already set.
 // ---------------------------------------------------------------------------
 
-/**
- * How long an item lies where it was dropped before it sets to what is under
- * it.
- *
- * Ten seconds: long enough to cover "that is not quite where I meant" without
- * being long enough to forget the thing is going to change under you.
- */
+/** Grace period before a drop becomes a pin. Long enough to adjust, short enough to remember. */
 export const SETTLE_MS = 10_000;
 
 /** id -> when it was last let go. Absent means set, which is the ordinary case. */
 const settling = new Map();
 
-/**
- * Start the clock on these ids, because they have just been let go.
- *
- * Called with the same set restick() is - what a gesture actually drove, never
- * what it towed - and for the same reason: a note carried across the board by
- * the photograph underneath it was not put down, so its ten seconds are not
- * its to have again.
- */
+/** Mark these ids as freshly dropped. Only driven ids, not towed followers. */
 export function startSettling(ids: Iterable<string>) {
   const now = Date.now();
   for (const id of ids) settling.set(id, now);
@@ -326,15 +128,7 @@ export function isSettling(it: { id: string } | null | undefined) {
   const at = it && settling.get(it.id);
   if (at === undefined) return false;
   if (Date.now() - at < SETTLE_MS) return true;
-  // Swept on the way past rather than on a timer. Every id in here is asked
-  // about within a frame or two of mattering, so the map cannot grow.
-  //
-  // Non-null, and it is worth saying what the assertion is standing on: a stamp
-  // was found, which takes an `it` with an id. An `it` of undefined returns at
-  // the line above; an `it` of *null* does not - `null && …` is null, which is
-  // not undefined - and reaches this line to throw, exactly as it did before
-  // this file was typed. Nothing calls it that way, so the behaviour is left
-  // alone rather than quietly changed.
+  // Swept lazily — no timer needed, every id is checked within frames of mattering.
   settling.delete(it!.id);
   return false;
 }
@@ -345,47 +139,16 @@ export function settlesIn(it: { id: string } | null | undefined) {
   return at === undefined ? 0 : Math.max(0, SETTLE_MS - (Date.now() - at));
 }
 
-/**
- * What this item is pinned to - fixed on, rather than merely lying on - or null.
- *
- * Stuck *and* set. The two come apart only for the few seconds after a drop;
- * everywhere else this is stuckTo() with a different name, which is the point
- * of Part 1: stuck comes to mean fixed, it just takes a moment about it.
- */
+/** Stuck *and* set — null during the settle window after a drop. */
 const pinnedTo = (it: Stickable | null | undefined) => (isSettling(it) ? null : stuckTo(it));
 
-/**
- * Is this item pinned - fixed in place on a host rather than lying loose or
- * still settling onto one?
- *
- * Its own predicate because three different doors ask it and answer
- * differently: a pointer drag redirects to the host, the arrow keys unstick and
- * nudge, and the command-driven geometry writes (align, distribute, rearrange,
- * the snap sweep) skip it. Three behaviours, one rule about what is true; the
- * rule wants one home even where the responses do not.
- */
+/** Is this item pinned? Three callers (drag, keys, geometry commands) read this with different responses. */
 export const isPinned = (it: Stickable | null | undefined) => !!pinnedTo(it);
 
 /**
- * The thing a press on `it` should actually take hold of: the top of its pile.
- *
- * Up rather than one step, because a sticker on a note on a photograph has to
- * move the photograph - the pile reads as one object under the pointer and
- * moving it in two goes would be the surprise. The walk stops at the first
- * thing that is not pinned, so a pile with a freshly dropped sticker on top of
- * it comes apart at exactly that sticker for ten seconds and nowhere else.
- *
- * It terminates for the same reason stuckFollowers() does: being stuck requires
- * a lower z, so the relation is a strict order and cannot close on itself.
- * seedSticks() is what makes that true of the memo as well as of the
- * measurement - see the note there.
- *
- * The visited set is the belt to that braces. This walk runs on pointerdown, so
- * the cost of the invariant being wrong is not a wrong answer, it is a browser
- * that stops responding to anything - and the guarantee is currently spread
- * across two functions in two files, one of which reads its input from a file
- * somebody else wrote. A bound that can only ever be reached by a bug is worth
- * the Set.
+ * Walk up the pin chain to find the root host — a press on a sticker on a note
+ * on a photo should move the photo. Stops at the first non-pinned item.
+ * Visited set guards against cycles (should be impossible, but runs on pointerdown).
  */
 export function dragRoot(it: Item): Item {
   const seen = new Set<string>([it.id]);
@@ -397,60 +160,29 @@ export function dragRoot(it: Item): Item {
   return it;
 }
 
-/**
- * Forget what these notes were stuck to, so the next question measures again.
- *
- * Called with the ids a gesture *drove* - what the pointer or the arrow keys
- * actually had hold of - and never with the followers those ids dragged along.
- * That distinction is the feature: a note carried across the board by the photo
- * underneath it has not been moved relative to anything and must not be
- * re-parented, while a note you picked up and put down has been, and must.
- */
+/** Clear the memo for driven ids so the next stuckTo() re-measures. Never called for towed followers. */
 export function restick(ids: Iterable<string>) {
   for (const id of ids) sticks.delete(id);
 }
 
 
 /**
- * Seed the memo from what a loaded board wrote down.
- *
- * Stickiness is measured, not stored, everywhere *inside* a session - but a
- * pixel of geometry drift across a save/reload, or a Mobile layout that parked a
- * note a hair off its host, could drop the overlap under STICK_MIN and lose a
- * relationship the author plainly made. `meta.stuckTo` is the durable record
- * (stamped at serialize time); seeding it here makes the saved answer win over a
- * fresh measurement, while an older board with no such key measures as before.
- * A null is kept as the real answer "loose", exactly as the memo treats it.
- *
- * A record naming furniture is dropped rather than seeded. The memo is trusted
- * ahead of measurement, so a file written before measureStick() excluded the
- * title card would otherwise reintroduce from disk exactly the relation the
- * measurement now refuses - and a seeded memo is never re-measured while its
- * host is on the board.
- *
- * The title card is named by its constant rather than looked up, because it is
- * not on the board yet: loadBoard() runs this before main.ts seeds the card, so
- * there is nothing to ask about the type. Hints need no such test - a load drops
- * every ghost, so a record naming one finds no host and simply measures again.
+ * Seed the memo from meta.stuckTo so saved stickiness survives geometry drift
+ * across a reload. Records naming furniture are dropped — they predate the
+ * exclusion and the memo would never re-measure them. Also clears settle clocks
+ * (a loaded board is fully set).
  */
 export function seedSticks() {
   sticks.clear();
-  // And every settle clock, which is the half that is not about the memo. A
-  // board being opened has been sitting still however long ago it was written,
-  // so everything on it is *set* - a stale stamp surviving a load would hand a
-  // freshly opened board ten seconds in which its stickies were not pinned.
-  // Cleared here because this is the function a load actually calls.
+  // A loaded board is fully set — stale settle stamps would unpin everything for 10s.
   settling.clear();
-  // Unknown rather than string: `stuckTo` out of a file is whatever the file
-  // said, and this asks whether it names furniture without first insisting it
-  // is the kind of thing that could.
+  // Unknown — file values are not guaranteed to be strings.
   const furniture = new Set<unknown>([TITLE_ID]);
   for (const it of board.items) if (isFurniture(it)) furniture.add(it.id);
   for (const it of board.items) {
     if (isSticky(it) && it.meta && 'stuckTo' in it.meta) {
       const hostId = it.meta.stuckTo ?? null;
-      // Self-reference first, because it is the cheapest cycle there is and the
-      // one a hand-edited file produces by accident.
+      // Self-reference and furniture records are dropped.
       sticks.set(it.id, furniture.has(hostId) || hostId === it.id ? null : hostId);
     }
   }
@@ -458,26 +190,10 @@ export function seedSticks() {
 }
 
 /**
- * Drop any seeded pin that stands in a cycle.
- *
- * dragRoot() and stuckFollowers() both terminate for one stated reason: being
- * stuck requires a lower z, so the relation is a strict order and cannot close
- * on itself. That is true of measureStick(), which is where the claim comes
- * from - and it was never true of the *memo*, which takes whatever meta.stuckTo
- * says after testing only that it does not name furniture. A .mbrd whose note is
- * stuck to itself, or two notes naming each other, seeded a cycle; `settling` is
- * cleared on load so nothing masked it; and the first press on the note put
- * dragRoot() into a loop with no exit and no allocation, so the tab simply
- * stopped. Verified under node, where the process had to be killed by timeout.
- *
- * Checked here rather than by holding the memo to the z rule, because z is not
- * populated at the point a board is seeded - the pin has to survive a file that
- * says "stuck" while the note lies nowhere near its host, which is the whole
- * reason the memo outranks the measurement.
- *
- * The walk is the standard three-colour one: follow each chain, mark what is on
- * the current path, and null the entry that closes the loop. Only that entry -
- * everything below it in the pile is a legitimate pin and stays.
+ * Break cycles in the seeded memo. measureStick() is acyclic by z-order, but
+ * the memo trusts meta.stuckTo — a self-reference or mutual pair would put
+ * dragRoot() in an infinite loop. Three-colour walk: null the entry that
+ * closes the loop, keep everything below it.
  */
 function breakCycles() {
   const settled = new Set<unknown>();
@@ -485,43 +201,26 @@ function breakCycles() {
     if (settled.has(start)) continue;
     const path = new Set<unknown>();
     let at: unknown = start;
-    // SAFETY: both assertions in this loop are the same fact - `at` is a key of
-    // `sticks`, which is keyed by item id, so it is a string whenever it is not
-    // null. It is typed unknown because it is read back out of the map's own
-    // values, which the map cannot promise are keys of itself. The `!= null` on
-    // the line above is what rules out the absence.
+    // SAFETY: `at` is a sticks key (string) when non-null — typed unknown because
+    // values are not guaranteed to be keys.
     while (at != null && !settled.has(at)) {
       if (path.has(at)) {
-        // SAFETY: see above.
         sticks.set(at as string, null);
         break;
       }
       path.add(at);
-      // SAFETY: see above.
       at = sticks.get(at as string) ?? null;
     }
     for (const id of path) settled.add(id);
   }
 }
 
-/**
- * Where a note sits relative to its host, as a fraction of the host's size.
- *
- * Fractions rather than world units so the offset survives the host being a
- * different size in the other layout: a note pinned to a photo's top-left stays
- * at its top-left when Mobile shrinks the photo to fit a column. Read live at
- * the moment a layout is generated, never stored - the current geometry is the
- * truth, and freezing an offset would fight a note dragged around its host.
- */
+/** Offset as fraction of host size — survives the host being resized across layouts. */
 function stuckOffset(note: Box, host: Box) {
   return { fx: (note.x - host.x) / (host.w || 1), fy: (note.y - host.y) / (host.h || 1) };
 }
 
-/**
- * The centre a stuck note takes in a target layout: its host's place there, plus
- * the offset it holds in the source layout. `hostSrc`/`hostDst` are the same host
- * measured in the two layouts.
- */
+/** Place a stuck note in the target layout using its fractional offset from the source layout. */
 export function stuckPlacement(note: Box, hostSrc: Box, hostDst: Box) {
   const off = stuckOffset(note, hostSrc);
   return { x: hostDst.x + off.fx * hostDst.w, y: hostDst.y + off.fy * hostDst.h };
@@ -533,12 +232,8 @@ export function isRider(it: Stickable) {
 }
 
 /**
- * Place each rider on its host inside a target layout, in passes so a note stuck
- * to a note resolves only once its own host has a place. `place` is the target
- * geometry map, keyed by id; `build(note, hostSrc, hostDst)` returns the entry to
- * store. Returns the ids that never resolved - a deleted host, or a cycle - for
- * the caller to fall back on. hostSrc is read live (the source layout); hostDst
- * is the host's entry in `place`.
+ * Place riders in a target layout via multi-pass resolution (note-on-note chains).
+ * Returns ids that never resolved (deleted host / cycle) for fallback placement.
  */
 export function attachRiders<T>(
   riders: Item[],
@@ -555,10 +250,7 @@ export function attachRiders<T>(
       if (pending.has(host.id)) continue;        // host is a rider, not placed yet
       const hostDst = place.get(host.id);
       if (!hostDst) continue;                     // host not laid out yet this pass
-      // `host` itself, not byId(host.id). stuckTo() already returned the live
-      // item, so the round trip bought nothing and cost the one thing an index
-      // can be: out of date. It is the read that threw during a load, before
-      // loadBoard() learned to drop the index where it swaps the array.
+      // Use `host` directly — stuckTo() already returned the live item.
       place.set(note.id, build(note, host, hostDst));
       pending.delete(note.id);
       grew = true;
@@ -568,25 +260,14 @@ export function attachRiders<T>(
 }
 
 /**
- * The ids of the notes that have to come along when `ids` are moved.
- *
- * Transitive, so a note stuck to a note stuck to a photo travels with the
- * photo: a pile of stickies on a picture reads as one object, and having to
- * move it in two goes would be the surprise. The walk cannot loop - being stuck
- * requires a lower z, which makes the relation a strict order - but each note
- * leaves the pool as it joins, so termination is a property here rather than an
- * assumption about z.
- *
- * Anything already moving is left out, which is what keeps this from fighting a
- * multi-select drag: a note selected alongside its host is moved once, by the
- * selection, instead of once by the selection and again as a follower.
+ * Transitive followers: notes/stickers stuck to anything in `ids`, recursively.
+ * Items already in `ids` are excluded to avoid double-moving in multi-select.
  */
 export function stuckFollowers(ids: Iterable<string>) {
   const moving = new Set(ids);
   const pool = board.items.filter(i => isSticky(i) && !moving.has(i.id));
   const out: string[] = [];
-  // Passes rather than one sweep: a note can only join once whatever it is
-  // stuck to has joined, and the pool is in no particular order.
+  // Multi-pass: a note joins only after its host has joined.
   for (let grew = true; grew;) {
     grew = false;
     for (let n = pool.length - 1; n >= 0; n--) {

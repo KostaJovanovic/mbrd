@@ -1,17 +1,10 @@
-// The media worker's boot, and the two deaths that used to be permanent.
-//
-// Most ways the worker can die go through killWorker(), which clears `ready` so
-// the next call spawns a fresh one. The constructor throwing - a CSP that forbids
-// workers, a blocked script URL - could not, because a promise executor runs
-// before the assignment it is being assigned by: whatever it wrote to `ready` was
-// overwritten by `ready = spawn()` on the very next line, leaving the module
-// holding a permanently rejected promise that `if (!ready)` would never replace.
-//
-// The other one never settled at all. A worker that boots and then stalls on the
-// core download throws nothing, fires no error event, and cannot report the
-// trouble itself - importScripts is synchronous, so it blocks the message loop
-// the complaint would travel on. `ready` stayed pending forever and every later
-// call queued behind it.
+// The media worker's boot, and two deaths that used to be permanent. Most
+// deaths go through killWorker(), clearing `ready` so the next call
+// respawns. A throwing constructor couldn't: the promise executor runs
+// before `ready = spawn()` overwrites it, leaving a permanently rejected
+// promise `if (!ready)` never replaces. And a worker that stalls on the
+// core download (importScripts is synchronous, blocking its own message
+// loop) never settles `ready` at all, queuing every later call behind it.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -25,7 +18,7 @@ test('a worker constructor that throws does not wedge the module', async () => {
   const realFetch = globalThis.fetch;
   const realWorker = globalThis.Worker;
   let attempts = 0;
-  // mediaAvailable() probes the core with a ranged GET, and caches only a true.
+  // mediaAvailable() probes the core with a ranged GET, caching only a true.
   globalThis.fetch = async () => ({ ok: true, status: 206 });
   globalThis.Worker = class {
     constructor() { attempts++; throw new Error('blocked by CSP'); }
@@ -34,8 +27,8 @@ test('a worker constructor that throws does not wedge the module', async () => {
   try {
     await assert.rejects(firstFrame(clip), /blocked by CSP/);
     assert.equal(attempts, 1);
-    // The second call is the whole point: it used to reject on the retained
-    // promise without ever reaching the constructor again.
+    // The second call is the point: it used to reject on the retained
+    // promise without reaching the constructor again.
     await assert.rejects(firstFrame(clip), /blocked by CSP/);
     assert.equal(attempts, 2, 'a later attempt must try to spawn again');
   } finally {
@@ -53,11 +46,11 @@ test('a worker that boots and then goes silent is given up on, and respawns', as
   let attempts = 0;
 
   globalThis.fetch = async () => ({ ok: true, status: 206 });
-  // spawn() resolves the core URL against the page. Nothing here loads it; it
-  // just has to be resolvable.
+  // spawn() resolves the core URL against the page; nothing here loads it,
+  // it just has to be resolvable.
   globalThis.location = { href: 'https://example.invalid/' };
-  // Constructs, accepts the boot message, and then says nothing ever again -
-  // which is what a stalled importScripts of the core looks like from out here.
+  // Constructs, accepts the boot message, then says nothing ever again -
+  // what a stalled importScripts of the core looks like from out here.
   globalThis.Worker = class {
     constructor() { attempts++; }
     addEventListener() {}
@@ -65,17 +58,16 @@ test('a worker that boots and then goes silent is given up on, and respawns', as
     postMessage() {}
     terminate() {}
   };
-  // The real ceiling is two minutes and this test is not going to sit through
-  // it. Only the boot clock is shortened - every other timer is left alone, so
-  // an accidental dependency on this would show up as a hang rather than pass.
+  // The real ceiling is two minutes; only the boot clock is shortened here,
+  // so an accidental dependency on other timers shows up as a hang.
   globalThis.setTimeout = (fn, ms, ...rest) =>
     realSetTimeout(fn, ms === BOOT_TIMEOUT_MS ? 5 : ms, ...rest);
 
   try {
     await assert.rejects(firstFrame(clip), /did not finish loading/);
     assert.equal(attempts, 1);
-    // The point of the whole thing: `ready` was cleared, so this spawns rather
-    // than awaiting the promise that never settled.
+    // The point of the whole thing: `ready` was cleared, so this spawns
+    // rather than awaiting the promise that never settled.
     await assert.rejects(firstFrame(clip), /did not finish loading/);
     assert.equal(attempts, 2, 'a later attempt must try to spawn again');
   } finally {

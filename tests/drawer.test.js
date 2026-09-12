@@ -1,11 +1,9 @@
 // The corner button's two jobs, and the one rule the drawer's markup lives under.
 //
-// #drawer-btn is Delete while something is selected and the way into the drawer
-// while nothing is, which is two behaviours behind one press and exactly the
-// sort of thing that gets swapped by a later edit. The window it opens is built
-// at runtime, so this stands up just enough of a browser to let it be opened and
-// closed - the point is not the DOM it produces but that the button still tells
-// the two states apart and still says which one it is in.
+// #drawer-btn is Delete while something is selected and the way into the
+// drawer otherwise - two behaviours behind one press, easy to swap by a
+// later edit. Stands up just enough browser to open and close the window;
+// the point is that the button tells the two states apart and says which one.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -46,11 +44,10 @@ class FakeElement {
 
 /**
  * Enough of a browser to open a floating window in: the document that builds
- * elements, the two globals float-window.ts and the shelf watcher reach for, and
- * a body to append to. Handed back as a teardown, which runs whatever happens -
- * a `delete` at the foot of a test body only runs when every assertion passed,
- * and a stray browser global makes an unrelated module throw at import (see
- * tests/imports.test.js).
+ * elements, the globals float-window.ts and the shelf watcher reach for, and
+ * a body to append to. Handed back as a teardown, since a `delete` at the
+ * foot of a test only runs when every assertion passed, and a stray browser
+ * global makes an unrelated module throw at import (tests/imports.test.js).
  */
 function fakeBrowser(ids) {
   const elements = Object.fromEntries(ids.map(id => [id, new FakeElement()]));
@@ -72,9 +69,8 @@ function fakeBrowser(ids) {
   };
   globalThis.addEventListener = () => {};
   globalThis.removeEventListener = () => {};
-  // Never called back: the open path only uses it to add .is-open a frame later,
-  // and a shelf that never gets a frame simply never mounts a card - which is
-  // the state this file is asserting about, not the one it is testing.
+  // Never called back: the open path uses it only to add .is-open a frame
+  // later, and a shelf that never gets a frame never mounts a card.
   globalThis.requestAnimationFrame = () => 0;
   globalThis.cancelAnimationFrame = () => {};
   globalThis.IntersectionObserver = class {
@@ -100,8 +96,8 @@ test('the drawer button deletes the selection and otherwise opens the drawer', (
   const { elements, restore } = fakeBrowser(['drawer-btn', 'viewport']);
   t.after(restore);
   const btn = elements['drawer-btn'];
-  // As index.html declares it. Deleting a selection must leave it alone rather
-  // than announce a drawer that was never open.
+  // As index.html declares it - deleting a selection must not announce a
+  // drawer that was never open.
   btn.setAttribute('aria-expanded', 'false');
 
   loadBoard({ title: 'Drawer button', items: [], trash: [] });
@@ -123,17 +119,14 @@ test('the drawer button deletes the selection and otherwise opens the drawer', (
   assert.equal(btn['aria-expanded'], 'false');
 });
 
-// A delete files the host and its riders as separate entries, because separate
-// things left the board - but they left as one pile and they come back as one
-// (riderCascade and ridersInBin, trash.ts). A shelf that showed three cards
-// would be describing a drawer nobody has: the note would be standing on its own
-// next to the photograph it is stuck to, and dragging either one back would
-// bring all three.
+// A delete files the host and its riders as separate entries, since separate
+// things left the board - but they left as one pile and come back as one
+// (riderCascade/ridersInBin, trash.ts). A shelf showing three cards would
+// describe a drawer nobody has, since dragging any one back brings all three.
 //
-// Nothing about getting this wrong fails on its own. The window still opens, the
-// cards still draw, and the restore still does the right thing - there are
-// simply two extra cards on the shelf that cannot be taken back separately. So
-// the count is asserted here, at the one place it is decided.
+// Nothing about getting this wrong fails on its own - the window still opens
+// and the restore still works, just with two extra cards that can't be taken
+// back separately. Asserted here, the one place it's decided.
 test('a card and everything stuck to it get one slot on the shelf', (t) => {
   const { elements, restore } = fakeBrowser(['drawer-btn', 'viewport']);
   t.after(restore);
@@ -160,10 +153,9 @@ test('a card and everything stuck to it get one slot on the shelf', (t) => {
   assert.equal(slots[0].dataset.id, pic.id, 'the host is what the slot puts back');
   assert.match(slots[0]['aria-label'], /2 things stuck to it/);
 
-  // And the other half of the same rule. Take the pile back out - all three
-  // come, which is what one slot promised - then throw the note and the sticker
-  // away on their own, with nothing they are stuck to going with them. Two
-  // things that are nobody's rider are two slots.
+  // The other half of the same rule: take the pile back out - all three
+  // come - then throw the note and sticker away on their own. Two things
+  // that are nobody's rider are two slots.
   restoreItems([pic.id]);
   assert.equal(board.trash.length, 0, 'the whole pile came back on one restore');
   removeItems([n.id]);
@@ -175,19 +167,15 @@ test('a card and everything stuck to it get one slot on the shelf', (t) => {
   btn.listeners.get('click')();
 });
 
-// The drawer draws items out of a .mbrd somebody else wrote, which puts it under
-// the rule in CLAUDE.md: nothing that reads a foreign document may touch
-// innerHTML. The panel this replaced did - the sticker thumbnail was a template
-// string with two values out of an item's open `meta` interpolated into it, one
-// of them inside an attribute. Both were narrowed a line above, so nothing was
-// actually getting through; "safe because of a guard three lines up" is the
-// arrangement the rule exists to refuse, because the guard and the escaping are
-// then held together by nothing.
+// The drawer draws items from a .mbrd somebody else wrote, so it falls under
+// CLAUDE.md's rule against innerHTML on a foreign document. The panel this
+// replaced used a template string interpolating item `meta` into an
+// attribute - "safe because of a guard three lines up" is the arrangement
+// the rule refuses.
 //
-// It draws no thumbnails at all now - the shelves hold the board's own cards,
-// built by canvas/item-dom.ts - and the two marks in its header come from the
-// menu's icon(), which builds its <use> with createElementNS. So there is no
-// escaping to get right anywhere in this module, and this is what says so.
+// It draws no thumbnails now - shelves hold the board's own cards (built by
+// canvas/item-dom.ts), and header marks come from the menu's icon() via
+// createElementNS. No escaping to get right anywhere in this module.
 test('ui/drawer.ts builds its markup rather than writing it', async () => {
   const { readFileSync } = await import('node:fs');
   const src = readFileSync(new URL('../web/assets/js/ui/drawer.ts', import.meta.url), 'utf8')

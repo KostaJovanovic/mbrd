@@ -1,24 +1,12 @@
-// The TypeScript migration debt, as a number that fell to zero.
-//
-// The tree was renamed from .js to .ts in one mechanical step: 104 modules, no
-// annotations, 4,935 errors under `strict`. Fixing all of that before committing
-// would have meant one enormous unreviewable change, and leaving `npm run
-// typecheck` red would have meant a check nobody reads - which is worse than no
-// check, because it looks like one.
-//
-// So every module that had not been annotated yet carried `// @ts-nocheck` and
-// was skipped, and this file counted them. That made the typecheck green and
-// honest at the same time: what it said was "everything not on this list is
-// clean under strict", which was true, useful, and got truer as the list
-// shrank. The list is empty now.
-//
-// Converting a module meant deleting its pragma block and fixing what tsc then
-// said, and lowering CEILING in the same commit. That half is finished: CEILING
-// is 0 and the second test below pins it there, so there is no number left to
-// lower. It was the same idiom as the DEBT map in tests/layers.test.js and it
-// had the same one rule: the list can only shrink. If you are adding a NEW
-// module, write it typed - a new pragma is a new debt, and this test is where
-// that argument has to be had rather than where it can be skipped.
+// The TypeScript migration debt, as a number that fell to zero. The tree
+// was renamed .js to .ts in one mechanical step - 104 modules, 4,935
+// `strict` errors - too large to fix in one commit, so every unannotated
+// module carried `// @ts-nocheck` and this file counted them, keeping
+// typecheck green and honest rather than red and ignored. Converting a
+// module meant deleting its pragma and lowering CEILING in the same
+// commit - same idiom as tests/layers.test.js's DEBT map, same rule: the
+// list only shrinks. A new module must be written typed; a new pragma is
+// new debt, argued here, not skipped.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -27,37 +15,23 @@ import { JS, WEB, read, walk } from './helpers.js';
 import { join } from 'node:path';
 
 /**
- * How many modules are still carried unchecked.
- *
- * This number may be lowered and never raised. It started at 103 of 105 on the
- * commit that renamed the tree and it is 0: every module in web/assets/js is
- * checked under strict, so `npm run typecheck` now means what it says about all
- * of them rather than about everything except a list.
- *
- * Zero is the interesting value, because from here this file stops being a
- * ratchet and becomes a plain guard. The first test below now reads "no module
- * may carry @ts-nocheck" with no number left to argue about, so a pragma cannot
- * be added quietly to get a change through - it fails the suite. That is what
- * the counting was for.
+ * How many modules are still carried unchecked. May be lowered, never
+ * raised. Started at 103 of 105 and is now 0: every module under
+ * web/assets/js is checked under strict. At zero this file stops being a
+ * ratchet and becomes a plain guard - "no module may carry @ts-nocheck",
+ * with no number left to argue about.
  */
 const CEILING = 0;
 
 /**
  * The file's leading trivia: every comment and blank line before the first
- * thing tsc would call code.
- *
- * This used to be `read(...).startsWith('// @ts-nocheck')`, which only ever saw
- * the pragma on byte 0 - and tsc honours it anywhere in a file's leading
- * comments. Every module in this codebase opens with a header comment arguing
- * its own design, so the house style was itself the bypass: put the pragma on
- * line two and the module is excused from strict while staying invisible to
- * both ratchets below.
- *
- * Matched the way tsc matches it - the pragma has to *open* the comment text,
- * so `// @ts-nocheck` counts and `// under @ts-nocheck, which hides the errors`
- * does not. Three module headers here discuss the pragma in prose; a plain
- * substring search would call all three unchecked and the guard would be
- * shouting about files that are fine.
+ * thing tsc would call code. Used to be
+ * `read(...).startsWith('// @ts-nocheck')`, which only saw the pragma on
+ * byte 0, though tsc honours it anywhere in the leading comments - and
+ * every module here opens with a header, so line two was an invisible
+ * bypass. Matched the way tsc matches it: the pragma must *open* the
+ * comment text, so a header merely discussing `@ts-nocheck` in prose does
+ * not count.
  */
 const leadingTrivia = src => {
   let i = 0;
@@ -86,15 +60,11 @@ test('the unchecked list is no longer than it was', () => {
 });
 
 test('the ceiling is not left standing above the real count', () => {
-  // The other direction, and the half that makes this a ratchet rather than a
-  // limit.
-  //
-  // It read `CEILING - unchecked.length < 5` while the migration was running,
-  // which stopped meaning anything the moment CEILING reached 0: the test above
-  // already forces the count to 0, so `0 - 0 < 5` could not fail. At zero the
-  // ratchet is finished and the only thing left to guard is the number itself,
-  // so that is what this asserts - a raise has to be argued for in the header
-  // above rather than typed into the constant.
+  // The other direction, making this a ratchet rather than a limit. Used to
+  // read `CEILING - unchecked.length < 5`, which stopped meaning anything
+  // once CEILING hit 0 (the test above already forces the count to 0, so
+  // `0 - 0 < 5` could not fail). At zero the only thing left to guard is
+  // the number itself - a raise must be argued for above, not typed in.
   assert.equal(CEILING, 0,
     `CEILING is ${CEILING}. Every module in web/assets/js is checked under `
     + 'strict; raising this is new debt, and the header above is where the case '
@@ -104,8 +74,8 @@ test('the ceiling is not left standing above the real count', () => {
 });
 
 test('nothing claims the pragma without being a module', () => {
-  // Guards the walk: a filter that matched nothing would let the count fall to
-  // zero and pass both tests above while proving nothing at all.
+  // Guards the walk: a filter matching nothing would pass both tests above
+  // while proving nothing.
   assert.ok(walk(JS, ['.ts']).length > 90, 'the module walk found almost nothing');
   for (const rel of unchecked) {
     assert.ok(rel.endsWith('.ts'), `${rel} is not a TypeScript module`);

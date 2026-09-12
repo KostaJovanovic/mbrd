@@ -1,11 +1,10 @@
-// The offer that follows a rubber band, in the two parts of it that are decisions
+// The offer that follows a rubber band, in the two parts that are decisions
 // rather than DOM: what it says, and when it goes away.
 //
-// Both are exported for exactly this reason. The rest of ui/fence-prompt.ts is a
-// div and a button, which a unit test can only restate; the reach rule is where
-// the feature can actually be wrong, because "far enough away" has a corner case
-// on every edge of the box and a user would experience getting it wrong as the
-// button vanishing while they were on their way to press it.
+// Both exported for that reason - the rest of ui/fence-prompt.ts is a div
+// and a button a unit test can only restate. The reach rule is where "far
+// enough away" has a corner case on every edge, felt as the button
+// vanishing mid-approach.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -24,8 +23,8 @@ test('one card is not "these 1"', () => {
 });
 
 test('a band that caught nothing offers the region instead', () => {
-  // Not a refusal: an empty fence is a fence you fill later, and the rectangle
-  // is the only thing that could say how big it is.
+  // Not a refusal - an empty fence is one filled later, and the rectangle
+  // is the only thing that says how big.
   assert.equal(fencePromptLabel(0), 'Fence this area');
 });
 
@@ -38,8 +37,8 @@ test('anywhere on the button itself is in reach', () => {
 });
 
 test('reach is measured from the edge the pointer is nearest', () => {
-  // Level with the button and off to the side: the sideways distance is the
-  // whole of it, so the last pixel in reach is REACH past the edge.
+  // Level with the button, off to the side - the last pixel in reach is
+  // REACH past the edge.
   assert.equal(outOfReach(BOX, 200 + REACH, 120, REACH), false);
   assert.equal(outOfReach(BOX, 200 + REACH + 1, 120, REACH), true);
   assert.equal(outOfReach(BOX, 100 - REACH - 1, 120, REACH), true);
@@ -47,17 +46,16 @@ test('reach is measured from the edge the pointer is nearest', () => {
 });
 
 test('going diagonally out of a corner spends both axes', () => {
-  // Only the overshoot on each axis counts, so a pointer past a corner is judged
-  // on the diagonal from that corner and not from the middle of the box.
+  // Only the overshoot per axis counts - a pointer past a corner is judged
+  // on the diagonal from that corner, not the box's middle.
   const d = REACH / Math.SQRT2;
   assert.equal(outOfReach(BOX, 200 + d - 1, 140 + d - 1, REACH), false);
   assert.equal(outOfReach(BOX, 200 + d + 1, 140 + d + 1, REACH), true);
 });
 
 test('the reach is roughly the couple of centimetres it claims to be', () => {
-  // CSS fixes 96px to the inch whatever the display does, so this is arithmetic
-  // rather than a guess about hardware - and it is here so that a later tweak to
-  // the constant has to be a deliberate one.
+  // CSS fixes 96px to the inch whatever the display does, so this is
+  // arithmetic, not a hardware guess - a later tweak has to be deliberate.
   const cm = REACH / (96 / 2.54);
   assert.ok(cm > 2 && cm < 3, `${cm.toFixed(2)}cm is outside the 2-3cm this is meant to be`);
 });

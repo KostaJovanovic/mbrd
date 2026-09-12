@@ -1,20 +1,12 @@
-// Where the four presets actually sit in OKLCh.
-//
-// ui/pigments.ts builds a palette out of photographs to the same rule the
-// presets were built on, and "the same rule" has to mean numbers off the real
-// thing rather than numbers that sound about right. This reads tokens.css,
-// converts every literal pigment in it, and prints the range and mean per token
-// - which is where the SHEET and PIGMENT tables in that file come from.
-//
-// Run: node tools/preset-oklch.mjs
+// Print the OKLCh range and mean of every preset pigment in tokens.css.
+// The SHEET and PIGMENT tables in pigments.ts come from this output.
 
 import { readFileSync } from 'node:fs';
 import { oklch } from '../web/assets/js/ui/pigments.ts';
 
 const css = readFileSync(new URL('../web/assets/css/tokens.css', import.meta.url), 'utf8');
 
-// Palette blocks only. The base :root block is Papyrus and counts as a preset;
-// the whimsy blocks are not palettes and their tokens are mostly not colours.
+// Palette blocks only — whimsy blocks are not palettes.
 const blocks = [['papyrus', css.slice(css.indexOf(':root {'), css.indexOf('/* ====', css.indexOf(':root {')))]];
 for (const m of css.matchAll(/:root\[data-palette="([a-z-]+)"\]\s*\{([^}]*)\}/g)) {
   blocks.push([m[1], m[2]]);
@@ -56,8 +48,7 @@ for (const token of TOKENS) {
   );
 }
 
-// How far each token's hue sits from its palette's --accent, which is what the
-// dh offsets in PIGMENT encode.
+// Hue offset from --accent per palette — what the dh offsets in PIGMENT encode.
 const turn = (a, b) => { const d = (b - a + 540) % 360 - 180; return d; };
 console.log('\nhue offset from --accent, per palette');
 for (const [name, hues] of hueOf) {

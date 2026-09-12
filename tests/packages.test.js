@@ -1,19 +1,16 @@
 // Choosing a picture out of an app package or a book (import/packages.ts).
+// Unlike import/document.ts, which looks a thumbnail up at a named path,
+// every family here has to *rank* what it finds - these tests are really
+// about the ordering, where the judgement calls live.
 //
-// Unlike import/document.ts, which looks a thumbnail up at a path a
-// specification names, every family here has to *rank* what it finds - so what
-// these tests are really about is the ordering, and the ordering is where the
-// judgement calls live. Each one below states a rule the module is making rather
-// than a byte layout it is reading.
+// Archives are built through the app's own writeZip(), as document.test.js
+// does, since a hand-assembled fixture can be wrong the same way the
+// reader is wrong and the two would agree while disagreeing with every
+// real file.
 //
-// Archives are built through the app's own writeZip(), which is what
-// tests/document.test.js does and for the reason it gives: a fixture assembled by
-// hand can be wrong in exactly the way the reader is wrong, and the two agree
-// with each other while disagreeing with every real file.
-//
-// The discipline is tests/preview.test.js's: **every refusal is paired with a
-// working fixture asserted first**, because null is this module's answer to
-// everything and a test that only asserts null passes on a broken fixture too.
+// The discipline is preview.test.js's: every refusal is paired with a
+// working fixture asserted first, since null is this module's answer to
+// everything and a test only asserting null passes on a broken fixture too.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -28,11 +25,9 @@ import { packagePicture, isPackage } from '../web/assets/js/import/packages.ts';
 const PNG_SIG = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
 /**
- * A run of bytes that sniffs as a PNG, `size` long.
- *
- * The length is the point in most of these: entry size is the module's stand-in
- * for pixel count, so making one candidate longer is how a test says "this is
- * the bigger icon" without carrying a real encoder.
+ * A run of bytes that sniffs as a PNG, `size` long. Length is the point in
+ * most of these: entry size stands in for pixel count, so a longer
+ * candidate is how a test says "this is the bigger icon" without a real encoder.
  */
 function png(size = 2048, fill = 0x21) {
   const b = new Uint8Array(Math.max(size, 16)).fill(fill);
@@ -69,8 +64,8 @@ test('it claims the package extensions and leaves the rest alone', () => {
   for (const ext of ['apk', 'xapk', 'apkm', 'apks', 'ipa', 'appx', 'msix', 'epub', 'cbz', '3mf']) {
     assert.equal(isPackage(ext), true, ext);
   }
-  // .cbr and .cb7 are RAR and 7z. Declining them by not claiming them is the
-  // honest shape - opening one and failing would report a broken file.
+  // .cbr and .cb7 are RAR and 7z. Declining by not claiming them is
+  // honest - opening one and failing would report a broken file.
   for (const ext of ['cbr', 'cb7', 'docx', 'zip', 'exe', '']) {
     assert.equal(isPackage(ext), false, ext);
   }
@@ -95,8 +90,8 @@ test('it finds an Android launcher icon and prefers the densest one', async () =
 });
 
 test('a name that says ic_launcher beats a larger picture that does not', async () => {
-  // Size is only the tie-break. A screenshot in the mipmap tree is bigger than
-  // the icon and is not the icon.
+  // Size is only the tie-break. A screenshot in the mipmap tree is bigger
+  // than the icon and isn't the icon.
   const got = await pick({
     'res/mipmap-xxxhdpi/ic_launcher.png': png(1024, 7),
     'res/mipmap-xxxhdpi/splash_art.png': png(80000, 8),
@@ -124,9 +119,9 @@ test('res/drawable is the last resort, under every mipmap', async () => {
 });
 
 test('an adaptive icon is XML and is not a picture', async () => {
-  // This is the case the whole glob-instead-of-ARSC decision turns on: anydpi
-  // holds the adaptive icon, which is a vector document, and taking it would be
-  // mounting markup as an image.
+  // The case the glob-instead-of-ARSC decision turns on: anydpi holds the
+  // adaptive icon, a vector document, and taking it would mount markup as
+  // an image.
   const xml = new Uint8Array(4096).fill(0x3C);
   const got = await pick({
     'res/mipmap-anydpi-v26/ic_launcher.xml': xml,
@@ -187,8 +182,8 @@ test('an .ipa takes iTunesArtwork, which is the one PNG Xcode did not rewrite', 
 });
 
 test('an Apple-optimised icon is refused rather than mounted broken', async () => {
-  // The rule this codebase already applies to docProps/thumbnail.emf: a picture
-  // nothing can draw is worse than no picture.
+  // The rule this codebase already applies to docProps/thumbnail.emf: a
+  // picture nothing can draw is worse than no picture.
   assert.ok(
     await pick({ 'Payload/App.app/AppIcon76x76.png': png(4096, 18) }, 'ipa'),
     'an ordinary PNG under Payload is taken, so the refusal below means something',
@@ -236,17 +231,15 @@ test('pictures outside Assets are not the app package logo', async () => {
 // EPUB
 // ---------------------------------------------------------------------------
 
-// The manifest walk is the half of this module that reads XML, and it needs a
-// DOMParser - which Node does not have, and which nothing in this suite shims.
-// ui/documents.ts is in exactly the same position and tests/documents.test.js
-// says so outright: what is testable here is the module's *decisions*, and the
-// tree walk is checked by opening a book in a browser.
+// The manifest walk reads XML and needs a DOMParser, which Node lacks and
+// nothing here shims - ui/documents.ts is in the same position. What's
+// testable here is the module's *decisions*; the tree walk is checked by
+// opening a book in a browser.
 //
-// So what these cover is everything either side of the parse: the fallback taken
-// when the manifest cannot be read, and the refusals. In Node, xmlPart() answers
-// null for every part, which makes every EPUB fixture below take exactly the path
-// a real book with a malformed OPF takes - which is worth having tested in its
-// own right, since that is the case nobody constructs deliberately.
+// So these cover everything either side of the parse: the fallback when
+// the manifest can't be read, and the refusals. In Node, xmlPart() answers
+// null for every part, so every EPUB fixture below takes exactly the path
+// a real book with a malformed OPF takes - a case nobody constructs deliberately.
 
 const opf = (manifest, meta = '') => new TextEncoder().encode(
   `<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0">`
@@ -270,8 +263,8 @@ test('a book whose manifest cannot be read falls back to a file called cover', a
 });
 
 test('the fallback is a name match, not "the biggest picture in the book"', async () => {
-  // A book is mostly pictures. Taking the largest would hand back a plate from
-  // the middle of it, which is worse than the grey card because it looks right.
+  // A book is mostly pictures. Taking the largest would hand back a plate
+  // from the middle, worse than the grey card because it looks right.
   assert.equal(await pick({
     'OEBPS/images/plate1.png': png(90000),
     'OEBPS/images/plate2.png': png(90000),
@@ -291,7 +284,7 @@ test('a book with no cover under any reading is null', async () => {
 // ---------------------------------------------------------------------------
 
 test('a comic opens on page one, with the numbers read as numbers', async () => {
-  // A plain string sort puts page10 before page2, which is the wrong cover.
+  // A plain string sort puts page10 before page2 - the wrong cover.
   const got = await pick({
     'page10.png': png(1024, 27),
     'page2.png': png(1024, 28),
@@ -330,8 +323,8 @@ test('a 3MF whose slicer put the thumbnail elsewhere under Metadata still answer
 // ---------------------------------------------------------------------------
 
 test('a file that is not a zip throws rather than answering null', async () => {
-  // Deliberate, and the split import/document.ts already makes: "no picture in
-  // this container" is null, "this is not a container" is the archive reader's
-  // error for the caller to turn into a card.
+  // Deliberate, the same split import/document.ts makes: "no picture in
+  // this container" is null, "this is not a container" is the archive
+  // reader's error for the caller to turn into a card.
   await assert.rejects(() => packagePicture(new Blob([png(4096)]), 'apk'));
 });

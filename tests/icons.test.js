@@ -1,20 +1,7 @@
-// The icon sprite, and the one thing that can go wrong with it quietly.
-//
-// Every icon in the app is a <symbol> in web/assets/icons.svg, reached by name:
-//
-//   <svg class="ico"><use href="assets/icons.svg#i-note"/></svg>
-//
-// A name that does not match anything in the sprite is not an error anywhere. No
-// console warning, no failed request - the browser fetches the file, finds no
-// such id, and draws nothing. What you get is a 16x16 hole where an icon was
-// meant to be, on whichever menu entry or button happens to be spelled wrong,
-// which is exactly the kind of thing that ships. So the references are checked
-// against the sprite here instead.
-//
-// The other direction too: a symbol nobody references is a drawing that is
-// downloaded by every visitor and seen by none. Not a bug, but the sprite is
-// meant to be the set of icons the app *has*, and a set nothing prunes stops
-// being that within a few changes.
+// Every icon is a <symbol> in web/assets/icons.svg, reached by name via
+// <use href="assets/icons.svg#i-note">. A misspelled name is not an error
+// anywhere - just a blank 16x16 hole - so references are checked against the
+// sprite here, in both directions: unreferenced symbols are pruned too.
 
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -28,36 +15,23 @@ const html = read(join(WEB, 'index.html'));
 const menu = read(join(JS, 'ui', 'menu.ts'));
 
 /** Every id the sprite defines. */
-// Attribute order is the author's choice, not the format's - so this reads the
-// whole tag and picks the id out of it. Requiring id to come first made a
-// `<symbol viewBox="..." id="...">` invisible to every check in this file at
-// once, including the two directions below: an unseen symbol is neither missing
-// nor an orphan.
+// Reads the whole tag rather than assuming id comes first - attribute order
+// is the author's choice, and requiring a fixed order made some symbols
+// invisible to every check in this file.
 const defined = new Set(
   [...sprite.matchAll(/<symbol\b([^>]*)>/g)]
     .map(m => (/\bid="([^"]+)"/.exec(m[1]) ?? [])[1])
     .filter(Boolean));
 
 /**
- * Every icon the app asks for, with where it asked.
+ * Every icon the app asks for, with where it asked. Three shapes: markup in
+ * index.html, the name handed to icon() or an `icon:` field, and a <use href>
+ * built into a string.
  *
- * Three shapes, because there are three ways in: markup written by hand in
- * index.html, the name handed to icon() or put in an `icon:` field by a module
- * that builds a row, and the same <use href> written into a string by a module
- * that builds its own markup.
- *
- * **All three are swept over every module rather than listed**, and it is worth
- * saying why. The href sweep was a list of two files, and the day the volume
- * slider moved from index.html into ui/playlist.ts the sprite grew an orphan
- * that this file reported as a symbol nobody asks for - the reference was real
- * and simply not being looked at. The other two were still lists of two files
- * afterwards, and cost exactly the same thing again the day the timeline strip
- * grew a table of icons: two symbols the app uses every time it draws a step,
- * reported here as symbols nobody wants.
- *
- * Held to names beginning `i-`, which is the sprite's own convention and is what
- * separates these from the note toolbar's `al-center` and the rest, which are
- * class names for a different mechanism and are not in the sprite at all.
+ * Swept over every module rather than listed by hand - a hand-kept list of
+ * files went stale twice already, reporting a real reference as an orphan.
+ * Held to names beginning `i-`, the sprite's own convention, to exclude
+ * things like the note toolbar's `al-center` class names.
  */
 const iconNames = (text, where) => [
   ...[...text.matchAll(/href="assets\/icons\.svg#([^"]+)"/g)],
@@ -86,29 +60,19 @@ test('the sprite carries nothing nobody asks for', () => {
 });
 
 test('no comment in the sprite holds two hyphens in a row', () => {
-  // SVG is XML, so this is a parse error, and a parse error takes down the
-  // whole file rather than the comment - every icon in the app disappears at
-  // once, with no console warning and no failed request. It has happened once,
-  // in the sticker sprite (tests/stickers.test.js carries the same check), and
-  // the thing that caused it was a section heading written as a rule of
-  // hyphens: the house style everywhere else in this codebase, and illegal
-  // here. Hence the ═ rules above.
+  // SVG is XML, so two hyphens in a comment is a parse error that takes down
+  // the whole sprite silently. It happened once, caused by a section heading
+  // written as a rule of hyphens - the house style elsewhere, illegal here.
   for (const [, inner] of sprite.matchAll(/<!--([\s\S]*?)-->/g)) {
     assert.ok(!inner.includes('--'), `two hyphens inside a comment: "${inner.trim().slice(0, 48)}"`);
   }
 });
 
 test('every symbol is drawn to the same box', () => {
-  // The spec that is not in CSS. Stroke and fill are inherited properties and
-  // live on .ico in base.css, so they are written once; the viewBox cannot be,
-  // and a symbol drawn in a different one is scaled to the wrapper's 16px and
-  // arrives at a weight nothing else in the set is at.
-  //
-  // Attributes read in either order. The regex used to require id before
-  // viewBox, so `<symbol viewBox="0 0 24 24" id="i-x">` - the order half the
-  // drawing tools emit - was invisible to this check and to the two below it.
-  // The count assertion hid it: a symbol the regex could not see was a symbol
-  // it did not count either.
+  // viewBox has no CSS equivalent - a symbol drawn to a different box is
+  // scaled to the wrapper's 16px and lands at a different weight.
+  // Reads attributes in either order: requiring id first made some symbols
+  // invisible to this check, and the count assertion hid the gap.
   const symbols = [...sprite.matchAll(/<symbol\b([^>]*)>/g)]
     .map(([, attrs]) => ({
       id: (/\bid="([^"]+)"/.exec(attrs) ?? [])[1],
@@ -122,18 +86,15 @@ test('every symbol is drawn to the same box', () => {
 });
 
 test('the sprite is in the service worker shell', () => {
-  // Hand-kept list, and the kind that goes stale exactly this way: an app that
-  // opens offline with every button blank looks broken in a way that has
-  // nothing to do with icons. See SHELL in web/sw.js.
+  // A stale list here means an offline app opens with every button blank.
+  // See SHELL in web/sw.js.
   const sw = readFileSync(join(WEB, 'sw.js'), 'utf8');
   assert.match(sw, /'\.\/assets\/icons\.svg'/);
 });
 
 test('no icon is drawn twice', () => {
-  // The whole point of the file. Two <symbol>s with the same path data are two
-  // drawings of one thing that will drift, which is the state index.html was in
-  // before the sprite existed - three close crosses and two pens, each a few
-  // characters different from its twin.
+  // Two <symbol>s with the same path data are two drawings of one thing that
+  // will drift - the state index.html was in before the sprite existed.
   const shapes = [...sprite.matchAll(/<symbol\b[^>]*\bid="([^"]+)"[^>]*>([\s\S]*?)<\/symbol>/g)]
     .map(([, id, body]) => [id, body.replace(/<!--[\s\S]*?-->/g, '').replace(/\s+/g, ' ').trim()]);
   const seen = new Map();
@@ -145,18 +106,11 @@ test('no icon is drawn twice', () => {
 });
 
 test('the right-click menu offers an icon on every entry', () => {
-  // A column that is a column only where somebody remembered reads as a menu
-  // with pieces missing, and the eye stops using it. Every entry that draws a
-  // row carries one; separators are not rows.
-  //
-  // Counted off `label:`, which is what makes an entry an entry. The two are
-  // written on the same object, so an entry that gained a label without an icon
-  // shows up here as a count that does not match.
-  // Checked per entry rather than by counting. Two totals compared is a balance
-  // that balances: one entry losing its icon while another gains a second key
-  // leaves the sums equal and the menu with a hole in the column. So each
-  // `label:` is walked out to the object literal that holds it, and that object
-  // is asked for its own icon.
+  // A column with gaps reads as broken and the eye stops using it. Every
+  // entry that draws a row carries an icon; separators do not.
+  // Checked per entry (walking each `label:` out to its enclosing object)
+  // rather than by comparing totals - two equal totals can still hide one
+  // entry that lost its icon while another gained a spare key.
   const labels = [...menu.matchAll(/\blabel:/g)];
   assert.ok(labels.length > 25, `only ${labels.length} entries found - has menu.ts moved?`);
 
@@ -188,24 +142,17 @@ test('the right-click menu offers an icon on every entry', () => {
 });
 
 test('the padlock keeps its switch outside the shadow tree', () => {
-  // The one icon whose insides used to be addressed from the page. A <use>
-  // renders into a shadow tree no selector can reach, so the open/shut swap had
-  // to move out to the wrappers - two of them, one per state. If these ever
-  // collapse back into a single <svg>, chrome.css goes on matching nothing and
-  // the padlock draws both shackles at once, in silence.
+  // A <use> renders into a shadow tree no selector can reach, so the
+  // open/shut swap lives on two wrapper elements instead. Collapsing these
+  // back into one <svg> makes chrome.css match nothing, silently.
   assert.match(html, /class="ico lock-open"[^>]*><use href="assets\/icons\.svg#i-lock-open"/);
   assert.match(html, /class="ico lock-shut"[^>]*><use href="assets\/icons\.svg#i-lock-shut"/);
 });
 
 test('nothing draws an icon inline any more', () => {
-  // Except the origin mark, which cannot: quality.css picks one of its three
-  // rings by whimsy tier, and that is a rule reaching inside the drawing - the
-  // one thing an external <use> forbids. It is 36 units across and is a marker
-  // on the board rather than an icon on a button, so it is not in the set that
-  // moved. Everything else in index.html is a reference.
-  // Comments out first: several of them talk about the markup they replaced,
-  // and a note explaining why there is no longer an inline <svg> here should not
-  // read as one.
+  // Except the origin mark: quality.css picks one of its three rings by
+  // whimsy tier, which needs to reach inside the drawing, so it stays inline.
+  // Comments are stripped first since some talk about the markup they replaced.
   const markup = html.replace(/<!--[\s\S]*?-->/g, '');
   const inline = [...markup.matchAll(/<svg\b[^>]*>/g)].map(m => m[0]);
   const strays = inline.filter(tag => !tag.includes('class="ico') && !tag.includes('id="origin-mark"'));

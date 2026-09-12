@@ -1,59 +1,9 @@
-// A deck's first slide, composited into the picture its card draws.
-//
-// Every other document family in import/document.ts is read the same cheap way:
-// the application that wrote the file already rendered a thumbnail into it, and
-// finding one is a container read and no renderer at all. PowerPoint is the
-// family where that answer stopped being true. `docProps/thumbnail.jpeg` is
-// optional, current PowerPoint does not write it unless somebody turns "save
-// thumbnail" on, and the exporters most decks actually come from - Google
-// Slides, Keynote, LibreOffice, python-pptx - never write one. So the single
-// well was dry for essentially every real file, and a deck was a grey card with
-// "pptx" on it whatever was inside.
-//
-// This is the other way of answering, and it is the expensive one: read the
-// slide, lay it out, and draw it. It is worth the code because of what a
-// moodboard is - a deck on a board is there to be *looked* at next to the other
-// things, and a grey rectangle with an extension on it is the one card that
-// carries no information at all.
-//
-// ── What this is and is not ──
-//
-// It is not a PowerPoint renderer and must not grow into one. DrawingML is a
-// vector language with theme inheritance, autoshape geometry, gradients,
-// effects, tables, charts and SmartArt in it, and a real implementation of that
-// is a library the size of pdf.js. What is here is the part that makes a slide
-// recognisable at card size, which is a much smaller thing:
-//
-//   - the pictures, at their real positions and sizes
-//   - the text, at its real position, size and colour
-//   - the background fill
-//
-// Everything else is skipped rather than approximated. An autoshape draws its
-// text and not its shape; a chart, a table and a piece of SmartArt draw nothing.
-// The test is whether somebody who made the deck recognises the slide at 300
-// pixels wide, not whether the result would survive being opened full size.
-//
-// Where it cannot answer it returns null and the card is the grey one it was, so
-// the whole of this is an upgrade over a known-bad state rather than something
-// the importer depends on.
-//
-// ── Two coordinate systems, and the one that surprises people ──
-//
-// Everything in a slide is in EMU - English Metric Units, 914400 to the inch,
-// 12700 to the point - which is an integer grid fine enough that no rounding in
-// the format is ever visible. Font sizes are the exception and are in hundredths
-// of a point, which is a different unit in the same file. Both are converted
-// once, at the edges of draw(), and nothing downstream of that thinks in EMU.
-//
-// ── Where the geometry comes from when the shape does not have it ──
-//
-// A placeholder - a title, a body, a slide number - usually carries no `a:xfrm`
-// of its own, because its position belongs to the layout it was placed from.
-// That is not an edge case, it is how nearly every text shape on a real slide is
-// written, so a reading that skips shapes without geometry draws the pictures
-// and none of the words. One level of lookup into ppt/slideLayouts/ answers it,
-// matched on the placeholder's index and then its type, and a shape that misses
-// in both is the one that is genuinely skipped.
+// Composite a deck's first slide into the card picture. Most exporters (Slides,
+// Keynote, LibreOffice) omit docProps/thumbnail.jpeg, so this reads the slide
+// XML and draws pictures + text + background fill at card size. Not a full
+// DrawingML renderer — autoshapes render text only, charts/tables/SmartArt
+// skipped. Coordinates in EMU (12700/pt); font sizes in hundredths of a point.
+// Placeholders without geometry are resolved from the slide layout.
 
 import { readZip } from '../storage/zip.ts';
 import { surface, surfaceToBlob, type Surface } from '../canvas/surface.ts';
@@ -70,26 +20,14 @@ const DECK_EXTS = new Set(['pptx', 'pptm', 'ppsx', 'ppsm', 'potx', 'potm']);
 /** English Metric Units to the point, and to the inch. The format's own grid. */
 const EMU_PER_POINT = 12700;
 
-/**
- * The default slide box, when presentation.xml does not say.
- *
- * 13.333 x 7.5 inches - the 16:9 default every version since 2013 writes. The
- * older 4:3 default is 9144000 x 6858000, and guessing wrong there costs a
- * letterboxed card rather than a wrong one, so the modern shape is the guess.
- */
+/** Default 16:9 slide box (since 2013). Wrong guess = letterboxed, not broken. */
 const DEFAULT_CX = 12192000;
 const DEFAULT_CY = 6858000;
 
 /** Long edge of the raster, in pixels. The same ceiling import/pdf.ts uses. */
 const TARGET = 1600;
 
-/**
- * Caps, each on a thing a hostile or merely enormous deck can have a lot of.
- *
- * Shapes because a generated deck can carry thousands on one slide and each is a
- * tree walk; images because each is a full decode held at once; characters
- * because fillText on a megabyte of text in one run is a frame that never ends.
- */
+/** Per-slide caps — generated decks can have thousands of shapes. */
 const MAX_SHAPES = 120;
 const MAX_IMAGES = 16;
 const MAX_CHARS = 4000;
@@ -108,24 +46,14 @@ type Piece =
 /** A paragraph, with the run properties of its first run standing for it. */
 type Line = { text: string, size: number, bold: boolean, colour: string | null, align: string };
 
-/**
- * The first slide of `file` as `{ blob, w, h }`, or null.
- *
- * Shaped exactly like firstPageRaster() in import/pdf.ts, and for the same
- * reason: prepareFile() treats both as "a picture of a document the app cannot
- * draw", stores it as meta.preview beside the untouched original, and retypes
- * the card to an image. The two are interchangeable at that call site and should
- * stay that way.
- */
+/** First slide as { blob, w, h }, or null. Same shape as pdf.ts's
+ * firstPageRaster — prepareFile() treats both identically. */
 export async function slideOneRaster(
   file: Blob,
   lift = false,
 ): Promise<{ blob: Blob, w: number, h: number } | null> {
   try {
-    // Thrown, not returned - the same reasoning bakedPreview() gives at length.
-    // A deck this size may well composite perfectly; what it will certainly do is
-    // cost 96 MB of somebody else's memory to find out, and that is theirs to
-    // spend. Declined, the deck is the grey card it was before this module existed.
+    // Oversize = liftable ceiling, not a refusal.
     if (!lift && file.size > MAX_CONTAINER) {
       throw oversize(
         'container-bytes',
@@ -146,11 +74,7 @@ export async function slideOneRaster(
 
     return await draw(pieces, box, background(doc));
   } catch (err) {
-    // A ceiling goes past, for the caller to ask about. See bakedPreview().
     if (isOversize(err)) throw err;
-    // Same reasoning as import/pdf.ts's: the card is unchanged either way, but
-    // "this deck has nothing this can draw" and "the archive would not read" are
-    // different faults and only the console can tell them apart.
     console.warn('[mbrd] slide: the first slide did not composite', err);
     return null;
   }
@@ -170,14 +94,7 @@ function firstSlide(entries: Entries): string | null {
 /** The _rels part beside a part - the format's own convention, spelled once. */
 const relsFor = (path: string) => path.replace(/([^/]+)$/, '_rels/$1.rels');
 
-/**
- * The slide box in EMU, from the presentation part.
- *
- * Read from ppt/presentation.xml rather than assumed, because the two common
- * shapes are a full 16:9 against 4:3 and a deck drawn at the wrong one is
- * stretched rather than letterboxed - the scale below is not uniform if the box
- * is wrong.
- */
+/** Slide box in EMU from presentation.xml. Wrong ratio = non-uniform stretch. */
 function slideBox(entries: Entries): { cx: number, cy: number } {
   const doc = xmlPart(entries, 'ppt/presentation.xml');
   const sz = doc && byLocal(doc, 'sldSz')[0];
@@ -186,13 +103,7 @@ function slideBox(entries: Entries): { cx: number, cy: number } {
   return { cx, cy };
 }
 
-/**
- * The layout this slide was placed from, parsed, or null.
- *
- * Reached through the slide's own relationship table rather than by guessing at
- * slideLayout1.xml: the numbering does not follow the slides and a deck of
- * twenty slides may use three layouts in any order.
- */
+/** Layout this slide references (via rels, not by guessing the number). */
 function layoutOf(entries: Entries, rels: Rels): Document | null {
   for (const target of rels.values()) {
     if (!/slideLayout\d*\.xml$/.test(target)) continue;
@@ -201,15 +112,8 @@ function layoutOf(entries: Entries, rels: Rels): Document | null {
   return null;
 }
 
-/**
- * The slide's own background colour, or null for "whatever the layout said".
- *
- * Only a flat `a:srgbClr` fill directly on the slide is read. A theme colour, a
- * gradient or a picture fill is left to the white default - each of those needs
- * the theme part and its colour map, which is the beginning of the renderer this
- * module is written not to become, and white behind dark text is never the wrong
- * way round.
- */
+/** Slide background — only flat srgbClr. Theme/gradient/picture fills fall
+ * back to white (reading the theme = beginning of a full renderer). */
 function background(doc: Document): string | null {
   const bg = byLocal(doc, 'bg')[0];
   return bg ? srgbIn(bg) : null;
@@ -225,14 +129,8 @@ function srgbIn(node: Element): string | null {
 // Reading the shape tree
 // ---------------------------------------------------------------------------
 
-/**
- * Every picture and every block of text on the slide, in the order they are
- * drawn in.
- *
- * Document order is z-order in this format - later shapes sit on top - so the
- * list is built by walking and never sorted. Groups are recursed into with their
- * transform applied; everything else is taken as it is.
- */
+/** Collect pictures and text in document order (= z-order). Groups recursed
+ * with their transform applied. */
 function collect(doc: Document, entries: Entries, rels: Rels, layout: Document | null): Piece[] {
   const tree = byLocal(doc, 'spTree')[0];
   if (!tree) return [];
@@ -279,16 +177,8 @@ function walk(
 
 const compose = (outer: Mapping, inner: Mapping): Mapping => f => outer(inner(f));
 
-/**
- * A group's child-space to parent-space transform.
- *
- * A group states two rectangles: where it sits in its parent (`a:off`/`a:ext`)
- * and what coordinate space its children were authored in (`a:chOff`/`a:chExt`).
- * Ignoring the second is the single most visible way to get a grouped slide
- * wrong - children are authored at their original absolute positions, so
- * without the mapping a group that was moved or scaled draws its contents where
- * they used to be.
- */
+/** Group child→parent transform. chOff/chExt define the child coordinate space;
+ * ignoring them draws group contents at their pre-move positions. */
 function groupMapping(group: Element): Mapping {
   const xfrm = byLocal(group, 'xfrm')[0];
   const off = xfrm && childOf(xfrm, 'off');
@@ -319,14 +209,8 @@ function groupMapping(group: Element): Mapping {
 
 const num = (el: Element, attr: string) => Number(el.getAttribute(attr)) || 0;
 
-/**
- * A shape's own rectangle, or null when it does not state one.
- *
- * Taken from the `a:xfrm` under this shape's own `p:spPr`, not from the first
- * one anywhere beneath it: a picture's `a:blipFill` can carry a `a:srcRect` and
- * a shape's text body can carry transforms of its own, and reaching past the
- * shape properties picks up whichever came first in the file.
- */
+/** Shape's own xfrm under spPr (not any nested xfrm — blipFill and txBody
+ * can carry their own). */
 function frameOf(shape: Element): Frame | null {
   const props = childOf(shape, 'spPr');
   const xfrm = props && childOf(props, 'xfrm');
@@ -339,15 +223,8 @@ function frameOf(shape: Element): Frame | null {
   return { x: num(off, 'x'), y: num(off, 'y'), w, h };
 }
 
-/**
- * Where the layout puts this placeholder, keyed the way the format matches them.
- *
- * `idx` first and `type` second, which is the order PowerPoint itself resolves
- * in: two body placeholders on a two-column layout are told apart only by their
- * index, while a title carries a type and usually no index at all. A shape with
- * neither, or one whose layout has no matching placeholder, gets null and is
- * skipped - drawing it at a guessed position would be worse than leaving it out.
- */
+/** Placeholder frame from layout, resolved idx-first then type (matches
+ * PowerPoint's own resolution order). */
 function placeholderFrame(shape: Element, frames: Map<string, Frame>): Frame | null {
   const ph = byLocal(shape, 'ph')[0];
   if (!ph) return null;
@@ -385,14 +262,8 @@ function pictureBytes(pic: Element, entries: Entries, rels: Rels) {
   return entries.get(resolveFrom('ppt/slides/', target)) || null;
 }
 
-/**
- * A text body as drawable lines.
- *
- * One set of run properties per paragraph, taken from its first run. A paragraph
- * that changes size or colour part way through therefore draws in the first
- * run's, which at card size is a difference nobody can see and saves carrying a
- * styled-run model through the whole of draw().
- */
+/** Paragraphs from a text body. First run's properties stand for the whole
+ * paragraph — at card size the difference is invisible. */
 function paragraphs(body: Element): Line[] {
   const out: Line[] = [];
   let chars = 0;
@@ -418,14 +289,7 @@ function paragraphs(body: Element): Line[] {
 // Drawing it
 // ---------------------------------------------------------------------------
 
-/**
- * The pieces, on a canvas the shape of the slide.
- *
- * Opaque, because a slide is: there is a background under everything and no card
- * on the board wants to see through a deck to the paper. That also lets the
- * encode fall back to JPEG without a question about transparency, the same trade
- * canvas/poster.ts makes for a video frame.
- */
+/** Draw pieces onto an opaque canvas (no alpha — JPEG fallback is safe). */
 async function draw(
   pieces: Piece[],
   box: { cx: number, cy: number },
@@ -455,9 +319,7 @@ async function draw(
     if (piece.kind === 'image') {
       if (images >= MAX_IMAGES) continue;
       images++;
-      // A picture the browser cannot decode - a WMF or an EMF, which decks do
-      // carry - is skipped and the rest of the slide is still drawn. That is the
-      // difference between a slide with a hole in it and no slide at all.
+      // Undecodable pictures (WMF/EMF) skipped — hole beats no slide.
       try {
         const bmp = await createImageBitmap(new Blob([piece.bytes]));
         ctx.drawImage(bmp, x, y, pw, ph);
@@ -473,15 +335,8 @@ async function draw(
   return blob ? { blob, w, h } : null;
 }
 
-/**
- * A shape's paragraphs inside its rectangle, wrapped and clipped.
- *
- * Clipped rather than shrunk to fit: PowerPoint's autofit would reflow the text
- * at a smaller size, and guessing at that produces a slide whose type sizes are
- * all subtly wrong. Text that overflows its box is cut off at the box, which is
- * what it looks like in the deck when autofit is off - and at card size the
- * difference between the two is a line.
- */
+/** Draw paragraphs clipped to their box. Clipped, not autofitted — guessing
+ * the reflow produces subtly wrong type sizes at card scale. */
 function drawText(
   ctx: Surface['ctx'],
   lines: Line[],
@@ -499,9 +354,7 @@ function drawText(
 
   let cursor = y;
   for (const line of lines) {
-    // Points to pixels through EMU, so the one conversion in this module is the
-    // one at the top of draw() and this borrows it rather than inventing a
-    // second scale factor.
+    // Points → pixels via EMU, reusing draw()'s single scale factor.
     const size = Math.max(6, line.size * EMU_PER_POINT * scale);
     ctx.font = `${line.bold ? 'bold ' : ''}${size}px system-ui, sans-serif`;
     ctx.fillStyle = line.colour || '#1a1a1a';
@@ -535,15 +388,7 @@ function wrap(ctx: Surface['ctx'], text: string, w: number): string[] {
   return out;
 }
 
-/**
- * The slide as bytes. WebP where the engine writes it, JPEG where it does not.
- *
- * The pattern import/pdf.ts established and canvas/surface.ts documents: ask for
- * WebP and then read the type that came back, because an engine that cannot
- * write it substitutes rather than refuses. JPEG unconditionally on the retry
- * for the reason the canvas is opaque - there is no transparency here to
- * flatten.
- */
+/** Encode: WebP preferred, JPEG fallback (opaque canvas, no transparency). */
 async function encode(face: Surface): Promise<Blob | null> {
   const webp = await surfaceToBlob(face, 'image/webp', 0.82);
   if (!webp) return null;

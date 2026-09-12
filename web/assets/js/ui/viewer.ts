@@ -1,67 +1,40 @@
-// The viewer: one item off the board, as big as the window will allow.
-//
-// A board is a wall of things at a glance, and that is what it is for - but
-// until this there was no second look. A photograph was however many pixels its
-// card happened to be; a clip had no full screen; a text file showed its first
-// screenful and stopped at whatever the card's height cut it off at. On the Feed
-// - which on a phone *is* the board - a tap on most types did nothing at all.
-//
-// One surface for every type rather than one per type. VIEWS below is the same
-// shape as RENDERERS in canvas/renderers.ts: a table keyed by what the item is,
-// each entry handed the item and the body to fill. A new type is one entry, and
-// nothing else in this file or in the markup changes. That is deliberate and it
-// is why this was built before it was needed for documents - the argument for
-// the surface is images and video, which need no parser at all; the document
-// formats are entries that arrive later.
-//
-// A real <dialog>, opened with showModal(). Three things come free with that and
-// each of them is a thing not to reimplement: the top layer (so nothing on the
-// board can paint over it), the backdrop, and Escape. canvas/input.ts already
-// stands the board's own shortcuts down while a modal is up, so arrow keys and
-// Delete do not reach the board through this.
-//
-// Nothing here reaches `document` at import time - initViewer() does, and
-// tests/imports.test.js holds this file to that.
+// Viewer: one item at full size in a showModal() <dialog>. VIEWS table keyed
+// by item type (same shape as RENDERERS). Teardown is load-bearing: mounted
+// videos keep their decoder, blob URLs must be revoked, parsed PDFs hold the
+// whole file. No document reach at import time (tests/imports.test.js).
 
 import { byId, itemAdjust, itemCrop, itemRotate, itemMatte, flipTransform } from '../state.ts';
 import { displayURLReady, ensureDisplay } from '../canvas/display.ts';
 import { assetURL, getAsset, readText } from '../storage/assets.ts';
 import { baseName, formatBytes } from '../util.ts';
 import { linkURL, MARKDOWN } from '../canvas/renderers.ts';
+import { embedFor, frameFor } from '../canvas/embed.ts';
 import { noteTint } from '../canvas/note-model.ts';
 import { kindName } from '../canvas/item-dom.ts';
 import { renderMarkdown } from './markdown.ts';
-// Statically: the reader's only import is storage/zip.ts, which is already in
-// memory because it is what opens every .mbrd, and the browser's own DOMParser.
-// There is no dependency to defer, so deferring it would only buy a second
-// module fetch at the moment somebody asked to see something.
+// Statically: the only import the reader needs is storage/zip.ts, already in
+// memory (it opens every .mbrd), plus the browser's DOMParser - nothing to defer.
 import { canReadDocument, readDocument } from './documents.ts';
 import type { Item } from '../board-model.ts';
 
 /**
- * `meta` is open by design (see board-model.ts), so the three things this file
- * reads out of it are narrowed here rather than trusted. A key that is not a
- * string is treated exactly as a missing one, which is what every one of these
- * reads already did by falling through a `||`.
+ * `meta` is open by design (board-model.ts), so the three keys read out of
+ * it here are narrowed rather than trusted. A non-string value reads as missing.
  */
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 /** The object URL for a hash out of `meta`, or null for anything that is not one. */
 const urlOf = (hash: unknown): string | null => (typeof hash === 'string' ? assetURL(hash) : null);
 
 /**
- * How much of a text file the viewer reads.
- *
- * Ten times the card's preview and five times the Feed tile's, because this is
- * the place the whole file is supposed to be. Still a cap: a board can hold a
- * log nobody meant to drop on it, and a dialog that locks the tab laying out
- * forty megabytes of one line is a worse answer than a truncated read that says
- * so at the bottom.
+ * How much of a text file the viewer reads - ten times the card's preview,
+ * five times the Feed tile's, since this is where the whole file belongs.
+ * Still capped: a 40MB log dropped on a board should not lock the tab.
  */
 const TEXT_MAX = 200000;
 
-// The dialog and its three slots, taken once in initViewer(). Everything past
-// that guard reads them with `!`: initViewer() returns early without the
-// dialog, and openViewer() refuses before it touches any of them.
+// The dialog and its three slots, taken once in initViewer(). Read past that
+// guard with `!`: initViewer() returns early without the dialog, and
+// openViewer() refuses before touching any of them.
 let dlg: HTMLDialogElement | null = null;
 let titleEl: HTMLElement | null = null;
 let metaEl: HTMLElement | null = null;
@@ -74,17 +47,16 @@ let pdfDoc: { destroy: () => void } | null = null;
 
 export function initViewer() {
   // SAFETY: #viewer is the <dialog> in index.html; the showModal test in
-  // openViewer() is the real guard, and it covers an engine with no dialog
-  // support too - which is why this is a cast rather than an instanceof.
+  // openViewer() is the real guard and covers engines without dialog support too.
   dlg = document.getElementById('viewer') as HTMLDialogElement | null;
   if (!dlg) return;
   titleEl = document.getElementById('viewer-title');
   metaEl = document.getElementById('viewer-meta');
   bodyEl = document.getElementById('viewer-body');
   document.getElementById('viewer-close')?.addEventListener('click', () => closeViewer());
-  // A press on the backdrop closes, the way every other overlay in this app
-  // does. A <dialog> fills the top layer, so the press lands on the dialog
-  // itself and the only way to tell backdrop from sheet is where it landed.
+  // A press on the backdrop closes, like every other overlay. A <dialog>
+  // fills the top layer, so the press lands on the dialog itself and the
+  // only way to tell backdrop from sheet is where it landed.
   dlg.addEventListener('click', e => {
     if (e.target !== dlg) return;
     const r = dlg!.getBoundingClientRect();
@@ -92,18 +64,15 @@ export function initViewer() {
                 && e.clientY >= r.top && e.clientY <= r.bottom;
     if (!inside) closeViewer();
   });
-  // Escape reaches the dialog as a close request whatever had focus. The
-  // teardown has to run for it too, or the next viewing inherits a video still
-  // playing behind a closed dialog.
+  // Escape reaches the dialog as a close request whatever had focus; the
+  // teardown must run too, or the next viewing inherits a video still playing.
   dlg.addEventListener('close', teardown);
 }
 
 /**
- * Is there anything worth showing this item full size?
- *
- * Asked by the callers rather than answered with an empty dialog: a tap that
- * opens a sheet saying "nothing to show" is worse than a tap that does nothing,
- * because it costs a second press to get back to where you were.
+ * Is there anything worth showing this item full size? Asked by callers
+ * rather than answered with an empty dialog - a tap that opens "nothing to
+ * show" costs a second press to undo.
  */
 export function canView(id: string) {
   const item = byId(id);
@@ -112,14 +81,11 @@ export function canView(id: string) {
 }
 
 /**
- * Which view opens this item.
- *
- * Documents are asked about *first*, and by extension rather than by type,
- * because a document does not have a type of its own on this board: a .docx that
- * carried a thumbnail imported as an `image` (import/document.ts found its baked
- * preview) and one that did not imported as `generic`. Neither says "document",
- * and both should open as one. The type table below is the fallback and covers
- * everything the board draws natively.
+ * Which view opens this item. Documents are asked about *first*, by
+ * extension rather than type, since a document has no type of its own on
+ * this board - a .docx with a baked thumbnail imported as `image`, one
+ * without imported as `generic`, and both should open as a document. The
+ * type table is the fallback for everything the board draws natively.
  */
 function viewFor(item: Item): View | null {
   if (!item.asset?.hash) return VIEWS[item.type] || null;
@@ -137,31 +103,27 @@ export function openViewer(id: string) {
   const view = viewFor(item);
   if (!view) return;
 
-  // A document that arrived without a name opens under what it is - "Word
-  // document" rather than the type it was imported as, which for anything the
-  // board cannot draw is the word `generic`.
+  // A document with no name opens under what it is - e.g. "Word document" -
+  // rather than its import type, which for the unrecognized is `generic`.
   titleEl!.textContent = baseName(item.name) || item.name || kindName(item);
   metaEl!.textContent = describe(item);
   bodyEl!.replaceChildren();
   dlg.dataset.type = item.type;
-  // Which of the two shapes this viewing is - a lightbox or a page. The test is
-  // on the view that was *dispatched to* rather than on the item's type, and
-  // that is the whole reason it is here and not a lookup in the stylesheet: a
-  // .docx that imported as an `image` because import/document.ts found its baked
-  // preview is type image and opens as a document, and a document read on a
-  // black ground with no page under it would be unreadable. viewFor() has
-  // already answered this question; this only writes down what it said.
+  // Which of the two shapes this viewing is - a lightbox or a page - tested
+  // on the view *dispatched to*, not the item's type: a .docx that imported
+  // as `image` (baked preview) still opens as a document, and reading it on
+  // a black ground with no page would be unreadable. viewFor() already
+  // answered this; this just writes it down.
   if (view === VIEWS.image || view === VIEWS.video) dlg.dataset.media = '';
   else delete dlg.dataset.media;
   view(item, bodyEl!);
-  // The picture, once the view has mounted it. A clip is deliberately left out:
-  // its controls are things to press, and a wheel or a drag over them meaning
-  // zoom would take the scrubber away.
+  // The picture, once mounted - a clip is left out deliberately: wheel/drag
+  // over its controls should press them, not zoom.
   const pic = bodyEl!.querySelector<HTMLImageElement>('img.viewer-media');
   if (pic) detachZoom = attachZoomPan(pic, bodyEl!);
   dlg.showModal();
-  // The body, not the close button. Scrolling a long file with the keyboard is
-  // the first thing anybody does in here, and a focused button swallows Space.
+  // The body, not the close button - scrolling with the keyboard is the
+  // first thing anybody does, and a focused button swallows Space.
   bodyEl!.focus?.();
 }
 
@@ -172,12 +134,10 @@ function closeViewer() {
 /**
  * Everything this viewing was holding, put down.
  *
- * A <video> left in a detached subtree keeps its decoder and, on some engines,
- * keeps playing - so it is stopped and emptied by hand rather than trusted to be
- * collected. Nothing else needs releasing: every URL in here comes from
- * assetURL(), which mints one per asset for the life of the board and revokes
- * them all when the board closes. Revoking one here would take the picture off
- * the card that is still showing it.
+ * A <video> left in a detached subtree keeps its decoder (and, on some
+ * engines, keeps playing), so it's stopped and emptied by hand. Nothing else
+ * needs releasing: every other URL comes from assetURL(), which mints one
+ * per asset for the board's life and revokes them all on close.
  */
 function teardown() {
   for (const el of bodyEl?.querySelectorAll?.<HTMLMediaElement>('video, audio') || []) {
@@ -185,25 +145,20 @@ function teardown() {
     el.removeAttribute('src');
     el.load?.();
   }
-  // A document's pictures come out of its own container as blob URLs this app
-  // minted, and those are not in the asset store - nothing else will ever revoke
-  // them. Opening a hundred-page comic and closing it again would otherwise leak
-  // a hundred decoded images for the life of the tab.
+  // A document's pictures come out of its own container as blob URLs this
+  // app minted outside the asset store - nothing else will ever revoke them.
   releaseDoc?.();
   releaseDoc = null;
-  // And the parsed PDF, which holds the whole file plus its object graph. The
-  // body is emptied a line below, which is also what stops a batch still running
-  // - it checks that the page list is still connected between pages.
+  // The parsed PDF holds the whole file plus its object graph. Body is
+  // emptied below too, which also stops a render batch still in flight.
   pdfDoc?.destroy();
   pdfDoc = null;
-  // The zoom's listeners are on the picture, which is about to be thrown away -
-  // but two of them are not: the window resize and the stage's own click. This
-  // is what takes those off, and it has to run before the body is emptied so the
-  // handler cannot fire against a picture that is no longer in the document.
+  // The zoom's listeners are mostly on the picture (about to be discarded),
+  // but the resize and stage-click listeners are not - this removes those,
+  // and must run before the body is emptied.
   detachZoom?.();
   detachZoom = null;
   bodyEl?.replaceChildren();
-  // Only bound as a listener on the dialog, so there is one here to clear.
   delete dlg!.dataset.type;
   delete dlg!.dataset.media;
 }
@@ -223,42 +178,32 @@ const ZOOM_CLICK = 2.5;
 const DRAG_SLOP = 6;
 
 /**
- * Wheel, pinch and drag over an open picture.
+ * Wheel, pinch and drag over an open picture. Fitting to the window handles
+ * "too small to see" only partly - a 6000px scan fitted to a laptop is
+ * still a tenth its own detail.
  *
- * The viewer's whole argument is that a card is too small to see a photograph
- * in; fitting it to the window is most of the answer and not all of it, because
- * a 6000px scan fitted to a laptop is still a tenth of its own detail. So the
- * fitted picture is where this starts and not where it ends.
+ * **One transform on the picture itself**, no wrapper - `translate(...)
+ * scale(...)` on the element's own style, cheapest for the compositor and
+ * survives the picture being swapped underneath (crop's display copy
+ * replaces `src`, not the node).
  *
- * **One transform on the picture itself.** No wrapper, no second element to keep
- * in step: `translate(...) scale(...)` written to the element's own style, which
- * is the compositor's cheapest path and survives the picture being swapped
- * underneath it (the crop's display copy arrives asynchronously and replaces
- * `src`, not the node). Setting `.style` from script is fine under the CSP; a
- * `style` attribute in markup would not be.
- *
- * **The zoom goes to the pointer, not to the middle.** With the origin at the
- * centre, holding the point under the cursor still costs one correction:
- * `t += (cursor - centre) * (1 - next/current)`. Zooming to the middle of the
- * window instead is the thing that makes every other image viewer feel like it
- * is fighting you - you point at a face and the face leaves.
- *
- * **The pan is clamped, not free.** Half the scaled picture past the window edge
- * plus a margin, so a fling cannot put the thing somewhere it has to be hunted
- * for. Returns its own detach, because two of the four listeners are not on the
- * picture and would outlive it.
+ * **The zoom goes to the pointer, not the middle** - keeps the point under
+ * the cursor fixed; zooming to centre is what makes other viewers feel like
+ * they're fighting you. **The pan is clamped, not free**: half the scaled
+ * picture past the window edge plus a margin, so a fling can't lose it
+ * off-screen. Returns its own detach, since two of the four listeners
+ * aren't on the picture and would outlive it.
  */
 function attachZoomPan(img: HTMLElement, stage: HTMLElement): () => void {
   let scale = 1, tx = 0, ty = 0;
-  // Whatever the view already wrote, read once and kept underneath everything
-  // this function does. That is the mirror (see the image view above), and
-  // reading it rather than being told it means this knows nothing about flips:
+  // Whatever the view already wrote (the mirror, see the image view above),
+  // read once and kept underneath - so this knows nothing about flips and
   // any future base transform composes the same way.
   //
-  // Last in the list, so it happens *first* - a CSS transform list applies right
-  // to left. The picture is turned in its own space and then panned and zoomed
-  // in the window's, which is the only order where a drag on a mirrored
-  // photograph still follows the hand.
+  // Last in the list, so it applies *first* (CSS transform lists apply
+  // right to left): turn in the picture's own space, then pan/zoom in the
+  // window's - the only order where a drag on a mirrored photo still
+  // follows the hand.
   const base = img.style.transform;
 
   const paint = () => {
@@ -269,9 +214,8 @@ function attachZoomPan(img: HTMLElement, stage: HTMLElement): () => void {
   const reset = () => { scale = 1; tx = 0; ty = 0; paint(); };
 
   const clampPan = () => {
-    // offsetWidth is the *laid out* size, which is the fitted picture - the
-    // transform does not touch it. That is what makes this arithmetic stable
-    // while the thing it is measuring is scaled.
+    // offsetWidth is the laid-out (fitted) size - the transform doesn't
+    // touch it, which is what keeps this stable while scale changes.
     const w = img.offsetWidth || 1;
     const h = img.offsetHeight || 1;
     const maxX = Math.max(0, (w * scale - innerWidth) / 2) + 40;
@@ -289,8 +233,8 @@ function attachZoomPan(img: HTMLElement, stage: HTMLElement): () => void {
     tx += dx * (1 - ns / scale);
     ty += dy * (1 - ns / scale);
     scale = ns;
-    // All the way out is all the way back: a picture at 1 that is still offset
-    // is a picture sitting somewhere nobody put it.
+    // All the way out is all the way back - an offset picture at scale 1 is
+    // sitting somewhere nobody put it.
     if (scale === 1) { tx = 0; ty = 0; }
     clampPan();
     paint();
@@ -353,23 +297,20 @@ function attachZoomPan(img: HTMLElement, stage: HTMLElement): () => void {
     }
   };
 
-  // A plain click on the picture is the cheap way in and the cheap way out: in
-  // to a look at the detail under the pointer, out to the whole frame again.
-  // Guarded by `moved`, or the lift at the end of every pan would toggle it.
+  // A plain click zooms in to the pointer, or back out - guarded by `moved`,
+  // or the lift at the end of every pan would toggle it.
   const onClick = (e: MouseEvent) => {
     if (moved) { moved = false; return; }
     if (scale > 1) reset();
     else zoomTo(ZOOM_CLICK, e.clientX, e.clientY);
   };
 
-  // The ground around the picture is the way out, which is what a dark surround
-  // has always meant. Only the stage itself - a press that reached the picture
-  // is handled above and never arrives here.
+  // The ground around the picture is the way out - only the stage itself; a
+  // press that reached the picture is handled above and never arrives here.
   const onStageClick = (e: MouseEvent) => { if (e.target === stage) closeViewer(); };
 
-  // A resized window re-fits the picture underneath a transform that was
-  // computed against the old one, so the offset is now measured off nothing.
-  // Putting it back is the honest answer and the one that cannot be subtly wrong.
+  // A resized window re-fits the picture under a transform computed against
+  // the old one; resetting is the one answer that can't be subtly wrong.
   const onResize = () => { if (scale !== 1) reset(); };
 
   img.addEventListener('wheel', onWheel, { passive: false });
@@ -384,10 +325,8 @@ function attachZoomPan(img: HTMLElement, stage: HTMLElement): () => void {
   return () => {
     stage.removeEventListener('click', onStageClick);
     removeEventListener('resize', onResize);
-    // Back to the base, not to nothing: what this attached to was a picture that
-    // may already have been mirrored, and detaching the zoom is not an undo of
-    // the flip. The node is usually thrown away a line later anyway; on the path
-    // where it is not, this leaves it as it was found.
+    // Back to the base, not to nothing - this may already be a mirrored
+    // picture, and detaching the zoom isn't an undo of the flip.
     img.style.transform = base;
   };
 }
@@ -410,11 +349,10 @@ const VIEWS: Record<string, View> = {
   /**
    * A picture, at its own size or the window's, whichever is smaller.
    *
-   * The original asset and not meta.thumb or meta.preview: this is the one place
-   * in the app where the full-size file is what is wanted, since every other
-   * surface is showing it inside a box. The preview is the fallback, and for an
-   * undecodable original (HEIC, RAW) it is the only thing that will draw - so it
-   * is tried second rather than not at all.
+   * The original asset, not meta.thumb/preview - the one place the full-size
+   * file is wanted, since every other surface shows it inside a box. The
+   * preview is the fallback, and the only thing that draws for an
+   * undecodable original (HEIC, RAW).
    */
   image(item, host) {
     const url = urlOf(item.asset?.hash) || urlOf(item.meta?.preview);
@@ -423,31 +361,18 @@ const VIEWS: Record<string, View> = {
     img.className = 'viewer-media';
     img.alt = item.name || '';
     img.decoding = 'async';
-    // A cropped picture is shown cropped, and the crop arrives the only way it
-    // exists: as the display copy, which is where canvas/display.ts bakes it.
-    // So this is the one case where the viewer does not show the original file -
-    // and it must not, because the original is a picture the person has already
-    // said they are not showing. The copy is bounded by the quality dial's
-    // sharpness rather than by the file, which is a real loss of resolution
-    // here and the honest trade: the alternative is a full-size view that
-    // disagrees with every card on the board.
+    // A cropped picture shows cropped, via the display copy canvas/display.ts
+    // bakes - the one case where the viewer deliberately doesn't show the
+    // original file. Bounded by the quality dial's sharpness, a real
+    // resolution loss traded for agreeing with the card. Quarter turn and
+    // background removal ride the same pipe, since neither has a CSS
+    // spelling over the original the way grade and mirror do below.
     //
-    // The quarter turn and the background removal come down the same pipe, and
-    // they have to: neither has a CSS spelling that would let this view apply it
-    // over the original the way the grade and the mirror below are applied. See
-    // itemRotate() in board-model.ts.
-    //
-    // **An edited picture waits for its copy rather than showing the original
-    // first.** This used to set the original above unconditionally and layer the
-    // copy over it a tick later, on the reasoning that the full frame for one
-    // moment is the same stand-in the card uses. The card does not use it - it
-    // refuses a stand-in on an edited picture precisely because the stand-in is
-    // the picture the person said they were not showing - and here it is at its
-    // worst: full screen, so a cut-out opens with its background on and then has
-    // it taken away in front of the reader. A blank instant is the better half
-    // of that trade, and it is usually not even an instant: the card that was
-    // just clicked has normally already made the copy, so `ready` answers
-    // synchronously.
+    // **An edited picture waits for its copy rather than showing the
+    // original first** - full-screen is the worst place to flash a cut-out
+    // with its background on and then lose it. A blank instant is the
+    // better trade, and usually not even that - the just-clicked card has
+    // normally already made the copy.
     const crop = itemCrop(item);
     const rot = itemRotate(item);
     const matte = itemMatte(item);
@@ -458,37 +383,29 @@ const VIEWS: Record<string, View> = {
     else if (!edited) img.src = url;
     if (edited && hash && !ready) {
       ensureDisplay(hash, crop, rot, matte).then(u => {
-        // A copy that could not be made falls back to the original: wrong in the
-        // way described above, and still better than an empty viewer over a
-        // picture that is sitting in the store.
+        // A copy that couldn't be made falls back to the original - wrong,
+        // but still better than an empty viewer over a picture that exists.
         const src = u || url;
         if (img.isConnected || !img.src) img.src = src;
       });
     }
-    // The grade is a filter and applies whatever the source, so it rides on top
-    // of either branch above.
+    // The grade is a filter and applies whatever the source, riding on top of either branch.
     const adjust = itemAdjust(item);
     if (adjust) {
       img.style.filter =
         `brightness(${adjust.brightness}) contrast(${adjust.contrast}) saturate(${adjust.saturation})`;
     }
-    // And the mirror, which rides on top of either branch for the same reason
-    // the grade does - it is a transform of whatever picture arrived, not a
-    // property of the file. Written before the zoom is attached, deliberately:
-    // attachZoomPan() reads this as the base it composes onto, so the order of
-    // these two lines is the order of the two transforms. See flipTransform().
+    // The mirror, same reasoning, written before the zoom is attached:
+    // attachZoomPan() reads this as the base it composes onto. See flipTransform().
     const flip = flipTransform(item);
     if (flip) img.style.transform = flip;
     host.append(img);
   },
 
   /**
-   * A clip, with the browser's own controls.
-   *
-   * Its poster is on it, so the frame is there before the first byte of video
-   * is - which on a phone is the difference between a black rectangle and the
-   * picture the card was already showing. Not autoplaying: opening a thing to
-   * look at it is not the same as asking it to start.
+   * A clip, with the browser's own controls. Its poster is on it so the
+   * frame is there before the first byte of video is. Not autoplaying:
+   * opening a thing isn't asking it to start.
    */
   video(item, host) {
     const url = urlOf(item.asset?.hash);
@@ -501,8 +418,8 @@ const VIEWS: Record<string, View> = {
     const poster = urlOf(item.meta?.cover || item.meta?.poster);
     if (poster) el.poster = poster;
     el.src = url;
-    // The grade, as on the card. A clip can be adjusted and cannot be cropped -
-    // see setItemCrop() in state.ts, which explains why the two differ.
+    // The grade, as on the card. A clip can be adjusted, not cropped - see
+    // setItemCrop() in state.ts.
     const adjust = itemAdjust(item);
     if (adjust) {
       el.style.filter =
@@ -532,20 +449,15 @@ const VIEWS: Record<string, View> = {
   },
 
   /**
-   * A text file, whole and scrolling - as prose if it is Markdown, as source if
-   * it is anything else.
+   * A text file, whole and scrolling - as prose if Markdown, as source if
+   * anything else. Split by extension only: Markdown is the one format
+   * meant to be *read*, and rendering the rest (JSON, CSS, a log) would be
+   * the viewer second-guessing the reader.
    *
-   * The split is by extension and only by extension. Markdown is the one thing
-   * in this bucket written to be *read*, and reading a README as hashes and
-   * asterisks is reading the scaffolding instead of the building. Everything
-   * else classify() routes here - JSON, CSS, a log, a Python file - is written
-   * to be read as source, and rendering it would be the viewer deciding it knew
-   * better.
-   *
-   * Both paths end in text nodes. <pre> plus textContent for source; for
-   * Markdown, ui/markdown.ts builds DOM and never touches innerHTML, so raw HTML
-   * inside the file shows as the characters it is made of rather than running.
-   * That is not a nicety here: these are files the app did not write.
+   * Both paths end in text nodes - <pre>/textContent for source, and for
+   * Markdown, ui/markdown.ts builds DOM without innerHTML, so raw HTML in
+   * the file shows as characters rather than running. Not a nicety: these
+   * are files the app did not write.
    */
   text(item, host) {
     const md = MARKDOWN.has(str(item.meta?.ext));
@@ -571,27 +483,39 @@ const VIEWS: Record<string, View> = {
   note(item, host) {
     const sheet = document.createElement('div');
     sheet.className = 'viewer-note-sheet';
-    // The rich body is a note's own structure and arrives out of a file, so it
-    // is walked as unknown: a blocks array of anything, each entry keeping its
-    // `text` only if that is what it is.
+    // The rich body is a note's own structure out of a file, walked as
+    // unknown: a blocks array of anything, keeping `text` only where present.
     const rich = item.meta?.rich;
     const blocks = rich && typeof rich === 'object' && 'blocks' in rich
       && Array.isArray(rich.blocks) ? rich.blocks : null;
     sheet.textContent = blocks?.length
       ? blocks.map(b => (b && typeof b === 'object' && 'text' in b ? str(b.text) : '')).join('\n').trim()
       : (str(item.meta?.text) || item.name || '').trim();
-    // meta.tint, not meta.color - see noteTint(). `color` is a key nothing in
-    // the app has ever written, so this both failed to tint a yellow note and
-    // put whatever a hand-edited file did put there straight into a background.
+    // meta.tint, not meta.color - see noteTint(). `color` is a key nothing
+    // in the app has written.
     const tint = noteTint(item.meta?.tint);
     if (tint) sheet.style.background = `var(--note-${tint})`;
     host.append(sheet);
   },
 
-  /** A link: its address, large, and a way to follow it. */
+  /** A link: its player where it has one (YouTube, Spotify), else its address
+   *  large with a way to follow it. This is where a YouTube link plays now -
+   *  off the board, in the popup - reached by the menu's Open (see openLink). */
   link(item, host) {
     const u = linkURL(item.meta?.url);
     if (!u) return void host.append(nothing('That is not an address this app will open'));
+    // An embeddable link fills the viewer with its player. frameFor carries the
+    // sandbox and referrer policy the board card uses (canvas/embed.ts); the
+    // frame stops loading when the body is emptied on close.
+    const spec = embedFor(u);
+    if (spec) {
+      const wrap = document.createElement('div');
+      wrap.className = 'viewer-embed';
+      wrap.dataset.provider = spec.provider;
+      wrap.append(frameFor(spec));
+      host.append(wrap);
+      return;
+    }
     const a = document.createElement('a');
     a.className = 'viewer-link';
     a.href = u.href;
@@ -603,12 +527,10 @@ const VIEWS: Record<string, View> = {
 };
 
 /**
- * A document, read out of its own container.
- *
- * Asynchronous and slow enough to say so: a .docx has to be unzipped, its XML
- * parsed and its pictures decoded, and the dialog is already open by then. A
- * line of text while that happens is the honest thing to show - the alternative
- * is a blank sheet that looks like the file was empty.
+ * A document, read out of its own container. Asynchronous and slow enough
+ * to say so: a .docx has to be unzipped, its XML parsed and pictures
+ * decoded, with the dialog already open. A line of text meanwhile beats a
+ * blank sheet that looks empty.
  */
 function documentView(item: Item, host: HTMLElement) {
   const asset = getAsset(item.asset?.hash);
@@ -623,9 +545,8 @@ function documentView(item: Item, host: HTMLElement) {
     })
     .catch(err => {
       if (!waiting.isConnected) return;
-      // The reader's own message where it has one - "that presentation has no
-      // slides" says more than "could not be read" - and a plain fallback where
-      // the failure came from somewhere with nothing to say.
+      // The reader's own message where it has one ("that presentation has
+      // no slides" says more than "could not be read"), else a plain fallback.
       waiting.textContent = err?.message || 'That file could not be read';
     });
 }
@@ -634,18 +555,14 @@ function documentView(item: Item, host: HTMLElement) {
 const PDF_BATCH = 5;
 
 /**
- * A PDF, page by page.
+ * A PDF, page by page. Rendering a page-description language is an
+ * interpreter - the app's first outside-code dependency (import/pdf.ts),
+ * vendored and served from this origin, so no third party is reached and it
+ * works offline once cached.
  *
- * A PDF is a page-description language and rendering it is an interpreter, which
- * is the app's first outside-code dependency (import/pdf.ts). That library is
- * carried in web/assets/vendor and served from this origin, so this view reaches
- * no third party and works offline once the service worker has seen it once. A
- * failure here says so and the file is still what it was - the same degradation
- * the import path takes.
- *
- * In batches, because a two-hundred-page report rendered eagerly is two hundred
- * canvases and a tab that stops answering. Five is about a screenful and a half
- * on a desktop; the button below asks for the next five.
+ * In batches: a two-hundred-page report rendered eagerly is two hundred
+ * canvases and a stalled tab. Five is about a screenful and a half; the
+ * button below asks for five more.
  */
 function pdfView(item: Item, host: HTMLElement) {
   const asset = getAsset(item.asset?.hash);
@@ -660,8 +577,8 @@ function pdfView(item: Item, host: HTMLElement) {
     if (!waiting.isConnected) { doc.destroy(); return; }
     pdfDoc = doc;
     waiting.replaceWith(pages);
-    // The width the page is drawn at, taken from the box it is going into, at
-    // device resolution so it is sharp on a phone and on a retina display.
+    // The width to draw at, from the box it's going into, at device
+    // resolution so it's sharp on a phone and a retina display.
     const width = Math.max(320, pages.clientWidth || bodyEl!.clientWidth || 800)
       * Math.min(2, globalThis.devicePixelRatio || 1);
     let shown = 0;
@@ -673,9 +590,8 @@ function pdfView(item: Item, host: HTMLElement) {
       more.disabled = true;
       const to = Math.min(doc.pages, shown + PDF_BATCH);
       for (let n = shown + 1; n <= to; n++) {
-        // Checked every page, not once: closing the dialog part way through a
-        // long document must stop the work rather than finish it into a node
-        // nobody will see.
+        // Checked every page: closing the dialog mid-batch must stop the
+        // work rather than finish it into a node nobody sees.
         if (!pages.isConnected) return;
         try {
           const canvas = await doc.render(n, width);
@@ -700,12 +616,9 @@ function pdfView(item: Item, host: HTMLElement) {
     more.addEventListener('click', batch);
     await batch();
   }).catch(err => {
-    // The message used to blame an offline session, which was the right guess
-    // back when the renderer came off a CDN and is now almost never the reason:
-    // it is served from this origin and cached with everything else. The honest
-    // remaining cases are a document this renderer will not parse and a first
-    // PDF on a fresh install with no connection, so the text says both and the
-    // console carries the actual error.
+    // Used to blame an offline session, right when the renderer came off a
+    // CDN - now it's vendored, so the honest remaining cases are an
+    // unparseable file or a first-ever PDF with no connection yet.
     console.warn('[mbrd] pdf: the document would not open', err);
     if (!waiting.isConnected) return;
     waiting.textContent = 'That PDF could not be opened. Either the file is one the page '

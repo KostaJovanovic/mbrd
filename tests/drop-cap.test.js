@@ -1,10 +1,9 @@
 // The five-hundred-file cap, and who is supposed to mention it.
 //
-// filesFrom() stops walking *at* MAX_FILES, so the list it returns is never
-// longer than the cap - which meant importFiles()'s `files.length > MAX_FILES`
-// could not fire for a drop, and a folder of a thousand photographs brought in
-// five hundred while the receipt said it had brought in everything. The cut is
-// made here, so it is reported from here.
+// filesFrom() stops walking at MAX_FILES, so its list is never longer than
+// the cap - meaning importFiles()'s own overflow check could never fire for
+// a drop, and a folder of a thousand photos reported "brought in everything"
+// after cutting to five hundred. The cut is made here, so it's reported here.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -26,8 +25,8 @@ function dirEntry(count) {
     isDirectory: true,
     createReader: () => ({
       readEntries(cb) {
-        // The real API returns at most ~100 per call and an empty array at the
-        // end, which is the loop condition walkEntry() drains on.
+        // The real API returns at most ~100 per call, empty at the end -
+        // the loop condition walkEntry() drains on.
         const batch = Math.min(100, count - served);
         const out = Array.from({ length: batch }, (_, i) => fileEntry(`p${served + i}.jpg`));
         served += batch;
@@ -63,9 +62,8 @@ test('loose files dropped without a folder are not a walk', async () => {
 });
 
 test('a browser with no entries API falls back to the flat list', async () => {
-  // Reported as untruncated, and that is right rather than a shortcut: nothing
-  // was walked, so nothing was cut here. Whatever the platform handed over is
-  // the whole of what it was asked for, and importFiles() applies its own cap.
+  // Reported as untruncated correctly: nothing was walked, so nothing was
+  // cut here - importFiles() applies its own cap.
   const got = await filesFrom({
     items: [],
     files: [{ name: 'a.jpg', size: 1, type: 'image/jpeg' }],

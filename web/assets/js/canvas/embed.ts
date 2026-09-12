@@ -1,6 +1,7 @@
 // Embed players for YouTube and Spotify. Nothing loads until the user clicks;
 // the choice is not remembered. IDs are validated before reaching the iframe src.
-// Uses youtube-nocookie.com and no-referrer for privacy.
+// Uses youtube-nocookie.com; the referrer is withheld where the player allows
+// it (Spotify) and trimmed to the bare origin where it does not (YouTube).
 
 import { byId, snapshotGeom, applyGeom, commitGeom } from '../state.ts';
 import type { Item } from '../board-model.ts';
@@ -242,10 +243,21 @@ export function frameFor(spec: EmbedSpec): HTMLIFrameElement {
   frame.src = spec.src;
   frame.title = spec.title;
   frame.loading = 'lazy';
-  frame.referrerPolicy = 'no-referrer';
+  // YouTube rejects a referrer-less embed with error 153 ("player configuration
+  // error"): the nocookie player checks the embedding origin before it will
+  // play. So YouTube gets the bare origin - scheme and host, never the board's
+  // path or hash - which is the least that satisfies it. Spotify plays with
+  // nothing and keeps no-referrer.
+  frame.referrerPolicy = spec.provider === 'youtube' ? 'origin' : 'no-referrer';
   frame.allow = spec.allow;
   frame.allowFullscreen = true;
   // allow-same-origin is the frame's origin, not ours — without it neither player starts.
+  // allow-popups stays: the player's own "Play on Spotify" / "Watch on YouTube" link
+  // lives inside this cross-origin frame, and the browser gives us no way to see or warn
+  // on a click in there (ui/leaving.ts governs mbrd's own links only). Withholding the
+  // grant does not add a warning - it only turns that click into a dead, silent no-op,
+  // which reads as broken. So the frame keeps its native link and mbrd does not pretend
+  // to guard what it cannot reach.
   frame.setAttribute('sandbox',
     'allow-scripts allow-same-origin allow-presentation allow-popups allow-popups-to-escape-sandbox');
   return frame;

@@ -1,12 +1,8 @@
 /* =========================================================
    mbrd - the board switcher (ui/library.ts)
 
-   One of the eight sheets the old overlays.css was split into. The order they
-   load in IS the cascade and is listed in the banner at the top of base.css.
-
-   Its own overlay rather than an ask() dialog, and the note on #library below
-   says why. Small, and deliberately its own file: it is the one piece of
-   furniture in the app that is about the boards rather than about a board.
+   Its own overlay (not ask()): a gallery of boards, not a question.
+   The one piece of furniture about the boards rather than a board.
    ========================================================= */
 
 /* Its own overlay, not the ask() dialog: that is a question and this is a

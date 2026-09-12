@@ -1,21 +1,7 @@
-// Coordinate + viewport model.
-//
-// World coordinates are floats with (0,0) at the board's centre, oriented like
-// a maths plane rather than a screen: +x right, **+y up**. Screen y points the
-// other way, and that sign lives here and in items.ts/place() - nowhere else.
-//
-//   screenX = (worldX - panX) * zoom + centreX
-//   screenY = (panY - worldY) * zoom + centreY
-//   worldX  = (screenX - centreX) / zoom + panX
-//   worldY  = panY - (screenY - centreY) / zoom
-//
-// #world is one absolutely-positioned layer pinned to the viewport centre, and
-// the whole pan/zoom is a single `translate(...) scale(...)` on it - so the
-// browser composites on the GPU and native <img>/<video> keep working.
-//
-// Transform order matters: `translate(t) scale(z)` puts a child laid out at CSS
-// (cssX, cssY) at centre + (t + css*z). Items are laid out at cssY = -worldY
-// (see items.ts), which makes the vertical translate +panY*zoom, not -panY*zoom.
+// Coordinate + viewport model. World coords are floats at (0,0) centre,
+// +y up (screen y inverted here and in items.ts/place() only). #world is
+// one GPU-composited translate+scale layer. Items lay out at cssY = -worldY,
+// so the vertical translate is +panY*zoom.
 
 import { clamp, rafThrottle, emitter, readToken } from '../util.ts';
 import type { Emitter } from '../util.ts';
@@ -26,10 +12,9 @@ import type { LayoutMode } from '../board-model.ts';
 /**
  * The board's sheet as the screen sees it - what mobileScreenRect() answers.
  *
- * Declared here, not in canvas/mobile-frame.ts where most of it is read:
- * mobile-frame already imports this module, so the type has to travel in that
- * direction or the graph gains a cycle (tests/layers.test.js counts a type-only
- * import as an edge, rightly - the arrow is a fact about the source).
+ * Declared here rather than in canvas/mobile-frame.ts (which reads most of it)
+ * because that module already imports this one, and a reverse type-only import
+ * would be a cycle (tests/layers.test.js counts it as an edge).
  */
 export type MobileScreenRect = {
   left: number;
@@ -41,28 +26,17 @@ export type MobileScreenRect = {
 /**
  * What the corner calls 100%, and now also what it is.
  *
- * This was 0.8: the printed percentage and the true scale were two numbers for
- * one thing, so that a board sitting at scale 0.8 read "100%". The rebasing is
- * gone - 100% is 1:1 again, one world unit to one CSS pixel, the same thing
- * mobileZoom() has always meant by 1 - and every rung below that is written as a
- * multiple of this so the percentages the interface prints stay the ones this
- * file reasons in.
+ * Used to be 0.8 (a rebase so a board at scale 0.8 read "100%"); now 100% is
+ * true 1:1, one world unit per CSS pixel, and `zoom` stays the real
+ * world-to-screen scale everywhere (transform, toScreen/toWorld, saved `view`).
+ * Consequence: a board saved under the old rebase now prints a different
+ * percentage for the same scale (0.8 was "100%", now reads 80%) - the drawing
+ * is unchanged, only the label is honest now.
  *
- * `zoom` in this file is and stays the true world-to-screen scale: the transform
- * multiplies by it, toScreen/toWorld divide by it, and a `view` saved in a board
- * records it raw. Which is the one thing worth knowing about the change: a board
- * saved before it opens at the scale it was saved at and prints a different
- * number for it - 0.8 was "100%" and reads as 80% now. The board is not drawn
- * any differently; the label under it is honest where it used to be flattering.
- *
- * The name stays, rather than the constant being folded away into 1s. It is the
- * one place that says which scale the corner means by 100%, and `vp.fit(items,
- * 80, 0, BASE_ZOOM)` in main.ts reads as what it is - open at 100% - where a
- * bare 1 would read as an argument somebody guessed.
- *
- * Anything measured in real screen pixels is deliberately not written against
- * it: the grid's MIN_PX/MAX_PX, paper.ts's page outline and the scale bar all
- * compose with the raw zoom and stay truthful by doing so.
+ * Kept as a named constant rather than folded into bare 1s, so `vp.fit(items,
+ * 80, 0, BASE_ZOOM)` reads as "open at 100%". Things measured in real screen
+ * pixels (grid MIN_PX/MAX_PX, paper.ts's page outline, the scale bar) compose
+ * with raw zoom instead, deliberately.
  */
 export const BASE_ZOOM = 1;
 
@@ -70,36 +44,28 @@ export const MIN_ZOOM = 0.1 * BASE_ZOOM;   // 10% as printed
 export const MAX_ZOOM = 5 * BASE_ZOOM;     // 500% as printed
 
 /**
- * How much board is kept mounted beyond the edge of the screen, to hide pop-in,
- * in *screen* pixels - converted to world units per call, which is the whole
- * point. It was a flat 400 world units, a margin that does not shrink as you
- * zoom in: at 100% it held about two and a half screens of cards, at 200% five,
- * because the visible world rectangle halves with every doubling of zoom while a
- * world-space margin stays the size it was. The pop-in it hides happens in
- * screen pixels, so this is the unit it should always have been in.
+ * How much board is kept mounted beyond the screen edge, to hide pop-in, in
+ * *screen* pixels - converted to world units per call. Used to be a flat 400
+ * world units, which grew relative to the visible area as you zoomed in (about
+ * 2.5 screens at 100%, 5 at 200%); screen pixels is the unit the pop-in it
+ * hides actually happens in.
  */
 const CULL_MARGIN_PX = 300;
 
 /**
- * And a ceiling on it in world units, the number this used to be. Below about
- * three-quarter zoom a constant screen margin is *wider* on the board than the
- * flat 400 was and would buy nothing - the visible slice is already enormous and
- * card chrome has been dropped - so the screen-space rule applies where it helps
- * and the old world-space one caps it beyond that. Never worse than before, at
- * any zoom.
+ * Ceiling on the margin above, in world units (the old flat value). Below about
+ * three-quarter zoom a constant screen margin would be wider than 400 world
+ * units for no benefit, so this caps it there - never worse than before, at any
+ * zoom.
  */
 const CULL_MARGIN_MAX = 400;
 
 /**
- * That margin in world units at the current zoom.
- *
- * Exported from here because canvas/items.ts and canvas/web.ts both cull against
- * it: their own module-level copies had drifted apart, which is the shape of bug
- * a duplicated line exists to produce - change one and you had to remember the
- * other. The null guard is not defensive noise: `vp` arrives in each module's
- * init(), and this is reachable from a repaint a subsystem can schedule before
- * that wiring is done, at which point an unguarded read is a TypeError during
- * boot rather than a margin.
+ * That margin in world units at the current zoom. Exported here because
+ * canvas/items.ts and canvas/web.ts both cull against it - separate copies had
+ * drifted apart before. The null guard matters: `vp` arrives in each module's
+ * init(), and this can be reached from a repaint scheduled before that wiring
+ * is done.
  */
 export const cullMargin = (vp: Viewport | null): number =>
   Math.min(CULL_MARGIN_PX / (vp ? vp.zoom : 1), CULL_MARGIN_MAX);
@@ -110,18 +76,11 @@ const MOBILE_BOTTOM_PAD = 32;
 /**
  * How far below the chrome buttons a Mobile board comes to rest.
  *
- * MOBILE_TOP_PAD alone put the board's masthead level with the menu button and
- * the pencil beside it: a title set across the width of the screen with two
- * controls sitting in the middle of it, reading as part of the same row. The
- * board now stops below them instead - the gap is above the masthead, so
- * nothing inside the band changes size or proportion, and it scrolls away with
- * the board like any other part of its top.
- *
- * Measured off the button rather than written down, because the number is not
- * ours: the buttons are pinned at max(12px, env(safe-area-inset-top)) in
- * mobile.css, and a notched phone pushes them further down than a flat one.
- * Asking the element where its lower edge actually is answers for both, and
- * keeps this true if the corner is ever re-laid.
+ * MOBILE_TOP_PAD alone put the masthead level with the menu button and pencil,
+ * reading as one row; the board now stops below them instead, with the gap
+ * above the masthead. Measured off the button rather than hardcoded, because
+ * the buttons are pinned at max(12px, env(safe-area-inset-top)) in mobile.css
+ * and a notched phone pushes them further down.
  */
 const MOBILE_CHROME_GAP = 14;
 
@@ -129,25 +88,16 @@ function mobileTopPad(): number {
   if (typeof document === 'undefined') return MOBILE_TOP_PAD;
   const btn = document.getElementById('menu-btn');
   const bottom = btn ? btn.getBoundingClientRect().bottom : 0;
-  // A button that has not been laid out yet (or is not there at all) measures
-  // zero; the plain pad is the honest answer until it has.
+  // Zero means the button isn't laid out yet (or isn't there); fall back to the plain pad.
   return bottom > 0 ? bottom + MOBILE_CHROME_GAP : MOBILE_TOP_PAD;
 }
 
 /**
- * The masthead above a Mobile board, sized from the board itself.
- *
- * Its width and height form a 3:2 landscape rectangle. Measuring the masthead
- * from the fitted board width keeps that shape identical on a short phone, a
- * tall phone, and a desktop window in Mobile mode; viewport height has no say
- * in where the board starts.
- *
- * The room is made here, in the pan clamp, rather than by moving the board's
- * top edge - the strip still starts exactly where mobileBoardTop() says, items
- * still pack from its first row, and nothing in state.ts has to know that a
- * header exists. What the clamp does is stop the scroll a header lower, so the
- * band above the edge is real space rather than something drawn over the items.
- *
+ * The masthead above a Mobile board, sized from the board itself: a 3:2
+ * landscape rectangle measured off the fitted board width, so its shape is
+ * identical regardless of phone height. Room for it is made here, in the pan
+ * clamp, rather than by moving the board's top edge - the strip still starts
+ * where mobileBoardTop() says and state.ts never has to know a header exists.
  */
 export const MOBILE_HEADER_ASPECT = 3 / 2;
 
@@ -159,11 +109,9 @@ export function mobileHeaderHeight(boardWidth: number): number {
 /**
  * Fixed zoom that seats a Mobile board in the viewport without enlarging it.
  *
- * Written against a literal 1 rather than against BASE_ZOOM, and so is
- * LOD_ZOOM_SMALL below. Mobile has no zoom control and prints no percentage, so
- * nothing here is a label: this zoom is fit-derived, and the 1 is the 1:1 the
- * name means - one world unit to one CSS pixel. That the two now agree is a
- * coincidence worth keeping separate, since only one of them is a display
+ * Written against a literal 1, not BASE_ZOOM (same for LOD_ZOOM_SMALL below):
+ * Mobile has no zoom control or printed percentage, so this 1 means true 1:1,
+ * not the display label. They now agree by coincidence, not by being the same
  * decision.
  */
 export function mobileZoom(viewWidth: number, worldWidth: number, pad = MOBILE_SIDE_PAD): number {

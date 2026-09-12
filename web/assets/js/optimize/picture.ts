@@ -1,57 +1,22 @@
-// Shrinking a picture, with the browser's own decoder and encoder.
-//
-// No dependency and none wanted: `createImageBitmap` reads every format the
-// board can display, a canvas resamples it, and `convertToBlob` writes WebP -
-// or JPEG, on the engines that cannot write WebP at all, which is every Safari.
-// The whole of it is four calls; what is worth writing down is the judgement
-// around them, which is when *not* to swap the file.
-//
-// The canvas comes from canvas/surface.ts rather than straight from
-// `new OffscreenCanvas(...)`, which is the one import this otherwise
-// dependency-free module carries. OffscreenCanvas is Safari 16.4, and every
-// call here sat inside a catch that answers "leave the picture alone" - so
-// below that version the optimiser ran its dialog and its progress bar and
-// found nothing to do, and no board ever got a thumbnail.
+// Picture shrinking via createImageBitmap + canvas WebP (JPEG on Safari).
+// Surface from canvas/surface.ts for OffscreenCanvas compat (Safari 16.4+).
+// The judgement is when NOT to swap — see WORTH_IT below.
 
 import { surface, surfaceToBlob, type Surface } from '../canvas/surface.ts';
 
-/**
- * The long edge a picture is allowed to keep.
- *
- * A moodboard card is rarely drawn much past 600 world units and a screen is
- * rarely worth more than two device pixels per unit, so 1200 is the size at
- * which the picture stops being the thing that limits what you see. Above it
- * you are storing a photograph library, not a board.
- */
+/** Max long edge — 1200px is where a card stops being pixel-limited. */
 export const MAX_SIDE = 1200;
 
-/**
- * Album art and card pictures are drawn smaller than the card itself, so they
- * get a lower ceiling. They are kept, not dropped - see the module note in
- * optimize.ts.
- */
+/** Cover art ceiling — drawn smaller than the card, so a lower limit. */
 export const MAX_SIDE_COVER = 600;
 
 /** WebP quality. High enough that a photograph does not band on paper. */
 export const QUALITY = 0.82;
 
-/**
- * How much smaller the new file has to be before the swap is worth making.
- *
- * A re-encode that saves four percent has still thrown away a generation of
- * quality, and doing that to every picture on a board to save a rounding error
- * is a bad trade. Below this the original is kept exactly as it arrived.
- */
+/** Minimum saving to justify the quality loss of a re-encode. */
 const WORTH_IT = 0.1;
 
-/**
- * Formats this refuses to touch, and why each one.
- *
- * An animated GIF or WebP would come back as a single frame - the canvas holds
- * one - and a picture that stops moving is not an optimisation. SVG is text and
- * already small, and rasterising it would throw away the one thing it has.
- * AVIF is already the small end of the scale.
- */
+/** Skip: animated (would lose frames), SVG (would lose vectors), AVIF (already small). */
 const SKIP = /^image\/(gif|svg\+xml|avif)$/i;
 
 /** A re-encoded picture, with what it cost before and after. */
@@ -70,29 +35,20 @@ export type ShrinkOptions = {
   type?: string,
 };
 
-/**
- * A smaller version of this picture, or null to leave it alone.
- *
- * Null rather than an exception for every one of the ordinary refusals -
- * animated, already small, already efficient, the re-encode came out bigger -
- * because none of those is a failure. The caller counts them as "left alone",
- * which is what they are.
- */
+/** Shrink this picture, or null if it should be left alone. */
 export async function shrinkPicture(
   blob: Blob | null | undefined,
   { maxSide = MAX_SIDE, quality = QUALITY, type = 'image/webp' }: ShrinkOptions = {},
 ): Promise<ShrunkPicture | null> {
   if (!blob || !/^image\//i.test(blob.type) || SKIP.test(blob.type)) return null;
-  // An animated WebP is a still WebP as far as the canvas is concerned, so it
-  // is caught by its own bytes rather than by its type - see isAnimated().
+  // Animated WebP: canvas would freeze it, so check by bytes, not type.
   if (await isAnimated(blob)) return null;
 
   let bmp;
   try {
     bmp = await createImageBitmap(blob);
   } catch {
-    // Not something this browser can decode. Leaving it alone is the only
-    // honest answer: it is still on the board and still exports.
+    // Cannot decode — leave it alone.
     return null;
   }
 
@@ -100,27 +56,17 @@ export async function shrinkPicture(
     const scale = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
     const w = Math.max(1, Math.round(bmp.width * scale));
     const h = Math.max(1, Math.round(bmp.height * scale));
-    // Never enlarged, and never re-encoded for nothing: a picture already
-    // inside the ceiling and already in the format being asked for keeps its
-    // bytes. Only when it is being asked for - a WebP asked to become a JPEG
-    // for an Opus tag is a conversion, not a re-encode, and has to happen.
+    // Already inside ceiling and in the right format — keep original bytes.
     if (scale === 1 && blob.type.toLowerCase() === type) return null;
 
-    // Through canvas/surface.ts rather than `new OffscreenCanvas(...)`: that
-    // constructor is Safari 16.4, and below it this threw into the catch that
-    // answers "leave the picture alone" - so on those engines the optimiser's
-    // whole picture pass silently found nothing to do, which is its largest
-    // saving. A surface this browser will not give is still that answer.
+    // Via canvas/surface.ts for OffscreenCanvas compat (Safari 16.4+).
     const face = surface(w, h);
     if (!face) return null;
     face.ctx.drawImage(bmp, 0, 0, w, h);
 
     const out = await encodeShrunk(face, type, quality, blob.type);
     if (!out) return null;
-    // The one guard that makes any of encodeShrunk()'s answers safe: whatever
-    // came back, it is only kept if it saves enough to be worth a generation of
-    // quality. A PNG that came back three times the size of the JPEG it would
-    // replace dies right here, which is what the old type test was really for.
+    // Only keep if the saving exceeds WORTH_IT.
     if (out.size > blob.size * (1 - WORTH_IT)) return null;
     return { blob: out, width: w, height: h, from: blob.size, to: out.size };
   } finally {
@@ -128,32 +74,14 @@ export async function shrinkPicture(
   }
 }
 
-/**
- * The shrunk canvas as bytes, or null when nothing usable came out.
- *
- * The rule this file used to follow - ask for a type, refuse anything else -
- * was right about file size and wrong about who it was refusing. **No version
- * of Safari encodes WebP from a canvas**, and the specification says an engine
+/** Encode the shrunk canvas. Falls back to JPEG (for JPEG sources, Safari
+ * cannot encode WebP) or keeps PNG for transparent sources. Spec says an engine
  * that cannot write the type asked for hands back a PNG without complaint. So
  * on every Safari the refusal fired for every picture on the board, and
  * Optimise ran its dialog, its progress bar and its minutes of work to report
- * that nothing needed doing. The picture pass is the largest saving the feature
- * offers.
- *
- * Three answers, in order:
- *
- *  - the type asked for came back. Keep it, as before.
- *  - a *pinned* type did not come back. Null, as before. A caller that names a
- *    type needs that type or nothing - toOpus() tags a track with JPEG cover
- *    art, and a PNG under a JPEG's name is a broken tag rather than a big one.
- *    Safari writes JPEG perfectly well, so this branch stays theoretical.
- *  - the default WebP did not come back. Retry as JPEG when the source was
- *    itself a JPEG, which is the one format that provably carries no alpha;
- *    otherwise keep the PNG, which preserves whatever transparency a cut-out
- *    had. Either way the WORTH_IT guard in the caller is what decides whether
- *    it is kept, so this cannot make a board's files bigger - only smaller or
- *    unchanged.
- */
+ * that nothing needed doing. If the asked-for type comes back, keep it.
+ * Pinned type miss → null (toOpus needs exact JPEG). Default WebP miss →
+ * retry JPEG for JPEG sources, else keep PNG for transparency. */
 async function encodeShrunk(
   face: Surface,
   type: string,
@@ -173,48 +101,16 @@ async function encodeShrunk(
   return out;
 }
 
-/**
- * How wide a thumbnail is.
- *
- * A hundred is not a guess at a nice round number - it is the widest a card can
- * be drawn at the zoom where thumbnails are used. Below the detail rung - 0.4
- * with a mouse, 0.55 under a finger, see thumbZoom() in canvas/viewport.ts - a
- * card of the default 320 world units covers 128 screen pixels or fewer, and
- * the boards where this matters are the ones zoomed further out than that. So a hundred pixels
- * is the picture at roughly life size for that view, and every pixel past it is
- * downsampled by the compositor for nothing.
- */
+/** Thumbnail width — matches the widest a card is drawn at thumb zoom. */
 const THUMB_SIDE = 100;
 
-/**
- * And how hard it is compressed.
- *
- * Far below QUALITY, and it can be: this is only ever seen at a size where a
- * pixel of it is under a pixel of screen. At 0.5 a hundred-pixel WebP lands at
- * one to three kilobytes, which is the entire point - a board of two hundred
- * photographs becomes half a megabyte of thumbnails rather than two hundred
- * full-size decodes held in memory at once.
- */
+/** Low quality is fine — thumbnails are always displayed below 1:1. */
 const THUMB_QUALITY = 0.5;
 
 /** A thumbnail: the small bytes and the size they were written at. */
 export type Thumbnail = { blob: Blob, width: number, height: number, cutout: boolean };
 
-/**
- * A hundred-pixel-wide copy of a picture, or null if it does not want one.
- *
- * Null, not an exception, for all four ordinary refusals:
- *
- *  - not a picture, or a vector. An SVG is already small and already scales;
- *    rasterising it to a hundred pixels would be strictly worse at every zoom.
- *  - animated. Those already have a far-zoom stand-in and it is a better one -
- *    canvas/stills.ts shoots the frame that was actually on screen, so a GIF
- *    freezes where you left it rather than snapping back to frame one.
- *  - already this small. The file is its own thumbnail; a second copy of it
- *    would be bytes spent to save nothing.
- *  - the browser could not decode it. It stays a full-size picture, which is
- *    what it was going to be anyway.
- *
+/** A 100px-wide thumbnail, or null for SVG/animated/already-small/undecoded.
  * Height is whatever the aspect ratio says, uncapped. A hundred wide is the
  * instruction, and a tall picture that obeys it is still only a few thousand
  * pixels of WebP.

@@ -1,53 +1,7 @@
-// One track at a time, running through a list.
-//
-// The Mobile feed's Playlist lens is a real player: next, previous, shuffle,
-// repeat, and a track that hands over to the following one when it ends. That
-// needs a single engine the whole board shares rather than an <audio> per row -
-// so this is it. One long-lived element plays whatever track the queue points
-// at; the rows are just a list that calls playTrack(), and the now-playing bar
-// drives it with the transport canvas/transport.ts builds plus the four buttons
-// ui/nowplaying.ts adds.
-//
-// It registers like any other player, so exclusivity still holds: starting a
-// card pauses the queue and starting the queue pauses a card. nowPlaying() names
-// the queue's element while it is the one sounding, and onNowPlaying() is how
-// the list highlights the current row and the bar shows its controls.
-//
-// ── Why this is a file and not a section ──
-//
-// It is one *policy* about what plays next, sitting on canvas/audio.ts's
-// invariant that only one thing plays at all. The two were interleaved in one
-// module and read as one subject, which they are not: the invariant is not
-// negotiable and this is a set of choices - that prev restarts a track within
-// three seconds, that shuffle keeps the current track at the front, that repeat
-// cycles off/all/one. Anything importing the engine used to have to take all of
-// that with it.
-//
-// ── The current voice, and why it is not always the shared element ──
-//
-// Playing a board card plays that card's own <audio>, with the queue steering
-// it, so its waveform and its seek keep working; only a track with no card on
-// screen - off the mobile board, or culled - falls back to the shared element
-// this file makes. That is what queuePlayerEl means, and it is what
-// isQueuePlayer() and queueState().active are really asking about.
-//
-// Which is also why the teardown is a subscription rather than a call. The
-// element the queue is driving may be a card's, and a card can be thrown away
-// underneath it: canvas/audio.ts announces every release through
-// onPlayerReleased() and this drops its two references when the element it hears
-// about is the one it holds. The reverse - the engine reaching in here - is the
-// import that would make these two files a cycle, and the cycle would be true.
-//
-// ── What must not move in here ──
-//
-// The exclusivity rule, the volume, and the record of what is playing. Those are
-// properties of the device and belong to every player on the board, queue or
-// not; a second copy of any of them in here would be a second answer to a
-// question that has one.
-//
-// Nor any DOM. The rows, the buttons and the transport are ui/playlist.ts and
-// canvas/transport.ts. This module has an <audio> and no elements - the shared
-// player is not a node anybody sees, it is a decoder with a volume.
+// Playlist queue: next/prev/shuffle/repeat over audio tracks. One shared
+// element plays the current track; when the track has a visible card, it uses
+// that card's own <audio> instead (so waveform/seek work). Sits on top of
+// canvas/audio.ts's exclusivity invariant — no DOM of its own.
 
 import type { Item } from '../board-model.ts';
 import { readPref, writePref } from '../prefs.ts';

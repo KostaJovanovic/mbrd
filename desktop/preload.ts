@@ -1,34 +1,7 @@
-// The bridge, and the only thing the page can see of this process.
-//
-// One object of named functions on `window.mbrdDesktop`, exposed through
-// contextBridge. Two rules hold for everything that is ever added here:
-//
-//   **Never expose ipcRenderer.** Handing the page the port hands it every
-//   channel main listens on, forever, including the ones added next year. What
-//   goes across is a function per thing the app can ask, and the list of things
-//   it can ask is readable in one screen.
-//
-//   **A function here is a request, not a capability.** Main validates every
-//   argument again on its own side - a path is only honoured if that process
-//   produced it, see desktop/files.ts - because this file runs in the
-//   renderer's process and a compromised renderer would own it. The value of
-//   the boundary is that main does not trust what arrives.
-//
-// ── Why this file is CommonJS ──
-//
-// The build emits CJS for both bundles, and for the preload it is not optional:
-// Electron does not run an ESM preload script under `sandbox: true`, and the
-// failure is a window that loads with no bridge at all rather than an error
-// anybody sees. `sandbox: true` is the decision; the format follows it.
-//
-// ── The callbacks ──
-//
-// `onClose`, `onOpenFiles`, `onCommand`, `updates.onFound` and `win.onState`
-// are the whole of the inbound direction. Each takes one listener and keeps the
-// last one, rather than adding to a list: there is one renderer, it registers
-// once at boot, and a set of them would be a leak with no way to notice.
-// `closeNow` is not exposed separately - the close handler answers by
-// resolving, which is what makes it impossible to forget.
+// The bridge: named functions on window.mbrdDesktop via contextBridge.
+// Never expose ipcRenderer directly. Main re-validates every argument.
+// CJS because Electron cannot run an ESM preload under sandbox:true.
+// Each on* callback keeps only the last listener (one renderer, one boot).
 
 import { contextBridge, ipcRenderer } from 'electron';
 

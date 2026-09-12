@@ -1,19 +1,8 @@
-// The inventory report: what is in this board, and what it weighs.
-//
-// The sheet itself is DOM and is not tested here. What is tested is
-// boardInventory(), which is arithmetic over the item list and the asset store
-// - and the two rules it must not break, both of which are about what it does
-// *not* do.
-//
-// The first is that sizes come from the stored blobs. Nothing here re-reads an
-// original and nothing decodes an image, because the boards this gets opened on
-// are the heavy ones and a panel that measured by decoding would stall the tab
-// at exactly the moment the question was asked.
-//
-// The second is the reference union, which is the one place this can be wrong
-// in a way that matters. An asset is unreferenced if no live item and nothing
-// in the bin points at it - the same union packBoard() writes with - and a bug
-// there would report somebody's picture as rubbish.
+// Tests boardInventory(), the arithmetic over the item list and asset store
+// behind the inventory sheet (DOM, untested here). Two rules must hold: sizes
+// come from stored blob size, never a re-decode that would stall a heavy
+// board; and the reference union (live items + bin) matches packBoard()'s,
+// or an orphan report starts calling live assets rubbish.
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -65,25 +54,23 @@ test('the heaviest come first, and the order is stable', () => {
   const inv = boardInventory();
   assert.deepEqual(inv.largest.map(a => a.name), ['big.png', 'middle.png', 'small.png']);
   assert.equal(inv.bytes, 10500);
-  // Twice, unchanged, in the same order - two assets of identical size would
-  // otherwise swap places on the whim of Map iteration order, and a report that
-  // shuffles between two opens of an unchanged board is one nobody trusts.
+  // Twice, unchanged, in the same order - identical-size assets could
+  // otherwise swap places on Map iteration order, and a report that shuffles
+  // between opens of an unchanged board is one nobody trusts.
   asset('d'.repeat(64), 1200, 'tie-one.png');
   asset('e'.repeat(64), 1200, 'tie-two.png');
   const first = boardInventory().largest.map(a => a.hash);
-  // The two tied assets have to be in it before comparing two runs proves
-  // anything: `deepEqual(f(), first)` over an empty largest[] is two empty
-  // arrays agreeing, which is what a report that lists nothing looks like.
+  // Confirm the tied assets are actually in the report - otherwise two empty
+  // arrays would agree and the comparison below proves nothing.
   assert.ok(first.includes('d'.repeat(64)) && first.includes('e'.repeat(64)),
     'the two tied assets are not in the report at all');
   assert.deepEqual(boardInventory().largest.map(a => a.hash), first);
 });
 
 test('a binned card still owns its bytes', () => {
-  // The whole point of the bin is that the card can come back, so its asset is
-  // referenced, not orphaned. This is the same union packBoard() writes with,
-  // and getting it wrong would report somebody's picture as rubbish the moment
-  // they deleted the card.
+  // The point of the bin is that the card can come back, so its asset is
+  // referenced, not orphaned - getting this wrong reports a deleted card's
+  // picture as rubbish.
   asset('a'.repeat(64), 500);
   const [p] = addItems([photo({ asset: { hash: 'a'.repeat(64) } })]);
   removeItems([p.id]);
@@ -105,10 +92,9 @@ test('an asset no card claims is reported as unused', () => {
 });
 
 test('every id an item can carry counts as a reference', () => {
-  // Not just asset.hash. A cover, a poster still, a thumbnail and a decodable
-  // preview are all ids an item owns, and itemHashes() is the one place that
-  // list lives - reproducing it here by hand is how one gets missed and a live
-  // thumbnail gets reported as rubbish.
+  // Not just asset.hash - cover, poster, thumb and preview are all ids an
+  // item owns. itemHashes() is the one place that list lives; reproducing it
+  // by hand here is how one gets missed.
   asset('a'.repeat(64), 10);
   asset('b'.repeat(64), 20);
   asset('c'.repeat(64), 30);
@@ -121,10 +107,9 @@ test('every id an item can carry counts as a reference', () => {
 });
 
 test('a file names the live cards using it, and an orphan names none', () => {
-  // What the sheet's jump is built on. Live cards only: a binned card keeps the
-  // file off the orphan list - that is what the test above is about - but there
-  // is nowhere to fly to for one, and a row offering to take somebody to a card
-  // that is in the bin would be a dead control that looks live.
+  // What the sheet's jump-to-card is built on. Live cards only: a binned
+  // card is off the orphan list but there's nowhere to fly to for it, so a
+  // row pointing at a binned card would be a dead control that looks live.
   asset('a'.repeat(64), 500, 'shared.png');
   asset('z'.repeat(64), 400, 'stray.png');
   const [one, two] = addItems([
@@ -139,12 +124,9 @@ test('a file names the live cards using it, and an orphan names none', () => {
 });
 
 test('sizes are written the way the rest of the app writes them', () => {
-  // util.ts's formatBytes, not a second one of this sheet's own. It was very
-  // nearly written twice - the second decimal, on the argument that a file
-  // manager says 12 MB for 12,000,000 bytes - and one app saying two different
-  // things about how big the same picture is would be a worse fault than
-  // whichever convention is chosen. The trash panel and the optimiser already
-  // say binary, so this does.
+  // util.ts's formatBytes, not a second one of this sheet's own - it was
+  // nearly duplicated with decimal units to match a file manager's "12 MB",
+  // but the trash panel and optimiser already say binary, so this does too.
   assert.equal(formatBytes(1024), '1.0 KB');
   assert.equal(formatBytes(1024 * 1024 * 12), '12 MB');
 });

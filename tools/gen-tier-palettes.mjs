@@ -1,22 +1,6 @@
-// The presets, dressed for the two ends of the whimsy axis.
-//
-// ui/pigments.ts dresses an *extracted* palette per tier - pastel() at Softish,
-// bolden() at Harsh, the tables untouched in the middle. The four palettes
-// written by hand in tokens.css get no such pass, because nothing measures
-// them: they are literals. This prints what those same two transforms make of
-// each literal, so the CSS starting point and the extraction agree about what
-// each end of the axis means.
-//
-// A ONE-SHOT PRINTER, NOT A BUILD STEP. Its output was pasted into tokens.css
-// section 3b once and has been hand-tuned there since - the numbers below are
-// a place to start an eye from, not an answer. Running this again and pasting
-// again would overwrite that tuning, which is why it writes nothing itself and
-// why doing so has to stay a deliberate act. Rerun it to start a tier over, or
-// after a new palette is added upstairs; never as part of a build.
-//
-// Run: node tools/gen-tier-palettes.mjs
-//
-// Sits beside tools/preset-oklch.mjs and reads tokens.css the same way.
+// Print the hand-written palettes dressed for Softish (pastel) and Harsh
+// (bold). ONE-SHOT — output was pasted into tokens.css and hand-tuned since.
+// Rerun to start a tier over or after adding a palette; never as a build step.
 
 import { readFileSync } from 'node:fs';
 import {
@@ -27,13 +11,10 @@ import {
 import { mixHex } from '../web/assets/js/color.ts';
 
 const all = readFileSync(new URL('../web/assets/css/tokens.css', import.meta.url), 'utf8');
-// Everything above the legacy section only. The `@supports not` block restates
-// three of the palettes with their color-mix() companions spelled out, and a
-// palette read twice would print twice.
+// Stop before the @supports-not legacy block to avoid reading palettes twice.
 const css = all.slice(0, all.indexOf('@supports not (color: color-mix(in srgb, red, blue))'));
 
-// The base :root block is Papyrus and is the default look - it gets the bare
-// `[data-whimsy=n]` selector, with no palette attribute to qualify it.
+// Papyrus (base :root) gets the bare selector with no palette attribute.
 const looks = [[null, css.slice(css.indexOf(':root {'), css.indexOf('/* ====', css.indexOf(':root {')))]];
 for (const m of css.matchAll(/:root\[data-palette="([a-z0-9-]+)"\]\s*\{([^}]*)\}/g)) {
   looks.push([m[1], m[2]]);
@@ -61,15 +42,7 @@ function pigments(body) {
   return out;
 }
 
-/**
- * --accent-deep as this palette's own darker twin of a dressed accent.
- *
- * Not deepen()'s fixed drop: each hand-written palette spends a different
- * distance between its accent and its deep - Orca's is a shade, Tearose's is a
- * step - and that spacing is part of what tells them apart. So the drop and the
- * chroma ratio are read off the literals and re-applied to the dressed accent,
- * at the deep's own hue.
- */
+/** Derive --accent-deep by preserving each palette's own accent-to-deep spacing. */
 const twin = (dressed, accent, deep) => ({
   L: dressed.L - (accent.L - deep.L),
   C: dressed.C * (accent.C ? deep.C / accent.C : 1),
@@ -88,8 +61,7 @@ function emit(tier, name, vars) {
 }
 
 // ---------------------------------------------------------------------------
-// Tier 0: chalk. The whole sheet plus the whole quartet, because at this end
-// the paper takes the dye too - there is no live derivation to leave alone.
+// Tier 0: chalk. Paper takes the dye too — no live derivation at this end.
 // ---------------------------------------------------------------------------
 
 for (const [name, body] of looks) {
@@ -113,37 +85,15 @@ for (const [name, body] of looks) {
     const t = twin(pastel(p['--accent']), p['--accent'], p['--accent-deep']);
     vars['--accent-deep'] = hex(t.L, t.C, p['--accent-deep'].h);
   }
-  // The middle darkens the accent until a light label clears it. A pastel
-  // accent cannot be darkened that far and stay pastel, so the label is the
-  // ink instead - by name, so it follows any tuning done to the ink above.
+  // Pastel accent is too light for a label — use the ink instead.
   vars['--accent-fg'] = 'var(--ink)';
   emit(0, name, vars);
 }
 
 // ---------------------------------------------------------------------------
-// Tier 2: poster. The quartet only. The hand-written [data-whimsy="2"] block
-// derives its whole sheet from var(--accent) by color-mix, so a boldened accent
-// reaches the paper, the ink and the rules on its own - writing sheet literals
-// here would cut that derivation off.
-//
-// The accent goes to its hue's cusp and stays there, because that is the fill;
-// --accent-text is the same pigment walked back down the wall until it can be
-// read on this end's sheet. --accent-warm takes the light register, which is
-// where the non-text roles live.
-//
-// --leafy is the second loud voice, and which hue it wears is the one thing
-// that differs per palette. A palette with a dominant hue to spare - a sheet
-// carrying real colour, standing apart from its accent - has a colour this
-// tier would otherwise erase, so that hue takes the deep register and the
-// palette's own leafy moves along to the wash. None of the four qualify today
-// and the branch is dormant; see the gate below for why that is the answer
-// rather than a gap. All of these rules are pigments.ts's, applied to literals
-// here.
-//
-// The sheet that descent is measured against is the Harsh block's own --stock,
-// read out of the file rather than restated, plus the 4% of --accent that block
-// mixes into it - which is knowable here because --accent is the cusp and does
-// not depend on the answer.
+// Tier 2: poster. Quartet only — the sheet derives from var(--accent) via
+// color-mix, so a boldened accent reaches paper/ink/rules on its own.
+// Accent goes to the cusp; --accent-text walks it down for readability.
 // ---------------------------------------------------------------------------
 
 const harsh = css.slice(css.indexOf(':root[data-whimsy="2"]'));
@@ -156,29 +106,15 @@ for (const [name, body] of looks) {
   let accent = null;
   if (p['--accent']) {
     const { h } = p['--accent'];
-    // The fill keeps the cusp; the text form is the same pigment walked down
-    // until it reads on the sheet. The sheet is the Harsh block's --stock with
-    // the 4% of --accent that block mixes into it, and --accent is the cusp -
-    // so unlike the accent itself this needs no second pass to settle.
+    // Accent at cusp; text form walked down until readable on the sheet.
     accent = bolden(p['--accent'], h);
     vars['--accent'] = hex(accent.L, accent.C, h);
     const paper = mixHex(STOCK, vars['--accent'], PAPER_MIX);
     const text = toGround(accent, h, paper);
     vars['--accent-text'] = hex(text.L, text.C, h);
   }
-  // A preset has no vote, so unlike an extraction its accent stays where its
-  // author put it and the dominant hue takes the deep register instead - but
-  // only where there is a dominant hue to take it.
-  //
-  // This is the gate an extraction gets for free and a literal does not. A hue
-  // that won a vote cleared NEUTRAL_C to be counted at all; the four sheets
-  // above cleared nothing, and section 2 says outright that they are held to
-  // chroma 0.003 to 0.007 so that they do not cast the photographs pinned to
-  // them. Papyrus's cream reads as h 89 against an h 44 accent - 45 degrees
-  // apart, which passes the separation test - but that angle is what is left
-  // of a colour after it has been drained almost to neutral, not a colour
-  // anyone chose. Handing the deep register to it printed a dull olive where
-  // the tier wanted its loudest second voice.
+  // Dominant sheet hue takes the deep register only if the sheet has enough
+  // chroma (NEUTRAL_C) — near-neutral sheets produce wrong colours there.
   const sheet = p['--paper'];
   const deepH = accent && sheet && sheet.C >= NEUTRAL_C
     ? counterTurn(sheet.h, p['--accent'].h) : null;
@@ -188,7 +124,7 @@ for (const [name, body] of looks) {
   }
   if (p['--accent-warm']) {
     const t = boldSecond();
-    // The displaced third hue, where there was one to displace.
+    // Displaced third hue, if any.
     vars['--accent-warm'] = hex(t.L, t.C,
       deepH == null || !p['--leafy'] ? p['--accent-warm'].h : p['--leafy'].h);
   }
@@ -196,10 +132,7 @@ for (const [name, body] of looks) {
     const t = twin(accent, p['--accent'], p['--accent-deep']);
     vars['--accent-deep'] = hex(t.L, t.C, p['--accent-deep'].h);
   }
-  // The hand block's `--accent-fg: #fff` stands wherever white still reads on
-  // the bold accent. Where it does not, the ink takes the label - which at this
-  // tier is near-black, and black on a poster colour is the reference look
-  // rather than a fallback.
+  // Use ink as label when white no longer reads on the bold accent.
   if (vars['--accent'] && contrast(vars['--accent'], '#ffffff') < 4.5) {
     vars['--accent-fg'] = 'var(--ink)';
   }

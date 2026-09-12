@@ -1,17 +1,10 @@
 """Rewrite stale `.js` module names to `.ts` inside comments only.
 
-    python tools/ste-js-to-ts.py            # dry run: report, write nothing
-    python tools/ste-js-to-ts.py --apply    # rewrite the files
+    python tools/ste-js-to-ts.py            # dry run
+    python tools/ste-js-to-ts.py --apply    # rewrite files
 
-The repo moved to TypeScript and the prose did not follow. About 1200 comment
-sites name a module with its old `.js` extension. This script fixes only the
-ones it can prove: a reference `X.js` is rewritten when a real `X.ts` exists
-AND no real `X.js` exists. That guard protects the files that are still
-genuinely `.js` - every `tests/*.test.js`, the esbuild bundles, and the
-`tools/*.mjs` scripts.
-
-Only comment text changes. A string literal that happens to hold `.js` is left
-alone, because the scanner finds the comment start outside quotes.
+Rewrites `X.js` → `X.ts` when X.ts exists and X.js does not. Only touches
+comment text, not string literals.
 """
 import argparse
 import os

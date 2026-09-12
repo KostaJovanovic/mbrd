@@ -1,10 +1,9 @@
 // Shortest-column-first packing - the rule the board's masonry and the Feed's
 // wall both lay out by.
 //
-// It had no test in either of the two places it was written, which is how they
-// came apart: spanning existed in one, the tie rule differed, and layout.ts's
-// comment went on describing them as one thing. These are the cases that hold
-// the two surfaces to the same answer.
+// Had no test in either place it was written, which is how they came apart:
+// spanning existed in one, the tie rule differed. These cases hold both
+// surfaces to the same answer.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -58,9 +57,8 @@ test('tolerance is what makes two columns count as level', () => {
 });
 
 test('a spanning box clears every column it covers', () => {
-  // Columns at 0, 50, 0. A two-column box must start below the tallest of
-  // whichever pair it takes, and the best pair is the last two - max 0 - not
-  // the first two, whose max is 50.
+  // Columns at 0, 50, 0. A two-column box starts below the tallest of its
+  // pair - the best pair is the last two (max 0), not the first two (max 50).
   const pack = packColumns(
     [{ h: 50 }, { h: 0 }, { h: 0 }, { h: 20, span: 2 }],
     { cols: 3 },
@@ -117,10 +115,8 @@ test('the board masonry drops each card into the shortest column', () => {
   const items = Array.from({ length: 4 }, (_, i) => ({ id: `i${i}`, w: 100, h: 50 }));
   const out = arrangeMasonry(items, 10);
 
-  // Two columns 110 wide (the card plus a spacing), centred on the origin, so
-  // the column midpoints land at -55 and 55. Each column holds two cards 60
-  // apart, and the block is centred vertically too - which with +y up puts the
-  // first row above the origin and the second below it.
+  // Two 110-wide columns centred on the origin put midpoints at -55 and 55;
+  // vertical centring with +y up puts the first row above origin, second below.
   assert.deepEqual(out, [
     { x: -55, y: 30 },
     { x: 55, y: 30 },
@@ -136,8 +132,8 @@ test('the board masonry gives each column the width of its widest card', () => {
     { id: 'a', w: 300, h: 50 },
     { id: 'b', w: 100, h: 50 },
   ], 10);
-  // Columns 310 and 110 wide, laid side by side and centred: midpoints at 155
-  // and 365 within a block 420 across, so -55 and 155 about the origin.
+  // Columns 310 and 110 wide, centred: midpoints at 155 and 365 within a
+  // 420-wide block, so -55 and 155 about the origin.
   assert.deepEqual(out.map(p => p.x), [-55, 155]);
 });
 

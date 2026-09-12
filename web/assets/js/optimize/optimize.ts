@@ -1,31 +1,7 @@
-// Trimming a board down to what a board actually needs.
-//
-// Strictly asked for. Nothing here runs on import, on save, or on a timer -
-// it is a menu item, it says what it is about to do, and it is one Ctrl+Z away
-// from being undone. That is the whole shape of the feature and the reason it
-// is allowed to be lossy at all: a moodboard is a thing you look at, and a
-// lossless master of a song nobody is mastering, or a 6000px photograph on a
-// card drawn at 300, is weight the board carries for nothing.
-//
-// What it will not do:
-//   - touch anything it cannot make meaningfully smaller (see WORTH_IT in
-//     picture.ts). A re-encode that saves four percent is a generation of
-//     quality spent on a rounding error.
-//   - throw the originals away. They stay in the browser under `meta.was` until
-//     you say otherwise, which is what makes the undo real rather than nominal.
-//   - lose the pictures inside things. Album art and card covers are shrunk to
-//     a card's worth of pixels, never dropped.
-//
-// Pictures and sound are the browser's own work - a canvas writes the WebP, and
-// WebCodecs plus ninety lines of Ogg writes the Opus (picture.ts, opus.ts), so
-// the whole feature runs with nothing downloaded.
-//
-// Video is left alone. Shrinking a clip is the one thing the browser cannot do
-// itself - it needs ffmpeg, a 30 MB single-threaded wasm encoder that pins a
-// core for the length of the clip - and for a board you look at that is not a
-// trade worth making. Clips stay exactly the file that was dropped; a still
-// poster for one the browser cannot even open is a separate, lighter job
-// (firstFrame in media.ts), not part of optimising.
+// Board optimizer — strictly user-initiated, lossy, undoable (originals kept
+// under meta.was). Pictures via canvas WebP, sound via WebCodecs Opus+Ogg.
+// Will not touch files that shrink less than WORTH_IT, will not drop embedded
+// art. Video is left alone (ffmpeg is too heavy for a board you look at).
 
 import { board, byId, swapAssets, setItemThumb, setItemPoster, removeItems } from '../state.ts';
 import { toast } from '../notify.ts';

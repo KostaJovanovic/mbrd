@@ -1,13 +1,8 @@
-// Every module must be loadable without a browser.
-//
-// This is the test that keeps the rest of the suite possible. Before it existed
-// `util.ts` computed IS_DEV from `location.hostname` at module scope, and since
-// almost everything imports util.ts, importing almost anything outside a
-// browser threw - which is why a codebase this size had no tests at all.
-//
-// The rule is not "no browser globals". It is "no browser globals *at import
-// time*": reach for `document` inside a function and this passes, reach for it
-// while the module body runs and it does not.
+// Every module must be loadable without a browser - the rule that keeps the
+// rest of the suite possible. Before it existed, util.ts read
+// `location.hostname` at module scope and broke every import outside one.
+// Not "no browser globals" but "none at import time": reading `document`
+// inside a function passes, reading it while the module body runs does not.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -28,80 +23,37 @@ const CLASSIC_WORKERS = [
 /** Workers that are ES modules but are still workers, and so still not units. */
 const MODULE_WORKERS = ['canvas/matte-worker.js'];
 
-/**
- * The six documented exceptions, none of which is a unit.
- *
- *   main.ts                     constructs the Viewport against real elements
- *   ui/appearance.ts            holds :root and the theme-colour <meta> at
- *                               module scope
- *   optimize/media-worker.js    is not a module at all. It is a *classic*
- *                               worker, because the vendored ffmpeg core is an
- *                               Emscripten bundle that wants importScripts and
- *                               a global factory - so it installs `self.onmessage`
- *                               at the top level and cannot be imported by
- *                               anything, in a browser or out of one.
- *   import/tiff-worker.js       the same, for the same reason: UTIF.js assigns
- *                               itself to `self.UTIF` and reads `self.pako`
- *                               back out, which is importScripts' contract and
- *                               not a module's.
- *   canvas/matte-worker.js      the fifth, and the argument is not the same as
- *                               the two above - it *is* an ES module, spawned
- *                               with `{ type: 'module' }`, because ONNX
- *                               Runtime's wasm entry is one. What exempts it is
- *                               the other half of those entries: a worker's
- *                               whole contract is that it installs
- *                               `self.onmessage` at the top level and answers
- *                               messages. There is no init*() shape that would
- *                               fix it, because there is nobody on this side to
- *                               call one. It reaches no DOM and holds no
- *                               element; it reads `self`, which is the thing it
- *                               is. The parse test at the foot of this file is
- *                               what covers it instead.
- *   mesh/occt-worker.js         the sixth, and a classic one on the first two's
- *                               terms exactly: occt-import-js is an Emscripten
- *                               UMD bundle that defines a global factory and
- *                               resolves its own .wasm beside itself, which is
- *                               importScripts' contract. It runs the CAD kernel
- *                               for STEP and IGES - see mesh/occt.ts.
- *
- * Anything else appearing here is a regression, not a new exception.
- */
+/** The six documented exceptions — main.ts, ui/appearance.ts (both touch the
+ *  DOM at import), and the four workers (classic or ES-module). Anything else
+ *  appearing here is a regression. */
 const DOM_ENTRY_POINTS = new Set([
   'main.ts', 'ui/appearance.ts', ...CLASSIC_WORKERS, ...MODULE_WORKERS,
 ]);
 
 const modules = walk(JS, ['.js', '.ts'], JS)
-  .filter(m => m !== 'import/formats.ts');       // generated, 358 lines of data
+  .filter(m => m !== 'import/formats.ts');       // generated
 
 test('every module is listed as testable or as a DOM entry point', () => {
   assert.ok(modules.length > 20, `only found ${modules.length} modules - is the walk right?`);
   for (const m of DOM_ENTRY_POINTS) {
     assert.ok(modules.includes(m), `${m} is listed as an entry point but does not exist`);
   }
-  // The list is the rule's only escape hatch, so its length is part of the rule.
-  // Without this, the way to get an import-time `document` past this file is to
-  // add a fourth name here - a one-line edit that reads like housekeeping and
-  // silently exempts a module from the thing that makes the suite possible.
+  // The list is the rule's only escape hatch, so its size is part of the
+  // rule - otherwise a new name here quietly exempts a module from the thing
+  // that makes the suite possible.
   assert.equal(DOM_ENTRY_POINTS.size, 6,
     'there are six documented DOM entry points; a seventh needs the argument '
     + 'for it written into the comment above, not just the name added');
 });
 
 /**
- * Browser globals that Node also defines.
+ * Browser globals that Node also defines - navigator, crypto, performance,
+ * Blob, File. A plain import throwing on `document` was the whole test once,
+ * but Node defines these too, so a module reading `navigator.userAgent` at
+ * module scope imported cleanly while doing exactly what the rule forbids.
  *
- * The import below used to be the whole test: a module that read `document` at
- * import time threw, and that was the check. But the rule is about the *shape*
- * of a module, not about which globals this particular runtime happens to lack,
- * and Node 22 defines `navigator`, `crypto`, `performance`, `Blob` and `File`.
- * So a module doing `const IS_SAFARI = /safari/i.test(navigator.userAgent)` at
- * module scope imported perfectly cleanly here while being exactly the thing
- * the header above forbids - and would then bake a wrong answer into a worker,
- * or read a stale one after a runtime swap.
- *
- * These are recorded rather than thrown from. A getter that throws leaves the
- * module half-evaluated and reports the symptom two frames from the cause; a
- * getter that notes the name lets the module finish and names it directly.
+ * Recorded rather than thrown from: a getter that throws leaves the module
+ * half-evaluated and reports the symptom two frames from the cause.
  */
 const NODE_PROVIDES = ['navigator', 'crypto', 'performance', 'Blob', 'File'];
 
@@ -141,11 +93,8 @@ for (const mod of modules) {
 }
 
 test('the workers parse, though nothing can import them', async () => {
-  // All three are skipped by the loop above because a classic worker cannot be
-  // imported at all, and all are excluded from the bundle - so until this the
-  // only thing that ever looked at their syntax was CI's parse leg, which
-  // reports after the push and after the deploy has started. Parsing them here
-  // costs a millisecond and moves that to `npm test`.
+  // Classic workers can't be imported, so without this the only syntax check
+  // was CI's parse leg, which reports after the deploy has already started.
   const { Script } = await import('node:vm');
   const { readFileSync } = await import('node:fs');
   for (const rel of CLASSIC_WORKERS) {

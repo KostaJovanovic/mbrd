@@ -1,33 +1,8 @@
-// DEFLATE and the ZIP directory, by hand and synchronously.
-//
-// **Why this is not storage/zip.ts.** That module is the app's real archive
-// reader and it is *async*, because it decompresses through the platform's
-// DecompressionStream - which is the right call there: a .mbrd is the whole
-// board, the entries are large, and the caller is already awaiting a file.
-//
-// parseMesh() is synchronous end to end, and that is not an accident of how it
-// was written. The whole ceiling mechanism in shared.ts depends on it: CAPS is
-// module state, and the argument that no two parses can interleave is exactly
-// the argument that there is no `await` beneath parseMesh(). The retry contract
-// in consent.ts leans on it too - canvas/model.ts parses, catches an Oversize,
-// asks, and parses again, and both parses are ordinary calls inside one async
-// function that owns the question.
-//
-// A 3MF is a ZIP and most of an FBX is zlib streams, so supporting either meant
-// choosing: make the whole family async and rewrite the ceiling argument and the
-// retry contract around it, or write two hundred lines of RFC 1951. This is the
-// two hundred lines. It is the same bargain the rest of this project makes
-// everywhere - import/artwork.ts walks its own ID3 frames, mesh.ts reads its own
-// glTF - and the same one that keeps `npm test` needing no install.
-//
-// It is a decoder only. Nothing here compresses; writing a ZIP is storage/'s job
-// and it has the platform's CompressionStream for it.
-//
-// The bounds rule from CLAUDE.md applies with force: these bytes come out of a
-// file the app did not write. Every read is checked against the buffer's length,
-// every allocation is checked against a stated size, and a stated size is
-// checked against CAPS.buf *before* anything is allocated. A truncated stream is
-// a plain Error - a file that does not say what it means - and never an Oversize.
+// Synchronous DEFLATE + ZIP directory. Separate from storage/zip.ts (which is
+// async via DecompressionStream) because parseMesh() must be fully synchronous —
+// CAPS module state and the consent.ts retry contract both depend on no interleaving.
+// Decode only (no compression). All reads bounds-checked; truncated streams are
+// plain Errors, never Oversize.
 
 import { oversize, mb } from '../consent.ts';
 import { CAPS, MeshError } from './shared.ts';
@@ -36,10 +11,8 @@ import { CAPS, MeshError } from './shared.ts';
 // Huffman
 // ---------------------------------------------------------------------------
 
-/** A canonical Huffman table: how many codes of each length, and the symbols in
- *  canonical order. Decoding walks the lengths rather than building a lookup
- *  table - slower per symbol and a tenth of the code, which is the right trade
- *  for a few megabytes of model read once. */
+/** Canonical Huffman table. Decoded by walking lengths (no lookup table —
+ *  simpler, fast enough for a few MB read once). */
 type Tree = { counts: Uint16Array; symbols: Uint16Array };
 
 function buildTree(lengths: Uint8Array, off: number, num: number): Tree {
@@ -188,14 +161,8 @@ const tooMuch = (n: number) =>
  *  ceiling at all once somebody has lifted it. */
 const inflateCap = () => (CAPS.buf === Infinity ? Infinity : Math.min(CAPS.buf, MAX_INFLATE));
 
-/**
- * Raw DEFLATE (RFC 1951), start to finish.
- *
- * `hint` is what the container claimed the result would be, used only to size
- * the first allocation - it is never trusted as a limit, because a lie there is
- * free. The limit is CAPS.buf, checked as the output grows rather than up front,
- * which is the only check a stream with no honest declared size can get.
- */
+/** Raw DEFLATE (RFC 1951). `hint` sizes the first allocation only — never
+ * trusted as a limit; CAPS.buf checked as the output grows. */
 export function inflateRaw(src: Uint8Array, hint = 0): Uint8Array {
   const d = new Bits(src);
   const out = new Out(hint, inflateCap());
@@ -277,15 +244,8 @@ export function inflateRaw(src: Uint8Array, hint = 0): Uint8Array {
   return out.done();
 }
 
-/**
- * zlib (RFC 1950) - two header bytes and an Adler-32 tail around a raw stream.
- *
- * The checksum is not verified. It would catch a corrupt file one step earlier
- * than the parser above it does, at the cost of a second pass over every byte,
- * and everything downstream of here already refuses geometry that does not
- * parse. What *is* checked is the header, because a file that is not zlib at all
- * should say so rather than being fed to the bit reader as noise.
- */
+/** zlib (RFC 1950) — header checked, Adler-32 not verified (parsers downstream
+ * already reject corrupt geometry). */
 export function inflateZlib(src: Uint8Array, hint = 0): Uint8Array {
   if (src.length < 2) throw new MeshError('This compressed data ends mid-stream');
   const cmf = src[0], flg = src[1];
@@ -316,22 +276,15 @@ export type ZipFile = { name: string; size: number; read: () => Uint8Array };
  *  and a thumbnail; anything with a five-figure directory is not one. */
 const MAX_ENTRIES = 20_000;
 
-/**
- * Every entry in a ZIP, by name, read through the central directory.
- *
- * Through the directory rather than by walking local headers, for the reason
- * storage/zip.ts gives too: a local header may declare zero sizes and defer them
- * to a data descriptor *after* the data, which cannot be read forwards. The
- * directory at the end always has the real numbers.
- */
+/** ZIP entries by name, via the central directory (not local headers — those
+ * may defer sizes to a data descriptor after the data). */
 export function readZip(bytes: Uint8Array): Map<string, ZipFile> {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const eocd = findEOCD(bytes, view);
   let count = view.getUint16(eocd + 10, true);
   let cdOff = view.getUint32(eocd + 16, true);
 
-  // ZIP64, when the 32-bit fields are saturated. Rare for a model and cheap to
-  // honour; the alternative is reading a directory at offset 0xffffffff.
+  // ZIP64: rare for models, but cheap to handle.
   if (count === 0xffff || cdOff === 0xffffffff) {
     const loc = eocd - 20;
     if (loc < 0 || view.getUint32(loc, true) !== EOCD64_LOC) {

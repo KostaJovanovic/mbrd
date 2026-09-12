@@ -1,11 +1,9 @@
-// The settings table, which is now the only description of the sidebar.
-//
-// Everything asserted here is a property the panel used to get by being written
-// out by hand and read by eye: that a control appears once, that a button names
-// a command that exists, that nothing Desktop-only reaches a phone, and that no
-// tab can show a heading with nothing under it. ui/panel.ts turning the table
-// into DOM needs a browser and is not tested here; the decisions are, and they
-// are all pure.
+// The settings table, the only description of the sidebar. Asserts
+// properties the panel used to get by hand and eye: a control appears
+// once, a button names a command that exists, nothing Desktop-only
+// reaches a phone, no tab shows a heading with nothing under it.
+// ui/panel.ts turning the table into DOM needs a browser and isn't
+// tested here; the decisions are, and they're all pure.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -31,15 +29,14 @@ test('every section belongs to a tab that exists', () => {
 });
 
 test('the panel opens on Board, and Board is first', () => {
-  // ui/panel.ts shows TABS[0]. The order here is the order on screen.
+  // ui/panel.ts shows TABS[0]; the order here is the order on screen.
   assert.equal(TABS[0].id, 'board');
   assert.deepEqual(TABS.map(t => t.id), ['board', 'look', 'system']);
 });
 
 test('no id is used twice', () => {
-  // Every one of these is looked up by getElementById somewhere - by
-  // ui/appearance.ts, canvas/audio.ts, ui/sidebar.ts or a test - so a duplicate
-  // is a control that silently loses its wiring to another.
+  // Every one of these is looked up by getElementById somewhere, so a
+  // duplicate is a control that silently loses its wiring to another.
   const seen = new Map();
   for (const [s, c] of allControls()) {
     if (!c.id) continue;
@@ -49,17 +46,15 @@ test('no id is used twice', () => {
 });
 
 test('every button names a command that exists', () => {
-  // The panel reaches the app through one delegated listener on data-cmd, so a
-  // typo here is a button that does nothing at all, silently.
+  // The panel reaches the app through one delegated listener on
+  // data-cmd, so a typo is a button that silently does nothing.
   //
-  // Asked of the real object rather than of the source text. This used to match
-  // `const cmds = { ... }` in commands.ts with a regex and look for each key
-  // inside it, which was only ever a stand-in for the question - and it stopped
-  // being even that when createCommands() was split, since five contiguous runs
-  // of the surface moved into commands/ and are spread back in. Building the
-  // object costs nothing here (it is a factory precisely so it touches no
-  // browser global at import time, and tests/connections.test.js already builds
-  // one the same way), and `key in cmds` is the thing the panel actually does.
+  // Asked of the real object rather than the source text: matching
+  // `const cmds = { ... }` in commands.ts with a regex was only ever a
+  // stand-in, and stopped working when createCommands() split across
+  // commands/. Building the object costs nothing (it's a factory
+  // precisely so it touches no browser global at import time), and
+  // `key in cmds` is what the panel actually does.
   const cmds = createCommands(
     { toWorld: () => ({ x: 0, y: 0 }), left: 0, top: 0, cx: 0, cy: 0, fit() {}, recenter() {} },
     { resetAppearance() {}, setWhimsy() {} });
@@ -73,14 +68,14 @@ test('every button names a command that exists', () => {
       assert.ok(key in cmds, `data-cmd="${b.cmd}" has no cmds.${key}`);
     }
   }
-  // The loop has two ways to iterate nothing - no controls, or no buttons with
-  // a cmd on them - and both left this passing with every button unchecked.
+  // The loop has two ways to iterate nothing - no controls, or no
+  // buttons with a cmd - and both left this passing with nothing checked.
   assert.ok(checked > 5, `only ${checked} data-cmd buttons found in the schema`);
 });
 
 test('a control that can be set can also be read', () => {
-  // Except the external ones, where another module owns both halves, and the
-  // decorative ones, which are not controls at all.
+  // Except the external ones, where another module owns both halves,
+  // and the decorative ones, which aren't controls at all.
   for (const [s, c] of allControls()) {
     if (c.external || !c.set) continue;
     assert.equal(typeof c.get, 'function', `${c.id || s.id} writes a value it cannot read back`);
@@ -88,19 +83,19 @@ test('a control that can be set can also be read', () => {
 });
 
 test('Mobile is shown the arrangement it has and nothing it has not', () => {
-  // setSetting() refuses paper, its orientation and its grips on a Mobile
-  // board - so a row for any of them would be a control that does nothing.
-  // Absence, not disabling. Spacing is deliberately not on this list any more:
-  // a fixed-width strip has no page to fit anything onto, but it can perfectly
-  // well have a gap between its cards, and it now does - starting at zero.
+  // setSetting() refuses paper, its orientation and its grips on a
+  // Mobile board, so a row for any would be a control that does nothing.
+  // Absence, not disabling. Spacing isn't on this list any more: a
+  // fixed-width strip has no page to fit anything onto, but it can have
+  // a gap between cards, and now does, starting at zero.
   for (const id of ['opt-paper', 'paper-orient', 'opt-paper-resize', 'paper-hint',
     'opt-web']) {
     assert.equal(controlVisible(byId(id), MOBILE), false, `${id} should be absent on Mobile`);
     assert.equal(controlVisible(byId(id), DESKTOP), true, `${id} should be present on Desktop`);
   }
-  // There is no longer a grid-width control the other way round: the Feed packs
-  // its columns from the sheet width (ui/feed.ts), so the manual "Grid width" row
-  // was retired. Its absence from the schema is the assertion now.
+  // No grid-width control the other way round: the Feed packs its
+  // columns from the sheet width (ui/feed.ts), so the manual row was
+  // retired. Its absence from the schema is the assertion now.
   assert.equal(byId('mobile-columns'), undefined, 'the manual Grid width row is retired');
 });
 
@@ -119,7 +114,7 @@ test('no tab can show a heading with nothing under it', () => {
       const shown = s.controls.filter(c => controlVisible(c, ctx));
       assert.ok(shown.length, `${s.id} is visible with no visible control`);
     }
-    // And every tab still has something in it, in both layouts.
+    // Every tab still has something in it, in both layouts.
     for (const t of TABS) {
       assert.ok(sectionsFor(t.id, ctx).length, `tab ${t.id} is empty when mobile=${ctx.mobile}`);
     }
@@ -127,9 +122,9 @@ test('no tab can show a heading with nothing under it', () => {
 });
 
 test('each section keeps something above its fold', () => {
-  // A section that is entirely advanced is a heading you have to open to find
-  // out is empty. The keyboard legend is the one exception and says so: it has
-  // no heading at all, only the fold's own summary.
+  // A section entirely advanced is a heading you have to open to find
+  // out is empty. The keyboard legend is the one exception: it has no
+  // heading at all, only the fold's own summary.
   for (const s of SECTIONS) {
     if (s.fold) continue;
     assert.ok(s.controls.some(c => !c.advanced), `${s.id} is nothing but a fold`);
@@ -140,12 +135,12 @@ test('each section keeps something above its fold', () => {
 });
 
 test('a section that is all fold is all fold', () => {
-  // The keyboard legend and Paper are whole sections behind one summary, and
-  // both carry `fold` and no title. buildSection() appends a control that is not
-  // `advanced` straight to the section, above the fold - which in a section with
-  // no h2 puts a bare row over the summary that is supposed to be its heading.
-  // So the two facts have to travel together, and the missing title is also what
-  // ui/panel.ts marks .is-head from.
+  // The keyboard legend and Paper are whole sections behind one summary,
+  // both carrying `fold` and no title. buildSection() appends a
+  // non-`advanced` control straight to the section, above the fold -
+  // which in a section with no h2 puts a bare row over the summary meant
+  // to be its heading. So the two facts must travel together; the
+  // missing title is also what ui/panel.ts marks .is-head from.
   for (const s of SECTIONS) {
     if (!s.fold) continue;
     assert.equal(s.title, undefined, `${s.id} is a fold and a heading both`);
@@ -154,54 +149,54 @@ test('a section that is all fold is all fold', () => {
         `${c.id || c.type} in ${s.id} would be drawn above that section's own summary`);
     }
   }
-  // And the set the rule was written for is still the set. Debug joined it: three
-  // development toggles nobody using a board reads, which is the same argument
-  // the keyboard legend makes and a stronger one - the legend is at least read
-  // once.
+  // The set the rule was written for is still the set. Debug joined it:
+  // three development toggles nobody using a board reads, a stronger
+  // version of the keyboard legend's argument - the legend is at least read once.
   assert.deepEqual(SECTIONS.filter(s => s.fold).map(s => s.id),
                    ['real-size', 'keys', 'debug']);
 });
 
 test('the four demoted controls are below a fold, not gone', () => {
-  // Panel width, the two grid sliders and the palette source count: set once or
-  // never, and they were crowding the two dials that do the work.
+  // Panel width, the two grid sliders and the palette source count: set
+  // once or never, crowding the two dials that do the work.
   for (const id of ['opt-palette-sources']) {
     assert.equal(byId(id).advanced, true, `${id} should be inside the fold`);
   }
-  // The three that live in ui/appearance.ts's own CONTROLS list are checked
-  // there - here we only hold the host they are built into.
+  // The three living in ui/appearance.ts's own CONTROLS list are checked
+  // there; here we only hold the host they're built into.
   const host = byId('appearance-advanced-vars');
   assert.equal(host.type, 'slot');
   assert.equal(host.advanced, true);
 });
 
 test('the Look tab opens on three dials, and type is one of them', () => {
-  // The fold is for controls a board is no worse for never touching, and a
-  // typeface is not one: the display serif is the loudest decision on a board,
-  // and a face dropped onto the board itself becomes an entry in these menus -
-  // so hiding them made a feature that worked into one that could not be found.
-  // Its hint says exactly that and has to travel with it.
+  // The fold is for controls a board is no worse for never touching,
+  // and a typeface is not one: the display serif is the loudest decision
+  // on a board, and a dropped face becomes an entry in these menus - so
+  // hiding them made a feature that worked into one that couldn't be
+  // found. The hint says exactly that and must travel with it.
   const look = SECTIONS.find(s => s.id === 'appearance');
   const above = look.controls.filter(c => !c.advanced);
   assert.deepEqual(above.map(c => c.id ?? c.type),
     ['opt-whimsy', 'opt-palette', 'appearance-type', 'hint', 'appearance-fonts']);
   assert.match(above[3].html, /\.woff2/, 'the dropped-face hint stayed with the menus');
-  // The dropped-face list rides with the hint and the menus, above the fold, so a
-  // face you added can be taken back off without opening the advanced controls.
+  // The dropped-face list rides with the hint and menus, above the
+  // fold, so an added face can be taken back off without opening the
+  // advanced controls.
   assert.equal(above[4].id, 'appearance-fonts');
 });
 
 test('the palette source dial has one stop past its highest count', async () => {
-  // The last stop is "Every photo" and is stored as 0 - see
-  // normalizePaletteSources() in state.ts. Two files know that number: the table
-  // shapes the element, ui/appearance.ts rewrites `max` from MAX_SOURCES on the
-  // way past. They have to agree, or the top stop is either unreachable or a
-  // count nothing will honour.
+  // The last stop is "Every photo", stored as 0 (see
+  // normalizePaletteSources() in state.ts). Two files know that number:
+  // the table shapes the element, ui/appearance.ts rewrites `max` from
+  // MAX_SOURCES. They must agree, or the top stop is unreachable or
+  // uncounted.
   const { MAX_SOURCES } = await import('../web/assets/js/ui/pigments.ts');
   assert.equal(byId('opt-palette-sources').max, MAX_SOURCES + 1);
-  // The stop is *defined* by the look model and *consumed* by the panel, which
-  // are two files since the appearance split - and the panel reaches it through
-  // the injected dependency bag rather than by import, which is the seam.
+  // The stop is *defined* by the look model and *consumed* by the panel
+  // - two files since the appearance split - and the panel reaches it
+  // through the injected dependency bag rather than by import.
   const model = await readFile(
     new URL('../web/assets/js/ui/appearance.ts', import.meta.url), 'utf8');
   assert.match(model, /ALL_SOURCES_STOP = MAX_SOURCES \+ 1/);
@@ -211,10 +206,11 @@ test('the palette source dial has one stop past its highest count', async () => 
 });
 
 test('the palette menu carries Dynamic, and it is the only way to ask for it', async () => {
-  // One decision, one control. "Take colours from pictures" used to be a
-  // checkbox below this menu and inside the fold, quietly overruling whichever
-  // palette the menu claimed - so a board could say Papyrus and be set in the
-  // colours of its own photographs, with the explanation two clicks away.
+  // One decision, one control. "Take colours from pictures" used to be
+  // a checkbox below this menu, inside the fold, quietly overruling
+  // whichever palette the menu claimed - so a board could say Papyrus
+  // and be set in its own photographs' colours, the explanation two
+  // clicks away.
   const options = byId('opt-palette').options();
   assert.equal(options[0].label, 'Dynamic', 'first, above the four named palettes');
   assert.deepEqual(options.map(o => o.label),
@@ -222,28 +218,28 @@ test('the palette menu carries Dynamic, and it is the only way to ask for it', a
   assert.equal(SECTIONS.flatMap(s => s.controls).some(c => c.id === 'opt-auto-palette'),
     false, 'the checkbox it replaced is gone, not merely hidden');
 
-  // And the value is one string in two files that do not import each other:
-  // this table is data with no panel imports, ui/appearance-controls.ts owns
-  // what the menu does with it. Same bargain as the source dial's top stop.
+  // The value is one string in two files that don't import each other:
+  // this table is data with no panel imports; ui/appearance-controls.ts
+  // owns what the menu does with it. Same bargain as the source dial's top stop.
   const controls = await readFile(
     new URL('../web/assets/js/ui/appearance-controls.ts', import.meta.url), 'utf8');
   const owned = controls.match(/DYNAMIC = '([a-z0-9-]+)'/)[1];
   assert.equal(options[0].value, owned, 'the menu offers a value the panel answers to');
-  // Never a palette name: it is not written to look.palette and no [data-palette]
-  // block answers to it, so a stylesheet that grew one would be a silent clash.
+  // Never a palette name: it isn't written to look.palette and no
+  // [data-palette] block answers to it, so a stylesheet growing one
+  // would be a silent clash.
   const tokens = await readFile(
     new URL('../web/assets/css/tokens.css', import.meta.url), 'utf8');
   assert.doesNotMatch(tokens, new RegExp(`\\[data-palette=["']?${owned}`));
 
-  // The mirror of that last one, and the reason it is worth having: the row
-  // draws each palette's own colours by walking tokens.css for the block its
-  // value names (paletteSwatches in ui/palettes.ts). A named palette with no
-  // block would therefore be an option that opens with no chips beside it -
-  // which looks like a rendering fault rather than like a missing stylesheet.
+  // The mirror of the last one: the row draws each palette's own
+  // colours by walking tokens.css for the block its value names
+  // (paletteSwatches in ui/palettes.ts). A named palette with no block
+  // opens with no chips beside it, looking like a rendering fault rather
+  // than a missing stylesheet.
   //
-  // Dynamic and Papyrus are exempt for the two reasons they are always exempt:
-  // Dynamic has no block by design (the assertion above says so), and Papyrus
-  // *is* the bare `:root`.
+  // Dynamic and Papyrus are exempt for their usual reasons: Dynamic has
+  // no block by design, and Papyrus *is* the bare `:root`.
   for (const { value, label } of options) {
     if (!value || value === owned) continue;
     assert.match(tokens, new RegExp(`\\[data-palette=["']?${value}["']?\\]`),
@@ -252,12 +248,12 @@ test('the palette menu carries Dynamic, and it is the only way to ask for it', a
 });
 
 test('the whimsy stops keep the id the stylesheet sets them by', async () => {
-  // Each of the three is a specimen of the tier it names - serif italic, sans
-  // italic, sans bold - and app.css pins those three faces to
-  // #whimsy-stop-labels and to nothing else. Left to the builder's default the
-  // row would be #opt-whimsy-stops, the rule would match nothing, and all three
-  // names would come out set in whatever the slider had just moved the display
-  // face to, which is the one thing a specimen must not do.
+  // Each of the three is a specimen of the tier it names - serif
+  // italic, sans italic, sans bold - and app.css pins those faces to
+  // #whimsy-stop-labels only. Left to the builder's default the row
+  // would be #opt-whimsy-stops, matching nothing, and all three names
+  // would come out set in whatever face the slider just moved to - the
+  // one thing a specimen must not do.
   assert.equal(byId('opt-whimsy').stopsId, 'whimsy-stop-labels');
   const css = appCss();
   assert.match(css, /#whimsy-stop-labels span:nth-child\(1\)/);

@@ -1,21 +1,11 @@
 // The credits sheet, and the one way it goes quietly wrong.
 //
-// There are two lists of what this app is standing on. THIRD-PARTY.md is for a
-// licence audit: it says which files each notice covers and where the notice
-// lives. The fold inside #credits is for a person: it says what was borrowed
-// and why, in a sentence each.
-//
-// Two lists of the same thing drift, and this one drifts in a particular
-// direction. Vendoring something new means touching the audit file - the
-// licence test in tests/stickers-license.test.js sees to that - and it does not
-// mean touching index.html, so the sheet a person reads is the copy that falls
-// behind. Nothing else would notice: the panel keeps opening, the two names
-// keep showing, and the new thing is simply absent from the screen that exists
-// to say what is there.
-//
-// So: every source THIRD-PARTY.md names has to be reachable from the sheet. Not
-// the other way round - the fold is allowed to mention things that carry no
-// third-party notice at all, and does.
+// THIRD-PARTY.md is the licence audit; the fold inside #credits is the
+// human-readable version. Vendoring something new touches the audit file
+// (tests/stickers-license.test.js sees to that) but not index.html, so the
+// sheet a person reads is the one that silently falls behind. Every source
+// THIRD-PARTY.md names must be reachable from the sheet - not the reverse,
+// since the fold may mention things with no third-party notice at all.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -37,8 +27,7 @@ test('the credits sheet has a fold that lists what ships', () => {
 });
 
 test('every source THIRD-PARTY.md names is linked from the sheet', () => {
-  // Whole URLs out of the manifest's tables, deduped. Trailing punctuation is
-  // trimmed because these sit in prose as well as in table cells.
+  // Whole URLs out of the manifest's tables, deduped.
   const sources = [...new Set(
     [...manifest.matchAll(/https:\/\/github\.com\/[\w.-]+\/[\w.-]+/g)].map(m => m[0]),
   )];
@@ -61,10 +50,9 @@ test('every link in the fold opens safely', () => {
 });
 
 test('the fold does not claim a licence the manifest disagrees with', () => {
-  // The chip beside each name is a two-word fact and the manifest is where the
-  // long version lives, so the words have to be the manifest's. "borrowed data"
-  // is the one that is deliberately not a licence - see file-analyser, which
-  // carries no third-party notice because it is not third-party.
+  // The chip beside each name is a two-word fact, and those words have to be
+  // the manifest's. "borrowed data" is deliberately not a licence - see
+  // file-analyser, which carries no third-party notice because it isn't one.
   const chips = [...fold.matchAll(/class="credits-lic">([^<]+)</g)].map(m => m[1].trim());
   assert.ok(chips.length >= 3, `only ${chips.length} licence chips`);
   for (const chip of chips) {

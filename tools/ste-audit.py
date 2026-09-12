@@ -1,11 +1,6 @@
-"""Score every first-party prose file in the repo against ASD-STE100.
+"""Score every first-party prose file against ASD-STE100.
 
-Usage:
-    python tools/ste-audit.py              # rank all first-party markdown
-    python tools/ste-audit.py --top 15     # show the worst 15 only
-    python tools/ste-audit.py --json       # machine-readable
-
-Build output, dependencies, and third-party licence text stay out of the scan.
+Usage: python tools/ste-audit.py [--top 15] [--json]
 """
 import argparse
 import importlib.util

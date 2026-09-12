@@ -3,53 +3,17 @@
  *
  *   node tools/gen-formats.mjs [path-to-analyser]
  *
- * analyser keeps a hand-curated catalog of ~1350 file extensions in
- * core/formats.js - what each one is, which family it belongs to, which
- * category that family sits in. mbrd wants the *data* (so a dropped .sldprt
- * says "SolidWorks / 3D & CAD" instead of "file"), but not the code around it:
- * every renderer over there builds an analysis report and is wired to that
- * app's DOM helpers and CSS. So we lift the catalog and leave the rest.
- *
- * Three files are read, because the catalog names *families* and mbrd also
- * wants the name of the format itself:
- *
- *   core/formats.js                  families, categories, routing sets
- *   tools/format-page-content.mjs    per-extension names, the good ones
- *   renderers/proprietary-formats.js per-extension names, the long tail
- *
- * The family answer for a .sldprt is "SolidWorks", which is a shelf rather than
- * a thing; the first of the two name tables calls it a SolidWorks part and the
- * second calls a .p3d a Prepar3D scene. Between them they name all but a
- * handful of the catalog, which is what lets a card say what it is holding
- * instead of the word "generic". They are read in that order and the first
- * answer wins: the page copy is written to be read by a person, the
- * proprietary table to be read next to a hex dump.
- *
- * analyser is TypeScript now and the two files under web/ are its build output,
- * which is why they are read from web/assets/js rather than src/ - the compiled
- * form is plain data with the types stripped, and evaluating it needs no tsc.
- *
- * Re-run this whenever analyser learns a new format. The output is committed,
- * so mbrd never needs the sibling repo present to build or run.
- *
- * The output is TypeScript, and the handful of annotations in the template
- * below are the whole of what that costs: the lookup tables are declared as
- * Records so they can be indexed by a runtime string, and describeExt() and
- * formatName() name their parameters. They are in the template rather than
- * applied to the output by hand
- * because output edited by hand is output the next run silently reverts - which
- * is exactly what nearly happened here: the .js -> .ts rename annotated the
- * generated file with a `@ts-nocheck` block this template never emitted, so
- * re-running it would have turned `npm run typecheck` red for reasons no one
- * would have connected to a catalog refresh.
+ * Reads families + categories from core/formats.js, per-extension names from
+ * format-page-content.mjs and proprietary-formats.js (first answer wins).
+ * Output is committed — mbrd never needs the sibling repo to build or run.
+ * Re-run when analyser learns a new format.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-// Both names are tried because the repo has been called both. Whichever is
-// there wins; argv[1] beats either.
+// The repo has been called both names; argv[1] overrides.
 const NEIGHBOURS = ['analyser', 'file-analyser'].map(n => path.resolve(HERE, '..', '..', n));
 const SIBLING = process.argv[2] || NEIGHBOURS.find(dir => fs.existsSync(dir)) || NEIGHBOURS[0];
 const SOURCE = path.join(SIBLING, 'web', 'assets', 'js', 'core', 'formats.js');
@@ -64,8 +28,7 @@ if (!fs.existsSync(SOURCE)) {
   process.exit(1);
 }
 
-// The catalog module's only dependency is one DOM helper it uses in the render
-// functions we don't call. Stub it out and the rest evaluates as pure data.
+// Stub the DOM helper the catalog imports — we only need the data.
 const src = fs.readFileSync(SOURCE, 'utf8').replace(
   /^import\s*\{[^}]*\}\s*from\s*'\.\/util\.js';?$/m,
   'const el = () => ({});'
@@ -74,8 +37,7 @@ const catalog = await import('data:text/javascript;charset=utf-8,' + encodeURICo
 
 const groups = catalog.catalogGrouped();
 
-// families[] is index-addressed so the ext -> family map can be a flat table of
-// small integers instead of 1350 repeated strings.
+// Index-addressed: ext -> small integer instead of repeated strings.
 const families = [];
 const extFamily = {};
 let collisions = 0;
@@ -87,8 +49,7 @@ for (const group of groups) {
     for (const raw of row.exts) {
       const ext = String(raw).toLowerCase().replace(/^\./, '');
       if (!ext) continue;
-      // First listing wins: the catalog is ordered most-specific-first, so an
-      // ext claimed by both "Photo" and some niche family stays a photo.
+      // First listing wins (catalog is most-specific-first).
       if (ext in extFamily) { collisions++; continue; }
       extFamily[ext] = index;
     }

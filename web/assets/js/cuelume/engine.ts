@@ -1,61 +1,7 @@
-// The synthesiser, the context's lifetime, and the four reasons to stay silent.
-//
-// Vendored from Cuelume (MIT, https://github.com/Danilaa1/cuelume, v0.2.2,
-// Copyright (c) 2026 Daniel Belyi) - see web/assets/cuelume-LICENSE.txt and
-// THIRD-PARTY.md. renderTone(), renderNoise(), attachShimmer(), the tail
-// arithmetic and the shared output stage are upstream's, near enough line for
-// line. What is new is everything below "The level", plus the context suspend
-// and the ambient session - and one thing is *missing* that upstream ships,
-// which is the half of this fork worth reading about first.
-//
-// ── What was left behind: bind() ──
-//
-// Upstream is two halves. This is the engine; the other half installs four
-// capture-phase listeners on `document` - pointerenter, pointerdown, pointerup,
-// click - and reads `data-cuelume-*` attributes off whatever the event landed
-// on. For a library that is exactly right: it cannot know what the host app's
-// actions are, so it lets the markup say. Here it is wrong three times over.
-//
-// It is a second event listener, which CLAUDE.md forbids in as many words - a
-// user-facing action is an entry in `cmds`. Four global listeners in the capture
-// phase would also land in the busiest part of this app: ui/menu.ts closes on
-// outside pointerdown in the capture phase, and canvas/input.ts is one pipeline
-// holding exactly one active gesture.
-//
-// It is a second markup contract. `data-cmd` already says what a button does;
-// `data-cuelume-press` beside it would say what it sounds like, in a different
-// vocabulary, maintained separately, and wrong the first time a button is
-// renamed.
-//
-// And most of what it can reach is not what should make a sound. A card
-// landing, a connection drawn, a delete, an undo - none of those are clicks on
-// an element with an attribute. The one thing bind() is genuinely built for is
-// the hover tick, and on a canvas you sweep the pointer across forty cards
-// without meaning anything by it.
-//
-// So the cues are called from the places that already know what happened, which
-// is a dozen one-line edits at chokepoints that exist anyway.
-//
-// ── Where this sits ──
-//
-// Bottom of the graph, beside quality.ts and for the same sentence: state.ts,
-// canvas/, import/, ui/ and notify.ts all say something, four tiers apart, and
-// a thing every tier reads has to be under all of them or it is an inversion for
-// most of them. It touches no DOM at all - it did, to read the whimsy tier, and
-// stopped when the tiers did - and localStorage only through prefs.ts, so
-// tests/imports.test.js needs no exemption for it.
-//
-// ── What must not move in here ──
-//
-// The recipe table and the cue map. They are recipes.ts, and the split is what
-// lets the map be walked in a test with no Web Audio at all. The levelling goes
-// with them for the same reason: loudnessOf() is arithmetic on the table, so
-// the claim that the palette comes out even is checkable without ears - which
-// is the one claim about sound that can be.
-//
-// Nor any knowledge of *why* a cue fired. This module is handed a name and
-// plays it; whether a delete should sound like `fall` is an argument that
-// belongs at the call site, where the delete is.
+// Synthesiser: renders recipes from recipes.ts through Web Audio.
+// Vendored from Cuelume (MIT, v0.2.2, Copyright (c) 2026 Daniel Belyi).
+// Upstream's bind() is omitted -- cues are called from existing chokepoints.
+// Bottom of the layer graph; no DOM, no knowledge of why a cue fired.
 
 import { readPref, writePref } from '../prefs.ts';
 import {
@@ -63,18 +9,8 @@ import {
   type Cue, type NoiseLayer, type Shimmer, type SoundRecipe, type ToneLayer, type Voice,
 } from './recipes.ts';
 
-// Upstream's four, unchanged. The gain of 4 is not a mistake: the palette is
-// written low so that a dozen overlapping cues have somewhere to go, and the
-// limiter after the output stage is what catches them when they do.
-//
-// It used to be true that "every peak in the table is under 0.15", and it is
-// not any more - trimFor() in recipes.ts multiplies a recipe's gain by up to
-// three so that a 20ms burst and a 350ms bell are the same loudness, and it is
-// the bursts that go up. At the top of the dial the loudest single cue now
-// peaks near -5.6 dBFS against the limiter's -2, so one cue is still nowhere
-// near it and two of the shortest ones together just reach it. Which is the
-// right way round: the cues that got louder are the ones that are over before
-// the limiter's 20ms release has finished with them.
+// Upstream constants. OUTPUT_GAIN of 4 is deliberate: recipes are written low
+// so overlapping cues have headroom before the limiter.
 const SOURCE_STOP_PADDING = 0.05;
 const CLEANUP_MARGIN = 0.05;
 const INAUDIBLE_GAIN = 0.001;
@@ -94,8 +30,7 @@ function renderTone(
   const oscillator = context.createOscillator();
   oscillator.type = layer.waveform;
   oscillator.frequency.setValueAtTime(layer.frequency, startTime);
-  // The recipe's own detune is a chorus between two layers of one sound; the
-  // repeat detune is a few cents on the whole thing. They add.
+  // Recipe detune (chorus) + repeat detune (anti-phase-lock) are additive.
   if (layer.detune || detune) oscillator.detune.value = (layer.detune ?? 0) + detune;
 
   if (layer.glideTo !== undefined) {
@@ -113,28 +48,8 @@ function renderTone(
   oscillator.stop(startTime + layer.attack + layer.decay + SOURCE_STOP_PADDING);
 }
 
-/**
- * Two seconds of white noise, made once and played from a different place in it
- * every time.
- *
- * Upstream allocates a buffer per layer per cue and fills every sample with
- * Math.random() - about six thousand of them for a press, twelve thousand for a
- * toast, on every single press and every single toast. That is right for a
- * library, which cannot know how often it will be called; here the busiest cue
- * fires several times a second and the allocation is pure waste.
- *
- * **Played from a random offset rather than from the start**, which is the half
- * that makes one buffer honest. Reusing a fixed window would make every burst
- * the *same* burst - forty identical noise bursts sum coherently rather than
- * incoherently and start to read as one sound with an amplitude problem, which
- * is the noise version of the phase-locking the detune exists to stop. Two
- * seconds against a longest layer of about a seventh of a second is fourteen
- * non-overlapping windows and effectively unbounded overlapping ones.
- *
- * Sized in seconds rather than samples so it means the same thing at 44.1 and
- * 48 kHz, and rebuilt if the context's rate ever differs from the one it was
- * made at - which happens when a device changes its output while a page is open.
- */
+// Shared noise buffer, played from a random offset each time to avoid coherent
+// summing. Rebuilt if the sample rate changes (device switch while page is open).
 const NOISE_SECONDS = 2;
 
 let noiseBuffer: AudioBuffer | null = null;

@@ -1,15 +1,6 @@
-// The board switcher: the shelf of boards this browser is keeping, drawn.
-//
-// The storage half is in storage/storage.ts and storage/library.ts; this is only
-// the face of it - a grid of the saved boards, each a thumbnail and a title,
-// click one to open it, with a New board that keeps the current one. It renders
-// from the library index alone (title and thumbnail live there), so opening the
-// switcher unpacks nothing; a board's megabytes are read only when it is opened.
-//
-// A self-contained overlay rather than the ask() dialog, because that one is a
-// question with buttons and this is a gallery. It reaches for `document` only
-// inside a function, like the rest of the interface, so it stays importable
-// without a browser.
+// Board switcher UI: a grid of saved boards (title + thumbnail) over the
+// library index. Storage logic is in storage/storage.ts and storage/library.ts.
+// Renders from the index alone — boards are unpacked only when opened.
 
 import {
   listLibrary, switchBoard, newBoard, deleteLibraryBoard, ensureCurrentOnShelf,
@@ -23,12 +14,10 @@ import { connectCloud } from './cloud-connect.ts';
 import type { LibraryEntry } from '../storage/library.ts';
 import type { RemoteBoard } from '../storage/cloud/sync.ts';
 
-/** A shelf row as the switcher sees it - the index entry, plus "is this the one on screen". */
 type ShelfEntry = LibraryEntry & { current: boolean };
 
 let root: HTMLDivElement | null = null;
 
-/** Human "when", for a board's card. */
 function ago(at: number) {
   if (!at) return '';
   const s = (Date.now() - at) / 1000;
@@ -38,7 +27,6 @@ function ago(at: number) {
   return Math.round(s / 86400) + ' d ago';
 }
 
-/** Whatever had the keyboard when the shelf opened, so it can be given back. */
 let opener: HTMLElement | null = null;
 
 function closeLibrary() {
@@ -49,23 +37,14 @@ function closeLibrary() {
   removeEventListener('keydown', onKey, true);
   const back = opener;
   opener = null;
-  // Only when the shelf actually had it: closing on a press elsewhere means the
-  // browser is about to place focus itself, and taking it back would fight
-  // that. The same rule ui/menu.ts's close() states.
+  // Restore focus only if the shelf had it — otherwise the browser is placing it.
   if (held && back?.isConnected) back.focus({ preventScroll: true });
 }
 
 function onKey(e: KeyboardEvent) {
   if (!root) return;
   if (e.key === 'Escape') { e.stopPropagation(); closeLibrary(); return; }
-  // The Tab trap `aria-modal="true"` was promising and nothing was keeping.
-  //
-  // This panel is a div on the body, not a <dialog> - so nothing outside it is
-  // inert, and a keyboard walked straight out of a thing that had announced
-  // itself as modal, into a board it could not see and could still delete
-  // cards on. showModal() would give the trap for nothing, and is not
-  // available here: the shelf is drawn under the same overlay stack as the
-  // viewer and the tour, and a top-layer dialog would sit above all of them.
+  // Manual tab trap — not a <dialog> so showModal() inertness is unavailable.
   if (e.key !== 'Tab') return;
   const stops = [...root.querySelectorAll<HTMLElement>(
     'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), '
@@ -73,19 +52,12 @@ function onKey(e: KeyboardEvent) {
   if (!stops.length) return;
   const first = stops[0], last = stops[stops.length - 1];
   const on = document.activeElement;
-  // Wrapped by hand at both ends, and also for a focus that has already
-  // escaped - which is the state the panel opens in until the line in
-  // openLibrary() below places it.
   if (!root.contains(on)) { e.preventDefault(); (e.shiftKey ? last : first).focus(); return; }
   if (!e.shiftKey && on === last) { e.preventDefault(); first.focus(); return; }
   if (e.shiftKey && on === first) { e.preventDefault(); last.focus(); }
 }
 
-/**
- * A busy guard around the storage moves, which are slow (pack, unpack, a thumb
- * render) and must not run twice from a double press. The panel is closed on the
- * ones that change the board on screen, and re-rendered on delete.
- */
+// Serialise storage moves — pack/unpack are slow and must not double-fire.
 let busy = false;
 async function guard(fn: () => Promise<void>) {
   if (busy) return;
@@ -203,21 +175,9 @@ async function render() {
 }
 
 // ---------------------------------------------------------------------------
-// The other shelf
-//
-// A board kept in Drive is the same board, in another place - so this is the
-// one panel it belongs in, rather than the anchored menu that used to hang off
-// the Sync section's own button. That menu listed board ids and dates against a
-// blank; here a board that is on both shelves is one card wearing a small
-// cloud, and a board that is only in Drive is a card of its own. **Which is
-// also the whole of the merge**: the ids are the same ids. A library row's `id`
-// and a folder's name in Drive are both the value ensureBoardId() minted, which
-// is what lets these two lists be joined at all rather than shown end to end.
-//
-// Everything here is best-effort. A person who is not signed in, a build with
-// no cloud identifiers, an expired token, a network that is not there - all of
-// them leave the local shelf exactly as it was drawn, because the shelf is not
-// a cloud feature and must not fail like one.
+// The other shelf — boards in Drive merged by id (the same ensureBoardId()
+// mint). Best-effort: unsigned / offline / no credentials leaves the local
+// shelf exactly as drawn.
 // ---------------------------------------------------------------------------
 
 /**

@@ -1,26 +1,7 @@
-// The Ogg container writer.
-//
-// optimize/opus.ts is the sixth of the hand-written binary readers CLAUDE.md
-// names, and the only one that also *writes* a format - which is the harder
-// half. A reader that gets a length wrong refuses a file; a writer that gets
-// one wrong produces a file that opens in this app and in nothing else, and the
-// user finds out months later on somebody else's player.
-//
-// toOpus() itself needs AudioEncoder, AudioData and OfflineAudioContext, so it
-// cannot run here. Everything under it can: the segment table, the CRC, the
-// granule arithmetic and the two headers are pure functions of their arguments,
-// and they are where all three of Ogg's off-by-ones live. They are exported for
-// this file, with the reason written at the export.
-//
-// The segment-table rules being checked, since they are the whole of the
-// format's cleverness:
-//
-//   - a packet is a run of 255s ended by a value below 255
-//   - so a packet whose length is an exact multiple of 255 needs a trailing 0,
-//     or the next packet is read as more of this one
-//   - a table holds at most 255 entries, so a packet over 65,025 bytes spills
-//     onto another page, which flags itself as a continuation and carries a
-//     granule of -1 because nothing finished on it
+// Ogg container writer — segment tables, CRC, granule arithmetic, headers.
+// toOpus() needs AudioEncoder so it cannot run here; the pure helpers can.
+// Key Ogg rule: a packet is a run of 255s ended by <255; exact multiples
+// need a trailing 0; a table holds at most 255 entries.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -80,9 +61,8 @@ test('a stream of one small packet is one page, and it parses back', () => {
 });
 
 test('the checksum is over the page with its own field zeroed', () => {
-  // The one rule in Ogg that cannot be inferred from a hex dump, and the one a
-  // player checks before anything else: get it wrong and every page is
-  // rejected as corrupt.
+  // The one rule in Ogg that can't be inferred from a hex dump, and the
+  // one a player checks first: get it wrong and every page is rejected as corrupt.
   const ogg = pager();
   ogg.packet(bytes(500), 1234);
   ogg.page(true);
@@ -96,8 +76,8 @@ test('the checksum is over the page with its own field zeroed', () => {
 });
 
 test('the serial number is the same on every page, and constant across runs', () => {
-  // optimize.ts addresses files by the hash of their bytes, so an encoder that
-  // produced a different file every run would defeat its whole ledger.
+  // optimize.ts addresses files by the hash of their bytes, so an encoder
+  // producing a different file every run would defeat the whole ledger.
   const build = () => {
     const ogg = pager();
     ogg.packet(bytes(300), 0); ogg.page();
@@ -122,8 +102,8 @@ test('page sequence numbers count up from zero with no gaps', () => {
 // ---------------------------------------------------------------------------
 
 test('a packet whose length is a multiple of 255 gets its terminating zero', () => {
-  // Without it the next packet is read as more of this one - a stream that is
-  // structurally valid, decodes to noise, and looks fine in a hex dump.
+  // Without it the next packet is read as more of this one - structurally
+  // valid, decodes to noise, looks fine in a hex dump.
   const ogg = pager();
   ogg.packet(bytes(510), 0);
   ogg.page(true);
@@ -151,8 +131,8 @@ test('an empty packet is one zero lace', () => {
 
 test('a packet larger than a page spills, and the spill says so', () => {
   // The album-art case: 255 laces of 255 is 65,025 bytes, and a cover is
-  // routinely bigger. The continuation page must flag itself and must carry a
-  // granule of -1, because no packet finished on it.
+  // routinely bigger. The continuation page must flag itself and carry a
+  // granule of -1, since no packet finished on it.
   const ogg = pager();
   ogg.packet(bytes(70000), 4321);
   ogg.page(true);
@@ -253,9 +233,8 @@ test('no tags and no cover is still a well-formed comment header', () => {
 
 test('base64 chunks without producing padding in the middle', () => {
   // The chunk size is a multiple of three so no boundary lands mid-triplet.
-  // Getting that wrong yields a string that is valid base64 and decodes to
-  // something else, which no player would report as an error - the cover just
-  // does not appear.
+  // Getting it wrong yields valid base64 that decodes to something else -
+  // no error, the cover just doesn't appear.
   for (const n of [0, 1, 2, 3, 12287, 12288, 12289, 40000]) {
     const src = bytes(n);
     const encoded = base64(src);
@@ -267,7 +246,7 @@ test('base64 chunks without producing padding in the middle', () => {
 });
 
 test('base64 of a cover-sized buffer does not overflow the stack', () => {
-  // `String.fromCharCode(...bytes)` on 200 KB is 200,000 arguments in one call,
-  // which throws on every engine. This is the size the chunking exists for.
+  // `String.fromCharCode(...bytes)` on 200KB is 200,000 arguments in one
+  // call, throwing on every engine - the size the chunking exists for.
   assert.doesNotThrow(() => base64(bytes(200 * 1024)));
 });

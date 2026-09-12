@@ -674,6 +674,25 @@
   </div>
 </dialog>
 
+<!-- Link card properties. The name on the chip and the address it points at,
+     edited together or the address copied; filled and read by ui/link-props.js. -->
+<dialog id="link-props" aria-labelledby="lp-title">
+  <h2 id="lp-title">Link properties</h2>
+  <label class="lp-label" for="lp-name">Name</label>
+  <input id="lp-name" class="lp-input" type="text" autocomplete="off" spellcheck="false">
+  <label class="lp-label" for="lp-url">Link</label>
+  <div class="lp-url-row">
+    <textarea id="lp-url" class="lp-input lp-url" rows="1" autocomplete="off"
+              autocapitalize="off" spellcheck="false"></textarea>
+    <button type="button" id="lp-copy" class="lp-copy">Copy</button>
+  </div>
+  <div class="ask-row">
+    <span class="ask-gap"></span>
+    <button type="button" id="lp-cancel">Cancel</button>
+    <button type="button" id="lp-go">Save</button>
+  </div>
+</dialog>
+
 <!-- Viewer: one item full-window. ui/viewer.js dispatches by type into the body.
      Head stays fixed, body scrolls. -->
 <dialog id="viewer" aria-labelledby="viewer-title">

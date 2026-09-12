@@ -1,26 +1,10 @@
-// Tying the board to the world, in one file that knows nothing about either.
+// Ties the board's unitless float coordinates to real-world measurements via
+// one number, `settings.scale` (world units per millimetre — millimetre so
+// every conversion divides rather than multiplies). `settings.units` only
+// picks the display names; it changes no geometry.
 //
-// A board's coordinates are floats with no unit - they always were, and that is
-// the right model for a thing you compose by eye. But a moodboard is very often
-// about objects that exist: prints to hang, cards to lay out, furniture to place
-// against a wall. The question "how big is this actually" had no answer at all.
-//
-// So a board carries one number, `settings.scale`, and it means:
-//
-//     world units per millimetre
-//
-// A millimetre rather than a centimetre or an inch, because it is the finest of
-// the units anyone will ask for, so every conversion out of it divides rather
-// than multiplies and no display value is ever built out of a rounded one. And
-// it is a plain scalar rather than a {value, unit} pair, so the arithmetic
-// everywhere else is a multiply and the choice of unit stays a display question
-// - which is exactly what it is. `settings.units` picks the family of names the
-// numbers are dressed in and changes no geometry whatsoever.
-//
-// Everything here is pure. No DOM, no state import, no board: callers pass the
-// two settings in. That keeps this at the very bottom of the layering, beside
-// util.ts and geometry.ts, so the canvas, the sidebar and the HUD can all reach
-// it without any of them reaching each other.
+// Pure: no DOM, no state, no board — callers pass both settings in. Sits at
+// the bottom of the layering beside util.ts and geometry.ts.
 
 /** The one hard fact in this file. Everything imperial is derived from it. */
 export const MM_PER_INCH = 25.4;

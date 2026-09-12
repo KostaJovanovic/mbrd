@@ -1,93 +1,34 @@
-// Compound File Binary Format: a filesystem in a file, and the thumbnails in it.
-//
-// Before OOXML made a .docx a ZIP, Microsoft's answer to "a document is several
-// things" was a FAT filesystem written inside one file - sectors, an allocation
-// table, a directory of named streams. It is called CFBF, or OLE2, or a Compound
-// File, or a Structured Storage, all for the same thing, and it is still what
-// holds a .doc, a .xls, a .ppt, a .msi, an Outlook .msg, a 3ds Max scene, a
-// SolidWorks part and the Thumbs.db Windows leaves in picture folders.
-//
-// It is worth reading here for one reason: several of those store a rendered
-// thumbnail, and there is no other way to reach it. A .sldprt is otherwise
-// completely opaque, and a moodboard full of grey CAD cards is the case this
-// whole corner of import/ exists to fix.
-//
-// ── What is actually being read ──
-//
-// A 512-byte header, then the file is a run of equal-sized sectors. Three
-// structures matter:
-//
-//   FAT        A chain-per-sector table: entry N holds the number of the sector
-//              following sector N, or a terminator. Reading a stream means
-//              following that chain. The FAT's own sectors are listed in the
-//              DIFAT, the first 109 entries of which live in the header.
-//   Directory  A chain of 128-byte entries, each a name in UTF-16, a type, a
-//              start sector and a length. This is what turns "PreviewPNG" into
-//              an offset.
-//   Mini FAT   Streams under 4096 bytes do not get whole sectors; they live
-//              packed inside one big stream owned by the root entry, indexed by
-//              a second, parallel allocation table. **A thumbnail is very often
-//              under 4096 bytes**, so a reader that skips the mini stream is a
-//              reader that misses exactly the thing it came for.
-//
-// ── The property set, which is the other half ──
-//
-// Where there is no dedicated stream, the thumbnail is a *property* inside
-// `\x05SummaryInformation` - the same place the title and author live. That is a
-// second container format layered on the first: a header, a section, then
-// (id, offset) pairs into typed values. Property 17 is the thumbnail and its type
-// is VT_CF, a clipboard format - which means the bytes are whatever Windows had
-// on its clipboard, usually a metafile and sometimes a bitmap.
-//
-// **That last part is why this family misses more than it hits, and it is not a
-// bug in this file.** A CF_METAFILEPICT is WMF, no browser draws one, and it is
-// declined for the same reason import/document.ts declines docProps/thumbnail.emf.
-// The CF_DIB case works and comes out through import/winimage.ts. So .doc and
-// .xls will often still be grey cards, .sldprt usually will not because
-// SolidWorks writes a real PNG stream, and that difference is the format's
-// rather than the reader's.
+// CFBF / OLE2 compound file reader. Extracts thumbnails from .doc, .xls, .ppt,
+// .sldprt, Thumbs.db, etc. Reads the FAT sector chains, directory, and mini
+// stream. Thumbnails come from either a dedicated stream (PreviewPNG) or the
+// SummaryInformation property set (property 17, VT_CF). WMF thumbnails are
+// declined (no browser draws them); DIB and PNG are returned.
 
 import { dibToBmp, isPng } from './winimage.ts';
 import { oversize, mb } from '../consent.ts';
 
-/** A view whose buffer is named, so a subarray of it stays a legal BlobPart. */
 type Bytes = Uint8Array<ArrayBuffer>;
 
-/** The magic every compound file opens with. */
 const MAGIC = [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
 
-/**
- * How much of one of these will be read.
- *
- * The whole file, because the sector chains jump backwards as often as forwards
- * and walking them against a Blob would be a read per sector. That makes this a
- * real memory cost rather than a nominal one, so it is a ceiling that asks -
- * see the contract in consent.ts.
- */
+// Reads the whole file (chains jump backwards). Liftable ceiling.
 const MAX_FILE = 96 * 1024 * 1024;
 
-/** Caps on the structures themselves. Each is "this file is lying", not a bound. */
+// Sanity caps - past these the file is lying.
 const MAX_SECTORS = 1 << 21;
 const MAX_DIR_ENTRIES = 8192;
 const MAX_CHAIN = 1 << 20;
 
-/** Sector chain terminators. */
 const FREE = 0xFFFFFFFF;
 const END = 0xFFFFFFFE;
 
-/** Directory entry types. */
 const STREAM = 2;
 const ROOT = 5;
 
-/** An open compound file: every stream it holds, by name. */
 export type Compound = {
-  /** A stream's bytes by its exact name, or null. */
   stream(name: string): Bytes | null;
-  /** Every stream name in the file, in directory order. */
   names(): string[];
-  /** Stream names with the sizes the directory declares, for ranking without reading. */
   sizes(): { name: string, size: number }[];
-  /** The first `n` bytes of a stream, reading only the sectors that far reaches. */
   head(name: string, n: number): Bytes | null;
 };
 
@@ -95,17 +36,10 @@ const le16 = (b: Bytes, i: number) => b[i] | (b[i + 1] << 8);
 const le32 = (b: Bytes, i: number) =>
   ((b[i] | (b[i + 1] << 8) | (b[i + 2] << 16)) + b[i + 3] * 0x1000000) >>> 0;
 
-/** Whether these first bytes are a compound file. */
 export const isCompound = (b: Uint8Array) =>
   b.length >= 8 && MAGIC.every((v, i) => b[i] === v);
 
-/**
- * Open `file` as a compound file, or null if it is not one.
- *
- * Throws Oversize past MAX_FILE, which is the ceiling contract: reading one of
- * these means holding all of it, and whether that is worth spending is a question
- * for whoever dropped the file rather than a decision for this module.
- */
+/** Open as compound file. Throws Oversize past MAX_FILE. */
 export async function openCompound(file: Blob, lift = false): Promise<Compound | null> {
   const head = new Uint8Array(await file.slice(0, 8).arrayBuffer());
   if (!isCompound(head)) return null;
@@ -120,7 +54,6 @@ export async function openCompound(file: Blob, lift = false): Promise<Compound |
   return parse(b);
 }
 
-/** The same, for bytes already in hand. */
 export function readCompound(b: Bytes): Compound | null {
   return isCompound(b) ? parse(b) : null;
 }
@@ -128,9 +61,7 @@ export function readCompound(b: Bytes): Compound | null {
 function parse(b: Bytes): Compound | null {
   if (b.length < 512) return null;
 
-  // Sector and mini-sector sizes are stored as powers of two. 512 and 4096 are
-  // the only two shifts any real writer emits, and anything else is a file
-  // describing a geometry this reader would then compute offsets from.
+  // Shifts: 9 (512) or 12 (4096) are the only real values.
   const shift = le16(b, 30);
   const miniShift = le16(b, 32);
   if (shift !== 9 && shift !== 12) return null;
@@ -142,16 +73,10 @@ function parse(b: Bytes): Compound | null {
   const sectors = Math.floor((b.length - 512) / sectorSize);
   if (sectors <= 0 || sectors > MAX_SECTORS) return null;
 
-  /** Where a sector's bytes begin. Sector 0 is the one after the header. */
   const at = (s: number) => 512 + s * sectorSize;
   const valid = (s: number) => s >= 0 && s < sectors;
 
-  // ── The FAT, through the DIFAT ──
-  //
-  // The header carries the first 109 FAT sector numbers; past that they continue
-  // in DIFAT sectors, each of which ends with a pointer to the next. Both are
-  // walked, and both are bounded - a DIFAT that points at itself is the obvious
-  // way to make this loop forever.
+  // Build FAT from header (109 entries) + DIFAT chain.
   const fatSectors: number[] = [];
   for (let i = 0; i < 109; i++) {
     const s = le32(b, 76 + i * 4);

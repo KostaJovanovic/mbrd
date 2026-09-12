@@ -282,8 +282,10 @@ export function defaultSize(type: string): Size {
     // original 96) still clears MIN_SIZE (48); resize grips cover the rest.
     case 'sticker': return { w: 72, h: 72 };
     // Wide and short: an address is a wide thing, and there's no body under it
-    // - a link card is a name, a URL, and nothing else.
-    case 'link':    return { w: 256, h: 106 };
+    // - a link card is a name, a URL, and nothing else. Four cells wide by two
+    // tall (256x128), the card grid floor, so a link is born at its own minimum
+    // rather than a hair under it. See CARD_FLOOR_CELLS in geometry.ts.
+    case 'link':    return { w: 256, h: 128 };
     // Four grid spaces wide, 3:2 tall (256 * 2/3 = 170.67) - the masthead's
     // aspect. Matches TITLE_SIZE in state.ts; CSS holds the visual to exact 3:2.
     case 'title':   return { w: 256, h: 171 };
@@ -1681,6 +1683,20 @@ export function linkURL(text: unknown): URL | null {
   try { u = new URL(s); } catch { return null; }
   if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
   return u.hostname ? u : null;
+}
+
+/**
+ * Parse a typed address. Unlike linkURL(), prepends `https://` when no scheme
+ * is present — intent is unambiguous from an "Add a link" or Properties box.
+ * Lives here beside linkURL so the address parsing has one home; commands.ts
+ * and the Properties dialog (ui/link-props.ts) both read it without either
+ * importing the other.
+ */
+export function linkTyped(text: string): URL | null {
+  const direct = linkURL(text);
+  if (direct) return direct;
+  // Already has a scheme (including mailto: etc.) — don't double-prefix.
+  return /^[a-z][a-z0-9+.-]*:/i.test(text.trim()) ? null : linkURL('https://' + text.trim());
 }
 
 /**

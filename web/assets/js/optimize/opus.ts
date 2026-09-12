@@ -1,21 +1,7 @@
-// Sound, through the browser's own Opus encoder.
-//
-// The browser already has everything this needs and has for years: it decodes
-// FLAC, ALAC, MP3, WAV and AAC through decodeAudioData, and it encodes Opus
-// through WebCodecs. What it will not do is put the result in a file - an
-// AudioEncoder hands back bare Opus packets, and a bare packet stream is not
-// something you can save, name, play or hand to anybody.
-//
-// So the missing piece is a container, and a container is a header format, so
-// it is written here by hand - the same bargain as storage/zip.ts and
-// import/artwork.ts. Ogg is about ninety lines: a page header, a lacing table
-// and a CRC. That is what stands between a 12 MB FLAC and a 3 MB file, and it
-// is a much better trade than thirty megabytes of vendored ffmpeg, which is
-// what this replaces for every sound file on a board.
-//
-// ffmpeg is still what video goes through - see media.ts - because demuxing an
-// MP4 is a different and much larger problem than muxing an Ogg. Sound no
-// longer waits on it.
+// Opus re-encode via WebCodecs + hand-written Ogg container (~90 lines of
+// page headers, lacing, CRC). No ffmpeg needed for sound — decodeAudioData
+// handles all input formats. Video still uses ffmpeg (media.ts) because
+// demuxing MP4 is a much larger problem than muxing Ogg.
 
 import { audioTags, type TagPair } from '../import/artwork.ts';
 

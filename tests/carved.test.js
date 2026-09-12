@@ -1,21 +1,12 @@
 // The five headers that open with a picture (import/carved.ts).
 //
-// Each of these is a length or an offset written by somebody else's exporter, so
-// the tests are about two things: that the honest layout reads, and that a
-// number which does not add up is refused rather than followed. Every fixture is
-// built here - there is no .dwg or .icns to commit, and one produced by AutoCAD
-// would prove that AutoCAD's output reads rather than that the reader is right.
+// Tests that an honest layout reads and a number that doesn't add up is
+// refused. Every fixture is built here - no .dwg or .icns to commit, and
+// AutoCAD's own output would only prove AutoCAD's output reads.
 //
-// **Two paths are deliberately not covered and it is worth saying which.** The
-// .blend preview ends at a canvas (ImageData, OffscreenCanvas) and the EPS
-// preview is handed to the TIFF reader, which is bounded by a Blob. Neither
-// exists in Node and nothing in this suite shims them, which is the same position
-// tests/documents.test.js takes about the XML readers. What is covered here is
-// everything up to that hand-off: the header parse, the bounds, and the refusals.
-//
-// Discipline as everywhere else in this suite: **every refusal is paired with a
-// working fixture asserted first**, because null is the answer to every failure
-// and a test that only asserts null passes on a broken builder too.
+// Not covered: the .blend preview's canvas hand-off and the EPS preview's TIFF
+// reader, neither of which exists in Node (same position as documents.test.js
+// on XML). Every refusal is paired with a working fixture asserted first.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -37,9 +28,8 @@ const ascii = (s) => [...s].map(c => c.charCodeAt(0));
 /**
  * Flatten strings, arrays and typed arrays into one buffer.
  *
- * Sized and copied rather than spread into an array literal: a spread of a
- * hundred-thousand-element payload is an argument list that long, which is a
- * stack overflow rather than a buffer.
+ * Sized and copied rather than spread into an array literal - spreading a
+ * huge payload makes an argument list that long, which overflows the stack.
  */
 function bytes(...parts) {
   const chunks = parts.map(p => (typeof p === 'string' ? new Uint8Array(ascii(p))
@@ -135,8 +125,8 @@ const SENTINEL = [
 /**
  * A .dwg whose header points at a preview section holding `records`.
  *
- * Laid out with the section at a fixed place after the header so the seeker is a
- * real pointer into a real file rather than a number that happens to work.
+ * The section sits at a fixed place after the header so the seeker is a real
+ * pointer into a real file, not a number that happens to work.
  */
 function dwg(records, opts = {}) {
   const version = opts.version ?? 'AC1032';
@@ -274,11 +264,10 @@ test('an uncompressed TIFF preview finds no JPEG in it, which is the usual case'
 /**
  * A .blend header and block list. `pointer` is 4 or 8 bytes.
  *
- * The declared dimensions are separate from the pixels actually written, because
- * that separation is the thing being tested: a file that *claims* 100000 x 100000
- * without carrying the bytes is exactly the input the dimension cap exists for,
- * and a builder that allocated what it declared would run out of memory before
- * the reader was ever called.
+ * Declared dimensions are kept separate from pixels actually written, since a
+ * file claiming 100000x100000 without the bytes is exactly what the dimension
+ * cap exists for - a builder that allocated what it declared would run out of
+ * memory before the reader was ever called.
  */
 function blend(opts = {}) {
   const pointer = opts.pointer ?? 8;

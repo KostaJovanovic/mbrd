@@ -1,12 +1,6 @@
-// A palette read off photographs has to be legible, and "legible" is the one
-// property of it that can be tested rather than looked at.
-//
-// So the bulk of this file is not "does absinthe come out of a green picture" -
-// that is a question about taste and the answer is a screenshot. It is the two
-// things that would ship broken and never be noticed until somebody's board
-// came out unreadable: that every hue on the wheel produces a palette whose ink
-// clears its contrast floor, and that everything the extractor emits actually
-// survives the filter it is about to be passed through.
+// Palette legibility: every hue must clear its contrast floor, and everything
+// the extractor emits must survive the token filter. Taste is a screenshot;
+// legibility is testable.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,9 +9,7 @@ import {
   contrast, extractPalette, hex, huesOf, oklch, paletteFor, paletteFromAccent,
   PALETTE_TOKENS,
 } from '../web/assets/js/ui/pigments.ts';
-// Straight from color.ts rather than through pigments.ts: this is the gamut
-// wall itself, which the bold end is a statement about, and pigments.ts
-// re-exports only the three functions its callers have always reached for.
+// Direct import: maxChroma is not re-exported by pigments.ts.
 import { maxChroma } from '../web/assets/js/color.ts';
 import { TOKENS } from '../web/assets/js/ui/look.ts';
 import { safeVars } from '../web/assets/js/ui/look.ts';
@@ -37,9 +29,7 @@ const apart = (a, b) => { const d = Math.abs(a - b) % 360; return Math.min(d, 36
 // ---------------------------------------------------------------------------
 
 test('sRGB survives a round trip through OKLCh', () => {
-  // Every one of these is in gamut by construction - they came out of sRGB - so
-  // hex() must not have to give up any chroma to get back, and the result has
-  // to be the same colour rather than merely a similar one.
+  // All in-gamut sRGB: must round-trip exactly (within 1 step).
   for (const c of ['#000000', '#ffffff', '#c25c2b', '#1f7a72', '#7d8f3c',
                    '#b4574f', '#372a1d', '#fbf8f1', '#0000ff', '#ffff00']) {
     const { L, C, h } = oklch(...[1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16)));
@@ -53,15 +43,12 @@ test('sRGB survives a round trip through OKLCh', () => {
 test('contrast agrees with the values everybody knows', () => {
   assert.equal(+contrast('#ffffff', '#000000').toFixed(2), 21);
   assert.equal(+contrast('#777777', '#777777').toFixed(2), 1);
-  // The canonical AA boundary colour pair, to catch a luminance formula that is
-  // subtly wrong rather than obviously wrong.
+  // AA boundary pair: catches a subtly wrong luminance formula.
   assert.ok(Math.abs(contrast('#767676', '#ffffff') - 4.54) < 0.02);
 });
 
 test('a hue too vivid for sRGB loses chroma, not hue or lightness', () => {
-  // L 0.6 at chroma 0.4 is far outside sRGB for every hue. What comes back must
-  // still be that lightness and that hue - the whole repair pass downstream is a
-  // statement about lightness, and a gamut clip that moved it would undo it.
+  // L 0.6, C 0.4 is out of sRGB. Gamut clip must preserve L and h.
   for (let h = 0; h < 360; h += 30) {
     const got = oklch(...[1, 3, 5].map(i => parseInt(hex(0.6, 0.4, h).slice(i, i + 2), 16)));
     assert.ok(Math.abs(got.L - 0.6) < 0.02, `hue ${h} came back at L ${got.L}`);
@@ -83,8 +70,7 @@ test('a solid colour votes for its own hue', () => {
 
 test('greys and near-blacks and near-whites do not vote', () => {
   assert.deepEqual(huesOf([block('#808080'), block('#3a3a3a'), block('#f2f2f2')]), []);
-  // Black and white are not merely low-chroma, they are outside the lightness
-  // window - a separate branch, and one that would happily return a hue.
+  // Black/white: outside lightness window, separate branch.
   assert.deepEqual(huesOf([block('#000000'), block('#ffffff')]), []);
 });
 
@@ -99,8 +85,7 @@ test('two distinct colours give two hues, and near neighbours give one', () => {
   assert.equal(two.length, 2, `got ${two}`);
   assert.ok(apart(two[0], two[1]) >= 40);
 
-  // Two greens a few degrees apart are one colour with variation in it, and a
-  // palette that spent two slots on them would say the same thing twice.
+  // Near-neighbours merge: two greens a few degrees apart are one slot.
   const one = huesOf([block('#7d8f3c'), block('#849439')]);
   assert.equal(one.length, 1, `got ${one}`);
 });
@@ -108,34 +93,27 @@ test('two distinct colours give two hues, and near neighbours give one', () => {
 test('never more than three hues, however many colours are in the picture', () => {
   const many = ['#c25c2b', '#1f7a72', '#7d8f3c', '#4050c0', '#b03a8a', '#d8c020'];
   const hues = huesOf(many.map(c => block(c)));
-  // Both ends. `<= 3` alone is satisfied by zero, which is the other way this
-  // can be wrong and the more likely one: six strongly coloured pictures that
-  // produce no hue at all is a broken extractor, not a restrained one.
+  // Both ends: zero hues from six coloured pictures is equally wrong.
   assert.ok(hues.length >= 1, 'six coloured pictures produced no hue at all');
   assert.ok(hues.length <= 3, `got ${hues.length}: ${hues}`);
 });
 
 test('a grey screenshot with one stray coloured pixel does not vote', () => {
-  // From a real board. A dark interface screenshot had exactly one pixel above
-  // the neutral floor, and one-picture-one-vote handed it the same say as a
-  // spectrogram with 771 - so a single olive pixel took the accent and coloured
-  // the whole app. A picture has to be a coloured picture to vote like one.
+  // Regression: one olive pixel in a grey screenshot took the accent.
   const grey = block('#3a3a3a', 2303);
   const stray = new Uint8ClampedArray(grey.length + 4);
   stray.set(grey);
   stray.set([0x87, 0x7e, 0x33, 255], grey.length);
   assert.deepEqual(huesOf([stray]), [], `one pixel voted: ${huesOf([stray])}`);
 
-  // And the real board it came from: rose and magenta pictures outvote it, and
-  // the palette is theirs rather than the stray pixel's.
+  // Rose/magenta pictures should outvote the stray pixel.
   const real = huesOf([stray, block('#b0417f', 2304), block('#c25c4a', 2304)]);
   assert.ok(real.length > 0, 'two strongly coloured pictures produced no hue');
   assert.ok(real.every(h => apart(h, 102) > 30), `the stray hue survived: ${real}`);
 });
 
 test('a small vivid thing outvotes a large washed-out one', () => {
-  // The grey street with one red door. By pixel count the street wins twenty to
-  // one; by what anybody would call the colour of the picture, the door does.
+  // Grey street, red door: vivid pixels outvote grey ones.
   const hues = huesOf([block('#b9b2a8', 4000), block('#d81e2c', 200)]);
   const red = oklch(0xd8, 0x1e, 0x2c).h;
   assert.ok(hues.length && apart(hues[0], red) < 12, `got ${hues}`);
@@ -146,10 +124,7 @@ test('a small vivid thing outvotes a large washed-out one', () => {
 // ---------------------------------------------------------------------------
 
 test('every hue on the wheel produces a legible palette', () => {
-  // The one property that must hold for colours nobody chose. Stepped finely
-  // enough to land inside the yellows and cyans, which are where lightness runs
-  // out of gamut before it runs out of range and the repair pass has to give up
-  // and flip the label instead.
+  // Fine step catches yellows and cyans where gamut runs out early.
   for (let h = 0; h < 360; h += 3) {
     const v = paletteFor([h]);
     const paper = v['--paper'];

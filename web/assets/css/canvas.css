@@ -1,50 +1,23 @@
-/* ---------------------------------------------------------
-   Canvas
-   --------------------------------------------------------- */
+/* === Canvas === */
 
 #viewport {
   position: fixed;
   inset: 0;
-  /* Pointer Events only - the browser must never claim a pan/pinch for itself. */
+  /* All gestures are ours. */
   touch-action: none;
-  /* Nor a *selection*. A long press on the board opens this app's own context
-     menu (canvas/input.ts), and a long press is also how iOS starts a text
-     selection - so the gesture did both, and because the board surface is one
-     fixed element behind everything, what the system reached for was the whole
-     screen. The card was already covered (.item in items.css); the ground it
-     sits on was not, which is the half nobody presses on purpose.
-     The callout menu is turned off beside this, in mobile.css, under the same
-     reasoning and the same gesture.
-     Safe against the editable note: a contenteditable is selectable whatever an
-     ancestor says here, which is why .item has carried this rule all along. */
+  /* Long-press on iOS starts text selection on the whole surface; contenteditable
+     children are exempt and keep their selection. */
   -webkit-user-select: none;
   user-select: none;
   cursor: default;
-  /* And the exception, stated rather than assumed - see the rule below. */
+  /* Stated, not assumed — see contenteditable override below. */
   overflow: hidden;
   background-color: transparent;   /* the paper on <body> shows through */
   background-repeat: repeat;
   contain: layout paint;
 }
-/* The board's editable surfaces, given their selection back explicitly.
- *
- * Three of them, all inside #viewport and all made editable from script rather
- * than in the markup: a card's name (canvas/items.ts), a note's text
- * (canvas/notes.ts) and the board title (ui/board-title.ts). The first two sit
- * inside `.item`, which has carried `user-select: none` since long before the
- * rule above existed and has been fine - which is the evidence that a
- * contenteditable is exempt from an inherited `none`, and it is *only* evidence.
- * The specification does not promise it, engines have disagreed about it, and
- * the board title is not inside `.item` at all, so the rule above is what newly
- * reached it.
- *
- * A caret that will not select is the kind of fault nobody reports as a bug -
- * it reads as the app being awkward - so this says the thing out loud instead of
- * relying on a behaviour that happened to hold. `text`, not `auto`: auto would
- * inherit the `none` straight back.
- *
- * Both spellings, because WebKit wanted the prefix until Safari 17 and this is
- * one of the rules least worth losing there. */
+/* Restore selection on editable surfaces. `text`, not `auto` (auto inherits
+   `none` back). Both spellings for WebKit < 17. */
 #viewport [contenteditable="true"],
 #viewport [contenteditable="plaintext-only"] {
   -webkit-user-select: text;
@@ -53,17 +26,13 @@
 
 #viewport.is-panning { cursor: grabbing; }
 #viewport.can-pan    { cursor: grab; }
-/* A card held mid-drag. #viewport captures the pointer, so the grabbing hand has
-   to be set here rather than on .item - the captured element owns the cursor. */
+/* #viewport captures the pointer, so the cursor must be set here. */
 #viewport.is-moving  { cursor: grabbing; }
-/* Over a connection line: a pointer, so it reads as clickable. After can-pan so
-   it wins the tie when both are set; web.ts drops the class the moment a pan or
-   drag starts, so it never fights the grabbing cursor those bring. */
+/* Over a connection line. After can-pan so it wins the tie. */
 #viewport.over-connection { cursor: pointer; }
 
-/* The one transformed layer. Sits at the viewport centre so world (0,0) is the
-   centre of the screen at pan (0,0); viewport.ts writes the transform and --iz
-   (= 1/zoom), which item chrome multiplies by to stay a constant screen size. */
+/* The one transformed layer. (0,0) at viewport centre; viewport.ts writes the
+   transform and --iz (= 1/zoom) for constant-screen-size item chrome. */
 #world {
   position: absolute;
   left: 50%;
@@ -71,145 +40,33 @@
   width: 0;
   height: 0;
   transform-origin: 0 0;
-  /* Promoted, and permanently.
-
-     This was briefly moved onto .is-viewing - promote for the gesture, demote
-     140ms after it stops - on the reasoning that a permanently composited layer
-     is rasterised once and then *scaled*, so every one-pixel line on the board
-     is resampled rather than redrawn. The premise is true. The conclusion is
-     backwards, because toggling the property does not avoid that resample: it
-     adds two full re-rasters of the whole board to every interaction, one when
-     the layer is created and one when it is thrown away. Each of them lands
-     every hairline on a different pixel phase, so every edge on screen changes
-     weight twice per pan, twice per wheel notch, twice per pinch - which is the
-     flicker the change was meant to cure, made periodic and tied to the pointer.
-
-     A uniformly soft line beats a line that redraws itself whenever the board is
-     touched. So: promoted for good. The compositor keeps a pan at sixty frames,
-     the resample is the same for every card because every card goes through the
-     same transform, and nothing re-rasters merely because a class went on or
-     off. */
+  /* Permanently promoted. Toggling it on/off added two full re-rasters per
+     interaction and made every hairline flicker. A uniform resample is better. */
   will-change: transform;
   --iz: 1;
-  /* A hairline stays a hair, at every zoom - and stays the *token's* hair, so a
-     look can still set it.
-
-     --hairline is 1px, and that is right on the screen: a panel rule sits on the
-     window and one CSS pixel is one CSS pixel. Inside here it is not, because
-     everything in #world is drawn *before* the layer transform and then scaled
-     by it - so at zoom 0.5 a one-pixel ring is asked to paint half a device
-     pixel, and each of the four edges rounds on its own depending on where it
-     lands on the pixel grid. The symptom does not look like a rounding problem:
-     a card comes out with a left and a top border and no right or bottom, its
-     neighbour two hundred units away comes out whole, and both change their
-     minds as you pan. Nothing is inconsistent - each edge is independently
-     either side of a boundary.
-
-     Multiplying by --iz (= 1/zoom) makes it one *screen* pixel instead, which is
-     the whole meaning of the word: the same thing canvas/web.ts asks the browser
-     for with vector-effect: non-scaling-stroke - "a thread, not a beam" - and
-     what canvas/grid.ts gets for free by painting in screen space. It also
-     settles what a border does when you zoom *in*, which was never decided so
-     much as inherited: a ring that scaled reached four device pixels at 4x,
-     which is a frame around a card rather than a hairline on it.
-
-     Under its own name rather than by redeclaring --hairline here, and that
-     distinction is worth the extra name. --hairline is on the TOKENS list in
-     ui/look.ts, so a .mbrd may set it inline on :root - and #world is a
-     descendant of :root, so a declaration on this selector outranks anything an
-     author writes and silently takes the control away from everything on the
-     board. It is the same trap the [data-snap] rule in items.css names for
-     --tilt-max. Derived, it keeps working: a look that asks for a two-pixel
-     hairline gets two screen pixels out here.
-
-     Only the *width* is derived, and that is the whole of the scope. A card's
-     inner rule sits at a gap that stays in world units, and .card::after in
-     items.css says why.
-
-     --iz is quantised to 8% rungs while the board is moving (IZ_STEP in
-     canvas/viewport.ts) and written exact the moment it stops, so a line drawn
-     from it sits within a twelfth of a pixel of its settled weight during a
-     gesture - under the resample a moving layer is already doing. That is why
-     nothing here reaches for an unquantised copy of it: publishing one would be
-     a custom-property write on #world on every frame, which invalidates the
-     computed style of every card on screen. It is the exact cost IZ_STEP exists
-     to avoid, and it would be spent correcting something nobody can see. */
+  /* A hairline in world space scales with zoom, so 1px at 0.5x paints half a
+     device pixel and edges vanish unevenly. * --iz makes it one *screen* pixel.
+     Own name, not --hairline, because --hairline is a look token a .mbrd may
+     set — redeclaring it here would silently override the board's say. */
   --board-hairline: calc(var(--hairline) * var(--iz));
-  /* One physical pixel, expressed in CSS pixels. Read by the Harsh override
-     below; nothing else on the board wants it.
-
-     --dpr is published on this element by canvas/viewport.ts and refreshed on
-     resize. On a 1x or 2x display it says nothing new: a 1px hairline is one or
-     two whole device pixels already. On the fractional scalings Windows hands
-     out - 125%, 150% - it is the difference between a line and a smear, because
-     1 CSS px is then 1.25 or 1.5 device pixels and a line one and a quarter
-     pixels wide has a quarter-pixel of grey down one side of it *wherever* it
-     lands. */
+  /* One physical pixel in CSS pixels. Matters on fractional DPR (125%, 150%)
+     where 1 CSS px is 1.25 or 1.5 device px — read by the Harsh override below. */
   --device-px: calc(1px / var(--dpr, 1));
 }
 
-/* Harsh, and Harsh alone, rounds the hairline down to a whole device pixel.
-
-   Rounding it is what lets deviceSnap() below deliver an edge with a hard
-   boundary at *both* ends rather than only at the near one, and at this tier
-   that is worth almost any price: --item-shadow is none and --item-border is
-   full-strength ink, so the ring is not part of the card's elevation, it *is*
-   the elevation, and it is the only thing on the screen.
-
-   It was briefly on #world, for every tier, and that was the mistake this rule
-   exists to undo. On a 150% display the floor takes a 1px line to 0.667px - a
-   third of its coverage - and at Middle and Softish the line it takes it from is
-   --item-border at 16% ink and .card::after in a pale --rule, with a drop shadow
-   already carrying the elevation. A third off full-strength ink reads as crisper.
-   A third off a pale line reads as the border having gone. Both tiers lost their
-   card edges to this, at every zoom, and the tier it was written for could not
-   show the damage because it is the one tier with no pale line on it.
-
-   So: crispness where the edge is the whole design, weight everywhere else. The
-   floor under the round keeps it from vanishing if a look asks for a hairline
-   finer than the screen can draw, and this is still derived from --hairline, so
-   a .mbrd setting that token keeps its say. */
+/* Harsh only: round hairline to whole device pixels. At other tiers the line
+   is pale with a drop shadow — rounding down loses a third of its coverage and
+   the border disappears. Here the border IS the elevation. */
 :root[data-whimsy="2"] #world {
   --board-hairline: calc(max(var(--device-px), round(down, var(--hairline), var(--device-px))) * var(--iz));
 }
 
-/* A one-pixel line is a width and a *position*, and the stylesheet only owns the
-   width. This is the half it does not own, written here because this is where
-   anyone chasing an uneven border will come looking.
+/* Sub-pixel positioning: the fix is deviceSnap() in canvas/items.ts, which
+   nudges cards onto whole device pixels. Requires whole-px width (above) and
+   no rotation (Harsh stands cards up — see quality.css). */
 
-   A line drawn inside this layer lands at (world coordinate x zoom) + pan. The
-   zoom is fractional, the pan is fractional, and an item's own coordinates are
-   fractional - so a card's four edges land at four unrelated positions *between*
-   device pixels. The width is exactly one pixel; what varies is how that pixel
-   is split across the two rows it straddles. An edge at 0.9/0.1 reads as a black
-   hairline and the one on the other side of the same card at 0.5/0.5 reads as
-   two rows of grey - same width, half the weight, twice the apparent thickness.
-   At Middle a drop shadow hides all of it. At Harsh, where the ring is the whole
-   card, it is the only thing on the screen.
-
-   Making the line thicker hides it and is not a fix - it trades an uneven hair
-   for an even beam, which is the wrong object. That was tried here and taken out.
-
-   The fix is to move the *card* onto the grid, and it lives in canvas/items.ts:
-   deviceSnap() nudges each item by under a pixel so its drawn box lands on whole
-   device pixels, on the settle pass rather than per frame. Same principle
-   canvas/grid.ts and canvas/paper.ts already work on - see the note on #paper
-   below, "a page edge is one device pixel at every zoom or it is not a drawn
-   edge" - applied to items, which are the one thing on the board that could not
-   simply be moved out of the transform.
-
-   Two things have to hold for it to mean anything, and both are arranged
-   elsewhere: the width has to be a whole number of device pixels (--device-px,
-   above) and the card must not be rotated, since a leaning edge crosses pixel
-   rows along its own length and has no crisp case at any position. That is why
-   Harsh stands its cards up - see quality.css. */
-
-/* Every item shadow is painted here, below every item.
-
-   A box-shadow on .item belongs to that item's stacking context, so a card in
-   front necessarily casts over the face of a card behind it. Geometry twins in
-   this shared underlay preserve the same silhouette while keeping the complete
-   item stack above the complete shadow stack. */
+/* Shared shadow underlay — twins of every item so shadows never cast over
+   the face of a card behind. Complete shadow stack stays below the item stack. */
 #item-shadows {
   position: absolute;
   inset: 0;
@@ -224,24 +81,17 @@
   border-radius: var(--own-radius);
   box-shadow: var(--item-shadow);
   rotate: calc(var(--item-tilt, 0) * var(--tilt-max));
-  /* The twin follows the card's hover/drag lift so it never slides out from
-     under it as a second card - the reveal Softish's spring used to show. The
-     card's own lift is in items.ts via translate/scale on the .item; these
-     mirror it with the same tokens and the same spring. is-hover / is-selected
-     are toggled onto the twin from items.ts alongside the card. */
+  /* Mirrors the card's hover/drag lift so the shadow never slides out. */
   translate: 0 calc(var(--sh-lift, 0px) * var(--iz));
   scale: var(--sh-grow, 1);
-  /* opacity is here for the tag filter, which fades the twin with its card. It
-     belongs in this list rather than in a `transition: opacity` of its own,
-     which is a shorthand and would replace the three springs above it. */
+  /* opacity in this list (not a separate shorthand) for the tag-filter fade. */
   transition: translate var(--dur-base) var(--ease-back),
               scale var(--dur-base) var(--ease-back),
               rotate var(--dur-base) var(--ease-back),
               opacity var(--dur-base) var(--ease);
 }
 .item-shadow.is-hover { --sh-lift: var(--lift-hover); --sh-grow: var(--grow-hover); }
-/* A selected card holds still under the pointer (its grips must not move), so
-   its twin does too - matches .item.is-selected:not(.is-dragging):hover. */
+/* Selected card holds still (grips must not move). */
 .item-shadow.is-hover.is-selected { --sh-lift: 0px; --sh-grow: 1; }
 .item-shadow.is-dragging { --sh-lift: var(--lift-drag); --sh-grow: var(--grow-hover); }
 .item-shadow[data-type="note"] {
@@ -250,14 +100,8 @@
 }
 :root[data-snap] .item-shadow { rotate: 0deg; }
 
-/* The lattice layer: the Harsh crosses are drawn on it and the other two tiers
-   tile their dots onto it as a background image, so it is either the whole grid
-   or nothing, never a second layer under one.
-   Sized in device pixels by canvas/grid.ts and stretched back to CSS pixels,
-   which is what lets a mark be snapped to the device grid rather than to a CSS
-   pixel that may be two thirds of one. The box below is only where it starts:
-   canvas/grid.ts writes left/top/width/height on every paint, because on a
-   Mobile board the layer is the board rather than the window - see inkBox(). */
+/* Grid lattice. Sized in device pixels by canvas/grid.ts and stretched to CSS
+   pixels so marks snap to the device grid. Position/size written per paint. */
 #grid-ink {
   position: absolute;
   inset: 0;
@@ -266,11 +110,8 @@
   pointer-events: none;
 }
 
-/* The paper outline, positioned in screen space by canvas/paper.ts for the same
-   reason the axes are: a border inside the transformed #world would be scaled
-   by the zoom, and a page edge is one device pixel at every zoom or it is not a
-   drawn edge. The faint fill is what makes it read as a surface rather than as
-   four more rules on a board that already has plenty. */
+/* Paper outline in screen space (canvas/paper.ts) — a border inside the
+   transform would scale with zoom and stop reading as a drawn edge. */
 #paper {
   position: absolute;
   border: var(--hairline) solid var(--sheet-line);
@@ -278,13 +119,8 @@
   pointer-events: none;
 }
 
-/* The four corner grips, which is how the board's scale is actually set: drag
-   an A4 until it looks right against the photographs, and the scale follows
-   from where you let go. See canvas/paper.ts.
-
-   pointer-events go back on for these alone - the sheet itself must stay
-   transparent to the pan, the marquee and every card sitting on it, and only
-   these four squares are allowed to intercept anything. */
+/* Corner grips for dragging the paper scale. pointer-events:auto on these
+   alone — the sheet itself must stay transparent to pan and marquee. */
 .paper-grip {
   position: absolute;
   width: var(--sheet-grip);
@@ -307,24 +143,18 @@
     transform: scale(1.25);
   }
 }
-/* Placed by their own corner so the margin above centres each one on the edge
-   it belongs to, rather than hanging off it. */
+/* Centred on each corner by the negative margin above. */
 .paper-grip[data-grip="nw"] { left: 0; top: 0; cursor: nwse-resize; }
 .paper-grip[data-grip="ne"] { left: 100%; top: 0; cursor: nesw-resize; }
 .paper-grip[data-grip="sw"] { left: 0; top: 100%; cursor: nesw-resize; }
 .paper-grip[data-grip="se"] { left: 100%; top: 100%; cursor: nwse-resize; }
-/* A sheet too small on screen for four separate targets. The outline stays -
-   it is legible as a rectangle long before it is grabbable - and only the
-   handles go, rather than the whole thing disappearing at a zoom threshold. */
+/* Too small on screen for separate targets — outline stays, handles go. */
 #paper.no-grips .paper-grip { display: none; }
 
-/* Held for the length of the drag, so the resize cursor survives the pointer
-   leaving the eleven pixels it started in - which it does immediately. */
+/* Held for the drag so the cursor survives leaving the grip. */
 :root.is-sizing-paper,
 :root.is-sizing-paper * { cursor: nwse-resize !important; }
-/* Outside the sheet, above its top-left corner, so it labels the edge without
-   sitting on the area the edge is drawn to enclose - the one part of the board
-   that has to stay clear for what is being laid out on it. */
+/* Above the sheet's top-left corner, out of the enclosed area. */
 #paper-label {
   position: absolute;
   bottom: 100%;
@@ -337,11 +167,7 @@
   white-space: nowrap;
 }
 
-/* World axes, drawn in screen space so they stay hairline at any zoom - and on
-   a canvas, in whole device pixels, so a hairline is a hairline rather than a
-   fraction of a row the rasteriser is free to round away. canvas/grid.ts draws
-   it; index.html says why it is not two <div>s. Sized in device pixels there
-   and stretched back to CSS ones here, exactly like #grid-ink. */
+/* World axes in screen space, device-pixel-snapped. See canvas/grid.ts. */
 #axis-ink {
   position: absolute;
   inset: 0;
@@ -350,16 +176,8 @@
   pointer-events: none;
 }
 
-/* Mobile is a finite, content-sized selected-width strip. canvas/mobile-frame.ts
-   keeps these screen-space edges aligned with its live world bounds as the
-   window and the lowest item change.
-   The four dashed rules that used to trace those edges - two down the sides,
-   one along the head and one along the foot - are gone. The lattice now stops
-   at the board (see inkBox() in canvas/grid.ts), so the edge is already drawn
-   by the dots ending: a ruled line over the top of that is the same statement
-   made twice, in the heavier of the two hands. What remains is the difference
-   in tone between the sheet and the surround, which is what says "off the
-   board" without drawing anything at all. */
+/* Mobile board strip. The tone difference between sheet and surround marks
+   the edge — the lattice stops at the board (inkBox() in canvas/grid.ts). */
 
 /* That difference in tone, as a layer of its own.
    It was a `box-shadow: 0 0 0 100vmax` on the sheet below, and as a picture

@@ -1,32 +1,17 @@
 // The oldest engine this code may be written for, enforced.
 //
-// research/docs/browser-support.md names a compatibility floor. Nothing checked
-// it, and the cost of that was not a missing nicety - it was one regular
-// expression.
+// research/docs/browser-support.md names a compatibility floor; nothing
+// checked it, and the cost was one regex: `ui/markdown.ts` used a lookbehind
+// unsupported before Safari 16.4, an early SyntaxError that fails to parse
+// the whole bundle before any line runs - no board, no error, every graceful
+// degradation unreachable because nothing got as far as running.
 //
-// `ui/markdown.ts` split a table row on `/(?<!\\)\|/`. WebKit gained lookbehind
-// assertions in Safari 16.4, and an unsupported regex literal is an **early**
-// SyntaxError: the engine refuses to parse the file containing it before a line
-// of it runs. That module is imported by ui/feed.ts and ui/viewer.ts, both of
-// which main.ts imports, and esbuild concatenates the whole tree into one
-// assets/app.js. So a single expression meant the entire application failed to
-// parse on every iOS below 16.4 - no board, no error, a splash screen that
-// never lifted. Every graceful degradation written for older engines (the
-// capability toast in main.ts, the guarded OffscreenCanvas paths, the
-// uncompressed-ZIP write path) was unreachable, because nothing ever got as far
-// as running.
+// A guarded API degrades; a syntax the parser doesn't know takes the whole
+// bundle down silently. So the constructs below are checked as text on every run.
 //
-// The lesson is the shape of the failure rather than the feature. A guarded API
-// degrades; a syntax the parser does not know takes the whole bundle with it,
-// and it does so silently on the one engine nobody has open. So the constructs
-// below are checked as text, in the source, on every run.
-//
-// ── Adding to the table ──
-//
-// Put the Safari version beside it. If a construct here becomes safe because
-// the floor moved, move the floor in browser-support.md and delete the row -
-// those two edits belong in one commit, which is the whole point of naming the
-// floor here rather than describing it.
+// Adding a row: put the Safari version beside it. If a construct becomes
+// safe because the floor moved, move the floor in browser-support.md and
+// delete the row in the same commit.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -39,10 +24,9 @@ const FLOOR = 15.0;
 /**
  * Constructs that need a newer Safari than the floor, as text.
  *
- * `parse` marks the ones that take the whole bundle down rather than throwing
- * where they are used - the distinction this file exists to draw. A runtime
- * built-in can be feature-detected and worked around at the call site; a syntax
- * error cannot be worked around at all.
+ * `parse` marks the ones that take the whole bundle down rather than
+ * throwing where used: a runtime built-in can be feature-detected and
+ * worked around; a syntax error cannot be worked around at all.
  */
 const BANNED = [
   { safari: 16.4, parse: true, name: 'regex lookbehind', re: /\(\?<[=!]/ },
@@ -57,16 +41,12 @@ const BANNED = [
 ];
 
 /**
- * The source with its prose taken out.
+ * The source with its prose taken out. Every module argues its own design at
+ * the top, sometimes about the very constructs above (this file included),
+ * so a scan that read comments could fail on the explanation itself.
  *
- * Every module in this codebase argues its own design at the top, and several
- * of those arguments are *about* the constructs above - this file included. A
- * scan that read comments would fail on the note explaining why the thing it is
- * looking for is not there.
- *
- * Block comments go wholesale. Line comments only where one starts the line,
- * which is this codebase's style throughout and is the reading that cannot
- * swallow the `//` in a URL sitting inside a string.
+ * Block comments go wholesale; line comments only where one starts the
+ * line, which can't swallow a `//` inside a string.
  */
 const code = (text) => text
   .replace(/\/\*[\s\S]*?\*\//g, '')
@@ -99,11 +79,10 @@ test('no module uses a construct newer than the stated floor', () => {
   assert.deepEqual(found, [], `constructs above the Safari ${FLOOR} floor:\n${found.join('\n')}`);
 });
 
-// The bundle is committed and is what visitors are actually served (wrangler
-// serves ./web statically), so it is worth checking on its own terms rather
-// than trusting that it was rebuilt. Minification removes the comments, so this
-// needs none of the stripping above - and a hit here means the committed bytes
-// are broken even if the source has been fixed.
+// The bundle is committed and is what visitors are served (wrangler serves
+// ./web statically), so it's worth checking directly rather than trusting a
+// rebuild. Minification removes comments, so no stripping needed here - a
+// hit means the committed bytes are broken even if the source is fixed.
 test('the committed bundle carries nothing above the floor either', () => {
   const bundle = readFileSync('web/assets/app.js', 'utf8');
   const found = BANNED

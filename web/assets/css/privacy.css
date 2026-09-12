@@ -1,46 +1,7 @@
 /* =========================================================
    mbrd - the privacy page
 
-   An external sheet rather than a <style> block in privacy.html, and that is a
-   policy decision rather than a preference: style-src is 'self' plus two
-   hashes and carries no 'unsafe-inline', so an inline block would need a third
-   hash in web/_headers and an entry in tests/csp.test.js, and would then break
-   the deploy silently on any edit that changed one character of it. A file
-   costs one request and none of that. See the style-src section of _headers.
-
-   It loads tokens.css and nothing else of the app's. The page is a document,
-   not the app: base.css pins the app to the window with everything fixed
-   inside it, which is exactly wrong for something you scroll and read - the
-   same reason patch.css exists.
-
-   ── It is the changelog's page, drawn from scratch ──
-
-   /patch and /privacy are the only two documents on this site, and two
-   documents that look like two sites is the thing worth avoiding here - so
-   everything below is patch.css's shape under a pv- prefix: the sticky pill
-   back to the board, the display title over a lede and a tracked line of
-   facts, the plates down a spine with a mark on it and the subject of each in
-   the margin, the rule-topped foot. The tokens are doing all of it, which is
-   why so few numbers appear below.
-
-   Not shared with patch.css, and deliberately: that file's first forty lines
-   are about putting a running board away and scrolling inside an app pinned to
-   the window, and none of that exists here. What is common between them is a
-   handful of shapes, and a shape is cheaper to restate than a dependency
-   between a document that boots the app and one whose whole claim is that it
-   does not.
-
-   ── One tier, not three ──
-
-   No whimsy dial here and no pre-paint restore script, which means :root
-   carries no data-whimsy - and tokens.css is written so that an unset
-   data-whimsy and data-whimsy="1" are the same thing, so the page renders in
-   the middle of the axis for everyone. That is why there is no scrapbook block
-   and no spec-sheet block below, unlike patch.css: a :root[data-whimsy="0"]
-   selector on this page would never match anything. It is also the right
-   choice for a document that is mostly read once - the scrapbook tier tilts
-   and tapes things, which is charming on a board and wrong on a page about
-   what happens to your files.
+   External (CSP hash). Loads tokens.css only. pv- prefix, whimsy 1 always.
    ========================================================= */
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -53,21 +14,13 @@ body {
   font-size: var(--t-body);
   line-height: 1.62;
   text-wrap: pretty;
-  /* The containing block for the grain below, which is the height of the page
-     and not the height of the window. min-height keeps a page shorter than the
-     screen covered to the foot. */
+  /* Containing block for the grain; min-height covers short pages. */
   position: relative;
   min-height: 100vh;
   background-attachment: scroll;
 }
 
-/* The stock, and what makes this paper rather than a background colour. Same
-   tile, same blend and the same dial as #grain in base.css and as the
-   changelog's own, so the two documents are printed on the same stuff.
-
-   Absolute rather than fixed, so the tooth runs the length of the sheet and
-   travels with it. Fixing it makes one screen of texture that the prose slides
-   over, which is a backdrop rather than the stock the page is printed on. */
+/* Paper grain. Absolute so the texture scrolls with the page. */
 body::before {
   content: "";
   position: absolute;
@@ -81,15 +34,13 @@ body::before {
   opacity: calc(0.8 * var(--grain));
 }
 
-/* Over the grain, and nothing more than that - the body scrolls the way a
-   document does, so this is only a stacking context. */
+/* Stacking context above the grain. */
 .pv {
   position: relative;
   z-index: 1;
 }
 
-/* The measure, and the same one the changelog uses - 880 with the margin
-   column inside it, not beside it. */
+/* The measure, matching the changelog's 880. */
 .pv-inner {
   max-width: 880px;
   margin: 0 auto;
@@ -100,16 +51,8 @@ body::before {
    The way back
    --------------------------------------------------------- */
 
-/* Sticky rather than fixed, and inside the column rather than over the window:
-   it rides the measure, so it cannot be somewhere different on a phone. It has
-   to be opaque and it has to outrank the plates, because a sticky element with
-   a transparent ground is a word with a privacy notice scrolling through it -
-   hence the card paper and the z-index.
-
-   One step larger than the changelog's, at --t-body rather than --t-small: on
-   /patch the app's own menu button is in the corner and this pill is the
-   second way out, while here it is the only control on the page and reads as a
-   footnote at small. */
+/* Sticky pill. Opaque to prevent content scrolling through it.
+   Larger than /patch's pill: this is the only control on the page. */
 .pv-back {
   position: sticky;
   top: 14px;
@@ -137,11 +80,10 @@ body::before {
 .pv-back:hover {
   color: var(--accent-deep);
   border-color: var(--accent-text);
-  /* Towards the board, which is the direction the arrow is pointing. */
+  /* Towards the board. */
   translate: -2px 0;
 }
-/* The arrow rides in the body face: the display face sets it as an italic
-   glyph leaning away from the direction it means. */
+/* Body face: the display italic leans the arrow the wrong way. */
 .pv-arrow {
   font-family: var(--font-body);
   font-style: normal;
@@ -153,18 +95,13 @@ body::before {
 
 .pv-head { margin-bottom: clamp(38px, 7vw, 70px); }
 
-/* Struck from --t-display rather than written as a number, so it moves with a
-   look that changes the display scale. Same rule as the changelog's title, and
-   the two pages should sit at the same height. */
+/* Matches the changelog's title height. */
 .pv-title {
   margin: 0;
   font-family: var(--font-display);
   font-size: clamp(var(--t-display), 8vw, calc(var(--t-display) * 2.1));
   font-weight: var(--display-weight);
-  /* Tracking that follows the clamp, argued at .pn-title in patch.css. It is
-     here rather than only there because of the line above this rule: the two
-     titles are supposed to sit at the same height, and that only stays true if
-     both take the same change. */
+  /* Tracking that follows the clamp; must match .pn-title in patch.css. */
   letter-spacing: calc(clamp(-0.02em, 0.03em - 0.09vw, 0.01em) * var(--ls-scale));
   line-height: 1.04;
   color: var(--ink);
@@ -177,9 +114,7 @@ body::before {
   color: var(--ink-2);
 }
 
-/* The changelog states three counts here; this page states three absences and
-   a date. Divided by hairlines rather than by punctuation, the same join the
-   sidebar makes between its own sections. */
+/* Three absences and a date, divided by hairlines like the sidebar. */
 .pv-tally {
   display: flex;
   flex-wrap: wrap;
@@ -198,11 +133,7 @@ body::before {
 }
 
 /* ---------------------------------------------------------
-   The spine
-
-   The margin cells of consecutive sections touch, so one border down their
-   right-hand side draws a single line the length of the page with no element
-   of its own. Each section marks it once, at its own head.
+   The spine — one continuous border-right across touching margin cells
    --------------------------------------------------------- */
 
 .pv-list {
@@ -213,8 +144,7 @@ body::before {
 
 .pv-sec {
   display: grid;
-  /* Wider than the changelog's 74px, because what stands in the margin here is
-     a subject and not a version number. */
+  /* Wider than the changelog's 74px: subjects, not version numbers. */
   grid-template-columns: 116px minmax(0, 1fr);
   column-gap: clamp(18px, 3vw, 34px);
 }
@@ -226,7 +156,7 @@ body::before {
   text-align: right;
 }
 
-/* The mark sits *on* the line, which is what the negative offset is for. */
+/* Sits on the spine line via the negative right offset. */
 .pv-mark {
   position: absolute;
   top: 0.72em;
@@ -237,11 +167,7 @@ body::before {
   background: var(--accent);
 }
 
-/* What the plate beside it is about. Quiet, in the display face, set against
-   the line rather than under the mark - it labels the thing beside it, so it
-   reads as a margin note and not as a heading the prose sits under. Which is
-   the point: three paragraphs need finding your way around, and none of them
-   needs a heading. */
+/* Margin label: reads as a note beside the plate, not a heading above it. */
 .pv-count {
   display: block;
   padding-top: 0.34em;
@@ -268,10 +194,7 @@ body::before {
               translate var(--dur-base) var(--ease-back);
 }
 
-/* The lift every control on the board answers a pointer with, through the same
-   token - a real hover at Softish, a small one in the middle, and nothing at
-   all at Harsh, where --lift-hover is 0 and this rule quietly stops meaning
-   anything. The token is already negative, so it is used as it is. */
+/* Hover lift via --lift-hover; no-ops at Harsh where the token is 0. */
 @media (hover: hover) {
   .pv-plate:hover {
     translate: 0 var(--lift-hover);
@@ -281,19 +204,14 @@ body::before {
 
 .pv-plate p { margin: 0; }
 
-/* The spine is drawn by the margin cells, which are as tall as their rows - so
-   the gap under the last plate would hang thirty pixels of line below the end
-   of the page, pointing at nothing. */
+/* Prevents the spine from dangling below the last plate. */
 .pv-sec:last-child .pv-plate { margin-bottom: 0; }
 
 /* ---------------------------------------------------------
    Links, code and the foot
    --------------------------------------------------------- */
 
-/* Named by their containers rather than as `.pv a`, which would also be a
-   selector for the pill - one type more specific than .pv-back is, so the
-   pill's own colour would lose to it and only under hover, which is exactly
-   the kind of thing that ships. */
+/* Scoped to containers, not `.pv a`, to avoid overriding .pv-back's colour. */
 .pv-plate a, .pv-foot a {
   color: var(--accent-text);
   text-decoration-color: color-mix(in srgb, var(--accent-text) 45%, transparent);
@@ -305,7 +223,7 @@ body::before {
   outline-offset: 3px;
   border-radius: var(--radius-xs);
 }
-/* The pill is already a shape, so it keeps its own corner. */
+/* Keeps the pill's own border-radius. */
 .pv-back:focus-visible {
   outline: 2px solid var(--accent-text);
   outline-offset: 3px;
@@ -337,12 +255,7 @@ body::before {
 }
 
 /* ---------------------------------------------------------
-   Narrow
-
-   The margin goes rather than shrinks, the way the changelog's does: a
-   hundred-odd pixels of gutter on a phone is a third of the measure spent on
-   two words. The label goes with it - it is a finding aid for a page you can
-   see the whole of, and on a phone you cannot.
+   Narrow — margin and label hidden on phones
    --------------------------------------------------------- */
 
 @media (max-width: 640px) {
@@ -359,9 +272,7 @@ body::before {
   }
 }
 
-/* Without color-mix(), for WebKit below 16.2 - section 7 of tokens.css carries
-   the argument and declares the channel-form tokens. This page wears the app's
-   cascade without booting it, so it needs the same fallback the app does. */
+/* Fallback for WebKit below 16.2, which lacks color-mix(). */
 @supports not (color: color-mix(in srgb, red, blue)) {
   .pv-plate a, .pv-foot a { text-decoration-color: rgb(var(--accent-c) / 45%); }
 }

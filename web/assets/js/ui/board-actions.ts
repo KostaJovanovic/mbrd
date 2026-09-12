@@ -1,37 +1,7 @@
-// The commands that needed more than a one-liner.
-//
-// Everything `cmds` delegates to rather than inlines: the save button's
-// cooldown, "Reset size", the three-press guard in front of Clear everything,
-// Rearrange, Reload board, Restart, and Scale from item. They were the second
-// half of main.ts and they belong together for one reason - each is a whole
-// small policy about a single control, written down where the control's
-// behaviour can be read in one sitting rather than inferred from a handler.
-//
-// Nothing here is wired to an element. These are called by commands.ts, and the
-// two paint functions are called by their own state machines. `vp` is handed in
-// by initBoardActions() so nothing touches a browser global at import time.
-//
-// ── This was a second wiring point, and it is narrower now ──
-//
-// Worth knowing before adding to it. main.ts is the wiring point by design and
-// says so; this file used to reach into ten different modules under canvas/ from
-// a module in ui/, which was the widest reach anywhere in that directory and
-// wider than main.ts's own. That was not an accident of growth - it is what
-// these commands are. Reset size has to ask the renderers what a default size
-// is; Scale from item has to reach the asset registry. Each import is the
-// shortest honest path from one control to the thing it changes.
-//
-// The one that was not was the ground. A Rearrange has to settle the geometry
-// and then repaint the grid, the grain, the paper outline and the Mobile frame,
-// and something had to hold the knowledge of which four - which meant this file
-// held it, and so did main.ts, in the same order, copied. That is
-// canvas/ground.ts now: repaintGround() and forgetLookInk(), two calls where
-// there were seven imports and two hand-kept sequences, and the reach is seven
-// canvas/ modules rather than ten.
-//
-// So the rule this header used to end on still stands, one module further out:
-// before importing an eighth canvas/ module, check whether what you want is
-// something canvas/ should be answering in one call.
+// Multi-step board commands delegated from commands.ts: save cooldown,
+// reset size, clear-everything guard, rearrange, reload, restart, scale.
+// Called by commands.ts, never wired to elements directly. vp is injected
+// by initBoardActions() so nothing touches the DOM at import time.
 
 import { shuffle, isRecord } from '../util.ts';
 import { toast } from '../notify.ts';
@@ -48,9 +18,6 @@ import {
 } from '../state.ts';
 import { latticeBox, itemBounds, rotatedExtents } from '../geometry.ts';
 import { travelMs } from '../canvas/viewport.ts';
-// The four layers under the cards, and the three caches they resolve out of the
-// look - one call each, rather than the seven imports and two hand-copied
-// sequences that used to be here. See the head of canvas/ground.ts.
 import { repaintGround, forgetLookInk } from '../canvas/ground.ts';
 import { barHeight, resetItems } from '../canvas/items.ts';
 import { resetWeb } from '../canvas/web.ts';
@@ -67,13 +34,7 @@ import type { Point } from '../geometry.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 import { platform } from '../platform/platform.ts';
 
-/**
- * canvas/viewport.ts still carries its migration pragma, so the class type it
- * exports has the methods but not the fields the constructor assigns - the same
- * intersection ui/hud.ts and ui/fence-prompt.ts make, for the same reason. These
- * are the fields the ground's painters read off the viewport this module hands
- * repaintGround(); the intersection comes out the day that module is annotated.
- */
+// Fields viewport.ts does not yet export due to migration pragma.
 type ActionsViewport = Viewport & {
   el: HTMLElement;
   width: number;
@@ -85,41 +46,19 @@ type ActionsViewport = Viewport & {
   moving: boolean;
 };
 
-/**
- * One row of a geometry snapshot, as snapshotGeom() actually answers.
- *
- * layout.ts still carries its migration pragma too, and there the loss is not
- * fields a constructor assigned but fields a *loop* did: the six geometry keys
- * are copied in by iterating GEOM_KEYS, which publishes none of them, so tsc
- * infers the row as `{ id }` alone and the array as possibly holding nulls -
- * which the function's own trailing .filter(Boolean) has already removed. This
- * names what is really there. It comes out the day layout.ts is annotated.
- *
- * SAFETY: this covers the three `as GeomRow[]` below, which are one claim said
- * three times - that snapshotGeom() fills in the six geometry keys and returns
- * no nulls. Both halves are read off its body, not assumed: the keys come from
- * the GEOM_KEYS loop and the nulls from its own filter.
- */
+// What snapshotGeom() actually returns (layout.ts pragma hides the geom keys).
 type GeomRow = Omit<Geometry, 'presnap'> & {
   presnap: { x: number, y: number, w: number, h: number } | null;
   loose: boolean;
 };
 
-/** The four options rearrange() takes - see the note above it. */
 type RearrangeOptions = {
-  /** the layout, overriding the board's own */
   name?: string;
-  /** where to lay out about, overriding the two rules rearrange() states */
   center?: Point;
-  /** a fence id to close around the result, inside the same commit */
   enclose?: string;
-  /** the undo entry's label, overriding the one rearrange() picks */
   label?: string;
 };
 
-// Non-null asserted at every use below rather than guarded: main.ts calls
-// initBoardActions() before any command can run, so a null here would be a
-// wiring bug and not a state to write a fallback for.
 let vp: ActionsViewport | null = null;
 
 export function initBoardActions(viewport: ActionsViewport) {
@@ -130,35 +69,14 @@ export function initBoardActions(viewport: ActionsViewport) {
 // Save, and the cooldown in front of it
 // ---------------------------------------------------------------------------
 
-/**
- * Save, then stand down for half a minute.
- *
- * Saving writes the whole board - every asset, every note - into IndexedDB, and
- * on a board of photographs that is real work. The button invites repetition in
- * a way the work does not deserve: it is the one control whose effect is
- * invisible, so the honest response to "did that save?" is to press it again,
- * and a few of those in a row is the same megabytes written three times while
- * the board stutters.
- *
- * A cooldown answers the question the second press was asking. The button says
- * how long ago it saved, which is the information that was missing - not a
- * refusal so much as a receipt that stays up.
- *
- * Only the button. The autosave debounce behind every edit is untouched: that
- * is the board's own safety net and rate-limiting it would be rate-limiting the
- * thing that stops work being lost. This governs a human pressing a control,
- * which is the only place repetition is a problem.
- */
+// Save cooldown: the button shows time-since-save instead of allowing repeats.
+// Autosave is unaffected; only the manual button is rate-limited.
 const SAVE_COOLDOWN_MS = 30_000;
 let saveReadyAt = 0;
 let saveTick = 0;
 let saving = false;
 
 export async function saveWithCooldown() {
-  // Two guards, not one. The cooldown is the deliberate half; `saving` covers
-  // the gap the cooldown cannot, which is the double click that arrives while
-  // the first write is still in flight and before there is anything to cool
-  // down from.
   if (saving || saveReadyAt > Date.now()) return;
   saving = true;
   paintSave();
@@ -166,30 +84,12 @@ export async function saveWithCooldown() {
   try {
     ok = await saveBoard();
   } catch (err) {
-    // A rejection is a failed save, not a broken button.
-    //
-    // There was no catch, and the shape of the damage is worth writing down:
-    // `finally` cleared `saving`, the throw then skipped every line after it,
-    // and the button was left disabled reading "Saving..." with no saveTick
-    // interval to repaint it - for the rest of the session, on the one control
-    // that stops work being lost. Plus an unhandled rejection in the console
-    // saying nothing about where it came from.
-    //
-    // That saveBoard() can reject is not hypothetical: runSaves() in
-    // storage/session.ts has try/finally and no catch, and four call sites
-    // around it defend against exactly this.
     console.warn('[mbrd] save failed', err);
     ok = false;
   } finally {
     saving = false;
   }
-  // A failure is not a save and there is nothing to stand down from. Whatever
-  // went wrong is worth another try immediately - it may be a permission that
-  // has just been granted.
   if (!ok) { paintSave(); return; }
-  // The one thing in the app worth a sound of its own that is not a change to
-  // the board: work is safe. Whatever saveBoard() toasted says the same thing a
-  // beat later and says so on top of this, which is two things having happened.
   cue('done');
   saveReadyAt = Date.now() + SAVE_COOLDOWN_MS;
   clearInterval(saveTick);
@@ -197,7 +97,6 @@ export async function saveWithCooldown() {
   paintSave();
 }
 
-/** Back to an ordinary Save button, cooldown abandoned. Used by a board load. */
 export function resetSave() {
   saveReadyAt = 0;
   clearInterval(saveTick);
@@ -206,9 +105,6 @@ export function resetSave() {
 }
 
 function paintSave() {
-  // A `data-cmd` is always on a button: the toolbar's are `<button data-cmd>` in
-  // index.html and the panel's are made by buildButtons() in ui/panel.ts, which
-  // sets the attribute on a <button> it just created. Same for paintClear().
   const btn = document.querySelector<HTMLButtonElement>('[data-cmd="save"]');
   if (!btn) return;
   if (saving) {
@@ -226,8 +122,7 @@ function paintSave() {
     return;
   }
   btn.disabled = true;
-  // Counting up rather than down, because what somebody wants to know is how
-  // stale the save is, not how long until a button will let them press it.
+  // Count up: "how stale" is more useful than "how long until enabled".
   btn.textContent = `Saved ${SAVE_COOLDOWN_MS / 1000 - left}s ago`;
   btn.title = 'Everything is already written. Edits keep saving on their own.';
 }
@@ -236,32 +131,13 @@ function paintSave() {
 // Clear everything - the countdown in front of the dialog
 // ---------------------------------------------------------------------------
 
-/**
- * Presses left before "Clear everything" asks its real question, and how long
- * a half-finished countdown survives.
- *
- * The button wipes the browser's copy of the board, everything in it and the
- * look with it, and it sits in the same panel as Save and Optimize, a row away
- * from buttons that are safe to press out of curiosity. A confirmation dialog
- * on the first press is not much of a gate either: a dialog that appears is a
- * dialog that gets dismissed, and the one that matters looks like all the
- * others. So the press is spent before the question is asked - three of them,
- * counted down on the button's own face, and the fourth opens the dialog.
- *
- * Ten seconds of quiet puts it back. Somebody who armed it and walked away has
- * not half-agreed to anything, and coming back to a button already holding "1"
- * would be the worst state this could leave behind.
- */
+// Three presses before the dialog opens; 10s idle resets the count.
 const CLEAR_PRESSES = 3;
 const CLEAR_IDLE_MS = 10000;
 
 let clearLeft = 0;
 let clearTimer = 0;
 
-/**
- * One press of "Clear everything": count it, and open the dialog once the
- * countdown is spent.
- */
 export function armClear() {
   if (clearLeft > 0) clearLeft -= 1;
   else clearLeft = CLEAR_PRESSES;
@@ -276,7 +152,6 @@ export function armClear() {
   return undefined;
 }
 
-/** Back to an ordinary button, countdown abandoned. */
 function resetClear() {
   clearLeft = 0;
   clearTimeout(clearTimer);
@@ -293,8 +168,6 @@ function paintClear() {
     delete btn.dataset.arming;
     return;
   }
-  // The number is presses remaining, not a clock: a countdown in seconds would
-  // be a button that fires itself, which is the one thing this must never do.
   btn.textContent = `Press ${clearLeft} more time${clearLeft === 1 ? '' : 's'}`;
   btn.title = 'Then it will ask, and then it will wipe this browser’s copy.';
   btn.dataset.arming = '';
@@ -304,54 +177,17 @@ function paintClear() {
 // Size, scale, and putting the board back together
 // ---------------------------------------------------------------------------
 
-/**
- * Every selected item back to the size it came in at.
- *
- * The size an item is *born* at, which is not its file's pixel dimensions:
- * measureSize() gives each type a standard area and lets the media supply only
- * the aspect, so a 6000px photograph and a 400px one arrive as cards of the
- * same weight and the board stays a board. Reproducing that here rather than
- * remembering it on the item is what makes this survive a `.mbrd` written by an
- * older version, and what stops a second field having to be kept true through
- * every crop, cover swap and optimise.
- *
- * Centres and rotations are kept. A reset is an answer to "I dragged this
- * corner and now it is wrong", and moving the card while fixing its size would
- * be answering a question nobody asked.
- *
- * Measured from the bytes, so it is asynchronous, and the whole selection is
- * measured before anything moves: half a group resized is not a state the board
- * should be seen in, and it would be one undo step per item to get out of.
- */
+// Reset selected items to their born-at size (measureSize, not pixel dims).
+// Centres and rotations are kept. Async because it reads bytes for aspect.
 export async function resetSize() {
-  // Fences sit this one out. "Reset size" restores the size a card was born at,
-  // and a fence was born at whatever size it was drawn - it has no natural one,
-  // because its size *is* what it means. Handing it a default would shrink a
-  // region down to a small box and drop everything in it, which is the same
-  // silent loss the resize grips now floor against; there is no floor to apply
-  // here, since the whole action is "go back to a size of your own".
-  // And so does anything locked: this writes w and h, which is geometry, and a
-  // lock is a promise about geometry whatever the route to it.
+  // Fences have no natural size; locked items must not move.
   const items = board.items.filter(i => selection.has(i.id) && !isFence(i) && !isLocked(i));
   if (!items.length) return;
 
   const step = baseStep();
   const sized = await Promise.all(items.map(async it => {
     const blob = getAsset(it.asset?.hash)?.blob;
-    // measureSize only reads the file for the two types with an aspect of their
-    // own; everything else answers from the type alone, so a card whose bytes
-    // have gone still resets.
-    // The asset store keeps a Blob and measureSize() asks for a File. Safe
-    // because the two members it reads that a Blob does not carry are read
-    // defensively: `file.name` only ever reaches extOf(), whose parameter
-    // defaults to '' for exactly this, and only after `file.type` - which every
-    // Blob has, and which putAsset() fills from the file it was made of - has
-    // already answered for an SVG. Nothing is constructed here to make the types
-    // agree, because that would be a different measurement.
-    //
-    // SAFETY: measureSize() takes a File because that is what the import path
-    // hands it; what it actually reads is the Blob half - bytes and a type -
-    // and a File is a Blob with a name. Nothing here reads the name.
+    // Blob as File is safe: measureSize only reads bytes and type, not name.
     const size = blob
       ? await measureSize(it.type, blob as File).catch(() => defaultSize(it.type))
       : defaultSize(it.type);
@@ -532,36 +368,9 @@ function obstacleBox(item: Item, step: number): Obstacle {
 }
 
 /**
- * Lay `items` out again under the board's current arrangement.
- *
- * The whole board or a selection of it, and the difference is more than which
- * ids move. A rearrangement of everything is entitled to rebuild the board
- * around the origin and fly the view to it, because there is nothing else on
- * the board to be in the way. A rearrangement of nine cards is not: those nine
- * are somewhere for a reason, the rest of the board is around them, and hauling
- * them to 0,0 would be a move you did not ask for wearing a layout's clothes.
- * So a subset is relaid about its own centre and covers its own ground, and the
- * view stays where it is - the cards rearrange in front of you, which is the
- * plainest feedback there is and the reason a Fit would only get in the way.
- *
- * Four options, three of them a region's (see cmds.rearrangeFence):
- *
- *   name     the layout, overriding the board's own. A region gets masonry
- *            whatever the board is set to, because the board's arrangement is a
- *            statement about the board.
- *   center   where to lay it out about, overriding the two rules above. A
- *            region is relaid about *itself*, not about the middle of whatever
- *            happens to be in it - the region is the thing that is staying put.
- *   enclose  a fence id to close around the result, inside the same commit. The
- *            layout is not bounded by anything, so its block can come out wider
- *            or narrower than the region it was made for; a region that ended up
- *            not holding its own contents would then have them measured out of
- *            it. So the rectangle follows the cards, which is also the shape a
- *            fence is made with in the first place - see fenceBox().
- *   label    the undo entry's words, overriding the ones picked below. The
- *            fourth, and it was in neither of the two places this option set is
- *            written down - the type said three and so did this list, while the
- *            field sat between them.
+ * Lay `items` out again. A subset relays about its own centre (not the
+ * origin) and the view stays put. Options: name (layout override),
+ * center, enclose (fence to resize around the result), label.
  *
  * This block used to sit above obstacleBox(), which was inserted underneath it
  * by a half-finished edit, so the function it documents had no documentation

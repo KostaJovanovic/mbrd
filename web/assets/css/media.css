@@ -1,40 +1,11 @@
 /* =========================================================
-   mbrd - cover art, and the two players that run on a card
-
-   One of the six sheets the old items.css was split into. The order they load
-   in IS the cascade and is listed in the banner at the top of items.css.
-
-   Three modules, one strip of card. canvas/audio.ts builds the audio card,
-   measures the waveform and owns .is-playing; canvas/video.ts builds the
-   transport that floats over a clip; canvas/renderers.ts/coverEl() prepends
-   the picture that turns either one into a sleeve.
-
-   They are filed together because they share the transport row, the
-   three-svg scrubber shape the now-playing bar and the playlist also use, and
-   the same bargain at far zoom: past the rung both types keep exactly one
-   control, the one still worth hitting from across a board, and give up
-   everything else. Separating them would put the two halves of that bargain
-   in two files.
-
-   The caption plate these rules hide and reveal is item-chrome.css, and it
-   loads after this sheet - which is also why .vbig ends up relative rather
-   than absolute. See the banner there.
+   mbrd - cover art and the two media players on a card
+   Split from items.css. Shares the transport row and scrubber shape
+   with the now-playing bar. Caption plate is in item-chrome.css.
    ========================================================= */
 
-/* A picture given to a card that is not itself one - album art off an mp3's
-   tags, or anything chosen by hand. See coverEl() in canvas/renderers.ts, which
-   prepends it inside the card rather than behind it.
-
-   Inside the padding, not bled to the edges. A card here is a plate: ruled
-   just in from its own border, with the rule's radius derived from the card's
-   so the two curves stay concentric. A full-bleed cover would cross that rule
-   and turn the plate into a poster with a line drawn across it - and the rule
-   is what tells a filed card apart from a photograph on this board.
-
-   flex rather than a fixed aspect, because a cover has no aspect it is
-   entitled to. Square for album art, wide for a screenshot, tall for a poster;
-   the card was sized by its type and its own resizing, so the picture takes the
-   room the words leave and crops to it. */
+/* Cover art inside a card (coverEl(), canvas/renderers.ts). Flex, not
+   fixed aspect -- crops to the room the text leaves. */
 .card-cover {
   flex: 1;
   min-height: 0;
@@ -42,36 +13,16 @@
   object-fit: cover;
   display: block;
   border-radius: var(--radius-sm);
-  /* A pale cover on pale card stock has no edge of its own - the same problem
-     the polaroid mat has, and the same hairline answers it. */
+  /* Hairline edge for pale covers on pale card stock. */
   box-shadow: 0 0 0 var(--board-hairline) color-mix(in srgb, var(--ink) 10%, transparent);
 }
 
-/* The kicker earns its place on a card that is only words. Above a picture of
-   the record it is labelling a card AUDIO that is plainly a record sleeve.
-
-   Not on an audio card, where the sleeve is a stamp in the corner rather than
-   the top half of the card: there the kicker is still the only thing naming the
-   type, and hiding it made a row of records where some said AUDIO and some did
-   not, for a reason - whether the file happened to carry artwork - that is
-   invisible from the outside. */
+/* Kicker is redundant above a picture -- except on audio cards, where
+   hiding it made some sleeves say AUDIO and others not. */
 .card:not(.card-audio).has-cover .card-icon { display: none; }
 
-/* An audio card's sleeve: square, and up in the corner.
-
-   Square because that is what a record is, and because the alternative is what
-   this used to do - hand the picture a full-width band and let it be whatever
-   shape it liked. Album art is square often enough that the band was mostly
-   empty card, and the one time it is not - a wide still off a video, a tall
-   poster - a card of this kind still wants a stamp rather than a header.
-
-   Cropped to the square rather than fitted inside it. A sleeve is legible from
-   its middle; letterboxing it would put the white bars back that the band had.
-
-   Out of the flow, so the words keep the full height of the card and the
-   transport stays where it was. The room it needs is bought back as padding on
-   the three text lines below, which is what keeps a long title from running
-   under it. */
+/* Audio sleeve: square, in the corner, out of flow. Padding on the
+   three text lines below clears it. */
 .card-audio .card-cover {
   position: absolute;
   top: var(--card-pad-y);
@@ -81,32 +32,13 @@
   flex: none;
 }
 .card-audio {
-  /* The sleeve grows to fill the empty height of the card rather than sitting as
-     a small corner stamp, because on a big card that stamp left most of the box
-     bare. Sized in the card's own container units (it is a size container, see
-     below): as tall as the card leaves once the top padding and the transport
-     strip at the foot are taken out (100cqh - 100px), but never more than a
-     just over half the width (100cqw * 0.52), so the title always keeps its
-     side. A floor so it does not vanish on a small card, and a ceiling so it
-     stops being art on a card and starts being the card. Square throughout - a
-     record is square - so width and height both read this. */
+  /* Sleeve sized in container units: fills empty height, capped at ~half
+     the width so the title keeps its side. */
   --sleeve: clamp(44px, min(100cqh - 76px, 100cqw * 0.52), 320px);
-  /* The ⋮ is not part of the card but sits over its bottom-right corner - it is
-     the item's own handle and every type has it - and on a card whose last row
-     is a control of its own the two crowded each other. This used to be settled
-     by reserving 16px of *height* at the foot, which worked and cost the one
-     thing an audio card has least of: the transport is pinned to the bottom by
-     margin-top: auto, so the reservation showed as an empty band under the
-     waveform on every card, and it is height that decides what the card can
-     still afford to say about itself.
-     The room is taken sideways instead, the way a video's transport does it -
-     the bar stops short of the corner and the handle stands beside the time
-     rather than under it. Same collision, same fix, and 16px of card back. */
+  /* Room for the handle taken sideways, not as height -- height is what
+     an audio card has least of. */
   padding-bottom: var(--card-pad-y);
-  /* Queried by the rules further down, which is how the card decides what to
-     drop as it gets shorter. Its own size is fixed by the item it fills, so
-     containing it costs nothing: `size` containment says the box does not
-     depend on its contents, and this one never did. */
+  /* Container queries below decide what to drop as the card shrinks. */
   container: audio-card / size;
 }
 .card-audio.has-cover .card-icon,
@@ -115,16 +47,9 @@
   padding-right: calc(var(--sleeve) + 10px);
 }
 
-/* The title is clamped rather than left to wrap.
-   The transport is pinned to the foot of the card by `margin-top: auto`, which
-   only works while there is a foot left to pin it to: a name that wrapped to
-   five or six lines pushed the play button out through the bottom of the card,
-   which clips. So it gets a line budget and an ellipsis after it.
-
-   Prefixed only, for the reason spelled out on `.card-link .card-meta` below:
-   no engine takes the unprefixed `line-clamp` without also taking the -webkit-
-   one, so the unprefixed declaration only ever bought a dropped-declaration
-   warning in the Firefox console. */
+/* Title clamped to stop the transport being pushed out through the
+   bottom. -webkit- only: no engine takes unprefixed line-clamp without
+   the -webkit- form. */
 .card-audio .card-name {
   flex: 0 1 auto;
   min-height: 0;
@@ -133,47 +58,22 @@
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
 }
-/* The transport keeps its height whatever else is on the card, and stops short
-   of the corner the handle owns - see the padding note on .card-audio above. */
+/* Transport pinned to the foot; stops short of the handle's corner. */
 .card-audio .transport {
   flex: none;
   padding-right: var(--handle-w);
 }
 
-/* What a shrinking card gives up, and in what order.
-
-   The name is the card. Everything else on it is either recoverable from
-   somewhere else or not worth the room, and the name keeps the space they leave
-   instead of being clamped to one line while a byte count sits underneath it.
-
-   The kicker goes first. It reads AUDIO over a play button, a waveform and a
-   running time, on a card shaped like nothing else on the board - it is the one
-   line here that says something already said three times. The size and the
-   format are a footnote, but they are a footnote nothing else on the card
-   carries, so they outlast it. That is the reverse of the order this dropped
-   them in for a long time, and the reason given for that order was the argument
-   against it: the kicker was described as the redundant one and then kept the
-   longer.
-
-   Heights rather than widths, because it is height the layout runs out of -
-   the title is what grows when a card is narrowed, and the transport at the
-   foot is a fixed strip that the growth pushes against.
-
-   Written with the same selectors as the rules above rather than the short
-   ones they could be: a container query carries no specificity of its own, so
-   `.card-name` inside one loses to `.card-audio .card-name` outside it and the
-   clamp would never move. */
+/* Shedding order as the card shrinks. Full selectors needed because
+   container queries carry no specificity. */
 @container audio-card (max-height: 150px) {
   .card-audio .card-icon { display: none; }
 }
 @container audio-card (max-height: 126px) {
   .card-audio .card-name { -webkit-line-clamp: 2; }
 }
-/* Just under the clamp above, and that is deliberate rather than a near miss.
-   By this height the name is on two lines, not three, which hands back a line's
-   worth of room - so the footnote survives a little way past the point a
-   three-line card would have had to drop it. Below here a two-line name, a
-   footnote and the transport genuinely do not fit between the paddings. */
+/* Just below the clamp: the 2-line name buys back a line, so the
+   footnote survives a little past where a 3-line card would drop it. */
 @container audio-card (max-height: 116px) {
   .card-audio .card-meta { display: none; }
 }
@@ -181,10 +81,7 @@
   .card-audio .card-name { -webkit-line-clamp: 1; }
 }
 
-/* The native player is a fixed-height control, so it is pinned to the foot of
-   the card rather than left to be squeezed by the text above it. */
-/* The audio card's own transport. The <audio> element is present but never
-   laid out - it is the engine, not the interface. */
+/* The <audio> element is the engine, not the interface. */
 .card-audio audio { display: none; }
 
 .transport {
@@ -215,11 +112,7 @@
 }
 .transport.is-playing .play { background: var(--accent); color: var(--accent-fg); }
 
-/* The waveform. Each bar is an RMS reading of that slice of the file, mirrored
-   about the centre line - a signal has no up and no down, and half of one
-   drawn on a baseline is a bar chart rather than a picture of a sound.
-   Rounded off with the rest of the interface, so a plain board gets square
-   bars and a soft one gets capsules. See canvas/audio.ts. */
+/* Waveform: RMS bars mirrored about centre. Rounded with the interface. */
 .wave {
   position: relative;
   flex: 1;
@@ -227,10 +120,8 @@
   height: 40px;
   cursor: pointer;
 }
-/* Two identical lanes, stacked. The quiet one is the whole waveform; the
-   accent one is the same waveform revealed by a clip that follows the
-   playhead, which is what lets the fill cut a bar in half instead of stepping
-   whole bars at a time. */
+/* Two stacked lanes: the quiet one is the whole waveform, the accent one
+   is clipped to the playhead so the fill can cut a bar in half. */
 .wave-lane {
   position: absolute;
   inset: 0;
@@ -243,20 +134,11 @@
   min-width: 1px;
   border-radius: var(--radius-pill);
 }
-/* Enough ink to read as a waveform on paper. At 22% it was a grey suggestion
-   next to a play button in full accent, and the two did not look like parts of
-   one control; a track that is visible is also a target that looks clickable,
-   which this one has always been. */
 .wave-base i { background: color-mix(in srgb, var(--ink) 38%, transparent); }
 .wave-fill {
   clip-path: inset(0 100% 0 0);
 }
-/* will-change promotes a compositing layer and keeps it for as long as the rule
-   matches. Left on the bare .wave-fill it stood a layer per audio card up for
-   the life of the tab, playing or not; the clip-path only actually animates
-   while the playhead is moving, so the hint belongs behind the is-playing class
-   the transport already carries (canvas/audio.ts). Idle cards give their layer
-   back, and a board that is audio-heavy stops paying for players nobody started. */
+/* Compositing layer only while playing -- idle cards give it back. */
 .transport.is-playing .wave-fill {
   will-change: clip-path;
 }
@@ -269,23 +151,8 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Zoomed out past the ladder's threshold, an audio card stops being a player
-   and becomes a button.
-
-   The waveform is the first thing that has to go. At this zoom a bar is under
-   half a device pixel and the gaps between them are less than that, so eighty
-   readings composite down to one flat grey block - noise wearing the shape of
-   information, and the most expensive thing on the card to keep painting. The
-   name and the clock follow it for the same reason the caption plates and the
-   resize handles already stand down here: type five pixels tall is a smudge,
-   and a smudge that is only there to be unreadable is worse than a gap.
-
-   What survives is the one control still worth hitting from across the board,
-   grown to fill the card it is on. Sized from --half-min (min(w, h) / 2, per
-   item from canvas/items.ts/place()) rather than from --iz, because this is
-   part of the card rather than chrome laid over it: it belongs to the board's
-   scale, and taking half the shorter side as its bound is what stops it
-   outgrowing the card on anything that has been resized to a strip. */
+/* Past the far-zoom rung the card becomes a button. The waveform, name
+   and clock are sub-pixel noise at this scale. */
 #world.zoom-far .card-audio .card-icon,
 #world.zoom-far .card-audio .card-name,
 #world.zoom-far .card-audio .card-meta,
@@ -294,96 +161,56 @@
 
 #world.zoom-far .card-audio .transport {
   flex: 1;
-  margin-top: 0;           /* nothing above it left to be pushed away from */
+  margin-top: 0;
   justify-content: center;
-  /* The handle is hidden down here (see #world.zoom-far .item-bar), so there is
-     no corner to keep clear. */
+  /* Handle is hidden at this zoom, so no corner to clear. */
   padding-right: 0;
-  /* The foot is the name's. The button centres in what is left above the band
-     rather than in the whole card - without this the two share the middle and the
-     name comes out across the button on anything that is not tall. --ix-head is
-     declared once, with the head itself, at the foot of this file. */
   padding-top: var(--ix-head);
 }
 #world.zoom-far .card-audio .play {
-  /* Slightly off the 0.86 this was when the button was the whole far-zoom design,
-     because it is no longer: there is a name under it now, and a button still
-     claiming the entire face would read as the name being squeezed in beneath
-     rather than as a record with its title on it. Still generous - it is the one
-     control worth hitting from across a board. */
+  /* Generous but not full-face -- there is a name under it now. */
   width:  calc(var(--half-min, 98px) * 0.6);
   height: calc(var(--half-min, 98px) * 0.6);
-  /* The ring has to thicken with the button or it antialiases away exactly
-     when the button is most of what there is left to see. */
+  /* Ring thickens with the button or it antialiases away. */
   border-width: max(var(--board-hairline), calc(var(--half-min, 98px) * 0.03));
 }
 #world.zoom-far .card-audio .play svg { width: 38%; height: 38%; }
 
-/* Audio needs no bespoke label out here any more, and that is the point of the
-   band: it wears the same nameplate every other card wears, in the same place, at
-   the same size. What was here was a centred headline with its own type scale, its
-   own line clamp and a translucent plate for the sleeve case - three special cases
-   for one card type, all of which the band answers by being where a label goes. */
-
-/* An audio card that has album art is the one case where zooming out should
-   leave *more* than a button. A sleeve is recognisable at a size a name is not
-   - it is the only thing on a card of this kind that still says which record
-   this is from across the board - so down here the picture takes the whole card
-   and the button sits on it, which is what a sleeve with a play button on it
-   has looked like for fifteen years.
-
-   .card is already position: relative, and .item-body clips at the item's
-   radius, so the cover can simply fill the box. */
+/* At far zoom, a sleeve card shows the art full-bleed with the play
+   button over it -- a recognisable record from across the board. */
 #world.zoom-far .card-audio.has-cover { padding: 0; }
-#world.zoom-far .card-audio.has-cover::after { content: none; }   /* no rule left to be inside of */
+#world.zoom-far .card-audio.has-cover::after { content: none; }
 
 #world.zoom-far .card-audio.has-cover .card-cover {
   position: absolute;
   inset: 0;
-  /* Both, and not only the height: the corner sleeve above sets a width, and a
-     box given left, right and width at once resolves the conflict by throwing
-     away `right` - so the picture would have filled the card's height and kept
-     the corner stamp's width. */
+  /* Both dimensions needed: the corner-sleeve rule above sets a width. */
   width: 100%;
   height: 100%;
   border-radius: inherit;
   box-shadow: none;
 }
-/* Over the sleeve rather than beside it. */
 #world.zoom-far .card-audio.has-cover .transport { position: relative; }
-/* And it needs a plate under it once it is over a picture. The button is an
-   accent ring on nothing, which is legible on card stock and disappears on a
-   dark sleeve - artwork is the one background this app does not choose. Same
-   answer .vbig uses over a video's poster frame, and for the same reason. */
+/* Plate under the button over artwork -- accent ring alone disappears
+   on a dark sleeve. */
 #world.zoom-far .card-audio.has-cover .play {
   background: color-mix(in srgb, var(--paper-card) 84%, transparent);
-  /* -webkit- first: WebKit shipped backdrop-filter unprefixed only in Safari
-     18, so 16.4-17.x need the prefixed form to blur at all. */
   -webkit-backdrop-filter: blur(3px);
   backdrop-filter: blur(3px);
 }
 
-/* The video transport (canvas/video.ts).
-   Laid over the picture rather than under it, because on a video card the
-   picture *is* the card - every row of chrome given its own space is a row of
-   the thing you pinned up, taken away. So it floats, and it stays out of the
-   way until the card is selected or the clip is running. */
+/* Video transport (canvas/video.ts). Floats over the picture; hidden
+   until selected or playing. pointer-events off so the card stays
+   one drag target. */
 .vplayer {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  /* Same bargain .transport and the link anchor make: the layer refuses the
-     pointer so the whole card stays one drag target, and only the controls on
-     it take the gesture back. */
   pointer-events: none;
 }
 
-/* The one thing on a parked video that says it is a video. A clip sitting on
-   its poster frame is otherwise a photograph, which is exactly the state the
-   old bare <video> left every one of them in.
-   Sized from --half-min (min(w, h) / 2, per item from items.ts/place()) so it
-   belongs to the card rather than to the screen, with a floor and a ceiling
-   because a play button has a size that reads as a play button. */
+/* Centre play button on a parked video. Sized from --half-min so it
+   belongs to the card's scale, with floor and ceiling. */
 .vbig {
   position: absolute;
   left: 50%;
@@ -406,57 +233,21 @@
               scale var(--dur-base) var(--ease-back);
 }
 .vbig svg { width: 40%; height: 40%; }
-/* scale, not transform: translate above is doing the centring, and a transform
-   here would overwrite it and throw the button off the middle of the card. */
+/* scale, not transform -- translate above is doing the centring. */
 @media (hover: hover) {
   .vbig:hover { background: var(--accent); color: var(--accent-fg); scale: var(--btn-grow); }
 }
 .vplayer.is-playing .vbig { opacity: 0; pointer-events: none; }
 
-/* There is no bar across the foot of a video card any more, and nothing here
-   replaces it.
-
-   It held a play button, then a scrubber and a clock, and finally a mute on its
-   own; each went to the now-playing bar or went away, and what was left was a
-   strip of paper and a hairline drawn across the bottom of every clip on the
-   board to carry one 20px glyph. The argument is in the head of canvas/video.ts.
-   Two things went with it that are worth naming, because they were both real
-   work and neither is missed:
-
-   - the two-second linger. A bar that appeared under a crossing pointer and
-     stayed until it was explicitly taken away needed a transition-delay to act
-     as its own timer, plus a :focus-within so a keyboard scrub did not fade out
-     under the hand doing it.
-   - the reservation for the handle. The strip ran the width of the card, so it
-     had to stop a --handle-w short of the corner or the mute and the item menu
-     shared one square and the menu won.
-
-   The caption plate has the foot to itself now, which is what the take-turns
-   rules below have been simplified to. */
-
-/* A stopped track's waveform is not a control.
-
-   The waveform is most of an audio card's face, so while the clip was not playing
-   every attempt to pick the card up by the part of it you were nearest scrubbed
-   it instead - and left a track you had not asked to hear parked in the middle of
-   itself. Playing, the same gesture is unmistakably a seek. So the face goes back
-   to being a drag target until there is something to seek through, and the
-   pointer says so rather than only refusing.
-
-   Off `.is-playing`, which canvas/audio.ts already toggles on the transport at
-   exactly the two moments this turns on; the keyboard and screen-reader halves of
-   the same rule are setSeekable() beside it. */
+/* Stopped waveform is not a control -- the card face stays a drag
+   target until there is something to seek through. */
 .transport:not(.is-playing) .wave {
   pointer-events: none;
   cursor: inherit;
 }
 
-/* The caption is hidden until you reach for the card, on images and video
-   alike: a name is a label, and at rest the picture should be the whole card
-   rather than a picture with a strip of paper across its foot. The whole
-   .item-bar fades - plate and label together - so an image at rest loses the
-   opaque strip and not only the text on it. Back on hover, on keyboard focus,
-   and while the caption itself is being edited. */
+/* Caption hidden at rest on images and video -- the picture is the card.
+   Back on hover, focus, and while editing. */
 .item[data-type="image"] .item-bar,
 .item[data-type="video"] .item-bar {
   opacity: 0;
@@ -470,54 +261,22 @@
 .item[data-type="video"]:focus-within .item-bar,
 .item[data-type="video"].is-editing .item-bar { opacity: 1; }
 
-/* A running clip has its foot to itself.
-
-   This was a take-turns arrangement between the caption plate and the control
-   bar, which both wanted the same strip of card: the name on hover, the
-   transport once the clip was selected or running. There is no bar to take
-   turns with now, so only the half that was about the *picture* is left - a
-   plate of paper with a filename on it, laid across a clip that is playing, is
-   a label over a moving image and reads as damage. Selected and focus-within
-   have gone with the bar they were making room for: a selected clip that is not
-   playing is a card like any other and keeps its name.
-
-   The caption goes and the sheet under it with it; the handle stays, because it
-   is the only way into the item's menu on a touchscreen and a playing video is
-   no reason to take it away. The `:has()` tests .item and not .item-body: the
-   plate is a sibling of the body, not a child of it. */
+/* Playing clip hides its caption (a label over moving video reads as
+   damage) but keeps the handle for the touch menu. */
 .item:has(.vplayer.is-playing) .item-label { opacity: 0; }
 .item:has(.vplayer.is-playing) .item-bar {
   background: none;
   border-top-color: transparent;
-  /* And it must stop catching the pointer, not only stop being seen. The plate
-     hangs off .item and paints - and hit-tests - above the picture, so gone to
-     transparent it was still an invisible sheet over the foot of the clip. That
-     is where a tap has to land to pause (see pauseOnTap in canvas/input.ts), and
-     over a named video every such press was landing on the plate instead. */
+  /* Must also stop catching the pointer -- the invisible plate was
+     blocking tap-to-pause. */
   pointer-events: none;
 }
 
-/* Past the chrome rung the big centre play goes: a clip that far out is a swatch
-   to move around, not one to start, and a button sitting in the middle of it
-   only gets in the way of picking the card up. */
+/* Far zoom: the big play button goes -- a clip that far out is a swatch. */
 #world.zoom-far .vbig { display: none; }
 
-/* A clip or a track this engine will not decode.
-
-   Set by markUnplayable() in canvas/renderers.ts, off the media element's own
-   error and nothing else - see the note there on why a table of what each
-   browser supports would be wrong by the next version.
-
-   The controls go rather than grey out. A disabled play button is still an
-   invitation to press it, and the honest reading of this card is that there is
-   nothing to press: what remains is the poster frame or the cover art, the
-   name, and the running time read out of the container - a still of a thing
-   this browser will not play. Everything else about the card is unchanged, and
-   the file is untouched and still what a download hands over.
-
-   The line itself sits at the foot, over the picture on a clip and under the
-   words on a track, and it is quiet. It reports a fact about this browser, not
-   a fault with the board - a red banner would be the app blaming the file. */
+/* Unplayable clip (markUnplayable(), canvas/renderers.ts). Controls go
+   rather than greying out -- the honest reading is nothing to press. */
 .item.is-unplayable .vbig,
 .item.is-unplayable .transport { display: none; }
 
@@ -538,20 +297,16 @@
   text-overflow: ellipsis;
   pointer-events: none;
 }
-/* On a card it is one of the plate's own rows rather than a strip laid over the
-   bottom of a picture, so it keeps the plate's inset and its rule. */
+/* On a card it is one of the plate's rows, not a strip over a picture. */
 .card .media-dead {
   position: static;
   padding: 6px 0 0;
   background: none;
   border-top: none;
 }
-/* Far out the card is a swatch and the sentence is unreadable anyway - the same
-   bargain .vbig and the transport make one rung above. */
 #world.zoom-far .media-dead { display: none; }
 
-/* Without color-mix(), for WebKit below 16.2 - section 7 of tokens.css carries
-   the argument and declares the channel-form tokens. */
+/* Fallback without color-mix() -- see tokens.css section 7. */
 @supports not (color: color-mix(in srgb, red, blue)) {
   .card-cover { box-shadow: 0 0 0 var(--board-hairline) rgb(var(--ink-c) / 10%); }
   .wave-base i { background: rgb(var(--ink-c) / 38%); }
@@ -559,4 +314,3 @@
     background: rgb(var(--paper-card-c) / 84%);
   }
 }
-

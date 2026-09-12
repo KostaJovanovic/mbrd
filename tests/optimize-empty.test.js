@@ -1,19 +1,13 @@
-// Files with no bytes in them, and what the optimiser does about them.
+// Files with no bytes in them, and what the optimiser does about them - a
+// removal rather than a re-encode, checked hardest of the feature's
+// halves. An empty file can never draw anything, leaving a card claiming
+// to be a photograph with a permanent hole.
 //
-// The one thing that feature does which is a removal rather than a re-encode,
-// so it is the one that has to be checked hardest. An empty file cannot be made
-// smaller and can never draw anything: what it leaves on a board is a card
-// claiming to be a photograph with a permanent hole where the picture goes.
-//
-// The two halves read differently on purpose, and getting that wrong is what
-// this file now pins. A card whose *own* file is empty has nothing on it at all
-// - no picture, no sound, no text, and no way for any of those to arrive later
-// - so the card goes, to the bin, in one undoable step. A card that merely
-// wears an empty *cover* has a real file on it and only its picture is hollow,
-// so it loses the picture and keeps everything else.
-//
-// The first version of this cleared the reference on both and left the cards
-// standing, which is the hole without even the explanation for it.
+// The two halves read differently on purpose. A card whose own file is
+// empty has nothing on it at all, so it goes to the bin in one undoable
+// step. A card that merely wears an empty *cover* keeps its real file and
+// loses only the picture. The first version cleared the reference on
+// both and left the cards standing - a hole with no explanation.
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -33,7 +27,7 @@ const COVER = hash('cover');
 beforeEach(() => {
   setBoardMode('desktop');
   clearAssets();
-  // Zero bytes, which is the whole point, against something with weight.
+  // Zero bytes, the whole point, against something with weight.
   putAsset(EMPTY, new Blob([], { type: 'image/png' }), { name: 'broken.png', ext: 'png', mime: 'image/png' });
   putAsset(REAL, new Blob([new Uint8Array(4096)], { type: 'image/png' }), { name: 'real.png', ext: 'png', mime: 'image/png' });
   putAsset(COVER, new Blob([], { type: 'image/jpeg' }), { name: 'art.jpg', ext: 'jpg', mime: 'image/jpeg' });
@@ -53,18 +47,18 @@ test('an empty file is planned as a removal, not as something to shrink', () => 
   assert.equal(plan.empty.length, 1);
   assert.equal(plan.empty[0].id, 'a');
   assert.equal(plan.empty[0].asset, true);
-  // And it is nowhere near the encoders. An encoder handed nothing would fail,
-  // and a dialog promising to shrink a zero-byte file promises the impossible.
+  // Nowhere near the encoders: one handed nothing would fail, and a
+  // dialog promising to shrink a zero-byte file promises the impossible.
   assert.equal(plan.pictures.length, 0);
   assert.equal(plan.sounds.length, 0);
   assert.equal(plan.total, 0, 'it contributes no weight to shrink');
 });
 
 test('every empty file is found, not just the first', () => {
-  // The reason this is bucketed per item rather than per hash, unlike
-  // everything else in the plan: every empty file in existence has the same
-  // digest, so a board with four of them has one hash on four cards. Dedup by
-  // hash would clean exactly one and silently leave the rest.
+  // Bucketed per item rather than per hash, unlike the rest of the plan:
+  // every empty file shares the same digest, so a board with four of them
+  // has one hash on four cards. Dedup by hash would clean one and
+  // silently leave the rest.
   loadBoard({
     title: 'T',
     items: ['a', 'b', 'c', 'd'].map(id =>
@@ -97,9 +91,9 @@ test('a board of real files plans no removals', () => {
 // ---------------------------------------------------------------------------
 
 test('a card whose own file is empty is thrown away, not left standing', () => {
-  // The bug this file was written for. Clearing the reference and leaving the
-  // card produced a card that had stopped claiming to be a file and still sat
-  // on the board taking up room.
+  // The bug this file was written for: clearing the reference and leaving
+  // the card produced one that stopped claiming to be a file yet still
+  // sat on the board.
   loadBoard({
     title: 'T',
     items: [
@@ -115,7 +109,7 @@ test('a card whose own file is empty is thrown away, not left standing', () => {
 });
 
 test('a thrown-away empty card goes to the bin and comes back on one undo', () => {
-  // The whole reason a delete is allowed here: it is recoverable twice over.
+  // Why a delete is allowed here: it's recoverable twice over.
   loadBoard({
     title: 'T',
     items: [photo({ id: 'a', name: 'broken', asset: { hash: EMPTY, embedded: true } })],
@@ -131,8 +125,8 @@ test('a thrown-away empty card goes to the bin and comes back on one undo', () =
 });
 
 test('an empty cover is dropped, and the card keeps everything else', () => {
-  // The other half, and deliberately not a delete: this card has a real file on
-  // it and only its picture is hollow.
+  // The other half, deliberately not a delete: this card has a real file
+  // and only its picture is hollow.
   loadBoard({
     title: 'T',
     items: [photo({
@@ -170,9 +164,9 @@ test('dropping empty covers is one undo across the whole board', () => {
 });
 
 test('a board with nothing but an empty cover to clear is still a run worth making', () => {
-  // The case the old `if (asset || cover || …)` guard silently dropped: null is
-  // falsy, so every card losing a cover failed the test that decides whether it
-  // reaches swapAssets() at all.
+  // The case the old `if (asset || cover || …)` guard silently dropped:
+  // null is falsy, so every card losing a cover failed the test deciding
+  // whether it reaches swapAssets() at all.
   loadBoard({
     title: 'T',
     items: [photo({ id: 'a', asset: { hash: REAL, embedded: true }, meta: { cover: COVER } })],

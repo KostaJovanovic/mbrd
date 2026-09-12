@@ -1,38 +1,7 @@
-// The per-item half of the command surface: what one card, specifically, can be
-// asked to do.
-//
-// Open it full size, edit its note, take it off what it is stuck to, put its
-// size back, give it a cover or take one away, fill or fit its picture, stand a
-// model up the other way, turn one, tint a sticker. One contiguous run of the
-// object in commands.ts, lifted whole - see commands/file.ts for why the five
-// runs became five files.
-//
-// ── Why it is mostly pairs ──
-//
-// Nearly every entry here is a `can*` predicate and the setter it guards, and
-// that shape is the right-click menu's doing rather than a habit. ui/menu.ts
-// builds its rows from this surface and has no other way to know whether a row
-// applies: it asks `canCoverItem(id)` and only then offers Set cover. So the
-// predicate is as much a part of the command as the action, and separating the
-// two - the predicate in the menu, the action here - would put the rule that
-// says "only a track wears a cover" in a file about drawing menus.
-//
-// The predicates are also deliberately *narrower than the model*. setItemCover()
-// will dress any card and state.ts says why; canCoverItem() offers it on audio
-// alone, so a picture an older build put on a note still draws and no new one
-// can be added. That gap is on purpose and is the one thing to be careful of
-// when editing this file: widening a `can*` is a product decision, not a tidy-up.
-//
-// ── What must not move in here ──
-//
-// The writes. setItemCover, setItemFit, setItemUpAxis and setStickerTint are all
-// state.ts's, and every one of them is undoable through the mutation door. What
-// is here is which card is eligible and what the menu should tick.
-//
-// Nor the selection-wide actions. Raise, lower, duplicate, delete and the
-// alignments read `selection` and stayed in commands.ts; `unstick` is the one
-// exception in this file and it is here because its predicate, canUnstick(), is
-// the same shape as everything around it and reads the same menu.
+// Per-item commands: viewer, note, cover, fit, bare, crop, model axis,
+// sticker tint, lock, tags, tour stops. Mostly can*/set* pairs for the
+// right-click menu. Predicates are deliberately narrower than the model:
+// widening a `can*` is a product decision, not a tidy-up.
 
 import { toast } from '../notify.ts';
 import {

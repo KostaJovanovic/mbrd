@@ -1,134 +1,35 @@
-// What a media container states about itself, read by hand.
-//
-// A browser will tell you how long a clip is and how big its picture is - right
-// up until it will not. Every engine refuses some part of this app's own format
-// catalogue: Chrome and Firefox decline AVI, WMV, FLV, MPEG program streams and
-// most of what a camcorder writes; nothing but Safari opens AC-3 or DTS; AIFF
-// and Matroska audio come and go by engine and platform. For those the element
-// answers nothing at all - no `loadedmetadata`, no duration, no dimensions -
-// and the card that results is a rectangle of the wrong shape with no facts on
-// it, which is the same card whatever the file was.
-//
-// The containers themselves are not shy about any of this. A duration, a frame
-// rate and a picture size are in the header of every format here, stated in
-// plain fields a few hundred bytes in, because that is what a player needs
-// before it can start. So this module reads them: fourteen containers, walked
-// with Blob.slice() the way import/artwork.ts and import/preview.ts walk theirs,
-// answering the same three or four facts for all of them.
-//
-// The method is the sibling analyser's, which is where the field offsets and
-// the awkward corners came from - the 80-bit sample rate in an AIFF COMM, the
-// Xing frame count that is the only honest duration a VBR MP3 has, the
-// difference between an AVI's per-stream and per-file frame counts. What is not
-// borrowed is the part that needs somebody else's code: analyser decodes the
-// pixels through ImageMagick and ffmpeg, and mbrd asks ffmpeg for one poster
-// frame (optimize/media.ts) and nothing more. Header fields need no decoder, so
-// these run everywhere, offline, in a few kilobytes of reads.
-//
-// What uses it:
-//
-//   - ui/playlist.ts, for the duration of a track this engine will not decode,
-//     and for the one it decodes *wrongly* (see streamDuration in artwork.ts).
-//   - import/drop.ts, for the shape of a clip nothing here can open, so a phone
-//     video lands upright instead of as a landscape box.
-//   - canvas/renderers.ts, for the facts a card shows when it cannot show the
-//     thing itself.
-//
-// The contract is import/artwork.ts's, deliberately: slice, never slurp; cap
-// every count read from the file before looping or allocating; bound every
-// offset against the file's real size; and answer null rather than throwing,
-// because a container that will not parse is a card that says a little less,
-// never an import that fails. Nothing here trusts a number in the file except
-// as a claim to be checked.
+// Hand-read media container metadata (duration, dimensions, sample rate).
+// Fourteen formats, all parsed from headers via Blob.slice(). Covers every
+// format the browser engine refuses: AVI, WMV, FLV, MPEG-TS, AC-3, DTS, etc.
+// Returns null on failure — a broken container is a card with fewer facts,
+// never an import error. All counts from the file are bounds-checked.
 
 import { streamDuration } from './artwork.ts';
 
-/**
- * What a container will say about itself.
- *
- * Every field is optional and an absent one means "this container does not
- * state it" - not zero, and not "unknown, ask again later". An AVI knows its
- * picture size and its frame count; a raw AC-3 stream knows its sample rate and
- * how long it runs but has no picture at all; an MP3 knows everything except
- * the two that only apply to video. The callers all read the fields they want
- * and ignore the rest, so a container that fills three of eight is useful.
- */
+/** Optional fields — absent means "not stated", not "unknown". */
 export type MediaFacts = {
-  /** Seconds. Exact where the container counts samples or frames. */
   duration?: number,
-  /** The picture, in pixels, as the container declares it. */
   width?: number,
   height?: number,
   sampleRate?: number,
   channels?: number,
-  /** A short human label - 'AC-3', 'Matroska'. For a card, not for logic. */
   container?: string,
-  /**
-   * The duration is arithmetic rather than a count, and may be wrong.
-   *
-   * One branch sets it: an MP3 with no Xing header, whose length is audio bytes
-   * over the first frame's bitrate and is therefore exact only if the file is
-   * constant bitrate. Every other duration here is either stated outright by
-   * the container or counted frame by frame.
-   *
-   * It matters because the engine is the better authority on exactly that case
-   * and on no other - it will decode the file and count - so a caller that has
-   * both takes the engine's number when this flag is set and this module's when
-   * it is not. See runProbe() in ui/playlist.ts.
-   */
+  // Set for MP3 without Xing header — duration is bytes/bitrate, not a count.
+  // Callers prefer the engine's number when this is true.
   estimated?: boolean,
 };
 
-/**
- * How much of the front of a file is read to identify it and walk its header.
- *
- * Generous on purpose. Every container here states what this module wants
- * inside its first header structure, but "first" is not "at the top": an AVI
- * puts its `avih` behind two nested RIFF lists, a Matroska file may carry a
- * seek head and a hundred kilobytes of cues before its Tracks, and an MP3's
- * Xing frame sits behind an ID3v2 tag that legally holds a cover photograph.
- * A quarter-megabyte covers all of those and is one read.
- */
+// 256 KB head, 64 KB tail — enough to cover ID3 tags, seek heads, and cues.
 const HEAD = 256 * 1024;
-
-/** And how much of the *end*, for the containers that count from the tail. */
 const TAIL = 64 * 1024;
 
-/**
- * Ceilings on anything the file itself claims. None is a correctness bound - a
- * real file clears all of them - they are what keeps a truncated or hostile
- * container from turning a walk into an unbounded loop.
- */
-const MAX_CHUNKS = 4096;      // RIFF/AIFF chunks, MP4 atoms, ASF objects
-const MAX_ELEMENTS = 4096;    // EBML elements in one walk
-const MAX_FRAMES = 4_000_000; // AMR frames, ~22 hours
-
-/**
- * The longest a duration may be before it is treated as nonsense.
- *
- * Ten days. Every arithmetic path here multiplies a count by a rate, and both
- * come out of the file - a corrupt sample rate of 1 turns a three-minute song
- * into eleven days, and a card reading "268435456:00" is worse than a card
- * reading nothing. Refused rather than clamped: a wrong number that looks
- * plausible is the one failure this whole module exists to end.
- */
+// Bounds against hostile/truncated files.
+const MAX_CHUNKS = 4096;
+const MAX_ELEMENTS = 4096;
+const MAX_FRAMES = 4_000_000;
 const MAX_SECONDS = 10 * 24 * 3600;
 
-/**
- * Everything one container says about itself, or null.
- *
- * Identified by its own first bytes rather than by its name, with two
- * exceptions noted at their branches - a raw AC-3 or DTS elementary stream has
- * a sync word a byte and a half long, which is not enough to hand a file to a
- * parser on, so those two are confirmed by extension as well. Every other
- * branch here would recognise its format inside a file called anything at all.
- *
- * `ext` is optional for that reason and for one other: half the callers hold a
- * File and can say `extOf(file.name)`, and half hold nothing but the stored
- * bytes - an asset in the registry is a Blob, and the archive carries no
- * filenames - and pass what the item remembers, or nothing at all. Every branch
- * but those two works without it.
- */
+// Identify by magic bytes; ext only needed for AC-3/DTS (sync word too short).
 export async function mediaFacts(file: Blob, ext = ''): Promise<MediaFacts | null> {
   try {
     const head = await bytes(file, 0, Math.min(HEAD, file.size));
@@ -140,10 +41,7 @@ export async function mediaFacts(file: Blob, ext = ''): Promise<MediaFacts | nul
   }
 }
 
-/** The branch table, in the order the signatures are unambiguous. */
 async function read(file: Blob, head: Bytes, ext: string): Promise<MediaFacts | null> {
-  // RIFF carries three of the formats here and says which in its form type, so
-  // it is one read and a three-way branch rather than three signature tests.
   if (tag(head, 0) === 'RIFF') {
     const form = tag(head, 8);
     if (form === 'WAVE') return riffWave(head);
@@ -161,36 +59,22 @@ async function read(file: Blob, head: Bytes, ext: string): Promise<MediaFacts | 
   if (isEbml(head)) return matroska(head);
   if (isAsf(head)) return asf(head);
   if (isMp4(head)) return mp4(head);
-  // An ID3 tag is worn by MP3s and by raw AAC alike, so what is behind it
-  // decides, not the tag. streamDuration() answers null for anything that is
-  // not a run of ADTS frames, which is exactly the question being asked.
+  // ID3 can wrap MP3 or AAC — try AAC first via streamDuration().
   if (isID3(head) || isMpegAudio(head, 0) || isAdts(head, 0)) {
     const adts = await streamDuration(file);
     if (adts) return { container: 'AAC', duration: adts };
     return mp3(file, head);
   }
-  // The two elementary streams whose sync word is too short to trust alone.
-  // Both are named by the only extensions they ever arrive under.
+  // AC-3/DTS: sync word too short, confirmed by extension.
   if ((ext === 'ac3' || ext === 'eac3') && head[0] === 0x0b && head[1] === 0x77) return ac3(file, head);
   if (ext === 'dts' || ext === 'dtshd') return dts(file, head);
   if (tag(head, 0, 5) === '#!AMR') return await amr(file, head);
-  // MPEG's two multiplexes and its two bare bitstreams, all four of which are
-  // recognised by a start code rather than by a header at offset zero - see
-  // their own sections.
   if (head[0] === 0x47 || isMpegPs(head)) return await mpegStream(file, head);
   if (findStart(head, 0) >= 0) return bitstream(head, ext);
   return null;
 }
 
-/**
- * A parsed answer, held to what is believable.
- *
- * Every field here was arithmetic on numbers a stranger wrote, so this is the
- * one place that decides what comes out. A field that does not survive is
- * dropped rather than the whole answer: an AVI with a broken frame count still
- * knows how big its picture is, and half a fact is the difference between a
- * card shaped like the clip and a card shaped like nothing.
- */
+// Drop implausible fields individually — half a fact beats none.
 function clean(f: MediaFacts): MediaFacts | null {
   const out: MediaFacts = {};
   if (f.container) out.container = f.container;
@@ -198,16 +82,13 @@ function clean(f: MediaFacts): MediaFacts | null {
     out.duration = f.duration;
     if (f.estimated) out.estimated = true;
   }
-  // Both or neither: a picture with one dimension is not a shape, and fitToBox()
-  // in canvas/renderers.ts would take the pair and divide by zero.
+  // Both or neither — one dimension alone causes a divide-by-zero in fitToBox().
   if (isSize(f.width) && isSize(f.height)) { out.width = f.width; out.height = f.height; }
   if (isRate(f.sampleRate)) out.sampleRate = f.sampleRate;
   if (isCount(f.channels)) out.channels = f.channels;
   return Object.keys(out).length ? out : null;
 }
 
-// 65535 is the largest either dimension can be in most of these headers anyway;
-// it is well past any real video and well short of an allocation.
 const isSize = (n: unknown): n is number =>
   typeof n === 'number' && Number.isInteger(n) && n > 0 && n <= 65535;
 const isRate = (n: unknown): n is number =>
@@ -221,11 +102,6 @@ const isSpan = (n: unknown): n is number =>
 // Reading
 // ---------------------------------------------------------------------------
 
-/**
- * A run of bytes off a Blob, named the way import/artwork.ts names it and for
- * the same reason - everything here is a view onto an ArrayBuffer that came
- * from a slice, and saying so keeps the chain assignable.
- */
 type Bytes = Uint8Array<ArrayBuffer>;
 
 async function bytes(file: Blob, start: number, length: number): Promise<Bytes> {
@@ -239,16 +115,7 @@ const be16 = (b: Bytes, i: number) => (b[i] << 8) | b[i + 1];
 const be24 = (b: Bytes, i: number) => (b[i] << 16) | (b[i + 1] << 8) | b[i + 2];
 const be32 = (b: Bytes, i: number) => ((b[i] << 24) | (b[i + 1] << 16) | (b[i + 2] << 8) | b[i + 3]) >>> 0;
 
-/**
- * A 64-bit field, as a double.
- *
- * Every 64-bit count in these formats - an ASF play duration, an MP4 version-1
- * mvhd, a Matroska element size - is a byte count or a tick count, and the
- * largest of them that describes a real file is nowhere near 2^53. So the high
- * half is folded in by multiplication rather than by BigInt: a number that
- * needs more than 53 bits of precision here is a number this module refuses on
- * the way out anyway.
- */
+// 64-bit as double — all values here are well under 2^53.
 const be64 = (b: Bytes, i: number) => be32(b, i) * 0x100000000 + be32(b, i + 4);
 const le64 = (b: Bytes, i: number) => le32(b, i) + le32(b, i + 4) * 0x100000000;
 
@@ -258,32 +125,17 @@ const tag = (b: Bytes, i: number, n = 4) =>
 const isID3 = (h: Bytes) => tag(h, 0, 3) === 'ID3' && h[3] < 5;
 const isMp4 = (h: Bytes) => tag(h, 4) === 'ftyp' || tag(h, 4) === 'moov' || tag(h, 4) === 'mdat';
 const isEbml = (h: Bytes) => h[0] === 0x1a && h[1] === 0x45 && h[2] === 0xdf && h[3] === 0xa3;
-// The ASF header object's GUID, first eight bytes - enough that nothing else
-// starts with them.
 const isAsf = (h: Bytes) => h[0] === 0x30 && h[1] === 0x26 && h[2] === 0xb2 && h[3] === 0x75
   && h[4] === 0x8e && h[5] === 0x66 && h[6] === 0xcf && h[7] === 0x11;
-/** Eleven sync bits, and a version and layer that are not the reserved ones. */
 const isMpegAudio = (b: Bytes, i: number) =>
   b[i] === 0xff && (b[i + 1] & 0xe0) === 0xe0
   && ((b[i + 1] >> 3) & 0x03) !== 1 && ((b[i + 1] >> 1) & 0x03) !== 0;
 
-/** The same sync bits with a layer of 00, which is what makes it AAC rather
- *  than MPEG audio - see streamDuration() in import/artwork.ts. */
+// Layer 00 = AAC (ADTS), not MPEG audio.
 const isAdts = (b: Bytes, i: number) => b[i] === 0xff && (b[i + 1] & 0xf6) === 0xf0;
 
-/**
- * Walk the chunks of a RIFF or IFF file, calling back with each one.
- *
- * The two formats are the same structure read in opposite byte orders - a
- * four-character name, a length, and that many bytes - which is why one walker
- * serves WAV, AVI and AIFF. `LIST`/`RIFF` in a RIFF file and `FORM` in an IFF
- * one carry a form type and then more chunks, so those are descended into
- * rather than skipped; everything else is a leaf.
- *
- * The callback answers true to stop the walk. Odd-length chunks are followed by
- * a pad byte in both formats, which is the `+ (len & 1)` and is the single most
- * commonly forgotten line in any RIFF reader.
- */
+// Walk RIFF/IFF chunks. Descends into LIST/RIFF/FORM containers.
+// `+ (len & 1)` is the pad byte — the most commonly forgotten line in any RIFF reader.
 function walkChunks(
   b: Bytes,
   from: number,
@@ -298,8 +150,6 @@ function walkChunks(
     const len = u32(b, at + 4);
     const body = at + 8;
     if (!(len >= 0) || body > to) return;
-    // A container chunk: its first four bytes name the form, and its children
-    // follow. Descending is what finds an `avih` inside `LIST hdrl`.
     if (name === 'LIST' || name === 'RIFF' || name === 'FORM') {
       if (visit(tag(b, body), body + 4, Math.max(0, len - 4))) return;
       walkChunks(b, body + 4, Math.min(to, body + len), little, visit);
@@ -1072,20 +922,9 @@ async function amr(file: Blob, head: Bytes): Promise<MediaFacts | null> {
 // MPEG  -  .ts, .m2ts, .mts, .mpg, .mpeg, .vob
 // ---------------------------------------------------------------------------
 //
-// The two multiplexes, and among the best reasons this module exists: not one
-// engine here will open a camcorder's .mts or a DVD's .vob, so before this they
-// were a black rectangle of the wrong shape with no running time on it. Neither
-// format has a header to read - both are a stream of packets, and what is
-// wanted is found by looking for start codes inside them.
-//
-// The picture comes out of the video sequence header, which MPEG-2 writes
-// before the first frame and repeats every second or so: twelve bits of width
-// and twelve of height, packed across three bytes.
-//
-// The duration comes out of the timestamps. Every packet is stamped in 90 kHz
-// units, so the last stamp less the first is how long the stream runs - which
-// is why this is the second reader here that reads both ends of the file. It is
-// exact to within a frame, and it is the only duration either format has.
+// Two multiplexes, no header — packet stream searched for start codes.
+// Picture from the MPEG-2 video sequence header (12+12 bits). Duration
+// from first/last 90 kHz PTS — reads both ends of the file.
 
 /** A program stream opens with a pack header, or has one very near the front. */
 const isMpegPs = (h: Bytes) => {
@@ -1228,16 +1067,9 @@ function stampFrom(b: Bytes, i: number): number {
 // H.264 and H.265  -  .264, .h264, .avc, .265, .h265, .hevc
 // ---------------------------------------------------------------------------
 //
-// A bare bitstream: no container, no index, no timing anywhere - a file of
-// coded frames and nothing else. So the one thing to read is the picture size,
-// out of the sequence parameter set, and the honest thing to say about the
-// length is nothing at all.
-//
-// The fields are Exp-Golomb coded, which is why this needs a bit reader rather
-// than a table of offsets: each value is written as a run of zeros, a one, and
-// then that many more bits, so nothing after the first field is at a known
-// position and every field ahead of the two that are wanted has to be decoded
-// to get past it.
+// Bare bitstream — no container, no timing. Reads picture size from the
+// SPS. Fields are Exp-Golomb coded, so a bit reader is needed (no fixed
+// offsets).
 
 function bitstream(head: Bytes, ext: string): MediaFacts | null {
   const hevc = ext === '265' || ext === 'h265' || ext === 'hevc';

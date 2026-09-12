@@ -1,22 +1,18 @@
-// clearSession() used to swallow every failure and return nothing, so "Clear
-// everything" could report success while user data survived a failed wipe. It
-// now throws on a wipe that does not commit. This drives it through a
-// controllable fake-IDB: an aborting clear transaction must reject, a
-// committing one must resolve.
-//
-// The overlapping-save (A/B inversion) and clear-during-save races are browser
-// boundary flows - they need the bus wiring and page globals initStorage()
-// installs - and live in the browser smoke suite (AUD-13), not here.
+// clearSession() used to swallow every failure and report success while data
+// survived a failed wipe. It now throws on a wipe that does not commit,
+// driven here through a controllable fake-IDB: abort must reject, commit
+// must resolve. The overlapping-save and clear-during-save races need the
+// bus wiring and page globals initStorage() installs, and live in the
+// browser smoke suite (AUD-13) instead.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 const soon = fn => Promise.resolve().then(fn);
 
-// One shared connection serves both cases; the transaction outcome is read from
-// this flag at settle-time, so flipping it between tests needs no reconnect
-// (idb.ts caches the connection for the process, and the relative import means
-// there is only one idb.ts instance to cache it).
+// One shared connection serves both cases; the outcome flag is read at
+// settle-time, so flipping it between tests needs no reconnect (idb.ts
+// caches the connection for the process).
 let outcome = 'complete';
 
 globalThis.indexedDB = {

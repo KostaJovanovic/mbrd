@@ -1,54 +1,11 @@
-/* The families the whimsy axis moves between.
-   Latin subsets only, self-hosted, no CDN - this app works offline by design.
+/* Families the whimsy axis moves between. Latin subsets, self-hosted, offline.
+   Playfair: on the menu but not a tier default. Fraunces: the serif of both
+   tiers that have one. Geist: the sans. All variable (weight + opsz/wdth).
+   SIL OFL 1.1; see the -OFL.txt files beside the font files. */
 
-   A browser only fetches a @font-face it actually needs, and only for the
-   characters it actually paints, so the plain end never downloads a serif and
-   the soft end never downloads the sans.
-
-   Two serifs are declared here, but only one is a tier's default. Fraunces is
-   the serif both the middle and the soft end set, at two different weights
-   (--display-weight in tokens.css). Playfair was the middle's for a while, on
-   the argument that a serif holding a line against Geist wants a Didone's
-   contrast; the middle buys that separation off Fraunces' weight axis instead,
-   which is one file rather than two.
-
-   Playfair stays declared because it is still a face you can choose - both font
-   menus offer it by name (DISPLAY_FACES in ui/appearance.ts and
-   BUILTIN_HEADER_FACES in ui/fonts.ts), and a board that picked it keeps it.
-   No default reaches for it, so on a board that has not, the four files below
-   are bytes the service worker precaches and the page never asks for. That is
-   the price of leaving the face on the menu; dropping it from SHELL in sw.js is
-   the trade available if it stops being worth paying.
-
-   Both are variable on a weight and an optical-size axis, and in both cases the
-   optical axis is why they are here rather than a static display serif: one file
-   gives a properly drawn cut at 30px and at 13px - tight and high-contrast up
-   top, open and sturdy down at reading size. tokens.css sets
-   `font-optical-sizing: auto` for exactly this; Blink needs telling.
-   Both SIL Open Font License 1.1; see the -OFL.txt files beside them. */
-
-/* Playfair, on the menu rather than on the axis. Not Playfair Display - that is
-   the static 2011 cut with no optical axis, which at 13px is hairlines and gaps.
-   This is the 2023 family, whose opsz runs from 5, so the small italic asides
-   (--display-italic) get a real text cut rather than a shrunk headline on a
-   board that has chosen it.
-
-   All three axes, opsz and wdth and wght. These shipped for a while with wdth
-   instanced out at 100, which saved 312KB across the four files and cost the
-   width slider - an axis removed from the file is gone, not merely unexposed,
-   and nothing downstream can tell that apart from a family that never had one.
-   The bytes are the honest price of the axis.
-
-   Every axis default in this family sits at an end of its range rather than in
-   the middle - opsz 5, wdth 112.5, wght 300 - so none of them is what you want
-   and all three have to be driven. All three are registered axes, which is
-   exactly what makes that fine: font-optical-sizing drives opsz, font-weight
-   drives wght, and font-stretch drives wdth, the last defaulting to `normal`
-   (100%) and so quietly correcting a face whose own default is SemiExpanded.
-   The range below is what lets it - a font-stretch descriptor left unstated
-   defaults to 100% alone, and the face would then claim one width and clamp
-   every other. The name records still read "5pt SemiExpanded Light"; that is
-   the same set of defaults seen from the other side, and not what renders. */
+/* Playfair (2023 variable, not the static 2011 "Display" cut). Three axes:
+   opsz, wdth, wght. All default to range ends, so font-stretch must declare
+   the full range or the browser clamps to one width. */
 @font-face {
   font-family: 'Playfair';
   font-style: normal;
@@ -71,10 +28,7 @@
                  U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF,
                  U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
-/* A real italic, because the levels that would set a board in this face are the
-   ones that set --display-italic - half the small print on a serif board is
-   italic - and a synthesised oblique of a Didone is the most obviously fake
-   thing a browser draws. */
+/* Real italic: a synthesised oblique of a Didone is obviously fake. */
 @font-face {
   font-family: 'Playfair';
   font-style: italic;
@@ -98,13 +52,8 @@
                  U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 
-/* Fraunces, the serif of both levels that have one - the soft end's single
-   voice, and the middle's announcing voice over Geist. It is the one face on
-   the board that has to be a display cut and a text cut at once, since whimsy 0
-   sets running copy in it too, and the weight axis is what lets it be two tiers
-   as well: 300 in the middle, 400 at the soft end. The wght range below is the
-   file's own 100-900 and not a narrower claim, which is what makes that
-   possible - see the note over Geist. */
+/* Fraunces: serif for the soft end (400) and the middle tier (300).
+   Full weight range declared so the browser does not clamp it. */
 
 @font-face {
   font-family: 'Fraunces';
@@ -126,10 +75,7 @@
                  U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF,
                  U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
-/* A real italic, not a slant - the soft end inherits --display-italic from the
-   middle without restating it, so half the small print there is set in this
-   file, and a synthesised oblique of a high-contrast serif is the most
-   obviously fake thing a browser draws. */
+/* Real italic: a synthesised oblique of a high-contrast serif is obviously fake. */
 @font-face {
   font-family: 'Fraunces';
   font-style: italic;
@@ -151,17 +97,8 @@
                  U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 
-/* Geist, for the plain end of the axis - and, from the middle onwards, for
-   running text underneath the serif.
-
-   The weight descriptors below are the files' own fvar ranges - 100 to 900 for
-   both Geist and Geist Mono - and not a narrower band chosen here. A @font-face
-   weight range is a *claim about the file*, and the browser clamps font-weight
-   to it: declaring 300 700 over a face that holds 100 900 does not decline the
-   extra weights so much as hide them, and nothing downstream can tell the
-   difference between an axis that stops and an axis said to stop. These used to
-   read 300 700 and 400 600, which is why `.wordmark h1` in base.css got 700 from
-   a font that has 900 - see the note there. */
+/* Geist: the sans for the plain end and for running text under the serif.
+   Full fvar range (100-900) declared; a narrower claim silently clamps. */
 
 @font-face {
   font-family: 'Geist';

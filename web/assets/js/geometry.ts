@@ -1,29 +1,7 @@
-// Where an item is, and what it covers.
-//
-// Every one of these answers had been written more than once, in modules that
-// could not see each other, and they did not all agree. A point-in-item test
-// that accounted for rotation lived in state.ts; a rotation-aware bounding box
-// lived in viewport.ts/fit; the marquee in input.ts tested the *unrotated*
-// extents; the culler in items.ts used a circumscribed square. Four takes on
-// one question.
-//
-// Nothing sets `rot` today, so the disagreement is invisible - which is
-// exactly the problem. Rotate handles are on the roadmap, and the day they
-// land is the day a rotated item becomes selectable by a marquee that misses
-// it, framed by a Fit that gets it right, and stuck to by a note that uses a
-// third rule. Consolidating now is cheap; consolidating then is a bug hunt.
-//
-// The convention throughout: an item is a centre (x, y), a size (w, h) and a
-// rotation `rot` in degrees, anticlockwise-positive, matching world axes where
-// +y is up. Every function here is pure and takes items rather than ids, so
-// none of it needs to know that a board exists.
-//
-// Which is also the whole of the vocabulary below. `Box` is that convention
-// written down; `Point` is one without a size, since half this file works over
-// polylines and corners; `Bounds` is the other spelling of a rectangle, the
-// two-corner one itemBounds() returns and the culler passes about. They are
-// structural on purpose - an Item satisfies Box without this file importing
-// board-model.ts, which is what keeps geometry at the bottom of the graph.
+// Pure geometry: point-in-item, bounding boxes, rotation-aware hit testing.
+// Convention: centre (x,y), size (w,h), rotation `rot` in degrees (CCW, +y up).
+// Structural types (Box, Point, Bounds) — no board-model import, stays at
+// graph bottom. Consolidated from four inconsistent copies across the codebase.
 
 /** A point in whatever space the caller is working in. */
 export type Point = { x: number, y: number };
@@ -45,96 +23,36 @@ export type View = { pan: Point, zoom: number };
 
 const RAD = Math.PI / 180;
 
-/**
- * How small and how large an item is allowed to get.
- *
- * Here rather than in input.ts because a resize handle is no longer the only
- * thing that sets a size: snapping the whole board onto the lattice does too,
- * and it lives in state.ts, which has no business importing from canvas/.
- *
- * 48 is where the eight resize grips stop fitting around a box - below it the
- * corners overlap, the edge strips collapse, and an item dragged down to a
- * speck could never be dragged back out. It is still well under half a note
- * (120x120) and under half the short side of the smallest default card
- * (200x112), so a deliberate shrink never runs into it.
- *
- * 20000 is a hundred default cards wide - far past anything a board wants, while
- * still spanning 400 screen pixels at the furthest zoom out, so even an item
- * used as a deliberate backdrop stays inside it.
- */
+// 48: resize grips overlap below this. 20000: ~100 default cards wide.
 export const MIN_SIZE = 48;
 export const MAX_SIZE = 20000;
 
-/**
- * How much of a cell a snapped item gives back at *each* of its four sides, so
- * that two of them side by side have a seam between them instead of meeting.
- *
- * A board laid exactly on the lattice is a board where every neighbour touches:
- * the cell boundary is one line, and an item on each side of it fills right up
- * to it, so two photographs read as one wide photograph with a crease. The fix
- * is not to move anything - the block of cells an item occupies is still chosen
- * on the lattice, which is the whole point of snapping - but to leave a sliver
- * of that block unpainted.
- *
- * Four sides rather than two, and that is the correction worth writing down.
- * The seam used to be taken off the high edges alone: the whole of it, so the
- * space *between* two neighbours came out the same, but an item sat flush
- * against the lines on its left and bottom and short of them on its right and
- * top. Two items in one row read correctly and everything else did not - a lone
- * card was visibly off-centre in its cells, a row and the row above it were
- * spaced differently from a column and the column beside it, and an item against
- * the edge of a group had a margin on one side only. Halving the seam and
- * putting it on every side costs nothing anywhere the old rule looked right and
- * fixes it everywhere it did not.
- *
- * A fraction of the step rather than a fixed distance, because the step is not
- * fixed: it doubles and halves with the zoom and the user can set the base. At
- * 4% a side - so 8% between two neighbours, exactly what it was - the seam is a
- * shade under a fifth of the smallest gap between two cards a layout would
- * leave, which is small enough to read as a join rather than as space, and it
- * stays that way at every step size.
- */
+// A card's floor on the grid: three cells across, two down. Held as cell
+// counts, not pixels, so the floor tracks the board's step rather than a
+// fixed size. Applied at resize in canvas/input.ts; the text- and mark-shaped
+// items (notes, text, titles, swatches, stickers) are exempt there.
+export const CARD_FLOOR_CELLS = { w: 3, h: 2 } as const;
+
+/** Inset per side so snapped items have a visible seam. 4% of step, on all four sides. */
 export const CELL_GAP = 0.04;
 
 /** The seam itself, in world units, for a given cell size. */
 export const cellInset = (step: number) => step * CELL_GAP;
 
-/**
- * A low edge laid on the lattice: a grid line, plus the seam.
- *
- * The offset is what makes the sides uniform, and it has to be applied by
- * everything that puts an edge on the grid - the drag gesture and the arrow keys
- * as well as the two callers of latticeBox() below - or an item dragged across a
- * snapped board would come to rest half a seam off the one that was laid there.
- */
+/** A low edge on the lattice: nearest grid line + seam inset. */
 export const latticeLow = (v: number, step: number) => {
   const inset = cellInset(step);
   return Math.round((v - inset) / step) * step + inset;
 };
 
-/**
- * A side laid on the lattice: a whole number of cells, less a seam at each end.
- *
- * Clamped, and a clamp can cost the box its whole number of cells. That is
- * accepted rather than worked around: the limits are absolute and the lattice is
- * a preference, and an item at either limit is far outside the range where
- * sitting flush in a cell is what anybody is looking at.
- */
+/** A side snapped to whole cells minus seam insets. Clamped to [MIN_SIZE, MAX_SIZE]. */
 export const latticeSide = (v: number, step: number) => {
   const gap = 2 * cellInset(step);
   const cells = Math.max(Math.round((v + gap) / step), 1);
   return Math.min(Math.max(cells * step - gap, MIN_SIZE), MAX_SIZE);
 };
 
-/**
- * A box laid on the lattice, both halves at once.
- *
- * The one place this arithmetic is assembled. Both callers need exactly it -
- * state.ts when snapping is switched on and the whole board is laid out at once,
- * and canvas/input.ts on every gesture that has to keep it that way - and they
- * differ only in the step they pass: the base step for geometry that is being
- * stored, the on-screen step for something being dragged against the dots.
- */
+/** A box snapped to the lattice (position and size). */
 export function latticeBox(box: Box, step: number) {
   const w = latticeSide(box.w, step), h = latticeSide(box.h, step);
   return {
@@ -144,14 +62,7 @@ export function latticeBox(box: Box, step: number) {
   };
 }
 
-/**
- * Half-extents of the axis-aligned box that contains a rotated item.
- *
- * The standard result: project the rotated rectangle's own half-extents onto
- * each world axis and add the two contributions. At rot = 0 it collapses to
- * (w/2, h/2), which is why callers can use it unconditionally without paying
- * for trig on a board where nothing is turned.
- */
+/** Half-extents of the AABB around a rotated item. At rot=0, just (w/2, h/2). */
 export function rotatedExtents(it: Size) {
   const rot = it.rot || 0;
   if (!rot) return { hw: it.w / 2, hh: it.h / 2 };
@@ -164,13 +75,7 @@ export function rotatedExtents(it: Size) {
   };
 }
 
-/**
- * The axis-aligned box around a set of items, or null for none.
- *
- * Rotation-aware, so this is the box you can actually see rather than the one
- * the unturned rectangles would occupy. Used to frame a Fit, to centre a
- * paste, and to decide whether what the clipboard holds is on screen.
- */
+/** Rotation-aware AABB around a set of items, or null for empty. */
 export function itemBounds(items: Iterable<Box>): Bounds | null {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   let any = false;
@@ -185,80 +90,28 @@ export function itemBounds(items: Iterable<Box>): Bounds | null {
   return any ? { x0, y0, x1, y1 } : null;
 }
 
-/**
- * Does an item overlap the world-space rectangle `[x0,x1] x [y0,y1]`?
- *
- * Box against box, using the rotated extents - the same forgiving test Fit
- * frames with. An exact rotated-rectangle intersection is available and is not
- * wanted: a marquee is a rough gesture, and catching an item whose corner
- * *nearly* reaches the band you dragged is the friendlier of the two mistakes.
- * What matters is that it is now the same approximation everything else makes.
- */
+/** Does an item's AABB overlap a world-space rect? Forgiving (same approx as Fit). */
 export function itemInRect(it: Box, x0: number, y0: number, x1: number, y1: number) {
   const { hw, hh } = rotatedExtents(it);
   return it.x + hw >= x0 && it.x - hw <= x1 &&
          it.y + hh >= y0 && it.y - hh <= y1;
 }
 
-/**
- * Does the world-space rectangle `[x0,x1] x [y0,y1]` hold the whole item?
- *
- * The strict half of the pair above, and it exists for one caller: a fence is
- * larger than anything drawn inside it, so under the overlap test a band swept
- * across a region always caught the region itself - and then the offer that
- * followed miscounted, the fence it drew was unioned out to swallow its own
- * parent, and dragging what the band caught towed the whole thing.
- *
- * Overlap is right for a card, whose face is what you are pointing at. A fence's
- * face is not a target at all - items.css hands presses straight through it, and
- * only its name plate takes one - so a band crossing that face is a band drawn
- * *in* the region, not at it. Containment is what "at it" means for a shape you
- * cannot otherwise hit.
- *
- * Rotation-aware through the same extents, so it is the box you can see that has
- * to fit, and the same forgiving approximation everything else here makes.
- */
+/** Is the item's AABB fully inside the rect? For fences — overlap would always catch them. */
 export function itemWithinRect(it: Box, x0: number, y0: number, x1: number, y1: number) {
   const { hw, hh } = rotatedExtents(it);
   return it.x - hw >= x0 && it.x + hw <= x1 &&
          it.y - hh >= y0 && it.y + hh <= y1;
 }
 
-/**
- * Where a point sits relative to a rectangle, as four bits.
- *
- * Cohen and Sutherland's, from 1967, and still the cheapest way to ask this:
- * one comparison per edge, and the answers compose. Two codes ORed to nothing
- * means both ends are inside; two codes ANDed to anything means both ends are
- * beyond the same edge, and a straight line between them cannot have visited
- * the rectangle in between.
- */
+// Cohen-Sutherland outcodes for segment-rect clipping.
 const OUT_LEFT = 1, OUT_RIGHT = 2, OUT_BELOW = 4, OUT_ABOVE = 8;
 
 const outcode = (x: number, y: number, r: Bounds) =>
   (x < r.x0 ? OUT_LEFT : x > r.x1 ? OUT_RIGHT : 0) |
   (y < r.y0 ? OUT_BELOW : y > r.y1 ? OUT_ABOVE : 0);
 
-/**
- * Does the segment a-b touch the rectangle `r` ({x0,y0,x1,y1})?
- *
- * Exact, where the obvious test - does the segment's bounding box meet the
- * rectangle - is not. The two agree on everything axis-aligned and part company
- * on the diagonal, which is the case that matters: a thread from one corner of
- * a board to the other has a bounding box covering the whole board, so it
- * passes a box test from every view there is while actually crossing almost
- * none of them.
- *
- * The loop is the classic clip, stopped one step early. Each turn takes an
- * endpoint that is outside, moves it onto the edge it is outside of, and asks
- * again; an endpoint can be outside on at most two edges, so this settles in
- * four turns at the very worst. The clipped points are thrown away - the
- * question here is only whether anything survived.
- *
- * No division by zero. The vertical branches are reached only when exactly one
- * endpoint is above or below, which cannot happen with both ends at the same y
- * - that case has already left through the shared-edge rejection.
- */
+/** Exact segment-rect intersection (Cohen-Sutherland clip, stopped early). */
 export function segmentMeetsRect(a: Point, b: Point, r: Bounds) {
   let x0 = a.x, y0 = a.y, x1 = b.x, y1 = b.y;
   let c0 = outcode(x0, y0, r), c1 = outcode(x1, y1, r);
@@ -276,26 +129,7 @@ export function segmentMeetsRect(a: Point, b: Point, r: Bounds) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Polylines
-//
-// The five below came out of canvas/web.ts and the two web-* modules, where
-// they were private helpers beside the drawing that used them. They are here
-// for the reason segmentMeetsRect above is: each is arithmetic over points
-// with no idea that a board, a viewport or an SVG exists, and the alternative
-// to one home is the disagreement this file was written to end - five takes on
-// "where is it", in modules that cannot see each other.
-//
-// The two squared-distance functions are the pointed case. Both were called
-// `dist2`, in web-graph.ts and web-route.ts, and they are not the same
-// function: one is the distance between two points and the other is the
-// distance from a point to the *middle* of a pair of them. Put side by side
-// under one name, either caller would silently get the other's answer - a
-// spanning tree over the wrong metric draws a plausible-looking web that is
-// simply not the minimal one, and nothing would ever fail. So they keep two
-// names that say which is which, and the names are longer than `dist2` on
-// purpose.
-// ---------------------------------------------------------------------------
+// === Polylines ===
 
 /** The point half way along a polyline by arc length - where a label sits. */
 export function polyMidpoint(points: Point[] | null | undefined): Point {
@@ -322,14 +156,7 @@ export function polyMidpoint(points: Point[] | null | undefined): Point {
   return points[points.length - 1];
 }
 
-/**
- * Whether any leg of a polyline meets the rect.
- *
- * Leg by leg rather than by the path's bounding box, and the reason is the case
- * a board of connections is full of: the long line. Its bounding box is most of
- * the board, so a box test passes it from almost anywhere and it is emitted
- * into `d` on every frame of every pan having never come near the screen.
- */
+/** Does any leg of a polyline meet the rect? Per-leg, not bounding-box (long lines would always pass). */
 export function polyMeetsRect(points: Point[], rect: Bounds) {
   for (let i = 1; i < points.length; i++) {
     if (segmentMeetsRect(points[i - 1], points[i], rect)) return true;
@@ -346,74 +173,31 @@ export function distToSegment(px: number, py: number, a: Point, b: Point) {
   return Math.hypot(px - cx, py - cy);
 }
 
-/**
- * Squared distance between two points.
- *
- * Squared because every caller only ever compares one of these to another, and
- * the square root is monotonic - it would cost time without changing a single
- * choice. Do not "fix" this into a real distance; web-graph.ts's spanning tree
- * runs it O(n^2) times.
- */
+/** Squared distance between two points. Squared on purpose — callers only compare, never need sqrt. */
 export function distSq(a: Point, b: Point) {
   const dx = a.x - b.x, dy = a.y - b.y;
   return dx * dx + dy * dy;
 }
 
-/**
- * Squared distance from a point to the midpoint of a pair of them.
- *
- * The router's "how far is this card from the corridor between the two ends",
- * and the word for it is *roughly*: the real answer is the distance to the
- * segment, which distToSegment() above gives, and this is the distance to its
- * middle instead. That is deliberate and it is only ever used to sort - the
- * obstacles nearest the middle of a run are the ones most likely to be in the
- * way, and when there are more of them than the router will consider, this
- * decides which get dropped. Swapping in the exact measure would change which
- * cards a heavily-obstructed route steers around, so it is not a tidy-up.
- */
+/** Squared distance from a point to the midpoint of a segment. Used to sort obstacles for the router. */
 export function distSqToMidpoint(p: Point, from: Point, to: Point) {
   const mx = (from.x + to.x) / 2;
   const my = (from.y + to.y) / 2;
   return (p.x - mx) ** 2 + (p.y - my) ** 2;
 }
 
-/**
- * The radius of a circle centred on the item that contains it whatever its
- * rotation - half its diagonal.
- *
- * For the culler, which asks this question about every item on every frame of
- * every pan and wants an answer that costs no trig and never says "no" to
- * something that is really on screen.
- */
+/** Half-diagonal — circumscribed circle radius. No trig, used by the culler every frame. */
 export function itemRadius(it: Size) {
   return Math.sqrt(it.w * it.w + it.h * it.h) / 2;
 }
 
-/**
- * Whether a world point lies inside an item's box.
- *
- * Tested in the item's *own* frame: the point is brought back through the
- * item's rotation and compared against the unrotated extents. That is the same
- * box the resize grips work in and the same one Fit frames, and it is the one
- * on screen. Testing the axis-aligned bounding box instead would be visibly
- * wrong for a rotated item - a card turned 45 degrees draws a diamond, and its
- * bounding box reaches half its diagonal past that into empty space, so a note
- * parked in one of those corners would claim to be stuck to nothing.
- *
- * `rot` is the only rotation accounted for. Items also rest at a small
- * presentational tilt (--item-tilt, dealt in items.ts) which is deliberately
- * not part of the geometry model. It is a couple of degrees, so leaving it out
- * can only disagree with the eye a hair's breadth from an edge, which is
- * exactly where "is it over it or not" had no obvious answer anyway.
- */
+/** Point-in-item test, rotation-aware (tested in the item's own frame). */
 export function pointInItem(px: number, py: number, it: Box) {
   const dx = px - it.x, dy = py - it.y;
-  // Cheap reject first, and it takes almost every pair: no rotation of the box
-  // reaches outside the circle that circumscribes it, and this costs no trig.
+  // Cheap reject — circumscribed circle test, no trig.
   if (dx * dx + dy * dy > (it.w * it.w + it.h * it.h) / 4) return false;
   if (!it.rot) return Math.abs(dx) <= it.w / 2 && Math.abs(dy) <= it.h / 2;
-  // rot is anticlockwise-positive in world space, so undoing it is a rotation
-  // by -rot: the usual matrix with the signs on the sines swapped.
+  // Undo rotation: matrix with swapped sine signs.
   const rad = it.rot * RAD;
   const c = Math.cos(rad), s = Math.sin(rad);
   return Math.abs(c * dx + s * dy) <= it.w / 2 &&
@@ -438,24 +222,11 @@ function shoelace2(poly: Point[]) {
   return sum;
 }
 
-/**
- * How much of `a` lies over `b`, as a fraction of `a`'s own area.
- *
- * Exact rather than sampled, and rotation-aware, because it decides whether a
- * sticky note is stuck: both boxes are convex, so `a` is clipped against each
- * of `b`'s four edges in turn (Sutherland-Hodgman) and what survives is the
- * intersection. Sampling would be simpler and would put the threshold in a
- * different place for every note depending on where the samples happened to
- * fall, which is not a thing to build a visible rule on.
- *
- * Returns a number in [0, 1]. Zero for a degenerate `a`, since "what fraction
- * of nothing" has no answer worth having and the callers want a boolean.
- */
+/** Fraction of `a` overlapping `b` ([0,1]). Exact Sutherland-Hodgman clip, rotation-aware. */
 export function overlapFraction(a: Box, b: Box) {
   const areaA = a.w * a.h;
   if (!(areaA > 0) || !(b.w * b.h > 0)) return 0;
-  // Cheap reject, and on a real board it takes almost every pair: two boxes
-  // whose circumscribing circles miss cannot overlap, and this costs no trig.
+  // Cheap reject — circumscribed circles miss.
   const dx = a.x - b.x, dy = a.y - b.y;
   const reach = itemRadius(a) + itemRadius(b);
   if (dx * dx + dy * dy > reach * reach) return 0;
@@ -464,8 +235,7 @@ export function overlapFraction(a: Box, b: Box) {
   const bs = corners(b);
   for (let i = 0, j = bs.length - 1; i < bs.length; j = i++) {
     if (!poly.length) return 0;
-    // Inside is to the left of the directed edge j -> i, which holds because
-    // corners() winds anticlockwise for both.
+    // Left of directed edge j->i (corners() winds CCW).
     const ex = bs[i].x - bs[j].x, ey = bs[i].y - bs[j].y;
     const side = (p: Point) => ex * (p.y - bs[j].y) - ey * (p.x - bs[j].x);
     const next: Point[] = [];
@@ -488,37 +258,14 @@ export function overlapFraction(a: Box, b: Box) {
   }
   if (poly.length < 3) return 0;
   const frac = Math.abs(shoelace2(poly)) / 2 / areaA;
-  // Clamped rather than trusted: floating point on a clip that came out very
-  // slightly larger than the box it started as would otherwise report 1.0000001,
-  // which is only ever going to be compared against a threshold anyway.
+  // Clamp — floating point can produce slightly >1.
   return frac > 1 ? 1 : frac;
 }
 
 /**
- * The furthest anything inside `rect` moved on screen between two views.
- *
- * Answers "did that view change actually change the picture?" for anything
- * painted in screen space from world coordinates - the grid is the caller, and
- * the reason this exists: it repaints full-viewport on every view frame, and
- * two gestures deliver a stream of frames that move nothing anybody can see.
- * The tail of an inertial pan settles below a pixel per frame long before it
- * stops emitting, and a precision wheel or trackpad hands over zoom in
- * fractions far under one.
- *
- * A view here is the transform itself, `{ pan: {x, y}, zoom }`, in the sense
- * viewport.ts's toScreen() uses it: screen = (world - pan) * zoom, with y
- * negated for the sign flip. Both views are measured against the *same*
- * rectangle - the one visible now - because the question is about the marks on
- * screen this moment, not about where a point used to be.
- *
- * Only the corners are evaluated, and that is exact rather than a sample: the
- * mapping is affine in the world point, so the displacement between two of them
- * is affine too, and an affine function over a rectangle takes its extremes at
- * the corners. Four evaluations bound the whole frame.
- *
- * Returns the larger of the two axes, in screen pixels. Compare it against one
- * device pixel to learn that every mark landed in the row and column it was
- * already in.
+ * Max screen-pixel displacement between two views over `rect`. Exact — the
+ * mapping is affine, so corners bound the whole frame. Used by the grid to
+ * skip repaints when a view change moved nothing by even one device pixel.
  */
 export function viewShift(prev: View, next: View, rect: Bounds) {
   let worst = 0;
@@ -543,21 +290,7 @@ export function topEdge(it: Box): Point[] {
   ];
 }
 
-/**
- * Move each item so a chosen edge or centre of the selection lines up.
- *
- * `edge` is one of 'left' | 'hcenter' | 'right' | 'top' | 'vcenter' | 'bottom'.
- * An item is a centre, so lining up a left edge is setting each centre to the
- * selection's shared left plus that item's own half-width - and the half-extents
- * are the rotated ones (rotatedExtents), so a turned card aligns by the box you
- * can see, the same box Fit frames and a marquee catches. `top` is the larger y
- * because +y is up here.
- *
- * Returns [{id, x, y}] for every item, in input order, for applyGeom to merge -
- * only the axis the edge names is moved; the other keeps its value. The commit
- * path is what makes it one undo step and what re-snaps it if snapping is on, so
- * nothing here snaps or clamps.
- */
+/** Align items to a shared edge or centre. Rotation-aware. Returns targets for applyGeom. */
 export function alignTargets(items: (Box & { id: string })[], edge: string): Target[] {
   const b = itemBounds(items);
   if (!b) return [];
@@ -576,21 +309,7 @@ export function alignTargets(items: (Box & { id: string })[], edge: string): Tar
   });
 }
 
-/**
- * Space the selection evenly along one axis, with equal clear gaps between
- * neighbours. `axis` is 'x' or 'y'.
- *
- * The two outermost items stay put - they define the span - and everything
- * between them is dealt so the space you can see between adjacent boxes is the
- * same. Gaps rather than centres on purpose: three cards of different widths
- * distributed by centre still read as bunched, because a wide card eats into the
- * gap on both sides of it. With fewer than three items there is nothing to even
- * out, and it returns nothing.
- *
- * Rotation-aware through the per-axis half-extent, so a turned card takes the
- * width of the box it actually occupies. Returns [{id, x, y}] only for the
- * interior items that move.
- */
+/** Distribute items evenly along an axis (equal visible gaps). Rotation-aware. */
 export function distributeTargets(items: (Box & { id: string })[], axis: string): Target[] {
   if (items.length < 3) return [];
   const half = (it: Box) => (axis === 'x' ? rotatedExtents(it).hw : rotatedExtents(it).hh);
@@ -617,22 +336,8 @@ export function distributeTargets(items: (Box & { id: string })[], axis: string)
 }
 
 /**
- * Push apart any items in a set of targets that would overlap along one axis,
- * keeping their order and the group's centre.
- *
- * Aligning is what needs this: lining cards up on a shared edge puts them all in
- * the same band across the other axis, where any two whose extents crossed now
- * sit on top of each other. This is the fix, and it is exactly the overlap that
- * can happen - once the aligned axis is shared, two items overlap if and only if
- * their extents overlap on the *other* one, so a single sweep along that axis
- * settles it. `axis` is that other axis, 'x' or 'y'.
- *
- * A sweep, not a repack: items already clear of each other keep the gap they
- * had, and only a run that would collide is opened up, each pushed just past the
- * one before it plus `gap`. The whole run is then shifted back so its centre
- * lands where the group's centre was, so aligning a column does not also drift
- * it off to one side. `targets` is [{id, x, y}] and `items` supplies the extents;
- * the returned targets change only the swept axis, leaving the aligned one exact.
+ * Push overlapping items apart along `axis`, preserving order and group centre.
+ * Used after alignment to prevent collisions on the cross axis.
  */
 export function separateOverlaps(targets: Target[], items: (Box & { id: string })[], axis: string, gap = 0): Target[] {
   if (targets.length < 2) return targets;

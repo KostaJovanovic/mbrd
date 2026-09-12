@@ -1,13 +1,8 @@
-// The keyboard, the toggle and the hover child - three rules ui/menu.ts states
-// in prose and did not keep.
-//
-// None of them can be driven from here: the menu is a module of closures over
-// document, and there is no browser in this suite. What is checkable is the
-// shape of each repair against the source, which is what
-// tests/font-tokens.test.js and tests/appearance.test.js already do for the
-// pairs they hold together. Each test below names the failure it is standing in
-// front of, so that a future edit that reintroduces it fails against a sentence
-// rather than a regex.
+// The keyboard, the toggle and the hover child - three rules ui/menu.ts
+// states in prose and didn't keep. None can be driven from here (the menu
+// is closures over document, no browser in this suite), so each test
+// checks the shape of a repair against the source, naming the failure it
+// guards so a regression fails against a sentence, not a regex.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -19,16 +14,15 @@ const menu = read(join(JS, 'ui', 'menu.ts'));
 const flyout = read(join(JS, 'ui', 'flyout.ts'));
 const search = read(join(JS, 'ui', 'search.ts'));
 
-/** Source with its comments taken off - most of these rules are also argued. */
+/** Source with comments stripped. */
 const code = src => src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 
 test('the menu only takes a keystroke when it has the keyboard', () => {
-  // The capture-phase keydown is on the *window* and acted whenever any panel
-  // was up - including a flyout that declined focus on the way in, which is
-  // openAnchored()'s whole reason for defaulting `focus` to false. Dwell on the
+  // The capture-phase keydown is on the *window* and acted whenever any
+  // panel was up - including a flyout that declined focus, which is
+  // openAnchored()'s reason for defaulting `focus` to false. Dwell on the
   // toolbar's Note button, press Ctrl+K, type `cat`: every letter reached
-  // typeAhead(), matched a row, focused it, and was eaten by preventDefault().
-  // The caret left the field and the word never arrived.
+  // typeAhead() and was eaten, and the caret left the field.
   assert.match(code(menu), /const ownsKeyboard = \(\) =>\s*!!lastOpts\.focus \|\| insideMenu\(document\.activeElement\)/,
     'ownsKeyboard() is gone or no longer asks both questions');
   const handler = code(menu).slice(code(menu).indexOf("addEventListener('keydown'"));
@@ -43,12 +37,10 @@ test('the menu only takes a keystroke when it has the keyboard', () => {
 });
 
 test('a menu button is a toggle for its own menu and nothing else', () => {
-  // justDismissed() recorded which *element* dismissed the menu and not which
-  // *menu* it dismissed, so pressing a second menu button while the first was
-  // open closed one and opened neither: the capture pointerdown named the
-  // second button as the dismisser, and that button's own opener read it as "I
-  // am the toggle that just closed". Font then Highlight in the note composer;
-  // More then the palette picker on the toolbar.
+  // justDismissed() recorded which *element* dismissed the menu, not which
+  // *menu*, so pressing a second menu button while the first was open
+  // closed one and opened neither - its own opener read the dismissal as
+  // its own toggle just closing. Font then Highlight; More then the palette.
   assert.match(code(menu), /let menuOwner: Element \| null = null;/,
     'the menu no longer records which button it hangs off');
   assert.match(code(menu), /if \(!dismissed\.owner \|\| !el\.contains\(dismissed\.owner\)\) return false;/,
@@ -58,30 +50,27 @@ test('a menu button is a toggle for its own menu and nothing else', () => {
 });
 
 test('the hover child is torn down with the page it hangs off', () => {
-  // swap() removed the root node and left the child on screen hanging off
-  // nothing, with childRow pointing at a detached button and childFrom at a
-  // detached panel - and the only thing that clears those compares childFrom
-  // against a live panel, so the orphan outlived every page turn.
+  // swap() removed the root node and left the child hanging off nothing -
+  // childRow pointing at a detached button, childFrom at a detached panel -
+  // and the only cleanup compares childFrom against a live panel, so the
+  // orphan outlived every page turn.
   const swap = code(menu).slice(code(menu).indexOf('function swap('));
-  // `closeChild(` and not `closeChild();`: the call takes an argument now - a
-  // page turn passes false, because playing the old fold out over the new page
-  // would be the menu saying something left when nothing did. What this test is
-  // about is the *order*, which that change did not touch.
+  // `closeChild(` not `closeChild();`: the call takes an argument, a page
+  // turn passing false so the old fold doesn't animate out over the new
+  // page. What's tested here is the *order*, which that change didn't touch.
   const closed = swap.indexOf('closeChild(');
   const removed = swap.indexOf('node.remove()');
   assert.ok(closed > 0 && closed < removed,
     'swap() tears down the root without closing the child first');
-  // And the root goes outright rather than through dismiss(): swap is not a
-  // close. A page turn that animated the old list out while the new one came in
-  // would make a menu flinch every time a row's tick changed.
+  // The root goes outright, not through dismiss(): swap is not a close, or
+  // a page turn would make the menu flinch every time a row's tick changed.
   assert.ok(!swap.slice(0, removed).includes('dismiss(node)'),
     'swap() plays the root out as if it were closing');
 });
 
 test('a keyboard press on a flown-out fold still drills in', () => {
-  // The "already flown out" guard was keyed on the row rather than on the route,
-  // so leaving the pointer on the Edit fold, arrowing back onto it and pressing
-  // Enter was a dead press - the worst answer available on a focused row.
+  // The "already flown out" guard was keyed on the row, not the route, so
+  // arrowing back onto the Edit fold and pressing Enter was a dead press.
   assert.match(code(menu), /const byKey = e\.detail === 0;/,
     'the row handler no longer tells a keyboard activation from a click');
   assert.match(code(menu), /if \(entry\.sub && child && childRow === btn && !byKey\) return;/,
@@ -89,10 +78,9 @@ test('a keyboard press on a flown-out fold still drills in', () => {
 });
 
 test('the arrow keys walk the panel that holds focus', () => {
-  // All three keyboard routes queried the root and only the root. The child is
-  // a sibling of the root on the body, so a keyboard inside it walked the rows
-  // behind it instead - focus jumping out of the panel it was in, one row at a
-  // time.
+  // All three keyboard routes queried only the root. The child is a
+  // sibling of the root on the body, so a keyboard inside it walked the
+  // rows behind it instead, jumping focus out of its own panel.
   assert.match(code(menu), /function focusRows\(\)/, 'focusRows() is gone');
   for (const fn of ['moveFocus', 'focusEnd', 'typeAhead']) {
     const body = code(menu).slice(code(menu).indexOf(`function ${fn}(`), code(menu).indexOf(`function ${fn}(`) + 900);
@@ -101,19 +89,19 @@ test('the arrow keys walk the panel that holds focus', () => {
 });
 
 test('a flyout stays open while the pointer is inside its submenu', () => {
-  // #ctx-child is a sibling of #ctx-menu on the body, so closest('#ctx-menu')
-  // called a pointer inside a submenu "anywhere else" and started the 250 ms
-  // close timer under it. The same trap insideMenu() documents from the other
-  // side; latent only because no FLYOUTS builder uses `sub` today.
+  // #ctx-child is a sibling of #ctx-menu on the body, so
+  // closest('#ctx-menu') called a pointer inside a submenu "anywhere else"
+  // and started the 250ms close timer. Latent only because no FLYOUTS
+  // builder uses `sub` today.
   assert.match(code(flyout), /closest\?\.\('#ctx-menu, #ctx-child'\)/,
     'onOver() treats the hover child as outside the flyout again');
 });
 
 test('the Find button is a toggle and does not eat a typed query', () => {
   // search.ts's capture-phase closer is the justDismissed() trap CLAUDE.md
-  // names. Tapping Find with "chair" typed closed the palette and the click
-  // then built a fresh empty one, so open()'s own `if (node)` branch - the one
-  // that keeps the query - was unreachable from any button in the app.
+  // names. Tapping Find with "chair" typed closed the palette, and the
+  // click then built a fresh empty one - open()'s `if (node)` branch, which
+  // keeps the query, was unreachable from any button.
   assert.match(code(search), /export function open\(from: Element \| null = null\)/,
     'open() no longer takes the button that asked for it');
   assert.match(code(search), /dismissedBy = e\.target as Node \| null;/,
@@ -123,14 +111,10 @@ test('the Find button is a toggle and does not eat a typed query', () => {
 });
 
 test('the Feed aims its menu at the tile that was pressed', () => {
-  // Every selection-wide row this menu draws - Delete item, Copy, Tags, A tour
-  // stop, Anchor - acts on the canvas selection, and nothing in the Feed had
-  // ever set one. Select a card on the canvas, switch to Feed, long-press a
-  // different tile, tap Delete item: the card selected on the canvas died and
-  // the one under the thumb stayed. With nothing selected the row did nothing.
-  //
-  // The same call openMenuAt() makes in canvas/input.ts, on the same rule every
-  // file manager follows.
+  // Every selection-wide row this menu draws acts on the canvas selection,
+  // and nothing in the Feed had ever set one - selecting on canvas, then
+  // long-pressing a different Feed tile and deleting, killed the wrong
+  // card. Same call openMenuAt() makes in canvas/input.ts.
   const feed = code(read(join(JS, 'ui', 'feed.ts')));
   assert.match(feed, /function openTileMenu\(x: number, y: number, id: string\)/,
     'the Feed opens its menu without retargeting again');
@@ -138,7 +122,7 @@ test('the Feed aims its menu at the tile that was pressed', () => {
     'openTileMenu() no longer retargets the selection');
   assert.match(feed, /cmds\?\.contextMenu\(x, y, id, selection\.size, \{ mobile: true \}\)/,
     'the Feed is back to telling the menu a hardcoded count');
-  // Both routes in - the mouse's contextmenu and the finger's hold timer.
+  // Both routes: the mouse's contextmenu and the finger's hold timer.
   assert.equal((feed.match(/openTileMenu\(/g) || []).length, 3,
     'one of the two ways into the Feed menu bypasses the retarget');
 });

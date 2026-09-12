@@ -1,36 +1,9 @@
-// Enough XML to read a model out of one, and no more.
-//
-// Three of the formats in this family are XML - 3MF, AMF and Collada - and none
-// of them may go through `DOMParser`. Two reasons, and either alone would be
-// enough:
-//
-// - **There is no DOM here.** Every parser in mesh/ is testable against real
-//   bytes under node with nothing installed, which is the property that makes a
-//   hand-written binary reader trustworthy at all. A reader that needs a browser
-//   to run cannot be fed a broken file in a test.
-// - **These files are foreign documents.** CLAUDE.md's rule is that nothing
-//   reading one may touch `innerHTML`, and the reason generalises: the less of a
-//   document model a foreign file gets to build, the less there is to get wrong.
-//   What comes out of here is numbers and names, never nodes.
-//
-// So: a scanner, not a parser. `scanXML()` walks tags in document order and
-// calls back; `parseXML()` builds a small tree on top of it for the places that
-// genuinely need one. The distinction matters for size - a 3MF writes one
-// `<vertex>` element *per vertex*, so a half-million-vertex part is a
-// half-million elements, and a tree of objects for that is a hundred megabytes
-// of book-keeping to read nine megabytes of floats. The scanner reads it
-// without allocating anything per vertex.
-//
-// **DOCTYPE is skipped, not processed.** No entity declarations are read and no
-// external entity is ever fetched, so the classic expansion attack ("billion
-// laughs") has nothing to expand and an XXE has nothing to include. The five
-// built-in entities and numeric character references are all that decode.
-//
-// Namespace prefixes are dropped from element and attribute names. Every format
-// here uses one vocabulary per document plus an extension namespace or two, and
-// the extensions do not collide with the core names - so `p:triangle` and
-// `triangle` answering to the same lookup is what a reader of these files
-// actually wants.
+// Minimal XML scanner/parser for mesh formats (3MF, AMF, Collada). No
+// DOMParser — mesh/ must run under Node with no browser, and foreign documents
+// must not build a real DOM. scanXML() streams tags; parseXML() builds a small
+// tree where needed. Scanner avoids per-vertex allocation (3MF has one element
+// per vertex). DOCTYPE skipped (no entity expansion, no XXE). Namespace
+// prefixes stripped — the formats here use one vocabulary per document.
 
 import { MeshError } from './shared.ts';
 
@@ -53,26 +26,14 @@ export type XmlHandlers = {
   text?: (value: string) => void;
 };
 
-/**
- * Walk an XML document, calling back per tag.
- *
- * Deliberately forgiving about what it is not reading: processing
- * instructions, comments, CDATA and DOCTYPE are stepped over rather than
- * reported, and an unmatched end tag closes what it can. A model file written
- * by a slicer is not going to be well-formed by luck, and the reader's job is to
- * find the geometry rather than to be an XML conformance suite.
- *
- * What it is *not* forgiving about is running off the end. Every one of the
- * skip cases below is bounded, and a start delimiter with no end is the end of
- * the document rather than an index that keeps going.
- */
+/** Walk tags in document order. Forgiving (PIs, comments, CDATA, DOCTYPE
+ * skipped; unmatched end tags tolerated) but strict about bounds — a start
+ * delimiter with no end stops at EOF, never runs off. */
 export function scanXML(text: string, on: XmlHandlers) {
   const len = text.length;
   let i = 0;
   let elements = 0;
-  // Reused across every open tag. Documented on `open` above: a handler that
-  // wants to keep the attributes copies them. Rebuilding this object per element
-  // is the single biggest allocation in reading a 3MF.
+  // Reused per tag — rebuilding per element dominates 3MF allocation.
   let attrs: XmlAttrs = {};
 
   while (i < len) {
@@ -81,8 +42,7 @@ export function scanXML(text: string, on: XmlHandlers) {
 
     if (lt > i && on.text) {
       const raw = text.slice(i, lt);
-      // Blank runs are the indentation between tags and are the overwhelming
-      // majority of the text nodes in any of these documents.
+      // Skip blank runs (indentation between tags).
       if (raw.trim()) on.text(decodeEntities(raw));
     }
 

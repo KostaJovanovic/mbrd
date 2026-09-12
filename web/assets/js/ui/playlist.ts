@@ -1,53 +1,8 @@
-// The Playlist: the board's audio as a proper player, in two homes.
-//
-// One is the Mobile board's second lens - Feed | Playlist - where it fills the
-// screen as the board pressed to a record: a sleeve (a mosaic of the board's own
-// covers) with the disc sliding out from behind it, the board's name, a "N songs
-// · M min" ledger line, a big Play / Shuffle pair, and a ruled track list you can
-// drag to reorder. The other is a floating window on the Desktop board, opened
-// from the sidebar - draggable and resizable, and one body only: a compact
-// transport over a plain list.
-//
-// **The lens has no transport of its own, and that is the arrangement rather
-// than an omission.** It carried one for a while - seek, prev/next, repeat and a
-// volume, in a panel between the header and the list - and the panel was the
-// thing on the surface that had to be scrolled past to reach the music. The bar
-// at the foot of the window is already a transport, it is already up whenever
-// there is anything playing, and it does not move when the list under it does.
-// So the bar is the transport on the phone, the header is how a board is
-// *started* (Play and Shuffle are the two things a bar cannot be), and a row is
-// how a track is chosen. Three surfaces, one job each. chrome.css no longer
-// hides #nowplaying under data-feed-lens for this reason.
-//
-// What is left on the lens is laid out on one gutter (--pl-gutter) rather than
-// the three left edges it grew, and each part has a form rather than a rule
-// between it and the next: the header is paper, the list is ruled. The record
-// behind the sleeve is the one flourish, it is drawn only at the soft end of the
-// whimsy axis, and it earns its place by saying something true - it turns while
-// the board is playing.
-//
-// The window used to be able to wear the album view too, in miniature, which made
-// the same view reachable two ways and made the window's title-bar button a switch
-// between two things it held itself. It is one thing each now: the album view is
-// the lens, the transport is the window, and that button switches *homes* - it
-// hands the board over to the lens, which is the album view at the size it was
-// drawn for. Nothing is lost but the miniature.
-//
-// It owns no <audio>. It drives the shared queue in canvas/playlist-queue.ts -
-// setQueue, playTrack, toggleShuffle - and the global now-playing bar is the
-// transport, so the music keeps playing across a lens switch, a trip to the
-// canvas, or the window being closed. Only a whole new board stops it (clearQueue
-// on board:load), because its tracks and their asset URLs are gone. Play /
-// Shuffle here are the two things a bar cannot be: the way to *start* the board,
-// from cold.
-//
-// The hand-arranged order lives in board.audioOrder (a list of ids, saved with
-// the board). applyAudioOrder() resolves it against the audio actually present;
-// a drag commits a new one through setAudioOrder(), which persists and comes back
-// round as an 'audioOrder' event that re-renders both homes.
-//
-// Handed nothing it imports at module scope that touches the browser: every
-// document reach is inside initPlaylist() or a handler that runs after it.
+// Playlist UI: the board's audio in two homes.
+// Mobile lens: album hero + reorderable track list; now-playing bar is the transport.
+// Desktop: floating window with compact transport over a plain list.
+// Owns no <audio> — drives the shared queue in canvas/playlist-queue.ts.
+// No document access at module scope; everything deferred to initPlaylist().
 
 import {
   board, bus, isDefaultTitle, markDirty, setAudioOrder, trackTitle,
@@ -68,61 +23,32 @@ import { audioTags, coverArt } from '../import/artwork.ts';
 import { mediaFacts } from '../import/containers.ts';
 import { resetPanels } from './panel-stack.ts';
 import { makeWindowDrag, makeWindowResize } from './float-window.ts';
-// Which Mobile lens comes up, for the title-bar button's one job. Set before the
-// mode switch, the same order cmds.feed / cmds.playlist use, so entering the
-// Mobile view lands on the lens that was asked for rather than on the last one.
+// Set before mode switch so entering Mobile lands on the requested lens.
 import { setLens } from './board-view.ts';
-// Nothing from the sprite: every glyph this file draws is a string constant
-// below, owned here because no other surface has one. The exception used to be
-// the speaker on the lens's volume row, which came through icon() so it could
-// not drift from the copy the now-playing bar uses - and the row went with the
-// lens's transport when the bar became the lens's transport.
 import type { Item } from '../board-model.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 
-/**
- * `meta` is open by design (see board-model.ts), so the tags this file reads out
- * of it are narrowed here rather than trusted - the same pair ui/viewer.ts and
- * ui/feed.ts keep. A key that is not the type it should be is treated exactly as
- * a missing one, which is what every one of these reads already did by falling
- * through a `||`.
- */
+// Narrow open `meta` fields to the expected types.
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
-/** The object URL for a hash out of `meta`, or null for anything that is not one. */
 const urlOf = (hash: unknown): string | null => (typeof hash === 'string' ? assetURL(hash) : null);
-/** A duration out of `meta`, which the probe writes as seconds, or 0. */
 const secs = (v: unknown): number => (typeof v === 'number' ? v : 0);
 
-/** One track's row: the element, and the item it is currently standing for. */
 type Row = { el: HTMLElement; item: Item };
 
-/** A Play + Shuffle pair, registered so its icons stay true - see makeActions(). */
 type ActionGroup = {
   play: HTMLButtonElement;
   shuffle: HTMLButtonElement;
   playIco: HTMLElement;
   playLabel: HTMLElement;
-  /**
-   * The header these two sit in, when there is one, so the record drawn behind
-   * its sleeve turns while the board is playing and stands still when it is not.
-   *
-   * On the group rather than on a handle of its own because refreshActions() is
-   * already the one pass that knows whether anything is playing, and a second
-   * fan-out over the headers would be a second thing to keep in step. The window
-   * has no header, hence optional.
-   */
+  // The hero header, if any — refreshActions() toggles its spinning disc.
   hero?: HTMLElement;
 };
 
-/** One track list, in either home - see createView(), which is the only builder. */
 type View = {
   listEl: HTMLElement;
   reorderable: boolean;
   group: ActionGroup | null;
-  /**
-   * The transport above this list - the Desktop window's, and only its. The lens
-   * has none and uses the now-playing bar; see the head of this file.
-   */
+  // Desktop window's transport; lens uses the now-playing bar instead.
   player: Player | null;
   fill: (audio: Item[]) => void;
   clear: () => void;
@@ -131,22 +57,6 @@ type View = {
   destroy: () => void;
 };
 
-/**
- * A transport - see makePlayer(), which is the only builder and builds the one
- * there is: the Desktop window's.
- *
- * It is not `WindowPlayer` even so. Nothing in it knows about a floating window,
- * the class prefix it writes is `pw-`, and the phone reached for exactly this
- * shape once already - so a name that says where the only instance happens to
- * live is the name that would have to be undone the next time something needs a
- * transport. `players` is a set for the same reason.
- *
- * It carries no sleep switch. It had one, for a lens transport that was built
- * with the lens and never taken down and would otherwise have run a rAF a frame
- * behind the Feed; the window's is built when the window opens and dropped when
- * it closes, so it is awake for its whole life and the switch had nothing left
- * to turn off.
- */
 type Player = {
   el: HTMLElement;
   bind: () => void;
@@ -154,11 +64,7 @@ type Player = {
   destroy: () => void;
 };
 
-/**
- * The reorder drag in flight. `ref` is the row the dragged one currently sits
- * before, or null for the end of the list - and `undefined` before the first
- * move, which is why the three states are spelled out.
- */
+// `ref`: row before the dragged one, null for end, undefined before first move.
 type Drag = {
   view: View;
   rowEl: HTMLElement;
@@ -167,11 +73,6 @@ type Drag = {
   ref: Element | null | undefined;
 };
 
-/**
- * What this module asks of the command surface: one thing, and it is not about
- * the window. Named here rather than borrowed from commands.ts for the reason
- * FlyoutCommands states in ui/flyout.ts.
- */
 export interface PlaylistCommands {
   setBoardMode: (mode: string) => void;
 }
@@ -192,57 +93,27 @@ const REPEAT_ONE_ICON =
   '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6V5.2A1.7 1.7 0 0 1 6.2 3.5H12"/><path d="m10.3 1.8 1.9 1.7-1.9 1.7"/><path d="M11.5 10v.8a1.7 1.7 0 0 1-1.7 1.7H4"/><path d="m5.7 14.2-1.9-1.7 1.9-1.7"/><text x="8" y="10.2" font-size="6" fill="currentColor" stroke="none" text-anchor="middle">1</text></svg>';
 const CLOSE_ICON =
   '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>';
-// The window's title-bar button wears the face of where it sends you: a grid of
-// tiles for the album view. It never wears a second face, because it only ever
-// goes one way - the window is not there to come back to.
 const GRID_ICON =
   '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg>';
-// The big play button's own triangle. Bounding box centred on the viewBox, then
-// nudged a touch right (+1 unit) for the optical balance a right-pointing triangle
-// wants in a round button. Vertices (5.25,3.5) (12.75,8) (5.25,12.5); y centres on
-// 8. Pause stays the shared symmetric bars.
+// Nudged +1 right for optical balance in a round button.
 const PW_PLAY_ICON =
   '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M5.25 3.5L12.75 8L5.25 12.5Z"/></svg>';
 
-let mobileView: View | null = null;    // the Mobile lens
-let windowEl: HTMLElement | null = null;      // the Desktop floating window, or null when closed
-let windowContent: HTMLElement | null = null; // the swappable region under the window's title bar
-let windowView: View | null = null;    // the list inside it
-let windowDetach: (() => void)[] = [];  // grab-listener detaches, called on close
-/**
- * Every transport currently built, so the events that move one move all of them.
- *
- * A set rather than the single `windowPlayer` handle it replaces. There is one
- * member today - the Desktop window's, which comes and goes with the window -
- * and it stays a set because the count is not a fact about this module: the
- * Mobile lens had one too until its transport panel came out (see the header),
- * and the next surface that wants one costs nothing. makePlayer() adds itself
- * and destroy() takes itself out, so nothing has to remember to keep this in
- * step - which is exactly the bookkeeping that would have gone wrong first.
- *
- * onNowPlaying and onQueue already fan out to whoever is listening; this is the
- * same fan-out one level down, for the two calls those handlers make.
- */
+let mobileView: View | null = null;
+let windowEl: HTMLElement | null = null;
+let windowContent: HTMLElement | null = null;
+let windowView: View | null = null;
+let windowDetach: (() => void)[] = [];
+// makePlayer() adds, destroy() removes — self-maintaining.
 const players = new Set<Player>();
-/** Rebind every transport to whatever the queue is playing now. */
 const bindPlayers = () => { for (const p of players) p.bind(); };
-/** Repaint every transport's buttons, which is cheaper than a rebind. */
 const refreshPlayers = () => { for (const p of players) p.refresh(); };
-// The command set, for the one thing the window's title-bar button does that is
-// not about the window: hand the board over to the Mobile view.
 let cmds: PlaylistCommands | null = null;
 
-/** Every visible header's Play / Shuffle pair, so play state paints in both. */
 const actionGroups = new Set<ActionGroup>();
-/** The shared queue element, once we have wired play/pause listeners to it. */
 let wiredEl: HTMLMediaElement | null = null;
-/** Aborts the previous wirePlayback() listeners so board loads do not stack them. */
 let playbackAbort: AbortController | null = null;
-
-/** Tracks whose tags/duration have been read this session, so it happens once. */
 const tagged = new Set<string>();
-
-/** The reorder drag in flight, or null. */
 let drag: Drag | null = null;
 
 export function initPlaylist(_viewport: Viewport | null, _commands: PlaylistCommands | null,
@@ -253,7 +124,7 @@ export function initPlaylist(_viewport: Viewport | null, _commands: PlaylistComm
 
   bus.on('board:load', () => { clearQueue(); tagged.clear(); wiredEl = null; resetPanels(); closePlayerWindow(); renderAll(); });
   bus.on('layout', () => {
-    // The window is a Desktop thing; leaving for the Mobile board takes it away.
+    // Desktop only — leaving for Mobile closes it.
     if (board.layoutMode === 'mobile') closePlayerWindow();
     renderAll();
   });
@@ -265,9 +136,6 @@ export function initPlaylist(_viewport: Viewport | null, _commands: PlaylistComm
   bus.on('board', updateMetaAll);
   bus.on('fonts', updateMetaAll);
   onNowPlaying(() => { wirePlayback(); markPlaying(); refreshActions(); bindPlayers(); });
-  // Every transport, not just the hero pair: a player's shuffle and repeat
-  // buttons are the only readout of a mode that lives in canvas/playlist-queue.ts,
-  // and a press that changes nothing on screen reads as a dead button.
   onQueue(() => { refreshActions(); refreshPlayers(); });
 
   renderAll();
@@ -277,29 +145,14 @@ export function initPlaylist(_viewport: Viewport | null, _commands: PlaylistComm
 // The list, in both homes
 // ---------------------------------------------------------------------------
 
-/** The board's audio, in the hand-arranged order over the board arrangement. */
 function orderedAudio(): Item[] {
   const audio = board.items.filter(it => it.type === 'audio');
-  // The cast holds for the reason board-actions.ts states at its own call:
-  // SAFETY: mobileOrder() hands back the very items it was given, in a new
-  // order, and ArrangeItem is only the narrower shape it reads them through.
   return applyAudioOrder(
     mobileOrder(audio, { name: board.arrangement }) as Item[], board.audioOrder);
 }
 
-/**
- * Render whichever home is live and point the shared queue at the board's audio.
- *
- * Mobile: the lens, with the now-playing bar as its transport. Desktop: the
- * window, when it is open. They are never both live, so only one setQueue runs
- * and there is no fight over it. The idle home is cleared so it holds no stale
- * rows.
- */
 function renderAll() {
   const audio = orderedAudio();
-  // The queue is always the board's audio, whether or not a playlist home is on
-  // screen: a board card plays into this same queue (canvas/audio.ts), so the track
-  // has to be in it to be reached, advanced past, or shuffled.
   setQueue(audio);
   if (board.layoutMode === 'mobile') {
     windowView && windowView.clear();
@@ -328,13 +181,11 @@ function markPlaying() {
 // Playback state - Play / Shuffle, and keeping their icons true
 // ---------------------------------------------------------------------------
 
-/** The shared queue's element while it is the sound, or null. */
 function queueEl() {
   const np = nowPlaying();
   return np && isQueuePlayer(np.el) ? np.el : null;
 }
 
-/** Play the queue from cold, resume it, or pause it - whichever applies. */
 function togglePlay() {
   const el = queueEl();
   if (el) { el.paused ? el.play().catch(reportPlayError) : el.pause(); return; }
@@ -342,24 +193,16 @@ function togglePlay() {
   if (audio.length) playTrack(audio[0]);
 }
 
-/** Shuffle on (if it was off) and start somewhere in it. */
 function shufflePlay() {
   if (!queueState().shuffle) toggleShuffle();
   const audio = orderedAudio();
   if (audio.length) playTrack(audio[Math.floor(Math.random() * audio.length)]);
 }
 
-/**
- * The shared <audio> is made once and reused, but pausing or resuming it does not
- * change the now-playing track, so onNowPlaying never fires for it. Wire play and
- * pause directly, once, so the Play button flips between its two faces.
- */
+// Pause/resume does not fire onNowPlaying; wire play/pause directly.
 function wirePlayback() {
   const el = queueEl();
   if (!el || el === wiredEl) return;
-  // The shared <audio> outlives every board, but board:load resets wiredEl to
-  // re-wire it. Drop the previous board's listeners first, or each load that
-  // plays leaves another onState stacked on the one long-lived element.
   playbackAbort?.abort();
   playbackAbort = new AbortController();
   wiredEl = el;
@@ -385,7 +228,6 @@ function refreshActions() {
   }
 }
 
-/** Build a Play + Shuffle pair, registered so its icons stay true. Returns the row. */
 function makeActions() {
   const row = div('pl-hero-actions');
   const play = document.createElement('button');
@@ -401,8 +243,6 @@ function makeActions() {
   shuffle.setAttribute('aria-label', 'Shuffle');
   shuffle.addEventListener('click', shufflePlay);
   row.append(play, shuffle);
-  // Both spans are asserted because the markup they are found in was written
-  // three lines up - they are this function's own, not the document's.
   const group: ActionGroup = {
     play, shuffle,
     playIco: play.querySelector<HTMLElement>('.pl-ico')!,
@@ -412,38 +252,13 @@ function makeActions() {
   return { row, group };
 }
 
-/**
- * Build one track list, and - on the lens - the album header above it.
- *
- * The lens (variant 'lens') gets the full album hero: sleeve, name, "N songs",
- * and the big Play / Shuffle pair, and nothing else above the list. The Desktop
- * window (variant 'window') gets no hero and a transport instead - its title bar
- * and that transport are its head, and the caller mounts it, because it sits
- * above the window's body rather than inside it.
- *
- * One player between the two homes, not one each. The lens had one for a while
- * and it is the piece that came back out: on Desktop the window is a thing you
- * open *over* the board and it has to carry its own controls, while on the phone
- * the now-playing bar is already at the foot of the screen and already the
- * transport for every other surface. A second one on the lens was a panel to
- * scroll past on the way to the music.
- *
- * Which leaves the hero's Play / Shuffle pair as the only controls here, and
- * they are the right two: they are what a bar cannot be, the way to start a
- * board that is not playing anything yet.
- */
+// Lens variant: album hero + reorderable list. Window variant: transport + plain list.
 function createView(container: HTMLElement,
   { reorderable, variant }: { reorderable: boolean, variant: 'lens' | 'window' }): View {
   container.replaceChildren();
-  const rows = new Map<string, Row>();   // id -> { el, item }
+  const rows = new Map<string, Row>();
   const lens = variant === 'lens';
-
-  // The lens sits on the same paper sheet the Feed does; the window drops the
-  // list straight into its body, under the player.
   const surface = lens ? div('feed-sheet') : container;
-
-  // The five the hero is made of, and they arrive together or not at all: the
-  // window has no hero, so `hero` being there is what says the other four are.
   let hero: HTMLElement | null = null;
   let cover: HTMLElement | null = null;
   let titleEl: HTMLElement | null = null;
@@ -451,11 +266,6 @@ function createView(container: HTMLElement,
   let group: ActionGroup | null = null;
   if (lens) {
     hero = div('pl-hero');
-    // The sleeve, and the record sliding out from behind it. The disc is drawn
-    // entirely in the stylesheet - three radial gradients, no asset and no
-    // sprite - so it takes the board's own accent, and it is drawn at the soft
-    // end of the whimsy axis only, without this file knowing either fact. It
-    // carries no information a screen reader wants, hence aria-hidden.
     const sleeve = div('pl-sleeve');
     const disc = div('pl-disc');
     disc.setAttribute('aria-hidden', 'true');
@@ -474,9 +284,6 @@ function createView(container: HTMLElement,
     surface.appendChild(hero);
   }
 
-  // The window's transport, and only the window's - the lens plays through the
-  // now-playing bar. It is mounted by the caller rather than here, because it
-  // sits above the window's body and not inside it.
   const player = lens ? null : makePlayer();
 
   const listEl = div('pl-list');
@@ -507,9 +314,6 @@ function createView(container: HTMLElement,
       }
       empty.classList.toggle('is-shown', audio.length === 0);
       hero?.classList.toggle('is-empty', audio.length === 0);
-      // A transport over an empty list is five buttons that cannot do anything
-      // and a scrubber for nothing. The "No music here yet" panel is the whole
-      // of what the window should be saying at that point.
       if (player) player.el.hidden = audio.length === 0;
       view.updateMeta(audio);
     },
@@ -519,10 +323,7 @@ function createView(container: HTMLElement,
       const id = np && isQueuePlayer(np.el) ? np.item?.id : null;
       for (const [rid, r] of rows) r.el.classList.toggle('is-playing', rid === id);
     },
-    /** The lens header: the board's name, the cover mosaic and the "N songs" line. */
     updateMeta(audio) {
-      // The three `!` are the test on the line above: the hero and its parts are
-      // built in one run, and only the lens variant builds any of them.
       if (!hero) return;
       titleEl!.textContent = board.title;
       titleEl!.classList.toggle('is-default', isDefaultTitle(board.title));
@@ -532,9 +333,7 @@ function createView(container: HTMLElement,
     destroy() {
       view.clear();
       if (group) actionGroups.delete(group);
-      // Before the container is emptied, and it is the load-bearing half of this:
-      // a transport holds a rAF and a set of listeners on a media element that
-      // outlives it, so dropping its node is not the same as taking it down.
+      // Destroy before emptying — transport holds rAF + listeners on a long-lived element.
       if (player) { player.destroy(); players.delete(player); }
       container.replaceChildren();
     },
@@ -542,13 +341,6 @@ function createView(container: HTMLElement,
   return view;
 }
 
-/**
- * "9 songs", or "9 songs · 33 min" once the durations are known.
- *
- * A middot rather than a comma: the line is set in small caps in the header, and
- * a comma between two counts reads as one clause there where a dot reads as two
- * facts - which is what they are.
- */
 function metaText(audio: Item[]) {
   const n = audio.length;
   const songs = `${n} ${n === 1 ? 'song' : 'songs'}`;
@@ -558,15 +350,7 @@ function metaText(audio: Item[]) {
   return mins < 1 ? songs : `${songs} · ${mins} min`;
 }
 
-/**
- * The header cover: a mosaic of the board's own art. Four covers make a 2x2, one
- * or more fewer than four shows the first as a single sleeve, none falls back to a
- * disc. It fills in as the tags are read (rebuildRow calls updateMetaAll).
- *
- * When no track carries embedded art - most loose MP3s do not - the board's own
- * pictures stand in: a music board's photo is its sleeve. Only a board with
- * neither art nor a picture shows the disc.
- */
+// Cover mosaic: 4+ → 2x2, 1-3 → single, 0 → disc. Falls back to board images.
 function paintCover(el: HTMLElement, audio: Item[]) {
   const covers: string[] = [];
   const seen = new Set<string>();
@@ -601,12 +385,6 @@ function coverImg(src: string) {
   return img;
 }
 
-/**
- * One track row: cover (or a note glyph), the title and artist, the duration,
- * and - in a reorderable list - a grip to drag it by. The row is the play
- * control; the grip, which sits over it, starts a drag instead and swallows its
- * own click so a nudge of the handle does not also start the track.
- */
 function createRow(item: Item, view: View): Row {
   const el = div('pl-row');
   el.dataset.id = item.id;
@@ -625,14 +403,9 @@ function fillRow(r: Row, view: View) {
   if (cover) {
     art.appendChild(coverImg(cover));
   } else {
-    // No embedded art, which is the common case for a loose MP3: the tile
-    // carries the track's number instead of the note glyph it used to, because
-    // nine copies of one glyph down a list is a column that says nothing nine
-    // times. The number is a CSS counter over .pl-row (mobile.css), so a drag
-    // renumbers the list without anything here walking it.
+    // Track number via CSS counter (mobile.css); auto-renumbers on drag.
     art.classList.add('is-placeholder');
   }
-  // The equalizer, shown by CSS only on the .is-playing row.
   const eq = div('pl-eq');
   eq.innerHTML = '<i></i><i></i><i></i><i></i>';
   art.appendChild(eq);
@@ -649,8 +422,6 @@ function fillRow(r: Row, view: View) {
   }
 
   const time = div('pl-time');
-  // A duration is written as seconds by probeDuration(); anything else is read
-  // as no duration at all, which is what the `!= null` test stood in for.
   time.textContent = typeof item.meta?.duration === 'number' ? clock(item.meta.duration) : '';
 
   r.el.append(art, main, time);
@@ -669,13 +440,6 @@ function fillRow(r: Row, view: View) {
   ensureTrackMeta(item);
 }
 
-/**
- * A track's display title, and the word for one that has no title at all.
- *
- * The chain is board-model.ts's - the Feed lists the same tracks and had the
- * same four terms written out beside it, differing only in this last word. See
- * trackTitle() there for why the placeholder stayed with the surface.
- */
 function trackName(item: Item) {
   return trackTitle(item) || 'Untitled';
 }
@@ -684,21 +448,12 @@ function trackName(item: Item) {
 // Drag to reorder
 // ---------------------------------------------------------------------------
 
-/**
- * Reorder by dragging the grip. The row is moved through the DOM live as the
- * pointer passes each neighbour's midpoint - no free-floating transform, which
- * keeps a list of forty tracks from turning into forty transforms a frame - and
- * on release the DOM order is read back and committed with setAudioOrder(), which
- * persists it and re-renders. Capture is on the grip so the pointer stream stays
- * with it wherever the finger goes.
- */
+// Moves the row through the DOM live (no transforms); commits order on release.
 function beginDrag(e: PointerEvent, view: View, r: Row) {
   if (drag) return;
   e.preventDefault();
   drag = { view, rowEl: r.el, pointerId: e.pointerId, mids: null, ref: undefined };
   r.el.classList.add('is-dragging');
-  // SAFETY: currentTarget is the grip this listener was put on, which is the one
-  // target a handler can be sure of - the same reading ui/hud.ts states.
   const grip = e.currentTarget as HTMLElement;
   grip.setPointerCapture?.(e.pointerId);
   grip.addEventListener('pointermove', onDragMove);
@@ -706,15 +461,8 @@ function beginDrag(e: PointerEvent, view: View, r: Row) {
   grip.addEventListener('pointercancel', endDrag);
 }
 
-/**
- * Midpoints of the non-dragged rows, measured once and held until a reorder
- * reflows the list. Without the cache every pointermove read getBoundingClientRect
- * on every row; the list only actually changes shape when the dragged row lands in
- * a new gap, so that is the only thing that invalidates it.
- */
+// Cached until the row lands in a new gap (invalidates on DOM move).
 function rowMids() {
-  // Asserted throughout: this is only ever reached from onDragMove(), which has
-  // just tested that a drag is in flight, and nothing here can end one.
   if (drag!.mids) return drag!.mids;
   const mids: { row: Element; mid: number }[] = [];
   for (const row of drag!.view.listEl.querySelectorAll('.pl-row')) {
@@ -733,7 +481,6 @@ function onDragMove(e: PointerEvent) {
   for (const { row, mid } of rowMids()) {
     if (y < mid) { ref = row; break; }
   }
-  // No change of gap, no DOM work - and the cached midpoints stay valid.
   if (ref === drag.ref) return;
   drag.ref = ref;
   if (ref) list.insertBefore(drag.rowEl, ref);
@@ -743,7 +490,6 @@ function onDragMove(e: PointerEvent) {
 
 function endDrag(e: PointerEvent) {
   if (!drag) return;
-  // SAFETY: the grip, for the reason beginDrag() gives about the same read.
   const grip = e.currentTarget as HTMLElement;
   drag.rowEl.classList.remove('is-dragging');
   grip.releasePointerCapture?.(e.pointerId);
@@ -768,12 +514,7 @@ async function ensureTrackMeta(item: Item) {
   const needTags = !item.meta?.artist && !item.meta?.trackTitle && !item.meta?.album;
   const needArt = !item.meta?.cover;
   const asset = getAsset(hash);
-  // A duration already on the item is kept - except on a raw AAC, where it may
-  // be a number an engine guessed for a board saved before this counted the
-  // frames, and where the guess is off by a factor rather than by seconds. The
-  // recount happens once a session, only for a row somebody has looked at, and
-  // `countOnly` is what stops a file it cannot count from being handed straight
-  // back to the engine that got it wrong.
+  // Raw AAC: engine-guessed duration can be off by a factor; recount from frames.
   if (item.meta?.duration == null) probeDuration(item);
   else if (asset?.ext === 'aac') probeDuration(item, true);
 
@@ -782,12 +523,7 @@ async function ensureTrackMeta(item: Item) {
   try {
     const [tags, art] = await Promise.all([
       needTags ? audioTags(asset.blob) : Promise.resolve([]),
-      // Its own catch, inside the shared one. coverArt() throws on a cover past
-      // the ceiling now (consent.ts) and this is not a place to ask - the track
-      // is already on the board, nobody dropped anything, and a dialog over a
-      // playlist filling itself in would come from nowhere. What must not happen
-      // is the outer catch swallowing the title and the artist along with it,
-      // which is what a bare rejection here would cost.
+      // Own catch: a cover past the ceiling must not swallow the tags.
       needArt ? coverArt(asset.blob).catch(() => null) : Promise.resolve(null),
     ]);
     const map = Object.fromEntries(tags || []);
@@ -799,20 +535,6 @@ async function ensureTrackMeta(item: Item) {
   if (changed) { markDirty(); rebuildRow(item.id); }
 }
 
-/**
- * How many duration probes may be in flight at once, and how long one is
- * allowed to take.
- *
- * A 200-track board fired 200 `preload="metadata"` fetches in a single render
- * pass, each an <audio> the browser then has to schedule. The queue below runs
- * them a handful at a time, in the order the rows were drawn, which is the
- * order somebody is looking at them.
- *
- * The timeout is the backstop canvas/poster.ts already carries for the same
- * shape of probe: an element that fires neither `loadedmetadata` nor `error` -
- * a truncated file, a codec the engine will not admit to - would otherwise sit
- * on a slot for the session.
- */
 const PROBE_LIMIT = 4;
 const PROBE_MS = 15_000;
 const probeQueue: { item: Item, countOnly: boolean }[] = [];
@@ -831,20 +553,12 @@ function pumpProbes() {
     const url = assetURL(hash);
     if (!url) continue;
     probesRunning += 1;
-    // The slot is this function's to give back, so a probe that throws on its
-    // way in gives it back too - otherwise four bad files stop the queue dead.
     void runProbe(item, hash, url, countOnly)
       .catch(() => { probesRunning -= 1; pumpProbes(); });
   }
 }
 
-/**
- * What a probe found, however it found it: written once, in one place.
- *
- * A recount that agrees with what is already there writes nothing. The row is
- * drawn to the second, and a board marked dirty on every visit by a number that
- * did not change would put a save behind a track nobody touched.
- */
+// Skips write if the value has not meaningfully changed (<0.5s).
 function takeDuration(item: Item, secs: number) {
   if (!Number.isFinite(secs) || secs <= 0) return;
   const had = item.meta.duration;
@@ -854,30 +568,8 @@ function takeDuration(item: Item, secs: number) {
   rebuildRow(item.id);
 }
 
-/**
- * One track's duration: the file's own answer where it has one, the engine's
- * where it does not.
- *
- * The file first, which is the opposite of what this used to do and is the
- * right way round for three reasons. It is *exact* - a FLAC, a WAV, an MP4 and
- * an Ogg all count their own samples, where the engine reports what its decoder
- * has reached. It is *available* - a .ac3, a .wma or an .aiff plays in no
- * engine here, so the element answers nothing at all and the row stayed blank
- * forever. And for a raw `.aac` the engine is not slower but wrong: the format
- * states its length nowhere, so every engine divides bytes by bitrate, and
- * Firefox has put a ninety-minute file at seven thousand minutes from a few
- * near-silent frames at the front.
- *
- * The engine keeps exactly one case: an MP3 with no Xing header, where this
- * module's own answer is bytes over bitrate too and says so (`estimated`). The
- * engine will decode the file and count, so on that one format it is the better
- * authority and this defers to it - see import/containers.ts.
- *
- * `countOnly` is a recount of a track that already has a duration - see
- * ensureTrackMeta(). There is nothing to fall back *to* on one of those: the
- * number on the item came from the engine in the first place, and asking it
- * again would replace it with itself.
- */
+// File-level duration first (exact sample count); falls back to engine probe.
+// `countOnly`: recount only, no engine fallback (already has engine's answer).
 async function runProbe(item: Item, hash: string, url: string, countOnly: boolean) {
   const blob = getAsset(hash)?.blob;
   const facts = blob ? await mediaFacts(blob, String(item.meta?.ext || '')).catch(() => null) : null;
@@ -891,23 +583,11 @@ async function runProbe(item: Item, hash: string, url: string, countOnly: boolea
   elementProbe(item, url, facts?.duration || 0);
 }
 
-/**
- * The engine's own answer, with the file's estimate behind it.
- *
- * `estimate` is the bytes-over-bitrate figure from import/containers.ts, which
- * is the only number a Xing-less MP3 has. It is used exactly where the engine
- * declines to answer at all - an `error`, or a `loadedmetadata` that never
- * comes - because at that point the alternative is a row with no time on it for
- * the rest of the board's life.
- */
+// Engine probe via <audio preload="metadata">; uses `estimate` if engine fails.
 function elementProbe(item: Item, url: string, estimate = 0) {
   const probe = new Audio();
   let timer = 0;
-  // The one exit, so a slot is given back exactly once whichever way the
-  // probe ended. load() after clearing the src is what actually makes the
-  // element let go of what it buffered - the same pairing canvas/items.ts,
-  // canvas/poster.ts and canvas/renderers.ts all make, and the one this was
-  // missing.
+  // Single exit; clear src + load() to release buffered data.
   let done = false;
   const finish = () => {
     if (done) return;
@@ -929,27 +609,18 @@ function elementProbe(item: Item, url: string, estimate = 0) {
   probe.src = url;
 }
 
-/** Redraw one track's row in every home it appears in, after metadata arrived. */
 function rebuildRow(id: string) {
   for (const view of [mobileView, windowView]) {
     if (!view) continue;
     const list = view.listEl;
     const el = list.querySelector<HTMLElement>(`.pl-row[data-id="${cssEscape(id)}"]`);
     if (!el) continue;
-    // Asserted: the row is on screen because the item is in the list this pass
-    // was built from, and fillRow() would read off nothing a line later if it
-    // were not - so a fallback here would only move the same failure along.
     fillRow({ el, item: board.items.find(i => i.id === id)! }, view);
   }
-  // A cover or a duration just arrived: the header's mosaic and "N min" want it too.
   updateMetaAll();
   markPlaying();
 }
 
-// `typeof` rather than the bare read this had: the DOM types say CSS.escape is
-// always there, so testing it as a value is an error tsc will not let past -
-// and asking whether it is a function is what the guard meant all along. Same
-// spelling as the `typeof getComputedStyle === 'function'` guards elsewhere.
 const cssEscape = (s: string) =>
   (typeof window.CSS?.escape === 'function' ? CSS.escape(s) : String(s).replace(/["\\]/g, '\\$&'));
 
@@ -957,7 +628,6 @@ const cssEscape = (s: string) =>
 // The Desktop floating window
 // ---------------------------------------------------------------------------
 
-/** Open the window if closed, close it if open. The sidebar's Playlist button. */
 export function togglePlayerWindow() {
   if (windowEl) closePlayerWindow(); else openPlayerWindow();
 }
@@ -985,15 +655,11 @@ function openPlayerWindow() {
   close.innerHTML = CLOSE_ICON;
   close.addEventListener('click', closePlayerWindow);
   head.append(title, spacer, toggle, close);
-  // The title bar is the grab handle: drag it to move the window around the board.
   windowDetach.push(makeWindowDrag(windowEl, head));
-
-  // One body, built once. It used to be swapped whole by a view toggle.
   windowContent = div('player-window-content');
   windowEl.append(head, windowContent);
   document.body.appendChild(windowEl);
 
-  // A grip in the bottom-right corner to resize the window by.
   const resize = div('player-window-resize');
   resize.setAttribute('aria-hidden', 'true');
   windowEl.appendChild(resize);
@@ -1001,34 +667,17 @@ function openPlayerWindow() {
 
   renderWindowBody();
 
-  // Out of the scaled-down state and up into place, next frame - it needs two
-  // computed styles to run between for the transition to take (see ui/nowplaying.ts
-  // raise()).
+  // Next frame so the transition from scaled-down actually runs.
   requestAnimationFrame(() => windowEl?.classList.add('is-open'));
 }
 
-/**
- * Build the window's body: the compact transport (cover, seek, five controls) over
- * a plain list. The only body there is - see the note at the top of this file.
- *
- * Still its own function rather than a run of lines inside openPlayerWindow,
- * because it tears down what it replaces first: it is the one place that owns the
- * pair of things the window holds, and a rebuild that leaked a windowPlayer would
- * leave a dead transport bound to the shared queue.
- */
 function renderWindowBody() {
-  // The two `!` are the test on this line: openPlayerWindow() builds the window
-  // and its content in one run, and closePlayerWindow() drops both together.
   if (!windowEl) return;
   windowView?.destroy();
   windowView = null;
   windowContent!.replaceChildren();
 
   const body = div('player-window-body');
-  // The window's own player, held only long enough to mount it: it takes itself
-  // out of `players` when the view that owns it is destroyed, so there is no
-  // second handle to keep in step. That handle is what used to leak a dead
-  // transport bound to the shared queue across a rebuild.
   windowView = createView(body, { reorderable: false, variant: 'window' });
   windowContent!.append(windowView.player!.el, body);
 
@@ -1036,50 +685,23 @@ function renderWindowBody() {
   renderAll();
 }
 
-/**
- * Leave for the album view - the Mobile lens, full size, which is the album view
- * this window used to carry a miniature of.
- *
- * Nothing here closes the window: the mode switch lands on bus 'layout', and the
- * handler at the top of this file already takes it away on the way into Mobile.
- * Two roads to the same close would be two chances to disagree about it.
- */
 function showAlbumView() {
   setLens('playlist');
   cmds?.setBoardMode('mobile');
 }
 
-/**
- * The slide-out backstop, so a close that never sees transitionend still
- * finishes - one per element, not one for the module.
- *
- * There was a single `windowExit` handle. Close the window, reopen it and close
- * it again quickly, and the second close's `clearTimeout(windowExit)` killed
- * the *first* element's backstop: that one then depended entirely on a
- * transitionend that may never arrive, and an invisible .player-window was left
- * on the body. A timer belongs to the animation it is backing up, and there can
- * be two of those in flight.
- */
+// Per-element backstop: a shared timer lost the first element's backstop on rapid close/reopen.
 const windowExits = new WeakMap<Element, number>();
 
 function closePlayerWindow() {
-  // Before the early return, not after: if the window ever goes away by some
-  // other road the flag has to be able to come off, and this is the one call
-  // every road ends at.
   if (!windowEl) { markTransport(); return; }
   const el = windowEl;
-  // The queue is deliberately left running - closing the player is not stopping
-  // the music, any more than leaving the Mobile playlist is. The view's destroy
-  // takes its transport with it, which is what puts it out of `players`.
   windowView?.destroy();
-  // Take the move/resize grab listeners off window - they close over this
-  // element, which is about to be detached and rebuilt on the next open.
   windowDetach.forEach(fn => fn());
   windowDetach = [];
   windowEl = null;
   windowContent = null;
   windowView = null;
-  // Scale it back down, then take it away once the transform has run.
   el.classList.remove('is-open');
   clearTimeout(windowExits.get(el));
   const done = () => { clearTimeout(windowExits.get(el)); windowExits.delete(el); el.remove(); };
@@ -1088,59 +710,12 @@ function closePlayerWindow() {
   markTransport();
 }
 
-/**
- * Say on <html> whether a transport is already on screen, so the now-playing bar
- * can stand down while one is.
- *
- * The bar is the transport for when you cannot see the thing making the noise.
- * With this window open in *player* mode you can see it: its play button and seek
- * line are right there, and the bar is then a second copy of a control already on
- * screen, laid over the bottom of the window showing the first.
- *
- * The window has one body now and it is that transport, so "open" and "a transport
- * is on screen" have come back into step. The name stays as it is anyway: it is
- * what chrome.css keys off, and it is still the true statement of the two. The
- * window once had a second body - the album view - which had no transport in it
- * and used the bar as one, and a flag meaning "the window is open" took the bar
- * away there and left that view with nothing to play or seek with. The lesson
- * outlived the mode: a flag that says what the stylesheet depends on survives the
- * next body being added, and a flag that says what happens to correlate with it
- * does not.
- *
- * A class on the root and nothing else, the same shape `is-connecting` and
- * `data-snap` use. It is written here rather than read from ui/nowplaying.ts
- * because that module imports *this* one, and the arrow may only go one way. The
- * Mobile half needs nothing - the lens carries its own controls, and
- * `data-feed-lens` is already on the root from ui/board-view.ts/syncLens().
- *
- * Written straight off the two facts it is made of, so there is no third truth to
- * keep in step.
- */
+// Tells chrome.css whether a transport is visible, so the now-playing bar can hide.
 function markTransport() {
   document.documentElement.classList.toggle('playlist-transport', !!windowEl);
 }
 
-// Moving and resizing the window are in ui/float-window.ts. They were written
-// here and lifted out when the sticker pad turned out to want exactly the same
-// two gestures - which is the argument for the move: dragging a window by its
-// title bar and pulling it bigger by its corner is not a fact about music.
-
-/**
- * A transport: the now-playing track (cover, title, artist, where it is in the
- * list), a seek line with times, and the five controls - shuffle, prev,
- * play/pause, next, repeat.
- *
- * It drives the same shared queue the list does, and binds its follow loop and
- * element listeners to whatever the queue is currently playing, rebinding on a
- * track change and letting go when the surface holding it goes away.
- *
- * No volume, and the argument is the one that has always been here: the
- * now-playing bar is up whenever there is anything to turn down, and a level is
- * a property of the room rather than of this list - so a slider in the window
- * would mean opening a window to quiet a noise. The lens was the one case that
- * argument did not cover, because the bar was hidden there; the bar is not
- * hidden there any more, and the row went with the lens's transport.
- */
+// Compact transport: cover, seek, shuffle/prev/play/next/repeat.
 function makePlayer(): Player {
   const el = div('pw-player');
 
@@ -1151,10 +726,6 @@ function makePlayer(): Player {
   const title = div('pw-title');
   title.textContent = 'Nothing playing';
   const artist = div('pw-artist');
-  // "4 of 12", counted down the list you can see rather than along the play
-  // order - see QueueSnapshot.index, which does the mapping. Deliberately not an
-  // "up next": under shuffle the next track is not the row below, and printing
-  // it only raises the question of why.
   const pos = div('pw-pos');
   pos.hidden = true;
   info.append(title, artist, pos);
@@ -1167,20 +738,10 @@ function makePlayer(): Player {
   line.setAttribute('role', 'slider');
   line.setAttribute('aria-label', 'Seek');
   line.tabIndex = 0;
-  // The same shape the now-playing bar and the video card draw - a base line, a
-  // clipped fill, and the fill carrying both a straight line and a wave, of which
-  // the stylesheet shows one per whimsy tier. It was a div scaled on X, which is
-  // the one thing a wave cannot be: scaling a wave horizontally changes its
-  // frequency as the track plays. See the note in media/transport.ts.
   line.innerHTML = seekInnerHTML('pw-line');
   const waveSvg = line.querySelector('.pw-line-wave-svg');
   const wavePathEl = line.querySelector('.pw-line-fill-wave');
   const sizeWave = () => sizeSeekWave(line, waveSvg, wavePathEl);
-  // Once unconditionally, and then again on every resize where there is a
-  // ResizeObserver to say so. The call was *only* inside the guard, so on a
-  // browser without one the path's `d` stayed empty and the scrubber had no
-  // wave at all - a graceful degradation that degraded to nothing.
-  // ui/nowplaying.ts has always called it outside the guard.
   sizeWave();
   if (typeof ResizeObserver === 'function') new ResizeObserver(sizeWave).observe(line);
   const total = document.createElement('span');
@@ -1190,14 +751,6 @@ function makePlayer(): Player {
   const controls = div('pw-controls');
   const shuffleBtn = pwBtn('pw-shuffle', SHUFFLE_ICON, 'Shuffle', toggleShuffle);
   const prevBtn = pwBtn('pw-prev', PREV_ICON, 'Previous', queuePrev);
-  // The same togglePlay() the hero uses, which is the point of the change.
-  //
-  // It called togglePlayback() on whatever nowPlaying() happened to be, and
-  // that is not always this window's queue: with a video sounding on the board,
-  // this button paused the *video* while the hero button one panel away started
-  // the audio queue. Two buttons in one player, in sight of each other, meaning
-  // two different things by "play". This window is the queue's transport; the
-  // queue is what its play button plays.
   const playBtn = pwBtn('pw-play', PW_PLAY_ICON, 'Play', togglePlay);
   const nextBtn = pwBtn('pw-next', NEXT_ICON, 'Next', queueNext);
   const repeatBtn = pwBtn('pw-repeat', REPEAT_ICON, 'Repeat', cycleRepeat);
@@ -1234,16 +787,8 @@ function makePlayer(): Player {
   function refresh() {
     const s = queueEl();
     const playing = !!s && !s.paused;
-    // Paused, which the scrubber needs and nothing else here does: at the soft
-    // end of the whimsy axis the seek line is a travelling wave, and it flattens
-    // to a straight line when the sound stops. The now-playing bar has said this
-    // with the same class since it was drawn (see chrome.css) - this transport
-    // was given the same three-svg line and never the flag, so its wave stood
-    // there rippling over a paused track. On the player rather than on the line
-    // because what is paused is the player.
+    // Wave flattens to a straight line when paused (chrome.css).
     el.classList.toggle('is-paused', !playing);
-    // Both `.pw-ico` spans are asserted: pwBtn() is what built the button, and
-    // the glyph span is the whole of what it put inside one.
     playBtn.querySelector('.pw-ico')!.innerHTML = playing ? PAUSE_ICON : PW_PLAY_ICON;
     playBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
     const { shuffle, repeat, index, length } = queueState();
@@ -1252,17 +797,7 @@ function makePlayer(): Player {
     repeatBtn.querySelector('.pw-ico')!.innerHTML = repeat === 'one' ? REPEAT_ONE_ICON : REPEAT_ICON;
     repeatBtn.setAttribute('aria-label',
       repeat === 'one' ? 'Repeat one' : repeat === 'all' ? 'Repeat all' : 'Repeat');
-    // Where in the list, and the two ends.
-    //
-    // The ends are only ends when the list is being read straight through:
-    // shuffling has no last track to speak of, and repeat 'all' means the list
-    // has no end at all. So the greying is gated on both, and in either of those
-    // modes both buttons stay live and wrap - which is what queuePrev/queueNext
-    // do when they are pressed rather than reached by a track finishing.
-    //
-    // With repeat off and no shuffle, disabling is not a lie about the button,
-    // it *is* the behaviour: pressing Next at the end of a list you asked not to
-    // repeat should do nothing, rather than quietly starting it again.
+    // Disable prev/next at list ends only when not shuffling or repeating.
     const straight = !shuffle && repeat === 'off';
     const loaded = index >= 0 && length > 0;
     pos.hidden = !loaded;
@@ -1277,9 +812,6 @@ function makePlayer(): Player {
     if (item) {
       const c = urlOf(item.meta?.cover);
       let src = c;
-      // The hash is read back off the found item rather than asserted: the
-      // find() tested it, and re-reading it is what lets the checker agree
-      // instead of being told to.
       if (!src) {
         const hash = board.items.find(it => it.type === 'image' && it.asset?.hash)?.asset?.hash;
         if (hash) src = assetURL(hash);
@@ -1306,8 +838,6 @@ function makePlayer(): Player {
         s.addEventListener('timeupdate', paint, { signal: sig });
         s.addEventListener('seeked', paint, { signal: sig });
         s.addEventListener('loadedmetadata', paint, { signal: sig });
-        // See canvas/transport.ts - a duration guessed from the bitrate is
-        // corrected by this event alone.
         s.addEventListener('durationchange', paint, { signal: sig });
       }
     }
@@ -1325,7 +855,6 @@ function makePlayer(): Player {
   return player;
 }
 
-/** One round transport button for the window player, its glyph in a swappable span. */
 function pwBtn(cls: string, icon: string, label: string, onClick: () => void) {
   const b = document.createElement('button');
   b.type = 'button';

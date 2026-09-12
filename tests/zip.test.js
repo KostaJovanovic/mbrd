@@ -1,15 +1,11 @@
 // The ZIP container - the whole storage substrate, since a .mbrd is a ZIP.
-//
-// Two halves. The round-trip tests say the writer and reader agree, which is
-// the thing a board depends on. The rest feed the reader damaged and hostile
-// archives, because a .mbrd arrives from outside - emailed, downloaded, handed
-// over on a stick - and every offset in it is a number this app is about to
-// index memory by.
-//
-// Malformed cases are built by writing a good archive and then corrupting one
-// field, rather than by hand-assembling bytes. That keeps each test about the
-// single thing it changed, and it keeps them honest: if the writer's layout
-// moves, these move with it instead of silently testing a format nobody emits.
+// Two halves: round-trip tests say the writer and reader agree, and the
+// rest feed the reader damaged and hostile archives, since a .mbrd
+// arrives from outside and every offset in it is a number this app is
+// about to index memory by. Malformed cases are built by writing a good
+// archive and corrupting one field, not hand-assembling bytes - keeps
+// each test about the one thing it changed, and keeps them honest if the
+// writer's layout moves.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -50,8 +46,8 @@ test('round-trips a stored entry', async () => {
 });
 
 test('round-trips a deflated entry', async () => {
-  // Long and repetitive, so the writer actually takes the compressed form:
-  // it only does so when deflating wins, and only above 256 bytes.
+  // Long and repetitive, so the writer takes the compressed form - only
+  // when deflating wins, and only above 256 bytes.
   const data = enc.encode('the same sentence over and over. '.repeat(200));
   const archive = await buf([{ name: 'board.json', data, compress: true }]);
   assert.ok(archive.length < data.length, 'fixture did not actually compress');
@@ -87,8 +83,8 @@ test('an empty entry survives the trip', async () => {
 });
 
 test('incompressible data is stored, not deflated', async () => {
-  // Random bytes deflate to *more* than they started as; the writer is
-  // supposed to notice and keep the original.
+  // Random bytes deflate to *more* than they started as; the writer
+  // must notice and keep the original.
   const data = bytes(4096, 99);
   const files = await readZip(await buf([{ name: 'noise', data, compress: true }]));
   assert.deepEqual(files.get('noise'), data);
@@ -99,15 +95,11 @@ test('incompressible data is stored, not deflated', async () => {
 // ---------------------------------------------------------------------------
 
 /**
- * Refused, and refused by the guard we meant.
- *
- * This was `assert.rejects(promise, /.+/)` - satisfied by any error at all with
- * a non-empty message. Thirteen of the fifteen archives below routed through it,
- * so a TypeError out of a half-broken reader read as "rejects a CRC mismatch"
- * and "rejects a decompression bomb" identically to the guard firing. Every
- * caller now names the sentence its fixture is supposed to earn, which is also
- * the only way the file records *which* of the twenty-odd refusals in zip.ts
- * each fixture is here to exercise.
+ * Refused, and refused by the guard we meant. Used to be
+ * `assert.rejects(promise, /.+/)`, satisfied by any non-empty error - a
+ * TypeError from a half-broken reader read the same as a real CRC or
+ * bomb refusal. Every caller now names the sentence its fixture earns,
+ * recording *which* of zip.ts's twenty-odd refusals it exercises.
  */
 const rejects = (promise, message, why) => assert.rejects(promise, message, why);
 
@@ -121,16 +113,15 @@ test('rejects an archive too short to hold a directory', async () => {
 });
 
 test('rejects a truncated archive', async () => {
-  // Keep the directory, lose the payload it points at - which the old fixture
-  // said it did and did not do. It sliced at `cdAt(archive) - 500`, taking the
-  // central directory and the EOCD with it, so it landed on the same "no
-  // end-of-central-directory record" branch as the two tests above and left
-  // zip.ts's truncation guard - the one thing between a hostile .mbrd and an
-  // out-of-range read - covered only by the forged-csize fixture below.
+  // Keep the directory, lose the payload it points at. The old fixture
+  // sliced at `cdAt(archive) - 500`, taking the central directory and the
+  // EOCD with it, landing on the same "no EOCD" branch as the two tests
+  // above and leaving zip.ts's truncation guard covered only by the
+  // forged-csize fixture below.
   //
-  // So: splice 500 bytes out of the payload and pull the trailer up to meet it.
-  // The directory survives intact and still declares 2000 bytes of entry data
-  // that are no longer in the file.
+  // So: splice 500 bytes out of the payload and pull the trailer up to
+  // meet it. The directory survives intact, still declaring 2000 bytes
+  // of entry data no longer in the file.
   const archive = await buf([{ name: 'a.bin', data: bytes(2000), compress: false }]);
   const cd = cdAt(archive);
   const CUT = 500;
@@ -188,7 +179,7 @@ test('rejects an unsupported compression method', async () => {
 
 test('rejects duplicate entry names', async () => {
   // Two board.json entries make the archive mean two different things
-  // depending on which the reader keeps.
+  // depending on which one the reader keeps.
   const archive = await buf([
     { name: 'board.json', data: enc.encode('{"items":[]}') },
     { name: 'board.json', data: enc.encode('{"items":[{"evil":true}]}') },
@@ -199,16 +190,15 @@ test('rejects duplicate entry names', async () => {
 test('rejects an absurd entry count', async () => {
   const archive = await buf([{ name: 'a.bin', data: bytes(100) }]);
   put16(archive, eocdAt(archive) + 10, 60000);
-  // The separator is the machine's, not ours - these messages are read by a person
-  // and go through toLocaleString(), like the triangle counts in mesh.ts. So the
-  // count is matched loosely and the sentence around it exactly, which is the half
-  // this file is entitled to have an opinion about.
+  // The separator is the machine's, not ours - these messages go through
+  // toLocaleString(), like mesh.ts's triangle counts. The count is
+  // matched loosely, the sentence around it exactly.
   await rejects(readZip(archive), /declares 60[., \s]000 entries|central directory/);
 });
 
 test('rejects a decompression bomb by its declared ratio', async () => {
-  // 8 MiB of zeros deflates to a couple of kilobytes: a ratio in the
-  // thousands, and the reader must refuse it on the declared numbers alone,
+  // 8 MiB of zeros deflates to a couple of kilobytes, a ratio in the
+  // thousands - the reader must refuse on the declared numbers alone,
   // before spending the memory to find out.
   const data = zeros(8 * 1024 * 1024);
   const archive = await buf([{ name: 'bomb', data, compress: true }]);
@@ -217,16 +207,15 @@ test('rejects a decompression bomb by its declared ratio', async () => {
 });
 
 test('rejects a bomb that lies about its uncompressed size', async () => {
-  // The ratio guard above reads the *declared* size, so the way past it is to
-  // declare something else. This entry says it inflates to one byte, which is
-  // under every ceiling there is - and then expands to 8 MiB.
+  // The ratio guard reads the *declared* size, so declaring something
+  // else gets past it. This entry claims one byte - under every
+  // ceiling - then expands to 8 MiB.
   //
-  // The reader used to collect the whole stream and compare lengths afterwards,
-  // so it did reject this, but only once the memory had already been spent: at
-  // this size the check cost ~26 MiB of allocation to reach, and the size in
-  // the fixture is the only thing stopping that being a gigabyte. Now the
-  // declared size is a budget the inflate is cancelled against, so the cost is
-  // bounded by what the entry claimed rather than by what it contains.
+  // The reader used to collect the whole stream and compare lengths
+  // afterwards, rejecting this only once the memory was already spent -
+  // ~26 MiB of allocation here, a gigabyte at a larger fixture. Now the
+  // declared size is a budget the inflate is cancelled against, bounding
+  // cost by the claim, not the content.
   const data = zeros(8 * 1024 * 1024);
   const archive = await buf([{ name: 'bomb.bin', data, compress: true }]);
   const cd = cdAt(archive);
@@ -235,8 +224,8 @@ test('rejects a bomb that lies about its uncompressed size', async () => {
 });
 
 test('the inflate budget is the declared size, not a round number', async () => {
-  // One byte over is still over: the cap is the entry's own claim, so an
-  // archive cannot buy headroom by declaring something merely plausible.
+  // One byte over is still over: the cap is the entry's own claim, so
+  // an archive cannot buy headroom by declaring something plausible.
   const data = enc.encode('the same sentence over and over. '.repeat(200));
   const archive = await buf([{ name: 'board.json', data, compress: true }]);
   const cd = cdAt(archive);
@@ -245,8 +234,8 @@ test('the inflate budget is the declared size, not a round number', async () => 
 });
 
 test('a big but honest entry is still accepted', async () => {
-  // The ratio guard must not catch real content. 2 MiB of noise compresses
-  // barely at all, which is what a photo or a video chunk looks like.
+  // The ratio guard must not catch real content: 2 MiB of noise barely
+  // compresses, what a photo or video chunk looks like.
   const data = bytes(2 * 1024 * 1024, 7);
   const files = await readZip(await buf([{ name: 'photo.jpg', data, compress: true }]));
   assert.equal(files.get('photo.jpg').length, data.length);
@@ -263,9 +252,9 @@ test('crc32 matches known vectors', () => {
 });
 
 test('an oversized Blob is rejected on its size, before it is ever allocated', async () => {
-  // A Blob-like whose arrayBuffer() would blow up if called: the point of the
-  // fix is that its cheap `.size` is checked first, so a file provably too large
-  // never gets pulled into memory. See AUD-04. 768 MiB is the archive ceiling.
+  // A Blob-like whose arrayBuffer() would blow up if called: its cheap
+  // `.size` is checked first, so a provably too-large file never gets
+  // pulled into memory. See AUD-04. 768 MiB is the archive ceiling.
   const oversize = {
     size: 768 * 1024 ** 2 + 1,
     arrayBuffer() { throw new Error('must not allocate an over-limit archive'); },
@@ -277,12 +266,11 @@ test('an oversized Blob is rejected on its size, before it is ever allocated', a
 // Blob entries - the export's memory ceiling
 // ---------------------------------------------------------------------------
 //
-// packBoard() hands assets over as Blobs rather than as bytes, so a board of
-// video is not a board of video on the heap. The writer therefore has two
-// paths to the same archive, and the thing that must hold is that they produce
-// the *same* archive - a Blob entry whose CRC or declared size came out
-// differently would be a file that opens nowhere, and it would only be
-// discovered by someone trying to reopen their board.
+// packBoard() hands assets over as Blobs, not bytes, so a board of video
+// is not a board of video on the heap. The writer's two paths must
+// produce the *same* archive - a Blob entry with a different CRC or
+// declared size would be a file that opens nowhere, discovered only when
+// somebody tries to reopen their board.
 
 test('a Blob entry writes byte-for-byte the same archive as its bytes', async () => {
   const data = bytes(5000, 7);
@@ -293,8 +281,8 @@ test('a Blob entry writes byte-for-byte the same archive as its bytes', async ()
 });
 
 test('a compressed Blob entry round-trips', async () => {
-  // Deflate goes Blob to Blob through the platform compressor on this path,
-  // which is a different call from the bytes one - so it gets its own trip.
+  // Deflate goes Blob to Blob through the platform compressor here, a
+  // different call from the bytes path, so it gets its own trip.
   const data = zeros(20000);
   const files = await readZip(await buf([{ name: 'flat', data: new Blob([data]), compress: true }]));
   assert.deepEqual(files.get('flat'), data);
@@ -319,10 +307,10 @@ test('an empty Blob entry is written and read as empty', async () => {
 // ---------------------------------------------------------------------------
 // The container's own structure
 //
-// The fixtures above all corrupt a *field* in a well-formed archive. These
-// corrupt the structure around the fields - the signatures, the directory's own
-// extent, the payload - which is the half a truncated or hand-rezipped .mbrd
-// actually arrives as.
+// The fixtures above corrupt a *field* in a well-formed archive. These
+// corrupt the structure around the fields - signatures, the directory's
+// own extent, the payload - the shape a truncated or hand-rezipped
+// .mbrd actually arrives in.
 // ---------------------------------------------------------------------------
 
 test('a corrupt central-directory signature is refused', async () => {
@@ -338,10 +326,10 @@ test('a corrupt local-header signature is refused', async () => {
 });
 
 test('a central directory longer than the space before its own record is refused', async () => {
-  // `p + cdSize > eocd` at zip.ts:405, which is a different guard from "points
-  // past the end of the file": the directory fits inside the archive and does
-  // not fit inside the room the EOCD leaves it. Sized to land in that window
-  // rather than past the file, which is why it is computed and not a constant.
+  // `p + cdSize > eocd` at zip.ts:405, a different guard from "points
+  // past the end of the file": the directory fits inside the archive but
+  // not inside the room the EOCD leaves it. Sized to land in that window,
+  // not past the file, hence computed rather than a constant.
   const archive = await buf([{ name: 'a.bin', data: bytes(500) }]);
   const eocd = eocdAt(archive);
   put32(archive, eocd + 12, (eocd - cdAt(archive)) + 10);   // cdSize
@@ -349,21 +337,20 @@ test('a central directory longer than the space before its own record is refused
 });
 
 test('an entry over the per-entry ceiling is refused on its declared size', async () => {
-  // Compressible content, so the writer actually deflates it: a stored entry
-  // whose two sizes disagree is caught by an earlier guard and never reaches
-  // this one.
+  // Compressible content, so the writer actually deflates it - a stored
+  // entry whose two sizes disagree is caught by an earlier guard and
+  // never reaches this one.
   const archive = await buf([{ name: 'big.bin', data: enc.encode('x'.repeat(4000)), compress: true }]);
   put32(archive, cdAt(archive) + 24, LIMITS.entry + 1);
   await rejects(readZip(archive), /unpacked, past the .* one entry is normally given/);
 });
 
 test('a ceiling is thrown as Oversize, and a corrupt archive is not', async () => {
-  // The distinction the whole asking-instead-of-refusing change rests on. Both
-  // of these come out of readZip() as a throw, and the caller has to be able to
-  // tell "this is large, shall I go on?" from "this file does not say what it
-  // means" - the first is a question for whoever owns the file and the second is
-  // not a question at all. Told apart by the class and by nothing else, because a
-  // message is what changes when somebody rewords a sentence.
+  // The distinction the asking-instead-of-refusing change rests on. Both
+  // come out of readZip() as a throw, but the caller must tell "this is
+  // large, shall I go on?" from "this file does not say what it means" -
+  // told apart by the class alone, since a message changes when
+  // somebody rewords a sentence.
   const big = await buf([{ name: 'big.bin', data: enc.encode('x'.repeat(4000)), compress: true }]);
   put32(big, cdAt(big) + 24, LIMITS.entry + 1);
   await assert.rejects(readZip(big), err => isOversize(err));
@@ -374,11 +361,10 @@ test('a ceiling is thrown as Oversize, and a corrupt archive is not', async () =
 });
 
 test('a lifted ceiling opens what the same ceiling refused', async () => {
-  // The other half of the contract, and the point of the exercise: a ceiling is
-  // a number the caller may overrule once somebody has agreed to it. Proved with
-  // a deliberately tiny cap rather than a 512 MB fixture - the mechanism is the
-  // same one the real ceilings use, and a test that has to allocate half a
-  // gigabyte to say so is a test nobody runs.
+  // The other half of the contract: a ceiling is a number the caller may
+  // overrule once agreed to. Proved with a deliberately tiny cap rather
+  // than a 512 MB fixture - same mechanism as the real ceilings, and a
+  // test allocating half a gigabyte is a test nobody runs.
   const archive = await buf([{ name: 'a.bin', data: enc.encode('x'.repeat(4000)), compress: true }]);
   await rejects(readZip(archive, { entry: 10, total: 10 }), /one entry is normally given/);
 
@@ -387,20 +373,19 @@ test('a lifted ceiling opens what the same ceiling refused', async () => {
 });
 
 test('lifting a ceiling does not lift a corruption check', async () => {
-  // `lift` is scoped to the size checks and must stay there. An archive whose
-  // entry data runs off the end of the file is not somebody's large document, and
-  // an agreement to spend memory is not an agreement to read bytes that are not
-  // there - so the guard has to hold with `lift` set, which is the only way to
-  // know the flag was wired to the ceilings alone.
+  // `lift` is scoped to the size checks and must stay there. An archive
+  // whose entry data runs off the end of the file is not a large
+  // document, and agreeing to spend memory is not agreeing to read bytes
+  // that are not there - the guard must hold even with `lift` set.
   const archive = await buf([{ name: 'a.bin', data: bytes(100) }]);
   put32(archive, cdAt(archive) + 42, 0x7fffffff);
   await assert.rejects(readZip(archive, { lift: true }), err => !isOversize(err));
 });
 
 test('a garbage DEFLATE payload fails as a bad entry, not as a crash', async () => {
-  // A payload long enough that corrupting its middle cannot reach the central
-  // directory - 4000 bytes of one character deflate to a few dozen, and the
-  // first fixture for this scribbled straight through the trailer.
+  // A payload long enough that corrupting its middle cannot reach the
+  // central directory - the first fixture for this scribbled straight
+  // through the trailer instead.
   const data = bytes(40000, 5);
   const archive = await buf([{ name: 'a.bin', data, compress: true }]);
   const from = Math.floor(cdAt(archive) / 2);
@@ -410,14 +395,14 @@ test('a garbage DEFLATE payload fails as a bad entry, not as a crash', async () 
 });
 
 test('hostile entry names are read as names and nothing more', async () => {
-  // readZip does not resolve paths - it returns a Map keyed by whatever the
-  // archive said - so the guard against traversal is one layer up, in whoever
-  // consumes the map. What this asserts is the half that is readZip's: a name
-  // full of separators, dots and control characters produces an entry with that
+  // readZip does not resolve paths - it returns a Map keyed by whatever
+  // the archive said - so the traversal guard is one layer up, in
+  // whoever consumes the map. This asserts readZip's own half: a name
+  // full of separators, dots and control characters comes back as that
   // name and does not escape the reader.
   //
-  // The control character is built rather than typed, so this file stays
-  // something grep will read as text.
+  // The control character is built, not typed, so this file stays
+  // something grep reads as text.
   const names = [
     '../../etc/passwd',
     '/absolute',
@@ -438,8 +423,8 @@ test('a name length past the end of the directory is refused', async () => {
 });
 
 test('the streamed CRC agrees with the whole-buffer one', async () => {
-  // The two implementations share a table and nothing else. A Blob larger than
-  // one stream chunk is the case that would catch a mis-carried running value.
+  // The two implementations share a table and nothing else. A Blob
+  // larger than one stream chunk would catch a mis-carried running value.
   const data = bytes(300000, 11);
   const archive = await buf([{ name: 'big', data: new Blob([data]), compress: false }]);
   // The local header's CRC field, at a fixed offset from the start.
@@ -451,10 +436,10 @@ test('the streamed CRC agrees with the whole-buffer one', async () => {
 // The name filter
 // ---------------------------------------------------------------------------
 //
-// `only` exists so that reaching one small entry inside a large archive does not
-// mean unpacking the archive - an .apk is the case it was added for. What has to
-// be true of it is that it decides *before* the inflate, that it changes nothing
-// when absent, and that it is not a way around the ceilings.
+// `only` exists so reaching one small entry inside a large archive does
+// not mean unpacking the whole thing (an .apk was the case it was added
+// for). It must decide *before* the inflate, change nothing when absent,
+// and never be a way around the ceilings.
 
 test('only admits the entries it names and skips the rest', async () => {
   const archive = await buf([
@@ -479,8 +464,8 @@ test('an absent filter reads exactly what it always did', async () => {
 });
 
 test('a skipped entry is not inflated, so it cannot cross a ceiling', async () => {
-  // The point of the filter: the entry that would refuse the whole read is the
-  // one the caller never asked for.
+  // The point of the filter: the entry that would refuse the whole read
+  // is the one the caller never asked for.
   const archive = await buf([
     { name: 'small.txt', data: bytes(32, 5) },
     { name: 'huge.bin', data: zeros(1 << 20) },

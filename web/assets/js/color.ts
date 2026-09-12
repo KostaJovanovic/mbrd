@@ -1,40 +1,7 @@
-// Colour, as arithmetic. No board, no tokens, no opinion about a palette.
-//
-// Every function here has the same answer in every program ever written: this
-// sRGB triple in OKLab, the closest hex the screen can show for this OKLCh, the
-// contrast between two hexes. It came out of ui/pigments.ts, where
-// `[1, 3, 5].map(i => parseInt(s.slice(i, i + 2), 16))` was written out in
-// ui/pigments.ts, ui/appearance.ts and ui/color-picker.ts - two of which
-// imported pigments.ts already. A helper duplicated by modules that import the
-// file it lives in is in the wrong file.
-//
-// ── Why OKLab and not HSL ──
-//
-// A fact about the space, not the palette: HSL's lightness is not lightness.
-// #ff0000 and #0000ff are both "50%" in HSL and one is nearly three times
-// brighter, so ranking by HSL lightness ranks by something nobody can see.
-// OKLab's L is perceptual, which lets hex() give up chroma to stay in gamut
-// while holding lightness exactly - every contrast guarantee above this file is
-// a statement about lightness.
-//
-// ── What must not move in here ──
-//
-// Anything that knows which colour does which job: the measured lightness and
-// chroma tables, the roles, the repair pass, the hue vote, the swatch sampler.
-// That is ui/pigments.ts. The test is whether a stranger writing an unrelated
-// program would recognise it as correct without being told what mbrd is.
-//
-// No DOM, no CSS. `readToken()` (util.ts) reads a custom property and
-// ui/look.ts decides what a board may ask for: colour arriving, not colour
-// being converted. This module is importable from the base layer, canvas/ and
-// ui/ alike - tests/layers.test.js lists it in BASE - and one
-// `getComputedStyle` here would end that.
-//
-// ── Rejected: methods on a Color class ──
-//
-// Every caller has a hex string or three channel numbers already, from a
-// stylesheet token or an ImageData buffer; wrapping those means allocating one
-// object per pixel in the hot loop pigments.ts runs over every photograph.
+// Pure colour arithmetic in OKLab/OKLCh. No board, no DOM, no CSS.
+// OKLab over HSL because its L is perceptual — every contrast guarantee
+// above this file is a statement about lightness. Importable from BASE layer.
+// App-specific colour logic (roles, repair, swatches) stays in ui/pigments.ts.
 
 /** A colour in OKLCh. `h` in degrees, 0-360; `L` and `C` in OKLab's own units. */
 export interface OKLCh {
@@ -94,18 +61,7 @@ function inGamut([r, g, b]: Triple): boolean {
   return r >= lo && r <= hi && g >= lo && g <= hi && b >= lo && b <= hi;
 }
 
-/**
- * The most chroma this hue can hold at this lightness and still be sRGB, up to
- * `ceiling`.
- *
- * The bisection hex() has always done, named because the wall is something a
- * caller wants to *ask about* rather than only be clipped to. ui/pigments.ts
- * walks lightness reading this to find a hue's cusp, the one place a colour can
- * be as saturated as the screen allows.
- *
- * Bisection rather than a loop of small steps: the first attempt is usually in
- * gamut already and this then costs one test.
- */
+/** Maximum in-gamut chroma at this L and hue, up to `ceiling`. Binary search. */
 export function maxChroma(L: number, h: number, ceiling: number): number {
   if (inGamut(oklchToLinear(L, ceiling, h))) return ceiling;
   let lo = 0, hi = ceiling;
@@ -116,16 +72,7 @@ export function maxChroma(L: number, h: number, ceiling: number): number {
   return lo;
 }
 
-/**
- * OKLCh -> `#rrggbb`, kept inside sRGB by giving up chroma rather than
- * lightness.
- *
- * A forced choice: every contrast guarantee the caller makes is a statement
- * about lightness, so a gamut clip that moved L would quietly undo a repair
- * pass that had just run. Clipping the channels instead is worse still - it
- * shifts the hue, dragging a too-blue blue towards cyan, and the palette stops
- * being the one that was chosen.
- */
+/** OKLCh -> #rrggbb, clipped by reducing chroma (not lightness — that would break contrast). */
 export function hex(L: number, C: number, h: number): string {
   const [r, g, b] = oklchToLinear(L, maxChroma(L, h, C), h);
   return '#' + [r, g, b].map(v => toSrgb(v).toString(16).padStart(2, '0')).join('');
@@ -136,15 +83,7 @@ export function luminance(r: number, g: number, b: number): number {
   return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
 }
 
-/**
- * `#rrggbb` -> three channels, 0-255.
- *
- * Six digits only, and unvalidated: every caller has already matched the string
- * against `/^#[0-9a-f]{6}$/` or produced it from hex() above, and a parser that
- * re-checked would be a second, quieter place for that grammar to live. A short
- * `#rgb` has to be expanded before it gets here - ui/color-picker.ts is the one
- * place that accepts one, because it is the one place a person types.
- */
+/** #rrggbb -> [r, g, b] 0-255. Six digits only — callers pre-validate. */
 export function parseHex(s: string): Triple {
   return [
     parseInt(s.slice(1, 3), 16),
@@ -159,15 +98,7 @@ export function contrast(a: string, b: string): number {
   return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
 }
 
-/**
- * `a` and `b` mixed in sRGB, `t` of the way to `b`. Matches `color-mix()`.
- *
- * In sRGB rather than OKLab, against the rest of this file, because the point
- * is to agree digit for digit with what the browser computes for the same mix
- * written in a stylesheet. A perceptually nicer blend that disagreed with
- * `color-mix()` would put a colour computed here and the same colour computed
- * in CSS a shade apart, which is the one failure this cannot have.
- */
+/** Mix in sRGB (not OKLab) to match CSS color-mix() digit for digit. */
 export function mixHex(a: string, b: string, t: number): string {
   const [ar, ag, ab] = parseHex(a), [br, bg, bb] = parseHex(b);
   const m = (x: number, y: number) => Math.round(x + (y - x) * t).toString(16).padStart(2, '0');

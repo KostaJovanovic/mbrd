@@ -1,33 +1,6 @@
-// IGES - the format CAD exchanged in before STEP, and still does.
-//
-// Older than STEP, less well specified, and completely different in shape: where
-// a STEP file is a graph of typed records, an IGES file is **eighty-column card
-// images**. Every line carries a section letter in column 73 and a sequence
-// number in the last seven, and the file is five sections in a fixed order -
-// Start, Global, Directory Entry, Parameter Data, Terminate. An entity is *two*
-// lines in the directory (fixed eight-character fields) plus a run of lines in
-// the parameter section (free format, comma separated), and the two halves refer
-// to each other by line number. That is 1979 for you, and it means the reader
-// below is a fixed-field parser and a free-format one stacked on each other.
-//
-// The geometry, once past that, is the same problem STEP poses and is solved by
-// the same tessellator in mesh/brep.ts. There are two ways an IGES file
-// describes a solid and this reads both:
-//
-//   - **Trimmed surfaces** (entity 144), which is what almost every exporter
-//     writes. A surface plus the curves that cut it, with the curves given both
-//     in three dimensions and in the surface's own parameters.
-//   - **A boundary representation** (186 / 514 / 510 / 508 / 504 / 502), the
-//     later addition that mirrors STEP's shells and faces.
-//
-// And a third case that is not a solid at all: a file of *untrimmed* surfaces,
-// which is what a lot of older IGES is. Those are drawn over their whole
-// parameter rectangle, because that is what they are.
-//
-// What is not read: dimensions, drafting entities, annotation, views, and the
-// whole two-dimensional drawing half of the format - IGES carries drawings as
-// well as models, and a card that showed the title block instead of the part
-// would be a strange thing.
+// IGES parser. 80-column card images: fixed-field directory + free-format parameters.
+// Reads trimmed surfaces (144), B-rep faces (510), and bare untrimmed surfaces.
+// Tessellation via mesh/brep.ts. Does not read: drafting, annotation, views.
 
 import { oversize } from '../consent.ts';
 import {
@@ -45,7 +18,7 @@ const MAX_ENTITIES = 500_000;
 const MAX_FACES = 200_000;
 const MAX_FOLLOW = 16;
 
-// Entity type numbers, named where they are used more than once.
+// Entity type numbers.
 const CIRCULAR_ARC = 100;
 const COMPOSITE_CURVE = 102;
 const COPIOUS_DATA = 106;
@@ -59,17 +32,14 @@ const RATIONAL_SPLINE_CURVE = 126;
 const RATIONAL_SPLINE_SURFACE = 128;
 const CURVE_ON_SURFACE = 142;
 const TRIMMED_SURFACE = 144;
-// A shell (514) and a manifold solid (186) are containers only: every face
-// under one is already reached by the sweep over all 510s, so neither is named
-// here and neither has to be walked.
+// Shell (514) / solid (186) are containers — all faces reached via 510 sweep.
 const VERTEX_LIST = 502;
 const EDGE_LIST = 504;
 const LOOP = 508;
 const FACE = 510;
 const COLOUR = 314;
 
-/** The analytic surface family, added late and written by few exporters - but
- *  the few include some CAM tools, and each is two lines here. */
+/** Analytic surface family (190–198). */
 const PLANE_SURFACE = 190;
 const CYLINDRICAL_SURFACE = 192;
 const CONICAL_SURFACE = 194;
@@ -77,14 +47,13 @@ const SPHERICAL_SURFACE = 196;
 const TOROIDAL_SURFACE = 198;
 
 type Entity = {
-  /** The directory sequence number, which is what every pointer names. */
+  /** Directory sequence number — the target of all pointers. */
   id: number;
   type: number;
   form: number;
-  /** Parameter values, the repeated type number already stripped from the
-   *  front so every reading below counts from the first real field. */
+  /** Parameter values, leading type number already stripped. */
   data: (number | string)[];
-  /** The 124 that places this entity, if it declared one. */
+  /** Pointer to entity 124 transform, or 0. */
   transform: number;
   colour: number;
 };
@@ -103,17 +72,13 @@ function read(text: string): Map<number, Entity> {
   const lines = text.split(/\r\n?|\n/);
   if (!lines.length) throw new MeshError('This IGES file is empty');
 
-  // The delimiters are declared in the Global section, in its own first two
-  // fields, and the declaration is itself written using them - which is why they
-  // are read by pattern rather than by field. Almost every file uses the
-  // defaults and a handful do not.
+  // Delimiters declared in Global section (defaults: comma and semicolon).
   let comma = ',', semi = ';';
   const global = lines.filter(l => l[72] === 'G' || l[72] === 'g').join('');
   const declared = /^(\d)H(.)(.)(\d)H(.)/.exec(global.trim());
   if (declared && declared[1] === '1' && declared[4] === '1') { comma = declared[2]; semi = declared[5]; }
 
-  // The directory: two cards an entity, in order, keyed by the sequence number
-  // of the *first* of the two.
+  // Directory: two cards per entity, keyed by the first card's sequence number.
   const directory: string[] = [];
   const parameters: { text: string; owner: number }[] = [];
   for (const line of lines) {
@@ -125,8 +90,7 @@ function read(text: string): Map<number, Entity> {
   }
   if (!directory.length) throw new MeshError('This IGES file has no directory in it');
 
-  // Parameter cards, gathered by the directory entry that owns them and split on
-  // the record terminator. One entity's parameters may run over many cards.
+  // Gather parameter cards by owning directory entry.
   const byOwner = new Map<number, string>();
   for (const card of parameters) {
     byOwner.set(card.owner, (byOwner.get(card.owner) || '') + card.text);
@@ -141,8 +105,7 @@ function read(text: string): Map<number, Entity> {
     const id = Number(one.slice(73, 80).trim()) || i + 1;
     const type = Number(field(one, 1)) || 0;
     const data = split(byOwner.get(id) || '', comma, semi);
-    // The first parameter is the entity type repeated, and every reading below
-    // is written as if it were not there.
+    // Strip the repeated entity type from the front.
     if (data.length && Number(data[0]) === type) data.shift();
     db.set(id, {
       id, type,

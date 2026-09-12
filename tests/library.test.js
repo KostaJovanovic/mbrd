@@ -1,16 +1,9 @@
-// The shelf's index, and the one field that made it two kinds of row.
-//
-// A row is either a board packed into a blob - which is every row on the web,
-// because a browser has nowhere else to put one - or a pointer at a file on
-// disk, which only the desktop can make. The whole safety of the second kind is
-// that it keeps *no* copy: a path row plus a blob is a board in two places, and
-// the moment either is written the shelf and the disk disagree with nothing able
-// to say which is right.
-//
-// So these tests are mostly about a blob that must not be there. They drive
-// library.ts through setStoreBackend() rather than through a fake IndexedDB,
-// which is the seam A3 opened and the same one the desktop's file backend sits
-// behind - see memoryStore() in helpers.js.
+// The shelf's index has two kinds of row: a board packed into a blob (every
+// row on the web), or a pointer at a file on disk (desktop only). The
+// second kind's safety is keeping *no* copy - a path row plus a blob is a
+// board in two places with nothing to say which is right. Mostly tests that
+// a blob is absent when it should be, driving library.ts through
+// setStoreBackend() (see memoryStore() in helpers.js).
 
 import { test, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -54,8 +47,8 @@ test('a path row stores no blob at all', async () => {
 });
 
 test('the first Save turns an unsaved row into a path row and drops its blob', async () => {
-  // The moment the two kinds meet, and the one that leaks if the delete is
-  // forgotten: the row had a blob because it was untitled, then it got a file.
+  // The moment the two kinds meet: the row had a blob because it was
+  // untitled, then got a file. Leaks if the delete is forgotten.
   await putLibraryBoard('brd-3', blobOf('packed'), { title: 'Untitled board', at: 1 });
   assert.ok(await getLibraryBoard('brd-3'));
 
@@ -66,9 +59,8 @@ test('the first Save turns an unsaved row into a path row and drops its blob', a
 });
 
 test('the sweep leaves a path row alone', async () => {
-  // The sweep deletes blobs no row points at. A path row points at no blob by
-  // construction, which must not read as "this blob is an orphan" in either
-  // direction - and in particular must not delete the *other* board's blob.
+  // The sweep deletes blobs no row points at. A path row points at no blob
+  // by construction, which must not read as an orphan in either direction.
   await putLibraryBoard('brd-4', blobOf('packed'), { title: 'Blob row', at: 1 });
   await putLibraryBoard('brd-5', null, { title: 'File row', at: 2, path: '/tmp/f.mbrd' });
   assert.equal(await sweepLibrary(), 0);

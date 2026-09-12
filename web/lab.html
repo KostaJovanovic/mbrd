@@ -4,73 +4,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mbrd — pigment lab</title>
-<!-- ── Off the design system on purpose ──
-
-     This file declares its own colours and its own eight literal corner radii
-     and imports none of tokens.css. research/old/visual-audit-2026-08-12.md graded
-     it C for that and said the only bad option was to leave the question
-     unanswered, so here is the answer: it stays off-system, deliberately.
-
-     The bench exists to look at what the pigment extractor produced. If it
-     rendered at the current whimsy tier it would be showing those pigments
-     through the same palette, easing and type the app is wearing - which is the
-     one thing a test bench must not do, because then a colour that is wrong and
-     a colour that is merely being displayed warmly look identical. Its flat
-     vocabulary is not neglect; it is the neutral ground the readings are taken
-     against.
-
-     What that costs is real and worth naming: this page is useless for auditing
-     the axis, and anything learned here about how a colour *feels* does not
-     transfer to the app. Use the app at the three stops for that - the audit's
-     own closing rule is to audit at the ends, and this page has no ends.
-
-     ── Not a page of the site ──
-
-     This bench ships in web/ only because the dev
-     server's document root is web/ and this is the one place it can import the real
-     pigments.ts; that is a build constraint, not a decision to publish it. A
-     crawler cannot know the difference, so it is told. Left indexable it would
-     compete with the app for the app's own name and put a debug harness in
-     front of anyone searching for it.
-
-     noindex, not a robots.txt Disallow: Disallow stops the fetch, which stops
-     the crawler ever reading the directive, so a page already in the index
-     stays there. noindex has to be fetched to work, and robots.txt next door
-     deliberately does not block this file for exactly that reason. -->
+<!-- Off the design system on purpose: a bench must not wear the palette it is
+     measuring. Own colours, no tokens.css. Lives in web/ only because the dev
+     server roots there. noindex, not robots.txt Disallow (Disallow blocks the
+     fetch that would carry the directive). -->
 <meta name="robots" content="noindex, nofollow">
-<!--
-  A bench for the palette extractor. Not part of the app.
-
-  It is here in web/ rather than in tools/ for one reason: tools/serve.py's
-  document root is web/, so this is the only place a page can reach the real
-  ui/pigments.ts instead of a copy of it. It is deliberately absent from sw.js's
-  SHELL - a dev bench has no business in the offline shell.
-
-  It reaches it through assets/lab-pigments.js, which is that module bundled on
-  its own, and the indirection is not a copy: `npm run build` writes it from
-  ui/pigments.ts and `npm run dev:lab` rewatches it. The app went to TypeScript
-  and a browser cannot fetch a .ts file, so a page that is loaded directly -
-  which this one is, being outside the app bundle - needs a built entry of its
-  own or it needs a duplicate. A build product cannot drift; a duplicate is
-  exactly what the paragraph below says must not happen.
-
-  What it imports is the real thing: oklch(), hex(), contrast() and
-  samplePixels() come straight from ui/pigments.ts, so colour conversion, gamut
-  clipping and the 48x48 sampling are not reimplemented here and cannot drift.
-
-  What it *does* reimplement is the census, the peak finder, the role
-  assignment and temper() - because those are the parts whose constants are
-  module-private, and the whole point of a bench is to turn them. That copy can
-  drift from the original, so the bench also runs the live extractPalette() on
-  the same pixels and shows both answers side by side. If the copy at its
-  default settings ever stops matching the live code, the readout says so in
-  red. That check is the only thing standing between this file and a tuning
-  session spent on a palette the app does not actually produce.
--->
+<!-- Palette extractor bench. Imports the real pigments.ts via assets/lab-pigments.js
+     (npm run build / npm run dev:lab). Reimplements census and peak-finder locally
+     so constants can be tuned, but runs live extractPalette() side by side as a
+     drift check. Absent from sw.js SHELL. -->
 <style>
-  /* Neutral chrome on purpose. A tinted surround is the one thing that makes a
-     near-neutral sheet impossible to judge, and judging the sheet is half of
-     what this page is for. */
+  /* Neutral chrome — a tinted surround makes near-neutrals impossible to judge. */
   :root {
     --bg: #17181a;   --panel: #1f2124;  --edge: #313437;
     --fg: #e7e9ec;   --dim: #9aa0a7;    --faint: #6b7178;
@@ -111,8 +55,7 @@
     text-align: center; color: var(--dim); cursor: pointer; transition: .12s;
   }
   #drop:hover, #drop.over { border-color: var(--hot); color: var(--fg); background: #ffffff08; }
-  /* Was a style= attribute on the span. Moved here so the whole site can drop
-     'unsafe-inline' from style-src - see web/_headers. */
+  /* Was a style= attribute; moved here to avoid 'unsafe-inline' in style-src. */
   .drop-hint { font-size: 11px; }
   #thumbs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; }
   #thumbs figure { margin: 0; position: relative; width: 48px; }
@@ -168,10 +111,8 @@
 
   canvas#chart { width: 100%; height: 150px; display: block; border-radius: 6px; background: #0000001f; }
 
-  /* The mock boards. One per whimsy level, because the difference between them
-     is the thing hardest to judge from a swatch: the whole palette is
-     extracted per level (each passes its own tier) and then painted under that
-     level's own --wash and --vignette, exactly as body does in app.css. */
+  /* Mock boards — one per whimsy level, palette extracted and painted under
+     that level's own wash/vignette as body does in app.css. */
   #mocks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
   @media (max-width: 1100px) { #mocks { grid-template-columns: 1fr; } }
   .mock { border-radius: 10px; padding: 20px; border: 1px solid var(--edge); }
@@ -301,12 +242,9 @@
 </main>
 
 <script type="module">
-// Everything colour-exact comes from the app. Only the tunable pipeline is
-// restated below, and #drift holds the restatement to the original.
-// The four dressing transforms come across rather than being restated with
-// dials of their own. They are the whole of what an end of the axis means to a
-// colour, the drift box below is only honest if the bench applies them exactly,
-// and what a tier does to a pigment is tuned in pigments.ts and looked at here.
+// Colour-exact functions come from the app. The tunable pipeline is restated
+// below; #drift checks it against the live code. Dressing transforms (pastel,
+// bolden, etc.) are imported directly — they define what each axis end means.
 import { oklch, hex, contrast, samplePixels, extractPalette,
   pastel, pastelInk, bolden, boldSecond, counterTurn, toGround,
   PASTEL_DYE, PASTEL_PAPER_DROP }
@@ -317,8 +255,7 @@ const apart = (a, b) => { const d = Math.abs(a - b) % 360; return Math.min(d, 36
 const BINS = 72;
 
 // --------------------------------------------------------------------------
-// The dials. `live` is the value the shipped constant holds right now, so
-// "Live defaults" is a real comparison and not a remembered one.
+// Dials. `live` is the shipped constant, so "Live defaults" is a real comparison.
 // --------------------------------------------------------------------------
 const DIALS = [
   ['neutralC',    'g-census', 'neutral floor (NEUTRAL_C)',      0.005, 0.12,  0.001, 0.045,
@@ -361,7 +298,7 @@ const P = {};
 for (const [key, , , , , , live] of DIALS) P[key] = live;
 let useStanding = true, tier = 1, vividMode = 'today';
 
-// The shipped tables, restated. Held to the live code by #drift.
+// Shipped tables, restated. #drift checks them against the live code.
 const SHEET = {
   '--paper':      { L: 0.980, C: 0.007 },
   '--paper-2':    { L: 0.952, C: 0.010 },
@@ -379,10 +316,8 @@ const PIGMENT = {
   '--accent-deep': { L: 0.415, C: 0.114 },
 };
 const LEAFY = { L: 0.572, C: 0.111 };
-// The bold end's typography, restated like the tables above: fixed tones for
-// the print and the hairlines, so at Harsh the accent is the only loud thing.
-// The papers are not here - they keep the plain-end treatment the two dials in
-// the Sheet group already carry.
+// Bold-end typography: fixed desaturated tones so the accent is the only loud
+// thing. Papers keep their plain-end treatment from the Sheet dials.
 const BOLD_SHEET = {
   '--ink':    { L: 0.135, C: 0.012 },
   '--ink-2':  { L: 0.310, C: 0.018 },
@@ -445,7 +380,7 @@ function census(chunks, floor) {
       votes[i] += shot.trust * one[i] / weight;   // democratic: one picture, one vote
       mass[i] += shot.trust * one[i] / opaque;    // honest: how much of the board it is
     }
-    // Three readings of "how vivid were these pictures", the fork this bench exists for.
+    // Three vividness readings — the fork this bench exists for.
     const vivid = vividMode === 'mass' ? shot.frame
       : vividMode === 'damped' ? shot.strength * clamp(0.5 + 0.5 * cover / 0.15, 0.5, 1)
         : shot.strength;
@@ -496,9 +431,7 @@ function peaksOf(board) {
     if (accepted.every(q => apart(p.h, q.h) >= P.minSep)) accepted.push(p);
   }
 
-  // Standing is read off the *raw* mass, exactly as pigments.js does it. The
-  // blurred copy above is for the chart only - a smoothed window is not the
-  // same sum as a raw one, and the drift check would rightly catch it.
+  // Standing uses raw mass (not blurred) — matches pigments.js.
   let total = 0; for (const v of board.mass) total += v;
   for (const p of accepted) {
     let m = 0, n = 0, d = 0;
@@ -549,11 +482,7 @@ function temper(traits, t) {
   const scale = clamp(Math.sqrt(traits.vivid / P.refVivid), P.vividFloor, P.vividCeil);
   const key = clamp((traits.key - REF_KEY) * P.keyGain, -P.keyDown, P.keyUp);
   const lift = P.paperL - SHEET['--paper'].L;
-  // The axis overrules the photographs about the paper at both ends: white at
-  // Harsh because that is what that end is, slightly deeper stock at Softish
-  // with more of the dye in it. The soft inks are not dyed at all - they are a
-  // deep chromatic colour of the sheet's own hue, which is the one thing that
-  // was still reading as black under a pastel.
+  // Axis overrules paper at both ends: white at Harsh, deeper at Softish.
   const bold = t === 2, soft = t === 0;
   const shift = bold ? P.plainPaper - SHEET['--paper'].L
     : key + lift - (soft ? PASTEL_PAPER_DROP : 0);
@@ -592,26 +521,21 @@ const dressFor = t => (t === 0 ? (x => pastel(x)) : t === 2 ? bolden : (x => x))
 
 function build(roles, traits, t = tier) {
   const { sheet, pigment, leafy, scale, key } = temper(traits, t);
-  // Dressed after the dials have said their piece, so a pastel is a pastel of
-  // *this board's* colour and a bold accent goes to its own hue's cusp.
+  // Dress after dials, so pastels/bolds use this board's actual colours.
   const dress = dressFor(t);
   const vars = {};
   for (const [k, { L, C }] of Object.entries(sheet)) vars[k] = hex(L, C, roles.sheet);
-  // At the plain end the hue that won the vote takes the accent and the
-  // counter-colour becomes the second voice, nudged towards the accent's
-  // complement; the third hue, if there is one, moves along to the wash.
+  // At Harsh the winning hue takes accent, counter goes to second voice.
   const swap = t === 2 && apart(roles.sheet, roles.accent) >= P.minSep;
   const accentH = ((swap ? roles.sheet : roles.accent) + 360) % 360;
   const leafyH = (((swap ? counterTurn(roles.accent, accentH) : roles.leafy)
     ?? roles.leafy) + 360) % 360;
   const washH = ((swap ? roles.leafy : roles.warm) + 360) % 360;
-  // Then walked back down its own wall until it can be seen on the sheet
-  // written just above, with everything else in the light register it gave up.
+  // Walk the accent down its wall until it contrasts against the sheet.
   const cusped = dress(pigment['--accent'], accentH);
   const accentInk = t === 2 ? toGround(cusped, accentH, vars['--paper']) : cusped;
   for (const k of Object.keys(pigment)) {
-    // --accent-deep stays the accent's own darker twin at every tier, so it is
-    // derived from the dressed accent rather than dressed itself.
+    // --accent-deep: darker twin of the dressed accent, not dressed independently.
     const ink = k === '--accent-warm' ? (t === 2 ? boldSecond() : dress(pigment[k], washH))
       : k === '--accent-deep' ? deepen(accentInk) : accentInk;
     vars[k] = hex(ink.L, ink.C, k === '--accent-warm' ? washH : accentH);
@@ -632,10 +556,7 @@ function build(roles, traits, t = tier) {
     }
   }
   const light = mixHex(paper, '#ffffff', 0.55);
-  // Neither end runs the darkening loop: it would be the axis overruling
-  // itself. A pastel that can hold a light label is not a pastel any more, and
-  // a bold accent has already come exactly as far down its wall as its *sheet*
-  // required. At both ends the label is chosen instead of forced.
+  // Neither end runs the darkening loop — label is chosen, not forced.
   if (t === 0 || t === 2) {
     vars['--accent-fg'] =
       contrast(vars['--accent'], vars['--ink']) >= contrast(vars['--accent'], light)
@@ -792,10 +713,7 @@ function run() {
   checkDrift(chunks, vars);
 }
 
-/**
- * The bench against the app. Only meaningful at live defaults - anywhere else
- * the two are *supposed* to differ, which is the point of the dials.
- */
+/** Drift check — only meaningful at live defaults. */
 function checkDrift(chunks, vars) {
   const atLive = DIALS.every(([k, , , , , , live]) => P[k] === live)
     && vividMode === 'today' && useStanding;
@@ -898,12 +816,7 @@ function paintMocks(roles, board) {
       `radial-gradient(52% 40% at 84% 78%, color-mix(in srgb, ${vars['--leafy']} ${4 * w.wash}%, transparent), transparent 72%)`,
       `radial-gradient(120% 100% at 50% 50%, transparent 55%, color-mix(in srgb, ${vars['--ink']} ${5 * w.vignette}%, transparent))`,
     ].join(',');
-    // Built rather than written as markup. These are runtime colours, so no
-    // hash could ever cover them, and a `style=` attribute parsed from markup is
-    // exactly what style-src governs - this block was the last thing on the site
-    // forcing 'unsafe-inline' into web/_headers. Assigning .style through the
-    // CSSOM is not parsed from markup and is not covered by it. Same seven
-    // declarations, same output.
+    // Built via CSSOM, not markup — runtime colours cannot be hashed by CSP.
     const card = el('div', 'card');
     card.style.background = vars['--paper-card'];
     card.style.border = `1px solid ${vars['--rule']}`;

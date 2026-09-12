@@ -1,57 +1,19 @@
-// A sheet of paper, outlined on the board - and the way the board gets measured.
-//
-// The measurement feature answers "how big is this" for one item at a time and
-// "how big is all of it" with the scale bar. Neither answers the question a
-// layout is actually for: does this fit on a page. So the board can be given a
-// sheet - A4, A3, Letter - drawn at the size that sheet really is, through the
-// board's scale.
-//
-// And then the sheet is draggable by its corners, which is the whole point.
-// `settings.scale` is world units per millimetre: a number with no intuition
-// attached, which changes by a factor of ten if you misjudge it. Every way of
-// setting it by typing is a way of setting it wrong. Dragging an A4 until it
-// looks right against the photographs already on the board is the same fact
-// stated in the only language this question is ever really asked in - a sheet
-// of paper is a thing everybody has held, so "that big" is an answer people
-// have, where "0.37 units per millimetre" is not.
-//
-// Centred on the origin, and not movable. There is exactly one obvious place
-// for a page on a board that already has a marked centre, and a sheet you can
-// put anywhere is a sheet you then have to line things up against twice - once
-// against the page and once against the grid. Fixing it to 0,0 makes the origin
-// mark the page's centre mark for free, and it makes the corner drag a pure
-// scale about a known point rather than a resize with an anchor to choose.
-//
-// Drawn in screen space, on #viewport rather than inside #world, for the reason
-// the axes and the grid are: a border inside the transformed layer is scaled by
-// the zoom, so the page edge would be a hairline at 20% and a four-pixel slab
-// at 400%. Here it is one device pixel at every zoom, which is what a drawn
-// edge should be.
+// Paper sheet overlay on the board. Lets the user set board scale by dragging
+// corners until the sheet matches real life. Fixed at origin (no positioning
+// ambiguity). Drawn in screen space so the border stays 1px at every zoom.
 
 import { board, bus, setSetting } from '../state.ts';
 import { paperMm, toUnits, formatSize, clampScale } from '../measure.ts';
 import { deviceRatio } from './viewport.ts';
 import type { Viewport } from './viewport.ts';
 
-/**
- * How far off screen an edge is allowed to be placed, in CSS pixels.
- *
- * Zoomed right in on a board measured in metres, an A0's far edge can be some
- * millions of pixels away, and handing a browser a box that size is asking it
- * to think about a region nothing can ever see. Anything past this is off the
- * window by a factor of twenty on any display, so clamping to it moves no
- * visible ink - only the border on the clamped side, which was never on screen.
- */
+/** Max off-screen extent in CSS px. Prevents multi-million-pixel boxes at high zoom. */
 const LIMIT = 1e5;
 
 /** Below this on screen the sheet is a smudge, and its caption is noise. */
 const MIN_CAPTION_PX = 120;
 
-/**
- * And below this the four grips overlap into one blob, which is a control that
- * cannot be aimed at. The sheet is still drawn - it is legible as a rectangle
- * long before it is grabbable - so this only takes the handles away.
- */
+/** Below this the four grips overlap and become unusable. Sheet still drawn. */
 const MIN_GRIP_PX = 44;
 
 /** The four corners, in world signs. +y is up, so north is positive. */
@@ -78,10 +40,7 @@ let drag: PaperDrag | null = null;
 export function initPaper(viewport: Viewport | null): void {
   vp = viewport;
   if (!vp || !build(vp.el)) return;
-  // Straight onto the viewport's change event rather than through a throttle of
-  // its own: that event is already emitted from inside the viewport's own rAF,
-  // so this paints on the same frame the grid and the axes do. A sheet arriving
-  // a frame behind the lattice it is drawn over would visibly swim during a pan.
+  // Draws on the viewport's own rAF — must stay in sync with the grid/axes.
   vp.onChange(draw);
   bus.on('settings', draw);
   bus.on('board:load', draw);
@@ -92,8 +51,7 @@ export function initPaper(viewport: Viewport | null): void {
 export const paintPaper = () => draw();
 
 function draw() {
-  // `caption` is built with `node` and never without it, so the extra test
-  // costs a comparison and rules out nothing that can happen.
+  // caption is built alongside node — both null or both present.
   if (!node || !caption || !vp) return;
   const s = board.settings;
   const mm = paperMm(s.paper, s.paperLandscape);
@@ -103,33 +61,22 @@ function draw() {
     return;
   }
 
-  // The sheet's size in world units, which is the only place the scale enters:
-  // everything below is the same arithmetic the axes do.
+  // Sheet size in world units, then projected to screen by zoom.
   const w = toUnits(mm.w, s.scale) * vp.zoom;
   const h = toUnits(mm.h, s.scale) * vp.zoom;
 
-  // The origin as the chrome draws it, not the raw one - see axisOrigin(). The
-  // page is centred on 0,0 and the origin mark stands there, so the two have to
-  // agree to the pixel or the mark sits visibly off the middle of the page.
+  // Use axisOrigin() (not raw origin) so the sheet and the origin mark agree.
   const o = vp.axisOrigin ? vp.axisOrigin() : vp.toScreen(0, 0);
   const d = deviceRatio();
-  // Both edges snapped rather than one edge and a width, so the box cannot
-  // breathe by a pixel as it is panned: rounding a position and a length
-  // independently lets the far edge land on either side of the same device row
-  // depending on where the near one fell.
+  // Snap both edges (not edge + width) so the box does not breathe by 1px during pan.
   const snap = (v: number) => Math.round(Math.min(Math.max(v, -LIMIT), LIMIT) * d) / d;
   const left = snap(o.x - w / 2);
   const top = snap(o.y - h / 2);
   const right = snap(o.x + w / 2);
   const bottom = snap(o.y + h / 2);
 
-  // Same trade the grid makes: this runs on every frame of every pan, and a
-  // style write the browser has to parse and compare is not free. During a pan
-  // the size never changes and during a zoom the position rarely repeats, so
-  // the key covers both and skips whichever half held still.
-  // The grips are off by default and are a setting of their own, so they join
-  // the key rather than being toggled outside it - otherwise turning them on
-  // while the board sat still would change nothing until the next pan.
+  // Skip style writes when nothing changed. Grips in the key so toggling them
+  // takes effect even without a pan.
   const grips = !!s.paperResize && Math.min(w, h) >= MIN_GRIP_PX;
   const key = `${left}|${top}|${right}|${bottom}|${s.paper}|${s.units}|${grips}`;
   if (key === last) return;
@@ -140,21 +87,13 @@ function draw() {
   node.style.top = top + 'px';
   node.style.width = (right - left) + 'px';
   node.style.height = (bottom - top) + 'px';
-  // A class rather than four `hidden` writes, so the whole set of handles goes
-  // with one attribute and the stylesheet decides what an absent grip looks
-  // like. Two reasons it can be absent - not asked for, or a sheet too small on
-  // screen for four separate targets - and one class, because the difference
-  // does not matter to anything downstream.
+  // One class toggles all four grips at once.
   node.classList.toggle('no-grips', !grips);
 
-  // The label is the honest part of the whole feature: it says which sheet this
-  // is *and* how big that sheet is, so a drag that has gone somewhere silly is
-  // legible as a number and not only as a shape.
+  // Sheet name + real-world size — legible feedback while dragging.
   caption.hidden = w < MIN_CAPTION_PX;
   if (!caption.hidden) {
-    // scale 1 because these millimetres are already millimetres - formatSize is
-    // being used for its unit-picking and its shared-unit collapse, not for a
-    // conversion there is nothing to convert.
+    // scale 1: millimetres are already millimetres, just using formatSize for unit display.
     caption.textContent = `${mm.label} · ${formatSize(mm.w, mm.h, 1, s.units)}`;
   }
 }
@@ -163,24 +102,12 @@ function draw() {
 // Resizing the sheet, which is really setting the scale
 // ---------------------------------------------------------------------------
 
-/**
- * Grab a corner.
- *
- * Everything the drag needs is frozen here rather than recomputed from the
- * live sheet on each move, and that is what keeps the corner under the finger.
- * Reading the current scale every move compounds its own rounding, and worse,
- * a corner grabbed a few pixels off its true position would snap to the pointer
- * on the first move - the sheet would jump before it grew.
- */
+/** Grab a corner. Freeze all drag state at grab time — recomputing per move
+ * compounds rounding and causes the sheet to jump. */
 function onDown(e: PointerEvent) {
-  // SAFETY: the listener is on #paper, so the target is an element of it; the
-  // optional call is kept because a harness can dispatch at something plainer,
-  // and answers undefined rather than throwing when it does.
+  // Optional chaining covers harness dispatches on non-element targets.
   const grip = (e.target as Element).closest?.<HTMLElement>('[data-grip]');
-  // The setting as well as the class, because a hidden grip is a stylesheet's
-  // opinion and this is the board's. The two only disagree if a look ever
-  // overrode the display, which is exactly the kind of thing a look should not
-  // be able to turn into a live control.
+  // Check the setting, not just the CSS class — a look must not enable grips.
   if (!grip || e.button > 0 || !vp || !board.settings.paperResize) return;
   const spec = GRIPS.find(g => g.id === grip.dataset.grip);
   const mm = paperMm(board.settings.paper, board.settings.paperLandscape);
@@ -189,8 +116,7 @@ function onDown(e: PointerEvent) {
   const scale = clampScale(board.settings.scale);
   drag = {
     scale,
-    // The corner's world position at the moment it was grabbed, and where the
-    // pointer was. Only the difference between the two ever matters.
+    // Corner world position and pointer at grab time.
     cx: spec.sx * toUnits(mm.w, scale) / 2,
     cy: spec.sy * toUnits(mm.h, scale) / 2,
     from: vp.toWorld(e.clientX, e.clientY),
@@ -210,18 +136,11 @@ function onMove(e: PointerEvent) {
   const wantX = drag.cx + (p.x - drag.from.x);
   const wantY = drag.cy + (p.y - drag.from.y);
 
-  // A sheet has a fixed aspect ratio - A4 turned is A5's shape doubled, not a
-  // rectangle you get to choose - so the corner cannot go wherever the pointer
-  // went. It goes to the nearest point on the diagonal it lives on, which is
-  // the projection of the wanted corner onto the original one. That is also the
-  // gesture that feels right: sliding along the diagonal resizes, and sliding
-  // across it does nothing rather than fighting you.
+  // Fixed aspect ratio — project wanted corner onto its diagonal.
   const denom = drag.cx * drag.cx + drag.cy * drag.cy;
   if (!(denom > 0)) return;
   let k = (wantX * drag.cx + wantY * drag.cy) / denom;
-  // Dragged past the centre and out the other side, which as a scale means zero
-  // or negative - a sheet with no size, or one inside out. The gesture stops at
-  // the middle instead, and the clamp below catches the far end.
+  // Clamp: dragging past centre would invert the sheet.
   k = Math.min(Math.max(k, 1e-4), 1e4);
 
   setSetting('scale', clampScale(drag.scale * k));
@@ -231,8 +150,7 @@ function onUp(e: PointerEvent) {
   if (!drag) return;
   drag = null;
   document.documentElement.classList.remove('is-sizing-paper');
-  // SAFETY: as in onDown() - the target of a pointer event on #paper is an
-  // element of it, and the optional call covers anything else.
+  // Optional chaining covers non-element targets in test harnesses.
   (e.target as Element).releasePointerCapture?.(e.pointerId);
 }
 
@@ -240,16 +158,9 @@ function onUp(e: PointerEvent) {
 // The layer
 // ---------------------------------------------------------------------------
 
-/**
- * The sheet layer and its four handles, made if they are not there.
- *
- * index.html carries the outline as one of the viewport's permanent layers, in
- * front of the grid and behind the axes - a page sits on the desk, under the
- * rules drawn across it. The grips are built here rather than written out four
- * times in the markup, since they are the same element with a different corner.
- * The whole fallback path is for the tests and the render harnesses, which
- * mount a bare #viewport.
- */
+/** Build the sheet layer and four corner grips if not already present. Grips are
+ * identical elements differing only by corner id. Fallback path creates them
+ * when tests mount a bare #viewport. */
 function build(host: HTMLElement | null): HTMLElement | null {
   if (!host) return null;
   node = host.querySelector<HTMLElement>(':scope > #paper');
@@ -258,8 +169,7 @@ function build(host: HTMLElement | null): HTMLElement | null {
     node.id = 'paper';
     node.setAttribute('aria-hidden', 'true');
     node.hidden = true;
-    // After the grid canvas, so the page is drawn over the lattice rather than
-    // under it; before everything else, so the axes and every item stay on top.
+    // After #grid-ink (over lattice), before everything else (under axes/items).
     const grid = host.querySelector(':scope > #grid-ink');
     grid ? grid.after(node) : host.prepend(node);
   }

@@ -1,23 +1,15 @@
 // The download page, and the one way it goes wrong without anybody noticing.
 //
 // Three buttons on web/download.html point at GitHub's
-// `releases/latest/download/<name>` redirect. That redirect resolves a
-// *filename*, so the page and desktop/electron-builder.yml's three
-// artifactName lines are one fact written in two files - and the failure when
-// they disagree is the worst shape this repository has: a link that is valid
-// HTML, on a page that renders correctly, 404ing only on the deployed site and
-// only for the person trying to install the app.
+// `releases/latest/download/<name>` redirect, which resolves a filename - so
+// the page and electron-builder.yml's three artifactName lines are one fact
+// in two files. Disagreement 404s only on the deployed site, only for
+// somebody trying to install - nothing else would catch it, since the page
+// isn't generated and the builds don't run on this machine. Compared by
+// string, both directions.
 //
-// Nothing else would catch it. The page is not generated, the builder config is
-// not typechecked, and the Linux and macOS builds have never run on this
-// machine - the first time a wrong name would be visible is a stranger pressing
-// a button. So this file compares the two by string, in both directions.
-//
-// It also holds the invariant underneath that: **no ${version} in an
-// artifactName**. A versioned filename is not wrong on its own - it is wrong
-// *here*, because `latest/download/` cannot know it, so every link dies on the
-// next tag. That is one word to add back and the reason it must not be is a
-// paragraph, which is why it is asserted rather than left in a comment.
+// Also holds: no ${version} in an artifactName - `latest/download/` can't
+// resolve one, so every link would die on the next tag.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -29,27 +21,20 @@ const page = read(join(WEB, 'download.html'));
 const builder = read(join(ROOT, 'desktop', 'electron-builder.yml'));
 
 /**
- * What electron-builder substitutes for `${ext}`, per target.
- *
- * Not derivable from the config - it is the builder's own table, and the third
- * row is why this map is written out rather than guessed at: an AppImage's
- * extension is `AppImage`, capitals and all, and lowercasing it is the exact
- * mistake this file exists to catch.
+ * What electron-builder substitutes for `${ext}`, per target. Not derivable
+ * from the config - an AppImage's extension is `AppImage`, capitals and all,
+ * and lowercasing it is the mistake this file exists to catch.
  */
 const EXT = { nsis: 'exe', dmg: 'dmg', appImage: 'AppImage' };
 
 /**
  * The artifact names the builder will produce, as a Map of target to filename.
  *
- * Walked line by line rather than read with a YAML parser, for the reason
- * tests/sw.test.js reads SHELL by hand: a parser is a dependency, this
- * repository has none at runtime and four in development, and what is being
- * read is three lines at a known indent under a known key.
- *
- * Line by line rather than by one regex, too, and that is not fussiness - a
- * lazy `[\s\S]*?` between a top-level key and an `artifactName` happily spans
- * the keys in between, so the first artifact in the file gets filed under
- * whatever key happens to be first. It did exactly that.
+ * Walked line by line rather than a YAML parser (same reason tests/sw.test.js
+ * reads SHELL by hand: no runtime dependency for three lines at a known
+ * indent). Not one regex either - a lazy `[\s\S]*?` between a top-level key
+ * and `artifactName` spans intervening keys, filing the first artifact under
+ * whichever key happened to be first. It did exactly that.
  */
 const artifacts = new Map();
 {
@@ -63,8 +48,8 @@ const artifacts = new Map();
 }
 
 test('the builder still names three artifacts', () => {
-  // Guards the guard. A reindented config, or a fourth target added above one
-  // of these, would make every assertion below vacuous rather than failing.
+  // Guards the guard - a reindented config or a fourth target would make
+  // every assertion below vacuous rather than failing.
   const targets = [...artifacts.keys()].sort();
   assert.deepEqual(targets, ['appImage', 'dmg', 'nsis'],
     `artifactName lines found for: ${targets.join(', ')} - has electron-builder.yml been reshaped?`);
@@ -80,9 +65,8 @@ test('no artifactName carries the version', () => {
 /**
  * The three filenames, with `${ext}` resolved the way the builder resolves it.
  *
- * A function rather than a constant: an unknown target has to fail as a test
- * and not as a throw at import time, which takes the whole file down and
- * reports nothing about the four assertions that would still have been true.
+ * A function, not a constant - an unknown target must fail as a test, not
+ * throw at import time and take the whole file down.
  */
 function filenames() {
   return [...artifacts].map(([target, name]) => {
@@ -103,9 +87,8 @@ test('the page links to a release asset for every artifact the builder makes', (
 });
 
 test('the page links to no release asset the builder does not make', () => {
-  // The direction that rots quietly. A button pointing at a filename nothing
-  // produces is not a broken page - it is a page that looks finished and hands
-  // back GitHub's 404 to the one visitor who wanted the app.
+  // The direction that rots quietly: a button pointing at a filename nothing
+  // produces looks finished but hands the visitor GitHub's 404.
   const built = filenames();
   const unbuilt = linked.filter(name => !built.includes(name));
   assert.deepEqual(unbuilt, [],
@@ -113,10 +96,8 @@ test('the page links to no release asset the builder does not make', () => {
 });
 
 test('the page is precached and findable', () => {
-  // Both lists a page of this site has to join, and neither fails on its own:
-  // an unlisted page is one that renders naked with the network off, and an
-  // unlisted URL is one nobody finds who was not already told about it. The
-  // stylesheet is covered by tests/sw.test.js, which walks the whole directory.
+  // Neither fails alone: unlisted in SHELL means it renders naked offline;
+  // unlisted in the sitemap means nobody finds it unprompted.
   const sw = read(join(WEB, 'sw.js'));
   const shell = sw.match(/const SHELL = \[([\s\S]*?)\];/)?.[1] ?? '';
   assert.ok(shell.includes("'./download.html'"), 'download.html is not in SHELL in web/sw.js');
@@ -128,11 +109,9 @@ test('the page is precached and findable', () => {
 });
 
 test('the page states the two things it exists to state', () => {
-  // The research note ranks these above the buttons themselves: an unsigned
-  // build is not a warning-free build, and macOS 15 removed the workaround
-  // every set of instructions on the internet still recommends. Asserted as
-  // prose rather than as markup because the words are the feature - a rewrite
-  // that keeps the shape and drops either of them is the regression.
+  // These rank above the buttons themselves: an unsigned build isn't
+  // warning-free, and macOS 15 removed the workaround everyone still
+  // recommends. Asserted as prose since the words are the feature.
   assert.match(page, /not code-signed/,
     'the page no longer says the builds are unsigned, which is the paragraph that '
     + 'stops somebody deciding this is malware');

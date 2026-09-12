@@ -1,10 +1,8 @@
 // What the readout says the board holds.
 //
-// The count answers "how much have I put here", so it counts items and not the
-// furniture the app puts on a board itself. The hints were excluded from the
-// start and the title card was not, which made every Desktop count one high and
-// opened a brand-new board on "1 thing" - see hasContent(), whose rule this now
-// shares through isFurniture().
+// Counts items, not furniture the app puts on the board. The title card
+// used to be miscounted, opening a brand-new board on "1 thing" - see
+// hasContent(), whose rule this now shares through isFurniture().
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

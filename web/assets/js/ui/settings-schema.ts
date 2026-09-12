@@ -1,62 +1,16 @@
-// Every control in the sidebar, written down once.
-//
-// The panel is described here and built by ui/panel.ts, so a setting is not
-// markup in index.html plus wiring in ui/sidebar.ts kept in step by hand. This
-// file is data: no DOM, no document, nothing that runs at import time beyond
-// building arrays. The `get`/`set` closures reach into state.ts, but only when
-// a control is painted or moved - after boot, as the old bindCheck() was.
-//
-// Three rules the shape encodes:
-//
-//   Absence, not disabling. A control whose `when(ctx)` is false is hidden
-//   outright. Mobile has no paper sheet and no spacing, and a greyed-out row
-//   for one is a promise the layout cannot keep.
-//
-//   `needsBoard: true` is the one inversion of that rule, on exactly one page.
-//   /patch is this app showing the changelog, with this panel over it and no
-//   board underneath - and there the sidebar has to be *the* sidebar, the real
-//   tabs with the real sections, not a likeness. So the rows that would act on
-//   a board a reader has not got are shown and greyed: Save, Export, Add files,
-//   the arrangement, the grid, the paper sheet, Optimize, Clear everything. The
-//   whimsy dial and the palette are not among them: the changelog is printed by
-//   the same tokens the board is, so that dial moves the page in front of you.
-//
-//   The View row is the one part of the Board tab a reader can still press, and
-//   it does the only thing it can mean there: goHome() in page.ts takes them to
-//   the board, showing the face they pressed.
-//
-//   `advanced: true` sinks a control into its section's fold. Which side of the
-//   fold something belongs on is whether a board is worse for never touching
-//   it: Whimsy and Palette move every token the fold sets one at a time, so the
-//   fold is where you go when those two landed wrong.
-//
-//   `external: true` means another module owns the control's behaviour and
-//   this file only asks for the element - by exactly the id that module looks
-//   up. ui/appearance.ts wires the whimsy slider and the palette menu,
-//   ui/board-title.ts wires the board name field; each predates the panel
-//   builder and none should have to learn about it.
-//
-// The `slot` type is the escape hatch for controls a table cannot describe -
-// the paired face menus, the generated token sliders. The builder makes the
-// empty host with today's id and the owning module fills it exactly as before.
+// Sidebar settings schema. Data only — no DOM, no document access.
+// ui/panel.ts builds controls from this; get/set closures reach state.ts.
+// `when` false → hidden (not disabled). `needsBoard` → greyed on /patch.
+// `advanced` → inside the section fold. `external` → another module wires it.
 
 import {
   board, setSetting, setArrangement, selection,
 } from '../state.ts';
 
-/** How many cards are picked. Read by the style tile row's title, which says
- *  what the export will draw from and so changes with the selection. */
 const selectionSize = () => selection.size;
-// The Tour section's two titles read the board's own list, not the runner's:
-// stop count is a fact about the board, and asking ui/tour.ts would make this
-// table depend on a module that owns a camera.
 const tourStops = () => board.tour.length;
 import { ARRANGEMENTS, MOBILE_ARRANGEMENTS } from '../arrange/arrangements.ts';
 import { currentLens } from './board-view.ts';
-// The palette row's chips, read out of tokens.css when the menu opens. Its own
-// leaf module rather than ui/appearance-controls.ts, where the rest of that row
-// lives: this table, the panel builder and the controls form a ring if the
-// function sits with its neighbours. See the header of ui/palettes.ts.
 import { paletteSwatches } from './palettes.ts';
 import { itemBounds } from '../geometry.ts';
 import { toUnits, formatLength, paperMm, PAPERS } from '../measure.ts';
@@ -65,21 +19,8 @@ import {
   SHARPNESS_STEPS, BUILD_STEPS,
 } from '../quality.ts';
 import { SOUND_STOPS, cueLogOn, soundLevel, setSoundLevel } from '../cuelume/engine.ts';
-// The cheap half of the share-link feature and only that: whether the build
-// carries a registered cloud application, out of two strings and no network
-// code. The flow behind the row is reached through a dynamic import in the
-// command, which keeps this panel off the OAuth module in
-// tests/layers.test.js's graph. See storage/cloud/provider.ts.
 import { canShareLink } from '../storage/cloud/provider.ts';
-// The synchronous mirror of "is this board kept in the cloud". Every predicate
-// in this file has to answer without awaiting, and the real answer is in
-// IndexedDB - see syncedNow(), which argues why a mirror is the right shape.
 import { syncedNow } from '../storage/cloud/sync.ts';
-// Static, unlike everything else that reaches the cloud modules, for the one
-// question this panel cannot ask any other way: **is an account connected right
-// now**. That is a token's liveness, the provider is the only thing holding it,
-// and a mirror here would go stale in the direction that matters - claiming
-// connected after the hour is up. See anyConnected().
 import { anyConnected, cloudProviders } from '../storage/cloud/cloud.ts';
 import { isDesktop } from '../platform/platform.ts';
 
@@ -87,57 +28,21 @@ import { isDesktop } from '../platform/platform.ts';
 // What a control is
 // ---------------------------------------------------------------------------
 
-/**
- * What the panel knows about the board while it paints: the one fact every
- * `when`, `options`, `pressed` and `text` closure below is asked against.
- */
 export type Ctx = {
   mobile: boolean,
-  /** The changelog: this panel, over a document, with no board under it. */
   patch: boolean,
 };
 
-/** One entry of a <select>. */
 export type Option = { value: string, label: string };
 
-/** One button in a `buttons` row. See buildButtons() in ui/panel.ts. */
 export type ButtonSpec = {
   label: string,
-  /** Answered by the delegated listener in ui/sidebar.ts. */
   cmd?: string,
   id?: string,
   className?: string,
-  /** The paper pair, which ui/sidebar.ts wires itself - see buildButtons(). */
   orient?: string,
-  /**
-   * Put the panel away after this one, on a narrow screen.
-   *
-   * On a phone the panel is the whole screen - mobile.css insets #sidebar to
-   * all four edges - so a button whose result is *on the board* fires into
-   * something nobody can see: press Rearrange and the panel looks unchanged
-   * while the board behind it has been rebuilt.
-   *
-   * Opt-in, not the default. Most rows here change the panel rather than the
-   * board - a checkbox, a dial, "Start over" - and closing on those takes the
-   * panel away mid-thought while the change is one repaint behind you. Anything
-   * that reports with a toast needs nothing either: #toast is z-index 50 over
-   * the panel's 40, so it is already read over an open panel. What is left is
-   * the set that changes the board, replaces it, leaves the page, or opens a
-   * surface of its own - and each says so beside its own label, not in a list
-   * of names to match against.
-   *
-   * Honoured in one place, the delegated listener in ui/sidebar.ts, the only
-   * place that knows a panel button was pressed at all.
-   *
-   * `'if-done'` defers that until the command says it happened: the panel
-   * closes only if the returned promise settles truthy. For buttons whose press
-   * is not yet the action - one that counts presses before it asks (Clear
-   * everything), or one whose dialog can be cancelled. Closing on the press
-   * would, on a phone, make the countdown and the row it is painted on vanish
-   * before anybody can answer.
-   */
+  // true → close panel on press. 'if-done' → close only when command resolves truthy.
   closesPanel?: boolean | 'if-done',
-  /** A starting value for a button whose own command writes the attribute after. */
   ariaPressed?: string,
   pressed?: (ctx: Ctx) => boolean,
   title?: (ctx: Ctx) => string,
@@ -482,47 +387,6 @@ export const SECTIONS: Section[] = [
   // in fewer words. A panel you open to reach a button already in view teaches
   // that the button in view is not the real one. This tab is the file, where it
   // goes, how it is laid out; putting things *on* the board is the toolbar's.
-  //
-  // --- Tour ---------------------------------------------------------------
-  //
-  // The whole of the tour, and the only place in the app that says anything
-  // about one: the item menu's ticked row and the board menu's "Take the tour"
-  // both went when this section arrived (see ui/menu.ts). A tour is an order,
-  // and an order needs a list - a panel, never a menu.
-  //
-  // On the Board tab rather than Look: a tour is not a way the board is
-  // dressed, it is a thing the board *is*. It travels in the .mbrd beside the
-  // connections and the playlist order, which are board data for that reason.
-  {
-    id: 'tour', tab: 'board', title: 'Tour', needsBoard: true,
-    controls: [
-      // Two verbs, one row - the whole of the tour in this panel. Take the tour
-      // carries the weight: it is the answer on a board that already has stops,
-      // where the editor is where you go once.
-      //
-      // Both close the panel, unlike every other pair on this tab: neither is a
-      // setting, they are two ways of handing the whole screen to the board.
-      // The editor lives on the board itself - see the head of ui/tour-edit.ts
-      // - and a panel left open under it is hidden anyway (:root.is-tour-edit
-      // in chrome.css), so a row that did not close it would close it invisibly.
-      { type: 'buttons', buttons: [
-        { cmd: 'tour-start', label: 'Take the tour', className: 'primary',
-          closesPanel: true,
-          title: () => (tourStops()
-            ? `${tourStops()} stops, in order`
-            : 'Add a stop first - the tour has nowhere to go') },
-        // `ariaPressed` as a starting value rather than a `pressed` predicate,
-        // which is why this table does not import ui/tour-edit: the panel
-        // repaints on `board`, `settings`, `layout` and `lens`, and opening the
-        // editor is none of those - a predicate would be read once and then be
-        // wrong until something unrelated repainted. The module writes the
-        // attribute itself, the shape `debug-grips` uses one tab over.
-        { cmd: 'tour-edit', label: 'Edit the tour', ariaPressed: 'false',
-          closesPanel: true,
-          title: () => 'Number the cards on the board, in the order they are seen' },
-      ] },
-    ],
-  },
   {
     // Board layout and Arrange were one idea under two headings: which of the
     // two arrangements you are in, how wide it is, and how things are placed
@@ -571,31 +435,29 @@ export const SECTIONS: Section[] = [
           .map(a => ({ value: a.id, label: a.label })),
         get: () => board.arrangement,
         set: v => setArrangement(v) },
-      // Below the fold with the other set-once dials: an arrangement is picked
-      // by name and the gap it packs at is tuned afterwards, if at all. It
-      // stays edge-to-edge world px - see arrange/arrangements.ts.
+      // Spacing and Snap sit in the open, not behind a fold: an arrangement is
+      // picked by name and these two tune how it packs, the everyday dials of
+      // the section. Spacing stays edge-to-edge world px - see
+      // arrange/arrangements.ts.
       //
-      // On both layouts, reading differently on each: Desktop's is a rule the
-      // next Rearrange will use, Mobile's moves the column the moment it is
-      // touched, because on a phone the gap is baked into where the packer put
-      // things. Mobile starts at zero and no saved board moves on its own.
-      { id: 'spacing', type: 'range', label: 'Spacing', advanced: true, needsBoard: true,
+      // Spacing reads differently on each layout: Desktop's is a rule the next
+      // Rearrange will use, Mobile's moves the column the moment it is touched,
+      // because on a phone the gap is baked into where the packer put things.
+      // Mobile starts at zero and no saved board moves on its own.
+      { type: 'buttons', needsBoard: true,
+        buttons: [{ cmd: 'rearrange', label: 'Rearrange everything', closesPanel: true }] },
+      { id: 'spacing', type: 'range', label: 'Spacing', needsBoard: true,
         min: 0, max: 200, step: 4, unit: 'px',
         get: () => board.settings.spacing,
         set: v => setSetting('spacing', v) },
-      { type: 'buttons', needsBoard: true,
-        buttons: [{ cmd: 'rearrange', label: 'Rearrange everything', closesPanel: true }] },
-      { type: 'hint', when: desktop,
-        html: 'New drops use this layout. <em>Free</em> leaves every position untouched.' },
-      // The Mobile half of the same sentence, necessarily different: a column
-      // is always packed the same way, so what is chosen is the order things
-      // are packed in, not the shape they come out as.
+      { id: 'opt-snap', type: 'check', label: 'Snap to grid', needsBoard: true,
+        get: () => !!board.settings.snap,
+        set: v => setSetting('snap', v) },
+      // Mobile only: a column is always packed the same way, so what is chosen
+      // is the order things are packed in, not the shape they come out as.
       { type: 'hint', when: mobile,
         html: 'The column is always packed tight - this is the order it packs in. '
           + '<em>As placed</em> keeps the one it already has.' },
-      { id: 'opt-snap', type: 'check', label: 'Snap to grid', advanced: true, needsBoard: true,
-        get: () => !!board.settings.snap,
-        set: v => setSetting('snap', v) },
     ],
   },
 
@@ -607,10 +469,9 @@ export const SECTIONS: Section[] = [
   // is finished with. This is where the board *lives*, Save and Export's
   // question, the one thing on this tab still true after you close the lid.
   //
-  // Last on the tab, under Arrange, putting the sections in the order they are
-  // wanted: what this board is called and where it goes, then its tour, then
-  // how it is laid out, then this. It is the only one of the four somebody sets
-  // once and never opens again, so it belongs at the bottom.
+  // Under Arrange, putting the sections in the order they are wanted: what this
+  // board is called and where it goes, then how it is laid out, then this. Tour
+  // follows it - two ways of handing the whole screen to the board, wanted last.
   //
   // Called Sync and not Cloud, the same choice the buttons make: the provider
   // is an implementation detail that will be two providers soon enough, and
@@ -762,6 +623,47 @@ export const SECTIONS: Section[] = [
       { type: 'buttons', when: () => anyConnected(), buttons: [
         { cmd: 'cloud-sign-out', label: 'Log out',
           title: () => 'Forget the sign-in in this browser. Nothing in your Drive is touched' },
+      ] },
+    ],
+  },
+  // --- Tour ---------------------------------------------------------------
+  //
+  // The whole of the tour, and the only place in the app that says anything
+  // about one: the item menu's ticked row and the board menu's "Take the tour"
+  // both went when this section arrived (see ui/menu.ts). A tour is an order,
+  // and an order needs a list - a panel, never a menu.
+  //
+  // On the Board tab rather than Look: a tour is not a way the board is
+  // dressed, it is a thing the board *is*. It travels in the .mbrd beside the
+  // connections and the playlist order, which are board data for that reason.
+  // Last on the tab, under Sync.
+  {
+    id: 'tour', tab: 'board', title: 'Tour', needsBoard: true,
+    controls: [
+      // Two verbs, one row - the whole of the tour in this panel. Take the tour
+      // carries the weight: it is the answer on a board that already has stops,
+      // where the editor is where you go once.
+      //
+      // Both close the panel, unlike every other pair on this tab: neither is a
+      // setting, they are two ways of handing the whole screen to the board.
+      // The editor lives on the board itself - see the head of ui/tour-edit.ts
+      // - and a panel left open under it is hidden anyway (:root.is-tour-edit
+      // in chrome.css), so a row that did not close it would close it invisibly.
+      { type: 'buttons', buttons: [
+        { cmd: 'tour-start', label: 'Take the tour', className: 'primary',
+          closesPanel: true,
+          title: () => (tourStops()
+            ? `${tourStops()} stops, in order`
+            : 'Add a stop first - the tour has nowhere to go') },
+        // `ariaPressed` as a starting value rather than a `pressed` predicate,
+        // which is why this table does not import ui/tour-edit: the panel
+        // repaints on `board`, `settings`, `layout` and `lens`, and opening the
+        // editor is none of those - a predicate would be read once and then be
+        // wrong until something unrelated repainted. The module writes the
+        // attribute itself, the shape `debug-grips` uses one tab over.
+        { cmd: 'tour-edit', label: 'Edit the tour', ariaPressed: 'false',
+          closesPanel: true,
+          title: () => 'Number the cards on the board, in the order they are seen' },
       ] },
     ],
   },

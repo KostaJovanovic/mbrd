@@ -1,17 +1,10 @@
-// The note's formatting model - and the marker colours in particular.
-//
-// canvas/note-model.ts is pure and DOM-free, and until this file nothing in
-// tests/ touched it. That included `wash`, the highlighter, which
-// research/docs/mbrd-format.md now promises two things about in writing:
-//
-//   - an unmarked block is byte-for-byte what it was before markers existed,
-//     so an old board re-saved by a new build does not grow a key per line
-//   - an unknown colour is dropped rather than rounded to the nearest one,
-//     because there is no nearest marker to round a stranger's name to
-//
-// Both are one-line properties of normalizeBlock() and both were undefended.
-// The module's own header argues for them at length, which is exactly the
-// arrangement CLAUDE.md warns about: a rule stated in prose and nowhere else.
+// The note's formatting model - and the marker colours (`wash`, the
+// highlighter) in particular. canvas/note-model.ts is pure and DOM-free,
+// but was untested until this file. research/docs/mbrd-format.md promises
+// two things: an unmarked block stays byte-for-byte what it was before
+// markers existed, and an unknown colour is dropped rather than rounded to
+// the nearest one. Both were one-line properties of normalizeBlock(),
+// undefended until now.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -36,9 +29,8 @@ test('every colour in the catalogue survives normalisation', () => {
 });
 
 test('an unmarked block carries no wash key at all', () => {
-  // Not `wash: null`, not `wash: undefined` - absent. The promise is that an
-  // old board re-saved by a new build is the same bytes, and a key written on
-  // every line of every note is a key in every file.
+  // Not `wash: null`, not `wash: undefined` - absent. An old board re-saved
+  // by a new build must be the same bytes.
   const out = normalizeNoteRich(rich([block()]));
   assert.equal('wash' in out.blocks[0], false,
     `an unmarked block came back as ${JSON.stringify(out.blocks[0])}`);
@@ -54,8 +46,8 @@ test('an unknown colour is dropped, not rounded to the nearest one', () => {
 });
 
 test('a marked block keeps its mark through a JSON round trip', () => {
-  // The trip a .mbrd actually makes: the model is serialised into board.json
-  // and read back by normalizeNoteRich on the way in.
+  // The trip a .mbrd actually makes: serialised into board.json and read
+  // back by normalizeNoteRich on the way in.
   const source = rich([
     block({ tag: 'h1', align: 'center', text: 'Title', wash: 'amber' }),
     block({ tag: 'p', align: 'right', text: 'Body', wash: 'olive' }),
@@ -72,8 +64,8 @@ test('a marked block keeps its mark through a JSON round trip', () => {
 });
 
 test('a mark has no plaintext form, so flattening drops it silently', () => {
-  // The deal meta.text makes to stay portable, asserted so that "the marker is
-  // missing from the export" is a known answer rather than a bug report.
+  // The deal meta.text makes to stay portable, so "the marker is missing
+  // from the export" is a known answer, not a bug report.
   const out = flattenNoteRich(rich([
     block({ tag: 'h1', text: 'Title', wash: 'amber' }),
     block({ text: 'Body', wash: 'olive' }),
@@ -86,8 +78,7 @@ test('a mark has no plaintext form, so flattening drops it silently', () => {
 // ---------------------------------------------------------------------------
 
 test('an unknown tag or alignment IS rounded, unlike a wash', () => {
-  // The asymmetry the module header argues for: there is a nearest paragraph
-  // and a nearest alignment, and there is no nearest colour.
+  // There is a nearest paragraph and a nearest alignment, but no nearest colour.
   const out = normalizeNoteRich(rich([block({ tag: 'h7', align: 'sideways' })]));
   assert.equal(out.blocks[0].tag, 'p');
   assert.equal(out.blocks[0].align, 'left');
@@ -103,8 +94,8 @@ test('every tag and alignment in the catalogue is accepted as it stands', () => 
 });
 
 test('a newline inside a block is flattened to a space', () => {
-  // A stray newline in stored text would otherwise smuggle a second, unstyled
-  // line into a block the editor cannot address.
+  // A stray newline would otherwise smuggle a second, unstyled line into a
+  // block the editor can't address.
   const out = normalizeNoteRich(rich([block({ text: 'one\ntwo\nthree' })]));
   assert.equal(out.blocks[0].text, 'one two three');
   assert.equal(out.blocks.length, 1);
@@ -119,18 +110,16 @@ test('a note with no usable rich model is parsed back from its plaintext', () =>
 });
 
 test('a rich model with no blocks left still yields one', () => {
-  // The renderer and the editor never branch on absence, which is only true if
-  // this holds.
+  // The renderer and editor never branch on absence, which holds only if this does.
   const out = normalizeNoteRich(rich([null, 'nonsense', 7]));
   assert.equal(out.blocks.length, 1);
   assert.equal(out.blocks[0].text, '');
 });
 
 test('the plaintext parser and the marker table agree', () => {
-  // Read on the *second* line, because an unmarked first line is deliberately
-  // h1: a note written before meta.rich existed still reads titled, and
-  // NOTE_MARKER.p is the empty string. Checking a bare 'words' on line 0 would
-  // be checking that legacy rule, not this one.
+  // Read on the *second* line: an unmarked first line is deliberately h1
+  // (so a note from before meta.rich still reads titled), and
+  // NOTE_MARKER.p is empty. Line 0 would test that legacy rule, not this one.
   for (const tag of NOTE_TAGS) {
     const [, b] = parseNoteText('first\n' + NOTE_MARKER[tag] + 'words');
     assert.equal(b.tag, tag, `"${NOTE_MARKER[tag]}words" did not parse as ${tag}`);

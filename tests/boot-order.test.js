@@ -1,35 +1,16 @@
 // The order main.ts brings the app up in.
 //
-// main.ts's boot is about forty init*() calls, and a dozen of them are in the
-// place they are for a stated reason - "Before initSidebar()", "After
-// initAudio()", "after initMenu() because the close hook it registers would
-// otherwise be overwritten". Every one of those was a comment and nothing else,
-// which meant the invariant they describe was held up by whoever read them.
+// About a dozen of main.ts's forty init*() calls are ordered for a stated
+// reason ("before initSidebar()", etc.), previously held up only by a comment.
+// Getting one wrong fails silently and only in one state - a slider paints
+// wrong, a flyout stops closing - and there's no browser-driven suite to catch
+// it. So the constraints are data here (BEFORE), checked against main.ts's
+// actual order, each row carrying its reason.
 //
-// Getting one wrong fails *silently*, and usually in one state rather than at
-// boot: the volume slider paints at the wrong value, the flyouts stop closing,
-// the hint cards animate out of nodes that are not mounted yet. There is no
-// browser-driven suite to catch any of that (see CONTRIBUTING.md), and a
-// reordering is exactly the kind of edit that looks safe in a diff.
-//
-// So the constraints are data here, the way tests/layers.test.js holds the
-// layering graph and the BASE list. That list *is* the split rather than a note
-// about it, and this table *is* the boot order rather than a note about it. Each
-// row carries the reason, because a constraint without one is a rule nobody can
-// safely delete.
-//
-// **What this deliberately does not do is compute the order.** A resolver was
-// the obvious shape and is the wrong one here: main.ts's boot is interleaved
-// with the viewport, the command surface, two `if (!isPatch)` branches and five
-// injection calls, and it reads as a narrative that explains itself. Turning
-// that into a table of declared needs would trade a boot a person can read for
-// machinery, on a file with no test of its behaviour at all. This checks the
-// hand-written order against its own stated reasons, which is the half that was
-// missing.
-//
-// Adding an init with an ordering requirement means adding a row. An init with
-// no requirement needs nothing - most of them have none, and saying so by
-// absence is the point.
+// This deliberately does not compute the order - a resolver is the wrong
+// shape for a boot that reads as an interleaved narrative. It only checks the
+// hand-written order against its own stated reasons. An init with no ordering
+// requirement (most of them) needs no row.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -39,20 +20,16 @@ import { join } from 'node:path';
 const MAIN = join(import.meta.dirname, '..', 'web', 'assets', 'js', 'main.ts');
 
 /**
- * Every call in main.ts's boot that something else is ordered against, in the
- * order the file makes them.
- *
- * Read off the source rather than listed here, so the two cannot disagree - the
- * whole failure mode this file exists for is a list that stops matching the
- * thing it describes. Only top-level calls count: a name inside a callback or a
- * subscription runs later and is not part of the sequence.
+ * Every call in main.ts's boot that something else is ordered against, read
+ * off the source so the two can't disagree. Only top-level calls count - a
+ * name inside a callback runs later and isn't part of the sequence.
  */
 function bootSequence() {
   const src = readFileSync(MAIN, 'utf8');
   const order = [];
   for (const line of src.split('\n')) {
-    // Column zero, or behind one of the two `if (!isPatch)` guards, which are
-    // the only conditional calls in the block and still hold their place in it.
+    // Column zero, or behind one of the two `if (!isPatch)` guards - the only
+    // conditional calls in the block, and they still hold their place.
     const m = /^(?:if \(!isPatch\) )?([a-zA-Z][\w]*)\(/.exec(line);
     if (m) order.push(m[1]);
   }
@@ -60,11 +37,9 @@ function bootSequence() {
 }
 
 /**
- * X must be called before Y, and why.
- *
- * The reason is the load-bearing column. Each is quoted from or condensed out of
- * the comment sitting over that call in main.ts, so a reader who wants to delete
- * a row can see what they would be deciding.
+ * X must be called before Y, and why. The reason is the load-bearing column,
+ * condensed from the comment over that call in main.ts, so deleting a row
+ * means deciding something visible.
  */
 const BEFORE = [
   ['initOverlays', 'initErrors',
@@ -141,10 +116,9 @@ test('nothing in the table is called twice, which would make "before" meaningles
 });
 
 test('the boot is still one block near the top of the file', () => {
-  // A guard on the guard. bootSequence() reads column-zero calls, so a boot
-  // that grew a second half further down - inside an async start(), say - would
-  // be checked against an order that no longer describes it. initStorage() is
-  // the last thing wired; anything after it is lifecycle rather than wiring.
+  // A guard on the guard: bootSequence() reads column-zero calls, so a boot
+  // that grew a second half deeper down would be checked against an order that
+  // no longer describes it. initStorage() is the last thing wired.
   const order = bootSequence();
   const end = order.indexOf('initStorage');
   assert.ok(end > 0, 'initStorage is the end of the wiring block');

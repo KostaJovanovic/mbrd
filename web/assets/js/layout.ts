@@ -1,26 +1,7 @@
-// Where everything is: the two layout profiles, the Mobile pack, and every
-// write to an item's geometry.
-//
-// Fourth concern out of state.ts, and one piece: the Mobile pack and the
-// profiles cannot be split, because placeMobileItems() calls completeLayout()'s
-// fitMobile and completeLayout() calls placeMobileItems - two modules importing
-// each other.
-//
-// Everything that answers "where does this go":
-//
-//   the Mobile pack   a first-fit over a column grid, with stuck notes riding
-//                     their host rather than taking a slot of their own
-//   the profiles      Desktop and Mobile geometry per item, captured on the way
-//                     out of a mode and completed on the way in
-//   the geometry writes  snapshotGeom / applyGeom / commitGeom, the undoable
-//                     triple every drag, nudge and arrange goes through
-//
-// The presnap memo comes with them (forgetPresnap, usableMemo): a geometry
-// fact - where an item was before the lattice took it - of which snapping is
-// only the first caller.
-//
-// Nothing above state.ts imports this: state.ts re-exports what callers have
-// always had. See board-store.ts for why the floor is built this way.
+// Layout profiles (Desktop/Mobile), the Mobile column pack, geometry
+// writes (snapshotGeom/applyGeom/commitGeom), and the board-wide snap
+// sweep. One module because placeMobileItems and completeLayout are
+// mutually recursive. Re-exported through state.ts.
 
 
 import {
@@ -36,27 +17,14 @@ import {
   MOBILE_MIN_ROWS, MOBILE_BOTTOM_ROWS, mobileColumnCount,
   cloneSettings, layoutSettingsOf, settingsFor, defaultLayoutSettings, isLocked,
 } from './board-model.ts';
-// Types only. Imported while this module was still unchecked: a @ts-nocheck
-// suppresses the errors *in* a file without hiding its declarations, so the
-// four signatures below could be annotated ahead of the rest for
-// board-schema.ts to read geometry through. The file is annotated now and the
-// import stands unchanged.
+// Types only.
 import type { Geometry, Item, LayoutMode, ItemMeta } from './board-model.ts';
 import type { Box } from './geometry.ts';
 
-/**
- * The four numbers a presnap memo holds - where an item was before the lattice
- * took it. Its own name because three things pass one around: the memo on
- * `meta.presnap`, the copy on a Geometry, and usableMemo(), the only thing that
- * decides whether what came out of a file is one.
- */
+/** Where an item was before the lattice took it. */
 export type Presnap = { x: number, y: number, w: number, h: number };
 
-/**
- * One item's geometry as a snapshot carries it: the six fields GEOM_KEYS names,
- * the presnap memo, and the one flag that rides with a movement rather than
- * beside it - see snapshotGeom(), which explains why `loose` is in here.
- */
+/** One item's geometry snapshot: GEOM_KEYS fields + presnap memo + loose flag. */
 export type GeomSnap = {
   id: string,
   x: number, y: number, w: number, h: number, rot: number, z: number,
@@ -64,18 +32,7 @@ export type GeomSnap = {
   loose: boolean,
 };
 
-/**
- * What applyGeom() will write: an id, and any part of the above.
- *
- * Partial because that is what its callers hand it - geometry.ts's align and
- * distribute answer `{ id, x, y }` and nothing else, and applyGeom() merges
- * whatever it is given onto the live item rather than replacing it.
- *
- * `presnap` is `unknown` here rather than a memo, and deliberately: applyGeom()
- * puts every one it is given through usableMemo(), which is the only thing in
- * this file that decides whether four numbers are a memo. A caller carrying one
- * straight off an item's meta is holding whatever a file put there.
- */
+/** Partial geometry patch. presnap is unknown because applyGeom() validates via usableMemo(). */
 export type GeomPatch =
   { id: string } & Partial<Omit<GeomSnap, 'id' | 'presnap'>> & { presnap?: unknown };
 import {
@@ -92,22 +49,7 @@ const SNAP_KEYS = ['x', 'y', 'w', 'h'] as const;
 
 const MOBILE_PACK_EPSILON = 1e-9;
 
-/**
- * Half the space left around a card in the column, in world units.
- *
- * The lattice seam is always there - cellInset() is what keeps a card from
- * sitting flush on the grid lines it is laid between - and Mobile's `spacing`
- * is *added* to it rather than replacing it. So the gap between two neighbours
- * is `spacing + 2 * cellInset(step)`, and a Mobile board at spacing 0 is
- * exactly the board that shipped before the setting existed, which is the one
- * property worth keeping: turning a slider up must be the only way to change
- * a board that was already saved.
- *
- * Half, because a gap is shared: each of the two cards either side of it gives
- * up this much, the same arrangement CELL_GAP makes in geometry.ts and for the
- * same reason - an item at the edge of the column then has the same margin as
- * one in the middle of it.
- */
+/** Half the gap around a card: cellInset + half the user spacing. Additive so spacing 0 matches the pre-setting layout. */
 function mobileSeam(step: number, spacing = 0) {
   return cellInset(step) + Math.max(0, spacing || 0) / 2;
 }
@@ -131,21 +73,7 @@ function mobilePackStartRow(obstacles: Item[], step: number) {
   );
 }
 
-/**
- * The cells an item that is not being packed already stands in.
- *
- * The inverse of the placement arithmetic at the foot of packMobileGrid, seam
- * included: a card claims every cell any part of its box plus its seam touches,
- * so nothing can be packed into the half cell beside it. Rotation-aware through
- * itemBounds(), because what must be kept clear is the box you can see.
- *
- * Columns are clamped at both ends and rows only at the top. The column count
- * is the width of the board and there is nothing outside it. The top row is
- * likewise a real edge - `r0` is clamped to 0, which the sentence here used to
- * deny - while the *bottom* has none: a card below the lowest packed row is
- * simply in rows the search will never ask about, so there is nothing to clamp
- * `r1` to.
- */
+/** Mark the cells an existing (non-packed) item occupies. Inverse of the placement arithmetic, seam included. */
 function claimBlocked(
   occupied: Set<number>, box: Item, step: number, columns: number, spacing: number,
 ) {
@@ -166,25 +94,15 @@ function claimBlocked(
 }
 
 /**
- * Compact row-major packing into the selected Mobile occupancy grid.
- *
- * `obstacles` and `blockers` are two different things and the difference is the
- * whole of how an anchored card survives a Rearrange. An obstacle sets the first
- * row the pack may use, so everything lands below it - which is what an import
- * appending to a column wants. A blocker holds only the cells it actually
- * stands in, and the pack flows around it from the top - which is what an
- * anchored card wants, since pushing the column below a card anchored near the
- * foot of it would leave the whole board hanging under a hole.
+ * Row-major first-fit packing. Obstacles set the first free row (imports
+ * append below). Blockers hold only their own cells and the pack flows
+ * around them (anchored cards survive a Rearrange).
  */
 export function packMobileGrid(
   items: Item[], obstacles: Item[], step: number, columns: number, spacing = 0,
   blockers: Item[] = [],
 ): Item[] {
-  // Cells keyed as row * columns + col rather than `${x}:${y}`: col is always
-  // in [0, columns) at every site (the placement loop bounds it, claimBlocked
-  // clamps it), so the integer is exact and collision-free, and `columns` is one
-  // value for the whole pack. See the header below - the key half is now fixed
-  // as well as the scan half.
+  // Integer key (row * columns + col) instead of template strings — collision-free and fast.
   const occupied = new Set<number>();
   const startRow = mobilePackStartRow(obstacles, step);
   const inset = mobileSeam(step, spacing);
@@ -208,20 +126,8 @@ export function packMobileGrid(
     return false;
   };
 
-  // The lowest row still worth looking at.
-  //
-  // The scan restarted at `startRow` for every item, so the pack is quadratic
-  // in the number of rows already filled, with a Set probe per cell: on a
-  // 2,000-card Mobile board each item walks from row 0 past every occupied row
-  // times eight columns - every time the column-count select or the spacing
-  // slider moves, and repackMobileBoard() passes no obstacles so `startRow`
-  // really is 0. The floor below cuts the row walk; the integer cell key (see
-  // above) cut the per-probe template string those millions of probes each built.
-  //
-  // A floor rather than a cursor, because an item may still land *above* the
-  // last one placed when a narrow card fits a gap a wide one left. What cannot
-  // happen is a fit below every row that is already full to the width of the
-  // widest item, and the floor only moves up when a whole row band is closed.
+  // Floor optimization: skip rows that are completely full. A floor, not a
+  // cursor — a narrow card may still fit a gap above the last placement.
   let floor = startRow;
   return items.map(item => {
     const cols = mobileCellSpan(item.w, step, columns, spacing);
@@ -237,10 +143,7 @@ export function packMobileGrid(
         }
       }
       if (!found) {
-        // Nothing of *any* width fits this row, so no later item will look at
-        // it either and the floor may come up past it. Checked with the
-        // narrowest possible span so the floor never rises over a gap a small
-        // card could still use.
+        // Row fully occupied — advance the floor.
         if (row === floor && !anyOpen(row)) floor = row + 1;
         row++;
       }
@@ -250,10 +153,7 @@ export function packMobileGrid(
     const top = (MOBILE_TOP_ROWS - row) * step;
     return {
       ...item,
-      // Anchor the visible box, not its centre, to the cell seam. Centring an
-      // off-lattice size inside its claimed span can leave either edge a pixel
-      // across a grid or board rule; the top-left seam is deterministic and
-      // keeps the whole box inside the cells it owns.
+      // Anchor to the cell seam, not the centre — deterministic and keeps the box inside its cells.
       x: left + inset + item.w / 2,
       y: top - inset - item.h / 2,
       rot: 0,
@@ -261,18 +161,7 @@ export function packMobileGrid(
   });
 }
 
-/**
- * A fence's Mobile geometry: a band across the whole column, one row deep.
- *
- * A fence is the one item that is not fitted to the column - it *is* the column.
- * Everything else keeps its proportions and is scaled down to fit; a region has
- * no proportions worth keeping, and a band narrower than the cards under it
- * would read as a card rather than as a heading over them.
- *
- * Sized to exactly the content width fitMobile() would allow, which is what
- * keeps that function free of a special case: with w already at the maximum, its
- * clamp is a no-op and its scale ratio is 1.
- */
+/** A fence on Mobile: a full-width band, one row deep. Sized to fitMobile's content width so the clamp is a no-op. */
 function bandBox(fence: Item, step: number, columns: number, spacing: number): Item {
   const inset = mobileSeam(step, spacing);
   return {
@@ -284,22 +173,9 @@ function bandBox(fence: Item, step: number, columns: number, spacing: number): I
 }
 
 /**
- * Pack a list into runs: a band across the column, then the cards it holds,
- * then the next band below all of them.
- *
- * The barrier is the whole point, and it is bought with no new machinery: each
- * run is packed against *everything already placed* as its obstacles, and
- * mobilePackStartRow() puts it on the first full row below the lowest of them.
- * So nothing in a later run can climb into a gap left in an earlier one, which a
- * plain first-fit over the whole column would do gladly - and a run that is not
- * contiguous is not a run.
- *
- * A board with no fences takes the first branch and packs exactly as it did
- * before any of this existed. That is deliberate: every board saved until now is
- * that board, and it must come back unchanged.
- *
- * The result is put back into the caller's order because placeMobileItems()
- * pairs its two packs by index.
+ * Pack items in fence-separated runs. Each run lands below everything already
+ * placed. No fences → single pack, unchanged from the pre-fence layout.
+ * Result restored to caller order (placeMobileItems pairs by index).
  */
 function packRuns(
   items: Item[], obstacles: Item[], step: number, columns: number, spacing: number,
@@ -327,22 +203,9 @@ function packRuns(
 }
 
 /**
- * Append items to Mobile as a compact selected-width grid without overlap.
- *
- * The incoming order still comes from the selected arrangement. Each item's
- * fitted dimensions become a rectangular cell span, then a row-major first-fit
- * search puts compatible spans beside one another before moving downward.
- * Existing items set the first available row, so imports and partial
- * rearrangements stay below content that was not part of the operation.
- *
- * Snapped and unsnapped geometry are packed separately. The snapped copy uses
- * the lattice's normal inset seam; its presnap memo therefore restores another
- * collision-free grid layout if the user later turns snapping off.
- *
- * `spacing` is the Mobile profile's own - zero on a board that has never been
- * asked for a gap, which is every board saved before the setting existed. It is
- * added to the seam on all four sides of every card and to the room each one
- * claims in the lattice; see mobileSeam().
+ * Fit and pack items into the Mobile column. Snapped and unsnapped geometry
+ * are packed separately; the presnap memo records the unsnapped position.
+ * Obstacles set the first available row (imports append below existing content).
  */
 export function placeMobileItems(
   items: Item[],
@@ -357,30 +220,10 @@ export function placeMobileItems(
   const preserveSize = options.preserveSize === true;
   const columns = mobileColumnCount(options.columns ?? board.settings.mobileColumns);
   const spacing = Math.max(0, options.spacing ?? board.settings.spacing ?? 0);
-  // Cards that hold their own cells rather than setting the floor of the pack -
-  // an anchored card during a Rearrange. See packMobileGrid(). They are filtered
-  // like the obstacles below, for the same reason: neither the Desktop title
-  // card nor a hint has a place on this board to hold.
+  // Anchored cards hold their own cells (see packMobileGrid). Title/ghost filtered out as below.
   const blockers = (options.blockers || [])
     .filter(it => it.type !== 'title' && it.type !== 'ghost');
-  // Two kinds of card are never neighbours, and neither may set the first free
-  // row - mobilePackStartRow() measures from the highest obstacle, so anything
-  // left in this list that is not really in the way costs every import the rows
-  // it stands in.
-  //
-  // The Desktop title card is not on this board at all. It has no Mobile
-  // geometry, it is never rendered here (the masthead above the column is drawn
-  // by canvas/mobile-frame.ts and is not an item), and completeLayout() parks it
-  // clear of the top edge. Left in, it pushed every import four or five rows
-  // down; completeLayout() already takes it out of its own sweep.
-  //
-  // A hint is on the board, but it is leaving: the first real item to arrive
-  // takes all four away (see canvas/ghosts.ts). Counting them cost an import the
-  // six rows they filled, and by the time the file was drawn the rows above it
-  // were empty - a photograph dropped onto a blank phone board landed a screen
-  // down from the top with nothing over it. They are packed as *items* when the
-  // column is rebuilt (repackMobileBoard passes no obstacles at all), so this
-  // does not strand them.
+  // Title card has no Mobile geometry; hints are leaving. Neither should set the pack floor.
   obstacles = obstacles.filter(it => it.type !== 'title' && it.type !== 'ghost');
   const clean = (item: Item) => {
     const presnap = usableMemo(item.meta?.presnap);
@@ -393,9 +236,7 @@ export function placeMobileItems(
     const pre = usableMemo(item.meta?.presnap);
     return fitMobile(pre ? { ...item, ...pre } : item, false, step, columns, spacing);
   });
-  // A blocker is measured where it will still be sitting when the pack is done -
-  // it is not moving - so the unsnapped pass reads it through its presnap memo
-  // exactly as an obstacle is, and the live pass reads it as it stands.
+  // Blockers are measured at their final position — unsnapped pass uses presnap.
   const rawBlockers = blockers.map((item: Item) => {
     const pre = usableMemo(item.meta?.presnap);
     return fitMobile(pre ? { ...item, ...pre } : item, false, step, columns, spacing);
@@ -436,20 +277,8 @@ export function repackMobileBoard() {
   const ordered = [...board.items].sort((a, b) =>
     b.y - a.y || a.x - b.x || a.id.localeCompare(b.id));
   const before = snapshotGeom(ordered.map(item => item.id));
-  // Stuck notes ride their host through a reflow instead of being repacked into
-  // their own column slot; they keep their size and follow the host to its new
-  // place. See attachRiders().
-  // The Desktop title card is not part of the Mobile board at all: it is neither
-  // packed into a column nor an obstacle for what is, and applyGeom below leaves
-  // its geometry untouched (it never lands in `target`).
-  // An anchored card holds its cells here as it does through a Rearrange.
-  //
-  // `blockers` was honoured at one of placeMobileItems()'s three call sites, so
-  // an anchor survived a Rearrange and not a reflow: change the column count or
-  // the gap and every anchored card was repacked into the column like anything
-  // else, which is the one thing anchoring says will not happen. Filtered out of
-  // `packable` for the same reason ui/board-actions.ts filters them - a card
-  // that holds its own place is not a card the pack is placing.
+  // Riders follow their host, not the pack. Title card excluded.
+  // Anchored cards are blockers (hold their cells) and are not packed.
   const held = ordered.filter(it => !isRider(it) && it.type !== 'title' && isLocked(it));
   const heldIds = new Set(held.map(it => it.id));
   const packable = ordered.filter(it =>
@@ -472,8 +301,7 @@ export function repackMobileBoard() {
       w: item.w,
       h: item.h,
       rot: item.rot,
-      // Through usableMemo() rather than spread raw: placeMobileItems() writes
-      // exactly these four, and the memo is the only thing read back out.
+      // Validated through usableMemo().
       presnap: usableMemo(item.meta?.presnap),
     };
   }));
@@ -482,18 +310,7 @@ export function repackMobileBoard() {
   });
 }
 
-/**
- * Whatever the lattice is measured in, with the fallback in one place.
- *
- * The *base* step, never the on-screen one. gridStep() in canvas/grid.ts picks
- * a spacing from the zoom so the dots never become a fill, which is right for
- * something drawn and wrong for something stored - see snapAll() below.
- *
- * Exported because main.ts's Rearrange lays the whole board out at once and has
- * to size the slots on the same lattice snapAll() would - and a second copy of
- * `gridStep > 0 ? gridStep : 64` in another file is how the two would come to
- * disagree about a board whose step is missing.
- */
+/** The stored grid step (not the zoom-dependent on-screen one). Exported for main.ts's Rearrange. */
 export function baseStep() {
   return board.settings.gridStep > 0 ? board.settings.gridStep : 64;
 }
@@ -1251,19 +1068,8 @@ export function usableMemo(pre: unknown): Presnap | null {
 }
 
 // ---------------------------------------------------------------------------
-// Snapping the whole board
-//
-// The board-wide half of the lattice, beside SNAP_KEYS and the presnap memo it
-// is written in terms of rather than in state.ts, where it used to sit calling
-// down into all three. It is a geometry write like every other one in this
-// file: a before list, an after list, and one commit that carries them.
-//
-// The setting comes with it and that is the whole reason it is one block. The
-// flag used to be written by setSetting() *outside* this command, so one Ctrl+Z
-// took the board off the lattice and left the checkbox ticked - the only place
-// in the app where undo produced a state nobody could have produced by hand.
-// state.ts still owns setSetting(); what it hands over on the `snap` key is the
-// value, and everything after that is here.
+// Snapping the whole board — setting + geometry in one commit so undo
+// does not leave the checkbox ticked while the board is off the lattice.
 // ---------------------------------------------------------------------------
 
 /**

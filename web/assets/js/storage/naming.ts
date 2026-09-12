@@ -1,8 +1,6 @@
-// Board title <-> file name, and nothing else.
-//
-// Pure string work, split out of storage.ts so both halves could have it. A
-// file name is picker-safe (spaces become underscores) and a title is not,
-// which is why reading a title back is not stripping the extension.
+// Board title <-> file name. Pure string work, split out of storage.ts.
+// Spaces → underscores for the file system; reading back is not just stripping
+// the extension because underscores may be intentional.
 
 import { cleanBoardTitle } from '../state.ts';
 
@@ -15,32 +13,12 @@ export function titleFromFileName(name: string): string {
   return stripExt(name).replace(/_/g, ' ');
 }
 
-/**
- * The last build that packed the picker-safe filename into board.json.
- *
- * Up to v0.50, exportBoard() did `setTitle(stripExt(fileHandle.name))` after
- * the picker, renaming the board itself, so every save after wrote the
- * underscored form. v0.51 switched to titleFromFileName(), and manifest.json
- * records which build wrote each file - which is what makes `app` worth
- * reading rather than decoration.
- */
+/** Builds before this version packed the underscored filename into board.json
+ *  as the title (v0.51 fixed it). manifest.json's `app` field identifies these. */
 const PACKED_TITLES_BEFORE: [number, number] = [0, 51];
 
-/**
- * The title an opened file should carry.
- *
- * The stored title wins, taken as typed - cleanBoardTitle() permits
- * underscores, so a board named `my_board` keeps that name. Underscores go
- * back to spaces only on the filename branch, whose mapping is this module's
- * own, and on stored titles old enough to have packed one.
- *
- * Do not widen it. Over every stored title, a deliberate `my_board` came back
- * as `my board` on reopen and stayed - the load marks it durable. Narrowing
- * instead to "stored title equals the file's base name" rewrote every board
- * saved under its suggested name, the same shape. A manifest naming no build
- * is not repaired - nothing this app writes lacks the field, so such a title
- * was made by hand and is one to believe.
- */
+/** Title for an opened file. Stored title wins (underscores are intentional).
+ *  Only old builds that packed the filename get underscore→space repair. */
 export function titleForOpenedBoard(
   storedTitle: unknown, fileName: string, writtenBy: unknown = '',
 ): string {
