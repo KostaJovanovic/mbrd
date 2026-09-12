@@ -42,7 +42,11 @@ export type EmbedSpec = {
 // exact; the couple of pixels of slack land in the paper mat around the frame,
 // where a hairline of the card's own paper is wanted anyway.
 const YT_CHROME = 50;
-const SP_CHROME = 48;
+// Measured, not derived: at 48 the opened card came out a few pixels taller than
+// the item that holds it and the player's bottom was clipped. 58 gives the frame
+// its full height inside the item with a hairline of the card's own paper to
+// spare, which is the mat the rest of the frame sits in anyway.
+const SP_CHROME = 58;
 
 // ---------------------------------------------------------------------------
 // YouTube

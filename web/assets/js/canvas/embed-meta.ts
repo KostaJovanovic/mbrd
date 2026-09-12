@@ -1,12 +1,13 @@
-// Fetches a Spotify track's title and cover art and stores them on its link
-// card. The one place in the app that reaches the network to decorate a card -
-// see the local-first note in canvas/renderers.ts, which this deliberately
-// steps outside of. It runs only for a card that has no title stored yet, so a
-// board that has been seen once fetches nothing on the next load.
+// Fetches a player card's title (and, for Spotify, its cover art) and stores
+// them on the card. The one place in the app that reaches the network to
+// decorate a card - see the local-first note in canvas/renderers.ts, which this
+// deliberately steps outside of. It runs only for a card that has no title
+// stored yet, so a board that has been seen once fetches nothing on the next
+// load.
 //
-// Spotify only. YouTube's oembed sends no CORS header, so a browser cannot read
-// it and this app has no server to proxy through - a YouTube card keeps the
-// provider name (embed.ts) and this returns early.
+// Spotify and YouTube, each through its own oembed (both send a CORS header the
+// browser can read). Spotify also carries a cover on i.scdn.co, stored as an
+// asset; YouTube's reply is the title alone. Any other provider returns early.
 //
 // Nothing here runs at import: enrichEmbed is called from the injected hook in
 // renderers.ts (setEmbedEnrich), wired in main.ts, so the module stays loadable
@@ -32,10 +33,22 @@ export async function enrichEmbed(item: Item): Promise<void> {
   // A stored title is the whole definition of "not missing"; leave it be.
   if (typeof item.meta?.title === 'string' && item.meta.title) return;
   const spec = embedFor(linkURL(item.meta?.url));
-  if (!spec || spec.provider !== 'spotify') return;
+  if (!spec || (spec.provider !== 'spotify' && spec.provider !== 'youtube')) return;
   if (inFlight.has(item.id)) return;
   inFlight.add(item.id);
   try {
+    // YouTube: the video title, and nothing else - its oembed carries no cover
+    // on a host of ours to store.
+    if (spec.provider === 'youtube') {
+      const res = await fetch(
+        `https://www.youtube.com/oembed?url=${encodeURIComponent(spec.page)}&format=json`,
+        { referrerPolicy: 'no-referrer' });
+      if (!res.ok) return;
+      const title = pick(await res.json(), 'title');
+      if (title) setEmbedMeta(item.id, { title });
+      return;
+    }
+    // Spotify: the title, and the cover if the reply names one on i.scdn.co.
     const url = `https://open.spotify.com/oembed?url=${encodeURIComponent(spec.page)}`;
     const res = await fetch(url, { referrerPolicy: 'no-referrer' });
     if (!res.ok) return;

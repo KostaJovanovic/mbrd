@@ -93,17 +93,17 @@
 # tests/csp.test.js checks both directions.
 #
 # ---------------------------------------------------------------------------
-# connect-src — the two decorate-a-Spotify-card hosts
+# connect-src — the decorate-a-player-card hosts
 # ---------------------------------------------------------------------------
 #
-# canvas/embed-meta.ts fetches open.spotify.com/oembed for a track's title and
-# then i.scdn.co for its cover art. The only network this app reaches to
+# canvas/embed-meta.ts fetches a player card's title from the provider's oembed:
+# open.spotify.com for a track, www.youtube.com for a video. Spotify's reply also
+# names a cover on i.scdn.co, fetched next. The only network this app reaches to
 # decorate a card, and only for one that has no title stored yet - see the
 # local-first note in canvas/renderers.ts. Fetched, not navigated and not shown
 # as a remote <img>: the cover is stored as an asset and drawn from blob:, which
 # is why i.scdn.co is here and not in img-src (which stays 'self' blob: data:).
-# YouTube has no equivalent - its oembed sends no CORS header, so no host of its
-# own is needed or would work.
+# YouTube's reply is the title alone, so it needs no img host of its own.
 #
 # ---------------------------------------------------------------------------
 # The deliberate 'none's and explicit 'self's
@@ -124,7 +124,7 @@
 # requests, require-trusted-types-for, report-to (no server).
 
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-TXFmC+WkJ7pej6GG4eilTgWXAPfRfnxeO2p8iCMvh/k=' 'sha256-IHNiUGcUOr6NelTq/uPBMjoUShciN3z/lAb4UJeNUZU=' 'sha256-Y54bV0qSvT/SjayyqBLRVo5YNx4RDDohESjalwLrmiU=' 'sha256-uvCBZcY4f9DxNUECjcV7ObPLKTkLMGe7JYQlf/0hOIw=' 'sha256-Q8ZzrQgcVPkApKR0qNf6mroKHffRQsjhyVVZIRu0QtU=' 'sha256-8ZGO4EWxaESz6+qYFa7Px/8iyW9D2UaZh/+P4/mg99Q=' 'sha256-W6Ek3VdZ0h8I8y6AJQrxOK0kORl/bq7s85k8oOrakjs='; style-src 'self' 'sha256-/Ky4tEy9rHoRMFnFuG73oUt7DZzJBqKlsnrdgKJT5sg=' 'sha256-oxU/eyeo5k8NDEY1uy+DN3ens/uVYDQxaaH6GEwI5Ls=' 'sha256-AL9WaAEqAR1J/jBnSEHAmJZsBz/eGk5SgKE4e+Z9lIY='; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'self' blob:; connect-src 'self' blob: https://cdn.jsdelivr.net https://www.googleapis.com https://open.spotify.com https://i.scdn.co; worker-src 'self'; manifest-src 'self'; frame-src https://www.youtube-nocookie.com https://open.spotify.com; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-TXFmC+WkJ7pej6GG4eilTgWXAPfRfnxeO2p8iCMvh/k=' 'sha256-IHNiUGcUOr6NelTq/uPBMjoUShciN3z/lAb4UJeNUZU=' 'sha256-Y54bV0qSvT/SjayyqBLRVo5YNx4RDDohESjalwLrmiU=' 'sha256-uvCBZcY4f9DxNUECjcV7ObPLKTkLMGe7JYQlf/0hOIw=' 'sha256-Q8ZzrQgcVPkApKR0qNf6mroKHffRQsjhyVVZIRu0QtU=' 'sha256-8ZGO4EWxaESz6+qYFa7Px/8iyW9D2UaZh/+P4/mg99Q=' 'sha256-W6Ek3VdZ0h8I8y6AJQrxOK0kORl/bq7s85k8oOrakjs='; style-src 'self' 'sha256-/Ky4tEy9rHoRMFnFuG73oUt7DZzJBqKlsnrdgKJT5sg=' 'sha256-oxU/eyeo5k8NDEY1uy+DN3ens/uVYDQxaaH6GEwI5Ls=' 'sha256-AL9WaAEqAR1J/jBnSEHAmJZsBz/eGk5SgKE4e+Z9lIY='; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'self' blob:; connect-src 'self' blob: https://cdn.jsdelivr.net https://www.googleapis.com https://open.spotify.com https://i.scdn.co https://www.youtube.com; worker-src 'self'; manifest-src 'self'; frame-src https://www.youtube-nocookie.com https://open.spotify.com; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'
 
 # Worker exemptions — removed rather than replaced, because _headers rules are
 # cumulative and two CSP values are intersected, not overridden. Each worker

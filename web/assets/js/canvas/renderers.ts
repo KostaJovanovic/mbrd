@@ -24,6 +24,7 @@ import { buildVideoPlayer, POSTER_TIME } from './video.ts';
 import { rationsDecoders } from './viewport.ts';
 import { embedFor, embedFloor, embedOffer } from './embed.ts';
 import { brandFor, siteName } from './brands.ts';
+import type { Brand } from './brands.ts';
 import { buildModelCard } from './model.ts';
 import { hintFor, hintKey, tapeStyle, bindDial, STOPS, DIAL } from './ghosts.ts';
 import { ensureDisplay, displayURLReady } from './display.ts';
@@ -134,6 +135,27 @@ function providerMark(provider: string) {
   svg.append(t);
   box.append(svg);
   fitMark(svg, t);
+  return box;
+}
+
+/**
+ * The watermark as the brand logo itself, stretched to fill (brands.ts mark).
+ * The same faint inset box as the text mark, but a fixed 0 0 24 24 viewBox with
+ * preserveAspectRatio="none" - so it needs no fitMark, and the logo fills the
+ * inner margins the way the word would. Drawn in the board ink (currentColor).
+ */
+function providerLogoMark(brand: Brand) {
+  const box = document.createElement('div');
+  box.className = 'embed-mark';
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('preserveAspectRatio', 'none');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  const p = document.createElementNS(SVG_NS, 'path');
+  p.setAttribute('d', brand.path);
+  p.setAttribute('fill', 'currentColor');
+  svg.append(p);
+  box.append(svg);
   return box;
 }
 
@@ -974,9 +996,16 @@ const RENDERERS = {
     // the mark, and it is a bundled brand SVG (canvas/brands.ts), never a
     // favicon fetched per domain, so the card is the same with the network off.
     if (u) {
+      const brand = brandFor(u);
       card.classList.add('card-embed');
       card.dataset.provider = 'link';
-      card.append(providerMark(siteName(u)), linkChip(item, u));
+      // The watermark: the brand name filling the width, or - for a one-glyph
+      // name like X, where the serif letter is not the mark anyone knows - the
+      // logo itself, stretched the same way (brands.ts mark).
+      const mark = brand?.mark
+        ? providerLogoMark(brand)
+        : providerMark(brand?.label ?? siteName(u));
+      card.append(mark, linkChip(item, u));
       return card;
     }
 
@@ -1678,7 +1707,38 @@ export function linkDraft(u: URL) {
       w: Math.max(size.w, floor.w), h: Math.max(size.h, floor.h),
     };
   }
-  return { type: 'link', name: linkName(u), w: size.w, h: size.h, meta: { url: u.href } };
+  return { type: 'link', name: smartLinkName(u), w: size.w, h: size.h, meta: { url: u.href } };
+}
+
+/**
+ * What a link is called before anybody renames it. The site by default, but a
+ * couple of sites carry the useful name in the address itself: a Steam store URL
+ * spells the game in its slug, a Reddit URL spells the subreddit. Reading it off
+ * the path fetches nothing and is exact, so the chip says "ULTRAKILL" or "r/pics"
+ * rather than the bare host. A rename still overrides it (it becomes item.name).
+ */
+function smartLinkName(u: URL): string {
+  return steamGame(u) ?? redditSub(u) ?? linkName(u);
+}
+
+// The game a Steam store link points at: the slug after /app/<id>/, underscores
+// back to spaces, capped so a long title does not push the chip past the card.
+function steamGame(u: URL): string | null {
+  const host = u.hostname.replace(/^www\./, '').toLowerCase();
+  if (host !== 'store.steampowered.com' && host !== 'steamcommunity.com') return null;
+  const m = /\/app\/\d+\/([^/]+)/.exec(u.pathname);
+  if (!m) return null;
+  try { return decodeURIComponent(m[1]).replace(/[_+]/g, ' ').trim().slice(0, 20); }
+  catch { return m[1].replace(/[_+]/g, ' ').slice(0, 20); }
+}
+
+// The subreddit a Reddit link is under: /r/<name>. Null for a user page or the
+// front page, which fall back to the host.
+function redditSub(u: URL): string | null {
+  const host = u.hostname.replace(/^(www|old|new|np)\./, '').toLowerCase();
+  if (host !== 'reddit.com') return null;
+  const m = /^\/r\/([^/]+)/i.exec(u.pathname);
+  return m ? `r/${m[1]}` : null;
 }
 
 /** What a link is called before anybody renames it: the site it points at. */
@@ -1718,7 +1778,7 @@ function linkChip(item: Item, u: URL): HTMLAnchorElement {
   a.title = u.href;
   const span = document.createElement('span');
   span.className = 'card-name';
-  span.textContent = item.name || linkName(u);
+  span.textContent = item.name || smartLinkName(u);
   a.append(linkGlyph(u), span);
   a.addEventListener('click', (e: MouseEvent) => {
     if (e.detail > 1 || a.closest('.is-editing')) e.preventDefault();
