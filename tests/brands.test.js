@@ -28,6 +28,8 @@ test('brandFor matches known sites, their rename, and their shorteners', () => {
   assert.equal(brand('fb.me'), 'facebook');
   assert.equal(brand('lnkd.in'), 'linkedin');
   assert.equal(brand('bsky.app'), 'bluesky');
+  assert.equal(brand('store.steampowered.com'), 'steam');   // subdomain + alias
+  assert.equal(brand('steamcommunity.com'), 'steam');
 });
 
 test('an unknown site has no brand', () => {
