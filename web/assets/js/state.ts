@@ -490,6 +490,15 @@ export function setItemCover(id: string, hash: unknown) {
     value => (isHash(value) ? value : null));
 }
 
+/** Change where a link card points. Undoable - the address is a choice, unlike
+ *  a fetched title. Validated as a non-empty string here; the caller (commands.ts
+ *  editLink) has already run it through linkTyped/linkURL, so what arrives is a
+ *  parsed href. The card re-renders off the new URL: watermark, mark and chip. */
+export function setLinkURL(id: string, url: unknown) {
+  patchMeta(id, 'url', url, 'Edit link',
+    value => (typeof value === 'string' && value ? value : null));
+}
+
 /** Attach a zoomed-out thumbnail. Not undoable (derived data, not a choice). */
 export function setItemThumb(id: string, hash: unknown) {
   const it = byId(id);
