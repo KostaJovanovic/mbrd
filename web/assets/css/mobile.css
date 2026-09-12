@@ -231,10 +231,21 @@
   gap: 4px;
   background: var(--paper-card);
 }
+/* The mark and the name on one row - the site's own logo (renderers.ts
+   linkGlyph) beside what the link is called, so a Feed link reads like its
+   canvas card. The name still ellipses; the mark keeps its size. */
+.feed-link-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.feed-link-title svg { width: 18px; height: 18px; flex: none; }
 .feed-link-name {
   font-family: var(--font-body);
   font-weight: 600;
   color: var(--ink);
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

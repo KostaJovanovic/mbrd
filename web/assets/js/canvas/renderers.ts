@@ -23,6 +23,7 @@ import { clock } from '../media/transport.ts';
 import { buildVideoPlayer, POSTER_TIME } from './video.ts';
 import { rationsDecoders } from './viewport.ts';
 import { embedFor, embedOffer } from './embed.ts';
+import { brandFor, siteName } from './brands.ts';
 import { buildModelCard } from './model.ts';
 import { hintFor, hintKey, tapeStyle, bindDial, STOPS, DIAL } from './ghosts.ts';
 import { ensureDisplay, displayURLReady } from './display.ts';
@@ -205,7 +206,7 @@ export function refitEmbedMarks() {
   for (const box of document.querySelectorAll('.embed-mark')) {
     const svg = box.querySelector('svg');
     const t = box.querySelector('text');
-    if (svg && t) fitMark(svg as SVGSVGElement, t as SVGTextElement);
+    if (svg && t) fitMark(svg, t);
   }
 }
 
@@ -966,62 +967,29 @@ const RENDERERS = {
       return card;
     }
 
+    // Not a player, but a card in the same family. The site name fills the width
+    // behind a chip that is the link itself - the site's own mark, or a globe,
+    // beside the address - so a plain link reads like the others rather than as
+    // a bare line of text. The one thing here that is not on the board already:
+    // the mark, and it is a bundled brand SVG (canvas/brands.ts), never a
+    // favicon fetched per domain, so the card is the same with the network off.
+    if (u) {
+      card.classList.add('card-embed');
+      card.dataset.provider = 'link';
+      card.append(providerMark(siteName(u)), linkChip(item, u));
+      return card;
+    }
+
+    // No valid URL: inert. The card still shows what it holds, and none of it is
+    // clickable - the one place a hand-edited .mbrd string could otherwise reach
+    // an href, refused by rendering it as text.
     const icon = document.createElement('div');
     icon.className = 'card-icon';
     icon.textContent = 'link';
-
-    const label = item.name || (u ? linkName(u) : '') || metaStr(item.meta.url) || 'link';
-
-    const name = document.createElement(u ? 'a' : 'div');
+    const name = document.createElement('div');
     name.className = 'card-name';
-    name.textContent = label;
-    if (u) {
-      // SAFETY: the element above is an <a> exactly when there is a URL for it
-      // to carry - the ternary that built it and the `if (u)` around this line
-      // are the same condition, so the narrowing is that test said twice.
-      const a = name as HTMLAnchorElement;
-      // Assigned as properties on a real element and only after the scheme
-      // check above - never assembled into markup, which is what keeps this
-      // app free of anything that would need a sanitiser.
-      a.href = u.href;
-      a.target = '_blank';
-      // noreferrer keeps this board's address off the other end's logs, and
-      // noopener is the load-bearing half: without it the page that opens gets
-      // a live handle on this one through window.opener and can navigate the
-      // board out from under you. Current engines imply it for target=_blank
-      // and it is written out anyway, because "implied" is not a guarantee to
-      // rest a cross-origin boundary on.
-      a.rel = 'noopener noreferrer';
-      // Anchors drag themselves. On a board that means a link ghost trailing
-      // off the card where the gesture should simply do nothing - the same
-      // reason the picture and video renderers turn it off.
-      name.draggable = false;
-      // The whole address, for the one that was too long to print.
-      name.title = u.href;
-      a.addEventListener('click', (e: MouseEvent) => {
-        // Two reasons to swallow a click, both of them about this element
-        // being more than an anchor. F2 turns it into a field (see
-        // editItemName in canvas/items.ts) and a click meant to place the
-        // caret must not also open the page; and a double click is a zoom-to-
-        // fit on the canvas, which arriving through an anchor would be two
-        // clicks and so two tabs.
-        if (e.detail > 1 || a.closest('.is-editing')) e.preventDefault();
-      });
-    }
-
+    name.textContent = item.name || metaStr(item.meta.url) || 'link';
     card.append(icon, name);
-
-    const dest = u ? linkDest(u) : '';
-    // Left off when it would only repeat the name - a bare hostname with
-    // nothing after it, which is what most pasted links are. `www.` is the one
-    // difference that does not count as one, being the only thing linkName()
-    // ever drops.
-    if (dest && dest !== label && dest !== 'www.' + label) {
-      const meta = document.createElement('div');
-      meta.className = 'card-meta';
-      meta.textContent = dest;
-      card.append(meta);
-    }
     return card;
   },
 
@@ -1709,18 +1677,73 @@ function linkName(u: URL): string {
   return u.hostname.replace(/^www\./, '');
 }
 
+
 /**
- * Where the link actually goes, spelled out under its name.
+ * The offer chip on a plain link card: the site's mark, then the address, as one
+ * anchor in the middle of the card. The same shape as a player's offer button
+ * (embed.ts offerButton) so the two families match, but an <a> rather than a
+ * button - a link's press is to open the page, not to swap in a frame.
  *
- * https earns no room, being the expectation; anything else is worth the eight
- * characters it costs to say so, because http is the one difference between
- * these two cards that a reader would want to know about. The rest is the
- * hostname, then the path - the identity first and the detail after it. A lone
- * `/` is dropped: it is punctuation the parser adds, not something anyone typed.
+ * The text sits in a .card-name span so F2 renames it in place (canvas/items.ts
+ * editItemName reads .card-name, and writing item.name over it must not wipe the
+ * mark beside it). The click swallow is the anchor's, for the same two reasons
+ * the old link name had: a caret placed while editing must not also navigate,
+ * and a double click is the canvas zoom, not two opened tabs.
  */
-function linkDest(u: URL): string {
-  const tail = (u.pathname === '/' ? '' : u.pathname) + u.search + u.hash;
-  return (u.protocol === 'https:' ? '' : u.protocol + '//') + u.host + tail;
+function linkChip(item: Item, u: URL): HTMLAnchorElement {
+  const a = document.createElement('a');
+  a.className = 'embed-go';
+  a.dataset.provider = 'link';
+  // Set as properties on a real element, only after linkURL()'s scheme check -
+  // never assembled into markup, which is what keeps this app sanitiser-free.
+  a.href = u.href;
+  a.target = '_blank';
+  // noopener is load-bearing: without it the opened page gets a window.opener
+  // handle on the board and can navigate it away. noreferrer keeps the board's
+  // address off the far end's logs. Both written out, not left to be implied.
+  a.rel = 'noopener noreferrer';
+  a.draggable = false;
+  a.title = u.href;
+  const span = document.createElement('span');
+  span.className = 'card-name';
+  span.textContent = item.name || linkName(u);
+  a.append(linkGlyph(u), span);
+  a.addEventListener('click', (e: MouseEvent) => {
+    if (e.detail > 1 || a.closest('.is-editing')) e.preventDefault();
+  });
+  return a;
+}
+
+/** The mark for the chip: a known site's bundled logo in its own colour, or a
+ *  plain globe drawn in the board ink for a site with no mark (brands.ts).
+ *  Exported so the Feed's link tile (ui/feed.ts) draws the same mark the canvas
+ *  card does. */
+export function linkGlyph(u: URL): SVGSVGElement {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('class', 'embed-brand');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  const brand = brandFor(u);
+  if (brand) {
+    const p = document.createElementNS(SVG_NS, 'path');
+    p.setAttribute('d', brand.path);
+    p.setAttribute('fill', brand.color || 'currentColor');
+    svg.append(p);
+    return svg;
+  }
+  // Globe: circle, equator, meridian - stroked in the ink, no fill.
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '2');
+  const circle = document.createElementNS(SVG_NS, 'circle');
+  circle.setAttribute('cx', '12'); circle.setAttribute('cy', '12'); circle.setAttribute('r', '9');
+  const equator = document.createElementNS(SVG_NS, 'path');
+  equator.setAttribute('d', 'M3 12h18');
+  const meridian = document.createElementNS(SVG_NS, 'ellipse');
+  meridian.setAttribute('cx', '12'); meridian.setAttribute('cy', '12');
+  meridian.setAttribute('rx', '4'); meridian.setAttribute('ry', '9');
+  svg.append(circle, equator, meridian);
+  return svg;
 }
 
 /**

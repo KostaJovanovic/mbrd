@@ -804,6 +804,23 @@
    the watermark is the whole of the card at that distance. */
 #world.zoom-far .embed-go { display: none; }
 
+/* A plain link card wears the same chip, but as an anchor that opens the page
+   (renderers.ts linkChip). text-decoration off, because the chip is a button
+   shape, not a run of underlined text. Its label is a .card-name so F2 renames
+   it in place - but inside the chip the underlined-accent link-name look is
+   wrong, so it is reset to the button's own label: ink on the card's paper,
+   ellipsed on one line, and following the chip's colour on hover. */
+.embed-go { text-decoration: none; }
+.card-link .embed-go .card-name {
+  color: inherit;
+  text-decoration: none;
+  overflow-wrap: normal;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
 /* The provider's name, faint, behind the offer: filled to the card width and
    pulled tall. Width from a container-unit font-size (a fraction of the card),
    height from the scaleY on top of it - the stretch the reference asks for. A

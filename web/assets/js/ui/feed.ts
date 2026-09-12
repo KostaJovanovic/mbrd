@@ -16,7 +16,7 @@ import { mobileOrder } from '../arrange/arrangements.ts';
 // that file for why the two walls are one rule and two surfaces.
 import { packColumns } from '../arrange/columns.ts';
 import { assetURL, readText } from '../storage/assets.ts';
-import { linkURL, buildContent, swatchHex, MARKDOWN, enrichEmbedCard } from '../canvas/renderers.ts';
+import { linkURL, buildContent, swatchHex, MARKDOWN, enrichEmbedCard, linkGlyph } from '../canvas/renderers.ts';
 import { embedFor, frameFor, offerButton } from '../canvas/embed.ts';
 import type { EmbedSpec } from '../canvas/embed.ts';
 import { kindName } from '../canvas/item-dom.ts';
@@ -786,11 +786,16 @@ function fillLink(t: Tile) {
   }
 
   const card = div('feed-link');
+  // The site's own mark, the same one the canvas card draws (renderers.ts), so a
+  // link reads the same on both surfaces. A globe for a site with no bundled mark.
+  const nameRow = div('feed-link-title');
+  if (u) nameRow.append(linkGlyph(u));
   const name = div('feed-link-name');
   name.textContent = t.item.name || host || str(t.item.meta?.url) || 'Link';
+  nameRow.append(name);
   const hostEl = div('feed-link-host');
   hostEl.textContent = host;
-  card.append(name, hostEl);
+  card.append(nameRow, hostEl);
   t.el.appendChild(card);
   if (u) {
     actAsButton(t.el, () => window.open(u.href, '_blank', 'noopener'), 'link');
