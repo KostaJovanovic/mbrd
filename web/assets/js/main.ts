@@ -13,6 +13,7 @@ import { electronPlatform, electronStore } from './platform/electron.ts';
 import type { Bridge } from './platform/electron.ts';
 import { setStoreBackend } from './storage/idb.ts';
 import { initOverlays } from './ui/overlays.ts';
+import { initLeaveGuard } from './ui/leaving.ts';
 import { initTimeline } from './ui/timeline-view.ts';
 import { ask } from './ui/dialog.ts';
 import { VERSION } from './version.js';
@@ -91,6 +92,11 @@ import { initBoardActions, resetSave } from './ui/board-actions.ts';
 // Until this call, notify.ts forwards to nobody and messages are lost.
 
 initOverlays();
+
+// Every external link, board-wide, confirms before it leaves mbrd. A capture
+// listener on the document, so it covers link cards, the Feed, rendered markdown
+// and the credits without any of them wiring it up. Cheap and page-agnostic.
+initLeaveGuard();
 
 // The only read of window.mbrdDesktop. Before anything touches the store —
 // a backend swapped after the first read would mix two stores.

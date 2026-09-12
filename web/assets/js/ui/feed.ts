@@ -17,6 +17,7 @@ import { mobileOrder } from '../arrange/arrangements.ts';
 import { packColumns } from '../arrange/columns.ts';
 import { assetURL, readText } from '../storage/assets.ts';
 import { linkURL, buildContent, swatchHex, MARKDOWN, enrichEmbedCard, linkGlyph } from '../canvas/renderers.ts';
+import { openExternal } from './leaving.ts';
 import { embedFor, frameFor, offerButton } from '../canvas/embed.ts';
 import type { EmbedSpec } from '../canvas/embed.ts';
 import { kindName } from '../canvas/item-dom.ts';
@@ -798,7 +799,10 @@ function fillLink(t: Tile) {
   card.append(nameRow, hostEl);
   t.el.appendChild(card);
   if (u) {
-    actAsButton(t.el, () => window.open(u.href, '_blank', 'noopener'), 'link');
+    // Through openExternal so a Feed link confirms before leaving, the same as a
+    // canvas card - the tile is a div, not an anchor, so the board-wide guard
+    // does not see it and it routes the exit itself.
+    actAsButton(t.el, () => { void openExternal(u.href); }, 'link');
   }
 }
 
