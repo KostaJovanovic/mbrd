@@ -8,20 +8,19 @@ import { formatName } from '../import/formats.ts';
 import { adjustFilter, flipTransform, isFence, isLocked, itemBare } from '../state.ts';
 import { buildContent, fitMode } from './renderers.ts';
 import { noteTint } from './note-model.ts';
-import { embedFor } from './embed.ts';
 import type { Item } from '../board-model.ts';
 
 /**
- * A link that is a player (YouTube, Spotify). Its card carries its own identity
- * at every zoom - the watermark and the offer - so it takes no far-zoom headline
- * over the top, the same way a picture card does not (item-chrome.css). embedFor
- * reads the host and id; a bad URL throws out of new URL and is not one.
+ * A link card with a valid address. Every one now carries its own identity at
+ * every zoom - the site name filling the width, and a player's offer or a link
+ * chip - so it takes no far-zoom headline over the top, the same way a picture
+ * card does not (item-chrome.css). A bad URL throws out of new URL and falls
+ * back to the plain headline, which is all an inert link has to show.
  */
 function isEmbedLink(item: ItemLike): boolean {
   if (item.type !== 'link') return false;
-  let u: URL;
-  try { u = new URL(String(item.meta?.url)); } catch { return false; }
-  return !!embedFor(u);
+  try { new URL(String(item.meta?.url)); } catch { return false; }
+  return true;
 }
 
 /**
