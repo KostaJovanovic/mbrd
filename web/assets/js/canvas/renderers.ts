@@ -22,7 +22,7 @@ import { buildTransport } from './transport.ts';
 import { clock } from '../media/transport.ts';
 import { buildVideoPlayer, POSTER_TIME } from './video.ts';
 import { rationsDecoders } from './viewport.ts';
-import { embedFor, embedOffer } from './embed.ts';
+import { embedFor, embedFloor, embedOffer } from './embed.ts';
 import { brandFor, siteName } from './brands.ts';
 import { buildModelCard } from './model.ts';
 import { hintFor, hintKey, tapeStyle, bindDial, STOPS, DIAL } from './ghosts.ts';
@@ -1666,6 +1666,18 @@ export function linkURL(text: unknown): URL | null {
  */
 export function linkDraft(u: URL) {
   const size = defaultSize('link');
+  // A player comes in at the size it would grow to on open (embedFloor), not the
+  // smaller link default it would then have to jump up from - so a pasted
+  // Spotify track lands at the player's minimum and never gets in undersized.
+  // Per axis, so YouTube (fluid, no width floor) keeps the wider link default.
+  const spec = embedFor(u);
+  if (spec) {
+    const floor = embedFloor(spec);
+    return {
+      type: 'link', name: linkName(u), meta: { url: u.href },
+      w: Math.max(size.w, floor.w), h: Math.max(size.h, floor.h),
+    };
+  }
   return { type: 'link', name: linkName(u), w: size.w, h: size.h, meta: { url: u.href } };
 }
 
