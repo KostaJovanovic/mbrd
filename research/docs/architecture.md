@@ -34,6 +34,8 @@ web/                     the application, and the document root
 tools/                   serve.py + qr.py (dev server and its terminal QR),
                          gen-formats.mjs, gen-stickers.mjs, preset-oklch.mjs
 server.bat, save.bat     the Windows launcher, and the release stamper
+desktop/                 the desktop shell, a second package (see below)
+mobile/                  the Android shell, a third package (see below)
 tests/                   node --test, no install
 research/                the reasoning behind past decisions; research/docs/
                          is the specifications, this file among them
@@ -1615,6 +1617,42 @@ ffmpeg.
 500-file cap in `import/drop.ts` is a UX guard, not a limit on bytes, since one
 50 KB PNG can claim 30000×30000 and cost gigabytes at `createImageBitmap()`. New
 import paths take `IMPORT_LIMITS` and a byte budget, not a file count.
+
+---
+
+## Three shells, one bridge
+
+The same `web/` tree runs in three places, and nothing below `main.ts` knows
+which.
+
+- **The browser** is the default. Boards live in IndexedDB (`storage/idb.ts`),
+  the service worker keeps the app offline, and every port in
+  `platform/platform.ts` has the answer the website gives.
+- **The desktop** (`desktop/`, Electron) serves `web/` from its own `app://`
+  scheme with `web/_headers`' policy on every answer, keeps the store as a
+  folder of files, and runs a real ffmpeg.
+- **Android** (`mobile/`, Capacitor) serves a staged copy of `web/` from
+  `https://app/` with the same policy, and keeps the boards as files in
+  `Documents/mbrd/` when the user allows it. `mobile/README.md` is its map.
+
+Both shells put **one object** in the page before any script runs:
+`window.mbrdDesktop`, in the shape `Bridge` in `platform/electron.ts` names.
+The desktop's comes from `desktop/preload.ts`, and the phone's from
+`mobile/bridge/mbrd-bridge.ts`, which `MbrdShell.java` injects at document
+start. `main.ts` is the only reader. It hands the object to
+`electronPlatform()` and `electronStore()` and calls `setPlatform()` once,
+before anything touches the store. So the phone needed no branch of its own.
+`shell: 'capacitor'` and `platform: 'android'` are the two keys a branch that
+must not run on a phone can test, and `tests/mobile-bridge.test.js` holds the
+two bridges to one shape.
+
+`isDesktop()` answers *was a shell wired*, not *is this a computer*. It is true
+on the phone too, which is what gives the phone the desktop's Save and the
+panel's "Check for updates".
+
+Every check lives on the far side of the bridge (`desktop/files.ts`,
+`MbrdFiles.java`), never in the page: a crafted file that finds an XSS can call
+the bridge directly, so the page is never trusted to name a path.
 
 ---
 

@@ -27,6 +27,14 @@ a QR for the LAN URL, so a phone on the same Wi-Fi opens the same board.
 
 On Windows, `server.bat` is a convenience wrapper around exactly that.
 
+The desktop app: on Windows, `desktop.bat` installs both packages, builds, and
+opens the app with the web bundle watching, so a saved `.ts` shows on Ctrl+R.
+Elsewhere, run `npm install` in `desktop/` once, then `npm run desktop`.
+
+The Android app: connect a phone with USB debugging on and run `mobile.bat`,
+which builds the APK and installs it. It needs JDK 21 and the Android SDK
+(platform 36). [`mobile/README.md`](../mobile/README.md) has the rest.
+
 `package.json` declares no runtime dependencies at all, and its three
 devDependencies are for the lint, the typecheck and the build below. `npm test`
 uses Node's own runner and needs nothing fetched. **Node 22.18 or newer**, and
