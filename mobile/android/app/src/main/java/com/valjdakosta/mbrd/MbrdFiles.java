@@ -10,6 +10,7 @@ import android.os.Environment;
 import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
 import android.view.WindowManager;
+import android.webkit.MimeTypeMap;
 import android.webkit.WebResourceResponse;
 import android.widget.EditText;
 import android.widget.FrameLayout;
@@ -71,12 +72,14 @@ public class MbrdFiles extends Plugin {
         }
     }
 
-    /** The last 64 tokens. The bridge fetches each one at once. */
+    /** Tokens not fetched yet. Each serves once, and the bridge fetches each one
+     *  at once. 1024 at most, so a share of 500 pictures (import/drop.ts's
+     *  MAX_FILES) never pushes its own first tokens out before they are read. */
     private static final Map<String, Handed> TOKENS = Collections.synchronizedMap(
         new LinkedHashMap<String, Handed>(16, 0.75f, false) {
             @Override
             protected boolean removeEldestEntry(Map.Entry<String, Handed> eldest) {
-                return size() > 64;
+                return size() > 1024;
             }
         }
     );
@@ -119,7 +122,7 @@ public class MbrdFiles extends Plugin {
 
     /** GET /__mbrd/file/<token>: the file's bytes, streamed, not copied. */
     static WebResourceResponse serve(Context ctx, String token) {
-        Handed h = TOKENS.get(token);
+        Handed h = TOKENS.remove(token);
         if (h == null) return MbrdWebViewClient.status(404);
         try {
             InputStream in = h.file != null ? new FileInputStream(h.file) : ctx.getContentResolver().openInputStream(h.uri);
@@ -309,6 +312,39 @@ public class MbrdFiles extends Plugin {
         }
         String last = uri.getLastPathSegment();
         return last == null ? "file" : last;
+    }
+
+    // ---- Incoming (MbrdShell.deliver) -----------------------------------------
+
+    private static final String BOARD_MIME = "application/vnd.mbrd+zip";
+
+    /**
+     * A file another app handed over, as the page will fetch it. A board (by its
+     * name, its type, or the ZIP magic when the provider gives no extension) is
+     * adopted into this run's folder and keeps its path, so Save writes back to
+     * it. Anything else streams from its content URI and has no path.
+     */
+    static JSObject incoming(Context ctx, Uri uri, String intentType) throws IOException {
+        String name = displayName(ctx, uri);
+        String mime = ctx.getContentResolver().getType(uri);
+        if (mime == null) mime = intentType == null ? "" : intentType;
+        boolean board = name.toLowerCase(Locale.ROOT).endsWith(BOARD_EXT)
+            || BOARD_MIME.equals(mime)
+            || (MbrdNames.extension(name).isEmpty() && isZip(ctx, uri));
+        if (board) {
+            File file = adopt(ctx, uri);
+            KNOWN.add(file.getPath());
+            return described(file.getName(), file.getPath(), token(new Handed(file, null)));
+        }
+        return described(withExtension(name, mime), "", token(new Handed(null, uri)));
+    }
+
+    /** import/drop.ts sorts a file by its extension, and a gallery can hand
+     *  over a name with none. */
+    private static String withExtension(String name, String mime) {
+        if (!MbrdNames.extension(name).isEmpty()) return name;
+        String ext = MimeTypeMap.getSingleton().getExtensionFromMimeType(mime);
+        return ext == null ? name : name + "." + ext;
     }
 
     // ---- Import ---------------------------------------------------------------

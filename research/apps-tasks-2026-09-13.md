@@ -944,12 +944,12 @@ every decision a task left to you in the notes column.
 | L4 | DONE (v0.306) | `mobile/bridge/store.ts`, `files.ts` and `native.ts`. `setMany` writes one value at a time, since the channel carries one transfer at once. A value that does not decode reads as missing with a warning, as on the desktop. The "Not now" note names the private folder, as the desktop's names its fallback |
 | L5 | DONE (v0.306) | `mobile/bridge/share.ts`. One file a share: FileAnalyser's shape. The shared copy sits in `cache/mbrd-share/<id>/`, which the next start deletes. A `data:` link is decoded in the page, because `connect-src` has `blob:` and no `data:`. Fixed on the way in `MbrdBytes`: a transfer that was short at `end` left the partial file in place, because `end` had closed the stream and the reset deleted nothing. FileAnalyser's `AnrBytes` has the same bug (below) |
 | L6 | | needs a person, on both phones. The steps and the 300-photograph measurement are under "Open" below |
-| M1 | | |
-| M2 | | |
-| M3 | | how "top layer" is known |
-| M4 | | |
-| M5 | | |
-| M6 | | |
+| M1 | DONE (v0.307) | `VIEW` names `content` and the MIME list. `SEND` and `SEND_MULTIPLE` name no scheme, because a `SEND` has no data URI to match. `deliver()` hands each file to `MbrdFiles.incoming()`, on a thread of its own. The ZIP magic counts only for a name with no extension, so a shared `.zip` or `.docx` is not taken for a board. A board is adopted as Open adopts it, so one already in `Documents/mbrd/` opens in place. An intent that arrives while the storage screen is up is kept for the bridge the answer builds. Fixed on the way, in L's code: a token now serves once and the table holds 1024, not 64. With 64, a pick or a share of more than 64 files pushed out its own first tokens before the page read them |
+| M2 | DONE (v0.307) | the first `.mbrd` opens, and every other file goes to `importFiles()` at the view centre, the call the picker's change handler makes. So the desktop changes too: a file that is not a board, handed over by argv, now lands as a card and does not fail in `openFile()`. Shared text: a link becomes a `.url` internet shortcut, which `drop.ts` turns into a link card (`SHORTCUT_EXTS`), and other text becomes a `.txt` |
+| M3 | DONE (v0.307) | the twelve files as listed. The choice: each Escape handler marks the event when it closes something (`markClosed()` in `util.ts`), and Back sends a synthetic Escape and reads the mark. Not `preventDefault()`: `timeline-view.ts` and `canvas/input.ts` stand down on a prevented Escape, so that signal would change the keyboard. Two layers come first, in the function in `main.ts`: an open menu (`isMenuOpen()`), then a modal dialog, which gets the `cancel` event the browser sends for Escape, because a synthetic key closes no `<dialog>`. The Escape case in `input.ts` marks only when a selection, a marked line, a sheet or the armed connector was there: `closeSidebar` and `clearActiveConnection` now answer that. New `tests/escape-mark.test.js` holds every Escape handler to the mark |
+| M4 | DONE (v0.307) | `handleOnPause()` sends `pause`, not retained. The bridge runs the `onClose` function, which the Electron adapter already wraps in a catch |
+| M5 | DONE (v0.307) | ported, with three changes. The bands start in the paper colour, not in white or black. The page colour goes through a 1-pixel canvas, because FileAnalyser's pattern reads `rgb()` only and a palette can set `--paper` with `color-mix()` (`tokens.css`). The colour is read again after 400 ms, for a look in transition |
+| M6 | | needs a person, on both phones. The steps are under "Open" below |
 | N0 | | the two phones and the result |
 | N1 | | |
 | N2 | | |
@@ -1025,6 +1025,21 @@ The measurement, on the faster phone:
 5. Do steps 2 and 3 again on that build.
 6. Send me the four times. They go into the header of `MbrdStore.java`.
 7. Run `git checkout main` to go back.
+
+M6, on each of the two phones, with a build from v0.307 or later:
+
+1. Put a `.mbrd` file in Downloads. In the Files app, share it to mbrd.
+2. Expect the board to open, and a copy of the file in Documents/mbrd.
+3. In the gallery, share a photograph to mbrd. Expect a card in the middle of the view.
+4. In Chrome, share a page to mbrd. Expect a link card.
+5. Long-press a card to open its menu. Press Back. Expect the menu to close, and nothing else.
+6. Open a picture in the viewer. Press Back. Expect the viewer to close.
+7. With nothing open, press Back. Expect the home screen, and the board still there in the recent apps.
+8. Add a note. Press Home at once, then swipe mbrd away in the recent apps.
+9. Open mbrd. Expect the note.
+10. In portrait, look at the top and bottom edges. Expect nothing under the status bar or the gesture bar.
+11. Turn the phone. Expect full screen, and a swipe from the edge to show the bars.
+12. Change the look in the panel. Expect the bands at the top and bottom to take the new paper colour.
 
 Asked outside the task list on 2026-09-13, done in v0.302: the desktop
 changelog opens in place in the board view, under the bar, and no longer in a

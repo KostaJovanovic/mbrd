@@ -2,9 +2,11 @@ package com.valjdakosta.mbrd;
 
 import android.app.Activity;
 import android.content.ClipData;
+import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
+import android.graphics.Color;
 import android.net.Uri;
 import android.webkit.ServiceWorkerClient;
 import android.webkit.ServiceWorkerController;
@@ -12,8 +14,10 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
 import androidx.core.content.FileProvider;
+import androidx.core.content.IntentCompat;
 import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
+import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Logger;
 import com.getcapacitor.Plugin;
@@ -25,8 +29,12 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.regex.Pattern;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -43,7 +51,9 @@ import org.json.JSONObject;
  *    assets/mbrd-bridge.js) at document start, for the app origin and the dev
  *    server only, with the boot object in place of its marker.
  * Its methods: startupNotes (where the boards are, when not in Documents/mbrd),
- * and share, the navigator.share the WebView lacks.
+ * share (the navigator.share the WebView lacks) and bars (the page colour for
+ * the status and gesture bands). Its events: "open" (deliver(), for "Open with"
+ * and "Share to") and "pause" (the flush the desktop runs before a close).
  */
 @CapacitorPlugin(name = "MbrdShell")
 public class MbrdShell extends Plugin {
@@ -157,6 +167,84 @@ public class MbrdShell extends Plugin {
                     + "so an uninstall would remove them. Allow file access at the next start to keep them in Documents/mbrd."
         );
         call.resolve(r);
+    }
+
+    // ---- incoming files and the pause ------------------------------------------
+
+    /** One thread: a shared board is copied before it is delivered. */
+    private static final ExecutorService INCOMING = Executors.newSingleThreadExecutor();
+
+    /**
+     * "Open with" and "Share to": the files of a VIEW, SEND or SEND_MULTIPLE
+     * intent (MbrdFiles.incoming), or the text of a SEND, as the "open" event.
+     * Retained until the page listens, since a cold start delivers the intent
+     * before main.ts has booted. True when the intent carried something.
+     */
+    boolean deliver(Intent intent) {
+        if (intent == null) return false;
+        String action = intent.getAction();
+        List<Uri> uris = new ArrayList<>();
+        String text = null;
+        if (Intent.ACTION_VIEW.equals(action)) {
+            uris.add(intent.getData());
+        } else if (Intent.ACTION_SEND.equals(action)) {
+            Uri one = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri.class);
+            if (one != null) uris.add(one);
+            else text = intent.getStringExtra(Intent.EXTRA_TEXT);
+        } else if (Intent.ACTION_SEND_MULTIPLE.equals(action)) {
+            List<Uri> list = IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri.class);
+            if (list != null) uris.addAll(list);
+        } else {
+            return false;
+        }
+        // content:// only. A file:// URI names another app's private path, and
+        // Android 7 stopped those crossing between apps.
+        List<Uri> content = new ArrayList<>();
+        for (Uri u : uris) if (u != null && ContentResolver.SCHEME_CONTENT.equals(u.getScheme())) content.add(u);
+        String shared = text != null && !text.trim().isEmpty() ? text : null;
+        if (content.isEmpty() && shared == null) return false;
+
+        Context ctx = getContext();
+        String type = intent.getType();
+        INCOMING.execute(() -> {
+            JSArray files = new JSArray();
+            for (Uri uri : content) {
+                try {
+                    files.put(MbrdFiles.incoming(ctx, uri, type));
+                } catch (IOException | SecurityException e) {
+                    Logger.warn(getLogTag(), "could not take a shared file: " + e.getMessage());
+                }
+            }
+            if (files.length() == 0 && shared == null) return;
+            JSObject payload = new JSObject();
+            payload.put("files", files);
+            if (shared != null) payload.put("text", shared);
+            notifyListeners("open", payload, true);
+        });
+        return true;
+    }
+
+    /** A phone pauses where the desktop closes, and may be killed after, so the
+     *  page flushes now (onClose in mobile/bridge/lifecycle.ts). Not retained: a
+     *  page that is not listening yet has nothing to flush. */
+    @Override
+    protected void handleOnPause() {
+        notifyListeners("pause", new JSObject());
+    }
+
+    // ---- the bar colour -------------------------------------------------------
+
+    /** The page's background, as sRGB bytes, so the inset bands match the look. */
+    @PluginMethod
+    public void bars(PluginCall call) {
+        int color = Color.rgb(channel(call.getInt("r")), channel(call.getInt("g")), channel(call.getInt("b")));
+        Activity activity = getActivity();
+        if (activity instanceof MainActivity) ((MainActivity) activity).setBarColor(color);
+        call.resolve();
+    }
+
+    private static int channel(Integer value) {
+        return value == null ? 0 : Math.max(0, Math.min(255, value));
     }
 
     // ---- share ----------------------------------------------------------------

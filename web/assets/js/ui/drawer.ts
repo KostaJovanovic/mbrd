@@ -6,7 +6,7 @@ import {
   board, bus, selection, removeItems, restoreItems, emptyTrash, select,
   restoreTitleCard, isTitleHidden, clipHomeId, stuckHostId,
 } from '../state.ts';
-import { formatBytes, div, el } from '../util.ts';
+import { formatBytes, div, el, markClosed } from '../util.ts';
 import { buildItem, restingTilt, kindName } from '../canvas/item-dom.ts';
 import { releaseCardContent } from '../canvas/items.ts';
 import { noteWords } from '../canvas/note-model.ts';
@@ -170,6 +170,7 @@ export function initDrawer(viewport: Viewport) {
   // disarm) - no mode to get out of, so a dialog on top gets the key first.
   addEventListener('keydown', e => {
     if (e.key !== 'Escape' || !win) return;
+    markClosed(e);
     closeDrawer();
   });
 

@@ -8,7 +8,7 @@ import {
   lastCommand, takeBack, removeItems,
 } from '../state.ts';
 import { nodeFor, onViewChange, screenBoxOf, viewportClientRect } from './items.ts';
-import { makeEditable } from '../util.ts';
+import { makeEditable, markClosed } from '../util.ts';
 import { linkURL, linkDraft } from './renderers.ts';
 import {
   normalizeNoteRich, flattenNoteRich, buildNoteLine,
@@ -626,7 +626,7 @@ export function editNote(
     // Escape ends the edit on the board. In a dialog it is the dialog's word,
     // not the editor's - there it means "I did not mean to open this", and the
     // surface answers it by discarding rather than by committing.
-    if (e.key === 'Escape') { if (!surface) finish(); return; }
+    if (e.key === 'Escape') { if (!surface) { markClosed(e); finish(); } return; }
     if (e.key === 'Enter') {
       e.preventDefault();
       const line = currentLine(wrap);

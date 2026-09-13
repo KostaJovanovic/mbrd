@@ -7,6 +7,7 @@
 import type { Bridge } from '../../web/assets/js/platform/electron.ts';
 import { BOOT } from './boot.ts';
 import * as files from './files.ts';
+import * as lifecycle from './lifecycle.ts';
 import { call } from './native.ts';
 import { installDownloads, installShare } from './share.ts';
 import * as store from './store.ts';
@@ -65,12 +66,13 @@ const api: AndroidBridge = {
   // A phone has no title bar to name the board in.
   setDocument: () => {},
   relaunch: () => location.reload(),
-  // Group M runs this on pause, as the desktop runs it before a close.
-  onClose: () => {},
-  // Group M delivers "Open with" and "Share to" here.
-  onOpenFiles: () => {},
+  // Run on pause, as the desktop runs it before a close.
+  onClose: lifecycle.onClose,
+  // "Open with" and "Share to".
+  onOpenFiles: lifecycle.onOpenFiles,
   // The desktop's menu sends commands. A phone has no menu of its own.
   onCommand: () => {},
+  onBack: lifecycle.onBack,
 };
 
 // Read once, so a debuggable build says so in the WebView console.
@@ -78,6 +80,8 @@ if (!BOOT.packaged) console.info(`[mbrd] Android shell ${BOOT.version ?? ''}, de
 
 installShare();
 installDownloads();
+lifecycle.installBack();
+lifecycle.installBars();
 
 Object.defineProperty(window, 'mbrdDesktop', {
   value: Object.freeze(api),

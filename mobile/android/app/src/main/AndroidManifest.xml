@@ -23,6 +23,39 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- "Open with" (plan §5.6). Listed in the chooser, never made the
+                 default unless the user asks. content:// only: MbrdShell.deliver()
+                 refuses file://. A .mbrd often arrives as octet-stream, so its
+                 name or the ZIP magic decides there. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:mimeType="application/vnd.mbrd+zip" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="video/*" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+
+            <!-- "Share to mbrd": a board opens, everything else lands as cards,
+                 and a shared link (text/plain) becomes a link card. A SEND has
+                 no data URI, so this filter names no scheme. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/vnd.mbrd+zip" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="video/*" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
 
         <provider

@@ -7,7 +7,7 @@ import {
   isFiltered, isPinned, settlesIn,
 } from '../state.ts';
 import { quality } from '../quality.ts';
-import { caretToEnd, makeEditable, selectContents } from '../util.ts';
+import { caretToEnd, makeEditable, markClosed, selectContents } from '../util.ts';
 import { itemRadius, rotatedExtents } from '../geometry.ts';
 import type { Bounds } from '../geometry.ts';
 import type { Item } from '../board-model.ts';
@@ -1311,7 +1311,7 @@ export function editItemName(id: string) {
   const onKey = (e: KeyboardEvent) => {
     e.stopPropagation();          // the canvas must not see Delete, space or Escape
     if (e.key === 'Enter') { e.preventDefault(); finish(); }
-    else if (e.key === 'Escape') { keep = false; finish(); }
+    else if (e.key === 'Escape') { keep = false; markClosed(e); finish(); }
   };
 
   function finish() {
@@ -1391,7 +1391,7 @@ export function editFontText(id: string) {
   const onKey = (e: KeyboardEvent) => {
     e.stopPropagation();          // the canvas must not see Delete, space or Escape
     if (e.key === 'Enter') { e.preventDefault(); finish(); }
-    else if (e.key === 'Escape') { keep = false; finish(); }
+    else if (e.key === 'Escape') { keep = false; markClosed(e); finish(); }
   };
 
   // One line: a pasted newline is folded to a space rather than growing the

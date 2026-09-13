@@ -21,6 +21,16 @@ export function wrap(n: number, tile: number) {
   return up < tile ? up : 0;
 }
 
+/**
+ * The Escape presses that closed something. Every Escape handler marks the
+ * event when it closes a layer, and Android's Back (main.ts) sends an Escape
+ * and reads the mark. Not preventDefault(): timeline-view.ts and canvas/input.ts
+ * stand down on a prevented Escape, so that signal would change the keyboard.
+ */
+const closedBy = new WeakSet<Event>();
+export const markClosed = (e: Event) => { closedBy.add(e); };
+export const wasClosed = (e: Event) => closedBy.has(e);
+
 /** The element with this id, or null. Every module wants this and no other. */
 export const el = (id: string) => document.getElementById(id);
 

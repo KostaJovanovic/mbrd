@@ -5,6 +5,7 @@
 
 interface CapacitorGlobal {
   nativePromise(plugin: string, method: string, options: Record<string, unknown>): Promise<unknown>;
+  addListener(plugin: string, event: string, callback: (data: unknown) => void): unknown;
 }
 
 declare global {
@@ -22,4 +23,18 @@ export function call<T>(plugin: string, method: string, options: Record<string, 
   // SAFETY: the value is the JSObject the named Java method resolves, and each
   // caller names its shape with every field optional or checked.
   return cap.nativePromise(plugin, method, options) as Promise<T>;
+}
+
+/**
+ * One plugin event. main.ts registers its handlers after Capacitor is up, so
+ * this runs then, never at load. A missing bridge warns rather than throws: a
+ * throw here would stop main.ts on its way to the board.
+ */
+export function listen(plugin: string, event: string, callback: (data: unknown) => void): void {
+  const cap = window.Capacitor;
+  if (typeof cap?.addListener !== 'function') {
+    console.warn(`[mbrd] the Capacitor bridge is not ready, so ${plugin}.${event} is not heard`);
+    return;
+  }
+  cap.addListener(plugin, event, callback);
 }

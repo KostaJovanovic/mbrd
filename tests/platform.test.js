@@ -114,7 +114,7 @@ function fakeShell({ canPick = true } = {}) {
       read: async () => { throw new Error('not in this test'); },
       exists: async () => true,
     },
-    lifecycle: { onCloseRequested() {}, onOpenFiles() {} },
+    lifecycle: { onCloseRequested() {}, onOpenFiles() {}, onBack() {} },
     native: {
       canTranscode: () => false,
       firstFrame: async () => null, transcode: async () => null,

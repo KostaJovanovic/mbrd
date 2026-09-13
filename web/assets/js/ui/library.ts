@@ -8,6 +8,7 @@ import {
 } from '../storage/storage.ts';
 import { platform, fileNameOf } from '../platform/platform.ts';
 import { toast } from '../notify.ts';
+import { markClosed } from '../util.ts';
 import { ask } from './dialog.ts';
 import { icon } from './menu.ts';
 import { connectCloud } from './cloud-connect.ts';
@@ -43,7 +44,7 @@ function closeLibrary() {
 
 function onKey(e: KeyboardEvent) {
   if (!root) return;
-  if (e.key === 'Escape') { e.stopPropagation(); closeLibrary(); return; }
+  if (e.key === 'Escape') { e.stopPropagation(); markClosed(e); closeLibrary(); return; }
   // Manual tab trap — not a <dialog> so showModal() inertness is unavailable.
   if (e.key !== 'Tab') return;
   const stops = [...root.querySelectorAll<HTMLElement>(

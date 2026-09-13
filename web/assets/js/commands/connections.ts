@@ -106,7 +106,13 @@ export function connectionCommands() {
       return !!hit;
     },
     activeConnection: () => activeConnection(),
-    clearActiveConnection: () => { clearActiveConnection(); syncConnChip(); },
+    // Answers whether a line was marked, which Escape's mark reads (canvas/input.ts).
+    clearActiveConnection: () => {
+      const had = !!activeConnection();
+      clearActiveConnection();
+      syncConnChip();
+      return had;
+    },
     // Returns false when no line is marked, so Delete falls through to the selection.
     deleteActiveConnection: () => {
       const at = activeConnection();

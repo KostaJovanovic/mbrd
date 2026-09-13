@@ -14,7 +14,7 @@ import { onNarrowScreen } from '../canvas/viewport.ts';
 import { tickSlider } from './controls.ts';
 import { setLens, currentLens } from './board-view.ts';
 import { togglePlayerWindow, isPlayerWindowOpen } from './playlist.ts';
-import { baseName, clamp } from '../util.ts';
+import { baseName, clamp, markClosed } from '../util.ts';
 import { seekInnerHTML, sizeSeekWave, reportPlayError } from '../media/transport.ts';
 import type { NowPlaying } from '../canvas/audio.ts';
 import type { Item } from '../board-model.ts';
@@ -174,7 +174,7 @@ export function initNowPlaying() {
   // The keys the canvas also wants. A bar reachable by Tab must not also
   // nudge the selection behind it; the seek line answers the arrows itself.
   bar.addEventListener('keydown', e => {
-    if (e.key === 'Escape') { close(); e.stopPropagation(); }
+    if (e.key === 'Escape') { markClosed(e); close(); e.stopPropagation(); }
   });
   lineEl!.addEventListener('keydown', onSeekKey);
 

@@ -160,7 +160,7 @@ function paint(): void {
 // per user in localStorage, not per board.
 const OPEN_KEY = 'mbrd.sidebar';
 
-const isOpen = () => sidebar?.classList.contains('is-open');
+export const isOpen = () => !!sidebar?.classList.contains('is-open');
 
 export function open(): void {
   setOpen(true);

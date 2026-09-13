@@ -4,6 +4,7 @@
 
 // Uses menu.ts's icon builder — the offer wears .ctx-item.
 import { icon } from './menu.ts';
+import { markClosed } from '../util.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 
 /** Viewport fields this module reads — intersection until viewport.ts is fully typed. */
@@ -63,7 +64,7 @@ export function initFencePrompt(viewport: PromptViewport | null): void {
     if (node && !node.contains(e.target as Node | null)) close();
   }, true);
   addEventListener('keydown', e => {
-    if (node && e.key === 'Escape') { e.stopPropagation(); close(); }
+    if (node && e.key === 'Escape') { e.stopPropagation(); markClosed(e); close(); }
   }, true);
   addEventListener('resize', close);
   addEventListener('blur', close);

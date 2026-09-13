@@ -8,13 +8,14 @@ import { fetchBytes, transfer } from './bytes.ts';
 import { call } from './native.ts';
 
 /** A file native picked or vouched for, not read yet. */
-interface Picked {
+export interface Picked {
   name: string;
   path: string;
   token: string;
 }
 
-async function hand(file: Picked): Promise<HandedFile> {
+/** The file's bytes, by its token. Each token serves once. */
+export async function hand(file: Picked): Promise<HandedFile> {
   const data = await fetchBytes('file', file.token);
   if (!data) throw new Error(`${file.name} could not be read`);
   return { name: file.name, path: file.path, data };

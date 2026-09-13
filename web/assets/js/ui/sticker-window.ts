@@ -7,7 +7,7 @@
 // initStickerWindow() or a handler that runs after it.
 
 import { readPrefJSON, writePref } from '../prefs.ts';
-import { div } from '../util.ts';
+import { div, markClosed } from '../util.ts';
 import { cue } from '../cuelume/engine.ts';
 import { bus, wouldStick, byId } from '../state.ts';
 import { defaultSize } from '../canvas/renderers.ts';
@@ -91,6 +91,7 @@ export function initStickerWindow(viewport: Viewport, commands: StickerCommands)
   addEventListener('keydown', e => {
     if (e.key !== 'Escape' || !armed) return;
     e.stopPropagation();
+    markClosed(e);
     disarm();
   }, true);
 }
