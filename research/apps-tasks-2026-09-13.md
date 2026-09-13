@@ -960,11 +960,11 @@ every decision a task left to you in the notes column.
 | O3 | DONE (v0.308) | two changes from FileAnalyser's job. It builds the web bundle first, as the desktop job does, because `stage-web.mjs` refuses a bundle older than its sources and a fresh checkout writes `app.js` before every `.ts` under it (git writes in path order). A build rewrites `app.js` even with the same bytes: checked, the file time moved and git saw no change. The four FFmpeg steps skip until `mobile/ffmpeg/build-android.sh` exists (`hashFiles(...) != ''`), because N is held for N0. The notes gain the Android row, the Android line under the signing list, and "The macOS, Linux and Android builds are new". Not run: O5 |
 | O4 | DONE (v0.308) | in a new `mobile/README.md`, which P1 fills in. The `keytool` options checked in JDK 21's `-genkeypair -help`, and `gh secret set` reads standard input when there is no `--body`. PowerShell has no `<`, so its steps pipe the file. The maintainer's to carry out |
 | O5 | | the maintainer's, after O4. The steps are under "Open" below |
-| P1 | | |
-| P2 | | |
-| P3 | | |
-| P4 | | |
-| P5 | | |
+| P1 | DONE (v0.309) | the twin of FileAnalyser's, with mbrd's files, and O4's key steps inside it. FileAnalyser's `/api` and job-service sections have no mbrd twin, so they are gone. The live-reload paragraph says nobody has tried it on a phone: `MbrdWebViewClient` has the code for it, and that is all that was checked. The FFmpeg section says N is held |
+| P2 | DONE (v0.309) | the "Mobile app" section before "Never hand-edit these", with the five the task names and the CSP. `save.bat release` in the command block, and a paragraph on the release after the portable one. The chrome and 9.8 paragraph after the Ctrl+R one. The `desktop.bat` sentence said the watch runs "in its own console", and `desktop.bat` runs it with `start /b` in the same console, so that changed. Nothing about electron-updater, `desktop-v*` tags or the page-drawn bar was left to remove: a Grep for updat, tag, frame and chrome found none |
+| P3 | DONE (v0.309) | two short paragraphs after the `server.bat` line. The link is `../mobile/README.md`, because the file is in `.github/` |
+| P4 | DONE (v0.309) | "Three shells, one bridge", before "Three things that reach outside", and `desktop/` and `mobile/` in the tree at the top |
+| P5 | | held. Group N and the checks that need a person are open, and `research/README.md` files a document in `old/` only when its work is done. Run it after N4 |
 
 ### Open from the earlier sessions (was HANDOFF.md)
 
@@ -1104,3 +1104,12 @@ Bugs found outside the task list, not fixed:
    short at `end`, `end` has already closed the stream and cleared it, so the
    reset that follows deletes nothing. Fix: delete the target in the reset
    whenever one is set, as `MbrdBytes` does from v0.306.
+5. `.github/CONTRIBUTING.md` links `research/docs/architecture.md` in its second
+   paragraph. The file is in `.github/`, so the link points at
+   `.github/research/docs/architecture.md`, which does not exist. It is in HEAD,
+   not from this plan. Fix: `../research/docs/architecture.md`.
+
+Before the first release, checked with `gh` on 2026-09-13: KostaJovanovic/mbrd
+has no secrets, and KostaJovanovic/mbrd-release has no branch, so the publish
+job's `--target main` has nothing to tag. The maintainer adds a first commit
+there (a README) and sets `RELEASES_TOKEN` and the three `ANDROID_KEY*` secrets.

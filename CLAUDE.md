@@ -48,6 +48,7 @@ npm run typecheck   # tsc --noEmit, strict, every .ts under web/assets/js
 npm run dev:lab     # watch build for web/lab.html, the pigment lab
 npm run dev:sound   # watch build for web/lab-sound.html, the sound lab
 save.bat            # version stamps → build → commit → portable copy → optionally push
+save.bat release    # the same, pushed, then GitHub builds every app and publishes them
 ```
 
 `save.bat` rebuilds `desktop/portable/` — the portable copy — after every commit
@@ -56,6 +57,18 @@ gitignored, so nothing built there is committed, pushed or deployed, and the
 worst a failure does is leave one machine with a stale copy. It is skipped when
 `desktop/node_modules` is absent, which is most checkouts. It also adds about
 ninety seconds, which is why it runs last, after the push question.
+
+**A release is `save.bat release` (option 1 in its menu), and nothing else.**
+After the push it runs `gh workflow run release.yml`, and
+`.github/workflows/release.yml` builds Windows, macOS, Linux and Android and
+publishes all four at once in the **public** `KostaJovanovic/mbrd-release`. This
+repository is private, and GitHub answers a private repository's releases with a
+404 to anybody signed out, so the download page and the updaters read the other
+one. A plain push starts nothing. There is no update file in a release: the apps
+read GitHub's API and find their file by the part of its name before the version
+(`desktop/updates.ts`, `MbrdUpdate.java`), so **a release file's name is a
+contract**, which `tests/desktop-package.test.js` holds. The secrets the workflow
+reads are the maintainer's.
 
 The desktop shell is a **second package** under `desktop/` with its own
 `node_modules`, and needs its own `npm install` before any of this:
@@ -73,8 +86,8 @@ things. It installs both packages' dependencies on a fresh clone. It builds the
 web bundle first: Electron serves `web/` off the disk you are editing, but
 `index.html` loads `assets/app.js`, so without a build an edit to a `.ts` file
 opens the previous bundle and reads as a change that did nothing. And it keeps
-`npm run dev` watching in its own console while the app is open, and stops it
-when the app closes. A watch already running in another terminal is reused and
+`npm run dev` watching in the same console (`start /b`, so its build errors
+land there) while the app is open, and stops it when the app closes. A watch already running in another terminal is reused and
 left alone. It also clears `ELECTRON_RUN_AS_NODE`, which an Electron-based
 editor sets in its integrated terminal and which makes `electron .` boot as
 plain Node: `app` is undefined and `main.ts` throws on its first line.
@@ -86,6 +99,17 @@ Started any other way (`npm run desktop`), nothing watches: run `npm run build`
 or `npm run dev` first. The Reload row is in the View menu. Nothing watches
 `desktop/` itself, so a change to the shell (main, the menu, the title bar)
 needs the window closed and `desktop.bat` run again.
+
+**The title bar is a page of its own, and the package must carry it.**
+`desktop/chrome/` holds the bar and its menus. `desktop/scripts/build.mjs`
+builds them into `desktop/dist/chrome/`, and `desktop/protocol.ts` serves only
+the names in `CHROME_FILES`, under `/__chrome/`. FileAnalyser 9.8 shipped with
+no title bar because its chrome pages were left out of the package. Here
+`files:` in `desktop/electron-builder.yml` ships `dist/**`,
+`tests/desktop-package.test.js` holds that and every name in `CHROME_FILES`
+against a source the build turns into it, and the release job looks inside each
+packed `app.asar` for `dist/chrome/titlebar.html`. A new chrome file is an entry
+in `CHROME_FILES` and a source `build.mjs` builds or copies.
 
 `desktop/portable/` is the unpacked app plus the `portable` marker
 `installer.nsh`'s Portable branch writes — there is no portable *target*, only
@@ -153,6 +177,41 @@ installed two directories above the repository.
 There is **no browser-driven suite**. Pan and zoom, drag and marquee, save →
 refresh → recover, and a clean boot console are checked by launching the app and
 looking.
+
+## Mobile app (`mobile/`)
+
+The Android shell is a **third package** under `mobile/`: Capacitor around the
+same `web/` tree, with no fork of the app code. `mobile.bat` is its launcher
+(`mobile.bat apk` builds only), and it needs JDK 21 and the Android SDK,
+platform 36. `mobile/README.md` is how it fits together. What breaks silently:
+
+- **The APK carries a copy of the site.** `mobile/tools/stage-web.mjs` copies
+  `web/` into `mobile/www/`, and `cap sync` puts that in the APK, so an edit
+  shows on a phone only after `mobile.bat` runs again. The staging refuses a
+  bundle older than its sources, which is why the release job builds the bundle
+  first: a fresh checkout writes `app.js` before every `.ts` under it.
+- **The bridge is the desktop's shape.** `mobile/bridge/mbrd-bridge.ts` defines
+  `window.mbrdDesktop` as `desktop/preload.ts` does, at `bridge: 3`, so
+  `main.ts` wires the phone through the branch it already has. A key added to
+  `Bridge` in `platform/electron.ts` needs the same key there.
+  `tests/mobile-bridge.test.js` holds the two in step as text, and
+  `npm run typecheck` in `mobile/` checks the types.
+- **`/_capacitor_file_/` and `/_capacitor_content_/` answer 404**
+  (`MbrdWebViewClient.java`), because they would hand any page script a reader
+  for every file the app can reach. Do not route them back in, and do not
+  install a general-purpose Capacitor plugin as a shortcut. Every check lives in
+  the Java plugins: a crafted file that finds an XSS can call them directly.
+- **The release key is forever.** Android refuses an update signed with another
+  key, so a new key strands every installed copy. The steps are in
+  `mobile/README.md`, and the key is the maintainer's, kept offline.
+- **`versionCode` is `COMMIT_COUNT`** (`mobile/tools/stamp-version.mjs`, from
+  `version.js`), and Android refuses an update whose code does not grow. Every
+  sync stamps `build.gradle` again, so the committed copy can lag behind. Never
+  set either number by hand.
+- **The CSP comes from `web/_headers`**, through `desktop/csp.mts`, into the
+  staged `mbrd-csp.json`. `serve.py` sends none, so a policy mistake shows only
+  in a built APK. `tests/csp.test.js` holds the staged file against a fresh
+  parse.
 
 ## Never hand-edit these
 
