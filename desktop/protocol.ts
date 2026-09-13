@@ -1,6 +1,6 @@
 // Serve web/ over app://mbrd/ so <base href="/"> resolves correctly,
 // IndexedDB/workers get a real origin, and file:// quirks never apply.
-// CSP is read from web/_headers (one policy, two enforcers — no copy).
+// CSP is read from web/_headers by csp.mts (one policy, one parser, no copy).
 // Path traversal is checked after resolve(); nothing outside web/ is served,
 // except the title bar's pages under /__chrome/, from an allow-list.
 
@@ -9,6 +9,7 @@ import { readFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { log } from './log.ts';
+import { parsePolicy, type Policy } from './csp.mts';
 
 /** The one host under the scheme. Not a hostname, just a name. */
 const HOST = 'mbrd';
@@ -123,33 +124,18 @@ function webRoot(): string {
   return resolve(join(base, 'web'));
 }
 
-/** Parse the CSP and its exemptions from web/_headers (Cloudflare format). */
-function readPolicy(root: string): { value: string, exempt: string[] } {
-  // SAFETY: assertion prevents never[] inference from the empty literal.
-  const empty = { value: '', exempt: [] as string[] };
+/** The CSP and its exemptions from web/_headers. csp.mts parses, for Android too. */
+function readPolicy(root: string): Policy {
   let text: string;
   try {
     text = readFileSync(join(root, '_headers'), 'utf8');
   } catch (err) {
     log('error', 'no _headers - the window will run with no CSP', err);
-    return empty;
+    return { value: '', exempt: [] };
   }
-
-  let value = '';
-  const exempt: string[] = [];
-  let rule = '';
-  for (const raw of text.split(/\r?\n/)) {
-    if (!raw.trim() || raw.trimStart().startsWith('#')) continue;
-    // Column zero is a path pattern; anything indented belongs to the last one.
-    if (!/^\s/.test(raw)) { rule = raw.trim(); continue; }
-    const line = raw.trim();
-    const removal = /^!\s*Content-Security-Policy$/i.exec(line);
-    if (removal) { exempt.push(rule); continue; }
-    const header = /^Content-Security-Policy:\s*(.+)$/i.exec(line);
-    if (header && rule === '/*') value = header[1].trim();
-  }
-  if (!value) log('error', 'no /* Content-Security-Policy in _headers');
-  return { value, exempt };
+  const policy = parsePolicy(text);
+  if (!policy.value) log('error', 'no /* Content-Security-Policy in _headers');
+  return policy;
 }
 
 /** Content type from extension. Only what web/ actually holds. */

@@ -45,7 +45,7 @@ const keyOf = (file: string) => decodeURIComponent(file);
 
 /** Write to .tmp then rename — atomic within a directory. A truncated file is
  * worse than a missing one (missing = last snapshot; truncated = corruption). */
-async function writeAtomic(file: string, data: Buffer | string): Promise<void> {
+async function writeAtomic(file: string, data: Uint8Array | string): Promise<void> {
   const tmp = file + '.tmp';
   await writeFile(tmp, data);
   await rename(tmp, file);

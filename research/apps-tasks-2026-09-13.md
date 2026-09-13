@@ -931,13 +931,13 @@ every decision a task left to you in the notes column.
 | J6 | DONE (v0.304) | looked at: the launcher icon is the whole mark, and the splash shows it at Capacitor's 20 % width on paper. The dark variants use the same paper, since the app has no dark launcher or splash. 59 files under `res/`, and `mobile/assets/logo.png` |
 | J7 | DONE (v0.304) | two changes from FileAnalyser's: it installs the root package too, as `desktop.bat` does, and it installs on every phone `adb devices` lists, since a bare `adb install` refuses to pick one. `.\gradlew.bat`, because a shell with `NoDefaultCurrentDirectoryInExePath=1` does not search the current folder (this one has it). `mobile.bat apk` on 2026-09-13: `com.valjdakosta.mbrd`, versionCode 303, versionName 0.303. The install path is not run: no phone was connected. `gradlew` is committed 100644 as FileAnalyser's is, whose release workflow runs `chmod +x gradlew`: group O ports that |
 | J8 | | needs a person, on both phones. The steps are under "Open" below |
-| K1 | | |
-| K2 | | |
-| K3 | | |
-| K4 | | |
-| K5 | | |
-| K6 | | |
-| K7 | | |
+| K1 | DONE (v0.305) | `encode()` returns a plain `Uint8Array` and `decode()` takes one. `store.ts` needed one type, on `writeAtomic`. `tests/desktop-bridge.test.js` read the output with `Buffer.toString('latin1')`, so it wraps it in `Buffer.from` now. New test: the constructor is `Uint8Array`, and a plain copy decodes |
+| K2 | DONE (v0.305) | `desktop/csp.mts`, `parsePolicy(text)`. `protocol.ts` keeps the read and both logs. Two tests in `tests/csp.test.js`: the shells' parse equals the test's own (the value, and the four exempt paths from `spawnedWorkers()`), and the staged `mbrd-csp.json` equals a fresh parse. That one skips when nothing is staged, as in CI |
+| K3 | DONE (v0.305) | three files: `mbrd-bridge.ts`, `boot.ts` (`MBRD_BOOT`) and `bytes.ts` (`transfer()`, `fetchBytes()`). The boot marker is in the wrapper `stage-web.mjs` writes, because esbuild drops comments. `native.can()` resolves `{ transcode: false, matte: false }` and does not reject, so the web path runs, as on the website. `onClose` and `onOpenFiles` do nothing until M. Nothing imports `bytes.ts` yet, so the bundle leaves it out until L. New `mobile/tsconfig.json` and `npm run typecheck` in `mobile/` (typescript 5.9.3, as the root): clean. So the store rejects every call and a phone saves nothing between K and L |
+| K4 | DONE (v0.305) | as written. The test compares group by group, and also holds `bridge: 3` against `preload.ts` |
+| K5 | DONE (v0.305) | `androidx.webkit` added to `app/build.gradle`: Capacitor has it as `implementation`, which does not reach the app. Checked in Capacitor 8.5.2's `Bridge.java`: `registerAllPlugins()` runs before `loadWebView()`, which keeps the client `load()` set, and Capacitor's own native bridge goes in by `addDocumentStartJavaScript`, so the page CSP does not block it. A path with no file is a plain 404, as on the desktop, not `404.html`. The router refuses `..`, `.`, `\` and empty segments before a lookup. `/__mbrd/*` answers 404 until L and N. New `MbrdRouterTest`, 6 tests on the host |
+| K6 | DONE (v0.305) | esbuild's API, IIFE, `chrome110` (J1's floor). `mobile.bat apk` on 2026-09-13 put all three files in the APK's assets. `gradlew testDebugUnitTest`: 7 pass |
+| K7 | | needs a person, on one phone. The steps are under "Open" below |
 | L1 | | |
 | L2 | | |
 | L3 | | |
@@ -983,8 +983,23 @@ J8, on each of the two phones:
 3. Run `mobile.bat` in the repository root. Both phones can be connected at once.
 4. Check that mbrd opens and shows the board as the website does.
 5. Add a note, close the app from the recent apps, and open it again. The note
-   must still be there.
-6. Expect What Changed to show the board. Group K routes `/patch`.
+   must still be there. From v0.305 (group K) this step fails until group L,
+   because the store rejects every call. Check it on the v0.304 build, or wait
+   for L.
+
+K7, on one phone, with a build from v0.305 or later:
+
+1. Run `mobile.bat` with the phone connected, as in J8.
+2. On the computer, open Chrome and go to `chrome://inspect`.
+3. Under the phone, find `https://app/` and click "inspect".
+4. In the console, type `window.mbrdDesktop.shell`. Expect `'capacitor'`.
+5. Type `navigator.serviceWorker.getRegistrations()`. Expect an empty list.
+6. Type `location.href = '/patch'`. Expect the changelog page, not the board.
+7. Type `location.href = '/download'`. Expect the download page.
+8. Type `location.href = '/'` to go back to the board.
+9. Type `document.body.insertAdjacentHTML('beforeend', '<img src=x onerror="alert(1)">')`.
+   Expect no alert, and a Content-Security-Policy error in the console.
+10. Expect store errors on the board. Group L wires the store.
 
 Asked outside the task list on 2026-09-13, done in v0.302: the desktop
 changelog opens in place in the board view, under the bar, and no longer in a

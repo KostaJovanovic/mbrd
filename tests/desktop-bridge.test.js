@@ -122,7 +122,8 @@ test('what lands on disk is not a JSON object with an empty blob in it', () => {
   // The bug as artefact: `{"blob":{}}` is what a plain stringify writes, and
   // what this format exists to stop.
   const record = { blob: { __bytes: true, data: PIXELS.buffer, mime: 'image/png' }, ext: 'png' };
-  const written = encode(record).toString('latin1');
+  // Buffer.from: encode() returns a plain Uint8Array, which has no latin1 view.
+  const written = Buffer.from(encode(record)).toString('latin1');
   assert.doesNotMatch(written, /"blob":\{\}/, 'the Blob was not stringified away');
   assert.match(written, /"__bytes":1/, 'it was lifted out and placed instead');
 });

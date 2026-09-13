@@ -1,8 +1,8 @@
-// Platform abstraction: six members for the questions a desktop shell
-// answers differently from a browser tab. The window's frame is not one:
-// the desktop's title bar is its own page (desktop/chrome/).
-// Unwired defaults to web behaviour. setPlatform() wires the desktop.
-// The bridge global is read only in main.ts; this module never touches it.
+// Platform abstraction: six members for the questions a native shell answers
+// differently from a browser tab. "Desktop" means "a native shell is wired":
+// Electron, or the Android shell (mobile/bridge/), which sets the same bridge.
+// The window's frame is not a member. Unwired is the web. setPlatform() wires a
+// shell. The bridge global is read only in main.ts; this module never touches it.
 
 /** A file the app has open. `path` is desktop-only; the web uses a handle. */
 export interface DocumentRef {

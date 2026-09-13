@@ -1,0 +1,21 @@
+{
+  // The bridge's typecheck (npm run typecheck in mobile/). The bridge runs in the
+  // WebView page, so the libraries are the root's (DOM, no Node, `types: []` for
+  // the reason ../tsconfig.json gives), and it imports the web's Bridge type by
+  // path. esbuild builds it in stage-web.mjs and tsc only checks.
+  "compilerOptions": {
+    "strict": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": [],
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true
+  },
+  "include": ["bridge/*.ts"]
+}
