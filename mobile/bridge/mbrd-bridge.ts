@@ -6,12 +6,16 @@
 
 import type { Bridge } from '../../web/assets/js/platform/electron.ts';
 import { BOOT } from './boot.ts';
+import * as files from './files.ts';
+import { call } from './native.ts';
+import { installDownloads, installShare } from './share.ts';
+import * as store from './store.ts';
 
 /** The desktop's shape at `bridge: 3`, and the two keys a branch that must not
  * run on a phone can test. tests/mobile-bridge.test.js holds the keys in step. */
 type AndroidBridge = Bridge & { shell: 'capacitor', platform: 'android' };
 
-/** A call the Java plugins answer from group L (store, files) or N (native)
+/** A call the Java plugins answer from group N (native FFmpeg) or O (updates)
  * of research/apps-tasks-2026-09-13.md. Until then it refuses, and every
  * caller in platform/electron.ts already has a path for a refusal. */
 const notYet = (what: string) => (): Promise<never> =>
@@ -23,23 +27,23 @@ const api: AndroidBridge = {
   platform: 'android',
 
   store: Object.freeze({
-    get: notYet('read the store'),
-    set: notYet('write the store'),
-    del: notYet('write the store'),
-    keys: notYet('read the store'),
-    clear: notYet('write the store'),
-    getMany: notYet('read the store'),
-    setMany: notYet('write the store'),
-    delMany: notYet('write the store'),
+    get: store.get,
+    set: store.set,
+    del: store.del,
+    keys: store.keys,
+    clear: store.clear,
+    getMany: store.getMany,
+    setMany: store.setMany,
+    delMany: store.delMany,
   }),
 
   files: Object.freeze({
-    pickOpen: notYet('open a file'),
-    pickSave: notYet('save a file'),
-    pickImport: notYet('import files'),
-    write: notYet('save a file'),
-    read: notYet('open a file'),
-    exists: notYet('open a file'),
+    pickOpen: files.pickOpen,
+    pickSave: files.pickSave,
+    pickImport: files.pickImport,
+    write: files.write,
+    read: files.read,
+    exists: files.exists,
   }),
 
   native: Object.freeze({
@@ -56,8 +60,8 @@ const api: AndroidBridge = {
     check: notYet('check for updates'),
   }),
 
-  // Group L puts the storage fallback note here (plan §5.4).
-  startupNotes: () => Promise.resolve(''),
+  // Where the boards are, when they are not in Documents/mbrd (plan §5.4).
+  startupNotes: () => call<{ note?: string }>('MbrdShell', 'startupNotes').then(r => r.note ?? ''),
   // A phone has no title bar to name the board in.
   setDocument: () => {},
   relaunch: () => location.reload(),
@@ -71,6 +75,9 @@ const api: AndroidBridge = {
 
 // Read once, so a debuggable build says so in the WebView console.
 if (!BOOT.packaged) console.info(`[mbrd] Android shell ${BOOT.version ?? ''}, debug build`);
+
+installShare();
+installDownloads();
 
 Object.defineProperty(window, 'mbrdDesktop', {
   value: Object.freeze(api),

@@ -20,8 +20,8 @@ declare global {
 
 export const CHUNK = 4 * 1024 * 1024;
 
-// Taken at document start, before any page script can replace it.
-const pageFetch = window.fetch.bind(window);
+/** Taken at document start, before any page script can replace it. */
+export const pageFetch = window.fetch.bind(window);
 
 interface Waiter {
   resolve(): void;

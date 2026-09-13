@@ -938,12 +938,12 @@ every decision a task left to you in the notes column.
 | K5 | DONE (v0.305) | `androidx.webkit` added to `app/build.gradle`: Capacitor has it as `implementation`, which does not reach the app. Checked in Capacitor 8.5.2's `Bridge.java`: `registerAllPlugins()` runs before `loadWebView()`, which keeps the client `load()` set, and Capacitor's own native bridge goes in by `addDocumentStartJavaScript`, so the page CSP does not block it. A path with no file is a plain 404, as on the desktop, not `404.html`. The router refuses `..`, `.`, `\` and empty segments before a lookup. `/__mbrd/*` answers 404 until L and N. New `MbrdRouterTest`, 6 tests on the host |
 | K6 | DONE (v0.305) | esbuild's API, IIFE, `chrome110` (J1's floor). `mobile.bat apk` on 2026-09-13 put all three files in the APK's assets. `gradlew testDebugUnitTest`: 7 pass |
 | K7 | | needs a person, on one phone. The steps are under "Open" below |
-| L1 | | |
-| L2 | | |
-| L3 | | |
-| L4 | | |
-| L5 | | |
-| L6 | | the two timings |
+| L1 | DONE (v0.306) | the screen is built in code, in `MainActivity.load()`, which `BridgeActivity.onCreate()` calls. The bridge cannot wait for the answer: Capacitor registers its activity-result launchers while it builds the bridge, and Android refuses that once the activity has started. So that instance builds no bridge, and Allow (back from Android's page with the grant) or Not now calls `recreate()`. Not now holds for the process, so the next launch asks again. A phone with no per-app page gets the list of every app, then Not now. `MbrdRoot.java` picks the folder |
+| L2 | DONE (v0.306) | `MbrdNames.java` ports `fileFor()` and `keyOf()` byte for byte, so a store folder copied from a phone reads on the desktop. New `MbrdNamesTest`, 6 tests on the host. The move of the private store runs on a thread behind a latch, and every read of the root waits for it. A failed move leaves the private store in place for that run. Boards saved as `.mbrd` files under the private folder stay there, and the shelf still opens them (`boardRoots()`) |
+| L3 | DONE (v0.306) | the page names a path only if it is under a board folder with no hidden segment (so never `.store/`) or this process handed it out. `pickOpen` copies into this run's folder, with "name (2)" on a clash, except a board the picker found in `Documents/mbrd/` itself, which opens in place. A file with no `.mbrd` name is taken if it starts with the ZIP magic. `pickImport` copies nothing: each file is a `content://` token |
+| L4 | DONE (v0.306) | `mobile/bridge/store.ts`, `files.ts` and `native.ts`. `setMany` writes one value at a time, since the channel carries one transfer at once. A value that does not decode reads as missing with a warning, as on the desktop. The "Not now" note names the private folder, as the desktop's names its fallback |
+| L5 | DONE (v0.306) | `mobile/bridge/share.ts`. One file a share: FileAnalyser's shape. The shared copy sits in `cache/mbrd-share/<id>/`, which the next start deletes. A `data:` link is decoded in the page, because `connect-src` has `blob:` and no `data:`. Fixed on the way in `MbrdBytes`: a transfer that was short at `end` left the partial file in place, because `end` had closed the stream and the reset deleted nothing. FileAnalyser's `AnrBytes` has the same bug (below) |
+| L6 | | needs a person, on both phones. The steps and the 300-photograph measurement are under "Open" below |
 | M1 | | |
 | M2 | | |
 | M3 | | how "top layer" is known |
@@ -983,9 +983,8 @@ J8, on each of the two phones:
 3. Run `mobile.bat` in the repository root. Both phones can be connected at once.
 4. Check that mbrd opens and shows the board as the website does.
 5. Add a note, close the app from the recent apps, and open it again. The note
-   must still be there. From v0.305 (group K) this step fails until group L,
-   because the store rejects every call. Check it on the v0.304 build, or wait
-   for L.
+   must still be there. The v0.305 build fails this step, because its store
+   rejects every call. Use v0.306 or later.
 
 K7, on one phone, with a build from v0.305 or later:
 
@@ -999,7 +998,33 @@ K7, on one phone, with a build from v0.305 or later:
 8. Type `location.href = '/'` to go back to the board.
 9. Type `document.body.insertAdjacentHTML('beforeend', '<img src=x onerror="alert(1)">')`.
    Expect no alert, and a Content-Security-Policy error in the console.
-10. Expect store errors on the board. Group L wires the store.
+10. On v0.305, expect store errors on the board. From v0.306, expect none.
+
+L6, on each of the two phones, with a build from v0.306 or later. A first
+install shows the "Keep your boards as files" screen before the board.
+
+1. Press "Not now". Expect the board, and a toast that names the app's own folder.
+2. Add a note, close mbrd from the recent apps, and open it again.
+3. Expect the screen again. Press "Allow".
+4. On Android's page, turn on the access for mbrd. Press Back.
+5. Expect the board, with the note from step 2.
+6. Use Save. Keep the name, and press "Save".
+7. Open the Files app, then Documents, then mbrd. Expect the `.mbrd` file.
+8. Close mbrd from the recent apps and open it again. Expect the same board.
+9. Use Open, and pick the file from step 7. Expect the board, and no "(2)" copy.
+10. Use Send file. Expect the share sheet, and share the file to yourself.
+11. Uninstall mbrd, and run `mobile.bat` again. Press "Allow" and turn on the access.
+12. Expect the shelf and the board as they were before the uninstall.
+
+The measurement, on the faster phone:
+
+1. Put 300 photographs on the phone.
+2. In mbrd (v0.306 or later), import all 300 onto one board, and time it.
+3. Close mbrd from the recent apps. Open it, and time until the photographs show.
+4. Build v0.304 (`git checkout f366e94`, then `mobile.bat`), which keeps the store in IndexedDB.
+5. Do steps 2 and 3 again on that build.
+6. Send me the four times. They go into the header of `MbrdStore.java`.
+7. Run `git checkout main` to go back.
 
 Asked outside the task list on 2026-09-13, done in v0.302: the desktop
 changelog opens in place in the board view, under the bar, and no longer in a
@@ -1022,3 +1047,7 @@ Bugs found outside the task list, not fixed:
 3. `desktop/electron-builder.yml` says its `extraResources` comment twice: two
    paragraphs about `web/` and `_headers`, and two about ffmpeg and
    onnxruntime. It is in HEAD, not from this plan. Fix: keep one of each.
+4. FileAnalyser's `AnrBytes` leaves a partial file behind. When a transfer is
+   short at `end`, `end` has already closed the stream and cleared it, so the
+   reset that follows deletes nothing. Fix: delete the target in the reset
+   whenever one is set, as `MbrdBytes` does from v0.306.
