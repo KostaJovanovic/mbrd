@@ -26,7 +26,7 @@ import { embeddedPreview, NOT_PORTABLE, PORTABLE_MIN_EDGE } from './preview.ts';
 import { hasBakedPreview, bakedPreview } from './document.ts';
 import { isDeck, slideOneRaster } from './slide.ts';
 import { isTiffFile, tiffRaster } from './tiff.ts';
-import { makeThumb } from '../optimize/picture.ts';
+import { makeThumb, shrinkPicture, DISPLAY_SIDE } from '../optimize/picture.ts';
 import { looksLikeMbrd } from '../storage/mbrd.ts';
 import { openOrMergeFile } from '../storage/storage.ts';
 import { stickerShape, stickerTint, DEFAULT_SHAPE } from '../stickers/catalogue.ts';
@@ -516,6 +516,19 @@ export async function thumbFor(blob: Blob, naturalWidth = 0) {
 }
 
 /**
+ * Register a baked display copy: the ~1024px WebP a card and a Feed tile mount
+ * instead of the full original, carried in the .mbrd (meta.display) so every
+ * device it opens on decodes nothing. Null when the original already serves -
+ * a picture already inside the ceiling, a vector, or an animation shrinkPicture
+ * declines - and the consumer falls back to the asset itself.
+ */
+export async function displayFor(blob: Blob) {
+  const made = await shrinkPicture(blob, { maxSide: DISPLAY_SIDE }).catch(() => null);
+  if (!made) return null;
+  return { hash: await addFile(derivedFile(made.blob, 'display')) };
+}
+
+/**
  * Extract a poster frame from a clip. Every video gets one (mobile holds back
  * the source until tapped). Browser decoder first; falls through to ffmpeg
  * (dynamically imported, 30 MB) for H.265 or engines that draw blank canvases.
@@ -808,6 +821,11 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
   // from the one `size` describes, so those pass nothing and take the old path.
   const thumbWidth = type === 'image' && !previewFile ? size.natural?.w || 0 : 0;
   const thumb = thumbSource ? await thumbFor(thumbSource, thumbWidth).catch(() => null) : null;
+  // The baked display copy, for photos only - a video shows its poster, which is
+  // already small. From the same source the thumbnail used (the file, or the
+  // preview pulled out of a HEIC/RAW), so an undecodable original still bakes one.
+  const display = type === 'image' && thumbSource
+    ? await displayFor(thumbSource).catch(() => null) : null;
   // The four optional keys of the meta, decided before the literal below.
   //
   // Each has to be *absent* rather than present-and-undefined: itemHashes() in
@@ -839,6 +857,7 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
   if (cover) meta.cover = cover;
   else if (poster?.hash) meta.cover = poster.hash;
   if (thumb) meta.thumb = thumb.hash;
+  if (display) meta.display = display.hash;
   // How long it runs, where the container was willing to say. The playlist used
   // to be the only thing that knew this and it found out by mounting an <audio>
   // per row on the first draw; here it is one header read on a file already in

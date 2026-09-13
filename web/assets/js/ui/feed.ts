@@ -56,7 +56,7 @@ type TileKind =
 /**
  * One tile on the wall. `video` is the whole of this module's release
  * discipline: the mounted <video> for a playing clip, null for a poster. See
- * mountVideo() and releaseOffscreen().
+ * mountVideo() and cullWindow().
  */
 type Tile = {
   el: HTMLElement;
@@ -97,8 +97,28 @@ type Tile = {
   embed: EmbedSpec | null;
 };
 
-/** One tile's box, as feedMasonry() packs it. */
-type TileBox = { t: Tile; x: number; y: number; w: number; h: number };
+/** A tile's placed box, in the grid's own coordinates. */
+type Box = { x: number; y: number; w: number; h: number };
+
+/**
+ * One item's place on the wall, computed for *every* item whether or not a tile
+ * is mounted for it - the scrollbar and the window both need the whole layout,
+ * which is the point of windowing: a size for all, a DOM node for a screenful.
+ * A Slot carries the sizing inputs (kind, ratio, span, embed, and a measured
+ * height for hints) and the box packSlots() writes back into it.
+ */
+type Slot = {
+  item: Item;
+  kind: TileKind;
+  embed: EmbedSpec | null;
+  ratio: number;
+  span: number;
+  measured: number;
+  box: Box;
+};
+
+/** What spanFor() and packSlots() read - satisfied by both Tile and Slot. */
+type Sizable = Pick<Slot, 'kind' | 'span' | 'embed'>;
 
 /**
  * What the Feed asks of the command surface, and nothing else. Named here
@@ -142,12 +162,18 @@ let empty: HTMLElement | null = null;       // the "nothing to show" plate
 let styleHeader: ((title: HTMLElement | null, box: Element | null) => void) | null = null;
 let cmds: FeedCommands | null = null;       // the command surface, for the armed-sticker tap
 
-/** id -> { el, item, ratio, kind, video } for every tile currently rendered. */
+/** id -> Tile, but only for the tiles inside the window - see cullWindow(). */
 const tiles = new Map<string, Tile>();
+
+/** Every item's place on the wall, in feed order, rebuilt by layout(). The
+ *  window is scanned over this, so it holds items with no mounted tile. */
+let slots: Slot[] = [];
+let slotById = new Map<string, Slot>();
 
 let cols = 2;
 let mastheadRaf = 0;
 let layoutRaf = 0;
+let cullRaf = 0;
 let resizeObs: ResizeObserver | null = null;
 let mastheadObs: IntersectionObserver | null = null;
 
@@ -366,7 +392,10 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
     }, { root, rootMargin: '600px 0px' });
   }
   addEventListener('resize', paintMasthead);
-  root.addEventListener('scroll', releaseOffscreen, { passive: true });
+  // Scroll moves the window, so it re-culls (rAF-throttled) - mounting the tiles
+  // that entered and dropping the ones that left. This is also what releases a
+  // scrolled-past clip's decoder, since a dropped video tile takes its <video>.
+  root.addEventListener('scroll', scheduleCull, { passive: true });
   document.fonts?.ready?.then(paintMasthead).catch(() => {});
 
   render();
@@ -386,37 +415,17 @@ function feedItems(): Item[] {
 }
 
 /**
- * Reconcile the tiles to the board, then lay them out. Off Mobile this tears
- * down and the CSS shows the canvas; on Mobile it (re)builds one tile per item,
- * in order, and drops any whose item has gone.
+ * The board changed. Off Mobile this tears down and the CSS shows the canvas;
+ * on Mobile it re-lays-out, which is where tiles are built and dropped now -
+ * layout() sizes every item and cullWindow() mounts only the screenful near the
+ * viewport, so a board of hundreds is a wall of a dozen live nodes.
  */
 function render() {
-  // The `!` below follows from the `root` test: initFeed() builds all six
+  // The `!` inside follows from the `root` test: initFeed() builds all six
   // nodes together or none, so a live root means a live wall.
   if (!root || board.layoutMode !== 'mobile') { teardown(); return; }
   paintMasthead();
-
-  const items = feedItems();
-  const present = new Set<string>();
-  for (const item of items) {
-    present.add(item.id);
-    let t = tiles.get(item.id);
-    if (!t || t.kind !== kindOf(item)) {
-      if (t) dropTile(t);
-      t = buildTile(item);
-      tiles.set(item.id, t);
-    } else {
-      t.item = item;
-      t.ratio = ratioOf(item);
-    }
-    gridEl!.appendChild(t.el);   // (re)append keeps DOM order matching feed order
-  }
-  for (const [id, t] of tiles) {
-    if (!present.has(id)) { dropTile(t); tiles.delete(id); }
-  }
-  empty!.classList.toggle('is-shown', items.length === 0);
   scheduleLayout();
-  markPlaying();
 }
 
 /** Kind buckets, which decide the tile shape and how it is filled. */
@@ -607,13 +616,21 @@ function fillImage(t: Tile) {
   const crop = itemCrop(t.item);
   const rot = itemRotate(t.item);
   const matte = itemMatte(t.item);
+  const edited = !!(crop || rot || matte) && !!shown;
 
-  // A copy already in memory (a revisit, or a second tile of the same asset)
-  // answers synchronously - straight to sharp, with no preview and no observer.
+  // The baked display copy carried in the .mbrd (meta.display, ~1024px). For an
+  // unedited photo it is the sharp layer with no decode and no generation at all;
+  // it is not used for an edited tile, since the baked copy is the *uncropped*
+  // picture and this tile shows the crop/turn/cut-out.
+  const baked = edited ? null : urlOf(t.item.meta?.display);
+  // A runtime copy already in memory (a revisit, an edited re-mount, or a second
+  // tile of the same asset) answers synchronously and wins - it is the exact
+  // edit state, where the baked copy is only the plain one.
   const ready = shown ? displayURLReady(shown, crop, rot, matte) : null;
+  const sharp = ready || baked;
   // The blur-up stage: the 100px thumb (or an embedded preview / poster),
-  // upscaled and soft until the copy lands. loading='lazy' holds even this off
-  // until the tile nears the screen, so a far tile fetches nothing.
+  // upscaled and soft until the sharp layer lands. loading='lazy' holds even
+  // this off until the tile nears the screen, so a far tile fetches nothing.
   const preview = lowResURL(t.item);
 
   // A shimmer until the first pixels paint, dropped on the first load. With a
@@ -621,7 +638,7 @@ function fillImage(t: Tile) {
   t.el.classList.add('is-loading');
   const settle = () => t.el.classList.remove('is-loading');
 
-  if (ready) img.src = ready;
+  if (sharp) img.src = sharp;
   else if (preview) img.src = preview;
   img.addEventListener('load', settle);
   // A source that will not load falls back to a spare made by another path,
@@ -633,9 +650,10 @@ function fillImage(t: Tile) {
     else settle();
   });
 
-  // The sharp copy is generated only as the tile approaches the screen, so
-  // opening a big board does not queue a hundred main-thread decodes at once.
-  if (!ready && shown) wantCopy(t.el, img, shown, crop, rot, matte);
+  // Nothing baked and nothing cached (an old board, or an edited tile): generate
+  // the copy as the tile approaches the screen, so opening a big board does not
+  // queue a hundred main-thread decodes at once.
+  if (!sharp && shown) wantCopy(t.el, img, shown, crop, rot, matte);
 
   applyGrade(img, t.item);
   writeTileFit(t);
@@ -875,7 +893,7 @@ function fillLink(t: Tile) {
 
 /**
  * Swap a tapped embed offer for its player, in place. The height was already
- * the player's (sizeEmbeds), so nothing on the wall moves; only the offer's
+ * the player's (sizeEmbedSlots), so nothing on the wall moves; only the offer's
  * chrome gives way to the frame. Guarded against a second tap, which on a
  * mounted tile would otherwise tear the running player out and rebuild it.
  */
@@ -966,16 +984,9 @@ function fillFile(t: Tile) {
 // ---------------------------------------------------------------------------
 
 /**
- * A finished masonry pass: where every tile goes, the column width, and the
- * total height. `colW`/`height` travel separately since neither is
- * recoverable from the boxes alone - an empty column still has a width, and
- * the tallest box isn't the height when the last row is ragged.
- */
-type FeedLayout = { boxes: TileBox[], colW: number, height: number };
-
-/**
- * Shortest-column packing. `list` is the tiles in reading order; each lands in
- * whichever column is shortest so far, leftmost on a tie.
+ * Shortest-column packing over every slot. Each lands in whichever column is
+ * shortest so far, leftmost on a tie, and the box it gets is written back onto
+ * the slot. Returns the tallest column's height (the wall's height).
  *
  * The packing itself is arrange/columns.ts's - the same call
  * arrange/arrangements.ts's masonry() makes, not the same rule written out
@@ -984,34 +995,32 @@ type FeedLayout = { boxes: TileBox[], colW: number, height: number };
  * one column width here, a width per column on the board - stays in each
  * surface, why packColumns() answers in columns and tops rather than x and y.
  *
- * What's left here is the screen-space half: column width, what a span costs
- * in pixels, where a box lands. Returns the boxes and the tallest column's
- * height. Pure but for reading `cols`.
+ * Over slots rather than tiles, because the wall's shape is known for every
+ * item whether or not a tile is mounted for it - that split is the windowing.
+ * Pure but for reading `cols`.
  */
-function feedMasonry(list: Tile[], width: number): FeedLayout {
+function packSlots(list: Slot[], width: number): number {
   const colW = (width - (cols - 1) * GAP) / cols;
-  // Every tile's span and height, knowable up front - packColumns() only
-  // needs the heights.
-  const sized = list.map(t => {
-    const span = spanFor(t, colW);
+  // Every slot's span and height, knowable up front - packColumns() only needs
+  // the heights. A measured height wins over the shape (hints and embeds have
+  // one); otherwise the ratio decides.
+  const sized = list.map(s => {
+    const span = spanFor(s, colW);
     const w = span * colW + (span - 1) * GAP;
-    // A measured height wins over the shape (only hints have one - see
-    // Tile.measured); otherwise fall back to the ratio.
-    return { t, span, w, h: t.measured > 0 ? t.measured : w / t.ratio };
+    return { span, w, h: s.measured > 0 ? s.measured : w / s.ratio };
   });
 
   // Half a pixel of tolerance: two columns apart in the eighth decimal place
   // look level to anybody. Without it a full-width tile wanders off x = 0.
   const { spots, height } = packColumns(sized, { cols, gap: GAP, tolerance: 0.5 });
 
-  const boxes: TileBox[] = sized.map((s, i) => ({
-    t: s.t,
-    x: spots[i].col * (colW + GAP),
-    y: spots[i].top,
-    w: s.w,
-    h: s.h,
-  }));
-  return { boxes, colW, height };
+  list.forEach((s, i) => {
+    s.box.x = spots[i].col * (colW + GAP);
+    s.box.y = spots[i].top;
+    s.box.w = sized[i].w;
+    s.box.h = sized[i].h;
+  });
+  return height;
 }
 
 /**
@@ -1027,7 +1036,7 @@ function feedMasonry(list: Tile[], width: number): FeedLayout {
  * and photograph full width. The type is asked first, `span` consulted only
  * for the type it describes.
  */
-function spanFor(t: Tile, colW: number): number {
+function spanFor(t: Sizable, colW: number): number {
   // A player spans as many columns as its frame's floor needs - a one-column
   // Spotify tile would start the same sideways scrollbar a too-narrow card does
   // on the canvas. A fully fluid player (YouTube, minWidth 0) stays one column.
@@ -1055,12 +1064,20 @@ function spanFor(t: Tile, colW: number): number {
  * round down to a strip too narrow for a sentence.
  *
  * Height is not this function's problem - every hint is measured before
- * packing (measureHints), so a narrow hint is a tall one, not a clipped one.
+ * packing (measureHintSlots), so a narrow hint is a tall one, not a clipped one.
  */
 const HINT_MIN_W = 170;
 
+/** A hint's seeded fraction of the wall, read straight off the item so a slot
+ *  can be sized without a tile. Mirrors fillHint(); one for every other kind. */
+function hintSpan(item: Item): number {
+  if (kindOf(item) !== 'hint') return 1;
+  const span = Number(item.meta?.span);
+  return Number.isFinite(span) && span > 0 ? Math.min(1, span) : 1;
+}
+
 /**
- * Give every hint tile the height its own words need, before the wall is packed.
+ * Give every hint slot the height its own words need, before the wall is packed.
  *
  * The Feed lays out by *shape*: a tile is a fraction of a column wide, its
  * height falls out of an aspect ratio. Right for a picture, which crops;
@@ -1068,55 +1085,73 @@ const HINT_MIN_W = 170;
  * it didn't, cutting off the three sentences and the whimsy dial with no sign
  * they'd been cut.
  *
- * So each hint is laid out once at the width it's about to get, height
- * released, and asked how tall it came out. The answer goes on the tile;
- * feedMasonry() uses it instead of the ratio.
+ * So each hint's tile is mounted, laid out once at the width it is about to get,
+ * height released, and asked how tall it came out. The answer goes on the slot;
+ * packSlots() uses it instead of the ratio.
  *
  * **This forces a layout flush**, which the rest of this module is careful
- * never to do per tile - see releaseOffscreen(), which hoists one
- * getBoundingClientRect out of a loop for the same reason. Affordable here
- * only: hints exist only on an otherwise-empty board, at most four of them,
- * gone the moment they stop being the whole board. A wall of two hundred
- * photographs measures nothing.
+ * never to do per tile. A hint is the one kind mounted before the window scan,
+ * which is affordable because hints exist only on an otherwise-empty board, at
+ * most four of them, gone the moment they stop being the whole board. A wall of
+ * two hundred photographs measures nothing.
  */
-function measureHints(list: Tile[], width: number) {
+function measureHintSlots(list: Slot[], width: number) {
   const colW = (width - (cols - 1) * GAP) / cols;
-  for (const t of list) {
-    if (t.kind !== 'hint') continue;
+  for (const s of list) {
+    if (s.kind !== 'hint') continue;
+    const t = ensureTile(s);
     // Same width the packer is about to give it, from the same function.
-    const span = spanFor(t, colW);
+    const span = spanFor(s, colW);
     const w = span * colW + (span - 1) * GAP;
-    // Width first, height auto: reads back the height this card needs at
-    // its new width, not its previous layout's height.
+    // Width first, height auto: reads back the height this card needs at its new
+    // width, not its previous layout's. scrollHeight, not getBoundingClientRect;
+    // floored so a card whose fonts have not landed cannot collapse to nothing.
     t.el.style.width = `${w}px`;
     t.el.style.height = 'auto';
-    // scrollHeight, not getBoundingClientRect: the tile's own rect is what's
-    // being sized. Floored so a card whose fonts haven't landed can't
-    // collapse to nothing.
-    t.measured = Math.max(72, Math.ceil(t.el.scrollHeight));
-    t.el.style.height = `${t.measured}px`;
+    s.measured = Math.max(72, Math.ceil(t.el.scrollHeight));
+    t.el.style.height = `${s.measured}px`;
   }
 }
 
 /**
- * Give every embed tile the exact height its player needs, before packing.
+ * Give every embed slot the exact height its player needs, before packing.
  *
- * Like measureHints, but computed rather than measured: a player's height is a
- * known function of its frame width (canvas/embed.ts, playerHeight), so this
- * forces no layout flush. The same height whether the tile still shows the
- * offer or already holds the frame - so mounting the player on a tap grows
- * nothing and the wall does not jump under the thumb.
+ * Like measureHintSlots, but computed rather than measured: a player's height
+ * is a known function of its frame width (canvas/embed.ts, playerHeight), so
+ * this needs no tile and forces no layout flush. The same height whether the
+ * tile still shows the offer or already holds the frame - so mounting the player
+ * on a tap grows nothing and the wall does not jump under the thumb.
  */
-function sizeEmbeds(list: Tile[], width: number) {
+function sizeEmbedSlots(list: Slot[], width: number) {
   const colW = (width - (cols - 1) * GAP) / cols;
-  for (const t of list) {
-    if (!t.embed) continue;
+  for (const s of list) {
+    if (!s.embed) continue;
     // The Feed mounts the bare frame full-bleed, so the tile width is the frame
     // width - no card padding to subtract, unlike the canvas.
-    const span = spanFor(t, colW);
+    const span = spanFor(s, colW);
     const w = span * colW + (span - 1) * GAP;
-    t.measured = Math.max(72, Math.round(t.embed.playerHeight(w)));
+    s.measured = Math.max(72, Math.round(s.embed.playerHeight(w)));
   }
+}
+
+/**
+ * The mounted tile for a slot, built and appended if absent - or rebuilt when
+ * the item's kind has changed under it. The one door that puts a tile in the
+ * DOM; cullWindow() and measureHintSlots() are its two callers.
+ */
+function ensureTile(s: Slot): Tile {
+  let t = tiles.get(s.item.id);
+  if (t && t.kind !== s.kind) { dropTile(t); tiles.delete(s.item.id); t = undefined; }
+  if (!t) {
+    t = buildTile(s.item);
+    tiles.set(s.item.id, t);
+    gridEl!.appendChild(t.el);
+  } else {
+    // Keep the tile pointed at the live item; a reused tile predates this pass.
+    t.item = s.item;
+    t.ratio = s.ratio;
+  }
+  return t;
 }
 
 // ---------------------------------------------------------------------------
@@ -1204,55 +1239,110 @@ function scheduleLayout() {
   layoutRaf = requestAnimationFrame(() => { layoutRaf = 0; layout(); });
 }
 
-/** Recompute the column count for the current width and place every tile. */
+/**
+ * Recompute the column count and the whole wall's shape, then mount the window.
+ *
+ * This sizes every item into a slot - a size for all, which is what keeps the
+ * scrollbar honest - and then cullWindow() puts a DOM tile only under the
+ * screenful near the viewport. The empty plate rides here because this is where
+ * the item count is read; a frame's delay showing it is invisible.
+ */
 function layout() {
   if (!gridEl || board.layoutMode !== 'mobile') return;
   const width = gridEl.clientWidth;
   if (width < 1) return;
   cols = clamp(Math.round(width / TILE_TARGET), 2, MAX_COLS);
-  const list = feedItems().map(it => tiles.get(it.id)).filter(t => !!t);
-  measureHints(list, width);
-  sizeEmbeds(list, width);
-  const { boxes, height } = feedMasonry(list, width);
-  for (const b of boxes) {
-    b.t.el.style.width = `${b.w}px`;
-    b.t.el.style.height = `${b.h}px`;
-    b.t.el.style.transform = `translate(${b.x.toFixed(2)}px, ${b.y.toFixed(2)}px)`;
-  }
+
+  const items = feedItems();
+  empty!.classList.toggle('is-shown', items.length === 0);
+  slots = items.map(it => ({
+    item: it, kind: kindOf(it), embed: linkEmbed(it),
+    ratio: ratioOf(it), span: hintSpan(it), measured: 0,
+    box: { x: 0, y: 0, w: 0, h: 0 },
+  }));
+  slotById = new Map(slots.map((s): [string, Slot] => [s.item.id, s]));
+
+  measureHintSlots(slots, width);   // the one kind that must be mounted to size
+  sizeEmbedSlots(slots, width);     // computed height, no DOM
+  const height = packSlots(slots, width);
   gridEl.style.height = `${Math.max(0, height)}px`;
-  // Here, not render(): a sticker's fraction of its host changes on resize
-  // (a bare 'geom', no tile rebuild), and layout() already listens for that,
-  // rAF-throttled.
-  paintStickers();
-  releaseOffscreen();
+
+  // Every box just moved, so every mounted tile is repositioned.
+  cullWindow(true);
 }
 
 // ---------------------------------------------------------------------------
-// Media discipline
+// The window: DOM for a screenful, not the whole wall
 // ---------------------------------------------------------------------------
 
+/** How far past the viewport a tile is still mounted, in screens. One screen of
+ *  headroom above and below absorbs a fast flick without a blank band. */
+const WINDOW_SCREENS = 1;
+
+function scheduleCull() {
+  if (cullRaf || typeof requestAnimationFrame !== 'function') { cullWindow(); return; }
+  cullRaf = requestAnimationFrame(() => { cullRaf = 0; cullWindow(); });
+}
+
 /**
- * Drop any mounted video that has scrolled well clear of the window and is not
- * the one now playing. A parked <video> holds a decoder; a phone rations those
- * hard, so a feed that mounted every clip it passed would exhaust them.
+ * Mount the tiles whose slot falls inside the window, drop the rest. This is the
+ * heart of the windowing: a board of hundreds keeps a wall of a dozen live
+ * nodes, the same trade canvas/items.ts makes with its cull.
+ *
+ * The now-playing clip is the one exemption, exactly as on the canvas: removing
+ * a <video> from the document pauses it, so the tile that is sounding is kept
+ * mounted wherever it has scrolled to.
+ *
+ * Stickers ride here too - a pinned sticker's host tile only exists while in the
+ * window, so paintStickers() is re-run on every cull rather than once per layout.
  */
-function releaseOffscreen() {
-  if (!root) return;
+function cullWindow(reposition = false) {
+  if (!root || !gridEl) return;
+  const view = root.clientHeight;
+  const scrollTop = root.scrollTop;
+  const margin = view * WINDOW_SCREENS;
+  const viewTop = scrollTop - margin;
+  const viewBottom = scrollTop + view + margin;
+  // gridEl's top in the scroller's own content coordinates - one rect read,
+  // hoisted out of the loop so the whole pass forces at most one layout flush.
+  const gridTop = gridEl.getBoundingClientRect().top - root.getBoundingClientRect().top + scrollTop;
+
   const npEl = nowPlaying()?.el || null;
-  const top = -root.clientHeight;
-  const bottom = root.clientHeight * 2;
-  // Hoisted: the container's own top doesn't move as fillTile swaps video
-  // for poster, so reading it once avoids a layout flush per mounted tile.
-  const rootTop = root.getBoundingClientRect().top;
-  for (const t of tiles.values()) {
-    if (!t.video || t.video === npEl) continue;
-    const y = t.el.getBoundingClientRect().top - rootTop;
-    if (y < top || y > bottom) {
-      releasePlayers(t.el);
-      t.video = null;
-      fillTile(t);      // back to a poster
-    }
+  const wanted = new Set<string>();
+  // Did the mounted set change this pass? A scroll that stays within the margin
+  // mounts and drops nothing, so the sticker repaint and the play mark below are
+  // skipped - the two O(n) tails that would otherwise run every scroll frame.
+  let changed = false;
+  for (const s of slots) {
+    const top = gridTop + s.box.y;
+    if (top + s.box.h < viewTop || top > viewBottom) continue;
+    wanted.add(s.item.id);
+    // On a plain scroll only the tiles that just entered are placed - an already
+    // mounted tile has not moved, so re-writing its width/height would be a
+    // layout flush per tile per frame, the very cost windowing exists to avoid.
+    const had = tiles.has(s.item.id);
+    const t = ensureTile(s);
+    if (!had) changed = true;
+    if (reposition || !had) placeTile(t, s.box);
   }
+  // Everything mounted but outside the window goes - unless it is the clip that
+  // is playing, which is kept and simply repositioned from its slot.
+  for (const [id, t] of tiles) {
+    if (wanted.has(id)) continue;
+    const s = slotById.get(id);
+    if (s && t.video && t.video === npEl) { placeTile(t, s.box); continue; }
+    dropTile(t);
+    tiles.delete(id);
+    changed = true;
+  }
+  if (changed || reposition) { paintStickers(); markPlaying(); }
+}
+
+/** Size and position one tile from its slot's box. */
+function placeTile(t: Tile, box: Box) {
+  t.el.style.width = `${box.w}px`;
+  t.el.style.height = `${box.h}px`;
+  t.el.style.transform = `translate(${box.x.toFixed(2)}px, ${box.y.toFixed(2)}px)`;
 }
 
 /** Light the video tile whose clip is the one playing. */
@@ -1303,4 +1393,6 @@ function dropTile(t: Tile) {
 function teardown() {
   for (const t of tiles.values()) dropTile(t);
   tiles.clear();
+  slots = [];
+  slotById = new Map();
 }

@@ -186,6 +186,9 @@ export const itemHashes = (
   [
     item?.asset?.hash, item?.meta?.cover, item?.meta?.shot,
     item?.meta?.thumb, item?.meta?.preview, item?.meta?.art,
+    // The baked ~1024px display copy (optimize/picture.ts, import/drop.ts). A
+    // derived asset like the thumb, so it packs and syncs by the same walk.
+    item?.meta?.display,
     // Legacy key — nothing writes it but old boards still carry it.
     item?.meta?.poster,
   ].filter((h): h is string => Boolean(h));
