@@ -151,7 +151,10 @@ test('What Changed shows the changelog in the board window, and the board comes 
   const userData = await mkdtemp(join(tmpdir(), 'mbrd-smoke-'));
   const app = await launch(userData);
   let board = await ready(app);
-  const windows = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length);
+  // Visible ones only: the hidden menu panel is a window too, built after the
+  // board's first load, so on a slow runner it can arrive between the counts.
+  const windows = () => app.evaluate(({ BrowserWindow }) =>
+    BrowserWindow.getAllWindows().filter(w => w.isVisible()).length);
   const before = await windows();
   await board.evaluate(() => {
     window.mbrd!.board.title = 'Changelog trip';

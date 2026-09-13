@@ -1116,7 +1116,14 @@ Windows and Linux quit anyway when the last window closes, and macOS keeps the
 app with no window. So Cmd+Q closed the window and left mbrd running, and in the
 first release test run (34776527199) every smoke test on macOS hung at
 `app.close()` for 3 minutes, then 3 more in teardown. The fix: a `quitting`
-flag set in `before-quit`, and the flush quits again when it is set.
+flag set in `before-quit`, and the flush quits again when it is set. The
+second test run (34777495499) seemed to say the fix failed, but it built
+9f698e8, the commit before the fix: `gh workflow run` right after the push
+took the old head. The third (34779433086, e836e35) quit cleanly on macOS, and
+its log shows "quit asked", then "quitting". It also found a race in the smoke
+test: the hidden menu panel is a window, built after the board's first load,
+so the changelog test's window count could change between its two reads. It
+counts visible windows now.
 
 Before the first release, checked with `gh` on 2026-09-13: KostaJovanovic/mbrd
 has no secrets, and KostaJovanovic/mbrd-release has no branch, so the publish
