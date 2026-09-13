@@ -26,6 +26,13 @@ import * as updates from './updates.ts';
 
 const isMac = process.platform === 'darwin';
 
+/** A quit is under way. holdCloseForFlush() stops the window's close for the
+ * flush, and Electron takes a stopped close as a cancelled quit. Windows and
+ * Linux quit anyway when the last window closes, and macOS does not, so the
+ * flush asks again. Without it, Cmd+Q on a Mac closed the window and left the
+ * app running, and the smoke test waited for an exit that never came. */
+let quitting = false;
+
 // Files the OS asked for before a window existed (macOS open-file can precede ready).
 const pending: string[] = [];
 
@@ -116,6 +123,9 @@ function main(): void {
   // On macOS the process stays alive with no windows.
   app.on('window-all-closed', () => {
     if (!isMac) app.quit();
+  });
+  app.on('before-quit', () => {
+    quitting = true;
   });
 }
 
@@ -514,6 +524,8 @@ function holdCloseForFlush(win: BrowserWindow, board: WebContents): void {
       flushed = true;
       // close() not destroy(): the handler stands aside once flushed is set.
       if (!win.isDestroyed()) win.close();
+      // The hold cancelled the quit, so ask again (see `quitting`).
+      if (quitting) app.quit();
     });
   });
 }
