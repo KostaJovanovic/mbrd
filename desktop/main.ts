@@ -122,11 +122,14 @@ function main(): void {
 
   // On macOS the process stays alive with no windows.
   app.on('window-all-closed', () => {
+    log('info', 'every window closed', { quitting });
     if (!isMac) app.quit();
   });
   app.on('before-quit', () => {
+    log('info', 'quit asked');
     quitting = true;
   });
+  app.on('will-quit', () => log('info', 'quitting'));
 }
 
 // .ico on Windows (multi-size); .png elsewhere. __dirname is dist/.
@@ -519,9 +522,11 @@ function holdCloseForFlush(win: BrowserWindow, board: WebContents): void {
     event.preventDefault();
     if (flushing) return;
     flushing = true;
+    log('info', 'close held for the flush', { quitting });
     closePanel();
     void flushBoard(board).then(() => {
       flushed = true;
+      log('info', 'flushed, closing', { quitting });
       // close() not destroy(): the handler stands aside once flushed is set.
       if (!win.isDestroyed()) win.close();
       // The hold cancelled the quit, so ask again (see `quitting`).

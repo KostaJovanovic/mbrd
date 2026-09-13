@@ -143,14 +143,27 @@ jobs:
 
       # Launch, add a note, close, relaunch, and see the board come back, before
       # 200 MB of installer is wrapped round it. Linux runners have no display.
+      # A minute a test here, not the three the config allows a slow machine:
+      # a hang then fails in about 12 minutes, and a private repo pays ten
+      # times the Linux rate for a macOS minute.
       - name: Smoke test
         run: |
           if [ "${{ matrix.platform }}" = "linux" ]; then
             sudo apt-get update && sudo apt-get install -y xvfb
-            xvfb-run --auto-servernum npm run smoke
+            xvfb-run --auto-servernum npm run smoke -- --timeout=60000
           else
-            npm run smoke
+            npm run smoke -- --timeout=60000
           fi
+
+      # The app's own log from each smoke run, which says where a hang stopped.
+      # A hung test never reaches its cleanup, so its folder is still there.
+      - name: The smoke test's app logs
+        if: failure()
+        run: >-
+          node -e "const fs = require('fs'), path = require('path'), dir = require('os').tmpdir();
+          for (const name of fs.readdirSync(dir).filter(n => n.startsWith('mbrd-smoke-'))) {
+          const file = path.join(dir, name, 'logs', 'main.log');
+          if (fs.existsSync(file)) console.log('== ' + file + '\n' + fs.readFileSync(file, 'utf8')); }"
 
       - name: Build
         env:
