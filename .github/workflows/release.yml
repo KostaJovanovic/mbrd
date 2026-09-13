@@ -165,6 +165,18 @@ jobs:
           const file = path.join(dir, name, 'logs', 'main.log');
           if (fs.existsSync(file)) console.log('== ' + file + '\n' + fs.readFileSync(file, 'utf8')); }"
 
+      # npm installed sharp's native package for this runner's chip only, and
+      # the universal app needs the Intel one too. x64ArchFiles in
+      # electron-builder.yml lets the pair sit in both halves. The versions are
+      # the ones sharp itself names.
+      - name: Add sharp for Intel Macs
+        if: matrix.platform == 'darwin'
+        run: |
+          v=$(node -p "require('./node_modules/sharp/package.json').optionalDependencies['@img/sharp-darwin-x64']")
+          l=$(node -p "require('./node_modules/sharp/package.json').optionalDependencies['@img/sharp-libvips-darwin-x64']")
+          npm install --no-save --force --ignore-scripts "@img/sharp-darwin-x64@$v" "@img/sharp-libvips-darwin-x64@$l"
+          ls node_modules/@img
+
       - name: Build
         env:
           # No Apple certificate: electron-builder.yml sets mac.identity to null
