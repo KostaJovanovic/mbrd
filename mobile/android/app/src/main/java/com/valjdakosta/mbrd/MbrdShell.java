@@ -51,8 +51,8 @@ import org.json.JSONObject;
  *    assets/mbrd-bridge.js) at document start, for the app origin and the dev
  *    server only, with the boot object in place of its marker.
  * Its methods: startupNotes (where the boards are, when not in Documents/mbrd),
- * share (the navigator.share the WebView lacks) and bars (the page colour for
- * the status and gesture bands). Its events: "open" (deliver(), for "Open with"
+ * share (the navigator.share the WebView lacks), bars (the page colour for the
+ * status and gesture bands) and checkUpdates (MbrdUpdate). Its events: "open" (deliver(), for "Open with"
  * and "Share to") and "pause" (the flush the desktop runs before a close).
  */
 @CapacitorPlugin(name = "MbrdShell")
@@ -245,6 +245,18 @@ public class MbrdShell extends Plugin {
 
     private static int channel(Integer value) {
         return value == null ? 0 : Math.max(0, Math.min(255, value));
+    }
+
+    // ---- updates --------------------------------------------------------------
+
+    /** The panel's "Check for updates" row, through updates.check() in the
+     *  bridge. MbrdUpdate shows the answer itself: a dialog for a new version, a
+     *  short message otherwise. */
+    @PluginMethod
+    public void checkUpdates(PluginCall call) {
+        Activity activity = getActivity();
+        if (activity != null) MbrdUpdate.checkNow(activity);
+        call.resolve();
     }
 
     // ---- share ----------------------------------------------------------------

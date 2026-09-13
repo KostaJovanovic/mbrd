@@ -68,6 +68,10 @@ public class MainActivity extends BridgeActivity {
         setUpInsets();
         applyFullscreen(getResources().getConfiguration());
         setUpBack();
+        // Returns at once, and does nothing unless the build has an update feed.
+        // Not while the storage screen is up: the answer recreates the activity,
+        // which would take the dialog with it, and the check waits six hours.
+        if (bridge != null) MbrdUpdate.maybeCheck(this);
     }
 
     /** BridgeActivity.onCreate() calls this to build the bridge. */
