@@ -7,6 +7,11 @@ import { surface, surfaceToBlob, type Surface } from '../canvas/surface.ts';
 /** Max long edge — 1200px is where a card stops being pixel-limited. */
 export const MAX_SIDE = 1200;
 
+/** Long edge of the baked display copy carried in the .mbrd (meta.display).
+ *  1024 is sharp for any Feed tile and every ordinary card; the canvas swaps in
+ *  the original when a card is zoomed past this, so it is a floor, not a ceiling. */
+export const DISPLAY_SIDE = 1024;
+
 /** Cover art ceiling — drawn smaller than the card, so a lower limit. */
 export const MAX_SIDE_COVER = 600;
 
