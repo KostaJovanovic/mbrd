@@ -58,6 +58,12 @@
             </intent-filter>
         </activity>
 
+        <!-- MbrdUpdate's install session reports here. Not exported: only the
+             PendingIntent the session was committed with can reach it. -->
+        <receiver
+            android:name=".MbrdUpdate$InstallStatus"
+            android:exported="false" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -74,4 +80,8 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
     <!-- Android 11 and later. A Play build must drop it (plan §1 #27). -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
+    <!-- MbrdUpdate.java writes a downloaded update into an install session. A
+         Google Play build must remove this line: Play forbids an app that
+         updates itself (plan §1 #27). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 </manifest>

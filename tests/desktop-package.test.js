@@ -93,7 +93,23 @@ test('the updaters find the files the builder names', () => {
   }
 });
 
-test('the Android updater finds the APK', { skip: 'MbrdUpdate.java arrives in group O of research/apps-tasks-2026-09-13.md' }, () => {});
+test('the Android updater finds the APK the release job names', () => {
+  const java = read(join(ROOT, 'mobile', 'android', 'app', 'src', 'main', 'java', 'com', 'valjdakosta', 'mbrd', 'MbrdUpdate.java'));
+  const literal = java.match(/APK_NAME = Pattern\.compile\("(.+)"\);/)?.[1];
+  assert.ok(literal, 'MbrdUpdate.java no longer compiles APK_NAME from one string literal');
+  // A Java string literal doubles every backslash.
+  const apkName = new RegExp(literal.replace(/\\\\/g, '\\'));
+  const workflow = read(join(ROOT, '.github', 'workflows', 'release.yml'));
+  const prefix = workflow.match(/"out\/(mbrd-android-)\$VERSION\.apk"/)?.[1];
+  assert.ok(prefix, '.github/workflows/release.yml no longer names the APK out/mbrd-android-$VERSION.apk');
+  const apk = `${prefix}0.302.0.apk`;
+  assert.match(apk, apkName, 'MbrdUpdate.java would not find the APK in a release');
+  for (const other of [sample('nsis'), sample('dmg'), sample('appImage'), 'mbrd-source-0.302.0.zip']) {
+    assert.doesNotMatch(other, apkName, `APK_NAME also matches ${other}`);
+  }
+  assert.doesNotMatch(apk, exportedPattern('INSTALLER_ASSET'), 'INSTALLER_ASSET also matches the APK');
+  assert.doesNotMatch(apk, exportedPattern('APPIMAGE_ASSET'), 'APPIMAGE_ASSET also matches the APK');
+});
 
 test('electron-builder writes no update file and publishes nothing', () => {
   // updates.ts reads GitHub's API. Without `publish: null` electron-builder infers

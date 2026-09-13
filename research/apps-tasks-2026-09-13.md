@@ -950,16 +950,16 @@ every decision a task left to you in the notes column.
 | M4 | DONE (v0.307) | `handleOnPause()` sends `pause`, not retained. The bridge runs the `onClose` function, which the Electron adapter already wraps in a catch |
 | M5 | DONE (v0.307) | ported, with three changes. The bands start in the paper colour, not in white or black. The page colour goes through a 1-pixel canvas, because FileAnalyser's pattern reads `rgb()` only and a palette can set `--paper` with `color-mix()` (`tokens.css`). The colour is read again after 400 ms, for a look in transition |
 | M6 | | needs a person, on both phones. The steps are under "Open" below |
-| N0 | | the two phones and the result |
-| N1 | | |
-| N2 | | |
-| N3 | | |
-| N4 | | |
-| O1 | | |
-| O2 | | |
-| O3 | | |
-| O4 | | |
-| O5 | | |
+| N0 | | needs a person, on both phones. No phone was connected on 2026-09-13, and FileAnalyser's "Build Android FFmpeg" workflow has never run (`gh run list --workflow android-ffmpeg.yml` is empty), so it has no artifact. The same script builds the binary inside FileAnalyser 9.10.0's release APK, through its release job: `lib/arm64-v8a/libanrffmpeg.so`, 22.6 MB, checked with `gh release download` and `tar -tf`. The steps use that file. They are under "Open" below |
+| N1 | | held for N0, which says test first. A failure on both phones stops the group |
+| N2 | | held for N0 |
+| N3 | | held for N0. The desktop's GPL notice is still missing too |
+| N4 | | held for N0 |
+| O1 | DONE (v0.308) | ported whole, with `mbrd` in every string. The dialog says "Your boards and settings stay". The bounded read of the API answer lives in `MbrdUpdate`, because `MbrdShell.readAll` has no ceiling. `MainActivity` checks only when the bridge exists: with the storage screen up, the answer recreates the activity and would take the dialog with it, and the check would then wait six hours. `MbrdUpdateTest`, 4 tests, one more than FileAnalyser's: `version.mjs` turns the label 1.05 into 1.5.0, and the two compare equal. The Android test in `tests/desktop-package.test.js` now runs: it holds `APK_NAME` against the name the release job writes |
+| O2 | DONE (v0.308) | as written, with FileAnalyser's comments. Checked on 2026-09-13 with a throwaway key: `assembleRelease` with `MBRD_KEYSTORE` set gives an APK that `apksigner verify` accepts, and `-PmbrdUpdateFeed` lands in `BuildConfig.UPDATE_FEED`. Without them the release is unsigned and the feed is empty |
+| O3 | DONE (v0.308) | two changes from FileAnalyser's job. It builds the web bundle first, as the desktop job does, because `stage-web.mjs` refuses a bundle older than its sources and a fresh checkout writes `app.js` before every `.ts` under it (git writes in path order). A build rewrites `app.js` even with the same bytes: checked, the file time moved and git saw no change. The four FFmpeg steps skip until `mobile/ffmpeg/build-android.sh` exists (`hashFiles(...) != ''`), because N is held for N0. The notes gain the Android row, the Android line under the signing list, and "The macOS, Linux and Android builds are new". Not run: O5 |
+| O4 | DONE (v0.308) | in a new `mobile/README.md`, which P1 fills in. The `keytool` options checked in JDK 21's `-genkeypair -help`, and `gh secret set` reads standard input when there is no `--body`. PowerShell has no `<`, so its steps pipe the file. The maintainer's to carry out |
+| O5 | | the maintainer's, after O4. The steps are under "Open" below |
 | P1 | | |
 | P2 | | |
 | P3 | | |
@@ -1040,6 +1040,44 @@ M6, on each of the two phones, with a build from v0.307 or later:
 10. In portrait, look at the top and bottom edges. Expect nothing under the status bar or the gesture bar.
 11. Turn the phone. Expect full screen, and a swipe from the edge to show the bars.
 12. Change the look in the panel. Expect the bands at the top and bottom to take the new paper colour.
+
+N0, on each of the two phones, one phone at a time. The binary is FileAnalyser
+9.10.0's, taken out of its release APK into
+`C:\Users\Kosta\AppData\Local\Temp\n0\lib\arm64-v8a\libanrffmpeg.so`. Use the
+SDK's adb by its full path: the `adb` in PATH is `C:\adb\adb.exe`, version
+1.0.32, and it stops the SDK's newer server.
+
+1. Connect the phone by USB with USB debugging on, as in J8 steps 1 and 2.
+2. In PowerShell, run `C:\Android\sdk\platform-tools\adb.exe devices`. Expect one phone in the list.
+3. Run `C:\Android\sdk\platform-tools\adb.exe push C:\Users\Kosta\AppData\Local\Temp\n0\lib\arm64-v8a\libanrffmpeg.so /data/local/tmp/ffmpeg`.
+4. Run `C:\Android\sdk\platform-tools\adb.exe shell chmod 755 /data/local/tmp/ffmpeg`.
+5. Run `C:\Android\sdk\platform-tools\adb.exe shell /data/local/tmp/ffmpeg -hide_banner -version`.
+6. Expect a first line that starts with "ffmpeg version".
+7. Run the one-frame hardware encode:
+   `C:\Android\sdk\platform-tools\adb.exe shell '/data/local/tmp/ffmpeg -hide_banner -loglevel error -f lavfi -i color=c=black:s=320x240:d=0.1:r=10 -pix_fmt yuv420p -c:v h264_mediacodec -frames:v 1 -f null - ; echo exit=$?'`
+8. Expect `exit=0` and no error lines.
+9. Run step 7 again with `libopenh264` in place of `h264_mediacodec`. Expect `exit=0`.
+10. Run `C:\Android\sdk\platform-tools\adb.exe shell rm /data/local/tmp/ffmpeg`.
+11. Send me the make, the model, the Android version, the line from step 6 and the output of steps 7 and 9.
+
+O5, the maintainer's, with v0.308 or later pushed:
+
+1. Do the four key steps in `mobile/README.md`.
+2. On GitHub, open KostaJovanovic/mbrd, then Actions, then "Release apps".
+3. Click "Run workflow". Untick "Publish the release", and click "Run workflow".
+4. Expect four artifacts: release-windows, release-macos, release-linux and release-android.
+5. Download release-android and unzip it.
+6. Run `C:\Android\sdk\build-tools\35.0.0\apksigner.bat verify --print-certs` on the APK.
+7. Expect the name you gave `keytool` in step 1.
+
+The update, on one phone, after two published releases:
+
+1. Uninstall any `mobile.bat` build. Its debug key cannot take a release update.
+2. Install the older release's `mbrd-android-<version>.apk` from KostaJovanovic/mbrd-release.
+3. Open mbrd. Expect "mbrd <newer version> is out". Press "Update".
+4. Expect a progress bar. On Android 12 and later, expect no confirm screen.
+5. Expect mbrd to close. Open it again.
+6. In the panel, expect the newer version in the footer.
 
 Asked outside the task list on 2026-09-13, done in v0.302: the desktop
 changelog opens in place in the board view, under the bar, and no longer in a

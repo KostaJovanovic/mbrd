@@ -16,9 +16,9 @@ import * as store from './store.ts';
  * run on a phone can test. tests/mobile-bridge.test.js holds the keys in step. */
 type AndroidBridge = Bridge & { shell: 'capacitor', platform: 'android' };
 
-/** A call the Java plugins answer from group N (native FFmpeg) or O (updates)
- * of research/apps-tasks-2026-09-13.md. Until then it refuses, and every
- * caller in platform/electron.ts already has a path for a refusal. */
+/** A call the Java plugins answer from group N (native FFmpeg) of
+ * research/apps-tasks-2026-09-13.md. Until then it refuses, and every caller
+ * in platform/electron.ts already has a path for a refusal. */
 const notYet = (what: string) => (): Promise<never> =>
   Promise.reject(new Error(`the Android shell cannot ${what} yet`));
 
@@ -57,8 +57,10 @@ const api: AndroidBridge = {
     decode: notYet('decode a picture natively'),
   }),
 
+  // MbrdUpdate.java answers in its own dialog or toast. A build with no update
+  // feed (mobile.bat) says that updates are off.
   updates: Object.freeze({
-    check: notYet('check for updates'),
+    check: () => call<void>('MbrdShell', 'checkUpdates'),
   }),
 
   // Where the boards are, when they are not in Documents/mbrd (plan §5.4).

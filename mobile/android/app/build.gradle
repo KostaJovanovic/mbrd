@@ -10,14 +10,41 @@ android {
         versionCode 306
         versionName "0.306"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        // The update feed MbrdUpdate.java reads. Empty means no update check at
+        // all, and it stays empty unless the build passes -PmbrdUpdateFeed=<url>.
+        // Only .github/workflows/release.yml does, so a mobile.bat build never
+        // checks. A Google Play build must not pass it: Play forbids an app
+        // that updates itself.
+        buildConfigField "String", "UPDATE_FEED", "\"${project.findProperty('mbrdUpdateFeed') ?: ''}\""
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    buildFeatures {
+        buildConfig = true
+    }
+    // The release key. The release workflow writes the keystore from the
+    // repository secrets and names it in MBRD_KEYSTORE. Without that variable a
+    // release build comes out unsigned, and a debug build keeps the debug key.
+    // Keep the SAME keystore forever: Android refuses an update signed with
+    // another key, so a new one would strand every installed copy.
+    signingConfigs {
+        release {
+            def keystore = System.getenv('MBRD_KEYSTORE')
+            if (keystore) {
+                storeFile file(keystore)
+                storePassword System.getenv('MBRD_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('MBRD_KEY_ALIAS')
+                // One password for the store and the key, unless a second is set.
+                keyPassword System.getenv('MBRD_KEY_PASSWORD') ?: System.getenv('MBRD_KEYSTORE_PASSWORD')
+            }
+        }
+    }
     buildTypes {
         release {
+            if (System.getenv('MBRD_KEYSTORE')) signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
