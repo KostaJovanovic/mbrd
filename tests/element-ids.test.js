@@ -32,6 +32,7 @@ const JS_BUILT = {
   'far-lands': 'the card at the edge of the board, placed once if anybody gets there',
   'fence-ghost': 'the preview rectangle drawn while a fence is being placed',
   'fence-prompt': 'the name-this-fence prompt',
+  'join-badge': 'the "cannot join" mark pinned over a card the router could not connect',
   // Off the table on purpose: it was one hardcoded id on a node
   // canvas/renderers.ts builds for both canvas and Feed, so two could exist
   // at once and the Feed slider's aria-describedby resolved to the wrong

@@ -58,6 +58,7 @@ import { armQuality, watchQuality } from './ui/quality.ts';
 import { initMenu, openAnchored, justDismissed } from './ui/menu.ts';
 import { initFencePrompt } from './ui/fence-prompt.ts';
 import { initConnChip } from './ui/conn-chip.ts';
+import { initJoinBadge } from './ui/join-badge.ts';
 import { initSearch } from './ui/search.ts';
 import { initIdle } from './ui/idle.ts';
 import { initBackfill } from './optimize/backfill.ts';
@@ -259,6 +260,8 @@ initFlyouts(cmds);
 initStickerWindow(vp, cmds);
 // Connection action chip. Needs vp for screen position of the line.
 initConnChip(cmds, vp);
+// "Cannot join" badge. Needs vp to pin over a card and to frame the failed pair.
+initJoinBadge(vp);
 // Board name on masthead + Desktop title card.
 initBoardTitle();
 // Injected: ui sits above storage. Clear-everything dialog.

@@ -40,6 +40,9 @@ type Seg = {
   // Outward face normals at the two endpoints — the router's chosen sides. The
   // Softish spline leaves and enters along these, so any side can meet any side.
   norms?: [Point, Point],
+  // The two cards cannot be joined without crossing a third (router verdict). No
+  // line is drawn; the pair is listed on the "cannot join" badge instead.
+  blocked?: boolean,
 };
 
 /** A seg with a look of its own: what decoLayer draws, and the bulk path never. */
@@ -107,6 +110,39 @@ const animating = new Map<string, Fade>();
 const settled = new Set<string>();
 /** Last known geometry per line. Kept so removed lines can fade out from where they were. */
 const lastSeg = new Map<string, Seg>();
+
+/** A pair the router could not join without crossing a third card — see Seg.blocked. */
+export type BlockedJoin = { a: string, b: string };
+/** The current set of blocked pairs, recomputed after each route pass. The join
+ *  badge (ui/join-badge.ts) reads this and lists them; nothing is drawn for them. */
+let blocked: BlockedJoin[] = [];
+let blockedSig = '';
+const blockedListeners = new Set<() => void>();
+/** Subscribe to changes in the blocked-join set. Mirrors onActiveConnectionMove. */
+export function onBlockedJoinsChange(fn: () => void): void { blockedListeners.add(fn); }
+/** The pairs that cannot be joined, for the badge. A fresh array only on change. */
+export function blockedJoins(): BlockedJoin[] { return blocked; }
+
+/** Recompute the blocked set from every seg's router verdict; notify on change. */
+function refreshBlocked(): void {
+  const pairs: BlockedJoin[] = [];
+  for (const seg of lastSeg.values()) {
+    if (seg.blocked && seg.routed && seg.ends) pairs.push({ a: seg.ends.a, b: seg.ends.b });
+  }
+  const sig = pairs.map(p => p.a + '\0' + p.b).sort().join('|');
+  if (sig === blockedSig) return;
+  blockedSig = sig;
+  blocked = pairs;
+  for (const fn of blockedListeners) fn();
+}
+
+/** Pull a thread out of the drawn/fading sets — a line that has become blocked
+ *  stops being drawn at once, rather than lingering until its fade lands. */
+function evict(key: string): void {
+  const live = animating.get(key);
+  if (live) { clearTimeout(live.timer); live.el.remove(); animating.delete(key); }
+  settled.delete(key);
+}
 
 /** Build and paint share one rAF. Flag prevents a paint from swallowing a pending build. */
 let wantBuild = false;
@@ -436,6 +472,8 @@ function build() {
 
   for (const [key, seg] of wanted) {
     lastSeg.set(key, seg);
+    // A known-blocked pair draws nothing and never enters a fade or the bulk path.
+    if (seg.blocked) { evict(key); continue; }
     if (settled.has(key)) continue;
     const live = animating.get(key);
     if (!live) {
@@ -456,6 +494,12 @@ function build() {
   }
   for (const [key, live] of animating) {
     if (!wanted.has(key) && live.dir === 'in') fadeTo(key, live, 'out');
+  }
+  // Blocked pairs sit in neither settled nor animating, so a deleted one is not
+  // pruned by the two loops above — drop any lastSeg entry nothing holds. Deleting
+  // the current key during Map iteration is safe.
+  for (const key of lastSeg.keys()) {
+    if (!wanted.has(key) && !settled.has(key) && !animating.has(key)) lastSeg.delete(key);
   }
 }
 
@@ -507,8 +551,13 @@ function routePass() {
     seg.points = intoMiddles(routed.points, a, b);
     seg.norms = routed.ends;
     seg.routed = true;
+    seg.blocked = routed.blocked || undefined;
+    // A pair that cannot be joined draws nothing — take it off screen at once and
+    // let the badge speak for it (ui/join-badge.ts).
+    if (seg.blocked) evict(key);
     for (const p of seg.points) stretchBox(p);
   }
+  refreshBlocked();
   requestPaint();
 }
 
