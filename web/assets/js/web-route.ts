@@ -46,6 +46,15 @@ export const STUB = 20;
  *  drag preview (straightSeg in canvas/web.ts) draw the same curve. */
 export const DRAG_HANDLE = 0.4;
 
+/** Absolute cap on a routed spline's interior corner rounding. Catmull-Rom
+ *  handles otherwise scale with leg length, so a long detour leg rounds its
+ *  corner by a hundred pixels and cuts straight through the card it routed
+ *  around. Capped, a corner turns tightly whatever the leg length. */
+const CORNER_ROUND = 24;
+/** A routed end may reach a little further than a corner for a clean, flowing
+ *  perpendicular exit from the card face. */
+const END_ROUND = 44;
+
 /** Fraction of face the fan of arriving lines may spread across. */
 const SPREAD = 0.66;
 
@@ -211,8 +220,11 @@ export function intoMiddles(points: Point[], a: End, b: End): Point[] {
 }
 
 /** A finished route. `ends`, when present, are the outward face normals at the two
- *  endpoints — the Softish spline leaves and enters along them. */
-export type Route = { points: Point[], ends?: [Point, Point] };
+ *  endpoints — the Softish spline leaves and enters along them. `blocked` is set
+ *  only when every clearance rung and all sixteen face pairs failed and the route
+ *  is the last-resort elbow that ignores obstacles: the two cards cannot be joined
+ *  without crossing another, so the drawing layer draws nothing and badges it. */
+export type Route = { points: Point[], ends?: [Point, Point], blocked?: boolean };
 
 /** Route a connection around obstacles. Tries clearance rungs, face escalation,
  *  and falls back to an orthogonal elbow (goes behind cards, never a diagonal). */
@@ -358,8 +370,9 @@ export function routeConnection(
     // No face pair draws a clear cubic: route orthogonally (it escalates faces on
     // its own), pull it straight, and take the exit normals from the route's ends.
     // Middle anchors here too, so the fallback also leaves from a face centre.
-    const orth = routeConnection(from, to, obstacles,
-      { ...opts, shape: 'square', fromSlot: undefined, toSlot: undefined }).points;
+    const orthRoute = routeConnection(from, to, obstacles,
+      { ...opts, shape: 'square', fromSlot: undefined, toSlot: undefined });
+    const orth = orthRoute.points;
     // Pull at the full clearance, not the tighter PULL_CLEARANCE: straightening
     // the path must not drag it back in to hug a card it was meant to keep off.
     const pulled = orth.length <= 2 ? orth
@@ -369,7 +382,24 @@ export function routeConnection(
     const hh = 0.2 * dd;
     const nA = unit(pulled[1].x - pulled[0].x, pulled[1].y - pulled[0].y);
     const nB = unit(pulled[m - 2].x - pulled[m - 1].x, pulled[m - 2].y - pulled[m - 1].y);
-    return { points: pulled, ends: [{ x: nA.x * hh, y: nA.y * hh }, { x: nB.x * hh, y: nB.y * hh }] };
+    // Inherit the orthogonal route's verdict: if even it could only give the
+    // obstacle-ignoring elbow, this curve cannot be drawn clear either.
+    const ends2: [Point, Point] = [{ x: nA.x * hh, y: nA.y * hh }, { x: nB.x * hh, y: nB.y * hh }];
+    // The orthogonal path clears every card, but the SPLINE drawn through it can
+    // round a corner straight through the body of a card the path went around
+    // (a bend hugging a card cuts the inside of the turn). Sample the actual drawn
+    // curve — the very geometry curveData/curvePoints render — and if it crosses a
+    // card body, this pair cannot be drawn clear: block it and badge it, never draw
+    // a line through a card.
+    let blocked = orthRoute.blocked;
+    if (!blocked) {
+      const bodies = blocksAt(0, false);
+      const drawn = curvePoints(pulled, ends2);
+      for (let i = 1; i < drawn.length; i++) {
+        if (crosses(drawn[i - 1], drawn[i], bodies)) { blocked = true; break; }
+      }
+    }
+    return { points: pulled, ends: ends2, blocked };
   }
 
   // Orthogonal best-face selection (Middle and Harsh): any side may meet any side.
@@ -488,7 +518,9 @@ export function routeConnection(
   }
 
   // Even the elbow gets the taut pass — a straight run between its corners may be clear.
-  return done(elbow(a, b), ordered, clearance, false);
+  // Nothing above cleared: this elbow ignores obstacles and will cross a card. Flag it
+  // blocked so the caller can draw nothing and raise the "cannot join" badge instead.
+  return { ...done(elbow(a, b), ordered, clearance, false), blocked: true };
 }
 
 /** Grow block outward to grid step — never inward, or the clearance margin is spent. */
@@ -859,11 +891,15 @@ function curveLegs(points: Point[], ends?: [Point, Point]): { start: Point, legs
     const p1 = points[i];
     const p2 = points[i + 1];
     const p3 = points[i + 2] ?? p2;
-    const cap = (Math.hypot(p2.x - p1.x, p2.y - p1.y) || 1) / 3;
-    // A routed end uses its handle vector, capped to a third of the first leg so
-    // it does not overshoot; the interior is plain Catmull-Rom.
-    const c1 = i === 0 && t0 ? clampHandle(p1, t0, cap) : catmull(p1, p0, p2, cap);
-    const c2 = i === n - 2 && tN ? clampHandle(p2, tN, cap) : catmull(p2, p3, p1, cap);
+    const leg = Math.hypot(p2.x - p1.x, p2.y - p1.y) || 1;
+    // Corners capped absolutely so a long leg still turns tightly; ends allowed a
+    // little more room for a flowing perpendicular exit. Both also held to a third
+    // of the leg, so a short leg does not overshoot either.
+    const midCap = Math.min(leg / 3, CORNER_ROUND);
+    const endCap = Math.min(leg / 3, END_ROUND);
+    // A routed end uses its handle vector; the interior is plain Catmull-Rom.
+    const c1 = i === 0 && t0 ? clampHandle(p1, t0, endCap) : catmull(p1, p0, p2, midCap);
+    const c2 = i === n - 2 && tN ? clampHandle(p2, tN, endCap) : catmull(p2, p3, p1, midCap);
     legs.push({ c1, c2, p: p2 });
   }
   return { start, legs };

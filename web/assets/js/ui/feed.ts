@@ -9,7 +9,9 @@ import {
   select, selection, trackTitle,
 } from '../state.ts';
 import { noteWords } from '../canvas/note-model.ts';
-import { displayURLReady, ensureDisplay } from '../canvas/display.ts';
+import {
+  displayURLReady, ensureDisplay, type Crop, type Turn, type Matte,
+} from '../canvas/display.ts';
 import { baseName, clamp, div, actAsButton } from '../util.ts';
 import { mobileOrder } from '../arrange/arrangements.ts';
 // Shortest-column-first, shared with the board's own masonry - see the head of
@@ -350,6 +352,18 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
       { root },
     );
     mastheadObs.observe(mastheadEl);
+
+    // The near-viewport gate for display-copy generation. Rooted on the
+    // scroller, with a margin so the copy is in flight before the tile arrives.
+    copyObs = new IntersectionObserver(entries => {
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        const job = copyJobs.get(e.target);
+        copyJobs.delete(e.target);
+        copyObs!.unobserve(e.target);
+        job?.();
+      }
+    }, { root, rootMargin: '600px 0px' });
   }
   addEventListener('resize', paintMasthead);
   root.addEventListener('scroll', releaseOffscreen, { passive: true });
@@ -467,6 +481,18 @@ function spareURL(item: Item) {
   return hash ? assetURL(hash) : null;
 }
 
+/**
+ * The small preview for the blur-up stage: the 100px thumb first, then an
+ * embedded preview, cover, poster or shot - but never the full-size asset. That
+ * asset is the original a phone cannot afford to decode for a tile, which is the
+ * whole reason a photo shows a soft thumb first and the card-sized copy after.
+ */
+function lowResURL(item: Item) {
+  const m = item.meta || {};
+  const hash = str(m.thumb) || str(m.preview) || str(m.cover) || str(m.poster) || str(m.shot);
+  return hash ? assetURL(hash) : null;
+}
+
 /** A raster URL for anything that has one - a preview, a thumb, a poster, a cover, a shot. */
 function pictureURL(item: Item) {
   const m = item.meta || {};
@@ -569,55 +595,74 @@ function fillImage(t: Tile) {
   img.decoding = 'async';
   img.draggable = false;
   img.alt = t.item.name || '';
-  // The full-size picture, not the hundred-pixel thumb the card swaps in when
-  // zoomed out - a feed tile is far bigger than 100px. Thumb (pictureURL) is
-  // only the fallback with no asset to show.
-  //
-  // Through shownHash(), the fix for a tile that drew its own filename: the
-  // asset behind a PDF, RAW or HEIC isn't a picture - only `meta.preview` is.
+  // The card-sized display copy is the sharp layer, never the full original: a
+  // multi-megapixel file decoded for a ~210px tile was the whole of the Feed's
+  // scroll lag on a phone (see canvas/display.ts). shownHash() picks the pixels
+  // - the asset for a photo, meta.preview for a PDF/RAW/HEIC whose asset is not
+  // a picture at all.
   const shown = shownHash(t.item);
-  const url = (shown && assetURL(shown)) || pictureURL(t.item);
-  // A cropped picture is cropped here too, via the same route the card and
-  // viewer take - the Feed is the whole board on a phone, so an uncropped
-  // tile here would be the only view most phone users ever see of a picture
-  // that's cropped everywhere else.
+  // The three edits baked into the copy, the same route the card and viewer
+  // take - an uncropped tile here would be the only view most phone users ever
+  // see of a picture that is cropped everywhere else.
   const crop = itemCrop(t.item);
-  // Quarter turn and background removal, same reasoning as the crop.
   const rot = itemRotate(t.item);
   const matte = itemMatte(t.item);
-  // `shown` again, not the asset: a cropped PDF page must be cropped from the
-  // page, and asking display.ts for a crop of the PDF's own bytes answers
-  // with nothing - which left the tile uncropped on the one view where a
-  // wrong frame is most visible.
-  const edited = !!(crop || rot || matte) && !!shown;
-  const ready = edited && shown ? displayURLReady(shown, crop, rot, matte) : null;
-  // **An edited tile never shows the untouched file, not even for a moment.**
-  // Used to set `url` unconditionally and let the copy replace it a tick
-  // later, which on a cut-out card flashed the background in and out - the
-  // same flash the card renderer refuses. An empty tile for a moment is
-  // better, and on a re-mount `ready` answers synchronously so there's no moment.
+
+  // A copy already in memory (a revisit, or a second tile of the same asset)
+  // answers synchronously - straight to sharp, with no preview and no observer.
+  const ready = shown ? displayURLReady(shown, crop, rot, matte) : null;
+  // The blur-up stage: the 100px thumb (or an embedded preview / poster),
+  // upscaled and soft until the copy lands. loading='lazy' holds even this off
+  // until the tile nears the screen, so a far tile fetches nothing.
+  const preview = lowResURL(t.item);
+
+  // A shimmer until the first pixels paint, dropped on the first load. With a
+  // thumb it barely shows; without one it stands in for the blur-up stage.
+  t.el.classList.add('is-loading');
+  const settle = () => t.el.classList.remove('is-loading');
+
   if (ready) img.src = ready;
-  else if (!edited && url) img.src = url;
-  // A source that won't load is answered, not left as alt text - the same
-  // guard the card has. The fallback thumbnail is different bytes on a
-  // different path, so it survives whatever this one hit.
+  else if (preview) img.src = preview;
+  img.addEventListener('load', settle);
+  // A source that will not load falls back to a spare made by another path,
+  // which survives whatever this one hit. No spare - drop the shimmer anyway
+  // rather than shimmer forever over an image that is never coming.
   img.addEventListener('error', () => {
     const spare = spareURL(t.item);
     if (spare && img.src !== spare) img.src = spare;
+    else settle();
   });
-  if (edited && shown && !ready) {
-    ensureDisplay(shown, crop, rot, matte).then(u => {
-      // A copy that couldn't be made falls back to the untouched picture -
-      // still wrong, still better than a tile showing its own filename.
-      // `!img.src` alongside isConnected saves work on a discarded tile
-      // without leaving a live one blank.
-      const src = u || url;
-      if (src && (img.isConnected || !img.src)) img.src = src;
-    });
-  }
+
+  // The sharp copy is generated only as the tile approaches the screen, so
+  // opening a big board does not queue a hundred main-thread decodes at once.
+  if (!ready && shown) wantCopy(t.el, img, shown, crop, rot, matte);
+
   applyGrade(img, t.item);
   writeTileFit(t);
   t.el.appendChild(img);
+}
+
+// The display copy is generated lazily, one tile at a time, as it nears the
+// viewport. One observer for the whole wall; a WeakMap holds each tile's job so
+// the callback stays a lookup. The margin is generous, so the copy is usually
+// ready by the time the tile is actually on screen. dropTile() unobserves.
+let copyObs: IntersectionObserver | null = null;
+const copyJobs = new WeakMap<Element, () => void>();
+
+function wantCopy(el: HTMLElement, img: HTMLImageElement,
+  shown: string, crop: Crop, rot: Turn, matte: Matte) {
+  const run = () => {
+    ensureDisplay(shown, crop, rot, matte).then(u => {
+      // A discarded tile is left alone; a live one, or one still blank, takes
+      // the copy. A copy that could not be made leaves the preview in place.
+      if (u && (img.isConnected || !img.src)) img.src = u;
+    }).catch(() => { /* the preview stays; the tile is not left blank */ });
+  };
+  // No observer (a headless test, or an old engine) means generate at once -
+  // the near-viewport gate is an optimisation, not the contract.
+  if (!copyObs) { run(); return; }
+  copyJobs.set(el, run);
+  copyObs.observe(el);
 }
 
 /**
@@ -1249,6 +1294,8 @@ function scheduleMasthead() {
 
 function dropTile(t: Tile) {
   if (t.video) { releasePlayers(t.el); t.video = null; }
+  copyObs?.unobserve(t.el);
+  copyJobs.delete(t.el);
   t.el.remove();
 }
 

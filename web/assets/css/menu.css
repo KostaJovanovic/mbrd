@@ -334,6 +334,35 @@
   border-radius: 0 max(0px, calc(var(--radius-sm) - 2px))
                    max(0px, calc(var(--radius-sm) - 2px)) 0;
 }
+/* "Cannot join" badge (ui/join-badge.ts). A single round mark pinned over the
+   card caught in the most failed joins; opens the list of unjoinable pairs. */
+#join-badge {
+  position: fixed;
+  z-index: calc(var(--z-menu) - 1);
+  display: grid;
+  place-items: center;
+  width: var(--icon-button);
+  height: var(--icon-button);
+  padding: 0;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: 999px;
+  background: var(--paper-card);
+  box-shadow: var(--shadow-2);
+  color: var(--danger);
+  font-family: var(--font-display);
+  font-size: var(--t-body);
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  animation: ctx-in var(--dur-fast) var(--ease);
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+#join-badge[hidden] { display: none; }
+#join-badge:focus-visible { background: var(--paper-2); }
+@media (hover: hover) {
+  #join-badge:hover { background: var(--paper-2); }
+}
+
 #conn-chip button:focus-visible { background: var(--paper-2); color: var(--accent-deep); }
 #conn-chip button.is-danger:focus-visible { color: var(--danger); }
 /* Guarded: the chip stays on the board after a tap, so an unguarded

@@ -24,8 +24,8 @@ uses the web defaults; Electron wires an adapter. **Capacitor is a third
 adapter and nothing more.** The renderer is the same WebView the phone already
 runs the site in, so the app already works — this plan packages it, gives it a
 native way to open and share a `.mbrd`, flushes on background instead of on
-close, and stops registering the service worker. Most ports stay on their web
-defaults. v1 keeps the store on IndexedDB, which the WebView already has.
+close, ships native ffmpeg and over-the-air updates, and stops registering the
+service worker. v1 keeps the store on IndexedDB, which the WebView already has.
 
 ---
 
@@ -39,11 +39,12 @@ and the reason, in the shape the Electron plan's §1 used.
 | 1 | **A third package, or fold into `desktop/`?** | A new sibling package `mobile/`, own `node_modules`, own deps. | The root stays zero-dependency and `npm test` stays zero-install — the property `desktop/` already protects. Capacitor's deps have nothing to do with Electron's. |
 | 2 | **The store on the phone.** | v1: keep IndexedDB as-is (zero work — the WebView has it). Durable native backend is a measured fast-follow (§4). | Fastest route to a working app, and the website already runs on this store. The seam is ready if eviction testing says move. |
 | 3 | **iOS build host.** | GitHub is not enough; iOS needs a Mac with Xcode. Android builds from Windows. | Apple signs and archives only on macOS. Same OS wall as the DMG, stricter. |
-| 4 | **Native work (ffmpeg, matte, decode).** | None in v1. Every `NativePort` method stays the web default. | The maintainer avoids ffmpeg on mobile anyway (devices too slow); the wasm matte path runs; iOS WKWebView decodes HEIC in `<img>` for free. |
+| 4 | **Native work (ffmpeg, matte, decode).** | Wire **native ffmpeg** through a plugin to fill the `NativePort` (poster frames, transcode). Matte and decode stay web defaults in v1. | Native ffmpeg is linked ARM code, not wasm — a different performance story, and worth it on a phone. The seam is already the shape `desktop/native/ffmpeg.ts` fills. The maintainer's "not worth it" was about *wasm* ffmpeg in a browser, not this. See O5 for the sourcing and licence risk. |
 | 5 | **`isDesktop()` — rename or overload?** | Rename to `isShell()` (or `isNativeShell()`) across its call sites. | Capacitor wires a `Platform`, so the flag means "a shell is wired", not "desktop". The service-worker guard (§6) and any desktop-only UI branch must read it correctly. |
-| 6 | **Frame, updates, and the title bar.** | All web defaults. No custom title bar, no auto-updater. | A phone draws no window frame, and the store delivers updates. `frame.own()` false and `updates.check()` null are already the web answers. |
+| 6 | **Frame and the title bar.** | Web defaults. No custom title bar. | A phone draws no window frame. `frame.own()` false is already the web answer. |
 | 7 | **Stores to publish to, and when.** | Android (Play, $25 one-time) first; iOS (App Store, $99/yr) when a Mac is available. | Android is buildable and testable from the maintainer's Windows machine today; iOS is gated on hardware. |
 | 8 | **Cloud share (Google Drive) on the phone.** | Decide after testing cross-origin fetch from the Capacitor scheme (§5, open question O1). | `googleapis` is reached by `fetch` from `capacitor://localhost`; that may need `CapacitorHttp` or a CORS path. It is the one network feature that can silently break. |
+| 9 | **Auto-update on mobile.** | **Custom OTA via GitHub Releases**, filling the `UpdatesPort`. Web assets only; native changes still ship through the store. | mbrd is web assets, so a new bundle is a new version — the mobile mirror of Electron serving `web/` off disk. Fixes reach users without a store review. See §13, O6, O7. |
 
 ---
 
@@ -78,12 +79,12 @@ Blobs at the seam, read no global (main.ts hands the surface in).
 
 ## §3 — What Capacitor changes, port by port
 
-Seven ports. Five stay on their web default. Two need a Capacitor adapter.
+Seven ports. Three stay on their web default. Four need a Capacitor adapter.
 
 | port | on Capacitor | work |
 | --- | --- | --- |
-| `native` | web default (all null) | none — §1 #4 |
-| `updates` | web default (null) | none — the store updates the app |
+| **`native`** | **ffmpeg via a plugin**; matte/decode web default | wire ffmpeg to `firstFrame`/`transcode`/`canTranscode` (§1 #4, O5) |
+| **`updates`** | **custom OTA adapter** (GitHub Releases) | fill `check`/`install`; download, verify, swap the web bundle (§13, O6, O7) |
 | `frame` | web default (`own()` false) | none — no window frame |
 | `setDocument` | web default (no-op) | none — no title bar |
 | `relaunch` | web default (`location.reload()`) | none — reload is fine |
@@ -248,14 +249,20 @@ next, packaging last.
 | --- | --- | --- |
 | **A** | `isDesktop()` → `isShell()` rename, and the service-worker guard (§1 #5, §6) | yes — a rename, same behaviour |
 | **B** | `mobile/` package: Capacitor config, `webDir` → built `web/`, `npx cap add android` | yes — nothing wired |
-| **C** | `platform/capacitor.ts`: files + lifecycle adapters, native/updates/frame from web defaults (§7, §8) | yes — adapter unwired until D |
+| **C** | `platform/capacitor.ts`: files + lifecycle adapters; updates/frame from web defaults (§7, §8). `native` stubbed to web default until H | yes — adapter unwired until D |
 | **D** | Wire it: the branch beside `main.ts:103` that reads the Capacitor runtime and calls `setPlatform`/(store, if §4 moves) | yes — guarded on the runtime being present |
 | **E** | Android packaging: intent filter, icons, splash, safe-area/status-bar CSS, version stamping (§11) | yes |
 | **F** | iOS packaging (needs a Mac): document type/UTI, icons, launch screen, safe-area | yes |
 | **G** | Store listings, screenshots, privacy text; Android internal-test track; TestFlight | yes |
+| **H** | Native ffmpeg: a plugin filling `NativePort.firstFrame`/`transcode`/`canTranscode`, sourced and licensed per O5. Any time after D. | yes — `native` is web default until wired |
+| **I** | OTA auto-update: the `updates` adapter in `platform/capacitor.ts`, the swap primitive (Capgo self-hosted, or a custom plugin), the GitHub-release `manifest.json`+`bundle.zip` in CI, and integrity/rollback/`minNativeVersion` (§12, O6, O7). Any time after D. | yes — `updates` is web default (null) until wired |
 
-A and D are the only groups that touch shared `web/` code, and both are small. B,
-C, E, F, G live under `mobile/` and the native projects `cap add` generates.
+A, D, and I are the groups that touch existing shared `web/` code (a rename, the
+wiring branch in `main.ts`, and the boot-time update check); the rest add new
+files under `mobile/`, the native projects `cap add` generates, or
+`platform/capacitor.ts`. **H and I can land whenever** — the app works without
+either (native work falls to the web path, and updates fall back to the store),
+so both are feature groups, not blockers.
 
 **Layering:** add `'platform/capacitor.ts'` to `BASE` in `tests/layers.test.js`
 beside `'platform/electron.ts'`, same reasoning.
@@ -281,7 +288,62 @@ CI, so the version lives in `version.js` and nowhere else.
 
 ---
 
-## §12 — Open questions
+## §12 — Mobile auto-update (OTA)
+
+**The idea, and why it fits.** mbrd is web assets bundled into a native shell,
+so a new `web/` build *is* a new version — exactly what Electron ships by serving
+`web/` off disk. On mobile the mirror is an over-the-air swap: download a newer
+bundle and serve from it, with no store review. It fills the `UpdatesPort`
+(`check`/`install`) the app already has, and drives the same "New version ready"
+toast the web and desktop already show.
+
+**What can and cannot go OTA.** Web assets only — HTML, CSS, the `app.js`
+bundle, fonts, vendored wasm. **Native code cannot**: a new Capacitor plugin,
+the group-H ffmpeg library, or an SDK bump ships through the store like any app.
+This split is the whole hazard — see O6.
+
+**The host is GitHub Releases**, the same backend electron-updater uses, so
+there is no server — the property the app keeps everywhere (§5, and `_headers`'
+"no server" notes). A release carries a `manifest.json` and a `bundle.zip`.
+
+**The mechanism.**
+- `check()` fetches `manifest.json` from the latest release, compares its bundle
+  version to the installed one, and returns `UpdateInfo` or null.
+- `install()` downloads `bundle.zip`, verifies it, unpacks it to app storage,
+  points the WebView at the new directory, and reloads.
+
+**The swap primitive is not in Capacitor core.** Core cannot repoint the served
+bundle at runtime — that is precisely why Capgo exists. "Custom via GitHub"
+therefore means *you own the distribution* (manifest, integrity, host), while the
+swap-and-rollback primitive comes from one of two places:
+- **`@capgo/capacitor-updater` with a self-hosted source** — the recommendation.
+  It gives proven download, atomic swap, and boot-failure rollback; point it at
+  the GitHub-hosted manifest/zip and run no Capgo backend. One dependency, little
+  code.
+- **A small custom native plugin** (Swift + Kotlin) — most control, most code,
+  and it re-implements the swap and rollback the first option already ships.
+
+**Integrity (O7).** GitHub over TLS secures the transport, but a bundle that
+swaps the whole app deserves more than transport trust: the manifest carries a
+SHA-256 per bundle and the app refuses a mismatch. A signed manifest (Ed25519,
+public key baked into the native build) is the stronger form, and it is worth it
+because the payload is the entire running app.
+
+**Rollback (O7).** A swapped bundle that fails to boot must revert to the
+last-good bundle, and the shipped bundle is the floor. A "mark this bundle good
+only after it boots once" latch is the shape.
+
+**Version alignment with the native shell (O6).** The one hazard with no desktop
+equivalent: an OTA web bundle may call a native capability the installed shell
+does not have — the group-H ffmpeg plugin pushed to a phone still on the
+pre-ffmpeg shell, say. The manifest carries a `minNativeVersion`, and the app
+refuses a bundle newer than its shell can serve. Native features must also
+degrade rather than throw when absent, which the `NativePort` null-fallback
+contract already guarantees.
+
+---
+
+## §13 — Open questions
 
 - **O1 — Cross-origin fetch from `capacitor://localhost`.** Does the Google
   Drive share (`googleapis`) work over `fetch` from the Capacitor scheme, or does
@@ -301,6 +363,33 @@ CI, so the version lives in `version.js` and nowhere else.
   the status bar need `env(safe-area-inset-*)` handling and a `@capacitor/status-bar`
   colour that follows the whimsy dial. A layout task, checked by eye on a real
   device, not a test.
+- **O5 — Sourcing native ffmpeg, and the iOS licence wall.** Two problems, both
+  real. FFmpegKit — the usual Capacitor/React Native ffmpeg wrapper — was retired
+  in 2025 and its prebuilt binaries were pulled from the remote repositories, so
+  the plugin route means self-hosting its last release, a maintained fork, or
+  building libav yourself. And a **GPL** ffmpeg build (the one the desktop ships)
+  conflicts with the App Store terms on iOS; an LGPL build without the GPL-only
+  codecs, or a different distribution stance, is the way through. **Android has
+  neither problem** — a GPL build ships fine and the binaries can be self-hosted.
+  Note also the mechanism: mobile links ffmpeg as a *library*, not a spawned
+  binary like `desktop/native/ffmpeg.ts`, so the implementation differs while the
+  port stays the same. On iOS, `AVFoundation` is a licence-clean alternative for
+  the poster-frame case (`firstFrame`) even if transcode waits.
+- **O6 — OTA bundle vs native shell skew.** An OTA web bundle can outrun the
+  installed native shell — a bundle that expects the group-H ffmpeg plugin,
+  pushed to a phone still on the pre-ffmpeg shell. The manifest's
+  `minNativeVersion` and a refusal to apply a bundle newer than the shell are the
+  guard (§12). Decide the versioning scheme for the native shell that this
+  compares against, and confirm every native feature degrades rather than throws
+  when its plugin is absent.
+- **O7 — OTA integrity and rollback.** Two things a whole-app swap must not get
+  wrong: a bundle whose bytes were tampered with (SHA-256 in the manifest, and
+  ideally an Ed25519 signature the native build verifies), and a bundle that
+  bricks the boot (revert to last-good, shipped bundle as the floor). Confirm the
+  chosen swap primitive (`@capgo/capacitor-updater` self-hosted, or a custom
+  plugin) does both, and store-policy-check that silent OTA of interpreted code
+  is within Apple's and Google's current terms (it is, for JS that does not
+  change the app's core purpose — verify at build time).
 
 ---
 
@@ -317,3 +406,5 @@ Mark each group `DONE <commit>`, `SKIPPED — <reason>`, or leave blank.
 | E | | |
 | F | | |
 | G | | |
+| H | | |
+| I | | |

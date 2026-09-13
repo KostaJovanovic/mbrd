@@ -127,6 +127,22 @@
 .feed-tile[data-fit="contain"] > img,
 .feed-tile[data-fit="contain"] video { object-fit: contain; }
 
+/* Loading shimmer: shown while a tile's picture resolves - ui/feed.ts adds
+   .is-loading and drops it on the first paint. GPU-only, no image decode, and it
+   sits under the <img>, so it vanishes the instant real pixels land. Offscreen
+   tiles skip it for free (content-visibility above). The tile's own --paper-3
+   shows through the transparent band. */
+.feed-tile.is-loading::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 30%,
+    color-mix(in srgb, var(--ink) 7%, transparent) 50%, transparent 70%);
+  background-size: 220% 100%;
+  animation: feed-shimmer 1.3s ease-in-out infinite;
+}
+@keyframes feed-shimmer { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+
 /* Video: a poster with a play badge, swapped for a live <video> on tap. */
 .feed-tile[data-kind="video"] { cursor: pointer; }
 .feed-play {
@@ -1089,6 +1105,8 @@
 @media (prefers-reduced-motion: reduce) {
   #mobile-feed, #mobile-playlist { scroll-behavior: auto; }
   .pl-eq i { animation: none; transform: scaleY(0.7); }
+  /* A still tint rather than a travelling sheen - the placeholder still reads. */
+  .feed-tile.is-loading::before { animation: none; }
 }
 
 @media (pointer: coarse) {
