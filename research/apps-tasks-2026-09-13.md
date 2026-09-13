@@ -1109,6 +1109,15 @@ Bugs found outside the task list, not fixed:
    `.github/research/docs/architecture.md`, which does not exist. It is in HEAD,
    not from this plan. Fix: `../research/docs/architecture.md`.
 
+Fixed outside the task list, because it blocked I8 and O5: on macOS a quit
+never finished. `holdCloseForFlush()` in `desktop/main.ts` stops the window's
+close for the flush, and Electron takes a stopped close as a cancelled quit.
+Windows and Linux quit anyway when the last window closes, and macOS keeps the
+app with no window. So Cmd+Q closed the window and left mbrd running, and in the
+first release test run (34776527199) every smoke test on macOS hung at
+`app.close()` for 3 minutes, then 3 more in teardown. The fix: a `quitting`
+flag set in `before-quit`, and the flush quits again when it is set.
+
 Before the first release, checked with `gh` on 2026-09-13: KostaJovanovic/mbrd
 has no secrets, and KostaJovanovic/mbrd-release has no branch, so the publish
 job's `--target main` has nothing to tag. The maintainer adds a first commit
