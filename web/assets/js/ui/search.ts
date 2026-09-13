@@ -5,7 +5,7 @@
 import { board, byId, itemTags, select } from '../state.ts';
 import { cue } from '../cuelume/engine.ts';
 import { travelMs } from '../canvas/viewport.ts';
-import { extOf } from '../util.ts';
+import { extOf, markClosed } from '../util.ts';
 import { describeExt, formatName } from '../import/formats.ts';
 import { kindName, kindTag } from '../canvas/item-dom.ts';
 import type { Viewport } from '../canvas/viewport.ts';
@@ -46,7 +46,7 @@ export function initSearch(viewport: Viewport) {
       return;
     }
     if (!node) return;
-    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); return; }
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); markClosed(e); close(); return; }
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
       e.stopPropagation();

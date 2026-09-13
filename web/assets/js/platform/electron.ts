@@ -48,6 +48,8 @@ export interface Bridge {
   onClose(fn: () => Promise<void>): void;
   onOpenFiles(fn: (files: HandedFile[]) => void): void;
   onCommand(fn: (cmd: string) => void): void;
+  /** Set by the Android shell, whose Back button asks `fn` first. */
+  onBack?(fn: () => boolean): void;
 }
 
 /** A file the main process read: bytes, name, and path. */
@@ -202,6 +204,9 @@ function electronLifecycle(bridge: Bridge): LifecyclePort {
       bridge.onOpenFiles(handed => {
         fn(handed.map((h): OpenedFile => ({ file: fileOf(h), ref: refOf(h) })));
       });
+    },
+    onBack(fn) {
+      bridge.onBack?.(fn);
     },
   };
 }

@@ -3,7 +3,7 @@
 // tests/boot-order.test.js — moving or adding a call means updating that test.
 // One of three modules allowed to touch browser globals at import time.
 
-import { el, rafThrottle } from './util.ts';
+import { el, rafThrottle, wasClosed } from './util.ts';
 import { toast } from './notify.ts';
 import { initErrors, setBoardProbe, reportCaught } from './errors.ts';
 import { setRiskPrompt } from './consent.ts';
@@ -40,12 +40,13 @@ import { initGhosts } from './canvas/ghosts.ts';
 import { initStills } from './canvas/stills.ts';
 import { initHires } from './canvas/hires.ts';
 import { initInput } from './canvas/input.ts';
-import { initDrop, setImportPrompt } from './import/drop.ts';
+import { initDrop, importFiles, setImportPrompt } from './import/drop.ts';
 import {
   initStorage, restoreSession, openFile, autosave, setPrompt, setBoardThumb,
   suspendCache, resetSessionLatches, failHandover, boardSafety, openSharedBoard,
   boardSyncState, pushBoardToCloud,
 } from './storage/storage.ts';
+import { looksLikeMbrd } from './storage/mbrd.ts';
 import { boardThumb } from './ui/snapshot.ts';
 import { flushNoteEdit, growNote, setNoteMenu } from './canvas/notes.ts';
 import { setMarkdownRenderer, setEmbedEnrich } from './canvas/renderers.ts';
@@ -56,7 +57,7 @@ import { forgetDisplay } from './canvas/display.ts';
 import { initSidebar } from './ui/sidebar.ts';
 import { buildPanel, paintPanel } from './ui/panel.ts';
 import { armQuality, watchQuality } from './ui/quality.ts';
-import { initMenu, openAnchored, justDismissed } from './ui/menu.ts';
+import { initMenu, isMenuOpen, openAnchored, justDismissed } from './ui/menu.ts';
 import { initFencePrompt } from './ui/fence-prompt.ts';
 import { initConnChip } from './ui/conn-chip.ts';
 import { initSearch } from './ui/search.ts';
@@ -642,17 +643,38 @@ if ('launchQueue' in window) {
   });
 }
 
-// Desktop file open (double-click, argv, macOS open-file). Same wait-for-start
-// rule as the PWA path above.
+// Files a shell hands over: a double-click, argv or macOS open-file on the
+// desktop, "Open with" and "Share to" on Android. Same wait-for-start rule as
+// the PWA path above. A board opens. Everything else lands as cards in the
+// middle of the view, as a picked file does in import/drop.ts.
 platform.lifecycle.onOpenFiles(files => {
-  const first = files[0];
-  if (!first) return;
+  if (!files.length) return;
+  const boardFile = files.find(f => looksLikeMbrd(f.file));
+  const content = files.filter(f => !looksLikeMbrd(f.file)).map(f => f.file);
   void (async () => {
     try {
       await started;
-      await openFile(first.file, first.ref);
+      if (boardFile) await openFile(boardFile.file, boardFile.ref);
+      if (content.length) await importFiles(content, vp.toWorld(vp.left + vp.cx, vp.top + vp.cy));
     } catch (err) { console.warn('[mbrd] open file:', err); }
   })();
+});
+
+// Android's Back: close the top layer as Escape would, and answer whether
+// anything closed. A menu is above everything, a modal dialog above the rest.
+// A synthetic key does not close a <dialog>, so its cancel event is sent here,
+// as the browser sends it for Escape. The other layers answer the Escape itself
+// and mark it (markClosed in util.ts).
+platform.lifecycle.onBack(() => {
+  const dialogs = document.querySelectorAll('dialog[open]');
+  const top = dialogs[dialogs.length - 1];
+  if (top instanceof HTMLDialogElement && !isMenuOpen()) {
+    if (top.dispatchEvent(new Event('cancel', { cancelable: true }))) top.close();
+    return true;
+  }
+  const esc = new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true });
+  (document.activeElement ?? document.body).dispatchEvent(esc);
+  return wasClosed(esc);
 });
 
 if (!isDesktop() && 'serviceWorker' in navigator) {

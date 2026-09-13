@@ -68,6 +68,7 @@ export const closeToolbar = () => { setOpen(false); setArmed(false); };
 
 /** Whether a press on a card means "connect this" rather than "select this". */
 let armed = false;
+export const isArmed = () => armed;
 /** The first end, once one has been chosen. Null between pairs. */
 let pick: string | null = null;
 

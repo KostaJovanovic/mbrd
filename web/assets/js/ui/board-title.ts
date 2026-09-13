@@ -2,7 +2,7 @@
 // card). Here rather than sidebar.ts so the sanitizer and commit-on-change
 // rule stay in one place.
 
-import { el, makeEditable, selectContents, caretToEnd } from '../util.ts';
+import { el, makeEditable, markClosed, selectContents, caretToEnd } from '../util.ts';
 import {
   board, bus, setTitle, markDirty,
   cleanBoardTitle, cleanBoardTitleDraft, isDefaultTitle,
@@ -173,7 +173,7 @@ function editBoardName(node: HTMLElement | null) {
   const onKey = (e: KeyboardEvent) => {
     e.stopPropagation();          // the canvas must not see Delete, space or Escape
     if (e.key === 'Enter') { e.preventDefault(); finish(); }
-    else if (e.key === 'Escape') { keep = false; finish(); }
+    else if (e.key === 'Escape') { keep = false; markClosed(e); finish(); }
   };
 
   const onInput = () => {

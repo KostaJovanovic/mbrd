@@ -50,8 +50,12 @@ export interface OpenedFile {
 export interface LifecyclePort {
   /** Register a flush to run before the app goes away. Desktop awaits it. */
   onCloseRequested(fn: () => Promise<void> | void): void;
-  /** Desktop only: files opened via argv, double-click, or second launch. */
+  /** A shell only: files opened via argv, double-click, a second launch, or
+   *  Android's "Open with" and "Share to". */
   onOpenFiles(fn: (files: OpenedFile[]) => void): void;
+  /** Android only: the Back button. `fn` closes the top layer and answers
+   *  whether it closed anything. The web and the desktop have no Back to send. */
+  onBack(fn: () => boolean): void;
 }
 
 /** Options for a native transcode. */
@@ -239,6 +243,7 @@ const webLifecycle: LifecyclePort = {
     });
   },
   onOpenFiles: () => {},
+  onBack: () => {},
 };
 
 const webNative: NativePort = {

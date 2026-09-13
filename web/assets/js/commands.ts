@@ -32,8 +32,8 @@ import { arrange } from './arrange/arrangements.ts';
 import { ask } from './ui/dialog.ts';
 import { pickColor } from './ui/color-picker.ts';
 import { getAsset, assetURL } from './storage/assets.ts';
-import { close as closeSidebar } from './ui/sidebar.ts';
-import { closeToolbar } from './ui/toolbar.ts';
+import { close as closeSidebar, isOpen as isSidebarOpen } from './ui/sidebar.ts';
+import { closeToolbar, isOpen as isToolbarOpen, isArmed as isConnectorArmed } from './ui/toolbar.ts';
 import { openContextMenu, openAnchored, justDismissed } from './ui/menu.ts';
 import { open as openSearch } from './ui/search.ts';
 import { toggleStickerWindow } from './ui/sticker-window.ts';
@@ -301,8 +301,15 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
       if (!selection.size) return;
       removeItems([...selection]);
     },
-    // Closes all three panels (sidebar, header, toolbar drawer).
-    closeSidebar: () => { closeSidebar(); closeHeaderPanel(); closeToolbar(); },
+    // Closes all three panels (sidebar, header, toolbar drawer), and answers
+    // whether any was open or the connector armed, for Escape's mark.
+    closeSidebar: () => {
+      const open = isSidebarOpen() || isHeaderPanelOpen() || isToolbarOpen() || isConnectorArmed();
+      closeSidebar();
+      closeHeaderPanel();
+      closeToolbar();
+      return open;
+    },
     // Open the note composer dialog (falls back to on-board editor without <dialog>).
     editNote: (id: string) => editNoteInComposer(id),
     // Edit a font card's specimen text inline on the board.

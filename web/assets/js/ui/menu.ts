@@ -6,6 +6,7 @@
 // Imported directly — renaming is the drawn name, so the affordance stays here.
 import { canRenameItem, editItemName } from '../canvas/items.ts';
 import { cue } from '../cuelume/engine.ts';
+import { markClosed } from '../util.ts';
 import { tickSlider } from './controls.ts';
 import { STICKER_TINT_NAMES } from '../stickers/catalogue.ts';
 import type { ConnMeta, ConnColor, ConnWeight } from '../board-model.ts';
@@ -181,6 +182,10 @@ let node: HTMLElement | null = null;
 let vp: Viewport | null = null;
 let cmds: MenuCommands | null = null;
 
+/** Whether a menu is up. Android's Back (main.ts) closes one before a dialog,
+ *  since a menu over a dialog is inside it. */
+export const isMenuOpen = () => !!node;
+
 /** Panels animating out. They are logically closed (no keyboard, no hit-test,
  * not in insideMenu()) — only the DOM removal is deferred for the exit
  * animation. A set because root and child can leave together. */
@@ -285,7 +290,7 @@ export function initMenu(viewport: Viewport, commands: MenuCommands) {
   addEventListener('keydown', e => {
     if (!node) return;
     // Escape closes regardless of focus.
-    if (e.key === 'Escape') { e.stopPropagation(); close(); return; }
+    if (e.key === 'Escape') { e.stopPropagation(); markClosed(e); close(); return; }
     // Navigation keys only when the menu owns the keyboard — otherwise typing
     // in a field behind a hover flyout would be swallowed by typeAhead().
     if (!ownsKeyboard()) return;

@@ -3,22 +3,38 @@ package com.valjdakosta.mbrd;
 import android.Manifest;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.content.res.Configuration;
+import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.View;
+import android.view.Window;
+import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import androidx.activity.OnBackPressedCallback;
 import androidx.core.app.ActivityCompat;
+import androidx.core.graphics.ColorUtils;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 import com.getcapacitor.BridgeActivity;
+import com.getcapacitor.PluginHandle;
 
 /**
  * The one activity: Capacitor's BridgeActivity with the shell's plugins, and the
  * question of where the boards live. Desktop twin: the BrowserWindow that
- * desktop/main.ts opens, and its choice of a data folder.
+ * desktop/main.ts opens, and its choice of a data folder. It also owns what the
+ * desktop's frame does: the insets (natively, so the page needs no safe-area
+ * CSS), the bar colour, full screen in landscape, Back, and "Open with".
  *
  * Before the bridge loads, it checks the storage grant. Without it, a screen
  * says why mbrd wants it, with Allow and Not now. The bridge cannot wait for the
@@ -38,6 +54,8 @@ public class MainActivity extends BridgeActivity {
     private static boolean notNow = false;
     /** True while Android's All files access page is open. */
     private boolean inSettings = false;
+    /** The last page background the bridge reported, applied again after a turn. */
+    private int barColor = PAPER;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -47,6 +65,9 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(MbrdStore.class);
         registerPlugin(MbrdFiles.class);
         super.onCreate(savedInstanceState);
+        setUpInsets();
+        applyFullscreen(getResources().getConfiguration());
+        setUpBack();
     }
 
     /** BridgeActivity.onCreate() calls this to build the bridge. */
@@ -61,15 +82,47 @@ public class MainActivity extends BridgeActivity {
         super.load();
     }
 
+    /** Also runs for the launch intent: BridgeActivity.load() calls it once. */
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        MbrdShell shell = shell();
+        if (shell == null) {
+            // The storage screen is up. Keep the intent for the bridge the
+            // answer builds, which reads it in load().
+            setIntent(intent);
+            return;
+        }
+        // Swap the handled intent out, so a restore does not open it twice.
+        if (shell.deliver(intent)) setIntent(new Intent(Intent.ACTION_MAIN));
+    }
+
+    private MbrdShell shell() {
+        if (bridge == null) return null;
+        PluginHandle handle = bridge.getPlugin("MbrdShell");
+        return handle == null ? null : (MbrdShell) handle.getInstance();
+    }
+
     @Override
     public void onResume() {
         super.onResume();
+        // Coming back from another app can bring the bars back.
+        applyFullscreen(getResources().getConfiguration());
         if (inSettings && bridge == null) {
             inSettings = false;
             // Back from Android's page. Without the grant the screen stays, and
             // Not now is still there.
             if (MbrdRoot.granted(this)) recreate();
         }
+    }
+
+    /** The manifest handles orientation changes itself (configChanges), so the
+     *  activity lives on and a turn of the phone lands here. */
+    @Override
+    public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        setBarColor(barColor);
+        applyFullscreen(newConfig);
     }
 
     @Override
@@ -82,6 +135,101 @@ public class MainActivity extends BridgeActivity {
         }
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
     }
+
+    // ---- insets and the bar colour -------------------------------------------
+
+    /** FileAnalyser's: the WebView's parent is padded from the insets, keyboard
+     *  included, so the page gets an ordinary viewport. capacitor.config.json
+     *  turns Capacitor's own inset handling off (SystemBars). */
+    private void setUpInsets() {
+        Window window = getWindow();
+        WindowCompat.setDecorFitsSystemWindows(window, false);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            // Draw beside the camera in landscape too, so the strip that keeps
+            // the page clear of it takes the page colour, not black.
+            WindowManager.LayoutParams lp = window.getAttributes();
+            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            window.setAttributes(lp);
+        }
+        if (Build.VERSION.SDK_INT < 35) {
+            // Android 15 and later draw transparent bars themselves.
+            window.setStatusBarColor(Color.TRANSPARENT);
+            window.setNavigationBarColor(Color.TRANSPARENT);
+        }
+        // The paper until the page reports its own background.
+        setBarColor(barColor);
+
+        View decor = window.getDecorView();
+        ViewCompat.setOnApplyWindowInsetsListener(decor, (v, insets) -> {
+            int bars = WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout();
+            Insets sys = insets.getInsets(bars);
+            Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
+            boolean keyboard = insets.isVisible(WindowInsetsCompat.Type.ime());
+            v.setPadding(sys.left, sys.top, sys.right, keyboard ? Math.max(ime.bottom, sys.bottom) : sys.bottom);
+            // Not WindowInsetsCompat.CONSUMED: Capacitor's SystemBars notes that
+            // it breaks the WebView's own inset recalculation (Chromium 461332423).
+            return new WindowInsetsCompat.Builder(insets).setInsets(bars, Insets.NONE).build();
+        });
+    }
+
+    /** Landscape is full screen: the bars hide, and a swipe from the edge shows
+     *  them for a moment. Portrait keeps them, in the page colour. */
+    private void applyFullscreen(Configuration config) {
+        Window window = getWindow();
+        WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(window, window.getDecorView());
+        if (config.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            controller.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            controller.hide(WindowInsetsCompat.Type.systemBars());
+        } else {
+            controller.show(WindowInsetsCompat.Type.systemBars());
+        }
+    }
+
+    /** The padded bands show the window background, so it takes the page's
+     *  colour (MbrdShell.bars), and the bar icons flip to stay readable. The
+     *  window's, not the decor view's: a turn of the phone resets the decor
+     *  view to the window background. */
+    void setBarColor(int color) {
+        barColor = color;
+        runOnUiThread(() -> {
+            Window window = getWindow();
+            window.setBackgroundDrawable(new ColorDrawable(color));
+            boolean light = ColorUtils.calculateLuminance(color) > 0.5;
+            WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(window, window.getDecorView());
+            controller.setAppearanceLightStatusBars(light);
+            controller.setAppearanceLightNavigationBars(light);
+        });
+    }
+
+    // ---- Back -----------------------------------------------------------------
+
+    /** The page decides first (window.__mbrdBack, mobile/bridge/lifecycle.ts):
+     *  it closes its top layer. With nothing left open the app goes to the
+     *  background, and does not finish, so the board is still there. */
+    private void setUpBack() {
+        getOnBackPressedDispatcher().addCallback(
+            this,
+            new OnBackPressedCallback(true) {
+                @Override
+                public void handleOnBackPressed() {
+                    if (bridge == null || bridge.getWebView() == null) {
+                        moveTaskToBack(true);
+                        return;
+                    }
+                    bridge
+                        .getWebView()
+                        .evaluateJavascript(
+                            "(function(){try{return window.__mbrdBack?window.__mbrdBack():'exit'}catch(e){return 'exit'}})()",
+                            value -> {
+                                if (value == null || !value.contains("handled")) moveTaskToBack(true);
+                            }
+                        );
+                }
+            }
+        );
+    }
+
+    // ---- the storage screen ---------------------------------------------------
 
     private void allow() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {

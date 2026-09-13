@@ -4,7 +4,7 @@
 // Pure deciders (readWheel, gestureTransition, pressIntent) are exported
 // for tests; the doing stays inside initInput().
 
-import { clamp, hasOwn } from '../util.ts';
+import { clamp, hasOwn, markClosed } from '../util.ts';
 import { cue } from '../cuelume/engine.ts';
 import {
   board, byId, selection, select, deselect, clearSelection, isMultiSelect, topZ, stackOrder,
@@ -1003,7 +1003,8 @@ type InputCommands = {
   deleteSelection(): void,
   recenter(): void,
   fit(): void,
-  closeSidebar(): void,
+  /** Whether a sheet was open, or the connector tool armed. */
+  closeSidebar(): boolean,
   editNote(id: string): void,
   editConnectionLabel(a: string, b: string): void,
   fencePrompt(x: number, y: number, rect: Bounds): void,
@@ -1015,7 +1016,8 @@ type InputCommands = {
   connectTap?(id: string | null, sticky?: boolean): boolean,
   connectionUnder?(at: Point): { a: string, b: string } | null,
   pickConnection?(at: Point): void,
-  clearActiveConnection?(): void,
+  /** Whether a line was marked. */
+  clearActiveConnection?(): boolean,
   deleteActiveConnection?(): boolean,
   editTitle?(): void,
   editTitleText?(): void,
@@ -2869,7 +2871,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
 
   addEventListener('keydown', e => {
     if (typingInto(e.target)) {
-      if (e.key === 'Escape') e.target.blur();
+      if (e.key === 'Escape') { markClosed(e); e.target.blur(); }
       return;
     }
     if (shortcutsSuppressed(e.defaultPrevented, overlayOwnsKeyboard())) return;
@@ -2945,25 +2947,28 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       case 'f': case 'F': cmds.fit(); break;
       case '+': case '=': vp.zoomBy(1.25, zoomMs()); break;
       case '-': case '_': vp.zoomBy(1 / 1.25, zoomMs()); break;
-      case 'Escape':
+      case 'Escape': {
         // A running tour first: Escape is the way out of every temporary state
         // in this app, and while the bar is up the tour is the outermost of them.
         // It answers false when there is none, so the ordinary three still run.
-        if (cmds.tourStop?.()) break;
+        if (cmds.tourStop?.()) { markClosed(e); break; }
         // Then the mode that builds one, which hides the same chrome and is the
         // next temporary state in. Above the pick mode below it because it is
         // the outer of the two: the marks on the cards are what Escape is most
         // likely being pressed at.
-        if (cmds.tourEditStop?.()) break;
+        if (cmds.tourEditStop?.()) { markClosed(e); break; }
         // And the pick mode next, for the same reason and with the same shape:
         // it is a temporary state, so Escape ends it - and only it, keeping the
         // group the mode was for. A second Escape then clears that group, which
         // is Escape meaning what it always did one layer further in.
-        if (isMultiSelect()) { cmds.toggleMultiSelect?.(); break; }
+        if (isMultiSelect()) { cmds.toggleMultiSelect?.(); markClosed(e); break; }
+        // All three run, and the mark says whether any had something to close.
+        const selected = selection.size > 0;
         clearSelection();
-        cmds.clearActiveConnection?.();
-        cmds.closeSidebar();
+        const marked = cmds.clearActiveConnection?.() === true;
+        if (cmds.closeSidebar() || selected || marked) markClosed(e);
         break;
+      }
       case 'ArrowLeft': case 'ArrowRight': case 'ArrowUp': case 'ArrowDown':
         // The tour owns the arrows while it is up - stepping a reading is what
         // they mean there - and it says so by answering true, including at the

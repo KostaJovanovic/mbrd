@@ -6,7 +6,7 @@
 
 import { bus } from '../board-store.ts';
 import { toast } from '../notify.ts';
-import { el, formatBytes } from '../util.ts';
+import { el, formatBytes, markClosed } from '../util.ts';
 import { ARRANGEMENTS, MOBILE_ARRANGEMENTS } from '../arrange/arrangements.ts';
 import { openAnchored, icon } from './menu.ts';
 import type { MenuEntry } from './menu.ts';
@@ -211,6 +211,7 @@ function closeStrip() {
 function onKey(event: KeyboardEvent) {
   if (event.key !== 'Escape' || event.defaultPrevented) return;
   if (document.querySelector('.menu:not([hidden]), #tour:not([hidden])')) return;
+  markClosed(event);
   closeStrip();
   event.preventDefault();
 }
