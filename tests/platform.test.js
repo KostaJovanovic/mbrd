@@ -48,11 +48,10 @@ test('every native port answers null, so every caller falls through', async () =
   assert.equal(await platform.native.decode(bytes, 'photo.heic'), null);
 });
 
-test('the updates port answers null, because the service worker is the web updater', async () => {
-  assert.equal(await platform.updates.check(), null);
-  // Safe to call and does nothing, so a toast wired to it can't throw on
-  // a web build that somehow reached the button.
-  assert.doesNotThrow(() => platform.updates.install());
+test('the updates port answers nothing, because the service worker is the web updater', async () => {
+  // Safe to call and does nothing, so a row wired to it can't throw on a web
+  // build that somehow reached it.
+  assert.equal(await platform.updates.check(), undefined);
 });
 
 test('a picker that is not there is a dismissal, not a crash', async () => {
@@ -121,7 +120,7 @@ function fakeShell({ canPick = true } = {}) {
       firstFrame: async () => null, transcode: async () => null,
       matte: async () => null, decode: async () => null,
     },
-    updates: { check: async () => null, install() {} },
+    updates: { check: async () => {} },
     setDocument: state => { calls.documents.push(state); },
     relaunch: () => { calls.relaunched++; },
   };

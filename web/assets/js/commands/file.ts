@@ -44,6 +44,7 @@ function storageLabel(what: string): string {
   return cache.startsWith('mbrd-') ? 'app cache' : `cache ${cache}`;
 }
 
+// SAFETY: every caller passes a caught value, and no module here throws a literal or rejects with one.
 const why = (err: unknown): string => (err as Error).message;
 
 // Shared boards always carry history now — see privacy.html.

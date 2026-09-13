@@ -6,8 +6,7 @@
 #mobile-header-edit-btn,
 #mobile-find-btn {
   position: fixed;
-  /* Below the drawn title bar (0px on the web, bar height in desktop). */
-  top: calc(max(16px, env(safe-area-inset-top)) + var(--frame-bar-h));
+  top: max(16px, env(safe-area-inset-top));
   left: max(16px, env(safe-area-inset-left));
   z-index: var(--z-panel);
   width: var(--chrome-button-w);
@@ -94,8 +93,7 @@
 #sidebar {
   position: fixed;
   z-index: var(--z-overlay);
-  /* Clear of the drawn title bar so its buttons stay reachable. */
-  top: calc(max(14px, env(safe-area-inset-top)) + var(--frame-bar-h));
+  top: max(14px, env(safe-area-inset-top));
   bottom: max(14px, env(safe-area-inset-bottom));
   left: max(14px, env(safe-area-inset-left));
   width: min(var(--sidebar-w), calc(100vw - 28px));
@@ -124,8 +122,7 @@
 #header-panel {
   position: fixed;
   z-index: var(--z-overlay);
-  /* Clear of the drawn title bar — this panel opens against the window buttons. */
-  top: calc(max(14px, env(safe-area-inset-top)) + var(--frame-bar-h));
+  top: max(14px, env(safe-area-inset-top));
   bottom: max(14px, env(safe-area-inset-bottom));
   right: max(14px, env(safe-area-inset-right));
   width: min(var(--sidebar-w), calc(100vw - 28px));

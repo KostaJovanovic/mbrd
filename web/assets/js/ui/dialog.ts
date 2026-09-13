@@ -45,7 +45,8 @@ export function ask(opts?: AskOptions & { field?: null }): Promise<Answer>;
 export function ask(opts: AskOptions & { field: AskField }): Promise<string | null>;
 export async function ask(opts: AskOptions = {}): Promise<Answer | string | null> {
   if (typeof document === 'undefined') return 'cancel';
-  // Duck-type check: missing <dialog> support falls through to 'cancel'.
+  // SAFETY: #ask is a <dialog> in index.html. The showModal duck-type test below sends a
+  // browser without <dialog> support to 'cancel'.
   const el = document.getElementById('ask') as HTMLDialogElement | null;
   if (!el || typeof el.showModal !== 'function') return 'cancel';
 
@@ -69,7 +70,8 @@ function openWith(el: HTMLDialogElement, o: AskSettled): Promise<Answer | string
   const go = document.getElementById('ask-go')!;
   const cancel = document.getElementById('ask-cancel')!;
   const keep = document.getElementById('ask-keep')!;
-  // The <input> inside #ask — same markup block as the elements above.
+  // SAFETY: #ask-field is the <input> inside #ask in index.html, the same markup block as
+  // the elements above.
   const field = document.getElementById('ask-field') as HTMLInputElement;
 
   // setMarked: textContent + the app name in its typeface (see wordmark.ts).

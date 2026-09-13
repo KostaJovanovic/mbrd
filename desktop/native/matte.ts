@@ -55,6 +55,8 @@ async function load(): Promise<Session | null> {
       });
       log('info', 'matte session ready', { provider });
       const { inputNames, outputNames } = made;
+      // SAFETY: runOne() feeds only float32 ort.Tensors keyed by inputNames. u2netp's outputs
+      // are float32, and runOne() null-checks `data` and copies it inside its try/catch.
       const run = (feeds: Record<string, unknown>) =>
         made.run(feeds as Parameters<typeof made.run>[0]) as
           Promise<Record<string, { data: Float32Array }>>;

@@ -1,0 +1,22 @@
+{
+  // The chrome pages' own check. They run in a renderer, so they get the DOM
+  // and no Node types - the root tsconfig's `"types": []` rule, and for its
+  // reason: with @types/node a setTimeout handle kept in a number goes red.
+  // look.ts imports the board's web/assets/js/ui/look.ts, which pulls a few web
+  // modules in, so the flags mirror the root config's, and the web's own
+  // ambient declarations (vendor-globals.d.ts) come in with them.
+  //
+  // preload.ts is not here. It runs in the preload's Node-flavoured sandbox and
+  // is checked with main by ../tsconfig.json.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": [],
+    "allowJs": true,
+    "checkJs": false
+  },
+  "include": [
+    "titlebar.ts", "panel.ts", "look.ts", "accel.ts", "bridge.ts",
+    "../../web/assets/js/vendor-globals.d.ts"
+  ]
+}

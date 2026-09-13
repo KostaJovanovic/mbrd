@@ -1,0 +1,193 @@
+/* The desktop title bar and its menu panels (desktop/chrome/). Not a page of
+   the site: served under /__chrome/ on the app's origin and drawn from
+   tokens.css, so it follows the board's whimsy tier and palette. The board is a
+   separate view below the bar, so nothing here makes room for the bar in it. */
+
+:root {
+  /* main.ts sizes the board's view from this, as the bar measures it. */
+  --tb-h: 32px;
+  --tb-btn-w: 46px;
+  --tb-lead: 0px;
+}
+/* The room the traffic lights take, set by trafficLightPosition in main.ts. */
+:root.mac { --tb-lead: 80px; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--paper-card);
+}
+body {
+  font-family: var(--font-body);
+  font-size: var(--t-small);
+  color: var(--ink-2);
+  -webkit-user-select: none;
+  user-select: none;
+  overscroll-behavior: none;
+}
+
+/* One strip of paper with a hairline under it: --paper-card and --rule-2, the
+   sheet and the rule every panel in the app is made of. */
+#titlebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  box-sizing: border-box;
+  height: var(--tb-h);
+  display: flex;
+  align-items: stretch;
+  padding-left: var(--tb-lead);
+  background: var(--paper-card);
+  border-bottom: var(--hairline) solid var(--rule-2);
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+/* Unfocused, the bar recedes rather than changing shape. */
+:root:not(.win-focused) #titlebar { color: var(--ink-3); }
+/* While a menu is down the bar stops being a drag region, or a click on it
+   would start a window drag instead of closing the menu. titlebar.ts sets it. */
+:root.menu-open #titlebar {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+/* Full screen: main.ts gives the board the whole window. */
+:root.win-full #titlebar { display: none; }
+
+/* The mark, at 0.75: at full strength a coloured mark in the corner of every
+   window is the loudest thing on a screen of paper. */
+.tb-mark {
+  flex: none;
+  align-self: center;
+  margin: 0 6px 0 10px;
+  opacity: 0.75;
+}
+.tb-mark[hidden] { display: none; }
+
+.tb-btn {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+@media (hover: hover) {
+  .tb-btn:hover { background: var(--paper-2); color: var(--accent-deep); }
+}
+.tb-btn:active { background: var(--paper-3); color: var(--accent-deep); }
+.tb-btn:focus-visible { outline: 1px solid var(--accent); outline-offset: -3px; }
+
+.tb-menubar { flex: none; display: flex; align-items: stretch; }
+.tb-menu { display: flex; align-items: stretch; }
+.tb-menu.is-open .tb-menu-title { background: var(--paper-3); color: var(--accent-deep); }
+
+/* The board's name: a label, not a heading, so --ink-3 and --t-tiny. */
+.tb-subject {
+  flex: 0 1 auto;
+  align-self: center;
+  min-width: 0;
+  padding: 0 12px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--t-tiny);
+  color: var(--ink-3);
+}
+/* Unsaved work, in the accent: the one thing up here that is a state. */
+.tb-subject[data-dirty]::before {
+  content: '\2022';
+  margin-right: 5px;
+  color: var(--accent);
+}
+/* The flexible middle is pure drag surface. */
+.tb-space { flex: 1 1 auto; min-width: 12px; }
+
+/* flex: none, and it is the one group that must never lose it: the buttons are
+   the only way to close a frameless window. */
+.tb-ctl { flex: none; display: flex; align-items: stretch; }
+.tb-ctl[hidden] { display: none; }
+.tb-ctl .tb-btn {
+  width: var(--tb-btn-w);
+  padding: 0;
+  border-left: 1px solid var(--rule);
+  color: var(--ink-2);
+}
+/* Close can lose work, so it answers in --danger, and only under the pointer. */
+@media (hover: hover) {
+  .tb-close:hover { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+}
+.tb-close:active { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+
+.tb-ico { display: block; }
+/* MDL2 first: Segoe Fluent's maximise glyph has a rounded corner. Windows 11
+   still ships MDL2 beside it. */
+.tb-ico-font {
+  font-family: "Segoe MDL2 Assets", "Segoe Fluent Icons";
+  font-size: 10px;
+  line-height: 1;
+}
+.tb-max .tb-ico-restore,
+:root.win-max .tb-max .tb-ico-max { display: none; }
+:root.win-max .tb-max .tb-ico-restore { display: block; }
+
+/* A narrow window sheds parts in a fixed order, and the buttons never go. The
+   window's minWidth is 480. Last in the file, because these carry the same
+   specificity as the rules above and source order decides. */
+@media (max-width: 560px) {
+  .tb-subject { display: none; }
+}
+@media (max-width: 460px) {
+  .tb-mark { display: none; }
+  .tb-menu-title { padding: 0 7px; }
+}
+
+/* ---- the menu panel, when it is the whole window (panel.html) ---- */
+
+:root.panel-window body { color: var(--ink); }
+/* Its natural size, always, never stretched to the window: main sizes the
+   window from this box, so a box sized from the window would report the window
+   back. A frameless window casts no shadow outside itself, so the rule carries
+   the edge alone. */
+#panel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  box-sizing: border-box;
+  width: max-content;
+  min-width: 200px;
+  padding: 4px 0;
+  background: var(--paper-card);
+  border: var(--hairline) solid var(--rule-2);
+}
+.panel-item {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  width: 100%;
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.panel-item:hover,
+.panel-item:focus-visible { background: var(--paper-2); color: var(--accent-deep); outline: 0; }
+.panel-key { font-size: var(--t-tiny); color: var(--ink-3); }
+.panel-item:hover .panel-key,
+.panel-item:focus-visible .panel-key { color: inherit; }
+.panel-sep { height: var(--hairline); margin: 4px 0; background: var(--rule); }

@@ -13,7 +13,7 @@ import { polyMidpoint, polyMeetsRect, distToSegment } from '../geometry.ts';
 import type { Point, Box, Bounds } from '../geometry.ts';
 import {
   routeConnection, pathData, curvePoints, blockOf, endOf, intoMiddles, portDir, bestFaces,
-  CLEARANCE, DRAG_HANDLE,
+  CLEARANCE, DRAG_HANDLE, HANDLE_MAX,
 } from '../web-route.ts';
 import { queryRect } from './spatial.ts';
 import {
@@ -40,9 +40,15 @@ type Seg = {
   // Outward face normals at the two endpoints — the router's chosen sides. The
   // Softish spline leaves and enters along these, so any side can meet any side.
   norms?: [Point, Point],
+  // Per-point corner rounding room (world units) for a routed detour, so a
+  // go-around sweeps in the open and stays tight in a corridor. See cornerCaps.
+  caps?: number[],
   // The two cards cannot be joined without crossing a third (router verdict). No
   // line is drawn; the pair is listed on the "cannot join" badge instead.
   blocked?: boolean,
+  // Why it was blocked, for the mbrd.joins() diagnostic: 'router' (no path found)
+  // or 'cross:<id>' (the drawn curve ran through that card's body).
+  blockReason?: string,
 };
 
 /** A seg with a look of its own: what decoLayer draws, and the bulk path never. */
@@ -80,6 +86,9 @@ let hoveredKey: string | null = null;
 let activePath: SVGPathElement | null = null;
 let activeKey: string | null = null;
 let focusPath: SVGPathElement | null = null;
+// Straight red dashed line for a pair that cannot be routed cleanly — drawn in
+// place of the old "?" badge, one subpath per blocked pair.
+let blockedPath: SVGPathElement | null = null;
 let focusIds: Set<string> | null = null;
 let hoverIds: Set<string> | null = null;
 // Focus held past deselect to cover the CSS transition — prevents a flash where
@@ -113,27 +122,57 @@ const lastSeg = new Map<string, Seg>();
 
 /** A pair the router could not join without crossing a third card — see Seg.blocked. */
 export type BlockedJoin = { a: string, b: string };
-/** The current set of blocked pairs, recomputed after each route pass. The join
- *  badge (ui/join-badge.ts) reads this and lists them; nothing is drawn for them. */
+/** The current set of blocked pairs, recomputed after each route pass. paint()
+ *  draws each as a straight red dashed line between the two cards. */
 let blocked: BlockedJoin[] = [];
-let blockedSig = '';
-const blockedListeners = new Set<() => void>();
-/** Subscribe to changes in the blocked-join set. Mirrors onActiveConnectionMove. */
-export function onBlockedJoinsChange(fn: () => void): void { blockedListeners.add(fn); }
-/** The pairs that cannot be joined, for the badge. A fresh array only on change. */
-export function blockedJoins(): BlockedJoin[] { return blocked; }
 
-/** Recompute the blocked set from every seg's router verdict; notify on change. */
+/** Recompute the blocked set from every seg's router verdict. */
 function refreshBlocked(): void {
   const pairs: BlockedJoin[] = [];
   for (const seg of lastSeg.values()) {
     if (seg.blocked && seg.routed && seg.ends) pairs.push({ a: seg.ends.a, b: seg.ends.b });
   }
-  const sig = pairs.map(p => p.a + '\0' + p.b).sort().join('|');
-  if (sig === blockedSig) return;
-  blockedSig = sig;
   blocked = pairs;
-  for (const fn of blockedListeners) fn();
+}
+
+/** Console diagnostic — `mbrd.joins()`. Every connection's routing verdict, so a
+ *  "why is this line missing" is answered with the card the code blamed. Returns
+ *  the rows too, so a remote inspector can read them without the console table. */
+export function joinDump(): Record<string, unknown>[] {
+  const rows = board.connections.map(conn => {
+    const [a, b] = conn;
+    const key = pairKey(a, b);
+    const seg = lastSeg.get(key);
+    const name = (id: string) => byId(id)?.name || id;
+    // Translate a 'cross:<id>' reason to the card's name for a readable table.
+    const reason = seg?.blockReason?.startsWith('cross:')
+      ? 'crosses ' + name(seg.blockReason.slice(6))
+      : seg?.blockReason || '';
+    const drawn = !!seg && !seg.blocked && (settled.has(key) || animating.has(key));
+    // Every card this drawn line's curve actually passes through (bodies), named —
+    // so a line visibly cutting a card shows up here.
+    let through = '';
+    if (drawn && seg) {
+      const pts = curveOn() ? curvePoints(seg.points, seg.norms, seg.caps) : seg.points;
+      const hit: string[] = [];
+      for (const c of centres()) {
+        if (c.id === a || c.id === b) continue;
+        if (polyMeetsRect(pts, blockOf(c, 0))) hit.push(name(c.id));
+      }
+      through = hit.join(', ');
+    }
+    return {
+      from: name(a), to: name(b),
+      routed: !!seg?.routed,
+      drawn,
+      blocked: !!seg?.blocked,
+      reason,
+      points: seg?.points.length ?? 0,
+      through,
+    };
+  });
+  console.table(rows);
+  return rows;
 }
 
 /** Pull a thread out of the drawn/fading sets — a line that has become blocked
@@ -222,8 +261,12 @@ export function initWeb(worldEl: HTMLElement, viewport?: Viewport | null) {
   draftPath.setAttribute('class', 'web-draft');
   draftPath.setAttribute('fill', 'none');
 
+  blockedPath = document.createElementNS(SVG_NS, 'path');
+  blockedPath.setAttribute('class', 'web-blocked');
+  blockedPath.setAttribute('fill', 'none');
+
   decoLayer = document.createElementNS(SVG_NS, 'g');
-  svg.append(defs, activePath, hoverPath, path, focusPath, fadeLayer, decoLayer, draftPath);
+  svg.append(defs, activePath, hoverPath, path, blockedPath, focusPath, fadeLayer, decoLayer, draftPath);
 
   worldEl.prepend(svg);
 
@@ -328,7 +371,7 @@ function straightSeg(pa: Card, pb: Card, sig: string): Seg {
   const f = bestFaces(pa, pb);
   const ea = pa.bare ? { x: pa.x, y: pa.y } : f.a;
   const eb = pb.bare ? { x: pb.x, y: pb.y } : f.b;
-  const h = DRAG_HANDLE * (Math.hypot(eb.x - ea.x, eb.y - ea.y) || 1);
+  const h = Math.min(DRAG_HANDLE * (Math.hypot(eb.x - ea.x, eb.y - ea.y) || 1), HANDLE_MAX);
   const da = pa.bare ? portDir(pa, pb) : f.na;
   const db = pb.bare ? portDir(pb, pa) : f.nb;
   return {
@@ -544,14 +587,21 @@ function routePass() {
     if (spent++ >= ROUTE_BUDGET) break;
     const { a, b } = seg;
     // No fan slots: every line leaves and enters at the middle of a side.
-    const routed = routeConnection(a, b, obstaclesBetween(a, b, where, opts.clearance), {
+    const routed = routeConnection(a, b, obstaclesBetween(a, b, where), {
       ...opts,
       avoid: linesNear(key, seg),
     });
     seg.points = intoMiddles(routed.points, a, b);
     seg.norms = routed.ends;
+    // Caps align one-to-one with routed.points; a bare end would shift them, so
+    // keep them only when the counts still match (always, for card-to-card).
+    seg.caps = routed.caps && routed.caps.length === seg.points.length ? routed.caps : undefined;
     seg.routed = true;
-    seg.blocked = routed.blocked || undefined;
+    // The router only knew the cards in its search box; a final check against every
+    // card the drawn curve actually reaches catches a bow that swung past that box.
+    const crossId = routed.blocked ? null : curveCrossesCard(seg, where);
+    seg.blocked = routed.blocked || !!crossId || undefined;
+    seg.blockReason = routed.blocked ? 'router' : crossId ? 'cross:' + crossId : undefined;
     // A pair that cannot be joined draws nothing — take it off screen at once and
     // let the badge speak for it (ui/join-badge.ts).
     if (seg.blocked) evict(key);
@@ -561,27 +611,38 @@ function routePass() {
   requestPaint();
 }
 
-/** Cards between a and b that the route may need to avoid. Flips y for the spatial query. */
-function obstaclesBetween(a: Card, b: Card, where: Map<string, Card>, clearance = CLEARANCE): Card[] {
-  const pad = clearance * 2;
-  const box = {
-    x0: Math.min(a.x, b.x) - pad, x1: Math.max(a.x, b.x) + pad,
-    y0: Math.min(a.y, b.y) - pad, y1: Math.max(a.y, b.y) + pad,
-  };
-  for (const end of [blockOf(a, pad), blockOf(b, pad)]) {
-    box.x0 = Math.min(box.x0, end.x0); box.x1 = Math.max(box.x1, end.x1);
-    box.y0 = Math.min(box.y0, end.y0); box.y1 = Math.max(box.y1, end.y1);
+/** Does the seg's drawn curve pass through any card body that is not one of its
+ *  own ends? The router validated against the cards in its search box; this walks
+ *  the sampled curve — the very geometry that gets drawn — against every card near
+ *  the curve's own bounds, so a bow that swung past the box is still caught. */
+function curveCrossesCard(seg: Seg, where: Map<string, Card>): string | null {
+  const pts = curveOn() ? curvePoints(seg.points, seg.norms, seg.caps) : seg.points;
+  if (pts.length < 2) return null;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const p of pts) {
+    if (p.x < x0) x0 = p.x;
+    if (p.y < y0) y0 = p.y;
+    if (p.x > x1) x1 = p.x;
+    if (p.y > y1) y1 = p.y;
   }
-  const world = { x0: box.x0, x1: box.x1, y0: -box.y1, y1: -box.y0 };
-  const out: Card[] = [];
-  for (const id of queryRect(world)) {
-    if (id === a.id || id === b.id) continue;
+  // queryRect wants world (y-up) coords; the curve is y-down.
+  for (const id of queryRect({ x0, x1, y0: -y1, y1: -y0 })) {
+    if (id === seg.a.id || id === seg.b.id) continue;
     const p = where.get(id);
-    if (!p) continue;                       // a rider or a hint: not an obstacle
-    const k = blockOf(p, 0);
-    if (k.x1 < box.x0 || k.x0 > box.x1 || k.y1 < box.y0 || k.y0 > box.y1) continue;
-    out.push(p);
+    if (!p) continue;
+    if (polyMeetsRect(pts, blockOf(p, 0))) return id;
   }
+  return null;
+}
+
+/** Every other join-eligible card, as obstacles. A between-the-endpoints box is
+ *  wrong for the Softish tier: a route that goes AROUND a cluster passes cards far
+ *  outside that box, which the router then never avoids and the curve cuts through.
+ *  The router caps at MAX_OBSTACLES (nearest to the midpoint), so handing it all is
+ *  bounded — and matches how routes are verified off-line. */
+function obstaclesBetween(a: Card, b: Card, where: Map<string, Card>): Card[] {
+  const out: Card[] = [];
+  for (const [id, p] of where) if (id !== a.id && id !== b.id) out.push(p);
   return out;
 }
 
@@ -614,7 +675,7 @@ function paint(forced = false) {
   // below - zoom is not one of them any more, see the note by the fade
   // constants that used to be here. A draft counts as something to draw: on a
   // board with no connections at all, it is the only line there is.
-  if (!settled.size && !animating.size && !draftPoints) {
+  if (!settled.size && !animating.size && !draftPoints && !blocked.length) {
     svg.style.display = 'none';
     // Nothing was drawn, so nothing below is true of what is on screen.
     paintedRect = null;
@@ -662,6 +723,19 @@ function paint(forced = false) {
   // everything else: it runs to wherever the pointer is, and an <svg> clips at
   // its own edge.
   if (draftPoints) for (const p of draftPoints) stretch(p);
+  // A blocked pair draws a straight line card-to-card; its ends sit on the card
+  // faces and may reach outside the settled box, which an <svg> would clip.
+  const blockedLines: [Point, Point][] = [];
+  if (blocked.length) {
+    const cards = new Map(centres().map(c => [c.id, c]));
+    for (const p of blocked) {
+      const ca = cards.get(p.a), cb = cards.get(p.b);
+      if (!ca || !cb) continue;
+      const f = bestFaces(ca, cb);
+      blockedLines.push([f.a, f.b]);
+      stretch(f.a); stretch(f.b);
+    }
+  }
   // A board whose items all sit on one row has a zero-height box, and an SVG
   // with a zero extent renders nothing at all - so the box never closes fully.
   const w = Math.max(maxX - minX, 1);
@@ -725,7 +799,7 @@ function paint(forced = false) {
     // arrow is per-line and this path is one shared `d`. drawDecorations marks
     // the lit ones with .web-lit, which is how they stay at full strength.
     if (seg.meta) continue;
-    const sub = pathData(seg.points, r, minX, minY, curved, curved ? seg.norms : undefined);
+    const sub = pathData(seg.points, r, minX, minY, curved, curved ? seg.norms : undefined, curved ? seg.caps : undefined);
     d += sub;
     // The same subpath twice, in the one case where that is cheaper than the
     // alternative: the focused threads are drawn again over the dimmed bulk
@@ -733,8 +807,26 @@ function paint(forced = false) {
     // to agree about which lines exist instead of one string and a copy.
     if (isLit) focusD += sub;
   }
+  // A blocked pair draws no line, but the hovered card's intended partner is still
+  // related — it must not dim as if it were a stranger. Add it to the un-dimmed set
+  // the same way a drawn partner is added above.
+  if (byPointer && lit) {
+    for (const p of blocked) {
+      if (lit.has(p.a)) { joined ||= new Set(); joined.add(p.b); }
+      if (lit.has(p.b)) { joined ||= new Set(); joined.add(p.a); }
+    }
+  }
   bulk.setAttribute('d', d);
   focus.setAttribute('d', focusD);
+  // The blocked pairs, each a straight subpath between the two card faces. Culled
+  // to the visible rect like the bulk lines; the CSS makes it red and dashed.
+  let blockedD = '';
+  for (const [p1, p2] of blockedLines) {
+    if (vis && !polyMeetsRect([p1, p2], vis)) continue;
+    blockedD += `M${(p1.x - minX).toFixed(2)} ${(p1.y - minY).toFixed(2)}`
+      + `L${(p2.x - minX).toFixed(2)} ${(p2.y - minY).toFixed(2)}`;
+  }
+  blockedPath!.setAttribute('d', blockedD);
   // Only when something was actually lit. A selected card with no lines of its
   // own, or none on screen, would otherwise dim the whole board to say nothing.
   svg.classList.toggle('is-focused', litAny);
@@ -767,7 +859,7 @@ function paint(forced = false) {
     // fading element is left blank rather than showing a solid twin under the
     // styled one. The fade timer still removes the empty element on its own.
     el.setAttribute('d', seg.meta ? ''
-      : pathData(seg.points, r, minX, minY, curved, curved ? seg.norms : undefined));
+      : pathData(seg.points, r, minX, minY, curved, curved ? seg.norms : undefined, curved ? seg.caps : undefined));
   }
 
   drawDecorations(minX, minY, r, vis, lit);
@@ -819,7 +911,7 @@ function drawDecorations(
     const focus = lit && seg.ends && (lit.has(seg.ends.a) || lit.has(seg.ends.b))
       ? ' web-lit' : '';
     line.setAttribute('class', 'web-styled' + colour + weight + focus);
-    line.setAttribute('d', pathData(seg.points, r, minX, minY, curved, curved ? seg.norms : undefined));
+    line.setAttribute('d', pathData(seg.points, r, minX, minY, curved, curved ? seg.norms : undefined, curved ? seg.caps : undefined));
     const style = seg.meta.style;
     if (style === 'dashed') line.setAttribute('stroke-dasharray', '7 5');
     else if (style === 'dotted') line.setAttribute('stroke-dasharray', '0.5 5');
@@ -829,7 +921,7 @@ function drawDecorations(
     layer.append(line);
 
     if (seg.meta.label) {
-      const mid = polyMidpoint(curved ? curvePoints(seg.points, seg.norms) : seg.points);
+      const mid = polyMidpoint(curved ? curvePoints(seg.points, seg.norms, seg.caps) : seg.points);
       const text = document.createElementNS(SVG_NS, 'text');
       text.setAttribute('class', 'web-label');
       text.setAttribute('x', (mid.x - minX).toFixed(2));
@@ -852,7 +944,7 @@ function nearestSeg(wx: number, wy: number, tolPx: number) {
     // Exclude fading-out lines — hitting one would re-create the deleted connection.
     if (!settled.has(key)) continue;
     // Walk the drawn curve, not the chord under it, so the hitbox follows the line.
-    const pts = curveOn() ? curvePoints(seg.points, seg.norms) : seg.points;
+    const pts = curveOn() ? curvePoints(seg.points, seg.norms, seg.caps) : seg.points;
     for (let i = 1; i < pts.length; i++) {
       const d = distToSegment(wx, py, pts[i - 1], pts[i]);
       if (d < bestD) { bestD = d; best = seg; bestKey = key; }
@@ -888,7 +980,7 @@ export function clearActiveConnection() { setActiveConnection(null, null); }
 export function activeConnectionAnchor(): Point | null {
   const seg = activeKey ? lastSeg.get(activeKey) : null;
   if (!seg?.points?.length) return null;
-  const mid = polyMidpoint(curveOn() ? curvePoints(seg.points, seg.norms) : seg.points);
+  const mid = polyMidpoint(curveOn() ? curvePoints(seg.points, seg.norms, seg.caps) : seg.points);
   return { x: mid.x, y: -mid.y };
 }
 
@@ -950,7 +1042,7 @@ function drawActive() {
   if (!activePath) return;
   const seg = activeKey ? lastSeg.get(activeKey) : null;
   activePath.setAttribute('d', seg
-    ? pathData(seg.points, cornerRadius(), originX, originY, curveOn(), curveOn() ? seg.norms : undefined)
+    ? pathData(seg.points, cornerRadius(), originX, originY, curveOn(), curveOn() ? seg.norms : undefined, curveOn() ? seg.caps : undefined)
     : '');
   // After the draw, not before: whatever follows this line is placed against where
   // it has just been put, and the mark going away is as much a move as it moving.
@@ -962,7 +1054,7 @@ function drawHover() {
   if (!hoverPath) return;
   const seg = hoveredKey ? lastSeg.get(hoveredKey) : null;
   hoverPath.setAttribute('d', seg
-    ? pathData(seg.points, cornerRadius(), originX, originY, curveOn(), curveOn() ? seg.norms : undefined)
+    ? pathData(seg.points, cornerRadius(), originX, originY, curveOn(), curveOn() ? seg.norms : undefined, curveOn() ? seg.caps : undefined)
     : '');
 }
 
@@ -1014,7 +1106,7 @@ function aimDraft(e: PointerEvent) {
     const where = new Map<string, Card>(centres().map(p => [p.id, p]));
     const opts = look();
     const routed = routeConnection(
-      draftBox, to, obstaclesBetween(draftBox, to, where, opts.clearance), opts);
+      draftBox, to, obstaclesBetween(draftBox, to, where), opts);
     draftPoints = intoMiddles(routed.points, draftBox, to);
     draftEnds = routed.ends ?? draftEnds;
     requestPaint();

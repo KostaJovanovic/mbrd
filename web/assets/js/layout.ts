@@ -333,10 +333,8 @@ const GEOM_KEYS = ['x', 'y', 'w', 'h', 'rot', 'z'] as const;
  * item even briefly - and on Mobile the fit is what holds a card to the column.
  */
 function fitOnto(it: Item, patch: Partial<Pick<Item, GeomKey>>, keys: readonly GeomKey[]): void {
-  // SAFETY: fitBoardMode() clamps numbers on the object it is given and hands
-  // the same object back - it adds and removes nothing - so a copy of an Item
-  // comes out an Item. The spread above is what makes it a copy, which is the
-  // point of the paragraph over this function.
+  // SAFETY: fitBoardMode() returns its input on Desktop and a spread of it with new numbers
+  // on Mobile. Neither adds or removes a key, so the copy of an Item made here stays an Item.
   const next = fitBoardMode({ ...it, ...patch }) as Item;
   for (const key of keys) it[key] = next[key];
 }

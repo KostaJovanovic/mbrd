@@ -63,7 +63,7 @@
   "browserRequirements": "Requires JavaScript and a browser released since 2023.",
   "image": "https://mbrd.valjdakosta.com/assets/img/og.png",
   "screenshot": "https://mbrd.valjdakosta.com/assets/img/og.png",
-  "softwareHelp": "https://github.com/KostaJovanovic/mbrd#readme",
+  "softwareHelp": "https://github.com/KostaJovanovic/mbrd-release#readme",
   "isAccessibleForFree": true,
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
   "author": { "@type": "Person", "name": "valjdakosta" },
@@ -288,30 +288,6 @@
      Built at runtime by ui/feed.js and ui/playlist.js. -->
 <div id="mobile-feed" hidden aria-label="Board feed"></div>
 <div id="mobile-playlist" hidden aria-label="Board playlist"></div>
-
-<!-- Desktop window frame (hidden in browsers). Before #sidebar — the ordering
-     rule below requires these to precede the sibling-combinator run. The bar is
-     the drag handle; mark hidden on macOS (traffic lights occupy that corner).
-     aria-hidden: the OS title bar carries the same string for screen readers. -->
-<div id="window-drag" hidden aria-hidden="true">
-  <img id="window-mark" src="assets/img/icon.svg" alt="" width="16" height="16" hidden>
-  <span id="window-title"></span>
-</div>
-<!-- Window buttons. Hidden on macOS (native buttons are in the opposite corner).
-     Two maximize glyphs, one shown at a time — a <use> shadow tree cannot be
-     CSS-selected, so the swap is two elements toggled by `is-maximized`. -->
-<div id="window-controls" hidden role="group" aria-label="Window">
-  <button type="button" data-cmd="window-minimize" aria-label="Minimise">
-    <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-window-min"/></svg>
-  </button>
-  <button type="button" data-cmd="window-maximize" aria-label="Maximise">
-    <svg class="ico win-max" aria-hidden="true"><use href="assets/icons.svg#i-window-max"/></svg>
-    <svg class="ico win-restore" aria-hidden="true"><use href="assets/icons.svg#i-window-restore"/></svg>
-  </button>
-  <button type="button" data-cmd="window-close" aria-label="Close window">
-    <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-close"/></svg>
-  </button>
-</div>
 
 <aside id="sidebar" aria-hidden="true">
   <header class="side-head">
@@ -843,7 +819,7 @@
         <span class="credits-why">The site logos on link cards.</span>
       </li>
       <li>
-        <a href="https://github.com/valjdakosta/file-analyser" target="_blank" rel="noopener noreferrer">file&#8209;analyser</a>
+        <a href="https://github.com/KostaJovanovic/Universal-File-Analyser" target="_blank" rel="noopener noreferrer">file&#8209;analyser</a>
         <span class="credits-lic">borrowed data</span>
         <span class="credits-by">valjdakosta</span>
         <span class="credits-why">File-type names, so a dropped <code>.sldprt</code>

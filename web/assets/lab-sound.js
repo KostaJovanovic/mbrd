@@ -624,6 +624,7 @@ var draftReversed = false;
 function clone(recipe) {
   return {
     masterGain: recipe.masterGain,
+    // SAFETY: each element is a shallow copy of a SoundLayer, with the same fields.
     layers: recipe.layers.map((l) => ({ ...l })),
     ...recipe.shimmer ? { shimmer: { ...recipe.shimmer } } : null
   };

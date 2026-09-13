@@ -356,6 +356,7 @@ function paintAxes(vp: Viewport) {
 }
 
 function makeInkCanvas(id: string): InkCanvas {
+  // SAFETY: _dpr is read only after sizeCanvas() returns a context, and it writes _dpr first.
   const canvas = document.createElement('canvas') as InkCanvas;
   canvas.id = id;
   canvas.setAttribute('aria-hidden', 'true');

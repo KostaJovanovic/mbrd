@@ -134,50 +134,6 @@
   <path d="M5.75 7.25V5.1a2.25 2.25 0 0 1 4.5 0v2.15"/>
 </symbol>
 
-<!-- The window's own three, drawn only where the app draws its own title bar
-     (ui/window-chrome.js). Each is a picture of the window itself - collapsed
-     to a line, filling the screen, and stepped back off it.
-
-     **All three are 9.5 units across and centred on the same line.** That is
-     the whole spec, and it is here because the first draft did not have it: the
-     minimise mark was drawn along the *foot* of the square, on the argument
-     that a minimised window is one laid down flat, and at 14px on screen it
-     read as a dash that had slipped out of the middle of its button while the
-     two marks beside it sat true. An idea about what a window does is worth
-     nothing against three glyphs that have to look like one set.
-
-     There is no i-window-close: the fourth is i-close above, unchanged. The
-     mark for "shut this" is the same mark whether the thing being shut is a
-     panel or a window, and a second cross a few tenths different from the first
-     is precisely what this file was made to stop. It is 8 units rather than
-     9.5, which is right and not an exception - a diagonal reads longer than a
-     straight edge of the same length, so a cross drawn to the square's width
-     comes out visibly the larger of the two.
-
-     Nor is this i-zoom-out drawn twice. That one is a minus sign set against a
-     monospace readout in the zoom pill and is sized to it; this is a window
-     with its own width. The two would move for different reasons. -->
-<symbol id="i-window-min" viewBox="0 0 16 16">
-  <path d="M3.25 8h9.5"/>
-</symbol>
-
-<!-- rx 1 rather than the 1.6 it started at. At this size 1.6 is a fifth of the
-     side, which stops reading as a window with rounded corners and starts
-     reading as a lozenge - and it was the one mark of the three that has to be
-     recognisably a *screen*. -->
-<symbol id="i-window-max" viewBox="0 0 16 16">
-  <rect x="3.25" y="3.25" width="9.5" height="9.5" rx="1"/>
-</symbol>
-
-<!-- Two sheets, the front one stepped down and left off the back one. The back
-     sheet is drawn as the two sides that show rather than as a whole square,
-     because a full rectangle behind a rounded one leaves a hairline of the back
-     sheet visible inside the front sheet's corners at every size. -->
-<symbol id="i-window-restore" viewBox="0 0 16 16">
-  <rect x="2.75" y="5.75" width="7.5" height="7.5" rx="1"/>
-  <path d="M5.75 5.75V4.4a1 1 0 0 1 1-1h5.85a1 1 0 0 1 1 1v5.85a1 1 0 0 1-1 1h-1.35"/>
-</symbol>
-
 <!-- Holding a card still, which is a different act from locking a door and now
      says so. The two padlocks above stay where they are and mean what they have
      always meant - they are the *zoom* lock's, and a zoom held at 100% really is

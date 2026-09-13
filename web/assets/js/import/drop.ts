@@ -117,6 +117,7 @@ async function asking<T>(file: File, read: (lift: boolean) => Promise<T | null>)
 }
 
 /** The shared hidden file input. Three entry points take turns via `dataset.mode`. */
+// SAFETY: #file-input is an <input type="file"> in index.html.
 const fileInput = () => document.getElementById('file-input') as HTMLInputElement;
 
 /** Concurrency for prepareFile(). Low: each holds a whole file in memory while hashing/measuring. */
@@ -456,7 +457,8 @@ export async function importFiles(
 
   const desktop = board.layoutMode !== 'mobile';
   if (!desktop) {
-    // Mobile: only reorder (mobileOrder returns the same Draft objects), no 2D layout.
+    // Mobile: only reorder, no 2D layout.
+    // SAFETY: every ORDERS entry in arrangements.ts returns the items it was handed, so each is a Draft.
     const ordered = mobileOrder(drafts, { name: board.arrangement }) as Draft[];
     drafts.length = 0;
     drafts.push(...ordered);
@@ -1107,6 +1109,29 @@ export function addStyleTile(centre: Point, selected: Set<string> | null = null)
     meta: { shots: tilePictures(selected).map(it => it.id) },
   }], 'Add style tile');
   select([item.id]);
+  return item;
+}
+
+/**
+ * A specimen of a dropped face, as a card on the board.
+ *
+ * Not a fileless type like the four above: the bytes are real and were hashed
+ * by ui/fonts.ts, which mints this the instant a dropped face registers. So the
+ * family passed here is the one document.fonts actually carries - uniqueFamily()
+ * may have numbered it - and asset.hash is that same face, so the specimen
+ * travels in the .mbrd whether or not the menu entry is later removed.
+ *
+ * asset.family is read straight back by the font renderer; nothing else on the
+ * card needs writing, since the letters it shows are fixed.
+ */
+export function addFontCard(centre: Point, hash: string, family: string) {
+  const size = defaultSize('font');
+  const [item] = addItems([{
+    type: 'font',
+    name: family,
+    x: centre.x, y: centre.y, w: size.w, h: size.h,
+    asset: { hash, family },
+  }], 'Add font');
   return item;
 }
 

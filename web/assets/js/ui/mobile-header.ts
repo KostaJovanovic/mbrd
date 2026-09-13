@@ -93,6 +93,7 @@ const axisControls = new Map<string, AxisControl>();
 
 // SAFETY: ids and tags match index.html; a missing id throws at boot.
 const inputEl = (id: string) => el(id)! as HTMLInputElement;
+// SAFETY: its one call names #mobile-header-font, a <select> in index.html.
 const selectEl = (id: string) => el(id)! as HTMLSelectElement;
 
 export function initMobileHeaderEditor(vp: Viewport | null) {

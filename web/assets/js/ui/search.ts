@@ -61,8 +61,10 @@ export function initSearch(viewport: Viewport) {
   }, true);
 
   addEventListener('pointerdown', e => {
+    // SAFETY: a pointerdown is dispatched at a node in the document, never at the window.
     if (!node || node.contains(e.target as Node | null)) return;
     // Record before close so open() can detect the same press (justDismissed pattern).
+    // SAFETY: as above.
     dismissedBy = e.target as Node | null;
     dismissedAt = performance.now();
     close();

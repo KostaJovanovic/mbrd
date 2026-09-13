@@ -17,20 +17,11 @@ contextBridge.exposeInMainWorld('mbrdDesktop', {
    * catches the two drifting: bumped when something is removed or changes
    * shape, so an adapter can refuse a shell older than it expects rather than
    * calling a function that is not there.
-   */
-  bridge: 2,
-
-  /**
-   * Which system this is, and the only thing on this bridge that is a fact
-   * rather than a request.
    *
-   * The page needs it for exactly one decision: macOS keeps its traffic lights
-   * in the top left, so the app's own button there steps aside, and the drawn
-   * window buttons in the opposite corner are not drawn at all. A sandboxed
-   * preload still has `process.platform`, which is why this is a string here
-   * rather than a call the main process would have to answer.
+   * 3: `win` and `platform` went when the title bar left the page. The bar is
+   * its own web contents now (chrome/), and nothing in the board reads either.
    */
-  platform: process.platform,
+  bridge: 3,
 
   store: {
     get: (store: string, key: string) => invoke('store:get', store, key),
@@ -60,32 +51,9 @@ contextBridge.exposeInMainWorld('mbrdDesktop', {
     decode: (bytes: ArrayBuffer, name: string) => invoke('native:decode', bytes, name),
   },
 
+  // A request with no answer: the shell replies in its own dialogs.
   updates: {
     check: () => invoke('updates:check'),
-    install: () => ipcRenderer.send('updates:install'),
-    onFound: (fn: (info: unknown) => void) => {
-      ipcRenderer.removeAllListeners('app:update');
-      ipcRenderer.on('app:update', (_event, info: unknown) => fn(info));
-    },
-  },
-
-  /**
-   * The window itself: the three buttons the page draws, and what shape it is
-   * in.
-   *
-   * `send` and not `invoke` for the three actions, because none of them has an
-   * answer - minimise and maximise are seen, and the reply to a close is the
-   * window going away. `onState` keeps one listener like the two callbacks
-   * above and for the same reason: one renderer, registered once at boot.
-   */
-  win: {
-    minimize: () => ipcRenderer.send('window:minimize'),
-    toggleMaximize: () => ipcRenderer.send('window:maximize'),
-    close: () => ipcRenderer.send('window:close'),
-    onState: (fn: (state: { maximized: boolean, fullScreen: boolean }) => void) => {
-      ipcRenderer.removeAllListeners('app:frame');
-      ipcRenderer.on('app:frame', (_event, state: { maximized: boolean, fullScreen: boolean }) => fn(state));
-    },
   },
 
   startupNotes: () => invoke('app:startupNotes'),

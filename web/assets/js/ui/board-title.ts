@@ -26,8 +26,8 @@ export function initBoardTitle() {
   // index.html; an absent one is a broken build, not a state to paint around.
   el('mobile-board-title')!.addEventListener('pointerdown', e => {
     // Already editing: don't reselect the whole name out from under someone
-    // aiming at one word. currentTarget is the field itself, the one target
-    // a handler here can be sure of.
+    // aiming at one word.
+    // SAFETY: currentTarget is the field itself, #mobile-board-title, an <h2> in index.html.
     titleTap = (e.currentTarget as HTMLElement).isContentEditable
       ? null
       : { id: e.pointerId, x: e.clientX, y: e.clientY };

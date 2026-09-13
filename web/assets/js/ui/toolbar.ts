@@ -29,6 +29,7 @@ export function initToolbar(cmds: ToolbarCommands): void {
   toggle!.addEventListener('click', () => setOpen(!isOpen()));
 
   bar!.addEventListener('click', e => {
+    // SAFETY: the listener is on #toolbar, and a click is dispatched at an element under it.
     const btn = (e.target as Element).closest<HTMLElement>('[data-cmd]');
     if (!btn) return;
     const fn = cmds[camel(btn.dataset.cmd!)];

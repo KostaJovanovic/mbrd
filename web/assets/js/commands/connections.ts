@@ -116,6 +116,7 @@ export function connectionCommands() {
       return true;
     },
     editConnectionLabel: async (a: string, b: string) => {
+      // SAFETY: connectionMeta() is declared to return ConnMeta | null, so the cast only restates it.
       const current = (connectionMeta(a, b) as ConnMeta | null)?.label || '';
       const typed = await ask({
         title: 'Connection label',

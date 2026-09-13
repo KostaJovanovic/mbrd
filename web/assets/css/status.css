@@ -38,10 +38,8 @@
 #busy {
   position: fixed;
   z-index: var(--z-toast);
-  /* Below the toolbar. mobile.css resets this when the bar moves to the foot.
-     --frame-bar-h accounts for the custom title bar on narrow desktop windows. */
-  top: calc(max(14px, env(safe-area-inset-top)) + var(--toolbar-h) + 10px
-    + var(--frame-bar-h));
+  /* Below the toolbar. mobile.css resets this when the bar moves to the foot. */
+  top: calc(max(14px, env(safe-area-inset-top)) + var(--toolbar-h) + 10px);
   left: 50%;
   width: min(330px, calc(100vw - 28px));
   padding: 10px 14px 11px;

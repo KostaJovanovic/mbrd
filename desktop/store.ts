@@ -20,7 +20,7 @@ function root(): string {
 }
 
 function dirOf(store: string): string {
-  // Widen to search; the throw on the next line rejects unknowns.
+  // SAFETY: widened for the includes() lookup only; a name outside STORES throws here.
   if (!STORES.includes(store as StoreName)) throw new Error('unknown store: ' + store);
   return join(root(), store);
 }

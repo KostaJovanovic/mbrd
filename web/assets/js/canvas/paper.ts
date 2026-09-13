@@ -106,6 +106,7 @@ function draw() {
  * compounds rounding and causes the sheet to jump. */
 function onDown(e: PointerEvent) {
   // Optional chaining covers harness dispatches on non-element targets.
+  // SAFETY: the listener is on #paper, so a real press targets an element in it.
   const grip = (e.target as Element).closest?.<HTMLElement>('[data-grip]');
   // Check the setting, not just the CSS class — a look must not enable grips.
   if (!grip || e.button > 0 || !vp || !board.settings.paperResize) return;
@@ -151,6 +152,7 @@ function onUp(e: PointerEvent) {
   drag = null;
   document.documentElement.classList.remove('is-sizing-paper');
   // Optional chaining covers non-element targets in test harnesses.
+  // SAFETY: the listener is on #paper, so a real release targets an element in it.
   (e.target as Element).releasePointerCapture?.(e.pointerId);
 }
 

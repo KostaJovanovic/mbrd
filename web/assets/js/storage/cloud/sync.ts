@@ -40,6 +40,7 @@ type SyncTable = Record<string, BoardSync>;
 /** Everything this browser knows about synced boards. Never throws. */
 export async function syncTable(): Promise<SyncTable> {
   const raw = await idbGet('kv', SYNC_KEY).catch(() => null);
+  // SAFETY: only writeSyncRow() and forgetAllSyncs() write this key; syncFor() field-checks each row.
   return (raw && typeof raw === 'object' ? raw as SyncTable : {});
 }
 

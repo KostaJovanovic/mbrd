@@ -1019,6 +1019,7 @@ type InputCommands = {
   deleteActiveConnection?(): boolean,
   editTitle?(): void,
   editTitleText?(): void,
+  editFontText?(id: string): void,
   openViewer?(id: string): void,
   playPause?(): boolean,
   // The tour's two keys, in the shape the three above use: the command answers
@@ -2827,6 +2828,9 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // A double-click on the title card renames the board inline, the same as its
     // T button - the one gesture besides the note edit that survives here.
     else if (byId(id)?.type === 'title') cmds.editTitleText?.();
+    // A font card is written on too: its specimen text is editable, so a
+    // double-click opens it rather than the viewer.
+    else if (byId(id)?.type === 'font') cmds.editFontText?.(id);
     // And on anything else it opens the item full size. A double-click on a file
     // is what every file manager in existence means by "open it", and until the
     // viewer existed this gesture had nothing to do on a photograph - which is
@@ -2931,6 +2935,9 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         // The title card has no item name of its own - F2 renames the board on
         // it, the same as its T button, where every other card edits its caption.
         if (byId(only)?.type === 'title') cmds.editTitleText?.();
+        // A font card has no caption to rename - its editable words are the
+        // specimen, so F2 opens that instead of a no-op on a missing name.
+        else if (byId(only)?.type === 'font') cmds.editFontText?.(only);
         else editItemName(only);
         e.preventDefault();
       } break;

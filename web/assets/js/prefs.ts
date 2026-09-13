@@ -33,7 +33,8 @@ export function writePref(key: string, value: unknown): boolean {
 export function readPrefJSON<T = unknown>(key: string, fallback: T | null = null): T | null {
   try {
     const raw = localStorage.getItem(key);
-    // T is unchecked — callers treat the result as a suggestion and fall back.
+    // SAFETY: T is unchecked. The three callers take unknown or pass it to cloneLook(),
+    // which re-checks every field.
     return raw === null ? fallback : JSON.parse(raw) as T;
   } catch {
     return fallback;

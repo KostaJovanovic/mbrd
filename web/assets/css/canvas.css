@@ -738,12 +738,16 @@
      zoom along with everything else, and reach ten pixels wide at 8x. */
   vector-effect: non-scaling-stroke;
 }
-/* There was a give-up style here - dimmer and dashed - for the straight line the
-   router drew when it found no way round. Both are gone. The router's last resort
-   is an orthogonal elbow now, which passes *behind* the cards in its way rather
-   than across them, and #web is under the items - so it reads as a wire going
-   under a photograph and out the other side, which is a connector rather than a
-   failure. A state worth marking as a failure has to look like one. */
+/* A pair the router cannot join cleanly draws nothing routed - instead a single
+   straight red dashed line runs card-to-card (web.ts, .web-blocked). It replaces
+   the old "?" badge: the failure is shown in place, on the board, between the two
+   cards that wanted to meet. The dash and width do not scale (non-scaling-stroke
+   above), so the marks stay the same size at every zoom. */
+#web .web-blocked {
+  stroke: var(--danger);
+  stroke-dasharray: 6 6;
+  stroke-linecap: butt;
+}
 /* A styled connection - direction, dash or label - drawn in its own layer. It
    inherits the stroke rule above (it is a #web path too); a dash is set per
    line in web.ts, and the arrowhead is a shade firmer than the faint line so a

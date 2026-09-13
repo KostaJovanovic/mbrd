@@ -1,5 +1,6 @@
 // View commands: camera, lenses (Canvas/Feed/Playlist), debug overlays,
-// zoom lock, scale/appearance/quality resets, window buttons. The only
+// zoom lock, scale/appearance/quality resets, the way out to the patch notes,
+// the download page and the update check. The only
 // command run that takes the Viewport — fit, recenter, and zoom lock are
 // the app's entire camera relationship. resetAppearance is injected
 // because ui/appearance.ts touches globals at import time.
@@ -144,25 +145,6 @@ export function viewCommands(vp: CommandViewport, { resetAppearance, perf }: Vie
       document.querySelector('[data-cmd="debug-grips"]')?.setAttribute('aria-pressed', String(on));
       return on;
     },
-    /**
-     * Dev: paint the window drag band. The band has no ink, so its reach
-     * cannot be checked by eye. Toast shows measured px, not the token.
-     */
-    debugFrame: () => {
-      const band = document.getElementById('window-drag');
-      // Browser tab — no app-drawn title bar to show.
-      if (!band || band.hidden) {
-        toast('No drawn title bar here - the browser draws this window');
-        return false;
-      }
-      const on = document.documentElement.toggleAttribute('data-debug-frame');
-      document.querySelector('[data-cmd="debug-frame"]')?.setAttribute('aria-pressed', String(on));
-      if (on) {
-        const h = Math.round(band.getBoundingClientRect().height);
-        toast(`The drag band is ${h}px tall - the window is moved from there`);
-      }
-      return on;
-    },
     /** Arm/disarm the frame profiler. Writes its own aria-pressed — console and #perf also toggle it. */
     debugPerf: () => {
       const on = !perf.active;
@@ -216,18 +198,19 @@ export function viewCommands(vp: CommandViewport, { resetAppearance, perf }: Vie
     },
     reload: reloadBoard,
     restart: () => restartApp(),
-    // Window buttons — no-ops in a browser (platform.frame answers with silence).
-    windowMinimize: () => platform.frame.minimize(),
-    windowMaximize: () => platform.frame.toggleMaximize(),
-    windowClose: () => platform.frame.close(),
     // Credits sheet.
     credits: () => openCredits(),
     // Board inventory report.
     inventory: () => openInventory(),
     // Toggle the timeline. Which face (strip or sheet) is decided by ui/timeline-view.ts.
     timeline: () => toggleTimeline(),
-    // Navigate to patch notes. Same tab — board is flushed on pagehide/visibilitychange,
-    // and in-place navigation avoids the theme flash a new tab would show.
+    // Navigate to patch notes. Same tab — board is flushed on pagehide/visibilitychange
+    // (the desktop shell asks for the flush first), and in-place navigation avoids
+    // the theme flash a new tab would show.
     patchNotes: () => { location.href = homePath() + 'patch'; },
+    // The download page, the way patchNotes goes to /patch.
+    getApp: () => { location.href = homePath() + 'download'; },
+    // The shell answers in its own dialogs. On the web this does nothing.
+    checkUpdates: () => platform.updates.check(),
   };
 }

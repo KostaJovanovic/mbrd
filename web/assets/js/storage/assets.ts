@@ -21,7 +21,8 @@ const store = new Map<string, Asset>();
 
 // Accepts null/undefined so callers can pass item.asset?.hash directly.
 export function getAsset(hash: string | null | undefined) {
-  return store.get(hash as string); // SAFETY: miss on null/undefined is the desired result
+  // SAFETY: the Map holds only string keys, so null or undefined misses, the result wanted.
+  return store.get(hash as string);
 }
 export function allAssets() { return store; }
 

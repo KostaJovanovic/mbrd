@@ -46,6 +46,7 @@ export function normalizeBoard(data: unknown): Omit<Board, 'settings' | 'arrange
   // Shared id space across live board and bin — restored items must not collide.
   const ids = new Set<string>();
   const normalizedItems = dedupeIds(items.map(makeItem), ids);
+  // SAFETY: the filter above kept only entries whose item passes isRecord().
   const trashItems = dedupeIds(trash.map(t => makeItem(t.item as Record<string, unknown>)), ids);
   // Items that can never be connection endpoints (stickers, ghosts) — prune them.
   const joinEnds = new Set<string>();

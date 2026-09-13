@@ -61,25 +61,31 @@ The desktop shell is a **second package** under `desktop/` with its own
 `node_modules`, and needs its own `npm install` before any of this:
 
 ```bash
-desktop.bat                         # Windows: build the web bundle, then the above
+desktop.bat                         # Windows: install, build, watch the web bundle, open
 desktop.bat portable                # Windows: repackage desktop/portable/ and run it
 npm run desktop                     # build the shell and open the app
 npm run portable                    # → desktop/portable/, a runnable copy
 cd desktop && npm run typecheck     # outside the root tsconfig on purpose
 ```
 
-`desktop.bat` is the launcher to use, and the one thing it adds over `npm run
-desktop` is the web bundle. Electron serves `web/` off the disk you are editing,
-but `index.html` loads `assets/app.js` — so without a build first, an edit to a
-`.ts` file opens the previous bundle and reads as a change that did nothing.
-It also clears `ELECTRON_RUN_AS_NODE`, which an Electron-based editor sets in
-its integrated terminal and which makes `electron .` boot as plain Node: `app`
-is undefined and `main.ts` throws on its first line.
+`desktop.bat` is the launcher to use. Over `npm run desktop` it adds three
+things. It installs both packages' dependencies on a fresh clone. It builds the
+web bundle first: Electron serves `web/` off the disk you are editing, but
+`index.html` loads `assets/app.js`, so without a build an edit to a `.ts` file
+opens the previous bundle and reads as a change that did nothing. And it keeps
+`npm run dev` watching in its own console while the app is open, and stops it
+when the app closes. A watch already running in another terminal is reused and
+left alone. It also clears `ELECTRON_RUN_AS_NODE`, which an Electron-based
+editor sets in its integrated terminal and which makes `electron .` boot as
+plain Node: `app` is undefined and `main.ts` throws on its first line.
 
-**`Ctrl+R` reloads, but nothing rebuilds.** The window reads `web/` off the disk
-fresh on every request, so a reload shows the last *build* — run `npm run build`
-(or `npm run dev` in another terminal) first, or the reload shows what was
-already there. The Reload row is in the View menu; there is no watch.
+**`Ctrl+R` reloads, and only `desktop.bat` rebuilds for it.** The window reads
+`web/` off the disk fresh on every request, so a reload shows the last *build*.
+Under `desktop.bat` the watch has made that build a moment after the save.
+Started any other way (`npm run desktop`), nothing watches: run `npm run build`
+or `npm run dev` first. The Reload row is in the View menu. Nothing watches
+`desktop/` itself, so a change to the shell (main, the menu, the title bar)
+needs the window closed and `desktop.bat` run again.
 
 `desktop/portable/` is the unpacked app plus the `portable` marker
 `installer.nsh`'s Portable branch writes — there is no portable *target*, only

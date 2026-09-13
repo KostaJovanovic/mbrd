@@ -71,17 +71,6 @@ extraResources:
     to: u2netp
     filter: ['*.onnx']
 
-# .mbrd belongs to this app. `role: Editor` rather than Viewer because opening
-# one is opening it to work on - there is no read-only mode and §4 of the plan
-# says why there is not.
-fileAssociations:
-  - ext: mbrd
-    name: mbrd board
-    description: mbrd board
-    mimeType: application/vnd.mbrd+zip
-    role: Editor
-    icon: icons/icon.ico
-
 # The native modules keep their .node binaries outside the archive. Without
 # this they cannot be dlopen'd - electron-builder detects most of these on its
 # own, and naming them is what stops that detection being the thing that breaks.
@@ -91,7 +80,11 @@ asarUnpack:
   - '**/node_modules/onnxruntime-node/**'
 
 win:
-  target: nsis
+  # x64 named, because installer.nsh's portable section unpacks the x64
+  # package and stops the build when there is none.
+  target:
+    - target: nsis
+      arch: [x64]
   icon: icons/icon.ico
   # Unsigned for now, and the download page has to say so - see plan §1. The
   # layout leaves signing a config change: a certificateFile and a password in
@@ -99,31 +92,24 @@ win:
 
 nsis:
   oneClick: false
-  allowToChangeInstallationDirectory: true
+  # No folder page: an install goes to the usual per-user folder, and page 1
+  # of installer.nsh picks the portable folder itself. installer.nsh stops the
+  # build if this is turned back on.
+  allowToChangeInstallationDirectory: false
   perMachine: false
   allowElevation: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
   # The Install-or-Portable page, and the branch that skips the registry.
   include: installer.nsh
-  # ── No ${version} in any of the three artifactName lines, and that is the
-  # download page's requirement rather than a preference ──
-  #
-  # web/download.html points each button at GitHub's
-  # `releases/latest/download/<name>` redirect, which is the only link shape
-  # that survives a release without somebody editing a page. It resolves a
-  # *filename*, so the filename cannot carry the version - a versioned name
-  # means three dead links the moment the next tag is pushed, and they die on
-  # the deployed site rather than anywhere a test can see.
-  #
-  # The version is not lost by this. It is in the installer's own metadata, in
-  # the About sheet, and in latest.yml, which is what electron-updater reads -
-  # see updates.ts. What is lost is being able to tell two downloaded copies
-  # apart by filename alone, which is the trade.
-  #
-  # tests/download.test.js holds these three names and the page's three hrefs
-  # in step, in both directions.
-  artifactName: mbrd-Setup.${ext}
+  # No .blockmap. updates.ts downloads the whole installer, which is simpler
+  # than a patch and keeps the release to one Windows file.
+  differentialPackage: false
+  # The version is in the name, as in FileAnalyser's. updates.ts finds its file
+  # in the latest release by the part before the version (INSTALLER_ASSET), so
+  # keep "mbrd-Windows" exactly as it is. tests/desktop-package.test.js holds
+  # the two in step.
+  artifactName: mbrd-Windows-${version}.${ext}
 
 mac:
   target:
@@ -131,23 +117,33 @@ mac:
       arch: universal
   icon: icons/icon.icns
   category: public.app-category.graphics-design
-  # Unsigned, so Gatekeeper refuses the DMG as "damaged" on first open and the
-  # download page carries the xattr line - plan §1, and note that macOS 15
-  # removed the right-click-Open bypass, so the page has to name System
-  # Settings as well.
+  # .mbrd belongs to this app on macOS, where the bundle declares it. Under
+  # mac: and not at the top level, because electron-builder hands a top-level
+  # list to every platform, and on Windows installer.nsh registers .mbrd itself,
+  # only when the Install card's box is ticked. `role: Editor` rather than
+  # Viewer because opening one is opening it to work on.
+  fileAssociations:
+    - ext: mbrd
+      name: mbrd board
+      description: mbrd board
+      mimeType: application/vnd.mbrd+zip
+      role: Editor
+  # No Apple Developer ID yet. null makes electron-builder skip signing, and
+  # scripts/after-pack.cjs signs ad-hoc instead, so macOS offers Open Anyway
+  # in Privacy & Security rather than calling the app damaged. Remove both once
+  # a certificate exists: notarisation becomes possible then, and so do
+  # installed updates.
   identity: null
   # If sharp or onnxruntime-node cannot be merged into a universal binary,
   # switch this to `arch: [arm64, x64]` and add chip detection to the download
   # page. Plan §1 makes that the fallback rather than the default.
 
 dmg:
-  # `universal` written out rather than ${arch}, for the same reason the version
-  # is gone: the page links this name by string and a test compares the two, so
-  # a name electron-builder derives is a name that test cannot check against
-  # anything. If §1's two-DMG fallback is ever taken, this becomes
-  # mbrd-${arch}.${ext} and the page grows a second Mac link - both edits, or
-  # tests/download.test.js fails.
-  artifactName: mbrd-universal.${ext}
+  # No .dmg.blockmap: nothing reads it.
+  writeUpdateInfo: false
+  # The version in the name, as on Windows. macOS only opens the download page
+  # (updates.ts), so no pattern reads this one.
+  artifactName: mbrd-mac-universal-${version}.${ext}
 
 linux:
   target: AppImage
@@ -162,16 +158,18 @@ linux:
       MimeType: application/vnd.mbrd+zip
 
 appImage:
-  # `x86_64` written out, not ${arch}. electron-builder spells the AppImage
-  # architecture differently from every other target - x86_64 rather than x64 -
-  # and a page that hardcodes one spelling against a config that derives the
-  # other is a broken link nobody can see until the Linux build has actually
-  # run, which on this repository has not happened yet. Written out, the two
-  # agree by string and tests/download.test.js says so.
-  artifactName: mbrd-x86_64.${ext}
+  # The version in the name. updates.ts finds the AppImage by the part before it
+  # (APPIMAGE_ASSET), so keep "mbrd-linux-x64" exactly as it is, written out
+  # rather than built from ${arch}. tests/desktop-package.test.js holds the two
+  # in step.
+  artifactName: mbrd-linux-x64-${version}.${ext}
 
-publish:
-  provider: github
-  owner: valjdakosta
-  repo: mbrd
-  releaseType: draft
+# No update file (latest*.yml) and no blockmap: updates.ts asks GitHub's API
+# for the latest release, which gives each download URL and its SHA-256
+# digest. `null` keeps electron-builder from inferring a GitHub target from the
+# git remote and writing those files anyway.
+publish: null
+
+# macOS only: an ad-hoc signature, because there is no Apple certificate yet.
+# See the file, and `mac.identity` above.
+afterPack: ./scripts/after-pack.cjs

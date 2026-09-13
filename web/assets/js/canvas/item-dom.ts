@@ -5,7 +5,7 @@
 
 import { extOf, shuffle } from '../util.ts';
 import { formatName } from '../import/formats.ts';
-import { adjustFilter, flipTransform, isFence, isLocked, itemBare } from '../state.ts';
+import { adjustFilter, baseStep, flipTransform, isFence, isLocked, itemBare } from '../state.ts';
 import { buildContent, fitMode } from './renderers.ts';
 import { noteTint } from './note-model.ts';
 import type { Item } from '../board-model.ts';
@@ -272,8 +272,17 @@ export function resetTilt(): void {
  * same way a card does; it simply answers it once, at the moment it lands,
  * because its angle is geometry and a card's is a stylesheet.
  */
+/** A card wider than this hangs straight - see restingTilt(). */
+const TILT_MAX_WIDTH_CELLS = 10;
+
 export function restingTilt(item: ItemLike): string {
-  return isFence(item) || item.type === 'sticker' ? '0' : tiltFactor().toFixed(3);
+  if (isFence(item) || item.type === 'sticker') return '0';
+  // A wide card hangs straight, for the reason a region does: the lean turns
+  // about the centre, so across ten grid spaces the far corners swing far
+  // enough to read as askew rather than as pinned by hand. Straight *before*
+  // the bag, so it does not take a slot out of the one-in-three split.
+  if (item.w > TILT_MAX_WIDTH_CELLS * baseStep()) return '0';
+  return tiltFactor().toFixed(3);
 }
 
 // ---------------------------------------------------------------------------

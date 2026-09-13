@@ -47,12 +47,16 @@ export function noteTint(raw: unknown): number {
   return typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= NOTE_TINTS ? n : 0;
 }
 
+// SAFETY: a widening to readonly string[], only so includes() takes a string.
 const isTag = (v: unknown): v is NoteTag =>
   typeof v === 'string' && (NOTE_TAGS as readonly string[]).includes(v);
+// SAFETY: a widening to readonly string[], only so includes() takes a string.
 const isAlign = (v: unknown): v is NoteAlign =>
   typeof v === 'string' && (NOTE_ALIGNS as readonly string[]).includes(v);
+// SAFETY: a widening to readonly string[], only so includes() takes a string.
 const isValign = (v: unknown): v is NoteValign =>
   typeof v === 'string' && (NOTE_VALIGNS as readonly string[]).includes(v);
+// SAFETY: a widening to readonly string[], only so includes() takes a string.
 const isWash = (v: unknown): v is NoteWash =>
   typeof v === 'string' && (NOTE_WASHES as readonly string[]).includes(v);
 
@@ -144,6 +148,7 @@ export function noteWords(meta: unknown): string {
   const rich = meta.rich;
   const blocks = isRecord(rich) ? rich.blocks : null;
   if (Array.isArray(blocks) && blocks.length) {
+    // SAFETY: blocks is an array only when isRecord(rich) held, and a record is a NoteRichInput.
     return normalizeNoteRich(rich as NoteRichInput).blocks.map(b => b.text).join('\n');
   }
   const text = typeof meta.text === 'string' ? meta.text : '';

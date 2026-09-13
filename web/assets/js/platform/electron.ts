@@ -3,7 +3,7 @@
 // Blobs do not cross IPC; this seam converts ArrayBuffer+mime both ways.
 
 import type {
-  Platform, FilesPort, FramePort, LifecyclePort, NativePort, UpdatesPort,
+  Platform, FilesPort, LifecyclePort, NativePort, UpdatesPort,
   DocumentRef, OpenedFile, PickSpec, TranscodeOpts,
 } from './platform.ts';
 // StoreBackend is not imported: platform/ sits below storage/ in the layer
@@ -12,7 +12,6 @@ import type {
 /** What `desktop/preload.ts` exposes. Written here to avoid cross-package import. */
 export interface Bridge {
   bridge: number;
-  platform: string;
   store: {
     get(store: string, key: string): Promise<unknown>;
     set(store: string, key: string, value: unknown): Promise<void>;
@@ -39,15 +38,7 @@ export interface Bridge {
     decode(bytes: ArrayBuffer, name: string): Promise<Uint8Array | null>;
   };
   updates: {
-    check(): Promise<{ version: string, canInstall: boolean } | null>;
-    install(): void;
-    onFound(fn: (info: { version: string, canInstall: boolean }) => void): void;
-  };
-  win: {
-    minimize(): void;
-    toggleMaximize(): void;
-    close(): void;
-    onState(fn: (state: { maximized: boolean, fullScreen: boolean }) => void): void;
+    check(): Promise<void>;
   };
   startupNotes(): Promise<string>;
   setDocument(state: { title: string, name: string | null, path: string | null, dirty: boolean }): void;
@@ -72,6 +63,7 @@ interface Bytes {
 }
 
 const isBytes = (v: unknown): v is Bytes =>
+  // SAFETY: a non-null object, read for one field that is compared, not trusted.
   !!v && typeof v === 'object' && (v as Bytes).__bytes === true;
 
 /** Dismissed-picker error. */
@@ -139,6 +131,8 @@ export function electronStore(bridge: Bridge) {
     getMany: async (store: string, list: unknown[]) =>
       (await bridge.store.getMany(store, list.map(k))).map(up),
     setMany: async (store: string, entries: [unknown, unknown][]) => {
+      // SAFETY: k() returns a string or throws, so each literal is a real pair.
+      // The assertion keeps the tuple type an array literal would widen away.
       const packed = await Promise.all(
         entries.map(async ([key, value]) => [k(key), await down(value)] as [string, unknown]));
       return bridge.store.setMany(store, packed);
@@ -256,23 +250,10 @@ function electronNative(bridge: Bridge): NativePort {
   };
 }
 
-/** Update port via electron-updater. */
+/** Update port. The shell answers in its own dialogs. */
 function electronUpdates(bridge: Bridge): UpdatesPort {
   return {
-    check: () => bridge.updates.check().catch(() => null),
-    install: () => bridge.updates.install(),
-  };
-}
-
-/** Frame port. `own()` checks the bridge has the win channel (portable drift). */
-function electronFrame(bridge: Bridge): FramePort {
-  return {
-    own: () => !!bridge.win,
-    systemLeft: () => bridge.platform === 'darwin',
-    minimize: () => bridge.win.minimize(),
-    toggleMaximize: () => bridge.win.toggleMaximize(),
-    close: () => bridge.win.close(),
-    onState: fn => bridge.win.onState(fn),
+    check: () => bridge.updates.check().catch(() => {}),
   };
 }
 
@@ -283,7 +264,6 @@ export function electronPlatform(bridge: Bridge): Platform {
     lifecycle: electronLifecycle(bridge),
     native: electronNative(bridge),
     updates: electronUpdates(bridge),
-    frame: electronFrame(bridge),
     setDocument: state => bridge.setDocument({
       title: state.title,
       name: state.ref?.name ?? null,

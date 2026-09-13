@@ -65,6 +65,7 @@ export function initFlyouts(commands: FlyoutCommands) {
   // ArrowDown opens with focus (standard menu-button pattern).
   bar.addEventListener('keydown', e => {
     if (e.key !== 'ArrowDown') return;
+    // SAFETY: the listener is on #toolbar, so the target is a node in it. closest?.() skips a non-Element.
     const btn = (e.target as Element).closest?.<HTMLElement>('[data-cmd]');
     if (!btn || !FLYOUTS[btn.dataset.cmd!]) return;
     e.preventDefault();
@@ -82,8 +83,10 @@ function onOver(e: PointerEvent) {
   if (e.pointerType === 'touch') return;
 
   // Inside the panel or a submenu (sibling #ctx-child, not descendant) — hold it open.
+  // SAFETY: closest?.() is an optional call, so a target that is not an Element reads as a miss.
   if ((e.target as Element).closest?.('#ctx-menu, #ctx-child')) { hold(); return; }
 
+  // SAFETY: as above.
   const btn = (e.target as Element).closest?.<HTMLElement>('#toolbar [data-cmd]');
   if (btn && FLYOUTS[btn.dataset.cmd!]) {
     hold();

@@ -59,6 +59,7 @@ export function initFencePrompt(viewport: PromptViewport | null): void {
   }, { passive: true });
   addEventListener('pointerdown', e => {
     // Click outside the prompt closes it.
+    // SAFETY: a pointerdown is dispatched at a node of this document, and contains() takes any Node.
     if (node && !node.contains(e.target as Node | null)) close();
   }, true);
   addEventListener('keydown', e => {

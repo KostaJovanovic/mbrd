@@ -42,6 +42,7 @@ import {
   isPanelOpen as isHeaderPanelOpen,
 } from './ui/mobile-header.ts';
 import { composeNote, editNoteInComposer } from './canvas/notes.ts';
+import { editFontText } from './canvas/items.ts';
 import { editLinkProps } from './ui/link-props.ts';
 import { editTitleCard } from './ui/board-title.ts';
 import { armClear, rearrange } from './ui/board-actions.ts';
@@ -304,6 +305,8 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     closeSidebar: () => { closeSidebar(); closeHeaderPanel(); closeToolbar(); },
     // Open the note composer dialog (falls back to on-board editor without <dialog>).
     editNote: (id: string) => editNoteInComposer(id),
+    // Edit a font card's specimen text inline on the board.
+    editFontText: (id: string) => editFontText(id),
 
     // --- right-click menu ---
     contextMenu: (x: number, y: number, id: string | null, count: number,

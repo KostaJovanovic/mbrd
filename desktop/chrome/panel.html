@@ -1,0 +1,20 @@
+<!doctype html>
+<!--
+  One open menu, in a window of its own: panel.ts says why. Same origin and the
+  same sheets as the title bar, so it follows the board's look. No inline
+  script and no inline style, for the CSP.
+-->
+<html lang="en" class="panel-window">
+<head>
+<meta charset="utf-8">
+<title>Menu</title>
+<script src="/__chrome/look.js"></script>
+<link rel="stylesheet" href="/assets/css/fonts.css">
+<link rel="stylesheet" href="/assets/css/tokens.css">
+<link rel="stylesheet" href="/__chrome/titlebar.css">
+</head>
+<body>
+<div id="panel" role="menu"></div>
+<script src="/__chrome/panel.js"></script>
+</body>
+</html>

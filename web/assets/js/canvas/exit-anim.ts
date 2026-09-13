@@ -58,6 +58,7 @@ export function flyOut(el: HTMLElement | null | undefined): void {
   const kind = exitKindFor(el.dataset.type, document.documentElement.dataset.whimsy);
   if (kind === 'chip') { dropChip(); return; }
 
+  // SAFETY: cloneNode() keeps the interface of the node it copies, and el is an HTMLElement.
   const g = el.cloneNode(true) as HTMLElement;
   g.classList.remove('is-selected', 'is-stick-target');
   for (const m of g.querySelectorAll('video, audio, iframe')) m.removeAttribute('src');

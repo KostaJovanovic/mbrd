@@ -8,6 +8,7 @@ import { rm, mkdir, readdir, rename, writeFile, access } from 'node:fs/promises'
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
+import { stampedVersion } from './version.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DESKTOP = join(HERE, '..');
@@ -35,9 +36,13 @@ if (!await exists(join(DESKTOP, 'resources', 'ffmpeg'))) {
   console.warn('[portable] no desktop/resources/ffmpeg - run `npm run fetch:ffmpeg` for the video features');
 }
 
+// The stamped version, as the release workflow passes it. desktop/package.json
+// says 0.0.0, and without this the copy would too.
+const { version } = await stampedVersion();
+
 await rm(SCRATCH, { recursive: true, force: true });
-console.log('[portable] packing');
-await run(`npx electron-builder --win --dir "-c.directories.output=${SCRATCH}"`, DESKTOP);
+console.log(`[portable] packing ${version}`);
+await run(`npx electron-builder --win --dir "-c.directories.output=${SCRATCH}" "-c.extraMetadata.version=${version}"`, DESKTOP);
 
 const unpacked = join(SCRATCH, 'win-unpacked');
 if (!await exists(unpacked)) {

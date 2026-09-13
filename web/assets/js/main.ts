@@ -35,9 +35,10 @@ import { initMobileFrame } from './canvas/mobile-frame.ts';
 import { repaintGround, forgetLookInk } from './canvas/ground.ts';
 import { initItems, resetItems } from './canvas/items.ts';
 import { resetModels } from './canvas/model.ts';
-import { initWeb } from './canvas/web.ts';
+import { initWeb, joinDump } from './canvas/web.ts';
 import { initGhosts } from './canvas/ghosts.ts';
 import { initStills } from './canvas/stills.ts';
+import { initHires } from './canvas/hires.ts';
 import { initInput } from './canvas/input.ts';
 import { initDrop, setImportPrompt } from './import/drop.ts';
 import {
@@ -58,7 +59,6 @@ import { armQuality, watchQuality } from './ui/quality.ts';
 import { initMenu, openAnchored, justDismissed } from './ui/menu.ts';
 import { initFencePrompt } from './ui/fence-prompt.ts';
 import { initConnChip } from './ui/conn-chip.ts';
-import { initJoinBadge } from './ui/join-badge.ts';
 import { initSearch } from './ui/search.ts';
 import { initIdle } from './ui/idle.ts';
 import { initBackfill } from './optimize/backfill.ts';
@@ -66,7 +66,6 @@ import { initScaleBar } from './ui/scalebar.ts';
 import { initDrawer } from './ui/drawer.ts';
 import { initNowPlaying } from './ui/nowplaying.ts';
 import { initToolbar } from './ui/toolbar.ts';
-import { initWindowChrome } from './ui/window-chrome.ts';
 import { initFlyouts } from './ui/flyout.ts';
 import { initStickerWindow } from './ui/sticker-window.ts';
 import { initAppearance, resetAppearance, setWhimsy } from './ui/appearance.ts';
@@ -140,11 +139,16 @@ const cmds = createCommands(vp, { resetAppearance, setWhimsy, perf: viewPerf });
 
 // Native menu maps command names to cmds. Optional chaining guards against an
 // older shell naming a command this build removed.
+// After start(), as a handed-over file waits: a row pressed on /patch brings
+// the board back, and its command must not land on a board a restore replaces.
 bridge?.onCommand(name => {
   // SAFETY: runtime typeof check before calling.
   const run = (cmds as Record<string, unknown>)[name];
-  if (typeof run === 'function') run();
-  else console.warn('[mbrd] the menu asked for a command that is not here:', name);
+  if (typeof run !== 'function') {
+    console.warn('[mbrd] the menu asked for a command that is not here:', name);
+    return;
+  }
+  void started.then(() => run(), () => run());
 });
 
 // ---------------------------------------------------------------------------
@@ -189,7 +193,7 @@ if (!isPatch) initCuelume();
 // Panel DOM, before modules that reach into it by id.
 buildPanel();
 // Before initAppearance so type menus have the board's fonts already.
-initFonts();
+initFonts(vp);
 // Harsh grid marks are drawn (not CSS gradients), so appearance changes must
 // flush the resolved colour caches and repaint grid + grain.
 initAppearance({
@@ -213,6 +217,10 @@ initWeb(el('world')!, vp);
 // cmds passed because canvas/ may not import ui/ (whimsy dial on the hint card).
 initGhosts(cmds);
 initStills(el('world')!, vp);
+// Swaps a plain photo card to its full original when zoomed past the ~1024px
+// display copy, and back to the copy when zoomed out. The high-zoom opposite of
+// initStills; both hang off vp.onChange.
+initHires(el('world')!, vp);
 // After initItems + initStills: quality changes remount every card.
 watchQuality();
 initScaleBar(vp);
@@ -252,16 +260,12 @@ initDrop(vp);
 initHud(vp, cmds);
 // Toolbar: buttons are data-cmd, needs cmds.
 initToolbar(cmds);
-// Custom title bar (Electron only; no-op in browser). No ordering requirement.
-initWindowChrome(cmds);
 // Flyouts behind toolbar buttons. After toolbar + initMenu().
 initFlyouts(cmds);
 // Sticker pad. After toolbar (which opens it). Needs vp for world-space drop.
 initStickerWindow(vp, cmds);
 // Connection action chip. Needs vp for screen position of the line.
 initConnChip(cmds, vp);
-// "Cannot join" badge. Needs vp to pin over a card and to frame the failed pair.
-initJoinBadge(vp);
 // Board name on masthead + Desktop title card.
 initBoardTitle();
 // Injected: ui sits above storage. Clear-everything dialog.
@@ -392,6 +396,7 @@ declare global {
 const handle = {
   board, bus, vp, cmds, selection, perf: viewPerf,
   debugGrips: cmds.debugGrips,
+  joins: joinDump,
   sound: {
     log: setCueLog,
     dump: dumpCueLog,
@@ -649,22 +654,6 @@ platform.lifecycle.onOpenFiles(files => {
     } catch (err) { console.warn('[mbrd] open file:', err); }
   })();
 });
-
-// Desktop update announcements (electron-updater). Two shapes: auto-install
-// builds get "will install when you quit"; portable/unsigned get the release URL.
-// Checks once on boot in case an update was found before the window existed.
-if (bridge) {
-  const announceUpdate = (info: { version: string, canInstall: boolean } | null) => {
-    if (!info) return;
-    if (info.canInstall) {
-      toast(`v${info.version} will install when you quit`);
-    } else {
-      toast(`v${info.version} is out — download it from the releases page`);
-    }
-  };
-  bridge.updates.onFound(announceUpdate);
-  void platform.updates.check().then(announceUpdate);
-}
 
 if (!isDesktop() && 'serviceWorker' in navigator) {
   // New worker mid-session = fresh deploy. Toast "reload to update" rather than

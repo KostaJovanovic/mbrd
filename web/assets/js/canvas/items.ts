@@ -3,18 +3,18 @@
 // this owns the node map, culling, pooling, placement and selection.
 
 import {
-  board, byId, selection, bus, renameItem, visualStackOrder, travelling, isFence,
+  board, byId, selection, bus, renameItem, setFontText, visualStackOrder, travelling, isFence,
   isFiltered, isPinned, settlesIn,
 } from '../state.ts';
 import { quality } from '../quality.ts';
-import { makeEditable, selectContents } from '../util.ts';
+import { caretToEnd, makeEditable, selectContents } from '../util.ts';
 import { itemRadius, rotatedExtents } from '../geometry.ts';
 import type { Bounds } from '../geometry.ts';
 import type { Item } from '../board-model.ts';
 import { TITLE_ID } from '../board-model.ts';
 import type { Viewport } from './viewport.ts';
 import { cullMargin } from './viewport.ts';
-import { buildContent, paintStyleTileFaces } from './renderers.ts';
+import { buildContent, fontFamilyOf, paintStyleTileFaces } from './renderers.ts';
 import {
   buildItem, buildShadow, buildTitleControls, farKind, itemAccessibleName,
   resetTilt, restingTilt, setGrips, wantsHead, writeFit, writeAdjust,
@@ -1351,6 +1351,94 @@ export function editItemName(id: string) {
   // appends to it, and a 60-character filename is a long way to hold backspace.
   field.focus();
   selectContents(field);
+}
+
+/**
+ * Edit a font card's specimen text - the same inline editor the title card uses
+ * (ui/board-title.ts editBoardName), pointed at the card's own words.
+ *
+ * The specimen is SVG text fitted to the box, which cannot be typed into, so for
+ * the length of the edit it is swapped for a plain editable line; rebuild() puts
+ * the fitted mark back afterwards, changed or not. Empty commits a cleared key -
+ * setFontText() drops meta.text on all-whitespace, so the specimen falls back to
+ * the face's own name.
+ */
+export function editFontText(id: string) {
+  const found = byId(id);
+  if (!found || found.type !== 'font') return;
+  const item = found;
+  const mounted = ensureMounted(id);
+  if (!mounted) return;
+  // Checked by construction, so the handlers below read a non-null host - the
+  // same reason editBoardName() binds a second const past its own null check.
+  const host = mounted;
+  const box = host.querySelector<HTMLElement>('.font-specimen');
+  if (!box) return;
+
+  const custom = typeof item.meta?.text === 'string' ? item.meta.text : '';
+  const field = document.createElement('div');
+  field.className = 'font-edit';
+  makeEditable(field);
+  // Seed with the words on the card now - the custom text, or the face's name
+  // when there is none - so a first keystroke replaces what the reader sees.
+  field.textContent = custom || fontFamilyOf(item);
+  box.replaceChildren(field);
+  host.classList.add('is-editing');
+
+  let done = false;
+  let keep = true;
+
+  const onKey = (e: KeyboardEvent) => {
+    e.stopPropagation();          // the canvas must not see Delete, space or Escape
+    if (e.key === 'Enter') { e.preventDefault(); finish(); }
+    else if (e.key === 'Escape') { keep = false; finish(); }
+  };
+
+  // One line: a pasted newline is folded to a space rather than growing the
+  // field, the same shape the board-name editor keeps. The caret jumped to the
+  // front when textContent was rewritten, so it is put back at the end.
+  const onInput = () => {
+    const clean = (field.textContent || '').replace(/[\r\n]+/g, ' ');
+    if (clean === field.textContent) return;
+    field.textContent = clean;
+    caretToEnd(field);
+  };
+
+  function finish() {
+    if (done) return;
+    done = true;
+    // Read before teardown: innerText is what the field renders. setFontText()
+    // trims and drops an empty value.
+    const typed = field.innerText.replace(/\s+/g, ' ').trim();
+    field.removeEventListener('keydown', onKey);
+    field.removeEventListener('input', onInput);
+    field.removeEventListener('blur', finish);
+    offRebuild?.();
+    offRebuild = null;
+    host.classList.remove('is-editing');
+    if (keep) setFontText(id, typed);
+    // Restore the fitted specimen from state. A real change already rebuilt via
+    // setFontText's 'item'; this covers Escape and an unchanged commit, and a
+    // second rebuild of one small card is cheap.
+    rebuild(id);
+  }
+
+  field.addEventListener('keydown', onKey);
+  field.addEventListener('input', onInput);
+  field.addEventListener('blur', finish);
+  // The card is culled and rebuilt on any 'items' emit; a rebuilt card is a new
+  // node, so the field would vanish and finish() never run. Commit what was
+  // typed - the same guard the title editor keeps.
+  let offRebuild: (() => void) | null = bus.on('items', () => {
+    if (!done && !field.isConnected) finish();
+  });
+  // Next frame, not now: the double-click that opens this is still settling, and
+  // focusing inside it now would be blurred by the click that follows.
+  requestAnimationFrame(() => {
+    if (done) return;
+    field.focus();
+    selectContents(field);
+  });
 }
 
 // World y points up, CSS top points down - this negation is the only place the

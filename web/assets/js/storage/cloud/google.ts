@@ -46,7 +46,8 @@ async function failure(res: Response, what: string): Promise<Error> {
   let detail = `${res.status} ${res.statusText}`.trim();
   try {
     const text = await res.text();
-    // Defensive: optional-chained, non-JSON falls through to status text.
+    // SAFETY: typeof and ?. guard every read below. A null or non-JSON body throws into
+    // the catch, which keeps the status text.
     const body = JSON.parse(text) as { error?: { message?: string } | string };
     const message = typeof body.error === 'string' ? body.error : body.error?.message;
     if (message) detail = message;
@@ -155,7 +156,7 @@ async function sendChunks(
     const res = await fetch(uri, { method: 'PUT', headers: { 'Content-Range': 'bytes */0' } });
     if (!res.ok) throw await failure(res, 'the upload failed');
     onProgress(0, 0);
-    // Same response shape as the loop below; `id` checked defensively.
+    // SAFETY: the same fields=id upload reply as the loop below; a missing id throws below.
     const done = await res.json() as { id?: string };
     if (!done.id) throw new Error('the upload finished without naming a file');
     return done.id;
@@ -176,7 +177,7 @@ async function sendChunks(
     }
     if (!res.ok) throw await failure(res, 'the upload failed');
     onProgress(blob.size, blob.size);
-    // `fields=id` narrows the response; checked defensively.
+    // SAFETY: Drive's documented upload reply to fields=id; a missing id throws below.
     const done = await res.json() as { id?: string };
     if (!done.id) throw new Error('the upload finished without naming a file');
     return done.id;
@@ -239,7 +240,7 @@ async function query(q: string): Promise<CloudFile[]> {
   });
   const res = await fetch(`${API}/drive/v3/files?${params}`, { headers: { Authorization: auth() } });
   if (!res.ok) throw await failure(res, 'Google Drive would not list your files');
-  // `fields` narrows the response; `files` defensively defaulted.
+  // SAFETY: Drive's documented files.list shape, trimmed by `fields`; a missing `files` becomes [].
   const body = await res.json() as { files?: CloudFile[] };
   return body.files ?? [];
 }
@@ -263,7 +264,7 @@ async function folder(name: string, parent: string | null): Promise<string> {
     body: JSON.stringify(meta),
   });
   if (!res.ok) throw await failure(res, `Google Drive would not create the ${name} folder`);
-  // `fields=id` narrows response; checked defensively.
+  // SAFETY: Drive's documented files.create reply to fields=id; a missing id throws below.
   const made = await res.json() as { id?: string };
   if (!made.id) throw new Error('Google Drive made a folder without naming it');
   return made.id;
@@ -301,7 +302,8 @@ async function owned(): Promise<OwnedFile[]> {
     if (page) params.set('pageToken', page);
     const res = await fetch(`${API}/drive/v3/files?${params}`, { headers: { Authorization: auth() } });
     if (!res.ok) throw await failure(res, 'Google Drive would not list your files');
-    // Both keys optional; absence terminates the loop.
+    // SAFETY: Drive's documented files.list shape, trimmed by `fields`. Both keys are optional:
+    // `files` defaults to [] and a missing token ends the loop.
     const body = await res.json() as { files?: OwnedFile[], nextPageToken?: string };
     out.push(...(body.files ?? []));
     page = body.nextPageToken;
@@ -366,6 +368,7 @@ async function sessionProgress(uri: string, size: number): Promise<SessionState>
   if (res.ok) {
     // Upload already completed — last chunk's response was lost. Read id here
     // to avoid creating a duplicate file.
+    // SAFETY: Drive's documented upload reply; a missing id falls through to null (a fresh upload).
     const done = await res.json() as { id?: string };
     if (done.id) return { id: done.id };
   }
