@@ -42,6 +42,21 @@ desktop/playwright-report/
 # repository root until the root was cleared of everything that had a choice.
 desktop/portable/
 
+# The Android shell (Capacitor). Its sources are committed, the android/ project
+# and its Java included. Its npm dependencies, the staged copy of web/ and the
+# FFmpeg build tree are not. mobile/android/.gitignore, Capacitor's own, covers
+# Gradle's output and what `cap sync` copies in.
+mobile/node_modules/
+mobile/www/
+mobile/ffmpeg/out/
+mobile/ffmpeg/work/
+
+# Written by mobile/tools/stage-web.mjs on every sync, from web/, the bridge's
+# source and _headers. Never edit them: the next sync writes them again.
+mobile/android/app/src/main/assets/mbrd-bridge.js
+mobile/android/app/src/main/assets/mbrd-files.txt
+mobile/android/app/src/main/assets/mbrd-csp.json
+
 # Node. The app has no dependencies; these are the two optional dev tools -
 # `npm run lint` and `npm run typecheck`. `npm test` needs neither, and needs
 # no install at all.
