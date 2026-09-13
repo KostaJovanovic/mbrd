@@ -1,6 +1,6 @@
 package com.valjdakosta.mbrd;
 
-import android.content.res.AssetManager;
+import android.content.Context;
 import android.net.Uri;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -15,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import org.json.JSONArray;
@@ -26,7 +27,8 @@ import org.json.JSONObject;
  * serveWeb() in desktop/protocol.ts. Installed by MbrdShell.load(), before
  * Capacitor's loadWebView(), so it sees the first navigation.
  *
- *   /__mbrd/*        the shell's namespace, 404 until groups L and N serve it
+ *   /__mbrd/store/<store>/<key>   a store value (MbrdStore.serve)
+ *   /__mbrd/file/<token>          a file MbrdFiles handed out (MbrdFiles.serve)
  *   /_capacitor_*    404: Capacitor's file and content routes would hand an XSS
  *                    a reader for any file the app can reach, and nothing uses them
  *   everything else  MbrdRouter picks the file, Capacitor's server reads it, and
@@ -38,17 +40,19 @@ final class MbrdWebViewClient extends BridgeWebViewClient {
 
     private final Bridge bridge;
     private final MbrdRouter router;
+    private final Context context;
     /** web/_headers' policy, parsed by desktop/csp.mts. Empty when not staged. */
     private final String policy;
     private final Set<String> exempt;
 
-    MbrdWebViewClient(Bridge bridge, MbrdRouter router, AssetManager assets) {
+    MbrdWebViewClient(Bridge bridge, MbrdRouter router, Context context) {
         super(bridge);
         this.bridge = bridge;
         this.router = router;
+        this.context = context.getApplicationContext();
         String value = "";
         Set<String> paths = new HashSet<>();
-        try (InputStream in = assets.open("mbrd-csp.json")) {
+        try (InputStream in = context.getAssets().open("mbrd-csp.json")) {
             JSONObject json = new JSONObject(MbrdShell.readAll(in));
             value = json.getString("value");
             JSONArray list = json.getJSONArray("exempt");
@@ -105,8 +109,11 @@ final class MbrdWebViewClient extends BridgeWebViewClient {
         return res;
     }
 
-    /** /__mbrd/store/..., /__mbrd/file/..., /__mbrd/ff/...: groups L and N. */
+    /** The shell's namespace. /__mbrd/ff/... arrives with group N. */
     private WebResourceResponse serveShell(Uri url) {
+        List<String> segs = url.getPathSegments();   // decoded: [__mbrd, store, <store>, <key>]
+        if (segs.size() == 4 && "store".equals(segs.get(1))) return MbrdStore.serve(segs.get(2), segs.get(3));
+        if (segs.size() == 3 && "file".equals(segs.get(1))) return MbrdFiles.serve(context, segs.get(2));
         return status(404);
     }
 
@@ -119,9 +126,27 @@ final class MbrdWebViewClient extends BridgeWebViewClient {
     }
 
     static WebResourceResponse status(int code) {
-        String reason = code == 404 ? "Not Found" : code == 403 ? "Forbidden" : code == 200 ? "OK" : "Error";
-        byte[] body = (code == 404 ? "Not found" : reason).getBytes(StandardCharsets.UTF_8);
-        return new WebResourceResponse("text/plain", "utf-8", code, reason, noStore(), new ByteArrayInputStream(body));
+        return text(code, code == 404 ? "Not found" : reason(code));
+    }
+
+    static WebResourceResponse text(int code, String body) {
+        byte[] bytes = (body == null ? "" : body).getBytes(StandardCharsets.UTF_8);
+        return new WebResourceResponse("text/plain", "utf-8", code, reason(code), noStore(), new ByteArrayInputStream(bytes));
+    }
+
+    private static String reason(int code) {
+        switch (code) {
+            case 200:
+                return "OK";
+            case 400:
+                return "Bad Request";
+            case 403:
+                return "Forbidden";
+            case 404:
+                return "Not Found";
+            default:
+                return "Error";
+        }
     }
 
     /** The original request with another URL, handed to Capacitor's server. */

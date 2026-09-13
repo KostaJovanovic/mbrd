@@ -31,15 +31,18 @@ import org.json.JSONObject;
  * base64 chunks of bounded size where it does not.
  *
  * Protocol (the page half is transfer() in mobile/bridge/bytes.ts):
- *   {"op":"begin","target":"stage","xfer":..,"size":N}   staged for a later call
- *   {"op":"begin","target":"store"|"file"|"ff",..}        groups L and N
- *   ArrayBuffer | {"op":"chunk","b64":..}                repeated
+ *   {"op":"begin","target":"store","store":..,"key":..,"size":N}  a store value
+ *   {"op":"begin","target":"file","path":..,"size":N}             a board, Save
+ *   {"op":"begin","target":"stage","xfer":..,"size":N}            for a share
+ *   {"op":"begin","target":"ff",..}                                group N
+ *   ArrayBuffer | {"op":"chunk","b64":..}                         repeated
  *   {"op":"end"} | {"op":"abort"}
  * Every message gets exactly one JSON ack, in order: {"ok":true} or
  * {"ok":false,"error":..}. The page waits for each ack before the next send, so
  * one chunk at most is in flight. Only the app origin (and the dev server) can
- * post: MbrdShell registers the listener with those origins. Stage ids must
- * match XFER, so nothing the page sends becomes a path.
+ * post: MbrdShell registers the listener with those origins. A store value and a
+ * board go to a temp name and are renamed at the end, so a cut transfer never
+ * replaces a whole file. MbrdStore and MbrdFiles check every name and path.
  */
 final class MbrdBytes implements WebViewCompat.WebMessageListener {
 
@@ -53,7 +56,10 @@ final class MbrdBytes implements WebViewCompat.WebMessageListener {
     private final Handler main = new Handler(Looper.getMainLooper());
 
     private OutputStream out;
+    /** What the bytes go into. */
     private File target;
+    /** What `target` is renamed to at the end, or null to keep it where it is. */
+    private File dest;
     private long expected;
     private long written;
 
@@ -133,10 +139,11 @@ final class MbrdBytes implements WebViewCompat.WebMessageListener {
                 out.close();
                 out = null;
                 if (expected >= 0 && written != expected) {
-                    reset(true);
                     throw new IOException("transfer was short: " + written + " of " + expected + " bytes");
                 }
+                if (dest != null && !target.renameTo(dest)) throw new IOException("could not write " + dest.getName());
                 target = null;
+                dest = null;
                 return;
             case "abort":
                 reset(true);
@@ -146,18 +153,27 @@ final class MbrdBytes implements WebViewCompat.WebMessageListener {
         }
     }
 
-    private void begin(JSONObject m) throws IOException {
+    private void begin(JSONObject m) throws IOException, JSONException {
         String kind = m.optString("target");
         File file;
+        File last = null;
         switch (kind) {
             case "stage":
                 file = stagedFile(context, m.optString("xfer"));
                 break;
             case "store":
+                // The temp suffix desktop/store.ts uses, which keys() skips.
+                last = MbrdStore.fileFor(m.getString("store"), m.getString("key"));
+                file = new File(last.getPath() + ".tmp");
+                break;
             case "file":
+                // The temp suffix desktop/files.ts's write() uses.
+                last = MbrdFiles.checked(m.getString("path"));
+                file = new File(last.getPath() + ".mbrd-tmp");
+                break;
             case "ff":
-                // MbrdStore and MbrdFiles (group L) and MbrdFfmpeg (group N).
-                throw new IOException("the " + kind + " target is not wired yet");
+                // MbrdFfmpeg arrives with group N.
+                throw new IOException("the ff target is not wired yet");
             default:
                 file = null;
         }
@@ -165,6 +181,7 @@ final class MbrdBytes implements WebViewCompat.WebMessageListener {
         expected = m.optLong("size", -1);
         written = 0;
         target = file;
+        dest = last;
         out = new BufferedOutputStream(new FileOutputStream(file), 1 << 20);
     }
 
@@ -175,19 +192,21 @@ final class MbrdBytes implements WebViewCompat.WebMessageListener {
         written += data.length;
     }
 
-    /** Close whatever is open. A partial file is never left to look finished. */
+    /** Close whatever is open. A partial file is never left to look finished,
+     *  including one whose stream "end" had already closed. */
     private void reset(boolean deletePartial) {
         if (out != null) {
             try {
                 out.close();
             } catch (IOException ignored) {}
             out = null;
-            if (deletePartial && target != null) {
-                //noinspection ResultOfMethodCallIgnored
-                target.delete();
-            }
+        }
+        if (deletePartial && target != null) {
+            //noinspection ResultOfMethodCallIgnored
+            target.delete();
         }
         target = null;
+        dest = null;
     }
 
     private static String error(String message) {
