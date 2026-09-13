@@ -12,6 +12,8 @@ import type {
 /** What `desktop/preload.ts` exposes. Written here to avoid cross-package import. */
 export interface Bridge {
   bridge: number;
+  /** Set by the Android shell ('capacitor'), absent on the desktop. */
+  shell?: string;
   store: {
     get(store: string, key: string): Promise<unknown>;
     set(store: string, key: string, value: unknown): Promise<void>;

@@ -10,7 +10,8 @@
     "stage": "node tools/stage-web.mjs",
     "sync": "node tools/stamp-version.mjs && node tools/stage-web.mjs && cap sync android",
     "open": "cap open android",
-    "icons": "node tools/make-icons.mjs"
+    "icons": "node tools/make-icons.mjs",
+    "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.2",
@@ -20,6 +21,7 @@
     "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^8.5.2",
     "esbuild": "^0.28.2",
-    "sharp": "^0.35.4"
+    "sharp": "^0.35.4",
+    "typescript": "^5.9.3"
   }
 }

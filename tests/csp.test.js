@@ -10,9 +10,12 @@ import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { WEB, JS, read, walk } from './helpers.js';
+import { ROOT, WEB, JS, read, walk } from './helpers.js';
+import { parsePolicy } from '../desktop/csp.mts';
 
 const HEADERS = join(WEB, '_headers');
+/** The policy as stage-web.mjs hands it to the Android shell. Gitignored. */
+const STAGED = join(ROOT, 'mobile', 'android', 'app', 'src', 'main', 'assets', 'mbrd-csp.json');
 
 /** Parse _headers: # comments, column-0 paths, indented Name: value or ! Name. */
 function parse(text) {
@@ -346,6 +349,21 @@ test('the exempted paths are the workers the app actually spawns', () => {
   for (const rule of exempt) {
     assert.ok(existsSync(join(WEB, rule.path.slice(1))), `${rule.path} does not exist`);
   }
+});
+
+test('csp.mts, which the desktop and Android enforce from, reads what this file reads', () => {
+  // Two parsers of one file: this test's own, and the shells'. A disagreement
+  // is a policy the tests pass and the apps do not send.
+  const shells = parsePolicy(read(HEADERS));
+  assert.equal(shells.value, policy);
+  assert.deepEqual([...shells.exempt].sort(), [...spawnedWorkers()].sort());
+});
+
+test('the policy staged for Android is the one in _headers', t => {
+  if (!existsSync(STAGED)) return t.skip('nothing staged - run `npm run stage` in mobile/');
+  // A stale mbrd-csp.json ships the policy of the last staging, not this one.
+  assert.deepEqual(JSON.parse(read(STAGED)), parsePolicy(read(HEADERS)),
+    'mbrd-csp.json is stale - run `npm run stage` in mobile/');
 });
 
 test('nothing but those workers is exempted, and no page is', () => {

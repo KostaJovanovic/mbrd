@@ -32,6 +32,10 @@
 // twenty-megabyte clip becomes a twenty-seven-megabyte string that has to be
 // encoded on the way in and decoded on the way out, on the thread that is
 // trying to save a board.
+//
+// Plain Uint8Array in and out, and no Buffer, because the Android bridge
+// (mobile/bridge/) bundles this file into a WebView page, where Node's Buffer
+// does not exist. The desktop is unaffected: a Buffer is a Uint8Array.
 
 /**
  * What crosses the bridge in place of a Blob.
@@ -78,12 +82,12 @@ const isPlain = (v: unknown): v is Record<string, unknown> => {
 };
 
 /** Pull every Bytes out of the value, replacing each with its placement. */
-export function encode(value: unknown): Buffer {
-  const parts: Buffer[] = [];
+export function encode(value: unknown): Uint8Array {
+  const parts: Uint8Array[] = [];
   let at = 0;
   const walk = (v: unknown): unknown => {
     if (isBytes(v)) {
-      const buf = Buffer.from(v.data);
+      const buf = new Uint8Array(v.data);
       const placed: Placed = { __bytes: 1, at, len: buf.length };
       if (v.mime) placed.mime = v.mime;
       parts.push(buf);
@@ -101,15 +105,23 @@ export function encode(value: unknown): Buffer {
     }
     return v;
   };
-  const envelope = JSON.stringify({ v: ENVELOPE_VERSION, value: walk(value) ?? null });
-  return Buffer.concat([Buffer.from(envelope + '\n', 'utf8'), ...parts]);
+  const envelope = new TextEncoder().encode(
+    JSON.stringify({ v: ENVELOPE_VERSION, value: walk(value) ?? null }) + '\n');
+  const out = new Uint8Array(envelope.length + at);
+  out.set(envelope);
+  let offset = envelope.length;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return out;
 }
 
 /** Put them back. Every slice is checked against the file's real length. */
-export function decode(raw: Buffer): unknown {
+export function decode(raw: Uint8Array): unknown {
   const split = raw.indexOf(0x0a);
   if (split < 0) throw new Error('no envelope');
-  const head = JSON.parse(raw.subarray(0, split).toString('utf8'));
+  const head = JSON.parse(new TextDecoder().decode(raw.subarray(0, split)));
   if (!head || head.v !== ENVELOPE_VERSION) throw new Error('unknown store format');
   const body = raw.subarray(split + 1);
 
@@ -122,10 +134,10 @@ export function decode(raw: Buffer): unknown {
       if (v.at < 0 || v.len < 0 || v.at + v.len > body.length) {
         throw new Error(`bytes at ${v.at}+${v.len} are past the end of a ${body.length}-byte value`);
       }
-      // A copy rather than a view: Buffer is a window onto a pooled allocation,
+      // A copy rather than a view: a Buffer is a window onto a pooled allocation,
       // and handing `.buffer` across the bridge would hand over whatever else
       // Node happened to have in that pool. `new ArrayBuffer` + set rather than
-      // `.slice`, because Node types `Buffer.buffer` as possibly shared.
+      // `.slice`, because TypeScript types `.buffer` as possibly shared.
       const slice = body.subarray(v.at, v.at + v.len);
       const data = new ArrayBuffer(slice.byteLength);
       new Uint8Array(data).set(slice);

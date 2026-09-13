@@ -84,6 +84,18 @@ test('a Uint8Array is left alone, because only a literal is walked', () => {
   assert.ok(!('__bytes' in (out.view ?? {})), 'not mistaken for a placement');
 });
 
+test('the format needs no Buffer - plain Uint8Array in and out', () => {
+  // The Android bridge bundles format.mts into a WebView page, where Node's
+  // Buffer does not exist. A Buffer is a Uint8Array too, so the check is on the
+  // constructor, and decode() is fed a plain copy of what encode() wrote.
+  const value = { note: 'pâte', blob: bytesOf(4, 5, 6) };
+  const written = encode(value);
+  assert.equal(written.constructor, Uint8Array, 'encode() returned a Buffer');
+  const out = decode(new Uint8Array(written));
+  assert.equal(out.note, 'pâte');
+  assert.deepEqual(read(out.blob), [4, 5, 6]);
+});
+
 test('a truncated file is refused rather than read short', () => {
   // A crash mid-write is the expected damage. Node slices past the end
   // silently, which would hand the renderer a wrong-sized Blob - so length is
