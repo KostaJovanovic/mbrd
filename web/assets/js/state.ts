@@ -509,6 +509,21 @@ export function setItemThumb(id: string, hash: unknown) {
 }
 
 /**
+ * Note a baked ~1024px display copy on a photo (meta.display) - the backfill for
+ * boards written before it existed (optimize/picture.ts bakeDisplayFor, the Feed,
+ * the canvas card). Silent by design: no event and *no dirty flag*, so opening an
+ * old board and scrolling it never looks edited. A save that happens for any other
+ * reason bakes what is here; until then it lives in memory and is regenerated
+ * near-viewport next session. Rides the asset walk (itemHashes) so a save carries
+ * it everywhere - unlike setItemThumb, which is a change the user is told about.
+ */
+export function noteDisplay(id: string, hash: unknown) {
+  const it = byId(id);
+  if (!it || !isHash(hash) || it.meta?.display === hash) return;
+  it.meta = { ...it.meta, display: hash };
+}
+
+/**
  * Store a fetched embed's song title and album-art hash on a link card. Not
  * undoable: it is fetched fact, not a choice the user made, the same footing as
  * a thumbnail (setItemThumb above). meta.art rides the asset walk (itemHashes,

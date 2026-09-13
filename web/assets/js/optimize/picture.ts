@@ -3,6 +3,7 @@
 // The judgement is when NOT to swap — see WORTH_IT below.
 
 import { surface, surfaceToBlob, type Surface } from '../canvas/surface.ts';
+import { getAsset, addFile, derivedFile } from '../storage/assets.ts';
 
 /** Max long edge — 1200px is where a card stops being pixel-limited. */
 export const MAX_SIDE = 1200;
@@ -104,6 +105,25 @@ async function encodeShrunk(
     } catch { /* no JPEG encoder either: the PNG below is still the right pixels */ }
   }
   return out;
+}
+
+/**
+ * Backfill one baked display copy from an original already in the asset store,
+ * and register it. Returns the display asset's content hash, or null when the
+ * original already serves (small, vector, animated - shrinkPicture declines).
+ *
+ * The exact 1024px WebP import bakes (meta.display), generated here for a board
+ * written before the copy existed. addFile dedups by content, so a repeat call
+ * is cheap, and the caller sets meta.display (state.ts noteDisplay) so a later
+ * save carries it to every device. One decode serves both the shown pixels and
+ * the bake - the caller shows the same asset it stores.
+ */
+export async function bakeDisplayFor(hash: string): Promise<string | null> {
+  const asset = getAsset(hash);
+  if (!asset) return null;
+  const made = await shrinkPicture(asset.blob, { maxSide: DISPLAY_SIDE }).catch(() => null);
+  if (!made) return null;
+  return addFile(derivedFile(made.blob, 'display'));
 }
 
 /** Thumbnail width — matches the widest a card is drawn at thumb zoom. */
