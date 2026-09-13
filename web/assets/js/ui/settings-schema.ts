@@ -1011,6 +1011,16 @@ export const SECTIONS: Section[] = [
         { cmd: 'patch-notes', label: 'Patch notes', closesPanel: true,
           title: () => 'Every version since the first. Your board is saved and waiting when you come back' },
       ] },
+      // Where the apps are, on the web, and the update check, in the app. Two
+      // rows for the reason the Save pair is two: `when` belongs to a row.
+      { type: 'buttons', when: () => !isDesktop(), buttons: [
+        { cmd: 'get-app', label: 'Get the app', closesPanel: true,
+          title: () => 'mbrd for Windows, macOS, Linux and Android. Your board is saved and waiting when you come back' },
+      ] },
+      { type: 'buttons', when: isDesktop, buttons: [
+        { cmd: 'check-updates', label: 'Check for updates', closesPanel: true,
+          title: () => 'Ask for a newer mbrd. The answer comes in a window of its own' },
+      ] },
     ],
   },
   {
@@ -1039,19 +1049,6 @@ export const SECTIONS: Section[] = [
         // itself - the #grips URL and mbrd.debugGrips() drive the same toggle -
         // and a painted value would put the button back to false behind it.
         { cmd: 'debug-grips', label: 'Highlight resize grips', ariaPressed: 'false',
-          closesPanel: true },
-        // The drag band the desktop window is moved by, which is invisible and
-        // takes every press that lands on it. Beside the grip overlay because
-        // the two are one idea: an element with no ink whose *reach* is the
-        // only thing worth seeing. Writes its own aria-pressed, like its
-        // neighbour, and closes the panel for the same reason - the thing it
-        // paints is along the top edge, and the panel covers that edge.
-        //
-        // Present in a browser too, where it says there is no drawn title bar
-        // rather than doing nothing. A row that vanished on the web would mean
-        // this table had to learn which shell it is in, and the answer would be
-        // one more thing to keep true.
-        { cmd: 'debug-frame', label: 'Show the window drag band', ariaPressed: 'false',
           closesPanel: true },
         // The frame profiler, which until now had no way in from the interface
         // at all - a console call or a URL fragment, on a tool whose whole point

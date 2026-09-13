@@ -499,6 +499,14 @@ export function setLinkURL(id: string, url: unknown) {
     value => (typeof value === 'string' && value ? value : null));
 }
 
+/** Set the custom specimen text on a font card, or clear it back to the face's
+ *  own name. Undoable - the words are a choice. Empty (or all whitespace) drops
+ *  the key, so the renderer falls back to the family name. */
+export function setFontText(id: string, text: unknown) {
+  patchMeta(id, 'text', text, 'Edit specimen',
+    value => (typeof value === 'string' && value.trim() ? value : null));
+}
+
 /** Attach a zoomed-out thumbnail. Not undoable (derived data, not a choice). */
 export function setItemThumb(id: string, hash: unknown) {
   const it = byId(id);

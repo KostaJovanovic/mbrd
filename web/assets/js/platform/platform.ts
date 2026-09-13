@@ -1,5 +1,6 @@
-// Platform abstraction: seven ports for the eight questions a desktop
-// shell answers differently from a browser tab.
+// Platform abstraction: six members for the questions a desktop shell
+// answers differently from a browser tab. The window's frame is not one:
+// the desktop's title bar is its own page (desktop/chrome/).
 // Unwired defaults to web behaviour. setPlatform() wires the desktop.
 // The bridge global is read only in main.ts; this module never touches it.
 
@@ -70,35 +71,10 @@ export interface NativePort {
   decode(bytes: ArrayBuffer, name: string): Promise<ImageBitmap | null>;
 }
 
-/** An available update. `null` from check() means none. */
-export interface UpdateInfo {
-  version: string;
-  /** False on portable or unsigned macOS: offer a link, not an install button. */
-  canInstall: boolean;
-}
-
 /** Update port. Plan §4 *updates*. */
 export interface UpdatesPort {
-  check(): Promise<UpdateInfo | null>;
-  /** Arm the update. It installs on quit. */
-  install(): void;
-}
-
-/** Window state. Both false on the web. */
-export interface FrameState {
-  maximized: boolean;
-  fullScreen: boolean;
-}
-
-/** Window frame port. `own()` true means the app draws its own title bar. */
-export interface FramePort {
-  own(): boolean;
-  /** macOS only: system traffic lights are in the top-left corner. */
-  systemLeft(): boolean;
-  minimize(): void;
-  toggleMaximize(): void;
-  close(): void;
-  onState(fn: (state: FrameState) => void): void;
+  /** Start a check. The shell answers in its own dialogs, so nothing comes back. */
+  check(): Promise<void>;
 }
 
 /** What the shell is told about the document on screen. */
@@ -114,7 +90,6 @@ export interface Platform {
   lifecycle: LifecyclePort;
   native: NativePort;
   updates: UpdatesPort;
-  frame: FramePort;
   /** Tell the shell what is on screen. No-op on web. */
   setDocument(state: DocumentState): void;
   /** Reload on web; relaunch the process on desktop. */
@@ -219,6 +194,8 @@ function download(blob: Blob, name: string) {
 /** Fallback picker via the hidden `<input>`. Resolves empty on dismiss. */
 function viaInput(spec: PickSpec, multiple: boolean) {
   return new Promise<File[]>(resolve => {
+    // SAFETY: index.html carries <input id="file-input" type="file">, and
+    // tests/element-ids.test.js holds that id in both directions.
     const input = document.getElementById('file-input') as HTMLInputElement;
     const prevAccept = input.accept;
     input.accept = spec.accept;
@@ -272,19 +249,9 @@ const webNative: NativePort = {
   decode: async () => null,
 };
 
+// The web's updater is the service worker (main.ts), so a check does nothing.
 const webUpdates: UpdatesPort = {
-  check: async () => null,
-  install: () => {},
-};
-
-// own() false: the browser draws the frame; methods below are never called.
-const webFrame: FramePort = {
-  own: () => false,
-  systemLeft: () => false,
-  minimize: () => {},
-  toggleMaximize: () => {},
-  close: () => {},
-  onState: () => {},
+  check: async () => {},
 };
 
 const web: Platform = {
@@ -292,7 +259,6 @@ const web: Platform = {
   lifecycle: webLifecycle,
   native: webNative,
   updates: webUpdates,
-  frame: webFrame,
   setDocument: () => {},
   relaunch: () => { location.reload(); },
 };
@@ -321,7 +287,6 @@ export const platform: Readonly<Platform> = {
   get lifecycle() { return current.lifecycle; },
   get native() { return current.native; },
   get updates() { return current.updates; },
-  get frame() { return current.frame; },
   setDocument(state) { current.setDocument(state); },
   relaunch() { current.relaunch(); },
 };

@@ -88,9 +88,8 @@ function hexToHsv(raw: unknown): Hsv | null {
  */
 export async function pickColor(opts: PickOptions = {}): Promise<string | null> {
   if (typeof document === 'undefined') return null;
-  // #pick is the <dialog> in index.html. A cast rather than an instanceof:
-  // SAFETY the showModal test below covers one more case - an engine with no
-  // HTMLDialogElement at all, where instanceof would itself throw.
+  // SAFETY: #pick is the <dialog> in index.html. A cast, not instanceof: the showModal test
+  // below also covers an engine with no HTMLDialogElement, where instanceof would throw.
   const el = document.getElementById('pick') as HTMLDialogElement | null;
   if (!el || typeof el.showModal !== 'function') return null;
 

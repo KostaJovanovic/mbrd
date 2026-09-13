@@ -274,6 +274,7 @@ export function buildModelCard(item: Item) {
   const ro = new ResizeObserver(() => { stageBox.delete(stage); paint(); });
   ro.observe(stage);
   // Stored for releaseModels() to disconnect — prevents mesh leak via closure.
+  // SAFETY: stage is the canvas made above, and StageCanvas only adds the optional _modelRO.
   (stage as StageCanvas)._modelRO = ro;
 
   orbit(stage, view, paint);
@@ -379,6 +380,7 @@ function liveView(item: Item): View {
   const held = views.get(item.id);
   if (held) return held;
   const m = item.meta?.view;
+  // SAFETY: the same test makes m a non-null object, and each field is read through Number().
   const raw = m && typeof m === 'object' ? m as Record<string, unknown> : null;
   const view = raw
     ? { yaw: Number(raw.yaw) || 0, pitch: Number(raw.pitch) || 0, zoom: Number(raw.zoom) || 1 }

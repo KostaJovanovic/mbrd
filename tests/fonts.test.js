@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  axesFromFilename, familyFor, fontAxes, fontIsVariable, headerFontSize,
+  axesFromFilename, familyFor, familyFrom, fontAxes, fontIsVariable, headerFontSize,
 } from '../web/assets/js/ui/fonts.ts';
 import {
   axisStep, variationSettings,
@@ -259,6 +259,89 @@ test('isFamily refuses what a stylesheet could not survive', () => {
 function writeTag(bytes, at, tag) {
   for (let i = 0; i < 4; i++) bytes[at + i] = tag.charCodeAt(i);
 }
+
+// ---------------------------------------------------------------------------
+// The family off the font's own `name` table, not its filename
+// ---------------------------------------------------------------------------
+
+function utf16be(text) {
+  const bytes = new Uint8Array(text.length * 2);
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    bytes[i * 2] = code >> 8;
+    bytes[i * 2 + 1] = code & 0xFF;
+  }
+  return bytes;
+}
+
+/** A minimal SFNT carrying one `name` table built from the given records. */
+function sfntWithNames(records, filename = 'Face.otf') {
+  const rows = records.map(r => ({
+    ...r,
+    bytes: r.platform === 1
+      ? Uint8Array.from([...r.text].map(c => c.charCodeAt(0) & 0xFF))
+      : utf16be(r.text),
+  }));
+  const header = 6 + rows.length * 12;
+  const storage = rows.reduce((n, r) => n + r.bytes.length, 0);
+  const nameLen = header + storage;
+  const nameAt = 12 + 16;                // one directory entry, then the table
+  const bytes = new Uint8Array(nameAt + nameLen);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(0, 0x00010000);         // sfnt 1.0
+  view.setUint16(4, 1);                  // one table
+  writeTag(bytes, 12, 'name');
+  view.setUint32(12 + 8, nameAt);        // its offset
+  view.setUint32(12 + 12, nameLen);      // its length
+  view.setUint16(nameAt + 2, rows.length);
+  view.setUint16(nameAt + 4, header);    // storage starts after the records
+  let strAt = 0;
+  rows.forEach((r, i) => {
+    const rec = nameAt + 6 + i * 12;
+    view.setUint16(rec, r.platform);
+    view.setUint16(rec + 2, r.encoding ?? 0);
+    view.setUint16(rec + 6, r.nameID);
+    view.setUint16(rec + 8, r.bytes.length);
+    view.setUint16(rec + 10, strAt);
+    bytes.set(r.bytes, nameAt + header + strAt);
+    strAt += r.bytes.length;
+  });
+  return { name: filename, arrayBuffer: async () => bytes.buffer };
+}
+
+test('a face is named from its own name table, not its filename', async () => {
+  // The file says BasicallyAMono-Bold; the face says Basically a mono.
+  const otf = sfntWithNames(
+    [{ platform: 3, encoding: 1, nameID: 1, text: 'Basically a mono' }],
+    'BasicallyAMono-Bold.otf');
+  assert.equal(await familyFrom(otf), 'Basically a mono');
+});
+
+test('the typographic family (16) wins over the basic family (1)', async () => {
+  // A Bold face whose basic family still carries the weight - nameID 16 is the
+  // weight-independent umbrella and is what a specimen should read.
+  const otf = sfntWithNames([
+    { platform: 3, encoding: 1, nameID: 1, text: 'Basically a mono Bold' },
+    { platform: 3, encoding: 1, nameID: 16, text: 'Basically a mono' },
+  ]);
+  assert.equal(await familyFrom(otf), 'Basically a mono');
+});
+
+test('a Windows name wins over a Mac one', async () => {
+  const otf = sfntWithNames([
+    { platform: 1, encoding: 0, nameID: 1, text: 'Mac Name' },
+    { platform: 3, encoding: 1, nameID: 1, text: 'Win Name' },
+  ]);
+  assert.equal(await familyFrom(otf), 'Win Name');
+});
+
+test('a name table that cannot be read falls back to the filename', async () => {
+  // WOFF2 table data is one Brotli stream with no decoder here.
+  assert.equal(await familyFrom(woff2([{ index: 0 }])), 'Dropped');
+  // A file object with no bytes has only its filename to go on.
+  assert.equal(await familyFrom({ name: 'Inter.woff2' }), 'Inter');
+  assert.equal(await familyFrom(undefined), 'Custom face');
+});
 
 const fixed = value => Math.round(value * 65536);
 

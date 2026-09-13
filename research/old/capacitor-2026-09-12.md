@@ -1,5 +1,13 @@
 # Capacitor — the plan for a mobile app
 
+> **Superseded on 2026-09-13, never ratified.** `research/apps-2026-09-13.md`
+> replaced it. Four of its recommendations were reversed there: the phone gets
+> the desktop's own bridge object injected natively (no `platform/capacitor.ts`),
+> updates are APK self-updates (no OTA bundle), the store is files in
+> `Documents/mbrd/` (not IndexedDB), and Android ships as an APK in the GitHub
+> release (not Play first). Its §9 on jank still holds. Read it for the
+> reasoning only.
+
 Open work. The argument for wrapping the web app as an installable iOS and
 Android build, and the record of every decision it rests on. Written against
 `299b768` (v0.293), after the Electron work (groups A–J) shipped — which is the

@@ -116,6 +116,7 @@ export function emitter<E = Record<string, unknown>>(): Emitter<E> {
     emit(evt, payload) {
       for (const fn of map.get(evt) || []) {
         try {
+          // SAFETY: on() files each handler under the event it was typed for, so fn takes E[evt].
           (fn as (payload?: E[typeof evt]) => void)(payload);
         }
         catch (e) { reportCaught(e, 'handler for "' + evt + '"'); }

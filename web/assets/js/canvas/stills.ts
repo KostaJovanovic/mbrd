@@ -70,7 +70,8 @@ export const refreshStills = () => recheck();
 function capture(force: boolean) {
   if (!worldEl) return;
   for (const img of worldEl.querySelectorAll<HTMLImageElement>('img[data-gif]')) {
-    // Twin is the GIF's next sibling, verified by .still class.
+    // SAFETY: the twin is the GIF's next sibling. Every .still built (renderers.ts, model.ts)
+    // is an <img>, and the class is tested next.
     const twin = img.nextElementSibling as StillImage | null;
     if (!twin?.classList.contains('still')) continue;
     if (!force && twin.classList.contains('is-ready')) continue;

@@ -54,6 +54,7 @@ export type LookDeps = {
 let d!: LookDeps;
 
 // Nullable because the tab may not be built yet.
+// SAFETY: only ever given #opt-whimsy and #opt-palette-sources, 'range' rows that panel.ts buildRange() makes <input>s.
 const rangeInput = (id: string) => document.getElementById(id) as HTMLInputElement | null;
 
 /** Wire up the look-model deps. Called once at boot. */
@@ -225,6 +226,7 @@ export function wirePalette() {
   const el = document.getElementById('opt-palette');
   if (!el) return;
   el.addEventListener('pick', e => {
+    // SAFETY: panel.ts buildPicker() dispatches 'pick' on #opt-palette with an Option value, a string.
     const value = (e as CustomEvent<string>).detail;
     if (value === DYNAMIC) d.goDynamic();
     else d.setPalette(value);

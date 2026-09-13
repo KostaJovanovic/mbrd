@@ -25,7 +25,8 @@ export type LibraryEntry = {
 export async function libraryIndex(): Promise<LibraryEntry[]> {
   const list = await idbGet('kv', INDEX_KEY);
   if (!Array.isArray(list)) return [];
-  // Only putLibraryBoard() writes this key; Array.isArray is the shape check.
+  // SAFETY: writeIndex() in this module is the one writer of this key, and it takes
+  // LibraryEntry[]. Array.isArray above is the shape check.
   const rows = list as LibraryEntry[];
   return [...rows].sort((a, b) => (b.at || 0) - (a.at || 0));
 }
@@ -82,7 +83,7 @@ export async function sweepLibrary() {
   const keys = await idbKeys(STORE);
   const orphans = keys.filter(k => typeof k === 'string' && !known.has(k));
   if (orphans.length) {
-      // SAFETY: filter above already narrowed to strings.
+    // SAFETY: filter above already narrowed to strings.
     await idbDelMany(STORE, orphans as string[]);
   }
   return orphans.length;
@@ -90,8 +91,8 @@ export async function sweepLibrary() {
 
 /** The packed blob for a board, or null if the shelf has no such id. */
 export async function getLibraryBoard(id: string): Promise<Blob | null> {
-  // Only putLibraryBoard writes this store; caller opens as zip, so a
-  // hand-edited value is refused there.
+  // SAFETY: putLibraryBoard() is the one writer of this store, and it writes only Blobs.
+  // The caller opens the blob as a zip, so a hand-edited value is refused there.
   return ((await idbGet(STORE, id)) || null) as Blob | null;
 }
 

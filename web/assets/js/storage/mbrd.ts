@@ -484,7 +484,8 @@ export async function unpackBoard(blob: Blob) {
     throw new Error('The board inside this file is not readable (board.json will not parse)');
   }
   if (!isRecord(parsed)) throw new Error('The board inside this file is not a board (board.json is not an object)');
-  // Cast, not check — FileBoard uses `unknown[]` and the loops below validate.
+  // SAFETY: isRecord() above. FileBoard types items and trash as unknown[], and allItems()
+  // isRecord-filters every element of both.
   const board = parsed as FileBoard;
   if (manifest.title && !board.title) board.title = manifest.title;
 

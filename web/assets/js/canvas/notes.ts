@@ -118,7 +118,8 @@ const lineTag = (line: Element): NoteTag =>
 const lineAlign = (line: Element): NoteAlign =>
   NOTE_ALIGNS.find(a => line.classList.contains('al-' + a)) || 'left';
 // Returns undefined (not 'none') for unmarked lines. Validated through the
-// allowlist — the attribute is user-editable. Callers always pass HTMLElement.
+// allowlist — the attribute is user-editable.
+// SAFETY: every caller passes a .note-line, and buildNoteLine() makes those as <div>s.
 const lineWash = (line: Element): NoteWash | undefined =>
   NOTE_WASHES.find(w => (line as HTMLElement).dataset.wash === w);
 
@@ -129,7 +130,7 @@ function setLineAlign(line: Element, align: NoteAlign) {
   for (const a of NOTE_ALIGNS) line.classList.toggle('al-' + a, a === align);
 }
 function setLineWash(line: Element, wash: NoteWash | null) {
-  // note-line is always HTMLElement (built by buildLine).
+  // SAFETY: every caller passes a .note-line, and buildNoteLine() makes those as <div>s.
   const el = line as HTMLElement;
   if (wash) el.dataset.wash = wash;
   else delete el.dataset.wash;
@@ -140,8 +141,9 @@ function currentLine(wrap: HTMLElement): HTMLElement | null {
   const sel = selectionNow();
   const node = sel.anchorNode;
   if (!node || !wrap.contains(node)) return null;
-  // Anchor is element or text node; text inside wrap always has a parentElement.
-  const el = node.nodeType === 3 ? node.parentElement! : (node as Element);
+  // SAFETY: caretTo() and the browser put the caret in Text or Element nodes, and nodeType 3
+  // took Text. Text inside wrap always has a parentElement.
+  const el =node.nodeType === 3 ? node.parentElement! : (node as Element);
   return el.closest<HTMLElement>('.note-line');
 }
 
@@ -173,8 +175,8 @@ function caretTo(line: Element, offset: number) {
   const sel = selectionNow();
   const range = document.createRange();
   const first = line.firstChild;
-  // nodeType 3 = Text node; cast is safe because the check precedes it.
-  const t = first && first.nodeType === 3 ? (first as Text) : null;
+  // SAFETY: nodeType 3 is Text, and the test precedes the cast in the same condition.
+  const t =first && first.nodeType === 3 ? (first as Text) : null;
   if (t) range.setStart(t, Math.min(offset, t.length));
   else range.setStart(line, 0);
   range.collapse(true);
@@ -488,8 +490,9 @@ export function editNote(
       afterEdit();
     },
     setFont(key) {
-      // Object.keys() returns string[]; validated against NOTE_FONT_KEYS so the cast is safe.
-      const font = (NOTE_FONT_KEYS.includes(key) ? key : 'sheet') as NoteFont;
+      // SAFETY: `key` is checked against NOTE_FONT_KEYS, which is Object.keys(NOTE_FONTS),
+      // and NOTE_FONTS satisfies Record<NoteFont, string>.
+      const font =(NOTE_FONT_KEYS.includes(key) ? key : 'sheet') as NoteFont;
       wrap.style.fontFamily = NOTE_FONTS[font];
       wrap.dataset.font = font;
       afterEdit();
@@ -583,7 +586,7 @@ export function editNote(
   const normalizeStructure = () => {
     let changed = false;
     for (const node of [...wrap.childNodes]) {
-      // nodeType 1 = Element; tested before the cast.
+      // SAFETY: nodeType 1 is Element, tested on the left of the &&.
       if (node.nodeType === 1 && (node as Element).classList.contains('note-line')) continue;
       if (node.nodeName === 'BR' || (node.nodeType === 3 && node.textContent === '')) {
         node.remove();
@@ -591,7 +594,8 @@ export function editNote(
         continue;
       }
       // Inherit formatting from the nearest sibling line, not model defaults.
-      const near = [node.previousSibling, node.nextSibling]
+      // SAFETY: in find(), nodeType 1 is Element, tested on the left of the &&.
+      const near =[node.previousSibling, node.nextSibling]
         .find((n): n is Element => !!n && n.nodeType === 1
           && (n as Element).classList.contains('note-line'));
       const beside = near ?? null;
@@ -707,7 +711,7 @@ export function editNote(
   // Reliable close: focusout does not fire for unfocusable targets (empty canvas).
   // Capture phase — runs before the canvas eats the press.
   const onDocPointerDown = (e: PointerEvent) => {
-    // target is Node | null in this document.
+    // SAFETY: the listener is on document, so the target is document or a node in it.
     const on = e.target as Node | null;
     if (node.contains(on) || toolbar.el.contains(on) || inMenu(on)) return;
     // Surface includes Cancel — must not commit before Cancel can fire.
@@ -788,7 +792,8 @@ export function composeNote(make: () => Item | null | undefined) {
 
 /** `added` is whatever lastCommand() answered - the entry composeNote() made. */
 function openComposer(id: string, added: ReturnType<typeof lastCommand>) {
-  // Falls back to inline editNote() when the dialog is absent.
+  // SAFETY: #compose is a <dialog> in index.html. If not, the showModal test below falls back
+  // to inline editNote().
   const dlg = document.getElementById('compose') as HTMLDialogElement | null;
   const mount = document.getElementById('compose-mount');
   const node: HTMLElement | undefined = nodeFor(id);

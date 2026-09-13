@@ -8,7 +8,14 @@ import { addFile, assetURL } from '../storage/assets.ts';
 import { isFamily } from '../util.ts';
 import { toast } from '../notify.ts';
 import { allow, fileKey, mb } from '../consent.ts';
+import { addFontCard } from '../import/drop.ts';
 import type { FontAxis, FontSpec } from '../board-model.ts';
+import type { Viewport } from '../canvas/viewport.ts';
+
+// Injected by initFonts() so a dropped face can also land a specimen card at
+// the current view centre. Null in a test with no board - the card step is
+// then skipped, the way every other view-dependent step here is.
+let vp: Viewport | null = null;
 
 /**
  * A ceiling per face and a ceiling per board.
@@ -151,7 +158,8 @@ const AXIS_FALLBACKS = {
 /** The panel's list of dropped faces, each with a remove control. */
 let fontListHost: HTMLElement | null = null;
 
-export function initFonts() {
+export function initFonts(viewport: Viewport | null = null) {
+  vp = viewport;
   fontListHost = document.getElementById('appearance-fonts');
   bus.on('fonts:add', files => { addFontFiles(files).catch(() => {}); });
   // A board load replaces the faces wholesale, the same way it replaces the
@@ -420,7 +428,16 @@ function skipBase128(bytes: Uint8Array, at: number) {
   return -1;
 }
 
-function findFvar(buffer: ArrayBuffer) {
+const findFvar = (buffer: ArrayBuffer) => findTable(buffer, 'fvar');
+
+/**
+ * Find one SFNT/WOFF table by tag, returning its bytes and whether they are
+ * deflated (WOFF only). WOFF2 is `null` - its table data is one Brotli stream
+ * with no browser decoder - and so is a directory that does not fit its own
+ * header. Every offset is bounds-checked before the slice: this walks a file
+ * the app did not write.
+ */
+function findTable(buffer: ArrayBuffer, want: string) {
   const bytes = new Uint8Array(buffer);
   const view = new DataView(buffer);
   if (bytes.length < 12) return null;
@@ -432,7 +449,7 @@ function findFvar(buffer: ArrayBuffer) {
     if (count > 128 || 44 + count * 20 > bytes.length) return null;
     for (let i = 0; i < count; i++) {
       const at = 44 + i * 20;
-      if (tagAt(bytes, at) !== 'fvar') continue;
+      if (tagAt(bytes, at) !== want) continue;
       const offset = view.getUint32(at + 4);
       const length = view.getUint32(at + 8);
       const original = view.getUint32(at + 12);
@@ -449,7 +466,7 @@ function findFvar(buffer: ArrayBuffer) {
   if (count > 128 || 12 + count * 16 > bytes.length) return null;
   for (let i = 0; i < count; i++) {
     const at = 12 + i * 16;
-    if (tagAt(bytes, at) !== 'fvar') continue;
+    if (tagAt(bytes, at) !== want) continue;
     const offset = view.getUint32(at + 8);
     const length = view.getUint32(at + 12);
     if (!tableFits(bytes, offset, length) || length > 1024 * 1024) return null;
@@ -512,6 +529,89 @@ export function familyFor(filename: unknown) {
   return isFamily(cleaned) ? cleaned : 'Custom face';
 }
 
+/**
+ * The family name the face declares of itself, or null.
+ *
+ * The filename is a guess ("BasicallyAMono-Bold.otf"); the font's own `name`
+ * table is the fact ("Basically a mono"). Typographic Family (nameID 16) is the
+ * weight-independent umbrella and is preferred; the basic Family (nameID 1) is
+ * next, and for a standard Bold/Italic style it already excludes the weight
+ * (that lives in the subfamily), so either drops the "Bold". A Windows/Unicode
+ * record (UTF-16BE) wins over a Mac one. Cleaned to what isFamily() accepts,
+ * since it lands in a CSS declaration the same as the filename would.
+ */
+function familyFromNameTable(bytes: Uint8Array): string | null {
+  if (bytes.length < 6) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const count = view.getUint16(2);
+  const storage = view.getUint16(4);
+  if (!count || 6 + count * 12 > bytes.length) return null;
+  let best: { score: number, value: string } | null = null;
+  for (let i = 0; i < count; i++) {
+    const rec = 6 + i * 12;
+    const platform = view.getUint16(rec);
+    const nameID = view.getUint16(rec + 6);
+    if (nameID !== 1 && nameID !== 16) continue;
+    const length = view.getUint16(rec + 8);
+    const start = storage + view.getUint16(rec + 10);
+    if (!length || start + length > bytes.length) continue;
+    const cleaned = cleanFamily(decodeNameString(platform, bytes.subarray(start, start + length)));
+    if (!cleaned) continue;
+    const score = (nameID === 16 ? 2 : 0) + (platform === 3 || platform === 0 ? 1 : 0);
+    if (!best || score > best.score) best = { score, value: cleaned };
+  }
+  return best?.value || null;
+}
+
+/** Windows (3) and Unicode (0) name strings are UTF-16BE; a Mac (1) string is a
+ *  byte run whose ASCII range covers every Latin family name that matters. */
+function decodeNameString(platform: number, bytes: Uint8Array): string {
+  if (platform === 3 || platform === 0) {
+    let out = '';
+    for (let i = 0; i + 1 < bytes.length; i += 2) out += String.fromCharCode((bytes[i] << 8) | bytes[i + 1]);
+    return out;
+  }
+  return String.fromCharCode(...bytes);
+}
+
+/** To what isFamily() accepts: separators to spaces, everything else dropped,
+ *  capped at 40. Shared by the name-table read and the filename fallback. */
+function cleanFamily(raw: string): string | null {
+  const cleaned = raw
+    .replace(/[^A-Za-z0-9 ]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 40)
+    .trim();
+  return isFamily(cleaned) ? cleaned : null;
+}
+
+/**
+ * The family for a dropped file: its own `name` table when it can be read, the
+ * filename otherwise. WOFF may deflate the table (handled like fvar); WOFF2
+ * cannot be decoded here, so a bracketed WOFF2 name falls through to familyFor.
+ */
+export async function familyFrom(file: File | null | undefined): Promise<string> {
+  const fallback = familyFor(file?.name);
+  if (!file?.arrayBuffer) return fallback;
+  try {
+    const buffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    if (bytes.length < 12 || tagAt(bytes, 0) === 'wOF2') return fallback;
+    const found = findTable(buffer, 'name');
+    if (!found) return fallback;
+    let data = found.bytes;
+    if (found.compressed) {
+      if (typeof DecompressionStream !== 'function') return fallback;
+      const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate'));
+      data = new Uint8Array(await new Response(stream).arrayBuffer());
+    }
+    return familyFromNameTable(data) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 // Serialized: each drop reads the whole font list, awaits hashing/registration,
 // then writes the list back. Two files arriving as separate 'fonts:add' events
 // could both read the pre-write list, and the second setSetting would clobber the
@@ -524,6 +624,9 @@ function addFontFiles(files: Iterable<File>) {
 
 async function runAddFontFiles(files: Iterable<File>) {
   let added = 0;
+  // Cascade so several faces dropped at once do not stack on one point.
+  let placed = 0;
+  const at = vp ? vp.toWorld(vp.left + vp.cx, vp.top + vp.cy) : null;
   for (const file of files) {
     const list = fontList();
     if (list.length >= MAX_FONTS) {
@@ -548,7 +651,7 @@ async function runAddFontFiles(files: Iterable<File>) {
     // Same bytes, already here - dropping a face twice isn't an error.
     if (list.some(f => f.hash === hash)) continue;
 
-    const family = uniqueFamily(familyFor(file.name), list);
+    const family = uniqueFamily(await familyFrom(file), list);
     // `variable` is only consulted when there's no wght axis, so it's only
     // asked for then - sparing a second parse of the whole file for every
     // face that already carries one (the variable ones do).
@@ -566,6 +669,13 @@ async function runAddFontFiles(files: Iterable<File>) {
       ...(axes.length ? { axes } : variable ? { variable: true } : {}),
     }]);
     added++;
+    // A specimen on the board, in this face - the menu entry says its name, the
+    // card shows its letters. Only for a face that actually registered, so a
+    // declined or unreadable file leaves no card behind.
+    if (at) {
+      addFontCard({ x: at.x + placed * 28, y: at.y + placed * 28 }, hash, family);
+      placed++;
+    }
   }
   if (!added) return;
   // Two signals, because two different things changed: the menus have new

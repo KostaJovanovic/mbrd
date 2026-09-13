@@ -54,7 +54,8 @@ export function recallGrant(provider: string): TokenGrant | null {
   }
   if (!raw) return null;
   try {
-    // Checked field by field — malformed entries fall out as null.
+    // SAFETY: both fields are typed unknown and typeof-checked below, so a malformed entry
+    // falls out as null. A null parse throws into the catch.
     const parsed = JSON.parse(raw) as { token?: unknown, expiresAt?: unknown };
     if (typeof parsed.token !== 'string' || !parsed.token) return null;
     if (typeof parsed.expiresAt !== 'number' || !Number.isFinite(parsed.expiresAt)) return null;

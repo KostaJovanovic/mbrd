@@ -183,17 +183,6 @@ their work does; the other three do not, and those are the ones to argue about:
   half-snapping, colourblind mode, dark mode, and "finish the timeline", which is
   unpinned and wants the tester pointing at something before it is work.
 
-- `connection-routing-2026-08-22.md` — **carried out, all five items**, and here
-  for what it left rather than for what it did. Four limitations are written down
-  at its foot on purpose: a route still concedes when a card lies over one of its
-  ends, `MAX_NODES` shedding can still let a dense patch clip, avoidance is
-  order-dependent, and the taut straight-line shortcut is not charged for
-  overlap. Each is a thing somebody will eventually see on screen and file as a
-  bug, and each is the honest picture rather than an oversight. The argument for
-  *why a face became a ranked set* is the durable half — one face committed to
-  before the search is what made a line go behind a card, stack on its
-  neighbours, and read as stiff, all three at once.
-
 - `design-audit-2026-08-25.md` — **where the app disagreed with itself, and what
   was done about it.** Read the **Outcome** at the foot first: everything was
   carried out except D3 and D4, and D1 was simply wrong, which it says at length.
@@ -240,18 +229,26 @@ their work does; the other three do not, and those are the ones to argue about:
   and this is the record of what to do, and neither is the code. Goes to `old/`
   with the plan.
 
-- `capacitor-2026-09-12.md` — **the plan for a mobile app, and why it is short.**
-  The Electron work left two seams — the `Platform` port and the `StoreBackend`
-  behind `idb.ts` — and Capacitor is a third adapter behind them, not a rewrite.
-  Its §1 is a decision table the maintainer has not ratified yet, so it is a
-  proposal rather than a schedule; no `capacitor-tasks` split exists until it is.
-  Two things in it are worth knowing without building anything. **It does not fix
-  the jank** the app was wrapped to escape — the WebView is the same renderer as
-  the browser, so pan/zoom framerate is unchanged, and §9 says so plainly. And
-  the one real decision in it is the store (§4): IndexedDB already works inside
-  the WebView, so v1 keeps it, and the durable native backend is a measured
-  fast-follow the seam is ready for. Goes to `old/` on the last commit of the
-  work it schedules — if it is ever ratified.
+- `apps-2026-09-13.md` — **the desktop and Android apps, made the way
+  FileAnalyser's are.** Thirty decisions from a question-and-answer session on
+  2026-09-13, in one table at the top. It reshapes the desktop shell (one manual
+  release for every system, an updater of its own with no update files, the
+  title bar moved out of the page, the Install-or-Portable page and an optional
+  `.mbrd` association) and adds an Android shell that injects the **desktop's
+  own bridge object**, so `main.ts` wires the phone through the branch it already
+  has. Boards on the phone are real files in `Documents/mbrd/`. Two things in it
+  are worth knowing without building anything: FileAnalyser 9.8 shipped with no
+  title bar because one glob was missing from electron-builder's `files:`, and
+  §4.1 makes that impossible here; and **Capacitor still does not fix the jank**
+  (§5.13). It overrides several rows of `electron-2026-09-06.md` §1 and
+  supersedes the unratified `old/capacitor-2026-09-12.md`. Goes to `old/` on the
+  last commit of the work it schedules.
+
+- `apps-tasks-2026-09-13.md` — **the executable half of the document above**,
+  on the terms `electron-tasks` takes: sixteen groups A–P, each task with a file,
+  a string to find it by, what to do and what done looks like, and a checklist
+  at the foot. Nothing in it is built. The maintainer will run it in a later
+  session. Goes to `old/` with the plan.
 
 `patch-notes-full.md` sits at this level too and is **not open work** - it is an
 archive, and the only file here that argues nothing. It holds every release at
@@ -425,6 +422,18 @@ only way an export can lean a card that has been culled, and is a `.mbrd`
 addition to decide deliberately rather than as a side effect of a PDF. Its
 verification section ends in three by-eye checks that were not run, the sharpest
 of which is the exported file size with grain on.
+
+`old/connection-routing-2026-08-22.md` went down on the commit that cleaned this
+folder, **carried out, all five items**, and it is here for what it left rather
+than for what it did. Four limitations are written down at its foot on purpose: a
+route still concedes when a card lies over one of its ends, `MAX_NODES` shedding
+can still let a dense patch clip, avoidance is order-dependent, and the taut
+straight-line shortcut is not charged for overlap. Each is a thing somebody will
+eventually see on screen and file as a bug, and each is the honest picture rather
+than an oversight. The argument for *why a face became a ranked set* is the
+durable half — one face committed to before the search is what made a line go
+behind a card, stack on its neighbours, and read as stiff, all three at once.
+Read it beside `old/connections-2026-08-12.md` below, which it builds on.
 
 `old/connections-2026-08-12.md` went down on the commit that carried it out, and
 its status block is the part to read first: three of its own instructions were

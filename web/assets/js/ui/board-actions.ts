@@ -187,7 +187,8 @@ export async function resetSize() {
   const step = baseStep();
   const sized = await Promise.all(items.map(async it => {
     const blob = getAsset(it.asset?.hash)?.blob;
-    // Blob as File is safe: measureSize only reads bytes and type, not name.
+    // SAFETY: measureSize() reads the type and bytes. Its one name read, in isSvgImage(), goes
+    // through extOf(), which takes the absent name of a Blob as ''.
     const size = blob
       ? await measureSize(it.type, blob as File).catch(() => defaultSize(it.type))
       : defaultSize(it.type);

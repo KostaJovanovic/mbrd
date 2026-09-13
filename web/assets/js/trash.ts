@@ -269,7 +269,8 @@ export function restoreItems(ids: Iterable<string>, at: { x: number, y: number }
     // Drop the drawer-only stuckOf link — live geometry takes over on the board.
     const meta = { ...e.item.meta };
     delete meta.stuckOf;
-    // fitBoardMode() clamps in place; spread above makes the copy.
+    // SAFETY: the spread below makes a copy of an Item, and fitBoardMode() returns that copy
+    // or a spread of it with new numbers.
     const item = fitBoardMode({
       ...e.item,
       ...(where ? { x: where.x, y: where.y } : null),
@@ -334,7 +335,8 @@ export function setAssetPurge(fn: AssetPurge | null | undefined) {
  */
 function allHashes(raw: unknown): string[] {
   if (!isRecord(raw)) return [];
-  // Assertion lets untyped JSON pass to structurally-typed itemHashes().
+  // SAFETY: lets untyped JSON reach itemHashes(). isRecord() above, itemHashes() reads each
+  // field through ?., and the filter below keeps only strings.
   const item = raw as { asset?: { hash?: string } | null, meta?: Record<string, unknown> | null };
   const meta = isRecord(raw.meta) ? raw.meta : null;
   return [...itemHashes(item), meta?.was, meta?.wasCover]

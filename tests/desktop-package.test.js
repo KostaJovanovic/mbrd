@@ -1,0 +1,102 @@
+// What the desktop package ships, checked from the source, since no build runs
+// here. FileAnalyser 9.8 shipped with no title bar because its chrome pages were
+// left out of the package, and its updaters find a release file by the part of
+// the name before the version. Both break silently, so both are held here.
+// Reads every file as text: the shell is a second package with its own install.
+
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+
+import { ROOT, read } from './helpers.js';
+
+const DESKTOP = join(ROOT, 'desktop');
+const protocol = read(join(DESKTOP, 'protocol.ts'));
+const buildScript = read(join(DESKTOP, 'scripts', 'build.mjs'));
+const builder = read(join(DESKTOP, 'electron-builder.yml'));
+const updates = read(join(DESKTOP, 'updates.ts'));
+
+/** The names in `CHROME_FILES`, the allow-list the protocol handler serves. */
+function chromeFiles() {
+  const list = protocol.match(/export const CHROME_FILES = new Set\(\[([\s\S]*?)\]\)/)?.[1];
+  assert.ok(list, 'desktop/protocol.ts has no `export const CHROME_FILES = new Set([...])`');
+  return [...list.matchAll(/'([^']+)'/g)].map(m => m[1]);
+}
+
+/** A regex literal exported by desktop/updates.ts, rebuilt as a RegExp. */
+function exportedPattern(name) {
+  const m = updates.match(new RegExp(`export const ${name} = /(.+)/([a-z]*);`));
+  assert.ok(m, `desktop/updates.ts no longer exports ${name} as a regex literal`);
+  return new RegExp(m[1], m[2]);
+}
+
+/** Top-level key -> artifactName, walked line by line as tests/download.test.js once did. */
+const artifacts = new Map();
+{
+  let key = '';
+  for (const line of builder.split('\n')) {
+    const top = line.match(/^(\w+):/);
+    if (top) { key = top[1]; continue; }
+    const name = line.match(/^ {2}artifactName: (\S+)\s*$/);
+    if (name) artifacts.set(key, name[1]);
+  }
+}
+
+/** The file a release of 0.302.0 would carry, for one target. */
+const EXT = { nsis: 'exe', dmg: 'dmg', appImage: 'AppImage' };
+const sample = key => artifacts.get(key).replace('${version}', '0.302.0').replace('${ext}', EXT[key]);
+
+test('every chrome file has a source the build turns into it', () => {
+  const names = chromeFiles();
+  assert.ok(names.includes('titlebar.html'), 'CHROME_FILES has no titlebar.html');
+  const copied = buildScript.match(/\/\\\.\(([\w|]+)\)\$\//)?.[1]?.split('|') ?? [];
+  for (const name of names) {
+    const source = name.replace(/\.js$/, '.ts');
+    assert.ok(existsSync(join(DESKTOP, 'chrome', source)),
+      `CHROME_FILES serves ${name}, and desktop/chrome/${source} does not exist`);
+    if (name.endsWith('.js')) {
+      assert.ok(buildScript.includes(`'${source}'`),
+        `desktop/scripts/build.mjs does not build chrome/${source}, so dist/chrome/${name} is never written`);
+    } else {
+      const ext = name.split('.').pop();
+      assert.ok(copied.includes(ext),
+        `desktop/scripts/build.mjs copies ${copied.join(', ') || 'nothing'} from chrome/, and not .${ext}, so dist/chrome/${name} is never written`);
+    }
+  }
+});
+
+test('the package ships dist/ whole, which is where the chrome is built', () => {
+  assert.match(builder, /^files:\n(?: {2}- .*\n)*? {2}- dist\/\*\*$/m,
+    'electron-builder.yml `files:` no longer lists dist/**, so dist/chrome/ is left out: the FileAnalyser 9.8 fault');
+});
+
+test('the builder names three files, each with the version', () => {
+  assert.deepEqual([...artifacts.keys()].sort(), ['appImage', 'dmg', 'nsis'],
+    'artifactName lines found under other keys - has electron-builder.yml been reshaped?');
+  for (const [key, name] of artifacts) {
+    assert.match(name, /^mbrd-[\w-]+-\$\{version\}\.\$\{ext\}$/, `${key}: ${name} does not end in -\${version}.\${ext}`);
+  }
+});
+
+test('the updaters find the files the builder names', () => {
+  const installer = exportedPattern('INSTALLER_ASSET');
+  const appImage = exportedPattern('APPIMAGE_ASSET');
+  assert.match(sample('nsis'), installer, 'desktop/updates.ts would not find the Windows installer in a release');
+  assert.match(sample('appImage'), appImage, 'desktop/updates.ts would not find the AppImage in a release');
+  // And each finds only its own: the release also carries the other systems and the source zip.
+  for (const other of [sample('dmg'), sample('appImage'), 'mbrd-source-0.302.0.zip']) {
+    assert.doesNotMatch(other, installer, `INSTALLER_ASSET also matches ${other}`);
+  }
+  for (const other of [sample('dmg'), sample('nsis'), 'mbrd-source-0.302.0.zip']) {
+    assert.doesNotMatch(other, appImage, `APPIMAGE_ASSET also matches ${other}`);
+  }
+});
+
+test('the Android updater finds the APK', { skip: 'MbrdUpdate.java arrives in group O of research/apps-tasks-2026-09-13.md' }, () => {});
+
+test('electron-builder writes no update file and publishes nothing', () => {
+  // updates.ts reads GitHub's API. Without `publish: null` electron-builder infers
+  // a GitHub target from the git remote and writes latest*.yml anyway.
+  assert.match(builder, /^publish: null\s*$/m, 'electron-builder.yml has no top-level `publish: null`');
+});

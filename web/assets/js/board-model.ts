@@ -8,7 +8,7 @@
 export type ItemType =
   | 'image' | 'video' | 'audio' | 'note' | 'link' | 'text' | 'model'
   | 'title' | 'ghost' | 'swatch' | 'sticker' | 'fence' | 'style-tile'
-  | 'gone' | 'generic';
+  | 'font' | 'gone' | 'generic';
 
 // Second arm is the reserved link-instead-of-embed form (no local bytes).
 export type ItemAsset =

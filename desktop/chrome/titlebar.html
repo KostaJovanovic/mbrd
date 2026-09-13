@@ -1,0 +1,22 @@
+<!doctype html>
+<!--
+  The desktop window's title bar. This page is the window's own web contents,
+  and the board runs in a view parked below it, so the board's viewport starts
+  under the bar for real. Served under /__chrome/ on the app's origin, so it
+  shares tokens.css, the fonts and the saved look with the board. Not part of
+  web/. No inline script and no inline style: the CSP from web/_headers
+  applies here as on every other page.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>mbrd</title>
+<script src="/__chrome/look.js"></script>
+<link rel="stylesheet" href="/assets/css/fonts.css">
+<link rel="stylesheet" href="/assets/css/tokens.css">
+<link rel="stylesheet" href="/__chrome/titlebar.css">
+</head>
+<body>
+<script src="/__chrome/titlebar.js"></script>
+</body>
+</html>

@@ -12,7 +12,7 @@ import { TOKENS, safeVars } from '../web/assets/js/ui/look.ts';
 import {
   PALETTE_TOKENS, TYPOGRAPHY_TOKENS, AXIS_TOKENS,
 } from '../web/assets/js/layout-settings.ts';
-import { WEB, read } from './helpers.js';
+import { ROOT, WEB, read } from './helpers.js';
 
 /**
  * tokens.css down to the point where it stops describing the look.
@@ -248,6 +248,22 @@ test('the anti-flash guard holds whimsy and palette to their shapes too', () => 
   // WHIMSY - a fourth stop is where the two would disagree.
   const stops = look.match(/WHIMSY = \[([^\]]*)\]/)[1].split(',').length;
   assert.equal(stops, 3, `WHIMSY has ${stops} stops - the inline /^[0-2]$/ no longer covers it`);
+});
+
+test('the desktop title bar puts on the look by the same rules', () => {
+  // desktop/chrome/look.ts is the third copy. The bar is its own page, so the
+  // pre-paint script never runs there. It imports the token filter from
+  // ui/look.ts, and web/ exports no reader for the other three, so it writes
+  // those checks out, and this holds them to index.html's.
+  const html = read(join(WEB, 'index.html'));
+  const bar = read(join(ROOT, 'desktop', 'chrome', 'look.ts'));
+
+  assert.match(bar, /import \{ safeVars \} from '\.\.\/\.\.\/web\/assets\/js\/ui\/look\.ts';/,
+    'the bar no longer takes the token filter from ui/look.ts');
+  for (const src of ['/^[0-2]$/', '/^[a-z0-9-]{1,24}$/i', '/^(light|balanced|full)$/']) {
+    assert.ok(html.includes(src), `index.html's pre-paint script lost ${src} - update the bar too`);
+    assert.ok(bar.includes(src), `desktop/chrome/look.ts does not check with ${src} as index.html does`);
+  }
 });
 
 test('the appearance panel no longer builds a density slider', () => {

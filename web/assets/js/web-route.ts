@@ -24,6 +24,11 @@ export type RouteOpts = {
   fromSlot?: Slot,
   toSlot?: Slot,
   avoid?: Point[][],
+  // Force the departure/arrival face instead of the dominant-axis one. The curve
+  // fallback routes once to learn which way the path really leaves each card, then
+  // re-routes with the matching face so the line meets it square, not grazing.
+  fromFace?: Side,
+  toFace?: Side,
 };
 
 /** Degrees to radians, for the one place here that needs the card's own frame. */
@@ -46,6 +51,13 @@ export const STUB = 20;
  *  drag preview (straightSeg in canvas/web.ts) draw the same curve. */
 export const DRAG_HANDLE = 0.4;
 
+/** Absolute cap on a direct Softish bow, in world units. The handle is otherwise
+ *  DRAG_HANDLE·distance with no ceiling, so a long connection bows by hundreds of
+ *  pixels and sweeps a vast arc far outside every card. Capped, a long line that
+ *  cannot bow around cleanly falls to a tight routed detour that hugs the cards
+ *  instead. Short and medium lines keep the full DRAG_HANDLE bow. */
+export const HANDLE_MAX = 150;
+
 /** Absolute cap on a routed spline's interior corner rounding. Catmull-Rom
  *  handles otherwise scale with leg length, so a long detour leg rounds its
  *  corner by a hundred pixels and cuts straight through the card it routed
@@ -54,6 +66,14 @@ const CORNER_ROUND = 24;
 /** A routed end may reach a little further than a corner for a clean, flowing
  *  perpendicular exit from the card face. */
 const END_ROUND = 44;
+/** Ceiling on an *open-space* corner. A go-around that clears the card cloud has
+ *  room to sweep, so its corner rounds far past CORNER_ROUND into a smooth arc
+ *  rather than a stiff right angle — but never unbounded, or a lone long leg
+ *  would bow into a balloon. curveLegs still holds every corner to leg/3. */
+const MAX_CORNER_ROUND = 170;
+/** Slack the routed curve must keep off a card, so the drawing layer's stricter
+ *  zero-margin graze test still passes what the router cleared here. */
+const CLIP_MARGIN = 4;
 
 /** Fraction of face the fan of arriving lines may spread across. */
 const SPREAD = 0.66;
@@ -68,8 +88,11 @@ export const TURN_COST = 60;
 /** Running along an existing line costs this multiple of distance. Crossings are free. */
 export const OVERLAP_COST = 4;
 
-/** Max full A* searches during face escalation (cheap L is tried on all 16 pairs). */
-const MAX_FACE_SEARCHES = 6;
+/** Max full A* searches during face escalation (cheap L is tried on all 16 pairs).
+ *  High enough to reach every face pair at both pad levels: a card stacked on an
+ *  endpoint seals its near faces, and the clean route leaves from a far one, which
+ *  is late in the i+j ordering. Only genuinely hard routes ever reach this rung. */
+const MAX_FACE_SEARCHES = 30;
 
 /** Max obstacles per route. Past this, nearest are kept and the rest dropped. */
 export const MAX_OBSTACLES = 40;
@@ -114,6 +137,13 @@ function lattice(values: number[]) {
 type Side = 'x+' | 'x-' | 'y+' | 'y-';
 
 const OPPOSITE: Record<Side, Side> = { 'x+': 'x-', 'x-': 'x+', 'y+': 'y-', 'y-': 'y+' };
+
+/** The face whose outward normal a direction points along — its dominant axis. */
+function sideTowards(d: Point): Side {
+  return Math.abs(d.x) >= Math.abs(d.y)
+    ? (d.x >= 0 ? 'x+' : 'x-')
+    : (d.y >= 0 ? 'y+' : 'y-');
+}
 
 /** Anchor on a named face, spread by slot so multiple lines fan out. */
 function faceAnchor(from: Box, side: Side, slot: Slot = MIDDLE): Anchor {
@@ -224,7 +254,13 @@ export function intoMiddles(points: Point[], a: End, b: End): Point[] {
  *  only when every clearance rung and all sixteen face pairs failed and the route
  *  is the last-resort elbow that ignores obstacles: the two cards cannot be joined
  *  without crossing another, so the drawing layer draws nothing and badges it. */
-export type Route = { points: Point[], ends?: [Point, Point], blocked?: boolean };
+export type Route = {
+  points: Point[], ends?: [Point, Point], blocked?: boolean,
+  /** Per-point interior corner rounding cap (world units), one per `points`
+   *  entry. Absent → CORNER_ROUND everywhere (a direct bow needs none). Wide in
+   *  open space so a go-around sweeps, tight in a corridor so it stays clear. */
+  caps?: number[],
+};
 
 /** Route a connection around obstacles. Tries clearance rungs, face escalation,
  *  and falls back to an orthogonal elbow (goes behind cards, never a diagonal). */
@@ -245,8 +281,10 @@ export function routeConnection(
   // Four ways out of each end; other 15 pairs are escalation at the bottom.
   const as = anchorsFor(from, to, opts.fromSlot);
   const bs = anchorsFor(to, from, opts.toSlot);
-  const a = as[0];
-  const b = bs[0];
+  // Default to the dominant-axis face; honour a forced face when the caller has
+  // already learnt which way the route leaves (see the curve fallback re-route).
+  const a = opts.fromFace ? faceAnchor(from, opts.fromFace) : as[0];
+  const b = opts.toFace ? faceAnchor(to, opts.toFace) : bs[0];
 
   // Other lines already drawn (empty = no overlap avoidance).
   const avoid = segmentsOf(opts.avoid);
@@ -325,7 +363,7 @@ export function routeConnection(
     // 16-pair search below wants the *smallest* clearing handle instead, so a
     // forced dodge stays tight; here the eye wants the generous one.
     for (const s of [DRAG_HANDLE, 0.3, 0.2, 0.12, 0.08]) {
-      const h = s * natDist;
+      const h = Math.min(s * natDist, HANDLE_MAX);
       if (cubicClear(nat.a, nat.na, h, nat.b, nat.nb, h, nearMiss, ownEnds)) {
         return { points: [nat.a, nat.b],
           ends: [{ x: nat.na.x * h, y: nat.na.y * h }, { x: nat.nb.x * h, y: nat.nb.y * h }] };
@@ -346,10 +384,13 @@ export function routeConnection(
         const dist = Math.hypot(dx, dy) || 1;
         // The smallest handle that clears: a nearly-straight line arches barely,
         // never with a fixed fraction that loops a whole board for a 30px dodge.
+        // Capped absolutely (HANDLE_MAX) so a long pair cannot clear a card by
+        // sweeping a giant bow — it falls to the routed detour below instead.
         let h = 0;
         for (const s of [0.08, 0.14, 0.22, 0.32, 0.45]) {
-          if (cubicClear(ai.edge, dirA, s * dist, bj.edge, dirB, s * dist, avoid, ownEnds)) {
-            h = s * dist;
+          const hh = Math.min(s * dist, HANDLE_MAX);
+          if (cubicClear(ai.edge, dirA, hh, bj.edge, dirB, hh, avoid, ownEnds)) {
+            h = hh;
             break;
           }
         }
@@ -370,18 +411,33 @@ export function routeConnection(
     // No face pair draws a clear cubic: route orthogonally (it escalates faces on
     // its own), pull it straight, and take the exit normals from the route's ends.
     // Middle anchors here too, so the fallback also leaves from a face centre.
-    const orthRoute = routeConnection(from, to, obstacles,
-      { ...opts, shape: 'square', fromSlot: undefined, toSlot: undefined });
-    const orth = orthRoute.points;
-    // Pull at the full clearance, not the tighter PULL_CLEARANCE: straightening
-    // the path must not drag it back in to hug a card it was meant to keep off.
-    const pulled = orth.length <= 2 ? orth
-      : pull(orth, [...blocksOf(ordered, clearance, false), ...ends]);
-    const m = pulled.length;
     const dd = Math.hypot(to.x - from.x, to.y - from.y) || 1;
     const hh = 0.2 * dd;
-    const nA = unit(pulled[1].x - pulled[0].x, pulled[1].y - pulled[0].y);
-    const nB = unit(pulled[m - 2].x - pulled[m - 1].x, pulled[m - 2].y - pulled[m - 1].y);
+    // Route, pull straight, and read the direction the path leaves each end by.
+    const runOrth = (o: RouteOpts) => {
+      const r = routeConnection(from, to, obstacles, { ...opts, ...o, shape: 'square' });
+      const pts = r.points.length <= 2 ? r.points
+        : pull(r.points, [...blocksOf(ordered, clearance, false), ...ends]);
+      const k = pts.length;
+      return {
+        pts, blocked: r.blocked,
+        nA: unit(pts[1].x - pts[0].x, pts[1].y - pts[0].y),
+        nB: unit(pts[k - 2].x - pts[k - 1].x, pts[k - 2].y - pts[k - 1].y),
+      };
+    };
+    let route = runOrth({ fromSlot: undefined, toSlot: undefined });
+    // The default anchor is the dominant-axis face; if the path actually leaves by a
+    // different face, that face grazes (the line runs parallel to the side it joins).
+    // Re-route from the faces the path uses, so it meets each card square (~90 deg).
+    const defA = sideTowards(unit(a.edge.x - from.x, a.edge.y - from.y));
+    const defB = sideTowards(unit(b.edge.x - to.x, b.edge.y - to.y));
+    const wantA = sideTowards(route.nA), wantB = sideTowards(route.nB);
+    if (!route.blocked && (wantA !== defA || wantB !== defB)) {
+      const re = runOrth({ fromFace: wantA, toFace: wantB, fromSlot: undefined, toSlot: undefined });
+      if (!re.blocked && re.pts.length >= 2) route = re;
+    }
+    const pulled = route.pts;
+    const nA = route.nA, nB = route.nB;
     // Inherit the orthogonal route's verdict: if even it could only give the
     // obstacle-ignoring elbow, this curve cannot be drawn clear either.
     const ends2: [Point, Point] = [{ x: nA.x * hh, y: nA.y * hh }, { x: nB.x * hh, y: nB.y * hh }];
@@ -391,15 +447,35 @@ export function routeConnection(
     // curve — the very geometry curveData/curvePoints render — and if it crosses a
     // card body, this pair cannot be drawn clear: block it and badge it, never draw
     // a line through a card.
-    let blocked = orthRoute.blocked;
-    if (!blocked) {
-      const bodies = blocksAt(0, false);
-      const drawn = curvePoints(pulled, ends2);
+    const bodies = blocksAt(0, false);
+    // Bodies grown by a hair for the clip test, so a curve that JUST clears keeps a
+    // sliver of gap. The drawing layer re-checks against the zero-margin body and
+    // counts a graze as a hit; matching it here stops a routable pair vanishing
+    // there after the router passed it.
+    const clipBodies = blocksAt(CLIP_MARGIN, false);
+    // How far each interior corner may round before it would reach a card: the
+    // gap to the nearest body, less the clearance the arc must keep off it. Wide
+    // in the open (a sweep), tight in a corridor. Ends stay on their normals.
+    let caps = cornerCaps(pulled, bodies);
+    const clips = (cs: number[]) => {
+      const drawn = curvePoints(pulled, ends2, cs);
       for (let i = 1; i < drawn.length; i++) {
-        if (crosses(drawn[i - 1], drawn[i], bodies)) { blocked = true; break; }
+        if (crosses(drawn[i - 1], drawn[i], clipBodies)) return true;
+      }
+      return false;
+    };
+    // The orthogonal path clears every card, but the SPLINE through it can round a
+    // corner into a body the path went around. Tighten the rounding and retry — a
+    // routable pair draws a plainer curve rather than vanishing. Block only when
+    // even the tightest rounding still crosses (or the orthogonal path was blocked).
+    let blocked = route.blocked;
+    if (!blocked) {
+      for (let tries = 0; clips(caps); tries++) {
+        if (tries >= 5) { blocked = true; break; }
+        caps = caps.map(c => Math.max(2, c * 0.5));
       }
     }
-    return { points: pulled, ends: ends2, blocked };
+    return { points: pulled, ends: ends2, blocked, caps };
   }
 
   // Orthogonal best-face selection (Middle and Harsh): any side may meet any side.
@@ -448,15 +524,34 @@ export function routeConnection(
 
   const attempt = (pool: Bounds[], a: Anchor, b: Anchor) => {
     // End cards' edges in the lattice too — lets routes escape under overlapping cards.
+    // An outer lane, one clearance+stub beyond the whole obstacle span, so a route
+    // can travel AROUND a dense cluster whose cards overlap and leave no corridor.
     let all = [...pool, ...ends];
-    let xs = lattice([a.edge.x, a.stub.x, b.edge.x, b.stub.x, ...all.flatMap(k => [k.x0, k.x1])]);
-    let ys = lattice([a.edge.y, a.stub.y, b.edge.y, b.stub.y, ...all.flatMap(k => [k.y0, k.y1])]);
+    const M = clearance + STUB;
+    const bounds = () => {
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (const k of all) {
+        if (k.x0 < x0) x0 = k.x0;
+        if (k.x1 > x1) x1 = k.x1;
+        if (k.y0 < y0) y0 = k.y0;
+        if (k.y1 > y1) y1 = k.y1;
+      }
+      return { x0, x1, y0, y1 };
+    };
+    const make = () => {
+      const bb = bounds();
+      xs = lattice([a.edge.x, a.stub.x, b.edge.x, b.stub.x, bb.x0 - M, bb.x1 + M,
+        ...all.flatMap(k => [k.x0, k.x1])]);
+      ys = lattice([a.edge.y, a.stub.y, b.edge.y, b.stub.y, bb.y0 - M, bb.y1 + M,
+        ...all.flatMap(k => [k.y0, k.y1])]);
+    };
+    let xs: number[] = [], ys: number[] = [];
+    make();
     // Too big → shed furthest cards rather than give up.
     while (xs.length * ys.length > MAX_NODES && pool.length) {
       pool = pool.slice(0, pool.length - 1);
       all = [...pool, ...ends];
-      xs = lattice([a.edge.x, a.stub.x, b.edge.x, b.stub.x, ...all.flatMap(k => [k.x0, k.x1])]);
-      ys = lattice([a.edge.y, a.stub.y, b.edge.y, b.stub.y, ...all.flatMap(k => [k.y0, k.y1])]);
+      make();
     }
     if (xs.length * ys.length > MAX_NODES) return null;
 
@@ -482,15 +577,12 @@ export function routeConnection(
     const got = attempt(pool, a, b);
     if (got) return done(got.points, ordered, pad, snap);
   }
-  // Filter cards, not blocks — done() rebuilds blocks at its own margin.
-  const uncovered = ordered.filter(it => !overlapsEnd(blockOf(it)));
-  if (uncovered.length !== ordered.length) {
-    const got = attempt(blocksOf(uncovered, 0, false), a, b);
-    if (got) return done(got.points, uncovered, 0, false);
-  }
 
   // Rung five: the other fifteen ways out, ordered by `i + j` so giving up
-  // one end's preferred face is tried before giving up both.
+  // one end's preferred face is tried before giving up both. Keeps every card —
+  // a clean route around a card stacked on the endpoint (out of its far face)
+  // is found here, and must be tried BEFORE the uncovered rung below, which would
+  // otherwise route straight through that card the moment it is removed.
   const pairs: [number, number][] = [];
   for (let sum = 1; sum <= 6; sum++) {
     for (let i = 0; i < 4; i++) {
@@ -515,6 +607,15 @@ export function routeConnection(
       const got = attempt(pool, as[i], bs[j]);
       if (got) return done(got.points, ordered, pad, snap);
     }
+  }
+
+  // Last resort before giving up: drop cards that overlap an endpoint (a card
+  // stacked on your own card cannot be avoided) and route out from under them.
+  // After the face search, so a genuine way around is always preferred.
+  const uncovered = ordered.filter(it => !overlapsEnd(blockOf(it)));
+  if (uncovered.length !== ordered.length) {
+    const got = attempt(blocksOf(uncovered, 0, false), a, b);
+    if (got) return done(got.points, uncovered, 0, false);
   }
 
   // Even the elbow gets the taut pass — a straight run between its corners may be clear.
@@ -786,10 +887,11 @@ function walkBack(xs: number[], ys: number[], W: number, from: Int32Array, end: 
 /** SVG `d` for a routed path. Radius clamped to half the shorter run at each corner. */
 export function pathData(
   points: Point[], radius = 0, dx = 0, dy = 0, curve = false, ends?: [Point, Point],
+  caps?: number[],
 ) {
   if (!points.length) return '';
   const at = (p: Point) => `${(p.x - dx).toFixed(2)} ${(p.y - dy).toFixed(2)}`;
-  if (curve && points.length >= 2) return curveData(points, at, ends);
+  if (curve && points.length >= 2) return curveData(points, at, ends, caps);
   if (points.length < 3 || radius <= 0) {
     return 'M' + points.map(at).join('L');
   }
@@ -859,18 +961,43 @@ function axisHandle(from: Point, toward: Point, h: number): Point {
 /** One cubic leg of the Softish spline: two controls and the point it ends on. */
 type Leg = { c1: Point, c2: Point, p: Point };
 
+/** Shortest distance from a point to a block, 0 if inside. */
+function distToBlock(p: Point, b: Bounds): number {
+  const dx = Math.max(b.x0 - p.x, 0, p.x - b.x1);
+  const dy = Math.max(b.y0 - p.y, 0, p.y - b.y1);
+  return Math.hypot(dx, dy);
+}
+
+/** Per-corner rounding room: how far each interior point may round before its arc
+ *  reaches a card. The gap to the nearest body less the clearance the arc keeps
+ *  off it, floored at CORNER_ROUND (never tighter than today) and ceiled at
+ *  MAX_CORNER_ROUND (never a balloon). Endpoints get 0 — their exit is the normal. */
+function cornerCaps(points: Point[], bodies: Bounds[]): number[] {
+  return points.map((p, i) => {
+    if (i === 0 || i === points.length - 1) return 0;
+    let near = Infinity;
+    for (const b of bodies) near = Math.min(near, distToBlock(p, b));
+    const room = near - CLEARANCE;
+    return Math.max(CORNER_ROUND, Math.min(MAX_CORNER_ROUND, room));
+  });
+}
+
 /** The Softish line as cubic legs, so the drawing (curveData) and the hit test
  *  (curvePoints) are the same curve. `ends` carries each card's outward face
  *  normal (see portDir), so the exit is perpendicular to the face the router
  *  chose, not guessed from the offset. Two points make one node-editor S — level
  *  ends collapse to a straight line, offset ends bow smoothly. A routed detour
- *  (three points or more) is a Catmull-Rom spline, its interior handles capped at
- *  a third of each leg so a bend rounds without bulging back through a card, its
- *  two ends held to the normals. */
-function curveLegs(points: Point[], ends?: [Point, Point]): { start: Point, legs: Leg[] } {
+ *  (three points or more) rounds every corner with a fillet tangent to both legs
+ *  (no overshoot), its two ends leaving along the chosen face normals. */
+function curveLegs(
+  points: Point[], ends?: [Point, Point], caps?: number[],
+): { start: Point, legs: Leg[] } {
   const n = points.length;
   const start = points[0];
   if (n < 2) return { start, legs: [] };
+  // Corner rounding cap at point i: the router's per-corner room where it gave
+  // one, else the flat CORNER_ROUND. curveLegs still holds each to leg/3 below.
+  const capAt = (i: number) => caps?.[i] ?? CORNER_ROUND;
   // `t0`/`tN` are handle *vectors* (direction and length), the router's choice.
   const t0 = ends?.[0], tN = ends?.[1];
   if (n === 2) {
@@ -885,30 +1012,91 @@ function curveLegs(points: Point[], ends?: [Point, Point]): { start: Point, legs
     const h = (Math.hypot(p1.x - p0.x, p1.y - p0.y) || 1) * 0.4;
     return { start, legs: [{ c1: axisHandle(p0, p1, h), c2: axisHandle(p1, p0, h), p: p1 }] };
   }
-  const legs: Leg[] = [];
-  for (let i = 0; i < n - 1; i++) {
-    const p0 = points[i - 1] ?? points[i];
-    const p1 = points[i];
-    const p2 = points[i + 1];
-    const p3 = points[i + 2] ?? p2;
-    const leg = Math.hypot(p2.x - p1.x, p2.y - p1.y) || 1;
-    // Corners capped absolutely so a long leg still turns tightly; ends allowed a
-    // little more room for a flowing perpendicular exit. Both also held to a third
-    // of the leg, so a short leg does not overshoot either.
-    const midCap = Math.min(leg / 3, CORNER_ROUND);
-    const endCap = Math.min(leg / 3, END_ROUND);
-    // A routed end uses its handle vector; the interior is plain Catmull-Rom.
-    const c1 = i === 0 && t0 ? clampHandle(p1, t0, endCap) : catmull(p1, p0, p2, midCap);
-    const c2 = i === n - 2 && tN ? clampHandle(p2, tN, endCap) : catmull(p2, p3, p1, midCap);
-    legs.push({ c1, c2, p: p2 });
+  const dir = (a: Point, b: Point) => unit(b.x - a.x, b.y - a.y);
+  const len = (a: Point, b: Point) => Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  // Prune interior points that do not really turn, so a stub that continues
+  // straight into a long run is ONE leg. The true corner then rounds, and a long
+  // straight departure can curve from the card (its leg carries no competing
+  // fillet) instead of leaving the stiff vertical stub the eye reads as a wire.
+  const P: Point[] = [points[0]];
+  const C: number[] = [capAt(0)];
+  for (let i = 1; i < n - 1; i++) {
+    const a = P[P.length - 1], mid = points[i], c = points[i + 1];
+    const d1 = dir(a, mid), d2 = dir(mid, c);
+    if (d1.x * d2.x + d1.y * d2.y < 0.999) { P.push(mid); C.push(capAt(i)); }
   }
+  P.push(points[n - 1]); C.push(capAt(n - 1));
+  const m = P.length;
+  if (m === 2) {
+    // Every interior point was collinear — a straight run, one cubic still leaving
+    // and entering along the chosen face normals.
+    const p0 = P[0], p1 = P[1];
+    if (t0 && tN) return { start, legs: [{
+      c1: { x: p0.x + t0.x, y: p0.y + t0.y }, c2: { x: p1.x + tN.x, y: p1.y + tN.y }, p: p1 }] };
+    const h = len(p0, p1) * 0.4;
+    return { start, legs: [{ c1: axisHandle(p0, p1, h), c2: axisHandle(p1, p0, h), p: p1 }] };
+  }
+  // Routed detour: round every corner with a cubic fillet tangent to both legs, its
+  // controls kept INSIDE the corner so the curve never overshoots (the Catmull-Rom
+  // it replaced bulged past the corner and read as a kink). The radius is the
+  // corner's clearance room, shared with the neighbouring corner on a leg so two
+  // fillets never overlap. An end leg has no fillet at the card, so its corner may
+  // round across the whole leg — that is what curves a long straight departure into
+  // its turn. Wide in the open, the fillets swallow the straight runs into one
+  // flowing curve; tight in a corridor, they stay small — smooth either way.
+  const K = 0.55; // control arm as a fraction of the radius — a near-circular arc.
+  const R: number[] = Array.from({ length: m }, () => 0);
+  for (let i = 1; i < m - 1; i++) R[i] = Math.min(C[i], MAX_CORNER_ROUND);
+  R[1] = Math.min(R[1], len(P[0], P[1]));
+  R[m - 2] = Math.min(R[m - 2], len(P[m - 2], P[m - 1]));
+  for (let i = 1; i < m - 2; i++) {
+    const L = len(P[i], P[i + 1]);
+    if (R[i] + R[i + 1] > L) { const f = L / (R[i] + R[i + 1]); R[i] *= f; R[i + 1] *= f; }
+  }
+  const legs: Leg[] = [];
+  let cur = P[0];                                             // where the pen sits
+  let outTan = t0 ? unit(t0.x, t0.y) : dir(P[0], P[1]);
+  for (let i = 1; i < m - 1; i++) {
+    const here = P[i];
+    const inD = dir(P[i - 1], here), outD = dir(here, P[i + 1]);
+    const r = R[i];
+    const tin = { x: here.x - inD.x * r, y: here.y - inD.y * r };
+    const tout = { x: here.x + outD.x * r, y: here.y + outD.y * r };
+    // Run from the pen to the corner's entry, leaving along outTan, arriving along
+    // the incoming leg. Skipped when the fillet already reaches the pen.
+    const run = len(cur, tin);
+    if (run > 1) legs.push({
+      c1: { x: cur.x + outTan.x * run * 0.4, y: cur.y + outTan.y * run * 0.4 },
+      c2: { x: tin.x - inD.x * run * 0.4, y: tin.y - inD.y * run * 0.4 },
+      p: tin,
+    });
+    // The fillet: tangent to the incoming leg at tin, the outgoing at tout.
+    legs.push({
+      c1: { x: tin.x + inD.x * r * K, y: tin.y + inD.y * r * K },
+      c2: { x: tout.x - outD.x * r * K, y: tout.y - outD.y * r * K },
+      p: tout,
+    });
+    cur = tout;
+    outTan = outD;
+  }
+  // Final run to the last point, arriving along its face normal (tN) if given.
+  const last = P[m - 1];
+  const tail = len(cur, last);
+  if (tail > 1) legs.push({
+    c1: { x: cur.x + outTan.x * tail * 0.4, y: cur.y + outTan.y * tail * 0.4 },
+    c2: tN ? clampHandle(last, tN, Math.max(tail * 0.4, END_ROUND))
+           : { x: last.x - outTan.x * tail * 0.4, y: last.y - outTan.y * tail * 0.4 },
+    p: last,
+  });
   return { start, legs };
 }
 
 /** SVG `d` for the Softish spline. */
-function curveData(points: Point[], at: (p: Point) => string, ends?: [Point, Point]) {
+function curveData(
+  points: Point[], at: (p: Point) => string, ends?: [Point, Point], caps?: number[],
+) {
   if (points.length < 2) return 'M' + at(points[0]);
-  const { start, legs } = curveLegs(points, ends);
+  const { start, legs } = curveLegs(points, ends, caps);
   let d = 'M' + at(start);
   for (const l of legs) d += 'C' + at(l.c1) + ' ' + at(l.c2) + ' ' + at(l.p);
   return d;
@@ -916,9 +1104,11 @@ function curveData(points: Point[], at: (p: Point) => string, ends?: [Point, Poi
 
 /** The Softish spline sampled into a polyline — the geometry the hit test walks,
  *  so the hitbox follows the drawn curve, not the chord under it. */
-export function curvePoints(points: Point[], ends?: [Point, Point], steps = 12): Point[] {
+export function curvePoints(
+  points: Point[], ends?: [Point, Point], caps?: number[], steps = 12,
+): Point[] {
   if (points.length < 2) return points.slice();
-  const { start, legs } = curveLegs(points, ends);
+  const { start, legs } = curveLegs(points, ends, caps);
   const out: Point[] = [start];
   let prev = start;
   for (const l of legs) {
@@ -933,15 +1123,6 @@ function clampHandle(p: Point, v: Point, cap: number): Point {
   const l = Math.hypot(v.x, v.y) || 1;
   const s = Math.min(1, cap / l);
   return { x: p.x + v.x * s, y: p.y + v.y * s };
-}
-
-/** One Catmull-Rom control point: `h` from `here` toward `next`, along the line
- *  through its two neighbours, capped so a sharp bend cannot overshoot. */
-function catmull(here: Point, prev: Point, next: Point, cap: number): Point {
-  const vx = next.x - prev.x, vy = next.y - prev.y;
-  const l = Math.hypot(vx, vy) || 1;
-  const h = Math.min(l / 6, cap) / l;
-  return { x: here.x + vx * h, y: here.y + vy * h };
 }
 
 /** `r` world units from `p` towards `q`. */

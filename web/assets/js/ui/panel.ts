@@ -602,15 +602,14 @@ function paintControl({ c: spec, owner, wrap, input, out, nodes }: Built, c: Ctx
   // The list before the value, so a select whose options depend on layout
   // has somewhere to put the value it's about to get - refilling clears the
   // selection, so this can't happen the other way round.
-  //
-  // SAFETY: `input` and `spec` were paired when the row was built - a
-  // 'select' spec got a <select> from buildSelect(), a 'check' got an
-  // <input>. The discriminant test on each line picks the branch.
   if (spec.type === 'select') {
+    // SAFETY: `input` and `spec` were paired when the row was built, and buildSelect()
+    // gave a 'select' spec its <select>. The discriminant test above picks the branch.
     fillSelect(spec, input as HTMLSelectElement, c);
   }
   const value = spec.get();
   if (spec.type === 'check') {
+    // SAFETY: as above - buildCheck() gave a 'check' spec its <input>.
     (input as HTMLInputElement).checked = !!value;
   } else if (spec.type === 'range') { input.value = String(value); writeOut(spec, input, out); }
   else input.value = String(value ?? '');

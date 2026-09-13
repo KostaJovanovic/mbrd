@@ -147,6 +147,7 @@ export function initPlaylist(_viewport: Viewport | null, _commands: PlaylistComm
 
 function orderedAudio(): Item[] {
   const audio = board.items.filter(it => it.type === 'audio');
+  // SAFETY: every order in mobileOrder() returns the same objects it was given, so these are still Items.
   return applyAudioOrder(
     mobileOrder(audio, { name: board.arrangement }) as Item[], board.audioOrder);
 }
@@ -454,6 +455,7 @@ function beginDrag(e: PointerEvent, view: View, r: Row) {
   e.preventDefault();
   drag = { view, rowEl: r.el, pointerId: e.pointerId, mids: null, ref: undefined };
   r.el.classList.add('is-dragging');
+  // SAFETY: beginDrag is only called from the grip's pointerdown listener, a <button> built above.
   const grip = e.currentTarget as HTMLElement;
   grip.setPointerCapture?.(e.pointerId);
   grip.addEventListener('pointermove', onDragMove);
@@ -490,6 +492,7 @@ function onDragMove(e: PointerEvent) {
 
 function endDrag(e: PointerEvent) {
   if (!drag) return;
+  // SAFETY: endDrag is only added as a listener on the grip, in beginDrag().
   const grip = e.currentTarget as HTMLElement;
   drag.rowEl.classList.remove('is-dragging');
   grip.releasePointerCapture?.(e.pointerId);

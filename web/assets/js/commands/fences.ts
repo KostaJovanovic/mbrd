@@ -107,6 +107,7 @@ export function fenceCommands() {
     /** The innermost fence containing this point, or null. */
     fenceUnder: (at: { x: number; y: number }) => {
       if (board.layoutMode === 'mobile') return null;
+      // SAFETY: fenceAt() returns Item | null, and every Item has the id and box that Boxed names.
       return (fenceAt(at.x, at.y) as Boxed | null)?.id ?? null;
     },
 

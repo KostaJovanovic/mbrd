@@ -16,6 +16,7 @@ rem fail the save.
 
 set FORCE_MODE=0
 set COMMIT_ONLY=0
+set RELEASE_MODE=0
 set ACTION=%~1
 
 rem The branch that is actually checked out.
@@ -39,6 +40,7 @@ if /i "%ACTION%"=="--force"   (set "FORCE_MODE=1" & set "ACTION=save")
 if /i "%ACTION%"=="commit"    (set "COMMIT_ONLY=1" & set "ACTION=save")
 if /i "%ACTION%"=="--commit"  (set "COMMIT_ONLY=1" & set "ACTION=save")
 if /i "%ACTION%"=="--no-push" (set "COMMIT_ONLY=1" & set "ACTION=save")
+if /i "%ACTION%"=="release"   (set "RELEASE_MODE=1" & set "ACTION=save")
 if /i "%ACTION%"=="save"   goto checkrepo
 if /i "%ACTION%"=="push"    goto push
 if /i "%ACTION%"=="pull"    goto pull
@@ -47,19 +49,21 @@ if /i "%ACTION%"=="pull"    goto pull
 echo.
 echo === git ===
 echo.
-echo   1  save     add + commit + push
-echo   2  commit   add + commit, no push
-echo   3  push     push current branch
-echo   4  pull     pull current branch
-echo   5  quit
+echo   1  release  add + commit + push, then build and publish the apps on GitHub
+echo   2  save     add + commit + push
+echo   3  commit   add + commit, no push
+echo   4  push     push current branch
+echo   5  pull     pull current branch
+echo   6  quit
 echo.
-set /p CHOICE=select [1-5]:
-if "%CHOICE%"=="1" goto checkrepo
-rem Quoted, for the reason the four lines above the menu give.
-if "%CHOICE%"=="2" (set "COMMIT_ONLY=1" & goto checkrepo)
-if "%CHOICE%"=="3" goto push
-if "%CHOICE%"=="4" goto pull
-if "%CHOICE%"=="5" exit /b 0
+set /p CHOICE=select [1-6]:
+rem Quoted, for the reason the lines above the menu give.
+if "%CHOICE%"=="1" (set "RELEASE_MODE=1" & goto checkrepo)
+if "%CHOICE%"=="2" goto checkrepo
+if "%CHOICE%"=="3" (set "COMMIT_ONLY=1" & goto checkrepo)
+if "%CHOICE%"=="4" goto push
+if "%CHOICE%"=="5" goto pull
+if "%CHOICE%"=="6" exit /b 0
 echo [err]  invalid choice
 goto menu
 
@@ -112,9 +116,22 @@ if defined UNMERGED (
   goto end
 )
 
-for /f %%i in ('git rev-list --count HEAD 2^>nul') do set COMMIT_COUNT=%%i
-if not defined COMMIT_COUNT set COMMIT_COUNT=0
+rem The counter is the project's, not this clone's. It used to be
+rem `git rev-list --count HEAD`, which is a property of the local history: a
+rem squash, a fresh init or a shallow clone collapses it. FileAnalyser lost its
+rem version that way - rev-list returned 1 and 8.14 became 0.02. The Android
+rem app makes it worse: its versionCode is this number, and Android refuses an
+rem update whose versionCode does not grow, so a count that falls strands every
+rem installed copy.
+rem
+rem So read the committed value out of version.js, which every clone shares,
+rem and ABORT when it cannot be read. This runs before either stamp below, so a
+rem refused save leaves the tree as it found it.
+set COMMIT_COUNT=
+for /f %%i in ('powershell -NoProfile -Command "$m=[regex]::Match((Get-Content 'web/assets/js/version.js' -Raw -Encoding UTF8),'export const COMMIT_COUNT = (\d+);'); if($m.Success){$m.Groups[1].Value}"') do set COMMIT_COUNT=%%i
+if not defined COMMIT_COUNT goto countfail
 set /a NEXT_COUNT=%COMMIT_COUNT%+1
+if %NEXT_COUNT% LEQ %COMMIT_COUNT% goto countfail
 
 rem Version label mirrors versionLabel() in web/assets/js/version.js. RELEASES is
 rem the list of commits crowned as major releases - keep it in sync with
@@ -229,6 +246,7 @@ if "%REMOTE%"=="" (
   echo.
   echo [git]  committed v%VERLABEL% - no remote configured, nothing pushed
   echo        add one with: git remote add origin ^<url^>
+  if "%RELEASE_MODE%"=="1" echo [warn] nothing was pushed, so no release was started
   goto end
 )
 
@@ -290,17 +308,43 @@ git push %REMOTE% %BRANCH% --force-with-lease
 if errorlevel 1 set SAVE_ERROR=1
 echo.
 echo [git]  force pushed %REMOTE%/%BRANCH%
+if "%RELEASE_MODE%"=="1" if "%SAVE_ERROR%"=="0" call :runrelease
 goto end
 
 :pushed
 echo.
 echo [git]  pushed %REMOTE%/%BRANCH%
+if "%RELEASE_MODE%"=="1" call :runrelease
 goto end
 
 :skipped
 echo.
 echo [git]  push skipped
+if "%RELEASE_MODE%"=="1" echo [warn] nothing was pushed, so no release was started
 goto end
+
+rem Option 1 (`release`): start the "Release apps" workflow once the push is in.
+rem It builds Windows, macOS and Linux on GitHub and publishes one release in
+rem the public KostaJovanovic/mbrd-release (.github/workflows/release.yml), with
+rem the branch just pushed. It needs the GitHub CLI, logged in. Non-fatal: the
+rem commit and the push already happened, and the Actions tab can still start
+rem the workflow by hand.
+:runrelease
+where gh >nul 2>nul
+if errorlevel 1 goto releasenogh
+echo.
+echo [gh]   start Release apps for v%VERLABEL%
+gh workflow run release.yml -R KostaJovanovic/mbrd --ref %BRANCH% -f publish=true
+if errorlevel 1 goto releasefail
+echo [gh]   started - the release goes live when every build is done:
+echo        https://github.com/KostaJovanovic/mbrd/actions/workflows/release.yml
+exit /b 0
+:releasenogh
+echo [warn] gh, the GitHub CLI, is not installed - start Release apps from the Actions tab
+exit /b 0
+:releasefail
+echo [warn] gh could not start Release apps - is it logged in? Start it from the Actions tab
+exit /b 0
 
 :committed
 echo.
@@ -377,6 +421,15 @@ goto end
 :noremote
 echo.
 echo [err]  no remote configured - add one with: git remote add origin ^<url^>
+set SAVE_ERROR=1
+goto end
+
+:countfail
+echo.
+echo [err]  could not read COMMIT_COUNT from web/assets/js/version.js - not saving
+echo        expected a line of the form:  export const COMMIT_COUNT = 301;
+echo        refusing to guess: a wrong count sends the version backwards, and a
+echo        falling Android versionCode strands every installed copy.
 set SAVE_ERROR=1
 goto end
 

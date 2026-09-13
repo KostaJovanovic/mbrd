@@ -61,7 +61,10 @@ export function canvasBlocked(): void {
 
 // Catch async command rejections and toast them. Sync throws are left for the console.
 export function runCommand(result: unknown, what = 'That'): void {
+  // SAFETY: widens only to read .then. ?. covers null and undefined, and any other value can be read.
   if (typeof (result as { then?: unknown } | null)?.then !== 'function') return;
+  // SAFETY: the check above found a then(), and no module under web/assets/js defines
+  // one, so this is a native Promise with catch().
   (result as Promise<unknown>).catch((err: unknown) => {
     console.warn('[mbrd] command failed', err);
     toast(`${what} did not work`, 'error');

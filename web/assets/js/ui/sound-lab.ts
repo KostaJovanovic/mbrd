@@ -11,6 +11,7 @@ import { initCuelume, playRecipe, resetCueState, setSoundLevel } from '../cuelum
 
 /** Resolve a voice to a playable recipe, applying inversion if needed. */
 const recipeOf = (voice: Voice): SoundRecipe => {
+  // SAFETY: RECIPES `satisfies Record<string, SoundRecipe>`, so the cast only widens its `as const` literal.
   const recipe = RECIPES[voice.sound] as SoundRecipe;
   return voice.reverse ? invert(recipe) : recipe;
 };
@@ -61,6 +62,7 @@ function buildCues(): void {
 function buildPairs(): void {
   const row = host('pairs');
   row.replaceChildren();
+  // SAFETY: all six names are members of Cue (recipes.ts). The cast stops string[][] inference.
   for (const [up, down] of [['pick', 'tap'], ['on', 'off'], ['rise', 'fall']] as [Cue, Cue][]) {
     const button = el('button', '', `${up} → ${down}`);
     button.addEventListener('click', () => {
@@ -103,6 +105,7 @@ const FIELDS: { key: LayerNumberKey, min: number, max: number, step: number }[] 
 ];
 
 /** Deep-copied recipe under the sliders. RECIPES is frozen, so we clone. */
+// SAFETY: as in recipeOf() - RECIPES satisfies Record<string, SoundRecipe>.
 let draft: SoundRecipe = clone(RECIPES.chime as SoundRecipe);
 let draftName: SoundName = 'chime';
 let draftReversed = false;
@@ -110,6 +113,7 @@ let draftReversed = false;
 function clone(recipe: SoundRecipe): SoundRecipe {
   return {
     masterGain: recipe.masterGain,
+    // SAFETY: each element is a shallow copy of a SoundLayer, with the same fields.
     layers: recipe.layers.map(l => ({ ...l })) as SoundLayer[],
     ...(recipe.shimmer ? { shimmer: { ...recipe.shimmer } } : null),
   };
@@ -123,6 +127,7 @@ function buildPicker(): void {
     button.addEventListener('click', () => {
       draftName = name;
       draftReversed = false;
+      // SAFETY: as in recipeOf() - RECIPES satisfies Record<string, SoundRecipe>.
       draft = clone(RECIPES[name] as SoundRecipe);
       buildSliders();
       playRecipe(draft);
@@ -144,6 +149,7 @@ function buildSliders(): void {
   }));
 
   draft.layers.forEach((layer, i) => {
+    // SAFETY: the ternary tests layer.kind === 'tone' before it reads waveform.
     panel.append(el('div', 'sub', `layer ${i + 1} — ${layer.kind === 'tone' ? (layer as ToneLayer).waveform : layer.filterType + ' noise'}`));
     for (const field of FIELDS) {
       const bag: Partial<Record<LayerNumberKey, number>> = layer;

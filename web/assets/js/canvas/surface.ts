@@ -27,11 +27,11 @@ function withContext(
   opts: { alpha?: boolean },
 ): Surface | null {
   if (!canvas) return null;
-  // Cast: TS cannot narrow getContext across the union, but both return a
-  // compatible 2D context. Wrapped in try — some engines throw on unknown args.
+  // Wrapped in try — some engines throw on unknown args.
   let ctx: Surface['ctx'] | null = null;
   try {
-    // Same cast as above — union cannot be narrowed by the checker.
+    // SAFETY: tsc cannot narrow getContext() across the union. '2d' gives CanvasRenderingContext2D
+    // on an element and OffscreenCanvasRenderingContext2D on an OffscreenCanvas - the two arms of Surface['ctx'].
     ctx = canvas.getContext('2d', { alpha: opts.alpha !== false }) as Surface['ctx'] | null;
   } catch { /* the next canvas, or null */ }
   if (!ctx) return null;

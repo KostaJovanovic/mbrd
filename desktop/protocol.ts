@@ -1,7 +1,8 @@
 // Serve web/ over app://mbrd/ so <base href="/"> resolves correctly,
 // IndexedDB/workers get a real origin, and file:// quirks never apply.
 // CSP is read from web/_headers (one policy, two enforcers — no copy).
-// Path traversal is checked after resolve(); nothing outside web/ is served.
+// Path traversal is checked after resolve(); nothing outside web/ is served,
+// except the title bar's pages under /__chrome/, from an allow-list.
 
 import { app, protocol } from 'electron';
 import { readFile } from 'node:fs/promises';
@@ -13,8 +14,22 @@ import { log } from './log.ts';
 const HOST = 'mbrd';
 export const APP_ORIGIN = `app://${HOST}`;
 export const APP_INDEX = `${APP_ORIGIN}/index.html`;
-/** The changelog path. readPage() resolves this extensionless form to patch.html. */
-export const APP_PATCH = `${APP_ORIGIN}/patch`;
+
+/** The title bar's and the menu panel's pages (desktop/chrome/), built into
+ * dist/chrome/ beside main.js. On the app's own origin, so they share
+ * tokens.css, the fonts and localStorage with the board. Never part of web/. */
+const CHROME_PREFIX = '/__chrome/';
+export const APP_CHROME = `${APP_ORIGIN}${CHROME_PREFIX}`;
+/** An allow-list, not a path join, so this handler reads nothing else in dist/.
+ * chrome/preload.js is absent on purpose: Electron loads it by path. */
+export const CHROME_FILES = new Set([
+  'titlebar.html',
+  'titlebar.css',
+  'titlebar.js',
+  'panel.html',
+  'panel.js',
+  'look.js',
+]);
 
 /** Register the scheme before `ready`. `standard` gives it a real origin;
  * `secure` enables crypto.subtle; `supportFetchAPI` lets the page self-fetch. */
@@ -34,6 +49,9 @@ export function serveWeb(): void {
   protocol.handle('app', async request => {
     const url = new URL(request.url);
     if (url.hostname !== HOST) return new Response('Not found', { status: 404 });
+    if (url.pathname.startsWith(CHROME_PREFIX)) {
+      return serveChrome(url.pathname.slice(CHROME_PREFIX.length), policy.value);
+    }
 
     // Decode before containment check so percent-encoded separators cannot bypass it.
     let rel: string;
@@ -67,6 +85,21 @@ export function serveWeb(): void {
   });
 }
 
+/** A chrome page or script, under the same CSP as every other response. */
+async function serveChrome(name: string, csp: string): Promise<Response> {
+  if (!CHROME_FILES.has(name)) return new Response('Not found', { status: 404 });
+  let body: Buffer;
+  try {
+    body = await readFile(join(__dirname, 'chrome', name));
+  } catch (err) {
+    log('error', 'a chrome file is missing from dist/chrome', { name, err: String(err) });
+    return new Response('Not found', { status: 404 });
+  }
+  const headers = new Headers({ 'Content-Type': mimeOf(name) });
+  if (csp) headers.set('Content-Security-Policy', csp);
+  return new Response(new Uint8Array(body), { headers });
+}
+
 /** Read the file, trying extensionless-as-.html first (makes `/patch` work). */
 async function readPage(file: string): Promise<{ file: string, body: Buffer } | null> {
   const named = /\.[a-z0-9]+$/i.test(file);
@@ -92,6 +125,7 @@ function webRoot(): string {
 
 /** Parse the CSP and its exemptions from web/_headers (Cloudflare format). */
 function readPolicy(root: string): { value: string, exempt: string[] } {
+  // SAFETY: assertion prevents never[] inference from the empty literal.
   const empty = { value: '', exempt: [] as string[] };
   let text: string;
   try {

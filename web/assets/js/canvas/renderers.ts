@@ -160,6 +160,32 @@ function providerLogoMark(brand: Brand) {
   return box;
 }
 
+/**
+ * The specimen on a font card: one line, in the face itself, sized to fill the
+ * card. Drawn as SVG text and fitted with fitMark() the way the provider
+ * watermark is - but "meet", not "none", so the letters keep their true
+ * proportions instead of being stretched to the box. That is the whole point of
+ * a specimen: it has to show the face, not a distortion of it. No JS on resize
+ * or zoom - the viewBox scales with the element, so it fits at every size the
+ * grips and the board give it.
+ */
+function fontSpecimenMark(text: string, family: string) {
+  const box = document.createElement('div');
+  box.className = 'font-specimen';
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+  svg.setAttribute('aria-hidden', 'true');
+  const t = document.createElementNS(SVG_NS, 'text');
+  t.textContent = text;
+  // The registered face, set from script (a markup style attribute is barred by
+  // the CSP; this is not). The family is isFamily()-clean before it is stored.
+  if (family) t.style.fontFamily = `"${family}", system-ui, sans-serif`;
+  svg.append(t);
+  box.append(svg);
+  fitMark(svg, t);
+  return box;
+}
+
 // One offscreen 2D context for measuring the cap band; lazily made and guarded
 // so the module still loads where there is no canvas (a headless test).
 let markCtx: CanvasRenderingContext2D | null | undefined;
@@ -297,6 +323,12 @@ export function defaultSize(type: string): Size {
     // A colour and its number - sized like the note beside it, not like a
     // card with a body. Two grid spaces square plus the row the hex prints in.
     case 'swatch':  return { w: 128, h: 148 };
+    // A specimen of a dropped face. Landscape so a big "Aa" sits across the
+    // card with the family name beneath it - it is a look at the letterforms,
+    // not a thing with an aspect of its own. Born on the board, never dropped:
+    // classify() never returns 'font' (fonts are diverted to faces in drop.ts),
+    // so this box is reached only through addFontCard().
+    case 'font':    return { w: 200, h: 176 };
     // Four grid spaces wide, a little over five tall. Portrait: three bands
     // stacked (pictures, pigments, faces) each want the card's full width.
     case 'style-tile': return { w: 256, h: 328 };
@@ -1403,6 +1435,40 @@ const RENDERERS = {
   },
 
   /**
+   * A specimen of a face the board carries. Dropping a font registers it (a
+   * menu entry, in ui/fonts.ts) and, from the same place, drops this card so
+   * the letterforms are on the board rather than only in a menu.
+   *
+   * The family is read off asset.family - the name document.fonts was actually
+   * given, which uniqueFamily() may have numbered. The face itself is
+   * registered by ui/fonts.ts; this layer cannot reach it (canvas <- ui), so
+   * the specimen names the family and lets the cascade match it. It resolves
+   * when the face loads and repaints on its own - no listener here.
+   */
+  font(item: Item) {
+    const card = document.createElement('div');
+    card.className = 'card font-card';
+    const family = fontFamilyOf(item);
+    const custom = metaStr(item.meta?.text);
+    // The specimen spells the face's own name by default, or whatever the reader
+    // typed in its place. Double-click edits it (canvas/input.ts -> notes/font).
+    const specimenText = custom || family || titleOf(item);
+
+    card.append(fontSpecimenMark(specimenText, family));
+
+    // A caption naming the face - but only when the specimen is not already its
+    // name, or it would print the family twice. Not a .card-name: the family
+    // follows asset.family, not the item's editable title.
+    if (custom && family) {
+      const name = document.createElement('div');
+      name.className = 'font-name';
+      name.textContent = family;
+      card.append(name);
+    }
+    return card;
+  },
+
+  /**
    * The board's own look, as a card on the board: pictures, pigments, faces.
    *
    * This was a 1500x1000 canvas that you saved as a PNG. Making it a card
@@ -1883,6 +1949,15 @@ function isAnimated(item: Item) {
 function titleOf(item: Item) {
   const stem = baseName(item.name) || item.name || '';
   return stem.replace(/^[\s._-]+|[\s._-]+$/g, '') || stem || 'untitled';
+}
+
+/** The registered family a font card should paint in, or '' if it has none.
+ *  `'family' in` narrows off the reserved external-asset arm, which has no
+ *  family; the type guard covers a hand-edited .mbrd that wrote a non-string. */
+export function fontFamilyOf(item: Item): string {
+  const asset = item.asset;
+  if (asset && 'family' in asset && typeof asset.family === 'string') return asset.family;
+  return '';
 }
 
 function cardShell(item: Item, kind: string) {

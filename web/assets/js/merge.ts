@@ -57,6 +57,7 @@ export function planMerge(
     connections: incoming.connections
       .filter(c => arriving.has(c[0]) && arriving.has(c[1]))
       .map(c => {
+        // SAFETY: each branch rebuilds the arm c has - length > 2 means c[2] is its ConnMeta.
         return (c.length > 2
           ? [now(c[0]), now(c[1]), c[2]]
           : [now(c[0]), now(c[1])]) as Connection;

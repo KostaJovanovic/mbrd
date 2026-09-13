@@ -65,7 +65,8 @@ function build(): Rig | null {
   let gl: WebGLRenderingContext | null = null;
   try {
     const got = canvas.getContext('webgl', opts) || canvas.getContext('experimental-webgl', opts);
-    // 'experimental-webgl' returns RenderingContext, same interface as 'webgl'.
+    // SAFETY: 'experimental-webgl' is typed RenderingContext, but both context names give
+    // the one WebGLRenderingContext interface, or null.
     gl = got as WebGLRenderingContext | null;
   } catch {
     return null;

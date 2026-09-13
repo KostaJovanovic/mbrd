@@ -83,6 +83,7 @@ export function initSidebar(cmds: SidebarCommands): void {
   el('side-close')!.addEventListener('click', close);
 
   sidebar!.addEventListener('pointerdown', e => {
+    // SAFETY: the listener is on #sidebar, so the target is a node in it. begin() calls matches?.() optionally.
     sliderFocus.begin(e.target as Element | null, e.pointerId);
   });
   const endSliderFocus = (e: PointerEvent) => sliderFocus.end(e.pointerId);
@@ -91,6 +92,7 @@ export function initSidebar(cmds: SidebarCommands): void {
   sidebar!.addEventListener('lostpointercapture', endSliderFocus, true);
 
   sidebar!.addEventListener('click', e => {
+    // SAFETY: the listener is on #sidebar, and a click is dispatched at an element under it.
     const btn = (e.target as Element).closest<HTMLElement>('[data-cmd]');
     if (!btn) return;
     const fn = cmds[camel(btn.dataset.cmd!)];
@@ -117,6 +119,7 @@ export function initSidebar(cmds: SidebarCommands): void {
 
   wirePaperOrientation();
   // May be null if the tab has not been built yet — board-title.ts handles that.
+  // SAFETY: #board-title is the 'text' row in settings-schema.ts, an <input> from panel.ts buildText().
   wireTitleField(el('board-title') as HTMLInputElement | null);
 
   el('version')!.textContent = 'v' + VERSION;
@@ -148,6 +151,7 @@ function wirePaperOrientation(): void {
 /** Push state back into the controls (after opening a board, or an undo). */
 function paint(): void {
   // board-title.ts owns the field — may be null (as above).
+  // SAFETY: #board-title is an <input> from panel.ts buildText(), as in initSidebar().
   paintTitleField(el('board-title') as HTMLInputElement | null);
   paintPanel();
 }

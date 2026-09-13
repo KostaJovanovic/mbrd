@@ -201,14 +201,15 @@ function breakCycles() {
     if (settled.has(start)) continue;
     const path = new Set<unknown>();
     let at: unknown = start;
-    // SAFETY: `at` is a sticks key (string) when non-null — typed unknown because
-    // values are not guaranteed to be keys.
+    // `at` is typed unknown because sticks values are not guaranteed to be keys.
     while (at != null && !settled.has(at)) {
       if (path.has(at)) {
+        // SAFETY: at is in path, so the walk went on from it, and it only does that from a sticks key.
         sticks.set(at as string, null);
         break;
       }
       path.add(at);
+      // SAFETY: a non-string at is no key, so get() misses and the walk ends.
       at = sticks.get(at as string) ?? null;
     }
     for (const id of path) settled.add(id);

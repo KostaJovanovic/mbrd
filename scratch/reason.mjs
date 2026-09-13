@@ -1,0 +1,10 @@
+import { chromium } from 'playwright';
+const b = await chromium.connectOverCDP('http://localhost:9222');
+let page=null;
+for (const c of b.contexts()) for (const p of c.pages()) if (p.url().includes('6273')) page=p;
+const rows = await page.evaluate(() => window.mbrd.joins());
+for (const r of rows) if (r.blocked) console.log(`  ${r.from} -> ${r.to} reason="${r.reason}" pts=${r.points}`);
+const items = await page.evaluate(() => window.mbrd.board.items.map(i=>`${i.name}|${i.x}|${i.y}|${i.w}|${i.h}`));
+console.log('EXACT:');
+for (const it of items) console.log('  '+it);
+await b.close();

@@ -10,7 +10,8 @@ let wired = false;
 /** Open the credits sheet. Idempotent; safe without a document. */
 export function openCredits(): void {
   if (typeof document === 'undefined') return;
-  // Duck-type check — safe if <dialog> is absent.
+  // SAFETY: #credits is the <dialog> in index.html. The showModal duck-type test below
+  // rejects anything else, a missing <dialog> included.
   const dlg = el('credits') as HTMLDialogElement | null;
   if (!dlg || typeof dlg.showModal !== 'function') return;
 
