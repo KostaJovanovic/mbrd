@@ -1125,6 +1125,21 @@ test: the hidden menu panel is a window, built after the board's first load,
 so the changelog test's window count could change between its two reads. It
 counts visible windows now.
 
+Fixed outside the task list, for the same reason: the macOS universal build
+never merged. The fourth test run (34779976453) stopped in `@electron/universal`
+on `@img/sharp-darwin-arm64`, the same file in both halves. Both halves are
+packed from one `node_modules`, and npm installs sharp's native package for the
+runner's chip only, so the Intel half carried the Apple-silicon library. Two
+more files would have stopped it next: onnxruntime-node 1.29 ships a
+`darwin/arm64` binary and no `darwin/x64` one (checked in `bin/napi-v6/`), and
+evermeet.cx's ffmpeg is built for Intel only. The fix: the release job
+installs sharp's Intel pair beside the runner's own (tried in a scratch folder:
+npm adds both and keeps the rest, and `npm ls` lists them, which is what
+electron-builder packs from), and `mac.x64ArchFiles` names all three, checked
+against their real paths with the minimatch `@electron/universal` uses. An
+Intel Mac then cuts out pictures with the browser's worker, because
+`native/matte.ts` returns null when onnxruntime does not load.
+
 Before the first release, checked with `gh` on 2026-09-13: KostaJovanovic/mbrd
 has no secrets, and KostaJovanovic/mbrd-release has no branch, so the publish
 job's `--target main` has nothing to tag. The maintainer adds a first commit

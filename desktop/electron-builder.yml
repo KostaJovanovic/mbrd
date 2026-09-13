@@ -134,9 +134,17 @@ mac:
   # a certificate exists: notarisation becomes possible then, and so do
   # installed updates.
   identity: null
-  # If sharp or onnxruntime-node cannot be merged into a universal binary,
-  # switch this to `arch: [arm64, x64]` and add chip detection to the download
-  # page. Plan §1 makes that the fallback rather than the default.
+  # The universal app joins an Intel and an Apple-silicon build of ONE
+  # node_modules, so a native file that is not itself universal sits in both
+  # halves unchanged, and @electron/universal refuses that unless this pattern
+  # names it. Such a file is kept as it is. Three do: sharp's packages (the
+  # release job installs the Intel pair beside the runner's own, and sharp picks
+  # one by process.arch), onnxruntime-node (it ships no Intel Mac binary, so an
+  # Intel Mac cuts out pictures with the browser's worker), and ffmpeg
+  # (evermeet.cx builds it for Intel, and Apple silicon runs it through
+  # Rosetta). If a merge ever fails past this, the fallback is
+  # `arch: [arm64, x64]` and chip detection on the download page (plan §1).
+  x64ArchFiles: '{**/node_modules/@img/**,**/node_modules/onnxruntime-node/**,Contents/Resources/ffmpeg/**}'
 
 dmg:
   # No .dmg.blockmap: nothing reads it.
