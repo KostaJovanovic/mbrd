@@ -923,14 +923,14 @@ every decision a task left to you in the notes column.
 | I6 | DONE (v0.302) | one button, four lines, the Android section, "for your computer or phone". macOS leads with Open Anyway, and the `xattr` line stays for the "damaged" case. `download.css`: `.dl-picks` and `.dl-note` gone, `.dl-pick` and `.dl-files` new. Seen in a browser at 1280 and 412 wide: no overflow, and the button fills a phone's width. The Android line names an `.apk` that no release carries until O |
 | I7 | DONE (v0.302) | `camel()` in `ui/sidebar.ts` turns `get-app` into `getApp` and `check-updates` into `checkUpdates`. In a browser on 2026-09-13: "Get the app" sits in the patch-notes section with its title, and the `check-updates` row is hidden. The desktop app needs a person |
 | I8 | | the maintainer's. A run with publish unticked first |
-| J1 | | the `minWebViewVersion` chosen |
-| J2 | | |
-| J3 | | |
-| J4 | | |
-| J5 | | |
-| J6 | | |
-| J7 | | |
-| J8 | | |
+| J1 | DONE (v0.304) | `minWebViewVersion` 110. `browser-support.md` names no Chrome number, only "current and one prior major", so the floor comes from what the app needs: `deflate-raw` in Chrome 103 (MDN's compat data, WebView mirrors Chrome), `:has()` and `@container` 105, `dvh` and `svh` 108. 110 clears all of them and is FileAnalyser's. Above it: `round()` (125) in one custom property at whimsy 2, and `text-wrap`. Every option name checked in `@capacitor/cli` 8.5.2's `declarations.d.ts`. Capacitor 8.5.2 and `@capacitor/assets` 3.0.5 are npm's latest, esbuild and sharp are pinned as the root and `desktop/` pin them |
+| J2 | DONE (v0.304) | `cap add android` names the Java package from `appId`, so `MainActivity` was already `com.valjdakosta.mbrd`. The two example tests moved out of the template's `com.getcapacitor.myapp`, and the instrumented one now expects `com.valjdakosta.mbrd`: the template's `com.getcapacitor.app` fails on every device. `mobile/android/.gitignore` kept. `minSdkVersion` 24 is Android 7.0, as the download page says |
+| J3 | DONE (v0.304) | after the `desktop/portable/` block. `git check-ignore` agrees for `mobile/www/`, `assets/public/` and `mbrd-files.txt` |
+| J4 | DONE (v0.304) | 270 files, 31.4 MB. A `.gz` stops the staging rather than being staged wrong (plan §5.8). The stale-bundle check compares file times. Not as J8 says: `sw.js` is not staged, so the worker does not register in this group. `register('sw.js')` fails, and `main.ts` catches it with a warning |
+| J5 | DONE (v0.304) | imports `version.js`, as `desktop/scripts/version.mjs` does, and refuses a count or a label it cannot read. `mobile/package.json` stays `0.0.0` as J1 says (FileAnalyser's stamps it too). The committed `build.gradle` lags by one save: every sync stamps it again |
+| J6 | DONE (v0.304) | looked at: the launcher icon is the whole mark, and the splash shows it at Capacitor's 20 % width on paper. The dark variants use the same paper, since the app has no dark launcher or splash. 59 files under `res/`, and `mobile/assets/logo.png` |
+| J7 | DONE (v0.304) | two changes from FileAnalyser's: it installs the root package too, as `desktop.bat` does, and it installs on every phone `adb devices` lists, since a bare `adb install` refuses to pick one. `.\gradlew.bat`, because a shell with `NoDefaultCurrentDirectoryInExePath=1` does not search the current folder (this one has it). `mobile.bat apk` on 2026-09-13: `com.valjdakosta.mbrd`, versionCode 303, versionName 0.303. The install path is not run: no phone was connected. `gradlew` is committed 100644 as FileAnalyser's is, whose release workflow runs `chmod +x gradlew`: group O ports that |
+| J8 | | needs a person, on both phones. The steps are under "Open" below |
 | K1 | | |
 | K2 | | |
 | K3 | | |
@@ -974,6 +974,17 @@ buttons, zoom, full screen, and `desktop.bat portable`), H1 (a fresh clone
 installs and opens, a `.ts` edit shows after Ctrl+R, closing the window stops
 the watch), G3 (a real phone clip, to see NVENC and the retry), I7 (the "Check
 for updates" row in the desktop app), I8.
+
+J8, on each of the two phones:
+
+1. Turn on USB debugging: About phone, tap "Build number" seven times, then
+   Developer options, USB debugging. The menu names differ by make.
+2. Connect the phone by USB and accept "Allow USB debugging" on it.
+3. Run `mobile.bat` in the repository root. Both phones can be connected at once.
+4. Check that mbrd opens and shows the board as the website does.
+5. Add a note, close the app from the recent apps, and open it again. The note
+   must still be there.
+6. Expect What Changed to show the board. Group K routes `/patch`.
 
 Asked outside the task list on 2026-09-13, done in v0.302: the desktop
 changelog opens in place in the board view, under the bar, and no longer in a

@@ -1,0 +1,25 @@
+{
+  "private": true,
+  "name": "mbrd-mobile",
+  "version": "0.0.0",
+  "type": "module",
+  "description": "The Android shell for mbrd (Capacitor). It wraps the same web/ tree the website serves, with no fork of the app code. Its own package, as desktop/ is, so the root keeps no dependency and `npm test` still installs nothing. The version here stays 0.0.0: tools/stamp-version.mjs writes the app's version into android/app/build.gradle, from web/assets/js/version.js.",
+  "license": "GPL-3.0-or-later",
+  "scripts": {
+    "stamp": "node tools/stamp-version.mjs",
+    "stage": "node tools/stage-web.mjs",
+    "sync": "node tools/stamp-version.mjs && node tools/stage-web.mjs && cap sync android",
+    "open": "cap open android",
+    "icons": "node tools/make-icons.mjs"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/core": "^8.5.2"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^8.5.2",
+    "esbuild": "^0.28.2",
+    "sharp": "^0.35.4"
+  }
+}
