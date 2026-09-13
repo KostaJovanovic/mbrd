@@ -11,8 +11,9 @@ import { assetURL, getAsset, readText } from '../storage/assets.ts';
 import { noPreview } from '../notify.ts';
 import {
   byId, bus, markDirty, board, isDefaultTitle, itemCrop, itemRotate, itemMatte,
-  setSwatchHex, baseStep,
+  setSwatchHex, baseStep, noteDisplay,
 } from '../state.ts';
+import { bakeDisplayFor } from '../optimize/picture.ts';
 import { latticeBox } from '../geometry.ts';
 import {
   describeExt, formatName, PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS,
@@ -645,8 +646,19 @@ const RENDERERS = {
       noPreview('card', 'this browser would not draw the picture');
     });
     if (hash && !isAnimated(item) && !vector) {
+      // A plain photo is tagged so canvas/hires.ts swaps in the original once the
+      // card is zoomed past the copy's ~1024px. An edited card cannot be: its
+      // display copy is the crop/turn/cut-out, and the original is the untouched
+      // file, so there is nothing to sharpen up to.
+      if (!edited) img.dataset.hiresHash = hash;
+      // The baked copy carried in the .mbrd (meta.display), the sharp layer with
+      // no decode - only for a plain card, since the baked copy is uncropped.
+      const displayHash = edited ? '' : metaStr(item.meta?.display);
+      const baked = displayHash ? assetURL(displayHash) : null;
       const ready = displayURLReady(hash, crop, rot, matte);
-      if (ready) {
+      if (baked) {
+        img.src = baked;
+      } else if (ready) {
         img.src = ready;
       } else {
         const thumbHash = metaStr(item.meta?.thumb);
@@ -657,15 +669,24 @@ const RENDERERS = {
         // Better to show nothing for the moment it takes.
         if (thumb && !edited) img.src = thumb;   // crisp-enough stand-in while the copy renders
         // **A copy that could not be made falls back to the original.** Without
-        // it this card ends with no `src` at all, which is an `<img>` drawing
-        // its own alt text - the file's name at the top of an empty rectangle,
-        // on an item whose picture is sitting in the store. `!img.src` alongside
-        // isConnected for the same reason: the guard exists to save work on a
-        // discarded card, not to leave a live one blank.
-        ensureDisplay(hash, crop, rot, matte).then(u => {
-          const src = u || assetURL(hash);
+        // it this card ends with no `src` at all, which is an `<img>` drawing its
+        // own alt text. `!img.src` alongside isConnected saves work on a
+        // discarded card without leaving a live one blank.
+        const done = (src: string | null) => {
           if (src && (img.isConnected || !img.src)) img.src = src;
-        });
+        };
+        if (edited) {
+          // The exact edit state, from the runtime cache - never baked.
+          ensureDisplay(hash, crop, rot, matte).then(u => done(u || assetURL(hash)));
+        } else {
+          // A plain card on a board with nothing baked (an old board). One decode
+          // both shows the 1024 copy and stores it as meta.display, so a later
+          // save persists it (noteDisplay is silent - no dirty flag).
+          bakeDisplayFor(hash).then(dhash => {
+            if (dhash) noteDisplay(item.id, dhash);
+            done((dhash && assetURL(dhash)) || assetURL(hash));
+          });
+        }
       }
     } else {
       const url = hash && assetURL(hash);

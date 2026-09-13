@@ -5,10 +5,11 @@
 
 import {
   board, bus, isDefaultTitle, byId, itemAdjust, itemCrop, itemRotate, itemMatte,
-  flipTransform, stuckTo, isRider,
+  flipTransform, stuckTo, isRider, noteDisplay,
   select, selection, trackTitle,
 } from '../state.ts';
 import { noteWords } from '../canvas/note-model.ts';
+import { bakeDisplayFor } from '../optimize/picture.ts';
 import {
   displayURLReady, ensureDisplay, type Crop, type Turn, type Matte,
 } from '../canvas/display.ts';
@@ -653,7 +654,7 @@ function fillImage(t: Tile) {
   // Nothing baked and nothing cached (an old board, or an edited tile): generate
   // the copy as the tile approaches the screen, so opening a big board does not
   // queue a hundred main-thread decodes at once.
-  if (!sharp && shown) wantCopy(t.el, img, shown, crop, rot, matte);
+  if (!sharp && shown) wantCopy(t, img, shown, crop, rot, matte);
 
   applyGrade(img, t.item);
   writeTileFit(t);
@@ -667,20 +668,30 @@ function fillImage(t: Tile) {
 let copyObs: IntersectionObserver | null = null;
 const copyJobs = new WeakMap<Element, () => void>();
 
-function wantCopy(el: HTMLElement, img: HTMLImageElement,
+function wantCopy(t: Tile, img: HTMLImageElement,
   shown: string, crop: Crop, rot: Turn, matte: Matte) {
-  const run = () => {
-    ensureDisplay(shown, crop, rot, matte).then(u => {
-      // A discarded tile is left alone; a live one, or one still blank, takes
-      // the copy. A copy that could not be made leaves the preview in place.
-      if (u && (img.isConnected || !img.src)) img.src = u;
-    }).catch(() => { /* the preview stays; the tile is not left blank */ });
+  const edited = !!(crop || rot || matte);
+  // A discarded tile is left alone; a live one, or one still blank, takes the
+  // result. A copy that could not be made leaves the preview in place.
+  const show = (url: string | null) => {
+    if (url && (img.isConnected || !img.src)) img.src = url;
   };
+  const run = edited
+    // An edited tile shows the crop/turn/cut-out, which is not the baked plain
+    // copy - so it uses the runtime display cache, and nothing is baked.
+    ? () => ensureDisplay(shown, crop, rot, matte).then(show).catch(() => {})
+    // A plain tile on a board with nothing baked (an old board). One decode both
+    // shows the 1024 copy and stores it as meta.display, so a save persists it.
+    // Null means the original already serves - fall back to it.
+    : () => bakeDisplayFor(shown).then(dhash => {
+        if (dhash) noteDisplay(t.item.id, dhash);
+        show(dhash ? assetURL(dhash) : assetURL(shown));
+      }).catch(() => {});
   // No observer (a headless test, or an old engine) means generate at once -
   // the near-viewport gate is an optimisation, not the contract.
   if (!copyObs) { run(); return; }
-  copyJobs.set(el, run);
-  copyObs.observe(el);
+  copyJobs.set(t.el, run);
+  copyObs.observe(t.el);
 }
 
 /**

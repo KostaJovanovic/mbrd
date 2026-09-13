@@ -138,11 +138,12 @@ test('boardAssetHashes names exactly what the packer writes', async () => {
   // would let that class drift unnoticed.
   const live = await stubAsset('live');
   const cover = await stubAsset('cover', { body: 'cover-bytes' });
+  const display = await stubAsset('display', { body: 'display-bytes' });
   const binned = await stubAsset('binned', { body: 'binned-bytes' });
   const face = await stubAsset('face', { ext: 'woff2', mime: 'font/woff2', body: 'face-bytes' });
   const stepped = await stubAsset('stepped', { body: 'stepped-bytes' });
 
-  const board = boardOf([withAsset(live, { id: 'i1', name: 'a.png', meta: { cover } })], {
+  const board = boardOf([withAsset(live, { id: 'i1', name: 'a.png', meta: { cover, display } })], {
     trash: [{ at: 1, item: withAsset(binned, { id: 'i9', name: 'b.png' }) }],
     settings: { fonts: [{ hash: face, family: 'Test Face' }] },
     timeline: {
@@ -171,7 +172,7 @@ test('boardAssetHashes names exactly what the packer writes', async () => {
   );
   // The guard on the guard: two empty sets are deepEqual, so a stubAsset()
   // that stopped registering anything would pass while proving nothing.
-  assert.equal(written.size, 5);
+  assert.equal(written.size, 6);
 });
 
 // ---------------------------------------------------------------------------
