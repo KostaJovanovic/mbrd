@@ -1659,6 +1659,38 @@ Every check lives on the far side of the bridge (`desktop/files.ts`,
 `MbrdFiles.java`), never in the page: a crafted file that finds an XSS can call
 the bridge directly, so the page is never trusted to name a path.
 
+### `desktop/package.json`
+
+JSON has no comments, and these notes lived in its `description` until the
+installer wrote that description into every shortcut. The quotes in it broke
+the shortcut's line, and the icon field held a slice of the prose, so Windows
+drew no icon (research/rapid-fixes-2026-09-14.md, R4). The description is now
+the app's name, and `tests/desktop-icon.test.js` keeps it short and plain.
+
+- **A second package** rather than dependencies on the root one, which
+  declares none and must keep declaring none: `npm test` at the root installs
+  nothing, and CI's first leg checks that claim. sharp and onnxruntime-node
+  are runtime dependencies of this app and could not live there.
+- **No `"type": "module"`.** Both bundles are CommonJS, because a preload
+  script under `sandbox: true` must be, and one format for the package is
+  cheaper than two rules.
+- **Version 0.0.0 on purpose.** The release workflow and
+  `scripts/portable.mjs` read VERSION out of `web/assets/js/version.js`
+  (`scripts/version.mjs`) and hand it to electron-builder as
+  `-c.extraMetadata.version`. So there is one stamp rather than three, and an
+  unpackaged run has no version at all, which is why the updater runs only
+  when `app.isPackaged`.
+- **Every runtime dependency is external** to the build, not bundled: sharp
+  and onnxruntime-node carry `.node` binaries esbuild cannot inline. They are
+  `dependencies` for that reason. electron-builder ships those and prunes the
+  rest.
+- **`productName` is here as well as in `electron-builder.yml`**, because
+  different things read the two. electron-builder's names the executable and
+  the installer. This one is what `app.getName()` answers, which is what
+  `app.getPath('userData')` is built from. Without it the name falls through
+  to `name`, and a person's boards would live in `%APPDATA%/mbrd-desktop`.
+  Changing it after a release strands every board written under the old path.
+
 ---
 
 ## Three things that reach outside

@@ -1,9 +1,12 @@
-// The Windows icon, and two ways it goes back to a blank placeholder.
+// The Windows icon, and three ways it goes back to a blank placeholder.
 //
 // Microsoft allows PNG compression for an .ico's 256 px image only, and parts of
-// the shell show the generic icon for a smaller PNG frame. And a taskbar button
+// the shell show the generic icon for a smaller PNG frame. A taskbar button
 // takes the installer shortcut's icon only when the window's AppUserModelID is
-// the shortcut's, which electron-builder sets from appId.
+// the shortcut's, which electron-builder sets from appId. And the installer
+// writes package.json's description into every shortcut it makes: a long one
+// with a double quote in it broke the line, and the shortcuts' icon field held
+// a slice of the prose (research/rapid-fixes-2026-09-14.md, R4).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -30,6 +33,17 @@ test('the .ico carries bitmaps below 256 px and nothing else is a PNG', () => {
       assert.equal(ico.readUInt32LE(offset), 40, `the ${size} px frame has no BITMAPINFOHEADER`);
     }
   }
+});
+
+test('the description the installer writes into the shortcuts is short and plain', () => {
+  const pkg = JSON.parse(read(join(DESKTOP, 'package.json')));
+  const said = pkg.description;
+  assert.equal(typeof said, 'string', 'desktop/package.json has no description');
+  // A shortcut's comment holds 259 characters (INFOTIPSIZE), and the exe's
+  // file description, which Task Manager shows, wants the app's name.
+  assert.ok(said.length <= 80, `the description is ${said.length} characters`);
+  // Nothing NSIS or a shortcut's command line reads as syntax.
+  assert.doesNotMatch(said, /["$`\\\n\r]/, 'the description holds a quote, a $, a backtick, a backslash or a line break');
 });
 
 test('main.ts names the same AppUserModelID the installer gives its shortcuts', () => {
