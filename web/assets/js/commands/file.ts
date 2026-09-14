@@ -87,6 +87,11 @@ async function runSync({ force }: { force: boolean }): Promise<void> {
 // ~1 min on a typical upstream — warn, but do not refuse.
 const HEAVY_SHARE = 100 * 1024 * 1024;
 
+// The viewing copy is offered from this size, and only when it is at most this
+// share of the whole: below either, the question costs more than it saves.
+const VIEWING_FROM = 20 * 1024 * 1024;
+const VIEWING_GAIN = 0.6;
+
 // Copy the share link to the clipboard, or show it in a dialog if the
 // clipboard write is refused (stale gesture, no secure context, etc.).
 async function handOverLink(link: string): Promise<void> {
@@ -272,14 +277,35 @@ export function fileCommands() {
       }
 
       let packed;
+      let viewing = null;
       const packing = busy('Packing the board');
       try {
         packed = await packForShare({ history: true });
+        if (packed.blob.size > VIEWING_FROM) viewing = await packForShare({ history: false, viewing: true });
       } catch (err) {
         console.error(err);
         toast('Could not pack the board: ' + why(err), 'error');
         return;
       } finally { packing.end(); }
+
+      // A board heavy with photographs and video can go as a viewing copy
+      // (research/rapid-fixes-2026-09-14.md, R13), and whoever opens the link
+      // sees the board after a fraction of the wait.
+      if (viewing && viewing.blob.size <= packed.blob.size * VIEWING_GAIN) {
+        const choice = await ask({
+          title: 'Send the whole board, or a viewing copy?',
+          body: `The whole board is ${formatBytes(packed.blob.size)}. A viewing copy is `
+            + `${formatBytes(viewing.blob.size)}: every photograph at screen size, every `
+            + 'video as its poster frame, and no bin or history. Whoever opens the link '
+            + 'gets that copy as their own board.',
+          go: 'Send the viewing copy',
+          keep: 'Send the whole board',
+          cancel: 'Cancel',
+          danger: false,
+        });
+        if (choice === 'cancel') return;
+        if (choice === 'go') packed = viewing;
+      }
 
       if (packed.blob.size > HEAVY_SHARE) {
         const go = await ask({

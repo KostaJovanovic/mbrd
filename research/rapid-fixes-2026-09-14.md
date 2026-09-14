@@ -142,10 +142,22 @@ box is ticked when its commit lands.
         to walk. The HEVC fix is not tried in a browser, because it needs the
         CDN core. The overlay also hides after 600 ms with no drag event, for
         a drag that leaves the window and ends outside it.
-- [ ] R13 Share link and sync gaps (`research/docs/cloud.md`): first, keep the
+- [x] R13 Share link and sync gaps (`research/docs/cloud.md`): first, keep the
       Drive session URI so a dropped upload resumes. Then a small viewing copy
       for recipients, a list of shared links that can be revoked, reopening a
       synced board without a fresh download, and cleanup of deleted assets.
+      - **Done**, in four commits. A dropped chunk or a server fault no longer
+        ends an upload: it waits, asks the session how far it got, and goes
+        on. A stopped share offers Try again, which resumes the same pack.
+        A push moves to the Drive trash the assets its board stopped naming,
+        once they are a day old. Shared links, beside Share link, lists every
+        shared board from Drive, to copy again or stop sharing. A board over
+        20 MB can go as a viewing copy: photographs at screen size, clips as
+        posters, no bin or history. Reopening a synced board was already
+        done: `openCloudBoard()` hands the outgoing board's bytes to the pull.
+        Not tried against a live Drive, since this checkout has no
+        registered application. The fakes in `tests/upload-resume.test.js`,
+        `tests/sync.test.js` and `tests/drive-shared.test.js` hold the rest.
 - [x] R14 Fences in the Feed follow the maintainer's rule: the cards of one
       fence always sit together, and fence groups interleave with loose cards
       by position (loose cards, a fence, more loose cards, another fence).

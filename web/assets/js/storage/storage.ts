@@ -24,7 +24,8 @@ import { normalizeBoard } from '../board-schema.ts';
 import { planMerge } from '../merge.ts';
 import { packBoard, packBoardFile, unpackBoard, MIME } from './mbrd.ts';
 import type { ZipLayout } from './zip.ts';
-import { allAssets, clearAssets } from './assets.ts';
+import { allAssets, clearAssets, getAsset } from './assets.ts';
+import { viewingCopy } from './viewing-copy.ts';
 import type { Asset } from './assets.ts';
 import { fileNameFor, titleFromFileName, titleForOpenedBoard } from './naming.ts';
 // Session engine — handed deps through initSession(), never imports back.
@@ -309,10 +310,12 @@ export async function shareBoard({ history = true } = {}) {
 
 /** Pack for the share-link path (bytes in memory, not on disk). Same pipeline
  *  as Export/Share. `history` not defaulted — the caller decides. Throws on
- *  failure (unlike Export/Share) so the upload caller catches once for all steps. */
-export async function packForShare({ history }: { history: boolean }) {
-  const data = serializeBoard();
+ *  failure (unlike Export/Share) so the upload caller catches once for all steps.
+ *  `viewing` packs the lighter viewing copy instead (storage/viewing-copy.ts). */
+export async function packForShare({ history, viewing = false }: { history: boolean, viewing?: boolean }) {
+  let data = serializeBoard();
   if (!history) delete data.timeline;
+  if (viewing) data = viewingCopy(data, hash => !!getAsset(hash));
   const { blob, manifest } = await packBoard(data, { created });
   created = manifest.created;
   return { blob, name: fileNameFor(data.title) };

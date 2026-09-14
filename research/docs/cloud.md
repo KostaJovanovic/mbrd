@@ -213,16 +213,26 @@ picker today — a menu with one row is worse than no menu.
 
 ## What is still open
 
-- **The viewing copy.** This ships the originals, so a board of video is slow to
-  upload and — the part that is not obvious from the sending end — the recipient
-  waits through the entire download before seeing anything. A downscaled copy with
-  poster frames instead of video would shrink every other problem here, and the
-  content-hashed asset store and `optimize/` are already the pieces. Until it
-  exists, the honest substitute is `HEAVY_SHARE`: over 100 MB the app says the
-  number and asks. That is not a ceiling and there is deliberately no `CeilingId`
-  in `consent.ts` for it — a ceiling in this app means *larger than something a
+- **The size question.** Over `HEAVY_SHARE` (100 MB) the app says the number
+  and asks. That is not a ceiling and there is deliberately no `CeilingId` in
+  `consent.ts` for it — a ceiling in this app means *larger than something a
   reader can safely allocate*, and this is only *larger than somebody would like
   to wait for*.
+
+## The viewing copy
+
+The whole board ships the originals, so a board of video is slow to upload and
+— the part that is not obvious from the sending end — the recipient waits
+through the entire download before seeing anything. So a board over 20 MB is
+packed twice, and when the second pack is at most 60% of the first, the sender
+is asked which to send. The second is the **viewing copy**
+(`storage/viewing-copy.ts`): every photograph as its baked ~1024 px display
+copy (`meta.display`), every clip as a picture of its poster (`meta.cover`), and
+no bin and no history. `crop`, `rotate` and `matte` still apply, since `crop` is
+fractions of the source. The packer carries only what the copy still names, so
+the originals stay out of the file. The recipient gets the copy as their own
+board, as with the whole one. A card is only pointed at a smaller picture this
+machine holds, and a card with nothing smaller rides as it is.
 
 ## Taking a link back
 
