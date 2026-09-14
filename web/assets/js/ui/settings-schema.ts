@@ -573,9 +573,16 @@ export const SECTIONS: Section[] = [
       // so: a share is a board as it was the moment it was sent, and a sync is a
       // board as it is now. Pointing a link at the syncing folder would mean
       // every later edit rewriting what somebody was already looking at.
+      //
+      // Shared links beside it: the links already handed out, each to copy
+      // again or take back. The same person, the same account, the other end
+      // of the same act. It opens a menu over the panel, so it leaves the
+      // panel open.
       { type: 'buttons', when: () => anyConnected(), buttons: [
         { cmd: 'share-link', label: 'Share link', closesPanel: true,
           title: () => 'Upload a copy and copy a link to it — whoever you send it to needs no account' },
+        { cmd: 'shared-links', label: 'Shared links',
+          title: () => 'The links you have shared: copy one again, or stop sharing it' },
       ] },
       // Behind the fold, and not dressed as a danger: it stops the syncing and
       // leaves the stored copy exactly where it is. The other reading of it -

@@ -389,6 +389,19 @@ async function folder(name: string, parent: string | null): Promise<string> {
 const list = (folderId: string) =>
   query(`${quoted(folderId)} in parents and trashed = false`);
 
+/**
+ * The boards shared as links. upload() names no parent, so a share lands at
+ * the top of My Drive, and a synced board lives inside the mbrd folder: the
+ * top holds shares and that one folder. Read from Drive rather than from a
+ * list kept here, so a link shared on another machine shows too, and nothing
+ * can drift from what is really up there.
+ */
+async function shared(): Promise<CloudFile[]> {
+  const files = await query(`'root' in parents and trashed = false and mimeType != ${quoted(FOLDER_MIME)}`);
+  // ISO 8601 on one clock sorts as text.
+  return files.sort((a, b) => b.modifiedTime.localeCompare(a.modifiedTime));
+}
+
 // ---------------------------------------------------------------------------
 // Taking it all back out
 //
@@ -528,5 +541,5 @@ export const googleDrive: ShareProvider = {
   signOut,
   upload,
   download,
-  store: { folder, list, put, fetch: fetchFile, trash, purge },
+  store: { folder, list, put, fetch: fetchFile, trash, shared, purge },
 };

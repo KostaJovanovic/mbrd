@@ -15,6 +15,8 @@ import {
   startSyncingBoard, stopSyncingBoard, storageBreakdown, boardFolder, saveDocument,
 } from '../storage/storage.ts';
 import { shareLinkFor } from '../storage/cloud/provider.ts';
+import type { CloudFile, ShareProvider } from '../storage/cloud/provider.ts';
+import { justDismissed, openAnchored } from '../ui/menu.ts';
 import { SHARE_SITE } from '../storage/cloud/config.ts';
 import { paintPanel } from '../ui/panel.ts';
 import { connectCloud } from '../ui/cloud-connect.ts';
@@ -112,6 +114,37 @@ async function handOverLink(link: string): Promise<void> {
   if (again === null) return;
   if (await copy()) toast('Link copied — anyone with it can open this board');
   else toast('Could not reach the clipboard — the link is in the console', 'error');
+}
+
+/** The link to a shared file. In the apps, location is app:// or https://app,
+ *  which only this machine can open, so the link names the website (SHARE_SITE). */
+function linkTo(provider: string, id: string): string {
+  const site = isDesktop() ? new URL(SHARE_SITE) : null;
+  return shareLinkFor(site?.origin ?? location.origin, site?.pathname ?? homePath(), { provider, id });
+}
+
+/** A shared file's board name, as the list shows it. */
+const sharedName = (file: CloudFile) => file.name.replace(/\.mbrd$/i, '') || 'Untitled board';
+
+/** Take one link back, once the person has said so: the file goes to the Drive trash. */
+async function stopSharing(provider: ShareProvider, file: CloudFile): Promise<void> {
+  const answer = await ask({
+    title: `Stop sharing ${sharedName(file)}?`,
+    body: 'The link stops working for everybody who has it. The file goes to your '
+      + `${provider.label} trash, where it stays for thirty days. A copy somebody `
+      + 'already opened is theirs, and stays with them.',
+    go: 'Stop sharing',
+    cancel: 'Keep it',
+    danger: true,
+  });
+  if (answer !== 'go') return;
+  try {
+    await provider.store!.trash(file.id);
+    toast('That link no longer opens anything');
+  } catch (err) {
+    console.error(err);
+    toast('Could not stop sharing: ' + why(err), 'error');
+  }
 }
 
 // Warn (but allow) exporting an empty board. The short-circuit is
@@ -283,13 +316,42 @@ export function fileCommands() {
           if (again !== 'go') return;
         } finally { job.end(); }
       }
-      // In the apps, location is app:// or https://app, which only this
-      // machine can open, so the link names the website (SHARE_SITE).
-      const site = isDesktop() ? new URL(SHARE_SITE) : null;
-      const link = shareLinkFor(site?.origin ?? location.origin, site?.pathname ?? homePath(),
-        { provider: provider.id, id });
+      const link = linkTo(provider.id, id);
       console.info('[mbrd] share link:', link);
       await handOverLink(link);
+    },
+    // Every link this account has shared, each with Copy link and Stop sharing
+    // (research/rapid-fixes-2026-09-14.md, R13). A menu hung off the panel's
+    // button, since ui/menu.ts draws every list of rows in the app.
+    sharedLinks: async () => {
+      const btn = document.querySelector<HTMLElement>('[data-cmd="shared-links"]');
+      // Before any await: the press that closed this menu must not reopen it.
+      if (justDismissed(btn)) return;
+      const { shareProvider } = await import('../storage/cloud/cloud.ts');
+      const provider = shareProvider('gdrive');
+      if (!provider?.signedIn() || !provider.store) { toast('Connect an account first', 'error'); return; }
+      const store = provider.store;
+
+      let files: CloudFile[];
+      const job = busy(`Asking ${provider.label}`);
+      try {
+        files = await store.shared();
+      } catch (err) {
+        console.error(err);
+        toast('Could not list the shared links: ' + why(err), 'error');
+        return;
+      } finally { job.end(); }
+      if (!files.length) { toast(`Nothing is shared from this ${provider.label}`); return; }
+
+      const mid = { left: innerWidth / 2, right: innerWidth / 2, top: innerHeight / 3, bottom: innerHeight / 3 };
+      openAnchored(btn?.isConnected ? btn.getBoundingClientRect() : mid, files.map(file => ({
+        label: `${sharedName(file)} · ${new Date(file.modifiedTime).toLocaleDateString()}`,
+        sub: [
+          { label: 'Copy link', icon: 'i-link',
+            action: () => { void handOverLink(linkTo(provider.id, file.id)); } },
+          { label: 'Stop sharing', danger: true, action: () => { void stopSharing(provider, file); } },
+        ],
+      })), { label: 'Shared links', owner: btn, focus: true });
     },
     // ── The cloud copy ───────────────────────────────────────────────────
     connectGdrive: async () => { await connectCloud('gdrive'); },
