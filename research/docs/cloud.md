@@ -223,8 +223,17 @@ picker today — a menu with one row is worse than no menu.
   in `consent.ts` for it — a ceiling in this app means *larger than something a
   reader can safely allocate*, and this is only *larger than somebody would like
   to wait for*.
-- **Expiry.** Every provider can revoke a link. The app has nowhere that lists
-  what has been shared, which is a small feature of its own and is not built.
+
+## Taking a link back
+
+**Shared links**, beside Share link in the Sync section, lists every board this
+account has shared, newest first, each with **Copy link** and **Stop sharing**.
+The list is read from Drive (`store.shared()`), not from a record kept here:
+a share names no parent, so it lands at the top of My Drive, and the top holds
+shares and the one `mbrd` folder. So a link shared on another machine shows
+too, and the list cannot drift from what is really up there. Stop sharing moves
+the file to the Drive trash, and the link stops working for everybody. A copy
+somebody already opened is theirs.
 
 ## A dropped upload
 

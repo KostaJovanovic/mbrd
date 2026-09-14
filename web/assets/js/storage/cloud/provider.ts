@@ -59,6 +59,8 @@ export interface CloudStore {
   fetch(id: string): Promise<Blob>;
   /** Move one file to the account's trash, where the person can still get it back. */
   trash(id: string): Promise<void>;
+  /** Every board shared as a link from this account, newest first. */
+  shared(): Promise<CloudFile[]>;
   /**
    * Remove everything this app created. Provider must enumerate exactly
    * its own files (e.g. drive.file scope). Covers both synced boards and
