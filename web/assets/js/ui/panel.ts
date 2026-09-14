@@ -13,10 +13,10 @@ import { setMarked } from './wordmark.ts';
 import {
   TABS, SECTIONS, controlVisible, controlEnabled, sectionVisible,
 } from './settings-schema.ts';
-import { openAnchored, justDismissed } from './menu.ts';
+import { openAnchored, menuButton } from './menu.ts';
 import type {
   ButtonsControl, CheckControl, Control, Ctx, HintControl, KeysControl,
-  PickerControl, RangeControl, SelectControl, Section, SlotControl, TextControl,
+  PickerControl, RangeControl, Section, SlotControl, TextControl,
 } from './settings-schema.ts';
 
 /**
@@ -30,7 +30,7 @@ type Built = {
   c: Control,
   owner: Section,
   wrap: HTMLElement,
-  input: HTMLInputElement | HTMLSelectElement | null,
+  input: HTMLInputElement | null,
   out: HTMLOutputElement | null,
   nodes: HTMLElement[] | null,
 };
@@ -201,7 +201,6 @@ const BUILDERS: { [K in Control['type']]: (c: Extract<Control, { type: K }>) => 
   text: buildText,
   check: buildCheck,
   range: buildRange,
-  select: buildSelect,
   picker: buildPicker,
   buttons: buildButtons,
   slot: buildSlot,
@@ -290,34 +289,15 @@ function buildRange(c: RangeControl) {
   return label;
 }
 
-function buildSelect(c: SelectControl) {
-  const { label } = field(c.label);
-  if (c.fieldId) label.id = c.fieldId;
-  const select = make('select');
-  if (c.id) select.id = c.id;
-  fillSelect(c, select, ctx());
-  label.append(select);
-  const set = c.set;
-  if (!c.external && set) {
-    select.addEventListener('change', () => { cue('pick'); set(select.value); });
-  }
-  register(c, label, select, null);
-  return label;
-}
-
 /**
- * A select that shows what it is choosing between.
- *
- * A button and ui/menu.ts's anchored panel, not a <select>: no browser
- * paints anything inside a native dropdown, so the one row whose options
- * *are* colours could not show them. Otherwise identical to a select's
- * schema entry (`options`, `get`/`set`, `external`).
+ * A dropdown: a button and ui/menu.ts's anchored panel, not a <select> - see
+ * PickerControl in ui/settings-schema.ts for why the panel has no native one.
  *
  * ui/menu.ts renders it, since CLAUDE.md reserves every menu to that module.
  * The value lives in `data-value` rather than a property, so a sync
  * (syncPaletteMode) and a paint read the same place, and a `pick`
  * CustomEvent carries the choice out - keeping this builder ignorant of what
- * a palette is, exactly as buildSelect is.
+ * a palette is.
  */
 function buildPicker(c: PickerControl) {
   const { label } = field(c.label);
@@ -328,10 +308,8 @@ function buildPicker(c: PickerControl) {
   btn.dataset.value = c.get?.() ?? '';
   // Rebuilt on every press rather than once: options() takes live context and
   // the tick has to follow a value anything else may have changed.
-  btn.addEventListener('click', () => {
-    // A second press closes rather than reopening - the menu's outside-press
-    // listener has already shut it by the time this click runs.
-    if (justDismissed(btn)) return;
+  // menuButton() is the toggle: a second press closes rather than reopening.
+  menuButton(btn, () => {
     const now = btn.dataset.value ?? '';
     const entries = (c.options?.(ctx()) || []).map(o => ({
       label: o.label,
@@ -400,29 +378,6 @@ function paintPicker(el: HTMLElement) {
     strip.append(chip);
   }
   el.append(strip);
-}
-
-/**
- * Fill a select from the table, and answer whether anything changed.
- *
- * The panel is built once, so a list that depends on layout has to be
- * refilled rather than rebuilt. Compared before writing, so the ordinary
- * case costs one join and no DOM, and a select the user has open is not
- * emptied under the pointer.
- */
-function fillSelect(c: SelectControl, select: HTMLSelectElement, ctxValue: Ctx) {
-  const want = c.options?.(ctxValue) || [];
-  const key = JSON.stringify(want.map(o => [o.value, o.label]));
-  if (select.dataset.opts === key) return false;
-  select.dataset.opts = key;
-  select.replaceChildren();
-  for (const o of want) {
-    const opt = make('option');
-    opt.value = o.value;
-    opt.textContent = o.label;
-    select.append(opt);
-  }
-  return true;
 }
 
 /**
@@ -501,7 +456,7 @@ function buildKeys(c: KeysControl) {
 
 function register(
   c: Control, wrap: HTMLElement,
-  input: HTMLInputElement | HTMLSelectElement | null,
+  input: HTMLInputElement | null,
   out: HTMLOutputElement | null,
   nodes: HTMLElement[] | null = null,
 ) {
@@ -511,7 +466,7 @@ function register(
   built.push({ c, owner: building ?? { tab: '', controls: [] }, wrap, input, out, nodes });
 }
 
-function writeOut(c: RangeControl, input: HTMLInputElement | HTMLSelectElement, out: HTMLOutputElement | null) {
+function writeOut(c: RangeControl, input: HTMLInputElement, out: HTMLOutputElement | null) {
   if (!out) return;
   out.textContent = typeof c.format === 'function'
     ? c.format(+input.value)
@@ -594,26 +549,26 @@ function paintControl({ c: spec, owner, wrap, input, out, nodes }: Built, c: Ctx
     if (typeof spec.text === 'function') wrap.textContent = spec.text(c);
     return;
   }
-  // The three kinds that carry a value to write back.
-  if (spec.type !== 'check' && spec.type !== 'range' && spec.type !== 'select') return;
-  if (spec.external || typeof spec.get !== 'function' || !input) return;
-  // Never into a control being used: a select with its list open, or a
-  // range mid-drag, both fight the hand on them.
-  if (document.activeElement === input) return;
-  // The list before the value, so a select whose options depend on layout
-  // has somewhere to put the value it's about to get - refilling clears the
-  // selection, so this can't happen the other way round.
-  if (spec.type === 'select') {
-    // SAFETY: `input` and `spec` were paired when the row was built, and buildSelect()
-    // gave a 'select' spec its <select>. The discriminant test above picks the branch.
-    fillSelect(spec, input as HTMLSelectElement, c);
+  if (spec.type === 'picker') {
+    const btn = wrap.querySelector<HTMLButtonElement>('.field-picker');
+    if (!btn) return;
+    btn.disabled = !live;
+    // An external picker's owner writes its value (syncPaletteMode()).
+    if (spec.external || typeof spec.get !== 'function') return;
+    btn.dataset.value = spec.get();
+    // The face follows the options as well as the value: Layout's list
+    // changes with the layout.
+    paintPicker(btn);
+    return;
   }
+  // The two kinds that carry a value to write back.
+  if (spec.type !== 'check' && spec.type !== 'range') return;
+  if (spec.external || typeof spec.get !== 'function' || !input) return;
+  // Never into a range mid-drag: it fights the hand on it.
+  if (document.activeElement === input) return;
   const value = spec.get();
-  if (spec.type === 'check') {
-    // SAFETY: as above - buildCheck() gave a 'check' spec its <input>.
-    (input as HTMLInputElement).checked = !!value;
-  } else if (spec.type === 'range') { input.value = String(value); writeOut(spec, input, out); }
-  else input.value = String(value ?? '');
+  if (spec.type === 'check') input.checked = !!value;
+  else { input.value = String(value); writeOut(spec, input, out); }
 }
 
 /**

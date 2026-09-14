@@ -41,6 +41,8 @@ export type MenuEntry = {
   /** Trailing-edge specimen chip. Tint chips go in the icon column (swatch);
    * palette specimens go here so they line up for comparison down the list. */
   swatchEnd?: string | string[];
+  /** A font-family for the label - a face menu sets each row in its own face. */
+  font?: string;
   /** Greyed readout row — shown but inert, skipped by arrow keys. */
   disabled?: boolean;
   /** a child menu, opened in place */
@@ -285,6 +287,11 @@ export function initMenu(viewport: Viewport, commands: MenuCommands) {
   addEventListener('scroll', e => {
     if (node && !insideMenu(e.target)) close();
   }, true);
+  // Press, drag, release - see followPress().
+  addEventListener('pointerdown', e => { down = { id: e.pointerId, x: e.clientX, y: e.clientY }; }, true);
+  addEventListener('pointermove', followPress, true);
+  addEventListener('pointerup', releasePress, true);
+  addEventListener('pointercancel', () => { down = null; press = null; }, true);
   addEventListener('resize', close);
   addEventListener('blur', close);
   addEventListener('keydown', e => {
@@ -310,6 +317,87 @@ export function initMenu(viewport: Viewport, commands: MenuCommands) {
       if (typeAhead(e.key)) e.preventDefault();
     }
   }, true);
+}
+
+// ---------------------------------------------------------------------------
+// Press, drag, release
+// ---------------------------------------------------------------------------
+
+/** The pointer that is down now, so a menu opened under a press can follow it. */
+let down: { id: number, x: number, y: number } | null = null;
+/** The press a menu was opened under, and whether it has become a drag. */
+let press: { id: number, x: number, y: number, at: number, moved: boolean } | null = null;
+/** Travel that makes a press a drag rather than a click. */
+const DRAG_PX = 6;
+/** A press held this long picks on release without moving, as a drag does. */
+const HOLD_MS = 350;
+
+/**
+ * The row under a point, in either panel, if it can be pressed. Asked of the
+ * point rather than the event target: a finger's pointer is captured by
+ * whatever it first touched, so its events never name the row under it.
+ */
+function rowAt(x: number, y: number): HTMLElement | null {
+  const row = document.elementFromPoint(x, y)?.closest<HTMLElement>('.ctx-item');
+  if (!row || !insideMenu(row) || row.matches(':disabled')) return null;
+  return row;
+}
+
+/**
+ * A menu opened by a press follows that pointer, as on iOS: a move lights the
+ * row under it, and a release on a row after a move or a hold picks it. A
+ * mouse lights rows by :hover already - `is-hot` is for the finger.
+ */
+function followPress(e: PointerEvent) {
+  const p = press;
+  if (!p || p.id !== e.pointerId || !node) return;
+  if (!p.moved && Math.hypot(e.clientX - p.x, e.clientY - p.y) < DRAG_PX) return;
+  p.moved = true;
+  const row = rowAt(e.clientX, e.clientY);
+  for (const hot of document.querySelectorAll('.ctx-item.is-hot')) {
+    if (hot !== row) hot.classList.remove('is-hot');
+  }
+  row?.classList.add('is-hot');
+}
+
+function releasePress(e: PointerEvent) {
+  if (down?.id === e.pointerId) down = null;
+  const p = press;
+  if (!p || p.id !== e.pointerId) return;
+  press = null;
+  // A plain click leaves the menu up, which is what keeps clicking working.
+  if (!node || (!p.moved && performance.now() - p.at < HOLD_MS)) return;
+  // click() rather than the action: a fold drills in and a row closes the
+  // menu exactly as a press on it would. The browser sends its own click to
+  // the element the press started on and this row share an ancestor of,
+  // never to the row.
+  rowAt(e.clientX, e.clientY)?.click();
+}
+
+/**
+ * Wire a button that opens a menu. A mouse opens it on the press, so the same
+ * press can drag down the list and release on a row. A finger and the
+ * keyboard open it on the click, so a finger can still scroll the panel past
+ * the button. A second press closes it rather than reopening - the capture
+ * listener above has shut the menu before either handler runs.
+ */
+export function menuButton(btn: HTMLButtonElement, open: () => void) {
+  let byMouse = false;
+  btn.addEventListener('pointerdown', e => {
+    byMouse = e.pointerType === 'mouse';
+    if (!byMouse || e.button !== 0 || btn.disabled) return;
+    if (justDismissed(btn)) return;
+    open();
+  });
+  // A mouse press would otherwise move focus onto the button, off the menu
+  // it just opened.
+  btn.addEventListener('mousedown', e => { if (e.button === 0) e.preventDefault(); });
+  btn.addEventListener('click', e => {
+    // The mouse press already answered. detail 0 is the keyboard.
+    if (byMouse && e.detail !== 0) return;
+    if (justDismissed(btn)) return;
+    open();
+  });
 }
 
 /** Jump to the first or last focusable row. */
@@ -849,6 +937,9 @@ function render(entries: MenuEntry[], clientX: number, clientY: number, opts: Me
   // Measure hidden, then place. max-height in menu.css caps tall menus to scroll.
   node.style.visibility = 'hidden';
   placeRoot(node, clientX, clientY, opts);
+  // Opened under a press: follow it. A page turn happens on a release, so it
+  // never inherits one.
+  press = down ? { ...down, at: performance.now(), moved: false } : null;
 }
 
 /** Fill a panel (root or child) with entry rows. Shared so the hover submenu
@@ -888,6 +979,7 @@ function fillPanel(panel: HTMLElement, entries: MenuEntry[]) {
     const label = document.createElement('span');
     // Asserted — separator and slider (handled above) are the only label-less rows.
     label.textContent = entry.label!;
+    if (entry.font) label.style.fontFamily = entry.font;
     btn.append(label);
 
     if (entry.accel) {
