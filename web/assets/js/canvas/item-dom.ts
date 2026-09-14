@@ -446,6 +446,7 @@ export function buildItem(item: ItemLike, tilt: string, picked: boolean): HTMLDi
   // build in between may carry either and neither is wrong.
   const tint = noteTint(item.meta.tint);
   if (tint) el.dataset.tint = String(tint);
+  if (isFence(item)) writeFenceLook(el, item);
   if (picked) el.dataset.pick = '';
   el.style.setProperty('--item-tilt', tilt);
 
@@ -592,6 +593,18 @@ export function buildTitleControls(el: HTMLElement): void {
   rename.title = 'Rename board';
   rename.textContent = 'T';
   el.append(pen, rename);
+}
+
+/**
+ * A fence's colour and its roll, on the outer element (fences.css reads both).
+ * Written at build and again by rebuild() in canvas/items.ts, since both change
+ * from the fence's menu as an 'item' event and a rebuild keeps the element.
+ */
+export function writeFenceLook(el: HTMLElement, item: ItemLike): void {
+  const tint = noteTint(item.meta.tint);
+  if (tint) el.dataset.tint = String(tint);
+  else delete el.dataset.tint;
+  el.classList.toggle('is-rolled', item.meta.rolled === true);
 }
 
 /**

@@ -116,6 +116,7 @@ import {
 import {
   isFence, fenceOf, fenceAt, fenceMembers, fenceFollowers, refence, refenceAround,
   refenceArrivals, seedFences, fenceBox, nextFenceName, mobileRuns,
+  isRolled, rolledFences, rolledAway,
 } from './fences.ts';
 
 import { stickerTint } from './stickers/catalogue.ts';
@@ -143,7 +144,7 @@ export {
 
 export {
   isFence, fenceOf, fenceAt, fenceMembers, fenceFollowers, refence, refenceAround,
-  fenceBox, nextFenceName, mobileRuns,
+  fenceBox, nextFenceName, mobileRuns, isRolled, rolledFences, rolledAway,
 };
 
 export {
@@ -807,6 +808,34 @@ export function setStickerTint(id: string, tint: unknown) {
     value => stickerTint(value, it.meta?.shape));
 }
 
+/** A fence's colour: a note sheet 1-4, or 0 to take it off. The same range
+ *  noteTint() reads (canvas/note-model.ts), written out because state.ts sits
+ *  under the canvas. */
+export function setFenceTint(id: string, tint: unknown) {
+  if (!isFence(byId(id))) return;
+  patchMeta(id, 'tint', tint, 'Fence colour',
+    value => (typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 4
+      ? value : null));
+}
+
+/** Roll a fence up to its name bar, or down again. Stored only when rolled. */
+export function setFenceRolled(id: string, rolled: boolean) {
+  if (!isFence(byId(id))) return;
+  patchMeta(id, 'rolled', rolled ? true : null,
+    (next: unknown) => (next ? 'Roll up fence' : 'Roll down fence'),
+    v => (v === true ? true : null));
+}
+
+/** Roll down every fence that hides this item. Find's way to a folded card. */
+export function unrollFor(id: string) {
+  const rolled = rolledFences();
+  let fence = fenceOf(byId(id));
+  for (let depth = 0; fence && depth < 64; depth++) {
+    if (rolled.has(fence.id)) setFenceRolled(fence.id, false);
+    fence = fenceOf(fence);
+  }
+}
+
 /**
  * Anchor/unanchor items (fix geometry). One undo for the whole set.
  * Excludes ghosts (app-owned) and riders (placed from their host).
@@ -1161,7 +1190,10 @@ export function setModelShot(
 // it needs the item list, and board-model.ts sits *above* board-store.ts in the
 // graph, so the module holding the selection cannot ask what is on the board.
 export function selectAll() {
-  select(board.items.map(i => i.id));
+  // Not what a rolled-up fence has folded away: Delete after Ctrl+A must not
+  // take cards nobody can see.
+  const rolled = rolledFences();
+  select(board.items.filter(i => !rolledAway(i, rolled)).map(i => i.id));
 }
 
 // ---------------------------------------------------------------------------

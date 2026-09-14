@@ -92,6 +92,10 @@ export interface MenuCommands {
   // One card, or the selection it is part of
   isTitleCard: (id: string) => boolean;
   isFenceItem: (id: string) => boolean;
+  fenceTintOf: (id: string) => number;
+  setFenceTint: (id: string, tint: number) => void;
+  isRolledFence: (id: string) => boolean;
+  setFenceRolled: (id: string, rolled: boolean) => void;
   canEditNote: (id: string) => boolean;
   canCoverItem: (id: string) => boolean;
   canClearCover: (id: string) => boolean;
@@ -568,6 +572,9 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
   const swatchable = !many && cmds!.canExtractSwatches(id);
   // Single-item — tint is an edit to one sticker.
   const tintable = !many && cmds!.canTintSticker(id);
+  // Single fence, canvas only — its colour and its roll-up.
+  const fenceItem = !many && !mobile && cmds!.isFenceItem(id);
+  const rolled = fenceItem && cmds!.isRolledFence(id);
   // Single-item — viewer shows one thing at a time.
   const viewable = !many && cmds!.canViewItem(id);
   // Single-item, not on Feed — "the current frame" is per-clip.
@@ -633,7 +640,7 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
       action: () => cmds!.zoomToSelection(), hidden: mobile || !many },
     // ── What the card is ──
     { sep: true, hidden: !coverable && !covered && !editable_picture && !flippable
-      && !turnable && !tintable && !taggable },
+      && !turnable && !tintable && !fenceItem && !taggable },
     { label: covered ? 'Change picture' : 'Set a picture', icon: 'i-picture',
       hidden: !coverable, action: () => cmds!.setCover(id) },
     { label: 'Remove picture', icon: 'i-picture-off', hidden: !covered,
@@ -654,6 +661,9 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // Full palette — every shape takes every tint. Tick shows the current one.
     { label: 'Colour', icon: 'i-swatch', hidden: !tintable,
       sub: tintable ? stickerTintEntries(id) : undefined },
+    // A fence's colour, washed over the whole region.
+    { label: 'Colour', icon: 'i-swatch', hidden: !fenceItem,
+      sub: fenceItem ? fenceTintEntries(id) : undefined },
     // Tags fold — selection-wide, on Feed too (tags are about the card, not position).
     { label: 'Tags', icon: 'i-tag', hidden: !taggable,
       sub: taggable ? tagEntries() : undefined },
@@ -676,6 +686,11 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     { label: 'Rearrange fence', icon: 'i-rearrange',
       hidden: mobile || many || !cmds!.isFenceItem(id),
       action: () => cmds!.rearrangeFence(id) },
+    // Mirrored pair — a fence folds down to its name bar, its cards out of sight.
+    { label: 'Roll up', icon: 'i-arrow-up', hidden: !fenceItem || rolled,
+      action: () => cmds!.setFenceRolled(id, true) },
+    { label: 'Roll down', icon: 'i-expand', hidden: !fenceItem || !rolled,
+      action: () => cmds!.setFenceRolled(id, false) },
     // Group only — relays the selection about its own centre.
     { label: `Rearrange these ${count}`, icon: 'i-rearrange', hidden: !many,
       action: () => cmds!.rearrangeSelection() },
@@ -807,6 +822,25 @@ function filterEntries(): MenuEntry[] {
     rows.push({ label: 'Show everything', icon: 'i-close', action: () => cmds!.clearTagFilter() });
   }
   return rows;
+}
+
+/** Fence colour — None for the plain well, then the four note sheets under the
+ *  names the Note flyout gives them (noteEntries() in ui/flyout.ts). */
+function fenceTintEntries(id: string): MenuEntry[] {
+  const now = cmds!.fenceTintOf(id);
+  const NAMES = ['Warm', 'Accent', 'Green', 'Pale'];
+  return [
+    // The icon is for rows drawn without a chip; the chip takes its column.
+    { label: 'None', icon: 'i-swatch', swatch: 'var(--paper-2)', check: now === 0,
+      action: () => cmds!.setFenceTint(id, 0) },
+    ...NAMES.map((label, i) => ({
+      label,
+      icon: 'i-swatch',
+      swatch: `var(--note-${i + 1})`,
+      check: now === i + 1,
+      action: () => cmds!.setFenceTint(id, i + 1),
+    })),
+  ];
 }
 
 function stickerTintEntries(id: string): MenuEntry[] {

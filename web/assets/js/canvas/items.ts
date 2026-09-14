@@ -4,6 +4,7 @@
 
 import {
   board, byId, selection, bus, renameItem, setFontText, visualStackOrder, travelling, isFence,
+  rolledAway, rolledFences,
   isFiltered, isPinned, settlesIn, setItemsLocked, startSettling,
 } from '../state.ts';
 import { quality } from '../quality.ts';
@@ -18,7 +19,7 @@ import { cullMargin } from './viewport.ts';
 import { buildContent, fontFamilyOf, paintStyleTileFaces } from './renderers.ts';
 import {
   buildItem, buildShadow, buildTitleControls, farKind, itemAccessibleName,
-  resetTilt, restingTilt, setGrips, wantsHead, writeFit, writeAdjust,
+  resetTilt, restingTilt, setGrips, wantsHead, writeFit, writeAdjust, writeFenceLook,
 } from './item-dom.ts';
 import { POSTER_TIME } from './video.ts';
 import { clearDisplay } from './display.ts';
@@ -313,6 +314,11 @@ export function initItems(world: HTMLElement, viewport: Viewport) {
   // class toggle per mounted node and the filter is a menu-speed event, so
   // there is nothing here worth the bookkeeping of a narrower answer.
   bus.on('item', paintFilter);
+  // A roll is an 'item' write, and membership changes with arrivals and moves.
+  bus.on('item', paintRolled);
+  bus.on('items', paintRolled);
+  bus.on('geom', paintRolled);
+  bus.on('layout', paintRolled);
   // The shadow twin lives in its own layer, so no CSS :hover on the card can
   // reach it. Mirror the hover onto it here: one delegated pair on the world,
   // tracking which item the pointer is over, so the twin lifts with the card
@@ -1220,6 +1226,12 @@ function build(item: Item) {
     el.classList.add('is-filtered');
     shadows.get(item.id)?.classList.add('is-filtered');
   }
+  // Folded away in a rolled-up fence, for the same reason: a card panned back
+  // on screen while its fence is rolled must come back hidden.
+  if (rolledAway(item, rolledNow)) {
+    el.classList.add('is-rolled-away');
+    shadows.get(item.id)?.classList.add('is-rolled-away');
+  }
   // And the tour mark, for the third time in the same words - see the block
   // above applyTourMark(). A card panned off screen and back is a new node, and
   // the editor is a mode somebody spends minutes in doing exactly that.
@@ -1319,6 +1331,8 @@ function rebuild(id: string) {
   // the same reason: locking a card, or moving a brightness dial, arrives as an
   // 'item' event and lands here.
   writeAdjust(el, item);
+  // And a fence's colour and roll, which its menu changes the same way.
+  if (isFence(item)) writeFenceLook(el, item);
   // And the shadow twin, which is not on this element at all - see syncTwin(),
   // and the reason a question build() asks once has to be asked again here.
   syncTwin(el, item);
@@ -1843,6 +1857,29 @@ function paintFilter() {
     const dim = isFiltered(byId(id));
     el.classList.toggle('is-filtered', dim);
     shadows.get(id)?.classList.toggle('is-filtered', dim);
+  }
+}
+
+/** The rolled-up fences as of the last paintRolled(), read again at build. */
+let rolledNow: Set<string> = new Set();
+
+/**
+ * Hide what a rolled-up fence holds, and show it again when it unrolls.
+ *
+ * Hidden rather than dimmed, unlike the filter: roll-up is a fence folded down
+ * to its name bar, and what it folds is out of sight. The cards stay mounted and
+ * stay where they are, so the fence carries them when it moves. Nothing to do on
+ * a board with no rolled fence and none just unrolled, which is every board
+ * until somebody rolls one.
+ */
+function paintRolled() {
+  const next = rolledFences();
+  if (!next.size && !rolledNow.size) return;
+  rolledNow = next;
+  for (const [id, el] of nodes) {
+    const away = rolledAway(byId(id), next);
+    el.classList.toggle('is-rolled-away', away);
+    shadows.get(id)?.classList.toggle('is-rolled-away', away);
   }
 }
 

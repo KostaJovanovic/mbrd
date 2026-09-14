@@ -2,7 +2,7 @@
 // Built per query, no index. Items are renamed/edited constantly; rebuilding
 // a few hundred string reads per keystroke is cheaper than invalidation bugs.
 
-import { board, byId, itemTags, select } from '../state.ts';
+import { board, byId, itemTags, select, rolledAway, unrollFor } from '../state.ts';
 import { cue } from '../cuelume/engine.ts';
 import { travelMs } from '../canvas/viewport.ts';
 import { extOf, markClosed } from '../util.ts';
@@ -274,6 +274,8 @@ function commit(hit: Hit | undefined) {
   close();
   const item = byId(id);
   if (!item) return;
+  // A card folded away in a rolled-up fence is what was asked for, so it opens.
+  if (rolledAway(item)) unrollFor(id);
   select([id]);
   // On the Feed the canvas is hidden, so flying it moves nothing anybody sees.
   if (board.layoutMode === 'mobile' && revealInFeed?.(id)) return;

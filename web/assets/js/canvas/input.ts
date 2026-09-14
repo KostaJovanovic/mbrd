@@ -9,6 +9,7 @@ import { cue } from '../cuelume/engine.ts';
 import {
   board, byId, selection, select, deselect, clearSelection, isMultiSelect, topZ, stackOrder,
   snapshotGeom, applyGeom, commitGeom, bus, stuckFollowers, stuckPlacement, wouldStick,
+  rolledAway, rolledFences,
   travelling, isFence, isLocked, dragRoot, isPinned, isSticky, stuckTo, resettle,
   copyItems, cutItems, pasteItems, clipboardSize, clipboardBounds, clipboardHasOurs,
   baseStep,
@@ -1425,9 +1426,11 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // queryRect is a superset (a cell is wider than the band's edge), so the
     // precise marqueeHit still runs - it just runs over a handful, not O(board).
     const hit: string[] = [];
+    // A card folded away in a rolled-up fence is out of sight, so out of reach.
+    const rolled = rolledFences();
     for (const id of queryRect({ x0, y0, x1, y1 })) {
       const it = byId(id);
-      if (it && marqueeHit(it, x0, y0, x1, y1)) hit.push(id);
+      if (it && !rolledAway(it, rolled) && marqueeHit(it, x0, y0, x1, y1)) hit.push(id);
     }
     // Additive: replace the live selection with base + enclosed each frame, so
     // the enclosed set tracks the band in both directions (see startMarquee).

@@ -6,6 +6,7 @@ import { toast } from '../notify.ts';
 import {
   addItems, anchorQuietly, baseStep, board, byId, fenceAt, fenceBox, fenceFollowers, fenceOf,
   isFence, isFurniture, isRider, nextFenceName, select, selection, startFresh,
+  isRolled, setFenceRolled, setFenceTint,
 } from '../state.ts';
 import { itemBounds, MAX_SIZE, MIN_SIZE } from '../geometry.ts';
 import { editItemName } from '../canvas/items.ts';
@@ -114,6 +115,18 @@ export function fenceCommands() {
 
     /** Is this item a fence? */
     isFenceItem: (id: string) => isFence(byId(id)),
+
+    /** The fence's colour: a note sheet 1-4, or 0 for the plain well. */
+    fenceTintOf: (id: string) => {
+      const fence = byId(id);
+      const tint = isFence(fence) ? fence.meta?.tint : 0;
+      return typeof tint === 'number' ? tint : 0;
+    },
+    setFenceTint: (id: string, tint: number) => setFenceTint(id, tint),
+
+    /** Is this fence rolled up to its name bar? */
+    isRolledFence: (id: string) => isRolled(byId(id)),
+    setFenceRolled: (id: string, rolled: boolean) => setFenceRolled(id, rolled),
 
     // Rearrange a fence's contents in masonry and close it around them.
     rearrangeFence: (id: string) => {

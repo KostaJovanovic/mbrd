@@ -9,7 +9,14 @@
    No fill (a wall), no shadow (items.ts skips it), dashed edge ("drawn on").
    The face keeps .item's paper; paintStack() sinks the fence band below both
    shadow underlays so cards cast onto it. --paper-2 is the palette's well tone. */
-.item[data-type="fence"] { background: var(--paper-2); }
+.item[data-type="fence"] { background: var(--fence-tint, var(--paper-2)); }
+
+/* A fence's own colour (meta.tint, the Colour row of its menu): the four note
+   sheets, so a tinted region and a sticky on it come off one pad. */
+.item[data-type="fence"][data-tint="1"] { --fence-tint: var(--note-1); }
+.item[data-type="fence"][data-tint="2"] { --fence-tint: var(--note-2); }
+.item[data-type="fence"][data-tint="3"] { --fence-tint: var(--note-3); }
+.item[data-type="fence"][data-tint="4"] { --fence-tint: var(--note-4); }
 .fence-card {
   background: none;
   border: 2px dashed var(--rule-2);
@@ -39,7 +46,7 @@
 /* Softish: a region becomes a cork board. Tile laid over the tint (not
    multiplied), --grain-fade fades to --cork (the tile's mean) so zooming out
    gives a cork-coloured rectangle, not a colour jump. */
-:root[data-whimsy="0"] .item[data-type="fence"] { background: var(--cork); }
+:root[data-whimsy="0"] .item[data-type="fence"] { background: var(--fence-tint, var(--cork)); }
 :root[data-whimsy="0"] .fence-card::after {
   background-image: url("../img/cork-board.webp");
   /* Half the grain pitch — cork has chips, and at 512 they read as a print. */
@@ -51,6 +58,25 @@
   opacity: calc(var(--grain-fade, 1) * 0.5);
 }
 .item[data-type="fence"].is-selected .fence-card { border-color: var(--select); }
+
+/* Rolled up (meta.rolled): only the name bar is left, a tab that holds the
+   region's place. The face, its grain and the grips go, and the cards inside
+   go with it (.is-rolled-away, written by paintRolled() in canvas/items.ts).
+   :root so it outranks the cork rule above on specificity's tie, by order. */
+:root .item[data-type="fence"].is-rolled { background: none; }
+.item[data-type="fence"].is-rolled .fence-card,
+.item[data-type="fence"].is-rolled .grip { display: none; }
+.item[data-type="fence"].is-rolled .item-bar {
+  background: var(--fence-tint, var(--paper-2));
+  border: 1px solid var(--rule-2);
+  border-radius: var(--radius);
+}
+/* The ring would outline the whole region, which is not on screen. The bar's
+   own edge takes the selection colour instead. */
+.item[data-type="fence"].is-rolled.is-selected::before { border-width: 0; }
+.item[data-type="fence"].is-rolled.is-selected .item-bar { border-color: var(--select); }
+.item.is-rolled-away,
+.item-shadow.is-rolled-away { visibility: hidden; pointer-events: none; }
 
 /* The interior refuses the pointer so presses fall through to cards or the
    board. Without this, a fence swallows pan/marquee over its entire area.

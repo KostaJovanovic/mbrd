@@ -92,7 +92,9 @@ test('cork is the softish end of the axis and nowhere else', async () => {
   // the other two, where a spec sheet has no cork on it. Unscope either
   // half and every board grows a pinboard.
   const css = appCss();
-  assert.match(css, /:root\[data-whimsy="0"\] \.item\[data-type="fence"\] \{ background: var\(--cork\); \}/);
+  // Under the fence's own colour when it has one (R24), which is why the cork
+  // is the fallback of --fence-tint rather than the background outright.
+  assert.match(css, /:root\[data-whimsy="0"\] \.item\[data-type="fence"\] \{ background: var\(--fence-tint, var\(--cork\)\); \}/);
   assert.match(css, /:root\[data-whimsy="0"\] \.fence-card::after\s*\{[^}]*cork-board\.webp/s);
 
   // Laid smaller than the paper it replaces - half the grain's 512, still
