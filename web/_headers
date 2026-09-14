@@ -155,3 +155,9 @@
 # Licence requires serving, not bundling — see web/assets/vendor/occt/LICENSE.txt.
 /assets/js/mesh/occt-worker.js
   ! Content-Security-Policy
+
+# libarchive.js (7z, RAR, and a ZIP the hand reader refuses): a module worker
+# that compiles libarchive.wasm. Same-origin, no network, loaded on the first
+# archive that needs it. Pinned by LIBARCHIVE_VERSION in import/archive.ts.
+/assets/vendor/libarchive/worker-bundle.js
+  ! Content-Security-Policy

@@ -262,6 +262,9 @@ export function refitEmbedMarks() {
  *  four things render natively - picture, moving picture, sound, text.
  *  Everything else becomes a named card; formats.ts knows what ~1350
  *  extensions *are*, so a .sldprt says "SolidWorks" rather than "file". */
+/** The files that land as an archive card with an Unzip button (import/archive.ts reads them). */
+export const ARCHIVE_EXTS = new Set(['zip', 'tar', 'tgz', 'gz', '7z', 'rar']);
+
 export function classify(file: File): ItemType {
   const mime = (file.type || '').toLowerCase();
   const ext = extOf(file.name);
@@ -272,6 +275,9 @@ export function classify(file: File): ItemType {
   // systems that hand them over, so testing MIME first would print a vertex list.
   if (meshKind(file.name)) return 'model';
   if (mime.startsWith('text/') || mime === 'application/json') return 'text';
+  // By extension alone: a ZIP's MIME is spelled four ways and a 7z's hardly
+  // ever, and a .docx is a ZIP that is not an archive to anybody who has one.
+  if (ARCHIVE_EXTS.has(ext)) return 'archive';
   // The catalog's sets are broader than what a browser bothers to set as MIME -
   // .jxl, .avif and friends often arrive with an empty file.type.
   if (PHOTO_EXTS.has(ext)) return 'image';
@@ -331,6 +337,10 @@ export function defaultSize(type: string): Size {
     // Four grid spaces wide, a little over five tall. Portrait: three bands
     // stacked (pictures, pigments, faces) each want the card's full width.
     case 'style-tile': return { w: 256, h: 328 };
+    // A named card with room under the name for its one button, clear of the
+    // caption plate at the foot. Three grid spaces tall.
+    case 'archive':
+    case 'folder':  return { w: 200, h: 192 };
     default:        return { w: 200, h: 112 };
   }
 }
@@ -1695,7 +1705,51 @@ const RENDERERS = {
   generic(item: Item) {
     return cardShell(item, extOf(item.name) || 'file');
   },
+
+  /** An archive, dropped whole: its name, and Unzip. See import/unpack.ts. */
+  archive(item: Item) {
+    return packCard(item, 'archive', 'Unzip', null);
+  },
+
+  /** A folder out of an archive or off the disk: its name, how many files, and Open. */
+  folder(item: Item) {
+    const count = Number(item.meta?.count) || 0;
+    return packCard(item, 'folder', 'Open', count ? `${count} file${count === 1 ? '' : 's'}` : '');
+  },
 };
+
+/**
+ * The card an archive or a folder wears: the named card every file wears, and
+ * one button under it that gives the card over to what it holds. The press is
+ * delegated - canvas/items.ts on the board, ui/feed.ts on the Feed - so a card
+ * rebuilt by the cull carries no listener of its own. `foot` replaces the size
+ * line when the card has no file of its own to weigh.
+ */
+const UNPACK = { icon: 'i-arrow-up' };
+
+function packCard(item: Item, kind: string, verb: string, foot: string | null) {
+  const card = cardShell(item, kind);
+  card.classList.add('pack-card');
+  if (foot !== null) {
+    const meta = card.querySelector('.card-meta');
+    if (meta) meta.textContent = foot;
+  }
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'card-unpack';
+  button.setAttribute('aria-label', `${verb} ${titleOf(item)}`);
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('class', 'ico');
+  svg.setAttribute('aria-hidden', 'true');
+  const use = document.createElementNS(SVG_NS, 'use');
+  use.setAttribute('href', `assets/icons.svg#${UNPACK.icon}`);
+  svg.append(use);
+  const word = document.createElement('span');
+  word.textContent = verb;
+  button.append(svg, word);
+  card.append(button);
+  return card;
+}
 
 /**
  * The bin, drawn: a can with its lid tipped off it.

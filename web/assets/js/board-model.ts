@@ -8,7 +8,7 @@
 export type ItemType =
   | 'image' | 'video' | 'audio' | 'note' | 'link' | 'text' | 'model'
   | 'title' | 'ghost' | 'swatch' | 'sticker' | 'fence' | 'style-tile'
-  | 'font' | 'gone' | 'generic';
+  | 'font' | 'gone' | 'archive' | 'folder' | 'generic';
 
 // Second arm is the reserved link-instead-of-embed form (no local bytes).
 export type ItemAsset =
@@ -653,7 +653,8 @@ export function makeItem(partial: Record<string, unknown>): Item {
 }
 
 // Must match itemHashes() in util.ts.
-const META_HASHES = ['cover', 'shot', 'thumb', 'preview', 'poster'];
+// `archive` is the file a folder card points into (import/unpack.ts).
+const META_HASHES = ['cover', 'shot', 'thumb', 'preview', 'poster', 'archive'];
 
 // For PDFs, RAWs, PSDs, etc. the displayed picture is meta.preview, not asset.hash.
 export function shownHash(item: Item): string | null {
@@ -668,6 +669,13 @@ function normalizeMeta(meta: ItemMeta): ItemMeta {
     if (!(key in out) || isHash(out[key])) continue;
     const { [key]: _drop, ...rest } = out;
     out = rest;
+  }
+  // A dropped folder's files, each a path and a content id. An entry missing
+  // either is dropped rather than repaired: its path becomes a card's name and
+  // its id an archive path, and there is nothing to repair either from.
+  if ('files' in out) {
+    const files = Array.isArray(out.files) ? out.files : [];
+    out = { ...out, files: files.filter(f => isRecord(f) && typeof f.path === 'string' && isHash(f.hash)) };
   }
   return out;
 }

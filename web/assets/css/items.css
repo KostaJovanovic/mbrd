@@ -224,6 +224,31 @@
   font-size: var(--t-small);
   font-style: var(--display-italic);
 }
+/* Unzip on an archive card, Open on a folder card (import/unpack.ts), centred
+   in the room under the name. The card body ignores the pointer, so the button
+   takes it back, as the style tile's swatches do. */
+.card-unpack {
+  margin: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px 6px 10px;
+  border: var(--board-hairline) solid var(--rule);
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--t-small);
+  cursor: pointer;
+  pointer-events: auto;
+}
+.card-unpack:hover,
+.card-unpack:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+/* A far-zoom card is a block, and a click on it is a click on the board. */
+#world.zoom-far .card-unpack { pointer-events: none; }
 /* Text card body. Two variants sharing the same box: .card-text (monospaced,
    pre-wrapped source) and .card-md (prose in the board's own face). */
 .card-text,

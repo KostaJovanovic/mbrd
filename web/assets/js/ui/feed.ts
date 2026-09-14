@@ -36,6 +36,7 @@ import {
 } from '../stickers/catalogue.ts';
 import { armedSticker, disarm } from './sticker-window.ts';
 import { openViewer, canView } from './viewer.ts';
+import { unpackItem } from '../import/unpack.ts';
 import { renderMarkdown } from './markdown.ts';
 import { shownHash, type Item } from '../board-model.ts';
 import type { Point } from '../geometry.ts';
@@ -331,6 +332,16 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
     e.preventDefault();
     e.stopPropagation();
   }, true);
+  // Unzip and Open on an archive or folder tile. Capture too, so the tile's
+  // own tap - open the viewer - never sees a press meant for the button.
+  root.addEventListener('click', e => {
+    const button = e.target instanceof Element ? e.target.closest('.card-unpack') : null;
+    const id = button && tileIdAt(button);
+    if (!id) return;
+    e.preventDefault();
+    e.stopPropagation();
+    void unpackItem(id);
+  }, true);
 
   bus.on('board:load', () => { teardown(); render(); });
   bus.on('layout', () => (board.layoutMode === 'mobile' ? render() : teardown()));
@@ -453,7 +464,7 @@ function kindOf(item: Item): TileKind {
 }
 
 /** The types the Feed draws with the canvas's own renderer. See kindOf(). */
-const CARD_TYPES = new Set(['style-tile', 'font', 'model', 'generic', 'gone']);
+const CARD_TYPES = new Set(['style-tile', 'font', 'model', 'generic', 'gone', 'archive', 'folder']);
 
 /**
  * The player a link becomes, or null. The same door the canvas card uses

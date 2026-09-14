@@ -33,7 +33,7 @@ import { initFarLands } from './canvas/farlands.ts';
 import { initPaper } from './canvas/paper.ts';
 import { initMobileFrame } from './canvas/mobile-frame.ts';
 import { repaintGround, forgetLookInk } from './canvas/ground.ts';
-import { initItems, resetItems } from './canvas/items.ts';
+import { initItems, resetItems, setUnpack } from './canvas/items.ts';
 import { resetModels } from './canvas/model.ts';
 import { initWeb, joinDump } from './canvas/web.ts';
 import { initGhosts } from './canvas/ghosts.ts';
@@ -41,6 +41,7 @@ import { initStills } from './canvas/stills.ts';
 import { initHires } from './canvas/hires.ts';
 import { initInput } from './canvas/input.ts';
 import { initDrop, importFiles, setImportPrompt } from './import/drop.ts';
+import { unpackItem } from './import/unpack.ts';
 import {
   initStorage, restoreSession, openFile, autosave, setPrompt, setBoardThumb,
   suspendCache, resetSessionLatches, failHandover, boardSafety, openSharedBoard,
@@ -260,6 +261,8 @@ initNowPlaying();
 // After the player — CSS sibling combinator requires this DOM order.
 initTimeline();
 initDrop(vp);
+// Unzip and Open on a card. Injected: canvas/ may not reach import/.
+setUnpack(id => { void unpackItem(id); });
 // HUD (zoom cluster, undo/redo, readouts). After buildPanel() and cmds.
 initHud(vp, cmds);
 // Toolbar: buttons are data-cmd, needs cmds.

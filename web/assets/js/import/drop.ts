@@ -6,8 +6,9 @@ import { platform } from '../platform/platform.ts';
 import { toast, busy } from '../notify.ts';
 import { cue } from '../cuelume/engine.ts';
 import {
-  board, bus, addItems, select, setItemCover, NOTE_MAX, baseStep, startSettling,
+  board, bus, addItems, replaceItem, select, setItemCover, NOTE_MAX, baseStep, startSettling,
 } from '../state.ts';
+import { cleanPath } from './archive.ts';
 import { addFile, derivedFile } from '../storage/assets.ts';
 import { makeByteBudget, overPixelBudget, pixelCrossing, IMPORT_LIMITS } from './budget.ts';
 import { allow, isAllowed, lift, fileKey, mb as consentMb } from '../consent.ts';
@@ -37,7 +38,7 @@ import type { Size } from '../canvas/renderers.ts';
 import type { Item, ItemMeta } from '../board-model.ts';
 
 /** Pre-layout item draft. x/y are placeholders until the arrangement fills them. */
-type Draft = {
+export type Draft = {
   type: string;
   name: string;
   x: number;
@@ -49,6 +50,20 @@ type Draft = {
   asset?: { hash: string, embedded: boolean };
   meta: ItemMeta;
 };
+
+/** One file under a folder dropped from the disk, by its path below that folder. */
+type DiskFile = { path: string, file: File };
+
+/** A folder inside a dropped folder: it lands as one folder card holding every file under it. */
+export type DiskFolder = { name: string, entries: DiskFile[] };
+
+/** What importFiles() takes: files, cards already made (a folder out of an archive), and disk folders. */
+export type Incoming = File | Draft | DiskFolder;
+
+const isFile = (x: Incoming): x is File => x instanceof File;
+
+/** How Unzip and Open land what a card held (import/unpack.ts): as one undo step with its leaving. */
+type Replace = { id: string, label: string, verb: string };
 
 /** Wider than MeasuredSize: absent `decodable` is the falsy default the reads below rely on. */
 type DraftSize = Size & { decodable?: boolean, measured?: boolean, natural?: Size };
@@ -173,7 +188,7 @@ export function initDrop(vp: DropViewport) {
     // Files first: a drag can carry both files and a URL; files are the intent.
     if (hasFiles(e.dataTransfer)) {
       const incoming = await filesFrom(e.dataTransfer);
-      await importFiles(incoming.files, at, {
+      await importFiles([...incoming.files, ...incoming.folders], at, {
         avoidOverlap: incoming.fromFolder,
         truncated: incoming.truncated,
       });
@@ -319,31 +334,35 @@ async function applyCover(id: string, file: File) {
  * A lone .mbrd opens as a board instead of being embedded.
  */
 export async function importFiles(
-  files: File[],
+  incoming: Incoming[],
   centre: Point,
-  { avoidOverlap = false, truncated = false }: { avoidOverlap?: boolean, truncated?: boolean } = {},
+  { avoidOverlap = false, truncated = false, replace = null }:
+    { avoidOverlap?: boolean, truncated?: boolean, replace?: Replace | null } = {},
 ) {
-  files = [...files].filter(f => f && (f.size > 0 || f.type));
+  let files = incoming.filter(f => f && (!isFile(f) || f.size > 0 || f.type));
   if (!files.length) return [];
 
   // A .mbrd is a board, not content. openOrMergeFile() asks "open or merge?"
-  // when the current board is non-empty.
-  if (files.length === 1 && looksLikeMbrd(files[0])) {
-    await openOrMergeFile(files[0]);
+  // when the current board is non-empty. Not out of an archive: Unzip asked
+  // for what is inside to land on this board, not for a board to open.
+  const sole = files.length === 1 ? files[0] : null;
+  if (!replace && sole && isFile(sole) && looksLikeMbrd(sole)) {
+    await openOrMergeFile(sole);
     return [];
   }
 
   // Fonts are board settings, not content. Announced via bus — ui/fonts.ts handles registration.
-  const fonts = files.filter(f => FONT_EXTS.has(extOf(f.name)));
+  const isFont = (f: Incoming): f is File => isFile(f) && FONT_EXTS.has(extOf(f.name));
+  const fonts = files.filter(isFont);
   if (fonts.length) {
     bus.emit('fonts:add', fonts);
-    files = files.filter(f => !FONT_EXTS.has(extOf(f.name)));
+    files = files.filter(f => !isFont(f));
     if (!files.length) return [];
   }
 
   // One warning for the whole drop if anything is over warnBytes.
   // After .mbrd and font extraction — those are not imported as content.
-  const big = files.filter(f => (f.size || 0) > IMPORT_LIMITS.warnBytes);
+  const big = files.filter((f): f is File => isFile(f) && (f.size || 0) > IMPORT_LIMITS.warnBytes);
   if (big.length && confirmImport) {
     const answer = await confirmImport({
       title: big.length === 1 ? 'Large file' : 'Large files',
@@ -380,8 +399,10 @@ export async function importFiles(
   // budget questions must be answered one at a time. See import/budget.ts.
   const budget = makeByteBudget();
   let overBudget = 0;
-  const keep: File[] = [];
+  const keep: Incoming[] = [];
   for (const f of files) {
+    // A card already made, or a folder whose files are filed one at a time.
+    if (!isFile(f)) { keep.push(f); continue; }
     const reasons = budget.check(f.size || 0);
     // Decode-bomb check from header dimensions, folded into the same question.
     const px = await pixelCrossing(f).catch(() => null);
@@ -423,7 +444,7 @@ export async function importFiles(
       if (i >= files.length) return;
       const file = files[i];
       try {
-        prepared[i] = await prepareFile(file, stats);
+        prepared[i] = await prepareOne(file, stats);
       } catch (err) {
         console.error('[mbrd] import failed for', file.name, err);
         firstError ??= err;
@@ -456,7 +477,8 @@ export async function importFiles(
   }
 
   const desktop = board.layoutMode !== 'mobile';
-  if (!desktop) {
+  // Unzip keeps the archive's own order on both surfaces.
+  if (!desktop && !replace) {
     // Mobile: only reorder, no 2D layout.
     // SAFETY: every ORDERS entry in arrangements.ts returns the items it was handed, so each is a Draft.
     const ordered = mobileOrder(drafts, { name: board.arrangement }) as Draft[];
@@ -464,7 +486,9 @@ export async function importFiles(
     drafts.push(...ordered);
   }
   // "Free" preserves positions, but fresh imports have none — fall back to grid.
-  const name = board.arrangement === 'free' ? 'grid' : board.arrangement;
+  // Unzip and Open spiral out from the card, from the centre in the archive's
+  // own order, whatever the board is arranged by.
+  const name = replace ? 'spiral' : board.arrangement === 'free' ? 'grid' : board.arrangement;
   if (desktop) {
     const spots = arrange(drafts, {
       name,
@@ -476,21 +500,31 @@ export async function importFiles(
       // Ghosts excluded: the hint cards leave the moment content lands, so flowing
       // around them reserves a void where they used to be. Same filter as the
       // Mobile pack's obstacles in layout.ts.
-      obstacles: avoidOverlap
-        ? board.items.filter(it => it.type !== 'ghost').map(it => ({ x: it.x, y: it.y, w: it.w, h: it.h }))
+      // What lands from a card flows round everything but the card it replaces.
+      obstacles: avoidOverlap || replace
+        ? board.items.filter(it => it.type !== 'ghost' && it.id !== replace?.id)
+          .map(it => ({ x: it.x, y: it.y, w: it.w, h: it.h }))
         : undefined,
     });
     drafts.forEach((d, i) => { d.x = spots[i].x; d.y = spots[i].y; });
+  } else if (replace) {
+    // The Feed reads "As placed" top to bottom and left to right, so a row at
+    // the card's own spot, in the archive's order, is the card's place in the
+    // column. The other orders put each card where they put any card.
+    drafts.forEach((d, i) => { d.x = centre.x + i * 0.01; d.y = centre.y; });
   }
 
-  const added = addItems(
-    drafts,
-    drafts.length > 1 ? `Add ${drafts.length} items` : 'Add item',
-    { avoidOverlap: avoidOverlap || board.layoutMode === 'mobile' }
-  );
+  const added = replace
+    ? replaceItem(replace.id, drafts, replace.label)
+    : addItems(
+      drafts,
+      drafts.length > 1 ? `Add ${drafts.length} items` : 'Add item',
+      { avoidOverlap: avoidOverlap || board.layoutMode === 'mobile' }
+    );
   select(added.map((i: Item) => i.id));
 
-  let msg = `${cancelled ? 'Stopped — kept' : 'Added'} ${added.length} item${added.length === 1 ? '' : 's'}`;
+  const verb = cancelled ? 'Stopped — kept' : replace ? replace.verb : 'Added';
+  let msg = `${verb} ${added.length} item${added.length === 1 ? '' : 's'}`;
   if (trimmed) msg += ` (capped at ${MAX_FILES})`;
   // "Skipped" — these were declined by the user, not refused by the app.
   if (overBudget) msg += `, ${overBudget} skipped`;
@@ -578,6 +612,33 @@ const isPdf = (file: File) => file.type === 'application/pdf'
   || PDF_EXTS.has(extOf(file.name));
 
 const PDF_EXTS = new Set(['pdf', 'ai']);
+
+/** A file is read and measured, a disk folder has its files filed, and a card already made passes through. */
+async function prepareOne(x: Incoming, stats: { undecodable: number }): Promise<Draft> {
+  if (isFile(x)) return prepareFile(x, stats);
+  if ('entries' in x) return diskFolderDraft(x);
+  return x;
+}
+
+/** A folder card, before the arrangement places it. See import/unpack.ts for Open. */
+export function folderDraft(name: string, meta: ItemMeta): Draft {
+  return { type: 'folder', name, x: 0, y: 0, ...defaultSize('folder'), meta };
+}
+
+/**
+ * A folder card for a folder inside a dropped folder. Its files are filed as
+ * assets now, while the drop can still read them, and the card lists each by
+ * path and content id. The leftovers an OS writes into folders are skipped,
+ * as they are out of an archive (cleanPath()).
+ */
+async function diskFolderDraft(folder: DiskFolder): Promise<Draft> {
+  const files: { path: string, hash: string, size: number }[] = [];
+  for (const { path, file } of folder.entries) {
+    const clean = cleanPath(path);
+    if (clean) files.push({ path: clean, hash: await addFile(file), size: file.size });
+  }
+  return folderDraft(folder.name, { files, count: files.length });
+}
 
 /** Classify, measure, hash one file into a Draft. `stats` accumulates soft outcomes for importFiles. */
 async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draft> {
@@ -1224,18 +1285,28 @@ export async function filesFrom(dt: DataTransfer) {
   // fallback reading dt.files after those awaits would usually find it emptied,
   // so the "walk yielded nothing" safety net could recover nothing.
   const flat = [...dt.files];
+  const folders: DiskFolder[] = [];
   const canWalk = items.length && typeof items[0].webkitGetAsEntry === 'function';
   if (!canWalk) {
-    return { files: flat, fromFolder: flat.some(file => !!file.webkitRelativePath), truncated: false };
+    return { files: flat, folders, fromFolder: flat.some(file => !!file.webkitRelativePath), truncated: false };
   }
 
   const entries = items.map(i => i.webkitGetAsEntry())
     .filter((entry): entry is FileSystemEntry => !!entry);
   const fromFolder = entries.some(entry => entry.isDirectory);
   const out: File[] = [];
+  const walk: Walk = { count: 0, dirs: 0 };
   for (const entry of entries) {
-    await walkEntry(entry, out);
-    if (out.length >= MAX_FILES) break;
+    // A dropped folder spreads its own files over the board, and each folder
+    // inside it lands as one folder card holding everything under it.
+    if (isDirEntry(entry)) {
+      await spreadFolder(entry, out, folders, walk);
+    } else {
+      const got: DiskFile[] = [];
+      await walkEntry(entry, '', got, walk);
+      out.push(...got.map(g => g.file));
+    }
+    if (walk.count >= MAX_FILES) break;
   }
   // Reported rather than left to be inferred. The walk stops *at* MAX_FILES, so
   // importFiles()'s `files.length > MAX_FILES` was unreachable from a drop and a
@@ -1243,7 +1314,8 @@ export async function filesFrom(dt: DataTransfer) {
   // brought in everything. Inferring it there with >= would be one character and
   // wrong for the picker, where five hundred chosen files really are five hundred
   // files and nothing was cut.
-  return { files: out.length ? out : flat, fromFolder, truncated: out.length >= MAX_FILES };
+  const walked = out.length || folders.length;
+  return { files: walked ? out : flat, folders, fromFolder, truncated: walk.count >= MAX_FILES };
 }
 
 /**
@@ -1262,23 +1334,55 @@ export async function filesFrom(dt: DataTransfer) {
 const MAX_DEPTH = 32;
 const MAX_DIRS = 8192;
 
-async function walkEntry(entry: FileSystemEntry, out: File[], depth = 0, seen = { dirs: 0 }) {
-  if (out.length >= MAX_FILES) return;
-  if (isFileEntry(entry)) {
-    const file = await new Promise<File | null>(res => entry.file(res, () => res(null)));
-    if (file) out.push(file);
-    return;
-  }
-  if (!isDirEntry(entry)) return;
-  if (depth >= MAX_DEPTH || ++seen.dirs > MAX_DIRS) return;
-  const reader = entry.createReader();
+/** One drop's walk: files found, across every folder and card, and directories visited. */
+type Walk = { count: number, dirs: number };
+
+/** Each child of a directory, in turn, until the walk reaches MAX_FILES. */
+async function eachChild(dir: FileSystemDirectoryEntry, walk: Walk, visit: (child: FileSystemEntry) => Promise<void>) {
+  const reader = dir.createReader();
   // readEntries returns at most ~100 per call and must be drained in a loop.
   for (;;) {
     const batch = await new Promise<FileSystemEntry[]>(res => reader.readEntries(res, () => res([])));
     if (!batch.length) break;
-    for (const child of batch) await walkEntry(child, out, depth + 1, seen);
-    if (out.length >= MAX_FILES) break;
+    for (const child of batch) await visit(child);
+    if (walk.count >= MAX_FILES) break;
   }
+}
+
+/** Every file under an entry, each with its path below `prefix`. */
+async function walkEntry(entry: FileSystemEntry, prefix: string, out: DiskFile[], walk: Walk, depth = 0) {
+  if (walk.count >= MAX_FILES) return;
+  if (isFileEntry(entry)) {
+    const file = await new Promise<File | null>(res => entry.file(res, () => res(null)));
+    if (file) {
+      out.push({ path: prefix + file.name, file });
+      walk.count++;
+    }
+    return;
+  }
+  if (!isDirEntry(entry)) return;
+  if (depth >= MAX_DEPTH || ++walk.dirs > MAX_DIRS) return;
+  const below = `${prefix}${entry.name}/`;
+  await eachChild(entry, walk, child => walkEntry(child, below, out, walk, depth + 1));
+}
+
+/**
+ * A dropped folder: its own files onto `files`, and each folder in it onto
+ * `folders` with every file under that one, by path below it.
+ */
+async function spreadFolder(dir: FileSystemDirectoryEntry, files: File[], folders: DiskFolder[], walk: Walk) {
+  if (++walk.dirs > MAX_DIRS) return;
+  await eachChild(dir, walk, async child => {
+    const got: DiskFile[] = [];
+    if (isDirEntry(child)) {
+      if (++walk.dirs > MAX_DIRS) return;
+      await eachChild(child, walk, inner => walkEntry(inner, '', got, walk, 2));
+      if (got.length) folders.push({ name: child.name, entries: got });
+    } else {
+      await walkEntry(child, '', got, walk, 1);
+      files.push(...got.map(g => g.file));
+    }
+  });
 }
 
 

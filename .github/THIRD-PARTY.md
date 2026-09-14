@@ -71,11 +71,12 @@ is black (X, GitHub, Patreon, TikTok, Threads, Medium).
 | pdf.js 4.7.76 | `web/assets/vendor/pdfjs/pdf.min.mjs`, `web/assets/vendor/pdfjs/pdf.worker.min.mjs` | https://github.com/mozilla/pdf.js | Apache-2.0 | `web/assets/vendor/pdfjs/LICENSE.txt` |
 | UTIF.js 3.1.0 | `web/assets/vendor/utif/UTIF.js` | https://github.com/photopea/UTIF.js | MIT | `web/assets/vendor/utif/LICENSE.txt` |
 | pako 1.0.11 (inflate) | `web/assets/vendor/pako/pako_inflate.min.js` | https://github.com/nodeca/pako | MIT AND Zlib | `web/assets/vendor/pako/LICENSE.txt` |
+| libarchive.js 2.0.2 | `web/assets/vendor/libarchive/libarchive.js`, `web/assets/vendor/libarchive/worker-bundle.js`, `web/assets/vendor/libarchive/libarchive.wasm` | https://github.com/nika-begiashvili/libarchivejs | MIT, BSD-2-Clause | `web/assets/vendor/libarchive/LICENSE.txt` |
 | occt-import-js 0.0.23 | `web/assets/vendor/occt/occt-import-js.js`, `web/assets/vendor/occt/occt-import-js.wasm` | https://github.com/kovacsv/occt-import-js | LGPL-2.1 | `web/assets/vendor/occt/LICENSE.txt` |
 | onnxruntime-web 1.23.0 | `web/assets/vendor/onnxruntime/ort.wasm.min.mjs`, `web/assets/vendor/onnxruntime/ort-wasm-simd-threaded.mjs`, `web/assets/vendor/onnxruntime/ort-wasm-simd-threaded.wasm` | https://github.com/microsoft/onnxruntime | MIT | `web/assets/vendor/onnxruntime/LICENSE.txt` |
 | u2netp (model weights) | `web/assets/vendor/u2netp/u2netp.onnx` | https://github.com/xuebinqin/U-2-Net | Apache-2.0 | `web/assets/vendor/u2netp/LICENSE.txt` |
 
-Seven vendored builds, none of them modified, each loaded only when a file or a
+Eight vendored builds, none of them modified, each loaded only when a file or a
 command that needs it is used and none of them in `SHELL`.
 
 **onnxruntime-web** runs **u2netp**, the model behind the background remover,
@@ -99,6 +100,17 @@ compression, which Photoshop writes by default. Both run inside
 `web/assets/js/import/tiff-worker.js`, off the main thread, because the decode
 is straight-line JavaScript over every pixel of what may be a 400-megapixel
 scan. Neither touches the DOM and neither reaches any host.
+
+**libarchive.js** opens the archives the hand-written readers do not: 7z, RAR,
+and a ZIP that uses ZIP64 or a method other than deflate
+(`web/assets/js/import/archive.ts`). It is a wrapper round
+[libarchive](https://github.com/libarchive/libarchive), compiled to
+WebAssembly and distributed under libarchive's own two-clause BSD licence
+(https://github.com/libarchive/libarchive/blob/master/COPYING). The wasm runs
+in a module worker with the policy dropped (`web/_headers`), is loaded on the
+first archive that needs it, and reads the one file it is handed. Its flat
+entry list is used rather than its tree, since the tree is built by assigning
+path segments as object keys.
 
 **occt-import-js** is Open CASCADE Technology (https://dev.opencascade.org)
 compiled to WebAssembly, and it is the only entry here whose licence changes how
