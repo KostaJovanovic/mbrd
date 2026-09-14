@@ -1,81 +1,37 @@
 /* =========================================================
    mbrd - the Timeline: every board change as a step
-   Two faces: a strip along the foot (wide window) and a sheet
-   (narrow window). The media query at the bottom switches them.
+   Docked along the foot of the window on every width. The
+   board ends above it: ui/timeline-view.ts writes the bar's
+   height to --dock, which #viewport and the bottom-anchored
+   furniture add to their inset (chrome.css and the rest).
    ========================================================= */
 
-/* Strip: one row, same height as the other glass furniture. min-height
-   rather than fixed so the trim offer can add a second line. */
 #timeline-strip {
   position: fixed;
-  z-index: var(--z-chrome-over);
-  left: var(--foot-left);
-  right: var(--foot-right);
-  bottom: max(16px, env(safe-area-inset-bottom));
+  z-index: var(--z-chrome);
+  left: 0;
+  right: 0;
+  bottom: 0;
   display: flex;
-  flex-flow: row wrap;
   align-items: center;
-  column-gap: 10px;
-  row-gap: 4px;
-  padding: 0 10px;
+  gap: 8px;
+  padding: 4px max(10px, env(safe-area-inset-right))
+           max(4px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
   min-height: var(--chrome-button-h);
-  border: var(--hairline) solid var(--rule-2);
-  border-radius: var(--leaf);
+  border-top: var(--hairline) solid var(--rule-2);
   background: var(--paper-card);
-  box-shadow: var(--shadow-1);
   -webkit-user-select: none;
   user-select: none;
 }
-/* Bottom padding only when the trim offer is present. */
-#timeline-strip:has(.tl-trim) { padding-bottom: 8px; }
 #timeline-strip[hidden] { display: none; }
 
-/* Enters from below, like the player. */
-#timeline-strip {
-  transform: translateY(calc(100% + max(16px, env(safe-area-inset-bottom))));
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--dur-fast) var(--ease),
-              transform var(--dur-fast) var(--ease);
+/* Transport, name and gear share one icon-button shape. */
+#timeline-strip .tl-transport {
+  display: flex;
+  flex: none;
+  gap: 2px;
 }
-#timeline-strip.is-up {
-  transform: none;
-  opacity: 1;
-  pointer-events: auto;
-  transition: opacity var(--dur-base) var(--ease),
-              transform var(--dur-base) var(--ease-back);
-}
-
-/* Player steps up over the strip while it is open. General sibling
-   combinator -- strip must precede #nowplaying in index.html. */
-#timeline-strip.is-up ~ #nowplaying {
-  bottom: calc(var(--foot-bottom, max(16px, env(safe-area-inset-bottom)))
-               + var(--tl-h, var(--chrome-button-h)) + var(--foot-gap));
-}
-
-/* Head becomes `display: contents` so its children join the strip row.
-   Order set here because the track sits between title and readout
-   visually but after the buttons in the document (for a11y). */
-#timeline-strip .tl-head {
-  display: contents;
-  font-size: var(--t-small);
-  color: var(--ink-3);
-}
-#timeline-strip .tl-title {
-  order: 1;
-  font-weight: 600;
-  color: var(--ink-2);
-  font-size: var(--t-small);
-}
-#timeline-strip .tl-where {
-  order: 3;
-  font-size: var(--t-small);
-  color: var(--ink-3);
-  font-variant-numeric: tabular-nums;
-}
-/* Close and Name buttons -- same icon-button size. */
-#timeline-strip .tl-close,
-#timeline-strip .tl-name {
+#timeline-strip :is(.tl-transport button, .tl-name, .tl-gear) {
   display: grid;
   place-items: center;
   flex: 0 0 auto;
@@ -91,18 +47,30 @@
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 @media (hover: hover) {
-  #timeline-strip .tl-close:hover,
-  #timeline-strip .tl-name:hover { background: var(--paper-2); color: var(--accent-deep); }
+  #timeline-strip :is(.tl-transport button, .tl-name, .tl-gear):not(:disabled):hover {
+    background: var(--paper-2);
+    color: var(--accent-deep);
+  }
 }
-#timeline-strip .tl-close:active,
-#timeline-strip .tl-name:active { background: var(--paper-3); }
-#timeline-strip .tl-close:focus-visible,
-#timeline-strip .tl-name:focus-visible { background: var(--paper-2); color: var(--accent-deep); }
-#timeline-strip .tl-close svg,
-#timeline-strip .tl-name svg { width: var(--icon-glyph); height: var(--icon-glyph); }
+#timeline-strip :is(.tl-transport button, .tl-name, .tl-gear):not(:disabled):active { background: var(--paper-3); }
+#timeline-strip :is(.tl-transport button, .tl-name, .tl-gear):focus-visible {
+  background: var(--paper-2);
+  color: var(--accent-deep);
+}
+#timeline-strip .tl-transport button:disabled { opacity: 0.35; cursor: default; }
+#timeline-strip .tl-transport [aria-pressed="true"] { color: var(--accent-deep); }
+#timeline-strip :is(.tl-transport, .tl-name, .tl-gear) svg {
+  width: var(--icon-glyph);
+  height: var(--icon-glyph);
+}
 #timeline-strip .tl-name[hidden] { display: none; }
-#timeline-strip .tl-name { order: 4; }
-#timeline-strip .tl-close { order: 5; }
+
+#timeline-strip .tl-where {
+  flex: none;
+  font-size: var(--t-small);
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
 
 /* Track dimensions -- named so four rules can do arithmetic on them. */
 #timeline-strip {
@@ -112,18 +80,62 @@
   --tl-gap: 10px;
 }
 
+/* The rail holds the track and the marker that rides over it. */
+#timeline-strip .tl-rail {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
 /* The track: one scrolling line of steps. */
 #timeline-strip .tl-track {
-  order: 2;
-  /* Basis 0 so it does not wrap to its own line in the wrapping flex. */
   flex: 1 1 0;
   min-width: 0;
   display: flex;
   align-items: center;
   gap: var(--tl-gap);
+  padding: 3px 0;
   overflow-x: auto;
   overflow-y: hidden;
+  scrollbar-width: thin;
 }
+
+/* The marker: a line through the step the board stands on, with a knob at
+   the top to take hold of. The line is a wash so the glyph under it reads. */
+#timeline-strip .tl-marker {
+  position: absolute;
+  top: -4px;
+  bottom: -2px;
+  width: 14px;
+  margin-left: -7px;
+  cursor: ew-resize;
+  touch-action: none;
+  z-index: 1;
+}
+#timeline-strip .tl-marker[hidden] { display: none; }
+#timeline-strip .tl-marker::before {
+  content: '';
+  position: absolute;
+  left: 3px;
+  top: 0;
+  width: 8px;
+  height: 5px;
+  border-radius: 0 0 4px 4px;
+  background: var(--accent);
+}
+#timeline-strip .tl-marker::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 5px;
+  bottom: 0;
+  width: 2px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+#timeline-strip .tl-marker.is-dragging::after { background: var(--accent); }
 
 /* One step: a mark with a connector to the previous one. */
 #timeline-strip .tl-step {
@@ -214,13 +226,6 @@
   background: var(--accent);
   color: var(--accent-fg);
 }
-#timeline-strip .tl-step.is-at::after {
-  content: '';
-  position: absolute;
-  inset: 1px;
-  border-radius: calc(var(--leaf) - 1px);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
-}
 
 /* Ruled (editable) step wears a ring. Most steps are sealed, so the
    strip stays quiet and the few editable ones stand out. */
@@ -252,159 +257,17 @@
 #timeline-strip.is-stale .tl-track { opacity: 0.4; pointer-events: none; }
 #timeline-strip.is-stale .tl-where { color: var(--danger); }
 
-/* Trim offer. Under the track, on its own wrapped line in the strip. */
-.tl-trim {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: var(--t-tiny);
-  color: var(--ink-3);
-}
-.tl-trim-why { color: var(--ink-3); }
-.tl-trim-go {
-  font: inherit;
-  padding: 3px 9px;
-  border: var(--hairline) solid var(--rule-2);
-  border-radius: var(--leaf);
-  background: none;
-  color: var(--ink-2);
-  cursor: pointer;
-}
-@media (hover: hover) {
-  .tl-trim-go:hover { background: var(--paper-2); color: var(--accent-deep); }
-}
-.tl-trim-go:active { background: var(--paper-3); }
-.tl-trim-go:focus-visible { background: var(--paper-2); color: var(--accent-deep); }
-/* In the strip it wraps to its own line. */
-#timeline-strip .tl-trim { order: 6; flex: 1 0 100%; }
-
-/* ═════════════════════════════════════════════════════════════════════════
-   The sheet: Timeline on a narrow window. Dressed as a sheet by
-   dialog.css. Head and foot stay; the list scrolls between them.
-   ═════════════════════════════════════════════════════════════════════════ */
-
-#timeline-sheet {
-  width: min(420px, calc(100vw - 32px));
-  /* svh, not vh -- accounts for the phone's address bar. */
-  max-height: calc(100svh - 32px);
-}
-/* Flat display on the open state only, or it outranks the UA's
-   display: none and leaves a closed dialog visible. */
-#timeline-sheet[open] { display: flex; flex-direction: column; }
-
-#tl-sheet-where {
-  margin: 0 0 10px;
-  font-size: var(--t-small);
-  color: var(--ink-3);
-  font-variant-numeric: tabular-nums;
-}
-#timeline-sheet.is-stale #tl-sheet-where { color: var(--danger); }
-#timeline-sheet.is-stale #tl-sheet-list { opacity: 0.4; pointer-events: none; }
-
-#tl-sheet-list {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  margin: 0 0 4px;
-  padding: 0;
-  list-style: none;
-}
-
-/* Row border on the <li>, hit target on the button inside. */
-#timeline-sheet .tl-row { border-bottom: var(--hairline) solid var(--rule); }
-#timeline-sheet .tl-row:last-child { border-bottom: 0; }
-#timeline-sheet .tl-go {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  margin: 0;
-  /* 44px minimum touch target. */
-  min-height: 44px;
-  padding: 4px 6px;
-  border: 0;
-  border-radius: var(--leaf);
-  background: none;
-  color: inherit;
-  font: inherit;
-  font-size: var(--t-small);
-  text-align: left;
-  cursor: pointer;
-  transition: background var(--dur-fast) var(--ease);
-}
-@media (hover: hover) {
-  #timeline-sheet .tl-go:hover { background: var(--paper-2); }
-}
-#timeline-sheet .tl-go:focus { outline: none; }
-#timeline-sheet .tl-go:focus-visible {
-  outline: var(--sel-line) solid var(--select);
-  outline-offset: calc(var(--sel-gap) * -1);
-}
-
-/* Sheet mark: icon-button size and corner, like .tour-chip. */
-#timeline-sheet .tl-mark {
-  position: relative;
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: var(--icon-button);
-  height: var(--icon-button);
-  border-radius: var(--leaf);
-  background: var(--paper-2);
-  color: var(--ink-3);
-}
-#timeline-sheet .tl-mark .ico { width: 15px; height: 15px; }
-/* Sentence truncates; time never does -- it is the scannable column. */
-#timeline-sheet .tl-said {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--ink-2);
-}
-#timeline-sheet .tl-when {
-  flex: none;
-  font-family: var(--font-mono);
-  font-size: var(--t-tiny);
-  font-variant-numeric: tabular-nums;
-  color: var(--ink-3);
-}
-
-/* Current position. */
-#timeline-sheet .tl-row.is-at .tl-mark { background: var(--accent); color: var(--accent-fg); }
-#timeline-sheet .tl-row.is-at .tl-said { color: var(--ink); }
-/* Ahead of marker: faded. */
-#timeline-sheet .tl-row.is-ahead .tl-go { opacity: 0.45; }
-/* Named: ring on the mark. */
-#timeline-sheet .tl-row.is-named .tl-mark {
-  box-shadow: 0 0 0 var(--hairline) var(--accent-text);
-}
-#timeline-sheet .tl-row.is-named .tl-said { color: var(--ink); }
-/* Broken: references a missing card. */
-#timeline-sheet .tl-row.is-broken .tl-mark {
-  color: var(--danger);
-  box-shadow: 0 0 0 var(--hairline) var(--danger);
-}
-
-/* Trim offer slot. :empty hides it when replaceChildren() clears it. */
-#tl-sheet-trim { margin: 0 0 12px; }
-#tl-sheet-trim:empty { display: none; }
-#tl-sheet-trim .tl-trim { flex-wrap: wrap; }
-
-/* Strip hides at the width the sheet takes over.
-   Must agree with onNarrow() in ui/timeline-view.ts. */
-@media (max-width: 720px) {
-  #timeline-strip { display: none; }
+/* A phone keeps the steps and the controls, and drops the count. */
+@media (max-width: 520px) {
+  #timeline-strip .tl-where { display: none; }
+  #timeline-strip { gap: 4px; }
 }
 
 /* Fallback without color-mix() -- see tokens.css section 7. */
 @supports not (color: color-mix(in srgb, red, blue)) {
   #timeline-strip .tl-step:hover .tl-dot { background: rgb(var(--ink-c) / 8%); }
-  #timeline-strip .tl-step.is-at::after {
-    box-shadow: 0 0 0 2px rgb(var(--accent-c) / 35%);
-  }
   #timeline-strip .tl-step.is-ruled .tl-dot {
     box-shadow: 0 0 0 var(--hairline) rgb(var(--accent-c) / 55%);
   }
+  #timeline-strip .tl-marker::after { background: rgb(var(--accent-c) / 40%); }
 }

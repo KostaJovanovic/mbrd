@@ -1,59 +1,68 @@
-// Timeline drawn — the step ledger from timeline.ts, shown. Wide window
-// gets a strip along the foot; narrow gets a sheet. One module so the
-// two faces share KINDS, sentenceFor(), goTo(), trim. Left-click to go;
-// right-click a rule-carrying step to edit it. Four visual states per
-// step: marker, ahead, sealed, broken (see timeline.css).
+// Timeline drawn - the step ledger from timeline.ts, docked along the foot of
+// the window on every width, the way a CAD history bar is: the board ends above
+// it rather than under it. Its height is --dock, which #viewport and every piece
+// of bottom-anchored furniture add to their inset. Transport on the left, one
+// mark per step and a marker to drag in the middle, size and trim behind a gear.
 
 import { bus } from '../board-store.ts';
 import { toast } from '../notify.ts';
-import { el, formatBytes, markClosed } from '../util.ts';
+import { formatBytes } from '../util.ts';
+import { readPref, writePref } from '../prefs.ts';
 import { ARRANGEMENTS, MOBILE_ARRANGEMENTS } from '../arrange/arrangements.ts';
-import { openAnchored, icon } from './menu.ts';
+import { openAnchored, menuButton, icon } from './menu.ts';
 import type { MenuEntry } from './menu.ts';
 import { ask } from './dialog.ts';
 import {
   board,
   timelineSteps, timelineAt, timelineStale, goTo, editStep, stepEditable,
-  timelineBytes, trimmable, trimTimeline, TRIM_BYTES, describeStep, nameStep,
+  timelineBytes, trimmable, trimTimeline, describeStep, nameStep,
 } from '../state.ts';
 
 /**
- * The row a delegated click landed on, by selector, or null. Three listeners
- * here are delegated (dots/rows are rebuilt on every change) and share this cast.
+ * The row a delegated click landed on, by selector, or null. The listeners
+ * here are delegated (the marks are rebuilt on every change) and share this cast.
  */
-// SAFETY: these listeners are on elements inside #timeline-strip and the
-// sheet, so `target` came off this document; the optional chain covers null.
+// SAFETY: these listeners are on elements inside #timeline-strip, so `target`
+// came off this document; the optional chain covers null.
 const rowUnder = (event: Event, selector: string) =>
   (event.target as HTMLElement | null)?.closest<HTMLElement>(selector);
 
 let strip: HTMLElement | null = null;
 let track: HTMLElement | null = null;
+let rail: HTMLElement | null = null;
+let marker: HTMLElement | null = null;
 let where: HTMLElement | null = null;
 let nameButton: HTMLElement | null = null;
-/** Whether the strip is up. Not read off the DOM: see closeStrip(). */
+let playButton: HTMLElement | null = null;
+/** Whether the bar is up. */
 let open = false;
 
 /**
- * How many steps are drawn at once, in either face. A ceiling, not a window:
- * past this the newest are shown and the head says so. Three thousand
- * buttons is three thousand event targets, and the far end of a long history
- * is exactly the part nobody aims a mouse at.
+ * Whether the bar is up, per device rather than per board: whether a screen
+ * has the room for it is a fact about the screen. Absent means never chosen.
+ */
+const PREF = 'mbrd.timeline';
+
+/**
+ * How many steps are drawn at once. A ceiling, not a window: past this the
+ * newest are shown. Three thousand buttons is three thousand event targets,
+ * and the far end of a long history is the part nobody aims a mouse at.
  */
 const MAX_DOTS = 400;
 
-/**
- * Which face this window gets. **720px, and it must agree with the media
- * query at the foot of timeline.css** - that rule is the belt for a window
- * narrowed while the strip is up; this is the decision itself. Width alone,
- * no touch condition, since a desktop window dragged to 500px has the same
- * problem a phone has. Made lazily and read live, like canvas/viewport.ts.
- */
-let narrow: MediaQueryList | null = null;
-function onNarrow(): boolean {
-  if (typeof matchMedia !== 'function') return false;
-  narrow ??= matchMedia('(max-width: 720px)');
-  return narrow.matches;
-}
+/** Play replays the history at two steps a second. */
+const STEP_MS = 500;
+/** The replay's timer, or 0 when nothing is playing. */
+let playing = 0;
+/** Set while the replay moves the marker, so its own step does not pause it. */
+let stepping = false;
+
+/** The two faces of the play button. Named constants, so tests/icons.test.js reads both. */
+const PLAY = { icon: 'i-tl-play', said: 'Play the history' };
+const PAUSE = { icon: 'i-tl-pause', said: 'Pause' };
+
+/** A phone, for the one decision made on it: the bar starts closed there. */
+const phone = () => typeof matchMedia === 'function' && matchMedia('(max-width: 720px)').matches;
 
 /**
  * What each kind of step looks like, and how it reads in the past tense.
@@ -95,6 +104,9 @@ const KINDS: Record<string, { icon: string, said: string }> = {
   'Bring': { icon: 'i-front', said: 'Brought to the front' },
   'Send': { icon: 'i-back', said: 'Sent to the back' },
   'Stickers': { icon: 'i-sticker', said: 'Added a sticker' },
+  // replaceItem() in state.ts, from import/unpack.ts.
+  'Unzip': { icon: 'i-arrow-up', said: 'Unzipped' },
+  'Open folder': { icon: 'i-arrow-up', said: 'Opened' },
 };
 
 /** The one every step that is none of the above falls back to. */
@@ -120,23 +132,34 @@ function sentenceFor(step: Step): string {
 }
 
 export function initTimeline() {
-  // The bus first and outside the guard below: a build with the strip's
-  // markup missing must still redraw an open sheet.
-  bus.on('history', renderOpen);
-  bus.on('board:load', renderOpen);
-  // A window narrowed while the strip is up keeps .is-up (CSS just hides it),
-  // so the player-over-strip rule would still be in effect over nothing.
-  // Closing it is also the honest answer to what happened.
-  onNarrow();
-  narrow?.addEventListener('change', event => { if (event.matches) closeStrip(); });
+  // The bus first and outside the guard below, like every init here.
+  bus.on('history', () => {
+    // A change that is not the replay's own step - an edit, an undo - stops it.
+    if (playing && !stepping) pause();
+    if (open) render();
+  });
+  bus.on('board:load', () => {
+    pause();
+    if (open) render();
+  });
   strip = document.getElementById('timeline-strip');
   if (!strip) return;
   track = strip.querySelector('.tl-track');
+  rail = strip.querySelector('.tl-rail');
+  marker = strip.querySelector('.tl-marker');
   where = strip.querySelector('.tl-where');
   nameButton = strip.querySelector('.tl-name');
+  playButton = strip.querySelector('[data-tl="play"]');
   nameButton?.addEventListener('click', () => { void namePoint(); });
-  strip.querySelector('.tl-close')?.addEventListener('click', () => closeStrip());
-  // Delegated: the dots are rebuilt on every change.
+  const gear = strip.querySelector<HTMLButtonElement>('.tl-gear');
+  if (gear) {
+    menuButton(gear, () => openAnchored(gear.getBoundingClientRect(), gearEntries(), { label: 'Timeline' }));
+  }
+  strip.querySelector('.tl-transport')?.addEventListener('click', event => {
+    const go = rowUnder(event, '[data-tl]')?.dataset.tl;
+    if (go) transport(go);
+  });
+  // Delegated: the marks are rebuilt on every change.
   track?.addEventListener('click', event => {
     const dot = rowUnder(event, '.tl-step');
     if (!dot?.dataset.at) return;
@@ -154,73 +177,107 @@ export function initTimeline() {
     event.preventDefault();
     openAnchored(dot.getBoundingClientRect(), entries, { label: 'Change this step' });
   });
-}
-
-/**
- * Redraw whichever face is up, and neither when neither is. What 'history'
- * (a commit, undo, redo or jump) and 'board:load' (a whole new history) land on.
- */
-function renderOpen() {
-  if (open) render();
-  if (sheet?.open) renderSheet();
-}
-
-/**
- * The Timeline, opened or dismissed - and the one place that decides which
- * face this window gets. A toggle rather than an open on both sides: it's a
- * surface you consult and put away. A second press while the sheet is up
- * should still close it.
- */
-export function toggleTimeline() {
-  if (onNarrow()) {
-    if (sheet?.open) sheet.close();
-    else openSheet();
-    return;
+  track?.addEventListener('scroll', placeMarker, { passive: true });
+  wireMarker();
+  // A press anywhere but the play button pauses a replay.
+  document.addEventListener('pointerdown', event => {
+    if (!playing) return;
+    if (event.target instanceof Node && playButton?.contains(event.target)) return;
+    pause();
+  }, true);
+  if (typeof ResizeObserver === 'function') {
+    new ResizeObserver(() => { writeDock(); placeMarker(); }).observe(strip);
   }
-  if (open) closeStrip();
-  else openStrip();
+  // On from now on, off to begin with on a phone, then whatever was last chosen here.
+  const saved = readPref(PREF);
+  if (saved === null ? !phone() : saved === '1') openBar();
 }
 
-function openStrip() {
+/** The Timeline button: up or down, remembered on this device. */
+export function toggleTimeline() {
+  if (open) closeBar();
+  else openBar();
+  writePref(PREF, open ? '1' : '0');
+}
+
+function openBar() {
   if (!strip || open) return;
   open = true;
   strip.hidden = false;
   render();
-  // Two frames: hidden->false and the class in the same tick would leave no
-  // transition to run. Same two-step every other entering surface uses.
-  requestAnimationFrame(() => requestAnimationFrame(() => strip?.classList.add('is-up')));
-  measure();
-  document.addEventListener('keydown', onKey);
+  writeDock();
+  paintToggle();
 }
 
-function closeStrip() {
+function closeBar() {
   if (!strip || !open) return;
+  pause();
   open = false;
-  strip.classList.remove('is-up');
-  document.removeEventListener('keydown', onKey);
-  // Hidden at the end of the exit, or the bar vanishes instead of leaving.
-  const done = () => { if (!open && strip) strip.hidden = true; };
-  strip.addEventListener('transitionend', done, { once: true });
-  setTimeout(done, 400);
+  strip.hidden = true;
+  writeDock();
+  paintToggle();
 }
 
-/**
- * Escape closes it, only when nothing else wants the key: an open menu or a
- * tour, both non-modal and above this one in priority.
- */
-function onKey(event: KeyboardEvent) {
-  if (event.key !== 'Escape' || event.defaultPrevented) return;
-  if (document.querySelector('.menu:not([hidden]), #tour:not([hidden])')) return;
-  markClosed(event);
-  closeStrip();
-  event.preventDefault();
+/** The bar's height as --dock, or nothing when it is down. */
+function writeDock() {
+  const root = document.documentElement;
+  if (open && strip) root.style.setProperty('--dock', `${Math.round(strip.getBoundingClientRect().height)}px`);
+  else root.style.removeProperty('--dock');
 }
 
-/** Tell the stylesheet how tall the strip is, so the player can step over it. */
-function measure() {
-  if (!strip) return;
-  const height = strip.getBoundingClientRect().height;
-  if (height) strip.style.setProperty('--tl-h', `${Math.round(height)}px`);
+/** Whichever Timeline buttons are on screen say whether the bar is up. */
+function paintToggle() {
+  for (const button of document.querySelectorAll('[data-cmd="timeline"]')) {
+    button.setAttribute('aria-pressed', String(open));
+  }
+}
+
+/** First, back, play, forward, last. */
+function transport(go: string) {
+  if (timelineStale()) return;
+  if (go === 'play') {
+    if (playing) pause();
+    else play();
+    return;
+  }
+  pause();
+  const at = timelineAt();
+  const last = timelineSteps().length;
+  const target = go === 'first' ? 0 : go === 'back' ? at - 1 : go === 'forward' ? at + 1 : last;
+  if (target >= 0 && target <= last && target !== at) goTo(target);
+}
+
+/** Replay from here to the newest step, or from the start when there is nothing ahead. */
+function play() {
+  if (!timelineSteps().length) return;
+  if (timelineAt() >= timelineSteps().length) advance(0);
+  playing = window.setInterval(() => {
+    const at = timelineAt();
+    if (at < timelineSteps().length) advance(at + 1);
+    if (timelineAt() >= timelineSteps().length) pause();
+  }, STEP_MS);
+  paintPlay();
+}
+
+function advance(target: number) {
+  stepping = true;
+  try { goTo(target); } finally { stepping = false; }
+}
+
+function pause() {
+  if (!playing) return;
+  clearInterval(playing);
+  playing = 0;
+  paintPlay();
+}
+
+function paintPlay() {
+  if (!playButton) return;
+  const face = playing ? PAUSE : PLAY;
+  playButton.replaceChildren(icon(face.icon));
+  playButton.title = face.said;
+  playButton.setAttribute('aria-label', face.said);
+  playButton.setAttribute('aria-pressed', String(!!playing));
 }
 
 function render() {
@@ -236,8 +293,8 @@ function render() {
   const shown = steps.length > MAX_DOTS ? steps.slice(-MAX_DOTS) : steps;
   const offset = steps.length - shown.length;
 
-  // The start dot only when the start is what's shown - otherwise the
-  // leftmost dot would claim to be the beginning while sitting a thousand
+  // The start mark only when the start is what's shown - otherwise the
+  // leftmost mark would claim to be the beginning while sitting a thousand
   // steps from its neighbour.
   if (!offset) track.append(dotFor(null, 0, at, 'Where this board started'));
   shown.forEach((step, index) => {
@@ -245,53 +302,115 @@ function render() {
     track!.append(dotFor(step, position, at, sentenceFor(step)));
   });
 
-  where.textContent = stale
-    ? 'This history does not match this board'
-    : `${at} of ${steps.length}` + (offset ? ` (newest ${shown.length})` : '');
-  showNameButton(nameButton, steps, at, stale);
-  renderTrim();
-  measure();
+  where.textContent = stale ? 'Does not match' : `${at} of ${steps.length}`;
+  where.title = stale ? 'This history does not match this board'
+    : offset ? `The newest ${shown.length} are shown` : '';
+  showNameButton(steps, at, stale);
+  paintTransport(at, steps.length, stale);
+  // The step the board stands on, in view.
+  track.querySelector('.is-at')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  placeMarker();
+}
+
+/** Nothing to go back to at the start, nothing ahead at the newest step. */
+function paintTransport(at: number, last: number, stale: boolean) {
+  if (!strip) return;
+  const off: Record<string, boolean> = {
+    first: stale || at === 0,
+    back: stale || at === 0,
+    play: stale || !last,
+    forward: stale || at >= last,
+    last: stale || at >= last,
+  };
+  for (const button of strip.querySelectorAll<HTMLButtonElement>('.tl-transport [data-tl]')) {
+    button.disabled = !!off[button.dataset.tl || ''];
+  }
+}
+
+/** The marker over the step the board stands on, or hidden when that step is scrolled away. */
+function placeMarker() {
+  if (!marker || !track || !rail) return;
+  const dot = track.querySelector<HTMLElement>('.tl-step.is-at');
+  if (!dot) { marker.hidden = true; return; }
+  const mark = dot.getBoundingClientRect();
+  const box = rail.getBoundingClientRect();
+  const x = mark.left + mark.width / 2 - box.left;
+  marker.hidden = x < 0 || x > box.width;
+  marker.style.left = `${x}px`;
 }
 
 /**
- * The naming control, in whichever head it is sitting in.
- *
- * **Absent, not greyed, at the start of the board**: there is no step at 0
- * to name. Absent on a stale history for the same reason nothing else on the
- * Timeline works there. The word changes because the act does: naming an
- * already-named point is renaming it.
+ * Dragging the marker goes to the step nearest the pointer, a frame at a
+ * time. The marker snaps to each step as the board arrives there, since
+ * render() puts it back over the step it stands on.
  */
-function showNameButton(button: HTMLElement | null, steps: Step[], at: number, stale: boolean) {
-  if (!button) return;
-  button.hidden = at === 0 || stale;
+function wireMarker() {
+  const handle = marker;
+  if (!handle) return;
+  handle.addEventListener('pointerdown', event => {
+    if (timelineStale() || event.button !== 0) return;
+    event.preventDefault();
+    handle.setPointerCapture(event.pointerId);
+    handle.classList.add('is-dragging');
+    let frame = 0;
+    const move = (e: PointerEvent) => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const at = nearestStep(e.clientX);
+        if (at !== null && at !== timelineAt()) goTo(at);
+      });
+    };
+    const up = () => {
+      cancelAnimationFrame(frame);
+      handle.classList.remove('is-dragging');
+      handle.removeEventListener('pointermove', move);
+      handle.removeEventListener('pointerup', up);
+      handle.removeEventListener('pointercancel', up);
+    };
+    handle.addEventListener('pointermove', move);
+    handle.addEventListener('pointerup', up);
+    handle.addEventListener('pointercancel', up);
+  });
+}
+
+/** The position of the mark nearest a screen x, or null with none drawn. */
+function nearestStep(x: number): number | null {
+  if (!track) return null;
+  let best: number | null = null;
+  let gap = Infinity;
+  for (const dot of track.querySelectorAll<HTMLElement>('.tl-step')) {
+    const r = dot.getBoundingClientRect();
+    const d = Math.abs(r.left + r.width / 2 - x);
+    if (d < gap) { gap = d; best = Number(dot.dataset.at); }
+  }
+  return best;
+}
+
+/**
+ * The naming control. **Absent, not greyed, at the start of the board**:
+ * there is no step at 0 to name. Absent on a stale history for the same
+ * reason nothing else here works there. The word changes because the act
+ * does: naming an already-named point is renaming it.
+ */
+function showNameButton(steps: Step[], at: number, stale: boolean) {
+  if (!nameButton) return;
+  nameButton.hidden = at === 0 || stale;
   const said = steps[at - 1]?.name ? 'Rename this point' : 'Name this point';
-  button.title = said;
-  button.setAttribute('aria-label', said);
-  if (button.dataset.words !== undefined) button.textContent = said;
+  nameButton.title = said;
+  nameButton.setAttribute('aria-label', said);
 }
 
 /**
  * Give the point the board is standing on a name, and only that point.
- *
- * nameStep() names where the marker is - one control in each head rather
- * than a per-row action, since a row action would have to jump there first.
- *
- * **This is the caller nameStep() had been waiting for**: a saved board
- * version used to carry a whole copy of the board; it went in v0.198 since
- * the ledger already holds the way back - a name on a step is the same
- * landmark for the cost of a string. The sheet closes before the question
- * and reopens after (two modals would fight); the strip stays put.
+ * nameStep() names where the marker is. A name on a step is a landmark, and
+ * keeps it from being folded away when an old history is trimmed.
  */
 async function namePoint() {
   const at = timelineAt();
   if (!at || timelineStale()) return;
   const step = timelineSteps()[at - 1];
-  // Refused rather than optional-chained: sentenceFor() reads step.name
-  // unguarded two lines later, and there's nothing to name at at===0 anyway.
   if (!step) return;
   const named = !!step.name;
-  const wasSheet = !!sheet?.open;
-  if (wasSheet) sheet!.close();
   const given = await ask({
     title: named ? 'Rename this point' : 'Name this point',
     body: 'A name makes this step a landmark on the Timeline, and keeps it from'
@@ -301,63 +420,29 @@ async function namePoint() {
   });
   // An empty box is an answer: "take the name off this one".
   if (given !== null) nameStep(given);
-  if (wasSheet) openSheet();
 }
 
 /**
- * The trim offer, when there is one.
- *
- * **Appears where the thing it's about is**, not a dialog interrupting a
- * save - a modal asking to discard part of somebody's history mid-task would
- * be the app being anxious at them. Absent below the threshold, and absent
- * above it when nothing is foldable (oldest step named or recent) since a
- * greyed button offering nothing is worse than silence.
+ * Behind the gear: how big the history is, and the trim. The trim folds
+ * steps older than 30 days into the starting state, never across a named
+ * point, and says so rather than disappearing when there is nothing to fold.
  */
-function renderTrim() {
-  if (!strip) return;
-  const existing = strip.querySelector<HTMLElement>('.tl-trim');
-  const row = trimRow();
-  if (!row) { existing?.remove(); return; }
-  if (existing) existing.replaceWith(row);
-  else strip.append(row);
-}
-
-/**
- * The trim offer as an element, or null - built here rather than placed
- * here since both faces want it in a different slot (under the track vs.
- * between the list and the buttons).
- */
-function trimRow(): HTMLElement | null {
-  const bytes = timelineBytes();
-  if (bytes < TRIM_BYTES) return null;
-  const row = document.createElement('div');
-  row.className = 'tl-trim';
-  const said = document.createElement('span');
-  said.textContent = `This history is ${formatBytes(bytes)}.`;
-  row.append(said);
+function gearEntries(): MenuEntry[] {
+  const steps = timelineSteps().length;
   const count = trimmable();
-  if (!count) {
-    const why = document.createElement('span');
-    why.className = 'tl-trim-why';
-    // Both reasons said together, since which applies isn't for the reader to deduce.
-    why.textContent = ' Nothing older than 30 days can go without crossing a'
-      + ' named point.';
-    row.append(why);
-    return row;
-  }
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'tl-trim-go';
-  button.textContent = `Fold in ${count} step${count === 1 ? '' : 's'} older than 30 days`;
-  button.addEventListener('click', () => {
-    const went = trimTimeline();
-    if (went) toast(`Folded ${went} step${went === 1 ? '' : 's'} into the starting state`);
-    // trimTimeline() announces on the bus already; this is the belt for the
-    // case it offered nothing but this row still needs its size updated.
-    renderOpen();
-  });
-  row.append(button);
-  return row;
+  const size: MenuEntry = {
+    label: `${steps} step${steps === 1 ? '' : 's'}, ${formatBytes(timelineBytes())}`,
+    disabled: true,
+  };
+  if (!count) return [size, { label: 'Nothing older than 30 days to fold in', disabled: true }];
+  return [size, {
+    label: `Fold in ${count} step${count === 1 ? '' : 's'} older than 30 days`,
+    action: () => {
+      const went = trimTimeline();
+      if (went) toast(`Folded ${went} step${went === 1 ? '' : 's'} into the starting state`);
+      if (open) render();
+    },
+  }];
 }
 
 type Step = ReturnType<typeof timelineSteps>[number];
@@ -426,16 +511,17 @@ function dotFor(step: Step | null, position: number, at: number, label: string) 
   button.type = 'button';
   button.className = 'tl-step';
   button.dataset.at = String(position);
-  // The title is still the whole affordance: the glyph says what *kind* of
-  // thing happened; hovering supplies which card.
-  button.title = position === at ? `${label}  (where you are)` : label;
+  // The title is the whole of what a mark says beyond its glyph: which card,
+  // and when - the sheet that used to list the times is gone.
+  const when = step ? whenOf(step.at) : '';
+  button.title = (position === at ? `${label}  (where you are)` : label) + (when ? `  ${when}` : '');
   button.setAttribute('role', 'option');
   button.setAttribute('aria-selected', String(position === at));
   button.setAttribute('aria-label', label);
   if (position === at) button.classList.add('is-at');
   if (position > at) button.classList.add('is-ahead');
   if (step) {
-    // Sealed is the default: a square dot carries a difference, a round one
+    // Sealed is the default: a square mark carries a difference, a round one
     // carries an editable rule - the distinction between a right-click that
     // does something and one that doesn't.
     if (stepEditable(step)) button.classList.add('is-ruled');
@@ -455,135 +541,10 @@ function dotFor(step: Step | null, position: number, at: number, label: string) 
 // icon() is borrowed from ui/menu.ts, which exports it for exactly this - a
 // local copy landed an <svg> in the HTML namespace and rendered nothing.
 
-// ── The sheet ──────────────────────────────────────────────────────────────
-//
-// The same ledger, turned ninety degrees. A <dialog> built here and opened
-// from the same cmd, copying ui/inventory.ts's arrangement on purpose - a
-// second solution to "report on both layouts" is a second thing to keep
-// working.
-//
-// **A row is a sentence and a time**, the same sentence the strip puts in a
-// mark's hover. Newest at the top - the one place the two faces disagree:
-// a strip runs left to right, a phone list scrolls from the top and the
-// wanted step is nearly always one of the last few taken.
-//
-// Wired on first open, not at init - the bargain ui/inventory.ts and
-// ui/credits.ts both make.
-
-let sheet: HTMLDialogElement | null = null;
-let sheetList: HTMLElement | null = null;
-let sheetWhere: HTMLElement | null = null;
-let sheetTrim: HTMLElement | null = null;
-let sheetName: HTMLElement | null = null;
-let sheetWired = false;
-
-/** Open the sheet. Idempotent; safe without a document. */
-function openSheet() {
-  if (typeof document === 'undefined') return;
-  // SAFETY: the duck type here is the runtime half of "this is a <dialog> in
-  // index.html" - same shape as openInventory().
-  const dlg = el('timeline-sheet') as HTMLDialogElement | null;
-  if (!dlg || typeof dlg.showModal !== 'function') return;
-  sheet = dlg;
-  sheetList = el('tl-sheet-list');
-  sheetWhere = el('tl-sheet-where');
-  sheetTrim = el('tl-sheet-trim');
-  sheetName = el('tl-sheet-name');
-
-  if (!sheetWired) {
-    sheetWired = true;
-    // Click outside to close: the sheet fills its dialog, so a press on the
-    // dialog itself is the backdrop.
-    dlg.addEventListener('click', event => { if (event.target === dlg) dlg.close(); });
-    el('tl-sheet-close')?.addEventListener('click', () => dlg.close());
-    sheetName?.addEventListener('click', () => { void namePoint(); });
-    // Delegated, same reason as the track's listener.
-    sheetList?.addEventListener('click', event => {
-      const row = rowUnder(event, '.tl-go');
-      if (!row?.dataset.at) return;
-      // The board first, sheet after: goTo() announces, and a modal still up
-      // while the board rearranges behind it is a change nobody sees.
-      goTo(Number(row.dataset.at));
-      dlg.close();
-    });
-  }
-  renderSheet();
-  if (!dlg.open) dlg.showModal();
-}
-
-function renderSheet() {
-  if (!sheet || !sheetList || !sheetWhere) return;
-  const steps = timelineSteps();
-  const at = timelineAt();
-  const stale = timelineStale();
-  sheet.classList.toggle('is-stale', stale);
-
-  // createElement throughout, never innerHTML - a step's name is typed text.
-  const shown = steps.length > MAX_DOTS ? steps.slice(-MAX_DOTS) : steps;
-  const offset = steps.length - shown.length;
-  const rows: HTMLElement[] = [];
-  for (let index = shown.length - 1; index >= 0; index -= 1) {
-    rows.push(rowFor(shown[index], offset + index + 1, at));
-  }
-  // The start of the board goes last, only when the whole history is shown -
-  // a truncated list doesn't reach back that far.
-  if (!offset) rows.push(rowFor(null, 0, at));
-  sheetList.replaceChildren(...rows);
-
-  sheetWhere.textContent = stale
-    ? 'This history does not match this board'
-    : `${at} of ${steps.length}` + (offset ? ` (newest ${shown.length})` : '');
-  showNameButton(sheetName, steps, at, stale);
-  const trim = trimRow();
-  sheetTrim?.replaceChildren(...(trim ? [trim] : []));
-  // The row the board is standing on, brought into view - otherwise a sheet
-  // of 400 steps opens at the top, which is the newest, not necessarily here.
-  sheetList.querySelector('.is-at .tl-go')?.scrollIntoView({ block: 'nearest' });
-}
-
-/** One step as a row: what it was, to what, and when. */
-function rowFor(step: Step | null, position: number, at: number): HTMLElement {
-  const row = document.createElement('li');
-  row.className = 'tl-row';
-  if (position === at) row.classList.add('is-at');
-  if (position > at) row.classList.add('is-ahead');
-  if (step?.broken) row.classList.add('is-broken');
-  if (step?.name) row.classList.add('is-named');
-
-  const go = document.createElement('button');
-  go.type = 'button';
-  go.className = 'tl-go';
-  go.dataset.at = String(position);
-  // aria-current, not the strip's aria-selected: this list isn't a listbox
-  // (see index.html). Written only where true - 300 "false" rows is noise.
-  if (position === at) go.setAttribute('aria-current', 'true');
-
-  const mark = document.createElement('span');
-  mark.className = 'tl-mark';
-  // The start of the board carries no glyph, same reason as the strip's first dot.
-  if (step) mark.append(icon(kindOf(step.label).icon));
-
-  const said = document.createElement('span');
-  said.className = 'tl-said';
-  said.textContent = step ? sentenceFor(step) : 'Where this board started';
-
-  const when = document.createElement('span');
-  when.className = 'tl-when';
-  when.textContent = step ? whenOf(step.at) : '';
-
-  go.append(mark, said, when);
-  row.append(go);
-  return row;
-}
-
 /**
  * When a step happened, as short as it can be said. Clock alone for today,
- * date in front for older - a column of identical dates is noise, and the
- * question here is "before or after lunch", not "which day".
- *
- * Through the browser's own formatter, unlike board-model.ts's month names:
- * that one writes into a file read everywhere, this is a label for whoever
- * is looking at the screen.
+ * date in front for older. Through the browser's own formatter: this is a
+ * label for whoever is looking at the screen, not something written to a file.
  */
 function whenOf(stamp: number): string {
   if (!stamp) return '';
