@@ -1,8 +1,9 @@
 // Timeline drawn - the step ledger from timeline.ts, docked along the foot of
 // the window on every width, the way a CAD history bar is: the board ends above
 // it rather than under it. Its height is --dock, which #viewport and every piece
-// of bottom-anchored furniture add to their inset. Transport on the left, one
-// mark per step and a marker to drag in the middle, size and trim behind a gear.
+// of bottom-anchored furniture add to their inset. Play on the left, one mark
+// per step in the middle with a playhead in the gap after the step shown and a
+// page-drawn scrollbar above, and the rest behind a gear.
 
 import { bus } from '../board-store.ts';
 import { toast } from '../notify.ts';
@@ -32,8 +33,9 @@ let track: HTMLElement | null = null;
 let rail: HTMLElement | null = null;
 let marker: HTMLElement | null = null;
 let where: HTMLElement | null = null;
-let nameButton: HTMLElement | null = null;
-let playButton: HTMLElement | null = null;
+let scrollBar: HTMLElement | null = null;
+let thumb: HTMLElement | null = null;
+let playButton: HTMLButtonElement | null = null;
 /** Whether the bar is up. */
 let open = false;
 
@@ -148,23 +150,25 @@ export function initTimeline() {
   rail = strip.querySelector('.tl-rail');
   marker = strip.querySelector('.tl-marker');
   where = strip.querySelector('.tl-where');
-  nameButton = strip.querySelector('.tl-name');
-  playButton = strip.querySelector('[data-tl="play"]');
-  nameButton?.addEventListener('click', () => { void namePoint(); });
+  scrollBar = strip.querySelector('.tl-scroll');
+  thumb = strip.querySelector('.tl-thumb');
+  playButton = strip.querySelector<HTMLButtonElement>('[data-tl="play"]');
+  playButton?.addEventListener('click', () => {
+    if (timelineStale()) return;
+    if (playing) pause();
+    else play();
+  });
   const gear = strip.querySelector<HTMLButtonElement>('.tl-gear');
   if (gear) {
     menuButton(gear, () => openAnchored(gear.getBoundingClientRect(), gearEntries(), { label: 'Timeline' }));
   }
-  strip.querySelector('.tl-transport')?.addEventListener('click', event => {
-    const go = rowUnder(event, '[data-tl]')?.dataset.tl;
-    if (go) transport(go);
-  });
   // Delegated: the marks are rebuilt on every change.
   track?.addEventListener('click', event => {
     const dot = rowUnder(event, '.tl-step');
     if (!dot?.dataset.at) return;
     goTo(Number(dot.dataset.at));
   });
+  track?.addEventListener('keydown', stepKeys);
   // Right-click edits, where there is a rule to edit: left is *take me
   // there*, right is *do this differently*, the same gesture every other
   // menu in the app opens with.
@@ -177,8 +181,9 @@ export function initTimeline() {
     event.preventDefault();
     openAnchored(dot.getBoundingClientRect(), entries, { label: 'Change this step' });
   });
-  track?.addEventListener('scroll', placeMarker, { passive: true });
+  track?.addEventListener('scroll', () => { placeMarker(); paintScroll(); }, { passive: true });
   wireMarker();
+  wireScroll();
   // A press anywhere but the play button pauses a replay.
   document.addEventListener('pointerdown', event => {
     if (!playing) return;
@@ -186,7 +191,7 @@ export function initTimeline() {
     pause();
   }, true);
   if (typeof ResizeObserver === 'function') {
-    new ResizeObserver(() => { writeDock(); placeMarker(); }).observe(strip);
+    new ResizeObserver(() => { writeDock(); placeMarker(); paintScroll(); }).observe(strip);
   }
   // On from now on, off to begin with on a phone, then whatever was last chosen here.
   const saved = readPref(PREF);
@@ -232,19 +237,25 @@ function paintToggle() {
   }
 }
 
-/** First, back, play, forward, last. */
-function transport(go: string) {
+/**
+ * The arrow keys walk the history from a focused mark, since the bar keeps no
+ * step buttons: Left and Right one step, Home and End to either end.
+ */
+function stepKeys(event: KeyboardEvent) {
   if (timelineStale()) return;
-  if (go === 'play') {
-    if (playing) pause();
-    else play();
-    return;
-  }
-  pause();
   const at = timelineAt();
   const last = timelineSteps().length;
-  const target = go === 'first' ? 0 : go === 'back' ? at - 1 : go === 'forward' ? at + 1 : last;
+  const target = event.key === 'ArrowLeft' ? at - 1
+    : event.key === 'ArrowRight' ? at + 1
+      : event.key === 'Home' ? 0
+        : event.key === 'End' ? last
+          : null;
+  if (target === null) return;
+  event.preventDefault();
+  pause();
   if (target >= 0 && target <= last && target !== at) goTo(target);
+  // render() rebuilt the marks, so the focus goes to the one the board is at.
+  track?.querySelector<HTMLElement>('.tl-step.is-at')?.focus();
 }
 
 /** Replay from here to the newest step, or from the start when there is nothing ahead. */
@@ -305,38 +316,114 @@ function render() {
   where.textContent = stale ? 'Does not match' : `${at} of ${steps.length}`;
   where.title = stale ? 'This history does not match this board'
     : offset ? `The newest ${shown.length} are shown` : '';
-  showNameButton(steps, at, stale);
-  paintTransport(at, steps.length, stale);
-  // The step the board stands on, in view.
-  track.querySelector('.is-at')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  // Nothing to play with no steps, and nothing works on a stale history.
+  if (playButton) playButton.disabled = stale || !steps.length;
+  keepInView(track.querySelector<HTMLElement>('.tl-step.is-at'));
   placeMarker();
+  paintScroll();
 }
 
-/** Nothing to go back to at the start, nothing ahead at the newest step. */
-function paintTransport(at: number, last: number, stale: boolean) {
-  if (!strip) return;
-  const off: Record<string, boolean> = {
-    first: stale || at === 0,
-    back: stale || at === 0,
-    play: stale || !last,
-    forward: stale || at >= last,
-    last: stale || at >= last,
-  };
-  for (const button of strip.querySelectorAll<HTMLButtonElement>('.tl-transport [data-tl]')) {
-    button.disabled = !!off[button.dataset.tl || ''];
-  }
+/**
+ * Scroll the steps so the one the board stands on shows, and the playhead in
+ * the gap after it. scrollIntoView() stopped at the mark's own edge, which
+ * left the playhead behind the newest step just out of view.
+ */
+function keepInView(dot: HTMLElement | null) {
+  if (!dot || !track) return;
+  const view = track.getBoundingClientRect();
+  const left = dot.getBoundingClientRect().left;
+  const right = gapAfter(dot) + PLAYHEAD_ROOM;
+  if (right > view.right) track.scrollLeft += right - view.right;
+  else if (left < view.left) track.scrollLeft -= view.left - left;
 }
 
-/** The marker over the step the board stands on, or hidden when that step is scrolled away. */
+/** Half the playhead's flag, so the whole flag shows past the gap's middle. */
+const PLAYHEAD_ROOM = 5;
+
+/**
+ * The playhead, in the gap after the step the board stands on, so the mark to
+ * its left is the last step shown. Hidden when that gap is scrolled away.
+ */
 function placeMarker() {
   if (!marker || !track || !rail) return;
   const dot = track.querySelector<HTMLElement>('.tl-step.is-at');
   if (!dot) { marker.hidden = true; return; }
-  const mark = dot.getBoundingClientRect();
   const box = rail.getBoundingClientRect();
-  const x = mark.left + mark.width / 2 - box.left;
+  const x = gapAfter(dot) - box.left;
   marker.hidden = x < 0 || x > box.width;
   marker.style.left = `${x}px`;
+}
+
+/** The screen x of the middle of the gap after a mark: where the playhead stands for it. */
+function gapAfter(dot: HTMLElement): number {
+  const right = dot.getBoundingClientRect().right;
+  const next = dot.nextElementSibling;
+  if (next) return (right + next.getBoundingClientRect().left) / 2;
+  const gap = track ? parseFloat(getComputedStyle(track).columnGap) || 0 : 0;
+  return right + gap / 2;
+}
+
+/** The narrowest the scrollbar's thumb is drawn, in pixels, so it stays a thing to hold. */
+const MIN_THUMB = 24;
+
+/**
+ * The scrollbar over the steps, drawn by the page. The track's own is hidden:
+ * the website drew a styled one, and the desktop app on Windows drew the
+ * system's grey slab under the marks (research/rapid-fixes-2026-09-14.md,
+ * R1). This one is the same everywhere, and sits above the marks.
+ */
+function paintScroll() {
+  if (!track || !scrollBar || !thumb) return;
+  const room = track.scrollWidth - track.clientWidth;
+  scrollBar.classList.toggle('is-idle', room < 1);
+  if (room < 1) return;
+  const bar = scrollBar.clientWidth;
+  const size = Math.max(MIN_THUMB, bar * track.clientWidth / track.scrollWidth);
+  thumb.style.width = `${size}px`;
+  thumb.style.transform = `translateX(${(bar - size) * track.scrollLeft / room}px)`;
+}
+
+/**
+ * The scrollbar's three ways in: drag the thumb, press the bar beside it to
+ * bring that part into view, or turn a mouse wheel over the steps.
+ */
+function wireScroll() {
+  const bar = scrollBar;
+  const grip = thumb;
+  const list = track;
+  if (!bar || !grip || !list) return;
+  grip.addEventListener('pointerdown', event => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    grip.setPointerCapture(event.pointerId);
+    grip.classList.add('is-dragging');
+    const from = event.clientX;
+    const start = list.scrollLeft;
+    // Pixels of track per pixel of thumb travel.
+    const rate = (list.scrollWidth - list.clientWidth) / Math.max(1, bar.clientWidth - grip.offsetWidth);
+    const move = (e: PointerEvent) => { list.scrollLeft = start + (e.clientX - from) * rate; };
+    const up = () => {
+      grip.classList.remove('is-dragging');
+      grip.removeEventListener('pointermove', move);
+      grip.removeEventListener('pointerup', up);
+      grip.removeEventListener('pointercancel', up);
+    };
+    grip.addEventListener('pointermove', move);
+    grip.addEventListener('pointerup', up);
+    grip.addEventListener('pointercancel', up);
+  });
+  bar.addEventListener('pointerdown', event => {
+    if (event.button !== 0 || event.target === grip) return;
+    const box = bar.getBoundingClientRect();
+    const share = (event.clientX - box.left) / Math.max(1, box.width);
+    list.scrollTo({ left: share * list.scrollWidth - list.clientWidth / 2, behavior: 'smooth' });
+  });
+  // A wheel turns the steps sideways: there is no system bar to aim at now.
+  list.addEventListener('wheel', event => {
+    if (event.deltaX || !event.deltaY || list.scrollWidth <= list.clientWidth) return;
+    event.preventDefault();
+    list.scrollLeft += event.deltaY;
+  }, { passive: false });
 }
 
 /**
@@ -373,31 +460,16 @@ function wireMarker() {
   });
 }
 
-/** The position of the mark nearest a screen x, or null with none drawn. */
+/** The position whose playhead gap is nearest a screen x, or null with no mark drawn. */
 function nearestStep(x: number): number | null {
   if (!track) return null;
   let best: number | null = null;
   let gap = Infinity;
   for (const dot of track.querySelectorAll<HTMLElement>('.tl-step')) {
-    const r = dot.getBoundingClientRect();
-    const d = Math.abs(r.left + r.width / 2 - x);
+    const d = Math.abs(gapAfter(dot) - x);
     if (d < gap) { gap = d; best = Number(dot.dataset.at); }
   }
   return best;
-}
-
-/**
- * The naming control. **Absent, not greyed, at the start of the board**:
- * there is no step at 0 to name. Absent on a stale history for the same
- * reason nothing else here works there. The word changes because the act
- * does: naming an already-named point is renaming it.
- */
-function showNameButton(steps: Step[], at: number, stale: boolean) {
-  if (!nameButton) return;
-  nameButton.hidden = at === 0 || stale;
-  const said = steps[at - 1]?.name ? 'Rename this point' : 'Name this point';
-  nameButton.title = said;
-  nameButton.setAttribute('aria-label', said);
 }
 
 /**
@@ -423,26 +495,43 @@ async function namePoint() {
 }
 
 /**
- * Behind the gear: how big the history is, and the trim. The trim folds
- * steps older than 30 days into the starting state, never across a named
- * point, and says so rather than disappearing when there is nothing to fold.
+ * Behind the gear: naming the point the board stands on, how big the history
+ * is, the trim, and Hide timeline. The trim folds steps older than 30 days
+ * into the starting state, never across a named point, and says so rather
+ * than disappearing when there is nothing to fold.
+ *
+ * The name row is absent at the start of the board, where there is no step
+ * to name, and on a stale history, where nothing here works. Its word
+ * changes because the act does: naming a named point is renaming it.
  */
 function gearEntries(): MenuEntry[] {
-  const steps = timelineSteps().length;
+  const steps = timelineSteps();
+  const at = timelineAt();
   const count = trimmable();
-  const size: MenuEntry = {
-    label: `${steps} step${steps === 1 ? '' : 's'}, ${formatBytes(timelineBytes())}`,
+  const rows: MenuEntry[] = [];
+  if (at && !timelineStale()) {
+    rows.push({
+      label: steps[at - 1]?.name ? 'Rename this point' : 'Name this point',
+      action: () => { void namePoint(); },
+    });
+  }
+  rows.push({
+    label: `${steps.length} step${steps.length === 1 ? '' : 's'}, ${formatBytes(timelineBytes())}`,
     disabled: true,
-  };
-  if (!count) return [size, { label: 'Nothing older than 30 days to fold in', disabled: true }];
-  return [size, {
-    label: `Fold in ${count} step${count === 1 ? '' : 's'} older than 30 days`,
-    action: () => {
-      const went = trimTimeline();
-      if (went) toast(`Folded ${went} step${went === 1 ? '' : 's'} into the starting state`);
-      if (open) render();
-    },
-  }];
+  });
+  rows.push(count
+    ? {
+      label: `Fold in ${count} step${count === 1 ? '' : 's'} older than 30 days`,
+      action: () => {
+        const went = trimTimeline();
+        if (went) toast(`Folded ${went} step${went === 1 ? '' : 's'} into the starting state`);
+        if (open) render();
+      },
+    }
+    : { label: 'Nothing older than 30 days to fold in', disabled: true });
+  // The Timeline row in the View menu and in the panel brings it back.
+  rows.push({ sep: true }, { label: 'Hide timeline', action: () => { if (open) toggleTimeline(); } });
+  return rows;
 }
 
 type Step = ReturnType<typeof timelineSteps>[number];

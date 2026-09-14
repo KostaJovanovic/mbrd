@@ -3,7 +3,7 @@
 Items from the maintainer, in the order given. Each gets a checkbox, and the
 box is ticked when its commit lands.
 
-- [ ] R1 The Timeline bar looks more like the history bar in Fusion 360
+- [x] R1 The Timeline bar looks more like the history bar in Fusion 360
       (screenshot of 2026-09-14 17:28):
       - A slim custom scrollbar runs above the icons, across the track.
         The website's scrollbar is styled and fine. The desktop app on
@@ -13,8 +13,16 @@ box is ticked when its commit lands.
         runs under the icons, not between them.
       - The playhead stands in the gap between two icons, not over an icon.
         The icon to its left is the last step shown.
-- [ ] R2 The Timeline bar keeps only Play and the gear. First, back, forward,
+      - **Done.** The track hides the system scrollbar, and `paintScroll()`
+        draws a 4 px bar above the marks, with a draggable thumb, a press to
+        jump, and the wheel turning the steps sideways. The playhead stands
+        at the middle of the gap after the step shown, in Chromium and
+        Firefox alike, and the view scrolls to keep it on screen.
+- [x] R2 The Timeline bar keeps only Play and the gear. First, back, forward,
       last and the rename button go. The gear menu gets a "Hide timeline" row.
+      - **Done.** "Name this point" moved into the gear menu. The arrow keys
+        walk the steps from a focused mark, Home and End go to either end.
+        The Timeline row in the View menu and the panel brings the bar back.
 - [ ] R3 Desktop: when a check finds a new version, the top right of the
       window says so, with an "Update" button. A press downloads the update,
       then installs it. Today the download starts on its own in the

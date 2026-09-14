@@ -4,6 +4,10 @@
    board ends above it: ui/timeline-view.ts writes the bar's
    height to --dock, which #viewport and the bottom-anchored
    furniture add to their inset (chrome.css and the rest).
+   Drawn after the history bar in Fusion 360: the marks sit
+   close on a baseline, the playhead stands in the gap after
+   the step shown, and a slim scrollbar of the page's own
+   runs above (research/rapid-fixes-2026-09-14.md, R1, R2).
    ========================================================= */
 
 #timeline-strip {
@@ -25,13 +29,8 @@
 }
 #timeline-strip[hidden] { display: none; }
 
-/* Transport, name and gear share one icon-button shape. */
-#timeline-strip .tl-transport {
-  display: flex;
-  flex: none;
-  gap: 2px;
-}
-#timeline-strip :is(.tl-transport button, .tl-name, .tl-gear) {
+/* Play and the gear share one icon-button shape. */
+#timeline-strip :is(.tl-play, .tl-gear) {
   display: grid;
   place-items: center;
   flex: 0 0 auto;
@@ -47,23 +46,22 @@
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 @media (hover: hover) {
-  #timeline-strip :is(.tl-transport button, .tl-name, .tl-gear):not(:disabled):hover {
+  #timeline-strip :is(.tl-play, .tl-gear):not(:disabled):hover {
     background: var(--paper-2);
     color: var(--accent-deep);
   }
 }
-#timeline-strip :is(.tl-transport button, .tl-name, .tl-gear):not(:disabled):active { background: var(--paper-3); }
-#timeline-strip :is(.tl-transport button, .tl-name, .tl-gear):focus-visible {
+#timeline-strip :is(.tl-play, .tl-gear):not(:disabled):active { background: var(--paper-3); }
+#timeline-strip :is(.tl-play, .tl-gear):focus-visible {
   background: var(--paper-2);
   color: var(--accent-deep);
 }
-#timeline-strip .tl-transport button:disabled { opacity: 0.35; cursor: default; }
-#timeline-strip .tl-transport [aria-pressed="true"] { color: var(--accent-deep); }
-#timeline-strip :is(.tl-transport, .tl-name, .tl-gear) svg {
+#timeline-strip .tl-play:disabled { opacity: 0.35; cursor: default; }
+#timeline-strip .tl-play[aria-pressed="true"] { color: var(--accent-deep); }
+#timeline-strip :is(.tl-play, .tl-gear) svg {
   width: var(--icon-glyph);
   height: var(--icon-glyph);
 }
-#timeline-strip .tl-name[hidden] { display: none; }
 
 #timeline-strip .tl-where {
   flex: none;
@@ -72,44 +70,83 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Track dimensions -- named so four rules can do arithmetic on them. */
+/* Track dimensions, named so the rules below can do arithmetic on them. */
 #timeline-strip {
-  --tl-cell: 26px;
-  --tl-mark: 22px;
-  --tl-start: 10px;
-  --tl-gap: 10px;
+  --tl-cell: 24px;     /* one mark's column */
+  --tl-mark: 22px;     /* the mark inside it */
+  --tl-start: 10px;    /* the start disc */
+  --tl-gap: 6px;       /* between marks, and the playhead's room */
+  --tl-foot: 6px;      /* the baseline and its ticks, under the marks */
+  --tl-bar: 4px;       /* the scrollbar */
+  --tl-bar-gap: 3px;   /* between the scrollbar and the marks */
 }
 
-/* The rail holds the track and the marker that rides over it. */
+/* The rail: the scrollbar over the track, and the playhead across both. */
 #timeline-strip .tl-rail {
   position: relative;
   flex: 1 1 0;
   min-width: 0;
   display: flex;
-  align-items: center;
+  flex-direction: column;
 }
 
-/* The track: one scrolling line of steps. */
+/* The scrollbar, drawn by the page (paintScroll() in ui/timeline-view.ts).
+   It keeps its room with nothing to scroll, so the bar's height, and with
+   it --dock, holds still as steps arrive. */
+#timeline-strip .tl-scroll {
+  position: relative;
+  flex: none;
+  height: var(--tl-bar);
+  margin-bottom: var(--tl-bar-gap);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+  cursor: pointer;
+}
+/* A taller target than the line it draws. */
+#timeline-strip .tl-scroll::before {
+  content: '';
+  position: absolute;
+  inset: -4px 0 -3px;
+}
+#timeline-strip .tl-scroll.is-idle { visibility: hidden; }
+#timeline-strip .tl-thumb {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--ink) 30%, transparent);
+  touch-action: none;
+  transition: background var(--dur-fast) var(--ease);
+}
+@media (hover: hover) {
+  #timeline-strip .tl-scroll:hover .tl-thumb { background: color-mix(in srgb, var(--ink) 46%, transparent); }
+}
+#timeline-strip .tl-thumb.is-dragging { background: var(--accent); }
+
+/* The track: one line of steps, scrolled by the bar above. The system's own
+   scrollbar is hidden. */
 #timeline-strip .tl-track {
-  flex: 1 1 0;
-  min-width: 0;
+  flex: none;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--tl-gap);
-  padding: 3px 0;
+  /* Room after the newest step for the playhead that stands behind it. */
+  padding: 0 var(--tl-gap) 0 0;
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: thin;
+  scrollbar-width: none;
 }
+#timeline-strip .tl-track::-webkit-scrollbar { display: none; }
 
-/* The marker: a line through the step the board stands on, with a knob at
-   the top to take hold of. The line is a wash so the glyph under it reads. */
+/* The playhead: in the gap after the step the board stands on, from the
+   scrollbar down to the baseline, with a flag at the top to take hold of. */
 #timeline-strip .tl-marker {
   position: absolute;
-  top: -4px;
-  bottom: -2px;
-  width: 14px;
-  margin-left: -7px;
+  top: calc(var(--tl-bar) + var(--tl-bar-gap) - 1px);
+  bottom: 0;
+  width: 10px;
+  margin-left: -5px;
   cursor: ew-resize;
   touch-action: none;
   z-index: 1;
@@ -118,7 +155,7 @@
 #timeline-strip .tl-marker::before {
   content: '';
   position: absolute;
-  left: 3px;
+  left: 1px;
   top: 0;
   width: 8px;
   height: 5px;
@@ -128,51 +165,65 @@
 #timeline-strip .tl-marker::after {
   content: '';
   position: absolute;
-  left: 6px;
-  top: 5px;
+  left: 4px;
+  top: 4px;
   bottom: 0;
   width: 2px;
   border-radius: 1px;
-  background: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: var(--accent);
 }
-#timeline-strip .tl-marker.is-dragging::after { background: var(--accent); }
+#timeline-strip .tl-marker.is-dragging::before,
+#timeline-strip .tl-marker.is-dragging::after { background: var(--accent-deep); }
 
-/* One step: a mark with a connector to the previous one. */
+/* One step: its mark above the baseline, and a tick down onto it. */
 #timeline-strip .tl-step {
   position: relative;
   flex: 0 0 auto;
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   width: var(--tl-cell);
-  height: var(--tl-cell);
-  padding: 0;
+  height: calc(var(--tl-cell) + var(--tl-foot));
+  padding: calc((var(--tl-cell) - var(--tl-mark)) / 2) 0 0;
   border: 0;
   background: none;
   color: var(--ink-3);
   cursor: pointer;
 }
-/* Connector drawn in the gap between marks -- not underneath them, so
-   faded and ringed states do not need to be opaque. */
+/* The baseline: a segment per step that meets its neighbours' in the gaps,
+   so it scrolls with the marks. It starts and ends under the outer marks. */
 #timeline-strip .tl-step::before {
   content: '';
   position: absolute;
-  left: calc(-1 * (var(--tl-gap) + (var(--tl-cell) - var(--tl-mark)) / 2));
-  width: calc(var(--tl-gap) + var(--tl-cell) - var(--tl-mark));
-  top: 50%;
-  transform: translateY(-50%);
+  bottom: 0;
+  left: calc(var(--tl-gap) / -2);
+  right: calc(var(--tl-gap) / -2);
   height: var(--hairline);
   background: var(--rule-2);
 }
-#timeline-strip .tl-step:first-child::before { display: none; }
-/* Second step's connector reaches further back to the smaller start disc. */
-#timeline-strip .tl-step:nth-child(2)::before {
-  left: calc(-1 * (var(--tl-gap) + (var(--tl-cell) - var(--tl-start)) / 2));
-  width: calc(var(--tl-gap) + var(--tl-cell)
-              - (var(--tl-mark) + var(--tl-start)) / 2);
+#timeline-strip .tl-step:first-child::before { left: 50%; }
+#timeline-strip .tl-step:last-child::before { right: 50%; }
+/* The tick: one per step, standing on the baseline under its mark. */
+#timeline-strip .tl-step::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: var(--hairline);
+  height: calc(var(--tl-foot) - 2px);
+  transform: translateX(-50%);
+  background: var(--ink-3);
 }
+/* The arrow keys walk the steps from a focused mark (stepKeys()). */
+#timeline-strip .tl-step:focus-visible { outline: none; }
+#timeline-strip .tl-step:focus-visible .tl-dot {
+  outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  outline-offset: 1px;
+}
+#timeline-strip .tl-step.is-ahead::after { opacity: 0.42; }
+#timeline-strip .tl-step.is-at::after { background: var(--accent); }
 
-/* The mark: glyph for what was done. --leaf corner, --tl-mark size
-   (tied to the connector arithmetic). */
+/* The mark: glyph for what was done. --leaf corner, --tl-mark size. */
 #timeline-strip .tl-step .tl-dot {
   position: relative;
   display: grid;
@@ -197,13 +248,14 @@
   }
 }
 
-/* Start of the board -- a plain disc, no glyph. */
+/* Start of the board -- a plain disc, no glyph, level with the marks. */
 #timeline-strip .tl-step:first-child .tl-dot {
   background: none;
   box-shadow: inset 0 0 0 5px var(--ink-3);
   border-radius: 50%;
   width: var(--tl-start);
   height: var(--tl-start);
+  margin-top: calc((var(--tl-mark) - var(--tl-start)) / 2);
 }
 @media (hover: hover) {
   #timeline-strip .tl-step:first-child:hover .tl-dot {
@@ -212,7 +264,7 @@
   }
 }
 
-/* Ahead of marker: present but faded -- a redo you can see. */
+/* Ahead of the playhead: present but faded -- a redo you can see. */
 #timeline-strip .tl-step.is-ahead .tl-dot { opacity: 0.42; }
 
 /* Current position. --accent-fg, not --paper-card -- neon palettes at
@@ -269,5 +321,6 @@
   #timeline-strip .tl-step.is-ruled .tl-dot {
     box-shadow: 0 0 0 var(--hairline) rgb(var(--accent-c) / 55%);
   }
-  #timeline-strip .tl-marker::after { background: rgb(var(--accent-c) / 40%); }
+  #timeline-strip .tl-scroll { background: rgb(var(--ink-c) / 7%); }
+  #timeline-strip .tl-thumb { background: rgb(var(--ink-c) / 30%); }
 }

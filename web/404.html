@@ -531,34 +531,20 @@
      #nowplaying — all three are linked by `~` combinators in the CSS. Hidden
      until the module opens it. -->
 <div id="timeline-strip" hidden aria-label="Timeline">
-  <div class="tl-transport">
-    <button type="button" data-tl="first" aria-label="First step" title="First step">
-      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-tl-first"/></svg>
-    </button>
-    <button type="button" data-tl="back" aria-label="Step back" title="Step back">
-      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-tl-back"/></svg>
-    </button>
-    <button type="button" data-tl="play" aria-label="Play the history" title="Play the history" aria-pressed="false">
-      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-tl-play"/></svg>
-    </button>
-    <button type="button" data-tl="forward" aria-label="Step forward" title="Step forward">
-      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-tl-forward"/></svg>
-    </button>
-    <button type="button" data-tl="last" aria-label="Newest step" title="Newest step">
-      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-tl-last"/></svg>
-    </button>
-  </div>
+  <button type="button" class="tl-play" data-tl="play" aria-label="Play the history" title="Play the history" aria-pressed="false">
+    <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-tl-play"/></svg>
+  </button>
   <div class="tl-rail">
+    <!-- The page draws this scrollbar, above the steps, and hides the
+         system's: on Windows that is a grey slab under the marks. -->
+    <div class="tl-scroll is-idle" aria-hidden="true"><div class="tl-thumb"></div></div>
     <div class="tl-track" role="listbox" aria-label="Steps"></div>
-    <!-- The marker: drag it along the steps. -->
+    <!-- The playhead, in the gap after the step shown: drag it along. -->
     <div class="tl-marker" hidden title="Drag to move through the history"></div>
   </div>
   <span class="tl-where"></span>
-  <!-- Name the current step. Hidden when no step exists yet. -->
-  <button type="button" class="tl-name" hidden aria-label="Name this point" title="Name this point">
-    <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-rename"/></svg>
-  </button>
-  <button type="button" class="tl-gear" aria-label="Timeline size and trim" title="Timeline size and trim">
+  <!-- Naming a point, the trim and Hide timeline are behind the gear. -->
+  <button type="button" class="tl-gear" aria-label="Timeline options" title="Timeline options">
     <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-gear"/></svg>
   </button>
 </div>
