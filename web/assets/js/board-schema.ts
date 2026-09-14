@@ -101,7 +101,35 @@ export function normalizeBoard(data: unknown): Omit<Board, 'settings' | 'arrange
     // Only a literal true counts: a file that omits it is a board with no music
     // yet, and ui/playlist.ts sets it quietly when an older board holds some.
     hadMusic: src.hadMusic === true,
+    extra: unknownKeys(src),
   };
+}
+
+/**
+ * Every top-level board.json key this build reads or writes, whatever it does
+ * with it. `versions` is withdrawn, and listed so an old file's copy is dropped
+ * rather than carried for ever.
+ */
+const KNOWN_KEYS = new Set([
+  'title', 'view', 'mobileHeader', 'titleHidden', 'mediaFit', 'paletteSources',
+  'settings', 'arrangement', 'items', 'layouts', 'trash', 'connections',
+  'audioOrder', 'tour', 'timeline', 'hadMusic', 'versions',
+]);
+
+/**
+ * The keys this build does not know, kept to be written back by
+ * serializeBoard(): a field a newer build added survives a save from this one.
+ * Only builds from here on do this - an older one still drops what it does not
+ * know. The values are untrusted and nothing reads them. `__proto__` is
+ * skipped, since JSON.parse makes it an own key and assigning it would set the
+ * bag's prototype instead.
+ */
+function unknownKeys(src: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(src)) {
+    if (!KNOWN_KEYS.has(key) && key !== '__proto__') out[key] = value;
+  }
+  return out;
 }
 
 // Raw layout profile from a file, before validation.
@@ -523,6 +551,13 @@ export function serializeBoard() {
   // Omitted rather than written false, for the timeline's reason: a board with
   // no music saves exactly as it did before the key existed.
   if (board.hadMusic) doc.hadMusic = true;
+  // What a newer build wrote and this one does not know, written back after
+  // everything this build owns - see unknownKeys(). A key this build writes
+  // itself always wins.
+  const open: Record<string, unknown> = doc;
+  for (const [key, value] of Object.entries(board.extra)) {
+    if (!(key in open) && !KNOWN_KEYS.has(key)) open[key] = value;
+  }
   return doc;
 }
 

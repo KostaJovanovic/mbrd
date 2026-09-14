@@ -442,8 +442,18 @@ export async function unpackBoard(blob: Blob) {
     files = await readZip(blob, { lift: true });
   }
 
+  // The `mimetype` entry, when it leads the archive, names what this is. Another
+  // ZIP-based format renamed to .mbrd (an EPUB, an ODF document) says so there
+  // and is refused by name. A file with no `mimetype` first - every board
+  // written before the entry existed, or one rezipped by another tool - is
+  // judged by what follows, as it always was.
+  const [first] = files.keys();
+  const mime = files.get('mimetype');
+  if (first === 'mimetype' && mime && dec.decode(mime).trim() !== MIME) {
+    throw new Error('This is not an mbrd board (its mimetype says it is something else)');
+  }
   const boardBytes = files.get('board.json');
-  if (!boardBytes) throw new Error('Not an .mbrd file (no board.json inside)');
+  if (!boardBytes) throw new Error('This is not an mbrd board (no board.json inside)');
 
   // Read manifest one key at a time — non-object is treated as empty.
   let manifest: Record<string, unknown> = {};
@@ -457,8 +467,6 @@ export async function unpackBoard(blob: Blob) {
   if (manifest.format && manifest.format !== FORMAT) {
     throw new Error(`Unknown board format "${String(manifest.format)}"`);
   }
-  // `mimetype` entry deliberately NOT read — it exists for file(1) and archive
-  // browsers, not this reader. manifest.format is the single source of truth.
   // Number() for loose comparison — hand-written `"2"` still warns.
   if (Number(manifest.version) > FORMAT_VERSION) {
     console.warn('[mbrd] file was written by a newer version; loading anyway');
