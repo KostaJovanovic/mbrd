@@ -52,8 +52,8 @@ const PREF = 'mbrd.timeline';
  */
 const MAX_DOTS = 400;
 
-/** Play replays the history at two steps a second. */
-const STEP_MS = 500;
+/** Play replays the history at three and a half steps a second (R33). */
+const STEP_MS = Math.round(1000 / 3.5);
 /** The replay's timer, or 0 when nothing is playing. */
 let playing = 0;
 /** Set while the replay moves the marker, so its own step does not pause it. */
@@ -313,9 +313,10 @@ function render() {
     track!.append(dotFor(step, position, at, sentenceFor(step)));
   });
 
-  where.textContent = stale ? 'Does not match' : `${at} of ${steps.length}`;
-  where.title = stale ? 'This history does not match this board'
-    : offset ? `The newest ${shown.length} are shown` : '';
+  // Words only on a stale history. The step count ("5 of 8") went in R33:
+  // the playhead says where the board stands, and the marks say how many.
+  where.textContent = stale ? 'Does not match' : '';
+  where.title = stale ? 'This history does not match this board' : '';
   // Nothing to play with no steps, and nothing works on a stale history.
   if (playButton) playButton.disabled = stale || !steps.length;
   keepInView(track.querySelector<HTMLElement>('.tl-step.is-at'));
