@@ -38,8 +38,17 @@ box is ticked when its commit lands.
         page, with the how in the tooltip. `desktop/updates.ts` opens no
         dialog, and `tests/desktop-updates.test.js` holds that. Not tried
         in a packaged app: that needs a release newer than the copy.
-- [ ] R4 Windows: the app icon still does not show on the desktop shortcut or
+- [x] R4 Windows: the app icon still does not show on the desktop shortcut or
       in the taskbar. A fresh install of the new version did not fix it.
+      - **Done.** The exe carries the right icon. The shortcuts did not: the
+        installer writes `desktop/package.json`'s description into each one,
+        and that description was 2,000 characters of notes with double
+        quotes in them. The quotes broke the shortcut's line, so its icon
+        field held a slice of the prose and its working folder another.
+        The taskbar button takes the shortcut's icon, so it went blank too.
+        The description is now "mbrd", and the notes moved to
+        `research/docs/architecture.md`. The next install writes whole
+        shortcuts.
 - [x] R5 The Timeline loses a board rename. Rename the board, step back to
       before the rename, step forward again: the old name comes back.
       - **A big problem, so it goes first.** Audit every change to the board
