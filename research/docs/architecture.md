@@ -586,10 +586,14 @@ A fence is the one thing that crosses that divide as a *shape* rather than as
 geometry. On Mobile it becomes a full-width band with its members packed as a
 contiguous run beneath it, which is the honest translation — `arrangement` there
 names an order, not a shape, and a run is an order. `mobileRuns()` decides the
-sequence (a run ranks where its earliest member does, loose cards last) and
-`packRuns()` in `layout.ts` packs each run against everything already placed, so
-a band is a barrier and nothing from a later run can climb into a gap in an
-earlier one. **A board with fences is repacked whole whenever `completeLayout()`
+sequence: a run ranks where its earliest member does, and loose cards between
+two fences in the order form a run of their own, so fences and loose cards
+interleave and neither goes first. `packRuns()` in `layout.ts` packs each run
+against everything already placed, so a band is a barrier and nothing from a
+later run can climb into a gap in an earlier one. The Feed reads the same runs
+(`feedRuns()` in `ui/feed.ts`): a fence's name heads its cards across the wall,
+and each run starts below the whole of the one before. Nothing on Mobile or in
+the Feed writes membership: fencing happens on the canvas. **A board with fences is repacked whole whenever `completeLayout()`
 runs**, because a fence drawn on Desktop would otherwise arrive as a lone band
 with its members still scattered up the column; the cost is that hand-arranged
 Mobile positions do not survive a mode switch on such a board, and a board with

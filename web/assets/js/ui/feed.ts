@@ -6,7 +6,7 @@
 import {
   board, bus, isDefaultTitle, byId, itemAdjust, itemCrop, itemRotate, itemMatte,
   flipTransform, stuckTo, isRider, noteDisplay,
-  select, selection, trackTitle,
+  select, selection, trackTitle, isFence, mobileRuns,
 } from '../state.ts';
 import { noteWords } from '../canvas/note-model.ts';
 import { bakeDisplayFor } from '../optimize/picture.ts';
@@ -54,7 +54,8 @@ const urlOf = (hash: unknown): string | null => (typeof hash === 'string' ? asse
 
 /** Which shape a tile is drawn as, and which filler builds it - see kindOf(). */
 type TileKind =
-  | 'image' | 'video' | 'audio' | 'note' | 'link' | 'swatch' | 'text' | 'hint' | 'file' | 'card';
+  | 'image' | 'video' | 'audio' | 'note' | 'link' | 'swatch' | 'text' | 'hint' | 'file' | 'card'
+  | 'fence';
 
 /**
  * One tile on the wall. `video` is the whole of this module's release
@@ -427,13 +428,24 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
 // Building the wall
 // ---------------------------------------------------------------------------
 
-/** Everything the Feed shows, in the board's arrangement order. */
-function feedItems(): Item[] {
+/**
+ * Everything the Feed shows, in the board's arrangement order, cut into runs:
+ * each fence's cards together under its name, between runs of loose cards
+ * (research/rapid-fixes-2026-09-14.md, R14). The runs are fences.ts's, the
+ * same the Mobile layout packs, so one rule says where a fence goes. A fence
+ * ranks where its earliest card does, which is why the fences join the order
+ * last: their own place in it would otherwise win. A fence with no card to
+ * show has no run. Fencing is the canvas's: nothing here writes membership.
+ */
+function feedRuns(): { band: Item | null, items: Item[] }[] {
   // SAFETY: mobileOrder() hands back the very items it was given, in a new
   // order - ArrangeItem is only the narrower shape it reads them through.
-  return mobileOrder(
+  const shown = mobileOrder(
     board.items.filter(it => !HIDDEN.has(it.type)),
     { name: board.arrangement }) as Item[];
+  const fences = board.items.filter(isFence);
+  if (!fences.length) return [{ band: null, items: shown }];
+  return mobileRuns([...shown, ...fences]).filter(run => run.items.length);
 }
 
 /**
@@ -452,6 +464,7 @@ function render() {
 
 /** Kind buckets, which decide the tile shape and how it is filled. */
 function kindOf(item: Item): TileKind {
+  if (item.type === 'fence') return 'fence';
   if (item.type === 'image') return 'image';
   if (item.type === 'video') return 'video';
   if (item.type === 'audio') return 'audio';
@@ -573,7 +586,9 @@ function pictureURL(item: Item) {
 
 function buildTile(item: Item): Tile {
   const kind = kindOf(item);
-  const el = div('feed-tile');
+  // A fence's band is not a tile: no press, no menu and no sticker lands on
+  // it, and every one of those looks for `.feed-tile`.
+  const el = div(kind === 'fence' ? 'feed-band' : 'feed-tile');
   el.dataset.kind = kind;
   el.dataset.id = item.id;
   const t: Tile = {
@@ -622,7 +637,15 @@ function fillTile(t: Tile) {
   if (kind === 'text') return fillText(t);
   if (kind === 'hint') return fillHint(t);
   if (kind === 'card') return fillCard(t);
+  if (kind === 'fence') return fillBand(t);
   return fillFile(t);
+}
+
+/** A fence's name across the wall, over the cards it holds. */
+function fillBand(t: Tile) {
+  const name = div('feed-band-name');
+  name.textContent = (t.item.name || '').trim() || 'Fence';
+  t.el.appendChild(name);
 }
 
 /**
@@ -1115,9 +1138,10 @@ function fillFile(t: Tile) {
  *
  * Over slots rather than tiles, because the wall's shape is known for every
  * item whether or not a tile is mounted for it - that split is the windowing.
- * Pure but for reading `cols`.
+ * `top` is where the run starts on the wall - see packRuns(). Pure but for
+ * reading `cols`.
  */
-function packSlots(list: Slot[], width: number): number {
+function packSlots(list: Slot[], width: number, top = 0): number {
   const colW = (width - (cols - 1) * GAP) / cols;
   // Every slot's span and height, knowable up front - packColumns() only needs
   // the heights. A measured height wins over the shape (hints and embeds have
@@ -1134,12 +1158,28 @@ function packSlots(list: Slot[], width: number): number {
 
   list.forEach((s, i) => {
     s.box.x = spots[i].col * (colW + GAP);
-    s.box.y = spots[i].top;
+    s.box.y = top + spots[i].top;
     s.box.w = sized[i].w;
     s.box.h = sized[i].h;
   });
   return height;
 }
+
+/**
+ * Pack each run on its own, each one starting below the whole of the one
+ * before. Packed as one wall, a loose card after a fence's run drops into the
+ * shortest column, beside the fence's cards and above its last ones, and the
+ * fence stops reading as one group. The Mobile layout levels its runs the same
+ * way (packRuns() in layout.ts). Returns the wall's height.
+ */
+function packRuns(runs: Slot[][], width: number): number {
+  let top = 0;
+  for (const run of runs) top += packSlots(run, width, top) + GAP;
+  return Math.max(0, top - GAP);
+}
+
+/** How tall a fence's band stands on the wall, in pixels. */
+const BAND_H = 34;
 
 /**
  * How many columns a tile takes.
@@ -1155,6 +1195,8 @@ function packSlots(list: Slot[], width: number): number {
  * for the type it describes.
  */
 function spanFor(t: Sizable, colW: number): number {
+  // A fence's band heads its run across the whole wall.
+  if (t.kind === 'fence') return cols;
   // A player spans as many columns as its frame's floor needs - a one-column
   // Spotify tile would start the same sideways scrollbar a too-narrow card does
   // on the canvas. A fully fluid player (YouTube, minWidth 0) stays one column.
@@ -1371,18 +1413,19 @@ function layout() {
   if (width < 1) return;
   cols = clamp(Math.round(width / TILE_TARGET), 2, MAX_COLS);
 
-  const items = feedItems();
-  empty!.classList.toggle('is-shown', items.length === 0);
-  slots = items.map(it => ({
+  const slotOf = (it: Item): Slot => ({
     item: it, kind: kindOf(it), embed: linkEmbed(it),
-    ratio: ratioOf(it), span: hintSpan(it), measured: 0,
+    ratio: ratioOf(it), span: hintSpan(it), measured: isFence(it) ? BAND_H : 0,
     box: { x: 0, y: 0, w: 0, h: 0 },
-  }));
+  });
+  const runs = feedRuns().map(run => (run.band ? [run.band, ...run.items] : run.items).map(slotOf));
+  slots = runs.flat();
+  empty!.classList.toggle('is-shown', slots.length === 0);
   slotById = new Map(slots.map((s): [string, Slot] => [s.item.id, s]));
 
   measureHintSlots(slots, width);   // the one kind that must be mounted to size
   sizeEmbedSlots(slots, width);     // computed height, no DOM
-  const height = packSlots(slots, width);
+  const height = packRuns(runs, width);
   gridEl.style.height = `${Math.max(0, height)}px`;
 
   // Every box just moved, so every mounted tile is repositioned.

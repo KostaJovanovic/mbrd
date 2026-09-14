@@ -419,7 +419,7 @@ test('a board with no fences packs into one bandless run', () => {
   assert.deepEqual(runs[0].items.map(i => i.id), ['a', 'b']);
 });
 
-test('a run holds its fence members and the loose cards come last', () => {
+test('a run holds its fence members and the loose card after it follows', () => {
   const [f] = addItems([fence({ x: 0, y: 0, w: 900, h: 700 })]);
   const [inside] = addItems([photo({ x: 0, y: 0 })]);
   const [outside] = addItems([photo({ x: 4000, y: 0 })]);
@@ -430,6 +430,51 @@ test('a run holds its fence members and the loose cards come last', () => {
   assert.deepEqual(runs[0].items.map(i => i.id), [inside.id]);
   assert.equal(runs[1].band, null);
   assert.deepEqual(runs[1].items.map(i => i.id), [outside.id]);
+});
+
+test('fence runs and loose cards interleave in the order handed in', () => {
+  // The maintainer's rule (research/todo-2026-09-14.md): fences have no
+  // priority, so the column reads loose cards, a fence, more loose cards,
+  // another fence - never every fence first or every loose card last.
+  addItems([
+    fence({ id: 'f1', x: 0, y: 0, w: 900, h: 700 }),
+    fence({ id: 'f2', x: 8000, y: 0, w: 900, h: 700 }),
+  ]);
+  addItems([
+    photo({ id: 'a', x: -4000, y: 0 }),
+    photo({ id: 'in1', x: 0, y: 0 }),
+    photo({ id: 'b', x: 4000, y: 0 }),
+    photo({ id: 'c', x: 5000, y: 0 }),
+    photo({ id: 'in2', x: 8000, y: 0 }),
+    photo({ id: 'd', x: 12000, y: 0 }),
+  ]);
+  const order = ['a', 'in1', 'b', 'c', 'in2', 'd', 'f1', 'f2'].map(byId);
+
+  const runs = mobileRuns(order);
+  assert.deepEqual(runs.map(r => [r.band?.id ?? null, r.items.map(i => i.id)]), [
+    [null, ['a']],
+    ['f1', ['in1']],
+    [null, ['b', 'c']],
+    ['f2', ['in2']],
+    [null, ['d']],
+  ]);
+});
+
+test('every member of a fence sits in one run, however the order scatters them', () => {
+  // A By-name or Tight-fit order puts a loose card between two members. The
+  // run gathers them at the earliest member and the loose card follows it.
+  addItems([fence({ id: 'f', x: 0, y: 0, w: 900, h: 700 })]);
+  addItems([
+    photo({ id: 'm1', x: -200, y: 0 }),
+    photo({ id: 'loose', x: 4000, y: 0 }),
+    photo({ id: 'm2', x: 200, y: 0 }),
+  ]);
+
+  const runs = mobileRuns(['m1', 'loose', 'm2', 'f'].map(byId));
+  assert.deepEqual(runs.map(r => [r.band?.id ?? null, r.items.map(i => i.id)]), [
+    ['f', ['m1', 'm2']],
+    [null, ['loose']],
+  ]);
 });
 
 test('a nested fence becomes its own band after its parent', () => {

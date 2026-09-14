@@ -176,10 +176,13 @@ export function fenceMembers(fenceId: string) {
 }
 
 /**
- * Mobile column as ordered runs: `{ band, items }[]`. Loose cards go last.
- * Run order derives from the arrangement's order via earliest-member rank.
- * Nesting flattens into subsections. Membership is read via byId() against
- * Desktop geometry, not the fitted copies the caller passes.
+ * Mobile column as ordered runs: `{ band, items }[]`, for the Mobile layout and
+ * the Feed alike. A fence's run ranks where its earliest member does, so fence
+ * runs and runs of loose cards interleave in the arrangement's order: loose
+ * cards, a fence, more loose cards, another fence. No fence goes first and no
+ * loose card goes last (research/todo-2026-09-14.md). Nesting flattens into
+ * subsections. Membership is read via byId() against Desktop geometry, not the
+ * fitted copies the caller passes.
  */
 export function mobileRuns(items: Item[]): { band: Item | null, items: Item[] }[] {
   const rank = new Map(items.map((it, index) => [it.id, index]));
@@ -201,16 +204,19 @@ export function mobileRuns(items: Item[]): { band: Item | null, items: Item[] }[
     return best;
   };
   const runs: { band: Item | null, items: Item[] }[] = [];
-  const emit = (list: Item[]) => {
-    for (const it of [...list].sort((a, b) => rankOf(a) - rankOf(b))) {
-      if (!isFence(it)) continue;
-      const members = kids.get(it.id) || [];
-      runs.push({ band: it, items: members.filter(m => !isFence(m)) });
-      emit(members);
-    }
+  const emit = (fence: Item) => {
+    const members = kids.get(fence.id) || [];
+    runs.push({ band: fence, items: members.filter(m => !isFence(m)) });
+    for (const it of members.filter(isFence).sort((a, b) => rankOf(a) - rankOf(b))) emit(it);
   };
-  emit(roots);
-  const loose = roots.filter(it => !isFence(it));
+  // Stable sort: loose cards keep the order handed in among themselves.
+  let loose: Item[] = [];
+  for (const it of [...roots].sort((a, b) => rankOf(a) - rankOf(b))) {
+    if (!isFence(it)) { loose.push(it); continue; }
+    if (loose.length) runs.push({ band: null, items: loose });
+    loose = [];
+    emit(it);
+  }
   if (loose.length || !runs.length) runs.push({ band: null, items: loose });
   return runs;
 }
