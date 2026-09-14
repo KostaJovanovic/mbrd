@@ -76,7 +76,7 @@ type Common = {
  * A control, as one of the eight kinds the builder knows.
  *
  * A discriminated union on `type` rather than one shape with everything
- * optional, because the kinds differ: only a range has a step, only a select
+ * optional, because the kinds differ: only a range has a step, only a picker
  * has a list, only a buttons row has buttons. It also makes the table below
  * check itself - a `min` on a checkbox is a mistake the typechecker catches
  * rather than a key nothing ever reads.
@@ -100,20 +100,8 @@ export type RangeControl = Common & {
   get?: () => number,
   set?: (value: number) => void,
 };
-export type SelectControl = Common & {
-  type: 'select', label: string, fieldId?: string,
-  options?: (ctx: Ctx) => Option[],
-  get?: () => string,
-  set?: (value: string) => void,
-};
 /**
- * A select whose options are worth *seeing* rather than only reading.
- *
- * The same shape as SelectControl - same `options`, `get`/`set`, `external` -
- * and it exists because a native <option> cannot paint anything. No browser
- * lets a stylesheet inside a dropdown list, so a palette row that shows its own
- * colours has to stop being a <select>. The builder opens ui/menu.ts's anchored
- * panel instead: the app's one menu, which already draws a colour chip per row.
+ * Every dropdown in the panel: a button and ui/menu.ts's anchored panel.
  *
  * `swatches` answers, for one option value, the colours to draw beside it. An
  * empty array is legal and draws a row with a label and no chips - the fallback
@@ -121,26 +109,22 @@ export type SelectControl = Common & {
  * (MenuEntry.swatchEnd): a palette chip is a specimen compared down a column,
  * not an icon for the word beside it.
  *
- * ── Why this is the exception, not the new default ──
+ * ── Why there is no native <select> here any more ──
  *
- * Every `type: 'select'` row still in this file was asked whether it should
- * become one of these; the answer was no. Written down because "make them all
- * match" is a persuasive reason to spend a day making four controls worse.
+ * The rule used to be that a dropdown stopped being native only when there was
+ * something a native one could not do - the palette, since no browser paints
+ * inside an <option>, and the note toolbar's face (canvas/notes.ts), since a
+ * native list takes focus from the editor under it. The rest stayed native for
+ * the listbox a screen reader announces and the phone's own wheel.
  *
- * A native <select> brings type-ahead, Home and End, a real listbox a screen
- * reader announces as *"combo box, Units, Millimetres, 1 of 2"*, and on a phone
- * the platform's own wheel. ui/menu.ts has the keyboard, but announces itself
- * as a *menu* - `role="menu"`, `role="menuitem"` - and menu roles are not
- * listbox roles. Converting these trades real semantics for visual consistency.
- *
- * The rule: a dropdown here stops being native when there is something a native
- * one *cannot do*, not when it looks different from its neighbours. Two have
- * cleared that bar. The palette, above, because no browser paints inside an
- * <option>. The note toolbar's face (canvas/notes.ts), because a native
- * dropdown takes focus and that bar sits over an editor which must not lose it
- * - removing it deleted three workarounds. The board's faces
- * (ui/appearance-controls.ts) did not, and neither did Layout, Units, Paper
- * outline, Picture sharpness or Cards built per frame.
+ * The rule now is one kind of dropdown in the panel, because two kinds read as
+ * two apps: a native list is drawn by the system in the system's type, at the
+ * system's size, over a panel set at the whimsy tier. The menu carries what the
+ * native list gave: type-ahead (typing jumps to the first match), Home, End and
+ * the arrow keys, and press, drag and release. What is given up is the
+ * listbox role - the menu announces itself as a menu - and the phone's wheel.
+ * The board's faces (ui/appearance-controls.ts) are the same button, built
+ * there, with each row set in its own face.
  */
 export type PickerControl = Common & {
   type: 'picker', label: string, fieldId?: string,
@@ -160,7 +144,7 @@ export type KeysControl = Common & {
   type: 'keys', keys: readonly (readonly [readonly string[], string])[],
 };
 export type Control =
-  | TextControl | CheckControl | RangeControl | SelectControl | PickerControl
+  | TextControl | CheckControl | RangeControl | PickerControl
   | ButtonsControl | SlotControl | HintControl | KeysControl;
 
 /** One heading's worth of controls, and which tab it lives in. */
@@ -431,7 +415,7 @@ export const SECTIONS: Section[] = [
       // a board's contents rather than which face of it you see, so these four
       // grey where the View row above does not - that row is the only thing on
       // this tab a changelog reader can press, and pressing it is how they leave.
-      { id: 'arrangement', type: 'select', label: 'Layout', needsBoard: true,
+      { id: 'arrangement', type: 'picker', label: 'Layout', needsBoard: true,
         options: ctx => (ctx.mobile ? MOBILE_ARRANGEMENTS : ARRANGEMENTS)
           .map(a => ({ value: a.id, label: a.label })),
         get: () => board.arrangement,
@@ -691,11 +675,9 @@ export const SECTIONS: Section[] = [
       // 'dynamic' is DYNAMIC in ui/appearance-controls.ts, which owns what the
       // menu does with it; this file is data and imports no panel module, so
       // tests/settings-panel.test.js holds the two strings together.
-      // A picker rather than a select, and the difference is that you can see
-      // what you are choosing between: each row carries its palette's own paper,
-      // accent and ink as a split chip. A native <option> cannot paint anything
-      // in any browser, which is the whole reason this one row is not a <select>
-      // like every other list in the panel. See buildPicker() in ui/panel.ts.
+      // Each row carries its palette's own paper, accent and ink as a split
+      // chip, so you can see what you are choosing between. See buildPicker()
+      // in ui/panel.ts.
       //
       // `swatches` reads the colours out of the live tokens.css rather than from
       // a table here - see paletteSwatches() in ui/appearance-controls.ts, which
@@ -797,7 +779,7 @@ export const SECTIONS: Section[] = [
     // section from the "keep something above the fold" rule.
     id: 'real-size', tab: 'look', fold: 'Paper', needsBoard: true,
     controls: [
-      { id: 'opt-units', type: 'select', label: 'Units', advanced: true,
+      { id: 'opt-units', type: 'picker', label: 'Units', advanced: true,
         options: () => [
           { value: 'metric', label: 'Millimetres, centimetres, metres' },
           { value: 'imperial', label: 'Inches and feet' },
@@ -806,7 +788,7 @@ export const SECTIONS: Section[] = [
       // A sheet is a Desktop question: Mobile is a narrow strip with a fixed
       // width and no page to fit anything onto, and setSetting() refuses these
       // three keys there.
-      { id: 'opt-paper', type: 'select', label: 'Paper outline', when: desktop, advanced: true,
+      { id: 'opt-paper', type: 'picker', label: 'Paper outline', when: desktop, advanced: true,
         options: () => [{ value: '', label: 'None' },
           ...PAPERS.map(p => ({ value: p.id, label: p.label }))],
         get: () => board.settings.paper, set: v => setSetting('paper', v) },
@@ -900,14 +882,14 @@ export const SECTIONS: Section[] = [
         get: () => quality.blur, set: v => setQualityOverride('blur', v) },
       { id: 'q-anim', type: 'check', label: 'Animations', advanced: true,
         get: () => quality.anim, set: v => setQualityOverride('anim', v) },
-      { id: 'q-sharpness', type: 'select', label: 'Picture sharpness', advanced: true,
+      { id: 'q-sharpness', type: 'picker', label: 'Picture sharpness', advanced: true,
         options: () => SHARPNESS_STEPS.map(s => ({ value: String(s.px), label: s.label })),
         get: () => String(quality.sharpness),
         set: v => setQualityOverride('sharpness', +v) },
       // The one lever here that is a trade rather than a reduction: a smaller
       // batch is a smoother zoom and a slower fill-in. See BUILD_BUDGET's note
       // in canvas/items.ts.
-      { id: 'q-build', type: 'select', label: 'Cards built per frame', advanced: true,
+      { id: 'q-build', type: 'picker', label: 'Cards built per frame', advanced: true,
         options: () => BUILD_STEPS.map(s => ({ value: String(s.n), label: s.label })),
         get: () => String(quality.build),
         set: v => setQualityOverride('build', +v) },

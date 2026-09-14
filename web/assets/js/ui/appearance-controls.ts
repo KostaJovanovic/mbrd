@@ -9,6 +9,8 @@ import { clamp } from '../util.ts';
 import { customFaces } from './fonts.ts';
 import { field, tickSlider } from './controls.ts';
 import { pickColor } from './color-picker.ts';
+import { openAnchored, menuButton } from './menu.ts';
+import type { MenuEntry } from './menu.ts';
 
 // Deferred to init time so this module imports without a browser.
 let ROOT: HTMLElement | null = null;
@@ -65,7 +67,7 @@ export function initAppearanceControls(deps: LookDeps) {
 
 /** Built rows keyed by CSS token name. */
 type Row = {
-  input: HTMLSelectElement | HTMLButtonElement | HTMLInputElement,
+  input: HTMLButtonElement | HTMLInputElement,
   out: HTMLOutputElement,
   label: HTMLLabelElement,
   spec: ControlSpec,
@@ -90,24 +92,19 @@ export function buildControls() {
     if (!host) continue;
     const { label, out } = field(c.label, { out: true });
 
-    // Native <select> kept deliberately: unbounded list needs type-ahead, and
-    // a phone gets the platform's own wheel picker.
-    let input: HTMLSelectElement | HTMLButtonElement | HTMLInputElement;
+    let input: HTMLButtonElement | HTMLInputElement;
     if (c.type === 'font') {
-      input = document.createElement('select');
-      // Board's own faces first — the one you dropped in is the one you want.
-      const faces = [...c.options];
-      const own = customFaces();
-      if (own.length) faces.splice(1, 0, ...own);
-      for (const f of faces) {
-        const opt = document.createElement('option');
-        opt.value = f.value;
-        opt.textContent = f.label;
-        // Show each name in its own face so the list is the comparison.
-        if (f.value && !f.value.startsWith('var(')) opt.style.fontFamily = f.value;
-        input.append(opt);
-      }
-      input.addEventListener('change', () => d.setVar(c.var, input.value));
+      // The panel's picker (buildPicker() in ui/panel.ts), built here because
+      // its rows are this module's: every face in its own face.
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'field-picker';
+      const name = document.createElement('span');
+      name.className = 'field-picker-name';
+      btn.append(name);
+      menuButton(btn, () => openAnchored(btn.getBoundingClientRect(),
+        faceEntries(c, btn.dataset.value ?? ''), { label: c.label, owner: btn, focus: true }));
+      input = btn;
     } else if (c.type === 'color') {
       input = document.createElement('button');
       input.type = 'button';
@@ -135,6 +132,38 @@ export function buildControls() {
   syncControls();
 }
 
+/** A face as a label's font-family: '' is "let whimsy decide", which has no face to show. */
+const faceOf = (value: string) => value || undefined;
+
+/**
+ * A face menu: Default on top, then every face A to Z - the board's own
+ * dropped faces sorted in with the rest - each row set in its own face so the
+ * list is the comparison. Typing jumps to a name (ui/menu.ts's type-ahead).
+ */
+function faceEntries(c: FontControl, now: string): MenuEntry[] {
+  const [first, ...rest] = c.options;
+  const faces = [...rest, ...customFaces()].sort((a, b) => a.label.localeCompare(b.label));
+  return [first, ...faces].map(f => ({
+    label: f.label,
+    font: faceOf(f.value),
+    check: f.value === now,
+    action: () => d.setVar(c.var, f.value),
+  }));
+}
+
+/**
+ * Write a face picker's value and its face. A value no option names - a board
+ * from elsewhere - shows the first family in its stack rather than nothing.
+ */
+function paintFace(btn: HTMLElement, c: FontControl, value: string) {
+  btn.dataset.value = value;
+  const name = btn.querySelector<HTMLElement>('.field-picker-name');
+  if (!name) return;
+  const known = [...c.options, ...customFaces()].find(f => f.value === value);
+  name.textContent = known?.label ?? value.split(',')[0].replace(/["']/g, '').trim();
+  name.style.fontFamily = faceOf(value) ?? '';
+}
+
 export function syncControlVisibility() {
   for (const [name, { label }] of inputs) {
     label.hidden = !appearanceControlVisible(name, board.layoutMode);
@@ -148,7 +177,7 @@ export function syncControls() {
     const raw = (d.current().vars[name] ?? computed.getPropertyValue(name)).trim();
     if (spec.type === 'font') {
       // Use vars, not computed — computed resolves to a stack matching no option.
-      input.value = d.current().vars[name] ?? '';
+      paintFace(input, spec, d.current().vars[name] ?? '');
       out.textContent = '';
     } else if (spec.type === 'color') {
       input.style.background = toHex(raw) || '#000000';

@@ -354,6 +354,20 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The chevron a <select> draws below, for a picker with no chips in its place. */
+.field-picker:not(:has(.field-picker-chips))::after {
+  content: '';
+  flex: none;
+  width: 11px;
+  height: 7px;
+  margin-right: 3px;
+  background: var(--ink-2);
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.5 2.4 6 6.2 10.5 2.4'/%3E%3C/svg%3E");
+  -webkit-mask: var(--chevron) center / 11px 7px no-repeat;
+  mask: var(--chevron) center / 11px 7px no-repeat;
+  transition: background var(--dur-fast) var(--ease);
+}
+.field-picker:hover::after { background: var(--accent); }
 .field-picker-chips { flex: none; display: flex; gap: 3px; }
 .field-picker-chips > i {
   width: 11px;

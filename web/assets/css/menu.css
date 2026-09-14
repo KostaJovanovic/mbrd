@@ -173,6 +173,7 @@
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 .ctx-item:hover,
+.ctx-item.is-hot,
 .ctx-item:focus-visible {
   background: var(--paper-2);
   color: var(--accent-deep);
@@ -206,6 +207,7 @@
   transition: color var(--dur-fast) var(--ease);
 }
 .ctx-item:hover .ico,
+.ctx-item.is-hot .ico,
 .ctx-item:focus-visible .ico { color: inherit; }
 
 /* Tick on the trailing edge. Space held whether drawn or not. */
