@@ -462,32 +462,13 @@
   <path d="M3 4.5h10M3 8h10M3 11.5h10"/>
 </symbol>
 
-<!-- The Timeline's transport (ui/timeline-view.ts), drawn the way a player's
-     is: a bar is an end, a head is a direction, two heads run. Play and pause
-     are one button that swaps its glyph. -->
-<symbol id="i-tl-first" viewBox="0 0 16 16">
-  <path d="M3 3.5v9"/>
-  <path d="M8.5 4.5v7L4.8 8z"/>
-  <path d="M13 4.5v7L9.3 8z"/>
-</symbol>
-<symbol id="i-tl-back" viewBox="0 0 16 16">
-  <path d="M4.5 3.5v9"/>
-  <path d="M11.5 3.5v9L6.5 8z"/>
-</symbol>
+<!-- The Timeline's one transport button (ui/timeline-view.ts), drawn the way
+     a player's is. Play and pause are one button that swaps its glyph. -->
 <symbol id="i-tl-play" viewBox="0 0 16 16">
   <path d="M5 3v10l8-5z"/>
 </symbol>
 <symbol id="i-tl-pause" viewBox="0 0 16 16">
   <path d="M5.5 3.5v9M10.5 3.5v9"/>
-</symbol>
-<symbol id="i-tl-forward" viewBox="0 0 16 16">
-  <path d="M11.5 3.5v9"/>
-  <path d="M4.5 3.5v9l5-4.5z"/>
-</symbol>
-<symbol id="i-tl-last" viewBox="0 0 16 16">
-  <path d="M3 4.5v7L6.7 8z"/>
-  <path d="M7.5 4.5v7L11.2 8z"/>
-  <path d="M13 3.5v9"/>
 </symbol>
 
 <!-- A settings wheel: the Timeline's size and trim sit behind it. -->
