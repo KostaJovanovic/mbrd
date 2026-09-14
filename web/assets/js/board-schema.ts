@@ -378,9 +378,11 @@ export function normalizeMobileHeader(raw: unknown): MobileHeader {
     // the band's own overflow clip.
     offset: clamp(Number.isFinite(Number(header.offset)) ? Number(header.offset) : 0, -50, 50),
     italic: !!header.italic,
-    // Absent means on. Every board written before this setting existed wrapped
-    // its name, and !!undefined would quietly turn that off for all of them.
-    wrap: header.wrap !== false,
+    // Absent from a header that exists means on: every board written before
+    // this setting existed wrapped its name, and !!undefined would quietly turn
+    // that off for all of them. A board with no header at all is new, and
+    // takes the default, which is off.
+    wrap: 'wrap' in header ? header.wrap !== false : isRecord(raw) || DEFAULT_MOBILE_HEADER.wrap,
     axes,
   };
 }

@@ -201,7 +201,7 @@ filename supplies one and is decoded the same way.
     "appearance": { "palette": "papyrus", "vars": { "--accent": "#b4553a" } }
   },
   "arrangement": "spiral",
-  "mobileHeader": { "font": "", "size": 13, "stretch": 100, "leading": 100, "weight": 700, "offset": 0, "italic": false, "wrap": true, "axes": {} },
+  "mobileHeader": { "font": "", "size": 13, "stretch": 100, "leading": 100, "weight": 700, "offset": 0, "italic": false, "wrap": false, "axes": {} },
   "titleHidden": false,
   "mediaFit": "contain",
   "paletteSources": 12,
@@ -239,7 +239,9 @@ masthead and the Desktop title card. It is **board-level** (one style for both
 layouts). Files written before it moved here carry it under `settings.mobileHeader`
 instead; a reader takes the top-level value first and falls back to that. It is
 also mirrored back into `settings.mobileHeader` on save, so an older reader still
-finds it. `titleHidden` is `true` only when the Desktop title card has been
+finds it. `wrap` is `false` on a new board. A `mobileHeader` without the key was
+written before the setting existed, and reads as `true`, as it was drawn.
+`titleHidden` is `true` only when the Desktop title card has been
 deleted; a board without the key seeds the card on open. The card itself is an
 ordinary item of `type: "title"` in `items` (a singleton, id `__title__`), with
 its own Desktop geometry in `layouts.desktop`; it is never packed onto Mobile.

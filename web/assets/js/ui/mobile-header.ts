@@ -474,7 +474,9 @@ function applyTitleStyle(title: HTMLElement, style: MobileHeader, axes: FontAxis
   const stack = headerFontStack(style.font);
   if (stack) title.style.fontFamily = stack;
   else title.style.removeProperty('font-family');
-  title.style.setProperty('--mobile-title-scale', formatAxis(style.size / 100));
+  // Unrounded: a slider step is a pixel on the board, about 0.2% of its width,
+  // and formatAxis()'s two places dropped four steps in five.
+  title.style.setProperty('--mobile-title-scale', String(style.size / 100));
   title.style.setProperty('--mobile-title-cap', String(TITLE_CAP));
   title.style.setProperty('--mobile-title-stretch', formatAxis(style.stretch / 100));
   title.style.setProperty('--mobile-title-offset', String(style.offset ?? 0));
@@ -526,12 +528,13 @@ const TITLE_CAP = 0.1875;
 const boardWidth = () => mobileBoardWorldWidth() || 512;
 
 /** The size slider counts pixels on the Mobile board, and the style keeps a
- *  share of its width, so the name still scales with the screen. The ends are
- *  board-schema.ts's clamp, 7% to 24%, rounded inwards so both stay inside it. */
+ *  share of its width, so the name still scales with the screen. It runs from
+ *  board-schema.ts's floor, 7%, to TITLE_CAP, where the stylesheets stop the
+ *  name: every step past the cap changed nothing. Both ends rounded inwards. */
 function paintSize(size: number) {
   const ref = boardWidth();
   sizeInput.min = String(Math.ceil(ref * 0.07));
-  sizeInput.max = String(Math.floor(ref * 0.24));
+  sizeInput.max = String(Math.floor(ref * TITLE_CAP));
   sizeInput.value = String(Math.round(ref * size / 100));
   sizeOut.textContent = sizeInput.value;
 }
