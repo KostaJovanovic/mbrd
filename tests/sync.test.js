@@ -66,11 +66,25 @@ function fakeStore() {
       if (!f) throw new Error('no such file');
       return f.blob;
     },
+    async trash(id) {
+      if (!files.has(id)) throw new Error('no such file');
+      trashed.push(files.get(id).name);
+      files.delete(id);
+    },
   };
+  /** The names moved to the trash, in order. */
+  const trashed = [];
 
   return {
     provider: { id: 'gdrive', label: 'Google Drive', store },
     files,
+    trashed,
+    /** Stamp a file as written now, by name - a push from another machine. */
+    freshen(name) {
+      for (const f of files.values()) {
+        if (f.name === name) files.set(f.id, { ...f, modifiedTime: new Date().toISOString() });
+      }
+    },
     /** How many times bytes were written under a name. */
     writes: name => writes.get(name) || 0,
     /** Somebody else's machine writing board.json under our feet. */
@@ -185,6 +199,77 @@ test('progress counts files, and ends on the total it promised', async () => {
   // a strip sitting at 90%.
   assert.deepEqual(steps.at(-1), [3, 3]);
   assert.ok(steps.every(([done, total]) => done <= total));
+});
+
+// ---------------------------------------------------------------------------
+// Assets the board stopped naming
+//
+// The fake's clock starts in 2023, so every file it writes is older than a
+// day unless a test stamps it fresh.
+// ---------------------------------------------------------------------------
+
+test('a push moves an old asset the board no longer names to the trash', async () => {
+  clearAssets();
+  const drive = fakeStore();
+  const a = await stubAsset('one');
+  const b = await stubAsset('two');
+  const first = await pushBoard(drive.provider, 'brd1', boardWith([a, b]));
+  assert.ok(first.ok);
+
+  const second = await pushBoard(drive.provider, 'brd1', boardWith([a]), { known: first.row });
+  assert.ok(second.ok);
+  assert.equal(second.removed, 1);
+  assert.deepEqual(drive.trashed, [`${b}.png`]);
+});
+
+test('an asset nobody names yet is left alone while it is young', async () => {
+  // Another machine's push sends its assets before its board.json. Until
+  // that lands, what it sent is named by nothing up there.
+  clearAssets();
+  const drive = fakeStore();
+  const a = await stubAsset('one');
+  const b = await stubAsset('two');
+  const first = await pushBoard(drive.provider, 'brd1', boardWith([a, b]));
+  drive.freshen(`${b}.png`);
+
+  const second = await pushBoard(drive.provider, 'brd1', boardWith([a]), { known: first.row });
+  assert.equal(second.removed, 0);
+  assert.deepEqual(drive.trashed, []);
+});
+
+test('the sweep keeps what the bin names, and every file not named by a hash', async () => {
+  clearAssets();
+  const drive = fakeStore();
+  const a = await stubAsset('one');
+  const b = await stubAsset('two');
+  const first = await pushBoard(drive.provider, 'brd1', boardWith([a, b]));
+  await drive.provider.store.put(first.row.folder, 'notes.txt', new Blob(['x']), null);
+
+  // b left the board for the bin: still the board's, and still kept.
+  const binned = boardWith([a], {
+    trash: [{ item: item({ id: 'gone', asset: { hash: b, embedded: true }, name: 'p.png' }), at: 1 }],
+  });
+  const second = await pushBoard(drive.provider, 'brd1', binned, { known: first.row });
+  assert.equal(second.removed, 0);
+  assert.deepEqual(drive.trashed, []);
+});
+
+test('a file that will not go to the trash does not fail the push', async () => {
+  clearAssets();
+  const drive = fakeStore();
+  const a = await stubAsset('one');
+  const b = await stubAsset('two');
+  const first = await pushBoard(drive.provider, 'brd1', boardWith([a, b]));
+  drive.provider.store.trash = async () => { throw new Error('rate limited'); };
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    const second = await pushBoard(drive.provider, 'brd1', boardWith([a]), { known: first.row });
+    assert.ok(second.ok);
+    assert.equal(second.removed, 0);
+  } finally {
+    console.warn = warn;
+  }
 });
 
 // ---------------------------------------------------------------------------

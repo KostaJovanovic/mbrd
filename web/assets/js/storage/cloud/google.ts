@@ -528,5 +528,5 @@ export const googleDrive: ShareProvider = {
   signOut,
   upload,
   download,
-  store: { folder, list, put, fetch: fetchFile, purge },
+  store: { folder, list, put, fetch: fetchFile, trash, purge },
 };

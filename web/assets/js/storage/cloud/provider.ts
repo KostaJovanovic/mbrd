@@ -57,6 +57,8 @@ export interface CloudStore {
   put(folder: string, name: string, blob: Blob, replacing: string | null): Promise<string>;
   /** Read a file back (authenticated, unlike download). */
   fetch(id: string): Promise<Blob>;
+  /** Move one file to the account's trash, where the person can still get it back. */
+  trash(id: string): Promise<void>;
   /**
    * Remove everything this app created. Provider must enumerate exactly
    * its own files (e.g. drive.file scope). Covers both synced boards and

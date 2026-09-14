@@ -12,7 +12,7 @@ import { isHash } from '../../util.ts';
 
 import type { Asset } from '../assets.ts';
 import type { PackedBoard } from '../mbrd.ts';
-import type { CloudFile, ShareProvider } from './provider.ts';
+import type { CloudFile, CloudStore, ShareProvider } from './provider.ts';
 
 /** The one folder in the person's Drive that everything else sits under. */
 const APP_FOLDER = 'mbrd';
@@ -111,7 +111,8 @@ const noProgress: SyncProgress = () => {};
 
 /** Push result. Row returned (not written) to keep this testable without a browser. */
 export type SyncOutcome =
-  | { ok: true, uploaded: number, row: BoardSync }
+  /** `removed` counts old assets the board no longer names, moved to the trash. */
+  | { ok: true, uploaded: number, removed: number, row: BoardSync }
   /** Remote was modified by another machine. Caller asks user, then retries with `force`. */
   | { ok: false, conflict: true, theirs: string };
 
@@ -170,12 +171,48 @@ export async function pushBoard(
   onProgress(total, total);
 
   // Read back modifiedTime from Drive's clock — guessing would trigger false conflicts.
-  const after = (await store.list(folder)).find(f => f.name === BOARD_FILE);
+  const listed = await store.list(folder);
+  const after = listed.find(f => f.name === BOARD_FILE);
+  const removed = await sweep(store, listed, want);
   return {
     ok: true,
     uploaded: missing.length,
+    removed,
     row: { provider: provider.id, folder, file, seen: after?.modifiedTime ?? null, at: Date.now() },
   };
+}
+
+/**
+ * How long an asset nobody names stays in the folder before a push takes it
+ * away. A push from another machine sends its assets before its board.json, so
+ * for a while an asset the board up there does not name yet is one it is about
+ * to name. A day is far past any push.
+ */
+const ORPHAN_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Move to the trash every asset in the folder that the board just written no
+ * longer names, once it is older than ORPHAN_MS (research/rapid-fixes-2026-09-14.md,
+ * R13). After board.json, never before: until it lands, the board up there is
+ * the older one, and it may still name them. The trash, not a delete, as purge
+ * does: thirty days to get one back. A file that will not go stays for the next
+ * push, since a push that worked must not fail over housekeeping.
+ */
+async function sweep(store: CloudStore, listing: CloudFile[], want: Set<string>): Promise<number> {
+  const now = Date.now();
+  let removed = 0;
+  for (const file of listing) {
+    const named = hashOf(file.name);
+    if (!named || want.has(named.hash)) continue;
+    if (!(now - Date.parse(file.modifiedTime) > ORPHAN_MS)) continue;
+    try {
+      await store.trash(file.id);
+      removed++;
+    } catch (err) {
+      console.warn('[mbrd] could not clear an old asset out of the cloud:', err);
+    }
+  }
+  return removed;
 }
 
 /** A board found in the cloud, before anything has been fetched of it. */

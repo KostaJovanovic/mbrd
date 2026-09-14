@@ -313,6 +313,16 @@ orphaned assets cost storage and nothing else, and the next successful push
 adopts them for free because they are named by their content.
 `tests/sync.test.js` asserts the order.
 
+**Assets the board stopped naming go last of all.** Once `board.json` has
+landed, `sweep()` moves to the Drive trash every asset in the folder that
+`boardAssetHashes()` no longer names: not the items, not the bin, not the fonts,
+not the history. Two limits keep it from taking what somebody still needs. It
+takes only a file older than a day, because another machine's push sends its
+assets before its `board.json`, and for that moment its new assets are named by
+nothing up there. And it takes only a name that is a hash, so a file somebody
+put in the folder by hand is never touched. A file that will not go stays for
+the next push: a push that worked does not fail over housekeeping.
+
 ## Conflicts, exactly
 
 `BoardSync.seen` is the `modifiedTime` Drive reported for `board.json`
@@ -364,8 +374,6 @@ three separate reference readers had to learn about them at once.
 
 ## Still open
 
-- **No deletes propagate.** An asset dropped from the board stays in the Drive
-  folder forever. Harmless and content-addressed, but it grows.
 - **One provider.** OneDrive implements `CloudStore` and appears in the picker;
   nothing else changes.
 
