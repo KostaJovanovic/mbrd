@@ -1268,6 +1268,8 @@
     left: calc(max(12px, env(safe-area-inset-left)) + var(--chrome-button-w) + var(--bar-gap));
     right: calc(max(12px, env(safe-area-inset-right)) + 2 * var(--chrome-button-w) + var(--bar-gap));
     bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--dock));
+    /* The desktop's room (chrome.css) does not apply: the handle's own insets are the room. */
+    max-width: none;
     translate: none;
     height: var(--bar-h);
     /* The tier hangs outside the container, so the overflow clip the desktop bar

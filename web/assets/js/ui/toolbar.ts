@@ -44,9 +44,58 @@ export function initToolbar(cmds: ToolbarCommands): void {
 
   // New board or layout change: close drawer and disarm.
   bus.on('board:load', () => { setOpen(false); setArmed(false); });
-  bus.on('layout', () => { setOpen(false); setArmed(false); });
+  bus.on('layout', () => { setOpen(false); setArmed(false); scheduleFit(); });
   // Items changed — drop pick (cheaper than checking whether it survived).
   bus.on('items', () => setPick(null));
+
+  // The room changes with the window, with a panel opening at either side,
+  // and with the look (faces and letter-spacing change the words' width).
+  addEventListener('resize', scheduleFit);
+  const panels = new MutationObserver(scheduleFit);
+  for (const id of ['sidebar', 'header-panel']) {
+    const panel = document.getElementById(id);
+    if (panel) panels.observe(panel, { attributes: true, attributeFilter: ['class'] });
+  }
+  bus.on('settings', scheduleFit);
+  document.fonts?.ready?.then(scheduleFit).catch(() => {});
+  scheduleFit();
+}
+
+// ---------------------------------------------------------------------------
+// Fitting the room
+// ---------------------------------------------------------------------------
+
+/**
+ * How much of the bar fits the room it is centred in, above phone width
+ * (research/rapid-fixes-2026-09-14.md, R11): every tool with its word, then
+ * icons only, then Colour, Link and Stickers behind More. A measure rather
+ * than a breakpoint: the room moves with the window and with a panel at
+ * either side, and a width written against today's tools is wrong the next
+ * time one is added. The room is the bar's max-width (chrome.css).
+ */
+const FITS = ['full', 'icons', 'more'];
+/** The phone's layout, where the bar is the Add handle at the foot instead. */
+const PHONE = '(max-width: 700px)';
+
+let fitFrame = 0;
+
+function scheduleFit(): void {
+  if (fitFrame || typeof requestAnimationFrame !== 'function') return;
+  fitFrame = requestAnimationFrame(() => { fitFrame = 0; fitBar(); });
+}
+
+function fitBar(): void {
+  if (!bar) return;
+  if (matchMedia(PHONE).matches) {
+    delete bar.dataset.fit;
+    return;
+  }
+  const room = parseFloat(getComputedStyle(bar).maxWidth);
+  for (const fit of FITS) {
+    bar.dataset.fit = fit;
+    // The bar clips what does not fit, so its scroll width is what it wants.
+    if (!(room > 0) || bar.scrollWidth <= room + 0.5) return;
+  }
 }
 
 export const isOpen = () => !!bar?.classList.contains('is-open');
