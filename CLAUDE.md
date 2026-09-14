@@ -47,16 +47,17 @@ npm run lint        # oxlint, correctness only — adding a formatter is a regre
 npm run typecheck   # tsc --noEmit, strict, every .ts under web/assets/js
 npm run dev:lab     # watch build for web/lab.html, the pigment lab
 npm run dev:sound   # watch build for web/lab-sound.html, the sound lab
-save.bat            # version stamps → build → commit → portable copy → optionally push
+save.bat            # version stamps → build → commit → optionally push
 save.bat release    # the same, pushed, then GitHub builds every app and publishes them
+save.bat portable   # build the web bundle, then desktop/portable/ — no commit
 ```
 
-`save.bat` rebuilds `desktop/portable/` — the portable copy — after every commit
-it makes, which is the one step in it that **cannot fail the save**: it is
-gitignored, so nothing built there is committed, pushed or deployed, and the
-worst a failure does is leave one machine with a stale copy. It is skipped when
-`desktop/node_modules` is absent, which is most checkouts. It also adds about
-ninety seconds, which is why it runs last, after the push question.
+`save.bat` does not rebuild `desktop/portable/`, the portable copy. That is
+option 6 in its menu, or `save.bat portable`. It builds the web bundle first,
+because electron-builder copies `web/` as it is. It takes about ninety
+seconds and can download Electron, and the folder is gitignored, so nothing
+built there is committed, pushed or deployed. A failed build leaves the old copy
+in place. It needs `desktop/node_modules`.
 
 **A release is `save.bat release` (option 1 in its menu), and nothing else.**
 After the push it runs `gh workflow run release.yml`, and
