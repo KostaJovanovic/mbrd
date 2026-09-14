@@ -22,7 +22,8 @@ import {
 } from '../state.ts';
 import { normalizeBoard } from '../board-schema.ts';
 import { planMerge } from '../merge.ts';
-import { packBoard, unpackBoard, MIME } from './mbrd.ts';
+import { packBoard, packBoardFile, unpackBoard, MIME } from './mbrd.ts';
+import type { ZipLayout } from './zip.ts';
 import { allAssets, clearAssets } from './assets.ts';
 import type { Asset } from './assets.ts';
 import { fileNameFor, titleFromFileName, titleForOpenedBoard } from './naming.ts';
@@ -255,6 +256,8 @@ export async function exportBoard({ pickNew = false, history = true } = {}) {
       // with the file timer, which writes the same file (saveDocument()).
       if (picking) job.label('Writing the file');
       const target = picking && doc ? doc : { name: fileNameFor(data.title) };
+      // Written whole, so the layout the timer's saves append to is stale.
+      fileLayout = null;
       await inTurn(() => platform.files.write(target, blob));
     } finally {
       job.end();
@@ -1129,6 +1132,17 @@ const FILE_ID = 'file:';
 const FILE_SAVE_MS = 10000;
 let fileTimer = 0;
 
+/**
+ * Where this session's last write left each entry of the board's file, so the
+ * next save can append only what changed (packBoardFile()). Null until a whole
+ * write has happened in this session, and dropped by anything else that writes
+ * the file - an export over it, an Optimize - so the next save is whole.
+ */
+let fileLayout: { path: string, layout: ZipLayout } | null = null;
+
+/** The next save to the board's file writes it whole, compacting it. */
+export function forgetFileLayout() { fileLayout = null; }
+
 /** Bumped by every change the file should hear about, so a write that ran
  *  while somebody kept working does not mark the newer work as written. */
 let edits = 0;
@@ -1214,12 +1228,28 @@ function writeDocument(): Promise<boolean> {
     try {
       // A board a picture short still goes to its file, as it goes to the
       // shelf. Refusing would stop the file hearing about every later edit.
-      const { blob, manifest } = await packBoard(serializeBoard(), { created, allowMissing: true });
-      created = manifest.created;
+      const data = serializeBoard();
+      const append = platform.files.append;
+      const prior = append && doc?.path && fileLayout?.path === doc.path ? fileLayout.layout : null;
+      let packed = await packBoardFile(data, { created, allowMissing: true, prior });
+      created = packed.manifest.created;
       if (doc?.path) {
-        await platform.files.write(doc, blob);
+        if (packed.appended && append && prior) {
+          // Refused when the file changed length under the page: written whole.
+          try { await append(doc, packed.blob, prior.size); }
+          catch (err) {
+            console.warn('[mbrd] could not append to the board file, writing it whole:', err);
+            packed = await packBoardFile(data, { created, allowMissing: true });
+            await platform.files.write(doc, packed.blob);
+          }
+        } else {
+          await platform.files.write(doc, packed.blob);
+        }
+        fileLayout = { path: doc.path, layout: packed.layout };
       } else {
+        const blob = packed.blob;
         doc = await port.create(fileNameFor(board.title), blob);
+        fileLayout = doc.path ? { path: doc.path, layout: packed.layout } : null;
         namedTitle = board.title;
         reportDocument();
       }

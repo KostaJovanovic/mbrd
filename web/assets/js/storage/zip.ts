@@ -183,14 +183,66 @@ function dosDateTime(date: Date) {
  * rather than copying them. Peak memory becomes a chunk and a header instead of
  * the archive.
  */
-export async function writeZip(
+export async function writeZip(entries: ZipEntry[], opts: ZipOptions = {}) {
+  return (await build(entries, opts, null, () => false)).body;
+}
+
+/** writeZip(), and the layout an appendZip() onto the result will want. */
+export async function writeZipLayout(entries: ZipEntry[], opts: ZipOptions = {}) {
+  const { body, layout } = await build(entries, opts, null, () => false);
+  return { blob: body, layout };
+}
+
+/**
+ * The tail that turns a file this module wrote into one holding `entries`:
+ * only the entries that are new or changed, then a whole new central directory
+ * and its record. The file stays one ZIP. Its old directory and every entry
+ * nothing points at any more stay behind as dead bytes, which `waste` counts,
+ * so the caller can write the file whole again when there is too much of it.
+ *
+ * An entry the file already holds under the same name is pointed at rather
+ * than written again when `keep(name)` says its name decides its bytes (a
+ * content-addressed asset) or when its checksum and length match. Readers take
+ * the last directory, and a tail cut short leaves the one before it standing -
+ * see findEOCD().
+ */
+export async function appendZip(
+  entries: ZipEntry[], prior: ZipLayout, keep: (name: string) => boolean, opts: ZipOptions = {},
+) {
+  const { body, layout, waste } = await build(entries, opts, prior, keep);
+  return { tail: body, layout, waste };
+}
+
+export type ZipOptions = { date?: Date, mime?: string };
+
+/** Where one entry sits in a file already written - what its central record says. */
+export type ZipRecord = {
+  offset: number, crc: number, csize: number, usize: number,
+  method: number, time: number, date: number,
+};
+
+/** A file this module wrote, as the next append needs it: its length, and where each entry sits. */
+export type ZipLayout = { size: number, records: Map<string, ZipRecord> };
+
+/**
+ * The writer. With no `prior` it writes a whole archive. With one it writes
+ * the tail appendZip() describes, every offset counted from the start of the
+ * file the tail goes onto.
+ */
+async function build(
   entries: ZipEntry[],
-  { date = new Date(), mime = 'application/zip' }: { date?: Date, mime?: string } = {},
+  { date = new Date(), mime = 'application/zip' }: ZipOptions,
+  prior: ZipLayout | null,
+  keep: (name: string) => boolean,
 ) {
   const { time, date: dosDate } = dosDateTime(date);
   const parts: (Bytes | Blob)[] = [];   // body chunks, in file order
   const central: Bytes[] = [];          // central-directory records
-  let offset = 0;
+  const records = new Map<string, ZipRecord>();
+  let offset = prior ? prior.size : 0;
+  // What the new directory points at, for the waste count. A reused entry's
+  // local header is counted as this module writes one, with no extra field.
+  let live = 0;
 
   // Fixed-width fields: a value that does not fit silently truncates the header.
   // Refuse everything that would need ZIP64.
@@ -201,62 +253,24 @@ export async function writeZip(
   for (const entry of entries) {
     const name = enc.encode(entry.name);
     if (name.length > 0xffff) throw new Error(`"${entry.name}" has too long a name for a ZIP entry`);
-    // Blob stays Blob to the output; read size once for the headers.
-    const raw = isBlob(entry.data) || entry.data instanceof Uint8Array
-      ? entry.data : new Uint8Array(entry.data);
-    const rawLen = isBlob(raw) ? raw.size : raw.length;
-    const crc = isBlob(raw) ? await crc32Blob(raw) : crc32(raw);
-
-    let method = 0;
-    let payload: Bytes | Blob = raw;
-    let payloadLen = rawLen;
-    if (entry.compress && supportsRaw() && rawLen > 256) {
-      const deflated = isBlob(raw) ? await deflateRawBlob(raw) : await deflateRaw(raw);
-      const deflatedLen = isBlob(deflated) ? deflated.size : deflated.length;
-      // Only take the compressed form when it actually helps.
-      if (deflatedLen < rawLen) { method = 8; payload = deflated; payloadLen = deflatedLen; }
+    const had = prior?.records.get(entry.name);
+    let rec = had && keep(entry.name) ? had : null;
+    if (!rec) {
+      // Blob stays Blob to the output; read size once for the headers.
+      const raw = isBlob(entry.data) || entry.data instanceof Uint8Array
+        ? entry.data : new Uint8Array(entry.data);
+      const rawLen = isBlob(raw) ? raw.size : raw.length;
+      const crc = isBlob(raw) ? await crc32Blob(raw) : crc32(raw);
+      if (had && had.crc === crc && had.usize === rawLen) rec = had;
+      else {
+        rec = await writeLocal(entry.name, name, raw, rawLen, crc, !!entry.compress, offset, time, dosDate, parts);
+        offset += 30 + name.length + rec.csize;
+        if (offset > MAX) throw new Error('Board is too large for a non-ZIP64 .mbrd (4 GB limit)');
+      }
     }
-
-    if (rawLen > MAX || payloadLen > MAX) {
-      throw new Error(`"${entry.name}" is too large for a non-ZIP64 archive (4 GB limit)`);
-    }
-
-    const local = new Uint8Array(30 + name.length);
-    const lv = new DataView(local.buffer);
-    lv.setUint32(0, LOCAL_SIG, true);
-    lv.setUint16(4, 20, true);            // version needed
-    lv.setUint16(6, 0x0800, true);        // flag: UTF-8 names
-    lv.setUint16(8, method, true);
-    lv.setUint16(10, time, true);
-    lv.setUint16(12, dosDate, true);
-    lv.setUint32(14, crc, true);
-    lv.setUint32(18, payloadLen, true);
-    lv.setUint32(22, rawLen, true);
-    lv.setUint16(26, name.length, true);
-    lv.setUint16(28, 0, true);
-    local.set(name, 30);
-
-    parts.push(local, payload);
-
-    const cd = new Uint8Array(46 + name.length);
-    const cv = new DataView(cd.buffer);
-    cv.setUint32(0, CD_SIG, true);
-    cv.setUint16(4, 20, true);            // version made by
-    cv.setUint16(6, 20, true);            // version needed
-    cv.setUint16(8, 0x0800, true);
-    cv.setUint16(10, method, true);
-    cv.setUint16(12, time, true);
-    cv.setUint16(14, dosDate, true);
-    cv.setUint32(16, crc, true);
-    cv.setUint32(20, payloadLen, true);
-    cv.setUint32(24, rawLen, true);
-    cv.setUint16(28, name.length, true);
-    cv.setUint32(42, offset, true);       // local header offset
-    cd.set(name, 46);
-    central.push(cd);
-
-    offset += local.length + payloadLen;
-    if (offset > MAX) throw new Error('Board is too large for a non-ZIP64 .mbrd (4 GB limit)');
+    records.set(entry.name, rec);
+    live += 30 + name.length + rec.csize;
+    central.push(centralRecord(name, rec));
   }
 
   const cdSize = central.reduce((s, c) => s + c.length, 0);
@@ -271,7 +285,70 @@ export async function writeZip(
   ev.setUint32(12, cdSize, true);
   ev.setUint32(16, offset, true);
 
-  return new Blob([...parts, ...central, eocd], { type: mime });
+  const size = offset + cdSize + eocd.length;
+  live += cdSize + eocd.length;
+  return {
+    body: new Blob([...parts, ...central, eocd], { type: mime }),
+    layout: { size, records },
+    waste: size - live,
+  };
+}
+
+/** One entry's local header and payload onto `parts`, and the record that points at it. */
+async function writeLocal(
+  label: string, name: Bytes, raw: Bytes | Blob, rawLen: number, crc: number,
+  compress: boolean, offset: number, time: number, dosDate: number, parts: (Bytes | Blob)[],
+): Promise<ZipRecord> {
+  let method = 0;
+  let payload: Bytes | Blob = raw;
+  let payloadLen = rawLen;
+  if (compress && supportsRaw() && rawLen > 256) {
+    const deflated = isBlob(raw) ? await deflateRawBlob(raw) : await deflateRaw(raw);
+    const deflatedLen = isBlob(deflated) ? deflated.size : deflated.length;
+    // Only take the compressed form when it actually helps.
+    if (deflatedLen < rawLen) { method = 8; payload = deflated; payloadLen = deflatedLen; }
+  }
+
+  if (rawLen > MAX || payloadLen > MAX) {
+    throw new Error(`"${label}" is too large for a non-ZIP64 archive (4 GB limit)`);
+  }
+
+  const local = new Uint8Array(30 + name.length);
+  const lv = new DataView(local.buffer);
+  lv.setUint32(0, LOCAL_SIG, true);
+  lv.setUint16(4, 20, true);            // version needed
+  lv.setUint16(6, 0x0800, true);        // flag: UTF-8 names
+  lv.setUint16(8, method, true);
+  lv.setUint16(10, time, true);
+  lv.setUint16(12, dosDate, true);
+  lv.setUint32(14, crc, true);
+  lv.setUint32(18, payloadLen, true);
+  lv.setUint32(22, rawLen, true);
+  lv.setUint16(26, name.length, true);
+  lv.setUint16(28, 0, true);
+  local.set(name, 30);
+  parts.push(local, payload);
+  return { offset, crc, csize: payloadLen, usize: rawLen, method, time, date: dosDate };
+}
+
+/** The central-directory record for one entry. */
+function centralRecord(name: Bytes, rec: ZipRecord): Bytes {
+  const cd = new Uint8Array(46 + name.length);
+  const cv = new DataView(cd.buffer);
+  cv.setUint32(0, CD_SIG, true);
+  cv.setUint16(4, 20, true);            // version made by
+  cv.setUint16(6, 20, true);            // version needed
+  cv.setUint16(8, 0x0800, true);
+  cv.setUint16(10, rec.method, true);
+  cv.setUint16(12, rec.time, true);
+  cv.setUint16(14, rec.date, true);
+  cv.setUint32(16, rec.crc, true);
+  cv.setUint32(20, rec.csize, true);
+  cv.setUint32(24, rec.usize, true);
+  cv.setUint16(28, name.length, true);
+  cv.setUint32(42, rec.offset, true);   // local header offset
+  cd.set(name, 46);
+  return cd;
 }
 
 // --- Reading ---------------------------------------------------------------
@@ -513,11 +590,24 @@ export async function readZip(
  * comment). The first match from the end wins, and the caller then validates
  * what it points at - four bytes inside compressed data can spell EOCD by
  * chance, and only the offsets it claims can tell the difference.
+ *
+ * With no record where one belongs, the rest of the file is searched, for the
+ * one case that produces that: a save appended to a board (appendZip()) that
+ * died part way leaves its tail with no record after it, and the last whole
+ * save's record further back than a comment could push it. Only a record whose
+ * directory lies before it and starts with the directory signature is taken
+ * there, since that search crosses every picture in the file.
  */
 function findEOCD(view: DataView, size: number) {
   const min = Math.max(0, size - 0xffff - 22);
   for (let i = size - 22; i >= min; i--) {
     if (view.getUint32(i, true) === EOCD_SIG) return i;
+  }
+  for (let i = min - 1; i >= 0; i--) {
+    if (view.getUint32(i, true) !== EOCD_SIG) continue;
+    const cdSize = view.getUint32(i + 12, true);
+    const p = view.getUint32(i + 16, true);
+    if (p + cdSize <= i && (cdSize === 0 || view.getUint32(p, true) === CD_SIG)) return i;
   }
   return -1;
 }

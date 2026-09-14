@@ -29,6 +29,8 @@ export interface Bridge {
     pickSave(suggested: string): Promise<{ name: string, path: string } | null>;
     pickImport(): Promise<HandedFile[]>;
     write(path: string, data: ArrayBuffer): Promise<void>;
+    /** A save's tail onto a file `at` bytes long. The Android shell refuses it. */
+    append(path: string, data: ArrayBuffer, at: number): Promise<void>;
     read(path: string): Promise<HandedFile>;
     exists(path: string): Promise<boolean>;
   };
@@ -202,6 +204,12 @@ function electronFiles(bridge: Bridge): FilesPort {
       const target = ref.path ?? (await bridge.files.pickSave(ref.name))?.path;
       if (!target) throw abort('Nothing picked');
       await bridge.files.write(target, await blob.arrayBuffer());
+    },
+
+    // The desktop only: the phone writes a board whole, and its bridge refuses.
+    append: bridge.shell === 'capacitor' ? undefined : async (ref: DocumentRef, blob: Blob, at: number) => {
+      if (!ref.path) throw abort('That document has no file');
+      await bridge.files.append(ref.path, await blob.arrayBuffer(), at);
     },
 
     async pickImport(_spec: PickSpec) {

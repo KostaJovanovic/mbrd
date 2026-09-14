@@ -3,7 +3,7 @@
 // open-file, the store, or the boards folder (boards.ts). Anything else is refused.
 
 import { dialog, BrowserWindow } from 'electron';
-import { readFile, writeFile, rename, access } from 'node:fs/promises';
+import { readFile, writeFile, rename, access, open as openFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import {
   CATEGORIES, FAMILIES, EXT_FAMILY,
@@ -149,6 +149,39 @@ export async function write(path: unknown, data: unknown): Promise<void> {
   const tmp = target + '.mbrd-tmp';
   await writeFile(tmp, Buffer.from(data));
   await rename(tmp, target);
+}
+
+/**
+ * Add a save's tail to the end of a board file (appendZip() in the page's
+ * storage/zip.ts): the new and changed entries and a new directory, so a save
+ * that changed one card writes one card's worth of bytes.
+ *
+ * Only onto a file exactly `at` bytes long, which is how long the page's last
+ * write left it - anything else means the file changed under the page, and
+ * the page writes it whole instead. A write that fails is cut back to `at`,
+ * leaving the last save standing. A crash part way leaves a tail with no
+ * directory after it, and the reader walks back past it to the save before.
+ */
+export async function append(path: unknown, data: unknown, at: unknown): Promise<void> {
+  const target = checked(path);
+  if (!(data instanceof ArrayBuffer)) throw new Error('expected bytes to write');
+  if (typeof at !== 'number' || !Number.isSafeInteger(at) || at < 0) {
+    throw new Error('expected the length the file had');
+  }
+  const handle = await openFile(target, 'r+');
+  try {
+    const { size } = await handle.stat();
+    if (size !== at) throw new Error('the file changed on disk since it was last written');
+    try {
+      await handle.write(Buffer.from(data), 0, data.byteLength, at);
+      await handle.sync();
+    } catch (err) {
+      await handle.truncate(at).catch(() => {});
+      throw err;
+    }
+  } finally {
+    await handle.close();
+  }
 }
 
 /** Read a document back. The shelf's file rows are the caller. */

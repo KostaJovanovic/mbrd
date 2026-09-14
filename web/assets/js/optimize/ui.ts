@@ -5,6 +5,7 @@ import { ask } from '../ui/dialog.ts';
 import { formatBytes } from '../util.ts';
 import { toast, busy } from '../notify.ts';
 import { discardOriginals, originalsHeld } from '../state.ts';
+import { forgetFileLayout } from '../storage/storage.ts';
 import { planOptimize, runOptimize, describeSaving, clipsWantingStills } from './optimize.ts';
 import { opusAvailable, OPUS_KBPS } from './opus.ts';
 
@@ -142,6 +143,9 @@ export async function optimizeBoard() {
   } finally {
     job.end();
   }
+  // The next save writes the board's file whole, so what Optimize shrank
+  // leaves the file rather than sitting in it as dead bytes.
+  forgetFileLayout();
   toast(describeSaving(report));
 }
 
