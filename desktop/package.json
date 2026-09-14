@@ -6,6 +6,7 @@
   "license": "GPL-3.0-or-later",
   "main": "dist/main.js",
   "description": "mbrd",
+  "homepage": "https://mbrd.valjdakosta.com/",
   "scripts": {
     "build": "node scripts/build.mjs",
     "typecheck": "tsc -p tsconfig.json && tsc -p chrome/tsconfig.json",
