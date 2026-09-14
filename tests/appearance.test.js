@@ -280,15 +280,17 @@ test('the appearance panel no longer builds a density slider', () => {
   assert.ok(source.includes("label: 'Panel width'"));
 });
 
+const PICTURE_PALETTE = join(WEB, 'assets', 'js', 'ui', 'picture-palette.ts');
+
 test('the palette compares pictures by hash, without minting an object URL', () => {
-  // ui/appearance.ts touches a browser global at import time, so this is asked
-  // of the source, like the density-slider check above.
+  // Asked of the source, like the density-slider check above: the property is
+  // what the walk calls, not what it returns.
   //
   // The walk answering "have the sampled pictures changed?" runs on every
   // 'items' event, and assetURL() mints a blob URL on first use. Resolving
   // inside the walk would mint one per picture on the board - hashes are
   // identity enough, and URLs are resolved only for the handful actually read.
-  const source = read(join(WEB, 'assets', 'js', 'ui', 'appearance.ts'));
+  const source = read(PICTURE_PALETTE);
   // Comments stripped: one names assetURL() to explain why it isn't called.
   const code = line => line.replace(/\/\/.*$/, '');
   const walk = source.match(/function pictureHashes\(\)[\s\S]*?\n}/)[0]
@@ -316,20 +318,22 @@ test('the palette compares pictures by hash, without minting an object URL', () 
 //
 // The gate is pure and tested in layout-settings.test.js; this asks that the
 // look model actually goes through it, checked against source since
-// ui/appearance.ts can't be loaded in Node.
+// ui/appearance.ts can't be loaded in Node. The extraction itself is in
+// ui/picture-palette.ts, so the callers are counted across the two.
 
 test('the board only ever colours itself through the three-picture gate', () => {
   const source = read(join(WEB, 'assets', 'js', 'ui', 'appearance.ts'));
+  const palette = read(PICTURE_PALETTE);
   const strip = block => block.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
 
   // Every unasked-for run goes through autoRecolour(), the only thing that
   // asks the gate. A second bus handler calling recolourFromBoard() direct
   // would colour the board off one photograph silently.
-  const auto = strip(source.match(/function autoRecolour\(\)[\s\S]*?\n}/)[0]);
+  const auto = strip(palette.match(/function autoRecolour\(\)[\s\S]*?\n}/)[0]);
   assert.ok(auto.includes('autoPaletteReady('), 'the automatic path asks the gate');
   assert.ok(auto.includes('dynamicOn()'), 'and tells it whether the board is already dynamic');
 
-  const calls = [...strip(source).matchAll(/recolourFromBoard\(/g)].length;
+  const calls = [...strip(source + palette).matchAll(/recolourFromBoard\(/g)].length;
   // Four callers: autoRecolour, the Dynamic entry, the whimsy axis, and the
   // definition itself. A new one needs a reason here.
   assert.equal(calls, 4, 'a new caller of recolourFromBoard() needs a reason in this test');
@@ -343,12 +347,12 @@ test('the board only ever colours itself through the three-picture gate', () => 
 });
 
 test('Dynamic is a state the menu reads, not a flag it remembers', () => {
-  const source = read(join(WEB, 'assets', 'js', 'ui', 'appearance.ts'));
+  const source = read(PICTURE_PALETTE);
   // `auto` is permission and `derived` is provenance; neither means "the board
   // is wearing its pictures' colours right now", which is what the menu shows -
   // and an older board with pigments but no `derived` flag still needs to.
   assert.match(source,
-    /const dynamicOn = \(\) => autoOn\(current\) && PALETTE_TOKENS\.some\(/);
+    /const dynamicOn = \(\) => autoOn\(d\.current\(\)\) && PALETTE_TOKENS\.some\(/);
 
   // The entry never becomes a palette name: nothing writes it to
   // `current.palette`, so no board saves a data-palette nothing can name.
@@ -359,4 +363,18 @@ test('Dynamic is a state the menu reads, not a flag it remembers', () => {
   // now a picker button dispatches the value instead. What's pinned is
   // unchanged: Dynamic goes to goDynamic(), a real name goes to setPalette().
   assert.match(wire, /if \(value === DYNAMIC\) d\.goDynamic\(\);\s*\n\s*else d\.setPalette\(value\)/);
+});
+
+test('the picture palette loads without a browser and reads the source dial', async () => {
+  // Moved out of ui/appearance.ts so it could be asked in Node at all (R22).
+  const { setSetting } = await import('../web/assets/js/state.ts');
+  const { sourceCount, ALL_SOURCES_MAX, ALL_SOURCES_STOP } =
+    await import('../web/assets/js/ui/picture-palette.ts');
+  const { MAX_SOURCES } = await import('../web/assets/js/ui/pigments.ts');
+  assert.equal(ALL_SOURCES_STOP, MAX_SOURCES + 1, 'the "all" stop sits one past the last number');
+  setSetting('paletteSources', 3);
+  assert.equal(sourceCount(), 3);
+  setSetting('paletteSources', 0);
+  assert.equal(sourceCount(), ALL_SOURCES_MAX, '0 is every picture, up to the cap');
+  setSetting('paletteSources', 12);
 });

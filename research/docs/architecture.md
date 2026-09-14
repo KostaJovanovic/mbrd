@@ -1737,6 +1737,9 @@ only part of a board that reaches the browser as *code*, so it is filtered
 through the `TOKENS` allowlist in `ui/look.ts` — keep it that way.
 `ui/pigments.ts` derives whole palettes in OKLCh from board pictures (48×48
 canvas, nothing uploaded) and repairs contrast afterwards.
+`ui/picture-palette.ts` decides which pictures feed it and when to run it again,
+and borrows the look through `initPicturePalette()` in the same way, so it
+loads in Node where the model cannot.
 
 The palette menu is the one control for "what colour is this board?": four named
 palettes and **Dynamic**, which is the board's own pictures. There is no separate
