@@ -6,7 +6,7 @@ import {
   board, bus, setAppearance, setSetting, MOBILE_APPEARANCE_VARS,
 } from '../state.ts';
 import { autoPaletteReady, whimsyControlsSnap, AXIS_TOKENS } from '../layout-settings.ts';
-import { readToken } from '../util.ts';
+import { readToken, toHex } from '../util.ts';
 import { oklch, parseHex } from '../color.ts';
 import { toast } from '../notify.ts';
 import { readPrefJSON, writePref } from '../prefs.ts';
@@ -23,7 +23,7 @@ import {
 import {
   initAppearanceControls, buildControls, syncControls, syncControlVisibility,
   syncPaletteMode, syncPaletteSources, wirePaletteSources,
-  wireWhimsy, wirePalette, inputs, toHex,
+  wireWhimsy, wirePalette, inputs,
 } from './appearance-controls.ts';
 import { legacyBlends } from './legacy-color.ts';
 import { refitEmbedMarks } from '../canvas/renderers.ts';

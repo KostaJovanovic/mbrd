@@ -5,7 +5,7 @@
 
 import { board, setSetting } from '../state.ts';
 import { appearanceControlVisible } from '../layout-settings.ts';
-import { clamp } from '../util.ts';
+import { toHex } from '../util.ts';
 import { customFaces } from './fonts.ts';
 import { field, tickSlider } from './controls.ts';
 import { pickColor } from './color-picker.ts';
@@ -262,30 +262,3 @@ export function wirePalette() {
   });
 }
 
-/** Normalise any CSS colour to #rrggbb for pickColor(). */
-export function toHex(value: string): string | null {
-  const v = value.trim();
-  if (/^#[0-9a-f]{6}$/i.test(v)) return v.toLowerCase();
-  if (/^#[0-9a-f]{3}$/i.test(v)) return '#' + [...v.slice(1)].map(c => c + c).join('').toLowerCase();
-  // Percentages would NaN under .map(Number) — fall through to canvas instead.
-  const m = v.match(/^rgba?\(([^)]+)\)$/i);
-  if (m && !m[1].includes('%')) {
-    const [r, g, b] = m[1].split(/[\s,/]+/).map(Number);
-    if ([r, g, b].every(Number.isFinite)) {
-      return '#' + [r, g, b].map(n => clamp255(n).toString(16).padStart(2, '0')).join('');
-    }
-  }
-  // Everything else: round-trip through a canvas.
-  try {
-    const ctx = document.createElement('canvas').getContext('2d');
-    if (!ctx) return null;
-    ctx.fillStyle = '#000';
-    ctx.fillStyle = v;
-    const out = ctx.fillStyle;
-    return typeof out === 'string' && /^#[0-9a-f]{6}$/i.test(out) ? out.toLowerCase() : null;
-  } catch {
-    return null;
-  }
-}
-
-const clamp255 = (n: number) => clamp(Math.round(n || 0), 0, 255);

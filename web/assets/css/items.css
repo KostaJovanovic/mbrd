@@ -359,6 +359,14 @@
   gap: 10px;
   align-items: stretch;
 }
+/* The caption plate would sit over the face names at the foot, so it rests
+   hidden and comes back on hover, focus and rename, as a photograph's does
+   (media.css). */
+.item[data-type="style-tile"] .item-bar {
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+.item[data-type="style-tile"]:is(:hover, :focus-within, .is-editing) .item-bar { opacity: 1; }
 
 .style-tile-strip {
   flex: 1;
@@ -379,22 +387,50 @@
   box-shadow: 0 0 0 var(--board-hairline) color-mix(in srgb, var(--ink) 10%, transparent);
 }
 
-/* One continuous band — at a card's width, gaps between chips would read as
-   a fifteenth colour. */
-.style-tile-band {
+/* Two rows of four, each chip separate and named underneath. */
+.style-tile-swatches {
   flex: none;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px 5px;
+}
+
+.style-tile-swatch {
   display: flex;
-  height: 26px;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-3);
+  font: 500 10px/1.2 var(--font-mono);
+  text-align: left;
+  cursor: copy;
+  /* The card's body takes no pointer; a swatch is the exception, the bargain
+     the link card's anchor makes. The gaps and the rest still drag the card. */
+  pointer-events: auto;
+}
+/* A far-zoom tile is a coloured block, and a click on it is a click on the board. */
+#world.zoom-far .style-tile-swatch { pointer-events: none; }
+
+.style-tile-chip {
+  height: 22px;
   border-radius: var(--radius-sm);
-  overflow: hidden;
+  background: var(--chip);
   box-shadow: 0 0 0 var(--board-hairline) color-mix(in srgb, var(--ink) 10%, transparent);
 }
 
-.style-tile-chip {
-  flex: 1;
-  min-width: 0;
-  background: var(--chip);
+.style-tile-name,
+.style-tile-hex {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
+/* The hex takes the name's place while the pointer is on the swatch. */
+.style-tile-hex { display: none; color: var(--ink); }
+.style-tile-swatch:is(:hover, :focus-visible) .style-tile-hex { display: block; }
+.style-tile-swatch:is(:hover, :focus-visible) .style-tile-name { display: none; }
 
 .style-tile-type {
   flex: none;
@@ -522,7 +558,7 @@
 @supports not (color: color-mix(in srgb, red, blue)) {
   .swatch-well,
   .style-tile-shot,
-  .style-tile-band {
+  .style-tile-chip {
     box-shadow: 0 0 0 var(--board-hairline) rgb(var(--ink-c) / 10%);
   }
 }

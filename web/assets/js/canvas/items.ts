@@ -7,7 +7,8 @@ import {
   isFiltered, isPinned, settlesIn, setItemsLocked, startSettling,
 } from '../state.ts';
 import { quality } from '../quality.ts';
-import { caretToEnd, makeEditable, markClosed, selectContents } from '../util.ts';
+import { caretToEnd, makeEditable, markClosed, readToken, selectContents, toHex } from '../util.ts';
+import { copyHex } from '../clipboard.ts';
 import { itemRadius, rotatedExtents } from '../geometry.ts';
 import type { Bounds } from '../geometry.ts';
 import type { Item } from '../board-model.ts';
@@ -208,6 +209,13 @@ export function initItems(world: HTMLElement, viewport: Viewport) {
       if (id) tourMarks?.press(id);
       return;
     }
+    // A style tile's swatch copies its colour as the palette has it now.
+    const swatch = t?.closest<HTMLElement>('.style-tile-swatch');
+    if (swatch) {
+      const hex = swatchHexNow(swatch);
+      if (hex) copyHex(hex);
+      return;
+    }
     // The two corner badges, delegated the same way. Both are buttons, so
     // canvas/input.ts treats a press on one as a widget's and never a drag.
     const badge = t?.closest('.item-badge');
@@ -222,6 +230,15 @@ export function initItems(world: HTMLElement, viewport: Viewport) {
     paintPinBadge(id);
     paintGrips();
   });
+  // A swatch's hex, written as the pointer or the keyboard arrives rather than
+  // when the tile was built, so it is always the palette's current value.
+  const showHex = (e: Event) => {
+    const swatch = e.target instanceof Element ? e.target.closest<HTMLElement>('.style-tile-swatch') : null;
+    const hex = swatch?.querySelector('.style-tile-hex');
+    if (swatch && hex) hex.textContent = swatchHexNow(swatch) || '';
+  };
+  world.addEventListener('pointerover', showHex);
+  world.addEventListener('focusin', showHex);
   // paintGrips() on both, because pinning is a fact about two items and changes
   // without either being rebuilt. 'items' is the host deleted or undone back out
   // of existence, which frees its riders; 'geom' is a drop, a nudge and Unstick,
@@ -599,6 +616,9 @@ export function tiltOf(id: string) {
   if (!el) return 0;
   return parseFloat(el.style.getPropertyValue('--item-tilt')) || 0;
 }
+
+/** A style tile swatch's colour as `#rrggbb`, read off its token now. */
+const swatchHexNow = (swatch: HTMLElement) => toHex(readToken(swatch.dataset.token || ''));
 
 /** The item id owning a DOM node, or null for canvas chrome. */
 export function itemIdFromEvent(target: EventTarget | null): string | null {
