@@ -342,5 +342,11 @@ list named auto-connect as the next one, and the app has no such command.
         from the top and 19 px from the side at 1100 × 800 and at 390 ×
         844, and 15 and 15 on a landscape phone, where the head pads less.
         The header panel's close shares the rule.
+- [x] R36 The Timeline row in Other turns the bar on and off, so it looks
+      like a toggle and not a button.
+      - **Done.** It is a box, "Show timeline", as Show grid is, and the
+        panel stays open when it is pressed. `ui/timeline-view.ts` ticks
+        and clears it when the bar goes up or down some other way. Checked
+        in Chromium both ways.
 - [ ] R30 The Android later list: `native.decode` through `ImageDecoder`, a
       foreground service for long transcodes, and the shelf as a folder tree.
