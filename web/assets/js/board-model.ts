@@ -143,7 +143,9 @@ export const DEFAULT_MOBILE_HEADER = Object.freeze({
   weight: 700,
   offset: 0, // % of band height; 0 = centred
   italic: false,
-  wrap: true,
+  // A new board's name stays on one line. board-schema.ts reads a header
+  // written before this setting existed as wrapped, as it was drawn.
+  wrap: false,
   axes: Object.freeze({}),
 });
 

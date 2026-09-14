@@ -1,8 +1,9 @@
-// Two guards on the .mbrd format. A top-level board.json key this build does
+// Guards on the .mbrd format. A top-level board.json key this build does
 // not know survives a load and a save (normalizeBoard() keeps it, and
-// serializeBoard() writes it back). And a ZIP whose leading `mimetype` names
+// serializeBoard() writes it back). A ZIP whose leading `mimetype` names
 // another format is refused by name, while a board with no `mimetype` at all
-// - every file from before the entry existed - still opens.
+// - every file from before the entry existed - still opens. And a new board's
+// name stays on one line, while a header from before `wrap` existed wraps.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -23,6 +24,16 @@ test('an unknown board.json key rides through a load and a save', () => {
   assert.deepEqual(out.futureThing, { a: 1 });
   // A key this build owns is never taken from the bag.
   assert.equal(out.title, 'Newer');
+});
+
+test('a new board keeps its name on one line, and an older header still wraps', () => {
+  // No header at all is a new board, which takes the default: off.
+  assert.equal(normalizeBoard({ title: 'T', items: [] }).mobileHeader.wrap, false);
+  // A header written before `wrap` existed was drawn wrapped, and reads so.
+  assert.equal(normalizeBoard({ title: 'T', items: [], mobileHeader: { size: 13 } }).mobileHeader.wrap, true);
+  for (const wrap of [true, false]) {
+    assert.equal(normalizeBoard({ title: 'T', items: [], mobileHeader: { wrap } }).mobileHeader.wrap, wrap);
+  }
 });
 
 test('the bag never holds a key this build knows, or __proto__', () => {

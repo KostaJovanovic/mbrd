@@ -706,6 +706,9 @@
   padding: 5px 0;
   cursor: pointer;
 }
+/* A slider that belongs to the box above it, Line height under Wrap long
+   names, stands as far from the box as a box stands from the slider above. */
+#mobile-header-settings .check + .field { margin-top: 12px; }
 .check input {
   -webkit-appearance: none;
           appearance: none;
