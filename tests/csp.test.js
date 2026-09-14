@@ -245,6 +245,8 @@ test('no module names a remote host the policy does not allow', () => {
     ['https://example.com', 'placeholder text'],
     // Navigated in a popup, not fetched — no CSP directive governs navigation.
     ['https://accounts.google.com', 'sign-in page, navigated to in a popup'],
+    // Written into a share link the apps hand over, never requested.
+    ['https://mbrd.valjdakosta.com', 'the website a share link from the apps names'],
   ]);
 
   const offenders = [];

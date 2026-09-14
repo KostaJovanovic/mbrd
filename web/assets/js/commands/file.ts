@@ -15,6 +15,7 @@ import {
   startSyncingBoard, stopSyncingBoard, storageBreakdown, boardFolder, saveDocument,
 } from '../storage/storage.ts';
 import { shareLinkFor } from '../storage/cloud/provider.ts';
+import { SHARE_SITE } from '../storage/cloud/config.ts';
 import { paintPanel } from '../ui/panel.ts';
 import { connectCloud } from '../ui/cloud-connect.ts';
 import { homePath } from '../page.ts';
@@ -264,7 +265,11 @@ export function fileCommands() {
       try {
         const id = await provider.upload(packed.blob, packed.name,
           (sent, total) => job.step(sent, total));
-        const link = shareLinkFor(location.origin, homePath(), { provider: provider.id, id });
+        // In the apps, location is app:// or https://app, which only this
+        // machine can open, so the link names the website (SHARE_SITE).
+        const site = isDesktop() ? new URL(SHARE_SITE) : null;
+        const link = shareLinkFor(site?.origin ?? location.origin, site?.pathname ?? homePath(),
+          { provider: provider.id, id });
         console.info('[mbrd] share link:', link);
         await handOverLink(link);
       } catch (err) {
