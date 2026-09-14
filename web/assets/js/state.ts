@@ -1392,6 +1392,20 @@ export function removeTourCards(ids: Iterable<string>) {
 }
 
 /**
+ * Take one whole stop off the tour, as one undo step - the tour editor's
+ * Delete. The other tour edits here are not history entries; this one is,
+ * because Delete is the key that removes things and an undo is expected of it.
+ * The cards stay on the board.
+ */
+export function removeTourStop(index: number): boolean {
+  if (!board.tour[index]) return false;
+  const before = board.tour;
+  const after = board.tour.filter((_, i) => i !== index);
+  commit('Remove stop', () => setTour(after), () => setTour(before));
+  return true;
+}
+
+/**
  * Break one grouped stop into a stop per card, where it stands.
  *
  * The exact reverse of adding several cards at once, and the reason both exist:

@@ -239,6 +239,12 @@ export function initItems(world: HTMLElement, viewport: Viewport) {
   };
   world.addEventListener('pointerover', showHex);
   world.addEventListener('focusin', showHex);
+  // A tour mark's number under the pointer, told to the editor, which lights
+  // that stop. Every pointerover, so leaving a number says null.
+  world.addEventListener('pointerover', e => {
+    const mark = e.target instanceof Element ? e.target.closest('.tour-mark:not(.is-add)') : null;
+    tourMarks?.hover?.(mark ? itemIdFromEvent(mark) : null);
+  });
   // paintGrips() on both, because pinning is a fact about two items and changes
   // without either being rebuilt. 'items' is the host deleted or undone back out
   // of existence, which frees its riders; 'geom' is a drop, a nudge and Unstick,
@@ -378,6 +384,8 @@ export function onViewChange(fn: (vp: Viewport) => void) { return vp?.onChange(f
 export type TourMarks = {
   markFor(id: string): number | null,
   press(id: string): void,
+  /** The pointer is on this card's number, or on no number at all (null). */
+  hover?(id: string | null): void,
 };
 
 let tourMarks: TourMarks | null = null;
@@ -412,6 +420,20 @@ export function setTourMarks(marks: TourMarks | null) {
  */
 export function paintTourMarks() {
   for (const [id, el] of nodes) applyTourMark(el, id);
+}
+
+/**
+ * The cards a tour is pointing at, each wearing `is-spot`: the stop on show
+ * (ui/tour.ts), or the stop whose chip or number is under the pointer in the
+ * editor (ui/tour-edit.ts). What that means is the root class's to say - see
+ * item-chrome.css. Handed to the hover watcher as well, so the connections
+ * fade round the stop as they do round a hovered card.
+ */
+let spot: Set<string> | null = null;
+export function setSpot(ids: Iterable<string> | null) {
+  spot = ids ? new Set(ids) : null;
+  for (const [id, el] of nodes) el.classList.toggle('is-spot', !!spot?.has(id));
+  hoverWatcher?.(spot ?? hoverGroup);
 }
 
 /** One card's mark, put on, changed or taken off. */
@@ -1178,6 +1200,7 @@ function build(item: Item) {
   // above applyTourMark(). A card panned off screen and back is a new node, and
   // the editor is a mode somebody spends minutes in doing exactly that.
   applyTourMark(el, item.id);
+  if (spot?.has(item.id)) el.classList.add('is-spot');
   return el;
 }
 

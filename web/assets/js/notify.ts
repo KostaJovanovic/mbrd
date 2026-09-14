@@ -16,8 +16,11 @@ export interface BusyOptions {
   onCancel?: (() => void) | null;
 }
 
+/** The one button a toast can carry: Undo on a removal. */
+export type ToastAction = { label: string, run: () => void };
+
 export interface Overlays {
-  toast(msg: string, kind?: ToastKind): void;
+  toast(msg: string, kind?: ToastKind, action?: ToastAction): void;
   busy(label?: string, opts?: BusyOptions): BusyJob;
 }
 
@@ -33,8 +36,8 @@ export function setOverlays(impl: Overlays | null): void {
   overlays = impl;
 }
 
-export function toast(msg: string, kind: ToastKind = ''): void {
-  overlays?.toast(msg, kind);
+export function toast(msg: string, kind: ToastKind = '', action?: ToastAction): void {
+  overlays?.toast(msg, kind, action);
   cue(kind === 'error' ? 'fail' : 'note');
 }
 

@@ -4,7 +4,7 @@
 // IDs are read lazily — nothing touches document at import time.
 
 import { setOverlays } from '../notify.ts';
-import type { BusyJob, BusyOptions, ToastKind } from '../notify.ts';
+import type { BusyJob, BusyOptions, ToastAction, ToastKind } from '../notify.ts';
 
 // ---------------------------------------------------------------------------
 // Toast
@@ -17,18 +17,27 @@ const TOAST_FADE_MS = 300;
 const TOAST_MAX = 5;
 
 /** One-line status message at the foot of the screen. Newest at the bottom. */
-export function toast(msg: string, kind: ToastKind = ''): void {
+export function toast(msg: string, kind: ToastKind = '', action?: ToastAction): void {
   const host = document.getElementById('toast');
   if (!host) return;
   const line = document.createElement('div');
   line.className = kind === 'error' ? 'toast-line is-error' : 'toast-line';
   line.textContent = msg;
+  if (action) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'toast-act';
+    btn.textContent = action.label;
+    btn.addEventListener('click', () => { line.remove(); action.run(); });
+    line.append(btn);
+  }
   host.append(line);
   while (host.children.length > TOAST_MAX && host.firstChild) host.firstChild.remove();
+  // A toast with a way back stays as long as an error, to leave time to press it.
   setTimeout(() => {
     line.classList.add('is-going');
     setTimeout(() => line.remove(), TOAST_FADE_MS);
-  }, kind === 'error' ? 6000 : 2600);
+  }, kind === 'error' || action ? 6000 : 2600);
 }
 
 // ---------------------------------------------------------------------------

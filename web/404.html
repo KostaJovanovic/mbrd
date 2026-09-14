@@ -567,21 +567,25 @@
 <!-- Tour bar. Must be *after* #nowplaying (sibling combinator constraint).
      Desktop only — vp.fit() does not work on Mobile. Hidden to start. -->
 <div id="tour" hidden>
-  <button type="button" class="tour-prev" aria-label="The stop before" title="The stop before  Left">
-    <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-chevron-left"/></svg>
-  </button>
   <div class="tour-where">
     <div class="tour-name"></div>
     <!-- Hidden when empty (avoids blank-line gap on uncaptioned boards). -->
     <div class="tour-caption" hidden></div>
-    <div class="tour-count"></div>
   </div>
-  <button type="button" class="tour-next" aria-label="The next stop" title="The next stop  Right">
-    <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-chevron-right"/></svg>
-  </button>
-  <button type="button" class="tour-close" aria-label="End the tour" title="End the tour  Esc">
-    <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-close"/></svg>
-  </button>
+  <div class="tour-controls">
+    <button type="button" class="tour-prev" aria-label="The stop before" title="The stop before  Left">
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-chevron-left"/></svg>
+    </button>
+    <div class="tour-count"></div>
+    <button type="button" class="tour-next" aria-label="The next stop" title="The next stop  Right">
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-chevron-right"/></svg>
+    </button>
+    <!-- The stop actions, built by ui/tour.ts from the editor chip menu list. -->
+    <div class="tour-acts"></div>
+    <button type="button" class="tour-close" aria-label="End the tour" title="End the tour  Esc">
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-close"/></svg>
+    </button>
+  </div>
 </div>
 
 <div id="drop-overlay" hidden><div>let it fall</div></div>

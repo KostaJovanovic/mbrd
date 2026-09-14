@@ -721,13 +721,13 @@
   bottom: max(16px, env(safe-area-inset-bottom));
   left: max(16px, env(safe-area-inset-left));
   right: max(16px, env(safe-area-inset-right));
-  width: max-content;
-  max-width: min(420px, 100vw - 32px);
+  /* A fixed width, so the controls row stays put as names change length. */
+  width: min(440px, 100vw - 32px);
   margin-inline: auto;
   display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 8px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 8px 6px;
   border: var(--hairline) solid var(--rule-2);
   border-radius: var(--leaf);
   background: var(--paper-card);
@@ -775,14 +775,29 @@
   #tour.is-up { transition: none; }
 }
 
-/* Two lines in the middle: which card, and how far through. The name gets what
-   is left after the three buttons and ellipses rather than pushing them off -
-   the same bargain the track name makes in the bar below. */
+/* Two rows. The top one is what this stop is and what is said about it, the
+   full width of the bar. The name ellipses rather than widening the bar - the
+   same bargain the track name makes in the bar below. */
 #tour .tour-where {
   min-width: 0;
+  padding: 0 6px 2px;
+}
+/* The bottom one: back, how far, forward, the stop's actions, and out. Back,
+   forward and out keep their places; the actions take the middle. */
+#tour .tour-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+#tour .tour-acts {
   flex: 1 1 auto;
-  padding: 0 6px;
-  text-align: center;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+  gap: 2px;
+}
+@media (hover: hover) {
+  #tour .tour-act.is-danger:hover { color: var(--danger); }
 }
 /* Both sizes here were the scale's own values written as numbers - 13 is
    --t-small and 11 is --t-tiny at the middle tier - so they read as on-scale
@@ -813,6 +828,9 @@
 }
 #tour .tour-caption[hidden] { display: none; }
 #tour .tour-count {
+  flex: none;
+  min-width: 4.5em;
+  text-align: center;
   font-size: var(--t-tiny);
   color: var(--ink-3);
   font-variant-numeric: tabular-nums;
