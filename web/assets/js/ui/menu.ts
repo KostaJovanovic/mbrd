@@ -606,7 +606,9 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     { sep: true },
     { label: 'Rename', icon: 'i-rename', accel: 'F2', hidden: !renamable,
       action: () => editItemName(id) },
-    { label: `Delete ${what}`, icon: 'i-delete', accel: 'Del', danger: true,
+    // A fence is not a card, and "Delete item" read as if it took its cards too.
+    { label: !many && cmds!.isFenceItem(id) ? 'Remove fence' : `Delete ${what}`,
+      icon: 'i-delete', accel: 'Del', danger: true,
       action: () => cmds!.deleteSelection() },
   ];
 }

@@ -179,7 +179,7 @@ function buildFold(spec: Section) {
   if (!spec.title) details.classList.add('is-head');
   if (spec.foldId) details.id = spec.foldId;
   const summary = make('summary');
-  summary.textContent = spec.fold || 'Advanced';
+  summary.textContent = spec.fold || spec.foldLabel || 'Advanced';
   details.append(summary);
   return details;
 }

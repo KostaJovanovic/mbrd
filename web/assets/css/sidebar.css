@@ -188,7 +188,7 @@
   margin-top: 3px;
   /* Sub-tiny register, off-scale on purpose (see .ctx-item kbd in menu.css). */
   font-size: 10px;
-  font-style: var(--display-italic);
+  font-style: var(--body-italic);
   letter-spacing: calc(0.22em * var(--ls-scale));
   text-transform: uppercase;
   color: var(--ink-3);
@@ -196,6 +196,8 @@
 #side-close,
 #header-close {
   flex: none;
+  /* Centred on the head, not on the wordmark's first line. */
+  align-self: center;
   width: var(--icon-button); height: var(--icon-button);
   display: grid; place-items: center;
   padding: 0;
@@ -239,7 +241,7 @@
   background: none;
   font: inherit;
   font-size: var(--t-tiny);
-  font-style: var(--display-italic);
+  font-style: var(--body-italic);
   letter-spacing: calc(0.18em * var(--ls-scale));
   text-transform: uppercase;
   color: var(--ink-3);
@@ -278,7 +280,7 @@
   margin: 0 0 11px;
   font-size: var(--t-tiny);
   font-weight: 400;
-  font-style: var(--display-italic);
+  font-style: var(--body-italic);
   letter-spacing: calc(0.24em * var(--ls-scale));
   text-transform: uppercase;
   color: var(--ink-3);
@@ -301,7 +303,7 @@
   transition: border-color var(--dur-fast) var(--ease),
               background-color var(--dur-fast) var(--ease);
 }
-.board-title::placeholder { color: var(--ink-3); font-style: var(--display-italic); opacity: 1; }
+.board-title::placeholder { color: var(--ink-3); font-style: var(--body-italic); opacity: 1; }
 .board-title:hover { border-color: var(--rule); }
 .board-title:focus {
   outline: none;
@@ -326,7 +328,8 @@
   align-items: center;
   gap: 8px;
   width: 100%;
-  min-height: calc(30px * var(--density));
+  /* The selects' and the buttons' height, so a row of mixed boxes is level. */
+  min-height: calc(35px * var(--density));
   padding: 0 10px;
   color: var(--ink);
   font: inherit;
@@ -371,7 +374,7 @@
   cursor: pointer;
   list-style: none;
   font-size: var(--t-tiny);
-  font-style: var(--display-italic);
+  font-style: var(--body-italic);
   letter-spacing: calc(0.24em * var(--ls-scale));
   text-transform: uppercase;
   color: var(--ink-3);
@@ -485,7 +488,7 @@
   justify-content: space-between;
   gap: 8px;
   font-size: var(--t-small);
-  font-style: var(--display-italic);
+  font-style: var(--body-italic);
   color: var(--ink-2);
   margin-bottom: 5px;
 }
@@ -588,7 +591,7 @@
           appearance: none;
   box-sizing: border-box;
   width: 100%;
-  height: calc(30px * var(--density));
+  height: calc(35px * var(--density));
   padding: 0;
   border: var(--hairline) solid var(--rule-2);
   border-radius: var(--radius-sm);
@@ -681,7 +684,7 @@
 .hint {
   margin: 9px 0 0;
   font-size: var(--t-small);
-  font-style: var(--display-italic);
+  font-style: var(--body-italic);
   line-height: 1.5;
   color: var(--ink-3);
 }
@@ -694,7 +697,7 @@
   gap: 12px;
   align-items: baseline;
   padding: 4px 0;
-  font-style: var(--display-italic);
+  font-style: var(--body-italic);
 }
 .keys li span { color: var(--ink-3); text-align: right; }
 kbd {
@@ -715,7 +718,7 @@ kbd {
   padding: 10px 18px calc(12px + env(safe-area-inset-bottom));
   border-top: 1px solid var(--rule);
   font-size: var(--t-tiny);
-  font-style: var(--display-italic);
+  font-style: var(--body-italic);
   letter-spacing: calc(0.1em * var(--ls-scale));
   color: var(--ink-3);
   display: flex;

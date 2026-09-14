@@ -422,6 +422,11 @@
      reader mid-sentence, and a heading that shifts when you nudge a slider
      reads as a bug even when it is the point. A look may still set it. */
   --display-italic: italic;
+  /* The same knob for ornamental text set in the body face - the sidebar's
+     labels, tabs and hints. Upright here, where the body face is Geist: an
+     italic grotesque is a slanted sans rather than an italic, and read as a
+     rendering fault. The soft end, whose body is the serif, turns it back on. */
+  --body-italic: normal;
   --ls-scale: 1;
 
   /* ---- ornament ----
@@ -859,6 +864,7 @@
      just be shouting. */
   --display-weight: 400;
   --font-body:  var(--font-display);
+  --body-italic: var(--display-italic);
   --t-display: 28px;
   --t-title:   20px;
 

@@ -167,6 +167,9 @@ export type Section = {
   /** The label on the section's one fold, and the id a stylesheet reaches it by. */
   fold?: string,
   foldId?: string,
+  /** A titled section's fold label, where "Advanced" is the wrong word. `fold`
+   *  cannot say it: that one means the whole section is the fold. */
+  foldLabel?: string,
   when?: (ctx: Ctx) => boolean,
   /** Every control under this heading acts on a board. See Common.needsBoard. */
   needsBoard?: true,
@@ -231,7 +234,6 @@ const KEYS: (readonly [readonly string[], string])[] = [
   [['ctrl', '+', 'shift', '+', 'S'], 'export a .mbrd'],
 ];
 
-const mobile = (ctx: Ctx) => ctx.mobile;
 const desktop = (ctx: Ctx) => !ctx.mobile;
 
 /** The long side of the box round every item - the board's own extent. */
@@ -272,7 +274,7 @@ export const SECTIONS: Section[] = [
     // Every row here names the board or produces a file out of it, down to the
     // title in the field at the top, so the whole heading comes down together
     // where there is no board to name.
-    id: 'name', tab: 'board', title: 'Board', needsBoard: true,
+    id: 'name', tab: 'board', title: 'Board', foldLabel: 'More', needsBoard: true,
     controls: [
       // A real input rather than a <p> you can click into, so it is reachable
       // by tab and by touch without inventing a role. Empty rather than
@@ -280,27 +282,11 @@ export const SECTIONS: Section[] = [
       // falls back to it. ui/board-title.ts owns the typing - wireTitleField().
       { id: 'board-title', type: 'text', external: true, className: 'board-title',
         maxlength: 32, placeholder: 'Untitled board', ariaLabel: 'Board name' },
-      // Save and Export share a row; weight keeps them apart, not distance.
-      // Save is the only button on this tab with a deadline attached, so it
-      // carries `primary` and Export does not: one row, two verbs, one of them
-      // obviously the answer. Export writes the real .mbrd, the one file on
-      // this tab that opens again, so it does not fold away.
-      //
-      // Two rows written out rather than one row with a button appearing in the
-      // middle of it, because `when` is a control's and not a button's, and
-      // giving a button one would make every row in this file a thing that has
-      // to be read twice. The pair is exclusive - exactly one is ever on screen
-      // - and the desktop's is the longer one, the shape a document application
-      // has: Save writes the file, Save As asks where, Export makes a copy that
-      // is not the file.
-      { type: 'buttons', when: () => !isDesktop(), buttons: [
+      // Save alone in the open. It is the only button on this tab with a
+      // deadline attached, so it carries `primary`. Save As and Export are
+      // rarer, and wait in the fold below with the other rows that make a file.
+      { type: 'buttons', buttons: [
         { cmd: 'save', label: 'Save', className: 'primary', closesPanel: true },
-        { cmd: 'export', label: 'Export', closesPanel: true },
-      ] },
-      { type: 'buttons', when: isDesktop, buttons: [
-        { cmd: 'save', label: 'Save', className: 'primary', closesPanel: true },
-        { cmd: 'saveAs', label: 'Save As…', closesPanel: true },
-        { cmd: 'export', label: 'Export', closesPanel: true },
       ] },
       // Which board you are on. Three verbs, one row, none of them about the
       // board's contents.
@@ -324,6 +310,19 @@ export const SECTIONS: Section[] = [
       // what it acts on: as rarely as the three below it. What is left above
       // the fold is the whole of what this section is for - the board's name,
       // what happens to it, and which board you are on.
+      //
+      // Save As and Export head the fold. Two rows written out rather than one
+      // row with a button appearing in the middle of it, because `when` is a
+      // control's and not a button's. The desktop's is the longer one, the
+      // shape a document application has: Save As asks where, Export makes a
+      // copy that is not the file.
+      { type: 'buttons', advanced: true, when: () => !isDesktop(), buttons: [
+        { cmd: 'export', label: 'Export', closesPanel: true },
+      ] },
+      { type: 'buttons', advanced: true, when: isDesktop, buttons: [
+        { cmd: 'saveAs', label: 'Save As…', closesPanel: true },
+        { cmd: 'export', label: 'Export', closesPanel: true },
+      ] },
       { type: 'buttons', advanced: true, needsBoard: true, buttons: [
         { cmd: 'add-style-tile', label: 'Add style tile', closesPanel: true,
           title: () => (selectionSize()
@@ -335,8 +334,7 @@ export const SECTIONS: Section[] = [
       // fold as the style tile rather than one of their own: a section may have
       // exactly one fold (buildSection, ui/panel.ts). So the fold is named for
       // how often its rows are wanted, which is what lets a row that makes no
-      // file sit at the top of it. Export is not among them - these three write
-      // a picture or a summary, Export writes the board - so it sits with Save.
+      // file sit at the top of it.
       //
       // Share keeps its own row and guard: it shows only where the engine can
       // put a file into the share sheet, hidden outright otherwise, the rule
