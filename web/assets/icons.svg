@@ -501,6 +501,12 @@
   <path d="M5.5 7.5 8 4l2.5 3.5"/>
 </symbol>
 
+<!-- Move down, in the Playlist row menu: the same arrow, pointing the other way. -->
+<symbol id="i-arrow-down" viewBox="0 0 16 16">
+  <path d="M8 2v9"/>
+  <path d="M5.5 8.5 8 12l2.5-3.5"/>
+</symbol>
+
 <!-- The timeline's two. Both are drawn for a 14px box rather than the 16 the
      toolbar uses, which is why they sit inside the middle of theirs: a step on
      the strip is the smallest place in the app an icon appears, and a glyph

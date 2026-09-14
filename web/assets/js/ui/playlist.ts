@@ -5,9 +5,11 @@
 // No document access at module scope; everything deferred to initPlaylist().
 
 import {
-  board, bus, isDefaultTitle, markDirty, setAudioOrder, trackTitle,
+  board, bus, isDefaultTitle, markDirty, renameItem, select, selection, setAudioOrder, trackTitle,
 } from '../state.ts';
-import { clamp, div, actAsButton } from '../util.ts';
+import {
+  clamp, div, actAsButton, makeEditable, markClosed, readToken, selectContents,
+} from '../util.ts';
 import {
   bindScrub, clock, seekInnerHTML, sizeSeekWave, reportPlayError,
   PAUSE_ICON, PLAY_ICON,
@@ -23,6 +25,8 @@ import { audioTags, coverArt } from '../import/artwork.ts';
 import { mediaFacts } from '../import/containers.ts';
 import { resetPanels } from './panel-stack.ts';
 import { makeWindowDrag, makeWindowResize } from './float-window.ts';
+import { openContextMenu } from './menu.ts';
+import type { MenuEntry } from './menu.ts';
 // Set before mode switch so entering Mobile lands on the requested lens.
 import { setLens } from './board-view.ts';
 import type { Item } from '../board-model.ts';
@@ -30,6 +34,12 @@ import type { Viewport } from '../canvas/viewport.ts';
 
 /** A song, the kind of card the Playlist plays. */
 const isTrack = (it: Item) => it.type === 'audio';
+
+/**
+ * Hidden from the Playlist (the row's menu): greyed at the foot of the list and
+ * never stepped to. A property of the track, so it holds in both homes.
+ */
+const isHidden = (it: Item) => it.meta?.playlistHidden === true;
 
 // Narrow open `meta` fields to the expected types.
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
@@ -50,6 +60,8 @@ type ActionGroup = {
 type View = {
   listEl: HTMLElement;
   reorderable: boolean;
+  // What a drag held at its edge scrolls; null where the list does not scroll.
+  scroller: HTMLElement | null;
   group: ActionGroup | null;
   // Desktop window's transport; lens uses the now-playing bar instead.
   player: Player | null;
@@ -67,13 +79,21 @@ type Player = {
   destroy: () => void;
 };
 
-// `ref`: row before the dragged one, null for end, undefined before first move.
+// Positions are in list coordinates, measured once at pickup: `rows` are the
+// listed rows then, `from` the held one's place and `to` where it would land.
 type Drag = {
   view: View;
   rowEl: HTMLElement;
   pointerId: number;
-  mids: { row: Element; mid: number }[] | null;
-  ref: Element | null | undefined;
+  rows: HTMLElement[];
+  tops: number[];
+  heights: number[];
+  from: number;
+  to: number;
+  grab: number;
+  dy: number;
+  lastY: number;
+  frame: number;
 };
 
 export interface PlaylistCommands {
@@ -118,6 +138,13 @@ let wiredEl: HTMLMediaElement | null = null;
 let playbackAbort: AbortController | null = null;
 const tagged = new Set<string>();
 let drag: Drag | null = null;
+// A finger held on a row opens its menu, as a right click does. The Feed's
+// numbers, for the reason it gives: the same question of how still a thumb is.
+const HOLD_MS = 500;
+const HOLD_SLOP = 10;
+let hold: { x: number, y: number, timer: number } | null = null;
+// Set when a hold opened the menu, so the tap that ends it does not also play.
+let heldOpen = false;
 
 export function initPlaylist(_viewport: Viewport | null, _commands: PlaylistCommands | null,
   _headerStyle: unknown) {
@@ -155,7 +182,13 @@ export function initPlaylist(_viewport: Viewport | null, _commands: PlaylistComm
   });
   bus.on('board', updateMetaAll);
   bus.on('fonts', updateMetaAll);
-  onNowPlaying(() => { wirePlayback(); markPlaying(); refreshActions(); bindPlayers(); });
+  // One card changed - renamed, or given a picture from the row's menu.
+  bus.on('item', id => {
+    if (board.items.some(it => it.id === id && isTrack(it))) rebuildRow(String(id));
+  });
+  onNowPlaying(() => {
+    wirePlayback(); markPlaying(); refreshActions(); bindPlayers(); markTransport();
+  });
   onQueue(() => { refreshActions(); refreshPlayers(); });
 
   renderAll();
@@ -165,16 +198,35 @@ export function initPlaylist(_viewport: Viewport | null, _commands: PlaylistComm
 // The list, in both homes
 // ---------------------------------------------------------------------------
 
-function orderedAudio(): Item[] {
+/** The board's audio in playing order, hidden tracks still in their places. */
+function boardOrder(): Item[] {
   const audio = board.items.filter(it => it.type === 'audio');
   // SAFETY: every order in mobileOrder() returns the same objects it was given, so these are still Items.
   return applyAudioOrder(
     mobileOrder(audio, { name: board.arrangement }) as Item[], board.audioOrder);
 }
 
+/** As the list shows it: the hidden tracks sunk to the foot. */
+function orderedAudio(): Item[] {
+  const all = boardOrder();
+  return [...all.filter(it => !isHidden(it)), ...all.filter(isHidden)];
+}
+
+/** What the Playlist offers to play: the ordered audio less what is hidden. */
+const listedAudio = () => boardOrder().filter(it => !isHidden(it));
+
+/**
+ * A new order for the listed tracks. A hidden track keeps the slot it holds in
+ * `audioOrder`, so showing it again puts it back where it was.
+ */
+function setListedOrder(ids: string[]) {
+  const rest = ids.slice();
+  setAudioOrder(boardOrder().map(it => (isHidden(it) ? it.id : rest.shift() ?? it.id)));
+}
+
 function renderAll() {
   const audio = orderedAudio();
-  setQueue(audio);
+  setQueue(audio, audio.filter(isHidden));
   if (board.layoutMode === 'mobile') {
     windowView && windowView.clear();
     mobileView && mobileView.fill(audio);
@@ -210,13 +262,13 @@ function queueEl() {
 function togglePlay() {
   const el = queueEl();
   if (el) { el.paused ? el.play().catch(reportPlayError) : el.pause(); return; }
-  const audio = orderedAudio();
+  const audio = listedAudio();
   if (audio.length) playTrack(audio[0]);
 }
 
 function shufflePlay() {
   if (!queueState().shuffle) toggleShuffle();
-  const audio = orderedAudio();
+  const audio = listedAudio();
   if (audio.length) playTrack(audio[Math.floor(Math.random() * audio.length)]);
 }
 
@@ -331,18 +383,28 @@ function createView(container: HTMLElement,
 
   const view: View = {
     listEl, reorderable, group, player,
+    // The lens scrolls as a whole; the window scrolls its body, which is this.
+    scroller: container,
     fill(audio) {
+      const shown = [...listEl.querySelectorAll<HTMLElement>('.pl-row')].map(el => el.dataset.id);
+      const moved = audio.length !== shown.length || audio.some((it, i) => it.id !== shown[i]);
+      if (moved && drag?.view === view) finishDrag(false);
+      // Where each row stood, so a reorder slides instead of jumping. Only when
+      // something moved: fill() runs on every board change.
+      const before = moved ? rowTops(listEl) : null;
       const present = new Set<string>();
       audio.forEach(item => {
         present.add(item.id);
         let r = rows.get(item.id);
         if (!r) { r = createRow(item, view); rows.set(item.id, r); }
         else r.item = item;
-        listEl.appendChild(r.el);
+        r.el.classList.toggle('is-hidden', isHidden(item));
+        if (moved) listEl.appendChild(r.el);
       });
       for (const [id, r] of rows) {
         if (!present.has(id)) { r.el.remove(); rows.delete(id); }
       }
+      if (before) slideFrom(before);
       empty.classList.toggle('is-shown', audio.length === 0);
       hero?.classList.toggle('is-empty', audio.length === 0);
       if (player) player.el.hidden = audio.length === 0;
@@ -356,10 +418,11 @@ function createView(container: HTMLElement,
     },
     updateMeta(audio) {
       if (!hero) return;
+      const listed = audio.filter(it => !isHidden(it));
       titleEl!.textContent = board.title;
       titleEl!.classList.toggle('is-default', isDefaultTitle(board.title));
-      metaEl!.textContent = metaText(audio);
-      paintCover(cover!, audio);
+      metaEl!.textContent = metaText(listed);
+      paintCover(cover!, listed);
     },
     destroy() {
       view.clear();
@@ -421,7 +484,26 @@ function createRow(item: Item, view: View): Row {
   el.dataset.id = item.id;
   const r: Row = { el, item };
   fillRow(r, view);
-  actAsButton(el, () => playTrack(r.item));
+  actAsButton(el, () => {
+    if (heldOpen) { heldOpen = false; return; }
+    playTrack(r.item);
+  });
+  el.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    // A hold already opened it: Android reports its own long press as well.
+    if (heldOpen) return;
+    cancelHold();
+    // The keyboard's menu key reports no point, so hang the menu off the row.
+    const box = el.getBoundingClientRect();
+    const at = e.clientX || e.clientY ? { x: e.clientX, y: e.clientY } : { x: box.left + 16, y: box.bottom };
+    openRowMenu(at.x, at.y, r);
+  });
+  el.addEventListener('pointerdown', e => armHold(e, r), { passive: true });
+  el.addEventListener('pointermove', e => {
+    if (hold && Math.hypot(e.clientX - hold.x, e.clientY - hold.y) > HOLD_SLOP) cancelHold();
+  }, { passive: true });
+  el.addEventListener('pointerup', cancelHold, { passive: true });
+  el.addEventListener('pointercancel', cancelHold, { passive: true });
   return r;
 }
 
@@ -464,7 +546,7 @@ function fillRow(r: Row, view: View) {
     grip.setAttribute('aria-label', 'Drag to reorder');
     grip.innerHTML = GRIP_ICON;
     grip.addEventListener('click', e => e.stopPropagation());
-    grip.addEventListener('pointerdown', e => beginDrag(e, view, r));
+    grip.addEventListener('pointerdown', e => beginDrag(e, view, r, grip));
     r.el.appendChild(grip);
   }
 
@@ -479,60 +561,303 @@ function trackName(item: Item) {
 // Drag to reorder
 // ---------------------------------------------------------------------------
 
-// Moves the row through the DOM live (no transforms); commits order on release.
-function beginDrag(e: PointerEvent, view: View, r: Row) {
-  if (drag) return;
+// The held row lifts and follows the pointer on `translate`, and the rows it
+// passes slide aside to open its gap. The DOM is left alone until release: the
+// old drag moved the row live, which released the grip's pointer capture after
+// the first swap, so the drag stopped following and never ended.
+function beginDrag(e: PointerEvent, view: View, r: Row, grip: HTMLElement) {
+  if (drag || e.button !== 0 || isHidden(r.item)) return;
+  const list = view.listEl;
+  const rows = [...list.querySelectorAll<HTMLElement>('.pl-row:not(.is-hidden)')];
+  const from = rows.indexOf(r.el);
+  if (from < 0) return;
   e.preventDefault();
-  drag = { view, rowEl: r.el, pointerId: e.pointerId, mids: null, ref: undefined };
-  r.el.classList.add('is-dragging');
-  // SAFETY: beginDrag is only called from the grip's pointerdown listener, a <button> built above.
-  const grip = e.currentTarget as HTMLElement;
-  grip.setPointerCapture?.(e.pointerId);
-  grip.addEventListener('pointermove', onDragMove);
-  grip.addEventListener('pointerup', endDrag);
-  grip.addEventListener('pointercancel', endDrag);
-}
-
-// Cached until the row lands in a new gap (invalidates on DOM move).
-function rowMids() {
-  if (drag!.mids) return drag!.mids;
-  const mids: { row: Element; mid: number }[] = [];
-  for (const row of drag!.view.listEl.querySelectorAll('.pl-row')) {
-    if (row === drag!.rowEl) continue;
-    const box = row.getBoundingClientRect();
-    mids.push({ row, mid: box.top + box.height / 2 });
+  cancelHold();
+  // Measured at rest: a row still sliding from the last drop would be read
+  // where it is drawn instead of where it stands.
+  for (const row of rows) {
+    for (const run of row.getAnimations()) run.cancel();
+    row.style.translate = '';
   }
-  return (drag!.mids = mids);
+  const top = list.getBoundingClientRect().top;
+  const boxes = rows.map(row => row.getBoundingClientRect());
+  drag = {
+    view, rowEl: r.el, pointerId: e.pointerId, rows,
+    tops: boxes.map(b => b.top - top),
+    heights: boxes.map(b => b.height),
+    from, to: from, grab: e.clientY - top, dy: 0, lastY: e.clientY, frame: 0,
+  };
+  list.classList.add('is-sorting');
+  r.el.classList.add('is-dragging');
+  grip.setPointerCapture?.(e.pointerId);
+  // On the window: a row rebuilt under the pointer takes its grip, and with it
+  // the capture, out of the document.
+  addEventListener('pointermove', onDragMove);
+  addEventListener('pointerup', endDrag);
+  addEventListener('pointercancel', endDrag);
+  drag.frame = requestAnimationFrame(dragFrame);
 }
 
 function onDragMove(e: PointerEvent) {
-  if (!drag) return;
-  const list = drag.view.listEl;
-  const y = e.clientY;
-  let ref = null;
-  for (const { row, mid } of rowMids()) {
-    if (y < mid) { ref = row; break; }
-  }
-  if (ref === drag.ref) return;
-  drag.ref = ref;
-  if (ref) list.insertBefore(drag.rowEl, ref);
-  else list.appendChild(drag.rowEl);
-  drag.mids = null;
+  if (drag && e.pointerId === drag.pointerId) drag.lastY = e.clientY;
 }
 
 function endDrag(e: PointerEvent) {
+  if (drag && e.pointerId === drag.pointerId) finishDrag(e.type === 'pointerup');
+}
+
+// Per frame rather than per move, so a list scrolled under a still pointer - by
+// the edge below, or a wheel - carries the held row with it.
+function dragFrame() {
   if (!drag) return;
-  // SAFETY: endDrag is only added as a listener on the grip, in beginDrag().
-  const grip = e.currentTarget as HTMLElement;
-  drag.rowEl.classList.remove('is-dragging');
-  grip.releasePointerCapture?.(e.pointerId);
-  grip.removeEventListener('pointermove', onDragMove);
-  grip.removeEventListener('pointerup', endDrag);
-  grip.removeEventListener('pointercancel', endDrag);
-  const ids = [...drag.view.listEl.querySelectorAll<HTMLElement>('.pl-row')]
-    .map(row => row.dataset.id);
+  const sc = drag.view.scroller;
+  if (sc) {
+    const box = sc.getBoundingClientRect();
+    // Deep enough to reach past the header and the now-playing bar over the lens.
+    const edge = box.height * 0.18;
+    const y = drag.lastY;
+    const push = y < box.top + edge ? y - (box.top + edge) : y > box.bottom - edge ? y - (box.bottom - edge) : 0;
+    if (push) sc.scrollTop += clamp(push / edge, -1, 1) * 14;
+  }
+  placeHeld();
+  drag.frame = requestAnimationFrame(dragFrame);
+}
+
+/** Draw the held row under the pointer and open the gap where it would land. */
+function placeHeld() {
+  const d = drag!;
+  const { rows, tops, heights, from } = d;
+  const last = rows.length - 1;
+  // Held inside the listed rows: past the last one are the hidden ones.
+  d.dy = clamp(d.lastY - d.view.listEl.getBoundingClientRect().top - d.grab,
+    tops[0] - tops[from], tops[last] + heights[last] - tops[from] - heights[from]);
+  d.rowEl.style.translate = `0 ${d.dy}px`;
+  const centre = tops[from] + heights[from] / 2 + d.dy;
+  let to = 0;
+  for (let i = 0; i <= last; i += 1) {
+    if (i !== from && tops[i] + heights[i] / 2 < centre) to += 1;
+  }
+  if (to === d.to) return;
+  d.to = to;
+  const gap = heights[from];
+  rows.forEach((row, i) => {
+    if (i === from) return;
+    const shift = i > from && i <= to ? -gap : i < from && i >= to ? gap : 0;
+    row.style.translate = shift ? `0 ${shift}px` : '';
+  });
+}
+
+/** Put the held row down in its gap, or back where it was, and let it settle. */
+function finishDrag(commit: boolean) {
+  const d = drag;
+  if (!d) return;
   drag = null;
-  setAudioOrder(ids);
+  cancelAnimationFrame(d.frame);
+  removeEventListener('pointermove', onDragMove);
+  removeEventListener('pointerup', endDrag);
+  removeEventListener('pointercancel', endDrag);
+  const { rowEl, rows, from } = d;
+  const to = commit ? d.to : from;
+  const list = d.view.listEl;
+  // Where the row is drawn, and the lift it is drawn with, before any of it goes.
+  const was = list.getBoundingClientRect().top + d.tops[from] + d.dy;
+  const lifted = getComputedStyle(rowEl);
+  const lift = { scale: lifted.scale, rotate: lifted.rotate };
+  // The other rows' offsets already drew them in their new places, so the
+  // offsets and the move cancel out, in one frame, with the slide switched off.
+  list.classList.remove('is-sorting');
+  rowEl.classList.remove('is-dragging');
+  for (const row of rows) row.style.translate = '';
+  const order = rows.filter(row => row !== rowEl);
+  order.splice(to, 0, rowEl);
+  if (to !== from) {
+    if (to < order.length - 1) list.insertBefore(rowEl, order[to + 1]);
+    else order[order.length - 2].after(rowEl);
+  }
+  settle(rowEl, was - rowEl.getBoundingClientRect().top, lift);
+  if (to !== from) setListedOrder(order.map(row => row.dataset.id ?? ''));
+}
+
+// ---------------------------------------------------------------------------
+// Motion: the drop, and a reorder made from the menu
+// ---------------------------------------------------------------------------
+
+/** --dur-base in ms, or 0 where motion is off. */
+function motionMs(): number {
+  if (globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return 0;
+  const raw = readToken('--dur-base');
+  const n = parseFloat(raw) || 0;
+  const ms = raw.endsWith('ms') ? n : n * 1000;
+  return ms >= 1 ? ms : 0;
+}
+
+/** The dropped row eases into its slot from where it was let go. */
+function settle(el: HTMLElement, dy: number, lift: { scale: string, rotate: string }) {
+  const ms = motionMs();
+  if (!ms) return;
+  // Above its neighbours until it lands, and its shadow fades as it does (mobile.css).
+  el.classList.add('is-settling');
+  const run = el.animate([
+    { translate: `0 ${dy}px`, scale: lift.scale, rotate: lift.rotate },
+    { translate: '0 0', scale: '1', rotate: '0deg' },
+  ], { duration: ms, easing: readToken('--ease-back') || 'ease' });
+  const done = () => el.classList.remove('is-settling');
+  run.addEventListener('finish', done);
+  run.addEventListener('cancel', done);
+}
+
+/** Each row's top on screen, or null where the list is not drawn. */
+function rowTops(list: HTMLElement): Map<HTMLElement, number> | null {
+  if (!list.getClientRects().length || !motionMs()) return null;
+  const tops = new Map<HTMLElement, number>();
+  for (const row of list.querySelectorAll<HTMLElement>('.pl-row')) {
+    tops.set(row, row.getBoundingClientRect().top);
+  }
+  return tops;
+}
+
+/** Slide every row that moved from where it stood to where it stands. */
+function slideFrom(before: Map<HTMLElement, number>) {
+  const ms = motionMs();
+  const easing = readToken('--ease') || 'ease';
+  for (const [row, top] of before) {
+    if (!row.isConnected) continue;
+    const dy = top - row.getBoundingClientRect().top;
+    if (Math.abs(dy) < 1) continue;
+    row.animate([{ translate: `0 ${dy}px` }, { translate: '0 0' }], { duration: ms, easing });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The row's menu: right click, or a finger held on the row
+// ---------------------------------------------------------------------------
+
+function armHold(e: PointerEvent, r: Row) {
+  // Spent here and not only by the click it guards: iOS sends no click after
+  // a long press, and a flag left set would swallow the next tap.
+  heldOpen = false;
+  // Touch only: a mouse has its right button, a pen its barrel press.
+  if (e.pointerType !== 'touch' || drag) return;
+  if (e.target instanceof Element && e.target.closest('.pl-grip')) return;
+  cancelHold();
+  const x = e.clientX;
+  const y = e.clientY;
+  hold = {
+    x, y,
+    timer: setTimeout(() => { hold = null; heldOpen = true; openRowMenu(x, y, r, true); }, HOLD_MS),
+  };
+}
+
+function cancelHold() {
+  if (hold) clearTimeout(hold.timer);
+  hold = null;
+}
+
+/**
+ * The Playlist's own rows - playing, order, hiding - over the card's menu, the
+ * one the Feed opens. The card's rows act on the selection, so the track is
+ * selected first, exactly as the Feed does for a tile.
+ */
+function openRowMenu(x: number, y: number, r: Row, touch = false) {
+  if (drag) return;
+  const item = r.item;
+  const hidden = isHidden(item);
+  const listed = listedAudio();
+  const at = listed.indexOf(item);
+  const last = listed.length - 1;
+  const el = queueEl();
+  const current = el && nowPlaying()?.item === item ? el : null;
+  const playing = !!current && !current.paused;
+  // Greyed rather than hidden at either end, so the menu keeps its shape from
+  // one row to the next. None for a hidden track: it has no place to move from.
+  const moves: MenuEntry[] = hidden || at < 0 || last < 1 ? [] : [
+    { sep: true },
+    { label: 'Move up', icon: 'i-arrow-up', disabled: at === 0, action: () => moveTrack(item, at - 1) },
+    { label: 'Move down', icon: 'i-arrow-down', disabled: at === last, action: () => moveTrack(item, at + 1) },
+    { label: 'Move to top', icon: 'i-front', disabled: at === 0, action: () => moveTrack(item, 0) },
+    { label: 'Move to bottom', icon: 'i-back', disabled: at === last, action: () => moveTrack(item, last) },
+  ];
+  const lead: MenuEntry[] = [
+    { label: 'Pause', icon: 'i-tl-pause', hidden: !playing, action: () => current?.pause() },
+    {
+      label: 'Play', icon: 'i-tl-play', hidden: playing,
+      action: () => { if (current) current.play().catch(reportPlayError); else playTrack(item); },
+    },
+    ...moves,
+    { sep: true },
+    { label: 'Hide from playlist', icon: 'i-close', hidden, action: () => setHidden(item, true) },
+    { label: 'Show in playlist', icon: 'i-restore', hidden: !hidden, action: () => setHidden(item, false) },
+  ];
+  if (!selection.has(item.id)) select([item.id]);
+  openContextMenu(x, y, item.id, selection.size,
+    { mobile: true, touch, lead, rename: () => renameRow(r) });
+}
+
+/**
+ * Rename, in the row. The card's own rename edits the card where it stands on
+ * the canvas, which is not on screen behind a list. A track with a title tag
+ * shows the tag, so the tag is what changes and the file keeps its name.
+ */
+function renameRow(r: Row) {
+  const title = r.el.querySelector<HTMLElement>('.pl-title');
+  if (!title) return;
+  const item = r.item;
+  const tagged = typeof item.meta?.trackTitle === 'string' && item.meta.trackTitle !== '';
+  const before = title.textContent ?? '';
+  const off = new AbortController();
+  let done = false;
+  const finish = (keep: boolean) => {
+    if (done) return;
+    done = true;
+    off.abort();
+    title.contentEditable = 'false';
+    r.el.classList.remove('is-renaming');
+    const next = (title.textContent ?? '').trim();
+    title.textContent = before;
+    if (!keep || !next || next === before) return;
+    if (tagged) { item.meta.trackTitle = next; markDirty(); rebuildRow(item.id); return; }
+    // The row shows the name without its extension; the card keeps it.
+    const ext = /\.[a-z0-9]{1,5}$/i.exec(item.name)?.[0] ?? '';
+    renameItem(item.id, ext && !next.toLowerCase().endsWith(ext.toLowerCase()) ? next + ext : next);
+  };
+  const opts = { signal: off.signal };
+  title.addEventListener('keydown', e => {
+    // Enter and Space belong to the field here, not to the row's play.
+    e.stopPropagation();
+    if (e.key === 'Enter' || e.key === 'Escape') {
+      e.preventDefault();
+      // Android's Back arrives as Escape and asks whether anything closed.
+      if (e.key === 'Escape') markClosed(e);
+      finish(e.key === 'Enter');
+      r.el.focus({ preventScroll: true });
+    }
+  }, opts);
+  title.addEventListener('blur', () => finish(true), opts);
+  // A press inside the field places the caret; it must not play or start a hold.
+  title.addEventListener('click', e => e.stopPropagation(), opts);
+  title.addEventListener('pointerdown', e => e.stopPropagation(), opts);
+  r.el.classList.add('is-renaming');
+  makeEditable(title);
+  title.focus();
+  selectContents(title);
+}
+
+function moveTrack(item: Item, to: number) {
+  const ids = listedAudio().map(it => it.id).filter(id => id !== item.id);
+  ids.splice(to, 0, item.id);
+  setListedOrder(ids);
+}
+
+/**
+ * Off the undo stack, like the order it changes (see setAudioOrder): it is how
+ * the list reads, not what is on the board. Written into the track's meta, as
+ * its tags are, so it travels with the card.
+ */
+function setHidden(item: Item, on: boolean) {
+  if (on) item.meta.playlistHidden = true;
+  else delete item.meta.playlistHidden;
+  markDirty();
+  renderAll();
 }
 
 // ---------------------------------------------------------------------------
@@ -711,7 +1036,7 @@ function renderWindowBody() {
   windowContent!.replaceChildren();
 
   const body = div('player-window-body');
-  windowView = createView(body, { reorderable: false, variant: 'window' });
+  windowView = createView(body, { reorderable: true, variant: 'window' });
   windowContent!.append(windowView.player!.el, body);
 
   markTransport();
@@ -743,9 +1068,13 @@ function closePlayerWindow() {
   markTransport();
 }
 
-// Tells chrome.css whether a transport is visible, so the now-playing bar can hide.
+// Tells chrome.css the window's transport drives what is sounding, so the
+// now-playing bar can step down. Not merely that the window is open: a video
+// card played beside it is nothing the window can pause, and needs the bar.
 function markTransport() {
-  document.documentElement.classList.toggle('playlist-transport', !!windowEl);
+  const np = nowPlaying();
+  document.documentElement.classList.toggle('playlist-transport',
+    !!windowEl && (!np || isQueuePlayer(np.el)));
 }
 
 // Compact transport: cover, seek, shuffle/prev/play/next/repeat.

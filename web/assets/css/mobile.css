@@ -15,6 +15,9 @@
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior-y: contain;
+  /* The scrollbar's room kept on both sides, so the column centres on the
+     window - the centre line the now-playing bar under it keeps (chrome.css). */
+  scrollbar-gutter: stable both-edges;
   background: color-mix(in srgb, var(--ink) 6%, var(--paper));
   contain: layout paint;
   -webkit-overflow-scrolling: touch;
@@ -559,6 +562,9 @@
   flex-direction: column;
   align-items: center;
   gap: 12px;
+  /* The sleeve and its two buttons, not a text to copy - see .pl-list. */
+  -webkit-user-select: none;
+  user-select: none;
   padding: 30px var(--pl-gutter, 20px) 22px;
   text-align: center;
 }
@@ -699,6 +705,10 @@
   display: flex;
   flex-direction: column;
   margin: 0 var(--pl-gutter, 12px) 10px;
+  /* A list of controls, not a text: a drag or a double click selected the
+     titles and times in orange. The one field typed into takes it back. */
+  -webkit-user-select: none;
+  user-select: none;
   /* The numbering behind the track-number tiles. On the list rather than on the
      rows themselves, so a reorder renumbers by itself - the DOM order *is* the
      order, and nothing has to walk the list to say so. */
@@ -720,35 +730,51 @@
   border-radius: var(--leaf);
   cursor: pointer;
   counter-increment: pl-track;
+  transition: opacity var(--dur-base) var(--ease), box-shadow var(--dur-base) var(--ease);
 }
-/* Ruled, the way the back of a sleeve is. The rows used to sit on nothing and
-   were told apart by hover alone, which left a list of nine reading as one grey
-   field. A hairline between them is the cheapest thing that makes it a listing. */
-.pl-row + .pl-row { border-top: var(--hairline) solid var(--rule); }
-/* A tinted row is its own block and takes the rules either side of it with it -
-   a hairline running into the top corner of a lit row reads as a mistake in the
-   ruling rather than as the edge of the row it belongs to. */
-.pl-row.is-playing,
-.pl-row.is-playing + .pl-row { border-top-color: transparent; }
+/* No rule between rows. A top border on a rounded row bends into its corners,
+   so on the soft tier every hairline drew as a faint arc over the row below.
+   The rows are told apart by their covers, number tiles and even spacing. */
 @media (hover: hover) {
   .pl-row:hover { background: var(--paper-2); }
 }
 .pl-row:active { background: var(--paper-3); }
 .pl-row.is-playing { background: color-mix(in srgb, var(--accent) 10%, var(--paper-card)); }
-/* The needle: the playing row is marked at its edge and not by tint alone, so it
-   is still the current track when it has scrolled half off the screen.
-
-   An inset shadow rather than an absolutely-positioned bar, and the radius axis
-   is the whole reason - a shadow is clipped to the border-radius, so the mark
-   follows the row's own corner at every tier. A 2px bar drawn down the left edge
-   was straight past a corner that curves 20px at the soft end, and stood outside
-   the block it was marking at top and bottom. */
-.pl-row.is-playing { box-shadow: inset 2px 0 0 var(--accent-text); }
+/* Reordering (ui/playlist.ts). The held row lifts off the sheet and follows
+   the pointer on `translate`, which is set from script and so never eased; the
+   rows it passes slide aside on theirs. The slide is on only while sorting: on
+   the drop the offsets are cleared in the same frame the rows move in the DOM,
+   and an eased clear would slide each one back out of its new place. */
+.pl-list.is-sorting .pl-row:not(.is-dragging) {
+  transition: translate var(--dur-base) var(--ease), opacity var(--dur-base) var(--ease);
+}
+.pl-list.is-sorting .pl-row { cursor: grabbing; }
 .pl-row.is-dragging {
   background: var(--paper-card);
   box-shadow: var(--shadow-2);
-  border-top-color: transparent;
   z-index: 2;
+  scale: 1.03;
+  /* A quarter of a card's tilt: a row is three cards wide, and the full angle
+     swings its far end by more than its own height. Zero off the playful tier. */
+  rotate: calc(var(--tilt-drag) / 4);
+  transition: scale var(--dur-fast) var(--ease), rotate var(--dur-fast) var(--ease),
+    box-shadow var(--dur-fast) var(--ease);
+}
+/* The drop: script eases it into its slot; this keeps it above the rows it
+   lands among until it does, while its shadow fades on .pl-row's transition. */
+.pl-row.is-settling {
+  background: var(--paper-card);
+  z-index: 2;
+}
+/* Hidden from the playlist: greyed at the foot, out of the numbering, and set
+   a little apart from the tracks that play. */
+.pl-row.is-hidden { opacity: 0.45; counter-increment: none; }
+.pl-row:not(.is-hidden) + .pl-row.is-hidden { margin-top: 14px; }
+.pl-row.is-hidden .pl-art img { filter: grayscale(1); }
+.pl-row.is-hidden .pl-art.is-placeholder::before { content: "\2013"; }
+.pl-row.is-hidden .pl-grip { visibility: hidden; }
+@media (hover: hover) {
+  .pl-row.is-hidden:hover { opacity: 0.7; }
 }
 .pl-art {
   position: relative;
@@ -788,6 +814,17 @@
   text-overflow: ellipsis;
 }
 .pl-row.is-playing .pl-title { color: var(--accent-text); font-weight: 600; }
+/* Rename, in place (ui/playlist.ts renameRow). */
+.pl-row.is-renaming { cursor: default; }
+.pl-row.is-renaming .pl-title {
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
+  text-overflow: clip;
+  outline: var(--hairline) solid var(--accent-text);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
 .pl-artist {
   font-size: var(--t-small);
   color: var(--ink-3);
@@ -1329,6 +1366,31 @@
        uses to keep its segments inside one border would cut it off. */
     overflow: visible;
   }
+  /* The Playlist draws no bin and no history (the rule at the top of this
+     file), so the handle has the foot to itself and runs edge to edge, under a
+     player that does the same. Clearing two buttons that were not there left
+     it a stub between two gaps, narrower than the player standing on it. */
+  :root[data-board-mode="mobile"][data-feed-lens="playlist"] #toolbar {
+    left: max(12px, env(safe-area-inset-left));
+    right: max(12px, env(safe-area-inset-right));
+  }
+  :root[data-board-mode="mobile"][data-feed-lens="playlist"] #toolbar-tools {
+    left: 0;
+    right: 0;
+  }
+  /* And the list takes the same width, so sheet, player and handle make one
+     column with one pair of edges. The cap is the desktop's, where the column
+     is a sleeve in the middle of the room; here the room is the column.
+     Counted from the window and not from the scroller (100%), whose width is
+     short by the two scrollbar gutters on a desktop: it is centred on the same
+     line either way, and the bars are measured from the window. */
+  #mobile-playlist .feed-sheet { width: calc(100vw - 24px); }
+  #mobile-playlist {
+    /* The foot is the handle, then the player standing on it: the last row
+       must scroll clear of both (the player's own `bottom` below). */
+    --feed-inset-bottom: calc(calc(max(12px, env(safe-area-inset-bottom)) + var(--dock))
+                              + var(--bar-h) + var(--bar-gap) + 78px);
+  }
   /* Two ids, to match the rule in chrome.css that takes it away. This one
      happened to work at (1,0,0) only because `#toolbar button` also says
      `display: flex`, which is a tie nobody chose and one that would break the
@@ -1445,7 +1507,7 @@
      block keeps what is about the player alone. */
   #nowplaying {
     bottom: calc(calc(max(12px, env(safe-area-inset-bottom)) + var(--dock)) + var(--bar-h) + var(--bar-gap));
-    max-width: none;
+    --np-w: calc(100vw - var(--foot-left) - var(--foot-right));
   }
   /* And a third tier while the drawer is out, because the tools took the
      second. This is the general sibling combinator, which is the whole reason
@@ -1471,8 +1533,8 @@
      sliver. The rule above that keeps it up is written for a sidebar that is a
      left-hand strip, which is what it stops being here. */
   :is(#sidebar, #header-panel).is-open ~ #nowplaying {
-    left: max(12px, env(safe-area-inset-left));
-    right: max(12px, env(safe-area-inset-right));
+    --foot-left: max(12px, env(safe-area-inset-left));
+    --foot-right: max(12px, env(safe-area-inset-right));
     bottom: calc(calc(max(12px, env(safe-area-inset-bottom)) + var(--dock)) + var(--bar-h) + var(--bar-gap));
     opacity: 0;
     pointer-events: none;

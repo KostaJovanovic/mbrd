@@ -480,10 +480,13 @@ export function openAnchored(rect: MenuAnchor, entries: MenuEntry[],
 }
 
 /** Open the context menu. `mobile` = Feed (drops spatial rows, no canvas menu).
- * `touch` = finger opened this (shown to multiSelectEntry). */
+ * `touch` = finger opened this (shown to multiSelectEntry). `lead` = rows of
+ * the surface's own over the card's (the Playlist's order and hiding), and
+ * `rename` = its own in-place rename, where the card is not on screen. */
 export function openContextMenu(clientX: number, clientY: number, itemId: string | null,
   selectionSize: number,
-  { mobile = false, touch = false }: { mobile?: boolean, touch?: boolean } = {}) {
+  { mobile = false, touch = false, lead = [], rename }:
+    { mobile?: boolean, touch?: boolean, lead?: MenuEntry[], rename?: () => void } = {}) {
   // Module field — only multiSelectEntry() reads it.
   byTouch = touch;
   if (mobile) {
@@ -491,7 +494,8 @@ export function openContextMenu(clientX: number, clientY: number, itemId: string
     close();
     opener = focusedNow();
     // No `at` — Feed drops the spatial rows that use it.
-    render(withoutKeys(itemEntries(itemId, 1, null, true)), clientX, clientY);
+    const own = withoutKeys(itemEntries(itemId, 1, null, true, rename));
+    render(lead.length ? [...lead, { sep: true }, ...own] : own, clientX, clientY);
     return;
   }
   // After close — the old menu's focus return is what gives us the right opener.
@@ -542,7 +546,8 @@ function titleEntries(_id: string, _at: Point): MenuEntry[] {
 
 /** Card menu. `mobile` (Feed) hides spatial rows (z-order, zoom, fence, etc.)
  * that have no meaning on a packed wall. One list with flags, not two lists. */
-function itemEntries(id: string, count: number, at: Point | null, mobile = false): MenuEntry[] {
+function itemEntries(id: string, count: number, at: Point | null, mobile = false,
+  rename?: () => void): MenuEntry[] {
   const many = count > 1;
   const what = many ? `${count} items` : 'item';
   // Single-item edits — no caret target for a group.
@@ -722,7 +727,7 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // F2 accelerator for anyone who prefers the keyboard.
     { sep: true },
     { label: 'Rename', icon: 'i-rename', accel: 'F2', hidden: !renamable,
-      action: () => editItemName(id) },
+      action: rename ?? (() => editItemName(id)) },
     // A fence is not a card, and "Delete item" read as if it took its cards too.
     { label: !many && cmds!.isFenceItem(id) ? 'Remove fence' : `Delete ${what}`,
       icon: 'i-delete', accel: 'Del', danger: true,
