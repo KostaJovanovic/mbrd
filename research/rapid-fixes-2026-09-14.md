@@ -432,3 +432,10 @@ list named auto-connect as the next one, and the app has no such command.
         Board contents.
 - [ ] R30 The Android later list: `native.decode` through `ImageDecoder`, a
       foreground service for long transcodes, and the shelf as a folder tree.
+      - **Deferred (2026-09-14), not a priority.** Every APK build needs
+        JDK 21, and this machine has only JDK 17.
+      - Android has no transcoder, so the foreground service has no job yet.
+        Two ways to get one: ffmpeg.wasm in the WebView (the head of
+        `optimize/media.ts` argues against it for clips), or FFmpeg built
+        with the NDK and shipped as a native library, with a small Java
+        plugin to start it. FFmpegKit ended in 2025.
