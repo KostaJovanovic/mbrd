@@ -12,6 +12,9 @@ import { call, listen } from './native.ts';
 import { installDownloads, installShare } from './share.ts';
 import * as store from './store.ts';
 
+/** The states MbrdUpdate.java says, as platform.ts's UpdateOfferState names them. */
+const UPDATE_STATES = ['available', 'ready', 'downloading', 'failed', 'said'] as const;
+
 /** The desktop's shape at `bridge: 3`, and the two keys a branch that must not
  * run on a phone can test. tests/mobile-bridge.test.js holds the keys in step. */
 type AndroidBridge = Bridge & { shell: 'capacitor', platform: 'android' };
@@ -69,16 +72,22 @@ const api: AndroidBridge = {
     decode: notYet('decode a picture natively'),
   }),
 
-  // MbrdUpdate.java answers a check in its own dialog or toast. A build with no
-  // update feed (mobile.bat) says that updates are off. The daily check in the
-  // background announces what it found ("update", retained), and the
-  // sidebar's Update row installs it.
+  // MbrdUpdate.java says everything on the page, never in a dialog: an offer
+  // for the sidebar's Update row, and a passing answer to a check ("said")
+  // for the page's toast. A build with no update feed (mobile.bat) says that
+  // updates are off. Any other state takes the row away.
   updates: Object.freeze({
     check: () => call<void>('MbrdShell', 'checkUpdates'),
     onOffer: fn => listen('MbrdShell', 'update', data => {
       // SAFETY: the object MbrdShell's offer listener builds, read as optional.
-      const o = (data ?? {}) as { version?: unknown, ready?: unknown };
-      fn(typeof o.version === 'string' && o.version ? { version: o.version, ready: o.ready === true } : null);
+      const o = (data ?? {}) as { state?: unknown, version?: unknown, progress?: unknown, note?: unknown };
+      const state = UPDATE_STATES.find(s => s === o.state);
+      fn(state ? {
+        state,
+        version: typeof o.version === 'string' ? o.version : '',
+        progress: typeof o.progress === 'number' ? o.progress : 0,
+        note: typeof o.note === 'string' ? o.note : '',
+      } : null);
     }),
     install: () => call<void>('MbrdShell', 'installUpdate'),
   }),

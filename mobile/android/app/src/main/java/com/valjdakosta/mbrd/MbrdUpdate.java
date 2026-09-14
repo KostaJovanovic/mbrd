@@ -11,10 +11,7 @@ import android.content.pm.PackageInstaller;
 import android.content.pm.PackageManager;
 import android.net.ConnectivityManager;
 import android.os.Build;
-import android.widget.FrameLayout;
-import android.widget.ProgressBar;
 import android.widget.Toast;
-import androidx.appcompat.app.AlertDialog;
 import androidx.core.content.IntentCompat;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -52,11 +49,13 @@ import org.json.JSONObject;
  * digest GitHub computed for it.
  *
  * At most one check a day, at start-up. A newer tag downloads in the
- * background, with no dialog, and the page's sidebar shows an Update row
- * (the "update" event, MbrdShell). Where Data Saver restricts background data
- * on a metered network nothing downloads: the row says "Update available",
- * and a press downloads it in the foreground. The panel's "Check for updates"
- * still asks in a dialog. Every download checks its SHA-256, its package name
+ * background, and the page's sidebar shows an Update row (the "update" event,
+ * MbrdShell). Where Data Saver restricts background data on a metered network
+ * nothing downloads, and a press on the row downloads it in the foreground,
+ * with the row counting. The panel's "Check for updates" answers on the page
+ * too: the row for a new version, the page's toast otherwise. Nothing here
+ * opens a dialog (research/rapid-fixes-2026-09-14.md, R7). Android's own
+ * install-confirm screen, below, is the system's. Every download checks its SHA-256, its package name
  * and that its versionCode is higher, and an install writes it into a
  * PackageInstaller session. On Android 12 and later the session asks for no
  * confirm screen (USER_ACTION_NOT_REQUIRED), which Android grants to an app
@@ -88,16 +87,20 @@ public final class MbrdUpdate {
         void at(int permille);
     }
 
-    /** Where the page hears of an update: MbrdShell's "update" event. */
+    /** Where the page hears of an update: MbrdShell's "update" event. `state`
+     *  is one of platform.ts's UpdateOfferState: available, ready, downloading,
+     *  failed, or said for a passing answer. Any other takes the row away. */
     interface Announce {
-        void send(String version, boolean ready);
+        void send(String state, String version, int permille, String note);
     }
 
-    private static volatile Announce announce = (version, ready) -> {};
-    /** Downloaded and checked in the background, waiting for the row's press. */
+    private static volatile Announce announce = (state, version, permille, note) -> {};
+    /** Downloaded and checked, waiting for the row's press. */
     private static volatile File readyFile = null;
-    /** Found, but Data Saver kept it from downloading on its own. */
+    private static volatile String readyVersion = "";
+    /** Found, and not downloaded yet: a press downloads it first. */
     private static volatile JSONObject waiting = null;
+    private static volatile String waitingVersion = "";
 
     private MbrdUpdate() {}
 
@@ -107,25 +110,55 @@ public final class MbrdUpdate {
     }
 
     /** The sidebar's Update row (MbrdShell.installUpdate). A downloaded update
-     *  installs; one Data Saver held back downloads first, with the dialog. */
+     *  installs. One not downloaded yet downloads first, with the row counting. */
     static void installNow(Activity activity) {
+        Context app = activity.getApplicationContext();
         File file = readyFile;
         if (file != null && file.isFile()) {
-            Context app = activity.getApplicationContext();
             NET.execute(() -> {
+                boolean taken = true;
                 try {
                     install(app, file);
                 } catch (Exception e) {
-                    toast(activity, "Android did not take the update. mbrd tries again later.");
+                    taken = false;
                 }
                 // The session holds its own copy once written.
                 deleteQuietly(file);
                 readyFile = null;
+                if (!taken) {
+                    announce.send("none", "", 0, "");
+                    say("Android did not take the update. mbrd tries again at the next start.");
+                }
             });
             return;
         }
         JSONObject apk = waiting;
-        if (apk != null) activity.runOnUiThread(() -> download(activity, apk));
+        if (apk != null) download(app, apk, waitingVersion);
+    }
+
+    /** A passing answer, for the page's toast. */
+    private static void say(String note) {
+        announce.send("said", "", 0, note);
+    }
+
+    private static String label(String version) {
+        return version.replaceFirst("\\.0$", "");
+    }
+
+    /** Found and not downloaded: the row offers it, and a press downloads it. */
+    private static void offerLater(String version, JSONObject apk) {
+        waiting = apk;
+        waitingVersion = version;
+        announce.send("available", version, 0,
+            "mbrd " + label(version) + " is out. Press to download it. Your board is saved, then mbrd closes to install it.");
+    }
+
+    /** Downloaded and checked: the row offers it, and a press installs it. */
+    private static void offerReady(File file, String version) {
+        readyFile = file;
+        readyVersion = version;
+        announce.send("ready", version, 0,
+            "mbrd " + label(version) + " is ready. Your board is saved, then mbrd closes to install it.");
     }
 
     /** Data Saver is on and the network is metered: no download in the background. */
@@ -150,8 +183,7 @@ public final class MbrdUpdate {
         try {
             verify(app, kept);
             PackageInfo p = app.getPackageManager().getPackageArchiveInfo(kept.getPath(), 0);
-            readyFile = kept;
-            announce.send(p != null && p.versionName != null ? p.versionName : "", true);
+            offerReady(kept, p != null && p.versionName != null ? p.versionName : "");
         } catch (Exception e) {
             deleteQuietly(kept);
         }
@@ -161,8 +193,7 @@ public final class MbrdUpdate {
      *  press where Data Saver says so. Runs on NET, inside the check. */
     private static void background(Context app, String version, JSONObject apk) {
         if (restricted(app)) {
-            waiting = apk;
-            announce.send(version, false);
+            offerLater(version, apk);
             return;
         }
         String url = apk.optString("browser_download_url", "");
@@ -172,8 +203,7 @@ public final class MbrdUpdate {
         try {
             save(url, file, digest.group(1), new AtomicBoolean(false), permille -> {});
             verify(app, file);
-            readyFile = file;
-            announce.send(version, true);
+            offerReady(file, version);
         } catch (Exception e) {
             // Offline, or a bad file. The next day's check tries again.
             deleteQuietly(file);
@@ -186,8 +216,9 @@ public final class MbrdUpdate {
         check(activity, false);
     }
 
-    /** The panel's "Check for updates" (MbrdShell.checkUpdates): no six-hour
-     *  wait, and it always answers - the update dialog, or a short message. */
+    /** The panel's "Check for updates" (MbrdShell.checkUpdates): no day's
+     *  wait, and it always answers on the page - the Update row for a new
+     *  version, the page's toast otherwise. */
     static void checkNow(Activity activity) {
         check(activity, true);
     }
@@ -195,11 +226,11 @@ public final class MbrdUpdate {
     private static void check(Activity activity, boolean manual) {
         String feed = BuildConfig.UPDATE_FEED;
         if (feed == null || feed.isEmpty()) {
-            if (manual) toast(activity, "Updates are off in this build of mbrd.");
+            if (manual) say("Updates are off in this build of mbrd.");
             return;
         }
         if (!BUSY.compareAndSet(false, true)) {
-            if (manual) toast(activity, "mbrd is already checking for an update.");
+            if (manual) say("mbrd is already checking for an update.");
             return;
         }
         Context app = activity.getApplicationContext();
@@ -209,7 +240,11 @@ public final class MbrdUpdate {
                 // The installer copied the last update when it ran, so the file is spare now.
                 deleteQuietly(apkFile(app));
                 if (readyFile == null) resumeReady(app);
-                if (!manual && readyFile != null) return;
+                if (readyFile != null) {
+                    // Downloaded already: the row offers it, and says so again when asked.
+                    if (manual) offerReady(readyFile, readyVersion);
+                    return;
+                }
                 if (!manual && System.currentTimeMillis() - prefs.getLong("checked", 0) < EVERY_MS) return;
                 HttpURLConnection c = open(feed, "application/vnd.github+json");
                 JSONObject release;
@@ -222,23 +257,19 @@ public final class MbrdUpdate {
                 String version = release.optString("tag_name", "").replaceFirst("^v", "");
                 JSONObject apk = asset(release, APK_NAME);
                 if (apk == null || !newer(version, installedName(app))) {
-                    if (manual) toast(activity, "mbrd is up to date.");
+                    if (manual) say("mbrd is up to date.");
                     return;
                 }
-                if (manual) activity.runOnUiThread(() -> offer(activity, version, apk));
+                // Asked for, it waits for the row's press. Found by the daily
+                // check, it downloads quietly first.
+                if (manual) offerLater(version, apk);
                 else background(app, version, apk);
             } catch (Exception e) {
                 // Offline, or GitHub did not answer. The next start tries again.
-                if (manual) toast(activity, "mbrd could not reach GitHub. Check the connection, then try again.");
+                if (manual) say("mbrd could not reach GitHub. Check the connection, then try again.");
             } finally {
                 BUSY.set(false);
             }
-        });
-    }
-
-    private static void toast(Activity activity, String text) {
-        activity.runOnUiThread(() -> {
-            if (!activity.isFinishing() && !activity.isDestroyed()) Toast.makeText(activity, text, Toast.LENGTH_LONG).show();
         });
     }
 
@@ -273,70 +304,45 @@ public final class MbrdUpdate {
         return null;
     }
 
-    private static void offer(Activity activity, String version, JSONObject apk) {
-        if (activity.isFinishing() || activity.isDestroyed()) return;
-        long size = apk.optLong("size", 0);
-        String mb = size > 0 ? String.format(Locale.ROOT, " (%d MB)", Math.round(size / 1048576.0)) : "";
-        new AlertDialog.Builder(activity)
-            .setTitle("mbrd " + version.replaceFirst("\\.0$", "") + " is out")
-            .setMessage("Download and install the update now" + mb + "? mbrd closes while it installs, and Android may ask you to confirm. Your boards and settings stay.")
-            .setPositiveButton("Update", (d, w) -> download(activity, apk))
-            .setNegativeButton("Later", null)
-            .show();
-    }
-
-    private static void download(Activity activity, JSONObject apk) {
+    /**
+     * The row's press on an update not downloaded yet: download it in the
+     * foreground, then install it. No dialog: the row counts the download, a
+     * failure turns it into Retry update, and Android's own confirm screen is
+     * the only thing that may still come up.
+     */
+    private static void download(Context app, JSONObject apk, String version) {
         final String url = apk.optString("browser_download_url", "");
         Matcher digest = DIGEST.matcher(apk.optString("digest", ""));
         // No digest, no install: the hash is what ties the file to the release.
         if (!url.startsWith("https://") || !digest.matches() || !BUSY.compareAndSet(false, true)) return;
         final String sha = digest.group(1);
+        final String note = "Downloading mbrd " + label(version) + ". mbrd closes to install it when the download is done.";
+        announce.send("downloading", version, 0, note);
 
-        ProgressBar bar = new ProgressBar(activity, null, android.R.attr.progressBarStyleHorizontal);
-        bar.setMax(1000);
-        int pad = Math.round(24 * activity.getResources().getDisplayMetrics().density);
-        FrameLayout box = new FrameLayout(activity);
-        box.setPadding(pad, pad / 2, pad, 0);
-        box.addView(bar);
-        AtomicBoolean cancelled = new AtomicBoolean(false);
-        AlertDialog dialog = new AlertDialog.Builder(activity)
-            .setTitle("Downloading the update")
-            .setView(box)
-            .setCancelable(false)
-            .setNegativeButton("Cancel", (d, w) -> cancelled.set(true))
-            .show();
-
-        Context app = activity.getApplicationContext();
         NET.execute(() -> {
             File file = apkFile(app);
-            String failed = null;
+            // Whole percent steps: the page repaints the row for each one.
+            int[] told = {0};
             try {
-                save(url, file, sha, cancelled, (permille) -> activity.runOnUiThread(() -> bar.setProgress(permille)));
+                save(url, file, sha, new AtomicBoolean(false), permille -> {
+                    if (permille - told[0] < 10) return;
+                    told[0] = permille;
+                    announce.send("downloading", version, permille, note);
+                });
                 verify(app, file);
+                install(app, file);
+                // Back to an offer: if Android's confirm screen is turned down,
+                // a press downloads it again. On a yes Android closes mbrd.
+                offerLater(version, apk);
             } catch (Exception e) {
-                failed = "The update did not download. mbrd tries again later.";
+                offerLater(version, apk);
+                announce.send("failed", version, 0,
+                    "mbrd " + label(version) + " did not download or install. Press to try again.");
+            } finally {
+                // The session holds its own copy once written, so the cached file is spare.
+                deleteQuietly(file);
+                BUSY.set(false);
             }
-            if (failed == null && !cancelled.get()) {
-                waiting = null;
-                try {
-                    install(app, file);
-                } catch (Exception e) {
-                    failed = "Android did not take the update. mbrd tries again later.";
-                }
-            }
-            // The session holds its own copy once written, so the cached file is spare.
-            deleteQuietly(file);
-            BUSY.set(false);
-            final String message = failed;
-            activity.runOnUiThread(() -> {
-                try {
-                    dialog.dismiss();
-                } catch (RuntimeException ignored) {
-                    /* the activity went away while the download ran */
-                }
-                if (message == null || cancelled.get() || activity.isFinishing() || activity.isDestroyed()) return;
-                Toast.makeText(activity, message, Toast.LENGTH_LONG).show();
-            });
         });
     }
 
