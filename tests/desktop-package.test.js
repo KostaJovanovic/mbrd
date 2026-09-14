@@ -84,11 +84,11 @@ test('the updaters find the files the builder names', () => {
   const appImage = exportedPattern('APPIMAGE_ASSET');
   assert.match(sample('nsis'), installer, 'desktop/updates.ts would not find the Windows installer in a release');
   assert.match(sample('appImage'), appImage, 'desktop/updates.ts would not find the AppImage in a release');
-  // And each finds only its own: the release also carries the other systems and the source zip.
-  for (const other of [sample('dmg'), sample('appImage'), 'mbrd-source-0.302.0.zip']) {
+  // And each finds only its own: the release also carries the other systems.
+  for (const other of [sample('dmg'), sample('appImage')]) {
     assert.doesNotMatch(other, installer, `INSTALLER_ASSET also matches ${other}`);
   }
-  for (const other of [sample('dmg'), sample('nsis'), 'mbrd-source-0.302.0.zip']) {
+  for (const other of [sample('dmg'), sample('nsis')]) {
     assert.doesNotMatch(other, appImage, `APPIMAGE_ASSET also matches ${other}`);
   }
 });
@@ -104,7 +104,7 @@ test('the Android updater finds the APK the release job names', () => {
   assert.ok(prefix, '.github/workflows/release.yml no longer names the APK out/mbrd-android-$VERSION.apk');
   const apk = `${prefix}0.302.0.apk`;
   assert.match(apk, apkName, 'MbrdUpdate.java would not find the APK in a release');
-  for (const other of [sample('nsis'), sample('dmg'), sample('appImage'), 'mbrd-source-0.302.0.zip']) {
+  for (const other of [sample('nsis'), sample('dmg'), sample('appImage')]) {
     assert.doesNotMatch(other, apkName, `APK_NAME also matches ${other}`);
   }
   assert.doesNotMatch(apk, exportedPattern('INSTALLER_ASSET'), 'INSTALLER_ASSET also matches the APK');

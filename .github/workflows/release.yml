@@ -14,8 +14,8 @@
 #   linux    mbrd-linux-x64-<version>.AppImage
 #   android  mbrd-android-<version>.apk         signed, with the native FFmpeg
 #                                               once group N adds it
-# Then the publish job creates the release v<version> with all of them and the
-# source zip at once. All at once on purpose: the installed apps read the
+# Then the publish job creates the release v<version> with all of them at
+# once. All at once on purpose: the installed apps read the
 # latest release, and a half-uploaded one would point them at a file that is
 # not there yet.
 #
@@ -325,17 +325,9 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/checkout@v4
-
-      # The source of exactly what shipped (GPL). .gitattributes marks what
-      # stays out: the plans and notes under research/, scratch/ and CLAUDE.md.
-      - name: Write the source zip
-        env:
-          VERSION: ${{ needs.version.outputs.version }}
-        run: |
-          mkdir -p files
-          git archive --format=zip --prefix="mbrd-$VERSION/" -o "files/mbrd-source-$VERSION.zip" "$GITHUB_SHA"
-
+      # No source zip: the maintainer owns mbrd's own code, and the GPL FFmpeg
+      # and LGPL OCCT sources are offered by the upstream pages that
+      # .github/THIRD-PARTY.md names.
       - uses: actions/download-artifact@v4
         with:
           pattern: release-*
@@ -372,7 +364,7 @@ jobs:
           - **Linux:** make the AppImage executable with chmod +x, then run it.
           - **Android:** when Android asks, allow your browser or file manager to install apps.
 
-          The source code of this release: [mbrd-source-$VERSION.zip]($dl/mbrd-source-$VERSION.zip), GPL-3.0-or-later. Built from commit $GITHUB_SHA.
+          Built from commit $GITHUB_SHA.
           EOF
           # --target main, not the source commit: a tag here must name a commit
           # in this repo, and the source commit is not in it.

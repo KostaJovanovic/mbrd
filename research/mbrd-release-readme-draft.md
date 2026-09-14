@@ -13,7 +13,6 @@ From the [latest release](https://github.com/KostaJovanovic/mbrd-release/release
 | macOS universal | `mbrd-mac-universal-<v>.dmg` | manual |
 | Linux x64 | `mbrd-linux-x64-<v>.AppImage` | automatic |
 | Android 7+ | `mbrd-android-<v>.apk` | automatic |
-| Source | `mbrd-source-<v>.zip` | — |
 
 The Windows installer can also set up a portable copy (a single folder with its data).
 
@@ -27,7 +26,7 @@ The Windows installer can also set up a portable copy (a single folder with its 
 ## Notes
 
 - Boards are `.mbrd` files in `Documents/mbrd` (portable copy: in its own folder).
-- Update checks run daily against this repo's latest release. Downloads are
-  verified against GitHub's SHA-256 digest before they install.
+- Update checks run daily against the latest release in this repo. Each
+  download must match the SHA-256 digest from GitHub before it installs.
 
 GPL-3.0-or-later.
