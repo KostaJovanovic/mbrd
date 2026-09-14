@@ -348,7 +348,7 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
     void unpackItem(id);
   }, true);
 
-  bus.on('board:load', () => { teardown(); render(); });
+  bus.on('board:load', () => { seenRatio.clear(); teardown(); render(); });
   bus.on('layout', () => (board.layoutMode === 'mobile' ? render() : teardown()));
   bus.on('lens', () => { if (board.layoutMode === 'mobile') { render(); scheduleLayout(); } });
   bus.on('items', render);
@@ -357,13 +357,18 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
   bus.on('fonts', paintMasthead);
   // A per-item Fill/Fit change arrives as 'item', the same as on the canvas
   // (canvas/items.ts): only the object-fit attribute changes, so the tile is
-  // repainted in place rather than rebuilt.
-  bus.on('item', id => { const t = tiles.get(id); if (t) writeTileFit(t); });
+  // repainted in place rather than rebuilt. Fit and Fill draw a tile at
+  // different shapes (ratioOf()), so the wall may move as well.
+  bus.on('item', id => {
+    const t = tiles.get(id);
+    if (t) writeTileFit(t);
+    relayoutIfReshaped(id);
+  });
   bus.on('settings', key => {
     if (key === 'arrangement' || key === 'profile') render();
     // The board-wide Fill/Fit default. Nothing about a tile is rebuilt - each
     // media tile re-reads its effective fit, exactly as canvas/items.ts does.
-    else if (key === 'mediaFit') { for (const t of tiles.values()) writeTileFit(t); }
+    else if (key === 'mediaFit') { for (const t of tiles.values()) writeTileFit(t); scheduleLayout(); }
     else if (key === 'mobileHeader' || key === 'appearance') paintMasthead();
   });
   onNowPlaying(markPlaying);
@@ -501,7 +506,35 @@ function ratioOf(item: Item) {
   // and a lot of paper.
   if (kind === 'text') return 0.75;
   const r = item.w > 0 && item.h > 0 ? item.w / item.h : 1;
+  // A picture set to Fit takes its own shape once a load has shown it, so it
+  // fills the tile with no band of paper above or below. Clamped far wider
+  // than a Fill tile: a panorama at 4:1 is still a strip a finger can press.
+  if ((kind === 'image' || kind === 'video') && fitMode(item) === 'contain') {
+    return clamp(seenRatio.get(item.id) || r, 0.25, 4);
+  }
   return clamp(r, 0.5, 2);
+}
+
+/**
+ * The shape of each item's picture, by id, read off the picture as it loads
+ * (research/rapid-fixes-2026-09-14.md, R9). The item's own box is only a
+ * guess at it: a card resized on the board keeps its new shape, and a Fit
+ * tile drawn at that shape letterboxes. Kept for the board, so a tile that
+ * comes back into the window is laid out right the first time.
+ */
+const seenRatio = new Map<string, number>();
+
+/** Note the shape a tile's picture loaded at. */
+function learnRatio(t: Tile, img: HTMLImageElement) {
+  if (!img.naturalWidth || !img.naturalHeight) return;
+  seenRatio.set(t.item.id, img.naturalWidth / img.naturalHeight);
+  relayoutIfReshaped(t.item.id);
+}
+
+/** Lay the wall out again if an item now wants another shape than its slot has. */
+function relayoutIfReshaped(id: string) {
+  const s = slotById.get(id);
+  if (s && Math.abs(ratioOf(s.item) - s.ratio) > 0.005) scheduleLayout();
 }
 
 /**
@@ -697,7 +730,11 @@ function fillImage(t: Tile) {
 
   if (sharp) img.src = sharp;
   else if (preview) img.src = preview;
-  img.addEventListener('load', settle);
+  img.addEventListener('load', () => {
+    settle();
+    // The preview of an edited tile is the uncropped picture, the wrong shape.
+    if (!edited || img.src !== preview) learnRatio(t, img);
+  });
   // A source that will not load falls back to a spare made by another path,
   // which survives whatever this one hit. No spare - drop the shimmer anyway
   // rather than shimmer forever over an image that is never coming.
@@ -790,6 +827,7 @@ function fillVideo(t: Tile) {
     const img = document.createElement('img');
     img.loading = 'lazy'; img.decoding = 'async'; img.draggable = false; img.alt = '';
     img.src = url;
+    img.addEventListener('load', () => learnRatio(t, img));
     // The poster carries the clip's grade, so a graded video reads the same on
     // the Feed as it does on the board. There is no crop on a clip - see
     // setItemCrop() in state.ts.

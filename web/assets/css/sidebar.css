@@ -41,10 +41,19 @@
 }
 /* Outside @media (hover) — :active must tint bars on touch too. */
 #menu-btn:active span { background: var(--accent-deep); }
-/* Stacked below #menu-btn on Mobile (ui/mobile-header.ts paintFind). */
+/* Top right on Mobile (ui/mobile-header.ts paintFind). While the pen holds the
+   corner, Find stands one button to its left
+   (research/rapid-fixes-2026-09-14.md, R20). */
 #mobile-find-btn {
-  top: calc(max(16px, env(safe-area-inset-top)) + var(--chrome-button-h) + 8px);
-  left: max(16px, env(safe-area-inset-left));
+  right: max(16px, env(safe-area-inset-right));
+  left: auto;
+  transition: background var(--dur-fast) var(--ease),
+              border-color var(--dur-fast) var(--ease),
+              opacity var(--dur-base) var(--ease),
+              right var(--dur-base) var(--ease);
+}
+#mobile-header-edit-btn:not([hidden]) ~ #mobile-find-btn {
+  right: calc(max(16px, env(safe-area-inset-right)) + var(--chrome-button-w) + 8px);
 }
 #mobile-find-btn[hidden] { display: none; }
 #mobile-find-btn svg { width: 18px; height: 18px; color: var(--accent-text); }
@@ -145,8 +154,9 @@
   visibility: visible;
   transition-delay: 0s;
 }
-/* The pen hides under the panel it opened. */
-#header-panel.is-open ~ #mobile-header-edit-btn { opacity: 0; pointer-events: none; }
+/* The pen hides under the panel it opened, and Find beside it goes too. */
+#header-panel.is-open ~ #mobile-header-edit-btn,
+#header-panel.is-open ~ #mobile-find-btn { opacity: 0; pointer-events: none; }
 
 /* No text selection in panel chrome — re-enabled on inputs below.
    Off by default because the schema grows rows this file does not know about. */

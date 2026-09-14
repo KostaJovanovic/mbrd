@@ -51,6 +51,15 @@
   box-shadow: var(--shadow-1);
 }
 
+/* On a phone the Feed's sheet is the width of the screen, with square corners,
+   and the cards stand one card gap (GAP in ui/feed.ts) from its edges. Its top
+   and foot stay under the buttons and over the bar
+   (research/rapid-fixes-2026-09-14.md, R19). */
+@media (max-width: 600px) {
+  #mobile-feed .feed-sheet { width: 100%; border-radius: 0; }
+  #mobile-feed .feed-grid { width: calc(100% - 20px); }
+}
+
 /* ::before so it multiplies against the sheet fill, not the photographs */
 .feed-sheet::before {
   content: "";
@@ -119,6 +128,13 @@
   background: var(--paper-3);
   box-shadow: var(--shadow-1);
   content-visibility: auto;
+}
+/* At the Full quality stop a tile stands off the sheet on a soft drop shadow
+   (R8). Harsh stays flat, as its cards on the canvas do, and the quality
+   dial's own shadow switch takes it off. */
+:root[data-quality="full"]:not([data-q-shadows="off"], [data-whimsy="2"]) .feed-tile {
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 12%, transparent),
+              0 4px 12px -2px color-mix(in srgb, var(--ink) 24%, transparent);
 }
 .feed-tile > img { width: 100%; height: 100%; object-fit: cover; display: block; }
 /* Fill vs fit follows data-fit, the same attribute the canvas card keys
@@ -1419,8 +1435,12 @@
     left: max(12px, env(safe-area-inset-left));
   }
   #mobile-find-btn {
-    top: calc(max(12px, env(safe-area-inset-top)) + var(--chrome-button-h) + 8px);
-    left: max(12px, env(safe-area-inset-left));
+    top: max(12px, env(safe-area-inset-top));
+    right: max(12px, env(safe-area-inset-right));
+    left: auto;
+  }
+  #mobile-header-edit-btn:not([hidden]) ~ #mobile-find-btn {
+    right: calc(max(12px, env(safe-area-inset-right)) + var(--chrome-button-w) + 8px);
   }
   #mobile-header-edit-btn {
     top: max(12px, env(safe-area-inset-top));
