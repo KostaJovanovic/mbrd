@@ -46,6 +46,14 @@ test('a board cannot make the app fetch anything', () => {
   assert.deepEqual(safeVars({ '--font-body': 'local(x), url(https://example.invalid/f.woff2)' }), {});
 });
 
+test('a look that still says "Same as display" for the body reads as the default', () => {
+  // The option left the body font list (research/rapid-fixes-2026-09-14.md, R6).
+  assert.deepEqual(safeVars({ '--font-body': 'var(--font-display)' }), {});
+  assert.deepEqual(safeVars({ '--font-body': 'var( --font-display )' }), {});
+  // The display face may still point anywhere it could before.
+  assert.deepEqual(safeVars({ '--font-display': 'var(--font-sans)' }), { '--font-display': 'var(--font-sans)' });
+});
+
 test('a value cannot end its own declaration', () => {
   assert.deepEqual(safeVars({ '--paper': 'red; background-image: url(https://example.invalid/x)' }), {});
   assert.deepEqual(safeVars({ '--paper': 'red} :root{display:none' }), {});

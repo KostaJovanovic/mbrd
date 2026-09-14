@@ -39,7 +39,7 @@ box is ticked when its commit lands.
         `timeline.ts` now writes that drift into every stored board before it
         records or replays, and `history.ts` keeps undo apart from drift.
         `tests/timeline-drift.test.js` walks every field in `REST_FIELDS`.
-- [ ] R6 The body font setting loses its "Same as display" option. A board or
+- [x] R6 The body font setting loses its "Same as display" option. A board or
       a preference that holds it today needs a sensible reading.
 - [ ] R7 Android: no update pop-up. The maintainer hates it. An update shows
       in the page instead (the sidebar's Update row, or a line like R3's),

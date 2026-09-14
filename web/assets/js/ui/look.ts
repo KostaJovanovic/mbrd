@@ -59,6 +59,9 @@ export function safeVars(vars: unknown): Record<string, string> {
     if (!SAFE_VALUE.test(value)) continue;
     const fns = [...value.matchAll(/([a-z][a-z0-9-]*)\s*\(/gi)].map(m => m[1].toLowerCase());
     if (fns.some(fn => !SAFE_FN.has(fn))) continue;
+    // "Same as display" left the body font list (research/rapid-fixes-2026-09-14.md,
+    // R6). A look that still carries it reads as the default body font.
+    if (key === '--font-body' && value.replace(/\s/g, '') === 'var(--font-display)') continue;
     out[key] = value;
   }
   return out;
