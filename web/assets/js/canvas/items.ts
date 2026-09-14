@@ -681,6 +681,12 @@ export function itemIdFromEvent(target: EventTarget | null): string | null {
  * reference to it does.
  */
 function discard(el: HTMLElement) {
+  // Focus out first. A card being written in loses focus as it leaves, and the
+  // blur can take the node out itself, so the removal after it threw - and one
+  // throw in resetItems() left the rest of the old board's cards on screen.
+  // Taken out already, remove() does nothing.
+  const focused = document.activeElement;
+  if (focused instanceof HTMLElement && el.contains(focused)) focused.blur();
   el.remove();
   releaseCardContent(el);
 }
