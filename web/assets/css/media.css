@@ -87,7 +87,7 @@
 .transport {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   margin-top: auto;
   pointer-events: auto;
 }

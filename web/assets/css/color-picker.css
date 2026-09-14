@@ -19,7 +19,7 @@
   animation: ask-in var(--dur-base) var(--ease-back);
 }
 /* Only when open: unconditional display would override <dialog>'s display:none. */
-#pick[open] { display: grid; gap: 14px; }
+#pick[open] { display: grid; gap: 12px; }
 #pick::backdrop {
   background: color-mix(in srgb, var(--ink) 42%, transparent);
   -webkit-backdrop-filter: blur(2px);
@@ -115,7 +115,7 @@
 }
 
 /* Swatch + hex side by side: one fact, both editable. */
-.pick-foot { display: flex; align-items: center; gap: 10px; }
+.pick-foot { display: flex; align-items: center; gap: 8px; }
 #pick-well {
   flex: 0 0 auto;
   width: calc(38px * var(--density));
