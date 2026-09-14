@@ -260,6 +260,8 @@
   transition: border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 .library-connect svg { width: var(--icon-glyph); height: var(--icon-glyph); }
+/* Open folder: the connect button's look, pushed to the left end of the foot. */
+.library-folder { margin-right: auto; }
 @media (hover: hover) {
   .library-connect:hover { border-color: var(--accent-text); color: var(--accent-deep); }
 }

@@ -47,6 +47,16 @@ const api: AndroidBridge = {
     exists: files.exists,
   }),
 
+  // The desktop's boards folder. The phone's folder is MbrdRoot's, and it keeps
+  // no list of its own yet, so list() answers null and the page asks no more.
+  boards: Object.freeze({
+    list: () => Promise.resolve(null),
+    create: notYet('make a board in its folder'),
+    rename: notYet('rename a board file'),
+    trash: notYet('move a board to the bin'),
+    reveal: notYet('open the boards folder'),
+  }),
+
   native: Object.freeze({
     // An answer, not a refusal: with no native FFmpeg the phone runs the web
     // path, as the website does on the same phone.

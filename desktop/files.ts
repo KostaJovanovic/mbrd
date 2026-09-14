@@ -1,10 +1,10 @@
 // File dialogs and read/write for .mbrd boards.
 // A renderer cannot name a path. Every path here comes from a dialog, argv,
-// open-file, or the store. Anything else is refused.
+// open-file, the store, or the boards folder (boards.ts). Anything else is refused.
 
 import { dialog, BrowserWindow } from 'electron';
 import { readFile, writeFile, rename, access } from 'node:fs/promises';
-import { basename } from 'node:path';
+import { basename, join } from 'node:path';
 import {
   CATEGORIES, FAMILIES, EXT_FAMILY,
   PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, DOC_EXTS, SVG_EXTS,
@@ -34,7 +34,7 @@ function refuse(path: string): never {
   throw new Error('that file was not opened by this app');
 }
 
-const checked = (path: unknown): string => {
+export const checked = (path: unknown): string => {
   if (typeof path !== 'string' || !known.has(path)) refuse(String(path));
   return path;
 };
@@ -102,19 +102,20 @@ function open(win: BrowserWindow | null, options: Electron.OpenDialogOptions) {
   return win ? dialog.showOpenDialog(win, options) : dialog.showOpenDialog(options);
 }
 
-export async function pickOpen(win: BrowserWindow | null): Promise<Handed | null> {
-  const { canceled, filePaths } = await open(win, {
-    properties: ['openFile'],
-    filters: BOARD_FILTER,
-  });
+// Both board dialogs start in the boards folder (boards.ts), which main hands in.
+export async function pickOpen(win: BrowserWindow | null, home = ''): Promise<Handed | null> {
+  const options: Electron.OpenDialogOptions = { properties: ['openFile'], filters: BOARD_FILTER };
+  if (home) options.defaultPath = home;
+  const { canceled, filePaths } = await open(win, options);
   const path = filePaths[0];
   if (canceled || !path) return null;
   return hand(path);
 }
 
-export async function pickSave(win: BrowserWindow | null, suggested: unknown): Promise<Ref | null> {
+export async function pickSave(win: BrowserWindow | null, suggested: unknown, home = ''): Promise<Ref | null> {
+  const name = typeof suggested === 'string' ? basename(suggested) : 'board.mbrd';
   const options = {
-    defaultPath: typeof suggested === 'string' ? suggested : 'board.mbrd',
+    defaultPath: home ? join(home, name) : name,
     filters: BOARD_FILTER,
   };
   const { canceled, filePath } = win

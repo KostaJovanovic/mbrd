@@ -43,6 +43,15 @@ contextBridge.exposeInMainWorld('mbrdDesktop', {
     exists: (path: string) => invoke('files:exists', path),
   },
 
+  // The boards folder (boards.ts): Documents/mbrd, where every board is a file.
+  boards: {
+    list: () => invoke('boards:list'),
+    create: (suggested: string, data: ArrayBuffer) => invoke('boards:create', suggested, data),
+    rename: (path: string, suggested: string) => invoke('boards:rename', path, suggested),
+    trash: (path: string) => invoke('boards:trash', path),
+    reveal: () => invoke('boards:reveal'),
+  },
+
   native: {
     can: () => invoke('native:can'),
     firstFrame: (bytes: ArrayBuffer) => invoke('native:firstFrame', bytes),

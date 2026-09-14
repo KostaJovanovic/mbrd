@@ -3,19 +3,17 @@
 // Renders from the index alone — boards are unpacked only when opened.
 
 import {
-  listLibrary, switchBoard, newBoard, deleteLibraryBoard, ensureCurrentOnShelf,
-  openCloudBoard, relocateLibraryBoard,
+  listBoards, switchBoard, newBoard, deleteLibraryBoard, ensureCurrentOnShelf,
+  openCloudBoard, relocateLibraryBoard, boardFolder, revealBoardFolder,
 } from '../storage/storage.ts';
+import type { BoardEntry } from '../storage/storage.ts';
 import { platform, fileNameOf } from '../platform/platform.ts';
 import { toast } from '../notify.ts';
 import { markClosed } from '../util.ts';
 import { ask } from './dialog.ts';
 import { icon } from './menu.ts';
 import { connectCloud } from './cloud-connect.ts';
-import type { LibraryEntry } from '../storage/library.ts';
 import type { RemoteBoard } from '../storage/cloud/sync.ts';
-
-type ShelfEntry = LibraryEntry & { current: boolean };
 
 let root: HTMLDivElement | null = null;
 
@@ -111,7 +109,8 @@ async function render() {
   // storage/storage.ts, which is a no-op on every visit after the first.
   await ensureCurrentOnShelf().catch(() => {});
   if (!root) return;   // closed while we were writing
-  const boards = await listLibrary().catch(() => []);
+  // On the desktop this is the shelf and every board in the boards folder.
+  const boards = await listBoards().catch(() => []);
   // Closed while we were reading, or asked to draw again since - the second is
   // new with the token and covers a delete pressed twice quickly, where the
   // slower of two renders would otherwise finish last and win.
@@ -304,6 +303,18 @@ function cloudCard(b: RemoteBoard) {
 function foot() {
   const bar = document.createElement('div');
   bar.className = 'library-foot';
+  // Bottom left, where a shell keeps a boards folder: the way to the files
+  // themselves. Before the cloud offer, which fills in on the right.
+  const home = boardFolder();
+  if (home) {
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'library-connect library-folder';
+    open.textContent = 'Open folder';
+    open.title = home;
+    open.addEventListener('click', () => { void revealBoardFolder(); });
+    bar.append(open);
+  }
   void (async () => {
     const mine = renderToken;
     const { canShareLink } = await import('../storage/cloud/provider.ts');
@@ -335,7 +346,39 @@ function foot() {
   return bar;
 }
 
-function card(b: ShelfEntry) {
+/** What the corner cross does to this kind of board, as the question it asks. */
+function removal(b: BoardEntry) {
+  const name = b.title || 'Untitled board';
+  if (b.inFolder && b.path) {
+    return {
+      label: 'Move this board to the bin',
+      title: 'Move this board to the bin?',
+      body: `${fileNameOf(b.path)} leaves the boards folder and goes to the bin, `
+        + 'where you can still restore it.',
+      go: 'Move to the bin',
+      danger: true,
+    };
+  }
+  if (b.path) {
+    return {
+      label: 'Take this board off the list',
+      title: 'Take this board off the list?',
+      body: `"${name}" leaves this list. The file ${fileNameOf(b.path)} stays where it is.`,
+      go: 'Take it off',
+      danger: false,
+    };
+  }
+  return {
+    label: 'Delete this board',
+    title: 'Delete this board?',
+    body: `"${name}" will be removed from the shelf. `
+      + 'This cannot be undone, and the bin does not hold boards.',
+    go: 'Delete',
+    danger: true,
+  };
+}
+
+function card(b: BoardEntry) {
   const el = document.createElement('div');
   el.className = 'library-card' + (b.current ? ' is-current' : '');
   // How the cloud listing finds its match. A library row's id and a board's
@@ -402,11 +445,12 @@ function card(b: ShelfEntry) {
   }
 
   if (!b.current) {
+    const question = removal(b);
     const del = document.createElement('button');
     del.type = 'button';
     del.className = 'library-del';
-    del.setAttribute('aria-label', 'Delete this board');
-    del.title = 'Delete this board';
+    del.setAttribute('aria-label', question.label);
+    del.title = question.label;
     // The sprite's cross, like the close beside it and every other cross in the
     // app. It set the `×` character, which is a different shape at a different
     // weight in whatever face the reader has.
@@ -422,16 +466,14 @@ function card(b: ShelfEntry) {
     // board, not everything, and the board's own name in the question is what
     // makes the answer informed. Every accidental way out of ask() - Escape,
     // the backdrop, the close button - is 'cancel'.
+    //
+    // A board in the boards folder is a file the folder would list again, so
+    // its cross moves the file to the bin, where it can come back from. A file
+    // elsewhere is somebody's own, and its cross only takes it off the list.
     del.addEventListener('click', () => guard(async () => {
-      const answer = await ask({
-        title: 'Delete this board?',
-        body: `"${b.title || 'Untitled board'}" will be removed from the shelf. `
-          + 'This cannot be undone, and the bin does not hold boards.',
-        go: 'Delete',
-        danger: true,
-      });
-      if (answer !== 'go') return;
-      await deleteLibraryBoard(b.id);
+      const { title, body, go, danger } = question;
+      if (await ask({ title, body, go, danger }) !== 'go') return;
+      await deleteLibraryBoard(b.id, { file: b.inFolder ? b.path : '' });
       await render();
     }));
     el.append(del);

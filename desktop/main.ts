@@ -18,6 +18,7 @@ import type { MenuActions, ViewAction } from './menu.ts';
 import type { Point, Subject, WinState } from './chrome/bridge.ts';
 import * as store from './store.ts';
 import * as files from './files.ts';
+import * as boards from './boards.ts';
 // Each loads its heavy binary on first use, not at startup.
 import * as ffmpeg from './native/ffmpeg.ts';
 import * as matte from './native/matte.ts';
@@ -98,6 +99,10 @@ function main(): void {
     }
     // Repeat the portable warning now that the log file exists.
     if (startupNote) log('warn', 'portable fallback', { note: startupNote });
+    // In the data folder for a portable copy, and for a run given its own data
+    // folder (the smoke test), so neither writes into Documents.
+    const inData = portableData || app.commandLine.hasSwitch('user-data-dir');
+    log('info', 'boards folder', { path: boards.chooseFolder(inData) });
     serveWeb();
     wireStore();
     wireFiles();
@@ -659,8 +664,9 @@ function showData(): void {
     type: 'info',
     title: 'mbrd',
     message: portableData ? 'Portable copy' : 'Installed copy',
-    detail: 'Your boards are the .mbrd files you save. This folder keeps the '
-      + 'recovery store, the shelf and the logs.\n\n' + dir,
+    detail: 'Your boards are .mbrd files. The ones mbrd makes are in '
+      + boards.folder() + '. This folder keeps the recovery store, the list of '
+      + 'boards and the logs.\n\n' + dir,
     buttons: ['Close', 'Open the folder'],
     defaultId: 0,
     cancelId: 0,
@@ -910,12 +916,18 @@ function wireStore(): void {
 }
 
 function wireFiles(): void {
-  ipcMain.handle('files:pickOpen', () => files.pickOpen(current()));
-  ipcMain.handle('files:pickSave', (_e, suggested: unknown) => files.pickSave(current(), suggested));
+  ipcMain.handle('files:pickOpen', () => files.pickOpen(current(), boards.folder()));
+  ipcMain.handle('files:pickSave', (_e, suggested: unknown) =>
+    files.pickSave(current(), suggested, boards.folder()));
   ipcMain.handle('files:pickImport', () => files.pickImport(current()));
   ipcMain.handle('files:write', (_e, path: unknown, data: unknown) => files.write(path, data));
   ipcMain.handle('files:read', (_e, path: unknown) => files.read(path));
   ipcMain.handle('files:exists', (_e, path: unknown) => files.exists(path));
+  ipcMain.handle('boards:list', () => boards.list());
+  ipcMain.handle('boards:create', (_e, suggested: unknown, data: unknown) => boards.create(suggested, data));
+  ipcMain.handle('boards:rename', (_e, path: unknown, suggested: unknown) => boards.rename(path, suggested));
+  ipcMain.handle('boards:trash', (_e, path: unknown) => boards.trash(path));
+  ipcMain.handle('boards:reveal', () => boards.reveal());
 }
 
 function wireApp(): void {

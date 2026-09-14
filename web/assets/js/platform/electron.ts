@@ -4,7 +4,7 @@
 
 import type {
   Platform, FilesPort, LifecyclePort, NativePort, UpdatesPort,
-  DocumentRef, OpenedFile, PickSpec, TranscodeOpts,
+  DocumentRef, OpenedFile, PickSpec, TranscodeOpts, BoardFolder, FolderBoard,
 } from './platform.ts';
 // StoreBackend is not imported: platform/ sits below storage/ in the layer
 // graph, so electronStore() is checked structurally at the wiring point.
@@ -31,6 +31,15 @@ export interface Bridge {
     write(path: string, data: ArrayBuffer): Promise<void>;
     read(path: string): Promise<HandedFile>;
     exists(path: string): Promise<boolean>;
+  };
+  /** The boards folder. The Android shell answers list() with null, because
+   *  its folder is MbrdRoot's and it keeps no list of its own yet. */
+  boards: {
+    list(): Promise<{ folder: string, files: FolderBoard[] } | null>;
+    create(suggested: string, data: ArrayBuffer): Promise<{ name: string, path: string }>;
+    rename(path: string, suggested: string): Promise<{ name: string, path: string } | null>;
+    trash(path: string): Promise<void>;
+    reveal(): Promise<void>;
   };
   native: {
     can(): Promise<{ transcode: boolean, matte: boolean }>;
@@ -149,8 +158,26 @@ export function electronStore(bridge: Bridge) {
 // The ports
 // ---------------------------------------------------------------------------
 
+function electronFolder(bridge: Bridge): BoardFolder {
+  return {
+    list: () => bridge.boards.list(),
+    create: async (suggested, blob) =>
+      refOf(await bridge.boards.create(suggested, await blob.arrayBuffer())),
+    async rename(ref, suggested) {
+      if (!ref.path) return null;
+      const moved = await bridge.boards.rename(ref.path, suggested);
+      return moved ? refOf(moved) : null;
+    },
+    async trash(ref) {
+      if (ref.path) await bridge.boards.trash(ref.path);
+    },
+    reveal: () => bridge.boards.reveal(),
+  };
+}
+
 function electronFiles(bridge: Bridge): FilesPort {
   return {
+    folder: electronFolder(bridge),
     canPick: () => true,
 
     async pickOpen(_spec: PickSpec) {

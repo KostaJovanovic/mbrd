@@ -44,7 +44,7 @@ import { initDrop, importFiles, setImportPrompt } from './import/drop.ts';
 import {
   initStorage, restoreSession, openFile, autosave, setPrompt, setBoardThumb,
   suspendCache, resetSessionLatches, failHandover, boardSafety, openSharedBoard,
-  boardSyncState, pushBoardToCloud,
+  boardSyncState, pushBoardToCloud, adoptFolder, saveDocument,
 } from './storage/storage.ts';
 import { looksLikeMbrd } from './storage/mbrd.ts';
 import { boardThumb } from './ui/snapshot.ts';
@@ -426,6 +426,8 @@ const flushEdits = async () => {
   if (!sessionReady) return;
   flushNoteEdit();
   await autosave().catch(() => {});
+  // The board's file too, on a desktop with a boards folder. A no-op elsewhere.
+  await saveDocument().catch(() => {});
 };
 platform.lifecycle.onCloseRequested(flushEdits);
 
@@ -480,6 +482,10 @@ const started = (async function start() {
   const restored = (notFound || isPatch) ? false : await restoreSession();
   // Session restored — safe to autosave on close now.
   markSessionReady();
+  // The desktop's boards folder: every board a file, moved there on the first
+  // start. Not awaited, and every write and shelving waits for it. Before the
+  // share link below, which shelves. Does nothing on the web.
+  if (!notFound && !isPatch) void adoptFolder();
   // First blank session never calls loadBoard(), so seed the title card here.
   if (isPatch) {
     // Named so the panel's Board tab has something to show.
