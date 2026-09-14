@@ -6,7 +6,6 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
-import android.graphics.Color;
 import android.net.Uri;
 import android.webkit.ServiceWorkerClient;
 import android.webkit.ServiceWorkerController;
@@ -51,8 +50,10 @@ import org.json.JSONObject;
  *    assets/mbrd-bridge.js) at document start, for the app origin and the dev
  *    server only, with the boot object in place of its marker.
  * Its methods: startupNotes (where the boards are, when not in Documents/mbrd),
- * share (the navigator.share the WebView lacks), bars (the page colour for the
- * status and gesture bands) and checkUpdates (MbrdUpdate). Its events: "open" (deliver(), for "Open with"
+ * share (the navigator.share the WebView lacks), checkUpdates and installUpdate
+ * (MbrdUpdate). Its "update" event carries what the daily check found.
+ * The status and gesture bands follow the phone's dark mode, in MainActivity,
+ * rather than the page. Its events: "open" (deliver(), for "Open with"
  * and "Share to") and "pause" (the flush the desktop runs before a close).
  */
 @CapacitorPlugin(name = "MbrdShell")
@@ -68,6 +69,14 @@ public class MbrdShell extends Plugin {
     @Override
     public void load() {
         Context ctx = getContext();
+        // What the daily check found, for the sidebar's Update row. Retained, so
+        // a page that starts listening late still hears it.
+        MbrdUpdate.onOffer((version, ready) -> {
+            JSObject offer = new JSObject();
+            offer.put("version", version);
+            offer.put("ready", ready);
+            notifyListeners("update", offer, true);
+        });
         MbrdBytes.clearStage(ctx);
         // What the last run shared. The app it went to has read it by now.
         MbrdRoot.deleteTree(shareDir(ctx));
@@ -232,20 +241,6 @@ public class MbrdShell extends Plugin {
         notifyListeners("pause", new JSObject());
     }
 
-    // ---- the bar colour -------------------------------------------------------
-
-    /** The page's background, as sRGB bytes, so the inset bands match the look. */
-    @PluginMethod
-    public void bars(PluginCall call) {
-        int color = Color.rgb(channel(call.getInt("r")), channel(call.getInt("g")), channel(call.getInt("b")));
-        Activity activity = getActivity();
-        if (activity instanceof MainActivity) ((MainActivity) activity).setBarColor(color);
-        call.resolve();
-    }
-
-    private static int channel(Integer value) {
-        return value == null ? 0 : Math.max(0, Math.min(255, value));
-    }
 
     // ---- updates --------------------------------------------------------------
 
@@ -256,6 +251,15 @@ public class MbrdShell extends Plugin {
     public void checkUpdates(PluginCall call) {
         Activity activity = getActivity();
         if (activity != null) MbrdUpdate.checkNow(activity);
+        call.resolve();
+    }
+
+    /** The sidebar's Update row, through updates.install() in
+     *  mobile/bridge/mbrd-bridge.ts. The page has saved the board first. */
+    @PluginMethod
+    public void installUpdate(PluginCall call) {
+        Activity activity = getActivity();
+        if (activity != null) MbrdUpdate.installNow(activity);
         call.resolve();
     }
 

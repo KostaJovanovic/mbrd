@@ -4,7 +4,7 @@
 // checks the sender of every message. CommonJS, as a sandboxed preload must be.
 
 import { contextBridge, ipcRenderer } from 'electron';
-import type { ChromeBridge, MenuModel, PanelBridge, Point, Subject, WinState } from './bridge.ts';
+import type { ChromeBridge, MenuModel, PanelBridge, Point, Subject, UpdateOffer, WinState } from './bridge.ts';
 
 // Kept here, so a handler registered late still gets the last value and the bar
 // paints the right glyph and title on its first frame. One handler each: one
@@ -15,6 +15,8 @@ let onState: ((state: WinState) => void) | null = null;
 let onSubject: ((subject: Subject) => void) | null = null;
 let onMenuClosed: (() => void) | null = null;
 let onMenu: ((open: { menu: MenuModel, at: Point }) => void) | null = null;
+let offer: UpdateOffer | null = null;
+let onUpdate: ((offer: UpdateOffer | null) => void) | null = null;
 
 ipcRenderer.on('chrome:state', (_event, state: WinState) => {
   winState = state;
@@ -23,6 +25,10 @@ ipcRenderer.on('chrome:state', (_event, state: WinState) => {
 ipcRenderer.on('chrome:subject', (_event, next: Subject) => {
   subject = next;
   onSubject?.(next);
+});
+ipcRenderer.on('chrome:update', (_event, next: UpdateOffer | null) => {
+  offer = next;
+  onUpdate?.(next);
 });
 ipcRenderer.on('chrome:menu-closed', () => onMenuClosed?.());
 ipcRenderer.on('panel:menu', (_event, open: { menu: MenuModel, at: Point }) => onMenu?.(open));
@@ -44,6 +50,11 @@ const chrome: ChromeBridge = {
     fn(subject);
   },
   onMenuClosed: fn => { onMenuClosed = fn; },
+  onUpdate: fn => {
+    onUpdate = fn;
+    fn(offer);
+  },
+  update: () => ipcRenderer.send('chrome:update-press'),
   height: px => ipcRenderer.send('chrome:height', px),
   ready: () => ipcRenderer.send('chrome:ready'),
 };

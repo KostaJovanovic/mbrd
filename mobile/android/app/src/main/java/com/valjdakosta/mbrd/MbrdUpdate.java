@@ -9,6 +9,7 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageInstaller;
 import android.content.pm.PackageManager;
+import android.net.ConnectivityManager;
 import android.os.Build;
 import android.widget.FrameLayout;
 import android.widget.ProgressBar;
@@ -50,9 +51,13 @@ import org.json.JSONObject;
  * named mbrd-android-<version>.apk its download URL, its size and the SHA-256
  * digest GitHub computed for it.
  *
- * At most one check every six hours, at start-up. A newer tag asks the user.
- * "Update" downloads the APK into the cache, checks its SHA-256, its package
- * name and that its versionCode is higher, and writes it into a
+ * At most one check a day, at start-up. A newer tag downloads in the
+ * background, with no dialog, and the page's sidebar shows an Update row
+ * (the "update" event, MbrdShell). Where Data Saver restricts background data
+ * on a metered network nothing downloads: the row says "Update available",
+ * and a press downloads it in the foreground. The panel's "Check for updates"
+ * still asks in a dialog. Every download checks its SHA-256, its package name
+ * and that its versionCode is higher, and an install writes it into a
  * PackageInstaller session. On Android 12 and later the session asks for no
  * confirm screen (USER_ACTION_NOT_REQUIRED), which Android grants to an app
  * that updates itself: the update installs and mbrd closes. Where Android
@@ -67,7 +72,7 @@ import org.json.JSONObject;
 public final class MbrdUpdate {
 
     private static final String PREFS = "mbrd-update";
-    private static final long EVERY_MS = 6L * 60 * 60 * 1000;
+    private static final long EVERY_MS = 24L * 60 * 60 * 1000;
     /** The API answer carries the release notes and every asset. */
     private static final int FEED_MAX = 512 * 1024;
     /** The APK's name ends in the version (mbrd-android-0.310.0.apk), so it is
@@ -83,9 +88,100 @@ public final class MbrdUpdate {
         void at(int permille);
     }
 
+    /** Where the page hears of an update: MbrdShell's "update" event. */
+    interface Announce {
+        void send(String version, boolean ready);
+    }
+
+    private static volatile Announce announce = (version, ready) -> {};
+    /** Downloaded and checked in the background, waiting for the row's press. */
+    private static volatile File readyFile = null;
+    /** Found, but Data Saver kept it from downloading on its own. */
+    private static volatile JSONObject waiting = null;
+
     private MbrdUpdate() {}
 
-    /** Called from MainActivity.onCreate. Returns at once: the work runs on NET. */
+    /** MbrdShell.load() sets this before MainActivity's first check. */
+    static void onOffer(Announce a) {
+        announce = a;
+    }
+
+    /** The sidebar's Update row (MbrdShell.installUpdate). A downloaded update
+     *  installs; one Data Saver held back downloads first, with the dialog. */
+    static void installNow(Activity activity) {
+        File file = readyFile;
+        if (file != null && file.isFile()) {
+            Context app = activity.getApplicationContext();
+            NET.execute(() -> {
+                try {
+                    install(app, file);
+                } catch (Exception e) {
+                    toast(activity, "Android did not take the update. mbrd tries again later.");
+                }
+                // The session holds its own copy once written.
+                deleteQuietly(file);
+                readyFile = null;
+            });
+            return;
+        }
+        JSONObject apk = waiting;
+        if (apk != null) activity.runOnUiThread(() -> download(activity, apk));
+    }
+
+    /** Data Saver is on and the network is metered: no download in the background. */
+    private static boolean restricted(Context app) {
+        ConnectivityManager cm = (ConnectivityManager) app.getSystemService(Context.CONNECTIVITY_SERVICE);
+        if (cm == null) return false;
+        return cm.isActiveNetworkMetered()
+            && cm.getRestrictBackgroundStatus() == ConnectivityManager.RESTRICT_BACKGROUND_STATUS_ENABLED;
+    }
+
+    /** Where a background download waits. Not the cache, which Android may empty
+     *  before the press. */
+    private static File readyApk(Context app) {
+        return new File(new File(app.getFilesDir(), "update"), "mbrd.apk");
+    }
+
+    /** A download from an earlier run, still newer than the installed copy, is
+     *  offered again at once. One that is not is deleted. Runs on NET. */
+    private static void resumeReady(Context app) {
+        File kept = readyApk(app);
+        if (!kept.isFile()) return;
+        try {
+            verify(app, kept);
+            PackageInfo p = app.getPackageManager().getPackageArchiveInfo(kept.getPath(), 0);
+            readyFile = kept;
+            announce.send(p != null && p.versionName != null ? p.versionName : "", true);
+        } catch (Exception e) {
+            deleteQuietly(kept);
+        }
+    }
+
+    /** The daily check found `version`: download it quietly, or wait for the
+     *  press where Data Saver says so. Runs on NET, inside the check. */
+    private static void background(Context app, String version, JSONObject apk) {
+        if (restricted(app)) {
+            waiting = apk;
+            announce.send(version, false);
+            return;
+        }
+        String url = apk.optString("browser_download_url", "");
+        Matcher digest = DIGEST.matcher(apk.optString("digest", ""));
+        if (!url.startsWith("https://") || !digest.matches()) return;
+        File file = readyApk(app);
+        try {
+            save(url, file, digest.group(1), new AtomicBoolean(false), permille -> {});
+            verify(app, file);
+            readyFile = file;
+            announce.send(version, true);
+        } catch (Exception e) {
+            // Offline, or a bad file. The next day's check tries again.
+            deleteQuietly(file);
+        }
+    }
+
+    /** Called from MainActivity.onCreate. Returns at once: the work runs on NET.
+     *  A download already waiting is offered again, and no check runs. */
     static void maybeCheck(Activity activity) {
         check(activity, false);
     }
@@ -112,6 +208,8 @@ public final class MbrdUpdate {
             try {
                 // The installer copied the last update when it ran, so the file is spare now.
                 deleteQuietly(apkFile(app));
+                if (readyFile == null) resumeReady(app);
+                if (!manual && readyFile != null) return;
                 if (!manual && System.currentTimeMillis() - prefs.getLong("checked", 0) < EVERY_MS) return;
                 HttpURLConnection c = open(feed, "application/vnd.github+json");
                 JSONObject release;
@@ -127,7 +225,8 @@ public final class MbrdUpdate {
                     if (manual) toast(activity, "mbrd is up to date.");
                     return;
                 }
-                activity.runOnUiThread(() -> offer(activity, version, apk));
+                if (manual) activity.runOnUiThread(() -> offer(activity, version, apk));
+                else background(app, version, apk);
             } catch (Exception e) {
                 // Offline, or GitHub did not answer. The next start tries again.
                 if (manual) toast(activity, "mbrd could not reach GitHub. Check the connection, then try again.");
@@ -218,6 +317,7 @@ public final class MbrdUpdate {
                 failed = "The update did not download. mbrd tries again later.";
             }
             if (failed == null && !cancelled.get()) {
+                waiting = null;
                 try {
                     install(app, file);
                 } catch (Exception e) {

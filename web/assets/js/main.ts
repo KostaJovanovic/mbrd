@@ -8,7 +8,7 @@ import { toast } from './notify.ts';
 import { initErrors, setBoardProbe, reportCaught } from './errors.ts';
 import { setRiskPrompt } from './consent.ts';
 // The Electron adapter — window.mbrdDesktop is read only in this file.
-import { platform, isDesktop, refForHandle, setPlatform } from './platform/platform.ts';
+import { platform, isDesktop, refForHandle, setPlatform, setUpdateOffer } from './platform/platform.ts';
 import { electronPlatform, electronStore } from './platform/electron.ts';
 import type { Bridge } from './platform/electron.ts';
 import { setStoreBackend } from './storage/idb.ts';
@@ -211,6 +211,9 @@ initAudio();
 bus.on('layout', () => { reseedGhostCards(); syncBoardMode(true); paintGrain(vp); });
 syncBoardMode();
 initSidebar(cmds, vp);
+// An update the phone has for itself shows as the sidebar's first row. Wired
+// after buildPanel(), which built the row. The desktop never calls it.
+platform.updates.onOffer(offer => { setUpdateOffer(offer); paintPanel(); });
 initMobileHeaderEditor(vp);
 initItems(el('world')!, vp);
 initWeb(el('world')!, vp);

@@ -8,7 +8,7 @@ import type { Bridge } from '../../web/assets/js/platform/electron.ts';
 import { BOOT } from './boot.ts';
 import * as files from './files.ts';
 import * as lifecycle from './lifecycle.ts';
-import { call } from './native.ts';
+import { call, listen } from './native.ts';
 import { installDownloads, installShare } from './share.ts';
 import * as store from './store.ts';
 
@@ -67,10 +67,18 @@ const api: AndroidBridge = {
     decode: notYet('decode a picture natively'),
   }),
 
-  // MbrdUpdate.java answers in its own dialog or toast. A build with no update
-  // feed (mobile.bat) says that updates are off.
+  // MbrdUpdate.java answers a check in its own dialog or toast. A build with no
+  // update feed (mobile.bat) says that updates are off. The daily check in the
+  // background announces what it found ("update", retained), and the
+  // sidebar's Update row installs it.
   updates: Object.freeze({
     check: () => call<void>('MbrdShell', 'checkUpdates'),
+    onOffer: fn => listen('MbrdShell', 'update', data => {
+      // SAFETY: the object MbrdShell's offer listener builds, read as optional.
+      const o = (data ?? {}) as { version?: unknown, ready?: unknown };
+      fn(typeof o.version === 'string' && o.version ? { version: o.version, ready: o.ready === true } : null);
+    }),
+    install: () => call<void>('MbrdShell', 'installUpdate'),
   }),
 
   // Where the boards are, when they are not in Documents/mbrd (plan §5.4).
@@ -93,7 +101,6 @@ if (!BOOT.packaged) console.info(`[mbrd] Android shell ${BOOT.version ?? ''}, de
 installShare();
 installDownloads();
 lifecycle.installBack();
-lifecycle.installBars();
 
 Object.defineProperty(window, 'mbrdDesktop', {
   value: Object.freeze(api),

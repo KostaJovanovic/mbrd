@@ -8,6 +8,14 @@ export interface WinState {
   focused: boolean;
 }
 
+/** An update the bar's Update button offers. `install`: this copy can put it in
+ *  place itself (the Windows install, the AppImage), and it has downloaded.
+ *  Otherwise the button says how to get it (macOS, a portable copy). */
+export interface UpdateOffer {
+  version: string;
+  install: boolean;
+}
+
 /** What the bar names: the board's title, and whether it has unsaved work. */
 export interface Subject {
   title: string;
@@ -51,6 +59,10 @@ export interface ChromeBridge {
   onState(fn: (state: WinState) => void): void;
   onSubject(fn: (subject: Subject) => void): void;
   onMenuClosed(fn: () => void): void;
+  /** The update to offer, or null for no button. */
+  onUpdate(fn: (offer: UpdateOffer | null) => void): void;
+  /** The Update button was pressed. */
+  update(): void;
   /** The bar's measured height, in its own CSS pixels. */
   height(px: number): void;
   ready(): void;

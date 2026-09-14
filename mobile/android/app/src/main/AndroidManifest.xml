@@ -76,6 +76,8 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- MbrdUpdate asks whether the network is metered, for Data Saver. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Boards and the store in Documents/mbrd/ (plan §5.4). Android 7 to 10: -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
     <!-- Android 11 and later. A Play build must drop it (plan §1 #27). -->

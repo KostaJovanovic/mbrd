@@ -3,7 +3,7 @@
 // Blobs do not cross IPC; this seam converts ArrayBuffer+mime both ways.
 
 import type {
-  Platform, FilesPort, LifecyclePort, NativePort, UpdatesPort,
+  Platform, FilesPort, LifecyclePort, NativePort, UpdatesPort, UpdateOffer,
   DocumentRef, OpenedFile, PickSpec, TranscodeOpts, BoardFolder, FolderBoard,
 } from './platform.ts';
 // StoreBackend is not imported: platform/ sits below storage/ in the layer
@@ -50,6 +50,11 @@ export interface Bridge {
   };
   updates: {
     check(): Promise<void>;
+    /** An update the shell has for the page to offer, or null. Android's;
+     *  the desktop offers its own in the title bar and never calls this. */
+    onOffer(fn: (offer: UpdateOffer | null) => void): void;
+    /** Put the offered update in place. The page has saved the board. */
+    install(): Promise<void>;
   };
   startupNotes(): Promise<string>;
   setDocument(state: { title: string, name: string | null, path: string | null, dirty: boolean }): void;
@@ -288,6 +293,8 @@ function electronNative(bridge: Bridge): NativePort {
 function electronUpdates(bridge: Bridge): UpdatesPort {
   return {
     check: () => bridge.updates.check().catch(() => {}),
+    onOffer: fn => bridge.updates.onOffer(fn),
+    install: () => bridge.updates.install().catch(() => {}),
   };
 }
 

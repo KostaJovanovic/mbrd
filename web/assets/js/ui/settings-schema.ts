@@ -22,7 +22,7 @@ import { SOUND_STOPS, cueLogOn, soundLevel, setSoundLevel } from '../cuelume/eng
 import { canShareLink } from '../storage/cloud/provider.ts';
 import { syncedNow } from '../storage/cloud/sync.ts';
 import { anyConnected, cloudProviders } from '../storage/cloud/cloud.ts';
-import { isDesktop } from '../platform/platform.ts';
+import { isDesktop, updateOffer } from '../platform/platform.ts';
 
 // ---------------------------------------------------------------------------
 // What a control is
@@ -273,6 +273,24 @@ function paperHint() {
  * reads on screen and the fold is not a nesting level in the data.
  */
 export const SECTIONS: Section[] = [
+  // An update the Android app has for itself (MbrdUpdate.java), first of all
+  // and only while there is one. The phone has no title bar to put the
+  // desktop's Update button in. The press saves the board, then installs.
+  // "Update available" when Data Saver kept it from downloading on its own:
+  // the press downloads it first.
+  {
+    id: 'update', tab: 'board',
+    controls: [
+      { type: 'buttons', when: () => !!updateOffer(), buttons: [
+        { cmd: 'install-update', label: 'Update', className: 'primary', closesPanel: true,
+          when: () => !!updateOffer()?.ready,
+          title: () => `mbrd ${updateOffer()?.version.replace(/\.0$/, '') ?? ''} is ready. Your board is saved first` },
+        { cmd: 'install-update', label: 'Update available', className: 'primary', closesPanel: true,
+          when: () => updateOffer()?.ready === false,
+          title: () => 'Download the update now, then install it. Your board is saved first' },
+      ] },
+    ],
+  },
   // --- Board -------------------------------------------------------------
   {
     // Every row here names the board or produces a file out of it, down to the
