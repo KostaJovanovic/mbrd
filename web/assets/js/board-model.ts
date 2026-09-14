@@ -114,6 +114,9 @@ export type Board = {
   /** Music has been on this board at some point. Never cleared: it is what
    *  shows the sidebar's Playlist button. See ui/playlist.ts. */
   hadMusic: boolean;
+  /** Top-level board.json keys this build does not know, carried untouched
+   *  so a newer build's fields survive this one's save. Never read here. */
+  extra: Record<string, unknown>;
 };
 
 // Stored versions (v0.197) were replaced by the timeline. Old files that
@@ -296,6 +299,8 @@ export const board: Board = {
   // SAFETY: assertion prevents never[] inference.
   trash: [] as TrashEntry[],
   hadMusic: false,
+  // SAFETY: an empty object is a valid Record<string, unknown>; the assertion only stops {} being inferred.
+  extra: {} as Record<string, unknown>,
 };
 
 // NUL-separated, sorted so a-b and b-a are one key.

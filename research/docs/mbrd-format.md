@@ -99,13 +99,14 @@ paragraph got wrong by exactly the length of the name for as long as it has
 existed. It is the ODF and EPUB convention, and it is there so `file(1)` can
 name a `.mbrd` instead of shrugging and saying "Zip archive data".
 
-It is written for other software rather than for this app, and mbrd's own reader
-deliberately **does not check it**. `manifest.json`'s `format` is the answer to
-"what is this", it is stricter, and a second source for the same fact would
-disagree the first time somebody unzipped a board, edited a note and rezipped it
-with a tool that put the entries back in a different order. So a `.mbrd` whose
-`mimetype` is missing, last, or deflated is still a `.mbrd` — it has only lost
-the courtesy to everything else.
+mbrd's own reader checks it in one case only: **when `mimetype` is the first
+entry and names another type**, the file is refused as "This is not an mbrd
+board". That is another ZIP-based format renamed to `.mbrd` — an EPUB or an ODF
+document says what it is in exactly this place. In every other case the entry
+is not consulted. `manifest.json`'s `format` is still the answer to "what is
+this", and a `.mbrd` whose `mimetype` is missing, not first, or deflated is still
+a `.mbrd`: somebody may have unzipped a board, edited a note and rezipped it with
+a tool that put the entries back in a different order.
 
 Absent from every file written before it was added, which is why no reader may
 require it — and why it is a courtesy rather than the fourth thing in the list
@@ -921,10 +922,14 @@ For anyone changing this format later:
 Stated on its own because `timeline` is the field where it costs something a
 person would miss, and because the obvious protection turns out not to exist.
 
-The reader builds an explicit board object field by field, so a key it has never
-heard of is **dropped on load** — and then absent from the next file that build
-writes. A board with six months of history, opened once in an older mbrd and
-saved, comes back with none.
+The reader builds an explicit board object field by field. Builds from
+2026-09-14 on keep every top-level `board.json` key they do not know in a side
+bag (`extra`, `unknownKeys()` in `board-schema.ts`) and write it back on save,
+after everything they own, so a newer build's field survives an older one's
+save. Builds before that drop such a key **on load** — and it is then absent
+from the next file that build writes. A board with six months of history,
+opened once in one of those builds and saved, comes back with none. Keys inside
+an item other than `meta` are not carried by either.
 
 The tempting answer is to move `version` in `manifest.json` so an old build
 declines the file instead of flattening it. **That does not work, and the reason

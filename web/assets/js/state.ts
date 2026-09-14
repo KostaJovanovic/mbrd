@@ -1608,6 +1608,7 @@ export function loadBoard(data: unknown) {
   board.audioOrder = next.audioOrder;
   board.tour = next.tour;
   board.hadMusic = next.hadMusic;
+  board.extra = next.extra;
   // A filter is about the tags of the board that set it, and the board leaving
   // took those with it. Left standing, opening a second board would fade most
   // of it out for a reason that is no longer on screen anywhere. Not saved
