@@ -213,8 +213,11 @@
 #header-close {
   --plate: transparent;
   flex: none;
-  /* Centred on the head, not on the wordmark's first line. */
-  align-self: center;
+  /* As far from the panel's top edge as from its side (R35). The head pads
+     16 px above and 18 px beside, so the 2 px here makes up the difference.
+     Centred on the head it sat lower than it sat in, and read as loose. */
+  align-self: flex-start;
+  margin-top: 2px;
   width: var(--icon-button); height: var(--icon-button);
   display: grid;
   padding: 0;

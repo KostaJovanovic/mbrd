@@ -232,7 +232,8 @@
 #timeline-strip .tl-step:focus-visible { outline: none; }
 #timeline-strip .tl-step:focus-visible .tl-dot {
   outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
-  outline-offset: 1px;
+  /* Inside the 1px the cell leaves above the mark, for the clip R34 names. */
+  outline-offset: -1px;
 }
 #timeline-strip .tl-step.is-ahead::after { opacity: 0.42; }
 #timeline-strip .tl-step.is-at::after { background: var(--ink-2); }
@@ -255,8 +256,9 @@
 /* Ink veil on hover rather than paper step -- the mark fills with
    accent when current, so paper wash would add a fourth ground. */
 @media (hover: hover) {
+  /* No scale: the track clips above its marks (a scroller cannot overflow
+     one way only), so a grown mark lost its top edge (R34). */
   #timeline-strip .tl-step:hover .tl-dot {
-    transform: scale(1.15);
     background: color-mix(in srgb, var(--ink) 8%, transparent);
     color: var(--ink);
   }

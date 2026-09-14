@@ -242,9 +242,22 @@ list named auto-connect as the next one, and the app has no such command.
       (`wouldStick()` in `sticky.ts` scans the whole board on every move).
 - [ ] R24 Fences v2: a fence folds down to its name bar (roll-up), and each
       fence can have its own tint.
-- [ ] R25 A palette or whimsy change: every surface changes colour the same
+- [x] R25 A palette or whimsy change: every surface changes colour the same
       way. A tester saw some fade and some snap. List which do which, then
       make one rule.
+      - **Done, with nothing left to change.** The rule is already in
+        `tokens.css`: the fifteen colour tokens are registered with
+        `@property` and fade on `:root`, and `.is-fading` takes every other
+        transition to zero while they travel. The seam the tester saw was
+        `--accent-text` at Harsh, which jumped, and that was fixed before
+        this list. A probe sampled seventeen surfaces every frame through
+        Papyrus to Orca, Middle to Harsh and Harsh to Softish: the page, the
+        sidebar and its text, the tab labels, the buttons, the toolbar
+        icons, the Timeline and the hints. Every one fades and none snaps.
+        They land between 250 and 900 ms, because a small change reaches
+        its last visible step sooner than a large one. Checked in Chromium
+        only: Firefox and Safari, where the `.is-fading` rule matters most,
+        are not tried.
 - [ ] R26 Sweep the Feed for a fourth thing it did not inherit from the old
       phone board (the first three were the grain, the scroll-gated pen and
       the long-press menu).
@@ -295,5 +308,19 @@ list named auto-connect as the next one, and the app has no such command.
         stale history. Play has a hairline edge, a paper ground and a small
         shadow, and steps every 286 ms. The playhead shows `grab`, and
         `grabbing` while it is dragged. Checked in Chromium.
+- [x] R34 Hovering a Timeline step cuts its circle off at the top
+      (screenshot of 2026-09-14).
+      - **Done.** The track is a scroller, and a scroller clips above its
+        marks as well as beside them, so the hover's `scale(1.15)` pushed
+        the mark's top edge out of view. The hover keeps its ink veil and
+        no longer grows. The keyboard focus ring moved inside the 1 px the
+        cell leaves above the mark, for the same reason.
+- [x] R35 The sidebar's close button sits as far from the top of the panel
+      as from its side (screenshot of 2026-09-14).
+      - **Done.** It was centred on the head, so it sat lower than it sat
+        in. Now it rides the top of the head, 2 px down, which makes 19 px
+        from the top and 19 px from the side at 1100 × 800 and at 390 ×
+        844, and 15 and 15 on a landscape phone, where the head pads less.
+        The header panel's close shares the rule.
 - [ ] R30 The Android later list: `native.decode` through `ImageDecoder`, a
       foreground service for long transcodes, and the shelf as a folder tree.
