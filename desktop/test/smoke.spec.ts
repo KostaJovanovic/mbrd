@@ -51,10 +51,15 @@ async function pageAt(app: ElectronApplication, prefix: string): Promise<Page> {
   return page;
 }
 
-/** The console handle main.ts documents, once the app has finished booting. */
+/** The console handle main.ts documents, once the app has finished booting.
+ * The handle is there before start() puts the board on screen, and a read in
+ * that gap sees the blank default: the v0.381 release's macOS runner read
+ * "New board Sep 14" while the stored board was still coming back. start()
+ * puts a board with cards on it on screen in one turn, the stored one or a
+ * first run's title card, so a card on the board means the boot is over. */
 async function ready(app: ElectronApplication) {
   const page = await pageAt(app, BOARD_URL);
-  await page.waitForFunction(() => !!window.mbrd, undefined, { timeout: 60_000 });
+  await page.waitForFunction(() => (window.mbrd?.board.items.length ?? 0) > 0, undefined, { timeout: 60_000 });
   return page;
 }
 

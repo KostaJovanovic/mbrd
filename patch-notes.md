@@ -157,7 +157,7 @@ back to the board.
 ## Releases
 
 ## Unpacked
-version: 0.318 - 0.377
+version: 0.318 - 0.381
 date: 14 September 2026
 
 - **An archive drops in as one card you can open, the Timeline moved to the foot
@@ -291,7 +291,7 @@ date: 14 September 2026
   the cards near it whether it should stick.
 - **Credit where it is due:** the credits name what they had been missing - ONNX
   Runtime, u2netp, Geist Mono, the FFmpeg builds, Electron, sharp and Capacitor -
-  and libarchive.js, which opens 7z and RAR.
+  libarchive.js, which opens 7z and RAR, and LibRaw, which develops a camera RAW.
 - **Maintenance:** every gap in the stylesheets was put on one spacing rhythm, and
   the research notes were audited and tidied.
 

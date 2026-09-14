@@ -79,6 +79,16 @@ test('the builder names four files, each with the version', () => {
   }
 });
 
+test('the .deb has the homepage and the maintainer its format requires', () => {
+  // electron-builder refuses to build a .deb without both, and builds one only
+  // on Linux, so the v0.381 release was the first to find the missing homepage.
+  const pkg = JSON.parse(read(join(DESKTOP, 'package.json')));
+  assert.match(pkg.homepage ?? '', /^https:\/\/\S+$/,
+    'desktop/package.json has no homepage, and electron-builder refuses to build the .deb without one');
+  assert.match(builder, /^deb:\n(?: {2}.*\n)*? {2}maintainer: \S/m,
+    'electron-builder.yml has no maintainer under deb:, and the .deb needs one');
+});
+
 test('the updaters find the files the builder names', () => {
   const installer = exportedPattern('INSTALLER_ASSET');
   const appImage = exportedPattern('APPIMAGE_ASSET');
