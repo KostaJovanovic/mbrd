@@ -523,22 +523,41 @@
   </div>
 </div>
 
-<!-- Timeline strip (wide windows only — phones get #timeline-sheet below).
-     Filled by ui/timeline-view.js. Must be between #toolbar and #nowplaying —
-     all three are linked by `~` combinators in the CSS. Hidden to start. -->
+<!-- Timeline, docked along the foot on every width (ui/timeline-view.ts). The
+     board ends above it: its height is --dock. Must be between #toolbar and
+     #nowplaying — all three are linked by `~` combinators in the CSS. Hidden
+     until the module opens it. -->
 <div id="timeline-strip" hidden aria-label="Timeline">
-  <div class="tl-head">
-    <span class="tl-title">Timeline</span>
-    <span class="tl-where"></span>
-    <!-- Name the current step. Hidden when no step exists yet. -->
-    <button type="button" class="tl-name" hidden aria-label="Name this point" title="Name this point">
-      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-rename"/></svg>
+  <div class="tl-transport">
+    <button type="button" data-tl="first" aria-label="First step" title="First step">
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-tl-first"/></svg>
     </button>
-    <button type="button" class="tl-close" aria-label="Close the timeline" title="Close the timeline  Esc">
-      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-close"/></svg>
+    <button type="button" data-tl="back" aria-label="Step back" title="Step back">
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-tl-back"/></svg>
+    </button>
+    <button type="button" data-tl="play" aria-label="Play the history" title="Play the history" aria-pressed="false">
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-tl-play"/></svg>
+    </button>
+    <button type="button" data-tl="forward" aria-label="Step forward" title="Step forward">
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-tl-forward"/></svg>
+    </button>
+    <button type="button" data-tl="last" aria-label="Newest step" title="Newest step">
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-tl-last"/></svg>
     </button>
   </div>
-  <div class="tl-track" role="listbox" aria-label="Steps"></div>
+  <div class="tl-rail">
+    <div class="tl-track" role="listbox" aria-label="Steps"></div>
+    <!-- The marker: drag it along the steps. -->
+    <div class="tl-marker" hidden title="Drag to move through the history"></div>
+  </div>
+  <span class="tl-where"></span>
+  <!-- Name the current step. Hidden when no step exists yet. -->
+  <button type="button" class="tl-name" hidden aria-label="Name this point" title="Name this point">
+    <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-rename"/></svg>
+  </button>
+  <button type="button" class="tl-gear" aria-label="Timeline size and trim" title="Timeline size and trim">
+    <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-gear"/></svg>
+  </button>
 </div>
 
 <!-- Now-playing bar. Play/pause, track name, seek, volume, close. Built by
@@ -953,23 +972,6 @@
     <button type="button" id="inventory-optimize">Optimize</button>
     <span class="ask-gap"></span>
     <button type="button" id="inventory-close">Close</button>
-  </div>
-</dialog>
-
-<!-- Timeline sheet (narrow/phone windows — wide windows get #timeline-strip).
-     Shell only, built by ui/timeline-view.js on each open. data-words on the
-     name button tells the module this variant shows its label as text. -->
-<dialog id="timeline-sheet" aria-labelledby="tl-sheet-title">
-  <h2 id="tl-sheet-title">Timeline</h2>
-  <p id="tl-sheet-where"></p>
-  <!-- No role="listbox" (unlike the strip's track) — these are buttons, not
-       scale options. Current step marked with aria-current. -->
-  <ol id="tl-sheet-list" aria-label="Steps"></ol>
-  <div id="tl-sheet-trim"></div>
-  <div class="ask-row">
-    <button type="button" id="tl-sheet-name" data-words hidden>Name this point</button>
-    <span class="ask-gap"></span>
-    <button type="button" id="tl-sheet-close">Close</button>
   </div>
 </dialog>
 

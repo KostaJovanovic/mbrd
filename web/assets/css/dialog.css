@@ -1,12 +1,12 @@
 /* =========================================================
    dialog.css — question, credits, darkroom and inventory dialogs.
-   Shared sheet dressing for #ask, #credits, #inventory, #timeline-sheet.
+   Shared sheet dressing for #ask, #credits, #inventory.
    The note composer (#compose) is the exception: no card, no sheet.
    ========================================================= */
 
 /* Shared sheet dressing. The two selectors tie on specificity, so width
    overrides below rely on document order. */
-#ask, #credits, #inventory, #timeline-sheet, #link-props {
+#ask, #credits, #inventory, #link-props {
   max-width: min(420px, calc(100vw - 32px));
   padding: 22px 24px 18px;
   border: var(--hairline) solid var(--rule-2);
@@ -18,14 +18,13 @@
   margin: auto;
   animation: ask-in var(--dur-base) var(--ease-back);
 }
-#ask::backdrop, #credits::backdrop, #inventory::backdrop, #timeline-sheet::backdrop, #link-props::backdrop {
+#ask::backdrop, #credits::backdrop, #inventory::backdrop, #link-props::backdrop {
   /* Ink-tinted so the scrim dims into the palette instead of going grey. */
   background: color-mix(in srgb, var(--ink) 42%, transparent);
   -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
 }
-/* #timeline-sheet shares the dressing above; its layout is in timeline.css. */
-#ask h2, #credits h2, #inventory h2, #timeline-sheet h2, #link-props h2 {
+#ask h2, #credits h2, #inventory h2, #link-props h2 {
   margin: 0 0 8px;
   font-family: var(--font-display);
   font-size: var(--t-title);
@@ -825,7 +824,6 @@ button.inv-line:focus-visible {
   #ask::backdrop,
   #credits::backdrop,
   #inventory::backdrop,
-  #timeline-sheet::backdrop,
   #compose::backdrop,
   #link-props::backdrop,
   #darkroom::backdrop { background: rgb(var(--ink-c) / 42%); }

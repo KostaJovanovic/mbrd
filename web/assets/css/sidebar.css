@@ -94,7 +94,7 @@
   position: fixed;
   z-index: var(--z-overlay);
   top: max(14px, env(safe-area-inset-top));
-  bottom: max(14px, env(safe-area-inset-bottom));
+  bottom: calc(max(14px, env(safe-area-inset-bottom)) + var(--dock));
   left: max(14px, env(safe-area-inset-left));
   width: min(var(--sidebar-w), calc(100vw - 28px));
   display: flex;
@@ -123,7 +123,7 @@
   position: fixed;
   z-index: var(--z-overlay);
   top: max(14px, env(safe-area-inset-top));
-  bottom: max(14px, env(safe-area-inset-bottom));
+  bottom: calc(max(14px, env(safe-area-inset-bottom)) + var(--dock));
   right: max(14px, env(safe-area-inset-right));
   width: min(var(--sidebar-w), calc(100vw - 28px));
   display: flex;

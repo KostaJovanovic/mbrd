@@ -6,7 +6,7 @@
    Keyed off attribute not width — entry is a manual choice, tablets get them too. */
 #mobile-feed, #mobile-playlist {
   --feed-inset-top: calc(max(12px, env(safe-area-inset-top)) + var(--chrome-button-h) + 20px);
-  --feed-inset-bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--chrome-button-h) + 12px);
+  --feed-inset-bottom: calc(calc(max(12px, env(safe-area-inset-bottom)) + var(--dock)) + var(--chrome-button-h) + 12px);
   display: none;
   position: fixed;
   inset: 0;
@@ -24,7 +24,7 @@
   --feed-w: 520px;
   --pl-gutter: clamp(14px, 4.5vw, 22px);
   /* Clears the now-playing bar at the foot */
-  --feed-inset-bottom: calc(max(16px, env(safe-area-inset-bottom)) + 78px);
+  --feed-inset-bottom: calc(calc(max(16px, env(safe-area-inset-bottom)) + var(--dock)) + 78px);
 }
 
 :root[data-board-mode="mobile"]:not([data-feed-lens="playlist"]) #mobile-feed { display: block; }
@@ -812,7 +812,7 @@
   position: fixed;
   z-index: var(--z-overlay);
   right: max(16px, env(safe-area-inset-right));
-  bottom: max(16px, env(safe-area-inset-bottom));
+  bottom: calc(max(16px, env(safe-area-inset-bottom)) + var(--dock));
   width: min(340px, calc(100vw - 32px));
   max-height: min(72vh, 620px);
   display: flex;
@@ -1249,7 +1249,7 @@
     top: auto;
     left: calc(max(12px, env(safe-area-inset-left)) + var(--chrome-button-w) + var(--bar-gap));
     right: calc(max(12px, env(safe-area-inset-right)) + 2 * var(--chrome-button-w) + var(--bar-gap));
-    bottom: max(12px, env(safe-area-inset-bottom));
+    bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--dock));
     translate: none;
     height: var(--bar-h);
     /* The tier hangs outside the container, so the overflow clip the desktop bar
@@ -1371,7 +1371,7 @@
      they are changed; the phone-width pair lives there beside the others. This
      block keeps what is about the player alone. */
   #nowplaying {
-    bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--bar-h) + var(--bar-gap));
+    bottom: calc(calc(max(12px, env(safe-area-inset-bottom)) + var(--dock)) + var(--bar-h) + var(--bar-gap));
     max-width: none;
   }
   /* And a third tier while the drawer is out, because the tools took the
@@ -1383,7 +1383,7 @@
      vanishes because a drawer opened over it sounds like something that cannot
      be stopped. Same objection the idle rule answers in chrome.css. */
   #toolbar.is-open ~ #nowplaying {
-    bottom: calc(max(12px, env(safe-area-inset-bottom))
+    bottom: calc(calc(max(12px, env(safe-area-inset-bottom)) + var(--dock))
                  + var(--bar-h) + var(--bar-gap)
                  + var(--tools-h) + var(--bar-gap));
   }
@@ -1400,7 +1400,7 @@
   :is(#sidebar, #header-panel).is-open ~ #nowplaying {
     left: max(12px, env(safe-area-inset-left));
     right: max(12px, env(safe-area-inset-right));
-    bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--bar-h) + var(--bar-gap));
+    bottom: calc(calc(max(12px, env(safe-area-inset-bottom)) + var(--dock)) + var(--bar-h) + var(--bar-gap));
     opacity: 0;
     pointer-events: none;
   }
@@ -1433,7 +1433,7 @@
      bought was a control that changes sides between a phone and the laptop it
      syncs with. */
   #drawer-dock {
-    bottom: max(12px, env(safe-area-inset-bottom));
+    bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--dock));
     left: max(12px, env(safe-area-inset-left));
   }
   /* And undo and redo stay at the other end, which is the one thing about this
@@ -1449,7 +1449,7 @@
      pinned changes. */
   #history-ctl {
     position: fixed;
-    bottom: max(12px, env(safe-area-inset-bottom));
+    bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--dock));
     right: max(12px, env(safe-area-inset-right));
   }
   /* All three share one height so the foot is a single flush line. */
@@ -1459,7 +1459,7 @@
      the foot is the button row, so a line landing at its usual 24px would sit
      behind the drawer button and the add bar. Lift it clear: the row's own
      bottom, plus the row height, plus a gap. */
-  #toast { bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--bar-h) + 12px); }
+  #toast { bottom: calc(calc(max(12px, env(safe-area-inset-bottom)) + var(--dock)) + var(--bar-h) + 12px); }
   /* The window is narrowed and lifted clear of the button row it opens from -
      on a desktop it stands on the corner, and here that corner is the foot bar.
      It still hangs off the left edge, so nothing about which way it opens
@@ -1468,7 +1468,7 @@
     width: min(360px, calc(100vw - 24px));
     max-height: min(60vh, 460px);
     left: max(12px, env(safe-area-inset-left));
-    bottom: calc(max(12px, env(safe-area-inset-bottom)) + var(--bar-h) + 10px);
+    bottom: calc(calc(max(12px, env(safe-area-inset-bottom)) + var(--dock)) + var(--bar-h) + 10px);
   }
   /* And it gets out of the way almost completely while a card is being carried
      out of it, where a desktop leaves it at 30%.
@@ -1579,7 +1579,7 @@
   #sidebar,
   #header-panel {
     top: max(10px, env(safe-area-inset-top));
-    bottom: max(10px, env(safe-area-inset-bottom));
+    bottom: calc(max(10px, env(safe-area-inset-bottom)) + var(--dock));
     left: max(10px, env(safe-area-inset-left));
     right: max(10px, env(safe-area-inset-right));
     width: auto;

@@ -2,7 +2,8 @@
 
 #viewport {
   position: fixed;
-  inset: 0;
+  /* The board ends above the docked Timeline (--dock, ui/timeline-view.ts). */
+  inset: 0 0 var(--dock) 0;
   /* All gestures are ours. */
   touch-action: none;
   /* Long-press on iOS starts text selection on the whole surface; contenteditable

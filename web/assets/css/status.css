@@ -136,7 +136,7 @@
   position: fixed;
   z-index: var(--z-status);
   left: 50%;
-  bottom: max(24px, env(safe-area-inset-bottom));
+  bottom: calc(max(24px, env(safe-area-inset-bottom)) + var(--dock));
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;

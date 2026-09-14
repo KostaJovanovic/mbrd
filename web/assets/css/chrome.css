@@ -7,7 +7,7 @@
   position: fixed;
   z-index: var(--z-chrome);
   right: max(16px, env(safe-area-inset-right));
-  bottom: max(16px, env(safe-area-inset-bottom));
+  bottom: calc(max(16px, env(safe-area-inset-bottom)) + var(--dock));
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -218,9 +218,9 @@
 
    The bottom edge has furniture at both ends - the bin's row on the left, the
    zoom cluster on the right - and the space between them is where anything
-   else along that edge has to fit. Two things want it: the player, and the
-   timeline strip. So the arithmetic is named here, once, at the root, rather
-   than computed twice.
+   else along that edge has to fit. The player wants it, and so did the
+   Timeline before it docked under the whole edge. So the arithmetic is named
+   here, once, at the root, rather than computed twice.
 
    That is not tidiness. The terms below are measurements of *other rules* - the
    bin's row is three chrome buttons and a gap, the zoom cluster is a segmented
@@ -235,6 +235,9 @@
    Narrow the window and the bar shrinks instead of sliding under the furniture;
    open the sidebar and only one number changes. */
 :root {
+  /* The docked Timeline's height, 0 while it is closed. ui/timeline-view.ts
+     writes it; #viewport and everything anchored to the bottom edge add it. */
+  --dock: 0px;
   --foot-corner-w: 214px;
   --foot-gap: 12px;
   --foot-left: calc(max(16px, env(safe-area-inset-left))
@@ -254,7 +257,7 @@
 #nowplaying {
   position: fixed;
   z-index: var(--z-chrome);
-  bottom: max(16px, env(safe-area-inset-bottom));
+  bottom: calc(max(16px, env(safe-area-inset-bottom)) + var(--dock));
   left: var(--foot-left);
   right: var(--foot-right);
   max-width: 520px;
@@ -473,7 +476,7 @@
   :is(#sidebar, #header-panel).is-open ~ :is(#nowplaying, #timeline-strip) {
     --foot-left: max(16px, env(safe-area-inset-left));
     --foot-right: max(16px, env(safe-area-inset-right));
-    --foot-bottom: calc(max(16px, env(safe-area-inset-bottom))
+    --foot-bottom: calc(calc(max(16px, env(safe-area-inset-bottom)) + var(--dock))
                         + var(--chrome-button-h) + 2 * var(--hairline)  /* the zoom pill */
                         + 8px                                           /* #corner's gap */
                         + 25px                                          /* the scale bar */
@@ -718,7 +721,7 @@
 
   position: fixed;
   z-index: var(--z-chrome-over);
-  bottom: max(16px, env(safe-area-inset-bottom));
+  bottom: calc(max(16px, env(safe-area-inset-bottom)) + var(--dock));
   left: max(16px, env(safe-area-inset-left));
   right: max(16px, env(safe-area-inset-right));
   /* A fixed width, so the controls row stays put as names change length. */
@@ -739,7 +742,7 @@
 /* Above the player rather than over it. The sum is each term named: the bar's
    own height at this padding, plus the gap the player keeps from the edge. */
 #nowplaying:not([hidden]) ~ #tour {
-  bottom: calc(max(16px, env(safe-area-inset-bottom)) + 76px);
+  bottom: calc(calc(max(16px, env(safe-area-inset-bottom)) + var(--dock)) + 76px);
 }
 /* And out of the sidebar's way, on the one side it opens from. The player next
    door loses width here; this one is content-width already, so it moves. */
@@ -972,7 +975,7 @@
 :root.is-touring #sidebar.is-open ~ #tour { left: max(16px, env(safe-area-inset-left)); }
 :root.is-touring #header-panel.is-open ~ #tour { right: max(16px, env(safe-area-inset-right)); }
 :root.is-touring #nowplaying:not([hidden]) ~ #tour {
-  bottom: max(16px, env(safe-area-inset-bottom));
+  bottom: calc(max(16px, env(safe-area-inset-bottom)) + var(--dock));
 }
 
 /* ---------------------------------------------------------------------------
@@ -1008,7 +1011,7 @@
 #tour-editor {
   position: fixed;
   z-index: var(--z-chrome-over);
-  bottom: max(16px, env(safe-area-inset-bottom));
+  bottom: calc(max(16px, env(safe-area-inset-bottom)) + var(--dock));
   left: max(16px, env(safe-area-inset-left));
   right: max(16px, env(safe-area-inset-right));
   width: min(760px, 100vw - 32px);
