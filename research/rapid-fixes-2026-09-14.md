@@ -23,13 +23,21 @@ box is ticked when its commit lands.
       - **Done.** "Name this point" moved into the gear menu. The arrow keys
         walk the steps from a focused mark, Home and End go to either end.
         The Timeline row in the View menu and the panel brings the bar back.
-- [ ] R3 Desktop: when a check finds a new version, the top right of the
+- [x] R3 Desktop: when a check finds a new version, the top right of the
       window says so, with an "Update" button. A press downloads the update,
       then installs it. Today the download starts on its own in the
       background, and the install runs when the app quits (`desktop/updates.ts`).
       - The maintainer dislikes the current update pop-up. The top-right
         control replaces the native dialogs, also for Help > Check for
         updates.
+      - **Done.** A check no longer downloads. The title bar's Update
+        button says each state: Update, Downloading 42%, Restarting, Retry
+        update, and for Help > Check for updates, Checking, Up to date or
+        No updates in a dev copy. A press on Update downloads, then installs
+        and restarts. A copy that cannot replace itself opens the download
+        page, with the how in the tooltip. `desktop/updates.ts` opens no
+        dialog, and `tests/desktop-updates.test.js` holds that. Not tried
+        in a packaged app: that needs a release newer than the copy.
 - [ ] R4 Windows: the app icon still does not show on the desktop shortcut or
       in the taskbar. A fresh install of the new version did not fix it.
 - [x] R5 The Timeline loses a board rename. Rename the board, step back to

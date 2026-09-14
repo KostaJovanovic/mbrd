@@ -8,12 +8,24 @@ export interface WinState {
   focused: boolean;
 }
 
-/** An update the bar's Update button offers. `install`: this copy can put it in
- *  place itself (the Windows install, the AppImage), and it has downloaded.
- *  Otherwise the button says how to get it (macOS, a portable copy). */
+/** What the bar's Update button says (desktop/updates.ts). `available`: a
+ *  newer version this copy can install, and a press downloads it, then
+ *  installs it. `downloading` counts `progress` from 0 to 1. `installing`:
+ *  the app is closing into the new version. `manual`: this copy cannot
+ *  replace itself (macOS, a portable copy), and a press opens the download
+ *  page. `failed`: a press tries again. `checking`, `current` and `dev`
+ *  answer Help > Check for updates, and pass. */
+export type UpdateState =
+  'available' | 'downloading' | 'installing' | 'manual' | 'failed' | 'checking' | 'current' | 'dev';
+
 export interface UpdateOffer {
+  state: UpdateState;
+  /** The version on offer, or '' for an answer about none. */
   version: string;
-  install: boolean;
+  /** How much has downloaded, from 0 to 1, while `downloading`. */
+  progress?: number;
+  /** The button's tooltip: the whole sentence the word stands for. */
+  note: string;
 }
 
 /** What the bar names: the board's title, and whether it has unsaved work. */

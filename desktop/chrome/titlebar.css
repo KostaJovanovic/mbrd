@@ -121,12 +121,35 @@ body {
   padding: 0 12px;
   color: #2f9e5a;
   font-weight: 600;
+  /* The percentage counts without the button changing width. */
+  font-variant-numeric: tabular-nums;
 }
 .tb-update[hidden] { display: none; }
 @media (hover: hover) {
-  .tb-update:hover { background: var(--paper-2); color: #248049; }
+  .tb-update:not(:disabled):hover { background: var(--paper-2); color: #248049; }
+  .tb-update:disabled:hover { background: none; color: #2f9e5a; }
 }
-.tb-update:active { background: var(--paper-3); color: #248049; }
+.tb-update:not(:disabled):active { background: var(--paper-3); color: #248049; }
+.tb-update:disabled { cursor: default; }
+
+/* Every answer about updates is said on this button (desktop/updates.ts):
+   the arrow only on the states a press acts on. */
+.tb-update:not([data-state="available"], [data-state="manual"], [data-state="failed"]) svg { display: none; }
+/* The download fills the button from the left as it comes. */
+.tb-update[data-state="downloading"],
+.tb-update[data-state="downloading"]:hover {
+  background: linear-gradient(to right,
+    color-mix(in srgb, #2f9e5a 16%, transparent) calc(var(--progress, 0) * 100%),
+    transparent 0);
+}
+/* Answers to Help > Check for updates, and the restart: said, not offered. */
+.tb-update:is([data-state="checking"], [data-state="current"], [data-state="dev"], [data-state="installing"]),
+.tb-update:is([data-state="checking"], [data-state="current"], [data-state="dev"], [data-state="installing"]):hover {
+  color: var(--ink-3);
+  font-weight: 400;
+}
+.tb-update[data-state="failed"],
+.tb-update[data-state="failed"]:not(:disabled):hover { color: var(--danger); }
 
 /* flex: none, and it is the one group that must never lose it: the buttons are
    the only way to close a frameless window. */
