@@ -376,7 +376,7 @@ const MIN_THUMB = 24;
 /**
  * The scrollbar over the steps, drawn by the page. The track's own is hidden:
  * the website drew a styled one, and the desktop app on Windows drew the
- * system's grey slab under the marks (research/rapid-fixes-2026-09-14.md,
+ * system's grey slab under the marks (research/old/done-2026-09-15.md,
  * R1). This one is the same everywhere, and sits above the marks.
  */
 function paintScroll() {

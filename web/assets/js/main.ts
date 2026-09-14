@@ -215,7 +215,7 @@ initSidebar(cmds, vp);
 // What the phone's updater says. An offer shows as the sidebar's first row,
 // wired after buildPanel(), which built the row. A passing answer to Check for
 // updates is the page's own toast, never a pop-up of the system's
-// (research/rapid-fixes-2026-09-14.md, R7). The desktop never calls it.
+// (research/old/done-2026-09-15.md, R7). The desktop never calls it.
 platform.updates.onOffer(offer => {
   if (offer?.state === 'said') {
     if (offer.note) toast(offer.note);

@@ -1,7 +1,7 @@
 // A change that is not a Timeline step must survive a trip through the
 // Timeline. A replay starts from a stored board, and every write the ledger
 // did not record used to vanish on the way back: rename the board, step back,
-// step forward, and the old name returned (research/rapid-fixes-2026-09-14.md,
+// step forward, and the old name returned (research/old/done-2026-09-15.md,
 // R5). The last test walks every board field the ledger keeps, so a field
 // added later fails here until it rides a trip too.
 

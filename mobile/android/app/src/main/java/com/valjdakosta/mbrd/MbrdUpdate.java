@@ -54,7 +54,7 @@ import org.json.JSONObject;
  * nothing downloads, and a press on the row downloads it in the foreground,
  * with the row counting. The panel's "Check for updates" answers on the page
  * too: the row for a new version, the page's toast otherwise. Nothing here
- * opens a dialog (research/rapid-fixes-2026-09-14.md, R7). Android's own
+ * opens a dialog (research/old/done-2026-09-15.md, R7). Android's own
  * install-confirm screen, below, is the system's. Every download checks its SHA-256, its package name
  * and that its versionCode is higher, and an install writes it into a
  * PackageInstaller session. On Android 12 and later the session asks for no

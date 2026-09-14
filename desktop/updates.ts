@@ -5,7 +5,7 @@
 // installs. No electron-updater, no latest.yml. A dev copy never checks.
 // Every answer goes to the title bar's Update button, never a native dialog. A
 // check finds a new version, and a press on Update downloads it, then installs
-// it (research/rapid-fixes-2026-09-14.md, R3).
+// it (research/old/done-2026-09-15.md, R3).
 
 import { app, net, shell } from 'electron';
 import { spawn } from 'node:child_process';

@@ -2296,7 +2296,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // the photograph, and the photograph is not looking for a host. Asking
       // about the star would light up whatever it is about to be carried over.
       // Only the cards the spatial index holds around the note are asked, not
-      // the whole board on every move (research/rapid-fixes-2026-09-14.md, R23).
+      // the whole board on every move (research/old/done-2026-09-15.md, R23).
       const leadItem = byId(drag.lead);
       const at = isSticky(leadItem)
         ? { x: lead.x + dx, y: lead.y + dy, w: leadItem.w, h: leadItem.h }

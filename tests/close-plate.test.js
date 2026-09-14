@@ -1,6 +1,6 @@
 // The two panel closes draw their hover plate and their cross in one svg the
 // size of the button, so the ink and the plate cannot come apart
-// (research/rapid-fixes-2026-09-14.md, R10). A 15 px glyph grid-centred on a
+// (research/old/done-2026-09-15.md, R10). A 15 px glyph grid-centred on a
 // background plate sat at a half pixel, and both engines snapped the two
 // differently. This holds the numbers that keep the two centres one: the
 // viewBox is the button, the plate fills it, the cross sits at its middle, and

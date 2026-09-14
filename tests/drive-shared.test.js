@@ -1,4 +1,4 @@
-// The list behind Shared links (research/rapid-fixes-2026-09-14.md, R13):
+// The list behind Shared links (research/old/done-2026-09-15.md, R13):
 // what it asks Drive for, and the order it hands back. A share names no
 // parent and so lands at the top of My Drive, where the only other thing of
 // this app's is the mbrd folder the synced boards live in.

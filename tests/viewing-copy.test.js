@@ -1,4 +1,4 @@
-// The viewing copy a share link can send (research/rapid-fixes-2026-09-14.md,
+// The viewing copy a share link can send (research/old/done-2026-09-15.md,
 // R13): smaller pictures, posters for clips, no bin and no history - and
 // through boardAssetHashes(), which tests/mbrd.test.js binds to the packer,
 // a file that carries none of the originals it replaced.

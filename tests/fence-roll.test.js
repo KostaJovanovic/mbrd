@@ -1,4 +1,4 @@
-// Fences v2 (research/rapid-fixes-2026-09-14.md, R24): a fence rolls up to its
+// Fences v2 (research/old/done-2026-09-15.md, R24): a fence rolls up to its
 // name bar with its cards out of sight, and takes a colour of its own. What is
 // out of sight is out of reach too - select-all passes it by, and Find rolls
 // the fence down to show it. Both are meta on the fence, one undo step each.

@@ -289,7 +289,7 @@ export function fileCommands() {
       } finally { packing.end(); }
 
       // A board heavy with photographs and video can go as a viewing copy
-      // (research/rapid-fixes-2026-09-14.md, R13), and whoever opens the link
+      // (research/old/done-2026-09-15.md, R13), and whoever opens the link
       // sees the board after a fraction of the wait.
       if (viewing && viewing.blob.size <= packed.blob.size * VIEWING_GAIN) {
         const choice = await ask({
@@ -347,7 +347,7 @@ export function fileCommands() {
       await handOverLink(link);
     },
     // Every link this account has shared, each with Copy link and Stop sharing
-    // (research/rapid-fixes-2026-09-14.md, R13). A menu hung off the panel's
+    // (research/old/done-2026-09-15.md, R13). A menu hung off the panel's
     // button, since ui/menu.ts draws every list of rows in the app.
     sharedLinks: async () => {
       const btn = document.querySelector<HTMLElement>('[data-cmd="shared-links"]');

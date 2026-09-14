@@ -192,7 +192,7 @@ const ORPHAN_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Move to the trash every asset in the folder that the board just written no
- * longer names, once it is older than ORPHAN_MS (research/rapid-fixes-2026-09-14.md,
+ * longer names, once it is older than ORPHAN_MS (research/old/done-2026-09-15.md,
  * R13). After board.json, never before: until it lands, the board up there is
  * the older one, and it may still name them. The trash, not a delete, as purge
  * does: thirty days to get one back. A file that will not go stays for the next

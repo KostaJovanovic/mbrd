@@ -1668,7 +1668,7 @@ the bridge directly, so the page is never trusted to name a path.
 JSON has no comments, and these notes lived in its `description` until the
 installer wrote that description into every shortcut. The quotes in it broke
 the shortcut's line, and the icon field held a slice of the prose, so Windows
-drew no icon (research/rapid-fixes-2026-09-14.md, R4). The description is now
+drew no icon (research/old/done-2026-09-15.md, R4). The description is now
 the app's name, and `tests/desktop-icon.test.js` keeps it short and plain.
 
 - **A second package** rather than dependencies on the root one, which

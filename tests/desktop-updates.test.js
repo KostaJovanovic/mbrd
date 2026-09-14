@@ -1,6 +1,6 @@
 // The desktop's updates answer on the title bar's Update button, never in a
 // native dialog, and download only when that button is pressed
-// (research/rapid-fixes-2026-09-14.md, R3). Read as text: the updater runs in
+// (research/old/done-2026-09-15.md, R3). Read as text: the updater runs in
 // Electron's main process, which no test here can start.
 
 import { test } from 'node:test';

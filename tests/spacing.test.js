@@ -1,4 +1,4 @@
-// The spacing rhythm (research/rapid-fixes-2026-09-14.md, R17, from the
+// The spacing rhythm (research/old/done-2026-09-15.md, R17, from the
 // design audit's D4): every pixel gap in the stylesheets is 2, 4, 6, 8 or 12.
 // Thirteen values were in use, every integer from 1 to 10 among them, and a
 // gap nobody chose is how they got there. A 1px gap is a seam, not spacing:
