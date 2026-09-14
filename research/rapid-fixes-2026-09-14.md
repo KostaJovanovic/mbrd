@@ -248,7 +248,16 @@ list named auto-connect as the next one, and the app has no such command.
 - [ ] R26 Sweep the Feed for a fourth thing it did not inherit from the old
       phone board (the first three were the grain, the scroll-gated pen and
       the long-press menu).
-- [ ] R27 A `.docx` with no baked thumbnail shows page one on its card.
+- [x] R27 A `.docx` with no baked thumbnail shows page one on its card.
+      - **Done.** New `import/page-one.ts` reads `word/document.xml` and sets
+        page one on a page of the file's own size and margins: the text in
+        the built-in styles' default looks (title, subtitle, headings, body,
+        list bullets), inline pictures shrunk to the text width, and tables
+        as rows of text. It stops at the foot of page one. It runs only when
+        the file has no baked thumbnail, after the deck path in
+        `import/drop.ts`. `tests/page-one.test.js` holds the page box and the
+        flow. Checked in Chromium with a python-docx file. A card imported
+        before this keeps its grey face until it is dropped again.
 - [ ] R28 Linux: a `.deb` beside the AppImage, so a double-click opens a
       `.mbrd` file.
 - [ ] R29 Camera RAW photos, the way FileAnalyser does them:
