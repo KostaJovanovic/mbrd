@@ -354,7 +354,7 @@
    canvas chip keeps its restrained size. */
 .feed-embed .embed-go {
   padding: 11px 18px 11px 15px;
-  gap: 9px;
+  gap: 8px;
   font-size: var(--t-body);
 }
 .feed-embed .embed-go svg { width: 19px; height: 19px; }
@@ -526,7 +526,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 18px;
+  gap: 12px;
   padding: 30px var(--pl-gutter, 20px) 22px;
   text-align: center;
 }
@@ -609,7 +609,7 @@
   font-variant-numeric: tabular-nums;
   color: var(--ink-3);
 }
-.pl-hero-actions { display: flex; gap: 10px; justify-content: center; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+.pl-hero-actions { display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap; margin-top: 10px; }
 /* Big, and they can be: they are the only controls on the lens now that the
    transport is the bar at the foot of the window. Two weights rather than two of
    the same button - Play is what this header is for and carries the fill,
@@ -620,7 +620,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 8px;
   padding: 15px 26px;
   border-radius: var(--radius-pill);
   font-family: var(--font-body);

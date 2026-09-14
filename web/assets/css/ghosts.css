@@ -17,7 +17,7 @@
   border: var(--board-ghost-weight) dashed var(--ghost-edge);
   border-radius: inherit;
   justify-content: center;
-  gap: 5px;
+  gap: 4px;
   --card-pad-x: 18px;
   --card-pad-y: 16px;
 }
@@ -57,7 +57,7 @@
 .ghost-keys {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 6px;
   font-family: var(--font-body);
   font-size: 12px;
   line-height: 1.2;
@@ -66,7 +66,7 @@
 .ghost-key {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
 }
 .ghost-key .ico {
   flex: none;

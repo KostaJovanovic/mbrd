@@ -347,7 +347,7 @@
 .doc-table th { background: var(--paper-3); font-weight: 600; }
 
 /* Pages (comic, PDF) in one column. Canvas needs explicit height:auto. */
-.doc-pages { display: flex; flex-direction: column; gap: 10px; align-items: center; }
+.doc-pages { display: flex; flex-direction: column; gap: 12px; align-items: center; }
 .doc-page {
   max-width: 100%;
   height: auto;

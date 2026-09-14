@@ -178,7 +178,7 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
   padding: 16px 18px 14px;
   border-bottom: 1px solid var(--rule);
 }
@@ -342,7 +342,7 @@
 .field-pair {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 0 10px;
+  gap: 0 8px;
   /* Bottoms aligned — keeps controls level when one label wraps. */
   align-items: end;
 }
@@ -394,7 +394,7 @@
   transition: background var(--dur-fast) var(--ease);
 }
 .field-picker:hover::after { background: var(--accent); }
-.field-picker-chips { flex: none; display: flex; gap: 3px; }
+.field-picker-chips { flex: none; display: flex; gap: 2px; }
 .field-picker-chips > i {
   width: 11px;
   height: 11px;
@@ -409,7 +409,7 @@
 .advanced > summary {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   padding: 5px 0;
   cursor: pointer;
   list-style: none;
@@ -692,7 +692,7 @@
 .check {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding: 5px 0;
   cursor: pointer;
 }
@@ -764,7 +764,7 @@ kbd {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
 }
 /* Button dressed as text — inherits the row's font/size/colour. */
 .side-foot .by {

@@ -155,7 +155,7 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   padding: 0 24px;
   /* Optical centring — box-centred reads low. */
   transform: translateY(-4%);

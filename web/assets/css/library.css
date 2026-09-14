@@ -30,7 +30,7 @@
 .library-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding: 13px 16px;
   border-bottom: var(--hairline) solid var(--rule);
 }
@@ -73,7 +73,7 @@
 .library-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 14px;
+  gap: 12px;
   padding: 16px;
   overflow-y: auto;
 }
@@ -235,7 +235,7 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 8px;
   padding: 10px 16px;
   border-top: var(--hairline) solid var(--rule);
 }

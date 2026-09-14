@@ -207,7 +207,7 @@ textarea.lp-url {
   background: none;
   flex-direction: column;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
   overflow: visible;
   animation: ask-in var(--dur-base) var(--ease-back);
 }
@@ -275,13 +275,13 @@ textarea.lp-url {
   padding: 0;
   list-style: none;
   display: grid;
-  gap: 18px;
+  gap: 12px;
 }
 .credit {
   display: grid;
   grid-template-columns: auto 1fr;
   align-items: start;
-  gap: 14px;
+  gap: 12px;
 }
 /* Always round — faces are people, not items, so the radius ignores the
    whimsy axis. object-fit covers because sources may not be square. */
@@ -488,7 +488,7 @@ textarea.lp-url {
   animation: ask-in var(--dur-base) var(--ease-back);
 }
 /* display:flex on [open] only — see #compose for why. */
-#darkroom[open] { display: flex; flex-direction: column; gap: 14px; }
+#darkroom[open] { display: flex; flex-direction: column; gap: 12px; }
 #darkroom::backdrop {
   background: color-mix(in srgb, var(--ink) 42%, transparent);
   -webkit-backdrop-filter: blur(2px);
@@ -658,7 +658,7 @@ textarea.lp-url {
 .dk-tool {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   padding: 6px 12px 6px 10px;
   font: inherit;
   font-size: var(--t-small);

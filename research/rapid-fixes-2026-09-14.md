@@ -191,9 +191,20 @@ box is ticked when its commit lands.
         bottom bar, as now. Only the sides and the corners change.
 - [x] R20 Feed: the search button moves to the top right. When the pen button
       shows, the search button sits to the pen's left.
-- [ ] R17 The spacing rhythm (design audit D4): the 13 different `gap`
+- [x] R17 The spacing rhythm (design audit D4): the 13 different `gap`
       values across 20 stylesheets move to 2/4/6/8/12, one sheet at a time,
       with the app open to check each by eye.
+      - **Done.** Fifty gaps in eighteen sheets moved to the nearest step.
+        An odd value went down where a card has a fixed size, so no text
+        can fall off its foot: 3 to 2, 5 to 4, 7 to 6, 9 to 8. A 10 went to
+        8 inside a row or a bar and to 12 between pages, 14 went to 12, and
+        the two 18s went to 12. A 1px gap stays: it is a seam, the hairline
+        between waveform bars or buttons that nearly touch. Relative gaps
+        (em, calc, var, clamp) scale with something and stay.
+        `tests/spacing.test.js` holds every pixel gap to the rhythm. Checked
+        by eye before and after: the hint cards, a style tile, the item
+        menu, the three sidebar tabs, the board list, the colour picker and
+        the Feed.
 - [ ] R18 A clutter pass at phone width, the way `research/ui-clutter-2026-08-15.md`
       audited the desktop. First the list of what to cut, for the maintainer
       to choose from, then the cuts.

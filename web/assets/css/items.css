@@ -182,7 +182,7 @@
   padding: var(--card-pad-y) var(--card-pad-x);
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 6px;
   border-radius: inherit;
   background: var(--paper-card);
   /* Inset shadow instead of border — a real border is shaved by .item's clip. */
@@ -311,7 +311,7 @@
   align-items: center;
   justify-content: center;
   text-align: center;
-  gap: 5px;
+  gap: 4px;
   color: var(--ink-3);
 }
 .gone-card .card-icon { color: var(--ink-3); }
@@ -351,7 +351,7 @@
    neutral constant — a full-bleed swatch would be judged against its
    neighbours rather than against something neutral. */
 .swatch-card {
-  gap: 9px;
+  gap: 8px;
   align-items: stretch;
 }
 
@@ -381,7 +381,7 @@
    has a fixed height. Nothing here names a colour — the renderer hands
    live tokens via --chip so the tile follows palette changes. */
 .style-tile-card {
-  gap: 10px;
+  gap: 8px;
   align-items: stretch;
 }
 /* The caption plate would sit over the face names at the foot, so it rests
@@ -397,7 +397,7 @@
   flex: 1;
   min-height: 0;
   display: flex;
-  gap: 5px;
+  gap: 4px;
 }
 
 /* Cover-cropped into equal boxes — a style tile is about register, not
@@ -417,13 +417,13 @@
   flex: none;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 6px 5px;
+  gap: 6px 4px;
 }
 
 .style-tile-swatch {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
   min-width: 0;
   padding: 0;
   border: 0;

@@ -128,14 +128,14 @@
    over: --note-scale is set *on this element* by applyNoteStyle, and a custom
    property is substituted where it is declared. A `--note-gap` declared on the
    item would read the scale off the item, where it is not set, and inherit the
-   answer down already multiplied by 1. The 9px is the old box-keyed gap at the
-   240px default. */
+   answer down already multiplied by 1. The 8px is the old box-keyed 9px gap at
+   the 240px default, put on the spacing rhythm (tests/spacing.test.js). */
 .item[data-type="note"] .note-rich {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: calc(9px * var(--note-scale, 1));
+  gap: calc(8px * var(--note-scale, 1));
   overflow: hidden;
   font-family: var(--font-display);
   color: var(--ink);
@@ -243,7 +243,7 @@
      it is never scaled by zoom nor clipped by the item box. */
   position: fixed;
   display: flex;
-  gap: 10px;
+  gap: 8px;
   padding: 8px 10px;
   /* --ogee, because that is what this is: a panel with controls in it. It read
      var(--radius-md, 14px) for a long time and --radius-md has never existed,
@@ -267,7 +267,7 @@
 /* Desktop float: JS sets left/top (top-left the anchor point); centre on it. */
 .note-toolbar.is-float { transform: translateX(-50%); transform-origin: 50% 0; }
 
-.note-toolbar .ntb-group { display: flex; gap: 3px; align-items: center; }
+.note-toolbar .ntb-group { display: flex; gap: 2px; align-items: center; }
 .note-toolbar .ntb-group + .ntb-group {
   margin-left: 5px;
   padding-left: 10px;
