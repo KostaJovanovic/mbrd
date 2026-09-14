@@ -175,6 +175,31 @@ export function fenceMembers(fenceId: string) {
   return board.items.filter(it => fenceOf(it)?.id === fenceId);
 }
 
+/** Is this a fence rolled up to its name bar (meta.rolled)? */
+export const isRolled = (it: Item | null | undefined) => isFence(it) && it.meta?.rolled === true;
+
+/** The ids of every rolled-up fence. One walk, handed to rolledAway() per card. */
+export function rolledFences(): Set<string> {
+  return new Set(board.items.filter(isRolled).map(f => f.id));
+}
+
+/**
+ * Is this item out of sight inside a rolled-up fence? The whole chain counts: a
+ * card in a fence inside a rolled one is folded away with it. The rolled fence
+ * itself is not, since its bar is what is left to press. Desktop geometry, as
+ * every containment answer here is.
+ */
+export function rolledAway(it: Boxed | null | undefined, rolled: Set<string> = rolledFences()): boolean {
+  if (!it || !rolled.size) return false;
+  let fence = fenceOf(it);
+  // Bounded: containment is a strict order by area, so the chain cannot loop.
+  for (let depth = 0; fence && depth < 64; depth++) {
+    if (rolled.has(fence.id)) return true;
+    fence = fenceOf(fence);
+  }
+  return false;
+}
+
 /**
  * Mobile column as ordered runs: `{ band, items }[]`, for the Mobile layout and
  * the Feed alike. A fence's run ranks where its earliest member does, so fence

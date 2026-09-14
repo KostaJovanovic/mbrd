@@ -675,8 +675,17 @@ compatibility note below, which this field is now the reason for.
 ### Fences
 
 A **fence** is an item of `type: "fence"` — a labelled rectangle, with the cards
-inside it belonging to it. Its `name` is the label; it carries no asset and its
-`meta` is empty but for the membership key below.
+inside it belonging to it. Its `name` is the label; it carries no asset, and its
+own `meta` holds at most two keys:
+
+- `tint`: an integer 1–4, the note sheet its region is washed in. Absent is the
+  plain well.
+- `rolled`: `true` when the fence is rolled up to its name bar, with every card
+  inside it out of sight on the canvas. Absent is open. It is a way of showing
+  the board, and nothing moves: the cards keep their places, and the fence
+  keeps its full size for when it rolls down. The Feed ignores it.
+
+Members carry the membership key below.
 
 **Membership is not a list, and there is deliberately nothing here that holds
 one.** A card is in a fence when its centre falls inside the fence's rectangle,

@@ -271,8 +271,23 @@ list named auto-connect as the next one, and the app has no such command.
         rotated card is never missed. A test in `state-sticky.test.js` holds
         the near answer to the full scan over 300 drops on 120 rotated cards.
         Without the list, the whole board is scanned as before.
-- [ ] R24 Fences v2: a fence folds down to its name bar (roll-up), and each
+- [x] R24 Fences v2: a fence folds down to its name bar (roll-up), and each
       fence can have its own tint.
+      - **Done.** A fence's item menu has Colour (None, then the four note
+        sheets under the Note flyout's names) and Roll up / Roll down. Both
+        are meta on the fence (`tint` 1-4, `rolled: true`), one undo step
+        each, and survive a save.
+      - Rolled up, the fence draws only its name bar, as a tab in its
+        colour, and keeps its full size for when it rolls down. Every card
+        inside it, nested fences included, is hidden (`is-rolled-away`,
+        `paintRolled()` in `canvas/items.ts`) and out of reach: the marquee,
+        Ctrl+A and the connection lines pass it by. Find rolls down every
+        fence that hides the card it picks. The cards keep their places, so
+        a moved fence still carries them. The Feed ignores the roll.
+      - A `.mbrd` schema addition: two `meta` keys on a fence, written in
+        `mbrd-format.md`. An older reader carries them through.
+      - Tests: seven in `fence-roll.test.js`. Checked in Chromium: tint,
+        menu, roll, Ctrl+A and Find.
 - [x] R25 A palette or whimsy change: every surface changes colour the same
       way. A tester saw some fade and some snap. List which do which, then
       make one rule.

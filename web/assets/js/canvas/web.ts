@@ -5,7 +5,7 @@
 
 import {
   board, bus, byId, isRider, isJoinEnd, baseStep, selection, pairKey, stuckFollowers,
-  itemBare,
+  itemBare, rolledAway, rolledFences,
 } from '../state.ts';
 import type { ConnMeta, Item } from '../board-model.ts';
 import { rafThrottle, readToken } from '../util.ts';
@@ -355,8 +355,10 @@ function cardOf(it: Item, maxLean: number): Card {
  *  between them reads as blocked. Matches the export in ui/snapshot.ts. */
 function centres(): Card[] {
   const maxLean = drawnTilt();
+  // A card folded away in a rolled-up fence is no end: its lines go with it.
+  const rolled = rolledFences();
   return board.items
-    .filter(i => !isRider(i) && isJoinEnd(i) && i.type !== 'fence')
+    .filter(i => !isRider(i) && isJoinEnd(i) && i.type !== 'fence' && !rolledAway(i, rolled))
     .map(i => cardOf(i, maxLean));
 }
 
@@ -1082,7 +1084,7 @@ export function setDraftFrom(id: string | null) {
 /** One item's box in this layer's coordinates - centres() for a single id. */
 function boxOf(id: string): Card | null {
   const it = byId(id);
-  if (!it || isRider(it) || !isJoinEnd(it) || it.type === 'fence') return null;
+  if (!it || isRider(it) || !isJoinEnd(it) || it.type === 'fence' || rolledAway(it)) return null;
   return cardOf(it, drawnTilt());
 }
 
