@@ -403,6 +403,25 @@ export function setSwatchHex(id: string, hex: unknown) {
 }
 
 /**
+ * Whether two note block models say the same thing, field by field like the
+ * other same*() helpers here. JSON.stringify on both depended on key order,
+ * and serialised the whole model twice on every editor commit to ask.
+ */
+function sameRich(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (!isRecord(a) || !isRecord(b)) return false;
+  if (a.font !== b.font || a.size !== b.size || a.valign !== b.valign) return false;
+  const x = a.blocks;
+  const y = b.blocks;
+  if (!Array.isArray(x) || !Array.isArray(y) || x.length !== y.length) return false;
+  return x.every((block: unknown, i) => {
+    const other: unknown = y[i];
+    return isRecord(block) && isRecord(other) && block.tag === other.tag &&
+      block.align === other.align && block.text === other.text && block.wash === other.wash;
+  });
+}
+
+/**
  * Commit a note's formatted content - the structured `meta.rich` and the
  * plaintext `meta.text` it flattens to - as one undoable step, so a single
  * Ctrl+Z takes back the whole edit rather than the two halves separately. A
@@ -420,7 +439,7 @@ export function setNoteContent(id: string, rich: unknown, text: unknown) {
   const prevRich = it.meta.rich;
   const prevText = it.meta.text;
   const prevName = it.name;
-  if (prevText === next && JSON.stringify(prevRich) === JSON.stringify(rich)) return;
+  if (prevText === next && sameRich(prevRich, rich)) return;
   const write = (t: string, r: unknown, nm: string) => {
     const x = byId(id);
     if (!x) return;

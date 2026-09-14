@@ -154,8 +154,15 @@ export function initDrop(vp: DropViewport) {
   let depth = 0;                       // dragenter/dragleave fire per child element
   let lastPoint: Point | null = null;
 
+  // The overlay also hides when dragover stops arriving. dragover fires every
+  // few hundred ms while a drag is over the window, and a drag that leaves it
+  // without a matching dragleave (GTK does this) otherwise left the overlay up
+  // for good, since the depth count never came back to zero.
+  const DRAG_IDLE_MS = 600;
+  let idle = 0;
   const show = () => { overlay.hidden = false; };
-  const hide = () => { depth = 0; overlay.hidden = true; };
+  const hide = () => { depth = 0; clearTimeout(idle); overlay.hidden = true; };
+  const stillDragging = () => { clearTimeout(idle); idle = window.setTimeout(hide, DRAG_IDLE_MS); };
 
   // Type-guard predicate: narrows dt so handlers can read the payload they accepted.
   const takes = (dt: DataTransfer | null): dt is DataTransfer => hasFiles(dt) || hasLink(dt);
@@ -165,6 +172,7 @@ export function initDrop(vp: DropViewport) {
     e.preventDefault();
     depth++;
     show();
+    stillDragging();
   });
 
   addEventListener('dragover', e => {
@@ -172,7 +180,11 @@ export function initDrop(vp: DropViewport) {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
     lastPoint = { x: e.clientX, y: e.clientY };
+    stillDragging();
   });
+
+  // A drag that ends anywhere, dropped or cancelled, takes the overlay with it.
+  addEventListener('dragend', hide);
 
   addEventListener('dragleave', e => {
     if (!takes(e.dataTransfer)) return;
