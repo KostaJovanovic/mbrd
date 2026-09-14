@@ -2,8 +2,8 @@
 // content-addressed assets/, notes/, waveforms/. One self-contained file.
 // Items reference bytes as `asset: { hash, embedded: true }`.
 
-import { writeZip, readZip } from './zip.ts';
-import type { ZipEntry } from './zip.ts';
+import { appendZip, readZip, writeZip, writeZipLayout } from './zip.ts';
+import type { ZipEntry, ZipLayout } from './zip.ts';
 import { getAsset, putAsset } from './assets.ts';
 import type { Asset } from './assets.ts';
 import { sha256 } from '../crypto.ts';
@@ -104,10 +104,40 @@ export function boardAssetHashes(boardData: PackedBoard): Set<string> {
  * Only hashes still referenced by an item are written, so deleting an item and
  * saving actually shrinks the file.
  */
-export async function packBoard(
+export async function packBoard(boardData: PackedBoard, opts: PackOptions = {}) {
+  const { entries, manifest, now } = await boardEntries(boardData, opts);
+  return { blob: await writeZip(entries, { date: now, mime: MIME }), manifest };
+}
+
+/**
+ * A save to the board's own file. Whole, or - given `prior`, where the last
+ * write to that file left each entry - only what changed, as a tail for the
+ * shell to append (appendZip() in zip.ts). `appended` says which `blob` is.
+ *
+ * An asset's name carries its hash, so the same name is the same bytes and it
+ * is never read to be compared. The rest are small and compared by checksum.
+ * The file is written whole again when more than half of it would be dead
+ * bytes: that save costs a whole write, and gives the space back.
+ */
+export async function packBoardFile(
+  boardData: PackedBoard, { prior = null, ...opts }: PackOptions & { prior?: ZipLayout | null } = {},
+) {
+  const { entries, manifest, now } = await boardEntries(boardData, opts);
+  const zip = { date: now, mime: MIME };
+  if (prior) {
+    const { tail, layout, waste } = await appendZip(entries, prior, name => name.startsWith(ASSETS_DIR), zip);
+    if (waste * 2 <= layout.size) return { blob: tail, manifest, layout, appended: true };
+  }
+  const { blob, layout } = await writeZipLayout(entries, zip);
+  return { blob, manifest, layout, appended: false };
+}
+
+type PackOptions = { created?: string | null, allowMissing?: boolean };
+
+/** Every entry a .mbrd of this board holds, in the order they are written. */
+async function boardEntries(
   boardData: PackedBoard,
-  { created = null, allowMissing = false }:
-    { created?: string | null, allowMissing?: boolean } = {},
+  { created = null, allowMissing = false }: PackOptions = {},
 ) {
   const now = new Date();
   const manifest = {
@@ -231,7 +261,7 @@ export async function packBoard(
     entries.push({ name: waveformFile(hash), data: enc.encode(waveformJSON(peaks)), compress: true });
   }
 
-  return { blob: await writeZip(entries, { date: now, mime: MIME }), manifest };
+  return { entries, manifest, now };
 }
 
 /** The note's text from meta, narrowed once for the three readers below. */

@@ -43,6 +43,8 @@ const api: AndroidBridge = {
     pickSave: files.pickSave,
     pickImport: files.pickImport,
     write: files.write,
+    // The page writes a phone's board whole (platform/electron.ts asks no more).
+    append: notYet('add to the end of a board file'),
     read: files.read,
     exists: files.exists,
   }),

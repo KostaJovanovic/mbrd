@@ -55,6 +55,13 @@ export interface FilesPort {
   pickSave(suggested: string, spec: PickSpec): Promise<DocumentRef>;
   /** Write bytes. Atomic on desktop; streams or downloads on web. */
   write(ref: DocumentRef, blob: Blob): Promise<void>;
+  /**
+   * Desktop only: add `blob` to the end of the file, which must be `at` bytes
+   * long - a save's tail (appendZip() in storage/zip.ts). Throws, leaving the
+   * file as it was, when the file has changed length since. Absent where a
+   * board is always written whole (the web, the phone).
+   */
+  append?(ref: DocumentRef, blob: Blob, at: number): Promise<void>;
   /** Desktop only: choose files to add. Web uses import/drop.ts instead. */
   pickImport(spec: PickSpec): Promise<File[]>;
   /** Desktop only: read a document back by path. */

@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld('mbrdDesktop', {
     pickSave: (suggested: string) => invoke('files:pickSave', suggested),
     pickImport: () => invoke('files:pickImport'),
     write: (path: string, data: ArrayBuffer) => invoke('files:write', path, data),
+    append: (path: string, data: ArrayBuffer, at: number) => invoke('files:append', path, data, at),
     read: (path: string) => invoke('files:read', path),
     exists: (path: string) => invoke('files:exists', path),
   },
