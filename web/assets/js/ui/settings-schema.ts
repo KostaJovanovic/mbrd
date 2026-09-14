@@ -624,19 +624,22 @@ export const SECTIONS: Section[] = [
       ] },
     ],
   },
-  // --- Tour ---------------------------------------------------------------
+  // --- Other --------------------------------------------------------------
+  //
+  // The tour, the Timeline and the board's contents: three ways of looking at
+  // this board that are not its settings. Last on the tab, under Sync. Called
+  // Other since the Timeline and Board contents joined the tour here from the
+  // System tab (R32, 2026-09-14): both are about the board, not the browser.
   //
   // The whole of the tour, and the only place in the app that says anything
   // about one: the item menu's ticked row and the board menu's "Take the tour"
   // both went when this section arrived (see ui/menu.ts). A tour is an order,
-  // and an order needs a list - a panel, never a menu.
-  //
-  // On the Board tab rather than Look: a tour is not a way the board is
-  // dressed, it is a thing the board *is*. It travels in the .mbrd beside the
-  // connections and the playlist order, which are board data for that reason.
-  // Last on the tab, under Sync.
+  // and an order needs a list - a panel, never a menu. A tour is not a way the
+  // board is dressed, it is a thing the board *is*. It travels in the .mbrd
+  // beside the connections and the playlist order, which are board data for
+  // that reason.
   {
-    id: 'tour', tab: 'board', title: 'Tour', needsBoard: true,
+    id: 'tour', tab: 'board', title: 'Other', needsBoard: true,
     controls: [
       // Two verbs, one row - the whole of the tour in this panel. Take the tour
       // carries the weight: it is the answer on a board that already has stops,
@@ -666,6 +669,26 @@ export const SECTIONS: Section[] = [
         { cmd: 'tour-edit', label: 'Edit the tour', ariaPressed: 'false',
           closesPanel: true, when: () => tourStops() > 0,
           title: () => 'Number the cards on the board, in the order they are seen' },
+      ] },
+      // Shows the Timeline bar, or puts it away. ui/timeline-view.ts presses
+      // every data-cmd="timeline" button while the bar is up.
+      //
+      // *Earlier versions* stood beside this until v0.198 and is gone. The
+      // two answered the same question at two grains - "take me back" by
+      // named copy and "take me back" by step - and once a step could be
+      // named, the copies were a second, coarser, more expensive answer.
+      { type: 'buttons', buttons: [
+        { cmd: 'timeline', label: 'Timeline', closesPanel: true,
+          title: () => 'Every change to this board, as steps you can go back to' },
+      ] },
+      // The only way to Optimize from this panel, and that is the whole of the
+      // arrangement: the sheet says what the board is made of and what the
+      // heaviest thing in it weighs, and its own footer offers Optimize as the
+      // next step. A label rather than a question - the sheet keeps "What is in
+      // this board" as its own heading, where a heading is allowed to be one.
+      { type: 'buttons', buttons: [
+        { cmd: 'inventory', label: 'Board contents', closesPanel: true,
+          title: () => 'Counts, weights and the heaviest files. A row takes you to the card' },
       ] },
     ],
   },
@@ -954,34 +977,9 @@ export const SECTIONS: Section[] = [
     id: 'browser', tab: 'system', get title() { return isDesktop() ? 'This app' : 'This browser'; },
     needsBoard: true,
     controls: [
-      // The only way to Optimize from this panel, and that is the whole of the
-      // arrangement. The optimizer works and had always been a button you had
-      // to already know about - nothing in the app gave you a reason to press
-      // it. This sheet is the reason: it says what the board is made of and
-      // what the heaviest thing in it weighs, and its own footer offers
-      // Optimize as the next step. It used to sit directly above a standalone
-      // `optimize` row, which is the arrangement that says "read first" while
-      // leaving the door beside the reading room open; the row is gone.
+      // Board contents and Timeline stood here until R32 (2026-09-14), and went
+      // to the Board tab's Other section: both are about the board.
       //
-      // A label rather than a question. It read "What is in this board", which
-      // is a sentence in a column of nouns - the sheet keeps that sentence as
-      // its own heading, where a heading is allowed to be one.
-      { type: 'buttons', buttons: [
-        { cmd: 'inventory', label: 'Board contents', closesPanel: true,
-          title: () => 'Counts, weights and the heaviest files. A row takes you to the card' },
-      ] },
-      // Above the two below it because it is the one that answers "something
-      // has gone wrong", and the row somebody is looking for in a hurry should
-      // not be under the two that are housekeeping. It needs a board for the
-      // obvious reason and is greyed on the changelog with the rest.
-      { type: 'buttons', buttons: [
-        // *Earlier versions* stood beside this until v0.198 and is gone. The
-        // two answered the same question at two grains - "take me back" by
-        // named copy and "take me back" by step - and once a step could be
-        // named, the copies were a second, coarser, more expensive answer.
-        { cmd: 'timeline', label: 'Timeline', closesPanel: true,
-          title: () => 'Every change to this board, as steps you can go back to' },
-      ] },
       // Feed | Playlist used to live here, next to Clear everything; it is the
       // board's own navigation, so it moved to the top of the Board tab (the
       // 'views' section above). What is left here is genuinely about this copy of

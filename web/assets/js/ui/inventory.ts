@@ -9,6 +9,7 @@ import { allAssets, assetURL, getAsset } from '../storage/assets.ts';
 import { travelMs } from '../canvas/viewport.ts';
 import { itemHashes, el, clamp, formatBytes } from '../util.ts';
 import type { Viewport } from '../canvas/viewport.ts';
+import type { Item } from '../board-model.ts';
 
 /** One asset, as this sheet talks about it. */
 export type InventoryAsset = {
@@ -270,17 +271,19 @@ function assetRow(asset: InventoryAsset): HTMLElement {
     ? `Go to the first of ${asset.cards.length} cards using this file`
     : 'Go to the card using this file';
   go.addEventListener('click', () => { cue('pick'); jump(to); });
-  // A picture shows itself. A clip's bytes are not an image, so a clip shows
-  // its card's still (a cover, else the poster frame), as the viewer does.
+  // A picture shows itself. A clip plays in the peek, muted, over its card's
+  // still. It used to show only that still, read from `cover` or `poster`,
+  // and a clip the browser plays carries neither - its card decodes the frame
+  // live - so an ordinary mp4 peeked as nothing (R32).
   const mime = getAsset(asset.hash)?.mime || '';
-  const meta = byId(to)?.meta;
-  const still = mime.startsWith('image/') ? asset.hash
-    : mime.startsWith('video/') ? meta?.cover || meta?.poster : null;
-  if (typeof still === 'string' && still) {
-    go.addEventListener('pointerenter', () => showPeek(go, still));
+  const shown: Peek | null = mime.startsWith('image/') ? { still: asset.hash, clip: null }
+    : mime.startsWith('video/') ? { still: stillOf(byId(to)?.meta), clip: asset.hash }
+    : null;
+  if (shown) {
+    go.addEventListener('pointerenter', () => showPeek(go, shown));
     go.addEventListener('pointerleave', hidePeek);
     // And by keyboard, since the row is a button and Tab reaches it too.
-    go.addEventListener('focus', () => showPeek(go, still));
+    go.addEventListener('focus', () => showPeek(go, shown));
     go.addEventListener('blur', hidePeek);
   }
   row.append(go);
@@ -319,13 +322,31 @@ const PEEK = 168;
 /** Clearance from the sheet and from the edge of the window. */
 const PEEK_GAP = 12;
 
+/** What a row peeks: a picture's own hash, or a clip and its still. */
+type Peek = { still: string | null, clip: string | null };
+
 let peek: HTMLElement | null = null;
 let peekImg: HTMLImageElement | null = null;
+let peekClip: HTMLVideoElement | null = null;
 
-function showPeek(row: HTMLElement, hash: string): void {
+/**
+ * A clip's still: the keys canvas/renderers.ts reads for a video's poster, in
+ * its order, so the peek and the card agree. Null when the clip has none,
+ * which is the usual case for one the browser can play.
+ */
+function stillOf(meta: Item['meta'] | undefined): string | null {
+  for (const key of ['cover', 'poster', 'shot', 'thumb']) {
+    const hash = meta?.[key];
+    if (typeof hash === 'string' && hash && getAsset(hash)) return hash;
+  }
+  return null;
+}
+
+function showPeek(row: HTMLElement, shown: Peek): void {
   const dlg = sheetEl();
-  const url = assetURL(hash);
-  if (!dlg || !url) return;
+  const still = shown.still ? assetURL(shown.still) : null;
+  const clip = shown.clip ? assetURL(shown.clip) : null;
+  if (!dlg || (!still && !clip)) return;
 
   if (!peek) {
     peek = document.createElement('div');
@@ -333,10 +354,27 @@ function showPeek(row: HTMLElement, hash: string): void {
     peekImg = document.createElement('img');
     // Decorative: the row beside it already names the file.
     peekImg.alt = '';
-    peek.append(peekImg);
+    peekClip = document.createElement('video');
+    // Muted, so it may play without a press. Inline, so a phone does not take
+    // it full screen. Looped, since a peek is a glance and not a playback.
+    peekClip.muted = true;
+    peekClip.loop = true;
+    peekClip.playsInline = true;
+    peekClip.setAttribute('aria-hidden', 'true');
+    peek.append(peekImg, peekClip);
   }
   if (peek.parentNode !== dlg) dlg.append(peek);
-  if (peekImg!.src !== url) peekImg!.src = url;
+  peekImg!.hidden = !!clip;
+  peekClip!.hidden = !clip;
+  if (clip) {
+    peekClip!.poster = still || '';
+    if (peekClip!.src !== clip) peekClip!.src = clip;
+    // A clip this browser cannot decode refuses, and its poster stays up.
+    void peekClip!.play().catch(() => {});
+  } else {
+    stopClip();
+    if (still && peekImg!.src !== still) peekImg!.src = still;
+  }
   peek.hidden = false;
 
   // Beside the sheet, on whichever side has room, over it when neither does -
@@ -357,6 +395,15 @@ function showPeek(row: HTMLElement, hash: string): void {
 
 function hidePeek(): void {
   if (peek) peek.hidden = true;
+  stopClip();
+}
+
+/** Let go of the clip: a <video> that keeps its source keeps its decoder. */
+function stopClip(): void {
+  if (!peekClip?.getAttribute('src')) return;
+  peekClip.pause();
+  peekClip.removeAttribute('src');
+  peekClip.load();
 }
 
 function heading(text: string): HTMLElement {

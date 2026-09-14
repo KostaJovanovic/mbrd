@@ -811,7 +811,8 @@ button.inv-line:focus-visible {
   pointer-events: none;
 }
 .inv-peek[hidden] { display: none; }
-.inv-peek img {
+.inv-peek img,
+.inv-peek video {
   max-width: 100%;
   max-height: 100%;
   border-radius: calc(var(--leaf) - 4px);
