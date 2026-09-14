@@ -35,6 +35,7 @@ import { getAsset, assetURL } from './storage/assets.ts';
 import { close as closeSidebar, isOpen as isSidebarOpen } from './ui/sidebar.ts';
 import { closeToolbar, isOpen as isToolbarOpen, isArmed as isConnectorArmed } from './ui/toolbar.ts';
 import { openContextMenu, openAnchored, justDismissed } from './ui/menu.ts';
+import { tourEditing } from './ui/tour-edit.ts';
 import { open as openSearch } from './ui/search.ts';
 import { toggleStickerWindow } from './ui/sticker-window.ts';
 import {
@@ -317,7 +318,11 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
 
     // --- right-click menu ---
     contextMenu: (x: number, y: number, id: string | null, count: number,
-      opts?: { mobile?: boolean, touch?: boolean }) => openContextMenu(x, y, id, count, opts),
+      opts?: { mobile?: boolean, touch?: boolean }) => {
+      // No card menus in the tour editor: a card there is picked, not worked on.
+      if (id && tourEditing()) return;
+      openContextMenu(x, y, id, count, opts);
+    },
     selectionHasStackOverlap,
     raise: raiseSelection,
     lower: lowerSelection,

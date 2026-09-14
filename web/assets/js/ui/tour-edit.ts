@@ -5,12 +5,14 @@
 import { MAX_TOUR_CAPTION } from '../board-model.ts';
 import {
   addTourStop, board, bus, byId, canTour, joinTourStops, moveTourStop,
-  removeTourCards, select, selection, setTourCaption, splitTourStop,
+  removeTourCards, removeTourStop, select, selection, setTourCaption, splitTourStop, undo,
 } from '../state.ts';
+import { toast } from '../notify.ts';
 import { openAnchored } from './menu.ts';
 import type { MenuEntry } from './menu.ts';
-import { paintTourMarks, setTourMarks } from '../canvas/items.ts';
-import { previewStop, startTour, tourActive } from './tour.ts';
+import { paintTourMarks, setSpot, setTourMarks } from '../canvas/items.ts';
+import { previewStop, setStopActions, startTour, tourActive } from './tour.ts';
+import type { StopMoves } from './tour.ts';
 
 /** The bar, built once by initTourEdit(). */
 let host: HTMLElement | null = null;
@@ -51,7 +53,9 @@ export function initTourEdit() {
   document.body.append(host);
   // The marks on the cards. canvas/items.ts draws them and asks this back -
   // see applyTourMark() there for why the mark can't be written from here.
-  setTourMarks({ markFor, press });
+  setTourMarks({ markFor, press, hover: id => peekStop(id ? stopOf(id) : -1) });
+  // The running tour's bar offers the same actions as a chip's menu here.
+  setStopActions((i, moves) => stopEntries(i, i + 1, moves));
   // The peek: pointer over the bar lays the order onto the board itself - see
   // :root.is-tour-peek in item-chrome.css. A class rather than a selector,
   // since the bar is a child of <body> and the cards are inside #viewport -
@@ -96,6 +100,22 @@ function peek(on: boolean) {
   document.documentElement.classList.toggle('is-tour-peek', on && editing);
 }
 
+/** The stop a chip or a card's number is lighting, or -1. */
+let peeking = -1;
+
+/**
+ * Light one stop's cards and fade the rest, connections included, while the
+ * pointer is on its chip or on one of its cards' numbers. -1 puts the board
+ * back. Compared first, since the marks report on every pointerover.
+ */
+function peekStop(i: number) {
+  const want = editing && board.tour[i] ? i : -1;
+  if (want === peeking) return;
+  peeking = want;
+  document.documentElement.classList.toggle('is-stop-peek', want >= 0);
+  setSpot(want >= 0 ? board.tour[want].cards : null);
+}
+
 /**
  * End the mode if it is on, and say whether it was - same shape as
  * stopTour(), for the same caller: Escape in canvas/input.ts tries temporary
@@ -127,13 +147,16 @@ function markFor(id: string): number | null {
 const stopOf = (id: string) => board.tour.findIndex(stop => stop.cards.includes(id));
 
 /**
- * A mark pressed: on the tour, off it. The card alone in both directions - a
- * "+" makes a stop of one card, never the whole selection (grouping is the
- * bar's Add); a number removes just that card, leaving its stop's others framed.
+ * A mark pressed: on the tour, off it. On a card in a selection of several it
+ * speaks for the selection - a "+" makes one stop of the selected cards not on
+ * the tour yet, and a number takes the selected cards in that stop off it. On
+ * any other card, the card alone.
  */
 function press(id: string) {
-  if (stopOf(id) >= 0) { removeTourCards([id]); return; }
-  if (addTourStop([id])) current = board.tour.length - 1;
+  const group = selection.has(id) && selection.size > 1 ? [...selection] : [id];
+  const at = stopOf(id);
+  if (at >= 0) { removeTourCards(group.filter(g => stopOf(g) === at)); return; }
+  if (addTourStop(group)) current = board.tour.length - 1;
   paint();
 }
 
@@ -233,7 +256,9 @@ function paint() {
   document.documentElement.classList.toggle('is-tour-edit', editing);
   // The button that opened this, told what it did - written here since none
   // of the four bus events this repaints on is "the editor opened".
-  document.querySelector('[data-cmd="tour-edit"]')?.setAttribute('aria-pressed', String(editing));
+  for (const btn of document.querySelectorAll('[data-cmd="tour-edit"]')) {
+    btn.setAttribute('aria-pressed', String(editing));
+  }
   paintTourMarks();
   if (!editing) { shut(); return; }
 
@@ -260,6 +285,7 @@ function shut() {
   // Before the early return: the mode can end with the pointer still on the
   // bar, and the veil must come off regardless of whether a bar remains.
   peek(false);
+  peekStop(-1);
   if (!host || host.hidden) return;
   current = -1;
   host.classList.remove('is-up');
@@ -409,24 +435,57 @@ function hint(): HTMLElement {
 // is the one menu implementation and this isn't a second. The foot row's
 // hint says the menu exists, so the right-click isn't a hidden feature.
 
-/** The rows for one stop. Only what applies to this one is in the list. */
-function chipEntries(i: number, name: number): MenuEntry[] {
+/**
+ * The rows for one stop. Only what applies to this one is in the list. One
+ * list for two bars: this one's chip menu, and a running tour's bar (see
+ * setStopActions() in ui/tour.ts), which differ only in where they land after.
+ */
+function stopEntries(i: number, name: number, moves: StopMoves): MenuEntry[] {
   const cards = board.tour[i]?.cards ?? [];
   const last = board.tour.length - 1;
   return [
     { label: `Split stop ${name} into ${cards.length}`, icon: 'i-distribute-h',
-      hidden: cards.length < 2, action: () => splitAt(i) },
+      hidden: cards.length < 2, action: () => moves.split(i) },
     { label: 'Join with the stop before', icon: 'i-arrow-back',
-      hidden: i <= 0, action: () => joinAt(i - 1) },
+      hidden: i <= 0, action: () => moves.join(i - 1) },
     { label: 'Join with the stop after', icon: 'i-arrow-fwd',
-      hidden: i >= last, action: () => joinAt(i) },
+      hidden: i >= last, action: () => moves.join(i) },
     { sep: true },
-    { label: 'Show this stop', icon: 'i-fit-card', action: () => previewStop(i) },
+    { label: 'Show this stop', icon: 'i-fit-card', action: () => moves.show(i) },
     { sep: true },
     { label: cards.length > 1 ? `Take these ${cards.length} cards off the tour`
       : 'Take this card off the tour',
-    icon: 'i-close', danger: true, action: () => { removeTourCards(cards); paint(); } },
+    icon: 'i-close', danger: true, action: () => moves.takeOff(i) },
   ];
+}
+
+/** What the chip menu's rows do here: the foot row follows the stop it was on. */
+const EDITOR_MOVES: StopMoves = {
+  split: i => splitAt(i),
+  join: i => joinAt(i),
+  show: i => previewStop(i),
+  takeOff: i => { removeTourCards(board.tour[i]?.cards ?? []); paint(); },
+};
+
+const chipEntries = (i: number, name: number) => stopEntries(i, name, EDITOR_MOVES);
+
+/**
+ * Delete with a stop picked in the bar: the stop comes off the tour and its
+ * cards stay on the board - one undo step, and the toast carries the Undo.
+ * With the editor up and no stop picked, Delete does nothing: nothing here
+ * bins a card. Answers whether it took the key, which is whether the editor
+ * is up.
+ */
+export function deleteStop(): boolean {
+  if (!editing) return false;
+  if (!board.tour[current]) return true;
+  const name = stopNames()[current];
+  removeTourStop(current);
+  current = -1;
+  select([]);
+  paint();
+  toast(`Stop ${name} removed`, '', { label: 'Undo', run: undo });
+  return true;
 }
 
 /** Break this stop up, and keep the foot row pointing where it was. */
@@ -542,6 +601,9 @@ function chip(cards: string[], i: number, name: number): HTMLLIElement {
     select(cards);
     paint();
   });
+  // The pointer on a chip lights its cards on the board.
+  b.addEventListener('pointerenter', () => peekStop(i));
+  b.addEventListener('pointerleave', () => peekStop(-1));
   // Right-click: what a stop *is*, not where it sits - see chipEntries().
   b.addEventListener('contextmenu', e => {
     e.preventDefault();

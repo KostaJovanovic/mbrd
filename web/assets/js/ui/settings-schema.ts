@@ -631,12 +631,16 @@ export const SECTIONS: Section[] = [
       // The editor lives on the board itself - see the head of ui/tour-edit.ts
       // - and a panel left open under it is hidden anyway (:root.is-tour-edit
       // in chrome.css), so a row that did not close it would close it invisibly.
+      //
+      // A board with no tour has one row, Create tour: there is nothing to take
+      // and nothing to edit yet, and two dead buttons said so less clearly.
       { type: 'buttons', buttons: [
+        { cmd: 'tour-edit', label: 'Create tour', className: 'primary',
+          closesPanel: true, when: () => !tourStops(),
+          title: () => 'Number the cards on the board, in the order they are seen' },
         { cmd: 'tour-start', label: 'Take the tour', className: 'primary',
-          closesPanel: true,
-          title: () => (tourStops()
-            ? `${tourStops()} stops, in order`
-            : 'Add a stop first - the tour has nowhere to go') },
+          closesPanel: true, when: () => tourStops() > 0,
+          title: () => `${tourStops()} stops, in order` },
         // `ariaPressed` as a starting value rather than a `pressed` predicate,
         // which is why this table does not import ui/tour-edit: the panel
         // repaints on `board`, `settings`, `layout` and `lens`, and opening the
@@ -644,7 +648,7 @@ export const SECTIONS: Section[] = [
         // wrong until something unrelated repainted. The module writes the
         // attribute itself, the shape `debug-grips` uses one tab over.
         { cmd: 'tour-edit', label: 'Edit the tour', ariaPressed: 'false',
-          closesPanel: true,
+          closesPanel: true, when: () => tourStops() > 0,
           title: () => 'Number the cards on the board, in the order they are seen' },
       ] },
     ],

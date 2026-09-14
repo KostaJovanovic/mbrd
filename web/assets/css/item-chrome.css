@@ -469,6 +469,26 @@
 /* Gone below the zoom where on-card controls are too small to aim at. */
 #world.zoom-tiny .tour-mark { display: none; }
 
+/* ---------------------------------------------------------------------------
+   A board on tour, or having its tour built, is looked at rather than worked
+   on: no card lifts under the pointer, and in the editor none is grabbed. */
+:root:is(.is-touring, .is-tour-edit) :is(.item, .item-shadow).is-hover {
+  --lift: 0px;
+  --grow: 1;
+  --sh-lift: 0px;
+  --sh-grow: 1;
+}
+:root.is-tour-edit .item.is-selected { cursor: default; }
+/* On tour, only the stop on show takes input, and in it only play: no links,
+   and no viewer or move (canvas/input.ts). A press anywhere else lands on the
+   board, which steps the tour on. `is-spot` is canvas/items.ts's setSpot(). */
+:root.is-touring .item:not(.is-spot),
+:root.is-touring .item:not(.is-spot) *,
+:root.is-touring .item.is-spot a { pointer-events: none; }
+/* In the editor, a stop chip or a card's number under the pointer leaves that
+   stop lit and fades the rest. */
+:root.is-stop-peek .item:not(.is-spot) { opacity: 0.25; }
+
 /* Fallback without color-mix() (WebKit < 16.2). */
 @supports not (color: color-mix(in srgb, red, blue)) {
   [data-debug-grips] .grip:not(.grip-edge)::before {

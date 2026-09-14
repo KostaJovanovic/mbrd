@@ -1035,6 +1035,11 @@ type InputCommands = {
   // keys: a click on bare board means the next stop while a tour is up and
   // means deselect the rest of the time - see tourClick.
   inTour?(): boolean,
+  // The editor's two: whether it is up (cards hold still and nothing is
+  // written on), and Delete, which there takes the picked stop off the tour
+  // and never bins a card. Answers whether it took the key.
+  tourEditing?(): boolean,
+  tourEditDelete?(): boolean,
 };
 
 export function initInput(vp: Viewport, cmds: InputCommands): void {
@@ -1910,7 +1915,9 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       onWidget: !!widget,
       onGrip: !!grip,
       onCard: id,
-      locked: !!id && isLocked(byId(id)),
+      // The tour editor holds every card as if anchored: a press picks it, a
+      // drag pans, and no grip resizes - the board is being ordered, not moved.
+      locked: !!id && (isLocked(byId(id)) || !!cmds.tourEditing?.()),
       // isPinned(), not stuckTo(): a sticker dropped three seconds ago is still
       // lying loose on its host and is still the thing you reached for, so its
       // grips are still its own. It is the same clock canvas/items.ts draws them
@@ -1947,7 +1954,10 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     }
 
     if (intent.kind === 'widget') {
-      if (id) select([id]);
+      // A tour mark on a card already in the selection speaks for the whole
+      // selection (ui/tour-edit.ts press()), so its press must leave it whole.
+      const forSelection = !!widget?.closest('.tour-mark') && !!id && selection.has(id);
+      if (id && !forSelection) select([id]);
       pointers.delete(e.pointerId);
       return;
     }
@@ -2798,6 +2808,9 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   // meaning left is opening a note to edit, which is not a zoom and stays. Zoom
   // to fit is still on the F key and in the menu.
   el.addEventListener('dblclick', e => {
+    // A tour and its editor show the board rather than work on it: no viewer,
+    // no note editor, no rename.
+    if (cmds.inTour?.() || cmds.tourEditing?.()) return;
     // The point, not the target - and that is not a preference.
     //
     // onDown captures the pointer on #viewport (el.setPointerCapture, above), and
@@ -2922,6 +2935,8 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
 
     switch (e.key) {
       case 'Delete': case 'Backspace':
+        // The tour editor first: there Delete means the picked stop.
+        if (cmds.tourEditDelete?.()) { e.preventDefault(); break; }
         // With a line marked and no cards selected, Delete means the line. The
         // order is the honest one: a selection is a louder statement of intent
         // than a mark left by the last press, so cards win whenever there are
@@ -2932,7 +2947,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         break;
       // One item only: a rename has to put the caret somewhere, and a group
       // selection has no single name to put it in.
-      case 'F2': if (selection.size === 1) {
+      case 'F2': if (selection.size === 1 && !cmds.inTour?.() && !cmds.tourEditing?.()) {
         const only = [...selection][0];
         // The title card has no item name of its own - F2 renames the board on
         // it, the same as its T button, where every other card edits its caption.

@@ -137,6 +137,8 @@ export function initSidebar(cmds: SidebarCommands, viewport: Viewport | null = n
   });
   // Lens switch updates Feed/Playlist button state.
   bus.on('lens', paint);
+  // The Tour section's rows depend on whether there is a tour.
+  bus.on('tour', paint);
   paint();
   restoreOpen();
 }

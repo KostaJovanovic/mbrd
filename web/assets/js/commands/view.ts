@@ -23,7 +23,7 @@ import { currentLens, setLens } from '../ui/board-view.ts';
 import {
   goToStop, startTour, stepTour, stopTour, tourActive, tourAt, tourLength,
 } from '../ui/tour.ts';
-import { stopTourEdit, toggleTourEdit } from '../ui/tour-edit.ts';
+import { deleteStop, stopTourEdit, toggleTourEdit, tourEditing } from '../ui/tour-edit.ts';
 import { togglePlayerWindow } from '../ui/playlist.ts';
 import { openCredits } from '../ui/credits.ts';
 import { openInventory } from '../ui/inventory.ts';
@@ -116,6 +116,8 @@ export function viewCommands(vp: CommandViewport, { resetAppearance, perf }: Vie
     // Tour editor: a mode, not a camera move. tourEditStop returns consumed-press for Escape.
     tourEdit: () => toggleTourEdit(),
     tourEditStop: () => stopTourEdit(),
+    tourEditing: () => tourEditing(),
+    tourEditDelete: () => deleteStop(),
     tourStop: () => stopTour(),
     tourStep: (delta: number) => stepTour(delta),
     tourGo: (i: number) => goToStop(i),
