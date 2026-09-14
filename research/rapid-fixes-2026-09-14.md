@@ -362,5 +362,8 @@ list named auto-connect as the next one, and the app has no such command.
       - **Done.** "Timeline hidden - Show timeline in the sidebar brings it
         back". Only the gear row says it: the box in the panel is in view
         when it is pressed. Checked in Chromium.
+- [x] R38 Show timeline moves to the top of Other.
+      - **Done.** Other now reads Show timeline, the tour buttons, then
+        Board contents.
 - [ ] R30 The Android later list: `native.decode` through `ImageDecoder`, a
       foreground service for long transcodes, and the shelf as a folder tree.
