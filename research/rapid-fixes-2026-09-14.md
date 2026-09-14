@@ -56,7 +56,7 @@ box is ticked when its commit lands.
       - **Done.** The card's box on the board was the guess, and a resized
         card kept a shape that was not the photo's. `ui/feed.ts` now reads
         the shape off the picture as it loads, and lays the wall out again.
-- [ ] R10 The sidebar's close X (`#side-close`) is still not centred in its
+- [x] R10 The sidebar's close X (`#side-close`) is still not centred in its
       round hover plate, in Firefox (screenshots of 2026-09-14 17:54:52 and
       17:54:56). **The fifth report.** Earlier fixes did not hold, so rebuild
       the button from nothing: an SVG glyph centred by grid in a square box,
@@ -64,6 +64,16 @@ box is ticked when its commit lands.
       padding. Measure the centre in both Firefox and Chromium (Playwright has
       Firefox) at every whimsy tier, and keep a test that fails when the glyph
       and the plate drift apart. The Harsh tier's no-spin rule stays.
+      - **Done.** The cause: a 15 px glyph grid-centred in a 28 px button
+        starts at 6.5 px, and each engine snapped it half a pixel off the CSS
+        plate, on both axes. Measured from pixels before the fix: 0.5 px off
+        at 100% in Firefox and Chromium on every tier, 0.8 px at 125%. Now the
+        svg is the whole button and draws both the plate (a `rect` whose `rx`
+        follows `--radius-pill`) and the 16 px cross about one centre. After:
+        0 px at 100%, 125%, 150% and 400% in both engines on every tier, but
+        for one ink row at Softish 100% that the probe's threshold cuts.
+        `tests/close-plate.test.js` holds the numbers. `#header-close`
+        shares the rules and got the same rebuild.
 - [ ] R11 The top toolbar (`#toolbar`) responds to the window:
       - When the sidebar opens, the toolbar moves over and stays visible.
         Today it vanishes.
