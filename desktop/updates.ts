@@ -141,18 +141,30 @@ export function startUpdates(opts: UpdateOptions): void {
   log('info', 'updates', { kind });
   if (kind === 'dev') return;
   if (kind === 'installer') {
-    rmSync(downloadDir(), { recursive: true, force: true });
+    tidy(downloadDir(), true);
     // "Later" still installs: the downloaded installer runs as the app closes,
     // silently, without starting the app again.
     app.on('will-quit', () => runInstaller(false));
   }
   const image = process.env.APPIMAGE;
   if (kind === 'appimage' && image) {
-    for (const stale of [image + '.new', image + '.new.part']) rmSync(stale, { force: true });
+    for (const stale of [image + '.new', image + '.new.part']) tidy(stale);
   }
   const look = () => { if (due()) void check(false); };
   setTimeout(look, FIRST_CHECK_MS);
   setInterval(look, LOOK_MS).unref();
+}
+
+/** Remove what an earlier update left, and never fail the start for it. The
+ *  installer that has just updated this copy starts it again before it exits,
+ *  so its own file can still be locked here (EBUSY on Windows), and a throw
+ *  here is an uncaught exception in main. The next start tries again. */
+function tidy(path: string, recursive = false): void {
+  try {
+    rmSync(path, { recursive, force: true });
+  } catch (err) {
+    log('warn', 'could not remove an old update file', { path, err: String(err) });
+  }
 }
 
 /**

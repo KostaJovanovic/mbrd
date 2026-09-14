@@ -116,3 +116,13 @@ test('electron-builder writes no update file and publishes nothing', () => {
   // a GitHub target from the git remote and writes latest*.yml anyway.
   assert.match(builder, /^publish: null\s*$/m, 'electron-builder.yml has no top-level `publish: null`');
 });
+
+test('the start-up cleanup of an old update cannot throw', () => {
+  // The installer that updated the app starts it again before it exits, so its
+  // file is still locked when startUpdates() clears the download folder. A bare
+  // rmSync there threw EBUSY as an uncaught exception in main (0.336).
+  const m = /export function startUpdates\([\s\S]*?\n\}/.exec(updates);
+  assert.ok(m, 'no `export function startUpdates(` in desktop/updates.ts - has it moved?');
+  assert.doesNotMatch(m[0], /\brmSync\(/, 'startUpdates() removes a file with a bare rmSync - use tidy()');
+  assert.match(updates, /function tidy\([\s\S]*?try \{[\s\S]*?rmSync\([\s\S]*?\} catch/, 'tidy() no longer catches');
+});
