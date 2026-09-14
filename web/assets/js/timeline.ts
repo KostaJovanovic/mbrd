@@ -60,8 +60,9 @@ export type Step = {
 /** Step as serialized: five core fields + optional `name`. `op`/`broken` are session-only. */
 type SerializedStep = Pick<Step, 'id' | 'at' | 'label' | 'run' | 'delta'> & { name?: string };
 
-/** Board fields beyond the four keyed lists. `versions` excluded — a full copy would dwarf every step. */
-const REST_FIELDS = [
+/** Board fields beyond the four keyed lists. `versions` excluded — a full copy would dwarf every step.
+ *  Exported for tests/timeline-drift.test.js, which holds every one of them to a trip. */
+export const REST_FIELDS = [
   'title', 'view', 'sharedAppearance', 'layoutSettings', 'settings',
   'arrangement', 'arrangements', 'layoutMode', 'mobileHeader', 'titleHidden',
   'mediaFit', 'paletteSources', 'connections', 'audioOrder', 'tour',
@@ -304,6 +305,111 @@ let checkpoints = new Map<number, Snap>();
 let stale = false;
 
 // ---------------------------------------------------------------------------
+// Drift: what the board did outside the ledger
+// ---------------------------------------------------------------------------
+
+/**
+ * The board the ledger stands on at `at`, as text.
+ *
+ * Not every write is a step. A rename, a setting, the look, the fonts, the
+ * tour, the playlist order, the camera and a card's thumbnail all change the
+ * board with no step. A replay starts from `base` or a checkpoint, which know
+ * nothing of those writes, so a trip back and forward used to lose every one
+ * of them: rename the board, step back, step forward, and the old name was
+ * back (research/rapid-fixes-2026-09-14.md, R5).
+ *
+ * So before anything records or replays, absorbDrift() compares the board with
+ * this and writes the difference into every stored board: `base`, the
+ * checkpoints, and each step that writes a card whole. Every point in the
+ * history then carries it.
+ */
+let synced: Snap = base;
+
+/** A value as JSON.parse() hands it back. */
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+
+const isJsonObject = (v: JsonValue | undefined): v is { [key: string]: JsonValue } =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/**
+ * `held` with the leaves that differ between `from` and `to` written in. Deep,
+ * unlike mergeChanged(): a thumbnail written into `meta` must not carry a later
+ * `meta.text` back into the past with it.
+ */
+function mergeDeep(held: JsonValue | undefined, from: JsonValue, to: JsonValue): JsonValue {
+  if (!isJsonObject(held) || !isJsonObject(from) || !isJsonObject(to)) return to;
+  const next = { ...held };
+  for (const key of new Set([...Object.keys(from), ...Object.keys(to)])) {
+    if (JSON.stringify(from[key]) === JSON.stringify(to[key])) continue;
+    if (key in to) next[key] = mergeDeep(held[key], from[key] ?? null, to[key]);
+    else delete next[key];
+  }
+  return next;
+}
+
+/** mergeDeep() over stored text. */
+function mergeText(held: string, from: string, to: string): string {
+  try {
+    return JSON.stringify(mergeDeep(JSON.parse(held), JSON.parse(from), JSON.parse(to)));
+  } catch {
+    return to;
+  }
+}
+
+const KEYED_SECTIONS = ['items', 'desktop', 'mobile', 'trash'] as const;
+
+/** Write what the board did outside the ledger into every stored board. */
+function absorbDrift(live: Snap = snapshot()) {
+  const drift = diff(synced, live);
+  synced = live;
+  if (!drift) return;
+  const stored = [base, ...checkpoints.values()];
+  for (const section of KEYED_SECTIONS) {
+    const part = drift[section];
+    if (!part) continue;
+    for (const id of Object.keys(part.changed)) {
+      const [from, to] = part.changed[id];
+      // A change to a card that exists on both sides. An add or a removal
+      // outside the ledger has no place in the past.
+      if (from == null || to == null) continue;
+      for (const snap of stored) {
+        const held = snap[section][id];
+        if (held != null) snap[section][id] = mergeText(held, from, to);
+      }
+      // A step that brings the card into being, or back, writes it whole.
+      for (const step of steps) {
+        const changed = step.delta[section]?.changed;
+        const pair = changed?.[id];
+        if (!changed || !pair || (pair[0] != null && pair[1] != null)) continue;
+        changed[id] = [
+          pair[0] == null ? null : mergeText(pair[0], from, to),
+          pair[1] == null ? null : mergeText(pair[1], from, to),
+        ];
+      }
+    }
+  }
+  for (const [field, [from, to]] of Object.entries(drift.rest || {})) {
+    for (const snap of stored) {
+      const held = snap.rest[field];
+      snap.rest[field] = held == null ? to : mergeText(held, from, to);
+    }
+  }
+  forgetBytes();
+}
+
+/** For history.ts, before an undo or redo runs: write the drift down while
+ *  the board still stands where the ledger says it does. */
+export function settleDrift() {
+  if (!replaying) absorbDrift();
+}
+
+/** For history.ts, after an undo or redo ran: the closure moved the board
+ *  along the ledger, so the board now is what the ledger describes. */
+export function ledgerMoved() {
+  if (!replaying) synced = snapshot();
+}
+
+// ---------------------------------------------------------------------------
 // Ops: the steps that carry a rule
 // ---------------------------------------------------------------------------
 
@@ -348,6 +454,7 @@ export function resetTimeline() {
   steps = [];
   at = 0;
   base = snapshot();
+  synced = base;
   checkpoints = new Map();
   stale = false;
   forgetBytes();
@@ -360,7 +467,12 @@ export function recordStep(label: string, before: Snap): Step | null {
   pendingOp = null;
   // During rebuild — a step about replaying a step would be spurious.
   if (replaying) return null;
+  // First the drift since the last step, or this step's `before` carries it
+  // and the past does not.
+  absorbDrift(before);
   const after = snapshot();
+  // Whatever happens below, the ledger ends up describing this board.
+  synced = after;
   const delta = diff(before, after);
   if (!delta) return null;
   // New action with marker rolled back — drop everything ahead (like undo).
@@ -541,6 +653,7 @@ function restoreInto(snap: Snap, run: Step[]) {
  * CHECKPOINT_EVERY steps regardless of history length.
  */
 export function replayTo(target: number) {
+  absorbDrift();
   const want = Math.max(0, Math.min(target, steps.length));
   let from = 0;
   let snap = base;
@@ -562,7 +675,9 @@ export function replayTo(target: number) {
       checkpoints.set(next, snapshot());
     }
   }
-  at = want;}
+  at = want;
+  synced = snapshot();
+}
 
 /** Announce a wholesale board change. Selection pruned first — stale ids cause wrong toolbar state. */
 function announce() {
@@ -647,6 +762,7 @@ export function rebuildFrom(index: number) {
     replaying = false;
   }
   at = steps.length;
+  synced = snapshot();
   // All checkpoints behind the rebuild are stale — drop them.
   checkpoints = new Map();
   // Undo stack closures captured old positions — drop them too.
@@ -742,6 +858,8 @@ export function docFingerprint(doc: unknown): string {
 /** Serialize for storage. Fingerprint handed in — this module never sees the document. */
 export function serializeTimeline(fingerprintOf = '') {
   if (!steps.length) return null;
+  // The stored `base` must carry the drift too, or a reopened board loses it.
+  absorbDrift();
   return {
     base,
     at,
@@ -821,6 +939,7 @@ export function adoptTimeline(raw: unknown, doc?: unknown) {
   // Against the document, not the live board. No fingerprint = pre-check file, trusted.
   const claimed = typeof raw.fingerprint === 'string' ? raw.fingerprint : '';
   stale = truncated || (!!claimed && doc !== undefined && claimed !== docFingerprint(doc));
+  synced = snapshot();
 }
 
 /** Rewrite recorded items in place (base + both sides of every step). Only caller: bin-empty.
@@ -828,6 +947,7 @@ export function adoptTimeline(raw: unknown, doc?: unknown) {
 export function rewriteRecorded(
   rewrite: (item: Record<string, unknown>) => Record<string, unknown> | null,
 ): number {
+  absorbDrift();
   let count = 0;
   const redo = (text: string | null): string | null => {
     if (text == null) return text;
@@ -864,6 +984,7 @@ export function rewriteRecorded(
     checkpoints = new Map();
     forgetBytes();
   }
+  synced = snapshot();
   return count;
 }
 

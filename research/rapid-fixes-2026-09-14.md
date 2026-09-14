@@ -24,7 +24,7 @@ box is ticked when its commit lands.
         updates.
 - [ ] R4 Windows: the app icon still does not show on the desktop shortcut or
       in the taskbar. A fresh install of the new version did not fix it.
-- [ ] R5 The Timeline loses a board rename. Rename the board, step back to
+- [x] R5 The Timeline loses a board rename. Rename the board, step back to
       before the rename, step forward again: the old name comes back.
       - **A big problem, so it goes first.** Audit every change to the board
         that the Timeline and undo should keep: the title, board settings,
@@ -32,6 +32,13 @@ box is ticked when its commit lands.
         the desktop and mobile layouts, and anything else that writes to the
         board. List each change that a step back and a step forward lose, fix
         them all, and add a test that fails for a change the history misses.
+      - **Done.** One cause covered every case. A replay starts from `base`
+        or a checkpoint, and those knew nothing of writes that were not
+        steps: the title, settings, the look, fonts, the tour, the playlist
+        order, the camera, and quiet card writes such as thumbnails.
+        `timeline.ts` now writes that drift into every stored board before it
+        records or replays, and `history.ts` keeps undo apart from drift.
+        `tests/timeline-drift.test.js` walks every field in `REST_FIELDS`.
 - [ ] R6 The body font setting loses its "Same as display" option. A board or
       a preference that holds it today needs a sensible reading.
 - [ ] R7 Android: no update pop-up. The maintainer hates it. An update shows
