@@ -61,14 +61,16 @@ myboard.mbrd                    ZIP, renamed
 ├── mimetype                    the media type, first and uncompressed
 ├── manifest.json               what this file is
 ├── board.json                  the board itself
+├── timeline/base.json          the board before its history, and the marker
+├── timeline/steps.jsonl        the history, one step to a line
 ├── assets/<slug>--<hash>.<ext> embedded bytes, deduped by content hash
 ├── notes/<slug>--<id>.md       one sticky note, as Markdown
 └── waveforms/<hash>.json       one audio file's measured readings
 ```
 
-Only `manifest.json` and `board.json` are required. A reader that finds neither
-of the last two directories is looking at a perfectly valid board — a board with
-no sticky notes and no audio on it has neither.
+Only `manifest.json` and `board.json` are required. A reader that finds none of
+the last three directories is looking at a perfectly valid board — a board
+nobody has changed, with no sticky notes and no audio on it, has none of them.
 
 **There is no `thumbnails/`.** A `thumbnails/<hash>.webp` was reserved in the
 first draft of this format and nothing ever wrote one, so it is gone rather than
@@ -581,6 +583,20 @@ build, an unedited board, or a share somebody trimmed.
 `at` is how many of them are on the board — the marker — so a file can be saved
 with the history rolled back and comes back that way.
 
+**In the file, the history is not in `board.json`.** The object above is what the
+app holds and what the cloud copy carries. A `.mbrd` splits it in two, so the
+board stays readable at a glance however long its past is:
+
+- `timeline/base.json` holds every key but `steps`, plus `count`, how many steps
+  there are.
+- `timeline/steps.jsonl` holds the steps, one JSON object to a line, oldest first.
+
+The two files outrank a `timeline` key in `board.json`, which is where a file
+written before them (up to v0.316) keeps it, and a reader must still take it from
+there. A line that will not parse, or fewer lines than `count`, makes the history
+stale, for the same reason a fingerprint that does not match does. An unreadable
+`base.json` opens the board with no past.
+
 **Most steps are a difference; some also carry a rule.** Each `delta` holds the
 state on both sides of what one action touched, keyed by item id, which is what
 makes it reversible in either direction without knowing what the action meant. A
@@ -916,9 +932,10 @@ For anyone changing this format later:
   default.
 - **Renaming or repurposing anything is a version bump.** `version` exists for
   exactly this and nothing has yet needed it.
-- **Removing a fallback is the dangerous change.** The two "sidecar outranks
-  `board.json`, `board.json` still works" rules are what let an old board open
-  in a new mbrd. Deleting either half silently breaks files that already exist.
+- **Removing a fallback is the dangerous change.** The three "sidecar outranks
+  `board.json`, `board.json` still works" rules (notes, waveforms, the timeline)
+  are what let an old board open in a new mbrd. Deleting either half of one
+  silently breaks files that already exist.
 
 ### An older build opening a newer file loses what it does not know
 
@@ -932,7 +949,9 @@ after everything they own, so a newer build's field survives an older one's
 save. Builds before that drop such a key **on load** — and it is then absent
 from the next file that build writes. A board with six months of history,
 opened once in one of those builds and saved, comes back with none. Keys inside
-an item other than `meta` are not carried by either.
+an item other than `meta` are not carried by either. A build from before the
+history had its own files (v0.316 and older) does not look in `timeline/` at
+all, so it opens a newer file with no past and saves it that way.
 
 The tempting answer is to move `version` in `manifest.json` so an old build
 declines the file instead of flattening it. **That does not work, and the reason
