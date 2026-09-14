@@ -198,6 +198,9 @@ export function initTimeline() {
   if (saved === null ? !phone() : saved === '1') openBar();
 }
 
+/** Is the bar up? What the panel's Show timeline box starts from. */
+export const timelineShown = () => open;
+
 /** The Timeline button: up or down, remembered on this device. */
 export function toggleTimeline() {
   if (open) closeBar();
@@ -230,11 +233,14 @@ function writeDock() {
   else root.style.removeProperty('--dock');
 }
 
-/** Whichever Timeline buttons are on screen say whether the bar is up. */
+/** Whichever Timeline buttons are on screen say whether the bar is up, and so
+ *  does the panel's box: the panel repaints on nothing the bar announces. */
 function paintToggle() {
   for (const button of document.querySelectorAll('[data-cmd="timeline"]')) {
     button.setAttribute('aria-pressed', String(open));
   }
+  const box = document.getElementById('opt-timeline');
+  if (box instanceof HTMLInputElement) box.checked = open;
 }
 
 /**

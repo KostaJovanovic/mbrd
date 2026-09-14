@@ -11,6 +11,7 @@ const selectionSize = () => selection.size;
 const tourStops = () => board.tour.length;
 import { ARRANGEMENTS, MOBILE_ARRANGEMENTS } from '../arrange/arrangements.ts';
 import { currentLens } from './board-view.ts';
+import { timelineShown, toggleTimeline } from './timeline-view.ts';
 import { paletteSwatches } from './palettes.ts';
 import { itemBounds } from '../geometry.ts';
 import { toUnits, formatLength, paperMm, PAPERS } from '../measure.ts';
@@ -670,17 +671,18 @@ export const SECTIONS: Section[] = [
           closesPanel: true, when: () => tourStops() > 0,
           title: () => 'Number the cards on the board, in the order they are seen' },
       ] },
-      // Shows the Timeline bar, or puts it away. ui/timeline-view.ts presses
-      // every data-cmd="timeline" button while the bar is up.
+      // Shows the Timeline bar, or puts it away. A box and not a button, as
+      // Show grid is, because it is on or off. ui/timeline-view.ts ticks it
+      // when the bar goes up some other way, since the panel repaints on
+      // nothing the bar announces.
       //
       // *Earlier versions* stood beside this until v0.198 and is gone. The
       // two answered the same question at two grains - "take me back" by
       // named copy and "take me back" by step - and once a step could be
       // named, the copies were a second, coarser, more expensive answer.
-      { type: 'buttons', buttons: [
-        { cmd: 'timeline', label: 'Timeline', closesPanel: true,
-          title: () => 'Every change to this board, as steps you can go back to' },
-      ] },
+      { id: 'opt-timeline', type: 'check', label: 'Show timeline',
+        get: () => timelineShown(),
+        set: v => { if (v !== timelineShown()) toggleTimeline(); } },
       // The only way to Optimize from this panel, and that is the whole of the
       // arrangement: the sheet says what the board is made of and what the
       // heaviest thing in it weighs, and its own footer offers Optimize as the
