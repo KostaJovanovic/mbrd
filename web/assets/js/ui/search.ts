@@ -26,14 +26,18 @@ type Fields = {
 type Hit = { item: Item, f: Fields, s: number };
 
 let vp: Viewport | null = null;
+/** revealInFeed() (ui/feed.ts), injected: the Feed reaches this module through
+ *  its masthead, so an import back would close a cycle. */
+let revealInFeed: ((id: string) => boolean) | null = null;
 let node: HTMLElement | null = null;
 let field: HTMLInputElement | null = null;
 let list: HTMLElement | null = null;
 let hits: Hit[] = [];
 let at = 0;
 
-export function initSearch(viewport: Viewport) {
+export function initSearch(viewport: Viewport, reveal: ((id: string) => boolean) | null = null) {
   vp = viewport;
+  revealInFeed = reveal;
 
   // Capture phase to beat the canvas key handling.
   addEventListener('keydown', e => {
@@ -271,5 +275,7 @@ function commit(hit: Hit | undefined) {
   const item = byId(id);
   if (!item) return;
   select([id]);
+  // On the Feed the canvas is hidden, so flying it moves nothing anybody sees.
+  if (board.layoutMode === 'mobile' && revealInFeed?.(id)) return;
   vp!.fit([item], 120, travelMs());
 }

@@ -258,9 +258,20 @@ list named auto-connect as the next one, and the app has no such command.
         its last visible step sooner than a large one. Checked in Chromium
         only: Firefox and Safari, where the `.is-fading` rule matters most,
         are not tried.
-- [ ] R26 Sweep the Feed for a fourth thing it did not inherit from the old
+- [x] R26 Sweep the Feed for a fourth thing it did not inherit from the old
       phone board (the first three were the grain, the scroll-gated pen and
       the long-press menu).
+      - **Done.** The fourth was Find. On the Feed it selected the hit and
+        flew the hidden canvas, so the wall did not move and the tile showed
+        no mark. Now `revealInFeed()` in `ui/feed.ts` scrolls the wall to put
+        the tile in the middle and rings it for 1.6 s (`.is-found` in
+        `mobile.css`). `ui/search.ts` gets it injected from `main.ts`, because
+        an import would close a cycle through the masthead. The canvas still
+        flies.
+      - The same probe (390 × 844, eight dropped pictures) found the rest
+        inherited: Ctrl+Z and Ctrl+Y, the tile menu's Copy and Ctrl+V, and
+        Delete on a selected tile. The idle fade does not run on the Feed,
+        by design (P11).
 - [x] R27 A `.docx` with no baked thumbnail shows page one on its card.
       - **Done.** New `import/page-one.ts` reads `word/document.xml` and sets
         page one on a page of the file's own size and margins: the text in

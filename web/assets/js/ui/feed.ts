@@ -1305,6 +1305,8 @@ function ensureTile(s: Slot): Tile {
   if (!t) {
     t = buildTile(s.item);
     tiles.set(s.item.id, t);
+    // The tile Find flew to can be built mid-scroll, after revealInFeed() ran.
+    if (s.item.id === foundId) t.el.classList.add('is-found');
     gridEl!.appendChild(t.el);
   } else {
     // Keep the tile pointed at the live item; a reused tile predates this pass.
@@ -1504,6 +1506,37 @@ function placeTile(t: Tile, box: Box) {
   t.el.style.width = `${box.w}px`;
   t.el.style.height = `${box.h}px`;
   t.el.style.transform = `translate(${box.x.toFixed(2)}px, ${box.y.toFixed(2)}px)`;
+}
+
+// The tile Find picked, lit for FOUND_MS. A module value and not only a class,
+// because the tile is usually outside the window when the scroll starts.
+const FOUND_MS = 1600;
+let foundId: string | null = null;
+let foundTimer = 0;
+
+/**
+ * Scroll the wall to an item's tile and light it - what Find does on the Feed
+ * in place of the canvas's flight (research/rapid-fixes-2026-09-14.md, R26).
+ * False when the wall is not on screen or the item has no tile on it, so the
+ * caller can fly the canvas instead.
+ */
+export function revealInFeed(id: string): boolean {
+  if (!root || !gridEl || !root.getClientRects().length) return false;
+  const s = slotById.get(id);
+  if (!s) return false;
+  const gridTop = gridEl.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop;
+  const top = gridTop + s.box.y - (root.clientHeight - s.box.h) / 2;
+  const still = !!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  root.scrollTo({ top: Math.max(0, top), behavior: still ? 'auto' : 'smooth' });
+  if (foundId) tiles.get(foundId)?.el.classList.remove('is-found');
+  foundId = id;
+  tiles.get(id)?.el.classList.add('is-found');
+  clearTimeout(foundTimer);
+  foundTimer = window.setTimeout(() => {
+    if (foundId) tiles.get(foundId)?.el.classList.remove('is-found');
+    foundId = null;
+  }, FOUND_MS);
+  return true;
 }
 
 /** Light the video tile whose clip is the one playing. */
