@@ -26,6 +26,7 @@ import { embeddedPreview, NOT_PORTABLE, PORTABLE_MIN_EDGE } from './preview.ts';
 // .mbrd. There is no dependency to defer and so no reason to defer it.
 import { hasBakedPreview, bakedPreview } from './document.ts';
 import { isDeck, slideOneRaster } from './slide.ts';
+import { isWordDoc, pageOneRaster } from './page-one.ts';
 import { isTiffFile, tiffRaster } from './tiff.ts';
 import { makeThumb, shrinkPicture, DISPLAY_SIDE } from '../optimize/picture.ts';
 import { looksLikeMbrd } from '../storage/mbrd.ts';
@@ -719,6 +720,18 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
       previewHash = await addFile(previewFile);
       type = 'image';
       size = { ...fitToBox('image', slide.w, slide.h), measured: true, decodable: true };
+    }
+  }
+  // A Word file, for the same reason: Word bakes a thumbnail in only when "Save
+  // preview picture" is on. import/page-one.ts sets page one's text and
+  // pictures on a page of the document's own size.
+  if (!size && isWordDoc(extOf(file.name))) {
+    const page = await asking(file, l => pageOneRaster(file, l));
+    if (page?.blob) {
+      previewFile = derivedFile(page.blob, 'page');
+      previewHash = await addFile(previewFile);
+      type = 'image';
+      size = { ...fitToBox('image', page.w, page.h), measured: true, decodable: true };
     }
   }
   // And a TIFF, which is the same shape of problem as all three above and the

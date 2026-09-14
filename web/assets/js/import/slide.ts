@@ -331,7 +331,7 @@ async function draw(
     drawText(ctx, piece.lines, x, y, pw, ph, scale);
   }
 
-  const blob = await encode(face);
+  const blob = await encodeOpaque(face);
   return blob ? { blob, w, h } : null;
 }
 
@@ -388,8 +388,9 @@ function wrap(ctx: Surface['ctx'], text: string, w: number): string[] {
   return out;
 }
 
-/** Encode: WebP preferred, JPEG fallback (opaque canvas, no transparency). */
-async function encode(face: Surface): Promise<Blob | null> {
+/** Encode: WebP preferred, JPEG fallback (opaque canvas, no transparency).
+ * Exported for import/page-one.ts, which draws the same kind of picture. */
+export async function encodeOpaque(face: Surface): Promise<Blob | null> {
   const webp = await surfaceToBlob(face, 'image/webp', 0.82);
   if (!webp) return null;
   if (webp.type.toLowerCase() === 'image/webp') return webp;
