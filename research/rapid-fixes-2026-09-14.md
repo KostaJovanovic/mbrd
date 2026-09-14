@@ -284,5 +284,16 @@ list named auto-connect as the next one, and the app has no such command.
         peeked as nothing. Now a clip plays in the peek, muted and looped,
         over the still the card itself uses, and lets go of its source when
         the pointer leaves. Checked in Chromium with an H.264 mp4.
+- [x] R33 The Timeline again: the current step is not highlighted in the
+      accent, but gets a greyish ground. The "x of x" count on the right
+      goes. The play button looks more like a button, and plays the
+      history at 3.5 steps a second. The playhead's cursor is a hand that
+      grabs, not resize arrows.
+      - **Done.** The current step sits on a 12% ink ground, with an ink
+        tick under it, and the playhead is the only accent on the bar. The
+        count is gone: the bar's text shows only "Does not match" on a
+        stale history. Play has a hairline edge, a paper ground and a small
+        shadow, and steps every 286 ms. The playhead shows `grab`, and
+        `grabbing` while it is dragged. Checked in Chromium.
 - [ ] R30 The Android later list: `native.decode` through `ImageDecoder`, a
       foreground service for long transcodes, and the shelf as a folder tree.

@@ -58,17 +58,28 @@
 }
 #timeline-strip .tl-play:disabled { opacity: 0.35; cursor: default; }
 #timeline-strip .tl-play[aria-pressed="true"] { color: var(--accent-deep); }
+/* Play is the one control on the bar that starts something, so it wears a
+   button's edge, ground and lift, where the gear stays a bare icon (R33). */
+#timeline-strip .tl-play {
+  border: var(--hairline) solid var(--rule-2);
+  background: var(--paper);
+  color: var(--ink-2);
+  box-shadow: var(--shadow-1);
+}
 #timeline-strip :is(.tl-play, .tl-gear) svg {
   width: var(--icon-glyph);
   height: var(--icon-glyph);
 }
 
+/* Says something only when the history does not match the board. The step
+   count it used to show ("5 of 8") went in R33: the playhead says where you
+   are, and the marks say how many there are. */
 #timeline-strip .tl-where {
   flex: none;
   font-size: var(--t-small);
   color: var(--ink-3);
-  font-variant-numeric: tabular-nums;
 }
+#timeline-strip .tl-where:empty { display: none; }
 
 /* Track dimensions, named so the rules below can do arithmetic on them. */
 #timeline-strip {
@@ -147,7 +158,9 @@
   bottom: 0;
   width: 10px;
   margin-left: -5px;
-  cursor: ew-resize;
+  /* A hand, not resize arrows: the playhead is a thing to pick up and move,
+     and nothing about it changes size (R33). */
+  cursor: grab;
   touch-action: none;
   z-index: 1;
 }
@@ -172,6 +185,7 @@
   border-radius: 1px;
   background: var(--accent);
 }
+#timeline-strip .tl-marker.is-dragging { cursor: grabbing; }
 #timeline-strip .tl-marker.is-dragging::before,
 #timeline-strip .tl-marker.is-dragging::after { background: var(--accent-deep); }
 
@@ -221,7 +235,7 @@
   outline-offset: 1px;
 }
 #timeline-strip .tl-step.is-ahead::after { opacity: 0.42; }
-#timeline-strip .tl-step.is-at::after { background: var(--accent); }
+#timeline-strip .tl-step.is-at::after { background: var(--ink-2); }
 
 /* The mark: glyph for what was done. --leaf corner, --tl-mark size. */
 #timeline-strip .tl-step .tl-dot {
@@ -267,15 +281,15 @@
 /* Ahead of the playhead: present but faded -- a redo you can see. */
 #timeline-strip .tl-step.is-ahead .tl-dot { opacity: 0.42; }
 
-/* Current position: a tint and a ring, not a fill. A full accent block
-   outshouted the playhead beside it, and on a neon palette it was the
-   loudest thing on the screen. No scale either: a grown mark reached into
-   the gap the playhead stands in. */
+/* Current position: a grey ground, no accent. The playhead beside it is what
+   says "here" in colour, and a second accent mark next to it only competed
+   (R31, R33). No scale either: a grown mark reached into the gap the
+   playhead stands in. */
 #timeline-strip .tl-step.is-at .tl-dot,
 #timeline-strip .tl-step.is-at:hover .tl-dot {
-  background: color-mix(in srgb, var(--accent) 16%, var(--paper-card));
-  color: var(--accent-text);
-  box-shadow: inset 0 0 0 var(--hairline) color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--ink) 12%, var(--paper-card));
+  color: var(--ink);
+  box-shadow: none;
   transform: none;
 }
 
@@ -322,10 +336,7 @@
     box-shadow: 0 0 0 var(--hairline) rgb(var(--accent-c) / 55%);
   }
   #timeline-strip .tl-step.is-at .tl-dot,
-  #timeline-strip .tl-step.is-at:hover .tl-dot {
-    background: rgb(var(--accent-c) / 16%);
-    box-shadow: inset 0 0 0 var(--hairline) rgb(var(--accent-c) / 55%);
-  }
+  #timeline-strip .tl-step.is-at:hover .tl-dot { background: rgb(var(--ink-c) / 12%); }
   #timeline-strip .tl-scroll { background: rgb(var(--ink-c) / 7%); }
   #timeline-strip .tl-thumb { background: rgb(var(--ink-c) / 30%); }
 }
