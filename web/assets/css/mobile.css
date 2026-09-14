@@ -1721,6 +1721,8 @@
 @media (max-width: 900px) and (max-height: 480px) {
   #sidebar, #header-panel { top: 6px; bottom: 6px; }
   .side-head { padding: 10px 14px 8px; }
+  /* The close button's top keeps level with its side: 10 + 4 = 14 (R35). */
+  :is(#side-close, #header-close) { margin-top: 4px; }
   /* Height is the scarce thing here, so the foot row shrinks a notch. The
      finger has not changed size, so this stops at 44 rather than going further.
      Harmless above 700px, where the foot row is not laid out and nothing reads
