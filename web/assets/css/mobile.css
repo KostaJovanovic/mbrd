@@ -153,7 +153,21 @@
   background: color-mix(in srgb, #000 18%, transparent);
 }
 .feed-play svg { width: 34px; height: 34px; filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.5)); }
+/* Over a playing clip the badge goes; a tap pauses and it comes back. */
+.feed-tile.is-playing .feed-play { display: none; }
 .feed-tile video { width: 100%; height: 100%; object-fit: cover; background: #000; display: block; }
+
+/* A card drawn by the canvas's renderer at its board size, scaled to the tile
+   by --feed-s (fillCard() in ui/feed.ts). The card brings its own paper. */
+.feed-tile[data-kind="card"] { background: none; }
+.feed-card {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  transform: scale(var(--feed-s, 1));
+}
+.feed-card > .card { width: 100%; height: 100%; box-sizing: border-box; }
 
 /* Audio: a cover (or a note glyph) with the track name over a gradient foot. A tap
    goes to the Playlist, audio's home. */
