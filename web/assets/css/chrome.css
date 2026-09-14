@@ -116,16 +116,21 @@
   user-select: none;
   transition: opacity var(--dur-base) var(--ease), visibility 0s, left var(--dur-base) var(--ease);
 }
+/* Crossing the phone width moves the bar between the top and the foot
+   (ui/toolbar.ts sets the class). It fades in where it lands: the `left`
+   transition above is for a panel nudging it along its own edge, and at the
+   crossing it flew the bar across the window. */
+#toolbar.is-relaid {
+  transition: none;
+  animation: toolbar-relaid var(--dur-base) var(--ease);
+}
+@keyframes toolbar-relaid { from { opacity: 0; } }
 /* A panel takes its side of the room, and the bar centres in what is left. */
 #sidebar.is-open ~ #toolbar {
   --tb-left: calc(max(14px, env(safe-area-inset-left)) + min(var(--sidebar-w), 100vw - 28px) + 12px);
 }
 #header-panel.is-open ~ #toolbar {
   --tb-right: calc(max(14px, env(safe-area-inset-right)) + min(var(--sidebar-w), 100vw - 28px) + 12px);
-}
-/* The Mobile board keeps Find and the pen at the top right. */
-:root[data-board-mode="mobile"] #header-panel:not(.is-open) ~ #toolbar {
-  --tb-right: calc(max(16px, env(safe-area-inset-right)) + 2 * var(--chrome-button-w) + 8px + 12px);
 }
 
 /* The steps ui/toolbar.ts takes as the room shrinks: every tool with its
@@ -256,18 +261,35 @@
   /* The docked Timeline's height, 0 while it is closed. ui/timeline-view.ts
      writes it; #viewport and everything anchored to the bottom edge add it. */
   --dock: 0px;
+  /* The bin row (drawer, undo, redo) and the corner stack: what each inset
+     keeps clear, named so a board that does not draw one can say so. */
+  --foot-bin-w: calc(3 * var(--chrome-button-w) + 8px);
   --foot-corner-w: 214px;
   --foot-gap: 12px;
   --foot-left: calc(max(16px, env(safe-area-inset-left))
-                    + 3 * var(--chrome-button-w) + 8px + var(--foot-gap));
+                    + var(--foot-bin-w) + var(--foot-gap));
   --foot-right: calc(max(16px, env(safe-area-inset-right))
                      + var(--foot-corner-w) + var(--foot-gap));
 }
+/* An inset is the furniture on its side, so it goes where the furniture goes.
+   The Mobile board draws no zoom cluster (canvas.css), and the Playlist draws
+   no bin row (mobile.css). The gap used to keep room for both anyway, and on
+   the Playlist that room was 400px of nothing: it squeezed the player to half
+   the list's width and pushed it off the list's centre line. */
+:root[data-board-mode="mobile"] { --foot-corner-w: 0px; }
+:root[data-board-mode="mobile"][data-feed-lens="playlist"] { --foot-bin-w: 0px; }
 
-/* The now-playing bar in that gap. `max-width` caps it and `margin-inline:
-   auto` centres whatever is left over inside the gap - a player is a control
-   and does not want to be a metre wide, which is the one way it differs from
-   the strip, which does.
+/* The now-playing bar in that gap. --np-w caps it - a player is a control and
+   does not want to be a metre wide, which is the one way it differs from the
+   strip, which does - and it is centred on the *window*, not on the gap.
+
+   The gap is lopsided by design: the bin row is three buttons, the zoom
+   cluster is 214px, and a panel opens at one end only. Centring inside it put
+   the bar 43px left of the middle on every board, and off the column of the
+   Feed and the Playlist, which are centred on the window. So the insets say
+   only where the bar must not go: the clamp keeps it on the window's centre
+   line while the room allows, and slides it only as far as the furniture on
+   one side pushes it.
 
    Same card as the add bar next door: the same paper, the same hairline, the
    same --leaf corner. It shares an edge with that bar on a phone, and two
@@ -276,10 +298,11 @@
   position: fixed;
   z-index: var(--z-chrome);
   bottom: calc(max(16px, env(safe-area-inset-bottom)) + var(--dock));
-  left: var(--foot-left);
-  right: var(--foot-right);
-  max-width: 520px;
-  margin-inline: auto;
+  /* On the element, so a rule that moves the insets for this bar moves this too. */
+  --np-w: min(520px, 100vw - var(--foot-left) - var(--foot-right));
+  box-sizing: border-box;
+  width: var(--np-w);
+  left: clamp(var(--foot-left), 50vw - var(--np-w) / 2, 100vw - var(--foot-right) - var(--np-w));
   /* Two rows and two columns: the transport down the left across both rows, and
      to the right of it the name-and-controls row over the thin seek line.
      A grid rather than a column of flex rows, because the play button belongs to
@@ -309,7 +332,9 @@
    first.
 
    The class ui/playlist.ts writes is `.playlist-transport`, not `.playlist-up`,
-   and the difference has already earned itself once. The window used to have a
+   and the difference has earned itself twice. It is on while the window's
+   transport drives what is sounding, and off for a video card played beside
+   the window, which the window cannot pause - that one gets the bar. The window used to have a
    second body - an album view, a hero and a list with no transport in it at all,
    built to use this bar as its transport - and a flag meaning "the window is open"
    hid the bar there too, leaving that view with no way to play, pause or seek
@@ -455,53 +480,20 @@
    the panel you had just opened. The bin and the add bar still go, because what
    they do is on the board the panel is covering.
 
-   One number: the left gutter clears the panel rather than the trash. The
-   right-hand one is untouched, so the bar keeps its own right edge and simply
-   loses width - it does not slide across under the sidebar.
+   One number: the left gutter clears the panel rather than the trash. The bar
+   stays on the window's centre line while that leaves it room, then slides
+   right, then loses width - it never slides under the sidebar.
 
    Both foot bars, because both are in the gap and a panel covers both ends of
    it equally. The general sibling combinator only looks forward, which is why
    #sidebar and #header-panel precede the pair in index.html and why the strip
    sits between #toolbar and #nowplaying rather than anywhere else.
 
-   The two rules are below the narrow-window block that follows, on purpose -
-   see the note there. */
-/* Where a panel and the zoom cluster together leave too little to be a player,
-   the bar steps over the cluster rather than squeezing between the two: the
-   corner stack stops taking a bite out of the gap and is cleared vertically
-   instead.
-
-   Spelled out as a sum rather than as the 67px it used to be. That number was
-   measured off the corner stack when the zoom pill was 32 tall, so raising the
-   pill to --chrome-button-h would have left the player eight pixels low and
-   sitting on it - and on a touch pointer, where the token is 46 rather than 40,
-   fourteen. A literal here is a measurement of another rule, and it goes stale
-   the moment that rule moves. Each term below is the thing it names.
-
-   Named as a property rather than written into `bottom` directly, because the
-   strip may be up as well and then the player has to clear both. See
-   timeline.css, which adds its own height to this.
-
-   **Above the two panel rules, and that placement is the whole mechanism.**
-   This selector and theirs have the same specificity, so whichever is written
-   last wins - which means the panel's own gutter is re-applied over this reset
-   simply by following it, and the side with no panel on it keeps the plain
-   inset. The two rules used to be copied in here, byte for byte, to win the
-   order back; nothing held the copies together, so a gutter edited in one place
-   changed the player's inset above 1080px and not below it, while a panel was
-   open, and nowhere else. */
-@media (max-width: 1080px) {
-  :is(#sidebar, #header-panel).is-open ~ :is(#nowplaying, #timeline-strip) {
-    --foot-left: max(16px, env(safe-area-inset-left));
-    --foot-right: max(16px, env(safe-area-inset-right));
-    --foot-bottom: calc(calc(max(16px, env(safe-area-inset-bottom)) + var(--dock))
-                        + var(--chrome-button-h) + 2 * var(--hairline)  /* the zoom pill */
-                        + 8px                                           /* #corner's gap */
-                        + 25px                                          /* the scale bar */
-                        + 10px);                                        /* clearance */
-  }
-  :is(#sidebar, #header-panel).is-open ~ #nowplaying { bottom: var(--foot-bottom); }
-}
+   Below 1080px the bar used to step up over the zoom cluster once a panel
+   left it too little room. A bar that jumps a row when a window is resized
+   reads as broken, so it stays on the foot and narrows like at any other
+   width, and sheds what it can spare as it does (the container rules after
+   the bar's parts, below). */
 #sidebar.is-open ~ :is(#nowplaying, #timeline-strip) {
   --foot-left: calc(max(14px, env(safe-area-inset-left))
                     + min(var(--sidebar-w), 100vw - 28px) + var(--foot-gap));
@@ -712,6 +704,20 @@
    `[hidden] { display: none }`, so without this the button would be there the
    whole time and merely claim not to be. */
 #nowplaying .np-qbtn[hidden] { display: none; }
+
+/* Narrow, it sheds, in the order it can spare things: the volume first (the
+   system has one), then the list button and the two times (the line still
+   seeks). Play, the name and close stay to the last. It narrows instead of
+   stepping up over the zoom cluster - see the panel note above. Measured on
+   the bar and not the window, because a panel open at either side takes the
+   room just as a narrow window does. */
+#nowplaying { container: np / inline-size; }
+@container np (max-width: 340px) {
+  #nowplaying .np-volume { display: none; }
+}
+@container np (max-width: 240px) {
+  #nowplaying :is(.np-controls .np-qbtn, .np-time) { display: none; }
+}
 
 /* ---------------------------------------------------------------------------
    The tour bar (ui/tour.ts)

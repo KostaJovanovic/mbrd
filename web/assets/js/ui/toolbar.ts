@@ -59,6 +59,25 @@ export function initToolbar(cmds: ToolbarCommands): void {
   bus.on('settings', scheduleFit);
   document.fonts?.ready?.then(scheduleFit).catch(() => {});
   scheduleFit();
+
+  // Crossing the phone width moves the bar between the top and the foot.
+  // Set in the change event, which runs before that frame's style, so the
+  // slide never starts; the fade in chrome.css runs instead.
+  matchMedia(PHONE).addEventListener('change', relay);
+  bar!.addEventListener('animationend', e => {
+    if (e.animationName === 'toolbar-relaid') bar!.classList.remove('is-relaid');
+  });
+}
+
+let relayTimer = 0;
+
+function relay(): void {
+  if (!bar) return;
+  bar.classList.add('is-relaid');
+  // Also on a timer: where animations are off, animationend never comes, and
+  // the class left on would switch the panel slide off for good.
+  clearTimeout(relayTimer);
+  relayTimer = setTimeout(() => bar?.classList.remove('is-relaid'), 1000);
 }
 
 // ---------------------------------------------------------------------------

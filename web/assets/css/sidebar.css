@@ -56,6 +56,13 @@
   right: calc(max(16px, env(safe-area-inset-right)) + var(--chrome-button-w) + 8px);
 }
 #mobile-find-btn[hidden] { display: none; }
+/* Above phone width the toolbar stays at the top and carries its own Find
+   (data-desktop in index.html), so the corner one was a second button for one
+   command, on the Feed and on the Playlist alike. At phone width the toolbar
+   drops Find (mobile.css) and the corner is the only way in. */
+@media not all and (max-width: 700px) {
+  #mobile-find-btn { display: none; }
+}
 #mobile-find-btn svg { width: 18px; height: 18px; color: var(--accent-text); }
 /* Top-right corner on Mobile; fades with visibility delay (same as #toolbar).
    0.3s flat — does not follow whimsy axis. */
