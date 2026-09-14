@@ -258,29 +258,6 @@ function paperHint() {
     : 'Outlines a sheet in the middle of the board, at the size it really is.';
 }
 
-/**
- * One line saying what the quality dial is currently doing, in the terms the
- * fold below it uses. A dial with three unnamed stops is a dial you move once
- * and never trust again.
- */
-const QUALITY_HINT = {
-  full: 'Everything on. The board as it was drawn.',
-  balanced: 'Softer pictures, no panel blur, smaller batches. Nothing you can see standing still.',
-  light: 'GIFs held still, no shadows, no blur, no animation. For a tired phone.',
-};
-
-/**
- * The same for the sound dial, with one sentence the quality hint does not
- * carry: this control is loudness and nothing else. The sounds are the same
- * eleven whatever else the app is wearing - see the head of CUES in
- * cuelume/recipes.ts for why the whimsy axis does not carry them.
- */
-const SOUND_HINT = [
-  'Silent.',
-  'Just audible. For a quiet room.',
-  'Small sounds for the things you do.',
-  'The same sounds, further forward.',
-];
 
 /**
  * Every section, in the order it appears inside its tab.
@@ -446,6 +423,8 @@ export const SECTIONS: Section[] = [
       // Mobile starts at zero and no saved board moves on its own.
       { type: 'buttons', needsBoard: true,
         buttons: [{ cmd: 'rearrange', label: 'Rearrange everything', closesPanel: true }] },
+      // Mobile has no hint here: the Layout names say what order the column
+      // packs in, and a sentence under them only restated it.
       { id: 'spacing', type: 'range', label: 'Spacing', needsBoard: true,
         min: 0, max: 200, step: 4, unit: 'px',
         get: () => board.settings.spacing,
@@ -453,11 +432,6 @@ export const SECTIONS: Section[] = [
       { id: 'opt-snap', type: 'check', label: 'Snap to grid', needsBoard: true,
         get: () => !!board.settings.snap,
         set: v => setSetting('snap', v) },
-      // Mobile only: a column is always packed the same way, so what is chosen
-      // is the order things are packed in, not the shape they come out as.
-      { type: 'hint', when: mobile,
-        html: 'The column is always packed tight - this is the order it packs in. '
-          + '<em>As placed</em> keeps the one it already has.' },
     ],
   },
 
@@ -865,7 +839,6 @@ export const SECTIONS: Section[] = [
         stops: QUALITY_LEVELS.map(l => l.label),
         get: () => QUALITY_LEVELS.findIndex(l => l.id === qualityLevel()),
         set: v => setQualityLevel(QUALITY_LEVELS[v]?.id) },
-      { id: 'quality-hint', type: 'hint', text: () => QUALITY_HINT[qualityLevel()] },
       // In this section rather than in Appearance, and that is the same line
       // the section's own note draws: how loud somebody else's laptop should be
       // is not a property of your moodboard, so it never travels inside a
@@ -875,9 +848,8 @@ export const SECTIONS: Section[] = [
       //
       // One four-stop dial rather than a checkbox and a volume beside it: two
       // controls can disagree with each other, and "Off" is a stop on this one.
-      // Defaults to Medium, which is to say defaults to on - a setting nobody
-      // ever hears is a setting nobody knows they have, and Off is one drag
-      // away and sticks.
+      // Defaults to Off: the sounds are experimental, and the hint under the
+      // dial says so whenever it is on.
       //
       // The quality dial deliberately does not touch it. Sound costs nothing to
       // draw, and muting it on a tired phone would be tidying rather than
@@ -887,18 +859,16 @@ export const SECTIONS: Section[] = [
         stops: SOUND_STOPS,
         get: () => soundLevel(),
         set: v => setSoundLevel(v) },
-      { id: 'sound-hint', type: 'hint', text: () => SOUND_HINT[soundLevel()] },
+      { id: 'sound-hint', type: 'hint', when: () => soundLevel() > 0,
+        text: () => 'Experimental feature. Might suck.' },
       // The overrides. Each reads the resolved flag - so moving the dial moves
       // every one of these - and writes an override that outranks the dial from
       // then on. "Start over" at the foot is the way back, the same as
       // Appearance's.
-      // "Moving GIFs" and not "Animate GIFs": the four checkboxes in this row
-      // are things the app has - shadows, backdrops, animations - and this one
-      // was the only command among them, which made it read as a button rather
-      // than a state. Not "GIF animation" either, which would sit two lines
-      // above "Animations" saying almost the same words about a different
-      // thing.
-      { id: 'q-motion', type: 'check', label: 'Moving GIFs', advanced: true,
+      // "Animated GIFs" and not "Animate GIFs": the four checkboxes in this row
+      // are things the app has - shadows, backdrops, animations - and a command
+      // among them would read as a button rather than a state.
+      { id: 'q-motion', type: 'check', label: 'Animated GIFs', advanced: true,
         get: () => quality.motion, set: v => setQualityOverride('motion', v) },
       { id: 'q-shadows', type: 'check', label: 'Card shadows', advanced: true,
         get: () => quality.shadows, set: v => setQualityOverride('shadows', v) },

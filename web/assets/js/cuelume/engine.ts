@@ -308,14 +308,25 @@ export const SOUND_STOPS = ['Off', 'Low', 'Medium', 'High'] as const;
 const GAIN_AT = [0, 0.35, 0.6, 1];
 
 /**
- * Medium, and on.
- *
- * On by default is the decision that makes the feature worth building: a
- * setting nobody finds is a setting nobody has, and the way to find out that an
- * app makes sounds is to hear one. Off is one drag away and it sticks - see the
- * Quality block in ui/settings-schema.ts.
+ * Off. The sounds are experimental, so they are something to switch on rather
+ * than something to find and switch off.
  */
-const DEFAULT_LEVEL = 2;
+const DEFAULT_LEVEL = 0;
+
+/** Set once the one-time reset below has run. */
+const RESET_PREF = 'mbrd.soundReset';
+
+/**
+ * The stored level, after a one-time reset to Off. The default was Medium until
+ * v0.317, so everybody who never touched the dial had sounds on; this puts
+ * everybody at Off once, and a dial moved after it sticks.
+ */
+function storedLevel(): string | null {
+  if (readPref(RESET_PREF) !== null) return readPref(PREF);
+  writePref(RESET_PREF, '1');
+  writePref(PREF, String(DEFAULT_LEVEL));
+  return String(DEFAULT_LEVEL);
+}
 
 let level = DEFAULT_LEVEL;
 
@@ -804,7 +815,7 @@ function render(
  * `stored` is a parameter for the reason initQuality() takes one: the test
  * wants to hand it a value without owning localStorage for the process.
  */
-export function initCuelume(stored: string | null = readPref(PREF)): number {
+export function initCuelume(stored: string | null = storedLevel()): number {
   level = stored === null ? DEFAULT_LEVEL : clampLevel(stored);
   armed = true;
   resetCueState();

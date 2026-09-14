@@ -299,21 +299,20 @@ function stubBrowser({ activated = true, reduced = false } = {}) {
   }));
 }
 
-test('the dial defaults to Medium and clamps whatever it is given', t => {
+test('the dial defaults to Off and clamps whatever it is given', t => {
   t.after(restoreGlobals);
   stubBrowser();
 
   assert.deepEqual([...SOUND_STOPS], ['Off', 'Low', 'Medium', 'High']);
-  // On by default is what makes the feature worth building - 0 here means
-  // it's off for everybody who never opens the panel, which is most people.
-  assert.equal(initCuelume(null), 2, 'the default is Medium, which is to say on');
+  // The sounds are experimental: nobody hears them until they switch them on.
+  assert.equal(initCuelume(null), 0, 'the default is Off');
 
   assert.equal(initCuelume('0'), 0);
   assert.equal(initCuelume('3'), 3);
   // localStorage is anyone's to edit, and this value reaches a gain.
   assert.equal(initCuelume('9'), 3);
   assert.equal(initCuelume('-4'), 0);
-  assert.equal(initCuelume('loud'), 2, 'unparseable falls back to the default');
+  assert.equal(initCuelume('loud'), 0, 'unparseable falls back to the default');
   assert.equal(initCuelume('2.6'), 3, 'a fractional stop rounds to one that exists');
 
   setSoundLevel(1);
@@ -339,7 +338,7 @@ test('a cue before the page has been touched tries, and is logged if refused', t
   // (high media-engagement, a granted permission, an installed PWA), including
   // the board arriving at launch, the one cue that legitimately speaks first.
   stubBrowser({ activated: false });
-  initCuelume(null);
+  initCuelume('2');
   cue('arrive');
   assert.equal(built.contexts, 1, 'the engine declined to even try');
 
@@ -356,7 +355,7 @@ test('a cue before the page has been touched tries, and is logged if refused', t
   } });
   setGlobal('navigator', { userActivation: { hasBeenActive: false } });
   setGlobal('matchMedia', query => ({ matches: false, media: query }));
-  initCuelume(null);
+  initCuelume('2');
   setCueLog(true);
   assert.doesNotThrow(() => cue('arrive'));
   return new Promise(resolve => setImmediate(() => {

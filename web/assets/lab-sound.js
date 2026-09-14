@@ -395,7 +395,14 @@ function renderRecipe(context, recipe, volume, detune) {
 var PREF = "mbrd.sound";
 var LOG_PREF = "mbrd.soundLog";
 var GAIN_AT = [0, 0.35, 0.6, 1];
-var DEFAULT_LEVEL = 2;
+var DEFAULT_LEVEL = 0;
+var RESET_PREF = "mbrd.soundReset";
+function storedLevel() {
+  if (readPref(RESET_PREF) !== null) return readPref(PREF);
+  writePref(RESET_PREF, "1");
+  writePref(PREF, String(DEFAULT_LEVEL));
+  return String(DEFAULT_LEVEL);
+}
 var level = DEFAULT_LEVEL;
 var armed = false;
 var clampLevel = (n) => {
@@ -543,7 +550,7 @@ function render(recipe, volume, detune, note) {
     say("blocked");
   }
 }
-function initCuelume(stored = readPref(PREF)) {
+function initCuelume(stored = storedLevel()) {
   level = stored === null ? DEFAULT_LEVEL : clampLevel(stored);
   armed = true;
   resetCueState();
