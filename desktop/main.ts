@@ -393,7 +393,6 @@ function createWindow(): BrowserWindow {
     void deliver();
     // After paint, not before: show the board first.
     updates.startUpdates({
-      window: current,
       portable: portableCopy,
       // The title bar's Update button.
       announce: offer => current()?.webContents.send('chrome:update', offer),
@@ -621,7 +620,7 @@ const menuActions: MenuActions = {
   send: runOnBoard,
   view: viewAction,
   showData,
-  // updates.ts answers in its own dialogs.
+  // updates.ts answers on the title bar's Update button.
   checkUpdates: () => { void updates.checkForUpdates(); },
 };
 
@@ -968,7 +967,7 @@ function wireApp(): void {
   // Startup messages (e.g. portable fallback), read once at boot.
   ipcMain.handle('app:startupNotes', () => startupNote);
 
-  // The shell answers in its own dialogs, so the page gets nothing back.
+  // The answer goes to the title bar's Update button, so the page gets nothing back.
   ipcMain.handle('updates:check', () => { void updates.checkForUpdates(); });
 
   // Google Drive's sign-in, in the system browser (google-oauth.mts). The

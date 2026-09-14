@@ -61,7 +61,7 @@ contextBridge.exposeInMainWorld('mbrdDesktop', {
     decode: (bytes: ArrayBuffer, name: string) => invoke('native:decode', bytes, name),
   },
 
-  // A request with no answer: the shell replies in its own dialogs.
+  // A request with no answer: the shell replies on the title bar's Update button.
   updates: {
     check: () => invoke('updates:check'),
     // The title bar's Update button offers the desktop's updates (updates.ts),

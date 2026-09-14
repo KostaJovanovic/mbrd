@@ -3,11 +3,11 @@
 // file's URL and the SHA-256 GitHub computed for it. A download that does not
 // match its digest never takes over, and a release with no digest never
 // installs. No electron-updater, no latest.yml. A dev copy never checks.
-// The automatic check, once a day, answers with the title bar's Update button
-// (announce); Help > Check for updates still answers in native dialogs.
+// Every answer goes to the title bar's Update button, never a native dialog. A
+// check finds a new version, and a press on Update downloads it, then installs
+// it (research/rapid-fixes-2026-09-14.md, R3).
 
-import { app, dialog, net, shell } from 'electron';
-import type { BrowserWindow, MessageBoxOptions, MessageBoxReturnValue } from 'electron';
+import { app, net, shell } from 'electron';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { chmodSync, createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
@@ -40,14 +40,15 @@ const ASSET = {
 const FIRST_CHECK_MS = 20 * 1000;
 const LOOK_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** How long a passing answer ("Up to date") stays on the button. */
+const PASSING_MS = 5000;
 
 /** How this copy was installed, and so what an update can do to it. */
 export type Kind = 'dev' | 'installer' | 'appimage' | 'manual';
 
-/** What main.ts hands over: the board window, whether this copy is portable,
- *  and where to announce an update (the title bar's button). */
+/** What main.ts hands over: whether this copy is portable, and where to
+ *  announce an update (the title bar's button). */
 export interface UpdateOptions {
-  window: () => BrowserWindow | null;
   portable: boolean;
   announce: (offer: UpdateOffer | null) => void;
 }
@@ -61,20 +62,38 @@ interface ApiAsset { name?: unknown, digest?: unknown, browser_download_url?: un
 
 let kind: Kind = 'dev';
 let portableCopy = false;
-let getWindow: () => BrowserWindow | null = () => null;
 let started = false;
+/** A check or a download is running. */
 let busy = false;
+/** Help > Check for updates was chosen, so the running check answers aloud. */
+let asked = false;
+/** The newer release this copy can install, found by the last check. */
+let pending: { version: string, asset: Asset } | null = null;
 /** A downloaded update waiting to take over, or null. */
 let ready: { version: string, file: string } | null = null;
 /** The installer was started, so quitting must not start it twice. */
 let launched = false;
-/** What the title bar's button offers now, or null for no button. */
+/** What the title bar's button says for good, or null for no button. */
 let offered: UpdateOffer | null = null;
+/** A passing answer's timer. When it runs out the button goes back to `offered`. */
+let passing: ReturnType<typeof setTimeout> | null = null;
 let announce: (offer: UpdateOffer | null) => void = () => {};
 
+/** Put a lasting state on the button. */
 function publish(offer: UpdateOffer | null): void {
+  if (passing) clearTimeout(passing);
+  passing = null;
   offered = offer;
   announce(offer);
+}
+
+/** Put a passing answer on the button, and after `ms` go back to what it said.
+ *  With no `ms` it stays until the next answer replaces it. */
+function say(offer: UpdateOffer, ms = 0): void {
+  if (passing) clearTimeout(passing);
+  passing = null;
+  announce(offer);
+  if (ms) passing = setTimeout(() => { passing = null; announce(offered); }, ms);
 }
 
 /** The button's state, for a title bar that loads after the answer came. */
@@ -110,10 +129,11 @@ const due = () => {
  * How this copy was installed.
  *
  * `installer` is the Windows install, whose uninstaller sits beside the exe:
- * the new installer downloads in the background and runs silently when the app
- * quits, or at once on "Restart now". `appimage` is Linux: the new file takes
- * the old one's place. `manual` only announces a new version: a portable copy,
- * and macOS, where an app with no Developer ID signature cannot install one.
+ * a press on Update downloads the new installer, which runs silently as the
+ * app closes and starts the new version. `appimage` is Linux: the new file
+ * takes the old one's place. `manual` only announces a new version: a
+ * portable copy, and macOS, where an app with no Developer ID signature
+ * cannot install one.
  */
 export function installKind(portable: boolean): Kind {
   if (!app.isPackaged) return 'dev';
@@ -136,13 +156,12 @@ export function startUpdates(opts: UpdateOptions): void {
   started = true;
   portableCopy = opts.portable;
   kind = installKind(portableCopy);
-  getWindow = opts.window;
   announce = opts.announce;
   log('info', 'updates', { kind });
   if (kind === 'dev') return;
   if (kind === 'installer') {
     tidy(downloadDir(), true);
-    // "Later" still installs: the downloaded installer runs as the app closes,
+    // A download that finished as the window was closing still installs,
     // silently, without starting the app again.
     app.on('will-quit', () => runInstaller(false));
   }
@@ -168,27 +187,23 @@ function tidy(path: string, recursive = false): void {
 }
 
 /**
- * The title bar's Update button. A copy that can install itself quits, and the
+ * The title bar's Update button. A press does what the button says: download
+ * the update then install it, open the download page for a copy that cannot
+ * replace itself, or try again after a failure. The install quits, and the
  * quit writes the board to its file first (holdCloseForFlush in main.ts), so
- * nothing asks about saving. One that cannot says how and opens the page.
+ * nothing asks about saving.
  */
 export function clickUpdate(): void {
-  if (!offered) return;
-  if (!offered.install) {
-    offerDownload(offered.version);
+  if (!offered || busy) return;
+  if (offered.state === 'manual') {
+    shell.openExternal(DOWNLOAD_PAGE).catch(err => log('warn', 'could not open the download page', { err: String(err) }));
     return;
   }
-  if (!ready) return;
-  if (kind === 'installer') {
-    // The installer waits for this copy to close, installs, then starts the
-    // new version (--force-run).
-    runInstaller(true);
-  } else {
-    // relaunch starts the new file once this process has gone, so the two
-    // never meet at the single-instance lock.
-    app.relaunch({ execPath: process.env.APPIMAGE, args: [] });
-  }
-  app.quit();
+  if (offered.state !== 'available' && offered.state !== 'failed') return;
+  // A failed download tries the download again. A failed check has nothing
+  // to download yet, so it checks again.
+  if (pending) void downloadAndInstall(pending);
+  else void check(true);
 }
 
 /** Help > Check for updates, and the panel row. Unlike the automatic check, it always answers. */
@@ -234,23 +249,33 @@ async function latestRelease(): Promise<Release> {
   return { version: tag.replace(/^v/, ''), assets };
 }
 
-/** Download a release asset to `dest`, hashing as it streams. Nothing lands at
- *  `dest` unless the SHA-256 matches the digest GitHub gives for the file. */
-async function download(asset: Asset, dest: string): Promise<void> {
+/** Download a release asset to `dest`, hashing as it streams, and report how
+ *  much has come, in whole percent steps. Nothing lands at `dest` unless the
+ *  SHA-256 matches the digest GitHub gives for the file. */
+async function download(asset: Asset, dest: string, onProgress: (share: number) => void): Promise<void> {
   const want = /^sha256:([0-9a-f]{64})$/.exec(asset.digest);
   if (!want) throw new Error('the release gives no SHA-256 for ' + asset.name);
   const res = await net.fetch(asset.url);
   if (!res.ok || !res.body) throw new Error('the download failed: ' + res.status);
+  const total = Number(res.headers.get('content-length')) || 0;
   mkdirSync(dirname(dest), { recursive: true });
   const part = dest + '.part';
   const hash = createHash('sha256');
   const out = createWriteStream(part);
+  let got = 0;
+  let told = 0;
   try {
     const reader = res.body.getReader();
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
       hash.update(value);
+      got += value.byteLength;
+      const share = total ? Math.min(1, got / total) : 0;
+      if (share - told >= 0.01) {
+        told = share;
+        onProgress(share);
+      }
       if (!out.write(value)) await new Promise<void>(resolve => out.once('drain', () => resolve()));
     }
     await new Promise<void>((resolve, reject) => {
@@ -272,10 +297,10 @@ async function download(asset: Asset, dest: string): Promise<void> {
 
 /** Fetch the update for a self-updating copy, and leave it ready to take over.
  *  `asset.name` matched ASSET's pattern, so it carries no path separator. */
-async function fetchUpdate(version: string, asset: Asset): Promise<void> {
+async function fetchUpdate(version: string, asset: Asset, onProgress: (share: number) => void): Promise<void> {
   if (kind === 'installer') {
     const file = join(downloadDir(), asset.name);
-    await download(asset, file);
+    await download(asset, file, onProgress);
     ready = { version, file };
     return;
   }
@@ -285,10 +310,49 @@ async function fetchUpdate(version: string, asset: Asset): Promise<void> {
   const target = process.env.APPIMAGE;
   if (!target) throw new Error('APPIMAGE is not set');
   const next = target + '.new';
-  await download(asset, next);
+  await download(asset, next, onProgress);
   chmodSync(next, 0o755);
   renameSync(next, target);
   ready = { version, file: target };
+}
+
+/** The press on Update: download with the button counting, then install. */
+async function downloadAndInstall(want: { version: string, asset: Asset }): Promise<void> {
+  busy = true;
+  const v = label(want.version);
+  const counting = (progress: number) => publish({
+    state: 'downloading', version: want.version, progress,
+    note: `Downloading mbrd ${v}. mbrd saves the board and restarts into it when the download is done.`,
+  });
+  counting(0);
+  try {
+    await fetchUpdate(want.version, want.asset, counting);
+    log('info', 'an update is ready', { version: want.version });
+    publish({ state: 'installing', version: want.version, note: `Restarting into mbrd ${v}` });
+    install();
+  } catch (err) {
+    log('info', 'update download did not complete', { err: errorText(err) });
+    publish({
+      state: 'failed', version: want.version,
+      note: `mbrd ${v} did not download: ${errorText(err).slice(0, 200)}. Press to try again.`,
+    });
+  } finally {
+    busy = false;
+  }
+}
+
+/** Put the downloaded update in place and restart into it. */
+function install(): void {
+  if (kind === 'installer') {
+    // The installer waits for this copy to close, installs, then starts the
+    // new version (--force-run).
+    runInstaller(true);
+  } else {
+    // relaunch starts the new file once this process has gone, so the two
+    // never meet at the single-instance lock.
+    app.relaunch({ execPath: process.env.APPIMAGE, args: [] });
+  }
+  app.quit();
 }
 
 function runInstaller(restart: boolean): void {
@@ -302,106 +366,65 @@ function runInstaller(restart: boolean): void {
     .unref();
 }
 
+/** What a copy that cannot replace itself tells somebody to do. */
+function manualHow(version: string): string {
+  const out = `mbrd ${label(version)} is out.`;
+  if (process.platform === 'darwin') {
+    return `${out} Press to open the download page, then drag the new copy into Applications. Your boards and settings stay.`;
+  }
+  if (portableCopy) {
+    return `${out} Press to open the download page, run the new Windows file, choose Portable, and pick this folder. The data folder in it keeps the shelf and the recovery store.`;
+  }
+  return `${out} This copy cannot replace itself. Press to open the download page.`;
+}
+
 async function check(manual: boolean): Promise<void> {
   if (kind === 'dev') {
-    if (manual) tell('Updates are off in a development copy', 'This copy runs the code in the desktop folder, so there is nothing to update.');
+    if (manual) {
+      say({ state: 'dev', version: '', note: 'This copy runs the code in the desktop folder, so there is nothing to update.' }, PASSING_MS);
+    }
     return;
   }
-  if (ready) {
-    if (manual) offerRestart();
-    return;
+  // The button already says what there is, and a new check adds nothing.
+  if (manual && offered && offered.state !== 'failed') return;
+  if (manual) {
+    asked = true;
+    say({ state: 'checking', version: '', note: 'Looking for a newer version' });
   }
-  if (busy) {
-    if (manual) tell('mbrd is already checking for an update', 'Try again in a moment.');
-    return;
-  }
+  // A running check answers the question too, now that it has been asked.
+  if (busy) return;
   busy = true;
   try {
     const rel = await latestRelease();
     stamp();
     if (!newer(rel.version, app.getVersion())) {
-      if (manual) tell('mbrd is up to date', `Version ${label(app.getVersion())} is the latest release.`);
+      if (asked) say({ state: 'current', version: '', note: `Version ${label(app.getVersion())} is the latest release.` }, PASSING_MS);
       return;
     }
     if (kind === 'installer' || kind === 'appimage') {
       const want = ASSET[kind];
       const asset = rel.assets.find(a => want.match.test(a.name));
       if (!asset) throw new Error('the release has no ' + want.name);
-      if (manual) tell(`mbrd ${label(rel.version)} is downloading`, 'A message offers a restart as soon as the download is done.');
-      await fetchUpdate(rel.version, asset);
-      log('info', 'an update is ready', { version: rel.version });
-      publish({ version: rel.version, install: true });
-      if (manual) offerRestart();
+      pending = { version: rel.version, asset };
+      publish({
+        state: 'available', version: rel.version,
+        note: `mbrd ${label(rel.version)} is out. Press to download it. mbrd then saves the board and restarts into it.`,
+      });
       return;
     }
-    publish({ version: rel.version, install: false });
-    if (manual) offerDownload(rel.version);
+    publish({ state: 'manual', version: rel.version, note: manualHow(rel.version) });
   } catch (err) {
-    // A background failure (offline, GitHub down, a bad download) stays
-    // silent, and the next check tries again.
+    // A background failure (offline, GitHub down) stays silent, and the next
+    // check tries again.
     log('info', 'update check did not complete', { err: errorText(err) });
-    if (manual) {
-      tell('mbrd could not update',
-        'Check the connection, then try again.\n\n' + errorText(err).slice(0, 300));
+    if (asked) {
+      publish({
+        state: 'failed', version: '',
+        note: `mbrd could not check for updates. Check the connection. ${errorText(err).slice(0, 200)}. Press to try again.`,
+      });
     }
   } finally {
     busy = false;
+    asked = false;
   }
-}
-
-function show(options: MessageBoxOptions): Promise<MessageBoxReturnValue> {
-  const win = getWindow();
-  const opts: MessageBoxOptions = { type: 'info', title: 'mbrd', noLink: true, ...options };
-  const shown = win && !win.isDestroyed() ? dialog.showMessageBox(win, opts) : dialog.showMessageBox(opts);
-  return shown.catch(() => ({ response: -1, checkboxChecked: false }));
-}
-
-function tell(message: string, detail: string): void {
-  void show({ message, detail, buttons: ['Close'] });
-}
-
-function offerRestart(): void {
-  if (!ready) return;
-  void show({
-    message: `mbrd ${label(ready.version)} is ready`,
-    detail: kind === 'installer'
-      ? 'Restart now to finish the update, or keep working and it installs when you quit.'
-      : 'Restart now to start the new version, or keep working and it starts next time.',
-    buttons: ['Restart now', 'Later'],
-    defaultId: 0,
-    cancelId: 1,
-  }).then(r => {
-    if (r.response !== 0) return;
-    if (kind === 'installer') {
-      // The installer waits for this copy to close, installs, then starts the
-      // new version (--force-run).
-      runInstaller(true);
-    } else {
-      // relaunch starts the new file once this process has gone, so the two
-      // never meet at the single-instance lock.
-      app.relaunch({ execPath: process.env.APPIMAGE, args: [] });
-    }
-    app.quit();
-  });
-}
-
-function offerDownload(version: string): void {
-  let how: string;
-  if (process.platform === 'darwin') {
-    how = 'Download it, then drag it into Applications to replace this copy. Your boards and settings stay.';
-  } else if (portableCopy) {
-    how = 'Download the new Windows file, run it, choose Portable, and pick this folder. The data folder in it keeps the shelf and the recovery store.';
-  } else {
-    how = 'This copy cannot replace itself. Download the new version and use it in place of this one.';
-  }
-  void show({
-    message: `mbrd ${label(version)} is out`,
-    detail: how,
-    buttons: ['Open the download page', 'Later'],
-    defaultId: 0,
-    cancelId: 1,
-  }).then(r => {
-    if (r.response !== 0) return;
-    shell.openExternal(DOWNLOAD_PAGE).catch(err => log('warn', 'could not open the download page', { err: String(err) }));
-  });
 }

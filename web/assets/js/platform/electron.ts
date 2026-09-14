@@ -303,7 +303,7 @@ function electronNative(bridge: Bridge): NativePort {
   };
 }
 
-/** Update port. The shell answers in its own dialogs. */
+/** Update port. The desktop answers on the title bar's Update button. */
 function electronUpdates(bridge: Bridge): UpdatesPort {
   return {
     check: () => bridge.updates.check().catch(() => {}),

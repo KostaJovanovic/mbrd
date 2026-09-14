@@ -3,7 +3,7 @@
 // is a separate view below it, so everything arrives through mbrdChrome. A port
 // of FileAnalyser's chrome/titlebar.js, without its back and forward arrows.
 
-import type { ChromeBridge, MenuModel, Subject, UpdateOffer, WinState } from './bridge.ts';
+import type { ChromeBridge, MenuModel, Subject, UpdateOffer, UpdateState, WinState } from './bridge.ts';
 import { applyLook } from './look.ts';
 
 declare global {
@@ -146,7 +146,8 @@ document.addEventListener('keydown', e => {
 
 /**
  * The Update button, as Discord has one: a green arrow and the word, at the
- * right of the bar, only while there is an update. Built by hand rather than
+ * right of the bar, only while updates.ts has something to say. Every answer
+ * about updates is said here, and never in a dialog. Built by hand rather than
  * through icon(), whose glyphs are the window buttons' and one colour.
  */
 function updateButton(api: ChromeBridge): HTMLButtonElement {
@@ -163,19 +164,38 @@ function updateButton(api: ChromeBridge): HTMLButtonElement {
   arrow.setAttribute('d', 'M6 1.5v7M3 5.5l3 3 3-3M2 10.5h8');
   svg.append(arrow);
   const word = document.createElement('span');
+  word.className = 'tb-update-word';
   word.textContent = 'Update';
   btn.append(svg, word);
   btn.addEventListener('click', () => api.update());
   return btn;
 }
 
+/** The word the button says in each state. The tooltip carries the sentence. */
+const WORDS: Record<UpdateState, (offer: UpdateOffer) => string> = {
+  available: () => 'Update',
+  downloading: offer => `Downloading ${Math.round((offer.progress ?? 0) * 100)}%`,
+  installing: () => 'Restarting',
+  manual: () => 'Update',
+  failed: () => 'Retry update',
+  checking: () => 'Checking for updates',
+  current: () => 'Up to date',
+  dev: () => 'No updates in a dev copy',
+};
+
+/** The states in which a press does something. */
+const PRESSABLE = new Set<UpdateState>(['available', 'manual', 'failed']);
+
 function paintUpdate(btn: HTMLButtonElement, offer: UpdateOffer | null): void {
   btn.hidden = !offer;
   if (!offer) return;
-  const v = offer.version.replace(/\.0$/, '');
-  btn.title = offer.install
-    ? `mbrd ${v} is ready. Your board is saved, then mbrd restarts into it`
-    : `mbrd ${v} is out. This copy cannot replace itself: see how to get it`;
+  const word = btn.querySelector('.tb-update-word');
+  if (word) word.textContent = WORDS[offer.state](offer);
+  btn.dataset.state = offer.state;
+  btn.title = offer.note;
+  btn.setAttribute('aria-label', offer.note);
+  btn.disabled = !PRESSABLE.has(offer.state);
+  btn.style.setProperty('--progress', String(offer.progress ?? 0));
 }
 
 /** The board's name and the dirty mark, forwarded by main from setDocument. */
