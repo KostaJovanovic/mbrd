@@ -7,7 +7,7 @@ import { cue } from './cuelume/engine.ts';
 import {
   snapshot, recordStep, markerBack, markerForward, dropLastStep, resetTimeline,
   stepBack, stepForward, stepBackLabel, stepForwardLabel, isReplaying,
-  setStackDropper,
+  setStackDropper, settleDrift, ledgerMoved,
 } from './timeline.ts';
 
 /** One undo entry. `step` links to the timeline ledger; `weight` drives eviction. */
@@ -95,9 +95,11 @@ export const lastCommand = () => top(undoStack) || null;
 export function takeBack(cmd: Command | null) {
   if (!cmd || top(undoStack) !== cmd) return false;
   undoStack.pop();
+  settleDrift();
   cmd.undo();
   // Erase from the timeline too, or a cancelled note leaves a dot on the strip.
   dropLastStep();
+  ledgerMoved();
   heldWeight -= cmd.weight;
   markDirty();
   historyChanged();
@@ -121,6 +123,9 @@ export function undo() {
     cue('fall');
     return true;
   }
+  // Drift is written down before the closure runs and the ledger is resynced
+  // after it, so what the closure undoes is never mistaken for drift.
+  settleDrift();
   cmd.undo();
   // Marker follows the ledger's count, not the stack's. A run of small changes
   // is several entries here but one step there. Move the marker only when this
@@ -128,6 +133,7 @@ export function undo() {
   // marker three steps back and replays rebuild the wrong board.
   const below = undoStack[undoStack.length - 1];
   if (cmd.step && below?.step !== cmd.step) markerBack();
+  ledgerMoved();
   heldWeight -= cmd.weight;
   redoStack.push(cmd);
   markDirty();
@@ -147,10 +153,12 @@ export function redo() {
     cue('rise');
     return true;
   }
+  settleDrift();
   cmd.redo();
   // Mirror of undo()'s marker rule — move forward once as a run is entered.
   const resuming = undoStack[undoStack.length - 1];
   if (cmd.step && resuming?.step !== cmd.step) markerForward();
+  ledgerMoved();
   undoStack.push(cmd);
   heldWeight += cmd.weight;
   markDirty();
