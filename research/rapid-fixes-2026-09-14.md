@@ -97,7 +97,7 @@ box is ticked when its commit lands.
       is built, list the new files), move finished documents to `old/`, and
       mark in each document the items the audit found done
       (`research/todo-2026-09-14.md`, "Already done").
-- [ ] R16 Feed: a press on the board title opens its edit menu at once, as
+- [x] R16 Feed: a press on the board title opens its edit menu at once, as
       the pen button does now.
 - [ ] R17 The spacing rhythm (design audit D4): the 13 different `gap`
       values across 20 stylesheets move to 2/4/6/8/12, one sheet at a time,

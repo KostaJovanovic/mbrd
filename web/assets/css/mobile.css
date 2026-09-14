@@ -99,6 +99,8 @@
 }
 .feed-title[data-nowrap] { white-space: pre; flex: none; max-width: none; }
 .feed-title.is-default { opacity: 0.45; }
+/* A press on the name opens the masthead editor (ui/feed.ts). */
+.feed-title[role="button"] { cursor: pointer; }
 
 /* Masonry grid — tiles positioned absolutely by ui/feed.ts */
 .feed-grid {

@@ -36,6 +36,7 @@ import {
 } from '../stickers/catalogue.ts';
 import { armedSticker, disarm } from './sticker-window.ts';
 import { openViewer, canView } from './viewer.ts';
+import { openPanel as openHeaderPanel } from './mobile-header.ts';
 import { unpackItem } from '../import/unpack.ts';
 import { renderMarkdown } from './markdown.ts';
 import { shownHash, type Item } from '../board-model.ts';
@@ -216,6 +217,10 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
   mastheadEl = div('feed-masthead');
   titleEl = document.createElement('h2');
   titleEl.className = 'feed-title';
+  // A press on the name opens the masthead editor, as the pen button does
+  // (research/rapid-fixes-2026-09-14.md, R16).
+  actAsButton(titleEl, openHeaderPanel);
+  titleEl.setAttribute('aria-controls', 'header-panel');
   mastheadEl.appendChild(titleEl);
   sheet.appendChild(mastheadEl);
 
