@@ -88,10 +88,18 @@
 :root { --toolbar-h: var(--chrome-button-h); }
 
 #toolbar {
+  /* The room the bar is centred in: clear of the menu button at the left and
+     of its twin at the right, and of a panel open at either side (below). The
+     bar moves over rather than going (research/rapid-fixes-2026-09-14.md,
+     R11), and ui/toolbar.ts drops the words, then the rarer tools, as the
+     room shrinks. */
+  --tb-left: calc(max(16px, env(safe-area-inset-left)) + var(--chrome-button-w) + 12px);
+  --tb-right: calc(max(16px, env(safe-area-inset-right)) + var(--chrome-button-w) + 12px);
   position: fixed;
   z-index: var(--z-chrome);
   top: max(16px, env(safe-area-inset-top));
-  left: 50%;
+  left: calc((var(--tb-left) + 100vw - var(--tb-right)) / 2);
+  max-width: calc(100vw - var(--tb-left) - var(--tb-right));
   translate: -50% 0;
   display: flex;
   align-items: stretch;
@@ -106,8 +114,27 @@
   box-shadow: var(--shadow-1);
   -webkit-user-select: none;
   user-select: none;
-  transition: opacity var(--dur-base) var(--ease), visibility 0s;
+  transition: opacity var(--dur-base) var(--ease), visibility 0s, left var(--dur-base) var(--ease);
 }
+/* A panel takes its side of the room, and the bar centres in what is left. */
+#sidebar.is-open ~ #toolbar {
+  --tb-left: calc(max(14px, env(safe-area-inset-left)) + min(var(--sidebar-w), 100vw - 28px) + 12px);
+}
+#header-panel.is-open ~ #toolbar {
+  --tb-right: calc(max(14px, env(safe-area-inset-right)) + min(var(--sidebar-w), 100vw - 28px) + 12px);
+}
+/* The Mobile board keeps Find and the pen at the top right. */
+:root[data-board-mode="mobile"] #header-panel:not(.is-open) ~ #toolbar {
+  --tb-right: calc(max(16px, env(safe-area-inset-right)) + 2 * var(--chrome-button-w) + 8px + 12px);
+}
+
+/* The steps ui/toolbar.ts takes as the room shrinks: every tool with its
+   word, then icons only, then Colour, Link and Stickers behind More, as the
+   phone has them. */
+#toolbar:is([data-fit="icons"], [data-fit="more"]) button span { display: none; }
+#toolbar:is([data-fit="icons"], [data-fit="more"]) button { padding: 0 12px; }
+#toolbar[data-fit="more"] [data-more] { display: none; }
+#toolbar[data-fit="more"] [data-mobile] { display: flex; }
 
 #toolbar-tools {
   display: flex;
@@ -181,33 +208,24 @@
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
-/* The bar goes while a panel is open. Same bargain as #drawer-dock and the bar this
-   replaced, and fading rather than sliding, because there is nowhere for a
-   centred object to slide to.
-
-   **At every width, and it used to be only below 1080.** The breakpoint was a
-   measurement dressed as a rule: above 1080 a panel was a strip down one side
-   and the bar kept the middle, so nothing had to move. That was true of the bar
-   as it stood when the number was written. The bar has since grown - it is
-   eight segments now - and it is centred, so its left edge walks *inward* as it
-   gets wider while the panel's right edge does not move at all. The sidebar
-   ends at 14px + --sidebar-w = 336, and the bar reaches past that well before
-   the window is down to 1080: the first tool sits under the panel while the
-   other seven look perfectly fine, which is exactly the kind of overlap nobody
-   reports for months.
-
-   So there is no width to strike it at. A number chosen against today's bar is
-   a number that is wrong the next time a tool is added, and this is the second
-   time it has been wrong. A panel is over the board and the bar is a control on
-   the board: while the panel is up, the bar goes. Nothing to keep in step.
+/* On a phone the bar goes while a panel is open: there the panel is the
+   screen, and there is no room beside it to move to. Wider, the bar moves
+   over into the room the panel leaves (above), which the maintainer asked for
+   in place of the fade it had at every width (R11). The fade was there
+   because a centred bar walks inward as it grows while a panel's edge stays,
+   and a first tool under the panel is an overlap nobody reports for months.
+   Centring in the room left over, and measuring what fits it, answers the
+   same overlap without a width to keep in step with the tools.
 
    visibility carries the delay so it leaves the tab order only once the fade
    has finished, and comes back the instant the panel starts to close. */
-:is(#sidebar, #header-panel).is-open ~ #toolbar {
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transition: opacity var(--dur-base) var(--ease), visibility 0s var(--dur-base);
+@media (max-width: 700px) {
+  :is(#sidebar, #header-panel).is-open ~ #toolbar {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity var(--dur-base) var(--ease), visibility 0s var(--dur-base);
+  }
 }
 
 /* ---------------------------------------------------------

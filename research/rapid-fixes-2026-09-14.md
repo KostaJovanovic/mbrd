@@ -105,7 +105,7 @@ box is ticked when its commit lands.
         for one ink row at Softish 100% that the probe's threshold cuts.
         `tests/close-plate.test.js` holds the numbers. `#header-close`
         shares the rules and got the same rebuild.
-- [ ] R11 The top toolbar (`#toolbar`) responds to the window:
+- [x] R11 The top toolbar (`#toolbar`) responds to the window:
       - When the sidebar opens, the toolbar moves over and stays visible.
         Today it vanishes.
       - It adapts to the width: as the room shrinks, the buttons drop their
@@ -114,6 +114,13 @@ box is ticked when its commit lands.
       - Mind the order rules in `index.html`: `#toolbar` sits after the
         sidebar and header panel, and the rules that move it are general
         sibling combinators.
+      - **Done.** The bar centres in the room between its side margins, and
+        an open sidebar or masthead panel widens its margin, so the bar
+        slides over. `ui/toolbar.ts` measures what fits the room: every tool
+        with its word, then icons only, then Colour, Link and Stickers
+        behind More. Probed: words at 1400 px with the sidebar open, icons
+        at 900 and 760, More at 720, and hidden with the panel at phone
+        width.
 - [x] R12 The small bugs from the research audit (`research/todo-2026-09-14.md`,
       "Should be done"):
       - HEVC poster frames are black on the website: `optimize/media-worker.js`
