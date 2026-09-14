@@ -208,3 +208,7 @@ box is ticked when its commit lands.
 - [ ] R18 A clutter pass at phone width, the way `research/ui-clutter-2026-08-15.md`
       audited the desktop. First the list of what to cut, for the maintainer
       to choose from, then the cuts.
+      - **The list is written:** `research/ui-clutter-phone-2026-09-14.md`,
+        twelve findings at 390 px. P1 to P5 are controls that do nothing on
+        a phone, P6 to P11 are design calls, P12 is a gap. The cuts wait for
+        the maintainer's choice, so the box stays open.
