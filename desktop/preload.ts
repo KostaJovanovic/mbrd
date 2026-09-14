@@ -70,6 +70,11 @@ contextBridge.exposeInMainWorld('mbrdDesktop', {
     install: () => Promise.resolve(),
   },
 
+  // Google Drive's sign-in, which main runs in the system browser.
+  auth: {
+    google: (req: unknown) => invoke('auth:google', req),
+  },
+
   startupNotes: () => invoke('app:startupNotes'),
 
   setDocument: (state: unknown) => ipcRenderer.send('app:document', state),

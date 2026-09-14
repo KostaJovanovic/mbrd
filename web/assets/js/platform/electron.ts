@@ -3,8 +3,9 @@
 // Blobs do not cross IPC; this seam converts ArrayBuffer+mime both ways.
 
 import type {
-  Platform, FilesPort, LifecyclePort, NativePort, UpdatesPort, UpdateOffer,
+  Platform, FilesPort, LifecyclePort, NativePort, UpdatesPort, UpdateOffer, AuthPort,
   DocumentRef, OpenedFile, PickSpec, TranscodeOpts, BoardFolder, FolderBoard,
+  GoogleSignIn, GoogleGrant,
 } from './platform.ts';
 // StoreBackend is not imported: platform/ sits below storage/ in the layer
 // graph, so electronStore() is checked structurally at the wiring point.
@@ -57,6 +58,11 @@ export interface Bridge {
     onOffer(fn: (offer: UpdateOffer | null) => void): void;
     /** Put the offered update in place. The page has saved the board. */
     install(): Promise<void>;
+  };
+  /** Google Drive's sign-in, outside the page: the system browser on the
+   *  desktop (google-oauth.mts), the account sheet on Android (MbrdAuth.java). */
+  auth: {
+    google(req: GoogleSignIn): Promise<GoogleGrant>;
   };
   startupNotes(): Promise<string>;
   setDocument(state: { title: string, name: string | null, path: string | null, dirty: boolean }): void;
@@ -306,6 +312,18 @@ function electronUpdates(bridge: Bridge): UpdatesPort {
   };
 }
 
+/** Sign-in port. An IPC failure arrives as "Error invoking remote method
+ *  'auth:google': Error: <why>", and the page shows only the why. */
+function electronAuth(bridge: Bridge): AuthPort {
+  return {
+    googleClient: bridge.shell === 'capacitor' ? 'android' : 'desktop',
+    google: req => bridge.auth.google(req).catch((err: unknown) => {
+      const why = err instanceof Error ? err.message : String(err);
+      throw new Error(why.replace(/^Error invoking remote method '[^']*': (Error: )?/, ''));
+    }),
+  };
+}
+
 /** Assemble all ports from a bridge. Called once from main.ts. */
 export function electronPlatform(bridge: Bridge): Platform {
   return {
@@ -313,6 +331,7 @@ export function electronPlatform(bridge: Bridge): Platform {
     lifecycle: electronLifecycle(bridge),
     native: electronNative(bridge),
     updates: electronUpdates(bridge),
+    auth: electronAuth(bridge),
     setDocument: state => bridge.setDocument({
       title: state.title,
       name: state.ref?.name ?? null,

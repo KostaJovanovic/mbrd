@@ -15,3 +15,20 @@ export const GOOGLE_CLIENT_ID =
  * neither - provider.ts enforces it.
  */
 export const GOOGLE_API_KEY = 'AIzaSyC8TAfzTKybC94aEikm4fsaR1qGvzdMYM4';
+
+/**
+ * The desktop app's own OAuth client, of the type "Desktop app". The desktop
+ * signs in through the system browser and a loopback address
+ * (desktop/google-oauth.mts), which a web client refuses. Google calls a
+ * Desktop client's secret not secret, and still asks for it. Both or neither.
+ * Empty keeps Google Drive out of the desktop app, rather than broken in it.
+ */
+export const GOOGLE_DESKTOP_CLIENT_ID: string = '';
+export const GOOGLE_DESKTOP_CLIENT_SECRET: string = '';
+
+/**
+ * Whether an Android OAuth client exists for com.valjdakosta.mbrd and the
+ * release key's SHA-1. Google finds that client by the app's signature, so
+ * there is no id to write here. False keeps Google Drive out of the Android app.
+ */
+export const GOOGLE_ANDROID_CLIENT: boolean = false;

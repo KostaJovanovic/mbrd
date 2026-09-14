@@ -157,6 +157,33 @@ is in every request the recipient's browser makes. What protects them is
 registration, not secrecy: a copy lifted from this repository is useless from any
 other host.
 
+### The apps sign in with clients of their own
+
+The popup above works only on the website. The desktop denies the page's
+`window.open` and serves `app://`, and Android serves `https://app`, so Google
+has no redirect to send either of them back to. Each app therefore signs in
+outside the page, through `platform.auth.google()`, and hands the page the
+same kind of token the popup would:
+
+- **The desktop** runs the loopback flow with PKCE in the system browser
+  (`desktop/google-oauth.mts`): a server on `127.0.0.1` for one answer, and the
+  code traded for a token in main. It needs a *Desktop app* OAuth client, whose
+  id and secret go in `GOOGLE_DESKTOP_CLIENT_ID` and
+  `GOOGLE_DESKTOP_CLIENT_SECRET`. Google calls that secret not secret, since
+  anybody can unpack the app, and still asks for it.
+- **Android** asks Google's Authorization API (`MbrdAuth.java`), which shows
+  the phone's own account sheet. It needs an *Android* OAuth client for the
+  package `com.valjdakosta.mbrd` and the SHA-1 of the release key. Google finds
+  that client by the signature, so there is no id to write: set
+  `GOOGLE_ANDROID_CLIENT` to `true` once it exists. A debug build is signed
+  with another key and needs a second Android client for that key's SHA-1.
+
+Until then an app has no Drive rows (`canSignIn()`, `googleSignInHere()` in
+`provider.ts`), and still opens a link it is sent, since the recipient needs no
+sign-in. The recipient half does need the API key to answer the app, so a key
+restricted by referrer has to allow the apps too, or be restricted to the Drive
+API instead.
+
 `tests/share.test.js` asserts that the committed state has *neither* filled in.
 If that assertion ever stands between somebody and a working deploy, it is
 inverted in the same commit that fills the file in; it is a statement about this

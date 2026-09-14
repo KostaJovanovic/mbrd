@@ -83,6 +83,13 @@ const api: AndroidBridge = {
     install: () => call<void>('MbrdShell', 'installUpdate'),
   }),
 
+  // Google Drive's sign-in, in Android's own account sheet (MbrdAuth.java).
+  // Google finds the Android client by the package name and the signing key,
+  // so only the scope goes across.
+  auth: Object.freeze({
+    google: req => call<{ token: string, expiresIn: number }>('MbrdAuth', 'google', { scope: req.scope }),
+  }),
+
   // Where the boards are, when they are not in Documents/mbrd (plan §5.4).
   startupNotes: () => call<{ note?: string }>('MbrdShell', 'startupNotes').then(r => r.note ?? ''),
   // A phone has no title bar to name the board in.

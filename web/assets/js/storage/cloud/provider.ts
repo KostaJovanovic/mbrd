@@ -5,7 +5,11 @@
 // checked against a fixed provider table (CSP stays a named host list).
 
 import { SHARE_PARAM } from '../../page.ts';
-import { GOOGLE_API_KEY, GOOGLE_CLIENT_ID } from './config.ts';
+import { platform } from '../../platform/platform.ts';
+import {
+  GOOGLE_ANDROID_CLIENT, GOOGLE_API_KEY, GOOGLE_CLIENT_ID, GOOGLE_DESKTOP_CLIENT_ID,
+  GOOGLE_DESKTOP_CLIENT_SECRET,
+} from './config.ts';
 
 /** How far along an upload is, for the strip. Bytes, not a fraction. */
 export interface ShareProgress {
@@ -19,6 +23,9 @@ export interface ShareProvider {
   readonly label: string;
   /** Whether this build has the registered app identifiers. Unconfigured = absent, not broken. */
   configured(): boolean;
+  /** Whether this shell can sign in. Configured but not here opens a link it
+   *  is sent, and offers no sign-in, upload or sync. */
+  canSignIn(): boolean;
   signedIn(): boolean;
   /** Open the sign-in popup. Must be from a live user gesture (browsers block otherwise). */
   signIn(): Promise<void>;
@@ -97,7 +104,21 @@ export function shareLinkFor(origin: string, home: string, ref: ShareRef): strin
   return `${origin}${home}?${SHARE_PARAM}=${codeFor(ref.provider)}.${ref.id}`;
 }
 
-/** Synchronous check for ui/settings-schema.ts — both client id and API key, or neither. */
+/**
+ * Whether this shell can sign in to Google. The web's popup fails in the apps
+ * (the desktop denies it and serves app://, Android serves https://app), so
+ * each app signs in with a client of its own, and has none until config.ts
+ * names it.
+ */
+export function googleSignInHere(): boolean {
+  switch (platform.auth.googleClient) {
+    case 'desktop': return !!GOOGLE_DESKTOP_CLIENT_ID && !!GOOGLE_DESKTOP_CLIENT_SECRET;
+    case 'android': return GOOGLE_ANDROID_CLIENT;
+    default: return true;
+  }
+}
+
+/** Synchronous check for ui/settings-schema.ts — both client id and API key, or neither, and a sign-in that works here. */
 export function canShareLink(): boolean {
-  return !!GOOGLE_CLIENT_ID && !!GOOGLE_API_KEY;
+  return !!GOOGLE_CLIENT_ID && !!GOOGLE_API_KEY && googleSignInHere();
 }
