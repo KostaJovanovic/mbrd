@@ -142,7 +142,7 @@ async function render() {
   // used to set in 22px type. It was the only close in the app not drawn from
   // icons.svg, so it was the only one whose weight and proportion came from
   // whatever face the reader happens to have - and the only one a palette or a
-  // whimsy tier could not reach. See research/design-audit-2026-08-25.md, B1.
+  // whimsy tier could not reach. See research/old/design-audit-2026-08-25.md, B1.
   const shut = document.createElement('button');
   shut.type = 'button';
   shut.className = 'library-close';

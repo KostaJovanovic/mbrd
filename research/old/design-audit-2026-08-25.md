@@ -347,7 +347,7 @@ the debug entries are `advanced: true`.
 
 ## Already known, still open
 
-`research/ui-clutter-2026-08-15.md` remains the standing document on quantity
+`research/old/ui-clutter-2026-08-15.md` remains the standing document on quantity
 rather than consistency, and most of it is still true. Its item **G** is now
 done — the trash and undo/redo are one `.bin-row` (`index.html:668`), and the
 scale bar is docked inside `#corner` (`:694`). Items A through F are untouched,
@@ -537,6 +537,8 @@ reader to remember: the two files had already said which of them holds what.
   normalising them is twenty judgement calls that look identical in a diff and
   different on screen. There is no browser-driven suite to catch a wrong one.
   This one wants somebody with the app open.
+  **Done 2026-09-14** (R17 in `../rapid-fixes-2026-09-14.md`): every pixel
+  gap is on 2/4/6/8/12, checked by eye, and `tests/spacing.test.js` holds it.
 
 ### Two things found while implementing, not in the audit above
 

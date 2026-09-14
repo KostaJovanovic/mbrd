@@ -1,5 +1,8 @@
 # Full code audit — 2026-07-26
 
+> **2026-09-14:** AUD-17, the Geist provenance, is written down in
+> `.github/THIRD-PARTY.md`.
+
 ## Executive summary
 
 This audit covers the complete browser application, its local Python server and

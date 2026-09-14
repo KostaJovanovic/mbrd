@@ -1,5 +1,10 @@
 # Where the clutter is, and what to cut
 
+> **2026-09-14 audit:** A, B, E, F and G are done, and half of D (the `Picture`
+> rename). The maintainer decided on 2026-09-14 that C (the note format bar)
+> and D's two board rows on the item menu stay as they are. H was not
+> rechecked. The phone half is `../ui-clutter-phone-2026-09-14.md`.
+
 2026-08-15, against v0.201 on `localhost:6273`, desktop Chrome at 1063 × 718 CSS px.
 
 Audited by driving the real app: resting board, sidebar (all three tabs, every

@@ -1,5 +1,10 @@
 # Electron — the task list
 
+> **2026-09-14 audit:** done and not ticked below: the FFmpeg GPL notice (G, J),
+> the data-folder name and the download page (H), and all four builds,
+> published as v0.316 (I, J2). The Windows hand checks are still open, in
+> `todo-2026-09-14.md`.
+
 Open work. The executable half of
 [`electron-2026-09-06.md`](electron-2026-09-06.md). That document argues *why*
 and records every decision; this one says *what to do, in what order*. Read
@@ -14,7 +19,7 @@ documents.
 working through the groups one at a time, in order, over several sessions.
 Each task names the file, gives a string to find it by, says what is there,
 says what to change, and says how you know it is done. Unlike
-`simplification-tasks-2026-08-18.md`, most tasks here *build* rather than
+`old/simplification-tasks-2026-08-18.md`, most tasks here *build* rather than
 edit, so the anchors are for the seams in the existing code and the new files
 are described by what they must export and what test holds them.
 

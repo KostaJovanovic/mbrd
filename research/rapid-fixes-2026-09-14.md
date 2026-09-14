@@ -174,10 +174,18 @@ box is ticked when its commit lands.
         no drag, and nothing in it writes membership. Probed at 420 px with
         As placed: card 0, fence 1 with cards 1 and 2, card 3, fence 2 with
         cards 4 and 5, card 6.
-- [ ] R15 Tidy `research/`: bring `research/README.md` up to date (apps-tasks
+- [x] R15 Tidy `research/`: bring `research/README.md` up to date (apps-tasks
       is built, list the new files), move finished documents to `old/`, and
       mark in each document the items the audit found done
       (`research/todo-2026-09-14.md`, "Already done").
+      - **Done.** Six documents went to `old/`: `ui-clutter-2026-08-15.md`,
+        the simplification pair, `design-audit-2026-08-25.md`,
+        `fixes-2026-09-14.md` and the release README draft. Every document
+        the audit found done work in carries a dated banner at its head, and
+        the simplification checklist is filled in, with "not checked" where
+        the audit did not look. The README lists the three new files and
+        says the desktop and Android apps are built. Every path to a moved
+        file is updated, in the code comments too.
 - [x] R16 Feed: a press on the board title opens its edit menu at once, as
       the pen button does now.
 - [x] R19 Feed: too much padding left and right. On a phone, the board sheet
@@ -205,7 +213,7 @@ box is ticked when its commit lands.
         by eye before and after: the hint cards, a style tile, the item
         menu, the three sidebar tabs, the board list, the colour picker and
         the Feed.
-- [ ] R18 A clutter pass at phone width, the way `research/ui-clutter-2026-08-15.md`
+- [ ] R18 A clutter pass at phone width, the way `research/old/ui-clutter-2026-08-15.md`
       audited the desktop. First the list of what to cut, for the maintainer
       to choose from, then the cuts.
       - **The list is written:** `research/ui-clutter-phone-2026-09-14.md`,

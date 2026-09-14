@@ -1,5 +1,10 @@
 # What the testers said
 
+> **2026-09-14 audit:** the wordmark is built (`ui/wordmark.ts`), and an empty
+> PNG or PDF export is refused with a toast. The maintainer decided on
+> 2026-09-14: no audio card on the starting board, and dark mode and
+> colourblind mode wait.
+
 Open work. A Discord session on 2026-08-19 with two people using the app for
 the first time on machines that are not this one — Linux/Brave, macOS/Safari,
 macOS/Chrome — plus one bug found by panning until the arithmetic gave up.

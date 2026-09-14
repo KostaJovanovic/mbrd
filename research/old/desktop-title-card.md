@@ -1,5 +1,8 @@
 # Desktop title card
 
+> **2026-09-14:** the inline rename on the title card, under "Open / v2", is
+> built: `.item-rename`.
+
 A movable card on the **Desktop** board that shows the board name, styled
 identically to the Mobile masthead, sharing one style with it. Symmetric to how
 Mobile has its fixed masthead: Desktop gets a movable title card.

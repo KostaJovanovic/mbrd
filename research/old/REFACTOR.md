@@ -1,5 +1,9 @@
 # mbrd — refactor plan
 
+> **2026-09-14:** the `state.js` split is done, in another shape: `state.ts` is
+> the one door over `board-model.ts`, `layout.ts`, `fences.ts`, `sticky.ts` and
+> the rest. The `import/types.js` split was skipped on purpose.
+
 Written against `6ee8c4a` (v0.18), clean tree. Self-contained: assumes no
 memory of the conversation that produced it.
 

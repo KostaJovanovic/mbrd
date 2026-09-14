@@ -1,6 +1,6 @@
 // Save, New, Save, and the Boards list. On the website this was reported to
 // leave only the board on screen in the list (G27 in
-// research/fixes-2026-09-14.md). It did not reproduce in a browser, with notes
+// research/old/fixes-2026-09-14.md). It did not reproduce in a browser, with notes
 // or pictures, with or without a reload between the steps. This holds the
 // shelf half of the sequence - Save on the web writes the browser's own copy,
 // which the shelf never reads - so the list is two rows after it, one current.

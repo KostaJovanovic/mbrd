@@ -1,5 +1,8 @@
 # Safari audit — what got fixed, what stayed a note
 
+> **2026-09-14:** the 90s easter-egg image files from *Noticed, out of scope*
+> are deleted.
+
 **Date:** 2026-07-28
 **Source:** `research/old/safari-support-audit-2026-07-26.md` (S1–S7)
 **Verified:** `npm test` → 566 pass / 0 fail after the changes below.
