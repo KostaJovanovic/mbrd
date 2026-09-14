@@ -1,5 +1,5 @@
 // A dropped upload goes on from the last byte that landed
-// (research/rapid-fixes-2026-09-14.md, R13). Against a fake of Drive's
+// (research/old/done-2026-09-15.md, R13). Against a fake of Drive's
 // resumable-session protocol on a stubbed fetch: a session URI, 308 with a
 // Range header for each chunk, the same 308 for a status query, and the file
 // id once the last byte lands. The drop is a fetch that rejects, which is

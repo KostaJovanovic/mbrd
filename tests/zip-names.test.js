@@ -1,7 +1,7 @@
 // Entry names in a ZIP the app did not write. Bit 11 of an entry's flags says
 // its name is UTF-8. With the bit clear, a name that is valid UTF-8 is still
 // read as UTF-8 (most archivers), and one that is not is read as CP437, which
-// is what Windows Explorer writes (research/rapid-fixes-2026-09-14.md, R12).
+// is what Windows Explorer writes (research/old/done-2026-09-15.md, R12).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

@@ -47,7 +47,7 @@ test('a board cannot make the app fetch anything', () => {
 });
 
 test('a look that still says "Same as display" for the body reads as the default', () => {
-  // The option left the body font list (research/rapid-fixes-2026-09-14.md, R6).
+  // The option left the body font list (research/old/done-2026-09-15.md, R6).
   assert.deepEqual(safeVars({ '--font-body': 'var(--font-display)' }), {});
   assert.deepEqual(safeVars({ '--font-body': 'var( --font-display )' }), {});
   // The display face may still point anywhere it could before.

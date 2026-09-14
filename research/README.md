@@ -25,18 +25,11 @@ The changelog source is `patch-notes.md` at the repository root, not in here.
 
 ## Current
 
-- `todo-2026-09-14.md` — **the list of open work.** On 2026-09-14 every
-  document under `research/` was read for unfinished items, and each item was
-  checked against the code. The list sorts them four ways: should be done,
-  needs the maintainer, skipped on purpose, and already done. The maintainer's
-  decisions of that day sit at its head.
-- `rapid-fixes-2026-09-14.md` — **the maintainer's fix list of 2026-09-14, R1
-  to R20.** Each item has a checkbox, and a **Done.** note says what was built
-  and what was not tried. Only R18 is open.
-- `ui-clutter-phone-2026-09-14.md` — **what could go at phone width**: twelve
-  findings at 390 px. P1 to P5 are controls that do nothing on a phone, P6 to
-  P11 are design calls, and P12 is a gap. Nothing in it is cut yet. The
-  maintainer picks, and the cuts land under R18.
+- `todo-2026-09-14.md` — **the list of open work.** Audited on 2026-09-14 and
+  trimmed on 2026-09-15 to what is still open: should be done, checks still
+  owed, needs the maintainer (with the phone design calls P6 to P11), and
+  ideas. What was done, decided or skipped, with the fix list R1 to R38, is in
+  `old/done-2026-09-15.md`.
 - `patch-notes-full.md` — **an archive, not open work.** It holds every release
   at the length it was first written, internal work included. Nothing generates
   anything from it.

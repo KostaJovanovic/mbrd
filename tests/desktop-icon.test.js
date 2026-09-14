@@ -6,7 +6,7 @@
 // the shortcut's, which electron-builder sets from appId. And the installer
 // writes package.json's description into every shortcut it makes: a long one
 // with a double quote in it broke the line, and the shortcuts' icon field held
-// a slice of the prose (research/rapid-fixes-2026-09-14.md, R4).
+// a slice of the prose (research/old/done-2026-09-15.md, R4).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

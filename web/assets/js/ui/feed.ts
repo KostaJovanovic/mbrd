@@ -219,7 +219,7 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
   titleEl = document.createElement('h2');
   titleEl.className = 'feed-title';
   // A press on the name opens the masthead editor, as the pen button does
-  // (research/rapid-fixes-2026-09-14.md, R16).
+  // (research/old/done-2026-09-15.md, R16).
   actAsButton(titleEl, openHeaderPanel);
   titleEl.setAttribute('aria-controls', 'header-panel');
   mastheadEl.appendChild(titleEl);
@@ -431,7 +431,7 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
 /**
  * Everything the Feed shows, in the board's arrangement order, cut into runs:
  * each fence's cards together under its name, between runs of loose cards
- * (research/rapid-fixes-2026-09-14.md, R14). The runs are fences.ts's, the
+ * (research/old/done-2026-09-15.md, R14). The runs are fences.ts's, the
  * same the Mobile layout packs, so one rule says where a fence goes. A fence
  * ranks where its earliest card does, which is why the fences join the order
  * last: their own place in it would otherwise win. A fence with no card to
@@ -530,7 +530,7 @@ function ratioOf(item: Item) {
 
 /**
  * The shape of each item's picture, by id, read off the picture as it loads
- * (research/rapid-fixes-2026-09-14.md, R9). The item's own box is only a
+ * (research/old/done-2026-09-15.md, R9). The item's own box is only a
  * guess at it: a card resized on the board keeps its new shape, and a Fit
  * tile drawn at that shape letterboxes. Kept for the board, so a tile that
  * comes back into the window is laid out right the first time.
@@ -1516,7 +1516,7 @@ let foundTimer = 0;
 
 /**
  * Scroll the wall to an item's tile and light it - what Find does on the Feed
- * in place of the canvas's flight (research/rapid-fixes-2026-09-14.md, R26).
+ * in place of the canvas's flight (research/old/done-2026-09-15.md, R26).
  * False when the wall is not on screen or the item has no tile on it, so the
  * caller can fly the canvas instead.
  */

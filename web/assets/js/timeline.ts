@@ -316,7 +316,7 @@ let stale = false;
  * board with no step. A replay starts from `base` or a checkpoint, which know
  * nothing of those writes, so a trip back and forward used to lose every one
  * of them: rename the board, step back, step forward, and the old name was
- * back (research/rapid-fixes-2026-09-14.md, R5).
+ * back (research/old/done-2026-09-15.md, R5).
  *
  * So before anything records or replays, absorbDrift() compares the board with
  * this and writes the difference into every stored board: `base`, the

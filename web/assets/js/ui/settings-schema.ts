@@ -274,7 +274,7 @@ export const SECTIONS: Section[] = [
   // What the Android app's updater offers (MbrdUpdate.java), first of all and
   // only while it has something. The phone has no title bar to put the
   // desktop's Update button in, and no pop-up either: every step is said on
-  // this row (research/rapid-fixes-2026-09-14.md, R7). A press saves the
+  // this row (research/old/done-2026-09-15.md, R7). A press saves the
   // board, then installs, at once when the update has downloaded and after
   // downloading it otherwise. The panel stays open so the row can count.
   {

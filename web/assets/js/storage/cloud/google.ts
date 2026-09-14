@@ -222,7 +222,7 @@ async function recover(uri: string, size: number, fail: () => number): Promise<{
  * Send bytes in chunks. 308 = chunk landed, keep going (the one success res.ok
  * misses). A dropped connection or a server fault does not end the upload: the
  * session is asked how far it got, and the bytes go on from there
- * (research/rapid-fixes-2026-09-14.md, R13).
+ * (research/old/done-2026-09-15.md, R13).
  */
 async function sendChunks(
   uri: string, blob: Blob, onProgress: ShareProgress, from = 0,

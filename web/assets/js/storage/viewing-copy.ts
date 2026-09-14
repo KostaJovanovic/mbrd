@@ -10,7 +10,7 @@ import type { PackedBoard } from './mbrd.ts';
 const hashIn = (v: unknown): string => (typeof v === 'string' ? v : '');
 
 /**
- * The board as a recipient would view it (research/rapid-fixes-2026-09-14.md,
+ * The board as a recipient would view it (research/old/done-2026-09-15.md,
  * R13). `held` says whether this machine has the bytes for a hash: a card is
  * only pointed at a smaller picture that will actually be in the file.
  *
