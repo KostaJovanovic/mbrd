@@ -139,6 +139,34 @@ export function settlesIn(it: { id: string } | null | undefined) {
   return at === undefined ? 0 : Math.max(0, SETTLE_MS - (Date.now() - at));
 }
 
+// ---------------------------------------------------------------------------
+// Fresh fences
+//
+// A new fence starts free, so it can be moved into place, and anchors itself
+// SETTLE_MS after its last move - once. Unlike the settle window above this
+// one needs a real timer, since the anchor is written to the item and saved.
+// Runtime only: a reload before the timer runs leaves the fence free.
+// ---------------------------------------------------------------------------
+
+/** fence id -> its pending anchor and the timer that will run it. */
+const fresh = new Map<string, { fire: () => void, timer: ReturnType<typeof setTimeout> }>();
+
+function arm(id: string, fire: () => void) {
+  clearTimeout(fresh.get(id)?.timer);
+  fresh.set(id, { fire, timer: setTimeout(() => { fresh.delete(id); fire(); }, SETTLE_MS) });
+}
+
+/** Start a new fence's clock. `fire` anchors it; injected, since this module sits under state.ts. */
+export function startFresh(id: string, fire: () => void) { arm(id, fire); }
+
+/** These ids were just moved: a fresh fence among them waits another SETTLE_MS. */
+export function nudgeFresh(ids: Iterable<string>) {
+  for (const id of ids) {
+    const f = fresh.get(id);
+    if (f) arm(id, f.fire);
+  }
+}
+
 /** Stuck *and* set — null during the settle window after a drop. */
 const pinnedTo = (it: Stickable | null | undefined) => (isSettling(it) ? null : stuckTo(it));
 
@@ -176,6 +204,9 @@ export function seedSticks() {
   sticks.clear();
   // A loaded board is fully set — stale settle stamps would unpin everything for 10s.
   settling.clear();
+  // Nor does another board's fresh fence anchor itself into this one.
+  for (const f of fresh.values()) clearTimeout(f.timer);
+  fresh.clear();
   // Unknown — file values are not guaranteed to be strings.
   const furniture = new Set<unknown>([TITLE_ID]);
   for (const it of board.items) if (isFurniture(it)) furniture.add(it.id);

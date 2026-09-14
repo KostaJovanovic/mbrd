@@ -28,6 +28,9 @@ import { setLens } from './board-view.ts';
 import type { Item } from '../board-model.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 
+/** A song, the kind of card the Playlist plays. */
+const isTrack = (it: Item) => it.type === 'audio';
+
 // Narrow open `meta` fields to the expected types.
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 const urlOf = (hash: unknown): string | null => (typeof hash === 'string' ? assetURL(hash) : null);
@@ -122,7 +125,24 @@ export function initPlaylist(_viewport: Viewport | null, _commands: PlaylistComm
   const host = document.getElementById('mobile-playlist');
   if (host) mobileView = createView(host, { reorderable: true, variant: 'lens' });
 
-  bus.on('board:load', () => { clearQueue(); tagged.clear(); wiredEl = null; resetPanels(); closePlayerWindow(); renderAll(); });
+  bus.on('board:load', () => {
+    clearQueue(); tagged.clear(); wiredEl = null; resetPanels(); closePlayerWindow(); renderAll();
+    // A board saved before the flag existed, with music on it, gets it quietly:
+    // the Playlist button shows, and no window opens for music already there.
+    if (!board.hadMusic && board.items.some(isTrack)) { board.hadMusic = true; bus.emit('board'); }
+  });
+  // The first song on a board opens the player, once. Only on the canvas: on
+  // the Feed a window would cover the column somebody is scrolling, and a song
+  // imported there has set the flag, so none opens later either.
+  bus.on('items', delta => {
+    if (board.hadMusic || !delta?.added?.length) return;
+    const added = new Set(delta.added);
+    if (!board.items.some(it => added.has(it.id) && isTrack(it))) return;
+    board.hadMusic = true;
+    markDirty();
+    bus.emit('board');
+    if (board.layoutMode !== 'mobile') openPlayerWindow();
+  });
   bus.on('layout', () => {
     // Desktop only — leaving for Mobile closes it.
     if (board.layoutMode === 'mobile') closePlayerWindow();

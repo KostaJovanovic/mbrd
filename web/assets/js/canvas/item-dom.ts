@@ -347,28 +347,31 @@ export function writeAdjust(el: HTMLElement, item: ItemLike): void {
   else delete el.dataset.locked;
   // The badge, and it exists because the anchor is otherwise invisible: an
   // anchored card looks exactly like a free one until you press it and nothing
-  // happens. It is drawn only while the card is *selected* (see the rule in
-  // item-chrome.css), because that is the moment the question is asked - you
-  // select the card, no grips appear, and this says why.
+  // happens. It is drawn while the card is hovered or selected (see the rule in
+  // item-chrome.css), and it is a button: a press takes the anchor off, which
+  // canvas/items.ts handles for every card at once.
   //
   // Built here with createElementNS rather than through ui/menu.ts's icon(),
   // which is the same six lines: canvas/ may not import ui/, and one small
   // duplicate is the price of that arrow pointing the way it does.
   const badge = el.querySelector(':scope > .item-locked');
   if (locked && !badge) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    // .item-locked is the hook item-chrome.css draws the badge by, and the
+    // click handler in canvas/items.ts tells the two badges apart by.
+    btn.className = 'item-badge item-locked';
+    btn.setAttribute('aria-label', 'Unanchor');
+    btn.title = 'Unanchor';
     const NS = 'http://www.w3.org/2000/svg';
     const svg = document.createElementNS(NS, 'svg');
-    svg.setAttribute('class', 'ico item-locked');
-    // The card's accessible name already says it is anchored - see
-    // itemAccessibleName() - so announcing this as well reads it out twice.
+    svg.setAttribute('class', 'ico');
     svg.setAttribute('aria-hidden', 'true');
-    // i-anchor, where this was a padlock. The class stays .item-locked: it is
-    // the hook item-chrome.css draws the badge by, and a class rename is a
-    // second edit in a second file buying nothing anybody can see.
     const use = document.createElementNS(NS, 'use');
     use.setAttribute('href', 'assets/icons.svg#i-anchor');
     svg.append(use);
-    el.append(svg);
+    btn.append(svg);
+    el.append(btn);
   } else if (!locked && badge) {
     badge.remove();
   }

@@ -28,7 +28,7 @@ import { brandFor, siteName } from './brands.ts';
 import type { Brand } from './brands.ts';
 import { buildModelCard } from './model.ts';
 import { hintFor, hintKey, tapeStyle, bindDial, STOPS, DIAL } from './ghosts.ts';
-import { ensureDisplay, displayURLReady } from './display.ts';
+import { ensureDisplay, displayURLReady, bakedServes } from './display.ts';
 import { meshKind } from '../mesh.ts';
 import { PALETTE_TOKENS } from '../layout-settings.ts';
 import { faceName, pixelHash } from '../style-tile.ts';
@@ -684,8 +684,10 @@ const RENDERERS = {
       // file, so there is nothing to sharpen up to.
       if (!edited) img.dataset.hiresHash = hash;
       // The baked copy carried in the .mbrd (meta.display), the sharp layer with
-      // no decode - only for a plain card, since the baked copy is uncropped.
-      const displayHash = edited ? '' : metaStr(item.meta?.display);
+      // no decode - only for a plain card, since the baked copy is uncropped, and
+      // only while the sharpness dial asks for no more than it holds.
+      const useBaked = !edited && bakedServes();
+      const displayHash = useBaked ? metaStr(item.meta?.display) : '';
       const baked = displayHash ? assetURL(displayHash) : null;
       const ready = displayURLReady(hash, crop, rot, matte);
       if (baked) {
@@ -707,8 +709,9 @@ const RENDERERS = {
         const done = (src: string | null) => {
           if (src && (img.isConnected || !img.src)) img.src = src;
         };
-        if (edited) {
-          // The exact edit state, from the runtime cache - never baked.
+        if (!useBaked) {
+          // The exact edit state, or a plain copy sharper than the baked one,
+          // from the runtime cache - never baked.
           ensureDisplay(hash, crop, rot, matte).then(u => done(u || assetURL(hash)));
         } else {
           // A plain card on a board with nothing baked (an old board). One decode

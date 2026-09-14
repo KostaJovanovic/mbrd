@@ -405,6 +405,15 @@ knowing before adding another top-level key.
 `settings.web` — which predates all of this and is still called that, so an
 older build reads it and behaves — is the switch for whether they are drawn.
 
+### `hadMusic`
+
+`true` once a song has been on the board, and never cleared. It is what shows
+the sidebar's Playlist button, which before it opened an empty player. The first
+song imported on the canvas also opens the player window, once. Omitted rather
+than written `false`, so a board with no music saves as it did before the key
+existed. A board saved before the key, with music on it, gets it on load without
+the window opening (`ui/playlist.ts`). Added 2026-09-14.
+
 ### `audioOrder`
 
 The order the Playlist plays the board's audio in, as a flat list of item ids.

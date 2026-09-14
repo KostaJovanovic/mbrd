@@ -5,11 +5,24 @@
 import { getAsset, assetURL } from '../storage/assets.ts';
 import { loadMatte, saveMatte, forgetMatte } from '../storage/matte-cache.ts';
 import { quality } from '../quality.ts';
+import { DISPLAY_SIDE } from '../optimize/picture.ts';
 import { cutout, MODEL_NAME, ORT_VERSION } from './matte.ts';
 import { surface, surfaceToBlob, type Surface } from './surface.ts';
 
 // Driven by the quality dial. Changing it invalidates the cache (resetItems → clearDisplay).
 const displayMax = () => quality.sharpness;
+
+/**
+ * Whether the baked copy a board carries (meta.display, DISPLAY_SIDE long) is
+ * sharp enough for the dial. At Soft it is exactly the size asked for. Above
+ * it the baked copy was the reason Picture sharpness seemed to do nothing: a
+ * plain photo showed it whatever the dial said, so a runtime copy at the
+ * dial's edge is made instead.
+ */
+export const bakedServes = () => displayMax() <= DISPLAY_SIDE;
+
+/** The long edge of the copy a plain photo shows, for canvas/hires.ts. */
+export const copyEdge = () => Math.max(DISPLAY_SIDE, displayMax());
 const QUALITY = 0.82;
 
 // Crop is baked into the copy so object-fit keeps working without knowing crops exist.

@@ -102,8 +102,7 @@ test('cork is the softish end of the axis and nowhere else', async () => {
   assert.match(cork.slice(0, cork.indexOf('}')), /background-size:\s*256px 256px;/);
 
   // Declared in that tier and only there, so the middle/Harsh fallback
-  // stays --paper-2 by never being overwritten. #fence-ghost in menu.css is
-  // the only other reader - the placement preview, visible against the board.
+  // stays --paper-2 by never being overwritten.
   const tokens = await readFile(new URL('../web/assets/css/tokens.css', import.meta.url), 'utf8');
   assert.equal(tokens.match(/^\s*--cork:/gm)?.length, 1, 'declared once');
   const tier = tokens.slice(tokens.indexOf(':root[data-whimsy="0"] {'));

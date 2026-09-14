@@ -36,7 +36,7 @@ export type GeomSnap = {
 export type GeomPatch =
   { id: string } & Partial<Omit<GeomSnap, 'id' | 'presnap'>> & { presnap?: unknown };
 import {
-  isRider, attachRiders, stuckPlacement, restick, stuckFollowers, startSettling,
+  isRider, attachRiders, stuckPlacement, restick, stuckFollowers, startSettling, nudgeFresh,
 } from './sticky.ts';
 import { isFence, refence, refenceAround, mobileRuns, fenceFollowers } from './fences.ts';
 
@@ -1005,6 +1005,8 @@ export function commitGeom(
     // back on a card gives it the same window a hand would have. Stepping back
     // is a thing you did to it.
     startSettling(driven);
+    // And a new fence moved into place waits another ten seconds to anchor.
+    nudgeFresh(driven);
     refence(driven);
     refenceAround(resized);
   };

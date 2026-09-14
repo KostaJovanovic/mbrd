@@ -110,7 +110,7 @@ export {
 import {
   STICK_MIN, stuckTo, wouldStick, restick, seedSticks,
   stuckPlacement, isRider, stuckFollowers, isPinned, dragRoot, hostUnder, isSticky,
-  startSettling, isSettling, settlesIn, SETTLE_MS,
+  startSettling, isSettling, settlesIn, SETTLE_MS, startFresh,
 } from './sticky.ts';
 
 import {
@@ -138,7 +138,7 @@ export type { GeomPatch } from './layout.ts';
 export {
   STICK_MIN, stuckTo, wouldStick, restick,
   stuckPlacement, isRider, stuckFollowers, isPinned, dragRoot, isSticky,
-  startSettling, isSettling, settlesIn, SETTLE_MS,
+  startSettling, isSettling, settlesIn, SETTLE_MS, startFresh,
 };
 
 export {
@@ -779,6 +779,18 @@ export function setItemsLocked(ids: Iterable<string>, locked: boolean) {
   // "Anchor"/"Unanchor" — the menu's word, not the stored key (meta.locked).
   commit((locked ? 'Anchor' : 'Unanchor') + many,
     () => write(locked), () => write(!locked));
+}
+
+/**
+ * A new fence anchoring itself (the fresh-fence clock in sticky.ts). Not an
+ * undo step: nobody did it, so Ctrl+Z must not be spent taking it back.
+ */
+export function anchorQuietly(id: string) {
+  const it = byId(id);
+  if (!it || it.meta.locked) return;
+  it.meta = { ...it.meta, locked: true };
+  bus.emit('item', id);
+  markDirty();
 }
 
 /** Set or clear an image's crop (four fractions of the source). */
@@ -1581,6 +1593,7 @@ export function loadBoard(data: unknown) {
   board.connections = next.connections;
   board.audioOrder = next.audioOrder;
   board.tour = next.tour;
+  board.hadMusic = next.hadMusic;
   // A filter is about the tags of the board that set it, and the board leaving
   // took those with it. Left standing, opening a second board would fade most
   // of it out for a reason that is no longer on screen anywhere. Not saved

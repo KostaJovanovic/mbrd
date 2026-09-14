@@ -9,6 +9,8 @@ import { readPref, writePref } from '../prefs.ts';
 import { runCommand } from '../notify.ts';
 import { cue } from '../cuelume/engine.ts';
 import { buildPanel, paintPanel } from './panel.ts';
+import { travelMs } from '../canvas/viewport.ts';
+import type { Viewport } from '../canvas/viewport.ts';
 import { paintTitleField, wireTitleField } from './board-title.ts';
 
 /** Command surface: index lookup by name + setBoardMode called directly. */
@@ -26,6 +28,8 @@ export interface SliderFocus {
 
 let sidebar: HTMLElement | null, menuBtn: HTMLElement | null;
 let sliderFocus: SliderFocus;
+/** The board's view, which the panel pans as it comes and goes. */
+let view: Viewport | null = null;
 const MODE_PREF = 'mbrd.boardMode';
 const MOBILE_LAYOUT_QUERY = '(max-width: 700px)';
 
@@ -73,7 +77,8 @@ export function createMobileSliderFocus(root: HTMLElement, {
   return { begin, end, clear };
 }
 
-export function initSidebar(cmds: SidebarCommands): void {
+export function initSidebar(cmds: SidebarCommands, viewport: Viewport | null = null): void {
+  view = viewport;
   // All ids declared in index.html beside #sidebar.
   sidebar = el('sidebar');
   menuBtn = el('menu-btn');
@@ -173,11 +178,29 @@ export function close(): void {
 }
 
 function setOpen(want: boolean, remember = true): void {
+  const was = isOpen();
   sidebar!.classList.toggle('is-open', want);
   sidebar!.setAttribute('aria-hidden', String(!want));
   menuBtn!.setAttribute('aria-expanded', String(want));
   if (!remember) return;
+  if (was !== want) panFor(want);
   writePref(OPEN_KEY, want ? '1' : '0');
+}
+
+/**
+ * Pan the board by half of what the panel covers, so what was in the middle of
+ * the window stays in the middle of the part the panel leaves free. Not on a
+ * phone, where the panel covers the screen, and not on a reload that restores
+ * it (restoreOpen() does not remember), since the saved view already allows
+ * for it.
+ */
+function panFor(opening: boolean): void {
+  if (!view || !sidebar || view.isMobile || mobileLayoutDetected()) return;
+  // offsetLeft and offsetWidth ignore the slide transform, so this is where the
+  // panel's right edge is when open, whichever way it is going.
+  const reach = sidebar.offsetLeft + sidebar.offsetWidth;
+  const dx = (opening ? reach : -reach) / 2;
+  view.viewTo({ x: view.pan.x - dx / view.zoom, y: view.pan.y }, view.zoom, travelMs());
 }
 
 /** Reopen the panel on load, without playing the slide-in for it. */

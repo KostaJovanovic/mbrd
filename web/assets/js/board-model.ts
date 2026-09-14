@@ -111,6 +111,9 @@ export type Board = {
   audioOrder: string[];
   tour: TourStop[];
   trash: TrashEntry[];
+  /** Music has been on this board at some point. Never cleared: it is what
+   *  shows the sidebar's Playlist button. See ui/playlist.ts. */
+  hadMusic: boolean;
 };
 
 // Stored versions (v0.197) were replaced by the timeline. Old files that
@@ -292,6 +295,7 @@ export const board: Board = {
   tour: [] as TourStop[],
   // SAFETY: assertion prevents never[] inference.
   trash: [] as TrashEntry[],
+  hadMusic: false,
 };
 
 // NUL-separated, sorted so a-b and b-a are one key.

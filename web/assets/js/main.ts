@@ -210,7 +210,7 @@ initAudio();
 // repaint grain (Desktop/Mobile use different surfaces).
 bus.on('layout', () => { reseedGhostCards(); syncBoardMode(true); paintGrain(vp); });
 syncBoardMode();
-initSidebar(cmds);
+initSidebar(cmds, vp);
 initMobileHeaderEditor(vp);
 initItems(el('world')!, vp);
 initWeb(el('world')!, vp);

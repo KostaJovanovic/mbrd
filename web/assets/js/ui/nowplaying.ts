@@ -36,6 +36,8 @@ let totalEl: HTMLElement | null = null;
 let playBtn: HTMLElement | null = null;
 /** The skip, which is only there while there is a list to skip through. */
 let nextBtn: HTMLElement | null = null;
+/** The way to the playlist, which a clip playing on its card is not in. */
+let listBtn: HTMLElement | null = null;
 // The wave's own svg and path, sized to the bar's pixel width so the
 // frequency does not stretch with it - see sizeWave().
 let waveSvg: SVGSVGElement | null = null;
@@ -124,7 +126,7 @@ export function initNowPlaying() {
 
   // The way in to the full player: the Playlist lens on a narrow screen, the
   // floating window where there is room for one.
-  const listBtn = ctlBtn('np-qbtn np-list', 'Open the playlist', LIST_ICON, openPlaylist);
+  listBtn = ctlBtn('np-qbtn np-list', 'Open the playlist', LIST_ICON, openPlaylist);
   // Before the volume, already in the markup along with close - so built and
   // written halves interleave in one order.
   controls!.insertBefore(listBtn, controls!.querySelector('.np-volume') || closeBtn);
@@ -209,6 +211,8 @@ function show(current: NowPlaying | null) {
   bind(current.el);
   caption!.textContent = name(current.item);
   caption!.title = current.item.name || '';
+  // A video is not in the playlist, so a way there from its bar leads nowhere.
+  listBtn!.hidden = current.item.type === 'video';
   paintNext();
   raise();
   // The bar was display:none until raise(), where the line had zero width;

@@ -4,8 +4,8 @@
 
 import { toast } from '../notify.ts';
 import {
-  addItems, baseStep, board, byId, fenceAt, fenceBox, fenceFollowers, fenceOf,
-  isFence, isFurniture, isRider, nextFenceName, select, selection,
+  addItems, anchorQuietly, baseStep, board, byId, fenceAt, fenceBox, fenceFollowers, fenceOf,
+  isFence, isFurniture, isRider, nextFenceName, select, selection, startFresh,
 } from '../state.ts';
 import { itemBounds, MAX_SIZE, MIN_SIZE } from '../geometry.ts';
 import { editItemName } from '../canvas/items.ts';
@@ -51,7 +51,7 @@ function fenceable(): boolean {
   return false;
 }
 
-// The rectangle a fence would occupy; the offer preview and the accept share it.
+// The rectangle a fence would occupy.
 const wouldFence = (rect: Band | null) => fenceBox(rect, itemBounds(fenced()), baseStep());
 
 // Create a fence over rect/selection. z goes below enclosed cards so
@@ -71,10 +71,11 @@ function drawFence(rect: Band | null): void {
     name: nextFenceName(),
     x: box.x, y: box.y, w: box.w, h: box.h,
     z: Math.min(0, ...under.map(i => i.z || 0)) - 1,
-    // Anchored so clicks on cards inside it do not drag the fence.
-    meta: { locked: true },
   }], 'Add a fence');
   if (!fence) return;
+  // Free for now, so it can be moved into place, then anchored so clicks on
+  // cards inside it do not drag the fence. See the fresh-fence clock in sticky.ts.
+  startFresh(fence.id, () => anchorQuietly(fence.id));
   select([fence.id]);
   requestAnimationFrame(() => editItemName(fence.id));
 }
@@ -99,7 +100,7 @@ export function fenceCommands() {
       const count = inside.length;
       if (!count && (rect.x1 - rect.x0 < MIN_SIZE || rect.y1 - rect.y0 < MIN_SIZE)) return;
       if (sharedFence(inside)) return;
-      openFencePrompt(x, y, count, wouldFence(rect), () => {
+      openFencePrompt(x, y, count, () => {
         if (fenceable()) drawFence(rect);
       });
     },

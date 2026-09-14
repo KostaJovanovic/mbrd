@@ -98,6 +98,9 @@ export function normalizeBoard(data: unknown): Omit<Board, 'settings' | 'arrange
     // Pruned to board + bin ids so binned tracks survive restore.
     audioOrder: normalizeAudioOrder(src.audioOrder, ids),
     tour: normalizeTour(src.tour, ids),
+    // Only a literal true counts: a file that omits it is a board with no music
+    // yet, and ui/playlist.ts sets it quietly when an older board holds some.
+    hadMusic: src.hadMusic === true,
   };
 }
 
@@ -515,8 +518,11 @@ export function serializeBoard() {
   // conditionally, so that readers of a filed board - storage.ts asks for
   // `doc.timeline` twice - still see one type with an optional key rather than
   // a union of two shapes.
-  const doc: typeof base & { timeline?: typeof timeline } = base;
+  const doc: typeof base & { timeline?: typeof timeline, hadMusic?: true } = base;
   if (timeline) doc.timeline = timeline;
+  // Omitted rather than written false, for the timeline's reason: a board with
+  // no music saves exactly as it did before the key existed.
+  if (board.hadMusic) doc.hadMusic = true;
   return doc;
 }
 
