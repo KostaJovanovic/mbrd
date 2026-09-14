@@ -6,7 +6,7 @@ edit is a save and a refresh. The property most of what follows exists to keep
 true is the one underneath that — **`npm test` needs no install**, on a clean
 clone, with nothing fetched.
 
-Please read [`research/docs/architecture.md`](research/docs/architecture.md) before a first
+Please read [`research/docs/architecture.md`](../research/docs/architecture.md) before a first
 change. It is the one canonical description of how the app is put together; this
 file is only about working on it.
 

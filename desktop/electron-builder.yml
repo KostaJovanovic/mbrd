@@ -52,9 +52,6 @@ files:
 # exclusions are the things web/ carries that a desktop build has no use for -
 # the two benches are debug harnesses (CLAUDE.md), sw.js is the web's updater
 # and is never registered here, and the source map is not even committed.
-# Beside the app rather than inside the asar, because both are read by something
-# that is not Node: ffmpeg is executed, and onnxruntime reads the model by path.
-# A file inside an asar has neither.
 extraResources:
   - from: ../web
     to: web

@@ -3,7 +3,7 @@
 // videos keep their decoder, blob URLs must be revoked, parsed PDFs hold the
 // whole file. No document reach at import time (tests/imports.test.js).
 
-import { byId, itemAdjust, itemCrop, itemRotate, itemMatte, flipTransform } from '../state.ts';
+import { bus, byId, itemAdjust, itemCrop, itemRotate, itemMatte, flipTransform } from '../state.ts';
 import { displayURLReady, ensureDisplay } from '../canvas/display.ts';
 import { assetURL, getAsset, readText } from '../storage/assets.ts';
 import { baseName, formatBytes } from '../util.ts';
@@ -67,6 +67,9 @@ export function initViewer() {
   // Escape reaches the dialog as a close request whatever had focus; the
   // teardown must run too, or the next viewing inherits a video still playing.
   dlg.addEventListener('close', teardown);
+  // A board swap takes the viewing with it, as it takes the sticker window: the
+  // item it shows, and the blob URLs behind it, belonged to the board that left.
+  bus.on('board:load', closeViewer);
 }
 
 /**

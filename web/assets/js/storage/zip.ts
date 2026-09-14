@@ -154,6 +154,34 @@ async function inflateRaw(bytes: Bytes, cap: number, name: string): Promise<Byte
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
+/** UTF-8 that refuses a byte that is not UTF-8, rather than writing U+FFFD. */
+const strictUtf8 = new TextDecoder('utf-8', { fatal: true });
+
+/**
+ * The IBM PC code page, bytes 0x80 to 0xFF in order. Windows Explorer writes
+ * entry names in it with bit 11 of the flags clear, so a rezipped board with
+ * an accented name read as UTF-8 came out as U+FFFD, and two such names
+ * collapsed into one "appears twice" refusal.
+ */
+const CP437_HIGH =
+  'ÇüéâäàåçêëèïîìÄÅÉæÆôöòûùÿÖÜ¢£¥₧ƒáíóúñÑªº¿⌐¬½¼¡«»' +
+  '░▒▓│┤╡╢╖╕╣║╗╝╜╛┐└┴┬├─┼╞╟╚╔╩╦╠═╬╧╨╤╥╙╘╒╓╫╪┘┌█▄▌▐▀' +
+  'αßΓπΣσµτΦΘΩδ∞φε∩≡±≥≤⌠⌡÷≈°∙·√ⁿ²■ ';
+
+/** An entry's name, by what its flags and its bytes say it is. */
+function entryName(raw: Uint8Array, flags: number): string {
+  // Bit 11: the name is UTF-8, said outright.
+  if (flags & 0x800) return dec.decode(raw);
+  try {
+    // No flag and UTF-8 anyway, which most archivers write. This app's own
+    // writer sets the flag.
+    return strictUtf8.decode(raw);
+  } catch {
+    let out = '';
+    for (const b of raw) out += b < 0x80 ? String.fromCharCode(b) : CP437_HIGH[b - 0x80];
+    return out;
+  }
+}
 
 function dosDateTime(date: Date) {
   const d = date instanceof Date ? date : new Date();
@@ -481,6 +509,7 @@ export async function readZip(
     within(p + 46, size, 'a central-directory entry');
     if (view.getUint32(p, true) !== CD_SIG) throw new Error('Corrupt central directory');
 
+    const flags = view.getUint16(p + 8, true);
     const method = view.getUint16(p + 10, true);
     const crc = view.getUint32(p + 16, true);
     const csize = view.getUint32(p + 20, true);
@@ -491,7 +520,7 @@ export async function readZip(
     const localOff = view.getUint32(p + 42, true);
 
     within(p + 46 + nameLen, size, 'an entry name');
-    const name = dec.decode(bytes.subarray(p + 46, p + 46 + nameLen));
+    const name = entryName(bytes.subarray(p + 46, p + 46 + nameLen), flags);
     p += 46 + nameLen + extraLen + commentLen;
     within(p, size, 'the central directory');
 

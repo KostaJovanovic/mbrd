@@ -80,8 +80,11 @@ async function boot(url) {
       const wasmBinary = await res.arrayBuffer();
       core = await factory({ wasmBinary, locateFile: name => new URL(name, url).href });
     }
-    if (!core?.FS || typeof core.callMain !== 'function') {
-      throw new Error('this build exposes neither FS nor callMain');
+    // Older cores run ffmpeg through callMain(). @ffmpeg/core 0.12 has no
+    // callMain: it runs through exec() and wants reset() between runs, and
+    // with only the callMain test here every poster on the web came out black.
+    if (!core?.FS || (typeof core.callMain !== 'function' && typeof core.exec !== 'function')) {
+      throw new Error('this build exposes neither FS nor callMain nor exec');
     }
     self.postMessage({ type: 'ready', ok: true });
   } catch (err) {
@@ -98,7 +101,12 @@ function run({ id, inName, out, argv, bytes }) {
     // ffmpeg's own exit code is not reliably surfaced by every core build, so
     // the test is whether an output file exists with anything in it - which is
     // the question actually being asked.
-    core.callMain(['-nostdin', '-hide_banner', '-loglevel', 'error', '-y', ...argv]);
+    const args = ['-nostdin', '-hide_banner', '-loglevel', 'error', '-y', ...argv];
+    if (typeof core.callMain === 'function') {
+      core.callMain(args);
+    } else {
+      try { core.exec(...args); } finally { core.reset?.(); }
+    }
 
     let result = null;
     try {

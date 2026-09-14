@@ -31,8 +31,11 @@ const SOURCES = {
     name: 'ffmpeg',
   },
   linux: {
-    // johnvansickle.com GPL static build.
-    url: 'https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz',
+    // johnvansickle.com GPL static build, pinned by version rather than the
+    // moving ffmpeg-release alias. The site moves a release to old-releases/
+    // once a newer one ships, so that address is the fallback.
+    url: 'https://johnvansickle.com/ffmpeg/releases/ffmpeg-7.0.2-amd64-static.tar.xz',
+    fallback: 'https://johnvansickle.com/ffmpeg/old-releases/ffmpeg-7.0.2-amd64-static.tar.xz',
     member: /(^|\/)ffmpeg$/,
     name: 'ffmpeg',
   },
@@ -60,7 +63,11 @@ await rm(scratch, { recursive: true, force: true });
 await mkdir(scratch, { recursive: true });
 
 console.log(`fetching ${source.url}`);
-const response = await fetch(source.url, { redirect: 'follow' });
+let response = await fetch(source.url, { redirect: 'follow' });
+if (!response.ok && source.fallback) {
+  console.log(`${response.status} there - fetching ${source.fallback}`);
+  response = await fetch(source.fallback, { redirect: 'follow' });
+}
 if (!response.ok) {
   console.error(`${response.status} ${response.statusText}`);
   process.exit(1);

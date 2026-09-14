@@ -69,7 +69,7 @@ box is ticked when its commit lands.
       - Mind the order rules in `index.html`: `#toolbar` sits after the
         sidebar and header panel, and the rules that move it are general
         sibling combinators.
-- [ ] R12 The small bugs from the research audit (`research/todo-2026-09-14.md`,
+- [x] R12 The small bugs from the research audit (`research/todo-2026-09-14.md`,
       "Should be done"):
       - HEVC poster frames are black on the website: `optimize/media-worker.js`
         calls `core.callMain`, which `@ffmpeg/core` 0.12.6 lacks. Use `exec`,
@@ -84,6 +84,12 @@ box is ticked when its commit lands.
         `electron-builder.yml`.
       - The simplification leftovers: two `JSON.stringify` compares
         (`state.ts`, `timeline.ts`), and `pictureFrom()` inlined.
+      - **Done.** The `state.ts` compare is now a field-by-field `sameRich()`.
+        The compares in `timeline.ts` stay: they compare any JSON (a card, a
+        setting, a stored board), and a field-by-field compare needs a shape
+        to walk. The HEVC fix is not tried in a browser, because it needs the
+        CDN core. The overlay also hides after 600 ms with no drag event, for
+        a drag that leaves the window and ends outside it.
 - [ ] R13 Share link and sync gaps (`research/docs/cloud.md`): first, keep the
       Drive session URI so a dropped upload resumes. Then a small viewing copy
       for recipients, a list of shared links that can be revoked, reopening a
@@ -99,6 +105,17 @@ box is ticked when its commit lands.
       (`research/todo-2026-09-14.md`, "Already done").
 - [x] R16 Feed: a press on the board title opens its edit menu at once, as
       the pen button does now.
+- [ ] R19 Feed: too much padding left and right. On a phone, the board sheet
+      (the textured ground the cards sit on, `.feed-sheet`) runs the full
+      screen width, and loses its rounded corners at the top and the bottom.
+      - Phones only, below about 600 px. Wider screens keep the centred
+        column (up to 940 px).
+      - The gap between the outer cards and the screen edge equals the gap
+        between cards (10 px).
+      - The sheet still starts below the top buttons and ends above the
+        bottom bar, as now. Only the sides and the corners change.
+- [ ] R20 Feed: the search button moves to the top right. When the pen button
+      shows, the search button sits to the pen's left.
 - [ ] R17 The spacing rhythm (design audit D4): the 13 different `gap`
       values across 20 stylesheets move to 2/4/6/8/12, one sheet at a time,
       with the app open to check each by eye.

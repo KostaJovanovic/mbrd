@@ -242,17 +242,8 @@ export function compoundPicture(doc: Compound): Bytes | null {
   // marker for "this is a property set rather than content", and it is a literal
   // control character in the string below rather than an escape because that is
   // the byte the directory holds.
-  return pictureFrom(doc, doc.stream('SummaryInformation'));
-}
-
-/**
- * The summary property, and failing that whatever a stream simply opens with.
- *
- * The caller does the SummaryInformation lookup and hands the bytes in, so this
- * is a thin two-way fallback rather than the place that lookup is saved.
- */
-function pictureFrom(doc: Compound, summary: Bytes | null): Bytes | null {
-  return fromSummary(summary) || fromCache(doc);
+  // The summary property, and failing that whatever a stream simply opens with.
+  return fromSummary(doc.stream('SummaryInformation')) || fromCache(doc);
 }
 
 /**

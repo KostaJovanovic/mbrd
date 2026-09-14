@@ -145,8 +145,8 @@ wants to know what runs, not only what is committed.
 **The desktop build ships FFmpeg itself, and that one is GPL-3.0.** Not the same
 thing as the paragraph above and not on the same terms: `@ffmpeg/core` is an
 LGPL build fetched by a browser at run time, and this is a GPL static executable
-inside a download. It is FFmpeg 7.1 (https://github.com/FFmpeg/FFmpeg), one
-prebuilt binary per platform, pinned by version in
+inside a download. It is FFmpeg (https://github.com/FFmpeg/FFmpeg), 7.1 on Windows and macOS and
+7.0.2 on Linux, one prebuilt binary per platform, pinned by version in
 `desktop/scripts/fetch-ffmpeg.mjs` — GyanD's `essentials` build on Windows
 (https://github.com/GyanD/codexffmpeg), evermeet.cx's on macOS
 (https://evermeet.cx/ffmpeg/), John Van Sickle's static build on Linux
