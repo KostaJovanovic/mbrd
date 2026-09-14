@@ -347,12 +347,32 @@ list named auto-connect as the next one, and the app has no such command.
       - Not tried: electron-builder makes a `.deb` only on Linux, so the
         first real build is the next release run. Check that its Linux leg
         is green, then install the file on Ubuntu and double-click a board.
-- [ ] R29 Camera RAW photos, the way FileAnalyser does them:
+- [x] R29 Camera RAW photos, the way FileAnalyser does them:
       - The card shows one of the JPEG previews the RAW file carries.
       - The item menu has "Demosaic", which decodes the sensor data into a
         full picture.
       - Optimize demosaics a RAW first, then optimizes the result like a
         normal photograph.
+      - **Done.** Most of it went into v0.377 with save.bat. LibRaw
+        (libraw-wasm 1.6.0, LibRaw 0.22.1) is in `web/assets/vendor/libraw/`
+        and runs in a module worker. `_headers` removes the site policy for
+        that one worker file, as it does for libarchive.
+      - A RAW card still draws the camera's JPEG preview. The item menu has
+        "Demosaic". It develops the sensor with the white balance of the
+        shot, puts the result in `meta.preview` with a new thumbnail and
+        display copy, and sets `meta.demosaiced`. This is one undo step.
+      - Optimize develops each RAW, one at a time, then shrinks it like a
+        photograph and puts it in place of the RAW. The RAW stays in
+        `meta.was` for undo. The preview and display copy go, and `ext` and
+        `mime` change to the new file. The dialog says that the RAW is
+        demosaiced first.
+      - A sensor above 64 Mpx asks first (`sensor-pixels` in consent.ts). A
+        result above 16.7 Mpx is scaled down to the iOS Safari canvas limit.
+      - Measured in Chromium with a 31 MB Sony ARW: Demosaic 3.5 s,
+        Optimize 3.7 s to a 1200 px WebP. Undo and redo were correct, and
+        the console showed no errors.
+      - Not tried: Firefox, Safari, the desktop app and Android. A RAW that
+        holds no preview stays a named card, with no Demosaic row.
 - [x] R31 The Timeline is too saturated, and the playhead overlaps the
       selected step (screenshot of 2026-09-14).
       - **Done.** The current step is a light accent tint with a thin ring,
