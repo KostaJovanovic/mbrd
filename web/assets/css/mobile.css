@@ -519,6 +519,24 @@
 }
 .feed-empty-title { margin: 0; color: var(--ink-2); font-size: var(--t-title); }
 .feed-empty-body { margin: 0; max-width: 34ch; color: var(--ink-3); font-size: var(--t-small); line-height: 1.5; }
+/* The empty Playlist lens's way back: the Shuffle button's quiet outline,
+   since it takes the reader somewhere rather than starting anything. */
+.feed-empty-back {
+  margin-top: 8px;
+  padding: 10px 20px;
+  border: var(--hairline) solid var(--rule);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--ink-2);
+  font-family: var(--font-body);
+  font-size: var(--t-body);
+  font-weight: 600;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .feed-empty-back:hover { background: var(--paper-2); color: var(--accent-deep); }
+}
+.feed-empty-back:active { background: var(--paper-3); }
 
 /* Playlist hero — sleeve, record disc (CSS gradients), title, Play/Shuffle.
    The disc spins while playing; drawn from the palette accent. */

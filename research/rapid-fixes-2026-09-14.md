@@ -213,7 +213,7 @@ box is ticked when its commit lands.
         by eye before and after: the hint cards, a style tile, the item
         menu, the three sidebar tabs, the board list, the colour picker and
         the Feed.
-- [ ] R18 A clutter pass at phone width, the way `research/old/ui-clutter-2026-08-15.md`
+- [x] R18 A clutter pass at phone width, the way `research/old/ui-clutter-2026-08-15.md`
       audited the desktop. First the list of what to cut, for the maintainer
       to choose from, then the cuts.
       - **The list is written:** `research/ui-clutter-phone-2026-09-14.md`,
@@ -221,6 +221,12 @@ box is ticked when its commit lands.
         a phone, P6 to P11 are design calls, P12 is a gap. The cuts wait for
         the maintainer's choice, so the box stays open.
       - **The maintainer chose** P1 to P5 and P12.
+      - **Done.** A Feed tile's menu prints no key hints, and has no Reload
+        board and no Anchor. On a phone the sidebar has no Rearrange
+        everything, Spacing, Snap to grid, Show grid, Show axes or Show
+        readout, and the font hint says to add a face with Add, then Files.
+        The empty Playlist lens has a "Back to the board" button, which
+        goes to the Feed. Checked at 390 × 844 in Chromium.
 
 Added on 2026-09-14 from the open list (`research/todo-2026-09-14.md`), after
 the maintainer chose from it. More editable timeline steps are not taken: the
@@ -258,5 +264,9 @@ list named auto-connect as the next one, and the app has no such command.
         steps is 8 px, not 6, and the playhead's flag is 6 px, not 8, so
         the flag clears the marks on both sides by 2 px. Measured in
         Chromium at the newest step and in the middle of the history.
+- [ ] R32 The sidebar's Board tab: the Tour section is renamed "Other", and
+      the Show/hide timeline button and the Board contents button move under
+      the tour buttons. Also, in the Board contents window, hovering over an
+      mp4 shows no preview. Fix that.
 - [ ] R30 The Android later list: `native.decode` through `ImageDecoder`, a
       foreground service for long transcodes, and the shelf as a folder tree.
