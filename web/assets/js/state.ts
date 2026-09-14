@@ -115,7 +115,7 @@ import {
 
 import {
   isFence, fenceOf, fenceAt, fenceMembers, fenceFollowers, refence, refenceAround,
-  refenceArrivals, seedFences, fenceBox, nextFenceName,
+  refenceArrivals, seedFences, fenceBox, nextFenceName, mobileRuns,
 } from './fences.ts';
 
 import { stickerTint } from './stickers/catalogue.ts';
@@ -143,7 +143,7 @@ export {
 
 export {
   isFence, fenceOf, fenceAt, fenceMembers, fenceFollowers, refence, refenceAround,
-  fenceBox, nextFenceName,
+  fenceBox, nextFenceName, mobileRuns,
 };
 
 export {

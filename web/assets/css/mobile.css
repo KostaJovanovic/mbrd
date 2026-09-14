@@ -136,6 +136,27 @@
   box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 12%, transparent),
               0 4px 12px -2px color-mix(in srgb, var(--ink) 24%, transparent);
 }
+/* A fence's name across the wall, over its cards (feedRuns() in ui/feed.ts).
+   The caption rule of the fence on the canvas (fences.css), laid flat. */
+.feed-band {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: flex-end;
+  box-sizing: border-box;
+  padding: 0 2px 6px;
+  border-bottom: 1px solid var(--rule);
+}
+.feed-band-name {
+  font-family: var(--font-body);
+  font-size: var(--t-small);
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .feed-tile > img { width: 100%; height: 100%; object-fit: cover; display: block; }
 /* Fill vs fit follows data-fit, the same attribute the canvas card keys
    object-fit off (items.css). Written by writeTileFit() in ui/feed.ts from the

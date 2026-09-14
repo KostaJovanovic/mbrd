@@ -146,11 +146,22 @@ box is ticked when its commit lands.
       Drive session URI so a dropped upload resumes. Then a small viewing copy
       for recipients, a list of shared links that can be revoked, reopening a
       synced board without a fresh download, and cleanup of deleted assets.
-- [ ] R14 Fences in the Feed follow the maintainer's rule: the cards of one
+- [x] R14 Fences in the Feed follow the maintainer's rule: the cards of one
       fence always sit together, and fence groups interleave with loose cards
       by position (loose cards, a fence, more loose cards, another fence).
       Fencing happens only on the canvas, so a Feed drag never changes fence
       membership. Check the Feed against this, and fix any difference.
+      - **Done.** Two differences. The Feed ignored fences: it hid them and
+        scattered their cards through the wall in the arrangement's order.
+        And `mobileRuns()`, which the Mobile layout packs, put every loose
+        card after the last fence. Now a fence's run ranks where its first
+        card falls in the arrangement, loose cards between two fences form a
+        run of their own, and the Feed and the Mobile layout read the same
+        runs. In the Feed the fence's name heads its cards across the wall,
+        and each run starts below the whole of the one before. The Feed has
+        no drag, and nothing in it writes membership. Probed at 420 px with
+        As placed: card 0, fence 1 with cards 1 and 2, card 3, fence 2 with
+        cards 4 and 5, card 6.
 - [ ] R15 Tidy `research/`: bring `research/README.md` up to date (apps-tasks
       is built, list the new files), move finished documents to `old/`, and
       mark in each document the items the audit found done
