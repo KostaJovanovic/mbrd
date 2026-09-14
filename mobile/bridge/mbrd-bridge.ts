@@ -20,7 +20,7 @@ const UPDATE_STATES = ['available', 'ready', 'downloading', 'failed', 'said'] as
 type AndroidBridge = Bridge & { shell: 'capacitor', platform: 'android' };
 
 /** A call the Java plugins answer from group N (native FFmpeg) of
- * research/apps-tasks-2026-09-13.md. Until then it refuses, and every caller
+ * research/old/apps-tasks-2026-09-13.md. Until then it refuses, and every caller
  * in platform/electron.ts already has a path for a refusal. */
 const notYet = (what: string) => (): Promise<never> =>
   Promise.reject(new Error(`the Android shell cannot ${what} yet`));

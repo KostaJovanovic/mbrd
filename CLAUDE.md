@@ -128,7 +128,7 @@ Android answers `boards.list()` with null and keeps its own folder rules.
 
 The root package still declares four devDependencies and no runtime
 dependency, and `npm test` still installs nothing — that is what the two-package
-layout is for. See `research/electron-2026-09-06.md` §11.
+layout is for. See `research/old/electron-2026-09-06.md` §11.
 
 The lint is oxlint plus one vendored plugin, `tools/oxlint/anti-slop`, which is
 why `@oxlint/plugins` is a dependency. Its rules are the single departure from
@@ -432,8 +432,8 @@ explicitly**.
 [`browser-support.md`](research/docs/browser-support.md),
 [`cloud.md`](research/docs/cloud.md).
 
-`research/` holds why things are the way they are, in three tiers: open work at
-the top level, carried-out work in `old/`, speculative work in `future/`. See
+`research/` holds why things are the way they are, in two tiers: open work at
+the top level, and carried-out work in `old/`. See
 [`research/README.md`](research/README.md). **Nothing in `old/` is
 authoritative** — if it disagrees with the code, the code is right.
 

@@ -2,8 +2,8 @@
 
 The Android shell of mbrd: Capacitor around the same `web/` tree the website
 serves, the way `desktop/` wraps it for a computer. There is no fork of the app
-code. The decisions are in `research/apps-2026-09-13.md` §5, and the tasks in
-`research/apps-tasks-2026-09-13.md`, groups J to O.
+code. The decisions are in `research/old/apps-2026-09-13.md` §5, and the tasks
+in `research/old/apps-tasks-2026-09-13.md`, groups J to O.
 
 Nothing here reaches the website: `web/` never sees it. iOS is written down in
 the plan (§11) and not started, because it needs a Mac.

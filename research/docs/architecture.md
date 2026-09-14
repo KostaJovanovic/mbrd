@@ -930,7 +930,7 @@ pair is a question still open, and its toast is the one line in the app that
 teaches Shift.
 
 This reverses what the tool did until v0.258, and the reversal came out of a
-tester session (`research/tester-feedback-2026-08-21.md`): the mode was invisible
+tester session (`research/old/tester-feedback-2026-08-21.md`): the mode was invisible
 enough that somebody in it kept not knowing they were in it. The cursor answers
 the other half of that — the tool's own mark, two ends and a line between them,
 a data: URL in `canvas.css` rather than a file, so the mode's mark cannot be the

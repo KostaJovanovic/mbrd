@@ -4,7 +4,7 @@
 // KostaJovanovic/mbrd-release. Every release file carries its version, so a
 // `releases/latest/download/<name>` link would 404 after the next release, and
 // a link into the private KostaJovanovic/mbrd 404s to anybody signed out. Both
-// fail only on the deployed site. research/apps-2026-09-13.md §1 #10 and #31.
+// fail only on the deployed site. research/old/apps-2026-09-13.md §1 #10 and #31.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
