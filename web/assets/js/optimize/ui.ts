@@ -55,6 +55,12 @@ export async function optimizeBoard() {
         : 'Nothing on this board is worth shrinking, but there are empty files on it.'];
 
   if (plan.pictures.length) lines.push('Pictures are capped at 1200px and rewritten as WebP.');
+  // Said because it is the slow part: seconds a file, where a JPEG is a blink.
+  const raws = plan.pictures.filter(job => job.raw).length;
+  if (raws) {
+    lines.push(`${raws === 1 ? 'The camera RAW is' : `${raws} camera RAWs are`} demosaiced first, ` +
+      'which takes a few seconds each.');
+  }
   if (plan.sounds.length) {
     lines.push(opusAvailable()
       ? `Sound becomes Opus at ${OPUS_KBPS}k, keeping its tags and its album art.`
