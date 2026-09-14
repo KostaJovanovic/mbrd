@@ -627,7 +627,14 @@ export function setItemPoster(id: string, hash: unknown, dangling = false) {
  * Originals go to meta.was/wasCover so the autosave sweep keeps them for undo.
  * meta.opt records what was optimised — prevents re-encoding on a second run.
  */
-export type AssetSwap = { id: string, asset?: string | null, cover?: string | null };
+export type AssetSwap = {
+  id: string,
+  asset?: string | null,
+  cover?: string | null,
+  // The new asset is a plain picture that draws itself - a RAW, developed and
+  // shrunk. Its stand-ins go with the old bytes, and ext/mime follow the new.
+  plain?: { ext: string, mime: string },
+};
 
 export function swapAssets(swaps: AssetSwap[] | null | undefined, label = 'Optimize board') {
   const list = (swaps || []).filter(s => s && byId(s.id));
@@ -656,7 +663,7 @@ export function swapAssets(swaps: AssetSwap[] | null | undefined, label = 'Optim
   }
 
   const forward = () => {
-    for (const { id, asset, cover } of list) {
+    for (const { id, asset, cover, plain } of list) {
       const it = byId(id);
       if (!it) continue;
       const meta = { ...it.meta };
@@ -668,6 +675,15 @@ export function swapAssets(swaps: AssetSwap[] | null | undefined, label = 'Optim
         // Only the first swap records the original.
         if (!isHash(meta.was)) meta.was = it.asset.hash;
         it.asset = { ...it.asset, hash: asset };
+        // The old preview and display copy stay on the undo step's before
+        // side, which is what keeps their bytes (timelineHashes).
+        if (plain) {
+          delete meta.preview;
+          delete meta.display;
+          delete meta.demosaiced;
+          meta.ext = plain.ext;
+          meta.mime = plain.mime;
+        }
       }
       if (cover === null && isHash(meta.cover)) {
         if (!isHash(meta.wasCover)) meta.wasCover = meta.cover;
@@ -980,6 +996,32 @@ export function setItemMatte(id: string, matte: unknown) {
   patchMeta(id, 'matte', matte ? true : null,
     next => (next ? 'Remove background' : 'Restore background'),
     value => itemMatte({ meta: { matte: value } }));
+}
+
+/**
+ * Put a developed RAW on its card: the demosaiced picture becomes meta.preview,
+ * with the thumbnail and display copy cut from it. One undo entry, and Undo
+ * puts the camera's own preview back with the copies cut from that. The
+ * original RAW stays asset.hash throughout. `demosaiced` is what stops the menu
+ * offering it twice.
+ */
+export function setItemDemosaiced(id: string, picture: { preview: unknown, thumb?: unknown, display?: unknown }) {
+  const it = byId(id);
+  if (!it || it.type !== 'image' || !isHash(picture.preview)) return;
+  const before: Record<string, unknown> = { ...it.meta };
+  const after: Record<string, unknown> = { ...it.meta, preview: picture.preview, demosaiced: true };
+  // Copies of the camera's preview are not copies of this picture.
+  delete after.thumb;
+  delete after.display;
+  if (isHash(picture.thumb)) after.thumb = picture.thumb;
+  if (isHash(picture.display)) after.display = picture.display;
+  const write = (meta: typeof before) => {
+    const item = byId(id);
+    if (!item) return;
+    item.meta = { ...meta };
+    bus.emit('item', id);
+  };
+  commit('Demosaic', () => write(after), () => write(before));
 }
 
 /** Two axis maps with the same tags and values, whatever order those were written in. */

@@ -161,3 +161,9 @@
 # archive that needs it. Pinned by LIBARCHIVE_VERSION in import/archive.ts.
 /assets/vendor/libarchive/worker-bundle.js
   ! Content-Security-Policy
+
+# LibRaw (camera RAW: the Demosaic row and Optimize): a module worker that
+# compiles libraw.wasm. Same-origin, no network, loaded on the first RAW that
+# is developed. Pinned by LIBRAW_VERSION in optimize/demosaic.ts.
+/assets/vendor/libraw/worker.js
+  ! Content-Security-Policy

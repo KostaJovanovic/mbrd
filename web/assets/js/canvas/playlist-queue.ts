@@ -94,6 +94,12 @@ export interface QueueSnapshot {
 }
 
 let queueItems: Track[] = [];   // the audio items, in list order
+/**
+ * Tracks the list holds but next and previous step over: the ones hidden from
+ * the Playlist. Held rather than dropped, because a card on the board still
+ * plays through playTrack() and would find nothing to play.
+ */
+let skipped = new Set<Track>();
 let queueOrder: number[] = [];  // indices into queueItems, in play order (shuffled or not)
 let queuePos = -1;              // where we are within queueOrder
 /**
@@ -125,16 +131,20 @@ export const isQueuePlayer = (el: unknown): boolean => !!queuePlayerEl && el ===
 
 /** Shuffle mode, repeat mode, and whether the queue is the current sound. */
 export function queueState(): QueueSnapshot {
+  // Guarded on both ends rather than indexed straight: queuePos is -1 before
+  // anything has been started, and queueOrder is rebuilt whenever the list or
+  // the shuffle changes, so a stale position is a real state rather than a
+  // theoretical one.
+  const at = queuePos >= 0 && queuePos < queueOrder.length ? queueOrder[queuePos] : -1;
+  // Counted over what the list offers: a skipped track is not "13 of 12".
+  const index = at < 0 || skipped.has(queueItems[at]) ? -1
+    : queueItems.slice(0, at).filter(it => !skipped.has(it)).length;
   return {
     shuffle: shuffleOn,
     repeat: repeatMode,
     active: !!queuePlayerEl && nowPlaying()?.el === queuePlayerEl,
-    length: queueItems.length,
-    // Guarded on both ends rather than indexed straight: queuePos is -1 before
-    // anything has been started, and queueOrder is rebuilt whenever the list or
-    // the shuffle changes, so a stale position is a real state rather than a
-    // theoretical one.
-    index: queuePos >= 0 && queuePos < queueOrder.length ? queueOrder[queuePos] : -1,
+    length: queueItems.length - skipped.size,
+    index,
     fromList,
   };
 }
@@ -230,12 +240,32 @@ function ensurePlayer(): HTMLAudioElement {
  * Set the tracks the queue runs through, keeping the current one's place.
  *
  * Called by the feed whenever the playlist's order changes. It does not start or
- * stop anything - only what next/previous will reach.
+ * stop anything - only what next/previous will reach. `skip` names tracks in
+ * `items` that stay playable by name and are never reached by stepping.
  */
-export function setQueue(items: readonly Track[] | null | undefined): void {
+export function setQueue(items: readonly Track[] | null | undefined,
+  skip: readonly Track[] = []): void {
   queueItems = Array.isArray(items) ? items.slice() : [];
+  const held = new Set(queueItems);
+  skipped = new Set(skip.filter(it => held.has(it)));
   rebuildOrder();
   notifyQueue();
+}
+
+/** The next position after `pos` that stepping may land on, or -1. */
+function reachAfter(pos: number): number {
+  for (let p = pos + 1; p < queueOrder.length; p += 1) {
+    if (!skipped.has(queueItems[queueOrder[p]])) return p;
+  }
+  return -1;
+}
+
+/** The nearest position before `pos` that stepping may land on, or -1. */
+function reachBefore(pos: number): number {
+  for (let p = Math.min(pos, queueOrder.length) - 1; p >= 0; p -= 1) {
+    if (!skipped.has(queueItems[queueOrder[p]])) return p;
+  }
+  return -1;
 }
 
 function rebuildOrder(): void {
@@ -307,9 +337,10 @@ function startCurrent(skips = 0): void {
   const url: string | null = item?.asset?.hash ? assetURL(item.asset.hash) : null;
   if (!url) {
     if (skips >= queueOrder.length) { notifyQueue(); return; }
-    const last = queuePos >= queueOrder.length - 1;
-    if (last && repeatMode !== 'all') { notifyQueue(); return; }
-    queuePos = last ? 0 : queuePos + 1;
+    let next = reachAfter(queuePos);
+    if (next < 0 && repeatMode === 'all') next = reachAfter(-1);
+    if (next < 0) { notifyQueue(); return; }
+    queuePos = next;
     startCurrent(skips + 1);
     return;
   }
@@ -368,8 +399,11 @@ export function queuePrev(): void {
   // Within the first few seconds prev restarts the track, as every player does;
   // past that it steps back.
   if (queuePlayerEl && queuePlayerEl.currentTime > 3) { queuePlayerEl.currentTime = 0; return; }
+  let prev = reachBefore(queuePos);
+  if (prev < 0) prev = reachBefore(queueOrder.length);
+  if (prev < 0) return;
   fromList = true;
-  queuePos = queuePos <= 0 ? queueOrder.length - 1 : queuePos - 1;
+  queuePos = prev;
   startCurrent();
 }
 
@@ -418,13 +452,12 @@ function advanceQueue(auto: boolean): void {
   if (!queueItems.length) return;
   if (auto && repeatMode === 'one') { startCurrent(); return; }
   if (auto && !fromList && advanceGate && !advanceGate()) return;
-  const last = queuePos >= queueOrder.length - 1;
-  if (last) {
-    if (repeatMode === 'all' || !auto) queuePos = 0;
-    else return;
-  } else {
-    queuePos += 1;
+  let next = reachAfter(queuePos);
+  if (next < 0) {
+    if (repeatMode === 'all' || !auto) next = reachAfter(-1);
+    if (next < 0) return;
   }
+  queuePos = next;
   startCurrent();
 }
 
@@ -459,6 +492,7 @@ export function clearQueue(): void {
   if (voice) voice.pause();
   if (player) { player.pause(); player.removeAttribute('src'); }
   queueItems = [];
+  skipped = new Set();
   queueOrder = [];
   queuePos = -1;
   // Back to the default, with the track that was started from a card. The next

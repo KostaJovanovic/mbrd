@@ -608,6 +608,15 @@
   <path d="M4.4 1.6v10h10M1.6 4.4h10v10"/>
 </symbol>
 
+<!-- Demosaic: one tile of a camera's colour filter, the two greens filled on
+     the diagonal and red and blue left open. The pattern the command resolves. -->
+<symbol id="i-demosaic" viewBox="0 0 16 16">
+  <rect x="2.5" y="2.5" width="5" height="5" rx="1"/>
+  <rect x="8.5" y="2.5" width="5" height="5" rx="1" fill="currentColor" fill-opacity="0.35"/>
+  <rect x="2.5" y="8.5" width="5" height="5" rx="1" fill="currentColor" fill-opacity="0.35"/>
+  <rect x="8.5" y="8.5" width="5" height="5" rx="1"/>
+</symbol>
+
 <!-- The two mirrors, drawn as the same picture twice about a broken axis. The
      axis is dashed rather than solid because it is not part of the shape - it
      is where the fold is - and the two wedges are filled so that the pair reads

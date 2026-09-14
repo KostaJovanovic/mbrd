@@ -4,7 +4,7 @@
 // tests/csp.test.js read the one policy through the one parser. `.mts` for the
 // reason format.mts gives.
 
-/** The site-wide policy, and the paths that drop it (the five workers). */
+/** The site-wide policy, and the paths that drop it (the wasm workers). */
 export interface Policy {
   value: string;
   exempt: string[];

@@ -10,6 +10,7 @@ export type CeilingId =
   | 'file-bytes'
   | 'batch-bytes'
   | 'pixels'
+  | 'sensor-pixels'
   | 'file-count'
   | 'archive-bytes'
   | 'archive-entries'
@@ -43,6 +44,10 @@ const RISKS: Record<CeilingId, string> = {
     'A decode allocates about four bytes a pixel whatever the card is drawn at, and several images decode at '
     + 'once. A small file can declare enormous dimensions, so this may be a picture of nothing that costs '
     + 'gigabytes. Left alone it still arrives, as a named card rather than a picture.',
+  'sensor-pixels':
+    'Developing a RAW holds the sensor at eight bytes a pixel while it works, then the picture again at four '
+    + 'bytes a pixel to draw it, so a sensor this size can cost well over a gigabyte at once. Left alone the '
+    + 'card keeps the preview the camera made.',
   'file-count':
     'This is not a memory limit - the bytes are budgeted separately. It is how long the import will take: '
     + 'each file is measured, and a measurement that fails waits out a timeout before giving up.',

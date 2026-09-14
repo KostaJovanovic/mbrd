@@ -11,6 +11,7 @@ import { PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS } from '../import/formats.
 import { coverArt, audioTags } from '../import/artwork.ts';
 import { shrinkPicture, makeThumb, MAX_SIDE, MAX_SIDE_COVER, QUALITY } from './picture.ts';
 import { toOpus, opusAvailable } from './opus.ts';
+import { demosaic, isRaw } from './demosaic.ts';
 import { platform } from '../platform/platform.ts';
 
 /** Which of the encoders a file belongs to. Null is "leave it alone". */
@@ -23,6 +24,10 @@ type Job = {
   name: string,
   isCover: boolean,
   kind: MediaKind | null,
+  // A camera RAW, developed before it is shrunk - see encodeOne(). `developed`
+  // is the picture the Demosaic row already made, where it made one.
+  raw?: boolean,
+  developed?: string,
 };
 
 /** A card carrying a file with no bytes in it, and which half of it is hollow. */
@@ -95,8 +100,10 @@ type ItemMeta = {
   shot?: string,
   preview?: string,
   thumb?: string,
+  display?: string,
   ext?: string,
   opt?: string[],
+  demosaiced?: boolean,
 };
 
 type ItemView = {
@@ -125,7 +132,12 @@ const cards = (): ItemView[] => board.items;
 type AssetEntry = { blob: Blob, size: number, name?: string, mime?: string };
 
 /** One instruction for swapAssets(): replace, drop (null), or leave alone. */
-type Swap = { id: string, asset: string | undefined, cover: string | null | undefined };
+type Swap = {
+  id: string,
+  asset: string | undefined,
+  cover: string | null | undefined,
+  plain?: { ext: string, mime: string },
+};
 
 /**
  * What optimising this board would do, without doing any of it.
@@ -174,8 +186,14 @@ export function planOptimize(): Plan {
     // only about the wasted minute: re-encoding a WebP or an Opus stream from
     // its own output is a second generation of loss bought for nothing.
     const marked = new Set(item.meta?.opt || []);
+    // A camera RAW is developed and then shrunk like any photograph, and the
+    // result replaces it. Its preview and display copy go with it, so they are
+    // not jobs of their own.
+    const raw = isRaw(item) && !!getAsset(item.asset?.hash);
     for (const hash of itemHashes(item)) {
       if (seen.has(hash)) continue;
+      const ownRaw = raw && hash === item.asset?.hash;
+      if (raw && !ownRaw && (hash === item.meta?.preview || hash === item.meta?.display)) continue;
       // A thumbnail is already the smallest this app knows how to make: a
       // hundred pixels of WebP at quality 0.5, cut by makeThumb(). Counting it
       // here would put a second entry on the dialog for every photograph on the
@@ -190,17 +208,23 @@ export function planOptimize(): Plan {
       // would be handed nothing, and a dialog promising to shrink a file whose
       // size is already zero is a promise it cannot keep.
       if (!asset.size) continue;
-      if (marked.has(hash)) { plan.done++; continue; }
+      // Not for a RAW: a build that could not develop one marked it as looked
+      // at, and that answer was about the build rather than the file.
+      if (marked.has(hash) && !ownRaw) { plan.done++; continue; }
       plan.total += asset.size;
       const isCover = hash !== item.asset?.hash;
       const name = asset.name || item.name || '';
-      const kind = mediaKind({
+      const kind = ownRaw ? 'image' : mediaKind({
         mime: asset.mime || '',
         ext: extOf(name) || item.meta?.ext || extOf(item.name) || '',
         type: item.type,
         isCover,
       });
       const entry: Job = { hash, size: asset.size, name, isCover, kind };
+      if (ownRaw) {
+        entry.raw = true;
+        if (item.meta?.demosaiced && item.meta.preview) entry.developed = item.meta.preview;
+      }
       if (kind === 'image') plan.pictures.push(entry);
       else if (kind === 'audio') plan.sounds.push(entry);
       // Video is bucketed with the skips on the web - counted so a dialog can
@@ -388,6 +412,8 @@ export async function runOptimize(
   // How wide each replacement came out, so the thumbnail pass can ask the
   // decoder for a small bitmap instead of a full one - see backfillThumbs().
   const width = new Map<string, number>();
+  // What each replacement is, for a RAW that becomes a plain picture.
+  const typeOf = new Map<string, string>();
 
   // Counted on completion rather than on start, because several are in flight:
   // a bar driven by what has been *begun* would run to the end immediately and
@@ -408,6 +434,7 @@ export async function runOptimize(
       // Nothing to swap, and swapping would leave `was` pointing at itself.
       if (hash === job.hash) { report.skipped++; return; }
       replacement.set(job.hash, hash);
+      typeOf.set(hash, smaller.blob.type);
       if ('width' in smaller && smaller.width) width.set(hash, smaller.width);
       report.changed++;
       report.before += asset.size;
@@ -443,8 +470,13 @@ export async function runOptimize(
     const cover = hollowCover.has(item.id) ? null : replacement.get(item.meta?.cover);
     // `!== undefined`, not truthiness: null is a real instruction here, and the
     // falsy test this used to be would have skipped every cover being dropped.
+    // A developed RAW is a plain photograph now. Asked of the item as it still
+    // is, before swapAssets() rewrites its ext.
+    const type = asset ? typeOf.get(asset) || '' : '';
+    const plain = asset && isRaw(item) && type.startsWith('image/')
+      ? { ext: type.slice('image/'.length), mime: type } : undefined;
     if (asset !== undefined || cover !== undefined || itemHashes(item).some(h => looked.has(h))) {
-      swaps.push({ id: item.id, asset, cover });
+      swaps.push({ id: item.id, asset, cover, plain });
     }
   }
   report.emptied = plan.empty.length;
@@ -718,6 +750,13 @@ async function backfillThumbs(
  * returns null and is left exactly as it was.
  */
 async function encodeOne(asset: AssetEntry, job: Job) {
+  // A camera RAW: developed, then shrunk like any photograph. The picture the
+  // Demosaic row made is the same development, so it is used where it exists.
+  if (job.raw) {
+    const developed = job.developed ? getAsset(job.developed)?.blob : null;
+    const picture = developed || (await inTurn(() => demosaic(asset.blob))).blob;
+    return shrinkPicture(picture, { maxSide: MAX_SIDE, quality: QUALITY });
+  }
   // job.kind is the category planOptimize() resolved (see mediaKind), not a
   // second read of asset.mime - so the AAC that reached the sound bucket by its
   // extension is encoded as sound rather than being re-doubted here.
@@ -745,6 +784,18 @@ async function encodeOne(asset: AssetEntry, job: Job) {
     return smaller && smaller.size < asset.size ? { blob: smaller } : null;
   }
   return null;
+}
+
+/**
+ * One RAW developed at a time, whatever LANES.media allows. Each one is a wasm
+ * heap the size of the sensor several times over (see SENSOR_PIXELS in
+ * optimize/demosaic.ts), and four of those at once is what loses a phone's tab.
+ */
+let rawTurn: Promise<unknown> = Promise.resolve();
+function inTurn<T>(task: () => Promise<T>): Promise<T> {
+  const run = rawTurn.then(task, task);
+  rawTurn = run.catch(() => {});
+  return run;
 }
 
 /**
