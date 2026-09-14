@@ -52,7 +52,7 @@ const urlOf = (hash: unknown): string | null => (typeof hash === 'string' ? asse
 
 /** Which shape a tile is drawn as, and which filler builds it - see kindOf(). */
 type TileKind =
-  | 'image' | 'video' | 'audio' | 'note' | 'link' | 'swatch' | 'text' | 'hint' | 'file';
+  | 'image' | 'video' | 'audio' | 'note' | 'link' | 'swatch' | 'text' | 'hint' | 'file' | 'card';
 
 /**
  * One tile on the wall. `video` is the whole of this module's release
@@ -444,8 +444,16 @@ function kindOf(item: Item): TileKind {
   // prose anybody drops on a board.
   if (item.type === 'text') return 'text';
   if (item.type === 'ghost') return 'hint';
+  // The canvas card itself, drawn by the canvas's renderer (fillCard()). These
+  // used to fall to a picture or to the name-and-kind file card, so a style
+  // tile lost its palette and its faces, a font its specimen, and a model or a
+  // plain file the card it wears on the board.
+  if (CARD_TYPES.has(item.type)) return 'card';
   return pictureURL(item) ? 'image' : 'file';
 }
+
+/** The types the Feed draws with the canvas's own renderer. See kindOf(). */
+const CARD_TYPES = new Set(['style-tile', 'font', 'model', 'generic', 'gone']);
 
 /**
  * The player a link becomes, or null. The same door the canvas card uses
@@ -464,6 +472,9 @@ function ratioOf(item: Item) {
   if (kind === 'swatch') return 1;
   if (kind === 'audio') return 1;
   if (kind === 'file') return 1.4;
+  // The card's own proportion, so the scaled card fills the tile. Clamped
+  // wider than the rest: a card is drawn whole, not cover-cropped.
+  if (kind === 'card') return clamp(item.w / Math.max(1, item.h), 0.4, 2.5);
   // A hint keeps the shape it was seeded at - ensureGhostCards() sizes these
   // against the column on Mobile (the dial takes the full width, the three
   // hints half), so the item's own box is already the right proportion and
@@ -548,7 +559,7 @@ function wireOpen(t: Tile) {
 }
 
 /** The tile kinds whose tap means "open this". See wireOpen(). */
-const OPENS = new Set(['image', 'text', 'note', 'file']);
+const OPENS = new Set(['image', 'text', 'note', 'file', 'card']);
 
 function fillTile(t: Tile) {
   const { el, kind } = t;
@@ -561,7 +572,35 @@ function fillTile(t: Tile) {
   if (kind === 'swatch') return fillSwatch(t);
   if (kind === 'text') return fillText(t);
   if (kind === 'hint') return fillHint(t);
+  if (kind === 'card') return fillCard(t);
   return fillFile(t);
+}
+
+/**
+ * A card drawn by the canvas's renderer (buildContent()), at the size it has
+ * on the board, then scaled to the tile: the same card, not a second drawing
+ * of it that could drift. One observer for the wall writes the scale as each
+ * tile's width settles. dropTile() unobserves.
+ */
+let cardObs: ResizeObserver | null = null;
+
+function fillCard(t: Tile) {
+  const host = div('feed-card');
+  // Written by canvas/items.ts on #world, which this surface does not have.
+  host.style.setProperty('--iz', '1');
+  host.style.width = `${Math.max(1, t.item.w)}px`;
+  host.style.height = `${Math.max(1, t.item.h)}px`;
+  host.append(buildContent(t.item));
+  t.el.appendChild(host);
+  cardObs ??= new ResizeObserver(entries => {
+    for (const entry of entries) {
+      const tile = entry.target;
+      const card = tile.firstElementChild;
+      const w = card instanceof HTMLElement ? parseFloat(card.style.width) : 0;
+      if (card instanceof HTMLElement && w) card.style.setProperty('--feed-s', String(tile.clientWidth / w));
+    }
+  });
+  cardObs.observe(t.el);
 }
 
 /**
@@ -745,7 +784,14 @@ function fillVideo(t: Tile) {
   badge.innerHTML = PLAY_ICON;
   t.el.appendChild(badge);
   writeTileFit(t);
-  actAsButton(t.el, () => mountVideo(t));
+  // The first tap plays the clip in the tile, and each after it pauses or
+  // resumes. No native controls: the now-playing bar at the foot is the
+  // transport, as it is for every clip on the board.
+  actAsButton(t.el, () => {
+    if (!t.video) { mountVideo(t); return; }
+    if (t.video.paused) t.video.play().catch(() => {});
+    else t.video.pause();
+  });
 }
 
 /** Swap a video tile's poster for a live, registered <video>. */
@@ -755,12 +801,17 @@ function mountVideo(t: Tile) {
   if (!url) return;
   const v = document.createElement('video');
   v.playsInline = true;
-  v.controls = true;
   v.preload = 'metadata';
   v.src = url;
   const poster = pictureURL(t.item);
   if (poster) v.poster = poster;
+  // The play badge stays, over the clip, and shows while it is paused.
+  const badge = t.el.querySelector('.feed-play');
   t.el.replaceChildren(v);
+  if (badge) t.el.append(badge);
+  const paint = () => t.el.classList.toggle('is-playing', !v.paused);
+  v.addEventListener('play', paint);
+  v.addEventListener('pause', paint);
   t.video = v;
   registerPlayer(v, t.item);
   v.play().catch(() => {});
@@ -1398,6 +1449,7 @@ function scheduleMasthead() {
 function dropTile(t: Tile) {
   if (t.video) { releasePlayers(t.el); t.video = null; }
   copyObs?.unobserve(t.el);
+  cardObs?.unobserve(t.el);
   copyJobs.delete(t.el);
   t.el.remove();
 }
