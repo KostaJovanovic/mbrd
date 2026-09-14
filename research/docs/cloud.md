@@ -225,10 +225,25 @@ picker today — a menu with one row is worse than no menu.
   to wait for*.
 - **Expiry.** Every provider can revoke a link. The app has nowhere that lists
   what has been shared, which is a small feature of its own and is not built.
-- **Chunked upload resumption.** The upload is resumable in Drive's sense — it
-  uses a resumable session because the simple upload tops out at 5 MB — but a
-  dropped connection is not resumed. The session URI is not kept, so a failed
-  upload starts again.
+
+## A dropped upload
+
+The upload uses Drive's resumable session, because the simple upload tops out
+at 5 MB, and the session is what a drop is recovered through. A chunk that gets
+no answer, or a 408, 429 or 5xx, does not end the upload: `sendChunks()` waits
+(0.5 s, doubling, five tries), asks the session how many bytes it holds, and
+sends on from there. Any other answer is final. A share keeps its session
+against the very `Blob` it sends, so when the tries run out the dialog's
+**Try again** hands the same pack back and the upload goes on where it stopped.
+A sync keeps its sessions by folder and name, beside the `Blob` they began
+with, and the next push resumes them. Both are held in memory only: a session
+belongs to a token, and the token dies with the tab.
+
+**Resume only the bytes the session began with.** Equal size is not equal
+bytes. `board.json` is a new file on every push, and bytes spliced from two
+files are a broken board, so a session is resumed only for the same `Blob`
+object. An asset's `Blob` is the store's own object on every push.
+`tests/upload-resume.test.js` drives the protocol against a fake session.
 
 ---
 
@@ -349,12 +364,6 @@ three separate reference readers had to learn about them at once.
 
 ## Still open
 
-- **Nothing resumes.** A dropped connection restarts the file it was on. The
-  assets already up there are kept, so the retry is cheap, but the session URI is
-  not stored.
-- **Reopening your own synced board re-downloads it.** The board swap runs inside
-  `withFreshAssets()`, which empties the store before the pull, so the
-  already-held check only helps within a session.
 - **No deletes propagate.** An asset dropped from the board stays in the Drive
   folder forever. Harmless and content-addressed, but it grows.
 - **One provider.** OneDrive implements `CloudStore` and appears in the picker;

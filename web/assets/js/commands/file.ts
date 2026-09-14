@@ -261,21 +261,35 @@ export function fileCommands() {
         if (go !== 'go') return;
       }
 
-      const job = busy(`Uploading to ${provider.label}`);
-      try {
-        const id = await provider.upload(packed.blob, packed.name,
-          (sent, total) => job.step(sent, total));
-        // In the apps, location is app:// or https://app, which only this
-        // machine can open, so the link names the website (SHARE_SITE).
-        const site = isDesktop() ? new URL(SHARE_SITE) : null;
-        const link = shareLinkFor(site?.origin ?? location.origin, site?.pathname ?? homePath(),
-          { provider: provider.id, id });
-        console.info('[mbrd] share link:', link);
-        await handOverLink(link);
-      } catch (err) {
-        console.error(err);
-        toast('Could not share the board: ' + why(err), 'error');
-      } finally { job.end(); }
+      // A try that stops is offered again with the same pack, and the provider
+      // goes on from the last byte that landed rather than from the first.
+      let id: string | null = null;
+      while (!id) {
+        const job = busy(`Uploading to ${provider.label}`);
+        try {
+          id = await provider.upload(packed.blob, packed.name,
+            (sent, total) => job.step(sent, total));
+        } catch (err) {
+          console.error(err);
+          job.end();
+          const again = await ask({
+            title: 'The upload stopped',
+            body: `${why(err)}. What reached ${provider.label} is kept for now, `
+              + 'so another try sends only the rest.',
+            go: 'Try again',
+            cancel: 'Stop',
+            danger: false,
+          });
+          if (again !== 'go') return;
+        } finally { job.end(); }
+      }
+      // In the apps, location is app:// or https://app, which only this
+      // machine can open, so the link names the website (SHARE_SITE).
+      const site = isDesktop() ? new URL(SHARE_SITE) : null;
+      const link = shareLinkFor(site?.origin ?? location.origin, site?.pathname ?? homePath(),
+        { provider: provider.id, id });
+      console.info('[mbrd] share link:', link);
+      await handOverLink(link);
     },
     // ── The cloud copy ───────────────────────────────────────────────────
     connectGdrive: async () => { await connectCloud('gdrive'); },
