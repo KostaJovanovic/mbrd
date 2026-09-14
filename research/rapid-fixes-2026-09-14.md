@@ -46,12 +46,16 @@ box is ticked when its commit lands.
       and "Check for updates" answers there too (`MbrdUpdate.java`,
       `MbrdShell`). Android's own install-confirm screen is the system's, and
       may stay where Android insists on it.
-- [ ] R8 Feed cards get a simple drop shadow at the highest quality setting
+- [x] R8 Feed cards get a simple drop shadow at the highest quality setting
       (`mobile.css`, the quality dial in `quality.css`).
-- [ ] R9 Feed: an image card set to Fit takes the aspect ratio of its photo.
+      - **Done** at the Full stop. Harsh stays flat, as its canvas cards do.
+- [x] R9 Feed: an image card set to Fit takes the aspect ratio of its photo.
       Today the card keeps some other ratio and letterboxes the photo.
       - Example (screenshot of 2026-09-14 17:50): a wide screenshot sits in
         a taller card, with a tinted band of card above and below it.
+      - **Done.** The card's box on the board was the guess, and a resized
+        card kept a shape that was not the photo's. `ui/feed.ts` now reads
+        the shape off the picture as it loads, and lays the wall out again.
 - [ ] R10 The sidebar's close X (`#side-close`) is still not centred in its
       round hover plate, in Firefox (screenshots of 2026-09-14 17:54:52 and
       17:54:56). **The fifth report.** Earlier fixes did not hold, so rebuild
@@ -105,7 +109,7 @@ box is ticked when its commit lands.
       (`research/todo-2026-09-14.md`, "Already done").
 - [x] R16 Feed: a press on the board title opens its edit menu at once, as
       the pen button does now.
-- [ ] R19 Feed: too much padding left and right. On a phone, the board sheet
+- [x] R19 Feed: too much padding left and right. On a phone, the board sheet
       (the textured ground the cards sit on, `.feed-sheet`) runs the full
       screen width, and loses its rounded corners at the top and the bottom.
       - Phones only, below about 600 px. Wider screens keep the centred
@@ -114,7 +118,7 @@ box is ticked when its commit lands.
         between cards (10 px).
       - The sheet still starts below the top buttons and ends above the
         bottom bar, as now. Only the sides and the corners change.
-- [ ] R20 Feed: the search button moves to the top right. When the pen button
+- [x] R20 Feed: the search button moves to the top right. When the pen button
       shows, the search button sits to the pen's left.
 - [ ] R17 The spacing rhythm (design audit D4): the 13 different `gap`
       values across 20 stylesheets move to 2/4/6/8/12, one sheet at a time,
