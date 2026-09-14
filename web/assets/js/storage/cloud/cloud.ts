@@ -34,10 +34,11 @@ export function shareProvider(id: string): ShareProvider | null {
  * Every provider this build could connect to, in the order a panel lists them.
  *
  * Configured ones only - a provider with no identifiers has no button, and a
- * newly configured one gets one with no edit to ui/settings-schema.ts.
+ * newly configured one gets one with no edit to ui/settings-schema.ts. One
+ * that cannot sign in in this shell has none either.
  */
 export function cloudProviders(): ShareProvider[] {
-  return PROVIDER_IDS.map(id => PROVIDERS[id]).filter(p => !!p && p.configured());
+  return PROVIDER_IDS.map(id => PROVIDERS[id]).filter(p => !!p && p.configured() && p.canSignIn());
 }
 
 /**

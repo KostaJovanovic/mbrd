@@ -4,7 +4,11 @@
 // upload because boards exceed the 5 MB simple-upload limit.
 // Identifiers live in config.ts; an unconfigured checkout has no Share link.
 
-import { GOOGLE_API_KEY, GOOGLE_CLIENT_ID } from './config.ts';
+import {
+  GOOGLE_API_KEY, GOOGLE_CLIENT_ID, GOOGLE_DESKTOP_CLIENT_ID, GOOGLE_DESKTOP_CLIENT_SECRET,
+} from './config.ts';
+import { googleSignInHere } from './provider.ts';
+import { platform } from '../../platform/platform.ts';
 import {
   fragmentViaPopup, nonce, recallGrant, redirectUri, rememberGrant, usable,
 } from './oauth.ts';
@@ -62,14 +66,34 @@ function configured(): boolean {
   return !!GOOGLE_CLIENT_ID && !!GOOGLE_API_KEY;
 }
 
+/** Configured, and a client of the kind this shell signs in with. */
+function canSignIn(): boolean {
+  return configured() && googleSignInHere();
+}
+
+/** The apps' sign-in: the shell asks Google, and the page gets the token. */
+async function signInThroughShell(): Promise<void> {
+  const got = await platform.auth.google({
+    clientId: GOOGLE_DESKTOP_CLIENT_ID,
+    clientSecret: GOOGLE_DESKTOP_CLIENT_SECRET,
+    scope: SCOPE,
+  });
+  if (!got || typeof got.token !== 'string' || !got.token || !Number.isFinite(got.expiresIn) || got.expiresIn <= 0) {
+    throw new Error('Google did not return a usable token');
+  }
+  grant = { token: got.token, expiresAt: Date.now() + got.expiresIn * 1000 };
+  rememberGrant('gdrive', grant);
+}
+
 function signedIn(): boolean {
   return !!held();
 }
 
 /** Open sign-in popup. Must be from a live gesture. State nonce verified on return. */
 async function signIn(): Promise<void> {
-  if (!configured()) throw new Error('this build has no Google application configured');
+  if (!canSignIn()) throw new Error('this build has no Google application configured');
   if (held()) return;
+  if (platform.auth.googleClient !== 'web') return signInThroughShell();
 
   const state = nonce();
   const params = new URLSearchParams({
@@ -418,6 +442,7 @@ export const googleDrive: ShareProvider = {
   id: 'gdrive',
   label: 'Google Drive',
   configured,
+  canSignIn,
   signedIn,
   signIn,
   signOut,

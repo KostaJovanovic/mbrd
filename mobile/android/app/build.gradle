@@ -65,6 +65,8 @@ dependencies {
     // MbrdShell and MbrdBytes call WebViewCompat. Capacitor has it as an
     // `implementation`, which does not reach this module.
     implementation "androidx.webkit:webkit:$androidxWebkitVersion"
+    // MbrdAuth: Google's Authorization API, for Google Drive's sign-in.
+    implementation "com.google.android.gms:play-services-auth:21.3.0"
     implementation project(':capacitor-android')
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"

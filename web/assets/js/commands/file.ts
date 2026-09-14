@@ -215,7 +215,7 @@ export function fileCommands() {
       if (!await confirmEmptyExport()) return;
       const { shareProvider } = await import('../storage/cloud/cloud.ts');
       const provider = shareProvider('gdrive');
-      if (!provider) { toast('Sharing a link is not set up in this build', 'error'); return; }
+      if (!provider?.canSignIn()) { toast('Sharing a link is not set up in this build', 'error'); return; }
 
       if (!provider.signedIn()) {
         const go = await ask({

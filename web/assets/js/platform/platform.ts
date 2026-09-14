@@ -133,6 +133,30 @@ export function setUpdateOffer(offer: UpdateOffer | null): void {
   heldOffer = offer && typeof offer.version === 'string' ? { version: offer.version, ready: !!offer.ready } : null;
 }
 
+/** Sign-in port: Google Drive's, where the page cannot open a popup of its
+ *  own. The desktop denies the popup and serves app://, which Google does not
+ *  know, and Android serves https://app. */
+export interface AuthPort {
+  /** Which Google OAuth client this shell signs in with. */
+  googleClient: 'web' | 'desktop' | 'android';
+  /** Sign in outside the page. The web never calls it: google.ts opens its popup. */
+  google(req: GoogleSignIn): Promise<GoogleGrant>;
+}
+
+/** The desktop's client, and the one scope. Android sends only the scope:
+ *  Google finds its client by the app's package name and signature. */
+export interface GoogleSignIn {
+  clientId: string;
+  clientSecret: string;
+  scope: string;
+}
+
+export interface GoogleGrant {
+  token: string;
+  /** Seconds. */
+  expiresIn: number;
+}
+
 /** What the shell is told about the document on screen. */
 export interface DocumentState {
   title: string;
@@ -146,6 +170,7 @@ export interface Platform {
   lifecycle: LifecyclePort;
   native: NativePort;
   updates: UpdatesPort;
+  auth: AuthPort;
   /** Tell the shell what is on screen. No-op on web. */
   setDocument(state: DocumentState): void;
   /** Reload on web; relaunch the process on desktop. */
@@ -314,11 +339,17 @@ const webUpdates: UpdatesPort = {
   install: async () => {},
 };
 
+const webAuth: AuthPort = {
+  googleClient: 'web',
+  google: () => Promise.reject(new Error('the page signs in through its own popup')),
+};
+
 const web: Platform = {
   files: webFiles,
   lifecycle: webLifecycle,
   native: webNative,
   updates: webUpdates,
+  auth: webAuth,
   setDocument: () => {},
   relaunch: () => { location.reload(); },
 };
@@ -347,6 +378,7 @@ export const platform: Readonly<Platform> = {
   get lifecycle() { return current.lifecycle; },
   get native() { return current.native; },
   get updates() { return current.updates; },
+  get auth() { return current.auth; },
   setDocument(state) { current.setDocument(state); },
   relaunch() { current.relaunch(); },
 };
