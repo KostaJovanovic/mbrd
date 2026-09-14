@@ -15,6 +15,8 @@ import { field, fieldStops, tickSlider } from './controls.ts';
 import { paintTitleField, wireTitleField } from './board-title.ts';
 import { registerPanel, panelShown, panelHidden } from './panel-stack.ts';
 import { open as openSearch } from './search.ts';
+import { openAnchored, menuButton } from './menu.ts';
+import type { MenuEntry } from './menu.ts';
 import type { FontAxis, MobileHeader } from '../board-model.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 import type { SliderFocus } from './sidebar.ts';
@@ -75,13 +77,14 @@ let panel: HTMLElement;
 let sliderFocus: SliderFocus;
 let section: HTMLElement;
 let titleInput: HTMLInputElement;
-let fontSelect: HTMLSelectElement;
+let fontBtn: HTMLButtonElement;
 let sizeInput: HTMLInputElement;
 let sizeOut: HTMLElement;
 let stretchInput: HTMLInputElement;
 let stretchOut: HTMLElement;
 let leadingInput: HTMLInputElement;
 let leadingOut: HTMLElement;
+let leadingRow: HTMLElement;
 let offsetInput: HTMLInputElement;
 let offsetOut: HTMLElement;
 let italicInput: HTMLInputElement;
@@ -93,8 +96,8 @@ const axisControls = new Map<string, AxisControl>();
 
 // SAFETY: ids and tags match index.html; a missing id throws at boot.
 const inputEl = (id: string) => el(id)! as HTMLInputElement;
-// SAFETY: its one call names #mobile-header-font, a <select> in index.html.
-const selectEl = (id: string) => el(id)! as HTMLSelectElement;
+// SAFETY: its one call names #mobile-header-font, a <button> in index.html.
+const buttonEl = (id: string) => el(id)! as HTMLButtonElement;
 
 export function initMobileHeaderEditor(vp: Viewport | null) {
   viewport = vp;
@@ -102,13 +105,15 @@ export function initMobileHeaderEditor(vp: Viewport | null) {
   panel = el('header-panel')!;
   section = el('mobile-header-settings')!;
   titleInput = inputEl('header-title');
-  fontSelect = selectEl('mobile-header-font');
+  fontBtn = buttonEl('mobile-header-font');
   sizeInput = inputEl('mobile-header-size');
   sizeOut = el('mobile-header-size-out')!;
   stretchInput = inputEl('mobile-header-stretch');
   stretchOut = el('mobile-header-stretch-out')!;
   leadingInput = inputEl('mobile-header-leading');
   leadingOut = el('mobile-header-leading-out')!;
+  // SAFETY: the slider sits in its own <label class="field"> in index.html.
+  leadingRow = leadingInput.closest('label')!;
   offsetInput = inputEl('mobile-header-offset');
   offsetOut = el('mobile-header-offset-out')!;
   italicInput = inputEl('mobile-header-italic');
@@ -133,11 +138,12 @@ export function initMobileHeaderEditor(vp: Viewport | null) {
   findBtn.addEventListener('click', () => openSearch(findBtn));
   // Same title field as the sidebar's — both paint from board.title on 'board'.
   wireTitleField(titleInput);
-  fontSelect.addEventListener('change', changeFont);
+  menuButton(fontBtn, () => openAnchored(fontBtn.getBoundingClientRect(), fontEntries(),
+    { label: 'Font', owner: fontBtn, focus: true }));
   for (const dial of [sizeInput, stretchInput, leadingInput, offsetInput]) tickSlider(dial);
   sizeInput.addEventListener('input', () => {
-    update({ size: +sizeInput.value });
-    sizeOut.textContent = `${sizeInput.value}%`;
+    update({ size: +sizeInput.value * 100 / boardWidth() });
+    sizeOut.textContent = sizeInput.value;
   });
   stretchInput.addEventListener('input', () => {
     const value = snapStretch(+stretchInput.value);
@@ -155,7 +161,10 @@ export function initMobileHeaderEditor(vp: Viewport | null) {
     offsetOut.textContent = offsetText(value);
   });
   italicInput.addEventListener('change', () => update({ italic: italicInput.checked }));
-  wrapInput.addEventListener('change', () => update({ wrap: wrapInput.checked }));
+  wrapInput.addEventListener('change', () => {
+    update({ wrap: wrapInput.checked });
+    leadingRow.hidden = !wrapInput.checked;
+  });
   el('mobile-header-reset')!.addEventListener('click', resetHeader);
 
   // Refit on name change and window resize (not viewport pan — too frequent).
@@ -272,8 +281,33 @@ function resetHeader() {
   paint();
 }
 
-function changeFont() {
-  const font = fontSelect.value;
+/**
+ * The face menu, as the sidebar's face pickers draw it (ui/appearance-controls.ts):
+ * Default on top, then every face A to Z, the board's dropped faces sorted in
+ * with the rest, each row set in its own face.
+ */
+function fontEntries(): MenuEntry[] {
+  const [first, ...rest] = headerFontOptions();
+  const now = header().font;
+  return [first, ...rest.sort((a, b) => a.label.localeCompare(b.label))].map(face => ({
+    label: face.label,
+    font: face.stack || undefined,
+    check: face.value === now,
+    action: () => changeFont(face.value),
+  }));
+}
+
+/** The picker's name, in its own face. An unknown face from a newer version
+ *  shows as Default, and the board keeps it. */
+function paintFont(value: string) {
+  const face = headerFontOptions().find(f => f.value === value);
+  const name = fontBtn.querySelector<HTMLElement>('.field-picker-name');
+  if (!name) return;
+  name.textContent = face?.label ?? 'Default';
+  name.style.fontFamily = face?.stack ?? '';
+}
+
+function changeFont(font: string) {
   const axes = availableAxes(font);
   const values: Record<string, number> = {};
   for (const axis of axes) {
@@ -288,18 +322,8 @@ function changeFont() {
 }
 
 function buildControls() {
-  const selected = header().font;
-  fontSelect.replaceChildren();
-  for (const face of headerFontOptions()) {
-    const option = document.createElement('option');
-    option.value = face.value;
-    option.textContent = face.label;
-    option.style.fontFamily = face.stack || 'inherit';
-    fontSelect.append(option);
-  }
-  fontSelect.value = selected;
-  // Unknown face from a newer version — fall back visually, do not rewrite board.
-  if (fontSelect.value !== selected) fontSelect.value = '';
+  // The face menu is built on each open, so a dropped face is in the next one.
+  paintFont(header().font);
   buildAxisControls();
 }
 
@@ -414,9 +438,8 @@ function paint() {
   styleTitleCard(style, axes);
   paintButton();
 
-  fontSelect.value = style.font;
-  sizeInput.value = String(style.size);
-  sizeOut.textContent = `${formatAxis(style.size)}%`;
+  paintFont(style.font);
+  paintSize(style.size);
   stretchInput.value = String(style.stretch);
   stretchOut.textContent = `${formatAxis(style.stretch)}%`;
   leadingInput.value = String(style.leading);
@@ -425,6 +448,8 @@ function paint() {
   offsetOut.textContent = offsetText(style.offset ?? 0);
   italicInput.checked = style.italic;
   wrapInput.checked = style.wrap;
+  // Line height only spaces the lines of a wrapped name.
+  leadingRow.hidden = !style.wrap;
 
   const weightAxis = axes.find(axis => axis.tag === 'wght');
   // set() abstracts continuous vs. named-stop controls.
@@ -480,7 +505,7 @@ function styleTitleCard(style: MobileHeader = header(), axes: FontAxis[] = avail
   applyTitleStyle(card, style, axes);
   // Compute --mobile-title-ratio so the card wraps identically to the masthead.
   // Uses mobileBoardWorldWidth() (always Mobile's width), not the active viewport.
-  const ref = mobileBoardWorldWidth() || 512;
+  const ref = boardWidth();
   const px = Math.min(ref * TITLE_CAP, Math.max(20, ref * (style.size / 100)));
   card.style.setProperty('--mobile-title-ratio', String(px / ref));
   scheduleFit();
@@ -496,6 +521,20 @@ const TITLE_LINES = 2;
 
 /** Max name size as fraction of board width (= 96/512). Ratio, not px, so both layouts agree. */
 const TITLE_CAP = 0.1875;
+
+/** The Mobile board's width, which the name's size is a share of. */
+const boardWidth = () => mobileBoardWorldWidth() || 512;
+
+/** The size slider counts pixels on the Mobile board, and the style keeps a
+ *  share of its width, so the name still scales with the screen. The ends are
+ *  board-schema.ts's clamp, 7% to 24%, rounded inwards so both stay inside it. */
+function paintSize(size: number) {
+  const ref = boardWidth();
+  sizeInput.min = String(Math.ceil(ref * 0.07));
+  sizeInput.max = String(Math.floor(ref * 0.24));
+  sizeInput.value = String(Math.round(ref * size / 100));
+  sizeOut.textContent = sizeInput.value;
+}
 
 // Counted via Range rects, not box/line-height — line-height is `normal` by default.
 function lineCount(title: Element) {

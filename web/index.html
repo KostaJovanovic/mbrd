@@ -342,24 +342,22 @@
            Chromeless at rest — reads as a name, not a form field. -->
       <input id="header-title" class="board-title" type="text" maxlength="32"
              placeholder="Untitled board" aria-label="Board name">
+      <!-- The sidebar's face picker: Default, then every face A to Z, each row
+           in its own face (ui/mobile-header.ts). -->
       <label class="field">
         <span>Font</span>
-        <select id="mobile-header-font"></select>
+        <button id="mobile-header-font" class="field-picker" type="button"><span class="field-picker-name">Default</span></button>
       </label>
       <div id="mobile-header-weight"></div>
-      <!-- Size (% of strip width), height (vertical stretch, detent at 100%),
-           line height (for wrapped names). -->
+      <!-- Size in pixels on the Mobile board, kept as a share of its width
+           (ui/mobile-header.ts). Height is a vertical stretch, detent at 100%. -->
       <label class="field">
-        <span>Font size <output id="mobile-header-size-out">13%</output></span>
-        <input id="mobile-header-size" type="range" min="7" max="24" step="0.5" value="13">
+        <span>Font size <output id="mobile-header-size-out">67</output></span>
+        <input id="mobile-header-size" type="range" min="36" max="122" step="1" value="67">
       </label>
       <label class="field">
         <span>Font height <output id="mobile-header-stretch-out">100%</output></span>
         <input id="mobile-header-stretch" type="range" min="50" max="500" step="1" value="100">
-      </label>
-      <label class="field">
-        <span>Line height <output id="mobile-header-leading-out">Auto</output></span>
-        <input id="mobile-header-leading" type="range" min="60" max="250" step="1" value="100">
       </label>
       <label class="field">
         <span>Vertical position <output id="mobile-header-offset-out">Center</output></span>
@@ -372,11 +370,16 @@
       <label class="check">
         <input type="checkbox" id="mobile-header-wrap" checked> Wrap long names
       </label>
+      <!-- Line height, for wrapped names: under Wrap, and shown only while it
+           is on (ui/mobile-header.ts). -->
+      <label class="field">
+        <span>Line height <output id="mobile-header-leading-out">Auto</output></span>
+        <input id="mobile-header-leading" type="range" min="60" max="250" step="1" value="100">
+      </label>
       <div id="mobile-header-axes"></div>
-      <p class="hint">Variable controls come from the selected font.</p>
       <!-- Reset: restores masthead to the look's default face and size. -->
       <div class="btn-row">
-        <button type="button" id="mobile-header-reset">Start over</button>
+        <button type="button" id="mobile-header-reset">Reset</button>
       </div>
     </section>
   </div>
