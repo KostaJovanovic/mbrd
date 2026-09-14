@@ -133,6 +133,15 @@ if not defined COMMIT_COUNT goto countfail
 set /a NEXT_COUNT=%COMMIT_COUNT%+1
 if %NEXT_COUNT% LEQ %COMMIT_COUNT% goto countfail
 
+rem A commit made without this script (a plain `git commit`) stamps nothing, so
+rem the file alone falls behind the history: two did on 2026-09-13, and the
+rem label read 313 at commit 315. So the history counts too, but only upward:
+rem the larger of the two wins, and a count that collapsed is simply outvoted.
+set GIT_COUNT=0
+for /f %%i in ('git rev-list --count HEAD 2^>nul') do set GIT_COUNT=%%i
+set /a GIT_NEXT=%GIT_COUNT%+1
+if %GIT_NEXT% GTR %NEXT_COUNT% set NEXT_COUNT=%GIT_NEXT%
+
 rem Version label mirrors versionLabel() in web/assets/js/version.js. RELEASES is
 rem the list of commits crowned as major releases - keep it in sync with
 rem RELEASE_COMMITS there (sorted ascending). Each release reads X.0 and resets
