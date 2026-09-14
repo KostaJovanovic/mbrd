@@ -1630,7 +1630,12 @@ which.
   `platform/platform.ts` has the answer the website gives.
 - **The desktop** (`desktop/`, Electron) serves `web/` from its own `app://`
   scheme with `web/_headers`' policy on every answer, keeps the store as a
-  folder of files, and runs a real ffmpeg.
+  folder of files, and runs a real ffmpeg. No board lives inside the app:
+  every board is a `.mbrd` file, and the ones the app makes are in the boards
+  folder, `Documents/mbrd` (`desktop/boards.ts`). New makes the file at once,
+  the edits reach it on a timer, a rename renames it, and the first start moves
+  the shelf's packed boards into it (`adoptFolder()` in `storage/storage.ts`).
+  The store stays as the crash copy.
 - **Android** (`mobile/`, Capacitor) serves a staged copy of `web/` from
   `https://app/` with the same policy, and keeps the boards as files in
   `Documents/mbrd/` when the user allows it. `mobile/README.md` is its map.

@@ -8,7 +8,7 @@
 
 import { test, expect, _electron as electron } from '@playwright/test';
 import type { ElectronApplication, Page } from '@playwright/test';
-import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -77,6 +77,11 @@ test('a board written on one run comes back on the next', async () => {
 
     // Close (not kill) — tests the flush-before-close handler in main.
     await app.close();
+
+    // Every board is a file. A run given --user-data-dir keeps the boards
+    // folder in it (boards.ts), so the test writes nothing into Documents.
+    const made = (await readdir(join(userData, 'boards'))).filter(n => n.endsWith('.mbrd'));
+    expect(made.length, 'the board is a file in the boards folder').toBeGreaterThan(0);
 
     // ── Run two ───────────────────────────────────────────────────────────
     app = await launch(userData);

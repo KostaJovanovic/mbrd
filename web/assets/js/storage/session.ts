@@ -13,7 +13,7 @@ import {
 } from '../state.ts';
 import { allAssets, putAsset } from './assets.ts';
 import {
-  idbGet, idbSet, idbClear, idbKeys, idbGetMany, idbSetMany, idbDelMany,
+  idbGet, idbSet, idbDel, idbClear, idbKeys, idbGetMany, idbSetMany, idbDelMany,
 } from './idb.ts';
 import { clearMatteCache } from './matte-cache.ts';
 // Type only — errors.ts sits in the base layer, reads through setBoardProbe().
@@ -352,6 +352,16 @@ export async function clearSession() {
   await idbClear('kv');
   await idbClear('assets');
   // Matte cache too — a cut-out left after "clear everything" is that photo.
+  await clearMatteCache();
+}
+
+/** Empty the board slot for New: the session record and the assets. Not the
+ *  whole `kv` store, which also holds the list of boards (library.ts). New
+ *  wiped it with clearSession(), so the list lost every row, and the next
+ *  shelving swept every packed board the list had held. */
+export async function clearBoardSlot() {
+  await idbDel('kv', SESSION_KEY);
+  await idbClear('assets');
   await clearMatteCache();
 }
 

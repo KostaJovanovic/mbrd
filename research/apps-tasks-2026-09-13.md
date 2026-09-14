@@ -922,7 +922,7 @@ every decision a task left to you in the notes column.
 | I5 | DONE (v0.302) | 6 tests, the Android one skipped until O. Two more than the task: `files:` still lists `dist/**`, and each updater pattern matches no other release file (the other systems, the source zip) |
 | I6 | DONE (v0.302) | one button, four lines, the Android section, "for your computer or phone". macOS leads with Open Anyway, and the `xattr` line stays for the "damaged" case. `download.css`: `.dl-picks` and `.dl-note` gone, `.dl-pick` and `.dl-files` new. Seen in a browser at 1280 and 412 wide: no overflow, and the button fills a phone's width. The Android line names an `.apk` that no release carries until O |
 | I7 | DONE (v0.302) | `camel()` in `ui/sidebar.ts` turns `get-app` into `getApp` and `check-updates` into `checkUpdates`. In a browser on 2026-09-13: "Get the app" sits in the patch-notes section with its title, and the `check-updates` row is hidden. The desktop app needs a person |
-| I8 | | the maintainer's. A run with publish unticked first |
+| I8 | DONE (v0.316) | four test runs with publish unticked found three faults, fixed in v0.310 to v0.313 (below). Run 34780659444 built all four. Then `save.bat release` published v0.316 (run 34792133730): the publish job first failed with HTTP 403, because the token had public read access and no repository permission, and passed on a re-run once the token had Contents read and write on mbrd-release. Checked signed out on 2026-09-14: `releases/latest` answers v0.316.0 with five files, each with a `sha256:` digest, and the source repo has the tag v0.316.0 on 848b6bd |
 | J1 | DONE (v0.304) | `minWebViewVersion` 110. `browser-support.md` names no Chrome number, only "current and one prior major", so the floor comes from what the app needs: `deflate-raw` in Chrome 103 (MDN's compat data, WebView mirrors Chrome), `:has()` and `@container` 105, `dvh` and `svh` 108. 110 clears all of them and is FileAnalyser's. Above it: `round()` (125) in one custom property at whimsy 2, and `text-wrap`. Every option name checked in `@capacitor/cli` 8.5.2's `declarations.d.ts`. Capacitor 8.5.2 and `@capacitor/assets` 3.0.5 are npm's latest, esbuild and sharp are pinned as the root and `desktop/` pin them |
 | J2 | DONE (v0.304) | `cap add android` names the Java package from `appId`, so `MainActivity` was already `com.valjdakosta.mbrd`. The two example tests moved out of the template's `com.getcapacitor.myapp`, and the instrumented one now expects `com.valjdakosta.mbrd`: the template's `com.getcapacitor.app` fails on every device. `mobile/android/.gitignore` kept. `minSdkVersion` 24 is Android 7.0, as the download page says |
 | J3 | DONE (v0.304) | after the `desktop/portable/` block. `git check-ignore` agrees for `mobile/www/`, `assets/public/` and `mbrd-files.txt` |
@@ -959,7 +959,7 @@ every decision a task left to you in the notes column.
 | O2 | DONE (v0.308) | as written, with FileAnalyser's comments. Checked on 2026-09-13 with a throwaway key: `assembleRelease` with `MBRD_KEYSTORE` set gives an APK that `apksigner verify` accepts, and `-PmbrdUpdateFeed` lands in `BuildConfig.UPDATE_FEED`. Without them the release is unsigned and the feed is empty |
 | O3 | DONE (v0.308) | two changes from FileAnalyser's job. It builds the web bundle first, as the desktop job does, because `stage-web.mjs` refuses a bundle older than its sources and a fresh checkout writes `app.js` before every `.ts` under it (git writes in path order). A build rewrites `app.js` even with the same bytes: checked, the file time moved and git saw no change. The four FFmpeg steps skip until `mobile/ffmpeg/build-android.sh` exists (`hashFiles(...) != ''`), because N is held for N0. The notes gain the Android row, the Android line under the signing list, and "The macOS, Linux and Android builds are new". Not run: O5 |
 | O4 | DONE (v0.308) | in a new `mobile/README.md`, which P1 fills in. The `keytool` options checked in JDK 21's `-genkeypair -help`, and `gh secret set` reads standard input when there is no `--body`. PowerShell has no `<`, so its steps pipe the file. The maintainer's to carry out |
-| O5 | | the maintainer's, after O4. The steps are under "Open" below |
+| O5 | | half done. O4's key and secrets are set, and v0.316 ships `mbrd-android-0.316.0.apk` beside the three desktop files, signed with that key (`apksigner` on the v0.309 test build) and carrying the update feed. The update half needs a second published release and a phone. The steps are under "Open" below |
 | P1 | DONE (v0.309) | the twin of FileAnalyser's, with mbrd's files, and O4's key steps inside it. FileAnalyser's `/api` and job-service sections have no mbrd twin, so they are gone. The live-reload paragraph says nobody has tried it on a phone: `MbrdWebViewClient` has the code for it, and that is all that was checked. The FFmpeg section says N is held |
 | P2 | DONE (v0.309) | the "Mobile app" section before "Never hand-edit these", with the five the task names and the CSP. `save.bat release` in the command block, and a paragraph on the release after the portable one. The chrome and 9.8 paragraph after the Ctrl+R one. The `desktop.bat` sentence said the watch runs "in its own console", and `desktop.bat` runs it with `start /b` in the same console, so that changed. Nothing about electron-updater, `desktop-v*` tags or the page-drawn bar was left to remove: a Grep for updat, tag, frame and chrome found none |
 | P3 | DONE (v0.309) | two short paragraphs after the `server.bat` line. The link is `../mobile/README.md`, because the file is in `.github/` |
@@ -1146,6 +1146,22 @@ September) stamped nothing, and since A1 `save.bat` only added 1 to
 `version.js`, so nothing caught them up. `save.bat` now takes the larger of
 `version.js` + 1 and `git rev-list --count HEAD` + 1. The number still never
 falls after a squash, and the next save is v0.316 at commit 316.
+
+Asked outside the task list on 2026-09-14: on the desktop no board stays inside
+the app. `desktop/boards.ts` keeps `Documents/mbrd` (or `boards/` in the data
+folder of a portable copy, or of a run given `--user-data-dir`). New makes the
+file at once, the edits reach it on a timer, a rename renames it, the first
+start moves the shelf's packed boards into it, and the board list shows the
+folder with the files opened from elsewhere, plus Open folder at the bottom
+left. Android keeps its old rules until its bridge answers `boards.list()`.
+Hand check: the steps in the reply of that day.
+
+Fixed outside the task list, because it blocked that: New emptied the whole
+`kv` store through `clearSession()`, and the list of boards
+(`library-index`) lives in `kv`. So New dropped every row, and the next
+shelving swept every packed board the list had held, on the web too. New now
+empties the board slot only (`clearBoardSlot()` in `storage/session.ts`), and
+`tests/board-folder.test.js` checks that New keeps the list.
 
 Before the first release, checked with `gh` on 2026-09-13: KostaJovanovic/mbrd
 has no secrets, and KostaJovanovic/mbrd-release has no branch, so the publish

@@ -24,8 +24,31 @@ export interface PickSpec {
   mode: string;
 }
 
+/** A board file in the shell's boards folder. `at` is when it last changed. */
+export interface FolderBoard {
+  name: string;
+  path: string;
+  at: number;
+}
+
+/** The boards folder, where a shell keeps one, and every board is a file in it. */
+export interface BoardFolder {
+  /** The folder and its boards. Null where the shell keeps no folder. */
+  list(): Promise<{ folder: string, files: FolderBoard[] } | null>;
+  /** A new board file, under the first free name like `suggested`. */
+  create(suggested: string, blob: Blob): Promise<DocumentRef>;
+  /** Rename a board in the folder. Null for a file elsewhere, which keeps its name. */
+  rename(ref: DocumentRef, suggested: string): Promise<DocumentRef | null>;
+  /** Move a board in the folder to the bin. */
+  trash(ref: DocumentRef): Promise<void>;
+  /** Open the folder in the system's file manager. */
+  reveal(): Promise<void>;
+}
+
 /** File I/O port. Plan §4 *files*. */
 export interface FilesPort {
+  /** The boards folder. Null on the web, where a board lives in the browser. */
+  folder: BoardFolder | null;
   /** Whether a real save-file picker exists (false on Safari/Firefox). */
   canPick(): boolean;
   pickOpen(spec: PickSpec): Promise<{ file: File, ref: DocumentRef }>;
@@ -145,6 +168,7 @@ export function refForHandle(handle: FileSystemFileHandle): DocumentRef {
 const canPick = () => hasWindow() && typeof window.showSaveFilePicker === 'function';
 
 const webFiles: FilesPort = {
+  folder: null,
   canPick,
 
   async pickOpen(spec: PickSpec) {

@@ -118,6 +118,13 @@ puts `userData` in `portable/data`, which is why **`portable/data/` survives a
 rebuild and everything else in there does not**. Not `desktop/dist/`, which is
 the two esbuild bundles. See `desktop/scripts/portable.mjs`.
 
+**Every desktop board is a file.** `desktop/boards.ts` keeps the boards folder:
+`Documents/mbrd`, or `boards/` in the data folder of a portable copy or of a
+run given `--user-data-dir`. That last rule keeps the smoke test out of
+Documents. The page writes the board on screen to its file on a timer
+(`saveDocument()` in `storage/storage.ts`), and the store is the crash copy.
+Android answers `boards.list()` with null and keeps its own folder rules.
+
 The root package still declares four devDependencies and no runtime
 dependency, and `npm test` still installs nothing — that is what the two-package
 layout is for. See `research/electron-2026-09-06.md` §11.

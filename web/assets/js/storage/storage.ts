@@ -15,6 +15,7 @@ import {
   libraryIndex, putLibraryBoard, getLibraryBoard, removeLibraryBoard, hasLibraryBoard,
   trimLibrary, sweepLibrary,
 } from './library.ts';
+import type { LibraryEntry } from './library.ts';
 import {
   board, serializeBoard, loadBoard, markDirty, isDirty, setTitle, bus, mergeBoard,
   defaultBoardTitle, isNotFoundBoard, hasContent,
@@ -27,7 +28,7 @@ import type { Asset } from './assets.ts';
 import { fileNameFor, titleFromFileName, titleForOpenedBoard } from './naming.ts';
 // Session engine — handed deps through initSession(), never imports back.
 import {
-  initSession, autosave, drainSave, clearSession,
+  initSession, autosave, drainSave, clearBoardSlot,
   initSessionStorage, lastSaveFailure, suspendCache,
   resetSessionLatches,
 } from './session.ts';
@@ -250,10 +251,11 @@ export async function exportBoard({ pickNew = false, history = true } = {}) {
 
       // Port writes to handle or downloads. `data.title` for the fallback name
       // (no picker = no rename). `picking &&` keeps the two paths distinct —
-      // a stale doc must not write to a file the user never picked.
+      // a stale doc must not write to a file the user never picked. In turn
+      // with the file timer, which writes the same file (saveDocument()).
       if (picking) job.label('Writing the file');
-      await platform.files.write(
-        picking && doc ? doc : { name: fileNameFor(data.title) }, blob);
+      const target = picking && doc ? doc : { name: fileNameFor(data.title) };
+      await inTurn(() => platform.files.write(target, blob));
     } finally {
       job.end();
     }
@@ -334,8 +336,8 @@ export async function openBoard() {
 
 /** Open a .mbrd File — the one door to "replace the board". Shelves the
  *  current board first (before unpack, because withFreshAssets() swaps the
- *  asset store). Mints a fresh id so the new board doesn't overwrite the
- *  outgoing shelf row. */
+ *  asset store). Takes the id of the row that already points at this file, or
+ *  mints a fresh one so the new board doesn't overwrite the outgoing row. */
 export async function openFile(file: File, ref: DocumentRef | null = null) {
   try {
     // If the outgoing board couldn't be shelved, refuse — opening would destroy it.
@@ -364,11 +366,19 @@ export async function openFile(file: File, ref: DocumentRef | null = null) {
       });
     } finally {
       job.end();
-      // Only a successfully opened board gets a new id — a failed open keeps
-      // the old board's shelf row.
-      if (opened) await setCurrentBoardId(uid('brd'));
+      // Only a successfully opened board gets an id — a failed open keeps the
+      // old board's shelf row. A file already on the shelf is that row's
+      // board, so opening it twice lists it once.
+      if (opened) await setCurrentBoardId(await rowForFile(ref) ?? uid('brd'));
       // Latches belong to the outgoing board (same as switchBoard/New).
       resetSessionLatches();
+      // The board and its row, now, on a desktop with a boards folder: the row
+      // for a file, and a file in the folder for a board that came with none
+      // (a drop, a share link). See saveDocument().
+      if (opened && folder) {
+        if (doc?.path) await fileRow().catch(err => console.warn('[mbrd] no row for the file:', err));
+        else await saveDocument();
+      }
     }
   } catch (err) {
     console.error(err);
@@ -552,6 +562,8 @@ export async function openCloudBoard(remote: { boardId: string, folder: string, 
       noteCurrentSync(row);
     }
     resetSessionLatches();
+    // A file of its own in the boards folder, as every board has on the desktop.
+    if (folder) await saveDocument();
     toast('Opened the cloud copy');
     return true;
   } catch (err) {
@@ -750,8 +762,9 @@ export async function newBoard() {
   // A failure here is self-healing: the session is one slot and the new board's
   // first autosave overwrites whatever stale bytes remain, so warn but do not
   // block starting fresh. clearAllData() is the path that must not paper over a
-  // failed wipe; New is not.
-  try { await clearSession(); }
+  // failed wipe; New is not. The slot only, and not the list of boards beside
+  // it - see clearBoardSlot().
+  try { await clearBoardSlot(); }
   catch (err) { console.warn('[mbrd] could not clear the old session:', err); }
   // A fresh start is a fresh start. Both latches below are set by a failure
   // that belonged to the board just closed - a quota error raised by its
@@ -760,6 +773,8 @@ export async function newBoard() {
   // disk into a session where nothing could be saved again until the page was
   // reloaded, on a board that is now empty.
   resetSessionLatches();
+  // On the desktop the new board is a file at once, in the boards folder.
+  if (folder) await saveDocument();
   return true;
 }
 
@@ -812,6 +827,12 @@ export async function listLibrary() {
 export async function stashCurrent() {
   const id = await ensureBoardId();
   const thumb = await makeThumb().catch(() => null);
+  // With a boards folder the file is brought up to date first, and made if the
+  // board has none, so the row below is always a pointer. A board that could
+  // not be written is not filed, and the caller keeps it on screen. The wait
+  // is for adoptFolder(), which is what sets `folder`.
+  await adopted;
+  if (folder && !(await saveDocument())) throw new Error('the board could not be written to its file');
   // A board that is a file gets a row that points at the file, and no copy.
   //
   // This is the whole of the desktop shelf. On the web a packed blob is the only
@@ -860,6 +881,9 @@ export async function stashCurrent() {
  * Cancel keeps the board, which is why this can refuse the whole shelving.
  */
 async function askBeforeLeaving() {
+  // With a boards folder the stash writes the file on the way out, so the
+  // changes do reach it and there is nothing to ask. This stays for Android.
+  if (folder) return true;
   if (!isDesktop() || !doc || !isDirty()) return true;
   const answer = await prompt({
     title: 'Save changes to ' + doc.name + '?',
@@ -977,6 +1001,9 @@ export async function ensureCurrentOnShelf() {
  */
 export async function switchBoard(id: string) {
   if (!id || id === boardId) return false;
+  // A file in the boards folder with no row yet: opened as a file, which
+  // gives it its row.
+  if (id.startsWith(FILE_ID)) return openBoardFile(id.slice(FILE_ID.length));
   const job = busy('Switching boards');
   try {
     if (!(await shelveCurrent())) return false;
@@ -1053,14 +1080,332 @@ export async function relocateLibraryBoard(id: string) {
   }
 }
 
-/** Take a board off the shelf. The board on screen cannot be deleted from under itself. */
-export async function deleteLibraryBoard(id: string) {
+/** Take a board off the shelf. The board on screen cannot be deleted from under itself.
+ *  `file` is a board in the boards folder: it goes to the bin with its row, or
+ *  the folder would list it again at the next look. A file elsewhere only
+ *  leaves the list. */
+export async function deleteLibraryBoard(id: string, { file = '' } = {}) {
   if (id === boardId) {
     toast('That is the board you are on - switch away from it first');
     return false;
   }
-  await removeLibraryBoard(id);
+  if (file) {
+    try {
+      await platform.files.folder?.trash({ name: fileNameOf(file), path: file });
+    } catch (err) {
+      console.error(err);
+      toast('Could not move that board to the bin: ' + detailOf(err), 'error');
+      return false;
+    }
+  }
+  if (!id.startsWith(FILE_ID)) await removeLibraryBoard(id);
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// The boards folder (desktop)
+// ---------------------------------------------------------------------------
+//
+// On the desktop no board lives inside the app. That is the web's limit, and a
+// desktop has a disk: every board is a .mbrd file, and the ones the app makes
+// go into the boards folder the shell keeps (Documents/mbrd). The board on
+// screen always has its file. New makes it at once, and the edits reach it on a
+// timer. The store's snapshot (session.ts) stays as the crash copy, so the file
+// can trail it by a few seconds and nothing is lost when it does.
+//
+// Android has the desktop's bridge and no list of its own yet, so its list()
+// answers null, `folder` stays null, and everything here stands down.
+
+/** The boards folder, once the shell has named one. */
+let folder: string | null = null;
+
+/** Where the boards are, for the board list's Open folder. Null on the web. */
+export const boardFolder = () => folder;
+
+/** A file in the folder with no shelf row is listed under this id. */
+const FILE_ID = 'file:';
+
+/** How long after an edit the file catches up with it. */
+const FILE_SAVE_MS = 10000;
+let fileTimer = 0;
+
+/** Bumped by every change the file should hear about, so a write that ran
+ *  while somebody kept working does not mark the newer work as written. */
+let edits = 0;
+for (const evt of ['items', 'geom', 'item', 'settings', 'board', 'trash'] as const) {
+  bus.on(evt, () => { edits++; });
+}
+
+/** File work, one piece at a time: a write, a rename, Save. A rename between
+ *  a write's temp file and its rename would leave two files. */
+let fileWork: Promise<unknown> = Promise.resolve();
+function inTurn<T>(work: () => Promise<T>): Promise<T> {
+  const run = fileWork.then(work);
+  fileWork = run.catch(() => {});
+  return run;
+}
+
+/** Set by adoptFolder(). A write waits for it, or the board on screen could
+ *  get a second file before its first one is found. */
+let adopted: Promise<void> = Promise.resolve();
+
+/** The title the file is named for, so that only a rename renames it. */
+let namedTitle = '';
+
+/** Said once per run of trouble, not once per tick. */
+let warnedFile = false;
+
+function scheduleFileSave() {
+  if (!folder || fileTimer) return;
+  fileTimer = setTimeout(() => {
+    fileTimer = 0;
+    void saveDocument();
+  }, FILE_SAVE_MS);
+}
+
+// An edit dirties the board, and a rename is the one title change that does:
+// a load and a Save both change the title with the flag down.
+bus.on('board', () => {
+  if (!isDirty()) return;
+  scheduleFileSave();
+  if (folder && board.title !== namedTitle) void renameDocument();
+});
+bus.on('board:load', () => { namedTitle = board.title; });
+
+/** The id of the shelf row that already points at this file, if one does. */
+async function rowForFile(ref: DocumentRef | null) {
+  if (!ref?.path) return undefined;
+  return (await libraryIndex()).find(e => e.path === ref.path)?.id;
+}
+
+/** Point the board's shelf row at its file. The picture stays what it was:
+ *  taking one costs a render, and the timer runs while somebody works. */
+async function fileRow() {
+  if (!doc?.path) return;
+  const id = await ensureBoardId();
+  const row = (await libraryIndex()).find(e => e.id === id);
+  await putLibraryBoard(id, null, {
+    title: board.title, at: Date.now(), thumb: row?.thumb ?? null, path: doc.path,
+  });
+}
+
+/**
+ * Write the board on screen to its file, and make the file first if it has none.
+ *
+ * Answers whether the file now holds the board. Quiet when it works, because
+ * this runs on a timer: the dirty mark going out is the whole receipt.
+ */
+export async function saveDocument(): Promise<boolean> {
+  await adopted;
+  return writeDocument();
+}
+
+/** saveDocument() without the wait, for adoptFolder(), which is what it waits for. */
+function writeDocument(): Promise<boolean> {
+  const port = platform.files.folder;
+  if (!folder || !port || isNotFoundBoard()) return Promise.resolve(true);
+  return inTurn(async () => {
+    // Any write stands for the timer's. A timer left set could fire in the
+    // middle of a board swap, with the asset store already emptied.
+    clearTimeout(fileTimer);
+    fileTimer = 0;
+    if (doc?.path && !isDirty()) return true;
+    const gen = edits;
+    try {
+      // A board a picture short still goes to its file, as it goes to the
+      // shelf. Refusing would stop the file hearing about every later edit.
+      const { blob, manifest } = await packBoard(serializeBoard(), { created, allowMissing: true });
+      created = manifest.created;
+      if (doc?.path) {
+        await platform.files.write(doc, blob);
+      } else {
+        doc = await port.create(fileNameFor(board.title), blob);
+        namedTitle = board.title;
+        reportDocument();
+      }
+      await fileRow();
+      warnedFile = false;
+      if (edits === gen) markDirty(false);
+      else scheduleFileSave();
+      return true;
+    } catch (err) {
+      console.error('[mbrd] could not write the board to its file:', err);
+      if (!warnedFile) {
+        warnedFile = true;
+        toast('Could not write ' + (doc?.name || 'the board file') + ': ' + detailOf(err), 'error');
+      }
+      return false;
+    }
+  });
+}
+
+/** Rename the file after the board, when the board was renamed. The shell
+ *  renames only a board in the folder, and leaves a file elsewhere alone. */
+async function renameDocument() {
+  await adopted;
+  const port = platform.files.folder;
+  if (!folder || !port) return;
+  await inTurn(async () => {
+    const ref = doc;
+    if (!ref?.path || board.title === namedTitle) return;
+    namedTitle = board.title;
+    // A name that already reads as this title stays. "My Board.mbrd" from
+    // Explorer and My_Board.mbrd name one board, and a rename would move
+    // somebody's file for a spelling.
+    if (titleFromFileName(ref.name) === board.title) return;
+    try {
+      const moved = await port.rename(ref, fileNameFor(board.title));
+      if (!moved || moved.path === ref.path) return;
+      doc = moved;
+      reportDocument();
+      await fileRow();
+    } catch (err) {
+      console.error('[mbrd] could not rename the board file:', err);
+      toast('Could not rename ' + ref.name + ': ' + detailOf(err), 'error');
+    }
+  });
+}
+
+/**
+ * Find the boards folder, and move every board kept inside the app into it.
+ *
+ * Called once at start, after the store's board is back on screen. Each board
+ * the shelf held as a packed copy becomes a file named for its title, and its
+ * row becomes a pointer at that file, the row a saved board always had. The
+ * board on screen gets its file back from its row, or a new one. On a later
+ * start there is nothing to move: every row is a pointer by then.
+ */
+export function adoptFolder(): Promise<void> {
+  adopted = (async () => {
+    const port = platform.files.folder;
+    if (!port) return;
+    const listing = await port.list();
+    if (!listing) return;
+    folder = listing.folder;
+    const id = await ensureBoardId();
+    const rows = await libraryIndex();
+    // The board on screen, back at its file. A file that has gone since is
+    // made again at the next write, under the board's name.
+    const mine = rows.find(e => e.id === id);
+    if (!doc && mine?.path) {
+      const ref = { name: fileNameOf(mine.path), path: mine.path };
+      if (await platform.files.exists(ref)) {
+        doc = ref;
+        reportDocument();
+      }
+    }
+    namedTitle = board.title;
+    const packed = rows.filter(e => !e.path && e.id !== id);
+    let moved = 0;
+    if (packed.length) {
+      const job = busy('Moving your boards into their folder');
+      try {
+        for (const [i, row] of packed.entries()) {
+          job.step(i, packed.length);
+          try {
+            const blob = await getLibraryBoard(row.id);
+            // A row with nothing behind it was a lost board already.
+            if (!blob) { await removeLibraryBoard(row.id); continue; }
+            const ref = await port.create(fileNameFor(row.title), blob);
+            await putLibraryBoard(row.id, null, {
+              title: row.title, at: row.at, thumb: row.thumb, path: ref.path,
+            });
+            moved++;
+          } catch (err) {
+            // The row keeps its blob, and the next start tries it again.
+            console.error('[mbrd] could not move a board into the folder:', err);
+          }
+        }
+      } finally {
+        job.end();
+      }
+      if (moved) toast(`Moved ${moved} board${moved === 1 ? '' : 's'} into ${folder}`);
+      if (moved < packed.length) {
+        toast(`${packed.length - moved} board${packed.length - moved === 1 ? '' : 's'} stayed `
+          + 'inside the app. mbrd tries again at the next start.', 'error');
+      }
+    }
+    // The board on screen last. Its own blob row goes when its file is written.
+    await writeDocument();
+  })().catch(err => {
+    console.error('[mbrd] could not open the boards folder:', err);
+    toast('Could not open the boards folder: ' + detailOf(err), 'error');
+  });
+  return adopted;
+}
+
+/** Open a board in the folder that has no shelf row yet. */
+async function openBoardFile(path: string) {
+  const ref: DocumentRef = { name: fileNameOf(path), path };
+  try {
+    if (!(await platform.files.exists(ref))) {
+      toast('That board has moved or been deleted', 'error');
+      return false;
+    }
+    return await openFile(await platform.files.read(ref), ref);
+  } catch (err) {
+    console.error(err);
+    toast('Could not open that board: ' + detailOf(err), 'error');
+    return false;
+  }
+}
+
+/** One board in the list: a shelf row, or a file in the folder with no row yet. */
+export type BoardEntry = LibraryEntry & { current: boolean, inFolder: boolean };
+
+/** Paths compared without case or slash direction. Windows and macOS match
+ *  names without case, and one board listed twice is the worse mistake. */
+const pathKey = (path: string) => path.replace(/\\/g, '/').toLowerCase();
+const folderOf = (path: string) => path.slice(0, Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\')));
+
+/**
+ * The boards to show: the shelf, and on the desktop every board in the folder.
+ *
+ * A file in the folder with no row is listed under FILE_ID, with no picture
+ * until it has been opened and left. A row whose file was in the folder and is
+ * gone was deleted outside the app, so the row goes too: the folder is the
+ * list. A row for a file elsewhere stays, there or not, because Locate is the
+ * repair for a file somebody moved.
+ */
+export async function listBoards(): Promise<BoardEntry[]> {
+  const rows = await listLibrary();
+  const listing = folder ? await platform.files.folder?.list().catch(() => null) : null;
+  if (!listing) return rows.map(r => ({ ...r, inFolder: false }));
+  const home = pathKey(listing.folder);
+  const within = (path: string) => pathKey(folderOf(path)) === home;
+  const files = new Map(listing.files.map(f => [pathKey(f.path), f]));
+  const seen = new Set<string>();
+  const out: BoardEntry[] = [];
+  for (const row of rows) {
+    if (!row.path) { out.push({ ...row, inFolder: false }); continue; }
+    const key = pathKey(row.path);
+    // Two rows for one file, from before a reopen found its row: the newer one.
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (within(row.path) && !files.has(key) && !row.current) {
+      await removeLibraryBoard(row.id).catch(() => {});
+      continue;
+    }
+    out.push({ ...row, inFolder: within(row.path) });
+  }
+  for (const [key, f] of files) {
+    if (seen.has(key)) continue;
+    out.push({
+      id: FILE_ID + f.path, title: titleFromFileName(f.name), at: f.at, thumb: null,
+      path: f.path, current: false, inFolder: true,
+    });
+  }
+  return out.sort((a, b) => (b.at || 0) - (a.at || 0));
+}
+
+/** Open the boards folder in the file manager. */
+export async function revealBoardFolder() {
+  try {
+    await platform.files.folder?.reveal();
+  } catch (err) {
+    console.error(err);
+    toast('Could not open the boards folder: ' + detailOf(err), 'error');
+  }
 }
 
 // ---------------------------------------------------------------------------
