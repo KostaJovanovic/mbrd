@@ -30,8 +30,7 @@ import { buildModelCard } from './model.ts';
 import { hintFor, hintKey, tapeStyle, bindDial, STOPS, DIAL } from './ghosts.ts';
 import { ensureDisplay, displayURLReady, bakedServes } from './display.ts';
 import { meshKind } from '../mesh.ts';
-import { PALETTE_TOKENS } from '../layout-settings.ts';
-import { faceName, pixelHash } from '../style-tile.ts';
+import { faceName, pixelHash, TILE_SWATCHES } from '../style-tile.ts';
 import { normalizeNoteRich, applyNoteStyle, buildNoteLine } from './note-model.ts';
 import type { NoteRichInput } from './note-model.ts';
 import {
@@ -1527,20 +1526,31 @@ const RENDERERS = {
       strip.append(shot);
     }
 
-    // The pigments, as one band. No hex printed under them, unlike the page
-    // this replaced: at a card's width fourteen labels are fourteen illegible
-    // smudges, and the value of a colour on a board you are looking at is the
-    // colour. The numbers are still available - see tilePalette().
+    // Eight named swatches in two rows of four, each its own chip with a small
+    // label. Buttons, so canvas/input.ts takes a press on one as a widget's and
+    // never starts a drag: hovering one shows its hex and a click copies it,
+    // both answered by canvas/items.ts's delegated listeners.
     const band = document.createElement('div');
-    band.className = 'style-tile-band';
-    for (const token of PALETTE_TOKENS) {
+    band.className = 'style-tile-swatches';
+    for (const { token, name } of TILE_SWATCHES) {
+      const swatch = document.createElement('button');
+      swatch.type = 'button';
+      swatch.className = 'style-tile-swatch';
+      swatch.dataset.token = token;
+      swatch.setAttribute('aria-label', `Copy the ${name} colour`);
       const chip = document.createElement('span');
       chip.className = 'style-tile-chip';
       // The indirection that makes this live: the property holds a reference to
       // the token, not the token's current value, so it re-resolves on paint.
       chip.style.setProperty('--chip', `var(${token})`);
-      chip.dataset.token = token;
-      band.append(chip);
+      const label = document.createElement('span');
+      label.className = 'style-tile-name';
+      label.textContent = name;
+      // Filled on hover, from the token as it is then.
+      const hex = document.createElement('span');
+      hex.className = 'style-tile-hex';
+      swatch.append(chip, label, hex);
+      band.append(swatch);
     }
 
     const type = document.createElement('div');

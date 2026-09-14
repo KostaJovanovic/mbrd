@@ -10,6 +10,22 @@ import { PALETTE_TOKENS } from './layout-settings.ts';
 /** Max pictures in a tile. Three — a fourth only narrows the crop on a small card. */
 export const TILE_IMAGES = 3;
 
+/**
+ * The tile's swatches, in the order they are drawn: two rows of four, the
+ * paper side above the accents. Named in the tile's own words rather than
+ * the tokens'. Tokens, not values, so the tile follows the palette.
+ */
+export const TILE_SWATCHES: readonly { token: string, name: string }[] = [
+  { token: '--paper', name: 'paper' },
+  { token: '--paper-card', name: 'card' },
+  { token: '--ink', name: 'ink' },
+  { token: '--ink-3', name: 'ink-3' },
+  { token: '--rule', name: 'rule' },
+  { token: '--accent', name: 'accent' },
+  { token: '--accent-warm', name: 'warm' },
+  { token: '--leafy', name: 'leafy' },
+];
+
 /** The asset hash that represents an item visually (preview > asset > cover > shot). */
 const hashAt = (meta: Item['meta'], key: string): string | null =>
   typeof meta?.[key] === 'string' ? meta[key] : null;

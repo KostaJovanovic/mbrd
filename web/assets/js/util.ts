@@ -89,6 +89,36 @@ export function caretToEnd(node: Node) {
 export const readToken = (name: string) =>
   getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
+/**
+ * Any CSS colour as `#rrggbb`, or null. Here rather than in ui/ because the
+ * style tile's swatches (canvas/items.ts) copy a token's hex, and so does the
+ * Pigment picker.
+ */
+export function toHex(value: string): string | null {
+  const v = value.trim();
+  if (/^#[0-9a-f]{6}$/i.test(v)) return v.toLowerCase();
+  if (/^#[0-9a-f]{3}$/i.test(v)) return '#' + [...v.slice(1)].map(c => c + c).join('').toLowerCase();
+  // Percentages would NaN under .map(Number) — fall through to canvas instead.
+  const m = v.match(/^rgba?\(([^)]+)\)$/i);
+  if (m && !m[1].includes('%')) {
+    const [r, g, b] = m[1].split(/[\s,/]+/).map(Number);
+    if ([r, g, b].every(Number.isFinite)) {
+      return '#' + [r, g, b].map(n => clamp(Math.round(n || 0), 0, 255).toString(16).padStart(2, '0')).join('');
+    }
+  }
+  // Everything else: round-trip through a canvas.
+  try {
+    const ctx = document.createElement('canvas').getContext('2d');
+    if (!ctx) return null;
+    ctx.fillStyle = '#000';
+    ctx.fillStyle = v;
+    const out = ctx.fillStyle;
+    return typeof out === 'string' && /^#[0-9a-f]{6}$/i.test(out) ? out.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Fisher-Yates in place. `rnd` accepts a seeded generator for reproducible shuffles. */
 export function shuffle<T>(arr: T[], rnd: () => number = Math.random): T[] {
   for (let i = arr.length - 1; i > 0; i--) {

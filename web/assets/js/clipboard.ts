@@ -9,6 +9,11 @@ import { itemBounds } from './geometry.ts';
 import { board } from './board-model.ts';
 import type { Item } from './board-model.ts';
 
+/** A colour to the system clipboard, said in a toast when it lands. */
+export function copyHex(hex: string) {
+  navigator.clipboard?.writeText(hex).then(() => toast(`Copied ${hex}`), () => {});
+}
+
 /** Items for a copy-shaped operation, z-sorted. Title card excluded — it is a singleton. */
 export function itemsIn(ids: Iterable<string>) {
   const set = ids instanceof Set ? ids : new Set(ids);
