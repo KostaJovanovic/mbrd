@@ -642,6 +642,19 @@ export const SECTIONS: Section[] = [
   {
     id: 'tour', tab: 'board', title: 'Other', needsBoard: true,
     controls: [
+      // Shows the Timeline bar, or puts it away. A box and not a button, as
+      // Show grid is, because it is on or off. First in the section, so the
+      // gear's "Hide timeline" toast points at a row that is easy to find.
+      // ui/timeline-view.ts ticks it when the bar goes up some other way,
+      // since the panel repaints on nothing the bar announces.
+      //
+      // *Earlier versions* stood beside this until v0.198 and is gone. The
+      // two answered the same question at two grains - "take me back" by
+      // named copy and "take me back" by step - and once a step could be
+      // named, the copies were a second, coarser, more expensive answer.
+      { id: 'opt-timeline', type: 'check', label: 'Show timeline',
+        get: () => timelineShown(),
+        set: v => { if (v !== timelineShown()) toggleTimeline(); } },
       // Two verbs, one row - the whole of the tour in this panel. Take the tour
       // carries the weight: it is the answer on a board that already has stops,
       // where the editor is where you go once.
@@ -671,18 +684,6 @@ export const SECTIONS: Section[] = [
           closesPanel: true, when: () => tourStops() > 0,
           title: () => 'Number the cards on the board, in the order they are seen' },
       ] },
-      // Shows the Timeline bar, or puts it away. A box and not a button, as
-      // Show grid is, because it is on or off. ui/timeline-view.ts ticks it
-      // when the bar goes up some other way, since the panel repaints on
-      // nothing the bar announces.
-      //
-      // *Earlier versions* stood beside this until v0.198 and is gone. The
-      // two answered the same question at two grains - "take me back" by
-      // named copy and "take me back" by step - and once a step could be
-      // named, the copies were a second, coarser, more expensive answer.
-      { id: 'opt-timeline', type: 'check', label: 'Show timeline',
-        get: () => timelineShown(),
-        set: v => { if (v !== timelineShown()) toggleTimeline(); } },
       // The only way to Optimize from this panel, and that is the whole of the
       // arrangement: the sheet says what the board is made of and what the
       // heaviest thing in it weighs, and its own footer offers Optimize as the

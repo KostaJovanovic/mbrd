@@ -536,8 +536,16 @@ function gearEntries(): MenuEntry[] {
       },
     }
     : { label: 'Nothing older than 30 days to fold in', disabled: true });
-  // The Timeline row in the View menu and in the panel brings it back.
-  rows.push({ sep: true }, { label: 'Hide timeline', action: () => { if (open) toggleTimeline(); } });
+  // Show timeline in the panel brings it back, and the toast says where, since
+  // a bar that goes from its own menu leaves nothing on screen to find it by.
+  rows.push({ sep: true }, {
+    label: 'Hide timeline',
+    action: () => {
+      if (!open) return;
+      toggleTimeline();
+      toast('Timeline hidden - Show timeline in the sidebar brings it back');
+    },
+  });
   return rows;
 }
 
