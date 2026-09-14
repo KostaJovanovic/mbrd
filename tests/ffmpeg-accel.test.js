@@ -1,7 +1,7 @@
 // The hardware rewrite (desktop/ffmpeg-accel.ts), run on a list shaped like
 // the one native/ffmpeg.ts builds for a transcode. A pure module, so this needs
 // no Electron and no ffmpeg. The probe and the software retry need both, and
-// are checked by hand (research/apps-tasks-2026-09-13.md, G3).
+// are checked by hand (research/old/apps-tasks-2026-09-13.md, G3).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

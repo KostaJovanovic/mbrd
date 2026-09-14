@@ -13,7 +13,7 @@ test('every module that handles Escape marks the press it closed something on', 
   // main.ts sends the Escape, and handles none.
   const handlers = walk(JS, ['.ts'], JS)
     .filter(file => file !== 'main.ts' && read(join(JS, file)).includes("'Escape'"));
-  // Twelve on 2026-09-13 (research/apps-tasks-2026-09-13.md, M3). Eleven from
+  // Twelve on 2026-09-13 (research/old/apps-tasks-2026-09-13.md, M3). Eleven from
   // 2026-09-14, when the Timeline docked and stopped closing on Escape.
   assert.ok(handlers.length >= 11, `only ${handlers.length} modules handle Escape - has the key moved?`);
   const unmarked = handlers.filter(file => !read(join(JS, file)).includes('markClosed('));

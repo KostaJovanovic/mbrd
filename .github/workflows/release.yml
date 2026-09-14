@@ -27,7 +27,7 @@
 # The releases live in KostaJovanovic/mbrd-release, not here. This repo is
 # private, and GitHub answers a private repo's releases with a 404 to anybody
 # signed out, so the download page and the updaters would find nothing. See
-# research/apps-2026-09-13.md §4.4.
+# research/old/apps-2026-09-13.md §4.4.
 #
 # There is no update file in the release. The apps ask GitHub's API for the
 # latest release (desktop/updates.ts), and the answer gives every file's
@@ -234,7 +234,7 @@ jobs:
       # The FFmpeg executable takes about 4 minutes on FileAnalyser's runs, so
       # it is cached on the build script and rebuilds only when that script
       # changes. The script arrives in group N of
-      # research/apps-tasks-2026-09-13.md, and until then these four steps
+      # research/old/apps-tasks-2026-09-13.md, and until then these four steps
       # skip and the APK runs ffmpeg.wasm, as the website does.
       - name: Restore FFmpeg
         id: ffcache

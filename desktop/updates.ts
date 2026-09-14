@@ -16,7 +16,7 @@ import { log } from './log.ts';
 import type { UpdateOffer } from './chrome/bridge.ts';
 
 // The source repo is private, and GitHub answers its releases with a 404 to
-// anybody signed out. research/apps-2026-09-13.md §1 #31.
+// anybody signed out. research/old/apps-2026-09-13.md §1 #31.
 const OWNER = 'KostaJovanovic';
 const REPO = 'mbrd-release';
 /** The one page every build can be downloaded from. */

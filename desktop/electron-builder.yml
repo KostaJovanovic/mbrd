@@ -3,7 +3,7 @@
 # One artefact per platform, chosen so a person downloading this has exactly one
 # link to press: a Setup.exe that asks Install or Portable on its first page, a
 # universal DMG, an AppImage that runs on every distribution. deb, rpm and
-# Flatpak are follow-ons - see research/electron-2026-09-06.md §10.
+# Flatpak are follow-ons - see research/old/electron-2026-09-06.md §10.
 
 appId: com.valjdakosta.mbrd
 productName: mbrd
