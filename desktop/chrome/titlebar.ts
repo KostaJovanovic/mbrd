@@ -3,7 +3,7 @@
 // is a separate view below it, so everything arrives through mbrdChrome. A port
 // of FileAnalyser's chrome/titlebar.js, without its back and forward arrows.
 
-import type { ChromeBridge, MenuModel, Subject, WinState } from './bridge.ts';
+import type { ChromeBridge, MenuModel, Subject, UpdateOffer, WinState } from './bridge.ts';
 import { applyLook } from './look.ts';
 
 declare global {
@@ -144,6 +144,40 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') closeMenu();
 });
 
+/**
+ * The Update button, as Discord has one: a green arrow and the word, at the
+ * right of the bar, only while there is an update. Built by hand rather than
+ * through icon(), whose glyphs are the window buttons' and one colour.
+ */
+function updateButton(api: ChromeBridge): HTMLButtonElement {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'tb-btn tb-update';
+  btn.hidden = true;
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  for (const [key, value] of Object.entries({
+    width: '12', height: '12', viewBox: '0 0 12 12', 'aria-hidden': 'true', focusable: 'false',
+    fill: 'none', stroke: 'currentColor', 'stroke-width': '1.6', 'stroke-linecap': 'round', 'stroke-linejoin': 'round',
+  })) svg.setAttribute(key, value);
+  const arrow = document.createElementNS(SVG_NS, 'path');
+  arrow.setAttribute('d', 'M6 1.5v7M3 5.5l3 3 3-3M2 10.5h8');
+  svg.append(arrow);
+  const word = document.createElement('span');
+  word.textContent = 'Update';
+  btn.append(svg, word);
+  btn.addEventListener('click', () => api.update());
+  return btn;
+}
+
+function paintUpdate(btn: HTMLButtonElement, offer: UpdateOffer | null): void {
+  btn.hidden = !offer;
+  if (!offer) return;
+  const v = offer.version.replace(/\.0$/, '');
+  btn.title = offer.install
+    ? `mbrd ${v} is ready. Your board is saved, then mbrd restarts into it`
+    : `mbrd ${v} is out. This copy cannot replace itself: see how to get it`;
+}
+
 /** The board's name and the dirty mark, forwarded by main from setDocument. */
 function paintSubject(el: HTMLElement, subject: Subject): void {
   el.textContent = subject.title || 'Untitled board';
@@ -182,8 +216,9 @@ function build(api: ChromeBridge): void {
   maxBtn.addEventListener('click', () => api.toggleMaximize());
   closeBtn.addEventListener('click', () => api.close());
   controls.append(minBtn, maxBtn, closeBtn);
+  const update = updateButton(api);
 
-  bar.append(mark, menubar, subject, space, controls);
+  bar.append(mark, menubar, subject, space, update, controls);
   document.body.append(bar);
 
   // A double-click on the bar's own surface maximises, as a title bar does.
@@ -205,6 +240,7 @@ function build(api: ChromeBridge): void {
   // The panel is another window, so the bar cannot see it dismissed. Main says so.
   api.onMenuClosed(markClosed);
   api.onSubject(next => paintSubject(subject, next));
+  api.onUpdate(next => paintUpdate(update, next));
 
   // Measured from --tb-h in titlebar.css, so the number is written once. Again
   // on resize, because a zoom or a DPI change moves it.

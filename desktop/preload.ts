@@ -63,6 +63,10 @@ contextBridge.exposeInMainWorld('mbrdDesktop', {
   // A request with no answer: the shell replies in its own dialogs.
   updates: {
     check: () => invoke('updates:check'),
+    // The title bar's Update button offers the desktop's updates (updates.ts),
+    // so the page is never told of one and never installs one.
+    onOffer: () => {},
+    install: () => Promise.resolve(),
   },
 
   startupNotes: () => invoke('app:startupNotes'),

@@ -1,16 +1,19 @@
-// Updates from the public release repo, answered in native dialogs. A port of
-// FileAnalyser's desktop/updater.mjs: one request to GitHub's API gives the
-// latest tag, each file's URL and the SHA-256 GitHub computed for it. A download
-// that does not match its digest never takes over, and a release with no digest
-// never installs. No electron-updater, no latest.yml. A dev copy never checks.
+// Updates from the public release repo. A port of FileAnalyser's
+// desktop/updater.mjs: one request to GitHub's API gives the latest tag, each
+// file's URL and the SHA-256 GitHub computed for it. A download that does not
+// match its digest never takes over, and a release with no digest never
+// installs. No electron-updater, no latest.yml. A dev copy never checks.
+// The automatic check, once a day, answers with the title bar's Update button
+// (announce); Help > Check for updates still answers in native dialogs.
 
 import { app, dialog, net, shell } from 'electron';
 import type { BrowserWindow, MessageBoxOptions, MessageBoxReturnValue } from 'electron';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, createWriteStream, existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
+import { chmodSync, createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { log } from './log.ts';
+import type { UpdateOffer } from './chrome/bridge.ts';
 
 // The source repo is private, and GitHub answers its releases with a 404 to
 // anybody signed out. research/apps-2026-09-13.md §1 #31.
@@ -30,17 +33,23 @@ const ASSET = {
   appimage: { name: 'mbrd-linux-x64-<version>.AppImage', match: APPIMAGE_ASSET },
 };
 
-/** The first check waits for start-up to settle, then one runs every six hours. */
+/** The first look waits for start-up to settle. After that the clock looks
+ *  every hour and checks when the last check is a day old, so a laptop asleep
+ *  for a week checks within the hour it wakes, and a restart does not check
+ *  again. The time of the last check is kept in the data folder. */
 const FIRST_CHECK_MS = 20 * 1000;
-const EVERY_MS = 6 * 60 * 60 * 1000;
+const LOOK_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** How this copy was installed, and so what an update can do to it. */
 export type Kind = 'dev' | 'installer' | 'appimage' | 'manual';
 
-/** What main.ts hands over: the board window, and whether this copy is portable. */
+/** What main.ts hands over: the board window, whether this copy is portable,
+ *  and where to announce an update (the title bar's button). */
 export interface UpdateOptions {
   window: () => BrowserWindow | null;
   portable: boolean;
+  announce: (offer: UpdateOffer | null) => void;
 }
 
 interface Asset { name: string, url: string, digest: string }
@@ -59,9 +68,43 @@ let busy = false;
 let ready: { version: string, file: string } | null = null;
 /** The installer was started, so quitting must not start it twice. */
 let launched = false;
-/** Versions the user answered "Later" to. The automatic check stays quiet about
- *  them for the rest of the session. The menu entry still reports them. */
-const declined = new Set<string>();
+/** What the title bar's button offers now, or null for no button. */
+let offered: UpdateOffer | null = null;
+let announce: (offer: UpdateOffer | null) => void = () => {};
+
+function publish(offer: UpdateOffer | null): void {
+  offered = offer;
+  announce(offer);
+}
+
+/** The button's state, for a title bar that loads after the answer came. */
+export const currentOffer = (): UpdateOffer | null => offered;
+
+const stampFile = () => join(app.getPath('userData'), 'update-check.json');
+
+/** When the last check got an answer, in ms since the epoch. 0 when never. */
+function lastCheck(): number {
+  try {
+    const at = Number(JSON.parse(readFileSync(stampFile(), 'utf8'))?.at);
+    return Number.isFinite(at) ? at : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function stamp(): void {
+  try {
+    writeFileSync(stampFile(), JSON.stringify({ at: Date.now() }));
+  } catch (err) {
+    log('warn', 'could not note the update check', { err: errorText(err) });
+  }
+}
+
+/** A day since the last answer, or a clock set back past it. */
+const due = () => {
+  const since = Date.now() - lastCheck();
+  return since >= DAY_MS || since < 0;
+};
 
 /**
  * How this copy was installed.
@@ -94,6 +137,7 @@ export function startUpdates(opts: UpdateOptions): void {
   portableCopy = opts.portable;
   kind = installKind(portableCopy);
   getWindow = opts.window;
+  announce = opts.announce;
   log('info', 'updates', { kind });
   if (kind === 'dev') return;
   if (kind === 'installer') {
@@ -106,8 +150,33 @@ export function startUpdates(opts: UpdateOptions): void {
   if (kind === 'appimage' && image) {
     for (const stale of [image + '.new', image + '.new.part']) rmSync(stale, { force: true });
   }
-  setTimeout(() => void check(false), FIRST_CHECK_MS);
-  setInterval(() => void check(false), EVERY_MS).unref();
+  const look = () => { if (due()) void check(false); };
+  setTimeout(look, FIRST_CHECK_MS);
+  setInterval(look, LOOK_MS).unref();
+}
+
+/**
+ * The title bar's Update button. A copy that can install itself quits, and the
+ * quit writes the board to its file first (holdCloseForFlush in main.ts), so
+ * nothing asks about saving. One that cannot says how and opens the page.
+ */
+export function clickUpdate(): void {
+  if (!offered) return;
+  if (!offered.install) {
+    offerDownload(offered.version);
+    return;
+  }
+  if (!ready) return;
+  if (kind === 'installer') {
+    // The installer waits for this copy to close, installs, then starts the
+    // new version (--force-run).
+    runInstaller(true);
+  } else {
+    // relaunch starts the new file once this process has gone, so the two
+    // never meet at the single-instance lock.
+    app.relaunch({ execPath: process.env.APPIMAGE, args: [] });
+  }
+  app.quit();
 }
 
 /** Help > Check for updates, and the panel row. Unlike the automatic check, it always answers. */
@@ -237,6 +306,7 @@ async function check(manual: boolean): Promise<void> {
   busy = true;
   try {
     const rel = await latestRelease();
+    stamp();
     if (!newer(rel.version, app.getVersion())) {
       if (manual) tell('mbrd is up to date', `Version ${label(app.getVersion())} is the latest release.`);
       return;
@@ -248,10 +318,12 @@ async function check(manual: boolean): Promise<void> {
       if (manual) tell(`mbrd ${label(rel.version)} is downloading`, 'A message offers a restart as soon as the download is done.');
       await fetchUpdate(rel.version, asset);
       log('info', 'an update is ready', { version: rel.version });
-      offerRestart();
+      publish({ version: rel.version, install: true });
+      if (manual) offerRestart();
       return;
     }
-    if (manual || !declined.has(rel.version)) offerDownload(rel.version);
+    publish({ version: rel.version, install: false });
+    if (manual) offerDownload(rel.version);
   } catch (err) {
     // A background failure (offline, GitHub down, a bad download) stays
     // silent, and the next check tries again.
@@ -317,10 +389,7 @@ function offerDownload(version: string): void {
     defaultId: 0,
     cancelId: 1,
   }).then(r => {
-    if (r.response === 0) {
-      shell.openExternal(DOWNLOAD_PAGE).catch(err => log('warn', 'could not open the download page', { err: String(err) }));
-    } else {
-      declined.add(version);
-    }
+    if (r.response !== 0) return;
+    shell.openExternal(DOWNLOAD_PAGE).catch(err => log('warn', 'could not open the download page', { err: String(err) }));
   });
 }

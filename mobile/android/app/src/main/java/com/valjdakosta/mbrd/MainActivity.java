@@ -20,7 +20,6 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import androidx.activity.OnBackPressedCallback;
 import androidx.core.app.ActivityCompat;
-import androidx.core.graphics.ColorUtils;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowCompat;
@@ -54,8 +53,10 @@ public class MainActivity extends BridgeActivity {
     private static boolean notNow = false;
     /** True while Android's All files access page is open. */
     private boolean inSettings = false;
-    /** The last page background the bridge reported, applied again after a turn. */
-    private int barColor = PAPER;
+    /** Whether the bars are hidden now, so a repeat of the same decision does
+     *  nothing. Null until the first. Calling hide or show on every resume and
+     *  every configuration change made the bars flicker. */
+    private Boolean fullscreen = null;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -66,7 +67,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(MbrdFiles.class);
         super.onCreate(savedInstanceState);
         setUpInsets();
-        applyFullscreen(getResources().getConfiguration());
+        applyFullscreen(getResources().getConfiguration(), true);
         setUpBack();
         // Returns at once, and does nothing unless the build has an update feed.
         // Not while the storage screen is up: the answer recreates the activity,
@@ -110,8 +111,9 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onResume() {
         super.onResume();
-        // Coming back from another app can bring the bars back.
-        applyFullscreen(getResources().getConfiguration());
+        // Coming back from another app can bring the bars back, so this one
+        // applies the decision even when it has not changed.
+        applyFullscreen(getResources().getConfiguration(), true);
         if (inSettings && bridge == null) {
             inSettings = false;
             // Back from Android's page. Without the grant the screen stays, and
@@ -125,8 +127,9 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
-        setBarColor(barColor);
-        applyFullscreen(newConfig);
+        // uiMode is in configChanges, so the phone going dark lands here too.
+        applyBars(newConfig);
+        applyFullscreen(newConfig, false);
     }
 
     @Override
@@ -160,8 +163,7 @@ public class MainActivity extends BridgeActivity {
             window.setStatusBarColor(Color.TRANSPARENT);
             window.setNavigationBarColor(Color.TRANSPARENT);
         }
-        // The paper until the page reports its own background.
-        setBarColor(barColor);
+        applyBars(getResources().getConfiguration());
 
         View decor = window.getDecorView();
         ViewCompat.setOnApplyWindowInsetsListener(decor, (v, insets) -> {
@@ -177,11 +179,16 @@ public class MainActivity extends BridgeActivity {
     }
 
     /** Landscape is full screen: the bars hide, and a swipe from the edge shows
-     *  them for a moment. Portrait keeps them, in the page colour. */
-    private void applyFullscreen(Configuration config) {
+     *  them for a moment. Portrait keeps them. Only a change of decision calls
+     *  hide or show, unless `force` (a resume, where another app may have
+     *  brought the bars back). */
+    private void applyFullscreen(Configuration config, boolean force) {
+        boolean want = config.orientation == Configuration.ORIENTATION_LANDSCAPE;
+        if (!force && fullscreen != null && fullscreen == want) return;
+        fullscreen = want;
         Window window = getWindow();
         WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(window, window.getDecorView());
-        if (config.orientation == Configuration.ORIENTATION_LANDSCAPE) {
+        if (want) {
             controller.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
             controller.hide(WindowInsetsCompat.Type.systemBars());
         } else {
@@ -189,20 +196,19 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
-    /** The padded bands show the window background, so it takes the page's
-     *  colour (MbrdShell.bars), and the bar icons flip to stay readable. The
-     *  window's, not the decor view's: a turn of the phone resets the decor
-     *  view to the window background. */
-    void setBarColor(int color) {
-        barColor = color;
-        runOnUiThread(() -> {
-            Window window = getWindow();
-            window.setBackgroundDrawable(new ColorDrawable(color));
-            boolean light = ColorUtils.calculateLuminance(color) > 0.5;
-            WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(window, window.getDecorView());
-            controller.setAppearanceLightStatusBars(light);
-            controller.setAppearanceLightNavigationBars(light);
-        });
+    /** The padded bands show the window background: black when the phone is in
+     *  dark mode, white in light mode, with the bar icons to match. They used to
+     *  follow the page's colour through a bridge call, and a flood of those calls
+     *  (every menu, every step of the whimsy slider) made the bars flicker. The
+     *  window's background, not the decor view's: a turn of the phone resets the
+     *  decor view to the window background. */
+    private void applyBars(Configuration config) {
+        boolean dark = (config.uiMode & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
+        Window window = getWindow();
+        window.setBackgroundDrawable(new ColorDrawable(dark ? Color.BLACK : Color.WHITE));
+        WindowInsetsControllerCompat controller = WindowCompat.getInsetsController(window, window.getDecorView());
+        controller.setAppearanceLightStatusBars(!dark);
+        controller.setAppearanceLightNavigationBars(!dark);
     }
 
     // ---- Back -----------------------------------------------------------------

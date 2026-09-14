@@ -102,6 +102,28 @@ export interface NativePort {
 export interface UpdatesPort {
   /** Start a check. The shell answers in its own dialogs, so nothing comes back. */
   check(): Promise<void>;
+  /** An update the shell holds for the page to offer (Android), or null. */
+  onOffer(fn: (offer: UpdateOffer | null) => void): void;
+  /** Put the offered update in place. The caller saves the board first. */
+  install(): Promise<void>;
+}
+
+/** An update the phone found. `ready`: downloaded and checked, so a press
+ *  installs it. Not ready: Data Saver kept it from downloading in the
+ *  background, so a press downloads it first. */
+export interface UpdateOffer {
+  version: string;
+  ready: boolean;
+}
+
+let heldOffer: UpdateOffer | null = null;
+
+/** The update the sidebar's Update row offers, or null for no row. */
+export const updateOffer = (): UpdateOffer | null => heldOffer;
+
+/** main.ts writes what the shell announced. */
+export function setUpdateOffer(offer: UpdateOffer | null): void {
+  heldOffer = offer && typeof offer.version === 'string' ? { version: offer.version, ready: !!offer.ready } : null;
 }
 
 /** What the shell is told about the document on screen. */
@@ -281,6 +303,8 @@ const webNative: NativePort = {
 // The web's updater is the service worker (main.ts), so a check does nothing.
 const webUpdates: UpdatesPort = {
   check: async () => {},
+  onOffer: () => {},
+  install: async () => {},
 };
 
 const web: Platform = {

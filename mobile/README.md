@@ -102,8 +102,10 @@ The bridge also adds what a WebView lacks:
   app goes to the background and keeps the board.
 - **The pause.** A phone does not close, it pauses and may be killed after. So
   the flush the desktop runs before a close runs on the pause.
-- **The bar colour.** The page's background, read through a one-pixel canvas,
-  goes to `MbrdShell.bars`, so the status and gesture bands follow the look.
+- **The bar colour.** The status and gesture bands are black when the phone is
+  in dark mode and white in light mode (`MainActivity.applyBars`). They used to
+  follow the page's background through a bridge call, and a flood of those
+  calls made the bars flicker.
 
 ## Routing and the CSP
 

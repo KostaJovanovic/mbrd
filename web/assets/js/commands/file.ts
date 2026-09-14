@@ -12,7 +12,7 @@ import { hasContent } from '../onboarding.ts';
 import {
   boardSafety, exportBoard, lastSaveFailure, newBoard,
   openBoard, packForShare, pushBoardToCloud, saveBlob, shareBoard,
-  startSyncingBoard, stopSyncingBoard, storageBreakdown, boardFolder,
+  startSyncingBoard, stopSyncingBoard, storageBreakdown, boardFolder, saveDocument,
 } from '../storage/storage.ts';
 import { shareLinkFor } from '../storage/cloud/provider.ts';
 import { paintPanel } from '../ui/panel.ts';
@@ -22,7 +22,7 @@ import { assetBytes } from '../storage/assets.ts';
 import { openLibrary } from '../ui/library.ts';
 import { boardPdf, boardPng } from '../ui/snapshot.ts';
 import { saveWithCooldown } from '../ui/board-actions.ts';
-import { isDesktop } from '../platform/platform.ts';
+import { isDesktop, platform } from '../platform/platform.ts';
 
 /** A filesystem-safe download name from the board title. */
 function boardArtefactName(ext: string): string {
@@ -133,6 +133,12 @@ export function fileCommands() {
   return {
     new: () => newBoard(),
     open: () => openBoard(),
+    // The sidebar's Update row (Android). The board goes to its file first,
+    // quietly, since installing closes the app.
+    installUpdate: async () => {
+      await saveDocument().catch(() => false);
+      await platform.updates.install();
+    },
     library: () => openLibrary(),
     // Debug readouts: each toasts the summary and logs the detail. In the apps
     // there is no browser to name: a board is a file, and the store under it

@@ -71,9 +71,16 @@ function claimPortableData(): void {
   }
 }
 
+/** electron-builder.yml's appId. The installer gives its shortcuts this as their
+ *  AppUserModelID, and Windows groups a taskbar button with a shortcut, and
+ *  takes its icon, only when the window says the same. tests/desktop-icon.test.js
+ *  holds the two in step. */
+const APP_ID = 'com.valjdakosta.mbrd';
+
 function main(): void {
   claimPortableData();
   registerSchemes();
+  if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
 
   // preventDefault required or macOS treats it as unhandled.
   app.on('open-file', (event, path) => {
@@ -384,7 +391,12 @@ function createWindow(): BrowserWindow {
     // Deliver any files the OS handed over before the window existed.
     void deliver();
     // After paint, not before: show the board first.
-    updates.startUpdates({ window: current, portable: portableCopy });
+    updates.startUpdates({
+      window: current,
+      portable: portableCopy,
+      // The title bar's Update button.
+      announce: offer => current()?.webContents.send('chrome:update', offer),
+    });
   });
 
   holdCloseForFlush(win, view.webContents);
@@ -820,6 +832,14 @@ function wireChrome(): void {
     if (!fromChrome(event)) return;
     chromeHooks?.pushState();
     event.sender.send('chrome:subject', lastSubject);
+    event.sender.send('chrome:update', updates.currentOffer());
+  });
+
+  // The Update button. updates.ts quits for the install, and the quit writes
+  // the board to its file first.
+  ipcMain.on('chrome:update-press', event => {
+    if (!fromChrome(event)) return;
+    updates.clickUpdate();
   });
 
   // The panel has drawn itself and says how big it is. Only now is it placed
@@ -982,7 +1002,8 @@ function showDocument(state: unknown): void {
 
   const file = typeof name === 'string' ? name : '';
   const board = typeof title === 'string' && title ? title : 'Untitled board';
-  const mark = dirty === true ? '• ' : '';
+  // The star most programs put before an unsaved document's name.
+  const mark = dirty === true ? '* ' : '';
   win.setTitle(mark + (file ? `${file} — ${board}` : board) + ' — mbrd');
 
   // The bar names the board and marks unsaved work.

@@ -103,14 +103,30 @@ body {
   font-size: var(--t-tiny);
   color: var(--ink-3);
 }
-/* Unsaved work, in the accent: the one thing up here that is a state. */
+/* Unsaved work, in the accent: the one thing up here that is a state. A star,
+   the mark most programs put before an unsaved document's name. */
 .tb-subject[data-dirty]::before {
-  content: '\2022';
-  margin-right: 5px;
+  content: '*';
+  margin-right: 4px;
   color: var(--accent);
 }
 /* The flexible middle is pure drag surface. */
 .tb-space { flex: 1 1 auto; min-width: 12px; }
+
+/* The Update button: a green arrow and the word, as Discord's. Green in every
+   look, because it means the same thing in every look. */
+.tb-update {
+  flex: none;
+  gap: 6px;
+  padding: 0 12px;
+  color: #2f9e5a;
+  font-weight: 600;
+}
+.tb-update[hidden] { display: none; }
+@media (hover: hover) {
+  .tb-update:hover { background: var(--paper-2); color: #248049; }
+}
+.tb-update:active { background: var(--paper-3); color: #248049; }
 
 /* flex: none, and it is the one group that must never lose it: the buttons are
    the only way to close a frameless window. */
