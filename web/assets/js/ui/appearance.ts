@@ -55,7 +55,6 @@ const BODY_FACES = [
   { label: 'System sans',          value: 'system-ui, -apple-system, "Segoe UI", sans-serif' },
   { label: 'Helvetica',            value: '"Helvetica Neue", Helvetica, Arial, sans-serif' },
   { label: 'Georgia',              value: 'Georgia, "Times New Roman", serif' },
-  { label: 'Same as display',      value: 'var(--font-display)' },
 ];
 
 // Exposed controls. host = panel section: type (above fold), main, advanced.
