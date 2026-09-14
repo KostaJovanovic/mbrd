@@ -22,15 +22,3 @@
 # no longer be a wasm module. tests/occt-vendor.test.js checks the magic number
 # for that reason; this is what stops it happening.
 *.wasm binary
-
-# What the source zip leaves out. Each release carries `git archive` of its
-# commit (research/apps-2026-09-13.md #32), and the repository is private for
-# the sake of the plans and notes, not the code. The specs under research/docs/
-# describe the file format the app writes, so they go in. Name each folder
-# rather than research/** with an exception: git archive drops a matched
-# folder whole, so an exception under it is never read.
-research/*.md    export-ignore
-research/old     export-ignore
-research/future  export-ignore
-scratch          export-ignore
-CLAUDE.md        export-ignore
