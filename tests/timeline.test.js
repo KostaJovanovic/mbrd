@@ -21,6 +21,7 @@ import {
   serializeTimeline, fingerprint, registerOp, declareOp, editStep, stepEditable,
   trimmable, trimTimeline,
 } from '../web/assets/js/timeline.ts';
+import { packBoard, unpackBoard } from '../web/assets/js/storage/mbrd.ts';
 import { fresh, photo, note } from './state-fixtures.js';
 
 beforeEach(() => {
@@ -200,6 +201,27 @@ test('a board with a history writes one, and it round-trips', () => {
   loadBoard(doc);
   assert.equal(timelineSteps().length, 2);
   assert.equal(timelineStale(), false);
+});
+
+test('a history survives a .mbrd, in its own files, and a torn one is stale', async () => {
+  // R21: the packer splits the ledger out of board.json and the reader puts it
+  // back, so the round trip through a file must end where the one above does.
+  const [a] = addItems([photo({ x: 0, y: 0 })]);
+  move(a.id, 40, 0);
+  const { blob } = await packBoard(serializeBoard());
+  loadBoard((await unpackBoard(blob)).board);
+  assert.equal(timelineSteps().length, 2);
+  assert.equal(timelineAt(), 2);
+  assert.equal(timelineStale(), false, 'the fingerprint still matches the board beside it');
+
+  // The last step's line lost: the head still says two.
+  const { readZip, writeZip } = await import('../web/assets/js/storage/zip.ts');
+  const files = await readZip(blob);
+  const body = new TextDecoder().decode(files.get('timeline/steps.jsonl'));
+  files.set('timeline/steps.jsonl', new TextEncoder().encode(body.split('\n')[0] + '\n'));
+  const torn = await writeZip([...files].map(([name, data]) => ({ name, data, compress: false })));
+  loadBoard((await unpackBoard(torn)).board);
+  assert.equal(timelineStale(), true);
 });
 
 test('a timeline that does not describe its board is marked stale', () => {

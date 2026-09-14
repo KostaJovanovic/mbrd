@@ -1,6 +1,6 @@
-// The .mbrd container — a ZIP holding manifest.json, board.json, and
-// content-addressed assets/, notes/, waveforms/. One self-contained file.
-// Items reference bytes as `asset: { hash, embedded: true }`.
+// The .mbrd container — a ZIP holding manifest.json, board.json, the history
+// in timeline/, and content-addressed assets/, notes/, waveforms/. One
+// self-contained file. Items reference bytes as `asset: { hash, embedded: true }`.
 
 import { appendZip, readZip, writeZip, writeZipLayout } from './zip.ts';
 import type { ZipEntry, ZipLayout } from './zip.ts';
@@ -163,18 +163,25 @@ async function boardEntries(
   // they get their own sidecar file.
   const waveforms = collectWaveforms(referenced);
 
+  // The history goes in its own two files, so board.json stays the board.
+  const ledger = timelineFiles(boardData.timeline);
+  const doc = withoutPeaks(boardData, waveforms);
+  if (ledger) delete doc.timeline;
+
   const entries: ZipEntry[] = [
     // First entry, stored, no extra field — MIME at fixed offset (ODF/EPUB
     // convention) so file(1) can identify a .mbrd. Written for other software;
     // this reader trusts manifest.format, not this entry.
     { name: 'mimetype', data: enc.encode(MIME), compress: false },
     { name: 'manifest.json', data: json(manifest), compress: true },
-    {
-      name: 'board.json',
-      data: json(withoutPeaks(boardData, waveforms)),
-      compress: true,
-    },
+    { name: 'board.json', data: json(doc), compress: true },
   ];
+  if (ledger) {
+    entries.push(
+      { name: TIMELINE_BASE, data: ledger.base, compress: true },
+      { name: TIMELINE_STEPS, data: ledger.steps, compress: true },
+    );
+  }
 
   // Gather all referenced assets before writing. Fatal on missing — a board
   // with a hole must not claim success (used to silently export holes).
@@ -443,6 +450,51 @@ function isReadings(v: unknown): v is number[] {
     && v.every(n => typeof n === 'number' && n >= 0 && n <= 1);
 }
 
+// ---------------------------------------------------------------------------
+// The timeline in its own files. timeline/base.json holds everything but the
+// steps - the board before step 0, the marker, the fingerprint - plus how many
+// steps there are. timeline/steps.jsonl holds the steps, one to a line, oldest
+// first. The files outrank a `timeline` in board.json, which is where a file
+// from before them keeps it. Unreadable → the board opens without a past.
+// ---------------------------------------------------------------------------
+
+const TIMELINE_BASE = 'timeline/base.json';
+const TIMELINE_STEPS = 'timeline/steps.jsonl';
+
+/** The ledger as the two files, or null when there is none to write. */
+function timelineFiles(timeline: unknown) {
+  if (!isRecord(timeline) || !Array.isArray(timeline.steps)) return null;
+  const { steps, ...head } = timeline;
+  return {
+    base: json({ ...head, count: steps.length }),
+    steps: enc.encode(steps.map(step => JSON.stringify(step) + '\n').join('')),
+  };
+}
+
+/**
+ * ...and back to the one object adoptTimeline() reads, or null.
+ *
+ * A line that will not parse stays in the list as null, and a lost tail adds
+ * one, so the ledger is shorter than it says. adoptTimeline() marks such a
+ * history stale rather than replaying steps that are not all there.
+ */
+function readTimelineFiles(files: Map<string, Uint8Array>) {
+  const head = files.get(TIMELINE_BASE);
+  if (!head) return null;
+  let parsed: unknown;
+  try { parsed = JSON.parse(dec.decode(head)); } catch { return null; }
+  if (!isRecord(parsed)) return null;
+  const { count, ...rest } = parsed;
+  const steps: unknown[] = [];
+  const body = files.get(TIMELINE_STEPS);
+  for (const line of body ? dec.decode(body).split('\n') : []) {
+    if (!line.trim()) continue;
+    try { steps.push(JSON.parse(line)); } catch { steps.push(null); }
+  }
+  if (typeof count === 'number' && count > steps.length) steps.push(null);
+  return { ...rest, steps };
+}
+
 // Old `versions/<id>.json` entries (removed in v0.198) are silently skipped —
 // they match no loop below, so the board opens without that history.
 
@@ -526,6 +578,10 @@ export async function unpackBoard(blob: Blob) {
   // isRecord-filters every element of both.
   const board = parsed as FileBoard;
   if (manifest.title && !board.title) board.title = manifest.title;
+
+  // The timeline's own files outrank board.json, as the sidecars below do.
+  const timeline = readTimelineFiles(files);
+  if (timeline) parsed.timeline = timeline;
 
   // Note sidecars outrank board.json. Keyed by item id from the filename.
   const notes = new Map<unknown, FileItem>();

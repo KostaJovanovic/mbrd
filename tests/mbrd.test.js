@@ -348,6 +348,61 @@ test('a board with no mimetype entry still opens', async () => {
   assert.equal(board.items[0].name, 'kept');
 });
 
+// ---------------------------------------------------------------------------
+// The timeline in its own files (R21)
+// ---------------------------------------------------------------------------
+
+const ledger = () => ({
+  base: { items: {}, itemOrder: [], desktop: {}, mobile: {}, trash: {}, trashOrder: [], rest: {} },
+  at: 2,
+  fingerprint: 'abc123',
+  steps: [
+    { id: 's1', at: 1, label: 'Add', run: 'items:i1|', delta: { items: { changed: { i1: [null, '{"id":"i1"}'] } } } },
+    { id: 's2', at: 2, label: 'Move', run: 'items:i1|x', delta: { items: { changed: { i1: ['{"id":"i1"}', '{"id":"i1","x":5}'] } } }, name: 'Moved' },
+  ],
+});
+
+test('the history is written beside board.json, a step to a line', async () => {
+  clearAssets();
+  const files = await readZip((await packBoard(boardOf([], { timeline: ledger() }))).blob);
+  const doc = JSON.parse(new TextDecoder().decode(files.get('board.json')));
+  assert.equal('timeline' in doc, false, 'board.json no longer carries the history');
+  const head = JSON.parse(new TextDecoder().decode(files.get('timeline/base.json')));
+  assert.deepEqual(head, { base: ledger().base, at: 2, fingerprint: 'abc123', count: 2 });
+  const lines = new TextDecoder().decode(files.get('timeline/steps.jsonl')).trim().split('\n');
+  assert.deepEqual(lines.map(line => JSON.parse(line)), ledger().steps);
+});
+
+test('the history comes back whole from its own files', async () => {
+  const back = await roundTrip(boardOf([], { timeline: ledger() }));
+  assert.deepEqual(back.timeline, ledger());
+});
+
+test('a file with the history inside board.json still opens with it', async () => {
+  // Every .mbrd written before the history had its own files looks like this.
+  clearAssets();
+  const doc = JSON.stringify(boardOf([], { timeline: ledger() }));
+  const old = await writeZip([{ name: 'board.json', data: new TextEncoder().encode(doc), compress: true }], { mime: MIME });
+  assert.deepEqual((await unpackBoard(old)).board.timeline, ledger());
+});
+
+test('a history with a torn line or a lost tail reads as shorter than it says', async () => {
+  // adoptTimeline() marks a ledger with an unreadable entry stale rather than
+  // replaying steps that are not all there. The null is that entry.
+  clearAssets();
+  const files = await readZip((await packBoard(boardOf([], { timeline: ledger() }))).blob);
+  const redo = async body => {
+    const entries = [...files].map(([name, data]) => ({
+      name, data: name === 'timeline/steps.jsonl' ? new TextEncoder().encode(body) : data, compress: false,
+    }));
+    return (await unpackBoard(await writeZip(entries, { mime: MIME }))).board.timeline.steps;
+  };
+  const [first, second] = new TextDecoder().decode(files.get('timeline/steps.jsonl')).trim().split('\n');
+  assert.deepEqual(await redo(`${first}\n{torn\n`), [ledger().steps[0], null]);
+  assert.deepEqual(await redo(`${first}\n`), [ledger().steps[0], null], 'two claimed, one there');
+  assert.equal((await redo(`${first}\n${second}\n`)).length, 2);
+});
+
 test('a WOFF2 face is stored rather than deflated', async () => {
   clearAssets();
   // Bytes that would compress enormously, so this can't pass by accident on

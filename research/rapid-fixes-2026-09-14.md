@@ -232,9 +232,22 @@ Added on 2026-09-14 from the open list (`research/todo-2026-09-14.md`), after
 the maintainer chose from it. More editable timeline steps are not taken: the
 list named auto-connect as the next one, and the app has no such command.
 
-- [ ] R21 The undo history moves out of `board.json` into its own files in the
+- [x] R21 The undo history moves out of `board.json` into its own files in the
       `.mbrd`: `timeline/base.json` and `timeline/steps.jsonl`. A `.mbrd`
       schema change, which the format allows until 1.0.
+      - **Done.** `storage/mbrd.ts` writes the ledger as two files and
+        leaves `timeline` out of `board.json`. `base.json` holds the base,
+        the marker, the fingerprint and `count`. `steps.jsonl` holds one
+        step to a line, oldest first. The reader puts the object back
+        together before `adoptTimeline()` sees it. The files outrank a
+        `timeline` in `board.json`, so every older `.mbrd` still opens with
+        its history. A torn line, or fewer lines than `count`, marks the
+        history stale. The cloud copy is not a `.mbrd` and keeps the
+        history inline. `mbrd-format.md` has the layout, the section and
+        the compatibility note. No version bump and no `requires`: an older
+        build opens a new file with no past, which the format already
+        allows. Tests: four in `mbrd.test.js` and a round trip through a
+        real file in `timeline.test.js`.
 - [x] R22 S1: the colour extraction (`pictureHashes()`, `autoRecolour()`)
       moves out of `ui/appearance.ts` behind a deps object, as `LookDeps`
       does. No change on screen.
