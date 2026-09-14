@@ -264,9 +264,16 @@ list named auto-connect as the next one, and the app has no such command.
         steps is 8 px, not 6, and the playhead's flag is 6 px, not 8, so
         the flag clears the marks on both sides by 2 px. Measured in
         Chromium at the newest step and in the middle of the history.
-- [ ] R32 The sidebar's Board tab: the Tour section is renamed "Other", and
+- [x] R32 The sidebar's Board tab: the Tour section is renamed "Other", and
       the Show/hide timeline button and the Board contents button move under
       the tour buttons. Also, in the Board contents window, hovering over an
       mp4 shows no preview. Fix that.
+      - **Done.** The Board tab ends with Other: the tour buttons, then
+        Timeline (lit while the bar is up), then Board contents. Both left
+        the System tab. The peek read a clip's still only from `cover` or
+        `poster`, and a clip the browser can play has neither, so an mp4
+        peeked as nothing. Now a clip plays in the peek, muted and looped,
+        over the still the card itself uses, and lets go of its source when
+        the pointer leaves. Checked in Chromium with an H.264 mp4.
 - [ ] R30 The Android later list: `native.decode` through `ImageDecoder`, a
       foreground service for long transcodes, and the shelf as a folder tree.
