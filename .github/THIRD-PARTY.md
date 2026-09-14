@@ -73,10 +73,11 @@ is black (X, GitHub, Patreon, TikTok, Threads, Medium).
 | pako 1.0.11 (inflate) | `web/assets/vendor/pako/pako_inflate.min.js` | https://github.com/nodeca/pako | MIT AND Zlib | `web/assets/vendor/pako/LICENSE.txt` |
 | libarchive.js 2.0.2 | `web/assets/vendor/libarchive/libarchive.js`, `web/assets/vendor/libarchive/worker-bundle.js`, `web/assets/vendor/libarchive/libarchive.wasm` | https://github.com/nika-begiashvili/libarchivejs | MIT, BSD-2-Clause | `web/assets/vendor/libarchive/LICENSE.txt` |
 | occt-import-js 0.0.23 | `web/assets/vendor/occt/occt-import-js.js`, `web/assets/vendor/occt/occt-import-js.wasm` | https://github.com/kovacsv/occt-import-js | LGPL-2.1 | `web/assets/vendor/occt/LICENSE.txt` |
+| libraw-wasm 1.6.0 (LibRaw 0.22.1) | `web/assets/vendor/libraw/index.js`, `web/assets/vendor/libraw/worker.js`, `web/assets/vendor/libraw/libraw.js`, `web/assets/vendor/libraw/libraw.wasm` | https://github.com/ybouane/LibRaw-Wasm, https://github.com/LibRaw/LibRaw | ISC (wrapper), LGPL-2.1 (LibRaw) | `web/assets/vendor/libraw/LICENSE.txt` |
 | onnxruntime-web 1.23.0 | `web/assets/vendor/onnxruntime/ort.wasm.min.mjs`, `web/assets/vendor/onnxruntime/ort-wasm-simd-threaded.mjs`, `web/assets/vendor/onnxruntime/ort-wasm-simd-threaded.wasm` | https://github.com/microsoft/onnxruntime | MIT | `web/assets/vendor/onnxruntime/LICENSE.txt` |
 | u2netp (model weights) | `web/assets/vendor/u2netp/u2netp.onnx` | https://github.com/xuebinqin/U-2-Net | Apache-2.0 | `web/assets/vendor/u2netp/LICENSE.txt` |
 
-Eight vendored builds, none of them modified, each loaded only when a file or a
+Nine vendored builds, none of them modified, each loaded only when a file or a
 command that needs it is used and none of them in `SHELL`.
 
 **onnxruntime-web** runs **u2netp**, the model behind the background remover,
@@ -129,9 +130,23 @@ and never passed through esbuild, which is LGPL-2.1 section 6: a work that
 anything here, may carry terms of its own. Bundling `occt-import-js.js` into
 `web/assets/app.js` would end that and is the one thing not to do with it.
 
-This is also the only vendored build the app can do without. `mesh/step.ts` and
+The app can also do without this one. `mesh/step.ts` and
 `mesh/iges.ts` read both formats without it, and are what happens when the
 kernel does not load - see the head of `mesh/occt.ts`.
+
+**libraw-wasm** is LibRaw 0.22.1 (https://www.libraw.org) compiled to
+WebAssembly with Little CMS 2.19.1 and Emscripten's libjpeg and zlib ports. It
+develops a camera RAW: the Demosaic row on a RAW card, and Optimize, which
+develops a RAW before it shrinks it like any photograph.
+`web/assets/js/optimize/demosaic.ts` pins the version and
+`tests/libraw-vendor.test.js` holds the pin to the files. The wrapper is ISC.
+LibRaw is offered under LGPL-2.1 or CDDL-1.0 and is taken here under LGPL-2.1,
+on the argument made for OCCT above: the four files are loaded at run time by a
+module worker the wrapper spawns, with the site policy removed for that file
+alone (`web/_headers`), and none of them passes through esbuild. Replacing
+`libraw.wasm` with another build of it needs nothing here rebuilt. Without it a
+RAW card keeps the preview its camera stored in the file (`import/preview.ts`),
+which is what every RAW card drew before this arrived.
 
 The ffmpeg core (`@ffmpeg/core` 0.12.6, MIT over LGPL-2.1 — the npm package is
 MIT and the FFmpeg build inside it is LGPL-2.1 —

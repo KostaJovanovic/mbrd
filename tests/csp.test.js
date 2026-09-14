@@ -319,7 +319,7 @@ test("base-uri is 'self' and not 'none', for the reason index.html gives", () =>
 // The worker exemptions
 // ---------------------------------------------------------------------------
 
-/** Derive the five exempted worker paths from the code that names them.
+/** Derive the six exempted worker paths from the code that names them.
  * A URL as a string in one file and a path in _headers is exactly the pair
  * that drifts — deriving catches a rename before it silently breaks. */
 function spawnedWorkers() {
@@ -343,14 +343,20 @@ function spawnedWorkers() {
   const archive = /WORKER_URL = '([^']+)'/.exec(read(join(JS, 'import', 'archive.ts')));
   assert.ok(archive, 'import/archive.ts no longer names a worker - is the exemption still needed?');
 
-  return [media[1], dir[1] + worker[1], matte[1], occt[1], archive[1]].map(url => url.replace(/^\.?\//, '/'));
+  // Same: libraw's index.js spawns worker.js from beside itself, and
+  // tests/libraw-vendor.test.js holds the constant to that.
+  const raw = /WORKER_URL = '([^']+)'/.exec(read(join(JS, 'optimize', 'demosaic.ts')));
+  assert.ok(raw, 'optimize/demosaic.ts no longer names a worker - is the exemption still needed?');
+
+  return [media[1], dir[1] + worker[1], matte[1], occt[1], archive[1], raw[1]]
+    .map(url => url.replace(/^\.?\//, '/'));
 }
 
 test('the exempted paths are the workers the app actually spawns', () => {
   const exempt = rules.filter(r => r.removed.includes('Content-Security-Policy'));
   const wanted = spawnedWorkers();
   assert.deepEqual(exempt.map(r => r.path).sort(), [...wanted].sort(),
-    'a path drops the policy that is not one of the five workers, or a worker has lost its rule '
+    'a path drops the policy that is not one of the six workers, or a worker has lost its rule '
     + '- each unlisted one is a page or a script running unprotected');
   for (const rule of exempt) {
     assert.ok(existsSync(join(WEB, rule.path.slice(1))), `${rule.path} does not exist`);

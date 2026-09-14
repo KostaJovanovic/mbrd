@@ -6,15 +6,17 @@
 import { toast } from '../notify.ts';
 import {
   addTourStop, board, boardTags, byId, cleanTag, freezeClip, isContent, isLocked, isRider,
-  itemTags, selection, setItemBare, setItemCover, setItemFit, setItemUpAxis, setItemsLocked,
-  setItemsTagged, setStickerTint, unstickItems, TAG_MAX, TAGS_PER_ITEM,
+  itemTags, selection, setItemBare, setItemCover, setItemDemosaiced, setItemFit, setItemUpAxis,
+  setItemsLocked, setItemsTagged, setStickerTint, unstickItems, TAG_MAX, TAGS_PER_ITEM,
 } from '../state.ts';
 import { extOf } from '../util.ts';
+import { fileKey, isOversize, lift } from '../consent.ts';
 import { ask } from '../ui/dialog.ts';
 import { defaultUpAxis, meshKind, upAxisIsGuessed } from '../mesh.ts';
 import { stickerTint } from '../stickers/catalogue.ts';
 import { addFile, derivedFile, getAsset } from '../storage/assets.ts';
-import { pickCover } from '../import/drop.ts';
+import { displayFor, pickCover, thumbFor } from '../import/drop.ts';
+import { demosaic, isRaw } from '../optimize/demosaic.ts';
 import { isTurning, rotateModel } from '../canvas/model.ts';
 // The card's own <video>, and the one thing in the app that reads a frame off
 // an element that is already on screen. Both for keepFrame() below.
@@ -429,5 +431,54 @@ export function itemMetaCommands() {
       // somewhere else. The bin is where it is and where it comes back from.
       toast('Kept the frame. The clip is in the bin - click it there to put it back.');
     },
+
+    /**
+     * Develop a camera RAW from its sensor data.
+     *
+     * A RAW card draws the JPEG its camera stored inside the file (see
+     * import/preview.ts), which is what the camera made of the shot and is
+     * sometimes a postage stamp. This runs LibRaw over the sensor itself and
+     * puts the result where that preview was, as one undoable step. The RAW
+     * stays the card's file. Several seconds of work in a worker, so a second
+     * press on the same card while it runs does nothing.
+     */
+    canDemosaic: (id: string) => {
+      const it = byId(id);
+      return isRaw(it) && it?.meta?.demosaiced !== true && !!getAsset(it?.asset?.hash);
+    },
+    demosaic: async (id: string) => {
+      const it = byId(id);
+      const asset = getAsset(it?.asset?.hash);
+      if (!it || !asset || !isRaw(it) || developing.has(id)) return;
+      developing.add(id);
+      const name = it.name || asset.name || 'this RAW';
+      toast(`Demosaicing ${name} - this takes a few seconds`);
+      try {
+        let made;
+        try {
+          made = await demosaic(asset.blob);
+        } catch (err) {
+          if (!isOversize(err)) throw err;
+          if (!await lift(err, fileKey({ name, size: asset.size }), `"${name}"`, 'Demosaic')) return;
+          made = await demosaic(asset.blob, true);
+        }
+        const file = derivedFile(made.blob, 'demosaic');
+        const preview = await addFile(file);
+        const [thumb, display] = await Promise.all([
+          thumbFor(file, made.width).catch(() => null),
+          displayFor(file).catch(() => null),
+        ]);
+        setItemDemosaiced(id, { preview, thumb: thumb?.hash, display: display?.hash });
+        toast('Demosaiced. Undo puts the camera preview back.');
+      } catch (err) {
+        console.warn('[mbrd] could not demosaic', name, err);
+        toast('Could not demosaic this RAW - the card keeps the camera preview', 'error');
+      } finally {
+        developing.delete(id);
+      }
+    },
   };
 }
+
+/** RAW cards being developed now - see demosaic() above. */
+const developing = new Set<string>();

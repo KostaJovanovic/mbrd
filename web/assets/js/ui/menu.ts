@@ -105,6 +105,7 @@ export interface MenuCommands {
   canRotateModel: (id: string) => boolean;
   canExtractSwatches: (id: string) => boolean;
   canKeepFrame: (id: string) => boolean;
+  canDemosaic: (id: string) => boolean;
   canTintSticker: (id: string) => boolean;
   canViewItem: (id: string) => boolean;
   // Link cards: the address is the whole point, so its Properties row (edit the
@@ -156,6 +157,8 @@ export interface MenuCommands {
   extractSwatches: (id: string) => void;
   // Async internally (decodes a frame); void here — menu fires and closes.
   keepFrame: (id: string) => void;
+  // Async internally (develops the sensor in a worker); void here, as above.
+  demosaic: (id: string) => void;
   rotateModel: (id: string) => void;
   setStickerTint: (id: string, tint: number) => void;
   raise: () => void;
@@ -556,6 +559,8 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
   const bare = bareable && cmds!.itemBare(id);
   // Crop/grade — non-spatial, so offered on Feed too.
   const croppable = !many && cmds!.canEditPicture(id);
+  // Single RAW card, until it is developed — on Feed too, like crop.
+  const demosaicable = !many && cmds!.canDemosaic(id);
   // Selection-wide — content items only (not fences/furniture).
   const taggable = cmds!.canTag();
   const flippable = !many && cmds!.canFlipUpAxis(id);
@@ -639,8 +644,8 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     { label: 'Zoom to them', icon: 'i-zoom-to',
       action: () => cmds!.zoomToSelection(), hidden: mobile || !many },
     // ── What the card is ──
-    { sep: true, hidden: !coverable && !covered && !editable_picture && !flippable
-      && !turnable && !tintable && !fenceItem && !taggable },
+    { sep: true, hidden: !coverable && !covered && !editable_picture && !demosaicable
+      && !flippable && !turnable && !tintable && !fenceItem && !taggable },
     { label: covered ? 'Change picture' : 'Set a picture', icon: 'i-picture',
       hidden: !coverable, action: () => cmds!.setCover(id) },
     { label: 'Remove picture', icon: 'i-picture-off', hidden: !covered,
@@ -648,6 +653,9 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // Picture edits fold — "Picture" not "Edit" because adjacent rows rename/delete the item.
     { label: 'Picture', icon: 'i-crop', hidden: !editable_picture,
       sub: editable_picture ? pictureEdits : undefined },
+    // A RAW card draws its camera's preview. This develops the sensor itself.
+    { label: 'Demosaic', icon: 'i-demosaic', hidden: !demosaicable,
+      action: () => cmds!.demosaic(id) },
     // Outside the fold — "No card" is about the item, not the picture.
     // Also avoids a confusing double-tick alongside the Fill/Fit radio pair.
     { label: 'No card', icon: 'i-cut-out', check: bare, hidden: !bareable,
