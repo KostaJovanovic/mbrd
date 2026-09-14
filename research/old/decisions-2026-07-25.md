@@ -1,5 +1,9 @@
 # Six decisions
 
+> **2026-09-14:** §5 is carried out as Drive sync (`storage/cloud/sync.ts`,
+> `research/docs/cloud.md`). §6, a compact-copy optimizer, was overtaken by
+> Optimize.
+
 Written 2026-07-25, after finishing everything on the roadmap that was not
 marked *(discussion)*. These six are what is left, and they are left because in
 each case **the decision costs more than the code** — which is exactly what the

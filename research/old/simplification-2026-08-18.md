@@ -1,6 +1,10 @@
 # The long way round — a simplification plan
 
-Open work. Two sweeps of the whole tree on 2026-08-18, one for duplication and
+> **2026-09-14 audit:** most of it is carried out. The checklist in
+> `simplification-tasks-2026-08-18.md` says which tasks, and C6 was declined.
+> `wouldStick()`'s whole-board scan is still open, in `../todo-2026-09-14.md`.
+
+Two sweeps of the whole tree on 2026-08-18, one for duplication and
 dead code and one for indirection, and the order in which the results are worth
 clearing.
 

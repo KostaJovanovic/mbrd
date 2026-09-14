@@ -1,5 +1,9 @@
 # mbrd apps, the FileAnalyser way — tasks, 2026-09-13
 
+> **2026-09-14 audit:** built, except group N (native FFmpeg, held until the
+> two-phone test N0) and the hand checks on a phone and on Windows, which
+> `todo-2026-09-14.md` lists. N3's GPL notice is in the credits.
+
 *The executable half of `apps-2026-09-13.md`, and nothing else. The plan holds
 the decisions and the reasons. This file holds what to do, in order, with a
 string to find each place by. Written for a session that has not read the plan:

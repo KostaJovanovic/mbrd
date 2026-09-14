@@ -1,5 +1,9 @@
 # mbrd code audit and Tauri readiness review
 
+> **2026-09-14:** the persistence and input blockers are closed
+> (`research/electron-2026-09-06.md` §2), and the desktop app ships on
+> Electron, not Tauri. Backlog items #15, #18, #19 and #21 are still ideas.
+
 Date: 2026-07-26  
 Audited revision: `9041621dfc116c0f55c6d91edb0e5854f0b9b43c` plus the uncommitted working tree present during the review  
 Targets: browser/PWA, Android, Windows, macOS, Linux  

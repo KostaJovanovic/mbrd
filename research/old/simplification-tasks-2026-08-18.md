@@ -1,6 +1,9 @@
 # Simplification — the task list
 
-Open work. The executable half of
+> **2026-09-14 audit:** the checklist at the foot is filled in from the audit
+> of that day, not from the commits. "Not checked" means the audit did not look.
+
+The executable half of
 [`simplification-2026-08-18.md`](simplification-2026-08-18.md). That document
 argues *why*; this one says *what to type*. Read that one only when a task here
 tells you to.
@@ -1288,56 +1291,56 @@ Mark each as `DONE`, `SKIPPED — <reason>`, or `DECLINED`.
 
 | | task | status |
 | --- | --- | --- |
-| T1.1 | palette readout tests `Infinity` | |
-| T1.2 | 96 blob URLs minted and unread | |
-| T1.3 | two stale `Infinity` comments + dead branch | |
-| T1.4 | six leaked window listeners per open | |
-| T1.5 | `clearQueue()` leaves `error` handler | |
-| T1.6 | feet-and-inches unit branch | |
-| T1.7 | submenu announces its own shortcut | |
-| T1.8 | `onCancelEvent` cannot do anything | |
+| T1.1 | palette readout tests `Infinity` | DONE |
+| T1.2 | 96 blob URLs minted and unread | DONE |
+| T1.3 | two stale `Infinity` comments + dead branch | DONE |
+| T1.4 | six leaked window listeners per open | DONE |
+| T1.5 | `clearQueue()` leaves `error` handler | DONE |
+| T1.6 | feet-and-inches unit branch | DONE |
+| T1.7 | submenu announces its own shortcut | DONE |
+| T1.8 | `onCancelEvent` cannot do anything | DONE |
 | | **commit C1 + four legs** | |
-| T2.1 | delete the reversed `optimize.ts` paragraph | |
-| T2.2 | seven doc blocks on the wrong declaration | |
-| T2.3 | two docstrings claiming a caller | |
+| T2.1 | delete the reversed `optimize.ts` paragraph | DONE |
+| T2.2 | seven doc blocks on the wrong declaration | not checked |
+| T2.3 | two docstrings claiming a caller | not checked |
 | | **commit C2 + four legs** | |
-| T3.1 | 60 aria writes a second | |
-| T3.2 | two board walks per pointermove + `cardOf` | |
-| T3.3 | layout + context forced per turn frame | |
-| T3.4 | note resize re-derives its inputs | |
-| T3.5 | `find` per drag frame | |
-| T3.6 | `byId` twice per moved item | |
+| T3.1 | 60 aria writes a second | DONE |
+| T3.2 | two board walks per pointermove + `cardOf` | not checked |
+| T3.3 | layout + context forced per turn frame | not checked |
+| T3.4 | note resize re-derives its inputs | not checked |
+| T3.5 | `find` per drag frame | DONE |
+| T3.6 | `byId` twice per moved item | not checked |
 | | **commit C3 + four legs** | |
-| T4.1 | five `JSON.stringify` comparisons | |
-| T4.2 | `includes` in a growing loop | |
-| T4.3 | `byId(host.id)` on a live host | |
-| T4.4 | board walked twice for the palette key | |
-| T4.5 | `Math.hypot` taken only to compare | |
-| T4.6 | template strings as `Set` keys | |
+| T4.1 | five `JSON.stringify` comparisons | DONE — the last, in `state.ts`, on 2026-09-14 (R12). `timeline.ts` keeps its two on purpose, since they compare JSON of any shape |
+| T4.2 | `includes` in a growing loop | DONE |
+| T4.3 | `byId(host.id)` on a live host | DONE |
+| T4.4 | board walked twice for the palette key | not checked |
+| T4.5 | `Math.hypot` taken only to compare | DONE |
+| T4.6 | template strings as `Set` keys | not checked |
 | | **commit C4 + four legs** | |
-| T5.1 | `byLocal` spreads every descendant | |
-| T5.2 | 64 MB slurped instead of sliced | |
-| T5.3 | every CFBF stream materialised | |
-| T5.4 | board and bin walked twice per autosave | |
-| T5.5 | 20 000 wrappers to delete a few items | |
-| T5.6 | seven arrays per serialize | |
-| T5.7 | sort-to-take-one, three sites | |
-| T5.8 | library index rewritten per evicted row | |
-| T5.9 | optimize plan built twice | |
-| T5.10 | eight smaller same-work-twice sites | |
+| T5.1 | `byLocal` spreads every descendant | DONE |
+| T5.2 | 64 MB slurped instead of sliced | not checked |
+| T5.3 | every CFBF stream materialised | not checked |
+| T5.4 | board and bin walked twice per autosave | not checked |
+| T5.5 | 20 000 wrappers to delete a few items | DONE |
+| T5.6 | seven arrays per serialize | not checked |
+| T5.7 | sort-to-take-one, three sites | not checked |
+| T5.8 | library index rewritten per evicted row | not checked |
+| T5.9 | optimize plan built twice | not checked |
+| T5.10 | eight smaller same-work-twice sites | not checked |
 | | **commit C5 + four legs** | |
 | T6.1 | one `followers()` for four copies | **DECLINED** |
 | | **commit C6 + four legs** | not run — nothing to commit |
-| T7.1 | `cullMargin` and `baseStep` duplicated | |
-| T7.2 | `contentEditable` fallback ×3 | |
-| T7.3 | select-contents range dance ×5 | |
-| T7.4 | Fisher-Yates ×3, `clampi` | |
-| T7.5 | sticker SVG block ×5 | |
-| T7.6 | create-element-with-class ×6 | |
-| T7.7 | role+tabIndex block ×5, `icon()` | |
-| T7.8 | four per-file duplications | |
-| T7.9 | dead code | |
-| T7.10 | inline `pictureFrom`, three classes | |
+| T7.1 | `cullMargin` and `baseStep` duplicated | DONE |
+| T7.2 | `contentEditable` fallback ×3 | DONE |
+| T7.3 | select-contents range dance ×5 | DONE |
+| T7.4 | Fisher-Yates ×3, `clampi` | DONE |
+| T7.5 | sticker SVG block ×5 | not checked |
+| T7.6 | create-element-with-class ×6 | not checked |
+| T7.7 | role+tabIndex block ×5, `icon()` | not checked |
+| T7.8 | four per-file duplications | not checked |
+| T7.9 | dead code | DONE |
+| T7.10 | inline `pictureFrom`, three classes | DONE — `pictureFrom` is gone from the tree |
 | | **commit C7 + four legs** | |
 
 ---

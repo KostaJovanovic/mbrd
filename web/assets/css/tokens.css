@@ -117,7 +117,7 @@
      sites that already scaled with it (the dialogs), not here, because a bar
      pinned to the glass does not grow with the reading size and a dialog does.
 
-     See research/design-audit-2026-08-25.md, finding B1. */
+     See research/old/design-audit-2026-08-25.md, finding B1. */
   --icon-button: 28px;
   --icon-glyph:  15px;
   /* How far off square an item may come to rest. Each one gets its own factor
@@ -235,7 +235,7 @@
      property in tokens.css." What is in front of what is structure, so it lives
      there and never enters the look system at all. No deny list, no exception
      in the test, and nothing to remember - the two files already said which is
-     which. See research/design-audit-2026-08-25.md, finding B7. */
+     which. See research/old/design-audit-2026-08-25.md, finding B7. */
 
   /* ---- shape ----
      Every corner is even. --leaf sizes controls, --ogee the panels that hold

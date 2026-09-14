@@ -1,5 +1,8 @@
 # Revising how a connection is drawn — 2026-08-22
 
+> **2026-09-14:** the "tool stays armed" sentence in `architecture.md`, from
+> *What has to be said afterwards*, is gone.
+
 **Carried out**, all five items, in the order below. The record of what was
 decided and why; the code carries the same arguments in its own headers, and
 `research/docs/architecture.md` carries the summary. What is *not* done is

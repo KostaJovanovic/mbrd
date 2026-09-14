@@ -1,7 +1,7 @@
 # Clutter at phone width, and what could go
 
 2026-09-14, against v0.340 on `localhost:6273`, Chromium at 390 × 844 CSS px,
-Feed layout, Middle whimsy. The phone half of `ui-clutter-2026-08-15.md`,
+Feed layout, Middle whimsy. The phone half of `old/ui-clutter-2026-08-15.md`,
 which audited the desktop only (R18 in `rapid-fixes-2026-09-14.md`).
 
 States driven: the empty board, a board of six photographs and a style tile
@@ -23,8 +23,10 @@ goes away.
   `:699`). A phone has no keyboard and no double-click. Cut: draw no `accel`
   when the menu opens with `{ mobile: true }`.
 - **P2. A board action on the tile menu.** "Reload board" (`ui/menu.ts:690`)
-  does nothing to the tile pressed. The desktop audit found the same (item D,
-  still open). Cut it from the item menu, on both surfaces.
+  does nothing to the tile pressed. The maintainer decided on 2026-09-14 that
+  the item menu keeps it on the canvas (the desktop audit's item D), so this
+  asks only about the Feed: cut it under `{ mobile: true }`, where the tile
+  menu is the only menu there is.
 - **P3. Anchor on a Feed tile.** An anchor holds a card's place in a layout,
   and the Feed packs by order and ignores every place (`ui/menu.ts:516`).
   Cut: hide it under `{ mobile: true }`.

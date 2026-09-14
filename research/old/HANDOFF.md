@@ -1,5 +1,8 @@
 # Handoff — 2026-07-25
 
+> **2026-09-14:** the `state.js` split this hands over is done, in another
+> shape (see `REFACTOR.md`).
+
 For whoever picks this up next. Written by the session that did the JavaScript
 while a second session did the CSS.
 

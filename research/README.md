@@ -61,11 +61,33 @@ items belonging to another, and nothing tells the other document. Five status
 blocks is five things that can be wrong about the same tree.
 
 So the open items are in one register, and the documents that argued them are all
-five in `old/` with the reasoning intact. **Nine documents at this level now: the
-register and eight subject documents**, which is the debt the closing section of
-this file describes, grown rather than shrunk. It was three when that section was
-written. Five of the eight have an end written into them and will go down when
-their work does; the other three do not, and those are the ones to argue about:
+five in `old/` with the reasoning intact. **Eleven documents at this level on
+2026-09-14: the register, the audit of that day, the fix list it fed, and eight
+subject documents**, which is the debt the closing section of this file
+describes, grown rather than shrunk. It was three when that section was written.
+Most of them have an end written into them and go down when their work does.
+`mbrd-format` and `tester-feedback` do not, and those are the ones to argue
+about:
+
+- `todo-2026-09-14.md` — **every document under `research/`, read against the
+  tree on 2026-09-14.** Each unfinished item found in any of them, checked
+  against the code, and sorted four ways: should be done, needs the
+  maintainer, skipped on purpose, and already done. The maintainer's decisions
+  of that day sit at its head. It is a second list, which the closing section
+  of this file warns against, and the difference is that it is dated: it
+  records what the tree was on one day, and it does not keep in step. The
+  items it sent to the fix list below are tracked there.
+
+- `rapid-fixes-2026-09-14.md` — **the maintainer's fix list of 2026-09-14,
+  R1 to R20**, one checkbox each, ticked with a **Done.** note on the commit
+  that lands it. The note says what was built and what was not tried. Goes to
+  `old/` when every box is ticked. R18 waits for the maintainer.
+
+- `ui-clutter-phone-2026-09-14.md` — **the phone half of
+  `old/ui-clutter-2026-08-15.md`**: twelve findings at 390 px, driven in a
+  real browser. P1 to P5 are controls that do nothing on a phone, P6 to P11
+  are design calls, and P12 is a gap. Nothing in it is cut yet. The
+  maintainer picks, and then the cuts land under R18.
 
 - `open-work-2026-08-14.md` — **the whole of what is open, in plain language.**
   Twenty items with an id each: five things somebody using the app would hit
@@ -99,42 +121,6 @@ their work does; the other three do not, and those are the ones to argue about:
   compatibility is owed yet — and read *Not now* and *Never* before proposing
   something it has already ruled out, which for Zstd, encryption and a binary
   `board.json` is most of the ideas that come up.
-
-- `ui-clutter-2026-08-15.md` — **seven findings about the interface, one of them
-  carried out.** Audited by driving the real app rather than by reading the CSS,
-  which is the rule that made it worth writing. Its diagnosis is the part that
-  outlives the list: no surface in the app is overloaded on its own, and the
-  weight is that one command rests on three or four surfaces at once under two
-  or three names — which the structural rules in `CLAUDE.md` permit, because
-  nothing in them bounds how many surfaces a command may appear on. Finding **A**
-  is done (the canvas menu is six rows, and `canvasEntries()` carries the
-  argument); **B–H** are open, in the order the *Sequence* section gives.
-
-- `simplification-2026-08-18.md` — **two whole-tree sweeps, one for duplication
-  and dead code and one for circuitous routes, and the order to clear them in.**
-  Seven batches, nothing touching the `.mbrd` schema, a generated catalogue or
-  `SHELL`. Like the two above it, it carries open items the register has never
-  heard of, and adds to the debt the closing section of this file describes. Its
-  list is the disposable half. The part worth reading whatever you do with the
-  items is the table it opens with: ten places where a module header argues a
-  rule — usually one learned from a real bug — and a sibling site still does the
-  thing the header warns against, because the knowledge stayed in the file that
-  learned it. Two of that document's own claims were wrong before they were
-  checked, and it records both rather than quietly dropping them; one of them is
-  the `isDev()` trap `CLAUDE.md` already warns about.
-
-- `simplification-tasks-2026-08-18.md` — **the executable half of the document
-  above, and nothing else.** Forty-odd numbered tasks in seven commit groups,
-  each naming a file, a string to find it by, what should be there and what to
-  change it to. It exists because the audit argues its findings at length and an
-  agent working through them needs neither the argument nor the whole list in
-  its head at once. Every task carries a search anchor rather than trusting a
-  line number, because the line numbers drift as the earlier tasks land — and a
-  standing rule that a task whose code no longer matches is **abandoned rather
-  than improvised**, since a finding whose ground has moved is a finding whose
-  reasoning may not hold. The two halves will fall out of step the moment
-  anything is done to either; when they disagree, the audit is the record of what
-  was found and this is the record of what to do, and neither is the code.
 
 - `apple-motion-2026-08-23.md` — **ten findings about how the interface answers a
   press, and the order to clear them in.** Audited by reading the source against
@@ -177,27 +163,12 @@ their work does; the other three do not, and those are the ones to argue about:
   the code had argued for**: the connect tool now puts itself down after a pair,
   with Shift keeping it. Read the *Defects* section for how that argument went,
   because the same shape will come up again — a behaviour with a good paragraph
-  behind it that a first-time hand reads as a fault. What is open: an audio file
-  on the starting board (the strongest of them, and one nobody would think to
-  ask for), a playlist that is not empty on arrival, the theme half-fading and
-  half-snapping, colourblind mode, dark mode, and "finish the timeline", which is
-  unpinned and wants the tester pointing at something before it is work.
-
-- `design-audit-2026-08-25.md` — **where the app disagreed with itself, and what
-  was done about it.** Read the **Outcome** at the foot first: everything was
-  carried out except D3 and D4, and D1 was simply wrong, which it says at length.
-  Its finding is worth knowing even now that it is fixed — the token layer was in
-  good shape and the *use* of it was not, and what had no token at all was the
-  thing this interface is mostly made of, a small square button with an icon in
-  it. Ten close buttons at eight sizes. The two left are the two that are
-  design questions rather than token edits: **D3**, whether the timeline's mark
-  is a square or a dot, which its own sequence says should wait for
-  `ui-clutter-2026-08-15.md` item F; and **D4**, the spacing rhythm, which is
-  twenty judgement calls that look identical in a diff and different on screen.
-  Also read *The ladder is structure, so it does not live with the look* — a
-  `--z-*` rung in `tokens.css` would quietly make stacking a `.mbrd` file's
-  business, and the way that fails is a menu opening behind the board on
-  somebody else's machine.
+  behind it that a first-time hand reads as a fault. The wordmark and the
+  refusal of an empty export are done too. The maintainer decided on 2026-09-14
+  that the starting board gets no audio card, and that dark mode and
+  colourblind mode wait. What is open: the theme half-fading and half-snapping,
+  and "finish the timeline", which is unpinned and wants the tester pointing at
+  something before it is work.
 
 - `electron-2026-09-06.md` — **the plan for the desktop app, and the record of
   every decision in it.** Twenty-odd choices made in a question-and-answer
@@ -213,8 +184,9 @@ their work does; the other three do not, and those are the ones to argue about:
   `web/_headers`' own policy to it. And the July Tauri audit's three
   persistence blockers are all closed in the tree, which §2 records so nobody
   re-finds them. It supersedes `future/code-audit-tauri-readiness-2026-07-26.md`
-  as the plan and leaves it where it is. Goes to `old/` on the last commit of
-  the work it schedules.
+  as the plan and leaves it where it is. **Built, and released as v0.316.**
+  The Windows hand checks keep it here, and it goes to `old/` when they are
+  run.
 
 - `electron-tasks-2026-09-06.md` — **the executable half of the document
   above, and nothing else**, on exactly the terms `simplification-tasks` takes:
@@ -226,8 +198,8 @@ their work does; the other three do not, and those are the ones to argue about:
   every commit* — is the one that makes the order safe. Groups A and B are the
   only ones that touch `storage/`; everything from D on is new files under
   `desktop/`. When the two disagree, the plan is the record of what was decided
-  and this is the record of what to do, and neither is the code. Goes to `old/`
-  with the plan.
+  and this is the record of what to do, and neither is the code. Its banner
+  lists what was done without a tick. Goes to `old/` with the plan.
 
 - `apps-2026-09-13.md` — **the desktop and Android apps, made the way
   FileAnalyser's are.** Thirty decisions from a question-and-answer session on
@@ -241,14 +213,16 @@ their work does; the other three do not, and those are the ones to argue about:
   title bar because one glob was missing from electron-builder's `files:`, and
   §4.1 makes that impossible here; and **Capacitor still does not fix the jank**
   (§5.13). It overrides several rows of `electron-2026-09-06.md` §1 and
-  supersedes the unratified `old/capacitor-2026-09-12.md`. Goes to `old/` on the
-  last commit of the work it schedules.
+  supersedes the unratified `old/capacitor-2026-09-12.md`. **Built, and
+  released with v0.316**, except §10's later list. Goes to `old/` on the last
+  commit of the work it schedules.
 
 - `apps-tasks-2026-09-13.md` — **the executable half of the document above**,
   on the terms `electron-tasks` takes: sixteen groups A–P, each task with a file,
   a string to find it by, what to do and what done looks like, and a checklist
-  at the foot. Nothing in it is built. The maintainer will run it in a later
-  session. Goes to `old/` with the plan.
+  at the foot. **Built**, except group N (native FFmpeg on Android, held until
+  the two-phone test N0) and the hand checks on a phone and on Windows. Goes to
+  `old/` with the plan.
 
 `patch-notes-full.md` sits at this level too and is **not open work** - it is an
 archive, and the only file here that argues nothing. It holds every release at
@@ -265,6 +239,29 @@ the parity test, the lab's tier control. Nothing said so, because nothing tells 
 document that the work it schedules has been done. It carries a banner at its
 head now, which is what makes it safe to read, and it is the second entry on this
 page found by reading a claim against the tree rather than against a plan.
+
+Six documents went down to `old/` on 2026-09-14, under R15 of the fix list,
+after the audit of that day read each one against the tree. Each carries a
+dated banner at its head that says what is done and what is still live.
+
+- `ui-clutter-2026-08-15.md` — seven findings about the interface on the
+  desktop. A, B, E, F and G are done, and half of D. The maintainer kept C and
+  the rest of D on purpose. Its diagnosis outlives the list: no surface is
+  overloaded on its own, and the weight is one command on three or four
+  surfaces under two or three names. Nothing in `CLAUDE.md` bounds how many
+  surfaces a command may appear on, and a test that does is still on the audit.
+- `simplification-2026-08-18.md` and its task list — two whole-tree sweeps and
+  forty-odd tasks. Most are in the code, and the checklist is filled in from
+  the audit. The table it opens with is still worth reading: ten places where
+  a module header argues a rule and a sibling site still breaks it, because
+  the knowledge stayed in the file that learned it.
+- `design-audit-2026-08-25.md` — where the app disagreed with itself. All of it
+  is carried out now, D4 (the spacing rhythm) as R17, except D1, which was
+  wrong, and D3, which was not rechecked. Read *The ladder is structure, so it
+  does not live with the look* before adding a `--z-*` token.
+- `fixes-2026-09-14.md` and `mbrd-release-readme-draft.md` — the maintainer's
+  earlier list of that day, and the README for the public release repository.
+  Both are carried out.
 
 Three documents that were at this level went down to `old/` on 2026-08-15.
 
@@ -351,11 +348,12 @@ item; what kept that cheap was the end, and it went down to `old/` on the commit
 that shipped the feature, one day after it was written.
 
 **The two subject documents are the untidy version of it, and this is the debt to
-be honest about.** `mbrd-format` and `ui-clutter` each carry open items the
+be honest about.** `mbrd-format` and `ui-clutter-phone` each carry open items the
 register has never heard of — a history that wants to come out of `board.json`,
-and seven findings about the interface — so there are three places at this level
-that can be wrong about the same tree, which is the number this whole
-reorganisation cut to one. Neither belongs in `old/` while its items are open,
+and twelve findings about the interface at phone width — so there are three
+places at this level that can be wrong about the same tree, which is the number
+this whole reorganisation cut to one. The audit of 2026-09-14 lists both, and
+it is dated, so it does not change that. Neither belongs in `old/` while its items are open,
 and neither is speculative enough for `future/`. The fix is to give each of them
 a row in the register the way T1 has one, with the document keeping the argument;
 until somebody does that, read them as what they are — open work filed beside the
