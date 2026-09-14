@@ -203,35 +203,51 @@
   text-transform: uppercase;
   color: var(--ink-3);
 }
+/* The two panel closes. The svg fills the button, and draws both the hover
+   plate and the cross about the centre of its own 28 px viewBox
+   (index.html). One render places both, so they cannot come apart. A 15 px
+   glyph grid-centred on a background plate sat at a half pixel, and each
+   engine snapped the two differently: half a pixel off at 100%, a whole
+   device pixel at 125% on Harsh (research/rapid-fixes-2026-09-14.md, R10). */
 #side-close,
 #header-close {
+  --plate: transparent;
   flex: none;
   /* Centred on the head, not on the wordmark's first line. */
   align-self: center;
   width: var(--icon-button); height: var(--icon-button);
-  display: grid; place-items: center;
+  display: grid;
   padding: 0;
   border: 0;
-  /* --radius-pill: follows the corner axis, not always a circle. */
+  /* --radius-pill: follows the corner axis, not always a circle. Here for
+     the focus ring. The plate takes the same radius below. */
   border-radius: var(--radius-pill);
   background: none;
   color: var(--ink-3);
   cursor: pointer;
-  transition: color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease), transform var(--dur-base) var(--ease-back);
+  transition: color var(--dur-fast) var(--ease), transform var(--dur-base) var(--ease-back);
 }
 #side-close svg,
-#header-close svg { width: var(--icon-glyph); height: var(--icon-glyph); display: block; }
+#header-close svg { width: 100%; height: 100%; display: block; }
+.close-plate {
+  fill: var(--plate);
+  stroke: none;
+  /* A circle, or a square at Harsh. An engine without rx as a property keeps
+     the circle the attribute draws. */
+  rx: min(var(--radius-pill), 14px);
+  transition: fill var(--dur-fast) var(--ease);
+}
 /* --accent-deep for controls, --accent-text for words.
    The spin is quality.css's to remove at the plain tier. */
 @media (hover: hover) {
   #side-close:hover,
-  #header-close:hover { color: var(--accent-deep); background: var(--paper-2); transform: rotate(90deg); }
+  #header-close:hover { color: var(--accent-deep); --plate: var(--paper-2); transform: rotate(90deg); }
 }
 #side-close:focus-visible,
-#header-close:focus-visible { color: var(--accent-deep); background: var(--paper-2); }
+#header-close:focus-visible { color: var(--accent-deep); --plate: var(--paper-2); }
 /* No spin on :active — it would outlast the panel's exit transition. */
 #side-close:active,
-#header-close:active { color: var(--accent-deep); background: var(--paper-3); }
+#header-close:active { color: var(--accent-deep); --plate: var(--paper-3); }
 
 /* Tab strip — outside .side-body so it holds still while a tab scrolls. */
 .side-tabs {
