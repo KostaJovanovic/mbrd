@@ -210,21 +210,39 @@
    be promising something the app then declines. */
 .item[data-locked] .grip { display: none; }
 
-/* The padlock, where the NE grip would have been — appears exactly where the
-   missing handle was, and only while selected. */
-.item-locked {
+/* The two corner badges: the anchor (.item-locked) and the pin (.item-pin).
+   Each sits where the NE grip would have been - neither card has grips - and
+   shows while the card is hovered or selected. Both are buttons: a press
+   takes the anchor off, or lets the pin go for ten seconds (canvas/items.ts).
+   A small disc so the glyph reads on any picture and the press has a target. */
+.item-badge {
   position: absolute;
-  top:   calc(var(--sel-edge) * -1 - 2px * var(--iz));
-  right: calc(var(--sel-edge) * -1 - 2px * var(--iz));
-  width:  calc(12px * var(--iz));
-  height: calc(12px * var(--iz));
+  top:   calc(var(--sel-edge) * -1 - 7px * var(--iz));
+  right: calc(var(--sel-edge) * -1 - 7px * var(--iz));
+  width:  calc(22px * var(--iz));
+  height: calc(22px * var(--iz));
+  box-sizing: border-box;
   display: none;
+  place-items: center;
+  padding: 0;
+  /* --board-hairline, not --hairline: this box is inside the world transform. */
+  border: var(--board-hairline) solid var(--rule-2);
+  border-radius: 50%;
+  background: var(--paper-card);
   color: var(--ink-2);
-  pointer-events: none;
-  z-index: 2;
+  cursor: pointer;
+  z-index: 3;
+  transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
 }
-.item[data-locked].is-selected > .item-locked { display: block; }
-#world.zoom-tiny .item-locked { display: none; }
+.item-badge .ico { width: 62%; height: 62%; }
+.item-pin { color: var(--select); }
+.item[data-locked]:is(.is-selected, :hover) > .item-locked,
+.item:is(.is-pinned, .is-pin-sel) > .item-pin { display: grid; }
+@media (hover: hover) {
+  .item-badge:hover { color: var(--accent-text); border-color: var(--accent-text); }
+}
+.item-badge:focus-visible { outline: var(--sel-line) solid var(--select); outline-offset: 1px; }
+#world.zoom-tiny .item-badge { display: none; }
 /* Grips survive two rungs below the chrome drop — gone only when the card is
    too small to aim at (GRIP_MIN_ZOOM in viewport.ts). */
 #world.zoom-tiny .grip { display: none; }
@@ -383,6 +401,11 @@
   cursor: pointer;
   transition: opacity var(--dur-fast) var(--ease),
               background var(--dur-fast) var(--ease);
+}
+/* Beside a corner badge rather than over it, when the card wears one. */
+.item[data-locked] > .tour-mark,
+.item:is(.is-pinned, .is-pin-sel) > .tour-mark {
+  right: calc(var(--sel-edge) + 22px * var(--iz, 1));
 }
 /* Not on a stop — quiet, dashed outline. On a board of forty this is most of
    them, so the accent colour would make the board unreadable. */

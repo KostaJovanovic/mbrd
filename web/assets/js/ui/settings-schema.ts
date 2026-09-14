@@ -46,6 +46,10 @@ export type ButtonSpec = {
   ariaPressed?: string,
   pressed?: (ctx: Ctx) => boolean,
   title?: (ctx: Ctx) => string,
+  /** False and this one button is not on screen. For a button that comes and
+   *  goes inside a row that stays, where a row's own `when` would take its
+   *  neighbours too. */
+  when?: (ctx: Ctx) => boolean,
 };
 
 /** The keys every control may carry, whatever kind it is. */
@@ -390,7 +394,11 @@ export const SECTIONS: Section[] = [
           title: ctx => (ctx.mobile
             ? 'Back to the canvas'
             : 'Show everything on the board as a scrollable feed') },
+        // Only once music has been on the board (board.hadMusic): before that
+        // it opened an empty player. Shown on the Playlist lens whatever the
+        // flag says, since it is the button that is lit there.
         { id: 'view-playlist', cmd: 'playlist', label: 'Playlist', closesPanel: true,
+          when: ctx => board.hadMusic || (ctx.mobile && currentLens() === 'playlist'),
           pressed: ctx => ctx.mobile && currentLens() === 'playlist',
           title: ctx => (ctx.mobile
             ? 'Back to the canvas'
@@ -915,7 +923,10 @@ export const SECTIONS: Section[] = [
     // the loudest way available. Optimize needs a board to trim. Reload saves
     // before it reloads, which on a page whose writer is deliberately suspended
     // is a button that would have to explain itself.
-    id: 'browser', tab: 'system', title: 'This browser', needsBoard: true,
+    // A getter, read when the panel is built, which is after main.ts has wired
+    // the shell: in the apps there is no browser to name.
+    id: 'browser', tab: 'system', get title() { return isDesktop() ? 'This app' : 'This browser'; },
+    needsBoard: true,
     controls: [
       // The only way to Optimize from this panel, and that is the whole of the
       // arrangement. The optimizer works and had always been a button you had
@@ -1066,7 +1077,9 @@ export const SECTIONS: Section[] = [
         // answerable only after a crash, because errors.ts was the only reader
         // of boardSafety().
         { cmd: 'board-safe', label: 'Is my work safe?' },
-        { cmd: 'storage-state', label: 'Storage' },
+        // In the apps a board is a file, so the question is where they are.
+        { cmd: 'storage-state', label: 'Storage', when: () => !isDesktop() },
+        { cmd: 'storage-state', label: 'Boards folder', when: isDesktop },
         { cmd: 'board-weight', label: 'What this board weighs' },
         // Not "Undo history", which is what it said and which reads as a
         // button that will do something to your undo history - close to the

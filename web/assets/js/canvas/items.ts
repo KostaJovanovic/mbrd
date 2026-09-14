@@ -4,7 +4,7 @@
 
 import {
   board, byId, selection, bus, renameItem, setFontText, visualStackOrder, travelling, isFence,
-  isFiltered, isPinned, settlesIn,
+  isFiltered, isPinned, settlesIn, setItemsLocked, startSettling,
 } from '../state.ts';
 import { quality } from '../quality.ts';
 import { caretToEnd, makeEditable, markClosed, selectContents } from '../util.ts';
@@ -92,7 +92,8 @@ function setHoverGroup(id: string | null) {
   //
   // Only on the hovered item, not the group - the lift already says "these move
   // together"; this says "fixed to that one", true only of the pointer's target.
-  if (lastHoverId) nodes.get(lastHoverId)?.classList.remove('is-pinned');
+  const was = lastHoverId ? nodes.get(lastHoverId) : undefined;
+  if (was) showPin(was, 'is-pinned', false);
   clearTimeout(settleWatch);
   lastHoverId = id;
   paintPinBadge(id);
@@ -124,11 +125,31 @@ function paintPinBadge(id: string | null) {
   // and nodes.get(null), both of which answer nothing. Asked rather than
   // relied on, which is the same two nothings.
   const it = id ? byId(id) : undefined;
-  if (id) nodes.get(id)?.classList.toggle('is-pinned', isPinned(it));
+  const el = id ? nodes.get(id) : undefined;
+  if (el) showPin(el, 'is-pinned', isPinned(it));
   const left = settlesIn(it);
   // +50ms, so the callback lands the far side of the comparison rather than on
   // the exact millisecond it turns over.
   if (left) settleWatch = setTimeout(() => paintPinBadge(id), left + 50);
+}
+
+/**
+ * Show or hide the pin badge on a card, for one of its two reasons: hovered
+ * (`is-pinned`) or selected (`is-pin-sel`). Two classes, so the pointer
+ * leaving a selected note does not take its badge away.
+ *
+ * The badge is a button, built on first need and kept: a press on it lets the
+ * note go for a settle window (the click handler in initItems()).
+ */
+function showPin(el: HTMLElement, why: 'is-pinned' | 'is-pin-sel', on: boolean) {
+  el.classList.toggle(why, on);
+  if (!on || el.querySelector(':scope > .item-pin')) return;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'item-badge item-pin';
+  btn.setAttribute('aria-label', 'Unpin for ten seconds');
+  btn.title = 'Unpin for ten seconds';
+  el.append(btn);
 }
 
 // cullMargin() and its two constants moved to canvas/viewport.ts, which both
@@ -180,10 +201,26 @@ export function initItems(world: HTMLElement, viewport: Viewport) {
   // away on every pan. The id comes off the card the mark is in, which is where
   // itemIdFromEvent() reads it from too.
   world.addEventListener('click', e => {
-    const mark = e.target instanceof Element ? e.target.closest('.tour-mark') : null;
-    if (!mark) return;
-    const id = itemIdFromEvent(mark);
-    if (id) tourMarks?.press(id);
+    const t = e.target instanceof Element ? e.target : null;
+    const mark = t?.closest('.tour-mark');
+    if (mark) {
+      const id = itemIdFromEvent(mark);
+      if (id) tourMarks?.press(id);
+      return;
+    }
+    // The two corner badges, delegated the same way. Both are buttons, so
+    // canvas/input.ts treats a press on one as a widget's and never a drag.
+    const badge = t?.closest('.item-badge');
+    if (!badge) return;
+    const id = itemIdFromEvent(badge);
+    if (!id) return;
+    // The anchor comes off for good, as the menu's Unanchor does.
+    if (badge.classList.contains('item-locked')) { setItemsLocked([id], false); return; }
+    // The pin lets go for one settle window: the note moves freely and pins
+    // again ten seconds after its last move (sticky.ts).
+    startSettling([id]);
+    paintPinBadge(id);
+    paintGrips();
   });
   // paintGrips() on both, because pinning is a fact about two items and changes
   // without either being rebuilt. 'items' is the host deleted or undone back out
@@ -1667,7 +1704,7 @@ function paintSelection() {
     // Taking them *away* only. Which selected cards get grips is paintGrips()'s
     // question, because it has a second one to ask and a clock to watch - and
     // this walk, over every mounted node, is the one that must not run per frame.
-    if (!on) setGrips(el, false);
+    if (!on) { setGrips(el, false); showPin(el, 'is-pin-sel', false); }
     el.classList.toggle('is-selected', on);
     // The twin tracks selection too, so a selected card's shadow holds still
     // under the pointer exactly as the card does (see .item-shadow in canvas.css).
@@ -1711,7 +1748,8 @@ function paintGrips() {
     // A selected card can be culled: it has no node until it comes back on
     // screen, and build() asks this same question when it does.
     const el = nodes.get(id);
-    if (el) setGrips(el, !isPinned(it));
+    const pinned = isPinned(it);
+    if (el) { setGrips(el, !pinned); showPin(el, 'is-pin-sel', pinned); }
     const left = settlesIn(it);
     if (left && (!soonest || left < soonest)) soonest = left;
   }

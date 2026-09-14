@@ -11,7 +11,7 @@ import {
 import { noteWords } from '../canvas/note-model.ts';
 import { bakeDisplayFor } from '../optimize/picture.ts';
 import {
-  displayURLReady, ensureDisplay, type Crop, type Turn, type Matte,
+  displayURLReady, ensureDisplay, bakedServes, type Crop, type Turn, type Matte,
 } from '../canvas/display.ts';
 import { baseName, clamp, div, actAsButton } from '../util.ts';
 import { mobileOrder } from '../arrange/arrangements.ts';
@@ -623,7 +623,8 @@ function fillImage(t: Tile) {
   // unedited photo it is the sharp layer with no decode and no generation at all;
   // it is not used for an edited tile, since the baked copy is the *uncropped*
   // picture and this tile shows the crop/turn/cut-out.
-  const baked = edited ? null : urlOf(t.item.meta?.display);
+  // Nor above Soft on the sharpness dial, where it is softer than asked for.
+  const baked = edited || !bakedServes() ? null : urlOf(t.item.meta?.display);
   // A runtime copy already in memory (a revisit, an edited re-mount, or a second
   // tile of the same asset) answers synchronously and wins - it is the exact
   // edit state, where the baked copy is only the plain one.
@@ -676,9 +677,10 @@ function wantCopy(t: Tile, img: HTMLImageElement,
   const show = (url: string | null) => {
     if (url && (img.isConnected || !img.src)) img.src = url;
   };
-  const run = edited
+  const run = edited || !bakedServes()
     // An edited tile shows the crop/turn/cut-out, which is not the baked plain
-    // copy - so it uses the runtime display cache, and nothing is baked.
+    // copy, and a sharper dial wants more than it - so both use the runtime
+    // display cache, and nothing is baked.
     ? () => ensureDisplay(shown, crop, rot, matte).then(show).catch(() => {})
     // A plain tile on a board with nothing baked (an old board). One decode both
     // shows the 1024 copy and stores it as meta.display, so a save persists it.

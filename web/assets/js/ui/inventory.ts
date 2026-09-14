@@ -270,13 +270,17 @@ function assetRow(asset: InventoryAsset): HTMLElement {
     ? `Go to the first of ${asset.cards.length} cards using this file`
     : 'Go to the card using this file';
   go.addEventListener('click', () => { cue('pick'); jump(to); });
-  // Only a picture has anything to show - a clip's bytes are not an image and
-  // its still is a different row.
-  if (getAsset(asset.hash)?.mime.startsWith('image/')) {
-    go.addEventListener('pointerenter', () => showPeek(go, asset.hash));
+  // A picture shows itself. A clip's bytes are not an image, so a clip shows
+  // its card's still (a cover, else the poster frame), as the viewer does.
+  const mime = getAsset(asset.hash)?.mime || '';
+  const meta = byId(to)?.meta;
+  const still = mime.startsWith('image/') ? asset.hash
+    : mime.startsWith('video/') ? meta?.cover || meta?.poster : null;
+  if (typeof still === 'string' && still) {
+    go.addEventListener('pointerenter', () => showPeek(go, still));
     go.addEventListener('pointerleave', hidePeek);
     // And by keyboard, since the row is a button and Tab reaches it too.
-    go.addEventListener('focus', () => showPeek(go, asset.hash));
+    go.addEventListener('focus', () => showPeek(go, still));
     go.addEventListener('blur', hidePeek);
   }
   row.append(go);

@@ -12,7 +12,7 @@ import { hasContent } from '../onboarding.ts';
 import {
   boardSafety, exportBoard, lastSaveFailure, newBoard,
   openBoard, packForShare, pushBoardToCloud, saveBlob, shareBoard,
-  startSyncingBoard, stopSyncingBoard, storageBreakdown,
+  startSyncingBoard, stopSyncingBoard, storageBreakdown, boardFolder,
 } from '../storage/storage.ts';
 import { shareLinkFor } from '../storage/cloud/provider.ts';
 import { paintPanel } from '../ui/panel.ts';
@@ -134,11 +134,13 @@ export function fileCommands() {
     new: () => newBoard(),
     open: () => openBoard(),
     library: () => openLibrary(),
-    // Debug readouts: each toasts the summary and logs the detail.
+    // Debug readouts: each toasts the summary and logs the detail. In the apps
+    // there is no browser to name: a board is a file, and the store under it
+    // is only the crash copy.
     boardSafe: () => {
       const { state, detail } = boardSafety();
       const failure = lastSaveFailure();
-      const headline = state === 'saved' ? 'Your work is saved in this browser'
+      const headline = state === 'saved' ? (isDesktop() ? 'Your work is saved' : 'Your work is saved in this browser')
         : state === 'unsaved' ? 'There are changes that are not saved'
           : 'Cannot tell whether the last changes were saved';
       toast(detail ? `${headline} - ${detail}` : headline, state === 'unsaved' ? 'error' : undefined);
@@ -146,6 +148,14 @@ export function fileCommands() {
     },
     /** Storage persistence state and per-store breakdown. */
     storageState: async () => {
+      // The apps keep boards as files, so the question is where they are.
+      // Android names no folder yet (see boardFolder in storage/storage.ts).
+      if (isDesktop()) {
+        const home = boardFolder();
+        toast(home ? `Boards are kept in ${home}` : 'Boards are kept inside the app');
+        console.info('[mbrd] storage:', { folder: home });
+        return;
+      }
       const { slices, measured, others, persisted, rest, used, quota } = await storageBreakdown();
       const durable = persisted === null ? 'not asked yet - save once and it will be'
         : persisted ? 'durable: the browser has promised to keep it'
@@ -171,7 +181,8 @@ export function fileCommands() {
           : 'Nothing here can be made smaller.';
       const already = plan.done ? ` ${plan.done} already optimised.` : '';
       const left = plan.skipped.length ? ` ${plan.skipped.length} left alone.` : '';
-      toast(`${count} files, ${formatBytes(bytes)} in this browser. ${verdict}${already}${left}`);
+      const where = isDesktop() ? '' : ' in this browser';
+      toast(`${count} files, ${formatBytes(bytes)}${where}. ${verdict}${already}${left}`);
       console.info('[mbrd] board weight:', { files: count, bytes, plan, saving: describeSaving });
     },
     /** Undo stack depth and weight. */

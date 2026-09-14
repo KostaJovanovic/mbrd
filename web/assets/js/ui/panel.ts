@@ -584,6 +584,7 @@ function paintControl({ c: spec, owner, wrap, input, out, nodes }: Built, c: Ctx
       const b = spec.buttons[i];
       const node = nodes[i];
       if (node instanceof HTMLButtonElement) node.disabled = !live;
+      if (typeof b.when === 'function') node.hidden = !b.when(c);
       if (typeof b.pressed === 'function') node.setAttribute('aria-pressed', String(b.pressed(c)));
       if (typeof b.title === 'function') node.title = b.title(c);
     }

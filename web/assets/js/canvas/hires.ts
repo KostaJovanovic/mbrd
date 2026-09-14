@@ -8,7 +8,7 @@
 
 import { byId } from '../state.ts';
 import { assetURL } from '../storage/assets.ts';
-import { DISPLAY_SIDE } from '../optimize/picture.ts';
+import { copyEdge } from './display.ts';
 import type { Viewport } from './viewport.ts';
 
 /** Minimal viewport dependency: the zoom level and a change listener. */
@@ -45,7 +45,7 @@ function sweep(zoom: number): void {
     // The card's drawn long edge in device pixels. Past the copy's own long edge
     // (times the margin) the copy is upscaling and the original earns its memory.
     const longEdge = Math.max(item.w, item.h) * zoom * dpr;
-    const wantOriginal = longEdge > DISPLAY_SIDE * TRIGGER;
+    const wantOriginal = longEdge > copyEdge() * TRIGGER;
     const isHi = img.dataset.hires === 'on';
     if (wantOriginal && !isHi) {
       const orig = assetURL(hash);
