@@ -26,7 +26,7 @@ import {
 import { noteFloor } from './notes.ts';
 import { linkURL } from './renderers.ts';
 import { embedFor, embedFloor } from './embed.ts';
-import { queryRect } from './spatial.ts';
+import { queryRect, queryAround } from './spatial.ts';
 import { isDesktop } from '../platform/platform.ts';
 
 const DRAG_SLOP = 3;      // screen px before a press becomes a drag
@@ -2292,12 +2292,13 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // The gesture's `lead`, not its `id`: a press on a pinned star is dragging
       // the photograph, and the photograph is not looking for a host. Asking
       // about the star would light up whatever it is about to be carried over.
+      // Only the cards the spatial index holds around the note are asked, not
+      // the whole board on every move (research/rapid-fixes-2026-09-14.md, R23).
       const leadItem = byId(drag.lead);
-      const host = isSticky(leadItem)
-        ? wouldStick(
-          { x: lead.x + dx, y: lead.y + dy, w: leadItem.w, h: leadItem.h },
-          drag.lead, leadItem)
+      const at = isSticky(leadItem)
+        ? { x: lead.x + dx, y: lead.y + dy, w: leadItem.w, h: leadItem.h }
         : null;
+      const host = at ? wouldStick(at, drag.lead, leadItem, queryAround(at)) : null;
       showStickTarget(host);
       if (drag.snap && host) {
         sx = 0;

@@ -82,14 +82,21 @@ function measureStick(note: Stickable): Item | null {
  * a box not yet on the board (drag preview). Not guarded by meta.loose — a
  * loose note dropped on a card is the way back from Unstick. `rider` widens
  * the host rules for stickers (see cannotHost).
+ *
+ * `near` narrows the field to those ids. A drag asks on every move, so the
+ * canvas passes what its spatial index holds around the box
+ * (canvas/spatial.ts); this module sits under the canvas and cannot ask the
+ * index itself. Without it the whole board is scanned.
  */
 export function wouldStick(
   box: { x: number, y: number, w: number, h: number, rot?: number },
   excludeId?: string,
   rider?: { type?: string } | null,
+  near?: Iterable<string> | null,
 ): Item | null {
   let best: Item | null = null;
-  for (const it of board.items) {
+  const pool = near ? [...near].flatMap(id => byId(id) ?? []) : board.items;
+  for (const it of pool) {
     if (cannotHost(it, rider) || it.id === excludeId) continue;
     if (best && (it.z || 0) < (best.z || 0)) continue;
     if (overlapFraction(box, it) > STICK_MIN) best = it;

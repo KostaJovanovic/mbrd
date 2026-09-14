@@ -10,6 +10,7 @@ import { readPrefJSON, writePref } from '../prefs.ts';
 import { div, markClosed } from '../util.ts';
 import { cue } from '../cuelume/engine.ts';
 import { bus, wouldStick, byId } from '../state.ts';
+import { queryAround } from '../canvas/spatial.ts';
 import { defaultSize } from '../canvas/renderers.ts';
 import { showStickTarget } from '../canvas/items.ts';
 import { makeWindowDrag, makeWindowResize } from './float-window.ts';
@@ -438,8 +439,8 @@ function hostUnderPointer(clientX: number, clientY: number) {
   // size of its own.
   const size = defaultSize('sticker');
   // No id to exclude: there is no item yet, which is the whole point of asking.
-  const host = wouldStick(
-    { x: at.x, y: at.y, w: size.w, h: size.h }, undefined, { type: 'sticker' });
+  const box = { x: at.x, y: at.y, w: size.w, h: size.h };
+  const host = wouldStick(box, undefined, { type: 'sticker' }, queryAround(box));
   // byId, because wouldStick hands back the live item and a host deleted
   // between two pointer moves would otherwise put the ring on a node that is on
   // its way off the board.

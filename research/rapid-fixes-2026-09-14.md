@@ -238,8 +238,17 @@ list named auto-connect as the next one, and the app has no such command.
 - [ ] R22 S1: the colour extraction (`pictureHashes()`, `autoRecolour()`)
       moves out of `ui/appearance.ts` behind a deps object, as `LookDeps`
       does. No change on screen.
-- [ ] R23 A dragged note checks only the cards near it for a place to stick
+- [x] R23 A dragged note checks only the cards near it for a place to stick
       (`wouldStick()` in `sticky.ts` scans the whole board on every move).
+      - **Done.** `wouldStick()` takes an optional list of ids to ask.
+        `sticky.ts` sits under the canvas and cannot read the spatial index,
+        so the note drag (`canvas/input.ts`) and the sticker drop
+        (`ui/sticker-window.ts`) pass `queryAround()`, new in
+        `canvas/spatial.ts`: the cells around the box's circumscribed circle.
+        The index files each card by its own circumscribed square, so a
+        rotated card is never missed. A test in `state-sticky.test.js` holds
+        the near answer to the full scan over 300 drops on 120 rotated cards.
+        Without the list, the whole board is scanned as before.
 - [ ] R24 Fences v2: a fence folds down to its name bar (roll-up), and each
       fence can have its own tint.
 - [x] R25 A palette or whimsy change: every surface changes colour the same

@@ -14,6 +14,7 @@ import {
   ensureGhostCards, TITLE_ID, undo, redo, setItemsLocked, isLocked,
 } from '../web/assets/js/state.ts';
 import { overlapFraction } from '../web/assets/js/geometry.ts';
+import { rebuild as rebuildIndex, queryAround } from '../web/assets/js/canvas/spatial.ts';
 import { fresh, note, photo } from './state-fixtures.js';
 
 beforeEach(() => {
@@ -384,6 +385,33 @@ test('a prospective drop onto the title card would stick to nothing', () => {
   ensureTitleCard();
   const title = byId(TITLE_ID);
   assert.equal(wouldStick({ x: title.x, y: title.y, w: 80, h: 80 }, 'nothing'), null);
+});
+
+test('asking only the cards near a box gives the whole board\'s answer', () => {
+  // R23: a note drag asks the spatial index for the cards around the note,
+  // indexed as canvas/items.ts indexes them. The index must never miss a host
+  // the full scan finds. Rotated cards are the hard case.
+  let s = 20260914;
+  const rand = () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 0x100000000; };
+  const pics = [];
+  for (let i = 0; i < 120; i++) {
+    pics.push(photo({ x: (rand() - 0.5) * 4000, y: (rand() - 0.5) * 4000,
+      w: 40 + rand() * 900, h: 40 + rand() * 900, rot: (rand() - 0.5) * 180 }));
+  }
+  addItems(pics);
+  assert.ok(board.items.some(it => it.rot), 'the fixture must keep its rotations');
+  rebuildIndex(board.items.map(it => {
+    const r = Math.hypot(it.w, it.h) / 2 + 2;
+    return { id: it.id, x: it.x, y: it.y, w: 2 * r, h: 2 * r };
+  }));
+  let hits = 0;
+  for (let q = 0; q < 300; q++) {
+    const box = { x: (rand() - 0.5) * 4000, y: (rand() - 0.5) * 4000, w: 80, h: 80 };
+    const all = wouldStick(box, 'nothing');
+    if (all) hits++;
+    assert.equal(wouldStick(box, 'nothing', null, queryAround(box))?.id, all?.id);
+  }
+  assert.ok(hits > 20, 'the fixture must land on cards often');
 });
 
 test('a file that pins a note to the title card opens with it loose', () => {

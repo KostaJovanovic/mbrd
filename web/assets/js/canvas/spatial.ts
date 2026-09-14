@@ -91,3 +91,10 @@ export function queryRect(rect: SpatialRect): Set<string> {
     }
   return out;
 }
+
+/** Ids near a centre-and-size box at any rotation: the query is the square
+ * around the box's circumscribed circle. A superset, as queryRect() is. */
+export function queryAround(box: { x: number; y: number; w: number; h: number }): Set<string> {
+  const r = Math.hypot(box.w, box.h) / 2;
+  return queryRect({ x0: box.x - r, y0: box.y - r, x1: box.x + r, y1: box.y + r });
+}
