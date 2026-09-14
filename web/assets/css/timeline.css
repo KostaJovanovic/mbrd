@@ -75,7 +75,7 @@
   --tl-cell: 24px;     /* one mark's column */
   --tl-mark: 22px;     /* the mark inside it */
   --tl-start: 10px;    /* the start disc */
-  --tl-gap: 6px;       /* between marks, and the playhead's room */
+  --tl-gap: 8px;       /* between marks, and the playhead's room: its flag clears both */
   --tl-foot: 6px;      /* the baseline and its ticks, under the marks */
   --tl-bar: 4px;       /* the scrollbar */
   --tl-bar-gap: 3px;   /* between the scrollbar and the marks */
@@ -155,9 +155,9 @@
 #timeline-strip .tl-marker::before {
   content: '';
   position: absolute;
-  left: 1px;
+  left: 2px;
   top: 0;
-  width: 8px;
+  width: 6px;
   height: 5px;
   border-radius: 0 0 4px 4px;
   background: var(--accent);
@@ -267,16 +267,16 @@
 /* Ahead of the playhead: present but faded -- a redo you can see. */
 #timeline-strip .tl-step.is-ahead .tl-dot { opacity: 0.42; }
 
-/* Current position. --accent-fg, not --paper-card -- neon palettes at
-   whimsy-2 redeclare --accent-fg to keep this legible. */
-#timeline-strip .tl-step.is-at .tl-dot {
-  background: var(--accent);
-  color: var(--accent-fg);
-  transform: scale(1.1);
-}
+/* Current position: a tint and a ring, not a fill. A full accent block
+   outshouted the playhead beside it, and on a neon palette it was the
+   loudest thing on the screen. No scale either: a grown mark reached into
+   the gap the playhead stands in. */
+#timeline-strip .tl-step.is-at .tl-dot,
 #timeline-strip .tl-step.is-at:hover .tl-dot {
-  background: var(--accent);
-  color: var(--accent-fg);
+  background: color-mix(in srgb, var(--accent) 16%, var(--paper-card));
+  color: var(--accent-text);
+  box-shadow: inset 0 0 0 var(--hairline) color-mix(in srgb, var(--accent) 55%, transparent);
+  transform: none;
 }
 
 /* Ruled (editable) step wears a ring. Most steps are sealed, so the
@@ -320,6 +320,11 @@
   #timeline-strip .tl-step:hover .tl-dot { background: rgb(var(--ink-c) / 8%); }
   #timeline-strip .tl-step.is-ruled .tl-dot {
     box-shadow: 0 0 0 var(--hairline) rgb(var(--accent-c) / 55%);
+  }
+  #timeline-strip .tl-step.is-at .tl-dot,
+  #timeline-strip .tl-step.is-at:hover .tl-dot {
+    background: rgb(var(--accent-c) / 16%);
+    box-shadow: inset 0 0 0 var(--hairline) rgb(var(--accent-c) / 55%);
   }
   #timeline-strip .tl-scroll { background: rgb(var(--ink-c) / 7%); }
   #timeline-strip .tl-thumb { background: rgb(var(--ink-c) / 30%); }

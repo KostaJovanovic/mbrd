@@ -220,3 +220,43 @@ box is ticked when its commit lands.
         twelve findings at 390 px. P1 to P5 are controls that do nothing on
         a phone, P6 to P11 are design calls, P12 is a gap. The cuts wait for
         the maintainer's choice, so the box stays open.
+      - **The maintainer chose** P1 to P5 and P12.
+
+Added on 2026-09-14 from the open list (`research/todo-2026-09-14.md`), after
+the maintainer chose from it. More editable timeline steps are not taken: the
+list named auto-connect as the next one, and the app has no such command.
+
+- [ ] R21 The undo history moves out of `board.json` into its own files in the
+      `.mbrd`: `timeline/base.json` and `timeline/steps.jsonl`. A `.mbrd`
+      schema change, which the format allows until 1.0.
+- [ ] R22 S1: the colour extraction (`pictureHashes()`, `autoRecolour()`)
+      moves out of `ui/appearance.ts` behind a deps object, as `LookDeps`
+      does. No change on screen.
+- [ ] R23 A dragged note checks only the cards near it for a place to stick
+      (`wouldStick()` in `sticky.ts` scans the whole board on every move).
+- [ ] R24 Fences v2: a fence folds down to its name bar (roll-up), and each
+      fence can have its own tint.
+- [ ] R25 A palette or whimsy change: every surface changes colour the same
+      way. A tester saw some fade and some snap. List which do which, then
+      make one rule.
+- [ ] R26 Sweep the Feed for a fourth thing it did not inherit from the old
+      phone board (the first three were the grain, the scroll-gated pen and
+      the long-press menu).
+- [ ] R27 A `.docx` with no baked thumbnail shows page one on its card.
+- [ ] R28 Linux: a `.deb` beside the AppImage, so a double-click opens a
+      `.mbrd` file.
+- [ ] R29 Camera RAW photos, the way FileAnalyser does them:
+      - The card shows one of the JPEG previews the RAW file carries.
+      - The item menu has "Demosaic", which decodes the sensor data into a
+        full picture.
+      - Optimize demosaics a RAW first, then optimizes the result like a
+        normal photograph.
+- [x] R31 The Timeline is too saturated, and the playhead overlaps the
+      selected step (screenshot of 2026-09-14).
+      - **Done.** The current step is a light accent tint with a thin ring,
+        not a solid accent block, and it no longer grows. The gap between
+        steps is 8 px, not 6, and the playhead's flag is 6 px, not 8, so
+        the flag clears the marks on both sides by 2 px. Measured in
+        Chromium at the newest step and in the middle of the history.
+- [ ] R30 The Android later list: `native.decode` through `ImageDecoder`, a
+      foreground service for long transcodes, and the shelf as a folder tree.
