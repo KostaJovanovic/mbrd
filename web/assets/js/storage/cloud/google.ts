@@ -170,7 +170,60 @@ async function beginUpload(
   return uri;
 }
 
-/** Send bytes in chunks. 308 = chunk landed, keep going (the one success res.ok misses). */
+/** The file id out of the reply to an upload's last byte. */
+async function finished(res: Response): Promise<string> {
+  // SAFETY: Drive's documented upload reply to fields=id; a missing id throws below.
+  const done = await res.json() as { id?: string };
+  if (!done.id) throw new Error('the upload finished without naming a file');
+  return done.id;
+}
+
+/** How many bytes a session holds, from a 308's Range header, or null if it names none. */
+function landed(res: Response): number | null {
+  const end = /bytes=0-(\d+)/.exec(res.headers.get('range') || '');
+  return end ? Number(end[1]) + 1 : null;
+}
+
+/**
+ * How often an upload may fail in a row before it gives up, and the first wait
+ * between tries, doubled each time: 0.5 s up to 8 s, half a minute in all. A
+ * dropped Wi-Fi comes back inside that more often than not.
+ */
+const RETRIES = 5;
+const RETRY_MS = 500;
+
+/** The statuses Drive documents as "try again": a timeout, a rate limit, a server fault. */
+const TRANSIENT = new Set([408, 429, 500, 502, 503, 504]);
+
+const pause = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * After a drop or a server fault: wait, then ask the session how far it got.
+ * Offline again counts one more try. A session Drive has let go throws, since
+ * nothing but a fresh upload can follow it.
+ */
+async function recover(uri: string, size: number, fail: () => number): Promise<{ sent: number } | { id: string }> {
+  for (;;) {
+    const tries = fail();
+    if (tries > RETRIES) throw new Error('the connection dropped and did not come back');
+    await pause(RETRY_MS * 2 ** (tries - 1));
+    let state: SessionState;
+    try {
+      state = await sessionProgress(uri, size);
+    } catch {
+      continue;
+    }
+    if (!state) throw new Error('Google Drive let the upload go - start it again');
+    return state;
+  }
+}
+
+/**
+ * Send bytes in chunks. 308 = chunk landed, keep going (the one success res.ok
+ * misses). A dropped connection or a server fault does not end the upload: the
+ * session is asked how far it got, and the bytes go on from there
+ * (research/rapid-fixes-2026-09-14.md, R13).
+ */
 async function sendChunks(
   uri: string, blob: Blob, onProgress: ShareProgress, from = 0,
 ): Promise<string> {
@@ -180,33 +233,58 @@ async function sendChunks(
     const res = await fetch(uri, { method: 'PUT', headers: { 'Content-Range': 'bytes */0' } });
     if (!res.ok) throw await failure(res, 'the upload failed');
     onProgress(0, 0);
-    // SAFETY: the same fields=id upload reply as the loop below; a missing id throws below.
-    const done = await res.json() as { id?: string };
-    if (!done.id) throw new Error('the upload finished without naming a file');
-    return done.id;
+    return finished(res);
   }
+  // Failures in a row; a chunk that lands starts the count again.
+  let tries = 0;
   while (sent < blob.size) {
     const end = Math.min(sent + CHUNK, blob.size);
-    const res = await fetch(uri, {
-      method: 'PUT',
-      headers: {
-        'Content-Range': `bytes ${sent}-${end - 1}/${blob.size}`,
-      },
-      body: blob.slice(sent, end),
-    });
-    if (res.status === 308) {
-      sent = end;
+    let res: Response | null = null;
+    try {
+      res = await fetch(uri, {
+        method: 'PUT',
+        headers: {
+          'Content-Range': `bytes ${sent}-${end - 1}/${blob.size}`,
+        },
+        body: blob.slice(sent, end),
+      });
+    } catch {
+      // No answer at all: the connection dropped. Recovered below.
+    }
+    if (res?.status === 308) {
+      sent = landed(res) ?? end;
+      tries = 0;
       onProgress(sent, blob.size);
       continue;
     }
-    if (!res.ok) throw await failure(res, 'the upload failed');
-    onProgress(blob.size, blob.size);
-    // SAFETY: Drive's documented upload reply to fields=id; a missing id throws below.
-    const done = await res.json() as { id?: string };
-    if (!done.id) throw new Error('the upload finished without naming a file');
-    return done.id;
+    if (res?.ok) {
+      onProgress(blob.size, blob.size);
+      return finished(res);
+    }
+    if (res && !TRANSIENT.has(res.status)) throw await failure(res, 'the upload failed');
+    const state = await recover(uri, blob.size, () => ++tries);
+    if ('id' in state) {
+      onProgress(blob.size, blob.size);
+      return state.id;
+    }
+    sent = state.sent;
+    onProgress(sent, blob.size);
   }
   throw new Error('the upload ended without finishing');
+}
+
+/**
+ * Finish the upload a session opened earlier, or null when it cannot be: Drive
+ * let it go, or cannot be reached to ask. The caller hands in the same Blob the
+ * session began with, never one of equal size: equal size is not equal bytes
+ * (a board.json), and bytes spliced from two files are a broken file.
+ */
+async function resume(uri: string, blob: Blob, onProgress: ShareProgress): Promise<string | null> {
+  const state = await sessionProgress(uri, blob.size).catch(() => null);
+  if (!state) return null;
+  if ('id' in state) return state.id;
+  onProgress(state.sent, blob.size);
+  return sendChunks(uri, blob, onProgress, state.sent);
 }
 
 /** Let anyone with the link read it. Without this the link is a sign-in wall. */
@@ -223,11 +301,25 @@ async function publish(id: string): Promise<void> {
   }
 }
 
+/**
+ * A share's session, by the very Blob it sends, so a second try with the same
+ * pack goes on where the first stopped. Weak, so a pack nobody retries is not
+ * held. `id` is set once the bytes are all up: a publish refused after that
+ * retries the publish alone, not the upload.
+ */
+const shares = new WeakMap<Blob, { uri: string | null, id: string | null }>();
+
 async function upload(blob: Blob, name: string, onProgress: ShareProgress): Promise<string> {
-  const uri = await beginUpload(blob, name);
-  const id = await sendChunks(uri, blob, onProgress);
-  await publish(id);
-  return id;
+  const open = shares.get(blob) ?? { uri: null, id: null };
+  shares.set(blob, open);
+  if (!open.id && open.uri) open.id = await resume(open.uri, blob, onProgress);
+  if (!open.id) {
+    open.uri = await beginUpload(blob, name);
+    open.id = await sendChunks(open.uri, blob, onProgress);
+  }
+  await publish(open.id);
+  shares.delete(blob);
+  return open.id;
 }
 
 /** Fetch a public file anonymously via API key. No drive.google.com fallback (no CORS, interstitial). */
@@ -361,10 +453,12 @@ async function purge(onProgress: ShareProgress): Promise<number> {
 }
 
 /** Write a file into a folder. No per-byte progress — sync reports progress in files. */
-// Resumable sessions kept in memory so a failed chunk can be resumed without
+// Resumable sessions kept in memory so a failed push resumes without
 // re-uploading from byte zero. Map dies with the tab — persisting it would add
-// complexity for a reload-during-upload edge case.
-const sessions = new Map<string, { uri: string, size: number }>();
+// complexity for a reload-during-upload edge case. The Blob is kept to compare:
+// an asset's is the store's own object on every push, and a board.json is new
+// each time, so it never resumes bytes that were a different file.
+const sessions = new Map<string, { uri: string, blob: Blob }>();
 
 const sessionKey = (folderId: string, name: string) => `${folderId}/${name}`;
 
@@ -384,11 +478,8 @@ async function sessionProgress(uri: string, size: number): Promise<SessionState>
   const res = await fetch(uri, {
     method: 'PUT', headers: { 'Content-Range': `bytes */${size}` },
   });
-  if (res.status === 308) {
-    const range = res.headers.get('range');
-    const end = range && /bytes=0-(\d+)/.exec(range);
-    return { sent: end ? Number(end[1]) + 1 : 0 };
-  }
+  // No Range at all: the session is alive and holds nothing yet.
+  if (res.status === 308) return { sent: landed(res) ?? 0 };
   if (res.ok) {
     // Upload already completed — last chunk's response was lost. Read id here
     // to avoid creating a duplicate file.
@@ -405,26 +496,15 @@ async function put(
 ): Promise<string> {
   const key = sessionKey(folderId, name);
   const open = sessions.get(key);
-
-  // Same size = same file (assets are content-hashed); different size = new file.
-  if (open && open.size === blob.size) {
-    const state = await sessionProgress(open.uri, blob.size);
-    if (state && 'id' in state) {
-      sessions.delete(key);
-      return state.id;
-    }
-    if (state) {
-      // Session stays in map — if this attempt fails, the next one resumes it.
-      const id = await sendChunks(open.uri, blob, () => {}, state.sent);
-      sessions.delete(key);
-      return id;
-    }
-    // Expired or rejected. Fall through and open a new one.
+  // A throw in here keeps the session in the map, and the next push resumes it.
+  const resumed = open?.blob === blob ? await resume(open.uri, blob, () => {}) : null;
+  if (resumed) {
     sessions.delete(key);
+    return resumed;
   }
 
   const uri = await beginUpload(blob, name, { parent: folderId, replacing });
-  sessions.set(key, { uri, size: blob.size });
+  sessions.set(key, { uri, blob });
   const id = await sendChunks(uri, blob, () => {});
   sessions.delete(key);
   return id;
