@@ -199,12 +199,11 @@ test('the palette source dial has one stop past its highest count', async () => 
   // uncounted.
   const { MAX_SOURCES } = await import('../web/assets/js/ui/pigments.ts');
   assert.equal(byId('opt-palette-sources').max, MAX_SOURCES + 1);
-  // The stop is *defined* by the look model and *consumed* by the panel
-  // - two files since the appearance split - and the panel reaches it
-  // through the injected dependency bag rather than by import.
-  const model = await readFile(
-    new URL('../web/assets/js/ui/appearance.ts', import.meta.url), 'utf8');
-  assert.match(model, /ALL_SOURCES_STOP = MAX_SOURCES \+ 1/);
+  // The stop is *defined* by the picture palette and *consumed* by the panel,
+  // which reaches it through the look model's injected dependency bag rather
+  // than by import. The palette loads in Node since R22, so it is asked.
+  const { ALL_SOURCES_STOP } = await import('../web/assets/js/ui/picture-palette.ts');
+  assert.equal(ALL_SOURCES_STOP, MAX_SOURCES + 1);
   const controls = await readFile(
     new URL('../web/assets/js/ui/appearance-controls.ts', import.meta.url), 'utf8');
   assert.match(controls, /n >= d\.ALL_SOURCES_STOP \? 0 : n/, 'the top stop stores zero');

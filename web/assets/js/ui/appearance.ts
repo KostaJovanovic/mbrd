@@ -5,16 +5,16 @@
 import {
   board, bus, setAppearance, setSetting, MOBILE_APPEARANCE_VARS,
 } from '../state.ts';
-import { autoPaletteReady, whimsyControlsSnap, AXIS_TOKENS } from '../layout-settings.ts';
+import { whimsyControlsSnap, AXIS_TOKENS } from '../layout-settings.ts';
 import { readToken, toHex } from '../util.ts';
-import { oklch, parseHex } from '../color.ts';
-import { toast } from '../notify.ts';
 import { readPrefJSON, writePref } from '../prefs.ts';
-import { assetURL, getAsset } from '../storage/assets.ts';
-import { shownHash } from '../board-model.ts';
+import { paletteFromAccent, PALETTE_TOKENS } from './pigments.ts';
+// Dynamic, the palette from the board's pictures, lives there and borrows the
+// look through initPicturePalette(), as the panel borrows it below.
 import {
-  extractPalette, paletteFromAccent, samplePixels, MAX_SOURCES, PALETTE_TOKENS,
-} from './pigments.ts';
+  initPicturePalette, autoRecolour, recolourFromBoard, forgetSources,
+  sourceCount, dynamicOn, ALL_SOURCES_STOP, ALL_SOURCES_MAX,
+} from './picture-palette.ts';
 // Pure look arithmetic — in its own module so it stays testable without a browser.
 import {
   safeVars, cloneLook, sameLook, hasLook, autoOn, clampWhimsy, WHIMSY, DEFAULT_WHIMSY,
@@ -84,6 +84,11 @@ let onChange: () => void = () => {};
 export function initAppearance(handlers: { onChange?: () => void } = {}) {
   onChange = handlers.onChange || (() => {});
 
+  initPicturePalette({
+    current: () => current,
+    setPigments, dropPigments, syncControls,
+    persist: () => persist(),
+  });
   initAppearanceControls({
     CONTROLS, HOSTS, WHIMSY, ALL_SOURCES_STOP, ALL_SOURCES_MAX,
     current: () => current,
@@ -289,100 +294,6 @@ function dropPigments() {
   return true;
 }
 
-// Collect picture hashes (newest first) for palette extraction.
-// Hashes, not URLs — minting blob URLs here would defeat lazy asset loading.
-function pictureHashes() {
-  const hashes = [];
-  for (const it of [...board.items].reverse()) {
-    // shownHash() returns the preview for PDFs/HEIC/RAW, not the raw document.
-    const hash = it.type === 'image' ? shownHash(it) : null;
-    // meta.art is a link card's fetched album cover (canvas/embed-meta.ts): a
-    // real picture on the board, so it feeds the palette like any other.
-    for (const h of [hash, it.meta?.cover, it.meta?.art]) {
-      if (typeof h === 'string' && getAsset(h)) hashes.push(h);
-    }
-  }
-  return hashes;
-}
-
-// How many pictures to sample. 0 means all (capped at ALL_SOURCES_MAX).
-function sourceCount() {
-  const n = board.paletteSources;
-  if (n === 0) return ALL_SOURCES_MAX;
-  return Number.isFinite(n) ? Math.max(1, Math.min(MAX_SOURCES, n)) : MAX_SOURCES;
-}
-
-// Hard cap on "all photos" — beyond ~120 the hues converge and the cost grows.
-const ALL_SOURCES_MAX = 120;
-
-// Slider stop for "all photos" — one past MAX_SOURCES; stored as 0.
-const ALL_SOURCES_STOP = MAX_SOURCES + 1;
-
-// Comparable key for "would re-extraction give a different answer?"
-function sourceKey(hashes = pictureHashes()) {
-  return hashes.slice(0, sourceCount()).join('\n');
-}
-
-let lastSources: string | null = null;
-
-let lastFailure: string | null = null;
-
-// True when the board is actually wearing extracted pigments (auto + inline tokens).
-const dynamicOn = () => autoOn(current) && PALETTE_TOKENS.some(key => key in current.vars);
-
-// Auto-recolour on item changes. Skips if source set unchanged.
-function autoRecolour() {
-  if (!autoOn(current)) return;
-  const hashes = pictureHashes();
-  if (!autoPaletteReady(hashes.length, dynamicOn())) return;
-  if (sourceKey(hashes) === lastSources) return;
-  recolourFromBoard({ silent: true, hashes }).catch(() => {});
-}
-
-// Extract palette from board pictures. Silent on auto-success, loud on user request.
-async function recolourFromBoard(
-  { silent = false, hashes = pictureHashes() }: { silent?: boolean, hashes?: string[] } = {},
-) {
-  // Slice before resolving URLs — only the sampled pictures get blob URLs.
-  const urls = hashes.slice(0, Math.min(sourceCount(), MAX_SOURCES)).map(assetURL)
-    .filter((u): u is string => !!u);
-  // Record before reading — avoids re-running on boards with colourless pictures.
-  lastSources = sourceKey(hashes);
-  const failed = (why: string) => {
-    if (!silent || lastFailure !== why) toast(why);
-    lastFailure = why;
-    return false;
-  };
-  // No minimum here (the floor is only for the auto path). Empty board drops pigments.
-  if (!hashes.length) {
-    if (dropPigments()) {
-      persist();
-      syncControls();
-      return failed('The colours came from those pictures - back to your palette');
-    }
-    lastFailure = 'No pictures on the board to take colours from';
-    if (!silent) toast(lastFailure);
-    return false;
-  }
-
-  const pixels = await samplePixels(urls, sourceCount());
-  console.info(`[mbrd] palette: ${hashes.length} picture${hashes.length === 1 ? '' : 's'} on the board, ${pixels.length} read`);
-  if (!pixels.length) return failed(`Could not read ${urls.length === 1 ? 'the picture' : 'any of the pictures'} on the board`);
-
-  const vars = extractPalette(pixels, { tier: current.whimsy });
-  if (!vars) return failed('No colour to take from these pictures');
-  lastFailure = null;
-  const hueOf = (c: string) => Math.round(oklch(...parseHex(c)).h);
-  console.info(`[mbrd] palette: sheet ${vars['--paper']} (hue ${hueOf(vars['--paper'])}), `
-    + `accent ${vars['--accent']} (hue ${hueOf(vars['--accent'])}), `
-    + `wash ${vars['--leafy']} (hue ${hueOf(vars['--leafy'])})`);
-  // Skip if hues unchanged — avoids marking the board dirty for nothing.
-  const moved = Object.entries(vars).some(([k, v]) => current.vars[k] !== v);
-  if (moved) setPigments(vars);
-  if (!silent) toast('Palette taken from the pictures');
-  return true;
-}
-
 /** Reset to default look: Middle, Papyrus, no overrides, extraction re-enabled. */
 export function resetAppearance() {
   const was = current.whimsy;
@@ -395,8 +306,7 @@ export function resetAppearance() {
   persist();
   syncControls();
   if (was !== DEFAULT_WHIMSY) axisMoved(DEFAULT_WHIMSY);
-  lastSources = null;
-  lastFailure = null;
+  forgetSources();
   autoRecolour();
 }
 

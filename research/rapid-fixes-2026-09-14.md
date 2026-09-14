@@ -235,9 +235,18 @@ list named auto-connect as the next one, and the app has no such command.
 - [ ] R21 The undo history moves out of `board.json` into its own files in the
       `.mbrd`: `timeline/base.json` and `timeline/steps.jsonl`. A `.mbrd`
       schema change, which the format allows until 1.0.
-- [ ] R22 S1: the colour extraction (`pictureHashes()`, `autoRecolour()`)
+- [x] R22 S1: the colour extraction (`pictureHashes()`, `autoRecolour()`)
       moves out of `ui/appearance.ts` behind a deps object, as `LookDeps`
       does. No change on screen.
+      - **Done.** New `ui/picture-palette.ts` holds the picture walk, the
+        source dial's arithmetic, the "did the pictures change" key,
+        `dynamicOn()`, `autoRecolour()` and `recolourFromBoard()`. The look
+        model hands it `current`, `setPigments`, `dropPigments`, `persist`
+        and `syncControls` through `initPicturePalette()`, and imports it
+        one way. `appearance.ts` loses about 90 lines. The new module
+        touches no browser global at import, so a test now loads it in Node.
+        By eye in Chromium: three red pictures dropped on a fresh board
+        moved the accent from rgb(185, 73, 0) to rgb(202, 57, 31).
 - [x] R23 A dragged note checks only the cards near it for a place to stick
       (`wouldStick()` in `sticky.ts` scans the whole board on every move).
       - **Done.** `wouldStick()` takes an optional list of ids to ask.
@@ -348,5 +357,10 @@ list named auto-connect as the next one, and the app has no such command.
         panel stays open when it is pressed. `ui/timeline-view.ts` ticks
         and clears it when the bar goes up or down some other way. Checked
         in Chromium both ways.
+- [x] R37 Hide timeline in the bar's gear menu shows a toast that says the
+      sidebar brings it back.
+      - **Done.** "Timeline hidden - Show timeline in the sidebar brings it
+        back". Only the gear row says it: the box in the panel is in view
+        when it is pressed. Checked in Chromium.
 - [ ] R30 The Android later list: `native.decode` through `ImageDecoder`, a
       foreground service for long transcodes, and the shelf as a folder tree.
