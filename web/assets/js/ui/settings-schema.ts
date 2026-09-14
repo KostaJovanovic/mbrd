@@ -23,6 +23,7 @@ import { canShareLink } from '../storage/cloud/provider.ts';
 import { syncedNow } from '../storage/cloud/sync.ts';
 import { anyConnected, cloudProviders } from '../storage/cloud/cloud.ts';
 import { isDesktop, updateOffer } from '../platform/platform.ts';
+import type { UpdateOffer } from '../platform/platform.ts';
 
 // ---------------------------------------------------------------------------
 // What a control is
@@ -34,6 +35,13 @@ export type Ctx = {
 };
 
 export type Option = { value: string, label: string };
+
+/** The Update row's word for what the phone's updater offers. */
+function updateWord(offer: UpdateOffer | null): string {
+  if (offer?.state === 'downloading') return `Downloading ${Math.round(offer.progress * 100)}%`;
+  if (offer?.state === 'failed') return 'Retry update';
+  return 'Update';
+}
 
 export type ButtonSpec = {
   label: string,
@@ -50,6 +58,11 @@ export type ButtonSpec = {
    *  goes inside a row that stays, where a row's own `when` would take its
    *  neighbours too. */
   when?: (ctx: Ctx) => boolean,
+  /** The label now, for a button whose word follows a state. `label` is the
+   *  word it is built with. */
+  says?: (ctx: Ctx) => string,
+  /** True and the button shows but cannot be pressed. */
+  idle?: (ctx: Ctx) => boolean,
 };
 
 /** The keys every control may carry, whatever kind it is. */
@@ -257,21 +270,20 @@ function paperHint() {
  * reads on screen and the fold is not a nesting level in the data.
  */
 export const SECTIONS: Section[] = [
-  // An update the Android app has for itself (MbrdUpdate.java), first of all
-  // and only while there is one. The phone has no title bar to put the
-  // desktop's Update button in. The press saves the board, then installs.
-  // "Update available" when Data Saver kept it from downloading on its own:
-  // the press downloads it first.
+  // What the Android app's updater offers (MbrdUpdate.java), first of all and
+  // only while it has something. The phone has no title bar to put the
+  // desktop's Update button in, and no pop-up either: every step is said on
+  // this row (research/rapid-fixes-2026-09-14.md, R7). A press saves the
+  // board, then installs, at once when the update has downloaded and after
+  // downloading it otherwise. The panel stays open so the row can count.
   {
     id: 'update', tab: 'board',
     controls: [
       { type: 'buttons', when: () => !!updateOffer(), buttons: [
-        { cmd: 'install-update', label: 'Update', className: 'primary', closesPanel: true,
-          when: () => !!updateOffer()?.ready,
-          title: () => `mbrd ${updateOffer()?.version.replace(/\.0$/, '') ?? ''} is ready. Your board is saved first` },
-        { cmd: 'install-update', label: 'Update available', className: 'primary', closesPanel: true,
-          when: () => updateOffer()?.ready === false,
-          title: () => 'Download the update now, then install it. Your board is saved first' },
+        { cmd: 'install-update', label: 'Update', className: 'primary',
+          says: () => updateWord(updateOffer()),
+          idle: () => updateOffer()?.state === 'downloading',
+          title: () => updateOffer()?.note ?? '' },
       ] },
     ],
   },

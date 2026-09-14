@@ -212,9 +212,18 @@ initAudio();
 bus.on('layout', () => { reseedGhostCards(); syncBoardMode(true); paintGrain(vp); });
 syncBoardMode();
 initSidebar(cmds, vp);
-// An update the phone has for itself shows as the sidebar's first row. Wired
-// after buildPanel(), which built the row. The desktop never calls it.
-platform.updates.onOffer(offer => { setUpdateOffer(offer); paintPanel(); });
+// What the phone's updater says. An offer shows as the sidebar's first row,
+// wired after buildPanel(), which built the row. A passing answer to Check for
+// updates is the page's own toast, never a pop-up of the system's
+// (research/rapid-fixes-2026-09-14.md, R7). The desktop never calls it.
+platform.updates.onOffer(offer => {
+  if (offer?.state === 'said') {
+    if (offer.note) toast(offer.note);
+    return;
+  }
+  setUpdateOffer(offer);
+  paintPanel();
+});
 initMobileHeaderEditor(vp);
 initItems(el('world')!, vp);
 initWeb(el('world')!, vp);

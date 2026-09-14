@@ -107,30 +107,44 @@ export interface NativePort {
 
 /** Update port. Plan §4 *updates*. */
 export interface UpdatesPort {
-  /** Start a check. The shell answers in its own dialogs, so nothing comes back. */
+  /** Start a check. The answer comes back through onOffer on the phone, and
+   *  on the desktop's title bar, so the promise carries nothing. */
   check(): Promise<void>;
-  /** An update the shell holds for the page to offer (Android), or null. */
+  /** What the shell's updater says for the page to show (Android), or null. */
   onOffer(fn: (offer: UpdateOffer | null) => void): void;
   /** Put the offered update in place. The caller saves the board first. */
   install(): Promise<void>;
 }
 
-/** An update the phone found. `ready`: downloaded and checked, so a press
- *  installs it. Not ready: Data Saver kept it from downloading in the
- *  background, so a press downloads it first. */
+/** What the phone's updater says (MbrdUpdate.java). The first four are an
+ *  offer, which the sidebar's Update row shows: `available` (a press
+ *  downloads it, then installs it), `ready` (downloaded and checked, so a
+ *  press installs it), `downloading` (counting `progress` from 0 to 1) and
+ *  `failed` (a press tries again). `said` is a passing answer to Check for
+ *  updates, such as "mbrd is up to date", shown in the page's toast and not
+ *  kept. `note` is the whole sentence. */
+export type UpdateOfferState = 'available' | 'ready' | 'downloading' | 'failed' | 'said';
+
 export interface UpdateOffer {
+  state: UpdateOfferState;
   version: string;
-  ready: boolean;
+  progress: number;
+  note: string;
 }
+
+const OFFER_STATES = new Set<string>(['available', 'ready', 'downloading', 'failed']);
 
 let heldOffer: UpdateOffer | null = null;
 
 /** The update the sidebar's Update row offers, or null for no row. */
 export const updateOffer = (): UpdateOffer | null => heldOffer;
 
-/** main.ts writes what the shell announced. */
+/** main.ts writes what the shell announced. A passing answer does not touch the row. */
 export function setUpdateOffer(offer: UpdateOffer | null): void {
-  heldOffer = offer && typeof offer.version === 'string' ? { version: offer.version, ready: !!offer.ready } : null;
+  if (offer?.state === 'said') return;
+  heldOffer = offer && OFFER_STATES.has(offer.state) && typeof offer.version === 'string'
+    ? { state: offer.state, version: offer.version, progress: Number(offer.progress) || 0, note: String(offer.note ?? '') }
+    : null;
 }
 
 /** Sign-in port: Google Drive's, where the page cannot open a popup of its

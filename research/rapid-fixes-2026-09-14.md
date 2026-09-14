@@ -57,11 +57,17 @@ box is ticked when its commit lands.
         `tests/timeline-drift.test.js` walks every field in `REST_FIELDS`.
 - [x] R6 The body font setting loses its "Same as display" option. A board or
       a preference that holds it today needs a sensible reading.
-- [ ] R7 Android: no update pop-up. The maintainer hates it. An update shows
+- [x] R7 Android: no update pop-up. The maintainer hates it. An update shows
       in the page instead (the sidebar's Update row, or a line like R3's),
       and "Check for updates" answers there too (`MbrdUpdate.java`,
       `MbrdShell`). Android's own install-confirm screen is the system's, and
       may stay where Android insists on it.
+      - **Done.** Both AlertDialogs and the system toasts are gone. The
+        sidebar's Update row says Update, Downloading 42% or Retry update,
+        and the panel stays open so it can count. "Check for updates"
+        answers in the page's own toast: up to date, updates off, no
+        connection. A found version waits for the row's press, and the
+        daily check still downloads quietly first.
 - [x] R8 Feed cards get a simple drop shadow at the highest quality setting
       (`mobile.css`, the quality dial in `quality.css`).
       - **Done** at the Full stop. Harsh stays flat, as its canvas cards do.

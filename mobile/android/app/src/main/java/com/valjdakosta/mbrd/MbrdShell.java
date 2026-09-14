@@ -69,13 +69,16 @@ public class MbrdShell extends Plugin {
     @Override
     public void load() {
         Context ctx = getContext();
-        // What the daily check found, for the sidebar's Update row. Retained, so
-        // a page that starts listening late still hears it.
-        MbrdUpdate.onOffer((version, ready) -> {
+        // What the updater says, for the sidebar's Update row and the page's
+        // toast. An offer is retained, so a page that starts listening late
+        // still hears it. A passing answer is not: it answered a press.
+        MbrdUpdate.onOffer((state, version, permille, note) -> {
             JSObject offer = new JSObject();
+            offer.put("state", state);
             offer.put("version", version);
-            offer.put("ready", ready);
-            notifyListeners("update", offer, true);
+            offer.put("progress", permille / 1000.0);
+            offer.put("note", note);
+            notifyListeners("update", offer, !"said".equals(state));
         });
         MbrdBytes.clearStage(ctx);
         // What the last run shared. The app it went to has read it by now.
@@ -245,8 +248,8 @@ public class MbrdShell extends Plugin {
     // ---- updates --------------------------------------------------------------
 
     /** The panel's "Check for updates" row, through updates.check() in the
-     *  bridge. MbrdUpdate shows the answer itself: a dialog for a new version, a
-     *  short message otherwise. */
+     *  bridge. MbrdUpdate answers on the page, through the "update" event: the
+     *  Update row for a new version, a line in the page's toast otherwise. */
     @PluginMethod
     public void checkUpdates(PluginCall call) {
         Activity activity = getActivity();
