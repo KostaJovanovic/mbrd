@@ -72,9 +72,16 @@ is black (X, GitHub, Patreon, TikTok, Threads, Medium).
 | UTIF.js 3.1.0 | `web/assets/vendor/utif/UTIF.js` | https://github.com/photopea/UTIF.js | MIT | `web/assets/vendor/utif/LICENSE.txt` |
 | pako 1.0.11 (inflate) | `web/assets/vendor/pako/pako_inflate.min.js` | https://github.com/nodeca/pako | MIT AND Zlib | `web/assets/vendor/pako/LICENSE.txt` |
 | occt-import-js 0.0.23 | `web/assets/vendor/occt/occt-import-js.js`, `web/assets/vendor/occt/occt-import-js.wasm` | https://github.com/kovacsv/occt-import-js | LGPL-2.1 | `web/assets/vendor/occt/LICENSE.txt` |
+| onnxruntime-web 1.23.0 | `web/assets/vendor/onnxruntime/ort.wasm.min.mjs`, `web/assets/vendor/onnxruntime/ort-wasm-simd-threaded.mjs`, `web/assets/vendor/onnxruntime/ort-wasm-simd-threaded.wasm` | https://github.com/microsoft/onnxruntime | MIT | `web/assets/vendor/onnxruntime/LICENSE.txt` |
+| u2netp (model weights) | `web/assets/vendor/u2netp/u2netp.onnx` | https://github.com/xuebinqin/U-2-Net | Apache-2.0 | `web/assets/vendor/u2netp/LICENSE.txt` |
 
-Five vendored builds, none of them modified, each loaded only when a file that
-needs it is imported and none of them in `SHELL`.
+Seven vendored builds, none of them modified, each loaded only when a file or a
+command that needs it is used and none of them in `SHELL`.
+
+**onnxruntime-web** runs **u2netp**, the model behind the background remover,
+in a worker (`web/assets/js/canvas/matte-worker.js`). `canvas/matte.ts` pins
+both, and `tests/matte-vendor.test.js` holds the pin to the files. The obvious
+larger models are CC BY-NC or AGPL and cannot ship here; u2netp is Apache-2.0.
 
 **pdf.js** renders page one of a PDF — and of an `.ai`, which is a PDF — to a
 raster the card draws. It is carried rather than fetched for a reason worth
@@ -147,6 +154,22 @@ that offer findable. The binary is fetched at release time rather than committed
 — 80-odd megabytes per platform, `desktop/resources/ffmpeg/` is gitignored — so
 a checkout carries none of it and a developer who never runs the script gets a
 desktop that falls through to the wasm path above.
+
+## The apps' shells
+
+| Module | Where | Source | Licence |
+| --- | --- | --- | --- |
+| Electron | the desktop app | https://github.com/electron/electron | MIT |
+| sharp, with libvips | the desktop app, `desktop/native/decode.ts` | https://github.com/lovell/sharp | Apache-2.0 (libvips: LGPL-3.0-or-later) |
+| onnxruntime-node | the desktop app, `desktop/native/matte.ts` | https://github.com/microsoft/onnxruntime | MIT |
+| Capacitor | the Android app, `mobile/` | https://github.com/ionic-team/capacitor | MIT |
+
+Dependencies of the `desktop/` and `mobile/` packages rather than vendored
+files, so their licence texts ship inside each installer's `node_modules` or
+APK, where electron-builder and Gradle put them. libvips is carried by sharp as
+a separate shared library, which is the relinkable form LGPL-3.0 asks for.
+
+## Cuelume
 
 The interface sounds. Seventeen recipes — each a handful of numbers rather than
 an audio file — and the Web Audio graph that renders them, taken as source and

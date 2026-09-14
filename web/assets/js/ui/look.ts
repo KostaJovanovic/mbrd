@@ -7,7 +7,7 @@
  * a .mbrd set any CSS property (display:none, url() fetches, etc). */
 export const TOKENS = new Set([
   '--accent', '--accent-deep', '--accent-fg', '--accent-text', '--accent-warm',
-  '--btn-grow', '--btn-lift', '--btn-press', '--card-rule-gap',
+  '--body-italic', '--btn-grow', '--btn-lift', '--btn-press', '--card-rule-gap',
   '--chrome-button-h', '--chrome-button-touch', '--chrome-button-w', '--cork',
   '--danger', '--density', '--display-italic', '--display-weight', '--dur-base',
   '--dur-fast', '--dur-palette', '--dur-travel', '--dur-zoom',

@@ -786,24 +786,33 @@
         <p class="credit-quote">Of course it depends, of course it depends</p>
       </div>
     </li>
-    <li class="credit">
-      <a class="credit-face-link" href="https://omarzunic.com" tabindex="-1"
-         aria-hidden="true" target="_blank" rel="noopener noreferrer">
-        <img class="credit-face" src="assets/img/credit-omarzunic.webp" alt=""
-             width="56" height="56" loading="lazy" decoding="async">
-      </a>
-      <div class="credit-who">
-        <a class="credit-name" href="https://omarzunic.com"
-           target="_blank" rel="noopener noreferrer">Omar Žunić</a>
-        <span class="credit-site">omarzunic.com</span>
-        <p class="credit-quote">[INSERT FUNNY QUIP HERE]</p>
-      </div>
-    </li>
   </ul>
-  <!-- Dependencies fold. <details> for free open/close state. Checked against
-       THIRD-PARTY.md by tests/credits.test.js. -->
+  <!-- Placeholder for the maintainer's own words on why the app exists. -->
+  <p class="credits-note credits-about">Lorem ipsum dolor sit amet, consectetur
+    adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna
+    aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.</p>
+  <!-- The fold. <details> for free open/close state. Its links are checked
+       against THIRD-PARTY.md by tests/credits.test.js. -->
   <details class="credits-more">
-    <summary>What this is built on</summary>
+    <summary>More</summary>
+    <ul class="credit-list credits-fold-list">
+      <li class="credit">
+        <a class="credit-face-link" href="https://omarzunic.com" tabindex="-1"
+           aria-hidden="true" target="_blank" rel="noopener noreferrer">
+          <img class="credit-face" src="assets/img/credit-omarzunic.webp" alt=""
+               width="56" height="56" loading="lazy" decoding="async">
+        </a>
+        <div class="credit-who">
+          <a class="credit-name" href="https://omarzunic.com"
+             target="_blank" rel="noopener noreferrer">Omar Žunić</a>
+          <span class="credit-site">omarzunic.com</span>
+          <p class="credit-quote">[INSERT FUNNY QUIP HERE]</p>
+          <p class="credits-note">Rewrote this entire project in rust. Also runs
+            in the web. Fuck you.
+            <a href="https://github.com/omznc/mbrd-rs" target="_blank" rel="noopener noreferrer">mbrd&#8209;rs</a></p>
+        </div>
+      </li>
+    </ul>
     <ul class="credits-deps">
       <li>
         <!-- All links point to source repos (must match THIRD-PARTY.md). -->
@@ -834,7 +843,7 @@
       <li>
         <a href="https://github.com/googlefonts/Playfair" target="_blank" rel="noopener noreferrer">Playfair</a>,
         <a href="https://github.com/undercasetype/Fraunces" target="_blank" rel="noopener noreferrer">Fraunces</a>,
-        <a href="https://github.com/vercel/geist-font" target="_blank" rel="noopener noreferrer">Geist</a>
+        <a href="https://github.com/vercel/geist-font" target="_blank" rel="noopener noreferrer">Geist and Geist&#160;Mono</a>
         <span class="credits-lic">OFL 1.1</span>
         <span class="credits-by">Google Fonts, Undercase Type, Vercel</span>
         <span class="credits-why">The typefaces.</span>
@@ -854,6 +863,20 @@
         <span class="credits-why">Decodes TIFF, in a worker.</span>
       </li>
       <li>
+        <a href="https://github.com/microsoft/onnxruntime" target="_blank" rel="noopener noreferrer">ONNX Runtime</a>
+        <span class="credits-lic">MIT</span>
+        <span class="credits-by">Microsoft</span>
+        <span class="credits-why">Runs the background remover: the web build in
+          a browser and on a phone, the Node build in the desktop app.</span>
+      </li>
+      <li>
+        <a href="https://github.com/xuebinqin/U-2-Net" target="_blank" rel="noopener noreferrer">U&#178;&#8209;Net (u2netp)</a>
+        <span class="credits-lic">Apache-2.0</span>
+        <span class="credits-by">Xuebin Qin and others</span>
+        <span class="credits-why">The model that finds the subject when a
+          picture&rsquo;s background is removed.</span>
+      </li>
+      <li>
         <a href="https://github.com/kovacsv/occt-import-js" target="_blank" rel="noopener noreferrer">occt&#8209;import&#8209;js</a>
         <span class="credits-lic">LGPL-2.1</span>
         <span class="credits-by">Viktor Kov&#225;cs, Open CASCADE</span>
@@ -870,12 +893,33 @@
       <li>
         <!-- Desktop FFmpeg — GPL (separate from the browser LGPL build above). -->
         <a href="https://github.com/FFmpeg/FFmpeg" target="_blank" rel="noopener noreferrer">FFmpeg</a>,
-        <a href="https://github.com/GyanD/codexffmpeg" target="_blank" rel="noopener noreferrer">GyanD builds</a>
+        <a href="https://github.com/GyanD/codexffmpeg" target="_blank" rel="noopener noreferrer">GyanD</a>,
+        <a href="https://evermeet.cx/ffmpeg/" target="_blank" rel="noopener noreferrer">evermeet.cx</a>
+        and <a href="https://johnvansickle.com/ffmpeg/" target="_blank" rel="noopener noreferrer">John Van Sickle</a> builds
         <span class="credits-lic">GPL-3.0</span>
         <span class="credits-by">The FFmpeg authors</span>
         <span class="credits-why">In the desktop app only: pulls a poster frame
           straight from a clip, with no download and no network. Its source is
           published beside each build &mdash; see <code>.github/THIRD-PARTY.md</code>.</span>
+      </li>
+      <li>
+        <a href="https://github.com/electron/electron" target="_blank" rel="noopener noreferrer">Electron</a>
+        <span class="credits-lic">MIT</span>
+        <span class="credits-by">OpenJS Foundation</span>
+        <span class="credits-why">The desktop app&rsquo;s window.</span>
+      </li>
+      <li>
+        <a href="https://github.com/lovell/sharp" target="_blank" rel="noopener noreferrer">sharp</a>
+        <span class="credits-lic">Apache-2.0</span>
+        <span class="credits-by">Lovell Fuller, libvips</span>
+        <span class="credits-why">In the desktop app only: opens pictures a
+          browser cannot, such as HEIC.</span>
+      </li>
+      <li>
+        <a href="https://github.com/ionic-team/capacitor" target="_blank" rel="noopener noreferrer">Capacitor</a>
+        <span class="credits-lic">MIT</span>
+        <span class="credits-by">Ionic</span>
+        <span class="credits-why">The Android app&rsquo;s shell.</span>
       </li>
     </ul>
   </details>

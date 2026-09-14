@@ -18,7 +18,7 @@ const paletteToken = new Set([...PALETTE_TOKENS, ...TYPOGRAPHY_TOKENS]);
  * tokens.css. Lives here (not ui/appearance.ts) so tests can import it.
  */
 export const AXIS_TOKENS = [
-  '--btn-grow', '--btn-lift', '--btn-press', '--card-rule-gap', '--cork',
+  '--body-italic', '--btn-grow', '--btn-lift', '--btn-press', '--card-rule-gap', '--cork',
   '--display-italic', '--display-weight', '--dur-base', '--dur-fast',
   '--dur-travel', '--dur-zoom', '--ease', '--ease-back',
   '--font-mono', '--ghost-edge', '--ghost-ink',
