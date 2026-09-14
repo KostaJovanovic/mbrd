@@ -437,19 +437,16 @@ export const SECTIONS: Section[] = [
       // the section. Spacing stays edge-to-edge world px - see
       // arrange/arrangements.ts.
       //
-      // Spacing reads differently on each layout: Desktop's is a rule the next
-      // Rearrange will use, Mobile's moves the column the moment it is touched,
-      // because on a phone the gap is baked into where the packer put things.
-      // Mobile starts at zero and no saved board moves on its own.
-      { type: 'buttons', needsBoard: true,
+      // Spacing is a rule the next Rearrange will use. All three are the
+      // canvas's: the Feed packs its wall by order, at a fixed gap, with no
+      // grid, so on a phone none of them changed anything and they are absent.
+      { type: 'buttons', needsBoard: true, when: desktop,
         buttons: [{ cmd: 'rearrange', label: 'Rearrange everything', closesPanel: true }] },
-      // Mobile has no hint here: the Layout names say what order the column
-      // packs in, and a sentence under them only restated it.
-      { id: 'spacing', type: 'range', label: 'Spacing', needsBoard: true,
+      { id: 'spacing', type: 'range', label: 'Spacing', needsBoard: true, when: desktop,
         min: 0, max: 200, step: 4, unit: 'px',
         get: () => board.settings.spacing,
         set: v => setSetting('spacing', v) },
-      { id: 'opt-snap', type: 'check', label: 'Snap to grid', needsBoard: true,
+      { id: 'opt-snap', type: 'check', label: 'Snap to grid', needsBoard: true, when: desktop,
         get: () => !!board.settings.snap,
         set: v => setSetting('snap', v) },
     ],
@@ -722,8 +719,12 @@ export const SECTIONS: Section[] = [
       // not be found. Its hint travels with it for the same reason; a line about
       // dropping a .woff2 is no use in a fold you open after giving up.
       { id: 'appearance-type', type: 'slot', className: 'field-pair' },
-      { type: 'hint',
+      // A phone cannot drop, so there the way in is the Add button's file picker,
+      // which sends a font down the same path a drop does.
+      { type: 'hint', when: desktop,
         html: 'Drop a <code>.woff2</code>, <code>.ttf</code> or <code>.otf</code> on the board to add your own face.' },
+      { type: 'hint', when: ctx => ctx.mobile,
+        html: 'Add your own face with Add, then Files: a <code>.woff2</code>, <code>.ttf</code> or <code>.otf</code>.' },
       // The board's own dropped faces, each with a way to take it back off - filled
       // and shown/hidden by ui/fonts.ts, empty (and gone) until one is dropped.
       { id: 'appearance-fonts', type: 'slot' },
@@ -756,11 +757,13 @@ export const SECTIONS: Section[] = [
   {
     id: 'board-grid', tab: 'look', title: 'Board & grid', needsBoard: true,
     controls: [
-      { id: 'opt-grid', type: 'check', label: 'Show grid',
+      // The grid, the axes and the readout are drawn over the canvas only, so
+      // the Feed has nothing for them to show or hide.
+      { id: 'opt-grid', type: 'check', label: 'Show grid', when: desktop,
         get: () => !!board.settings.grid, set: v => setSetting('grid', v) },
-      { id: 'opt-axes', type: 'check', label: 'Show axes',
+      { id: 'opt-axes', type: 'check', label: 'Show axes', when: desktop,
         get: () => !!board.settings.axes, set: v => setSetting('axes', v) },
-      { id: 'opt-hud', type: 'check', label: 'Show readout',
+      { id: 'opt-hud', type: 'check', label: 'Show readout', when: desktop,
         get: () => !!board.settings.hud, set: v => setSetting('hud', v) },
       // A Desktop thing - Mobile is a reading feed with no spatial map to draw
       // them over - so it comes down rather than sitting there inert.

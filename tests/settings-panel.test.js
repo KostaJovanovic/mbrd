@@ -85,11 +85,11 @@ test('a control that can be set can also be read', () => {
 test('Mobile is shown the arrangement it has and nothing it has not', () => {
   // setSetting() refuses paper, its orientation and its grips on a
   // Mobile board, so a row for any would be a control that does nothing.
-  // Absence, not disabling. Spacing isn't on this list any more: a
-  // fixed-width strip has no page to fit anything onto, but it can have
-  // a gap between cards, and now does, starting at zero.
+  // Absence, not disabling. Spacing, snap, the grid, the axes and the
+  // readout joined it on 2026-09-14 (R18): the Feed packs its wall by order
+  // at a fixed gap and draws nothing over it, so none of them did anything.
   for (const id of ['opt-paper', 'paper-orient', 'opt-paper-resize', 'paper-hint',
-    'opt-web']) {
+    'opt-web', 'spacing', 'opt-snap', 'opt-grid', 'opt-axes', 'opt-hud']) {
     assert.equal(controlVisible(byId(id), MOBILE), false, `${id} should be absent on Mobile`);
     assert.equal(controlVisible(byId(id), DESKTOP), true, `${id} should be present on Desktop`);
   }
@@ -100,7 +100,7 @@ test('Mobile is shown the arrangement it has and nothing it has not', () => {
 });
 
 test('the settings that are not about a layout are in both', () => {
-  for (const id of ['opt-grid', 'opt-axes', 'opt-hud', 'opt-mediafit',
+  for (const id of ['opt-mediafit',
     'opt-units', 'opt-whimsy', 'opt-palette', 'opt-quality', 'board-title']) {
     assert.equal(controlVisible(byId(id), MOBILE), true, `${id} missing on Mobile`);
     assert.equal(controlVisible(byId(id), DESKTOP), true, `${id} missing on Desktop`);
@@ -175,15 +175,20 @@ test('the Look tab opens on three dials, and type is one of them', () => {
   // on a board, and a dropped face becomes an entry in these menus - so
   // hiding them made a feature that worked into one that couldn't be
   // found. The hint says exactly that and must travel with it.
+  // The hint has two wordings, one per layout: a phone cannot drop, so it
+  // is told the Add button's way in (R18, 2026-09-14).
   const look = SECTIONS.find(s => s.id === 'appearance');
-  const above = look.controls.filter(c => !c.advanced);
-  assert.deepEqual(above.map(c => c.id ?? c.type),
-    ['opt-whimsy', 'opt-palette', 'appearance-type', 'hint', 'appearance-fonts']);
-  assert.match(above[3].html, /\.woff2/, 'the dropped-face hint stayed with the menus');
-  // The dropped-face list rides with the hint and menus, above the
-  // fold, so an added face can be taken back off without opening the
-  // advanced controls.
-  assert.equal(above[4].id, 'appearance-fonts');
+  for (const ctx of [DESKTOP, MOBILE]) {
+    const above = look.controls.filter(c => !c.advanced && controlVisible(c, ctx));
+    assert.deepEqual(above.map(c => c.id ?? c.type),
+      ['opt-whimsy', 'opt-palette', 'appearance-type', 'hint', 'appearance-fonts']);
+    assert.match(above[3].html, /\.woff2/, 'the added-face hint stayed with the menus');
+    assert.match(above[3].html, ctx.mobile ? /Add, then Files/ : /Drop a/);
+    // The added-face list rides with the hint and menus, above the
+    // fold, so an added face can be taken back off without opening the
+    // advanced controls.
+    assert.equal(above[4].id, 'appearance-fonts');
+  }
 });
 
 test('the palette source dial has one stop past its highest count', async () => {

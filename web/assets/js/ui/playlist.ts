@@ -315,6 +315,16 @@ function createView(container: HTMLElement,
     '<p class="feed-empty-title">No music here yet</p>'
     + '<p class="feed-empty-body">The playlist is your board&rsquo;s audio. '
     + 'Add a track, or switch back to the board.</p>';
+  // The lens takes the whole screen, so its empty state carries the way back
+  // it names. The window floats over the board, which is already there.
+  if (lens) {
+    const back = document.createElement('button');
+    back.type = 'button';
+    back.className = 'feed-empty-back';
+    back.textContent = 'Back to the board';
+    back.addEventListener('click', () => setLens('feed'));
+    empty.append(back);
+  }
   surface.appendChild(empty);
 
   if (lens) container.appendChild(surface);

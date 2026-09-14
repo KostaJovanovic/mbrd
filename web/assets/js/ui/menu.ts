@@ -484,7 +484,7 @@ export function openContextMenu(clientX: number, clientY: number, itemId: string
     close();
     opener = focusedNow();
     // No `at` — Feed drops the spatial rows that use it.
-    render(itemEntries(itemId, 1, null, true), clientX, clientY);
+    render(withoutKeys(itemEntries(itemId, 1, null, true)), clientX, clientY);
     return;
   }
   // After close — the old menu's focus return is what gives us the right opener.
@@ -503,6 +503,10 @@ export function openContextMenu(clientX: number, clientY: number, itemId: string
     : itemEntries(itemId, selectionSize, at);
   render(entries, clientX, clientY);
 }
+
+/** The Feed's menu prints no key hints: a phone has no keyboard and no double-click. */
+const withoutKeys = (entries: MenuEntry[]): MenuEntry[] =>
+  entries.map(e => (e.accel ? { ...e, accel: '' } : e));
 
 /** Title card menu — edit style, reset position, anchor, delete. No copy/stack.
  * Anchor is only reachable here (the card starts anchored, so drags pan). */
@@ -557,8 +561,8 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
   const stackable = !mobile && cmds!.selectionHasStackOverlap();
   // Selection-wide — taking nine stickies off is the same act as taking one off.
   const unstickable = !mobile && cmds!.canUnstick();
-  // On Feed too — a lock is about the item, not a position.
-  const lockable = cmds!.canLock();
+  // Not on Feed — an anchor holds a place, and the Feed packs by order.
+  const lockable = !mobile && cmds!.canLock();
   const allLocked = lockable && cmds!.lockedCount() === cmds!.lockableCount();
   // Single-item — extracts one image's palette.
   const swatchable = !many && cmds!.canExtractSwatches(id);
@@ -687,7 +691,9 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // Feed has no "here" — the packer decides placement.
     { label: 'Add a note here', icon: 'i-pen', hidden: mobile,
       action: () => cmds!.addNoteAt(at) },
-    { label: 'Reload board', icon: 'i-reload', action: () => cmds!.reload() },
+    // Not on Feed — there the tile menu is the only menu, and a board action
+    // on it reads as something done to the tile.
+    { label: 'Reload board', icon: 'i-reload', hidden: mobile, action: () => cmds!.reload() },
     // ── Rename & delete ──
     // Rename at the foot — the last thing you do to a card you are keeping.
     // F2 accelerator for anyone who prefers the keyboard.
