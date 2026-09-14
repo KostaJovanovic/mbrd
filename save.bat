@@ -7,12 +7,10 @@ rem places that must never drift: the VERSION constant the app shows, and the
 rem service-worker cache epoch (without that bump, stale-while-revalidate keeps
 rem serving the old shell to anyone who already loaded the app).
 rem
-rem Four things are rebuilt around the commit and all four are argued where they
-rem happen: the bundle and web/404.html and web/patch.html before it, because
-rem those are committed and a stale one ships; and the portable copy in
-rem desktop\portable\ after it at :portable, because that one is gitignored and
-rem only ever wrong on this machine. The last is also the only one that cannot
-rem fail the save.
+rem Three things are rebuilt before the commit, and each is argued where it
+rem happens: the bundle, web/404.html and web/patch.html. All three are
+rem committed, and a stale one ships. The portable copy in desktop\portable\ is
+rem not part of a save. It has its own menu option, `portable` (:portableonly).
 
 set FORCE_MODE=0
 set COMMIT_ONLY=0
@@ -44,6 +42,7 @@ if /i "%ACTION%"=="release"   (set "RELEASE_MODE=1" & set "ACTION=save")
 if /i "%ACTION%"=="save"   goto checkrepo
 if /i "%ACTION%"=="push"    goto push
 if /i "%ACTION%"=="pull"    goto pull
+if /i "%ACTION%"=="portable" goto portableonly
 
 :menu
 echo.
@@ -54,16 +53,18 @@ echo   2  save     add + commit + push
 echo   3  commit   add + commit, no push
 echo   4  push     push current branch
 echo   5  pull     pull current branch
-echo   6  quit
+echo   6  portable build desktop\portable\, no commit
+echo   7  quit
 echo.
-set /p CHOICE=select [1-6]:
+set /p CHOICE=select [1-7]:
 rem Quoted, for the reason the lines above the menu give.
 if "%CHOICE%"=="1" (set "RELEASE_MODE=1" & goto checkrepo)
 if "%CHOICE%"=="2" goto checkrepo
 if "%CHOICE%"=="3" (set "COMMIT_ONLY=1" & goto checkrepo)
 if "%CHOICE%"=="4" goto push
 if "%CHOICE%"=="5" goto pull
-if "%CHOICE%"=="6" exit /b 0
+if "%CHOICE%"=="6" goto portableonly
+if "%CHOICE%"=="7" exit /b 0
 echo [err]  invalid choice
 goto menu
 
@@ -237,11 +238,6 @@ if errorlevel 1 (
   set SAVE_ERROR=1
   goto end
 )
-
-rem A commit happened. Read at :end, and by nothing else - the portable copy is
-rem rebuilt from it there rather than here, so the push question below is asked
-rem immediately instead of ninety seconds after the commit it belongs to.
-set DID_COMMIT=1
 
 rem Re-resolved: in a repo whose first commit has just been made, HEAD did not
 rem name a branch when this script started.
@@ -443,58 +439,55 @@ set SAVE_ERROR=1
 goto end
 
 
-rem The portable copy in desktop\portable\, rebuilt from the commit just made.
+rem Option 6 (`portable`): the portable copy in desktop\portable\, from the
+rem files on disk. No stamp, no commit, no push.
 rem
-rem ── Why here, at the very end ──
+rem It used to run after every commit. It takes about ninety seconds, it
+rem downloads Electron when the cache is cold, and it ships nothing: the folder
+rem is gitignored. A save paid for it every time, and a network error at the
+rem end of a good save read as a failure. Now it runs only when asked.
 rem
-rem Every path that reaches :end after a commit reaches it having already asked
-rem about the push, so this runs while nobody is waiting to answer anything. It
-rem is also the last thing in the script for the plainer reason: it takes about
-rem ninety seconds, and ninety seconds in front of the commit message prompt is a
-rem tax on every save for an artifact that ships nothing.
+rem The web bundle builds first, because electron-builder copies ../web
+rem wholesale and index.html loads assets/app.js: without the build, the copy
+rem carries whatever bundle was last built. portable.mjs builds into a scratch
+rem folder and swaps it in only on success, so a failure leaves the old copy
+rem and its data\ folder as they were.
 rem
-rem ── Why it cannot fail the save ──
-rem
-rem It is gitignored. Nothing built here is committed, pushed or deployed, so
-rem unlike the bundle above there is no version of this failing that puts a wrong
-rem file in front of anybody - the worst case is a stale copy on one machine.
-rem The bundle stops the commit because a bundle that did not build means the
-rem sources were never compiled together; this one warns and gets on with it,
-rem and SAVE_ERROR is deliberately left alone.
-rem
-rem ── Why the gate is desktop\node_modules ──
-rem
-rem The shell is a second package with its own install (see CLAUDE.md), and most
-rem checkouts of this repository have never run it. Testing for the directory
-rem rather than running npx and letting it fail is the difference between one
-rem line of output and a minute of npm working out that it has nothing to work
-rem with. `npm test` at the root still installs nothing, and this does not change
-rem that: it only runs where somebody has already chosen to build the desktop app.
-rem
-rem It runs after the root `npm run build` above, which is what makes it correct
-rem rather than merely last: electron-builder copies ../web wholesale, so the
-rem portable copy carries the bundle that was just built and the version that was
-rem just stamped into it.
-:portable
-if not exist "desktop\node_modules" (
-  echo.
-  echo [portable] skipped - desktop\node_modules is not installed
-  echo            run "npm install" in desktop\ to have save.bat keep it current
-  exit /b 0
-)
+rem desktop\node_modules is the gate: the shell is a second package with its own
+rem install (see CLAUDE.md), and most checkouts have never run it.
+:portableonly
 echo.
-echo [portable] portable copy
+echo === portable ===
+echo.
+set SAVE_ERROR=0
+if not exist "desktop\node_modules" (
+  echo [err]  desktop\node_modules is not installed - run "npm install" in desktop\ first
+  set SAVE_ERROR=1
+  goto end
+)
+echo [bld]  bundle
+call npm run build
+if errorlevel 1 (
+  echo.
+  echo [err]  the bundle did not build - no portable copy was made
+  set SAVE_ERROR=1
+  goto end
+)
+echo [bld]  portable copy
 call npm run portable
 if errorlevel 1 (
   echo.
-  echo [warn] the portable copy did not rebuild - it is now behind this commit
-  echo        run "npm run portable" to see why. The commit itself is fine.
+  echo [err]  the portable copy did not rebuild - desktop\portable\ is unchanged
+  echo        a download error such as 504 is the network: run this again.
+  set SAVE_ERROR=1
+  goto end
 )
-exit /b 0
+echo.
+echo [portable] desktop\portable\ is current
+goto end
 
 
 :end
-if "%DID_COMMIT%"=="1" call :portable
 echo.
 pause
 exit /b %SAVE_ERROR%
