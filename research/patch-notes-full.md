@@ -27,6 +27,400 @@ stated at the top of that file.
 
 ## Releases
 
+## Unpacked
+version: 0.318 - 0.377
+date: 14 September 2026
+
+- **Two lists worked through in one day.** The afternoon cleared the fix list
+  written after the apps shipped, batches A to H, and the evening an audit of
+  every item the research documents still left open, R1 to R38. An archive became
+  a card you can open, the Timeline moved to the foot of the window, and the tour,
+  the fences and both apps' updates were rebuilt along the way.
+
+### Archives and folders
+
+- [new] **A dropped ZIP, TAR, `.tar.gz`, `.gz`, 7z or RAR arrives as one archive
+  card:** its name and an `Unzip` button. `Unzip` replaces the card with what was
+  inside, in a spiral round where it sat, in the archive's own order, as one undo
+  step. A folder inside lands as a folder card with an `Open` button, which does
+  the same one level down, and an archive inside lands as another archive card.
+  On the Feed both put the files in the card's place in the column.
+- [new] **A folder dragged in from Explorer or Finder** still spreads its own
+  files over the board, but each folder inside it now lands as one folder card,
+  its files kept with it rather than scattered.
+- The reader is the app's own for ZIP and TAR, every size and checksum measured
+  against the end of the file, and gzip goes through the browser's inflate under
+  the same ceilings as every other import. 7z, RAR and ZIP64 go through
+  libarchive.js, vendored and loaded on the first archive that needs it rather
+  than in the bundle. Its flat list of entries is read and its tree is not, since
+  the tree writes path segments as object keys. Paths are cleaned: no `..`, no
+  `__MACOSX`, no `.DS_Store`.
+
+### The Timeline
+
+- [new] **The Timeline docks along the foot of the window at every width,** as a
+  history bar does in a CAD program. It gives its height to the layout, so the
+  board ends above it rather than under it. On by default, off by default on a
+  phone, and the last choice is kept per device. The narrow-window sheet it used
+  to open in is gone, and it no longer closes on `Esc`, since a docked bar is not
+  a layer.
+- [new] **The bar was then cut down after Fusion's history bar.** The marks sit
+  close on a baseline with a tick per step, the playhead stands in the gap after
+  the step shown, and the view scrolls to keep it in sight, with a thin scrollbar
+  of the page's own above the marks. `Play` and the gear are the only buttons:
+  first, back, forward, last and the name button went, with their icons. The gear
+  holds `Name this point`, the size, the trim and `Hide timeline`. The arrow keys
+  walk the steps from a focused mark, and `Home` and `End` go to either end.
+- [new] **The current step is a grey mark with an ink tick,** so the playhead is
+  the only accent on the bar. The `5 of 8` count went, `Play` has an edge and a
+  ground of its own and steps three and a half times a second, and the playhead
+  shows a grab cursor. A hovered step no longer grows and loses its top edge to
+  the track.
+- [new] **`Show timeline` is a box at the top of the Board tab's `Other`
+  section,** since it is on or off, and `Hide timeline` in the gear says in a
+  toast where to find it again.
+- [fix] **A trip through the Timeline keeps every change that was not a step.** A
+  replay started from the stored base or a checkpoint, which knew nothing of
+  writes that were not steps - the title, the settings, the tour, the connections
+  - so going back and forth could quietly put them back. The Timeline now
+  compares the board with the one its record describes before it records or
+  replays, and a test holds every board field to a round trip.
+- **The history moved out of `board.json`.** A `.mbrd` now carries it as
+  `timeline/base.json` and `timeline/steps.jsonl`, one step to a line, and a torn
+  line marks the history stale rather than losing the board. Every older `.mbrd`
+  still opens with its history. A copy of mbrd from v0.316 or older opens a new
+  file without one.
+
+### The tour
+
+- [new] **A board with no tour shows one `Create tour` row.** `Take the tour` and
+  `Edit the tour` appear once a tour exists.
+- [new] **On tour and in the editor no card lifts, moves or resizes.** The editor
+  holds every card as anchored - a press picks, a drag pans - and has no card
+  menus, no viewer, no note editing and no renaming.
+- [new] **The `+` or number on a card in a multi-selection acts for the whole
+  selection,** and pressing it no longer collapses the selection to that card.
+- [new] **On tour only the stop on show takes a press, and only to play.** One
+  clip or song in a stop plays by itself after two seconds, starting the tour
+  pauses the board's music, and leaving a stop pauses its clips.
+- [new] **The tour bar has two rows:** the name and caption over back, the count,
+  forward, the stop's actions and close. After an action the tour stays where it
+  is.
+- [new] **A stop chip or a card's number under the pointer lights that stop and
+  fades the rest,** its connections included.
+- [new] **`Delete` in the editor takes the picked stop off the tour** as one undo
+  step, and the toast that says so carries `Undo` - the first toast in the app
+  that can.
+
+### Fences and badges
+
+- [new] **Fences, the second version.** A fence's menu gains `Colour` - none, or
+  one of the four note sheets under the names the Note flyout uses - and
+  `Roll up`. Rolled up, a fence draws only its name bar, as a tab in its colour,
+  and every card inside it, nested fences too, is hidden and out of reach: the
+  marquee, `Ctrl+A` and the connection lines pass it by. `Find` rolls down every
+  fence hiding the card it picks. The cards keep their places, so a moved fence
+  still carries them. Both are one undo step and survive a save.
+- [new] **A new fence starts free and anchors itself ten seconds after its last
+  move,** once and quietly, with no undo step of its own. The preview box over a
+  would-be fence is gone, and a fence's menu says `Remove fence`.
+- [new] **The anchor and pin badges are buttons,** shown on hover and on select.
+  A press on the anchor unanchors the card, a press on the pin lets the note come
+  away, and the tour mark moves to the left of a badge.
+- [new] **The Feed shows fences.** It used to hide them and scatter their cards
+  through the wall. A fence's name now heads its cards, and each run starts below
+  the whole of the one before. The Mobile layout's runs were wrong the same way,
+  every loose card after the last fence, and now a run of loose cards forms
+  between two fences in the arrangement's order, so a repacked Mobile board
+  changes to match.
+
+### Pictures, documents and the style tile
+
+- [new] **`Demosaic` develops a camera RAW from its sensor.** A RAW card draws the
+  JPEG its camera tucked inside the file, which is sometimes a postage stamp. The
+  new row runs LibRaw over the sensor data in a worker, puts the result where the
+  preview was and cuts the thumbnail and the display copy from it, as one undo
+  step. The RAW stays the card's file. A sensor big enough to cost more than a
+  gigabyte while it works asks first, like every other ceiling in the app.
+- [new] **`Optimize` develops a RAW before it shrinks it,** using the picture
+  `Demosaic` already made where there is one, and one RAW at a time, so a phone's
+  tab survives it. The result replaces the RAW as an ordinary photograph.
+- [new] **A Word file with no baked thumbnail shows page one,** set on a page of
+  the file's own size and margins: the text in the built-in styles, inline
+  pictures shrunk to the text width, tables as rows of text. It stops at the foot
+  of the first page.
+- [new] **The style tile shows eight named swatches** - paper, card, ink, ink-3,
+  rule, accent, warm and leafy - in two rows of four under the pictures, with the
+  two faces at the foot. Hovering one shows its hex as the palette has it now, a
+  click copies it with `Copied #hex`, and a press on a swatch never drags the
+  card. The caption plate stays hidden on a style tile, as on a photograph, so it
+  no longer covers the body face's name.
+- [fix] **`Picture sharpness` decides again.** Since the display copies arrived,
+  every photograph drew at the 1024-pixel copy whatever the dial said. That copy
+  now serves only at `Soft`. Above it a plain photograph gets a copy at the dial's
+  edge, and the original takes over past that.
+- [fix] **An HEVC clip's poster frame is no longer black.** The media worker
+  drove the newer ffmpeg.wasm through a call that version does not have.
+
+### The sidebar, the menus and the toolbar
+
+- [new] **Every sidebar dropdown is a picker,** like Palette: Layout, Units, Paper
+  outline, Picture sharpness and Cards built per frame. The native select is gone
+  from the panel. The Display and Body font pickers set each row in its own face,
+  `Default` on top and then A to Z with the board's own faces sorted in, and
+  typing jumps to a match.
+- [new] **A menu opened under a press follows that pointer.** A move lights the
+  row under it, and a release on a row after a move or a hold picks it. A plain
+  click still leaves the menu up.
+- [new] **The Board tab was sorted.** `Save` stands alone in the open, with
+  `Save As` and `Export` under a fold labelled `More`. The Tour section became
+  `Other`, and holds the tour buttons, the Timeline and `Board contents`, which
+  moved from System because they are about the board and not the browser.
+- [new] **`Board contents` peeks a clip.** A video row showed nothing on hover for
+  any clip the browser can play, since it looked only for a cover or a poster.
+  Now the clip plays in the peek, muted and looped, over the still its card uses,
+  and lets go of its source when the pointer leaves.
+- [new] **The top toolbar moves with a panel and fits the room.** It centres
+  between its side margins, and an open sidebar or masthead panel widens its
+  margin, so the bar slides over rather than vanishing. It measures what fits:
+  every tool with its word, then icons only, then Colour, Link and Stickers behind
+  `More`. At phone width it still hides with the panel.
+- [new] **Opening and closing the sidebar pans the board by half its reach.**
+- [new] **The Playlist button shows once music has been on the board,** and the
+  first song imported on the canvas opens the player once. An older board with
+  music gets it on load, quietly. No Playlist button on the bar while a video
+  plays.
+- [fix] **The interface sounds start switched off.** They are experimental, the
+  panel says so under the dial whenever it is on, and every copy was set back to
+  off once, after which a dial moved sticks. The quality dial's one-line hints
+  went, and `Moving GIFs` reads `Animated GIFs`.
+- [fix] **The body font list lost `Same as display`,** and a look that still
+  carries it reads as the default body face.
+- [fix] **The sidebar's close cross sits in the middle of its plate** in both
+  engines at every zoom and on every tier, where it had been half a pixel off,
+  and it rides the top of the panel's head, as far from the top as from the side.
+  Sans labels stay upright at the middle and harsh tiers, and the palette picker
+  and the pigment swatch are the size of the rest.
+
+### The Feed and the phone
+
+- [new] **Feed tiles are their canvas cards.** Style tiles, fonts, models,
+  generic cards and gone cards draw the board's own renderer at the item's shape,
+  scaled to the tile. A video tile has no native controls: a tap plays in the
+  tile, a second tap pauses, and the now-playing bar drives it.
+- [new] **A press on the Feed's title opens the masthead editor,** as the pen
+  does.
+- [new] **`Find` on the Feed scrolls to the hit and rings it** for a second and a
+  half. It used to select the hit and fly the hidden canvas, so the wall stayed
+  put and nothing was marked.
+- [fix] **The Feed on a phone.** At full quality a tile stands on a soft drop
+  shadow, a picture set to `Fit` takes its own shape as it loads rather than the
+  shape of its card's box on the board, below 600 pixels the Feed sheet runs the
+  full width with square corners, and `Find` moved to the top right.
+- [fix] **What did nothing on a phone went.** A Feed tile's menu prints no key
+  hints and has no `Reload board` and no `Anchor`. The sidebar drops
+  `Rearrange everything`, `Spacing`, `Snap to grid`, `Show grid`, `Show axes` and
+  `Show readout`, none of which changed the Feed. The font hint tells a phone to
+  add a face from Add, then Files. The empty Playlist lens has a button back to
+  the board.
+
+### Sharing through Drive
+
+- [fix] **A dropped upload goes on from the last byte that landed.** A chunk with
+  no answer, or a busy or failing server, used to end a Drive upload. It now
+  waits, doubling the wait, up to five times, asks the session how much it holds
+  and sends on from there, and the stopped-upload dialog gains `Try again`, which
+  resumes the same pack. The old same-size check on a sync could have spliced two
+  different boards together, and it went.
+- [fix] **A push clears the files its board stopped naming.** After the board
+  lands, every file in its Drive folder that the board no longer uses goes to the
+  Drive bin, if it is more than a day old, so another machine's push in progress
+  is never swept. A file that will not go waits for the next push.
+- [new] **`Shared links` lists every board this account has shared,** newest
+  first and from any machine, each row with `Copy link` and `Stop sharing`.
+  Stopping asks first and moves the file to the Drive bin.
+- [new] **A heavy board can be shared as a viewing copy.** A board over 20 MB is
+  packed twice, and when the second pack is at most 60% of the first the sender
+  chooses. The viewing copy shows every photograph as its display copy and every
+  clip as a picture of its poster, and leaves out the bin and the history.
+- [new] **The apps sign in to Google Drive outside the page.** The web sign-in
+  window fails in both apps, so the desktop runs the sign-in in the system browser
+  and Android asks Google's own account screen, each handing the page a token for
+  the one permission the app uses. The clients are not registered yet, so both
+  apps show no Drive rows rather than broken ones, and still open a shared link.
+  A share link made in an app names the website rather than the app's own address.
+
+### The desktop and Android apps
+
+- [new] **The desktop's Update button.** The check runs once a day and no longer
+  downloads on its own. When it finds a newer version a green `Update` shows at
+  the right of the title bar, and a press downloads it with the button counting,
+  `Downloading 42%`, then installs and restarts, writing the board to its file
+  first. A failed download says `Retry update`. A copy that cannot replace itself,
+  on macOS or portable, opens the download page. `Check for updates` answers on the
+  same button, `Checking for updates` and then `Up to date`, and no native dialog
+  is left.
+- [new] **Android's updates say everything on the page.** A daily check downloads
+  in the background, or waits when Data Saver restricts it. An `Update` row at the
+  top of the sidebar offers it, counts while it downloads and says `Retry update`
+  when it fails, and a passing answer comes as a toast. Both dialogs and the
+  system toasts went. The install-confirm screen is Android's own and stays.
+- [new] **An unsaved board is marked with `*`** on the title bar and in the window
+  title.
+- [new] **A Linux `.deb` beside the `.AppImage`.** It installs a file type for
+  `.mbrd`, so a board opens on a double-click, and a `.deb` copy announces an
+  update rather than installing it, since root owns its folder. The download page
+  names it. The next release run is its first build.
+- [faster] **A desktop save appends only what changed.** New and changed entries
+  and a fresh directory go on the end of the board's file, and a picture the file
+  already holds is pointed at rather than written again. `Save As`, `Export`,
+  `Optimize` and a file more than half waste make the next save a whole write,
+  which compacts it. A tail cut short by a crash is walked past to the last good
+  save. The web and Android keep the whole write.
+- [fix] **An update no longer crashes the app it just installed.** The installer
+  starts the new copy before it exits, so its own file was still locked when the
+  new copy tried to clear it away, and that failure ended the start.
+- [fix] **The Windows shortcuts have their icon back.** The installer writes the
+  package's description into every shortcut, and that description was two
+  thousand characters of notes with quotes in them, which broke the shortcut's
+  line: the Desktop and Start menu shortcuts carried a slice of prose as their
+  icon path, and the taskbar button went blank with them. The description is now
+  `mbrd`. The `.ico` frames below 256 pixels are plain bitmaps, as Windows wants.
+- [fix] **Android's bars are black in dark mode and white in light mode,** where
+  they followed the page's colour through a flood of calls that made them
+  flicker.
+- [fix] **The apps' Debug readouts stop talking about a browser,** and Storage
+  names the boards folder.
+
+### Board files
+
+- [fix] **A board keeps what a newer mbrd wrote into it.** Every top-level key
+  this build does not know rides through a save untouched, so a newer build's
+  field survives an older build's save. A ZIP whose leading mimetype names another
+  format is refused with `This is not an mbrd board`, and a board with no mimetype
+  still opens.
+- [fix] **A ZIP from Windows Explorer shows its names as written.** A name without
+  the UTF-8 flag that is not valid UTF-8 reads as the old DOS code page, the way
+  Explorer writes it.
+- **The board format grew:** `hadMusic` at the top level, the `archive` and
+  `folder` card types, a fence's `tint` and `rolled`, `demosaiced` on a developed
+  RAW card, and the history's own two files. An older build shows the new cards
+  as plain named cards and writes them back untouched.
+
+### Repairs
+
+- [fix] **`New` while a note had focus threw,** and the rest of the old board's
+  cards were never cleared. The note gives up focus first now. Found while
+  failing to reproduce a report that the website's board list kept only the
+  current board: it held every board in every scenario tried.
+- [fix] **The drop overlay hides when a drag ends,** and after 600 milliseconds
+  with no drag event, rather than standing over the board.
+- [fix] **The viewer closes when another board loads.**
+- [faster] **A dragged note asks only the cards near it** whether it should stick,
+  where it scanned the whole board on every pointer move. A sticker dropped from
+  its window does the same.
+
+### Maintenance
+
+- **The research was audited.** Every open item in the research documents was
+  checked against the code and listed, and the rapid-fix list drawn from it became
+  R1 to R38. The documents that are done went down to `research/old/`, the
+  `future/` tier was deleted, and the README lists only what is open.
+- **Every pixel gap in the stylesheets is on one rhythm** - 2, 4, 6, 8 or 12 -
+  fifty gaps in eighteen sheets, checked by eye before and after, with a test to
+  hold it.
+- **Seventeen surfaces were sampled frame by frame** through a palette change and
+  two whimsy changes, and every one fades as one. Nothing needed changing.
+- **The picture-led palette moved into a module of its own,** loadable in a test
+  with no browser.
+- **The releases no longer carry a source zip,** and `save.bat` builds the
+  portable copy only when asked, as option 6, rather than spending ninety seconds
+  on it every save. A README for the public release repository was drafted.
+- **Credit where it is due:** the credits name ONNX Runtime, u2netp, Geist Mono,
+  the evermeet.cx and John Van Sickle FFmpeg builds, Electron, sharp and
+  Capacitor, and libarchive.js, which opens 7z and RAR. LibRaw arrived with
+  `Demosaic`.
+
+## Pocket Size
+version: 0.305 - 0.317
+date: 13 September 2026
+
+- **mbrd is an Android app,** built in an evening as a third package around the
+  same `web/` tree the website serves, with no fork of the app code. The
+  desktop's boards became files you can see. Everything here builds and its tests
+  pass. The checks that need a phone in a hand were still to be run.
+
+### Android
+
+- [new] **An `.apk` for Android 7 and later,** built on GitHub beside the desktop
+  builds and published in the same release. Capacitor wraps the page, and a
+  bridge gives the phone the desktop's own shape, so the app runs through the
+  branch the desktop already has.
+- [new] **The boards live in `Documents/mbrd`** and the store in a hidden folder
+  beside them, so both survive an uninstall and the boards show in Files. The
+  grant is asked for once, on a screen that says why. `Not now` keeps everything
+  in the app's private folder for that run, a note on the board says where, and
+  the next start asks again. The first run with the grant moves the private store
+  across.
+- [new] **Save, Open and Import.** Save asks for a name, and asks again before it
+  replaces a file. Open copies a board from anywhere into the board folder, as
+  `name (2).mbrd` on a clash, except a board already there, which opens in place.
+  Import copies nothing: each file's bytes go into the store.
+- [new] **Open with and Share, for boards, pictures, clips, sound, PDF and
+  text.** A board opens, every other file lands as a card at the centre of the
+  view, and a shared link becomes a link card. A file that arrives before the page
+  is ready waits for it.
+- [new] **What a WebView lacks, added.** A download link hands its bytes to the
+  Save dialog a board uses, `navigator.share` goes to the system share sheet, and
+  Back closes the top layer - an open menu, then a dialog, then whatever answers
+  `Esc` - and with nothing left open sends the app to the background with the
+  board kept.
+- [new] **A pause is a close.** A phone does not close an app, it pauses it and
+  may end it after, so the write the desktop runs before a close runs on the
+  pause.
+- [new] **Updates, from the public release repository.** At start, at most once
+  every six hours, the app reads the latest release. A newer version asks first,
+  downloads with a progress bar, is checked against the digest GitHub publishes
+  for it, and installs, on Android 12 and later with no confirm screen.
+- Bytes never cross Capacitor's JSON bridge. They go page to native through a
+  byte channel of their own, in chunks with one in flight at a time, and native to
+  page as a plain request, so a board is never turned into base64 on the way.
+  `/_capacitor_file_/` and `/_capacitor_content_/` answer 404, because they would
+  give any page script a reader for every file the app can reach, and every check
+  lives in the Java plugins rather than in the bridge.
+
+### The desktop
+
+- [new] **Every desktop board is a file in `Documents/mbrd`.** `New` makes the
+  file at once, and the page writes the board on screen to it on a timer, with
+  the store as the crash copy. A portable copy, and a run given its own data
+  folder, keep the boards in `boards/` in the data folder instead, so neither
+  writes outside its own folder.
+- [new] **The board list shows the folder.** It lists the shelf and every board
+  in the folder, an `Open folder` button leads to the files, and the Open and
+  Save dialogs start there. The cross on a board in the folder moves the file to
+  the bin, where it can be restored. A board kept elsewhere only leaves the list,
+  and its file stays where it is.
+- [fix] **`Cmd+Q` quits the macOS app.** The quit waited for the board to be
+  written and then stopped short. It quits again after the write.
+- [fix] **The macOS build is universal.** The release job installs sharp's Intel
+  half beside the runner's own, and the native files that are not themselves
+  universal are named so the merge keeps them, so an Intel Mac gets the native
+  picture decoder too.
+
+### Maintenance
+
+- **The release job builds all four apps at once** - Windows, macOS, Linux and
+  Android. Each smoke test is capped at a minute, logs the quit path and prints
+  the app's logs when it fails, and the changelog test counts visible windows,
+  since the hidden menu panel can arrive between two counts.
+- **The Android release is signed with a key kept offline,** and its
+  `versionCode` is the commit count, which only grows, as an update needs.
+- **The apps have their documentation:** `mobile/README.md`, the mobile section
+  and the release in the project notes, and the launchers in the contributing
+  guide.
+- The scratch folders from the connection-line work were deleted.
+
 ## Every Corner
 version: 0.207 - 0.230
 date: 15 - 16 August 2026

@@ -185,13 +185,133 @@
          down: how many releases there are, how many commits they cover, and
          when it started. All counted from the source. -->
     <p class="pn-tally">
-      <span>33 releases</span>
+      <span>35 releases</span>
       <span>381 commits</span>
       <span>since 24 July 2026</span>
     </p>
   </header>
 
   <ol class="pn-list">
+<li class="pn-rel" id="r-unpacked">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">60</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.318 - 0.377</p>
+      <h2 class="pn-name">Unpacked</h2>
+      <p class="pn-date">14 September 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>An archive drops in as one card you can open, the Timeline moved to the foot of the window, and the tour, the fences and the apps' updates were reworked.</strong> The rest of the day went on a long list of rough edges.</li>
+    </ul>
+    <h3 class="pn-part">Archives and folders</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>A ZIP, TAR, 7z, RAR or <code>.gz</code> arrives as one card with an <code>Unzip</code> button.</strong> A press puts what was inside on the board in a spiral round where the card sat, in the archive's own order, and one undo takes it back. A folder inside becomes a card with an <code>Open</code> button, which does the same one level down.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A folder dragged in from Explorer or Finder still spreads its files over the board,</strong> but each folder inside it lands as one folder card rather than a flood of loose files.</li>
+    </ul>
+    <h3 class="pn-part">The Timeline</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>The Timeline is a bar along the foot of the window,</strong> the way a history bar sits under a CAD drawing. It takes its own room rather than covering the board, starts on at a desk and off on a phone, and keeps your choice.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The bar is a row of steps with a playhead you drag,</strong> and the board follows it. <code>Play</code> walks forward from where you are, the arrow keys go one step at a time, and a gear holds naming, trimming and <code>Hide timeline</code>. The <code>Show timeline</code> box in the Board tab brings it back.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Going back and forth in the Timeline no longer loses changes that were never steps,</strong> such as the board's title or a setting.</li>
+    </ul>
+    <h3 class="pn-part">The tour</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>A board with no tour offers <code>Create tour</code>,</strong> and <code>Take the tour</code> and <code>Edit the tour</code> appear once there is one. While you tour or edit, the cards stay where they are: a press picks, a drag pans, and pointing at a stop lights it and fades the rest.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The tour bar has two rows,</strong> the stop's name and caption over back, forward, the stop's own actions and close. A clip or song alone in a stop plays by itself, and the board's music pauses while you tour. <code>Delete</code> in the editor takes a stop off the tour, with <code>Undo</code> on the note that says so.</li>
+    </ul>
+    <h3 class="pn-part">Fences</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>A fence can wear one of the four note colours, and roll up to its name bar.</strong> Rolled up, the cards inside are hidden and out of reach until it rolls down again, and <code>Find</code> unrolls it when the card it finds is inside.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A new fence anchors itself</strong> ten seconds after you last move it. The anchor and pin badges on a card are buttons now: a press on the anchor lets the card go, and a press on the pin lets the note come away.</li>
+      <li><span class="pn-tag is-new">New</span><strong>On the Feed, a fence's name heads its own cards,</strong> and fences and loose cards take turns in the board's order rather than every loose card falling to the end.</li>
+    </ul>
+    <h3 class="pn-part">Around the board</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong><code>Demosaic</code> develops a camera RAW from its sensor,</strong> where the card had shown only the small preview the camera tucked inside. Undo puts the preview back, and <code>Optimize</code> develops a RAW before it shrinks it.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A Word file with no picture of itself shows its first page,</strong> set from its own text, headings, pictures and tables.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The style tile shows eight named swatches,</strong> and a click on one copies its hex code.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The Playlist button turns up once there has been music on the board,</strong> and the first song you drop opens the player. It stays off the bar while a video plays.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong><code>Picture sharpness</code> decides again.</strong> Above <code>Soft</code>, a photograph draws at the size the dial asks for rather than at the light display copy.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The interface sounds start switched off.</strong> They are experimental, so they wait until you turn them on, and everybody was set back to off once.</li>
+    </ul>
+    <h3 class="pn-part">The sidebar and the toolbar</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>Every dropdown in the sidebar is the app's own picker,</strong> and the font pickers set each name in its own face. Any menu picks on a press, a drag and a release, the way a desktop menu does.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The Board tab was sorted.</strong> <code>Save</code> stands alone with <code>Save As</code> and <code>Export</code> under <code>More</code>, and a new <code>Other</code> section holds the tour, the Timeline and <code>Board contents</code>, where a video row now plays a silent preview on hover.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The toolbar slides aside for an open panel</strong> instead of vanishing, and drops its words, then tucks Colour, Link and Stickers behind <code>More</code>, as the room runs short.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Opening or closing the sidebar pans the board by half its width,</strong> so what you were looking at stays in sight.</li>
+    </ul>
+    <h3 class="pn-part">The Feed and the phone</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>Every Feed tile looks like its card on the board</strong> - style tiles, fonts and 3D models included - and a video plays in its tile with a tap.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A press on the Feed's title opens the masthead editor,</strong> and <code>Find</code> scrolls the Feed to what it found and rings it.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A picture set to <code>Fit</code> takes its own shape on the Feed,</strong> tiles stand on a soft shadow at full quality, and on a phone the Feed runs edge to edge with <code>Find</code> at the top right.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The phone lost the controls that did nothing there</strong> - key hints, <code>Reload board</code> and <code>Anchor</code> on a Feed tile, and the grid and spacing settings in the sidebar. An empty Playlist has a way back to the board.</li>
+    </ul>
+    <h3 class="pn-part">Sharing through Drive</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong><code>Shared links</code> lists every board you have shared,</strong> from any machine, each with <code>Copy link</code> and <code>Stop sharing</code>.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A heavy board can be shared as a viewing copy,</strong> with the photographs at display size, a still for each clip and no bin or history, when that comes out much smaller.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>An upload that drops resumes from the last byte that arrived,</strong> and a synced board stops leaving the files it no longer uses in your Drive.</li>
+    </ul>
+    <h3 class="pn-part">The desktop and Android apps</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>An <code>Update</code> button on the title bar.</strong> The app looks once a day, and a press on the button downloads the new version, counting as it goes, then installs it and restarts. A macOS or portable copy opens the download page instead, and <code>Check for updates</code> answers on the same button, not in a dialog.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The Android app offers its update in a row at the top of the sidebar,</strong> counting while it downloads. It looks once a day, waits when Data Saver says so, and opens no dialogs.</li>
+      <li><span class="pn-tag is-new">New</span>**An unsaved board shows a <code>*</code>** on the title bar and in the window title.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A <code>.deb</code> for Debian and Ubuntu</strong> beside the <code>.AppImage</code>, so a board opens on a double-click on Linux.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>A desktop save writes only what changed</strong> to the end of the board's file rather than the whole board, and a save cut short by a crash leaves the last good one readable.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The desktop app no longer crashes on its first start after an update.</strong></li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The Windows icon is back on the shortcuts and the taskbar,</strong> and draws cleanly at small sizes.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Android's status and gesture bars stop flickering.</strong> They are black in dark mode and white in light mode.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The apps hide the Google Drive rows</strong> until signing in works there, rather than opening a sign-in that fails. A shared link still opens.</li>
+    </ul>
+    <h3 class="pn-part">Repairs</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-fix">Fix</span><strong><code>New</code> while typing in a note no longer leaves the old board's cards behind.</strong></li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A ZIP made on Windows shows its file names as they were written,</strong> where an older Windows encoding used to come out garbled.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A board saved by a newer <span class="wm">mbrd</span> keeps what this one does not know,</strong> and a ZIP of some other kind is refused as <code>This is not an mbrd board</code>.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Three small ones:</strong> an HEVC clip's poster is no longer black, the drop overlay goes when a drag leaves without dropping, and the viewer closes when another board opens.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>Dragging a note across a busy board is lighter,</strong> since it asks only the cards near it whether it should stick.</li>
+      <li class="is-plain"><strong>Credit where it is due:</strong> the credits name what they had been missing - ONNX Runtime, u2netp, Geist Mono, the FFmpeg builds, Electron, sharp and Capacitor - and libarchive.js, which opens 7z and RAR.</li>
+      <li class="is-plain"><strong>Maintenance:</strong> every gap in the stylesheets was put on one spacing rhythm, and the research notes were audited and tidied.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-pocket-size">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">13</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.305 - 0.317</p>
+      <h2 class="pn-name">Pocket Size</h2>
+      <p class="pn-date">13 September 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong><span class="wm">mbrd</span> is an Android app now,</strong> the same board as the website and the desktop, and on the desktop every board became a file you can see.</li>
+    </ul>
+    <h3 class="pn-part">Android</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong><span class="wm">mbrd</span> installs on Android 7 and later,</strong> as an <code>.apk</code> from <code>/download</code> beside the desktop builds. It is the same app as the website, wrapped for a phone.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Your boards live in <code>Documents/mbrd</code> on the phone,</strong> so they show in Files and survive an uninstall. The app asks once, on a page that says why, and <code>Not now</code> keeps them inside the app until the next start.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Files open in <span class="wm">mbrd</span> from other apps,</strong> through Open with or Share. A board opens, a picture, clip, sound, PDF or text file lands as a card in the middle of the view, and a shared link becomes a link card.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Back closes whatever is on top</strong> - a menu, a dialog, a panel - and with nothing left open it puts the app in the background with the board kept. The board is written away whenever the phone pauses the app.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Save asks for a name, and an export or a share goes through the phone's own Save dialog and share sheet.</strong></li>
+      <li><span class="pn-tag is-new">New</span><strong>The app installs its own updates</strong> from the same releases as the desktop, on Android 12 and later without a confirm screen.</li>
+    </ul>
+    <h3 class="pn-part">The desktop</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>Every desktop board is a file in <code>Documents/mbrd</code>.</strong> <code>New</code> makes the file at once and the board on screen is written to it as you work. The board list shows the folder with an <code>Open folder</code> button, and Open and Save start there.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The cross on a board in that folder moves the file to the bin,</strong> where it can be restored. A board kept anywhere else only leaves the list.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong><code>Cmd+Q</code> quits the macOS app.</strong> It used to write the board away and then stop short of quitting.</li>
+    </ul>
+  </article>
+</li>
 <li class="pn-rel" id="r-well-connected">
   <div class="pn-margin" aria-hidden="true">
     <span class="pn-mark"></span>

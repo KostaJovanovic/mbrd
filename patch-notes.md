@@ -156,6 +156,179 @@ back to the board.
 
 ## Releases
 
+## Unpacked
+version: 0.318 - 0.377
+date: 14 September 2026
+
+- **An archive drops in as one card you can open, the Timeline moved to the foot
+  of the window, and the tour, the fences and the apps' updates were reworked.**
+  The rest of the day went on a long list of rough edges.
+
+### Archives and folders
+- [new] **A ZIP, TAR, 7z, RAR or `.gz` arrives as one card with an `Unzip`
+  button.** A press puts what was inside on the board in a spiral round where the
+  card sat, in the archive's own order, and one undo takes it back. A folder
+  inside becomes a card with an `Open` button, which does the same one level down.
+- [new] **A folder dragged in from Explorer or Finder still spreads its files over
+  the board,** but each folder inside it lands as one folder card rather than a
+  flood of loose files.
+
+### The Timeline
+- [new] **The Timeline is a bar along the foot of the window,** the way a history
+  bar sits under a CAD drawing. It takes its own room rather than covering the
+  board, starts on at a desk and off on a phone, and keeps your choice.
+- [new] **The bar is a row of steps with a playhead you drag,** and the board
+  follows it. `Play` walks forward from where you are, the arrow keys go one step
+  at a time, and a gear holds naming, trimming and `Hide timeline`. The
+  `Show timeline` box in the Board tab brings it back.
+- [fix] **Going back and forth in the Timeline no longer loses changes that were
+  never steps,** such as the board's title or a setting.
+
+### The tour
+- [new] **A board with no tour offers `Create tour`,** and `Take the tour` and
+  `Edit the tour` appear once there is one. While you tour or edit, the cards stay
+  where they are: a press picks, a drag pans, and pointing at a stop lights it and
+  fades the rest.
+- [new] **The tour bar has two rows,** the stop's name and caption over back,
+  forward, the stop's own actions and close. A clip or song alone in a stop plays
+  by itself, and the board's music pauses while you tour. `Delete` in the editor
+  takes a stop off the tour, with `Undo` on the note that says so.
+
+### Fences
+- [new] **A fence can wear one of the four note colours, and roll up to its name
+  bar.** Rolled up, the cards inside are hidden and out of reach until it rolls
+  down again, and `Find` unrolls it when the card it finds is inside.
+- [new] **A new fence anchors itself** ten seconds after you last move it. The
+  anchor and pin badges on a card are buttons now: a press on the anchor lets the
+  card go, and a press on the pin lets the note come away.
+- [new] **On the Feed, a fence's name heads its own cards,** and fences and loose
+  cards take turns in the board's order rather than every loose card falling to
+  the end.
+
+### Around the board
+- [new] **`Demosaic` develops a camera RAW from its sensor,** where the card had
+  shown only the small preview the camera tucked inside. Undo puts the preview
+  back, and `Optimize` develops a RAW before it shrinks it.
+- [new] **A Word file with no picture of itself shows its first page,** set from
+  its own text, headings, pictures and tables.
+- [new] **The style tile shows eight named swatches,** and a click on one copies
+  its hex code.
+- [new] **The Playlist button turns up once there has been music on the board,**
+  and the first song you drop opens the player. It stays off the bar while a video
+  plays.
+- [fix] **`Picture sharpness` decides again.** Above `Soft`, a photograph draws at
+  the size the dial asks for rather than at the light display copy.
+- [fix] **The interface sounds start switched off.** They are experimental, so
+  they wait until you turn them on, and everybody was set back to off once.
+
+### The sidebar and the toolbar
+- [new] **Every dropdown in the sidebar is the app's own picker,** and the font
+  pickers set each name in its own face. Any menu picks on a press, a drag and a
+  release, the way a desktop menu does.
+- [new] **The Board tab was sorted.** `Save` stands alone with `Save As` and
+  `Export` under `More`, and a new `Other` section holds the tour, the Timeline
+  and `Board contents`, where a video row now plays a silent preview on hover.
+- [new] **The toolbar slides aside for an open panel** instead of vanishing, and
+  drops its words, then tucks Colour, Link and Stickers behind `More`, as the room
+  runs short.
+- [new] **Opening or closing the sidebar pans the board by half its width,** so
+  what you were looking at stays in sight.
+
+### The Feed and the phone
+- [new] **Every Feed tile looks like its card on the board** - style tiles, fonts
+  and 3D models included - and a video plays in its tile with a tap.
+- [new] **A press on the Feed's title opens the masthead editor,** and `Find`
+  scrolls the Feed to what it found and rings it.
+- [fix] **A picture set to `Fit` takes its own shape on the Feed,** tiles stand on
+  a soft shadow at full quality, and on a phone the Feed runs edge to edge with
+  `Find` at the top right.
+- [fix] **The phone lost the controls that did nothing there** - key hints,
+  `Reload board` and `Anchor` on a Feed tile, and the grid and spacing settings in
+  the sidebar. An empty Playlist has a way back to the board.
+
+### Sharing through Drive
+- [new] **`Shared links` lists every board you have shared,** from any machine,
+  each with `Copy link` and `Stop sharing`.
+- [new] **A heavy board can be shared as a viewing copy,** with the photographs at
+  display size, a still for each clip and no bin or history, when that comes out
+  much smaller.
+- [fix] **An upload that drops resumes from the last byte that arrived,** and a
+  synced board stops leaving the files it no longer uses in your Drive.
+
+### The desktop and Android apps
+- [new] **An `Update` button on the title bar.** The app looks once a day, and a
+  press on the button downloads the new version, counting as it goes, then
+  installs it and restarts. A macOS or portable copy opens the download page
+  instead, and `Check for updates` answers on the same button, not in a dialog.
+- [new] **The Android app offers its update in a row at the top of the sidebar,**
+  counting while it downloads. It looks once a day, waits when Data Saver says so,
+  and opens no dialogs.
+- [new] **An unsaved board shows a `*`** on the title bar and in the window title.
+- [new] **A `.deb` for Debian and Ubuntu** beside the `.AppImage`, so a board opens
+  on a double-click on Linux.
+- [faster] **A desktop save writes only what changed** to the end of the board's
+  file rather than the whole board, and a save cut short by a crash leaves the last
+  good one readable.
+- [fix] **The desktop app no longer crashes on its first start after an update.**
+- [fix] **The Windows icon is back on the shortcuts and the taskbar,** and draws
+  cleanly at small sizes.
+- [fix] **Android's status and gesture bars stop flickering.** They are black in
+  dark mode and white in light mode.
+- [fix] **The apps hide the Google Drive rows** until signing in works there,
+  rather than opening a sign-in that fails. A shared link still opens.
+
+### Repairs
+- [fix] **`New` while typing in a note no longer leaves the old board's cards
+  behind.**
+- [fix] **A ZIP made on Windows shows its file names as they were written,** where
+  an older Windows encoding used to come out garbled.
+- [fix] **A board saved by a newer mbrd keeps what this one does not know,** and a
+  ZIP of some other kind is refused as `This is not an mbrd board`.
+- [fix] **Three small ones:** an HEVC clip's poster is no longer black, the drop
+  overlay goes when a drag leaves without dropping, and the viewer closes when
+  another board opens.
+- [faster] **Dragging a note across a busy board is lighter,** since it asks only
+  the cards near it whether it should stick.
+- **Credit where it is due:** the credits name what they had been missing - ONNX
+  Runtime, u2netp, Geist Mono, the FFmpeg builds, Electron, sharp and Capacitor -
+  and libarchive.js, which opens 7z and RAR.
+- **Maintenance:** every gap in the stylesheets was put on one spacing rhythm, and
+  the research notes were audited and tidied.
+
+## Pocket Size
+version: 0.305 - 0.317
+date: 13 September 2026
+
+- **mbrd is an Android app now,** the same board as the website and the desktop,
+  and on the desktop every board became a file you can see.
+
+### Android
+- [new] **mbrd installs on Android 7 and later,** as an `.apk` from `/download`
+  beside the desktop builds. It is the same app as the website, wrapped for a
+  phone.
+- [new] **Your boards live in `Documents/mbrd` on the phone,** so they show in
+  Files and survive an uninstall. The app asks once, on a page that says why, and
+  `Not now` keeps them inside the app until the next start.
+- [new] **Files open in mbrd from other apps,** through Open with or Share. A board
+  opens, a picture, clip, sound, PDF or text file lands as a card in the middle of
+  the view, and a shared link becomes a link card.
+- [new] **Back closes whatever is on top** - a menu, a dialog, a panel - and with
+  nothing left open it puts the app in the background with the board kept. The
+  board is written away whenever the phone pauses the app.
+- [new] **Save asks for a name, and an export or a share goes through the phone's
+  own Save dialog and share sheet.**
+- [new] **The app installs its own updates** from the same releases as the
+  desktop, on Android 12 and later without a confirm screen.
+
+### The desktop
+- [new] **Every desktop board is a file in `Documents/mbrd`.** `New` makes the file
+  at once and the board on screen is written to it as you work. The board list
+  shows the folder with an `Open folder` button, and Open and Save start there.
+- [new] **The cross on a board in that folder moves the file to the bin,** where it
+  can be restored. A board kept anywhere else only leaves the list.
+- [fix] **`Cmd+Q` quits the macOS app.** It used to write the board away and then
+  stop short of quitting.
+
 ## Well Connected
 version: 0.297 - 0.304
 date: 12 September 2026
