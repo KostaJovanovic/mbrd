@@ -44,7 +44,7 @@ const artifacts = new Map();
 }
 
 /** The file a release of 0.302.0 would carry, for one target. */
-const EXT = { nsis: 'exe', dmg: 'dmg', appImage: 'AppImage' };
+const EXT = { nsis: 'exe', dmg: 'dmg', appImage: 'AppImage', deb: 'deb' };
 const sample = key => artifacts.get(key).replace('${version}', '0.302.0').replace('${ext}', EXT[key]);
 
 test('every chrome file has a source the build turns into it', () => {
@@ -71,8 +71,8 @@ test('the package ships dist/ whole, which is where the chrome is built', () => 
     'electron-builder.yml `files:` no longer lists dist/**, so dist/chrome/ is left out: the FileAnalyser 9.8 fault');
 });
 
-test('the builder names three files, each with the version', () => {
-  assert.deepEqual([...artifacts.keys()].sort(), ['appImage', 'dmg', 'nsis'],
+test('the builder names four files, each with the version', () => {
+  assert.deepEqual([...artifacts.keys()].sort(), ['appImage', 'deb', 'dmg', 'nsis'],
     'artifactName lines found under other keys - has electron-builder.yml been reshaped?');
   for (const [key, name] of artifacts) {
     assert.match(name, /^mbrd-[\w-]+-\$\{version\}\.\$\{ext\}$/, `${key}: ${name} does not end in -\${version}.\${ext}`);
@@ -84,11 +84,12 @@ test('the updaters find the files the builder names', () => {
   const appImage = exportedPattern('APPIMAGE_ASSET');
   assert.match(sample('nsis'), installer, 'desktop/updates.ts would not find the Windows installer in a release');
   assert.match(sample('appImage'), appImage, 'desktop/updates.ts would not find the AppImage in a release');
-  // And each finds only its own: the release also carries the other systems.
-  for (const other of [sample('dmg'), sample('appImage')]) {
+  // And each finds only its own: the release also carries the other systems,
+  // and the .deb shares the AppImage's stem.
+  for (const other of [sample('dmg'), sample('appImage'), sample('deb')]) {
     assert.doesNotMatch(other, installer, `INSTALLER_ASSET also matches ${other}`);
   }
-  for (const other of [sample('dmg'), sample('nsis')]) {
+  for (const other of [sample('dmg'), sample('nsis'), sample('deb')]) {
     assert.doesNotMatch(other, appImage, `APPIMAGE_ASSET also matches ${other}`);
   }
 });
@@ -104,7 +105,7 @@ test('the Android updater finds the APK the release job names', () => {
   assert.ok(prefix, '.github/workflows/release.yml no longer names the APK out/mbrd-android-$VERSION.apk');
   const apk = `${prefix}0.302.0.apk`;
   assert.match(apk, apkName, 'MbrdUpdate.java would not find the APK in a release');
-  for (const other of [sample('nsis'), sample('dmg'), sample('appImage')]) {
+  for (const other of [sample('nsis'), sample('dmg'), sample('appImage'), sample('deb')]) {
     assert.doesNotMatch(other, apkName, `APK_NAME also matches ${other}`);
   }
   assert.doesNotMatch(apk, exportedPattern('INSTALLER_ASSET'), 'INSTALLER_ASSET also matches the APK');

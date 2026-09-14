@@ -34,7 +34,7 @@ test('no link names a release file', () => {
 });
 
 test('the page names the file to pick on each system', () => {
-  for (const ending of ['.exe', '.dmg', '.AppImage', '.apk']) {
+  for (const ending of ['.exe', '.dmg', '.AppImage', '.deb', '.apk']) {
     assert.ok(page.includes(`<code>${ending}</code>`), `web/download.html no longer names the ${ending} file`);
   }
 });

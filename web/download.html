@@ -77,8 +77,9 @@
         to install properly or unpack a portable copy you can carry on a stick.</li>
       <li><b>macOS:</b> the <code>.dmg</code>, Intel and Apple silicon in one
         file. New, less tested.</li>
-      <li><b>Linux:</b> the <code>.AppImage</code>. No install, no package
-        manager. New, less tested.</li>
+      <li><b>Linux:</b> the <code>.AppImage</code>, which needs no install, or
+        the <code>.deb</code> for Debian and Ubuntu, which opens boards on a
+        double-click. New, less tested.</li>
       <li><b>Android:</b> the <code>.apk</code>, for Android 7 and later.</li>
     </ul>
   </div>
@@ -136,6 +137,9 @@
       <div class="dl-plate">
         <p>Nothing complains, but an AppImage arrives without the executable
           bit. Run <code>chmod +x mbrd-*.AppImage</code>, then start it.</p>
+        <p>The .deb installs with <code>sudo apt install ./mbrd-*.deb</code>.
+          It tells you about a new version, and you install that one the same
+          way.</p>
       </div>
     </li>
 
