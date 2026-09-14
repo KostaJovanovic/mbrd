@@ -11,8 +11,9 @@ import { setPlatform } from '../web/assets/js/platform/platform.ts';
 import { canShareLink } from '../web/assets/js/storage/cloud/provider.ts';
 import { cloudProviders, shareProvider } from '../web/assets/js/storage/cloud/cloud.ts';
 import {
-  GOOGLE_ANDROID_CLIENT, GOOGLE_DESKTOP_CLIENT_ID, GOOGLE_DESKTOP_CLIENT_SECRET,
+  GOOGLE_ANDROID_CLIENT, GOOGLE_DESKTOP_CLIENT_ID, GOOGLE_DESKTOP_CLIENT_SECRET, SHARE_SITE,
 } from '../web/assets/js/storage/cloud/config.ts';
+import { readFileSync } from 'node:fs';
 
 const REQ = {
   clientId: '123-abc.apps.googleusercontent.com',
@@ -93,6 +94,16 @@ test('an app offers Drive sign-in only with a client of its own, and still opens
   }
   assert.equal(!!GOOGLE_DESKTOP_CLIENT_ID, !!GOOGLE_DESKTOP_CLIENT_SECRET,
     'config.ts has the desktop client id and not its secret, or the other way round');
+});
+
+test('a link made in the apps names the website, which the canonical URL agrees on', () => {
+  const site = new URL(SHARE_SITE);
+  assert.equal(site.protocol, 'https:');
+  const html = readFileSync(new URL('../web/index.html', import.meta.url), 'utf8');
+  assert.match(html, new RegExp(`<link rel="canonical" href="${SHARE_SITE.replace(/[.]/g, '\\.')}">`),
+    'config.ts SHARE_SITE and the canonical URL in index.html name different sites');
+  assert.match(readFileSync(new URL('../web/assets/js/commands/file.ts', import.meta.url), 'utf8'),
+    /isDesktop\(\) \? new URL\(SHARE_SITE\)/, 'the share command no longer links the apps to the website');
 });
 
 test('the redirect, the token answer and the PKCE pair read strictly', () => {

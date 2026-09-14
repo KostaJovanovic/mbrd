@@ -32,3 +32,10 @@ export const GOOGLE_DESKTOP_CLIENT_SECRET: string = '';
  * there is no id to write here. False keeps Google Drive out of the Android app.
  */
 export const GOOGLE_ANDROID_CLIENT: boolean = false;
+
+/**
+ * The website a link made in the apps points to. The desktop serves app:// and
+ * Android serves https://app, and neither address opens on the recipient's
+ * machine. The website opens any link, so the apps link there.
+ */
+export const SHARE_SITE = 'https://mbrd.valjdakosta.com/';
