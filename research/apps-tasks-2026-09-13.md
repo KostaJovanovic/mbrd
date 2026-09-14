@@ -1140,6 +1140,13 @@ against their real paths with the minimatch `@electron/universal` uses. An
 Intel Mac then cuts out pictures with the browser's worker, because
 `native/matte.ts` returns null when onnxruntime does not load.
 
+Changed at the maintainer's request on 2026-09-14, over A1: the label read 313
+at git commit 315. Two plain `git commit` commits (ad711fc and 2562ed1, 13
+September) stamped nothing, and since A1 `save.bat` only added 1 to
+`version.js`, so nothing caught them up. `save.bat` now takes the larger of
+`version.js` + 1 and `git rev-list --count HEAD` + 1. The number still never
+falls after a squash, and the next save is v0.316 at commit 316.
+
 Before the first release, checked with `gh` on 2026-09-13: KostaJovanovic/mbrd
 has no secrets, and KostaJovanovic/mbrd-release has no branch, so the publish
 job's `--target main` has nothing to tag. The maintainer adds a first commit
