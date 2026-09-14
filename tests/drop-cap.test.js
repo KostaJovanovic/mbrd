@@ -41,6 +41,31 @@ const drop = entries => ({
   files: [],
 });
 
+/** A named directory entry holding exactly these children, in one batch. */
+function folder(name, children) {
+  return {
+    name,
+    isFile: false,
+    isDirectory: true,
+    createReader: () => {
+      let served = false;
+      return { readEntries(cb) { cb(served ? [] : children); served = true; } };
+    },
+  };
+}
+
+test('a dropped folder spreads its own files, and each folder in it is one card', async () => {
+  const got = await filesFrom(drop([folder('trip', [
+    fileEntry('a.jpg'),
+    folder('raw', [fileEntry('b.jpg'), folder('x', [fileEntry('c.jpg')])]),
+    folder('empty', []),
+  ])]));
+  assert.deepEqual(got.files.map(f => f.name), ['a.jpg']);
+  // An empty folder lands as nothing, and paths are below the card's folder.
+  assert.deepEqual(got.folders.map(f => [f.name, f.entries.map(e => e.path)]), [['raw', ['b.jpg', 'x/c.jpg']]]);
+  assert.equal(got.fromFolder, true);
+});
+
 test('a folder walked past the cap says so', async () => {
   const got = await filesFrom(drop([dirEntry(MAX_FILES + 250)]));
   assert.equal(got.files.length, MAX_FILES, 'the cap is applied');

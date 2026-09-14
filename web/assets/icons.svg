@@ -479,6 +479,12 @@
   <path d="M9.5 5.5 12 8l-2.5 2.5"/>
 </symbol>
 
+<!-- Unzip and Open on an archive or folder card: what is inside comes up and out. -->
+<symbol id="i-arrow-up" viewBox="0 0 16 16">
+  <path d="M8 14V5"/>
+  <path d="M5.5 7.5 8 4l2.5 3.5"/>
+</symbol>
+
 <!-- The timeline's two. Both are drawn for a 14px box rather than the 16 the
      toolbar uses, which is why they sit inside the middle of theirs: a step on
      the strip is the smallest place in the app an icon appears, and a glyph

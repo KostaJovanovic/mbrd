@@ -209,6 +209,13 @@ export function initItems(world: HTMLElement, viewport: Viewport) {
       if (id) tourMarks?.press(id);
       return;
     }
+    // Unzip on an archive card, Open on a folder card.
+    const unpack = t?.closest('.card-unpack');
+    if (unpack) {
+      const id = itemIdFromEvent(unpack);
+      if (id) unpacker?.(id);
+      return;
+    }
     // A style tile's swatch copies its colour as the palette has it now.
     const swatch = t?.closest<HTMLElement>('.style-tile-swatch');
     if (swatch) {
@@ -403,6 +410,17 @@ let tourMarks: TourMarks | null = null;
  * removal below finds nothing and the id leaves the set on the same pass.
  */
 const marked = new Set<string>();
+
+let unpacker: ((id: string) => void) | null = null;
+
+/**
+ * What Unzip and Open do (import/unpack.ts). Injected, since import/ sits
+ * beside canvas/ rather than under it; main.ts wires it. Unwired, the button
+ * does nothing.
+ */
+export function setUnpack(fn: ((id: string) => void) | null) {
+  unpacker = fn;
+}
 
 /** Wire the editor up, or `null` to take every mark off. See paintTourMarks(). */
 export function setTourMarks(marks: TourMarks | null) {

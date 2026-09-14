@@ -232,7 +232,12 @@ export const itemHashes = (
     item?.meta?.display,
     // Legacy key — nothing writes it but old boards still carry it.
     item?.meta?.poster,
-  ].filter((h): h is string => Boolean(h));
+    // A folder card out of an archive points into it; a folder dropped from
+    // the disk lists its own files. Both are what the card holds until it is
+    // opened, so both pack and sync with it (import/unpack.ts).
+    item?.meta?.archive,
+    ...(Array.isArray(item?.meta?.files) ? item.meta.files.map(f => (isRecord(f) ? f.hash : null)) : []),
+  ].filter((h): h is string => typeof h === 'string' && h.length > 0);
 
 /**
  * Whether this is a dev server (localhost/LAN). Memoised — deferred to first

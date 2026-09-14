@@ -199,6 +199,38 @@ export function addItems(
 }
 
 /**
+ * One card out and what it held in, as one undo step: Unzip and Open
+ * (import/unpack.ts). The card leaves the board rather than going to the bin,
+ * since what it held is on the board in its place, and undo puts it back where
+ * it was in the stack. Positions come from the caller - a spiral round the card
+ * on the canvas, the card's own place in the column on the Feed.
+ */
+export function replaceItem(id: string, items: Record<string, unknown>[], label: string) {
+  const index = board.items.findIndex(i => i.id === id);
+  if (index < 0) return [];
+  const card = board.items[index];
+  let z = topZ();
+  const added = items.map(partial => fitBoardMode(onLattice(makeItem({ ...partial, z: ++z }))));
+  commit(label,
+    () => { board.items = board.items.filter(i => i.id !== id);
+            selection.delete(id);
+            const fresh = added.filter(a => !byId(a.id));
+            board.items.push(...fresh);
+            refenceArrivals(added);
+            bus.emit('items', { added: fresh.map(a => a.id), removed: [id] });
+            bus.emit('selection'); },
+    () => { const ids = new Set(added.map(a => a.id));
+            board.items = board.items.filter(i => !ids.has(i.id));
+            ids.forEach(i => selection.delete(i));
+            board.items.splice(Math.min(index, board.items.length), 0, card);
+            refenceArrivals([card]);
+            bus.emit('items', { added: [id], removed: [...ids] });
+            bus.emit('selection'); },
+    added.length + 1);
+  return added;
+}
+
+/**
  * Snap a new item to the lattice if the board is snapped. Saves a presnap memo
  * so unsnapAll() can restore original geometry. Sticky items that would attach
  * to a host skip the snap — they belong at their stick point, not the grid.
