@@ -75,7 +75,7 @@ import { initFonts } from './ui/fonts.ts';
 import { initMobileHeaderEditor, isPanelOpen as isHeaderPanelOpen, closePanel as closeHeaderPanel, styleFeedMasthead } from './ui/mobile-header.ts';
 import { initAudio } from './canvas/audio.ts';
 import { cue, initCuelume, setCueLog, cueLog, dumpCueLog, soundLevel, setSoundLevel } from './cuelume/engine.ts';
-import { initFeed } from './ui/feed.ts';
+import { initFeed, revealInFeed } from './ui/feed.ts';
 import { initViewer } from './ui/viewer.ts';
 import { initDarkroom } from './ui/darkroom.ts';
 import { initInventory } from './ui/inventory.ts';
@@ -259,7 +259,7 @@ initInput(vp, cmds);
 initMenu(vp, cmds);
 // Fence prompt after rubber-band selection.
 initFencePrompt(vp);
-initSearch(vp);
+initSearch(vp, revealInFeed);
 // Skipped on /patch: idle fade would hide the only controls on a prose page.
 if (!isPatch) initIdle(vp);
 // Skipped on /patch: backfill writes to the board, which the changelog must not.

@@ -194,6 +194,20 @@
 .feed-play svg { width: 34px; height: 34px; filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.5)); }
 /* Over a playing clip the badge goes; a tap pauses and it comes back. */
 .feed-tile.is-playing .feed-play { display: none; }
+/* The tile Find picked (revealInFeed() in ui/feed.ts): a ring that holds, then
+   fades, since the Feed has no selection mark to show the hit by. An outline, so the tile's own shadow at each quality stop is left alone. */
+.feed-tile.is-found {
+  outline: 3px solid var(--accent-text);
+  outline-offset: 2px;
+  animation: feed-found 1.6s ease-out both;
+}
+@keyframes feed-found {
+  0%, 60% { outline-color: var(--accent-text); }
+  100% { outline-color: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .feed-tile.is-found { animation: none; }
+}
 .feed-tile video { width: 100%; height: 100%; object-fit: cover; background: #000; display: block; }
 
 /* A card drawn by the canvas's renderer at its board size, scaled to the tile
