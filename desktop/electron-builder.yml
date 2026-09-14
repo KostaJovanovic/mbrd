@@ -2,8 +2,9 @@
 #
 # One artefact per platform, chosen so a person downloading this has exactly one
 # link to press: a Setup.exe that asks Install or Portable on its first page, a
-# universal DMG, an AppImage that runs on every distribution. deb, rpm and
-# Flatpak are follow-ons - see research/old/electron-2026-09-06.md §10.
+# universal DMG, an AppImage that runs on every distribution. Linux also gets a
+# .deb, which is how .mbrd files open on a double-click there. rpm and Flatpak
+# are follow-ons - see research/old/electron-2026-09-06.md §10.
 
 appId: com.valjdakosta.mbrd
 productName: mbrd
@@ -151,13 +152,30 @@ dmg:
   artifactName: mbrd-mac-universal-${version}.${ext}
 
 linux:
-  target: AppImage
+  # Two files: the AppImage runs anywhere and updates itself, and the .deb
+  # installs on Debian and Ubuntu and opens .mbrd files on a double-click.
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
   icon: icons/icon.png
   category: Graphics
-  # An AppImage registers no MIME association without desktop integration the
-  # user installs themselves, so open-with on Linux arrives with the .deb in
-  # plan §10 and not here. The desktop entry is still correct for the launchers
-  # that do integrate one.
+  synopsis: A board for pictures, video, notes and files
+  description: >-
+    mbrd is a board for pictures, video, sound, notes and files. Every board is
+    one .mbrd file, and it works with the network off.
+  # .mbrd belongs to this app where a package can say so. The .deb installs a
+  # shared-mime-info entry for the type, and its postinst refreshes the MIME
+  # and desktop databases. Under linux: and not at the top level, for the
+  # reason mac: gives. An AppImage installs nothing, so it still registers no
+  # association without desktop integration the user adds. The desktop entry
+  # is correct for the launchers that do integrate one.
+  fileAssociations:
+    - ext: mbrd
+      name: mbrd board
+      description: mbrd board
+      mimeType: application/vnd.mbrd+zip
   desktop:
     entry:
       MimeType: application/vnd.mbrd+zip
@@ -168,6 +186,15 @@ appImage:
   # rather than built from ${arch}. tests/desktop-package.test.js holds the two
   # in step.
   artifactName: mbrd-linux-x64-${version}.${ext}
+
+deb:
+  # The AppImage's stem with its own extension, so APPIMAGE_ASSET passes it by.
+  # No updater reads it: a copy the .deb installed lives where the app cannot
+  # write, so updates.ts only announces a new version (`manual`).
+  # tests/desktop-package.test.js holds the names.
+  artifactName: mbrd-linux-x64-${version}.${ext}
+  # The format requires one. Not a person's address, and nobody reads mail here.
+  maintainer: mbrd <noreply@valjdakosta.com>
 
 # No update file (latest*.yml) and no blockmap: updates.ts asks GitHub's API
 # for the latest release, which gives each download URL and its SHA-256

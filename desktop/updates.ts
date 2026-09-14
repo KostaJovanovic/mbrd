@@ -132,8 +132,8 @@ const due = () => {
  * a press on Update downloads the new installer, which runs silently as the
  * app closes and starts the new version. `appimage` is Linux: the new file
  * takes the old one's place. `manual` only announces a new version: a
- * portable copy, and macOS, where an app with no Developer ID signature
- * cannot install one.
+ * portable copy, a copy the Linux .deb installed (root owns its folder), and
+ * macOS, where an app with no Developer ID signature cannot install one.
  */
 export function installKind(portable: boolean): Kind {
   if (!app.isPackaged) return 'dev';

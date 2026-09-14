@@ -328,8 +328,25 @@ list named auto-connect as the next one, and the app has no such command.
         `import/drop.ts`. `tests/page-one.test.js` holds the page box and the
         flow. Checked in Chromium with a python-docx file. A card imported
         before this keeps its grey face until it is dropped again.
-- [ ] R28 Linux: a `.deb` beside the AppImage, so a double-click opens a
+- [x] R28 Linux: a `.deb` beside the AppImage, so a double-click opens a
       `.mbrd` file.
+      - **Done in the configuration, not yet built.** `electron-builder.yml`
+        builds a `deb` beside the AppImage, named
+        `mbrd-linux-x64-<version>.deb`, with `fileAssociations` under
+        `linux:`. The package installs a shared-mime-info entry for
+        `application/vnd.mbrd+zip`, and its postinst refreshes the MIME and
+        desktop databases. The desktop entry passes files as `%U`, so
+        `boardsIn()` in `desktop/main.ts` now turns a `file://` URL back
+        into a path. A `.deb` copy updates by announcing (`manual`), since
+        root owns its folder. The release job uploads it and the notes list
+        it. The download page names it. `desktop-package.test.js` holds the
+        new name against every updater pattern.
+      - The package field `maintainer` is `mbrd <noreply@valjdakosta.com>`,
+        not a personal address. Change it in `electron-builder.yml` if
+        another is wanted.
+      - Not tried: electron-builder makes a `.deb` only on Linux, so the
+        first real build is the next release run. Check that its Linux leg
+        is green, then install the file on Ubuntu and double-click a board.
 - [ ] R29 Camera RAW photos, the way FileAnalyser does them:
       - The card shows one of the JPEG previews the RAW file carries.
       - The item menu has "Demosaic", which decodes the sensor data into a

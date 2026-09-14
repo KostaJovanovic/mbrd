@@ -10,6 +10,7 @@ import type {
   MessageBoxOptions, WebContents, WebPreferences, WindowOpenHandlerResponse,
 } from 'electron';
 import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { registerSchemes, serveWeb, APP_CHROME, APP_INDEX, APP_ORIGIN } from './protocol.ts';
 import { initLog, log } from './log.ts';
@@ -882,9 +883,17 @@ function wireChrome(): void {
 // Open-with
 // ---------------------------------------------------------------------------
 
-// Filter argv to .mbrd files only (ignore flags and the executable).
+// Filter argv to .mbrd files only (ignore flags and the executable). A Linux
+// launcher can hand a file:// URL rather than a path, since the .deb's desktop
+// entry takes %U, so one is turned back into its path.
 function boardsIn(argv: readonly string[]): string[] {
-  return argv.filter(arg => /\.mbrd$/i.test(arg) && !arg.startsWith('-'));
+  const out: string[] = [];
+  for (const arg of argv) {
+    if (arg.startsWith('-') || !/\.mbrd$/i.test(arg)) continue;
+    if (!/^file:\/\//i.test(arg)) { out.push(arg); continue; }
+    try { out.push(fileURLToPath(arg)); } catch { /* not a local file: skipped */ }
+  }
+  return out;
 }
 
 // Queue paths and deliver once a window exists.

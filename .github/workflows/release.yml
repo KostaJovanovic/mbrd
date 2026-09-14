@@ -7,11 +7,12 @@
 # release" for a test build. A port of FileAnalyser's release.yml.
 #
 # One run builds, in parallel, each on its own GitHub machine, ONE file per
-# system:
+# system, and two for Linux:
 #   windows  mbrd-Windows-<version>.exe         installs, or unpacks a portable
 #                                               copy (desktop/installer.nsh)
 #   macos    mbrd-mac-universal-<version>.dmg   Apple silicon and Intel
-#   linux    mbrd-linux-x64-<version>.AppImage
+#   linux    mbrd-linux-x64-<version>.AppImage  runs anywhere, updates itself
+#            mbrd-linux-x64-<version>.deb       Debian and Ubuntu, opens .mbrd
 #   android  mbrd-android-<version>.apk         signed, with the native FFmpeg
 #                                               once group N adds it
 # Then the publish job creates the release v<version> with all of them at
@@ -195,7 +196,7 @@ jobs:
             exit 1
           fi
 
-      # The one file per system, by extension: nothing else in out/ ships.
+      # The files per system, by extension: nothing else in out/ ships.
       - uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.name }}
@@ -203,6 +204,7 @@ jobs:
             desktop/out/mbrd-*.exe
             desktop/out/mbrd-*.dmg
             desktop/out/mbrd-*.AppImage
+            desktop/out/mbrd-*.deb
           if-no-files-found: error
           # Installers and disk images are compressed already.
           compression-level: 0
@@ -353,6 +355,7 @@ jobs:
           | Windows | [mbrd-Windows-$VERSION.exe]($dl/mbrd-Windows-$VERSION.exe) | Installs itself. A portable copy tells you |
           | macOS, Apple silicon and Intel | [mbrd-mac-universal-$VERSION.dmg]($dl/mbrd-mac-universal-$VERSION.dmg) | Tells you |
           | Linux | [mbrd-linux-x64-$VERSION.AppImage]($dl/mbrd-linux-x64-$VERSION.AppImage) | Installs itself |
+          | Linux, Debian and Ubuntu | [mbrd-linux-x64-$VERSION.deb]($dl/mbrd-linux-x64-$VERSION.deb) | Tells you |
           | Android 7 and later | [mbrd-android-$VERSION.apk]($dl/mbrd-android-$VERSION.apk) | Asks, then installs |
 
           The macOS, Linux and Android builds are new and less tested than the Windows one.
@@ -361,7 +364,7 @@ jobs:
 
           - **Windows:** SmartScreen stops the first run. Click **More info**, then **Run anyway**.
           - **macOS:** open the app once and close the warning. Then open **System Settings > Privacy & Security** and click **Open Anyway**.
-          - **Linux:** make the AppImage executable with chmod +x, then run it.
+          - **Linux:** make the AppImage executable with chmod +x, then run it. Or install the .deb with sudo apt install ./mbrd-linux-x64-$VERSION.deb, and .mbrd files open on a double-click.
           - **Android:** when Android asks, allow your browser or file manager to install apps.
 
           Built from commit $GITHUB_SHA.
