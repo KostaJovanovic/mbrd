@@ -99,7 +99,8 @@
   --item-shadow: var(--note-shadow);
   --shape-radius: var(--note-radius);
 }
-:root[data-snap] .item-shadow { rotate: 0deg; }
+:root[data-snap] .item-shadow,
+:root[data-no-tilt] .item-shadow { rotate: 0deg; }
 
 /* Grid lattice. Sized in device pixels by canvas/grid.ts and stretched to CSS
    pixels so marks snap to the device grid. Position/size written per paint. */

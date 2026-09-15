@@ -204,6 +204,11 @@ export function paintSnap() {
   document.documentElement.toggleAttribute('data-snap', !!board.settings.snap);
 }
 
+/** Tilt cards, published to CSS the same way: data-no-tilt stands them square. */
+export function paintTilt() {
+  document.documentElement.toggleAttribute('data-no-tilt', board.settings.tilt === false);
+}
+
 /**
  * Both readings, always: board units first (what a nudge moves, what the
  * grid counts) then the real measurement (what you'd hold a tape to). The

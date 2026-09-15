@@ -233,11 +233,13 @@ function readShadow(): Look['shadow'] {
  *
  * The same two-part answer canvas/web.ts uses: `--item-tilt` (a per-card
  * fraction dealt from a bag, living only on the node) times `--tilt-max`,
- * zeroed outright by Harsh or a snapped board rather than by zeroing the
- * token - reading only the token would lean every card on a board that draws none.
+ * zeroed outright by Harsh, a snapped board or Tilt cards off rather than by
+ * zeroing the token - reading only the token would lean every card on a board
+ * that draws none.
  */
 function maxLean(): number {
-  if (document.documentElement.dataset.whimsy === '2' || board.settings.snap) return 0;
+  if (document.documentElement.dataset.whimsy === '2' || board.settings.snap
+    || board.settings.tilt === false) return 0;
   return Math.abs(parseFloat(readToken('--tilt-max'))) || 0;
 }
 

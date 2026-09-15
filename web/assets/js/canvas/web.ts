@@ -295,7 +295,7 @@ export function initWeb(worldEl: HTMLElement, viewport?: Viewport | null) {
   });
   bus.on('settings', key => {
     if (key === 'web') requestBuild();
-    else if (key === 'appearance') reshape();
+    else if (key === 'appearance' || key === 'tilt') reshape();
   });
   if (vp) vp.onChange(viewMoved);
 
@@ -384,13 +384,15 @@ function straightSeg(pa: Card, pb: Card, sig: string): Seg {
 }
 
 /** Max lean in degrees. Routes clip against the tilted box so lines end exactly
- * on the drawn edge. Zeroed at Harsh and when snap is on (CSS zeroes rotation). */
+ * on the drawn edge. Zeroed at Harsh, when snap is on and when Tilt cards is off
+ * (CSS zeroes rotation). */
 let leanDeg: number | null = null;
 function drawnTilt() {
   if (leanDeg === null) {
     leanDeg = Math.abs(parseFloat(readToken('--tilt-max'))) || 0;
   }
-  if (document.documentElement.dataset.whimsy === '2' || board.settings.snap) return 0;
+  if (document.documentElement.dataset.whimsy === '2' || board.settings.snap
+    || board.settings.tilt === false) return 0;
   return leanDeg;
 }
 
