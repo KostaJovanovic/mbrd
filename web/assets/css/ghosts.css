@@ -23,8 +23,23 @@
 }
 /* Inner rule steps in by the border width to avoid overlap. */
 .ghost-card::after { inset: calc(var(--card-rule-gap) - var(--board-ghost-weight)); }
-/* Softish candidates carry their own edge; pencil uses ::after for its stroke. */
-:root[data-whimsy="0"] .ghost-card:not([data-hint="whimsy"])::after { content: none; }
+/* Softish candidates carry their own edge, so the rule goes unseen there. Unseen
+   rather than `content: none`: a pseudo-element that stops existing cannot
+   travel, and between Softish and Middle this rule appeared at its end radius
+   while the dashed edge around it was still easing (tokens.css, 1c). */
+:root[data-whimsy="0"] .ghost-card:not([data-hint="whimsy"])::after {
+  border-color: transparent;
+  /* The torn shape, so the rule leaves Softish square on the left with the
+     edge it sits inside, not round inside a square corner. */
+  border-radius: 0 max(0px, calc(var(--own-radius) - var(--card-rule-gap)))
+    max(0px, calc(var(--own-radius) - var(--card-rule-gap))) 0;
+}
+/* The item takes the torn shape too. .item-body clips to it everywhere but
+   Softish, and leaving Softish a round clip easing over the square-cornered
+   edge cut its dashes away at the left. */
+:root[data-whimsy="0"] .item[data-type="ghost"]:not(:has([data-hint="whimsy"])) {
+  border-radius: 0 var(--own-radius) var(--own-radius) 0;
+}
 /* Unclip so tape can hang outside. Not the dial — it has no tape. */
 :root[data-whimsy="0"] .item[data-type="ghost"]:not(:has([data-hint="whimsy"])) .item-body {
   overflow: visible;
@@ -127,8 +142,9 @@
       color-mix(in srgb, #b4544a 42%, transparent) 26px 27px,
       transparent 27px),
     var(--paper-card);
-  /* Square where torn, rounded where not. */
-  border-radius: 0 var(--radius) var(--radius) 0;
+  /* Square where torn, rounded where not. --radius where no .item sets
+     --own-radius (the Feed). */
+  border-radius: 0 var(--own-radius, var(--radius)) var(--own-radius, var(--radius)) 0;
   --card-pad-x: 34px;
   -webkit-mask-image: radial-gradient(circle 6px at 0 11px, transparent 6px, #000 6.5px);
   mask-image: radial-gradient(circle 6px at 0 11px, transparent 6px, #000 6.5px);
@@ -154,6 +170,11 @@
 .ghost-card[data-hint="whimsy"]::after { content: none; }
 /* Softish corners turn hard enough to crowd outer stop names. */
 :root[data-whimsy="0"] .ghost-card[data-hint="whimsy"] { --card-pad-x: 28px; }
+/* A pill at Softish, not a card with round corners: --own-radius (items.css)
+   caps the shape at half the shorter side, so asking for that half is exact. */
+:root[data-whimsy="0"] .item[data-type="ghost"]:has([data-hint="whimsy"]) {
+  --shape-radius: var(--half-min, var(--radius));
+}
 /* .ghost-mount scopes to both surfaces that mount a ghost card:
    the canvas .item and the Feed .feed-hint. */
 .ghost-mount .ghost-dial {

@@ -287,6 +287,7 @@ function paletteMs() {
 }
 
 let reshapeTimer = 0;
+let reshapeFrame = 0;
 
 /** The cards that ease with the interface. See reshapeCorners(). */
 const SEEN = 'is-reshape-seen';
@@ -313,12 +314,35 @@ function reshapeCorners() {
     if (r.width && r.right > 0 && r.bottom > 0 && r.left < innerWidth && r.top < innerHeight) el.classList.add(SEEN);
   }
   root.classList.add('is-reshaping');
+  cancelAnimationFrame(reshapeFrame);
+  // The corners start with the tier write, but the rest of the tier change can
+  // hold the page for a tenth of a second, and the first frame draws the whole
+  // new tier, which can take longer again. The short run into Harsh was over
+  // before either had passed. Restarted on the first frame and the second, so
+  // all of it shows.
+  const restart = () => {
+    const now = document.timeline.currentTime;
+    for (const a of document.getAnimations()) {
+      if (a instanceof CSSTransition && a.transitionProperty.endsWith('radius')) a.startTime = now;
+    }
+  };
   // The longest run, the colours' own: into Harsh it is shorter, and the class
-  // staying on for the rest of it changes nothing anybody can see.
-  reshapeTimer = window.setTimeout(() => {
+  // staying on for the rest of it changes nothing anybody can see. Timed from
+  // now as well as from the restart: while the class is on it overrules every
+  // other transition, so a frame that never comes must not leave it on.
+  const settle = () => {
     root.classList.remove('is-reshaping');
     for (const el of document.querySelectorAll(`.${SEEN}`)) el.classList.remove(SEEN);
-  }, paletteMs() + 100);
+  };
+  reshapeTimer = window.setTimeout(settle, paletteMs() + 100);
+  reshapeFrame = requestAnimationFrame(() => {
+    restart();
+    reshapeFrame = requestAnimationFrame(() => {
+      restart();
+      clearTimeout(reshapeTimer);
+      reshapeTimer = window.setTimeout(settle, paletteMs() + 100);
+    });
+  });
 }
 
 // Re-read controls after the fade lands — getComputedStyle mid-transition

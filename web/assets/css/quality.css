@@ -74,7 +74,12 @@
 :root[data-whimsy="2"] #origin-mark .om-ring-sq,
 :root[data-whimsy="2"] #origin-mark .om-pip-sq { display: inline; }
 
-:root[data-whimsy="2"] .card::after { content: none; }
+/* No inner rule at Harsh. Unseen rather than `content: none`, so the rule is
+   still there to ease its corner when the tier changes (tokens.css, 1c): one
+   that stops existing appears at its end radius inside a card still easing.
+   A fence's ::after is its grain, not a rule, and still goes altogether. */
+:root[data-whimsy="2"] .card::after { border-color: transparent; }
+:root[data-whimsy="2"] .fence-card::after { content: none; }
 
 /* No lean at Harsh: a 1px black rectangle turned 1.5deg has no crisp edge.
    `rotate` outright because tilt tokens can be set inline on :root. */
