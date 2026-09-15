@@ -778,7 +778,7 @@ export const SECTIONS: Section[] = [
         min: 1, max: 25, step: 1, value: 12 },
       { id: 'appearance-advanced-vars', type: 'slot', advanced: true },
       { type: 'buttons', advanced: true,
-        buttons: [{ cmd: 'reset-appearance', label: 'Start over' }] },
+        buttons: [{ cmd: 'reset-appearance', label: 'Reset' }] },
     ],
   },
   {

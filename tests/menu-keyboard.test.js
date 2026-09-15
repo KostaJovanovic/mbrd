@@ -144,3 +144,32 @@ test('the Feed can select tiles, and shows which ones it has', () => {
   const css = read(join(JS, '..', 'css', 'mobile.css'));
   assert.match(css, /\.feed-tile\.is-selected \{/, 'a selected tile has no ring');
 });
+
+test('the Playlist picks rows, and the board menu off a card selects', () => {
+  // The Feed and the Playlist opened a menu on a card and none off one, and the
+  // Playlist drew no selection, so a Delete there could take a group unseen.
+  const playlist = code(read(join(JS, 'ui', 'playlist.ts')));
+  assert.match(playlist, /bus\.on\('selection', \(\) => \{ mobileView\?\.markSelected\(\); windowView\?\.markSelected\(\); \}\)/,
+    'the Playlist stopped repainting the selection');
+  assert.match(playlist, /r\.el\.classList\.toggle\('is-selected', selection\.has\(item\.id\)\)/,
+    'a row filled while selected comes up without its ring');
+  const pick = playlist.slice(playlist.indexOf('e.shiftKey || e.ctrlKey || e.metaKey || isMultiSelect()'));
+  assert.ok(pick.length < playlist.length, 'a modifier or the multi-select mode no longer picks a row');
+  assert.match(pick, /e\.stopImmediatePropagation\(\);\s*pick\(row\.dataset\.id\);/,
+    'a pick no longer toggles the row, or plays it as well');
+  assert.match(playlist, /select\(\[item\.id\], isMultiSelect\(\)\)/,
+    'the row menu drops the group in the multi-select mode');
+  // Select all is the surface's own: the board holds cards the list never shows.
+  assert.match(menu, /function sheetEntries\(selectAll\?: \(\) => void\)/, 'the board menu lost Select all');
+  assert.match(menu, /\.\.\.multiSelectEntry\(true\)/, 'the board menu lost Select multiple');
+  assert.match(code(read(join(JS, 'ui', 'feed.ts'))), /selectAll: \(\) => select\(shown\(\)\)/,
+    'the Feed Select all takes more than the tiles it shows');
+  // Over a group the rows say how many they act on.
+  assert.match(menu, /itemEntries\(itemId, selectionSize, null, true, rename, track\)/,
+    'a list card menu tells its rows a count of one again');
+  // Rows hidden between two rules leave one rule, not two.
+  assert.match(menu, /if \(!prev \|\| prev\.classList\.contains\('ctx-sep'\)\) continue;/,
+    'two rules can touch again');
+  const css = read(join(JS, '..', 'css', 'mobile.css'));
+  assert.match(css, /\.pl-row\.is-selected \{/, 'a selected row has no ring');
+});

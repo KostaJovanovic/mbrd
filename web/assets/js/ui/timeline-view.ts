@@ -88,6 +88,11 @@ const KINDS: Record<string, { icon: string, said: string }> = {
   'Duplicate': { icon: 'i-duplicate', said: 'Duplicated' },
   'Paste': { icon: 'i-paste', said: 'Pasted' },
   'Rename': { icon: 'i-rename', said: 'Renamed' },
+  // renameBoard() and commitHeader() in state.ts.
+  'Rename board': { icon: 'i-rename', said: 'Renamed the board' },
+  'Edit header': { icon: 'i-style', said: 'Restyled the header' },
+  // commitAppearance() in state.ts, from the Whimsy slider.
+  'Whimsy': { icon: 'i-style', said: 'Changed the whimsy' },
   'Rearrange': { icon: 'i-rearrange', said: 'Rearranged' },
   'Align': { icon: 'i-align-left', said: 'Aligned' },
   'Distribute': { icon: 'i-distribute-h', said: 'Distributed' },

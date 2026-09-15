@@ -3,9 +3,10 @@
 // vars (per-token overrides). Stored in both localStorage and the board.
 
 import {
-  board, bus, setAppearance, setSetting, MOBILE_APPEARANCE_VARS,
+  board, bus, setAppearance, setSetting, commitAppearance, MOBILE_APPEARANCE_VARS,
 } from '../state.ts';
 import { whimsyControlsSnap, AXIS_TOKENS } from '../layout-settings.ts';
+import { DEFAULT_PALETTE_SOURCES } from '../board-schema.ts';
 import { readToken, toHex } from '../util.ts';
 import { readPrefJSON, writePref } from '../prefs.ts';
 import { paletteFromAccent, PALETTE_TOKENS } from './pigments.ts';
@@ -79,6 +80,9 @@ const HOSTS: Record<string, string> = {
 const root = document.documentElement;
 const themeColour = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
 let current: Look = { whimsy: DEFAULT_WHIMSY, palette: '', vars: {} };
+/** Whether `current` is the last look used here, standing in for a board that
+ *  has none, and not yet written to it. See syncFromBoard in initAppearance(). */
+let fromPrefs = false;
 let onChange: () => void = () => {};
 
 export function initAppearance(handlers: { onChange?: () => void } = {}) {
@@ -92,7 +96,7 @@ export function initAppearance(handlers: { onChange?: () => void } = {}) {
   initAppearanceControls({
     CONTROLS, HOSTS, WHIMSY, ALL_SOURCES_STOP, ALL_SOURCES_MAX,
     current: () => current,
-    setVar, setWhimsy, setPalette, goDynamic, sourceCount, dynamicOn,
+    setVar, previewWhimsy, settleWhimsy, setPalette, goDynamic, sourceCount, dynamicOn,
   });
 
   // Flush pending pref writes on tab close (pagehide for iOS, visibility for discard).
@@ -104,6 +108,7 @@ export function initAppearance(handlers: { onChange?: () => void } = {}) {
   const stored = readStored();
   const fromBoard = board.settings.appearance;
   current = hasLook(fromBoard) ? cloneLook(fromBoard) : stored;
+  fromPrefs = !hasLook(fromBoard);
   apply(current);
 
   buildControls();
@@ -135,17 +140,23 @@ export function initAppearance(handlers: { onChange?: () => void } = {}) {
   // fitMark re-measures once document.fonts.ready settles the new load.
   bus.on('fonts', () => { buildControls(); refitEmbedMarks(); });
 
-  const syncFromBoard = () => {
+  // A board arriving (`load`) with no look takes the last look used here.
+  // Otherwise the board's look wins, the default one included: that is what an
+  // undo or a Timeline trip back past a look change lands on. The exception is
+  // the fallback itself, while it is on screen and not yet written to the board.
+  const syncFromBoard = (load = false) => {
     const look = board.settings.appearance;
-    const next = hasLook(look) ? cloneLook(look) : readStored();
+    const fallback = !hasLook(look) && (load || fromPrefs);
+    const next = fallback ? readStored() : cloneLook(look);
+    fromPrefs = fallback;
     if (sameLook(next, current)) return;
     current = next;
     apply(current);
     syncControls();
   };
-  bus.on('board', syncFromBoard);
+  bus.on('board', () => syncFromBoard());
   // Apply on 'board:load' too — 'board' fires after consumers that need the resolved face.
-  bus.on('board:load', syncFromBoard);
+  bus.on('board:load', () => syncFromBoard(true));
   // Advanced overrides are layout-local; reconcile on profile switch.
   bus.on('layout', () => {
     syncFromBoard();
@@ -153,10 +164,20 @@ export function initAppearance(handlers: { onChange?: () => void } = {}) {
   });
 }
 
-/** Set the whimsy level (0-2). Exported for cmds (canvas/ cannot import ui/). */
+/** Set the whimsy level (0-2) as one Timeline step. Exported for cmds (canvas/ cannot import ui/). */
 export function setWhimsy(level: number | string) {
+  previewWhimsy(level);
+  settleWhimsy();
+}
+
+/** The look before the whimsy slider in hand moved, or null between drags. */
+let whimsyFrom: Look | null = null;
+
+/** The slider moving: the page takes each level as it passes. settleWhimsy() records where it stops. */
+function previewWhimsy(level: number | string) {
   const n = clampWhimsy(level);
   if (n === current.whimsy) return;
+  whimsyFrom ??= cloneLook(current);
   // Drop inline overrides for axis-owned tokens so the new level takes effect.
   for (const key of AXIS_TOKENS) {
     delete current.vars[key];
@@ -167,7 +188,19 @@ export function setWhimsy(level: number | string) {
   persist();
   syncControls();          // computed radii, fonts and durations all moved
   reshade();
-  axisMoved(n);
+  // The grid's shape follows at once. The snap waits for the release: it is a
+  // step of its own, and one taken mid-drag would file the drag into the past.
+  bus.emit('settings', 'appearance');
+}
+
+/** The slider let go: one step from the look before the drag, and the snap Harsh brings. */
+function settleWhimsy() {
+  if (!whimsyFrom) return;
+  const from = whimsyFrom;
+  whimsyFrom = null;
+  if (sameLook(from, current)) return;
+  commitAppearance(cloneLook(current), from);
+  if (whimsyControlsSnap(board.layoutMode)) setSetting('snap', current.whimsy === HARSH);
 }
 
 // Re-derive the sheet at the new whimsy level (paper varies by tier).
@@ -294,6 +327,29 @@ function dropPigments() {
   return true;
 }
 
+/**
+ * The Look tab's Reset: whimsy, the faces and every override back to where a
+ * board starts, and how many pictures a Dynamic palette reads - but not the
+ * palette. The colours are the one choice here that is about this board, so
+ * the named palette, the pigments and whether they come from the pictures all
+ * stay. resetAppearance() is the whole reset a new board gets.
+ */
+export function resetLook() {
+  setSetting('paletteSources', DEFAULT_PALETTE_SOURCES);
+  const was = current.whimsy;
+  const vars: Record<string, string> = board.layoutMode === 'mobile' ? { ...MOBILE_APPEARANCE_VARS } : {};
+  for (const [key, value] of Object.entries(current.vars)) {
+    if (PALETTE_TOKENS.includes(key)) vars[key] = value;
+  }
+  current = { ...current, whimsy: DEFAULT_WHIMSY, vars };
+  apply(current);
+  persist();
+  syncControls();
+  if (was !== DEFAULT_WHIMSY) axisMoved(DEFAULT_WHIMSY);
+  // The paper is built for a tier, so the kept pigments are built again for this one.
+  reshade();
+}
+
 /** Reset to default look: Middle, Papyrus, no overrides, extraction re-enabled. */
 export function resetAppearance() {
   const was = current.whimsy;
@@ -385,6 +441,7 @@ function flushLook() {
 function persist({ soon = false } = {}) {
   storeLook(soon);
   setAppearance(cloneLook(current));
+  fromPrefs = false;
   onChange();
 }
 

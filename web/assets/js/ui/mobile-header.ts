@@ -3,7 +3,7 @@
 // sidebar markup classes and slider-focus behaviour.
 
 import {
-  board, bus, DEFAULT_MOBILE_HEADER, setSetting, mobileBoardWorldWidth,
+  board, bus, DEFAULT_MOBILE_HEADER, setSetting, commitHeader, mobileBoardWorldWidth,
 } from '../state.ts';
 import { clamp, el, readToken } from '../util.ts';
 import {
@@ -140,24 +140,27 @@ export function initMobileHeaderEditor(vp: Viewport | null) {
   wireTitleField(titleInput);
   menuButton(fontBtn, () => openAnchored(fontBtn.getBoundingClientRect(), fontEntries(),
     { label: 'Font', owner: fontBtn, focus: true }));
-  for (const dial of [sizeInput, stretchInput, leadingInput, offsetInput]) tickSlider(dial);
+  for (const dial of [sizeInput, stretchInput, leadingInput, offsetInput]) {
+    tickSlider(dial);
+    dial.addEventListener('change', settle);
+  }
   sizeInput.addEventListener('input', () => {
-    update({ size: +sizeInput.value * 100 / boardWidth() });
+    preview({ size: +sizeInput.value * 100 / boardWidth() });
     sizeOut.textContent = sizeInput.value;
   });
   stretchInput.addEventListener('input', () => {
     const value = snapStretch(+stretchInput.value);
-    update({ stretch: value });
+    preview({ stretch: value });
     stretchOut.textContent = `${value}%`;
   });
   leadingInput.addEventListener('input', () => {
     const value = +leadingInput.value;
-    update({ leading: value });
+    preview({ leading: value });
     leadingOut.textContent = leadingText(value);
   });
   offsetInput.addEventListener('input', () => {
     const value = Math.round(+offsetInput.value);
-    update({ offset: value });
+    preview({ offset: value });
     offsetOut.textContent = offsetText(value);
   });
   italicInput.addEventListener('change', () => update({ italic: italicInput.checked }));
@@ -338,8 +341,9 @@ function buildAxisControls() {
     control.input.addEventListener('input', () => {
       const value = +control.input.value;
       control.out.textContent = formatAxis(value);
-      update({ axes: { ...header().axes, [axis.tag]: value } });
+      preview({ axes: { ...header().axes, [axis.tag]: value } });
     });
+    control.input.addEventListener('change', settle);
     axesHost.append(control.label);
     axisControls.set(axis.tag, control);
   }
@@ -358,8 +362,9 @@ function buildWeight(axis: FontAxis | undefined) {
     control.input.addEventListener('input', () => {
       const value = Math.round(+control.input.value);
       control.out.textContent = String(value);
-      update({ weight: value });
+      preview({ weight: value });
     });
+    control.input.addEventListener('change', settle);
     weightHost.append(control.label);
     weightControl = {
       ...control,
@@ -393,8 +398,9 @@ function buildWeight(axis: FontAxis | undefined) {
   input.addEventListener('input', () => {
     const index = clamp(Math.round(+input.value), 0, stops.length - 1);
     describe(index);
-    update({ weight: stops[index].value });
+    preview({ weight: stops[index].value });
   });
+  input.addEventListener('change', settle);
   label.append(input, names);
   weightHost.append(label);
   weightControl = {
@@ -632,13 +638,34 @@ function availableAxes(font: string = header().font) {
   return headerFontAxes(font, displayStack());
 }
 
-function update(patch: Partial<MobileHeader>) {
+/** The style with `patch` written over it. */
+function patched(patch: Partial<MobileHeader>): MobileHeader {
   const current = header();
-  setSetting('mobileHeader', {
-    ...current,
-    ...patch,
-    axes: patch.axes ? { ...patch.axes } : { ...current.axes },
-  });
+  return { ...current, ...patch, axes: patch.axes ? { ...patch.axes } : { ...current.axes } };
+}
+
+/** The style before the slider in hand moved, or null between drags. */
+let dragFrom: MobileHeader | null = null;
+
+/** A slider moving: written live, and one step when it is let go (settle()). */
+function preview(patch: Partial<MobileHeader>) {
+  dragFrom ??= header();
+  setSetting('mobileHeader', patched(patch));
+}
+
+/** A slider let go: one step, from where the drag started to where it ended. */
+function settle() {
+  if (!dragFrom) return;
+  const from = dragFrom;
+  dragFrom = null;
+  commitHeader(header(), from);
+}
+
+/** Any other control: one step now. Consecutive steps fold on the Timeline, as moves do. */
+function update(patch: Partial<MobileHeader>) {
+  const from = dragFrom ?? header();
+  dragFrom = null;
+  commitHeader(patched(patch), from);
 }
 
 function header(): MobileHeader {

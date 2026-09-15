@@ -5,7 +5,8 @@
 // No document access at module scope; everything deferred to initPlaylist().
 
 import {
-  board, bus, isDefaultTitle, markDirty, renameItem, select, selection, setAudioOrder, trackTitle,
+  board, bus, clearSelection, deselect, isDefaultTitle, isMultiSelect, markDirty, renameItem,
+  select, selection, setAudioOrder, trackTitle,
 } from '../state.ts';
 import {
   clamp, div, actAsButton, makeEditable, markClosed, readToken, selectContents,
@@ -68,6 +69,7 @@ type View = {
   fill: (audio: Item[]) => void;
   clear: () => void;
   markPlaying: () => void;
+  markSelected: () => void;
   updateMeta: (audio: Item[]) => void;
   destroy: () => void;
 };
@@ -182,6 +184,7 @@ export function initPlaylist(_viewport: Viewport | null, _commands: PlaylistComm
   });
   bus.on('board', updateMetaAll);
   bus.on('fonts', updateMetaAll);
+  bus.on('selection', () => { mobileView?.markSelected(); windowView?.markSelected(); });
   // One card changed - renamed, or given a picture from the row's menu.
   bus.on('item', id => {
     if (board.items.some(it => it.id === id && isTrack(it))) rebuildRow(String(id));
@@ -329,6 +332,7 @@ function makeActions() {
 function createView(container: HTMLElement,
   { reorderable, variant }: { reorderable: boolean, variant: 'lens' | 'window' }): View {
   container.replaceChildren();
+  wireSheet(container);
   const rows = new Map<string, Row>();
   const lens = variant === 'lens';
   const surface = lens ? div('feed-sheet') : container;
@@ -399,6 +403,7 @@ function createView(container: HTMLElement,
         if (!r) { r = createRow(item, view); rows.set(item.id, r); }
         else r.item = item;
         r.el.classList.toggle('is-hidden', isHidden(item));
+        r.el.classList.toggle('is-selected', selection.has(item.id));
         if (moved) listEl.appendChild(r.el);
       });
       for (const [id, r] of rows) {
@@ -415,6 +420,9 @@ function createView(container: HTMLElement,
       const np = nowPlaying();
       const id = np && isQueuePlayer(np.el) ? np.item?.id : null;
       for (const [rid, r] of rows) r.el.classList.toggle('is-playing', rid === id);
+    },
+    markSelected() {
+      for (const [rid, r] of rows) r.el.classList.toggle('is-selected', selection.has(rid));
     },
     updateMeta(audio) {
       if (!hero) return;
@@ -486,6 +494,8 @@ function createRow(item: Item, view: View): Row {
   fillRow(r, view);
   actAsButton(el, () => {
     if (heldOpen) { heldOpen = false; return; }
+    // The keyboard's press in the pick mode. A click never gets here: see wireSheet().
+    if (isMultiSelect()) { pick(r.item.id); return; }
     playTrack(r.item);
   });
   el.addEventListener('contextmenu', e => {
@@ -498,12 +508,8 @@ function createRow(item: Item, view: View): Row {
     const at = e.clientX || e.clientY ? { x: e.clientX, y: e.clientY } : { x: box.left + 16, y: box.bottom };
     openRowMenu(at.x, at.y, r);
   });
-  el.addEventListener('pointerdown', e => armHold(e, r), { passive: true });
-  el.addEventListener('pointermove', e => {
-    if (hold && Math.hypot(e.clientX - hold.x, e.clientY - hold.y) > HOLD_SLOP) cancelHold();
-  }, { passive: true });
-  el.addEventListener('pointerup', cancelHold, { passive: true });
-  el.addEventListener('pointercancel', cancelHold, { passive: true });
+  el.addEventListener('pointerdown', e => armHold(e, (x, y) => openRowMenu(x, y, r, true)),
+    { passive: true });
   return r;
 }
 
@@ -732,7 +738,7 @@ function slideFrom(before: Map<HTMLElement, number>) {
 // The row's menu: right click, or a finger held on the row
 // ---------------------------------------------------------------------------
 
-function armHold(e: PointerEvent, r: Row) {
+function armHold(e: PointerEvent, open: (x: number, y: number) => void) {
   // Spent here and not only by the click it guards: iOS sends no click after
   // a long press, and a flag left set would swallow the next tap.
   heldOpen = false;
@@ -744,8 +750,66 @@ function armHold(e: PointerEvent, r: Row) {
   const y = e.clientY;
   hold = {
     x, y,
-    timer: setTimeout(() => { hold = null; heldOpen = true; openRowMenu(x, y, r, true); }, HOLD_MS),
+    timer: setTimeout(() => { hold = null; heldOpen = true; open(x, y); }, HOLD_MS),
   };
+}
+
+/** A track in or out of the board's selection, the one the row menu acts on. */
+function pick(id: string) {
+  if (!deselect(id)) select([id], true);
+}
+
+/**
+ * The list's own menu, for a press off every row: a right click, or a finger
+ * held there. The move, the release and the tap after a hold are the rows'
+ * too, so all of them are caught here once and not on each row. And picking,
+ * as the Feed picks its tiles (ui/feed.ts).
+ */
+function wireSheet(container: HTMLElement) {
+  const onRow = (e: Event) => e.target instanceof Element && !!e.target.closest('.pl-row');
+  container.addEventListener('contextmenu', e => {
+    if (onRow(e)) return;
+    e.preventDefault();
+    if (heldOpen) return;
+    cancelHold();
+    openSheetMenu(e.clientX, e.clientY);
+  });
+  container.addEventListener('pointerdown', e => {
+    if (!onRow(e)) armHold(e, openSheetMenu);
+  }, { passive: true });
+  container.addEventListener('pointermove', e => {
+    if (hold && Math.hypot(e.clientX - hold.x, e.clientY - hold.y) > HOLD_SLOP) cancelHold();
+  }, { passive: true });
+  container.addEventListener('pointerup', cancelHold, { passive: true });
+  container.addEventListener('pointercancel', cancelHold, { passive: true });
+  // Capture, so a hold on the hero's Play does not also press it.
+  container.addEventListener('click', e => {
+    if (!heldOpen || onRow(e)) return;
+    heldOpen = false;
+    e.preventDefault();
+    e.stopPropagation();
+  }, true);
+  // Picking a row rather than playing it: a click with Shift, Ctrl or Cmd, or
+  // any tap in the multi-select mode. Capture, so the row's play never sees it.
+  // Not on the grip, whose press is a drag, nor in a row being renamed.
+  container.addEventListener('click', e => {
+    if (e.defaultPrevented || !(e.shiftKey || e.ctrlKey || e.metaKey || isMultiSelect())) return;
+    const at = e.target instanceof Element ? e.target : null;
+    const row = at?.closest<HTMLElement>('.pl-row');
+    if (!row?.dataset.id || at?.closest('.pl-grip') || row.classList.contains('is-renaming')) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    pick(row.dataset.id);
+  }, true);
+  // A press between the rows puts the selection down, as on the Feed. Only on
+  // the lens, which is the board: the window floats over the canvas, whose
+  // selection is the canvas's to put down. The pick mode keeps its group.
+  container.addEventListener('click', e => {
+    if (e.defaultPrevented || isMultiSelect() || board.layoutMode !== 'mobile') return;
+    const at = e.target instanceof Element ? e.target : null;
+    if (!at || at.closest('.pl-row, button, a, input')) return;
+    clearSelection();
+  });
 }
 
 function cancelHold() {
@@ -774,8 +838,6 @@ function openRowMenu(x: number, y: number, r: Row, touch = false) {
     { sep: true },
     { label: 'Move up', icon: 'i-arrow-up', disabled: at === 0, action: () => moveTrack(item, at - 1) },
     { label: 'Move down', icon: 'i-arrow-down', disabled: at === last, action: () => moveTrack(item, at + 1) },
-    { label: 'Move to top', icon: 'i-front', disabled: at === 0, action: () => moveTrack(item, 0) },
-    { label: 'Move to bottom', icon: 'i-back', disabled: at === last, action: () => moveTrack(item, last) },
   ];
   const lead: MenuEntry[] = [
     { label: 'Pause', icon: 'i-tl-pause', hidden: !playing, action: () => current?.pause() },
@@ -788,9 +850,40 @@ function openRowMenu(x: number, y: number, r: Row, touch = false) {
     { label: 'Hide from playlist', icon: 'i-close', hidden, action: () => setHidden(item, true) },
     { label: 'Show in playlist', icon: 'i-restore', hidden: !hidden, action: () => setHidden(item, false) },
   ];
-  if (!selection.has(item.id)) select([item.id]);
+  // In the pick mode the track joins the group instead, as a Feed tile does.
+  if (!selection.has(item.id)) select([item.id], isMultiSelect());
   openContextMenu(x, y, item.id, selection.size,
-    { mobile: true, touch, lead, rename: () => renameRow(r) });
+    { mobile: true, touch, lead, rename: () => renameRow(r), track: true });
+}
+
+/** Playing and the hidden tracks over the board's menu, the one the Feed opens off a tile. */
+function openSheetMenu(x: number, y: number) {
+  if (drag) return;
+  const listed = listedAudio();
+  const el = queueEl();
+  const playing = !!el && !el.paused;
+  const hidden = orderedAudio().filter(isHidden);
+  const lead: MenuEntry[] = [
+    { label: 'Pause', icon: 'i-tl-pause', hidden: !playing, action: () => el?.pause() },
+    {
+      label: 'Play', icon: 'i-tl-play', hidden: playing || !listed.length,
+      action: () => { if (el) el.play().catch(reportPlayError); else playTrack(listed[0]); },
+    },
+    {
+      label: hidden.length === 1 ? 'Show the hidden track' : 'Show hidden tracks',
+      icon: 'i-restore', hidden: !hidden.length, action: () => showHidden(hidden),
+    },
+  ];
+  openContextMenu(x, y, null, selection.size,
+    { mobile: true, lead: lead.filter(row => !row.hidden), track: true,
+      selectAll: () => select(orderedAudio().map(it => it.id)) });
+}
+
+/** Every hidden track back in the list, in the place it keeps. */
+function showHidden(items: Item[]) {
+  for (const item of items) delete item.meta.playlistHidden;
+  markDirty();
+  renderAll();
 }
 
 /**

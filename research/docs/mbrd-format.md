@@ -571,12 +571,15 @@ build, an unedited board, or a share somebody trimmed.
 
 ```json
 "timeline": {
-  "base": { "items": { "…": "id -> JSON" }, "itemOrder": ["…"], "rest": { "…": "…" } },
+  "version": 2,
+  "base": { "items": { "…": "id -> JSON" }, "itemOrder": ["…"],
+            "desktop": { "…": "id -> place" }, "mobile": { "…": "id -> place" },
+            "rest": { "…": "…" } },
   "at": 42,
   "fingerprint": "3f9a21c4",
   "steps": [
-    { "id": "s8k2m", "at": 1755180000000, "label": "Move", "run": "items:k3f|x,y",
-      "delta": { "items": { "changed": { "k3f": ["{…before}", "{…after}"] } } } }
+    { "id": "s8k2m", "at": 1755180000000, "label": "Move", "run": "desktop:k3f|x,y",
+      "delta": { "desktop": { "changed": { "k3f": ["{…before}", "{…after}"] } } } }
   ]
 }
 ```
@@ -584,6 +587,19 @@ build, an unedited board, or a share somebody trimmed.
 `base` is the board before step 0, as text. `steps` are in order, oldest first.
 `at` is how many of them are on the board — the marker — so a file can be saved
 with the history rolled back and comes back that way.
+
+**A card's place is kept apart from the card** (`version` 2). `items` holds each
+card without `x`, `y`, `w`, `h`, `rot`, `z` and `meta.presnap`. `desktop` and
+`mobile` hold its place in each layout, shaped as `layouts` entries are. So a
+move is a change to one layout's places and nothing else, and one history
+replays on the Canvas and on the Feed. `rest` has no `settings`, `arrangement`
+or `layoutMode`: the first two are the live layout's copy of `layoutSettings` and
+`arrangements`, and the third is which layout is on screen, which a trip through
+the history leaves alone. A card with no place yet in the layout on screen gets
+one the way a layout switch gives one.
+
+A timeline with no `version` (up to v0.377) kept each place on its card, and is
+not read: the board opens with no past.
 
 **In the file, the history is not in `board.json`.** The object above is what the
 app holds and what the cloud copy carries. A `.mbrd` splits it in two, so the

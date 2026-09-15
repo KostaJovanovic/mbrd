@@ -13,13 +13,13 @@ import assert from 'node:assert/strict';
 import {
   board, addItems, removeItems, restoreItems, renameItem, undo, redo, byId,
   setBoardMode, snapshotGeom, commitGeom, lastCommand, takeBack, loadBoard,
-  historyDepth, historyState,
+  historyDepth, historyState, renameBoard, commitHeader, setSetting, commitAppearance,
   serializeBoard,
 } from '../web/assets/js/state.ts';
 import {
   timelineSteps, timelineAt, timelineStale, timelineHashes, replayTo, goTo,
   serializeTimeline, fingerprint, registerOp, declareOp, editStep, stepEditable,
-  trimmable, trimTimeline,
+  trimmable, trimTimeline, adoptTimeline,
 } from '../web/assets/js/timeline.ts';
 import { packBoard, unpackBoard } from '../web/assets/js/storage/mbrd.ts';
 import { fresh, photo, note } from './state-fixtures.js';
@@ -62,7 +62,7 @@ test('the step records both sides, so it can be walked either way', () => {
   const [a] = addItems([photo({ x: 0, y: 0 })]);
   move(a.id, 40, 0);
   const [step] = timelineSteps().slice(-1);
-  const pair = step.delta.items.changed[a.id];
+  const pair = step.delta.desktop.changed[a.id];
   assert.equal(JSON.parse(pair[0]).x, 0);
   assert.equal(JSON.parse(pair[1]).x, 40);
 });
@@ -86,7 +86,7 @@ test('the collapsed step keeps the first position and the last', () => {
   move(a.id, 10, 0);
   move(a.id, 10, 0);
   const [step] = timelineSteps().slice(-1);
-  const pair = step.delta.items.changed[a.id];
+  const pair = step.delta.desktop.changed[a.id];
   assert.equal(JSON.parse(pair[0]).x, 0);
   assert.equal(JSON.parse(pair[1]).x, 20);
 });
@@ -160,15 +160,221 @@ test('undo and redo move the marker without adding steps', () => {
   assert.equal(timelineSteps().length, 2);
 });
 
-test('doing something new with the marker rolled back drops what was ahead', () => {
+test('doing something new after an undo drops what the undo took', () => {
   addItems([photo({ x: 0, y: 0 })]);
   addItems([note({ x: 300, y: 0 })]);
   undo();
   addItems([photo({ x: 600, y: 0 })]);
-  // Truncation, the way undo behaves everywhere - Fusion inserts instead, a
-  // deliberate divergence the design explains.
+  // Truncation, the way undo behaves everywhere. A trip on the Timeline
+  // inserts instead - the tests below.
   assert.equal(timelineSteps().length, 2);
   assert.equal(timelineAt(), 2);
+});
+
+test('an edit from a point on the Timeline keeps the steps ahead', () => {
+  const [a] = addItems([photo({ x: 0, y: 0 })]);
+  move(a.id, 40, 0);
+  const [b] = addItems([note({ x: 300, y: 0 })]);
+  goTo(1);
+  const [c] = addItems([photo({ x: 600, y: 0 })]);
+  // In at the marker, the way a CAD history inserts a feature, with the
+  // later two still ahead of it. Dropping them lost every step after the
+  // point somebody went back to.
+  assert.deepEqual(labels(), ['Add', 'Add', 'Move', 'Add']);
+  assert.equal(timelineAt(), 2);
+  assert.equal(byId(a.id).x, 0, 'the board stays where the edit was made');
+  goTo(timelineSteps().length);
+  assert.equal(byId(a.id).x, 40);
+  assert.ok(byId(b.id));
+  assert.ok(byId(c.id), 'the card added in the past reaches the present');
+});
+
+test('a later step keeps what it changed, and only that', () => {
+  const [a] = addItems([photo({ x: 0, y: 0 })]);
+  move(a.id, 40, 0);
+  goTo(1);
+  renameItem(a.id, 'Early');
+  move(a.id, 0, 99);
+  goTo(timelineSteps().length);
+  // The later move wrote x and nothing else, so the name and the y from the
+  // past both survive it.
+  assert.equal(byId(a.id).x, 40);
+  assert.equal(byId(a.id).y, 99);
+  assert.equal(byId(a.id).name, 'Early');
+});
+
+test('a card deleted in the past stays deleted, whatever came after', () => {
+  const [a] = addItems([photo({ x: 0, y: 0 })]);
+  const [b] = addItems([photo({ x: 300, y: 0 })]);
+  move(a.id, 40, 0);
+  goTo(2);
+  removeItems([a.id]);
+  goTo(timelineSteps().length);
+  // apply() alone would have written the moved card back whole.
+  assert.ok(!byId(a.id), 'the later move brought the card back');
+  assert.ok(byId(b.id));
+});
+
+test('an edit after a trip back starts its own step', () => {
+  const [a] = addItems([photo({ x: 0, y: 0 })]);
+  move(a.id, 40, 0);
+  addItems([note({ x: 300, y: 0 })]);
+  goTo(2);
+  move(a.id, 40, 0);
+  // Same card and field as step two, but folding into it would lose the
+  // board step two was, with the card at 40.
+  assert.deepEqual(labels(), ['Add', 'Move', 'Move', 'Add']);
+  goTo(2);
+  assert.equal(byId(a.id).x, 40);
+});
+
+test('undo after an edit in the past takes only that edit with the next one', () => {
+  const [a] = addItems([photo({ x: 0, y: 0 })]);
+  move(a.id, 40, 0);
+  goTo(1);
+  addItems([note({ x: 300, y: 0 })]);
+  undo();
+  renameItem(a.id, 'Instead');
+  // The undone add goes, as after any undo. The move the Timeline went back
+  // past stays.
+  assert.deepEqual(labels(), ['Add', 'Rename', 'Move']);
+  assert.equal(timelineAt(), 2);
+});
+
+test('taking back an edit made in the past keeps the steps ahead', () => {
+  const [a] = addItems([photo({ x: 0, y: 0 })]);
+  move(a.id, 40, 0);
+  goTo(1);
+  addItems([note({ x: 300, y: 0 })]);
+  assert.equal(takeBack(lastCommand()), true);
+  assert.deepEqual(labels(), ['Add', 'Move']);
+  assert.equal(timelineAt(), 1);
+  goTo(2);
+  assert.equal(byId(a.id).x, 40);
+});
+
+test('a replay after an edit in the past starts from a checkpoint that has it', () => {
+  const [a] = addItems([photo({ x: 0, y: 0 })]);
+  const [b] = addItems([photo({ x: 300, y: 0 })]);
+  // Past CHECKPOINT_EVERY (50), so the trip forward starts from a mark.
+  for (let i = 0; i < 30; i += 1) { move(a.id, 10, 0); move(b.id, 10, 0); }
+  assert.ok(timelineSteps().length > 50, 'the fixture needs a checkpoint ahead');
+  goTo(2);
+  renameItem(b.id, 'Early');
+  goTo(timelineSteps().length);
+  // A mark recorded before the edit would replay a board without the name.
+  assert.equal(byId(b.id).name, 'Early');
+  assert.equal(byId(a.id).x, 300);
+  assert.equal(byId(b.id).x, 600);
+});
+
+// ---------------------------------------------------------------------------
+// The two layouts
+// ---------------------------------------------------------------------------
+
+test('switching between the Canvas and the Feed keeps the history', () => {
+  const [a] = addItems([photo({ x: 0, y: 0 })]);
+  move(a.id, 40, 0);
+  const top = timelineSteps().length;
+  setBoardMode('mobile');
+  // It used to be wiped here, on every trip to the Feed or the Playlist.
+  assert.equal(timelineSteps().length, top);
+  assert.equal(timelineAt(), top);
+  // The closures hold the Canvas's places, so they go, and undo walks the ledger.
+  assert.equal(historyDepth().undo, 0);
+  setBoardMode('desktop');
+  assert.equal(byId(a.id).x, 40);
+  goTo(1);
+  assert.equal(byId(a.id).x, 0);
+  goTo(top);
+  assert.equal(byId(a.id).x, 40);
+});
+
+test('a move is a place in one layout, and a trip in the other leaves it alone', () => {
+  const [a] = addItems([photo({ x: 0, y: 0 })]);
+  move(a.id, 40, 0);
+  setBoardMode('mobile');
+  const tile = () => ({ x: byId(a.id).x, y: byId(a.id).y });
+  const feed = tile();
+  renameItem(a.id, 'Named on the Feed');
+  goTo(1);
+  // The Canvas move is not the Feed's to replay.
+  assert.deepEqual(tile(), feed);
+  assert.notEqual(byId(a.id).name, 'Named on the Feed');
+  goTo(timelineSteps().length);
+  assert.equal(byId(a.id).name, 'Named on the Feed');
+  setBoardMode('desktop');
+  assert.equal(byId(a.id).x, 40);
+  assert.equal(byId(a.id).name, 'Named on the Feed');
+});
+
+test('undo after a switch takes back a whole step from the ledger', () => {
+  const [a] = addItems([photo({ x: 0, y: 0 })]);
+  renameItem(a.id, 'Before the switch');
+  setBoardMode('mobile');
+  assert.equal(undo(), true);
+  assert.equal(timelineAt(), 1);
+  assert.notEqual(byId(a.id).name, 'Before the switch');
+});
+
+test('a history written before the layouts were kept apart is not read', () => {
+  const [a] = addItems([photo({ x: 0, y: 0 })]);
+  move(a.id, 40, 0);
+  const old = serializeTimeline();
+  assert.equal(old.version, 2);
+  delete old.version;
+  // Each place on its card: read as this version, every card would land wrong.
+  adoptTimeline(old);
+  assert.equal(timelineSteps().length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// The header
+// ---------------------------------------------------------------------------
+
+test('renaming the board is a step, and a run of renames is one', () => {
+  addItems([photo({ x: 0, y: 0 })]);
+  const first = board.title;
+  renameBoard('One');
+  renameBoard('Two');
+  assert.deepEqual(labels(), ['Add', 'Rename board']);
+  // Undo is finer than the strip, as it is for moves.
+  assert.equal(undo(), true);
+  assert.equal(board.title, 'One');
+  redo();
+  goTo(1);
+  assert.equal(board.title, first);
+  goTo(2);
+  assert.equal(board.title, 'Two');
+});
+
+test('a header slider drag is one step, from where it started', () => {
+  addItems([photo({ x: 0, y: 0 })]);
+  const start = board.mobileHeader;
+  // What the panel does: every tick written live, one commit on release.
+  setSetting('mobileHeader', { ...start, stretch: 110 });
+  setSetting('mobileHeader', { ...start, stretch: 120 });
+  commitHeader(board.mobileHeader, start);
+  commitHeader({ ...board.mobileHeader, stretch: 130 });
+  assert.deepEqual(labels(), ['Add', 'Edit header']);
+  assert.equal(board.mobileHeader.stretch, 130);
+  goTo(1);
+  assert.equal(board.mobileHeader.stretch, start.stretch);
+  goTo(2);
+  assert.equal(board.mobileHeader.stretch, 130);
+});
+
+test('a whimsy change is a step, and a run of them keeps the last', () => {
+  addItems([photo({ x: 0, y: 0 })]);
+  const first = board.settings.appearance.whimsy;
+  commitAppearance({ ...board.settings.appearance, whimsy: 2 });
+  commitAppearance({ ...board.settings.appearance, whimsy: 0 });
+  assert.deepEqual(labels(), ['Add', 'Whimsy']);
+  assert.equal(board.settings.appearance.whimsy, 0);
+  goTo(1);
+  assert.equal(board.settings.appearance.whimsy, first);
+  goTo(2);
+  assert.equal(board.settings.appearance.whimsy, 0);
 });
 
 test('taking back a command takes back its step', () => {

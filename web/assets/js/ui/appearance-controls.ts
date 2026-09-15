@@ -45,7 +45,8 @@ export type LookDeps = {
   ALL_SOURCES_MAX: number,
   current: () => Look,
   setVar: (name: string, value: string) => void,
-  setWhimsy: (level: number | string) => void,
+  previewWhimsy: (level: number | string) => void,
+  settleWhimsy: () => void,
   setPalette: (name: string) => void,
   goDynamic: () => void,
   sourceCount: () => number,
@@ -242,7 +243,9 @@ export function wireWhimsy() {
   input.max = String(d.WHIMSY.length - 1);
   input.value = String(d.current().whimsy);
   tickSlider(input);
-  input.addEventListener('input', () => d.setWhimsy(input.value));
+  // Live while dragged, one Timeline step on release.
+  input.addEventListener('input', () => d.previewWhimsy(input.value));
+  input.addEventListener('change', () => d.settleWhimsy());
 }
 
 function format(value: string, spec: RangeControl) {
