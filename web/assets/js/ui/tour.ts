@@ -4,9 +4,7 @@
 // tour-specific right-click menu. Stops resolved live on every read — survives
 // undo that removes a stop. Desktop only (Mobile has no free camera).
 
-import {
-  bus, board, byId, canTour, joinTourStops, removeTourCards, splitTourStop,
-} from '../state.ts';
+import { bus, board, byId, canTour, clearSelection } from '../state.ts';
 import type { Item } from '../board-model.ts';
 import { shownName } from '../board-model.ts';
 import { toast } from '../notify.ts';
@@ -14,20 +12,9 @@ import { BASE_ZOOM, travelMs } from '../canvas/viewport.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 import { nodeFor, setSpot } from '../canvas/items.ts';
 import { nowPlaying, ownerOf, registeredPlayers } from '../canvas/audio.ts';
-import { icon } from './menu.ts';
-import type { MenuEntry } from './menu.ts';
 
-/** One resolved stop — never held across an event. `index` is its place in board.tour. */
-type Stop = { items: Item[], caption: string, index: number };
-
-/** What a stop's actions do, for whichever bar is showing them. Indices are board.tour's. */
-export type StopMoves = {
-  split(i: number): void,
-  /** Join stop `i` with stop `i + 1`. */
-  join(i: number): void,
-  show(i: number): void,
-  takeOff(i: number): void,
-};
+/** One resolved stop — never held across an event. */
+type Stop = { items: Item[], caption: string };
 
 /** Max zoom per stop — 1.5× base keeps surrounding context visible. */
 const TOUR_MAX_ZOOM = BASE_ZOOM * 1.5;
@@ -43,7 +30,6 @@ let bar: HTMLElement | null = null;
 let nameEl: HTMLElement | null = null;
 let captionEl: HTMLElement | null = null;
 let countEl: HTMLElement | null = null;
-let actsEl: HTMLElement | null = null;
 let prevBtn: HTMLButtonElement | null = null;
 let nextBtn: HTMLButtonElement | null = null;
 let autoTimer = 0;
@@ -51,25 +37,17 @@ let autoTimer = 0;
 /** -1 when no tour is running. Never anything else while the bar is down. */
 let at = -1;
 
-/**
- * The stop's actions as menu rows - the editor's chip menu list, so the two
- * bars can never offer different things. Injected by ui/tour-edit.ts, which
- * imports this module. Unwired, the bar has no actions.
- */
-let stopActions: ((i: number, moves: StopMoves) => MenuEntry[]) | null = null;
-export function setStopActions(fn: typeof stopActions) { stopActions = fn; }
-
 /** Resolve stops against the live board. Empty stops dropped, partial stops kept. */
 function stops(): Stop[] {
   const out: Stop[] = [];
-  board.tour.forEach((stop, index) => {
+  board.tour.forEach(stop => {
     const items: Item[] = [];
     for (const id of stop.cards) {
       // Re-check canTour: a note dropped onto a card since the stop was written is now a rider.
       const item = byId(id);
       if (canTour(item)) items.push(item!);
     }
-    if (items.length) out.push({ items, caption: stop.caption || '', index });
+    if (items.length) out.push({ items, caption: stop.caption || '' });
   });
   return out;
 }
@@ -91,7 +69,6 @@ export function initTour(viewport: Viewport) {
   nameEl = bar.querySelector<HTMLElement>('.tour-name');
   captionEl = bar.querySelector<HTMLElement>('.tour-caption');
   countEl = bar.querySelector<HTMLElement>('.tour-count');
-  actsEl = bar.querySelector<HTMLElement>('.tour-acts');
   prevBtn = bar.querySelector<HTMLButtonElement>('.tour-prev');
   nextBtn = bar.querySelector<HTMLButtonElement>('.tour-next');
 
@@ -120,6 +97,10 @@ export function startTour() {
   at = 0;
   // The board's music stops: the stops have the floor.
   nowPlaying()?.el.pause();
+  // And nothing stays selected: a tour shows the board rather than works on it,
+  // and a ring and grips left on a card - often the editor's last stop, since
+  // pressing a chip selects its cards - would sit in every frame of the showing.
+  clearSelection();
   bar.hidden = false;
   // Hide all chrome.
   presentation(true);
@@ -232,29 +213,6 @@ function play(id: string) {
   el?.querySelector<HTMLButtonElement>('.vbig, .transport .play')?.click();
 }
 
-/**
- * After an action from the bar, stay in place: on the stop now at board index
- * `i` (a split's first piece, the joined stop, the stop after one taken off),
- * or the last stop if the tour got shorter than that. None left ends the tour.
- */
-function land(i: number) {
-  if (at < 0) return;
-  const list = stops();
-  if (!list.length) { stopTour(true); return; }
-  const pos = list.findIndex(s => s.index >= i);
-  at = pos < 0 ? list.length - 1 : pos;
-  travel();
-  paint();
-  bus.emit('tour:at', at);
-}
-
-const MOVES: StopMoves = {
-  split: i => { splitTourStop(i); land(i); },
-  join: i => { joinTourStops(i); land(i); },
-  show: () => travel(),
-  takeOff: i => { removeTourCards(board.tour[i]?.cards ?? []); land(i); },
-};
-
 /** Label for the bar: first name + count; full list in title attribute. */
 function stopLabel(stop: Stop): { text: string, full: string } {
   const names = stop.items.map(i => shownName(i).trim() || 'Untitled');
@@ -265,7 +223,11 @@ function stopLabel(stop: Stop): { text: string, full: string } {
   };
 }
 
-/** The bar's strings, the two greyed ends, and the stop's actions. */
+/**
+ * The bar's strings and the two greyed ends. Nothing that edits the tour: a
+ * running tour is being shown, and splitting, joining or taking a stop off is
+ * the editor's (ui/tour-edit.ts).
+ */
 function paint() {
   const list = stops();
   if (!list.length) { stopTour(true); return; }
@@ -285,25 +247,7 @@ function paint() {
   if (countEl) countEl.textContent = `${at + 1} of ${list.length}`;
   if (prevBtn) prevBtn.disabled = at <= 0;
   if (nextBtn) nextBtn.disabled = at >= list.length - 1;
-  paintActs(stop);
   // Only this stop's cards take input (item-chrome.css). Here rather than in
   // travel(), since an edit or an undo can change a stop's cards in place.
   setSpot(stop.items.map(i => i.id));
-}
-
-/** The stop's actions, as the bar's own icon buttons. */
-function paintActs(stop: Stop) {
-  if (!actsEl) return;
-  actsEl.replaceChildren();
-  for (const entry of stopActions?.(stop.index, MOVES) ?? []) {
-    if (entry.hidden || entry.sep || !entry.action) continue;
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = entry.danger ? 'tour-act is-danger' : 'tour-act';
-    btn.title = entry.label ?? '';
-    btn.setAttribute('aria-label', btn.title);
-    if (entry.icon) btn.append(icon(entry.icon));
-    btn.addEventListener('click', entry.action);
-    actsEl.append(btn);
-  }
 }

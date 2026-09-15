@@ -148,7 +148,7 @@ test('each section keeps something above its fold', () => {
   }
   const keys = SECTIONS.find(s => s.id === 'keys');
   assert.equal(keys.title, undefined, 'the legend section draws no h2 of its own');
-  assert.equal(keys.fold, 'By hand');
+  assert.equal(keys.fold, 'Shortcuts');
 });
 
 test('a section that is all fold is all fold', () => {

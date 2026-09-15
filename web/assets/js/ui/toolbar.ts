@@ -1,8 +1,9 @@
-// Toolbar: data-cmd dispatch, mobile drawer, and the connector tool's armed
-// state. A completed pair disarms (Shift to stay armed). cmds is injected
-// because commands.ts imports this module — the arrow may only go one way.
+// Toolbar: data-cmd dispatch, mobile drawer, the fit to its room (and the
+// morph between fits), and the connector tool's armed state. A completed pair
+// disarms (Shift to stay armed). cmds is injected because commands.ts imports
+// this module — the arrow may only go one way.
 
-import { el } from '../util.ts';
+import { el, readToken } from '../util.ts';
 import { board, bus, isJoinEnd, toggleConnection } from '../state.ts';
 import { toast, runCommand } from '../notify.ts';
 import { cue } from '../cuelume/engine.ts';
@@ -20,10 +21,13 @@ export interface ToolbarCommands {
 
 let bar: HTMLElement | null = null;
 let toggle: HTMLElement | null = null;
+/** The row of tools inside the bar - what a fit measures and a morph moves. */
+let tools: HTMLElement | null = null;
 
 export function initToolbar(cmds: ToolbarCommands): void {
   bar = el('toolbar');
   toggle = el('toolbar-toggle');
+  tools = el('toolbar-tools');
 
   // Both ids from index.html.
   toggle!.addEventListener('click', () => setOpen(!isOpen()));
@@ -119,16 +123,122 @@ function scheduleFit(): void {
 }
 
 function fitBar(): void {
-  if (!bar) return;
+  if (!bar || !tools) return;
+  const moving = morphs.some(a => a.playState === 'running');
   if (matchMedia(PHONE).matches) {
+    settleFit();
     delete bar.dataset.fit;
     return;
   }
+  const was = bar.dataset.fit;
+  // Where the bar and its tools are drawn now, a morph still running included -
+  // read before the measure below moves anything. Nothing to morph from on the
+  // first fit or coming up from the phone. A window being dragged morphs too:
+  // the step flips once as the edge crosses it, and every frame after that
+  // picks the morph up from the frame on screen (below), so it settles while
+  // the bar follows the window rather than trailing after it.
+  const from = was ? drawn(bar, tools) : null;
+  // At rest, the row's width rather than the bar's: a panel that has just
+  // opened has already narrowed max-width, so the bar reads clamped before any
+  // frame was drawn that way. Mid-morph, the bar's own width is the frame.
+  if (from && !moving) from.width = tools.getBoundingClientRect().width;
+  // Stopped before the measure, which has to read the layout, not a morph's frame.
+  settleFit();
   const room = parseFloat(getComputedStyle(bar).maxWidth);
   for (const fit of FITS) {
     bar.dataset.fit = fit;
     // The bar clips what does not fit, so its scroll width is what it wants.
-    if (!(room > 0) || bar.scrollWidth <= room + 0.5) return;
+    if (!(room > 0) || bar.scrollWidth <= room + 0.5) break;
+  }
+  // A morph cut short by a fit that lands on the same step carries on from
+  // where it was drawn, rather than snapping to its end.
+  if (from && (bar.dataset.fit !== was || moving)) morph(bar, tools, from);
+}
+
+/** One tool's centre, from the middle of the row, and whether its word shows. */
+type Place = { x: number, word: boolean };
+/** The bar as drawn at one moment: its width, and where each tool on it sits. */
+type Drawn = { width: number, at: Map<HTMLElement, Place> };
+
+/** The pieces of the running morph, so the next fit can stop them before it measures. */
+let morphs: Animation[] = [];
+
+function settleFit(): void {
+  for (const a of morphs) a.cancel();
+  morphs = [];
+}
+
+/**
+ * Read off the drawn boxes, so a morph mid-flight reads as the frame on screen.
+ * Centres are taken from the middle of the row rather than from the window: the
+ * bar is centred on a `left` a panel may be sliding, and the row is centred in
+ * the bar throughout a morph, so the middle is the one point that holds still.
+ */
+function drawn(b: HTMLElement, row: HTMLElement): Drawn {
+  const box = row.getBoundingClientRect();
+  const mid = box.left + box.width / 2;
+  const at = new Map<HTMLElement, Place>();
+  for (const btn of row.children) {
+    // A tool the step hides (display: none) has no place to come from or go to.
+    if (!(btn instanceof HTMLElement) || !btn.getClientRects().length) continue;
+    const r = btn.getBoundingClientRect();
+    const word = btn.querySelector('span');
+    at.set(btn, { x: r.left + r.width / 2 - mid, word: !!word?.getClientRects().length });
+  }
+  return { width: b.getBoundingClientRect().width, at };
+}
+
+/** --dur-base in ms, or 0 where Animations are off (the quality dial writes 0.01ms). */
+function baseMs(): number {
+  const raw = readToken('--dur-base');
+  const n = parseFloat(raw) || 0;
+  const ms = raw.endsWith('ms') ? n : n * 1000;
+  return ms >= 1 ? ms : 0;
+}
+
+/**
+ * The step between two fits, drawn rather than cut. The bar's width runs from
+ * what was drawn to what fits, on the tier's own --dur-base and --ease - the
+ * pair its `left` slides on (chrome.css), so a panel opening moves and narrows
+ * the bar as one motion: long and soft at Softish, brisk at the middle, and at
+ * Harsh a plain ease over a sixth of a second. Each tool glides from where it
+ * was; a word coming back, or More, fades in behind the movement rather than
+ * landing on it. A word going leaves at once - it has no box left to fade.
+ *
+ * Width rather than a transform, because the pill cannot take one: scaleX
+ * would drag its corners, seams and ring (#zoom-ctl scales glyphs, not
+ * buttons, for the same reason), and the bar already lays out on every frame
+ * of its `left` slide. max-width and justify-content ride in the same
+ * keyframes, so they are the morph's for exactly as long as it runs: the wider
+ * end is drawn whole, and the row stays centred in a bar narrower or wider
+ * than it.
+ *
+ * Reduced motion keeps the fades and drops the movement. Animations off on the
+ * quality dial plays nothing.
+ */
+function morph(b: HTMLElement, row: HTMLElement, from: Drawn): void {
+  const ms = baseMs();
+  if (!ms) return;
+  const to = drawn(b, row);
+  // Not even the last step fits: the row is clipped at rest, and a morph that
+  // centred it would jump back at the end.
+  if (row.getBoundingClientRect().width > to.width + 0.5) return;
+  const opts: KeyframeAnimationOptions = { duration: ms, easing: readToken('--ease') || 'ease' };
+  const run = (target: Element, frames: Keyframe[]) => { morphs.push(target.animate(frames, opts)); };
+  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (Math.abs(to.width - from.width) > 0.5) {
+      const held = { maxWidth: 'none', justifyContent: 'center' };
+      run(b, [{ width: `${from.width}px`, ...held }, { width: `${to.width}px`, ...held }]);
+    }
+    for (const [btn, { x }] of to.at) {
+      const was = from.at.get(btn);
+      if (was && Math.abs(was.x - x) > 0.5) run(btn, [{ translate: `${was.x - x}px 0` }, { translate: '0 0' }]);
+    }
+  }
+  for (const [btn, { word }] of to.at) {
+    const was = from.at.get(btn);
+    const arriving = !was ? btn : word && !was.word ? btn.querySelector('span') : null;
+    if (arriving) run(arriving, [{ opacity: 0 }, { opacity: 0, offset: 0.3 }, { opacity: 1 }]);
   }
 }
 

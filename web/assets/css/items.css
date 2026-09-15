@@ -172,6 +172,10 @@
 .item-body img.still { display: none; }
 #world.is-stilled .item-body img.still.is-ready { display: block; }
 #world.is-stilled .item-body img:not(.still):has(+ .still.is-ready) { display: none; }
+/* Animated GIFs off (the quality dial, stills.ts): the same swap for GIFs
+   only, at every zoom. Photographs keep their display copy until the rung. */
+#world.is-held .item-body img[data-gif] + img.still.is-ready { display: block; }
+#world.is-held .item-body img[data-gif]:has(+ .still.is-ready) { display: none; }
 
 /* Video twin: swaps to the still only while the clip is parked — a playing
    clip must keep its picture. */

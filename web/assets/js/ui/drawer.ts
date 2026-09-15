@@ -9,6 +9,7 @@ import {
 import { formatBytes, div, el, markClosed } from '../util.ts';
 import { buildItem, restingTilt, kindName } from '../canvas/item-dom.ts';
 import { releaseCardContent } from '../canvas/items.ts';
+import { startEdgePan } from '../canvas/edge-pan.ts';
 import { noteWords } from '../canvas/note-model.ts';
 import { toast } from '../notify.ts';
 import { cue } from '../cuelume/engine.ts';
@@ -434,10 +435,12 @@ function makeSlot(pile: Pile): Slot {
 function watch() {
   watcher?.disconnect();
   if (!body) return;
-  // How far ahead of scroll a card may build: at Full, a screenful of margin
-  // means cards are already drawn by the time they're scrolled to; at Light,
-  // nothing builds until it's actually visible.
-  const ahead = quality.motion ? '220px' : '0px';
+  // How far ahead of scroll a card may build, the same at every stop: the
+  // pace is quality.build's to ration (drain() below). It used to be nothing
+  // whenever Animated GIFs was off, which is Light - so every card was built
+  // as it scrolled into view and dropped the moment it left, popping in and
+  // out on the device least able to afford the rebuilds.
+  const ahead = '220px';
   watcher = new IntersectionObserver(seen => {
     for (const e of seen) {
       const slot = slots.find(s => s.el === e.target);
@@ -629,6 +632,12 @@ function startDrag(e: PointerEvent) {
   // rather than a drag. Every other direction still works, and the board
   // sits above/right of this window, so that's not the gesture people use.
   let lifted = false;
+  // Where the pointer last was, for the edge loop, which pans the board while
+  // the card is held at an edge. Held still over this window, where a drop is
+  // a cancel and there is no board to see.
+  let at = { x: e.clientX, y: e.clientY };
+  let stopEdge: (() => void) | null = null;
+  const overWindow = () => !!win?.contains(document.elementFromPoint(at.x, at.y));
 
   const lift = (ev: PointerEvent) => {
     lifted = true;
@@ -639,9 +648,15 @@ function startDrag(e: PointerEvent) {
     // cancel, and it needs to stay visible enough to aim away from.
     win?.classList.add('is-lifting');
     ghost = makeGhost(slot);
+    // Not until the pointer has come out onto the board: this window stands on
+    // the edge of the screen.
+    if (vp) {
+      stopEdge = startEdgePan(vp, { point: () => (overWindow() ? null : at), needsEntry: true });
+    }
   };
 
   const onMove = (ev: PointerEvent) => {
+    at = { x: ev.clientX, y: ev.clientY };
     if (!lifted) {
       if (Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) <= TAP_SLOP) return;
       lift(ev);
@@ -651,6 +666,8 @@ function startDrag(e: PointerEvent) {
 
   // Taken off the window - see the note at the foot of this function.
   const unwire = () => {
+    stopEdge?.();
+    stopEdge = null;
     removeEventListener('pointermove', onMove);
     removeEventListener('pointerup', onUp);
     removeEventListener('pointercancel', onCancel);

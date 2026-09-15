@@ -19,8 +19,8 @@ import type { UpdateOffer } from './chrome/bridge.ts';
 // anybody signed out. research/old/apps-2026-09-13.md §1 #31.
 const OWNER = 'KostaJovanovic';
 const REPO = 'mbrd-release';
-/** The one page every build can be downloaded from. */
-export const DOWNLOAD_PAGE = `https://github.com/${OWNER}/${REPO}/releases/latest`;
+/** The latest release's page, which every build is downloaded from. */
+export const RELEASE_PAGE = `https://github.com/${OWNER}/${REPO}/releases/latest`;
 const API = `https://api.github.com/repos/${OWNER}/${REPO}/releases/latest`;
 
 /** A release file's name ends in the version (mbrd-Windows-0.302.0.exe), so a
@@ -188,7 +188,7 @@ function tidy(path: string, recursive = false): void {
 
 /**
  * The title bar's Update button. A press does what the button says: download
- * the update then install it, open the download page for a copy that cannot
+ * the update then install it, open the release page for a copy that cannot
  * replace itself, or try again after a failure. The install quits, and the
  * quit writes the board to its file first (holdCloseForFlush in main.ts), so
  * nothing asks about saving.
@@ -196,7 +196,7 @@ function tidy(path: string, recursive = false): void {
 export function clickUpdate(): void {
   if (!offered || busy) return;
   if (offered.state === 'manual') {
-    shell.openExternal(DOWNLOAD_PAGE).catch(err => log('warn', 'could not open the download page', { err: String(err) }));
+    shell.openExternal(RELEASE_PAGE).catch(err => log('warn', 'could not open the release page', { err: String(err) }));
     return;
   }
   if (offered.state !== 'available' && offered.state !== 'failed') return;
@@ -370,12 +370,12 @@ function runInstaller(restart: boolean): void {
 function manualHow(version: string): string {
   const out = `mbrd ${label(version)} is out.`;
   if (process.platform === 'darwin') {
-    return `${out} Press to open the download page, then drag the new copy into Applications. Your boards and settings stay.`;
+    return `${out} Press to open the release page, then drag the new copy into Applications. Your boards and settings stay.`;
   }
   if (portableCopy) {
-    return `${out} Press to open the download page, run the new Windows file, choose Portable, and pick this folder. The data folder in it keeps the shelf and the recovery store.`;
+    return `${out} Press to open the release page, run the new Windows file, choose Portable, and pick this folder. The data folder in it keeps the shelf and the recovery store.`;
   }
-  return `${out} This copy cannot replace itself. Press to open the download page.`;
+  return `${out} This copy cannot replace itself. Press to open the release page.`;
 }
 
 async function check(manual: boolean): Promise<void> {

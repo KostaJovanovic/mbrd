@@ -4,7 +4,7 @@
 
 // Namespaced: activate only deletes its own PREFIX caches.
 // VERSION is literal because save.bat bumps it by regex.
-const VERSION = 'mbrd-v402';
+const VERSION = 'mbrd-v403';
 const PREFIX = 'mbrd-';
 
 // Local dev: pass-through so a refresh always shows the latest edit. 169.254 is
@@ -21,7 +21,6 @@ const SHELL = [
   './patch.html',
   // The site pages, precached so they work offline.
   './privacy.html',
-  './download.html',
   './manifest.json',
   './assets/css/tokens.css',
   // Subsystem sheets, in cascade order (quality.css last).
@@ -50,7 +49,6 @@ const SHELL = [
   // Document-page sheets (not in the cascade above).
   './assets/css/patch.css',
   './assets/css/privacy.css',
-  './assets/css/download.css',
   // Chrome sprite (buttons, menus). Stickers are a separate sprite.
   './assets/icons.svg',
   './assets/stickers.svg',
@@ -136,8 +134,7 @@ self.addEventListener('fetch', event => {
   if (req.mode === 'navigate') {
     const page = /\/patch(\.html)?\/?$/.test(url.pathname) ? './patch.html'
       : /\/privacy(\.html)?\/?$/.test(url.pathname) ? './privacy.html'
-        : /\/download(\.html)?\/?$/.test(url.pathname) ? './download.html'
-          : './index.html';
+        : './index.html';
     event.respondWith((async () => {
       try {
         return await fetch(req);

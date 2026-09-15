@@ -143,10 +143,12 @@
   box-shadow: var(--shadow-1);
   content-visibility: auto;
 }
-/* At the Full quality stop a tile stands off the sheet on a soft drop shadow
-   (R8). Harsh stays flat, as its cards on the canvas do, and the quality
-   dial's own shadow switch takes it off. */
-:root[data-quality="full"]:not([data-q-shadows="off"], [data-whimsy="2"]) .feed-tile {
+/* Wherever card shadows are on, a tile stands off the sheet on a soft drop
+   shadow (R8). Harsh stays flat, as its cards on the canvas do. Keyed to the
+   shadow flag rather than to the Full stop, which left Balanced - shadows on -
+   with flat tiles and made the Card shadows switch do nothing here. The third
+   :not() is Light before ui/quality.ts has written the flags (tokens.css). */
+:root:not([data-q-shadows="off"], [data-whimsy="2"], [data-quality="light"]:not([data-q-shadows])) .feed-tile {
   box-shadow: 0 1px 2px color-mix(in srgb, var(--ink) 12%, transparent),
               0 4px 12px -2px color-mix(in srgb, var(--ink) 24%, transparent);
 }
@@ -1896,11 +1898,12 @@
   }
   #header-panel { padding-bottom: env(safe-area-inset-bottom); }
 
-  /* A range is the only visible thing while a finger is tuning it. The panel
-     itself dissolves as well as its controls, exposing the board beneath while
-     the active track stays exactly where the gesture began. Ancestors of that
-     input remain laid out but lose their own decoration; every other branch
-     fades completely. Releasing the pointer removes the state immediately.
+  /* A range and its own row - name, value, stop names - are the only visible
+     things while a finger is tuning it. The panel itself dissolves as well as
+     its controls, exposing the board beneath while the active track stays
+     exactly where the gesture began. Ancestors of that input remain laid out
+     but lose their own decoration; every other branch fades completely.
+     Releasing the pointer removes the state immediately.
      Here and not from 700px: a panel at the side leaves the board in view, and
      there the dissolve only hid the panel. createMobileSliderFocus() in
      ui/sidebar.ts asks the same width. */
@@ -1915,7 +1918,7 @@
      :not(:has(.is-slider-active)) care the rows below it do. */
   :is(#sidebar, #header-panel).is-slider-focus .side-tabs,
   :is(#sidebar, #header-panel).is-slider-focus .side-foot,
-  :is(#sidebar, #header-panel).is-slider-focus .side-body :where(*):not(:has(.is-slider-active)):not(.is-slider-active) {
+  :is(#sidebar, #header-panel).is-slider-focus .side-body :where(*):not(:has(.is-slider-active)):not(.is-slider-active):not(.field:has(.is-slider-active) *) {
     opacity: 0;
     pointer-events: none;
     transition: opacity var(--dur-fast) var(--ease);
@@ -1932,6 +1935,19 @@
     background: transparent;
     border-color: transparent;
     box-shadow: none;
+  }
+  /* The row keeps a card of its own, since a bare track over the board says
+     neither what it sets nor where it has got to. Drawn as a spread shadow and
+     not padding, which would move the track out from under the finger. Two
+     spreads and no elevation token: a tier sets --shadow-2 to none, and none
+     inside a list drops the whole declaration. Beats the strip above on
+     specificity, not order. */
+  :is(#sidebar, #header-panel).is-slider-focus .side-body .field:has(.is-slider-active) {
+    background: var(--paper-card);
+    border-radius: var(--radius);
+    box-shadow: 0 0 0 10px var(--paper-card), 0 0 0 11px var(--rule);
+    transition: background-color var(--dur-fast) var(--ease),
+                box-shadow var(--dur-fast) var(--ease);
   }
   :is(#sidebar, #header-panel).is-slider-focus input[type="range"].is-slider-active {
     position: relative;

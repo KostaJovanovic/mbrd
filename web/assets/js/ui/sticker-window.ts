@@ -13,6 +13,7 @@ import { bus, wouldStick, byId } from '../state.ts';
 import { queryAround } from '../canvas/spatial.ts';
 import { defaultSize } from '../canvas/renderers.ts';
 import { showStickTarget } from '../canvas/items.ts';
+import { startEdgePan } from '../canvas/edge-pan.ts';
 import { makeWindowDrag, makeWindowResize } from './float-window.ts';
 import { registerPanel, panelShown, panelHidden } from './panel-stack.ts';
 import {
@@ -358,9 +359,14 @@ function startTileDrag(e: PointerEvent, entry: Sticker) {
   const el = e.currentTarget as HTMLElement;
   el.setPointerCapture?.(e.pointerId);
   drag = { entry, el, id: e.pointerId, x: e.clientX, y: e.clientY, ghost: null };
+  // Where the pointer last was, for the edge loop, which pans the board while
+  // the shape is held at an edge and asks again what it would stick to.
+  let at = { x: e.clientX, y: e.clientY };
+  let stopEdge: (() => void) | null = null;
 
   const move = (ev: PointerEvent) => {
     if (!drag || ev.pointerId !== drag.id) return;
+    at = { x: ev.clientX, y: ev.clientY };
     if (!drag.ghost) {
       if (Math.hypot(ev.clientX - drag.x, ev.clientY - drag.y) < DRAG_SLOP) return;
       // It has become a drag, and the window gets out of the way for good -
@@ -372,6 +378,15 @@ function startTileDrag(e: PointerEvent, entry: Sticker) {
       closeStickerWindow();
       drag.ghost = makeGhost(entry);
       document.body.append(drag.ghost);
+      // Not until the pointer has come out onto the board: the pad it came
+      // from stands on the edge of the screen.
+      if (vp) {
+        stopEdge = startEdgePan(vp, {
+          point: () => at,
+          onPan: () => showStickTarget(hostUnderPointer(at.x, at.y)),
+          needsEntry: true,
+        });
+      }
     }
     placeGhost(ev.clientX, ev.clientY);
     showStickTarget(hostUnderPointer(ev.clientX, ev.clientY));
@@ -379,6 +394,7 @@ function startTileDrag(e: PointerEvent, entry: Sticker) {
 
   const end = (ev: PointerEvent) => {
     if (!drag || ev.pointerId !== drag.id) return;
+    stopEdge?.();
     const { ghost } = drag;
     const dropped = ev.type === 'pointerup' && ghost && overBoard(ev.clientX, ev.clientY);
     ghost?.remove();

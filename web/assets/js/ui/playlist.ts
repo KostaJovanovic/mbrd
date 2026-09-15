@@ -18,6 +18,7 @@ import {
 import { mobileOrder, applyAudioOrder } from '../arrange/arrangements.ts';
 import { assetURL, getAsset, addFile } from '../storage/assets.ts';
 import { nowPlaying, onNowPlaying } from '../canvas/audio.ts';
+import { edgeSpeed, EDGE_MAX } from '../canvas/edge-pan.ts';
 import {
   clearQueue, cycleRepeat, isQueuePlayer, onQueue, playTrack, queueNext,
   queuePrev, queueState, setQueue, toggleShuffle,
@@ -96,6 +97,10 @@ type Drag = {
   dy: number;
   lastY: number;
   frame: number;
+  // The last frame's time, for the edge scroll's step, and the part of a pixel
+  // it has still to scroll: a slow edge moves less than a pixel a frame.
+  at: number;
+  spill: number;
 };
 
 export interface PlaylistCommands {
@@ -591,7 +596,7 @@ function beginDrag(e: PointerEvent, view: View, r: Row, grip: HTMLElement) {
     view, rowEl: r.el, pointerId: e.pointerId, rows,
     tops: boxes.map(b => b.top - top),
     heights: boxes.map(b => b.height),
-    from, to: from, grab: e.clientY - top, dy: 0, lastY: e.clientY, frame: 0,
+    from, to: from, grab: e.clientY - top, dy: 0, lastY: e.clientY, frame: 0, at: 0, spill: 0,
   };
   list.classList.add('is-sorting');
   r.el.classList.add('is-dragging');
@@ -614,16 +619,23 @@ function endDrag(e: PointerEvent) {
 
 // Per frame rather than per move, so a list scrolled under a still pointer - by
 // the edge below, or a wheel - carries the held row with it.
-function dragFrame() {
+function dragFrame(now: number) {
   if (!drag) return;
   const sc = drag.view.scroller;
+  // Timed by the frame's own interval, so the list scrolls as fast at 120 Hz
+  // as at 60, and on the board's curve (canvas/edge-pan.ts).
+  const dt = drag.at ? Math.min(now - drag.at, 50) / 1000 : 0;
+  drag.at = now;
   if (sc) {
     const box = sc.getBoundingClientRect();
     // Deep enough to reach past the header and the now-playing bar over the lens.
-    const edge = box.height * 0.18;
-    const y = drag.lastY;
-    const push = y < box.top + edge ? y - (box.top + edge) : y > box.bottom - edge ? y - (box.bottom - edge) : 0;
-    if (push) sc.scrollTop += clamp(push / edge, -1, 1) * 14;
+    const band = box.height * 0.18;
+    const want = drag.spill + edgeSpeed(drag.lastY, box.top, box.bottom, band, EDGE_MAX) * dt;
+    // Whole pixels, the rest carried: a fraction added to scrollTop can be
+    // rounded away, and a slow edge would never move.
+    const whole = Math.trunc(want);
+    drag.spill = want - whole;
+    if (whole) sc.scrollTop += whole;
   }
   placeHeld();
   drag.frame = requestAnimationFrame(dragFrame);

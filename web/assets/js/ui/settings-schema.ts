@@ -158,8 +158,11 @@ export type SlotControl = Common & { type: 'slot' };
 export type HintControl = Common & {
   type: 'hint', html?: string, text?: (ctx: Ctx) => string,
 };
+/** One legend row: its keys, what they do, and - for a key only one build
+ *  answers - where it shows. */
+type KeyRow = readonly [keys: readonly string[], text: string, when?: (ctx: Ctx) => boolean];
 export type KeysControl = Common & {
-  type: 'keys', keys: readonly (readonly [readonly string[], string])[],
+  type: 'keys', keys: readonly KeyRow[],
 };
 export type Control =
   | TextControl | CheckControl | RangeControl | PickerControl
@@ -210,11 +213,14 @@ export const TABS = [
 /**
  * The keyboard legend, which is a table and was sixteen rows of markup.
  *
- * A bare '+' is a joiner rather than a key: `ctrl+C X V` is one chord and then
- * two more letters that take the same modifier, and spacing them all alike
- * would read as five keys pressed in a row.
+ * A bare '+' between two keys is a joiner rather than a key: `ctrl+C X V` is
+ * one chord and then two more letters that take the same modifier, and spacing
+ * them all alike would read as five keys pressed in a row. First in a row,
+ * last, or straight after a joiner, it is the plus key itself.
  */
-const KEYS: (readonly [readonly string[], string])[] = [
+const inBrowser = () => !isDesktop();
+
+const KEYS: readonly KeyRow[] = [
   [['drag'], 'pan the board'],
   [['shift', '+', 'drag'], 'select a region'],
   [['space', '+', 'drag'], 'pan from anywhere'],
@@ -227,17 +233,36 @@ const KEYS: (readonly [readonly string[], string])[] = [
   // panning on a touchpad that nobody guesses - see readWheel() in
   // canvas/input.ts.
   [['shift', '+', 'scroll'], 'pan sideways'],
+  // Its vertical twin, and not a pinch, which readWheel() tells apart.
+  [['ctrl', '+', 'scroll'], 'pan up and down'],
   [['dbl-click'], 'zoom to an item'],
+  [['+', '-'], 'zoom in, out'],
   [['0', 'F'], 'recenter, fit'],
   [['←↑→↓'], 'nudge (+shift a step)'],
+  [['esc'], 'deselect, close'],
+  [['space'], 'play, pause a track'],
+  // The desktop's Find (desktop/menu.ts) opens the same search.
+  [['ctrl', '+', 'K'], 'search the board', inBrowser],
+  [['ctrl', '+', 'K', 'F'], 'search the board', isDesktop],
   [['ctrl', '+', 'A'], 'select all'],
   [['ctrl', '+', 'C', 'X', 'V'], 'copy, cut, paste'],
   [['ctrl', '+', 'D'], 'duplicate selection'],
   [['F2'], 'rename'],
-  [['del'], 'delete selection'],
+  [['del', 'backspace'], 'delete selection'],
   [['ctrl', '+', 'Z', 'Y'], 'undo, redo'],
+  [['ctrl', '+', 'shift', '+', 'Z'], 'redo'],
   [['ctrl', '+', 'S', 'O'], 'save, open'],
-  [['ctrl', '+', 'shift', '+', 'S'], 'export a .mbrd'],
+  // Save is the file on the desktop, so the deliberate one asks where.
+  [['ctrl', '+', 'shift', '+', 'S'], 'export a .mbrd', inBrowser],
+  [['ctrl', '+', 'shift', '+', 'S'], 'save as', isDesktop],
+  // The desktop menu's own accelerators (desktop/menu.ts).
+  [['ctrl', '+', 'N'], 'new board', isDesktop],
+  [['ctrl', '+', 'B'], 'your boards', isDesktop],
+  [['ctrl', '+', '0', '-', '+'], 'page zoom', isDesktop],
+  [['F11'], 'full screen', isDesktop],
+  [['ctrl', '+', 'R'], 'reload', isDesktop],
+  [['ctrl', '+', 'W'], 'close window', isDesktop],
+  [['ctrl', '+', 'shift', '+', 'I'], 'developer tools', isDesktop],
 ];
 
 const desktop = (ctx: Ctx) => !ctx.mobile;
@@ -924,7 +949,7 @@ export const SECTIONS: Section[] = [
       // The quality dial deliberately does not touch it. Sound costs nothing to
       // draw, and muting it on a tired phone would be tidying rather than
       // helping.
-      { id: 'opt-sound', type: 'range', label: 'Sounds',
+      { id: 'opt-sound', type: 'range', label: 'Sounds (experimental)',
         min: 0, max: 3, step: 1, silent: true,
         stops: SOUND_STOPS,
         get: () => soundLevel(),
@@ -1033,7 +1058,7 @@ export const SECTIONS: Section[] = [
       // rows for the reason the Save pair is two: `when` belongs to a row.
       { type: 'buttons', when: () => !isDesktop(), buttons: [
         { cmd: 'get-app', label: 'Get the app', closesPanel: true,
-          title: () => 'mbrd for Windows, macOS, Linux and Android. Your board is saved and waiting when you come back' },
+          title: () => 'mbrd for Windows, macOS, Linux and Android, on GitHub. Opens in a new tab' },
       ] },
       { type: 'buttons', when: isDesktop, buttons: [
         { cmd: 'check-updates', label: 'Check for updates', closesPanel: true,
@@ -1045,12 +1070,12 @@ export const SECTIONS: Section[] = [
     // Folded, and closed on arrival. Every row is a keyboard row: read once,
     // learned, then scrolled past forever - on a phone, where there is no
     // keyboard to read it for, scrolled past on the first visit.
-    id: 'keys', tab: 'system', fold: 'By hand', foldId: 'keys-fold',
+    id: 'keys', tab: 'system', fold: 'Shortcuts', foldId: 'keys-fold',
     controls: [{ type: 'keys', keys: KEYS, advanced: true }],
   },
   {
     // Development aids, last of all: none of this is part of using a board. The
-    // grip overlay paints the resize corner grab zones - invisible by design -
+    // grip overlay paints the resize grab zones, corners and sides - invisible by design -
     // so their reach can be seen. Grips only show on a selected card.
     //
     // Folded, like the keyboard rows two sections up, and for a stronger version

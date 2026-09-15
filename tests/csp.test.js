@@ -247,6 +247,8 @@ test('no module names a remote host the policy does not allow', () => {
     ['https://accounts.google.com', 'sign-in page, navigated to in a popup'],
     // Written into a share link the apps hand over, never requested.
     ['https://mbrd.valjdakosta.com', 'the website a share link from the apps names'],
+    // Opened in a new tab by Get the app (commands/view.ts), never requested.
+    ['https://github.com', 'the release page Get the app opens'],
   ]);
 
   const offenders = [];

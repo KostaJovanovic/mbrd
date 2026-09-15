@@ -17,7 +17,7 @@ import java.util.Set;
  * Capacitor's own server answers index.html for every path with no extension,
  * and its RouteProcessor only ever sees "/index.html", so it cannot route. This
  * does what the desktop does: a path ending in / gets index.html, a path with no
- * extension tries <path>.html first (/patch, /download, /privacy), and nothing
+ * extension tries <path>.html first (/patch, /privacy), and nothing
  * outside the staged tree is served. The tree is mbrd-files.txt, which
  * stage-web.mjs writes, so each "does this exist" is a set lookup.
  */

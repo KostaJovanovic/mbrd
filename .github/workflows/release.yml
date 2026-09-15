@@ -27,7 +27,7 @@
 #
 # The releases live in KostaJovanovic/mbrd-release, not here. This repo is
 # private, and GitHub answers a private repo's releases with a 404 to anybody
-# signed out, so the download page and the updaters would find nothing. See
+# signed out, so Get the app and the updaters would find nothing. See
 # research/old/apps-2026-09-13.md §4.4.
 #
 # There is no update file in the release. The apps ask GitHub's API for the
@@ -363,7 +363,7 @@ jobs:
           No build carries a paid signing certificate yet, so each system asks once:
 
           - **Windows:** SmartScreen stops the first run. Click **More info**, then **Run anyway**.
-          - **macOS:** open the app once and close the warning. Then open **System Settings > Privacy & Security** and click **Open Anyway**.
+          - **macOS:** open the app once and close the warning. Then open **System Settings > Privacy & Security** and click **Open Anyway**. On macOS 15 and later the old right-click, Open trick no longer works. If Finder says the app is damaged, it is not: run xattr -d com.apple.quarantine /Applications/mbrd.app in Terminal, then open it normally.
           - **Linux:** make the AppImage executable with chmod +x, then run it. Or install the .deb with sudo apt install ./mbrd-linux-x64-$VERSION.deb, and .mbrd files open on a double-click.
           - **Android:** when Android asks, allow your browser or file manager to install apps.
 

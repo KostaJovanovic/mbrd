@@ -433,14 +433,22 @@ function buildHint(c: HintControl) {
 
 function buildKeys(c: KeysControl) {
   const ul = make('ul', 'keys');
-  for (const [keys, text] of c.keys) {
+  // Asked once, at build: which app this is does not change while it runs.
+  const now = ctx();
+  for (const [keys, text, when] of c.keys) {
+    if (when && !when(now)) continue;
     const li = make('li');
     // One box for the keys, so the row spreads the keys from their text and
     // not each key from the next.
     const combo = make('span', 'key-combo');
     let joined = true;   // no leading space before the first key
-    for (const k of keys) {
-      if (k === '+') { combo.append(document.createTextNode('+')); joined = true; continue; }
+    for (const [i, k] of keys.entries()) {
+      // A joiner only between two keys; anywhere else '+' is the plus key.
+      if (k === '+' && !joined && i < keys.length - 1) {
+        combo.append(document.createTextNode('+'));
+        joined = true;
+        continue;
+      }
       if (!joined) combo.append(document.createTextNode(' '));
       const kbd = make('kbd');
       kbd.textContent = k;

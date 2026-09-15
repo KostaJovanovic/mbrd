@@ -25,7 +25,7 @@ import { openExternal } from './leaving.ts';
 import { embedFor, frameFor, offerButton } from '../canvas/embed.ts';
 import type { EmbedSpec } from '../canvas/embed.ts';
 import { kindName } from '../canvas/item-dom.ts';
-import { bindDial } from '../canvas/ghosts.ts';
+import { bindDial, hintKey } from '../canvas/ghosts.ts';
 import { noteTint } from '../canvas/note-model.ts';
 import {
   registerPlayer, releasePlayers, nowPlaying, onNowPlaying,
@@ -153,6 +153,15 @@ export interface FeedCommands {
  * is the safer read than a lone floating panel.
  */
 const HIDDEN = new Set(['title', 'fence', 'sticker']);
+
+/**
+ * The one hint the Feed leaves out: "A surface for thinking", whose rows are
+ * the canvas's gestures - pan, zoom, shift-drag - and none of which a
+ * scrolling wall answers to. Resolved through hintKey(), as the renderer
+ * does, so a hint with no key, which draws as this one, goes with it.
+ */
+const canvasOnly = (it: Item) => it.type === 'ghost'
+  && hintKey(typeof it.meta?.hint === 'string' ? it.meta.hint : undefined) === 'drop';
 
 // All seven are null until initFeed() has run and stay null on a page with no
 // #mobile-feed in it, which is why every reader below tests one rather than
@@ -505,7 +514,7 @@ function feedRuns(ridden: Set<string>): { band: Item | null, items: Item[] }[] {
   // SAFETY: mobileOrder() hands back the very items it was given, in a new
   // order - ArrangeItem is only the narrower shape it reads them through.
   const shown = mobileOrder(
-    board.items.filter(it => !HIDDEN.has(it.type) && !ridden.has(it.id)),
+    board.items.filter(it => !HIDDEN.has(it.type) && !canvasOnly(it) && !ridden.has(it.id)),
     { name: board.arrangement }) as Item[];
   const fences = board.items.filter(isFence);
   if (!fences.length) return [{ band: null, items: shown }];

@@ -14,7 +14,7 @@ import org.junit.Test;
 public class MbrdRouterTest {
 
     private final MbrdRouter router = new MbrdRouter(
-        new HashSet<>(Arrays.asList("index.html", "patch.html", "download.html", "assets/app.js", "assets/icons.svg", "docs/index.html"))
+        new HashSet<>(Arrays.asList("index.html", "patch.html", "privacy.html", "assets/app.js", "assets/icons.svg", "docs/index.html"))
     );
 
     @Test
@@ -27,7 +27,7 @@ public class MbrdRouterTest {
     @Test
     public void aPathWithNoExtensionTriesHtmlFirst() {
         assertEquals("patch.html", router.route("/patch"));
-        assertEquals("download.html", router.route("/download"));
+        assertEquals("privacy.html", router.route("/privacy"));
     }
 
     @Test
