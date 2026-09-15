@@ -38,6 +38,16 @@
 :root[data-board-mode="mobile"][data-feed-lens="playlist"] #mobile-header-edit-btn { display: none; }
 /* Playlist has no selection or undo — editing chrome hidden */
 :root[data-board-mode="mobile"][data-feed-lens="playlist"] .drawer-row { display: none; }
+/* The Playlist moves right as the sidebar comes in, and centres in the room
+   the panel leaves, as the toolbar does (chrome.css). #mobile-playlist sits
+   before #sidebar in index.html, so a sibling rule cannot reach it. Above
+   700 px only: narrower, the panel covers the screen. */
+@media not all and (max-width: 700px) {
+  #mobile-playlist { transition: left var(--dur-base) var(--ease-back); }
+  :root:has(#sidebar.is-open) #mobile-playlist {
+    left: calc(max(14px, env(safe-area-inset-left)) + min(var(--sidebar-w), 100vw - 28px));
+  }
+}
 
 .feed-sheet {
   box-sizing: border-box;
@@ -57,7 +67,7 @@
 /* On a phone the Feed's sheet is the width of the screen, with square corners,
    and the cards stand one card gap (GAP in ui/feed.ts) from its edges. Its top
    and foot stay under the buttons and over the bar
-   (research/rapid-fixes-2026-09-14.md, R19). */
+   (research/old/done-2026-09-15.md, R19). */
 @media (max-width: 600px) {
   #mobile-feed .feed-sheet { width: 100%; border-radius: 0; }
   #mobile-feed .feed-grid { width: calc(100% - 20px); }

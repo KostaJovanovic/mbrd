@@ -43,7 +43,7 @@
 #menu-btn:active span { background: var(--accent-deep); }
 /* Top right on Mobile (ui/mobile-header.ts paintFind). While the pen holds the
    corner, Find stands one button to its left
-   (research/rapid-fixes-2026-09-14.md, R20). */
+   (research/old/done-2026-09-15.md, R20). */
 #mobile-find-btn {
   right: max(16px, env(safe-area-inset-right));
   left: auto;
@@ -215,7 +215,7 @@
    (index.html). One render places both, so they cannot come apart. A 15 px
    glyph grid-centred on a background plate sat at a half pixel, and each
    engine snapped the two differently: half a pixel off at 100%, a whole
-   device pixel at 125% on Harsh (research/rapid-fixes-2026-09-14.md, R10). */
+   device pixel at 125% on Harsh (research/old/done-2026-09-15.md, R10). */
 #side-close,
 #header-close {
   --plate: transparent;

@@ -86,7 +86,7 @@ function relay(): void {
 
 /**
  * How much of the bar fits the room it is centred in, above phone width
- * (research/rapid-fixes-2026-09-14.md, R11): every tool with its word, then
+ * (research/old/done-2026-09-15.md, R11): every tool with its word, then
  * icons only, then Colour, Link and Stickers behind More. A measure rather
  * than a breakpoint: the room moves with the window and with a panel at
  * either side, and a width written against today's tools is wrong the next

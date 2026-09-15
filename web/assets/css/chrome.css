@@ -90,7 +90,7 @@
 #toolbar {
   /* The room the bar is centred in: clear of the menu button at the left and
      of its twin at the right, and of a panel open at either side (below). The
-     bar moves over rather than going (research/rapid-fixes-2026-09-14.md,
+     bar moves over rather than going (research/old/done-2026-09-15.md,
      R11), and ui/toolbar.ts drops the words, then the rarer tools, as the
      room shrinks. */
   --tb-left: calc(max(16px, env(safe-area-inset-left)) + var(--chrome-button-w) + 12px);
