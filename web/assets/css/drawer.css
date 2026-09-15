@@ -100,7 +100,10 @@
   align-items: stretch;
   width: calc(var(--chrome-button-w) + var(--chrome-button-w));
   height: var(--chrome-button-h);
-  border: var(--hairline) solid var(--rule-2);
+  /* The ring inside, over the two buttons, as on #zoom-ctl (chrome.css), so
+     each half is a whole square button. */
+  outline: var(--hairline) solid var(--rule-2);
+  outline-offset: calc(-1 * var(--hairline));
   border-radius: var(--leaf);
   overflow: hidden;
   background: var(--paper-card);
@@ -119,6 +122,9 @@
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
 #history-ctl button + button { border-left: 1px solid var(--rule); }
+/* The ring's allowance at the two ends, as on #zoom-ctl (chrome.css). */
+#history-ctl > button:first-child { border-left: var(--hairline) solid transparent; }
+#history-ctl > button:last-child { border-right: var(--hairline) solid transparent; }
 #history-ctl button:hover:not(:disabled) { background: var(--paper-2); color: var(--accent-deep); }
 #history-ctl button:active:not(:disabled) { background: var(--paper-3); }
 #history-ctl button:disabled { color: var(--ink-3); cursor: default; }
@@ -147,7 +153,7 @@
   flex-direction: column;
   background: var(--paper-card);
   border: var(--hairline) solid var(--rule-2);
-  border-radius: var(--ogee);
+  border-radius: var(--radius);
   box-shadow: var(--shadow-2);
   overflow: hidden;
   transform-origin: bottom left;

@@ -10,7 +10,7 @@
   max-width: min(420px, calc(100vw - 32px));
   padding: 22px 24px 18px;
   border: var(--hairline) solid var(--rule-2);
-  border-radius: var(--ogee);
+  border-radius: var(--radius);
   background: var(--paper-card);
   box-shadow: var(--shadow-2);
   color: var(--ink);
@@ -296,9 +296,14 @@ textarea.lp-url {
   transition: border-color var(--dur-fast) var(--ease),
               transform var(--dur-base) var(--ease-back);
 }
-/* display:block removes the baseline descender gap under the image. */
+/* A 60px circle round the 56px face, so the focus ring is round and stands off
+   the picture. A grid makes the face a block in the middle of it: an inline
+   image left a baseline gap under it, which made the ring an oval. */
 .credit-face-link {
-  display: block;
+  display: grid;
+  place-items: center;
+  width: 60px;
+  height: 60px;
   border-radius: 50%;
   cursor: pointer;
 }
@@ -480,7 +485,7 @@ textarea.lp-url {
   max-height: calc(100dvh - 32px);
   padding: 18px 20px 16px;
   border: var(--hairline) solid var(--rule-2);
-  border-radius: var(--ogee);
+  border-radius: var(--radius);
   background: var(--paper-card);
   box-shadow: var(--shadow-2);
   color: var(--ink);

@@ -250,7 +250,7 @@ export function isDev() {
   if (devHost === null) {
     const h = location.hostname;
     devHost = h === 'localhost' || h === '127.0.0.1' || h === '0.0.0.0' ||
-              /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h);
+              /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.)/.test(h);
   }
   return devHost;
 }

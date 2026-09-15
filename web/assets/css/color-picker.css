@@ -11,7 +11,7 @@
   max-width: min(340px, calc(100vw - 32px));
   padding: 22px 24px 18px;
   border: var(--hairline) solid var(--rule-2);
-  border-radius: var(--ogee);
+  border-radius: var(--radius);
   background: var(--paper-card);
   box-shadow: var(--shadow-2);
   color: var(--ink);

@@ -251,7 +251,7 @@ test('the dev-host test still matches the one in util.js', () => {
   // sw.js cannot import util.ts, so both carry the same regex by hand. If
   // one is edited without the other, a service worker starts caching the dev server.
   const util = read(join(WEB, 'assets', 'js', 'util.ts'));
-  const pattern = /\^\(10\\\.\|192\\\.168\\\.\|172\\\.\(1\[6-9\]\|2\\d\|3\[01\]\)\\\.\)/;
+  const pattern = /\^\(10\\\.\|192\\\.168\\\.\|172\\\.\(1\[6-9\]\|2\\d\|3\[01\]\)\\\.\|169\\\.254\\\.\)/;
   assert.match(sw, pattern, 'sw.js lost its LAN-host test');
   assert.match(util, pattern, 'util.js lost its LAN-host test');
 });

@@ -435,16 +435,19 @@ function buildKeys(c: KeysControl) {
   const ul = make('ul', 'keys');
   for (const [keys, text] of c.keys) {
     const li = make('li');
+    // One box for the keys, so the row spreads the keys from their text and
+    // not each key from the next.
+    const combo = make('span', 'key-combo');
     let joined = true;   // no leading space before the first key
     for (const k of keys) {
-      if (k === '+') { li.append(document.createTextNode('+')); joined = true; continue; }
-      if (!joined) li.append(document.createTextNode(' '));
+      if (k === '+') { combo.append(document.createTextNode('+')); joined = true; continue; }
+      if (!joined) combo.append(document.createTextNode(' '));
       const kbd = make('kbd');
       kbd.textContent = k;
-      li.append(kbd);
+      combo.append(kbd);
       joined = false;
     }
-    li.append(document.createTextNode(' '));
+    li.append(combo, document.createTextNode(' '));
     const span = make('span');
     span.textContent = text;
     li.append(span);

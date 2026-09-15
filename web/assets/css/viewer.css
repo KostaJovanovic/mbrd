@@ -13,7 +13,7 @@
   max-height: none;
   padding: 0;
   border: var(--hairline) solid var(--rule-2);
-  border-radius: var(--ogee);
+  border-radius: var(--radius);
   background: var(--paper-card);
   box-shadow: var(--shadow-2);
   color: var(--ink);
@@ -116,7 +116,7 @@
   max-width: none;
   max-height: none;
   border: 0;
-  border-radius: var(--ogee);
+  border-radius: var(--radius);
   box-shadow: var(--shadow-2);
   /* Near-black, not the ink token — neutral ground for judging photos. */
   background: rgb(14 13 12 / 0.94);
@@ -135,9 +135,10 @@
   background: none;
 }
 #viewer[data-media] #viewer-meta { color: rgb(255 255 255 / 0.55); }
-/* A solid circle over the stage, not a bare icon that vanishes on a busy photo. */
+/* A solid disc over the stage, not a bare icon that vanishes on a busy photo.
+   Square at Harsh, as the other closes are: it is a close, not a circle with a meaning. */
 #viewer[data-media] #viewer-close {
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: rgb(14 13 12 / 0.55);
   border: var(--hairline) solid rgb(255 255 255 / 0.32);
   color: rgb(255 255 255 / 0.92);

@@ -71,6 +71,16 @@ export { tagFilter, setTagFilter };
 export { isMultiSelect, setMultiSelect };
 export { commit, undo, redo, historyState, historyDepth, historyWeight, lastCommand, takeBack };
 
+/**
+ * Forget the whole history: the board as it stands becomes the start of a new
+ * one. The undo stack goes with it, since every entry on it undoes a step that
+ * is gone. Dirty, so the next save writes the board without the old ledger.
+ */
+export function deleteTimeline() {
+  clearHistory();
+  markDirty();
+}
+
 import {
   NOTE_MAX, DEFAULT_MOBILE_HEADER, DEFAULT_SETTINGS, BOARD_MODES, BOARD_TITLE_MAX,
   MOBILE_COLUMNS, MOBILE_COLUMN_OPTIONS, MOBILE_TOP_ROWS, MOBILE_MIN_ROWS,

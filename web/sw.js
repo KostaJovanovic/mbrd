@@ -4,13 +4,15 @@
 
 // Namespaced: activate only deletes its own PREFIX caches.
 // VERSION is literal because save.bat bumps it by regex.
-const VERSION = 'mbrd-v391';
+const VERSION = 'mbrd-v400';
 const PREFIX = 'mbrd-';
 
-// Local dev: pass-through so a refresh always shows the latest edit.
+// Local dev: pass-through so a refresh always shows the latest edit. 169.254 is
+// link-local, where a dev server bound to a direct cable or an unconfigured
+// adapter answers; cached there, every stylesheet stayed at the last VERSION.
 const HOST = self.location.hostname;
 const DEV = HOST === 'localhost' || HOST === '127.0.0.1' || HOST === '0.0.0.0' ||
-  /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(HOST);
+  /^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.)/.test(HOST);
 
 const SHELL = [
   './',

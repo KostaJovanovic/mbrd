@@ -96,11 +96,11 @@
   --btn-lift:  -1px;
   --btn-grow:  1;
   --btn-press: 0.985;
-  /* Permanent controls on the glass. Width and height differ slightly on a
-     precise pointer; touch uses one square target for both. */
+  /* Permanent controls on the glass: one square button, 42px on a precise
+     pointer and 45px on touch (mobile.css takes both sides to the touch size). */
   --chrome-button-w:     42px;
-  --chrome-button-h:     40px;
-  --chrome-button-touch: 46px;
+  --chrome-button-h:     42px;
+  --chrome-button-touch: 45px;
   /* The *small* icon button, which is the other one and by far the more common:
      a close, a step, a transport control, anything that is one glyph in a box
      sitting inside a bar rather than on the glass on its own.
@@ -238,9 +238,9 @@
      which. See research/old/design-audit-2026-08-25.md, finding B7. */
 
   /* ---- shape ----
-     Every corner is even. --leaf sizes controls, --ogee the panels that hold
-     them, --radius-sm the seams inside a segmented control, --radius-xs the
-     small fry (checkboxes, chips, kbd).
+     Every corner is even. --leaf sizes controls, --radius the cards and the
+     panels that hold controls, --radius-sm the seams inside a segmented
+     control, --radius-xs the small fry (chips, kbd).
 
      --radius-sm carried sixteen uses and no clause in that sentence until now,
      which is how it ended up on two closes that wanted --leaf. Its actual job
@@ -257,19 +257,19 @@
      interface followed the control and half ignored it.
 
      The ratios are the middle tier's own numbers divided through by its 13, so
-     this level resolves to the same 8 / 4 / 10 / 15 it always did. What changes
+     this level resolves to the same 8 / 4 / 10 it always did. What changes
      is that the ends now fall out for free: the soft tier declares 26px and
-     gets 16 / 8 / 20 / 30, and the plain tier declares 0px and gets zeroes
+     gets 16 / 8 / 20, and the plain tier declares 0px and gets zeroes
      without listing them.
 
-     --ogee lands a hair over --radius on purpose: it is the panel *around*
-     controls, so it has to clear the --leaf inside it by roughly the padding
-     between them or the two curves fight. */
+     One panel corner, --radius. The sidebar, the dialogs, Find, the player and
+     the drawer used to wear --ogee, a hair over --radius (15px at the middle),
+     while the menus, the library and the Feed's sheet wore --radius - two
+     panel corners on one screen, a couple of pixels apart. */
   --radius:    13px;
   --radius-sm: calc(var(--radius) * 0.615);
   --radius-xs: calc(var(--radius) * 0.308);
   --leaf:      calc(var(--radius) * 0.77);
-  --ogee:      calc(var(--radius) * 1.154);
   /* Fully round, for the two things that want their ends capped rather than
      their corners eased: a hairline meter (waveform bar, slider track, splash
      thread - 1-3px tall, where any shared corner token rounds it into a
@@ -783,11 +783,12 @@
    them. The shadows below still take their colour from whichever ink 3b has
    left in place. */
 :root[data-whimsy="0"] {
-  /* Twice the middle's, and the one line does all five: the ratios above carry
-     it to 16 / 8 / 20 / 30. --leaf lands at 20px, which on a 35px control is
-     all but a pill. The four it replaces were 17 / 9 / 20 / 30 - within a
-     pixel, but drifting, because each end was eyed on its own rather than
-     struck from a scale. */
+  /* Twice the middle's, and the one line does all four: the ratios above carry
+     it to 16 / 8 / 20. --leaf lands at 20px, which caps a 35px control to a
+     pill, and quality.css rounds the few controls it leaves a pixel or two
+     short of one. The numbers it replaces were within a pixel of these, but
+     drifting, because each end was eyed on its own rather than struck from a
+     scale. */
   --radius:    26px;
   --card-rule-gap: 8px;
 

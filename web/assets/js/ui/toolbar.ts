@@ -50,7 +50,7 @@ export function initToolbar(cmds: ToolbarCommands): void {
 
   // The room changes with the window, with a panel opening at either side,
   // and with the look (faces and letter-spacing change the words' width).
-  addEventListener('resize', scheduleFit);
+  addEventListener('resize', () => { holdStill(); scheduleFit(); });
   const panels = new MutationObserver(scheduleFit);
   for (const id of ['sidebar', 'header-panel']) {
     const panel = document.getElementById(id);
@@ -70,6 +70,21 @@ export function initToolbar(cmds: ToolbarCommands): void {
 }
 
 let relayTimer = 0;
+let resizeTimer = 0;
+
+/**
+ * The bar's slide (chrome.css) is for a panel coming in at its side. A window
+ * being dragged moves the room many times a second, and every move restarted
+ * the slide from wherever the last one had got to, so the bar trailed the
+ * window and stepped after it. While the window is changing size the bar
+ * follows it exactly, and the slide comes back once it has been still a moment.
+ */
+function holdStill(): void {
+  if (!bar) return;
+  bar.classList.add('is-resizing');
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => bar?.classList.remove('is-resizing'), 200);
+}
 
 function relay(): void {
   if (!bar) return;

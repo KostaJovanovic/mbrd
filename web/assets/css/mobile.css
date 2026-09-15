@@ -46,7 +46,7 @@
 @media not all and (max-width: 600px) {
   #mobile-playlist { transition: padding-left var(--dur-base) var(--ease-back); }
   :root:has(#sidebar.is-open) #mobile-playlist {
-    padding-left: calc(max(14px, env(safe-area-inset-left)) + min(var(--sidebar-w), 100vw - 28px));
+    padding-left: calc(max(var(--panel-inset), env(safe-area-inset-left)) + min(var(--sidebar-w), 100vw - 28px));
   }
 }
 
@@ -232,7 +232,8 @@
 /* The multi-select mode. On the canvas it is a frame round the window, but
    here the window is mostly tiles, so each tile a tap now picks wears an empty
    circle, and a picked one a filled circle with a tick. Top left, clear of the
-   play buttons in the middle of the audio and video tiles. */
+   play buttons in the middle of the audio and video tiles. Square at Harsh, as
+   the sidebar's checkboxes are. */
 :root.is-picking .feed-tile:not([data-kind="hint"])::after {
   content: '';
   position: absolute;
@@ -245,7 +246,7 @@
   height: 22px;
   box-sizing: border-box;
   border: 2px solid #fff;
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
   background: rgba(0, 0, 0, 0.22);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
   color: #fff;
@@ -775,7 +776,9 @@
   gap: 12px;
   box-sizing: border-box;
   padding: 8px 8px 8px 10px;
-  border-radius: var(--leaf);
+  /* The player window's corner less the 12px its list keeps from it, so the
+     last row's corner runs parallel to the window's. */
+  border-radius: max(var(--radius-xs), calc(var(--radius) - 12px));
   cursor: pointer;
   counter-increment: pl-track;
   transition: opacity var(--dur-base) var(--ease), box-shadow var(--dur-base) var(--ease);
@@ -806,7 +809,7 @@
   height: 18px;
   box-sizing: border-box;
   border: 2px solid #fff;
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
   background: rgba(0, 0, 0, 0.22);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
   color: #fff;
@@ -857,7 +860,8 @@
   flex: none;
   width: 44px;
   height: 44px;
-  border-radius: var(--leaf);
+  /* 8px inside the row's corner, so the row's corner less that, near enough. */
+  border-radius: var(--radius-xs);
   overflow: hidden;
   background: color-mix(in srgb, var(--accent) 12%, var(--paper-3));
 }
@@ -1003,7 +1007,7 @@
   flex-direction: column;
   background: var(--paper-card);
   border: var(--hairline) solid var(--rule-2);
-  border-radius: var(--ogee);
+  border-radius: var(--radius);
   box-shadow: var(--shadow-2);
   overflow: hidden;
   transform-origin: bottom right;
@@ -1370,19 +1374,14 @@
   /* 44px, everywhere a finger has to land. This is the *input* question, so it
      is here rather than in the width query below: a 10" tablet has all the room
      in the world and the same finger. */
-  /* 20, not 19: the 46px button over a 1px border is a 44px box, so an even bar
+  /* 21, not 20: the 45px button over a 1px border is a 43px box, so an odd bar
      centres on a whole pixel. The gap is untouched - the pitch of 8 is the one
      number in this control that must not move. */
-  #menu-btn span { width: 20px; }
+  #menu-btn span { width: 21px; }
   #mobile-header-edit-btn svg { width: 20px; height: 20px; }
   #drawer-btn svg { width: 20px; height: 20px; }
-  /* Width only. The height used to be restated here as 46 because the base rule
-     set 32 and a finger needs more than that; now the base rule reads
-     --chrome-button-h, which this query has already taken to
-     --chrome-button-touch a few hundred lines up, so the pill grows with every
-     other control instead of alongside it. A literal repeated here would be a
-     second place to remember. */
-  #zoom-ctl button { min-width: 40px; }
+  /* No size here: the pill's segments read --chrome-button-w and -h, which
+     this query has already taken to --chrome-button-touch. */
   #zoom-ctl svg { width: 17px; height: 17px; }
   .check input { width: 20px; height: 20px; }
 
@@ -1417,8 +1416,15 @@
 
      --tools-h is the tier the handle opens into. Named beside the other two
      because the player's bottom is worked out from all three and a literal
-     there would be a measurement of a rule somewhere else. */
-  :root { --bar-h: 48px; --bar-gap: 8px; --tools-h: 46px; }
+     there would be a measurement of a rule somewhere else.
+
+     Both heights are the chrome button's own size, so the bin and each history
+     button on the strip are square: 45 on touch, 42 with a mouse.
+
+     --panel-inset (sidebar.css) takes this width's 12px, so a panel that is
+     still a sheet at the side, from 601px to here, starts level with the
+     view controls and the buttons in the top corners. */
+  :root { --bar-h: var(--chrome-button-h); --bar-gap: 8px; --tools-h: var(--chrome-button-h); --panel-inset: 12px; }
 
   /* The toolbar stops being a strip at the top and becomes a drawer at the
      foot. Nothing about the markup changes - it is one fixed element and always
@@ -1711,11 +1717,6 @@
     bottom: auto;
     right: max(12px, env(safe-area-inset-right));
   }
-  /* The readout can afford to be tighter than it is on a desktop: there is no
-     room for 58px of it, and the + and - shifting by a few pixels as the zoom
-     crosses 100% matters less than the whole bar fitting. */
-  #zoom-level { min-width: 46px; }
-
   /* The ruler goes under the view controls here rather than over them, and it
      turns over with the move.
 
@@ -1890,11 +1891,6 @@
   .side-head { padding: 10px 14px 8px; }
   /* The close button's top keeps level with its side: 10 + 4 = 14 (R35). */
   :is(#side-close, #header-close) { margin-top: 4px; }
-  /* Height is the scarce thing here, so the foot row shrinks a notch. The
-     finger has not changed size, so this stops at 44 rather than going further.
-     Harmless above 700px, where the foot row is not laid out and nothing reads
-     the token. */
-  :root { --bar-h: 44px; }
   /* Wider than 600px, the panel is still a sheet at the side, and it gives up
      the inset to take the height. Narrower, it is the whole screen already. */
   @media not all and (max-width: 600px) {
