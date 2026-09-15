@@ -923,7 +923,7 @@ export const SECTIONS: Section[] = [
         text: () => 'Experimental feature. Might suck.' },
       // The overrides. Each reads the resolved flag - so moving the dial moves
       // every one of these - and writes an override that outranks the dial from
-      // then on. "Start over" at the foot is the way back, the same as
+      // then on. "Reset" at the foot is the way back, the same as
       // Appearance's.
       // "Animated GIFs" and not "Animate GIFs": the four checkboxes in this row
       // are things the app has - shadows, backdrops, animations - and a command
@@ -948,7 +948,7 @@ export const SECTIONS: Section[] = [
         get: () => String(quality.build),
         set: v => setQualityOverride('build', +v) },
       { type: 'buttons', advanced: true,
-        buttons: [{ cmd: 'reset-quality', label: 'Start over' }] },
+        buttons: [{ cmd: 'reset-quality', label: 'Reset' }] },
     ],
   },
   {

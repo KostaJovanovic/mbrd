@@ -28,7 +28,7 @@ stated at the top of that file.
 ## Releases
 
 ## Unpacked
-version: 0.318 - 0.381
+version: 0.318 - 0.389
 date: 14 September 2026
 
 - **Two lists worked through in one day.** The afternoon cleared the fix list
@@ -342,7 +342,7 @@ date: 14 September 2026
   `Demosaic`.
 
 ## Pocket Size
-version: 0.305 - 0.317
+version: 0.304 - 0.317
 date: 13 September 2026
 
 - **mbrd is an Android app,** built in an evening as a third package around the
