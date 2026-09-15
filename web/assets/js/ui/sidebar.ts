@@ -53,9 +53,11 @@ export function panelFillsScreen(
   return typeof media === 'function' && !!media(PANEL_SCREEN_QUERY)?.matches;
 }
 
-/** Isolate one slider under a finger. Headless-testable; event wiring is in initSidebar. */
+/** Isolate one slider under a finger. Headless-testable; event wiring is in initSidebar.
+ *  Only where the panel fills the screen: a sheet at the side has the board
+ *  beside it already, and fading it for a drag hid the panel for nothing. */
 export function createMobileSliderFocus(root: HTMLElement, {
-  isMobile = mobileLayoutDetected,
+  isMobile = panelFillsScreen,
 }: { isMobile?: () => boolean } = {}): SliderFocus {
   let active: Element | null = null;
   let pointerId: number | null = null;

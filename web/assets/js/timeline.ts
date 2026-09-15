@@ -2,7 +2,7 @@
 // exactly) unless a step carries an `op`. Both layouts are kept apart, so one
 // history serves the Canvas and the Feed. Below state.ts — may never import it.
 
-import { board, byId, dropIdIndex, layoutSettingsOf } from './board-model.ts';
+import { board, byId, dropIdIndex, layoutSettingsOf, unmarkNoteLine } from './board-model.ts';
 import type { Geometry, Item, LayoutMode } from './board-model.ts';
 import { bus, selection, markDirty } from './board-store.ts';
 import { itemHashes, isRecord, uid } from './util.ts';
@@ -1027,10 +1027,13 @@ function nameOf(value: unknown): string {
   // Bin entry is { at, item }; card is itself. One unwrap covers both.
   const rec = isRecord(value) && isRecord(value.item) ? value.item : value;
   if (!isRecord(rec)) return '';
-  if (typeof rec.name === 'string' && rec.name.trim()) return rec.name.trim();
+  // A note's name is its first line, which older builds took with its mark.
+  const name = typeof rec.name === 'string'
+    ? (rec.type === 'note' ? unmarkNoteLine(rec.name) : rec.name).trim() : '';
+  if (name) return name;
   const meta = isRecord(rec.meta) ? rec.meta : null;
   const text = typeof meta?.text === 'string' ? meta.text : '';
-  const first = text.split('\n')[0].trim();
+  const first = unmarkNoteLine(text.split('\n')[0]).trim();
   if (first) return first.length > 28 ? `${first.slice(0, 27)}...` : first;
   if (typeof rec.type === 'string' && rec.type) return rec.type;
   return '';

@@ -10,6 +10,7 @@ import { describeExt, formatName } from '../import/formats.ts';
 import { kindName, kindTag } from '../canvas/item-dom.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 import type { Item } from '../board-model.ts';
+import { shownName } from '../board-model.ts';
 
 const MAX_HITS = 12;
 const SNIPPET = 90;
@@ -132,7 +133,7 @@ export function close() {
 // ---------------------------------------------------------------------------
 
 function fields(item: Item): Fields {
-  const name = item.name || '';
+  const name = shownName(item);
   const meta = item.meta || {};
   // Note body minus first line (name already covers it).
   const body = typeof meta.text === 'string' ? meta.text : '';

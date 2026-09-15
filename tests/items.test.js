@@ -8,6 +8,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { farKind, itemAccessibleName, wantsHead } from '../web/assets/js/canvas/items.ts';
+import { noteNameOf, shownName } from '../web/assets/js/board-model.ts';
 
 test('a named item announces its own name', () => {
   assert.equal(itemAccessibleName({ name: 'Sunset.jpg', type: 'image' }), 'Sunset.jpg');
@@ -93,4 +94,20 @@ test('a note prints no kind at all', () => {
   // A sticky is not a specimen - a note's name is its first line, a
   // sentence a classification would sit on top of.
   assert.equal(farKind({ type: 'note', name: 'Ring Marta about the scaffolding', meta: {} }), '');
+});
+
+test('a note is named for its words, not its heading mark', () => {
+  // meta.text marks a heading line "# " or "## " (canvas/note-model.ts). The
+  // name came off that line whole, so Find, the Timeline and the far view all
+  // printed "# Note A".
+  assert.equal(noteNameOf('# Note A\nbody'), 'Note A');
+  assert.equal(noteNameOf('## Smaller\n'), 'Smaller');
+  assert.equal(noteNameOf('Plain first line'), 'Plain first line');
+  assert.equal(noteNameOf('# '), 'Note', 'a heading with no words falls back');
+  assert.equal(noteNameOf('#hashtag stays'), '#hashtag stays', 'only the mark and its space');
+  // A name taken by an older build still carries it, and comes off on screen.
+  assert.equal(shownName({ type: 'note', name: '# Note A' }), 'Note A');
+  assert.equal(itemAccessibleName({ type: 'note', name: '# Note A' }), 'Note A');
+  // Anything else keeps its name as it is.
+  assert.equal(shownName({ type: 'text', name: '# README.md' }), '# README.md');
 });

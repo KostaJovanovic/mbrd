@@ -196,6 +196,12 @@ date: 14 September 2026
   rung the note's body is down and the item is the whole note, and a faded one
   had no colour there, so it was a name floating on the board. It takes the pad
   colour back at that zoom.
+- [fix] **A note's name drops the `#` of its heading.** A note is named for its
+  first line, and `meta.text` marks a heading line with `# `, so Find, the
+  Timeline, the far-zoom head, the tour list and the screen reader all said
+  "# Note A". A new or edited note is named without it (`noteNameOf()`), and a
+  name stored with it shows without it (`shownName()`) until the note's next
+  edit. The file keeps whatever name it has.
 - [new] **Ctrl and the wheel move the board up and down,** as Shift and the wheel
   move it across. A touchpad pinch also arrives as a wheel event with Ctrl set,
   so the canvas watches the Control key itself: a Ctrl that is really held pans,
@@ -242,7 +248,9 @@ date: 14 September 2026
   longer closes it, and on a Desktop board it pans the view as it does on a
   wide screen. The move is
   one block in `mobile.css` and `panelFillsScreen()` in `ui/sidebar.ts`, which
-  ask the same width, and a test holds the two together.
+  ask the same width, and a test holds the two together. The slider focus, which
+  dissolves the panel while one of its ranges is dragged, moved with it: at the
+  side the board is already in view, and the dissolve only hid the panel.
 - [new] **The Playlist button shows once music has been on the board,** and the
   first song imported on the canvas opens the player once. An older board with
   music gets it on load, quietly. No Playlist button on the bar while a video

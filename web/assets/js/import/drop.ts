@@ -37,6 +37,7 @@ import { NOTE_TINTS } from '../canvas/note-model.ts';
 import type { Point } from '../arrange/arrangements.ts';
 import type { Size } from '../canvas/renderers.ts';
 import type { Item, ItemMeta } from '../board-model.ts';
+import { noteNameOf } from '../board-model.ts';
 
 /** Pre-layout item draft. x/y are placeholders until the arrangement fills them. */
 export type Draft = {
@@ -1012,7 +1013,7 @@ export function addNote(centre: Point, text = '', want = 0) {
     || board.items.filter(i => i.type === 'note').length % NOTE_TINTS + 1;
   const [item] = addItems([{
     type: 'note',
-    name: text ? text.split('\n')[0].slice(0, 40) : 'Note',
+    name: noteNameOf(text || ''),
     x: centre.x, y: centre.y, w: size.w, h: size.h,
     meta: { text, tint },
   }], 'Add note');

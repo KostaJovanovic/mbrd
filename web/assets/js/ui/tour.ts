@@ -8,6 +8,7 @@ import {
   bus, board, byId, canTour, joinTourStops, removeTourCards, splitTourStop,
 } from '../state.ts';
 import type { Item } from '../board-model.ts';
+import { shownName } from '../board-model.ts';
 import { toast } from '../notify.ts';
 import { BASE_ZOOM, travelMs } from '../canvas/viewport.ts';
 import type { Viewport } from '../canvas/viewport.ts';
@@ -256,7 +257,7 @@ const MOVES: StopMoves = {
 
 /** Label for the bar: first name + count; full list in title attribute. */
 function stopLabel(stop: Stop): { text: string, full: string } {
-  const names = stop.items.map(i => (i.name || '').trim() || 'Untitled');
+  const names = stop.items.map(i => shownName(i).trim() || 'Untitled');
   const full = names.join(', ');
   return {
     text: names.length > 1 ? `${names[0]} +${names.length - 1}` : names[0],

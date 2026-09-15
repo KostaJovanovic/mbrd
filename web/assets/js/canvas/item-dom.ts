@@ -9,6 +9,7 @@ import { adjustFilter, baseStep, flipTransform, isFence, isLocked, itemBare, ite
 import { buildContent, fitMode } from './renderers.ts';
 import { noteTint } from './note-model.ts';
 import type { Item } from '../board-model.ts';
+import { shownName } from '../board-model.ts';
 
 /**
  * A link card with a valid address. Every one now carries its own identity at
@@ -63,7 +64,7 @@ const TYPE_LABEL: Record<string, string> = {
  * card its own name: the item's, or a typed fallback. See AUD-09.
  */
 export function itemAccessibleName(item?: ItemFragment | null): string {
-  const name = typeof item?.name === 'string' ? item.name.trim() : '';
+  const name = typeof item?.name === 'string' ? shownName({ type: item.type, name: item.name }).trim() : '';
   const base = name || `Untitled ${TYPE_LABEL[item?.type ?? ''] || 'item'}`;
   // Suffixed rather than announced by a separate element, because what an
   // anchor changes is what this card *is* to somebody driving by keyboard: it
@@ -642,7 +643,7 @@ function bottomBar(item: ItemLike): HTMLDivElement {
 function nameplate(item: ItemLike): HTMLDivElement {
   const label = document.createElement('div');
   label.className = 'item-label';
-  label.textContent = item.name || '';
+  label.textContent = shownName(item);
   label.hidden = !item.name;
   return label;
 }
@@ -681,7 +682,7 @@ function farHead(item: ItemLike): HTMLDivElement {
 
   const line = document.createElement('span');
   line.className = 'fh-name';
-  line.textContent = item.name || '';
+  line.textContent = shownName(item);
 
   head.append(kind, line);
   head.hidden = !item.name;
