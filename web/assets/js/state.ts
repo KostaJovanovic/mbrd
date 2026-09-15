@@ -84,7 +84,7 @@ import {
 } from './board-model.ts';
 import {
   isLocked, isFiltered, itemCrop, itemAdjust, adjustFilter, itemFlip, flipTransform,
-  itemRotate, itemMatte, itemBare,
+  itemRotate, itemMatte, itemBare, itemFaded,
   itemTags, boardTags, cleanTag,
   normalizeTour, TAGS_PER_ITEM, TAG_MAX, MIN_CROP,
 } from './board-model.ts';
@@ -93,7 +93,7 @@ import type { MergePlan } from './merge.ts';
 
 export { MAX_CONNECTIONS, pairKey, CONN_DIRECTIONS, CONN_STYLES };
 export { isLocked, isFiltered, itemCrop, itemAdjust, adjustFilter, itemFlip, flipTransform };
-export { itemRotate, itemMatte, itemBare };
+export { itemRotate, itemMatte, itemBare, itemFaded };
 export { itemTags, boardTags, cleanTag };
 export { TAGS_PER_ITEM, TAG_MAX, MIN_CROP };
 
@@ -837,6 +837,17 @@ export function setItemBare(id: string, bare: unknown) {
   // Only stored when true — false is the default and not worth a byte per card.
   patchMeta(id, 'bare', bare ? true : null,
     (next: unknown) => (next ? 'Take the card off' : 'Put the card back'),
+    v => (v === true ? true : null));
+}
+
+/**
+ * Draw a sticky at half strength. Notes only - the row that took "No card"'s
+ * place on them. Stored only when true, like `bare`.
+ */
+export function setItemFaded(id: string, faded: unknown) {
+  if (byId(id)?.type !== 'note') return;
+  patchMeta(id, 'faded', faded ? true : null,
+    (next: unknown) => (next ? 'Low opacity' : 'Full opacity'),
     v => (v === true ? true : null));
 }
 

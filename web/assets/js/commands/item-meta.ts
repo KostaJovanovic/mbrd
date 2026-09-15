@@ -1,4 +1,4 @@
-// Per-item commands: viewer, note, cover, fit, bare, crop, model axis,
+// Per-item commands: viewer, note, cover, fit, bare, faded, crop, model axis,
 // sticker tint, lock, tags, tour stops. Mostly can*/set* pairs for the
 // right-click menu. Predicates are deliberately narrower than the model:
 // widening a `can*` is a product decision, not a tidy-up.
@@ -6,7 +6,8 @@
 import { toast } from '../notify.ts';
 import {
   addTourStop, board, boardTags, byId, cleanTag, freezeClip, isContent, isLocked, isRider,
-  itemTags, selection, setItemBare, setItemCover, setItemDemosaiced, setItemFit, setItemUpAxis,
+  itemTags, selection, setItemBare, setItemCover, setItemDemosaiced, setItemFaded, setItemFit,
+  setItemUpAxis,
   setItemsLocked, setItemsTagged, setStickerTint, unstickItems, TAG_MAX, TAGS_PER_ITEM,
 } from '../state.ts';
 import { extOf } from '../util.ts';
@@ -306,12 +307,19 @@ export function itemMetaCommands() {
     // through the corners of its box - and a bracket or a bolt is exactly the
     // shape somebody wants sitting *on* a moodboard rather than mounted on a
     // plate. It is the type where the frame round nothing is most of the frame.
+    //
+    // A sticky now offers Low opacity in its place (below). One that already
+    // has no paper still sees the row, ticked, so it can have its paper back.
     canSetBare: (id: string) => {
-      const type = byId(id)?.type;
-      return type === 'image' || type === 'note' || type === 'model';
+      const it = byId(id);
+      if (it?.type === 'note') return it.meta?.bare === true;
+      return it?.type === 'image' || it?.type === 'model';
     },
     itemBare: (id: string) => byId(id)?.meta?.bare === true,
     setItemBare: (id: string, bare: boolean) => setItemBare(id, bare),
+    canSetFaded: (id: string) => byId(id)?.type === 'note',
+    itemFaded: (id: string) => byId(id)?.meta?.faded === true,
+    setItemFaded: (id: string, faded: boolean) => setItemFaded(id, faded),
 
     /**
      * Crop a photograph, and grade it.

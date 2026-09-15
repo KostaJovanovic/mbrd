@@ -5,7 +5,7 @@
 
 import { extOf, shuffle } from '../util.ts';
 import { formatName } from '../import/formats.ts';
-import { adjustFilter, baseStep, flipTransform, isFence, isLocked, itemBare } from '../state.ts';
+import { adjustFilter, baseStep, flipTransform, isFence, isLocked, itemBare, itemFaded } from '../state.ts';
 import { buildContent, fitMode } from './renderers.ts';
 import { noteTint } from './note-model.ts';
 import type { Item } from '../board-model.ts';
@@ -317,6 +317,9 @@ export function writeFit(el: HTMLElement, item: ItemLike): void {
   // stylesheet and the connector come to disagree about which cards have a card.
   if (itemBare(item)) el.dataset.bare = '';
   else delete el.dataset.bare;
+  // Low opacity on a sticky - a stylesheet question too, answered in cards.css.
+  if (itemFaded(item)) el.dataset.faded = '';
+  else delete el.dataset.faded;
 }
 
 /**

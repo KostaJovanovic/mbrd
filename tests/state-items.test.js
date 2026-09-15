@@ -11,7 +11,7 @@ import {
   byId, select, deselect, clearSelection, selectAll, setNoteContent, renameItem,
   NOTE_MAX, setItemCover, setItemPoster, setTitle, cleanBoardTitle,
   cleanBoardTitleDraft, BOARD_TITLE_MAX, setBoardMode, setItemBare, itemBare,
-  setItemsTagged, setItemUpAxis,
+  setItemFaded, itemFaded, setItemsTagged, setItemUpAxis,
 } from '../web/assets/js/state.ts';
 import { hash } from './helpers.js';
 import { fresh, note, photo, clip, model } from './state-fixtures.js';
@@ -194,6 +194,33 @@ test('a note can lose its paper, and keeps its words', () => {
   assert.equal(byId(n.id).meta.bare, true);
   setItemBare(n.id, false);
   assert.equal('bare' in (byId(n.id).meta || {}), false, 'stored only when true');
+});
+
+test('a note can be drawn at low opacity, and back', () => {
+  // The row that took "No card"'s place on a sticky. The paint is cards.css;
+  // asserted here is the write, its undo, and that it survives a file.
+  const [n] = addItems([note()]);
+  setItemFaded(n.id, true);
+  assert.equal(byId(n.id).meta.faded, true);
+  assert.equal(itemFaded(byId(n.id)), true);
+  undo();
+  assert.equal('faded' in (byId(n.id).meta || {}), false, 'undone, and stored only when true');
+  setItemFaded(n.id, 'yes');
+  assert.equal(byId(n.id).meta.faded, true, 'truthy junk is coerced to the flag at the door');
+  loadBoard(JSON.parse(JSON.stringify(serializeBoard())));
+  assert.equal(board.items[0].meta.faded, true);
+  setItemFaded(board.items[0].id, false);
+  assert.equal('faded' in board.items[0].meta, false, 'cleared rather than stored as false');
+});
+
+test('only a note can be drawn at low opacity', () => {
+  // The canvas and the export both read it off notes only, so a flag on a
+  // photograph would be a byte that does nothing.
+  const [p] = addItems([photo()]);
+  setItemFaded(p.id, true);
+  assert.equal(byId(p.id).meta?.faded, undefined);
+  assert.equal(itemFaded(null), false);
+  assert.equal(itemFaded({ meta: {} }), false);
 });
 
 test('a model can stand on the board without its card', () => {

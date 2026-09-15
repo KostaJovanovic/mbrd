@@ -656,6 +656,13 @@
   <path d="M5.6 9.9C4.9 8.2 5.6 6.2 7.2 5.5 8.9 4.8 10.4 5.9 10.4 7.5 10.4 9.1 9.2 10.6 7.6 10.9 6.8 11 6 10.7 5.6 9.9Z"/>
 </symbol>
 
+<!-- Low opacity: a sheet the board shows through. The outline at full strength
+     so the row reads at 16px, the face at the fill-opacity i-demosaic uses for
+     its tinted cells. -->
+<symbol id="i-low-opacity" viewBox="0 0 16 16">
+  <rect x="2.5" y="2.5" width="11" height="11" rx="2" fill="currentColor" fill-opacity="0.35"/>
+</symbol>
+
 <!-- The board with the clip, and no page on it. Paste's partner in the menu is
      Copy, which uses i-duplicate - two cards, one behind the other - so the two
      rows do not have to be read to be told apart: one is cards, one is a
