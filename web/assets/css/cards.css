@@ -79,7 +79,7 @@
     linear-gradient(180deg,
       color-mix(in srgb, var(--ink) 6%, transparent) 0,
       transparent var(--note-band)),
-    var(--note-paper);
+    var(--note-sheet, var(--note-paper));
   /* No ruled border - pad paper has no printed edge. Just enough of an inset
      line to keep a pale note off a pale board. */
   box-shadow: inset 0 0 0 var(--board-hairline) color-mix(in srgb, var(--ink) 7%, transparent);
@@ -123,17 +123,27 @@
    paper back to full. The shadow twin goes (noTwin() in canvas/items.ts),
    because it would show through the sheet as a grey block.
 
-   background-color alone on the card, so the adhesive band over it stays and
-   the change can fade. The pad colour on the item goes, or the two layers
-   would stack to more than 60%. Not on a note with no paper, which the rules
-   above have already emptied. */
-.item[data-type="note"][data-faded]:not([data-bare]) { background: none; }
+   The sheet is --note-sheet, the colour the card's paper reads here and at
+   Harsh (quality.css), so one declaration fades every tier. A colour and not
+   a background on the card, so the adhesive band over it stays and the change
+   can fade. The pad colour on the item goes, or the two layers would stack to
+   more than 60%. Not on a note with no paper, which the rules above have
+   already emptied. */
+.item[data-type="note"][data-faded]:not([data-bare]) {
+  --note-sheet: color-mix(in srgb, var(--note-paper) 60%, transparent);
+  background: none;
+}
+.item[data-type="note"][data-faded]:not([data-bare]):is(:hover, .is-editing) {
+  --note-sheet: var(--note-paper);
+}
 .item[data-type="note"][data-faded]:not([data-bare]) .card {
-  background-color: color-mix(in srgb, var(--note-paper) 60%, transparent);
   transition: background-color var(--dur-fast) var(--ease);
 }
-.item[data-type="note"][data-faded]:not([data-bare]):is(:hover, .is-editing) .card {
-  background-color: var(--note-paper);
+/* Zoomed out past the chrome rung the body is down (item-chrome.css) and the
+   item is the whole note, so it takes the pad colour back. With none, a faded
+   note that far out was a name floating on the board. */
+#world.zoom-far .item[data-type="note"][data-faded]:not([data-bare]) {
+  background: var(--note-paper);
 }
 
 /* A note is a column of formatted block-lines (renderers.ts/note). The column
@@ -967,9 +977,12 @@ plates do: below a third of size a card is a coloured tile, and a click on
       linear-gradient(180deg,
         rgb(var(--ink-c) / 6%) 0,
         transparent var(--note-band)),
-      var(--note-paper);
+      var(--note-sheet, var(--note-paper));
     box-shadow: inset 0 0 0 var(--board-hairline) rgb(var(--ink-c) / 7%);
   }
+  /* No 60% sheet without color-mix(): a faded note stays solid here, where the
+     unparseable mix would have left its paper transparent. */
+  .item[data-type="note"][data-faded]:not([data-bare]) { --note-sheet: var(--note-paper); }
   .note-toolbar {
     box-shadow:
       0 3px 10px rgb(var(--ink-c) / 16%),

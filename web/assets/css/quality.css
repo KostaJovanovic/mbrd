@@ -70,9 +70,10 @@
    `rotate` outright because tilt tokens can be set inline on :root. */
 :root[data-whimsy="2"] .item { rotate: 0deg; }
 
-/* Stickies go flat: ruled edge, no adhesive band. */
+/* Stickies go flat: ruled edge, no adhesive band. --note-sheet is a faded
+   note's paper (cards.css), which this rule outranks and so has to read. */
 :root[data-whimsy="2"] .item[data-type="note"] .card {
-  background: var(--note-paper);
+  background: var(--note-sheet, var(--note-paper));
   box-shadow: inset 0 0 0 var(--board-hairline) var(--ink);
 }
 

@@ -229,7 +229,10 @@ date: 14 September 2026
   step as the switch, and a corner drag keeps that shape until you hold Shift.
 - [new] **A sticky offers `Low opacity` where it offered `No card`.** The paper
   goes to 60% and the words stay solid, and the note comes back to full under the
-  pointer or while you type in it.
+  pointer or while you type in it. It is see-through at every whimsy tier, Harsh
+  included, and below 40% zoom it is a whole note again.
+- [new] **Holding Ctrl while you scroll moves the board up and down,** as Shift
+  moves it across. A pinch on a touchpad still zooms.
 - [fix] **Below 40% zoom the buttons on a card go** - the anchor and pin badges
   and the title card's pen and `T`. An audio card's play button fits inside the
   card, and one with cover art shows the art with the button over it.

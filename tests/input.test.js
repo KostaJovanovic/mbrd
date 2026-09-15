@@ -422,6 +422,30 @@ test('a pinch zooms from either device, and takes nothing with it', () => {
   assert.equal(wheel({ deltaY: 100, timeStamp: 1_020 }).kind, 'zoom');
 });
 
+test('Control held on the keyboard pans up and down, where a pinch zooms', () => {
+  // ctrlKey arrives on both. The third argument is the Control key the page
+  // saw pressed, which a pinch never sends.
+  const held = (props = {}) => readWheel({
+    deltaX: 0, deltaY: 0, deltaMode: 0, ctrlKey: true, shiftKey: false, timeStamp: 0, ...props,
+  }, 800, true);
+  const notch = held({ deltaY: 100, timeStamp: 1_000 });
+  assert.deepEqual([notch.kind, notch.dx, notch.dy, notch.factor], ['pan', 0, 100, 1],
+    'a wheel notch with Control down moves the board down, and zooms nothing');
+  resetWheelKind();
+  assert.equal(held({ deltaY: 3, deltaMode: 1, timeStamp: 5_000 }).dy, 48, 'Firefox counts in lines');
+  resetWheelKind();
+  assert.equal(held({ deltaX: 30, timeStamp: 7_000 }).dy, 30, 'a sideways delta goes onto the vertical');
+
+  // The same event with no key down is a pinch.
+  resetWheelKind();
+  assert.equal(wheel({ deltaY: 100, ctrlKey: true, timeStamp: 9_000 }).kind, 'zoom');
+
+  // And it leaves the device alone: the next plain notch is a zoom.
+  resetWheelKind();
+  held({ deltaY: 100, timeStamp: 11_000 });
+  assert.equal(wheel({ deltaY: 100, timeStamp: 11_020 }).kind, 'zoom');
+});
+
 // A swipe, as a burst of events a few milliseconds apart - the lean is
 // measured over a gesture, not one event. Returns the last event's result.
 function swipe(steps) {
