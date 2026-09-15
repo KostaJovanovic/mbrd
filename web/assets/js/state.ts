@@ -135,6 +135,7 @@ export {
 
 export { baseStep, snapshotGeom, applyGeom, commitGeom, placeMobileItems, mobileBoardWidth, travelling };
 export type { GeomPatch } from './layout.ts';
+import type { GeomPatch } from './layout.ts';
 
 export {
   STICK_MIN, stuckTo, wouldStick, restick,
@@ -796,11 +797,34 @@ export function setItemUpAxis(id: string, axis: unknown) {
     () => write(prev, shot, shotInk));
 }
 
-/** Per-item fit override (cover/contain). Undoable. */
-export function setItemFit(id: string, fit: unknown) {
+/**
+ * Per-item fit override (cover/contain). Undoable.
+ *
+ * `shape` is the card's new box, for a switch to Fit that brings the card to
+ * its picture's proportion (fitShapes, ui/board-actions.ts). It rides in the
+ * same step as the fit, so one Undo puts back both the fill and the box. It can
+ * also come alone, for a card already set to Fit that is pressed again.
+ */
+export function setItemFit(id: string, fit: unknown, shape: GeomPatch[] = []) {
   const it = byId(id);
   if (!it || (it.type !== 'image' && it.type !== 'video')) return;
-  patchMeta(id, 'fit', fit, 'Fit media', oneOf('cover', 'contain'));
+  if (!shape.length) {
+    patchMeta(id, 'fit', fit, 'Fit media', oneOf('cover', 'contain'));
+    return;
+  }
+  const pick = oneOf('cover', 'contain');
+  const next = pick(fit);
+  const prev = pick(it.meta?.fit);
+  const before = snapshotGeom(shape.map(g => g.id));
+  const write = (value: unknown, geom: GeomPatch[]) => () => {
+    const item = byId(id);
+    if (!item) return;
+    const { fit: _drop, ...rest } = item.meta || {};
+    item.meta = value == null ? rest : { ...rest, fit: value };
+    bus.emit('item', id);
+    applyGeom(geom);
+  };
+  commit('Fit media', write(next, shape), write(prev, before));
 }
 
 /**

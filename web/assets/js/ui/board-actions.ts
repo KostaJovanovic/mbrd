@@ -9,14 +9,14 @@ import { cue } from '../cuelume/engine.ts';
 import { formatLength, scaleFrom, MM_PER_INCH } from '../measure.ts';
 import { ask } from './dialog.ts';
 import {
-  board, bus, selection, setSetting, byId,
+  board, bus, selection, setSetting, byId, commit,
   snapshotGeom, applyGeom, commitGeom, baseStep,
   recheckBoardGeometry, placeMobileItems,
   isRider, stuckTo, stuckPlacement, isFence, isLocked, fenceOf, fenceBox,
   declareOp,
   type GeomPatch,
 } from '../state.ts';
-import { latticeBox, itemBounds, rotatedExtents } from '../geometry.ts';
+import { latticeBox, itemBounds, pictureShape, rotatedExtents } from '../geometry.ts';
 import { travelMs } from '../canvas/viewport.ts';
 import { repaintGround, forgetLookInk } from '../canvas/ground.ts';
 import { barHeight, resetItems } from '../canvas/items.ts';
@@ -25,7 +25,7 @@ import { resetModels } from '../canvas/model.ts';
 import { flushNoteEdit, noteFloor } from '../canvas/notes.ts';
 import { getAsset } from '../storage/assets.ts';
 import { saveBoard, exportBoard, autosave, clearAllData } from '../storage/storage.ts';
-import { defaultSize, measureSize } from '../canvas/renderers.ts';
+import { defaultSize, measureSize, pictureRatio } from '../canvas/renderers.ts';
 import { arrange, mobileOrder } from '../arrange/arrangements.ts';
 import type { Obstacle } from '../arrange/arrangements.ts';
 import { syncBoardMode } from './board-view.ts';
@@ -218,6 +218,72 @@ export async function resetSize() {
   applyGeom(before.map((g, i) => ({ ...g, w: sized[i].w, h: sized[i].h })));
   commitGeom(items.length === 1 ? 'Reset size' : `Reset ${items.length} sizes`,
     before, items.map(i => i.id));
+}
+
+/**
+ * The boxes that bring photo and video cards to their pictures' proportions,
+ * for Fit: the shorter side stays and the longer follows (pictureShape in
+ * geometry.ts). Centres and turns stay, as Reset size keeps them. Only cards
+ * whose box changes come back, as whole rows for applyGeom().
+ *
+ * Desktop only. The Feed already draws a Fit tile at its picture's shape
+ * (ratioOf in ui/feed.ts), and the Mobile board is a packed grid, where a card
+ * that grows lands on its neighbours. Anchored cards keep their size, as they
+ * do under Reset size.
+ *
+ * One card at a time on purpose: each is a decode, and a whole board of them
+ * at once would hold every picture in memory together.
+ */
+export async function fitShapes(items: Item[]): Promise<GeomPatch[]> {
+  if (board.layoutMode === 'mobile') return [];
+  const sizes = new Map<string, { w: number, h: number }>();
+  for (const it of items) {
+    if (isLocked(it)) continue;
+    const ratio = await pictureRatio(it);
+    // Read again after the wait, which can let the card move, resize or go.
+    const live = byId(it.id);
+    if (!ratio || !live) continue;
+    const shape = pictureShape(live, ratio);
+    const box = board.settings.snap ? latticeBox({ ...live, ...shape }, baseStep()) : shape;
+    const w = Math.round(box.w), h = Math.round(box.h);
+    if (w !== live.w || h !== live.h) sizes.set(live.id, { w, h });
+  }
+  // Built after the last wait, so every row holds where each card is now.
+  // presnap goes on a snapped board, as commitGeom() drops it for a resize:
+  // the memo holds the card's old shape.
+  const snap = board.settings.snap;
+  return snapshotGeom([...sizes.keys()]).map(g => ({
+    ...g, ...sizes.get(g.id), presnap: snap ? null : g.presnap,
+  }));
+}
+
+/** Bumped by each press of the Fill switch, so a slow Fit cannot land after a later Fill. */
+let mediaFitRun = 0;
+
+/**
+ * The board-wide Fill switch. Off brings every card that follows the board's
+ * default to its picture's shape, in the same step as the switch, so one Undo
+ * puts both back. On changes no box, because Fill crops to any shape.
+ */
+export async function setMediaFit(fill: boolean) {
+  const run = ++mediaFitRun;
+  const prev = board.mediaFit;
+  if (fill || prev === 'contain') {
+    setSetting('mediaFit', fill ? 'cover' : 'contain');
+    return;
+  }
+  const followers = board.items.filter(i => (i.type === 'image' || i.type === 'video')
+    && i.meta?.fit !== 'cover' && i.meta?.fit !== 'contain');
+  const shape = await fitShapes(followers);
+  if (run !== mediaFitRun) return;
+  if (!shape.length) {
+    setSetting('mediaFit', 'contain');
+    return;
+  }
+  const before = snapshotGeom(shape.map(g => g.id));
+  commit('Fit photos & videos',
+    () => { setSetting('mediaFit', 'contain'); applyGeom(shape); },
+    () => { setSetting('mediaFit', prev); applyGeom(before); });
 }
 
 /**

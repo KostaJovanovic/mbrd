@@ -24,7 +24,7 @@ import { nodeFor } from '../canvas/items.ts';
 import { frameOnScreen } from '../canvas/poster.ts';
 import { canView, openViewer } from '../ui/viewer.ts';
 import { canEditPicture, openDarkroom } from '../ui/darkroom.ts';
-import { resetSize } from '../ui/board-actions.ts';
+import { fitShapes, resetSize } from '../ui/board-actions.ts';
 
 /**
  * The members of the selection an anchor can be put on.
@@ -280,7 +280,13 @@ export function itemMetaCommands() {
       if (own === 'cover' || own === 'contain') return own;
       return board.mediaFit === 'contain' ? 'contain' : 'cover';
     },
-    setItemFit: (id: string, fit: string) => setItemFit(id, fit),
+    // Fit also brings the card to its picture's shape, in the same step (see
+    // fitShapes). Fill leaves the box alone: it crops to any shape.
+    setItemFit: async (id: string, fit: string) => {
+      const it = byId(id);
+      const shape = it && fit === 'contain' ? await fitShapes([it]) : [];
+      setItemFit(id, fit, shape);
+    },
 
     // The card, on or off - and only one at a time, like every other row here.
     // A cut-out is a judgement about *this* item, and the import guess is a

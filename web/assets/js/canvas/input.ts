@@ -25,7 +25,7 @@ import {
   itemIdFromEvent, ensureMounted, nodeFor, sync as syncItems, editItemName, showStickTarget,
 } from './items.ts';
 import { noteFloor } from './notes.ts';
-import { linkURL } from './renderers.ts';
+import { fitMode, linkURL } from './renderers.ts';
 import { embedFor, embedFloor } from './embed.ts';
 import { queryRect, queryAround } from './spatial.ts';
 import { isDesktop } from '../platform/platform.ts';
@@ -1715,7 +1715,11 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       //
       // Kept as a field rather than folded into the XOR below because it is the
       // *default* for this grip, and a future one may well want its own.
-      lockAspect: false,
+      //
+      // One default is not false: a photo or video set to Fit. Its box is the
+      // picture's own shape (fitShapes, ui/board-actions.ts), and a free corner
+      // would only put bands of paper back round it. Shift frees it.
+      lockAspect: (it.type === 'image' || it.type === 'video') && fitMode(it) === 'contain',
       snap,
     });
   }
