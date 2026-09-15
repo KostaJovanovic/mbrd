@@ -544,6 +544,22 @@ export function itemFaded(it: unknown): boolean {
   return !!it.meta.faded;
 }
 
+/** A line of a note's meta.text without the `# ` or `## ` heading mark
+ *  (canvas/note-model.ts). The mark is how the line is set, not what it says. */
+export const unmarkNoteLine = (line: string) => line.replace(/^#{1,2} /, '');
+
+/**
+ * A note's name: its first line, capped, and unmarked, or it read "# Note A"
+ * wherever a name is printed. Taken at creation (import/drop.ts) and on every
+ * edit (state.ts), so Find follows the text.
+ */
+export const noteNameOf = (text: string) => unmarkNoteLine(text.split('\n')[0]).slice(0, 40) || 'Note';
+
+/** What a card is called on screen. A note named before its mark came off
+ *  keeps "# " in the file until its next edit, so it comes off here too. */
+export const shownName = (item: { type?: string, name?: string }) =>
+  item.type === 'note' ? unmarkNoteLine(item.name || '') : item.name || '';
+
 export const TAG_MAX = 24;
 export const TAGS_PER_ITEM = 12;
 

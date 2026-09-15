@@ -233,6 +233,8 @@ date: 14 September 2026
   included, and below 40% zoom it is a whole note again.
 - [new] **Holding Ctrl while you scroll moves the board up and down,** as Shift
   moves it across. A pinch on a touchpad still zooms.
+- [fix] **A note's name no longer starts with `#`.** Find, the Timeline, the tour
+  and a note seen from far out show its words without the heading mark.
 - [fix] **Below 40% zoom the buttons on a card go** - the anchor and pin badges
   and the title card's pen and `T`. An audio card's play button fits inside the
   card, and one with cover art shows the art with the button over it.
@@ -252,7 +254,7 @@ date: 14 September 2026
   centres in the room the panel leaves.
 - [new] **The sidebar fills the screen only at 600 pixels wide or less,** where it
   did from 700. Between the two it stays a panel at the side, with the board
-  beside it.
+  beside it, and it no longer fades away while you drag one of its sliders.
 - [new] **The header editor was tidied.** The font is the sidebar's own picker
   with `Default` at the top, the size reads in pixels and every step shows,
   `Line height` appears only while `Wrap long names` is on, and `Start over` is

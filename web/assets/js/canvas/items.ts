@@ -13,7 +13,7 @@ import { copyHex } from '../clipboard.ts';
 import { itemRadius, rotatedExtents } from '../geometry.ts';
 import type { Bounds } from '../geometry.ts';
 import type { Item } from '../board-model.ts';
-import { TITLE_ID } from '../board-model.ts';
+import { TITLE_ID, shownName } from '../board-model.ts';
 import type { Viewport } from './viewport.ts';
 import { cullMargin } from './viewport.ts';
 import { buildContent, fontFamilyOf, paintStyleTileFaces } from './renderers.ts';
@@ -1381,7 +1381,7 @@ function rebuild(id: string) {
   // the keyboard had put there.
   const label = el.querySelector<HTMLElement>('.item-bar > .item-label');
   if (label) {
-    label.textContent = item.name || '';
+    label.textContent = shownName(item);
     label.hidden = !item.name;
   }
   // The headline is the same string on the same schedule, and it is a sibling
@@ -1390,7 +1390,7 @@ function rebuild(id: string) {
   // ordinary re-render.
   const head = el.querySelector<HTMLElement>(':scope > .far-head');
   if (head) {
-    head.querySelector('.fh-name')!.textContent = item.name || '';
+    head.querySelector('.fh-name')!.textContent = shownName(item);
     // The kind follows a rename too: the extension is read off item.name, so
     // renaming "sketch.png" to "sketch" changes what this card calls itself.
     head.querySelector('.fh-kind')!.textContent = farKind(item);

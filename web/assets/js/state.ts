@@ -76,7 +76,7 @@ import {
   MOBILE_COLUMNS, MOBILE_COLUMN_OPTIONS, MOBILE_TOP_ROWS, MOBILE_MIN_ROWS,
   MOBILE_BOTTOM_ROWS, MOBILE_APPEARANCE_VARS, cleanBoardTitleDraft, cleanBoardTitle,
   defaultBoardTitle, isDefaultTitle, mobileColumnCount, board, TITLE_ID, byId,
-  topZ, makeItem, isFurniture, isContent, isJoinEnd, trackTitle,
+  topZ, makeItem, isFurniture, isContent, isJoinEnd, trackTitle, noteNameOf,
 } from './board-model.ts';
 import {
   cloneSettings, layoutSettingsOf, dropIdIndex,
@@ -345,11 +345,12 @@ export function pasteItems(at: { x: number, y: number } | null = null) {
 
 
 /**
- * A note's name is its first line, capped - the copy Search reads
- * (ui/search.ts). Taken at creation (import/drop.ts) and re-taken on every
- * edit, or Find keeps showing the title the note had when it was made.
+ * A note's name is its first line, capped and without its heading mark - the
+ * copy Search reads (ui/search.ts). Taken at creation (import/drop.ts) and
+ * re-taken on every edit, or Find keeps showing the title the note had when it
+ * was made. noteNameOf() in board-model.ts, shared by both.
  */
-const noteName = (text: string) => text.split('\n')[0].slice(0, 40) || 'Note';
+const noteName = noteNameOf;
 
 /*
  * There is no plain-text `setItemText(id, text)` door, and there must not be.

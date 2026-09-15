@@ -20,6 +20,7 @@ import { icon } from './menu.ts';
 import { makeWindowDrag, makeWindowResize } from './float-window.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 import type { Item, TrashEntry } from '../board-model.ts';
+import { shownName } from '../board-model.ts';
 
 /** How many cards to a shelf. See the header: dealt, not reflowed. */
 const PER_SHELF = 3;
@@ -546,7 +547,7 @@ function label(item: Item): string {
     const url = item.meta?.url;
     return item.name || (url ? String(url) : '') || 'link';
   }
-  if (item.name) return item.name;
+  if (shownName(item)) return shownName(item);
   if (item.type === 'note') return noteText(item).split('\n')[0] || 'Empty note';
   // A nameless item stands under what it is.
   return kindName(item);

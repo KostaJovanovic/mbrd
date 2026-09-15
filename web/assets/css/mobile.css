@@ -1743,46 +1743,6 @@
      330px strip and a right-pinned zoom bar are the same piece of screen. */
   #busy { top: calc(max(12px, env(safe-area-inset-top)) + 46px); }
 
-  /* A range is the only visible thing while a finger is tuning it. The panel
-     itself dissolves as well as its controls, exposing the board beneath while
-     the active track stays exactly where the gesture began. Ancestors of that
-     input remain laid out but lose their own decoration; every other branch
-     fades completely. Releasing the pointer removes the state immediately. */
-  :is(#sidebar, #header-panel).is-slider-focus {
-    background: transparent;
-    border-color: transparent;
-    box-shadow: none;
-  }
-  :is(#sidebar, #header-panel).is-slider-focus .side-head,
-  /* The tab strip goes wholesale, like the head and the foot and unlike the
-     body: no slider is ever inside it, so it needs none of the
-     :not(:has(.is-slider-active)) care the rows below it do. */
-  :is(#sidebar, #header-panel).is-slider-focus .side-tabs,
-  :is(#sidebar, #header-panel).is-slider-focus .side-foot,
-  :is(#sidebar, #header-panel).is-slider-focus .side-body :where(*):not(:has(.is-slider-active)):not(.is-slider-active) {
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity var(--dur-fast) var(--ease);
-  }
-  /* The scrollbar goes with everything else in the panel while a slider is
-     being dragged. Written as the thumb rather than as scrollbar-color, which
-     is the app's own bar everywhere now (base.css): the standard property
-     would not have hidden the drawn one, it would have replaced it with the
-     operating system's, which is the opposite of what this rule wants. */
-  :is(#sidebar, #header-panel).is-slider-focus .side-body::-webkit-scrollbar-thumb {
-    background: transparent;
-  }
-  :is(#sidebar, #header-panel).is-slider-focus .side-body :where(*):has(.is-slider-active) {
-    background: transparent;
-    border-color: transparent;
-    box-shadow: none;
-  }
-  :is(#sidebar, #header-panel).is-slider-focus input[type="range"].is-slider-active {
-    position: relative;
-    z-index: 2;
-    opacity: 1;
-    pointer-events: auto;
-  }
   /* A flick that runs off the end of the panel would otherwise carry on into
      the page behind it, which on a phone is the browser's own overscroll. */
   .side-body { overscroll-behavior: contain; }
@@ -1878,6 +1838,50 @@
                 box-shadow var(--dur-fast) var(--ease);
   }
   #header-panel { padding-bottom: env(safe-area-inset-bottom); }
+
+  /* A range is the only visible thing while a finger is tuning it. The panel
+     itself dissolves as well as its controls, exposing the board beneath while
+     the active track stays exactly where the gesture began. Ancestors of that
+     input remain laid out but lose their own decoration; every other branch
+     fades completely. Releasing the pointer removes the state immediately.
+     Here and not from 700px: a panel at the side leaves the board in view, and
+     there the dissolve only hid the panel. createMobileSliderFocus() in
+     ui/sidebar.ts asks the same width. */
+  :is(#sidebar, #header-panel).is-slider-focus {
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+  }
+  :is(#sidebar, #header-panel).is-slider-focus .side-head,
+  /* The tab strip goes wholesale, like the head and the foot and unlike the
+     body: no slider is ever inside it, so it needs none of the
+     :not(:has(.is-slider-active)) care the rows below it do. */
+  :is(#sidebar, #header-panel).is-slider-focus .side-tabs,
+  :is(#sidebar, #header-panel).is-slider-focus .side-foot,
+  :is(#sidebar, #header-panel).is-slider-focus .side-body :where(*):not(:has(.is-slider-active)):not(.is-slider-active) {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--dur-fast) var(--ease);
+  }
+  /* The scrollbar goes with everything else in the panel while a slider is
+     being dragged. Written as the thumb rather than as scrollbar-color, which
+     is the app's own bar everywhere now (base.css): the standard property
+     would not have hidden the drawn one, it would have replaced it with the
+     operating system's, which is the opposite of what this rule wants. */
+  :is(#sidebar, #header-panel).is-slider-focus .side-body::-webkit-scrollbar-thumb {
+    background: transparent;
+  }
+  :is(#sidebar, #header-panel).is-slider-focus .side-body :where(*):has(.is-slider-active) {
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
+  }
+  :is(#sidebar, #header-panel).is-slider-focus input[type="range"].is-slider-active {
+    position: relative;
+    z-index: 2;
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 /* Landscape on a phone: the bar is still at the bottom but there is barely any
