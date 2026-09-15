@@ -157,7 +157,7 @@ back to the board.
 ## Releases
 
 ## Unpacked
-version: 0.318 - 0.389
+version: 0.318 - 0.391
 date: 14 September 2026
 
 - **An archive drops in as one card you can open, the Timeline moved to the foot
@@ -223,6 +223,12 @@ date: 14 September 2026
 - [new] **A photo or video set to `Fit` takes the shape of its picture.** The card
   keeps its shorter side and the longer one follows the picture, in the same undo
   step as the switch, and a corner drag keeps that shape until you hold Shift.
+- [new] **A sticky offers `Low opacity` where it offered `No card`.** The note
+  draws at half strength, paper and words together, and comes back to full while
+  you type in it.
+- [fix] **Below 40% zoom the buttons on a card go** - the anchor and pin badges
+  and the title card's pen and `T`. An audio card's play button fits inside the
+  card, and one with cover art shows the art with the button over it.
 
 ### The sidebar and the toolbar
 - [new] **Every dropdown in the sidebar is the app's own picker,** and the font
@@ -241,6 +247,8 @@ date: 14 September 2026
   with `Default` at the top, the size reads in pixels and every step shows,
   `Line height` appears only while `Wrap long names` is on, and `Start over` is
   `Reset`. A new board keeps its name on one line.
+- [fix] **The player and the buttons along the foot sit level with the
+  sidebar,** 14 pixels off the bottom of the window.
 
 ### The Feed and the phone
 - [new] **Every Feed tile looks like its card on the board** - style tiles, fonts
@@ -250,6 +258,8 @@ date: 14 September 2026
 - [new] **Cards on the Feed can be selected.** A click with Ctrl, Shift or Cmd
   picks one, and on a phone a long press offers `Select multiple`, after which
   each tap picks one. The menu, `Delete` and `Tags` then act on them all.
+- [new] **An audio tile on the Feed has its play button in the middle,** as a
+  video tile does.
 - [fix] **A picture set to `Fit` takes its own shape on the Feed,** tiles stand on
   a soft shadow at full quality, and on a phone the Feed runs edge to edge with
   `Find` at the top right.

@@ -28,7 +28,7 @@ stated at the top of that file.
 ## Releases
 
 ## Unpacked
-version: 0.318 - 0.389
+version: 0.318 - 0.391
 date: 14 September 2026
 
 - **Two lists worked through in one day.** The afternoon cleared the fix list
@@ -162,6 +162,34 @@ date: 14 September 2026
 - [fix] **An HEVC clip's poster frame is no longer black.** The media worker
   drove the newer ffmpeg.wasm through a call that version does not have.
 
+### Cards on the board
+
+- [new] **A card set to `Fit` takes its picture's shape.** From its menu or from
+  the board's Fill switch, a photo or video card keeps its shorter side and the
+  longer one follows the picture's proportion, in the same undo step as the fit.
+  `Fit` pressed again on a card already set to it brings it back to shape, and a
+  corner drag holds the shape until Shift frees it. The app reads the proportion
+  off the display copy, the poster frame or the file, applies the crop and the
+  quarter turn, and caches it by hash. Desktop layout only: the Feed already draws
+  Fit tiles at their shape, and on the packed Mobile grid a grown card would land
+  on its neighbours. Anchored cards keep their size, as under `Reset size`.
+- [new] **A sticky offers `Low opacity` where it offered `No card`.** The note
+  draws at half strength - paper, words and ring together - through a CSS
+  `filter: opacity()`, so it multiplies with the tag filter and a lifted board
+  rather than fighting them on specificity. Its shadow twin goes, since at full
+  strength it showed through the sheet as a grey block, and the export paints the
+  same note. It comes back to full strength while its text is edited. A note that
+  already has no paper still shows `No card`, ticked, so the paper can come back.
+  Pictures and models keep `No card`.
+- [fix] **Below 40% zoom a card's buttons go.** The anchor and pin badges and the
+  title card's pen and `T` stayed until 10%. They now go with the labels at the
+  far-zoom rung, and the title card's raise and hover bridge follow it.
+- [fix] **An audio card at far zoom keeps its play button inside it.** The button
+  is sized to the room under the name, where it hung off the card's foot, and the
+  kind and its rule left the head. A card with a sleeve wore its kind and name
+  over the art, because the rule that hides the head lost on specificity to the
+  rule that shows it. Now it shows the art with the button centred on it.
+
 ### The sidebar, the menus and the toolbar
 
 - [new] **Every sidebar dropdown is a picker,** like Palette: Layout, Units, Paper
@@ -185,11 +213,28 @@ date: 14 September 2026
   margin, so the bar slides over rather than vanishing. It measures what fits:
   every tool with its word, then icons only, then Colour, Link and Stickers behind
   `More`. At phone width it still hides with the panel.
-- [new] **Opening and closing the sidebar pans the board by half its reach.**
+- [new] **Opening and closing the sidebar pans the board by half its reach.** The
+  Feed layout's Playlist lens slides right with it and centres in the room the
+  panel leaves, above 700 pixels, since narrower the panel covers the screen.
 - [new] **The Playlist button shows once music has been on the board,** and the
   first song imported on the canvas opens the player once. An older board with
   music gets it on load, quietly. No Playlist button on the bar while a video
   plays.
+- [new] **The Header panel's `Font` is the sidebar's face picker,** `Default` on
+  top and every face A to Z with the dropped faces sorted in, each row in its own
+  face. `Font size` reads in pixels on the Mobile board, and every
+  step changes the name: the size was written rounded to 1% of the board's width
+  while a step is about 0.2%, so four steps in five did nothing, and the slider
+  now ends at the 18.75% cap the stylesheets set. `Line height` sits under
+  `Wrap long names`, 12 pixels clear of it, and shows only while wrapping is on.
+  `Wrap long names` is off on a new board. `Start over` is `Reset`, and the hint
+  about variable controls went.
+- [fix] **The foot row sits level with the sidebar.** The now-playing bar, the
+  zoom and drawer buttons, the tour bar and its editor, the drawer window, the
+  sticker pad and the Desktop Playlist window moved from 16 to 14 pixels off the
+  bottom.
+- [fix] **The quality section's `Start over` reads `Reset`,** as Appearance's
+  does.
 - [fix] **The interface sounds start switched off.** They are experimental, the
   panel says so under the dial whenever it is on, and every copy was set back to
   off once, after which a dial moved sticks. The quality dial's one-line hints
@@ -213,6 +258,15 @@ date: 14 September 2026
 - [new] **`Find` on the Feed scrolls to the hit and rings it** for a second and a
   half. It used to select the hit and fly the hidden canvas, so the wall stayed
   put and nothing was marked.
+- [new] **Feed tiles can be selected.** Ctrl, Shift or Cmd with a click adds a
+  tile to the board's selection or takes it out, and the tile does not open. A
+  long press offers `Select multiple`, after which each tap picks a tile and `Esc`
+  ends the mode. A selected tile wears a ring in the selection colour, and in the
+  mode every tile shows an empty circle, a picked one a filled circle with a tick.
+  A click between the tiles clears the selection, and the tile menu, `Delete` and
+  `Tags` act on the whole group.
+- [new] **An audio tile's play button sits in the middle of the tile,** 44 pixels
+  across, as a video tile's does, where it was a small badge in the corner.
 - [fix] **The Feed on a phone.** At full quality a tile stands on a soft drop
   shadow, a picture set to `Fit` takes its own shape as it loads rather than the
   shape of its card's box on the board, below 600 pixels the Feed sheet runs the
@@ -304,8 +358,10 @@ date: 14 September 2026
   Explorer writes it.
 - **The board format grew:** `hadMusic` at the top level, the `archive` and
   `folder` card types, a fence's `tint` and `rolled`, `demosaiced` on a developed
-  RAW card, and the history's own two files. An older build shows the new cards
-  as plain named cards and writes them back untouched.
+  RAW card, `faded` on a note at low opacity, and the history's own two files. An
+  older build shows the new cards as plain named cards and writes them back
+  untouched. A board with no Mobile header at all now opens with `Wrap long names`
+  off, and a header written before that setting existed still reads as wrapped.
 
 ### Repairs
 
@@ -336,6 +392,16 @@ date: 14 September 2026
 - **The releases no longer carry a source zip,** and `save.bat` builds the
   portable copy only when asked, as option 6, rather than spending ninety seconds
   on it every save. A README for the public release repository was drafted.
+- **The v0.381 release run failed on two legs, and both now pass.**
+  electron-builder refuses a `.deb` without a homepage and builds one only on
+  Linux, so the first release with the `.deb` was the first to find out, and the
+  desktop package now names the site. On macOS the smoke test read the board
+  before the stored one was back and saw the blank default, so it now waits for a
+  card on the board.
+- **The patch notes gained 13 and 14 September.** A check against the 9am day
+  break moved the start of Pocket Size to 0.304, and this archive gained the days
+  from 0.235 to 0.303, which only the page carried. The last comments that named the fix list point at its record in
+  `research/old/`.
 - **Credit where it is due:** the credits name ONNX Runtime, u2netp, Geist Mono,
   the evermeet.cx and John Van Sickle FFmpeg builds, Electron, sharp and
   Capacitor, and libarchive.js, which opens 7z and RAR. LibRaw arrived with
@@ -420,6 +486,245 @@ date: 13 September 2026
   and the release in the project notes, and the launchers in the contributing
   guide.
 - The scratch folders from the connection-line work were deleted.
+
+## Well Connected
+version: 0.297 - 0.303
+date: 12 September 2026
+
+- **The lines between cards were rebuilt, photos grew a lighter stand-in, and
+  link cards say more.** A day spent on the board's plumbing.
+
+### The lines between cards
+- [new] **Connection lines were rebuilt.** A line leaves and arrives on whichever
+  side of each card is nearest, finds its way around the cards between it with
+  clean right-angled bends rather than a staircase, and wears the look of the
+  whimsy dial. Several lines meeting one card fan across its edge instead of
+  stacking, and a line you draw by dragging keeps the curve it had under your hand.
+- [fix] **The "Cannot join" mark is gone.** The rebuilt router reaches a side of
+  every card, so the round badge that used to pin over a card and announce the
+  pairs it could not connect has nothing left to report.
+
+### Photos and the Feed
+- [new] **Every photo keeps a lighter display copy,** about a thousand pixels on
+  its long side, which is what the board and the Feed now draw. An older board has
+  the copies filled in the first time it opens.
+- [new] **A card shows its full original when you zoom right in,** and drops back
+  to the light copy when you zoom out - so a close look stays sharp without the
+  whole board carrying full-size pictures.
+- [faster] **The Feed keeps up on a big board.** It draws only the tiles in view
+  and fills them in as you scroll, each picture set to fill or fit its tile rather
+  than all of them decoded at once.
+
+### Link cards
+- [new] **Player and brand cards say more.** A card fetches the page's own title,
+  names the Steam game or the Reddit community it points at, and shows the X logo
+  where a link leads there.
+- [new] **A link card's menu leads with `Edit` and `Copy link`,** and every link
+  out of the app asks once before it takes you off the board.
+- [fix] **A pasted player link arrives the right size,** at the least a player
+  needs rather than the smaller default a plain link uses.
+
+## Live Links
+version: 0.295 - 0.296
+date: 11 September 2026
+
+- **A link card stopped being a title and a favicon,** and a Spotify link plays
+  where it sits.
+- [new] **A Spotify link plays on the board.** Paste a track, album or playlist
+  and it becomes the real player in place, with the Spotify mark stretched across
+  it.
+- [new] **Every link card wears its site.** The site name fills the width of the
+  card and its logo sits on the chip, so a wall of links reads as a wall of
+  places rather than a column of addresses.
+
+## Own Title Bar
+version: 0.293 - 0.294
+date: 8 September 2026
+
+- **The desktop window draws its own title bar.**
+- [new] **The desktop window draws its own title bar,** in the app's type and
+  colours, carrying the name of the open board.
+- **Maintenance:** the comments throughout the code were rewritten in plain,
+  controlled English. Nothing on a board changed.
+
+## Quiet Bump
+version: 0.292
+date: 7 September 2026
+
+- **Nothing a reader would notice** - a version bump only.
+
+## A Window of Its Own
+version: 0.273 - 0.291
+date: 6 September 2026
+
+- **mbrd is an app you can install now.** The board in the browser is unchanged
+  and is still the whole of it. What the desktop adds is a window of its own, your
+  boards where you can see them, and three jobs a tab is not allowed to do.
+
+### Installing
+- [new] **mbrd installs on Windows, macOS and Linux.** One `Setup.exe` asks on a
+  page of its own whether to install or to leave a portable copy, a `.dmg` for
+  macOS and an `.AppImage` for Linux. `/download` has the three, and says plainly
+  what your computer will say about an app nobody has paid to sign yet, and what to
+  do about it.
+- [new] **A `.mbrd` file opens by double-clicking it.** The title bar says which
+  board is open, a menu bar carries the app's own commands, and a second file
+  opens in the window already running rather than starting another.
+- [new] **New versions arrive on their own and install when you quit.** A note
+  says which version will install when you close the app, and then nothing happens
+  until you do. A portable copy and an unsigned macOS build say they cannot replace
+  themselves rather than offering a button that fails.
+
+### What the desktop does that a tab cannot
+- [new] **Your boards are a folder, not a browser's storage.** They sit in
+  `%APPDATA%/mbrd` and its equivalents, and a portable copy keeps them in `data`
+  beside the program. A browser may clear its own storage to make room. A folder
+  stays where you put it.
+- [new] **`Optimize` does video on the desktop.** It is the first thing this app
+  can do there and cannot do in a tab. ffmpeg is a program sitting beside the app
+  rather than a 32 MB download into a page.
+- [faster] **`Remove background` is close to instant on the desktop** - 13
+  milliseconds against a couple of seconds in a browser, once the model has loaded
+  the first time.
+- [new] **`Add files` offers every format mbrd knows** - twelve groups, from
+  pictures and sound to 3D and CAD, archives, maps and disk images - where it had
+  offered only the four kinds the app can draw.
+
+## Off This Machine
+version: 0.271 - 0.272
+date: 2 September 2026
+
+- **A board can be shared as a link, and kept in your own Google Drive.**
+- [new] **`Share link` puts the board in your Drive and copies a link anybody can
+  open.** `Keep this board` copies it to your account and keeps it up to date from
+  then on, `Open from cloud` opens it on another machine, `Sync now` sends
+  whatever has changed, and `Stop syncing` leaves the stored copy where it is.
+- The app asks for the one permission that reaches files it put there itself, and
+  for nothing else in your Drive.
+
+## Even Edges
+version: 0.266 - 0.270
+date: 31 August 2026
+
+- **A handful of repairs the audits had been carrying, and a Mobile board that
+  resists at its edges.**
+- [fix] **A Mobile board resists at its edges instead of stopping dead.** Dragged
+  past the top it follows at a diminishing fraction of your finger and settles back
+  when you let go.
+- [fix] **The tour's chips and the timeline's marks are one shape,** where they
+  had been two rows of small squares agreeing about nothing.
+- [fix] **Two colours the tier work had left behind** are put right.
+- **Maintenance:** two small repairs the audits had been carrying, and the
+  research written up.
+
+## Off Day
+version: 0.265
+date: 28 August 2026
+
+- **Nothing a reader would notice** - a version bump only.
+
+## Odd Hours
+version: 0.264
+date: 25 August 2026
+
+- **Nothing a reader would notice** - a version bump only.
+
+## Under the Hand
+version: 0.258 - 0.263
+date: 22 August 2026
+
+- **Mostly a release about what the app does when you touch it:** a press that is
+  answered, a menu that leaves the way it came, a board that steps back while you
+  follow a thread across it. Two tools also stopped guessing, and the tour is
+  built somewhere else entirely.
+
+### Touch and menus
+- [new] **Every button answers a press,** and a tapped one stops staying lit
+  afterwards. On a touch screen the browser answers hover from the last tap and
+  leaves it standing, so a tool pressed once looked chosen until something else
+  was.
+- [new] **Menus leave the way they arrive.** Find, the right-click menu, the
+  toolbar's flyouts, the fence offer and the connection chip all used to appear and
+  then simply vanish. Each plays its way out now, and a flyout opens from the
+  middle of the button that opened it rather than from its corner.
+
+### The tour, and following a thread
+- [new] **The tour is built on the board.** Every card carries a small square in
+  its corner - a number if it is at that stop, a `+` if it is not - and a bar along
+  the foot holds the order and a caption for each stop. It used to be a list in a
+  panel covering the third of the board you were picking cards from.
+- [new] **Following a card's threads steps the rest of the board back.** Hovering a
+  card used to drop every line that was not its own. The cards those lines reach
+  stay as they are and everything else goes quiet - enough to separate, not enough
+  to hide.
+- [fix] **A connection finds its way around the cards between its ends,** where it
+  used to settle on a side before looking and send a line behind a card.
+- [fix] **The connect tool puts itself down after a pair,** with Shift keeping it
+  up. It stayed armed before, which every first-time hand read as the app having
+  got stuck.
+
+### The two tools that stopped guessing
+- [new] **`Remove background` finds the subject,** rather than filling inwards from
+  the edges against their average colour. A card cut out this way is cut out in the
+  exported picture too.
+- [new] **CAD files draw properly.** `.iges` and `.igs` are read at all now, and
+  they and `.step` go through a real CAD kernel rather than this app's own reading
+  of their surfaces, so a curved part arrives curved.
+- [fix] **A cut-out card stops growing its background back when you zoom out.**
+
+## The Long Way Round
+version: 0.253 - 0.257
+date: 18 August 2026
+
+- **A release with almost nothing new on it:** the app was read through twice for
+  work it was doing twice over, and the result cleared.
+- [fix] **The palette's photo count reads `Every photo` again** at the top of its
+  range, where it had printed `120 photos`.
+- [fix] **Sizes in feet and inches print like sizes in centimetres.** They read
+  `4 ft 3 × 5 ft 2 in`, with one unit for the pair, as the metric ones always did.
+- [faster] **Word, PowerPoint and the older `.doc` and `.xls` files find their
+  preview sooner.**
+- [faster] **Saving, autosaving and emptying the bin cost less on a big board.**
+- [fix] **The sticker and sound windows stop leaking a little memory each time
+  they open.**
+
+## Face Up
+version: 0.242 - 0.252
+date: 17 August 2026
+
+- **A release about cards that used to be blank.** A great many files that dropped
+  in as a grey rectangle with a name now show their own picture, and the clips that
+  would not preview at all finally do.
+
+### Files that show their own picture
+- [new] **Documents and design files show the thumbnail they were saved with.**
+  Word, Excel, PowerPoint, Pages, Numbers, Keynote and OpenDocument files, the
+  older `.doc`, `.xls` and `.ppt`, and Visio, Krita, Procreate, SolidWorks and 3ds
+  Max files besides.
+- [new] **Programs and app packages show their own icon.** A Windows `.exe` or
+  `.dll`, an Android `.apk`, an iOS `.ipa`, a Windows `.appx`, an ebook, a comic or
+  a 3D-print package shows its icon or its cover.
+- [new] **Camera RAW and HEIC photos show a real image.** The app pulls out the
+  preview the camera tucked inside, so a folder of `.cr2`, `.nef`, `.arw`, `.dng`
+  or `.heic` files is a wall of pictures again.
+
+### Video
+- [new] **Clips a browser cannot play still get the right shape and facts.** AVI,
+  WMV, FLV, MPEG and their kind now carry their true length and dimensions.
+- [fix] **Video previews appear on Android phones and on Firefox.** A clip used to
+  land as a blank card there, a phone's own camera footage being the exact case
+  that failed.
+- [fix] **Photo-heavy boards no longer run older iPhones and iPads out of memory.**
+  The picture-shrinking that keeps a big board inside a tab's memory had stopped
+  working on Safari before 16.4.
+- [fix] **Emptying the bin actually frees the space.** A deleted file's data used
+  to travel on inside the board and be written into every save afterwards.
+
+## Fallow
+version: 0.235 - 0.241
+date: 16 August 2026
+
+- **Nothing a reader would notice** - version bumps only.
 
 ## Every Corner
 version: 0.207 - 0.230
