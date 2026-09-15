@@ -470,9 +470,12 @@
 </symbol>
 
 <!-- The Timeline's one transport button (ui/timeline-view.ts), drawn the way
-     a player's is. Play and pause are one button that swaps its glyph. -->
+     a player's is. Play and pause are one button that swaps its glyph. The
+     triangle's box sits on the centre line. It stood one unit right, the
+     usual optical nudge, and inside the bordered button that read as
+     off-centre. -->
 <symbol id="i-tl-play" viewBox="0 0 16 16">
-  <path d="M5 3v10l8-5z"/>
+  <path d="M4 3v10l8-5z"/>
 </symbol>
 <symbol id="i-tl-pause" viewBox="0 0 16 16">
   <path d="M5.5 3.5v9M10.5 3.5v9"/>

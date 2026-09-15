@@ -185,6 +185,8 @@ date: 14 September 2026
   never steps,** such as the board's title or a setting.
 - [fix] **Stepping through the Timeline redraws a card whose look changed,** such
   as a note set to `Low opacity`, where it kept the look it had.
+- [fix] **`Play` lines up with the sidebar's edge,** its triangle sits in the
+  middle of the button, and the gear has the outline and ground of a button.
 
 ### The tour
 - [new] **A board with no tour offers `Create tour`,** and `Take the tour` and
