@@ -224,7 +224,15 @@ date: 14 September 2026
   `More`. At phone width it still hides with the panel.
 - [new] **Opening and closing the sidebar pans the board by half its reach.** The
   Feed layout's Playlist lens slides right with it and centres in the room the
-  panel leaves, above 700 pixels, since narrower the panel covers the screen.
+  panel leaves, above 600 pixels, since narrower the panel covers the screen.
+- [new] **The sidebar and the header panel fill the screen at 600 pixels or
+  less,** where they did from 700 with the rest of the phone layout. From 601 to
+  700 the phone layout holds, and the panel is the 322-pixel sheet at the side.
+  The zoom controls and the masthead pen stay up beside it, a tap on a row no
+  longer closes it, and on a Desktop board it pans the view as it does on a
+  wide screen. The move is
+  one block in `mobile.css` and `panelFillsScreen()` in `ui/sidebar.ts`, which
+  ask the same width, and a test holds the two together.
 - [new] **The Playlist button shows once music has been on the board,** and the
   first song imported on the canvas opens the player once. An older board with
   music gets it on load, quietly. No Playlist button on the bar while a video
