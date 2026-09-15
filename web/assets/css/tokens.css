@@ -613,8 +613,8 @@
    the sheet's fade (--dur-palette); waiting for the colours to finish first
    read as two changes, not one. After the .is-fading rules
    above, which are in force at the same moment and would zero it. Animations
-   off in Quality flatten --dur-palette and --dur-fast (section 9), so the
-   corners change at once there. Reduced motion never gets the class.
+   off in Quality flatten --dur-palette (section 9), so the corners change at
+   once there. Reduced motion never gets the class.
    ========================================================= */
 :root.is-reshaping *,
 :root.is-reshaping *::before,
@@ -643,8 +643,10 @@
   transition: border-radius var(--dur-palette) var(--ease) !important;
 }
 
-/* Into Harsh the corners snap rather than settle: Harsh's own --dur-fast, a
-   tenth of a second, as the colours start to fade. */
+/* Into Harsh the corners go quicker than the colours, but still travel:
+   Harsh's own --dur-fast, a tenth of a second on its plain `ease`, read as no
+   animation at all. A fraction of --dur-palette, so Quality's flatten still
+   reaches it. */
 :root.is-reshaping[data-whimsy="2"] *,
 :root.is-reshaping[data-whimsy="2"] *::before,
 :root.is-reshaping[data-whimsy="2"] *::after,
@@ -654,7 +656,7 @@
 :root.is-reshaping[data-whimsy="2"] :is(#world, #mobile-feed) .is-reshape-seen *,
 :root.is-reshaping[data-whimsy="2"] :is(#world, #mobile-feed) .is-reshape-seen *::before,
 :root.is-reshaping[data-whimsy="2"] :is(#world, #mobile-feed) .is-reshape-seen *::after {
-  transition-duration: var(--dur-fast) !important;
+  transition-duration: calc(var(--dur-palette) * 0.4) !important;
 }
 
 /* --accent-text is in that list and --accent-fg is not, which looks arbitrary
