@@ -23,6 +23,8 @@ export type BusEvents = {
   'trash:evicted': number,
   'trash:purged': { items: number, bytes: number },
   history: void,
+  /** An edit refused because the Timeline is playing (history.ts commit()). */
+  readonly: void,
   connections: void,
   autosaved: void,
   filter: void,

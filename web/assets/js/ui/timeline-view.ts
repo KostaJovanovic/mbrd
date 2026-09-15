@@ -17,6 +17,7 @@ import {
   board,
   timelineSteps, timelineAt, timelineStale, goTo, editStep, stepEditable,
   timelineBytes, trimmable, trimTimeline, describeStep, nameStep, deleteTimeline,
+  setTimelinePlaying,
 } from '../state.ts';
 
 /**
@@ -56,8 +57,12 @@ const MAX_DOTS = 400;
 const STEP_MS = Math.round(1000 / 3.5);
 /** The replay's timer, or 0 when nothing is playing. */
 let playing = 0;
-/** Set while the replay moves the marker, so its own step does not pause it. */
-let stepping = false;
+
+/**
+ * What goes inert while Play runs: the tools that edit the board. Find stays,
+ * since it only flies the view. The gear goes too, in paintPlay().
+ */
+const LOCKED = '#toolbar [data-cmd]:not([data-cmd="find"]), #history-ctl, #drawer-btn, #mobile-header-edit-btn';
 
 /** The two faces of the play button. Named constants, so tests/icons.test.js reads both. */
 const PLAY = { icon: 'i-tl-play', said: 'Play the history' };
@@ -143,11 +148,10 @@ function sentenceFor(step: Step): string {
 
 export function initTimeline() {
   // The bus first and outside the guard below, like every init here.
-  bus.on('history', () => {
-    // A change that is not the replay's own step - an edit, an undo - stops it.
-    if (playing && !stepping) pause();
-    if (open) render();
-  });
+  // Only Pause stops a replay, besides its own last step and a board that goes:
+  // nothing can edit the board while it runs (see paintPlay()).
+  bus.on('history', () => { if (open) render(); });
+  bus.on('readonly', refuseEdit);
   bus.on('board:load', () => {
     pause();
     if (open) render();
@@ -173,7 +177,8 @@ export function initTimeline() {
   // Delegated: the marks are rebuilt on every change.
   track?.addEventListener('click', event => {
     const dot = rowUnder(event, '.tl-step');
-    if (!dot?.dataset.at) return;
+    // Not while Play runs, which only Pause stops.
+    if (!dot?.dataset.at || playing) return;
     goTo(Number(dot.dataset.at));
   });
   track?.addEventListener('keydown', stepKeys);
@@ -183,23 +188,18 @@ export function initTimeline() {
   track?.addEventListener('contextmenu', event => {
     const dot = rowUnder(event, '.tl-step');
     if (!dot?.dataset.at) return;
+    if (playing) { event.preventDefault(); return; }
     const index = Number(dot.dataset.at) - 1;
     const entries = editEntries(index);
     if (!entries.length) return;
     event.preventDefault();
     openAnchored(dot.getBoundingClientRect(), entries, { label: 'Change this step' });
   });
-  // A finger's pan and a trackpad's sideways swipe scroll natively: held to the
-  // current step here, as every scroll the page makes itself is.
-  track?.addEventListener('scroll', () => { scrollToStep(track!.scrollLeft); placeMarker(); paintScroll(); }, { passive: true });
+  // A finger's pan and a trackpad's sideways swipe scroll natively, held to
+  // whole steps here.
+  track?.addEventListener('scroll', () => { scrollToStep(track!.scrollLeft, false); placeMarker(); paintScroll(); }, { passive: true });
   wireMarker();
   wireScroll();
-  // A press anywhere but the play button pauses a replay.
-  document.addEventListener('pointerdown', event => {
-    if (!playing) return;
-    if (event.target instanceof Node && playButton?.contains(event.target)) return;
-    pause();
-  }, true);
   if (typeof ResizeObserver === 'function') {
     new ResizeObserver(() => { writeDock(); fitView(); placeMarker(); paintScroll(); }).observe(strip);
   }
@@ -213,6 +213,12 @@ export const timelineShown = () => open;
 
 /** The Timeline button: up or down, remembered on this device. */
 export function toggleTimeline() {
+  // The bar holds Pause, the one way to stop a replay, so it stays while one runs.
+  if (playing) {
+    paintToggle();
+    toast('Pause the timeline before you hide it');
+    return;
+  }
   if (open) closeBar();
   else openBar();
   writePref(PREF, open ? '1' : '0');
@@ -258,7 +264,7 @@ function paintToggle() {
  * step buttons: Left and Right one step, Home and End to either end.
  */
 function stepKeys(event: KeyboardEvent) {
-  if (timelineStale()) return;
+  if (timelineStale() || playing) return;
   const at = timelineAt();
   const last = timelineSteps().length;
   const target = event.key === 'ArrowLeft' ? at - 1
@@ -268,7 +274,6 @@ function stepKeys(event: KeyboardEvent) {
           : null;
   if (target === null) return;
   event.preventDefault();
-  pause();
   if (target >= 0 && target <= last && target !== at) goTo(target);
   // render() rebuilt the marks, so the focus goes to the one the board is at.
   // It is in view already (fitView), and a focus that scrolled would land
@@ -279,28 +284,40 @@ function stepKeys(event: KeyboardEvent) {
 /** Replay from here to the newest step, or from the start when there is nothing ahead. */
 function play() {
   if (!timelineSteps().length) return;
-  if (timelineAt() >= timelineSteps().length) advance(0);
+  if (timelineAt() >= timelineSteps().length) goTo(0);
   playing = window.setInterval(() => {
     const at = timelineAt();
-    if (at < timelineSteps().length) advance(at + 1);
+    if (at < timelineSteps().length) goTo(at + 1);
     if (timelineAt() >= timelineSteps().length) pause();
   }, STEP_MS);
+  setTimelinePlaying(true);
   paintPlay();
-}
-
-function advance(target: number) {
-  stepping = true;
-  try { goTo(target); } finally { stepping = false; }
 }
 
 function pause() {
   if (!playing) return;
   clearInterval(playing);
   playing = 0;
+  setTimelinePlaying(false);
   paintPlay();
 }
 
+/** An edit the replay refused (history.ts), said once in a while, not per try. */
+let refusedAt = 0;
+function refuseEdit() {
+  const now = Date.now();
+  if (now - refusedAt < 2500) return;
+  refusedAt = now;
+  toast('The board cannot change while the timeline plays. Press Pause first.');
+}
+
 function paintPlay() {
+  // The board is read-only while Play runs, and so is the chrome that edits
+  // it, and the gear, whose rows would stop or rewrite the replay.
+  document.documentElement.classList.toggle('is-replaying', !!playing);
+  for (const el of document.querySelectorAll(LOCKED)) el.toggleAttribute('inert', !!playing);
+  const gear = strip?.querySelector<HTMLButtonElement>('.tl-gear');
+  if (gear) gear.disabled = !!playing;
   if (!playButton) return;
   const face = playing ? PAUSE : PLAY;
   playButton.replaceChildren(icon(face.icon));
@@ -354,18 +371,19 @@ function pitch(): number {
 }
 
 /**
- * Scroll to the whole step nearest `left`, as far as the step the board stands
- * on allows: every way of scrolling stops where that step would leave the
- * view, so it is on screen at all times. Moving the playhead, a click on a mark
- * or the arrow keys walk further, and the view follows them.
+ * Scroll to the whole step nearest `left`. With `hold`, only as far as the step
+ * the board stands on allows, so it stays in view: every scroll the page makes
+ * itself holds, on a render, a new step, a replay and a resize. The reader's own
+ * scrolls - the scrollbar, the wheel, a swipe - do not, or the bar could not
+ * reach the old steps; the next change of step brings the view back.
  */
-function scrollToStep(left: number) {
+function scrollToStep(left: number, hold = true) {
   if (!track) return;
   const p = pitch();
   if (!p) { track.scrollLeft = left; return; }
   const room = track.scrollWidth - track.clientWidth;
   let to = Math.round(left / p) * p;
-  const dot = track.querySelector<HTMLElement>('.tl-step.is-at');
+  const dot = hold ? track.querySelector<HTMLElement>('.tl-step.is-at') : null;
   if (dot) {
     const index = [...track.children].indexOf(dot);
     const fits = Math.max(1, Math.round(track.clientWidth / p));
@@ -455,7 +473,7 @@ function wireScroll() {
     const start = list.scrollLeft;
     // Pixels of track per pixel of thumb travel.
     const rate = (list.scrollWidth - list.clientWidth) / Math.max(1, bar.clientWidth - grip.offsetWidth);
-    const move = (e: PointerEvent) => { scrollToStep(start + (e.clientX - from) * rate); };
+    const move = (e: PointerEvent) => { scrollToStep(start + (e.clientX - from) * rate, false); };
     const up = () => {
       grip.classList.remove('is-dragging');
       grip.removeEventListener('pointermove', move);
@@ -470,7 +488,7 @@ function wireScroll() {
     if (event.button !== 0 || event.target === grip) return;
     const box = bar.getBoundingClientRect();
     const share = (event.clientX - box.left) / Math.max(1, box.width);
-    scrollToStep(share * list.scrollWidth - list.clientWidth / 2);
+    scrollToStep(share * list.scrollWidth - list.clientWidth / 2, false);
   });
   // A wheel turns the steps sideways, a whole step at a time: there is no
   // system bar to aim at now. A trackpad's small turns add up to a step; a
@@ -485,7 +503,7 @@ function wireScroll() {
     const by = Math.trunc(spun / p);
     if (!by) return;
     spun -= by * p;
-    scrollToStep(list.scrollLeft + by * p);
+    scrollToStep(list.scrollLeft + by * p, false);
   }, { passive: false });
 }
 
@@ -498,7 +516,7 @@ function wireMarker() {
   const handle = marker;
   if (!handle) return;
   handle.addEventListener('pointerdown', event => {
-    if (timelineStale() || event.button !== 0) return;
+    if (timelineStale() || playing || event.button !== 0) return;
     event.preventDefault();
     handle.setPointerCapture(event.pointerId);
     handle.classList.add('is-dragging');
@@ -611,17 +629,13 @@ function gearEntries(): MenuEntry[] {
 /**
  * Delete the whole history, after asking: the board as it stands becomes the
  * start, and the steps, their names and the undo stack all go. The board
- * itself does not change, which the question says, because "delete" next to
- * a board reads as the board.
+ * itself does not change.
  */
 async function deleteHistory() {
-  const n = timelineSteps().length;
   const answer = await ask({
     title: 'Delete the timeline?',
-    body: `All ${n} step${n === 1 ? '' : 's'} go, with their names, and the board as it`
-      + ' is now becomes the start. The board itself does not change. This cannot'
-      + ' be undone.',
-    go: 'Delete timeline',
+    body: 'You are about to delete your entire timeline. There is no going back. Are you sure?',
+    go: "Yes, I'm sure",
   });
   if (answer !== 'go') return;
   pause();

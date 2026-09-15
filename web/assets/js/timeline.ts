@@ -493,6 +493,15 @@ let replaying = false;
 /** For history.ts — suppresses undo entries during rebuild. */
 export const isReplaying = () => replaying;
 
+/**
+ * Whether the Timeline's Play is running. The board is shown, not worked on,
+ * while it is: commit() refuses every edit (history.ts) and a press on the
+ * canvas pans. Set by ui/timeline-view.ts, which owns Play.
+ */
+let playing = false;
+export const timelinePlaying = () => playing;
+export function setTimelinePlaying(on: boolean) { playing = on; }
+
 /** Drop undo/redo stacks. Injected by history.ts (layering: this module cannot import it). */
 let dropStacks: (() => void) | null = null;
 export function setStackDropper(fn: (() => void) | null) { dropStacks = fn; }

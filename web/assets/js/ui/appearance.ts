@@ -256,10 +256,7 @@ let fadeEnd = 0, fading = false;
 function followFade() {
   if (typeof requestAnimationFrame !== 'function') return;
   const still = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-  const raw = readToken('--dur-palette');
-  const ms = raw.endsWith('ms') ? parseFloat(raw)
-    : raw.endsWith('s') ? parseFloat(raw) * 1000 : NaN;
-  fadeEnd = performance.now() + (still ? 0 : Number.isFinite(ms) ? ms : FADE_MS);
+  fadeEnd = performance.now() + (still ? 0 : paletteMs());
   if (fading) return;
   fading = true;
   // .is-fading suppresses other transitions to prevent colour flashing.
@@ -279,6 +276,49 @@ function followFade() {
     }
   };
   requestAnimationFrame(step);
+}
+
+/** --dur-palette in milliseconds: how long the sheet fades, and the corners travel. */
+function paletteMs() {
+  const raw = readToken('--dur-palette');
+  const ms = raw.endsWith('ms') ? parseFloat(raw)
+    : raw.endsWith('s') ? parseFloat(raw) * 1000 : NaN;
+  return Number.isFinite(ms) ? ms : FADE_MS;
+}
+
+let reshapeTimer = 0;
+
+/** The cards that ease with the interface. See reshapeCorners(). */
+const SEEN = 'is-reshape-seen';
+
+/**
+ * Ease the corners into a new tier: .is-reshaping lets border-radius, and
+ * nothing else, travel with the colours (tokens.css, 1c). On while they
+ * travel and no longer, since for that time it overrules every other transition.
+ *
+ * Cards ease only when on screen and at 40% or closer; the rest change at once.
+ * Called before the tier is written: the measure below flushes layout, and a
+ * flush after the write would lay the new corners out with no transition.
+ */
+function reshapeCorners() {
+  if (typeof window !== 'object' || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+  clearTimeout(reshapeTimer);
+  for (const el of document.querySelectorAll(`.${SEEN}`)) el.classList.remove(SEEN);
+  const world = document.getElementById('world');
+  // On Mobile the Feed covers the board, so only its tiles are seen.
+  const cards = world && board.layoutMode !== 'mobile' && !world.classList.contains('zoom-far')
+    ? [...world.querySelectorAll('.item')] : [];
+  for (const el of [...cards, ...document.querySelectorAll('#mobile-feed .feed-tile')]) {
+    const r = el.getBoundingClientRect();
+    if (r.width && r.right > 0 && r.bottom > 0 && r.left < innerWidth && r.top < innerHeight) el.classList.add(SEEN);
+  }
+  root.classList.add('is-reshaping');
+  // The longest run, the colours' own: into Harsh it is shorter, and the class
+  // staying on for the rest of it changes nothing anybody can see.
+  reshapeTimer = window.setTimeout(() => {
+    root.classList.remove('is-reshaping');
+    for (const el of document.querySelectorAll(`.${SEEN}`)) el.classList.remove(SEEN);
+  }, paletteMs() + 100);
 }
 
 // Re-read controls after the fade lands — getComputedStyle mid-transition
@@ -377,8 +417,12 @@ let applied = new Set<string>(
 );
 
 function apply(look: Look) {
+  const tier = String(look.whimsy);
+  // A new tier eases the corners into place. Not before one is written: the
+  // first look arrives on a page nobody has seen change.
+  if (root.dataset.whimsy !== undefined && root.dataset.whimsy !== tier) reshapeCorners();
   // Always written — level 0 has its own rules; absent would fall back to 1.
-  root.dataset.whimsy = String(look.whimsy);
+  root.dataset.whimsy = tier;
   if (look.palette) root.dataset.palette = look.palette;
   else delete root.dataset.palette;   // no attribute = the default, Papyrus
 

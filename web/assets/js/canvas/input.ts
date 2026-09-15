@@ -12,7 +12,7 @@ import {
   rolledAway, rolledFences,
   travelling, isFence, isLocked, dragRoot, isPinned, isSticky, stuckTo, resettle,
   copyItems, cutItems, pasteItems, clipboardSize, clipboardBounds, clipboardHasOurs,
-  baseStep,
+  baseStep, timelinePlaying,
 } from '../state.ts';
 import { zoomMs } from './viewport.ts';
 import type { Viewport } from './viewport.ts';
@@ -28,6 +28,7 @@ import { noteFloor } from './notes.ts';
 import { fitMode, linkURL } from './renderers.ts';
 import { embedFor, embedFloor } from './embed.ts';
 import { queryRect, queryAround } from './spatial.ts';
+import { holdRoutes } from './web.ts';
 import { isDesktop } from '../platform/platform.ts';
 
 const DRAG_SLOP = 3;      // screen px before a press becomes a drag
@@ -101,6 +102,10 @@ export function shortcutsSuppressed(
   return !!(defaultPrevented || overlayOwnsKeyboard);
 }
 
+/** The keys that still work while the Timeline plays: they move the view or
+ *  close something. See the keydown handler. */
+const VIEW_KEYS = new Set(['0', 'f', 'F', '+', '=', '-', '_', 'Escape']);
+
 // ---------------------------------------------------------------------------
 // What a press means — pure decision, handler does the doing. Branch order
 // matches the handler's; each turns on facts a headless test can state.
@@ -154,6 +159,8 @@ export type PressFacts = {
    *  moves, resizes, is picked up, or drives the view (see branch below). A
    *  fact here for the same reason as `additive`. */
   touring: boolean;
+  /** Is the Timeline playing? The board is read-only then, and a press pans. */
+  viewOnly: boolean;
 };
 
 /**
@@ -164,6 +171,10 @@ export type PressFacts = {
  */
 export function pressIntent(f: PressFacts): PressIntent {
   const middle = f.button === 1;
+  // While the Timeline plays, the board changes under the replay and nothing
+  // else may change it: every press pans, a control in a card included. Pan,
+  // not frozen, because unlike a tour the view is the reader's.
+  if (f.viewOnly) return { kind: 'pan', middle };
   if (f.onWidget && !f.spaceDown && !middle) return { kind: 'widget' };
   // While a tour runs the board is frozen: a press takes hold of nothing and
   // drives nothing. Above the grip branch as well as the move one, so a card
@@ -1117,6 +1128,10 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // out of `pan`, including a pinch stealing it and a pointercancel, clears it
     // for free. Anything that is not a pan is not a finger dragging the board.
     vp.dragging = mode === 'pan';
+    // And the lines' one fact about it: while a card is in the hand no route is
+    // recalculated, and the drop recalculates them all - see holdRoutes() in
+    // canvas/web.ts. Here for the same reason: every way out of `move` passes.
+    holdRoutes(mode === 'move');
     return next;
   }
 
@@ -1819,6 +1834,8 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       }
     }
     const id = itemIdFromEvent(target);
+    // Play on the Timeline: the four claims below all edit, so none is asked.
+    const viewOnly = timelinePlaying();
     // The connector tool, when it is armed. A press picks an end instead of
     // selecting one, and claims the whole gesture: no capture, no drag, nothing
     // deselected underneath. Caught before every branch below - including the
@@ -1837,7 +1854,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // the event rather than off `intent`, because the connector is answered
     // before pressIntent() ever runs - the additive flag it would fold Shift
     // into is about selection, and while the tool is out this press is not.
-    if (cmds.connectTap?.(id, e.shiftKey)) {
+    if (!viewOnly && cmds.connectTap?.(id, e.shiftKey)) {
       pointers.delete(e.pointerId);
       return;
     }
@@ -1845,7 +1862,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // button would otherwise just select the card): it opens the shared style
     // panel and claims the whole press, so the card underneath neither drags nor
     // deselects. Selection is left as-is - the pen only exists while selected.
-    if (target?.closest('.item-pen')) {
+    if (!viewOnly && target?.closest('.item-pen')) {
       cmds.editTitle?.();
       pointers.delete(e.pointerId);
       return;
@@ -1853,7 +1870,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // The title card's T button, caught the same way: it drops into inline rename
     // of the board name and claims the press, so the card neither drags nor
     // deselects underneath it.
-    if (target?.closest('.item-rename')) {
+    if (!viewOnly && target?.closest('.item-rename')) {
       cmds.editTitleText?.();
       pointers.delete(e.pointerId);
       return;
@@ -1862,7 +1879,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // A second press within the double-tap window that has not wandered claims the
     // gesture: no capture, no move, just the editor. The first press falls through
     // and selects as usual, recording itself for the second to match against.
-    if (id && byId(id)?.type === 'title') {
+    if (!viewOnly && id && byId(id)?.type === 'title') {
       const now = e.timeStamp;
       const last = taps.lastTitle;
       if (last && now - last.at <= DOUBLE_TAP_MS
@@ -1946,6 +1963,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // The same question tourClick asks two blocks up, at the same moment and
       // through the same door - one press, one answer about what is running.
       touring: !!cmds.inTour?.(),
+      viewOnly,
     });
 
     // Every press that takes hold of a card, said once here rather than in each
@@ -2824,8 +2842,8 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   // to fit is still on the F key and in the menu.
   el.addEventListener('dblclick', e => {
     // A tour and its editor show the board rather than work on it: no viewer,
-    // no note editor, no rename.
-    if (cmds.inTour?.() || cmds.tourEditing?.()) return;
+    // no note editor, no rename. Nor does the Timeline while it plays.
+    if (cmds.inTour?.() || cmds.tourEditing?.() || timelinePlaying()) return;
     // The point, not the target - and that is not a preference.
     //
     // onDown captures the pointer on #viewport (el.setPointerCapture, above), and
@@ -2906,6 +2924,9 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     }
     if (shortcutsSuppressed(e.defaultPrevented, overlayOwnsKeyboard())) return;
     const mod = e.ctrlKey || e.metaKey;
+    // While the Timeline plays only the keys that move the view, Escape, and
+    // Ctrl+S, which saves the board as it stands in the replay.
+    if (timelinePlaying() && (mod ? e.key.toLowerCase() !== 's' : !(VIEW_KEYS.has(e.key) || e.code === 'Space'))) return;
 
     // Let a focused control have its own keys. The shortcuts with a modifier
     // are still ours - Ctrl+S means save wherever the focus happens to be.
@@ -3032,6 +3053,15 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   // became a pan: a plain middle click still pastes, and an ordinary Ctrl+V is
   // untouched.
   addEventListener('paste', e => {
+    // While the Timeline plays nothing is pasted onto the board, ours or the
+    // import's (import/drop.ts), which this capture runs ahead of. A field
+    // still takes its paste.
+    if (timelinePlaying() && !typingInto(e.target)) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      bus.emit('readonly');
+      return;
+    }
     if (!(midPaste.down && midPaste.dragged)) return;
     e.preventDefault();
     e.stopImmediatePropagation();
@@ -3119,7 +3149,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   });
 
   addEventListener('cut', e => {
-    if (!canClip(e)) return;
+    if (!canClip(e) || timelinePlaying()) return;
     const text = cutItems(selection);
     if (!text) return;
     e.preventDefault();
@@ -3216,6 +3246,8 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
    * a finger and not for a pointer that has a Shift key beside it.
    */
   function openMenuAt(x: number, y: number, id: string | null, touch = false) {
+    // Every row on it edits or starts something, and the Timeline is playing.
+    if (timelinePlaying()) return;
     // `touch` is the same fact twice: the menu keeps the selection (below), and
     // the menu itself is told, because one of its rows is the finger's answer to
     // a Shift key and has no business on a menu a mouse opened.

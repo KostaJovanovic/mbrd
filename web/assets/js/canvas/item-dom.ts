@@ -247,6 +247,23 @@ export function resetTilt(): void {
   tiltBag.length = 0;
 }
 
+/** A card wider or taller than these, in grid spaces, hangs straight - see tooLarge(). */
+const TILT_MAX_WIDTH_CELLS = 8;
+const TILT_MAX_HEIGHT_CELLS = 6;
+
+/** Whether an item takes a lean at all - see restingTilt() for the two that do not. */
+const leans = (item: ItemLike) => !isFence(item) && item.type !== 'sticker';
+
+/**
+ * Too large to lean, for the reason a region is: the lean turns about the
+ * centre, so along a long side the far corners swing far enough to read as
+ * askew rather than as pinned by hand.
+ */
+const tooLarge = (item: ItemLike) => {
+  const step = baseStep();
+  return item.w > TILT_MAX_WIDTH_CELLS * step || item.h > TILT_MAX_HEIGHT_CELLS * step;
+};
+
 /**
  * How far off square this card rests, as a fraction of whatever the whimsy axis
  * currently allows (--item-tilt against --tilt-max). A string, because it is
@@ -273,17 +290,42 @@ export function resetTilt(): void {
  * same way a card does; it simply answers it once, at the moment it lands,
  * because its angle is geometry and a card's is a stylesheet.
  */
-/** A card wider than this hangs straight - see restingTilt(). */
-const TILT_MAX_WIDTH_CELLS = 10;
-
 export function restingTilt(item: ItemLike): string {
-  if (isFence(item) || item.type === 'sticker') return '0';
-  // A wide card hangs straight, for the reason a region does: the lean turns
-  // about the centre, so across ten grid spaces the far corners swing far
-  // enough to read as askew rather than as pinned by hand. Straight *before*
-  // the bag, so it does not take a slot out of the one-in-three split.
-  if (item.w > TILT_MAX_WIDTH_CELLS * baseStep()) return '0';
+  if (!leans(item)) return '0';
+  // Straight *before* the bag, so a large card does not take a slot out of the
+  // one-in-three split. retilt() deals it one if it is ever made smaller.
+  if (tooLarge(item)) return '0';
   return tiltFactor().toFixed(3);
+}
+
+/**
+ * A built card's lean after its size changed: straight while it is wider or
+ * taller than the limits above tooLarge(), and leaning again once it is back
+ * inside both.
+ *
+ * The lean a card gives up is parked in data-lean, so a resize that crosses the
+ * line and comes back returns the card to its own angle rather than a new one -
+ * a drag that wavers over the line crosses it on every frame it wavers. A card
+ * built too large was never dealt a lean (buildItem() parks an empty one), and
+ * draws from the bag the first time it fits. So data-lean is present exactly
+ * while a card stands straight for its size.
+ *
+ * Null when nothing changed, which is every frame of a resize that stays on one
+ * side of the line; otherwise the lean now on the card, for its twin to carry.
+ */
+export function retilt(el: HTMLElement, item: ItemLike): string | null {
+  if (!leans(item)) return null;
+  const parked = el.dataset.lean;
+  const large = tooLarge(item);
+  if (large === (parked !== undefined)) return null;
+  let tilt = '0';
+  if (large) el.dataset.lean = el.style.getPropertyValue('--item-tilt');
+  else {
+    tilt = parked || tiltFactor().toFixed(3);
+    delete el.dataset.lean;
+  }
+  el.style.setProperty('--item-tilt', tilt);
+  return tilt;
 }
 
 // ---------------------------------------------------------------------------
@@ -453,6 +495,9 @@ export function buildItem(item: ItemLike, tilt: string, picked: boolean): HTMLDi
   if (isFence(item)) writeFenceLook(el, item);
   if (picked) el.dataset.pick = '';
   el.style.setProperty('--item-tilt', tilt);
+  // Built too large to lean, so it has no lean to take back when it is made
+  // smaller. The empty park tells retilt() to deal one then.
+  if (leans(item) && tooLarge(item)) el.dataset.lean = '';
 
   const body = document.createElement('div');
   body.className = 'item-body';

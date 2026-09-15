@@ -7,6 +7,7 @@ import { toast, busy } from '../notify.ts';
 import { cue } from '../cuelume/engine.ts';
 import {
   board, bus, addItems, replaceItem, select, setItemCover, NOTE_MAX, baseStep, startSettling,
+  timelinePlaying,
 } from '../state.ts';
 import { cleanPath } from './archive.ts';
 import { addFile, derivedFile } from '../storage/assets.ts';
@@ -172,6 +173,8 @@ export function initDrop(vp: DropViewport) {
   addEventListener('dragenter', e => {
     if (!takes(e.dataTransfer)) return;
     e.preventDefault();
+    // No overlay while the Timeline plays: nothing lands on the board then.
+    if (timelinePlaying()) return;
     depth++;
     show();
     stillDragging();
@@ -180,7 +183,7 @@ export function initDrop(vp: DropViewport) {
   addEventListener('dragover', e => {
     if (!takes(e.dataTransfer)) return;
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'copy';
+    e.dataTransfer.dropEffect = timelinePlaying() ? 'none' : 'copy';
     lastPoint = { x: e.clientX, y: e.clientY };
     stillDragging();
   });
@@ -197,6 +200,8 @@ export function initDrop(vp: DropViewport) {
     if (!takes(e.dataTransfer)) return;
     e.preventDefault();
     hide();
+    // Still prevented above, or the browser would open the file in the tab.
+    if (timelinePlaying()) { bus.emit('readonly'); return; }
     const pt = lastPoint || { x: e.clientX, y: e.clientY };
     const at = vp.toWorld(pt.x, pt.y);
     // Files first: a drag can carry both files and a URL; files are the intent.

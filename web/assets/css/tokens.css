@@ -316,7 +316,17 @@
      (Left correct-by-accident until now: nobody had chosen it, which is the
      only reason it was worth a paragraph. See research/old/visual-audit-2026-08-12.md,
      item 1 of its remaining plan.) */
-  --radius-pill: 999px;
+  /* A real length, not the 999px pills are usually written with. 999px works
+     because the browser shrinks a radius too big for its box to half the box's
+     short side: "as round as this box allows", with nobody knowing the height.
+     It fails at the one thing a length must do here, which is travel. Between
+     tiers the corners ease (1c, below), and 999px to 0 spends nearly all of the
+     way above every box's half-height, where nothing moves, then snaps in the
+     last frames. 26px is half the tallest pill: Play and Shuffle at the head of
+     the Playlist, 52px. A pill taller than that would come out a rounded
+     rectangle, so one that is wants this raised. On the board a pill scales with
+     the zoom, so it is written times --iz (.item-badge in item-chrome.css). */
+  --radius-pill: 26px;
   /* Gap between a card's edge and its inner rule. The rule's own radius is
      --radius minus this, so the two curves stay concentric. */
   --card-rule-gap: 5px;
@@ -576,6 +586,75 @@
 :root.is-fading *::before,
 :root.is-fading *::after {
   transition-duration: 0s !important;
+}
+
+/* Except how a card moves. The lift, the lean and the grow on a card and its
+   shadow read no colour, so they cannot chase the sheet. Zeroed, a card popped
+   up with no travel for the whole fade, after every load and every whimsy
+   change. The hover ring (box-shadow) reads --rule-2 and keeps its zero, so the
+   first entry below is 0s: the list follows .item's own in items.css, in order.
+
+   :where() holds these at the specificity of the rule above, which they beat
+   only by coming later, so quality.css's animations-off rules still win. */
+:root.is-fading :where(.item) {
+  transition-duration: 0s, var(--dur-base), var(--dur-base), var(--dur-base), var(--dur-base) !important;
+}
+:root.is-fading :where(.item-shadow) {
+  transition-duration: var(--dur-base) !important;
+}
+
+/* =========================================================
+   1c. The corners between whimsy tiers - and only the corners.
+
+   ui/appearance.ts hangs .is-reshaping on :root when the tier changes, and
+   takes it off when the corners have landed. For that long every element's
+   own transitions give way to one on border-radius, so the type, the shadows
+   and the grid still change at once. The corners travel with the colours, for
+   the sheet's fade (--dur-palette); waiting for the colours to finish first
+   read as two changes, not one. After the .is-fading rules
+   above, which are in force at the same moment and would zero it. Animations
+   off in Quality flatten --dur-palette and --dur-fast (section 9), so the
+   corners change at once there. Reduced motion never gets the class.
+   ========================================================= */
+:root.is-reshaping *,
+:root.is-reshaping *::before,
+:root.is-reshaping *::after {
+  transition: border-radius var(--dur-palette) var(--ease) !important;
+}
+
+/* The board's cards and the Feed's tiles change at once: a big board eases
+   only what anybody can see. The exception is the cards that ui/appearance.ts
+   marks .is-reshape-seen as the tier changes: on screen, at 40% or closer.
+   Further out a card is a speck, and its corners are not worth the frames. */
+:root.is-reshaping #world *,
+:root.is-reshaping #world *::before,
+:root.is-reshaping #world *::after,
+:root.is-reshaping #mobile-feed *,
+:root.is-reshaping #mobile-feed *::before,
+:root.is-reshaping #mobile-feed *::after {
+  transition: none !important;
+}
+:root.is-reshaping :is(#world, #mobile-feed) .is-reshape-seen,
+:root.is-reshaping :is(#world, #mobile-feed) .is-reshape-seen::before,
+:root.is-reshaping :is(#world, #mobile-feed) .is-reshape-seen::after,
+:root.is-reshaping :is(#world, #mobile-feed) .is-reshape-seen *,
+:root.is-reshaping :is(#world, #mobile-feed) .is-reshape-seen *::before,
+:root.is-reshaping :is(#world, #mobile-feed) .is-reshape-seen *::after {
+  transition: border-radius var(--dur-palette) var(--ease) !important;
+}
+
+/* Into Harsh the corners snap rather than settle: Harsh's own --dur-fast, a
+   tenth of a second, as the colours start to fade. */
+:root.is-reshaping[data-whimsy="2"] *,
+:root.is-reshaping[data-whimsy="2"] *::before,
+:root.is-reshaping[data-whimsy="2"] *::after,
+:root.is-reshaping[data-whimsy="2"] :is(#world, #mobile-feed) .is-reshape-seen,
+:root.is-reshaping[data-whimsy="2"] :is(#world, #mobile-feed) .is-reshape-seen::before,
+:root.is-reshaping[data-whimsy="2"] :is(#world, #mobile-feed) .is-reshape-seen::after,
+:root.is-reshaping[data-whimsy="2"] :is(#world, #mobile-feed) .is-reshape-seen *,
+:root.is-reshaping[data-whimsy="2"] :is(#world, #mobile-feed) .is-reshape-seen *::before,
+:root.is-reshaping[data-whimsy="2"] :is(#world, #mobile-feed) .is-reshape-seen *::after {
+  transition-duration: var(--dur-fast) !important;
 }
 
 /* --accent-text is in that list and --accent-fg is not, which looks arbitrary

@@ -120,7 +120,8 @@
   overscroll-behavior: contain;
   padding: 5px;
   border: var(--hairline) solid var(--rule-2);
-  border-radius: var(--radius);
+  /* --leaf, the sidebar's corner: every floating sheet wears the same one. */
+  border-radius: var(--leaf);
   background: var(--paper-card);
   box-shadow: var(--shadow-2);
   animation: ctx-in var(--dur-fast) var(--ease);
@@ -162,9 +163,9 @@
   width: 100%;
   padding: 7px 10px;
   border: 0;
-  /* Nested radius: outer minus padding, so highlights sit concentric.
-     max(0px) because --radius is 0 on the sharp tier. */
-  border-radius: max(0px, calc(var(--radius) - 5px));
+  /* Nested radius: the menu's --leaf minus its padding, so highlights sit
+     concentric. max(0px) because the corner is 0 on the sharp tier. */
+  border-radius: max(0px, calc(var(--leaf) - 5px));
   background: none;
   color: var(--ink);
   font-size: var(--t-small);

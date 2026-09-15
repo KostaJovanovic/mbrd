@@ -459,6 +459,20 @@ test('the Playlist lens shows the player and hides the canvas, outside any width
     'the switch sits above every media query in mobile.css');
 });
 
+test('Fit and recenter centre in the room an open sidebar leaves', () => {
+  const vp = new Viewport(element(1000, 600), element(1000, 600));
+  vp.setCover(() => 300);
+  vp.recenter();
+  assertNear(vp.toScreen(0, 0).x, 650, 'the origin lands between the panel and the right edge');
+  // 700px of room less 80px a side frames 540 units at 1:1.
+  vp.fit([{ x: 500, y: 0, w: 540, h: 100 }], 80);
+  assertNear(vp.zoom, 1);
+  assertNear(vp.toScreen(500, 0).x, 650);
+  vp.setCover(() => 0);
+  vp.recenter();
+  assertNear(vp.toScreen(0, 0).x, 500, 'with the panel closed the room is the window');
+});
+
 test('the feed surface is a sibling of #viewport, never a child of it', async () => {
   // #viewport has paint containment and publishes --iz to its subtree; a
   // feed nested inside would inherit that property and hit the

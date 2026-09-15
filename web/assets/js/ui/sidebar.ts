@@ -97,6 +97,9 @@ export function initSidebar(cmds: SidebarCommands, viewport: Viewport | null = n
   sidebar = el('sidebar');
   menuBtn = el('menu-btn');
   sliderFocus = createMobileSliderFocus(sidebar!);
+  // Fit and recenter centre in the room the open panel leaves: the same reach
+  // panFor() pans by, and none where the panel is the whole screen.
+  view?.setCover(() => (isOpen() && !panelFillsScreen() ? panelReach(sidebar!) : 0));
 
   menuBtn!.addEventListener('click', () => (isOpen() ? close() : open()));
   el('side-close')!.addEventListener('click', close);
@@ -212,12 +215,16 @@ function setOpen(want: boolean, remember = true): void {
  */
 function panFor(opening: boolean): void {
   if (!view || !sidebar || view.isMobile || panelFillsScreen()) return;
-  // offsetLeft and offsetWidth ignore the slide transform, so this is where the
-  // panel's right edge is when open, whichever way it is going.
-  const reach = sidebar.offsetLeft + sidebar.offsetWidth;
+  const reach = panelReach(sidebar);
   const dx = (opening ? reach : -reach) / 2;
   view.viewTo({ x: view.pan.x - dx / view.zoom, y: view.pan.y }, view.zoom, travelMs());
 }
+
+/**
+ * Where the panel's right edge is when open, whichever way it is going:
+ * offsetLeft and offsetWidth ignore the slide transform.
+ */
+const panelReach = (panel: HTMLElement) => panel.offsetLeft + panel.offsetWidth;
 
 /** Reopen the panel on load, without playing the slide-in for it. */
 function restoreOpen(): void {

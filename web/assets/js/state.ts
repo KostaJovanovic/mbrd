@@ -56,10 +56,11 @@ import {
   adoptTimeline, timelineSteps, timelineAt, timelineStale, timelineHashes, goTo,
   nameStep, declareOp, registerOp, editStep, rebuildFrom, stepEditable,
   timelineBytes, trimmable, trimTimeline, TRIM_BYTES, TRIM_DAYS,
-  replayTo, serializeTimeline, describeStep,
+  replayTo, serializeTimeline, describeStep, timelinePlaying, setTimelinePlaying,
 } from './timeline.ts';
 
 export {
+  timelinePlaying, setTimelinePlaying,
   timelineSteps, timelineAt, timelineStale, timelineHashes, replayTo, goTo,
   nameStep, declareOp, registerOp, editStep, rebuildFrom, stepEditable,
   timelineBytes, trimmable, trimTimeline, TRIM_BYTES, TRIM_DAYS,

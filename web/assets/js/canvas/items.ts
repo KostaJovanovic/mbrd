@@ -19,7 +19,7 @@ import { cullMargin } from './viewport.ts';
 import { buildContent, fontFamilyOf, paintStyleTileFaces } from './renderers.ts';
 import {
   buildItem, buildShadow, buildTitleControls, farKind, itemAccessibleName,
-  resetTilt, restingTilt, setGrips, wantsHead, writeFit, writeAdjust, writeFenceLook,
+  resetTilt, restingTilt, retilt, setGrips, wantsHead, writeFit, writeAdjust, writeFenceLook,
 } from './item-dom.ts';
 import { POSTER_TIME } from './video.ts';
 import { clearDisplay } from './display.ts';
@@ -1813,7 +1813,14 @@ function placeNode(id: string) {
   const el = nodes.get(id);
   const shadow = shadows.get(id);
   const item = byId(id);
-  if (el && item) place(el, item);
+  if (el && item) {
+    place(el, item);
+    // Every frame of a resize lands here, so this is where a card pulled past
+    // the size a lean allows stands up straight - see retilt(). The twin turns
+    // with it, or the shadow would keep the old angle.
+    const tilt = retilt(el, item);
+    if (tilt !== null) shadow?.style.setProperty('--item-tilt', tilt);
+  }
   if (shadow && item) placeBox(shadow, item);
   return item;
 }

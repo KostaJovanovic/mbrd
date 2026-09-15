@@ -706,7 +706,22 @@ const press = (over = {}) => ({
   doubleTapDrag: false,
   isMobile: false,
   touring: false,
+  viewOnly: false,
   ...over,
+});
+
+test('every press pans while the Timeline plays', () => {
+  // The board is read-only then, and pan and zoom are all it keeps: a card, a
+  // grip, a control in a card and a modified press all pan.
+  const pan = { kind: 'pan', middle: false };
+  assert.deepEqual(pressIntent(press({ viewOnly: true })), pan);
+  assert.deepEqual(pressIntent(press({ viewOnly: true, onCard: 'a', wasSelected: true })), pan);
+  assert.deepEqual(
+    pressIntent(press({ viewOnly: true, onCard: 'a', onGrip: true, wasSelected: true, selectionSize: 1 })), pan);
+  assert.deepEqual(pressIntent(press({ viewOnly: true, onCard: 'a', onWidget: true })), pan);
+  assert.deepEqual(pressIntent(press({ viewOnly: true, additive: true })), pan);
+  assert.deepEqual(pressIntent(press({ viewOnly: true, doubleTapDrag: true, pointerType: 'touch' })), pan);
+  assert.deepEqual(pressIntent(press({ viewOnly: true, button: 1 })), { kind: 'pan', middle: true });
 });
 
 test('a press on bare board clears and pans; a modified one bands', () => {

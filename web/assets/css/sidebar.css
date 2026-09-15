@@ -143,6 +143,16 @@
   transition-delay: 0s;
 }
 
+/* The shadow stops where the Timeline starts. Both sheets end a panel inset
+   above the dock, and --shadow-2 falls downward, so it darkened the strip.
+   The clip sits at the strip's top edge and reaches far out on the other three
+   sides. With the Timeline shut, --dock is 0 and the edge is the window's. */
+#sidebar,
+#header-panel {
+  clip-path: inset(-100vmax -100vmax
+    calc(-1 * max(var(--panel-inset), env(safe-area-inset-bottom))) -100vmax);
+}
+
 /* Same sheet as #sidebar, arriving from the right (where the pen that opens it
    is). Shares .side-head, .side-body, .side-sec and all fields. */
 #header-panel {

@@ -7,6 +7,7 @@ import {
   board, bus, isDefaultTitle, byId, itemAdjust, itemCrop, itemRotate, itemMatte,
   flipTransform, stuckTo, isRider, noteDisplay,
   select, selection, deselect, clearSelection, isMultiSelect, trackTitle, isFence, mobileRuns,
+  timelinePlaying,
 } from '../state.ts';
 import { noteWords } from '../canvas/note-model.ts';
 import { bakeDisplayFor } from '../optimize/picture.ts';
@@ -176,6 +177,16 @@ const tiles = new Map<string, Tile>();
 let slots: Slot[] = [];
 let slotById = new Map<string, Slot>();
 
+/** Host id -> the notes stuck on it, bottom first. These ride the host's tile
+ *  and take no slot of their own - see riderHost(). Rebuilt by layout(). */
+let riders = new Map<string, Item[]>();
+/** The hosts whose notes are laid open over their tile. Kept across culls, so
+ *  a tile scrolled away and back comes back as it was left. */
+const notesOpen = new Set<string>();
+/** Bumped by layout(), so paintRiders() redraws notes whose words may have changed. */
+let riderPass = 0;
+const riderDrawn = new WeakMap<HTMLElement, string>();
+
 let cols = 2;
 let mastheadRaf = 0;
 let layoutRaf = 0;
@@ -200,7 +211,8 @@ function cancelHold() {
 function tileIdAt(target: EventTarget | null) {
   // SAFETY: the listener is on an element, so a press inside it lands on one
   // too, and closest() is only being asked whether an ancestor matches.
-  return (target as HTMLElement | null)?.closest?.<HTMLElement>('.feed-tile')?.dataset.id || null;
+  // A stuck note laid open over its host answers first: its menu is the note's.
+  return (target as HTMLElement | null)?.closest?.<HTMLElement>('.feed-rider, .feed-tile')?.dataset.id || null;
 }
 
 /** The tile a pick lands on, or null. A hint tile is the board's help and not
@@ -288,12 +300,15 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
    * multi-select mode the tile joins the group instead, as on the canvas.
    */
   function openTileMenu(x: number, y: number, id: string) {
+    // Its rows edit, and the board is read-only while the Timeline plays.
+    if (timelinePlaying()) return;
     if (!selection.has(id)) select([id], isMultiSelect());
     cmds?.contextMenu(x, y, id, selection.size, { mobile: true, touch: pressType === 'touch' });
   }
 
   /** Off every tile, the board's own menu, as the canvas opens on bare ground. */
   function openSheetMenu(x: number, y: number) {
+    if (timelinePlaying()) return;
     // Select all takes the tiles the wall shows, never the title or a sticker.
     const shown = () => slots.filter(s => s.kind !== 'hint' && s.kind !== 'fence').map(s => s.item.id);
     cmds?.contextMenu(x, y, null, selection.size, { mobile: true, selectAll: () => select(shown()) });
@@ -486,11 +501,11 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
  * last: their own place in it would otherwise win. A fence with no card to
  * show has no run. Fencing is the canvas's: nothing here writes membership.
  */
-function feedRuns(): { band: Item | null, items: Item[] }[] {
+function feedRuns(ridden: Set<string>): { band: Item | null, items: Item[] }[] {
   // SAFETY: mobileOrder() hands back the very items it was given, in a new
   // order - ArrangeItem is only the narrower shape it reads them through.
   const shown = mobileOrder(
-    board.items.filter(it => !HIDDEN.has(it.type)),
+    board.items.filter(it => !HIDDEN.has(it.type) && !ridden.has(it.id)),
     { name: board.arrangement }) as Item[];
   const fences = board.items.filter(isFence);
   if (!fences.length) return [{ band: null, items: shown }];
@@ -1446,6 +1461,128 @@ function stickerOverlay(it: Item, host: Item) {
   return svg;
 }
 
+// ---------------------------------------------------------------------------
+// Notes stuck on a card
+//
+// On the canvas a stuck note sits on its host. On the wall it had a tile of its
+// own, somewhere else in the order, which cut it from the card it is about. So
+// it takes no slot: it rides the host's tile, counted by a small sticky in the
+// tile's top-right corner, and a press on that lays the notes open over the
+// tile. Top right, clear of the pick circle top left and the play badge in the
+// middle.
+// ---------------------------------------------------------------------------
+
+/**
+ * The tile a stuck note rides: its host, or for a note on a note, the first
+ * host up the chain that has a tile. Null when the chain ends at something the
+ * wall does not draw (see HIDDEN) or goes round, and then the note keeps a tile
+ * of its own rather than vanishing.
+ */
+function riderHost(note: Item): Item | null {
+  const seen = new Set([note.id]);
+  let host = stuckTo(note);
+  while (host?.type === 'note' && isRider(host)) {
+    if (seen.has(host.id)) return null;
+    seen.add(host.id);
+    host = stuckTo(host);
+  }
+  return host && !HIDDEN.has(host.type) ? host : null;
+}
+
+/** Every stuck note, under the tile it rides, in board order: bottom first. */
+function ridersByHost() {
+  const out = new Map<string, Item[]>();
+  for (const it of board.items) {
+    if (it.type !== 'note' || !isRider(it)) continue;
+    const host = riderHost(it);
+    if (!host) continue;
+    const list = out.get(host.id);
+    if (list) list.push(it);
+    else out.set(host.id, [it]);
+  }
+  return out;
+}
+
+/**
+ * Put the notes button, and the notes when open, on every mounted tile. Only a
+ * tile whose notes changed is redrawn, so a scroll that mounts one tile leaves
+ * an open one where its reader left it.
+ */
+function paintRiders() {
+  for (const [id, t] of tiles) {
+    const notes = riders.get(id) || [];
+    const key = notes.length ? `${riderPass}|${notes.map(n => n.id).join()}` : '';
+    if ((riderDrawn.get(t.el) || '') === key) continue;
+    riderDrawn.set(t.el, key);
+    t.el.querySelector(':scope > .feed-notes-btn')?.remove();
+    t.el.querySelector(':scope > .feed-notes')?.remove();
+    if (!notes.length) { notesOpen.delete(id); continue; }
+    t.el.append(notesButton(id, notes));
+    if (notesOpen.has(id)) t.el.append(notesLayer(id, notes));
+  }
+}
+
+/** Lay a tile's notes open, or fold them away. Only the layer changes, so the
+ *  button keeps its focus. */
+function toggleNotes(id: string) {
+  const t = tiles.get(id);
+  const notes = riders.get(id);
+  if (!t || !notes) return;
+  const open = !notesOpen.delete(id);
+  if (open) notesOpen.add(id);
+  t.el.querySelector(':scope > .feed-notes')?.remove();
+  if (open) t.el.append(notesLayer(id, notes));
+  t.el.querySelector('.feed-notes-btn')?.setAttribute('aria-expanded', String(open));
+}
+
+/** The note's own sheet colour, as fillNote() reads it. */
+function paintNoteSheet(el: HTMLElement, note: Item) {
+  const tint = noteTint(note.meta?.tint);
+  if (tint) el.style.background = `var(--note-${tint})`;
+}
+
+/**
+ * Keep a press inside the notes off the tile under them. The tile is itself a
+ * button (wireOpen()), and without this a press here would open the card too.
+ */
+function ownPresses(el: HTMLElement) {
+  el.addEventListener('click', e => e.stopPropagation());
+  el.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') e.stopPropagation(); });
+}
+
+function notesButton(id: string, notes: Item[]) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'feed-notes-btn';
+  b.textContent = String(notes.length);
+  const label = notes.length === 1 ? 'The note stuck on this' : `The ${notes.length} notes stuck on this`;
+  b.title = label;
+  b.setAttribute('aria-label', label);
+  b.setAttribute('aria-expanded', String(notesOpen.has(id)));
+  // The top note's colour, as the stack reads on the canvas.
+  paintNoteSheet(b, notes[notes.length - 1]!);
+  b.addEventListener('click', () => toggleNotes(id));
+  ownPresses(b);
+  return b;
+}
+
+/** The notes over the tile, top note first. A press on a note opens it in the
+ *  viewer, and a press between them folds them away. */
+function notesLayer(id: string, notes: Item[]) {
+  const layer = div('feed-notes');
+  for (const note of [...notes].reverse()) {
+    const sheet = div('feed-rider');
+    sheet.dataset.id = note.id;
+    sheet.textContent = noteText(note);
+    paintNoteSheet(sheet, note);
+    if (canView(note.id)) actAsButton(sheet, () => openViewer(note.id));
+    layer.append(sheet);
+  }
+  layer.addEventListener('click', e => { if (e.target === layer) toggleNotes(id); });
+  ownPresses(layer);
+  return layer;
+}
+
 function scheduleLayout() {
   if (layoutRaf || typeof requestAnimationFrame !== 'function') return;
   layoutRaf = requestAnimationFrame(() => { layoutRaf = 0; layout(); });
@@ -1470,7 +1607,10 @@ function layout() {
     ratio: ratioOf(it), span: hintSpan(it), measured: isFence(it) ? BAND_H : 0,
     box: { x: 0, y: 0, w: 0, h: 0 },
   });
-  const runs = feedRuns().map(run => (run.band ? [run.band, ...run.items] : run.items).map(slotOf));
+  riders = ridersByHost();
+  riderPass++;
+  const ridden = new Set([...riders.values()].flat().map(n => n.id));
+  const runs = feedRuns(ridden).map(run => (run.band ? [run.band, ...run.items] : run.items).map(slotOf));
   slots = runs.flat();
   empty!.classList.toggle('is-shown', slots.length === 0);
   slotById = new Map(slots.map((s): [string, Slot] => [s.item.id, s]));
@@ -1548,7 +1688,7 @@ function cullWindow(reposition = false) {
     tiles.delete(id);
     changed = true;
   }
-  if (changed || reposition) { paintStickers(); markPlaying(); }
+  if (changed || reposition) { paintStickers(); paintRiders(); markPlaying(); }
 }
 
 /** Size and position one tile from its slot's box. */
@@ -1572,8 +1712,17 @@ let foundTimer = 0;
  */
 export function revealInFeed(id: string): boolean {
   if (!root || !gridEl || !root.getClientRects().length) return false;
+  // A stuck note has no tile: its host's tile is shown, with the notes laid open.
+  const note = slotById.has(id) ? null : byId(id);
+  const host = note?.type === 'note' ? riderHost(note) : null;
+  if (host) id = host.id;
   const s = slotById.get(id);
   if (!s) return false;
+  // A tile not yet mounted is built open by paintRiders() when it arrives.
+  if (host && !notesOpen.has(id)) {
+    if (tiles.has(id)) toggleNotes(id);
+    else notesOpen.add(id);
+  }
   const gridTop = gridEl.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop;
   const top = gridTop + s.box.y - (root.clientHeight - s.box.h) / 2;
   const still = !!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
