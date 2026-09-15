@@ -7,7 +7,7 @@
   position: fixed;
   z-index: var(--z-chrome);
   right: max(16px, env(safe-area-inset-right));
-  bottom: calc(max(16px, env(safe-area-inset-bottom)) + var(--dock));
+  bottom: calc(max(14px, env(safe-area-inset-bottom)) + var(--dock));
   display: flex;
   flex-direction: column;
   align-items: flex-end;
@@ -297,7 +297,7 @@
 #nowplaying {
   position: fixed;
   z-index: var(--z-chrome);
-  bottom: calc(max(16px, env(safe-area-inset-bottom)) + var(--dock));
+  bottom: calc(max(14px, env(safe-area-inset-bottom)) + var(--dock));
   /* On the element, so a rule that moves the insets for this bar moves this too. */
   --np-w: min(520px, 100vw - var(--foot-left) - var(--foot-right));
   box-sizing: border-box;
@@ -745,7 +745,7 @@
 
   position: fixed;
   z-index: var(--z-chrome-over);
-  bottom: calc(max(16px, env(safe-area-inset-bottom)) + var(--dock));
+  bottom: calc(max(14px, env(safe-area-inset-bottom)) + var(--dock));
   left: max(16px, env(safe-area-inset-left));
   right: max(16px, env(safe-area-inset-right));
   /* A fixed width, so the controls row stays put as names change length. */
@@ -766,7 +766,7 @@
 /* Above the player rather than over it. The sum is each term named: the bar's
    own height at this padding, plus the gap the player keeps from the edge. */
 #nowplaying:not([hidden]) ~ #tour {
-  bottom: calc(calc(max(16px, env(safe-area-inset-bottom)) + var(--dock)) + 76px);
+  bottom: calc(calc(max(14px, env(safe-area-inset-bottom)) + var(--dock)) + 76px);
 }
 /* And out of the sidebar's way, on the one side it opens from. The player next
    door loses width here; this one is content-width already, so it moves. */
@@ -999,7 +999,7 @@
 :root.is-touring #sidebar.is-open ~ #tour { left: max(16px, env(safe-area-inset-left)); }
 :root.is-touring #header-panel.is-open ~ #tour { right: max(16px, env(safe-area-inset-right)); }
 :root.is-touring #nowplaying:not([hidden]) ~ #tour {
-  bottom: calc(max(16px, env(safe-area-inset-bottom)) + var(--dock));
+  bottom: calc(max(14px, env(safe-area-inset-bottom)) + var(--dock));
 }
 
 /* ---------------------------------------------------------------------------
@@ -1035,7 +1035,7 @@
 #tour-editor {
   position: fixed;
   z-index: var(--z-chrome-over);
-  bottom: calc(max(16px, env(safe-area-inset-bottom)) + var(--dock));
+  bottom: calc(max(14px, env(safe-area-inset-bottom)) + var(--dock));
   left: max(16px, env(safe-area-inset-left));
   right: max(16px, env(safe-area-inset-right));
   width: min(760px, 100vw - 32px);

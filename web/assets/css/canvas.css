@@ -625,8 +625,8 @@
    Gated on the same zoom rung that reveals the buttons, so the raise exists
    when they do and not otherwise - a card that jumped forward on hover while
    showing nothing would be a stacking change with no visible cause. */
-#world:not(.zoom-tiny) .item[data-type="title"]:hover,
-#world:not(.zoom-tiny) .item[data-type="title"].is-selected { z-index: 100000 !important; }
+#world:not(.zoom-far) .item[data-type="title"]:hover,
+#world:not(.zoom-far) .item[data-type="title"].is-selected { z-index: 100000 !important; }
 /* A transparent bridge across the gap to the buttons. Without it the pointer
    crosses dead space between the card's edge and the buttons, .item:hover drops,
    and they vanish before they can be reached. A pseudo-element of the card, so
@@ -646,8 +646,8 @@
   pointer-events: none;
   z-index: 1;
 }
-.item[data-type="title"]:hover::after,
-.item[data-type="title"].is-selected::after { pointer-events: auto; }
+#world:not(.zoom-far) .item[data-type="title"]:hover::after,
+#world:not(.zoom-far) .item[data-type="title"].is-selected::after { pointer-events: auto; }
 @media (hover: hover) {
   .item-pen:hover,
   .item-rename:hover { background: var(--paper-2); color: var(--accent-deep); border-color: var(--accent-text); }
@@ -655,9 +655,11 @@
 .item-pen:focus-visible,
 .item-rename:focus-visible { background: var(--paper-2); color: var(--accent-deep); border-color: var(--accent-text); }
 .item-pen svg { width: calc(var(--icon-glyph) * var(--iz, 1)); height: calc(var(--icon-glyph) * var(--iz, 1)); }
-/* Gone once the card is too small to aim at, the same rung the grips vanish on. */
-#world.zoom-tiny .item-pen,
-#world.zoom-tiny .item-rename { display: none; }
+/* Gone from the chrome rung (40%) down, with the anchor and pin badges
+   (item-chrome.css): that far out they are clutter over a card too small to
+   edit. The raise and the bridge above use the same rung. */
+#world.zoom-far .item-pen,
+#world.zoom-far .item-rename { display: none; }
 /* Inline rename in progress: the caret's ring, and pre-wrap so a trailing space
    is typeable - the same treatment #mobile-board-title[contenteditable] gets. */
 .title-name[contenteditable="true"],

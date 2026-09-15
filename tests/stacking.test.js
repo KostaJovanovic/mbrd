@@ -29,7 +29,7 @@ const read = name => readFileSync(join(CSS, name), 'utf8');
  * with --z-chrome. Large and !important to beat the board's unbounded
  * per-item z.
  */
-const EXEMPT = [/#world:not\(\.zoom-tiny\) \.item\[data-type="title"\]\.is-selected/];
+const EXEMPT = [/#world:not\(\.zoom-far\) \.item\[data-type="title"\]\.is-selected/];
 
 test('nothing above the board writes its own z-index', () => {
   const stray = [];
