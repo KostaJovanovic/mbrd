@@ -8,7 +8,7 @@
   position: fixed;
   z-index: var(--z-chrome);
   left: max(16px, env(safe-area-inset-left));
-  bottom: calc(max(16px, env(safe-area-inset-bottom)) + var(--dock));
+  bottom: calc(max(14px, env(safe-area-inset-bottom)) + var(--dock));
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -140,7 +140,7 @@
   /* One rung under the panels so the sidebar wins on overlap. */
   z-index: calc(var(--z-overlay) - 1);
   left: max(16px, env(safe-area-inset-left));
-  bottom: calc(max(16px, env(safe-area-inset-bottom)) + var(--dock));
+  bottom: calc(max(14px, env(safe-area-inset-bottom)) + var(--dock));
   width: min(400px, calc(100vw - 32px));
   max-height: min(68vh, 560px);
   display: flex;

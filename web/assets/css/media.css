@@ -159,26 +159,33 @@
 #world.zoom-far .card-audio .wave,
 #world.zoom-far .card-audio .transport-time { display: none; }
 
+/* The card's own pad goes: the head brings its own, and the button needs the
+   room. The transport fills what the head leaves (--ix-head, item-chrome.css). */
+#world.zoom-far .card-audio { padding: 0; }
 #world.zoom-far .card-audio .transport {
-  flex: 1;
+  position: absolute;
+  inset: var(--ix-head) 0 0;
   margin-top: 0;
   justify-content: center;
   /* Handle is hidden at this zoom, so no corner to clear. */
-  padding-right: 0;
-  padding-top: var(--ix-head);
+  padding: 0;
 }
 #world.zoom-far .card-audio .play {
-  /* Generous but not full-face -- there is a name under it now. */
-  width:  calc(var(--half-min, 98px) * 0.6);
-  height: calc(var(--half-min, 98px) * 0.6);
+  /* As large as the room under the name allows, and never past 60% of the
+     card's short half. Sized off the half alone, it was taller than that room
+     on an ordinary card and hung off the foot. 100cqh is the card's height
+     (container: audio-card above), less the head and a pad under the button. */
+  --far-play: max(0px, min(calc(var(--half-min, 98px) * 0.6),
+                           calc(100cqh - var(--ix-head) - var(--ix-pad))));
+  width:  var(--far-play);
+  height: var(--far-play);
   /* Ring thickens with the button or it antialiases away. */
-  border-width: max(var(--board-hairline), calc(var(--half-min, 98px) * 0.03));
+  border-width: max(var(--board-hairline), calc(var(--far-play) * 0.05));
 }
 #world.zoom-far .card-audio .play svg { width: 38%; height: 38%; }
 
 /* At far zoom, a sleeve card shows the art full-bleed with the play
    button over it -- a recognisable record from across the board. */
-#world.zoom-far .card-audio.has-cover { padding: 0; }
 #world.zoom-far .card-audio.has-cover::after { content: none; }
 
 #world.zoom-far .card-audio.has-cover .card-cover {
@@ -190,10 +197,13 @@
   border-radius: inherit;
   box-shadow: none;
 }
-#world.zoom-far .card-audio.has-cover .transport { position: relative; }
+/* No head over a sleeve, so the button centres on the whole card, over the
+   art (a later sibling, so it paints above it). */
+#world.zoom-far .card-audio.has-cover .transport { inset: 0; }
 /* Plate under the button over artwork -- accent ring alone disappears
    on a dark sleeve. */
 #world.zoom-far .card-audio.has-cover .play {
+  --far-play: calc(var(--half-min, 98px) * 0.6);
   background: color-mix(in srgb, var(--paper-card) 84%, transparent);
   -webkit-backdrop-filter: blur(3px);
   backdrop-filter: blur(3px);

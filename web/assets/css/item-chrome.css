@@ -85,8 +85,9 @@
   --ix-name: min(calc(14px * var(--iz, 1)), calc(var(--half-h, 60px) * 0.36));
   --ix-kind: calc(var(--ix-name) * 0.62);
   --ix-pad:  calc(var(--ix-name) * 0.72);
-  /* Full head height for audio cards that keep something underneath. */
-  --ix-head: calc(var(--ix-pad) * 2.84 + var(--ix-kind) + var(--ix-name) * 1.1);
+  /* The head of an audio card without a sleeve, which keeps its play button
+     underneath: the top pad and one line of name. */
+  --ix-head: calc(var(--ix-pad) + var(--ix-name) * 1.1);
 }
 /* Swatch rung — no label at all. */
 #world.zoom-tiny .far-head { display: none; }
@@ -106,8 +107,10 @@
 }
 /* :not(.is-editing) so a card being typed into keeps showing its content. */
 #world.zoom-far .item:not(.is-editing) > .far-head:not([hidden]) { display: flex; }
-/* No head over a picture — a photograph is its own name at any size. */
-#world.zoom-far .item:has(.card-cover) > .far-head { display: none; }
+/* No head over a picture — a photograph is its own name at any size. As
+   specific as the rule above, which it has to beat: one class short, it lost,
+   and an audio sleeve wore its kind and name across the art. */
+#world.zoom-far .item:not(.is-editing):has(.card-cover) > .far-head:not([hidden]) { display: none; }
 
 /* The kind and its underline. The rule runs the card's measure, not the full
    width, because a specimen label is ruled inside its margins. */
@@ -149,12 +152,17 @@
 #world.zoom-far .item[data-type="note"] .fh-name { -webkit-line-clamp: 4; }
 
 /* Audio without a sleeve keeps its play button — the one control worth hitting
-   from across a board. The head takes a fixed slice; the button centres below. */
+   from across a board. The head takes one line of name at the top and the
+   button centres below (media.css). No kind above the name: the button says
+   what the card is, and the kind and its rule took the room the button needed,
+   which pushed it off the card's foot. */
 #world.zoom-far .item[data-type="audio"]:not(:has(.card-cover)) > .far-head {
   bottom: auto;
   height: var(--ix-head);
+  padding-bottom: 0;
 }
-#world.zoom-far .item[data-type="audio"] .fh-name { -webkit-line-clamp: 1; }
+#world.zoom-far .item[data-type="audio"] .fh-kind { display: none; }
+#world.zoom-far .item[data-type="audio"] .fh-name { -webkit-line-clamp: 1; text-align: center; }
 
 /* The inner bookplate rule retires once two hairlines would be too close to
    read as two lines. Not the fence — fences.css puts the cork on this same
@@ -242,7 +250,9 @@
   .item-badge:hover { color: var(--accent-text); border-color: var(--accent-text); }
 }
 .item-badge:focus-visible { outline: var(--sel-line) solid var(--select); outline-offset: 1px; }
-#world.zoom-tiny .item-badge { display: none; }
+/* Off from the chrome rung (40%) down, with the labels and the item bar: that
+   far out a badge is clutter on a card too small to press it on. */
+#world.zoom-far .item-badge { display: none; }
 /* Grips survive two rungs below the chrome drop — gone only when the card is
    too small to aim at (GRIP_MIN_ZOOM in viewport.ts). */
 #world.zoom-tiny .grip { display: none; }
