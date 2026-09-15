@@ -183,6 +183,8 @@ date: 14 September 2026
   `Show timeline` box in the Board tab brings it back.
 - [fix] **Going back and forth in the Timeline no longer loses changes that were
   never steps,** such as the board's title or a setting.
+- [fix] **Stepping through the Timeline redraws a card whose look changed,** such
+  as a note set to `Low opacity`, where it kept the look it had.
 
 ### The tour
 - [new] **A board with no tour offers `Create tour`,** and `Take the tour` and
@@ -223,9 +225,9 @@ date: 14 September 2026
 - [new] **A photo or video set to `Fit` takes the shape of its picture.** The card
   keeps its shorter side and the longer one follows the picture, in the same undo
   step as the switch, and a corner drag keeps that shape until you hold Shift.
-- [new] **A sticky offers `Low opacity` where it offered `No card`.** The note
-  draws at half strength, paper and words together, and comes back to full while
-  you type in it.
+- [new] **A sticky offers `Low opacity` where it offered `No card`.** The paper
+  goes to 60% and the words stay solid, and the note comes back to full under the
+  pointer or while you type in it.
 - [fix] **Below 40% zoom the buttons on a card go** - the anchor and pin badges
   and the title card's pen and `T`. An audio card's play button fits inside the
   card, and one with cover art shows the art with the button over it.

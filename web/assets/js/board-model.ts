@@ -538,7 +538,7 @@ export function itemBare(it: unknown): boolean {
   return !!it.meta.bare;
 }
 
-// A sticky drawn at half strength, paper and words together. See cards.css.
+// A sticky with see-through paper and solid words. See cards.css.
 export function itemFaded(it: unknown): boolean {
   if (!isRecord(it) || !isRecord(it.meta)) return false;
   return !!it.meta.faded;

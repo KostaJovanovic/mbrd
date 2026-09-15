@@ -101,6 +101,9 @@ const KINDS: Record<string, { icon: string, said: string }> = {
   'Edit connection': { icon: 'i-connect', said: 'Changed the join on' },
   'Remove connection': { icon: 'i-connect', said: 'Unjoined' },
   'Recolour swatch': { icon: 'i-swatch', said: 'Recoloured' },
+  // setItemFaded() in state.ts, from a sticky's menu.
+  'Low opacity': { icon: 'i-low-opacity', said: 'Faded' },
+  'Full opacity': { icon: 'i-low-opacity', said: 'Unfaded' },
   // Keyed off the commit labels in setItemsLocked (state.ts), where the two
   // strings are written and the note about the word lives.
   'Anchor': { icon: 'i-anchor', said: 'Anchored' },
