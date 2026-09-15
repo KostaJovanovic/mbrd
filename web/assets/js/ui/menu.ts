@@ -629,7 +629,8 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     { label: many ? 'Unstick these' : 'Unstick', icon: 'i-lock-open',
       hidden: !unstickable, action: () => cmds!.unstick() },
     // Duplicated from canvas menu — a hold on a card is how touch starts collecting.
-    ...(mobile ? [] : multiSelectEntry()),
+    // The Feed too, now that it draws the selection (ui/feed.ts).
+    ...multiSelectEntry(),
     // No accel on notes — double-click belongs to Edit text there.
     // A link opens its site (or, for YouTube, the viewer's player) - see
     // openLink. Every other viewable item opens in the viewer.
@@ -737,10 +738,12 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
 
 /** Align/distribute fold — six edges + two axes, one undo step each. */
 /** Touch multi-select toggle. Only shown when a finger opened this menu (mouse
- * has Shift). Stays visible once the mode is on, regardless of pointer type. */
+ * has Shift). Stays visible once the mode is on, regardless of pointer type.
+ * Not offered on the Playlist, which draws no selection for it to add to. */
 function multiSelectEntry(): MenuEntry[] {
   const on = cmds!.multiSelect();
   if (!byTouch && !on) return [];
+  if (!on && document.documentElement.dataset.feedLens === 'playlist') return [];
   return [{
     label: on ? 'Done selecting' : 'Select multiple',
     icon: 'i-select-all',

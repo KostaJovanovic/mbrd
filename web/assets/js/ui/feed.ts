@@ -6,7 +6,7 @@
 import {
   board, bus, isDefaultTitle, byId, itemAdjust, itemCrop, itemRotate, itemMatte,
   flipTransform, stuckTo, isRider, noteDisplay,
-  select, selection, trackTitle, isFence, mobileRuns,
+  select, selection, deselect, clearSelection, isMultiSelect, trackTitle, isFence, mobileRuns,
 } from '../state.ts';
 import { noteWords } from '../canvas/note-model.ts';
 import { bakeDisplayFor } from '../optimize/picture.ts';
@@ -132,7 +132,7 @@ type Sizable = Pick<Slot, 'kind' | 'span' | 'embed'>;
 export interface FeedCommands {
   addStickerAt: (shape: string, at: Point) => void;
   contextMenu: (x: number, y: number, id: string | null, count: number,
-    opts?: { mobile?: boolean }) => void;
+    opts?: { mobile?: boolean, touch?: boolean }) => void;
 }
 
 /**
@@ -165,6 +165,8 @@ let empty: HTMLElement | null = null;       // the "nothing to show" plate
 /** styleFeedMasthead, injected from main.ts. */
 let styleHeader: ((title: HTMLElement | null, box: Element | null) => void) | null = null;
 let cmds: FeedCommands | null = null;       // the command surface, for the armed-sticker tap
+/** The pointer that pressed last, so a tile menu a finger opened offers "Select multiple". */
+let pressType = '';
 
 /** id -> Tile, but only for the tiles inside the window - see cullWindow(). */
 const tiles = new Map<string, Tile>();
@@ -199,6 +201,19 @@ function tileIdAt(target: EventTarget | null) {
   // SAFETY: the listener is on an element, so a press inside it lands on one
   // too, and closest() is only being asked whether an ancestor matches.
   return (target as HTMLElement | null)?.closest?.<HTMLElement>('.feed-tile')?.dataset.id || null;
+}
+
+/** The tile a pick lands on, or null. A hint tile is the board's help and not
+ *  one of its cards, so it is never picked. */
+function pickableAt(target: EventTarget | null) {
+  const tile = target instanceof Element ? target.closest<HTMLElement>('.feed-tile') : null;
+  return tile && tile.dataset.kind !== 'hint' ? tile.dataset.id || null : null;
+}
+
+/** The ring on each selected tile. Only the mounted tiles: a tile built later
+ *  reads the selection in buildTile(). */
+function paintSelection() {
+  for (const [id, t] of tiles) t.el.classList.toggle('is-selected', selection.has(id));
 }
 
 const TILE_TARGET = 210;   // the width a column aims for; more screen, more columns
@@ -269,11 +284,12 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
    * Same call openMenuAt() makes in canvas/input.ts, same rule every file
    * manager follows: opening outside the selection retargets it, opening
    * inside leaves the group. Not a second selection model - the Feed shows
-   * the board's items; the board's selection is what "this one" means.
+   * the board's items; the board's selection is what "this one" means. In the
+   * multi-select mode the tile joins the group instead, as on the canvas.
    */
   function openTileMenu(x: number, y: number, id: string) {
-    if (!selection.has(id)) select([id]);
-    cmds?.contextMenu(x, y, id, selection.size, { mobile: true });
+    if (!selection.has(id)) select([id], isMultiSelect());
+    cmds?.contextMenu(x, y, id, selection.size, { mobile: true, touch: pressType === 'touch' });
   }
 
   // The right-click slot, which the Feed did not own.
@@ -338,6 +354,32 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
     e.preventDefault();
     e.stopPropagation();
   }, true);
+  // Picking a tile rather than opening it: a click with Shift, Ctrl or Cmd
+  // held, or any tap while the multi-select mode is on ("Select multiple" in a
+  // tile's menu). The tile joins or leaves the board's selection - the one the
+  // tile menu and Delete act on - and nothing else the tap would do happens.
+  // Capture, and stopImmediatePropagation, so neither the tile nor the Unzip
+  // button below sees the press.
+  root.addEventListener('click', e => {
+    if (e.defaultPrevented) return;
+    if (!(e.shiftKey || e.ctrlKey || e.metaKey || isMultiSelect())) return;
+    const id = pickableAt(e.target);
+    if (!id) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (!deselect(id)) select([id], true);
+  }, true);
+  // A press on the sheet between the tiles puts the selection down, as a press
+  // on bare board does on the canvas. The multi-select mode keeps its group.
+  root.addEventListener('click', e => {
+    if (e.defaultPrevented || isMultiSelect()) return;
+    const at = e.target instanceof Element ? e.target : null;
+    if (!at || at.closest('.feed-tile, .feed-masthead, button, a, input')) return;
+    clearSelection();
+  });
+  // Every press, whatever made it. Capture, so the tile menu's hold reads it.
+  root.addEventListener('pointerdown', e => { pressType = e.pointerType; },
+    { capture: true, passive: true });
   // Unzip and Open on an archive or folder tile. Capture too, so the tile's
   // own tap - open the viewer - never sees a press meant for the button.
   root.addEventListener('click', e => {
@@ -356,6 +398,7 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
   bus.on('geom', scheduleLayout);
   bus.on('board', paintMasthead);
   bus.on('fonts', paintMasthead);
+  bus.on('selection', paintSelection);
   // A per-item Fill/Fit change arrives as 'item', the same as on the canvas
   // (canvas/items.ts): only the object-fit attribute changes, so the tile is
   // repainted in place rather than rebuilt. Fit and Fill draw a tile at
@@ -591,6 +634,7 @@ function buildTile(item: Item): Tile {
   const el = div(kind === 'fence' ? 'feed-band' : 'feed-tile');
   el.dataset.kind = kind;
   el.dataset.id = item.id;
+  if (selection.has(item.id)) el.classList.add('is-selected');
   const t: Tile = {
     el, item, ratio: ratioOf(item), kind, video: null,
     // Both are hints' business, both settled by fillHint() inside fillTile():
