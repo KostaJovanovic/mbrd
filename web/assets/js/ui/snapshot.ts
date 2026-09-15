@@ -4,7 +4,7 @@
 // card — one parameter so the two renderers can't disagree.
 
 import { readToken } from '../util.ts';
-import { board, adjustFilter, itemCrop, itemFlip, itemRotate, itemMatte } from '../state.ts';
+import { board, adjustFilter, itemCrop, itemFaded, itemFlip, itemRotate, itemMatte } from '../state.ts';
 import { itemBounds } from '../geometry.ts';
 import { assetURL, getAsset } from '../storage/assets.ts';
 import { paperMm, toUnits } from '../measure.ts';
@@ -1055,7 +1055,13 @@ async function renderBoardCanvas(detail: Detail = 'full', maxEdge = MAX_EDGE) {
     // relying on the stylesheet, so an image without a card would have grown
     // a border and shadow back on export - a bug visible only in the export,
     // seen only by whoever prints one.
-    const lifted = it.type !== 'sticker' && it.type !== 'fence' && it.meta?.bare !== true;
+    //
+    // And a sticky at low opacity, which the canvas draws at half strength with
+    // no shadow twin (noTwin() in canvas/items.ts). Both here, so the export
+    // shows the same note.
+    const faded = it.type === 'note' && itemFaded(it);
+    const lifted = it.type !== 'sticker' && it.type !== 'fence' && it.meta?.bare !== true && !faded;
+    if (faded) ctx.globalAlpha = 0.5;
     withShadow(ctx, look, lifted, scale);
     await painterFor(it)({ ctx, it, w: it.w * scale, h: it.h * scale, look, scale });
     withShadow(ctx, look, false, scale);

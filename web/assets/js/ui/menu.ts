@@ -152,6 +152,9 @@ export interface MenuCommands {
   canSetBare: (id: string) => boolean;
   itemBare: (id: string) => boolean;
   setItemBare: (id: string, bare: boolean) => void;
+  canSetFaded: (id: string) => boolean;
+  itemFaded: (id: string) => boolean;
+  setItemFaded: (id: string, faded: boolean) => void;
   editPicture: (id: string) => void;
   flipUpAxis: (id: string) => void;
   extractSwatches: (id: string) => void;
@@ -566,6 +569,8 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
   const fills = fittable && cmds!.itemFit(id) === 'cover';
   const bareable = !many && cmds!.canSetBare(id);
   const bare = bareable && cmds!.itemBare(id);
+  const fadeable = !many && cmds!.canSetFaded(id);
+  const faded = fadeable && cmds!.itemFaded(id);
   // Crop/grade — non-spatial, so offered on Feed too.
   const croppable = !many && cmds!.canEditPicture(id);
   // Single RAW card, until it is developed — on Feed too, like crop.
@@ -670,6 +675,9 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // Also avoids a confusing double-tick alongside the Fill/Fit radio pair.
     { label: 'No card', icon: 'i-cut-out', check: bare, hidden: !bareable,
       action: () => cmds!.setItemBare(id, !bare) },
+    // A sticky's answer in the same place: the paper stays, at half strength.
+    { label: 'Low opacity', icon: 'i-low-opacity', check: faded, hidden: !fadeable,
+      action: () => cmds!.setItemFaded(id, !faded) },
     // OBJ up-axis is ambiguous — per-item, not in Appearance.
     { label: 'Turn it upright', icon: 'i-upright', hidden: !flippable,
       action: () => cmds!.flipUpAxis(id) },

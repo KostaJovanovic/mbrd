@@ -1260,9 +1260,13 @@ const NO_TWIN = new Set(['title', 'ghost', 'fence', 'sticker']);
  * Leaving it out would hang a rectangular shadow under a picture with no
  * rectangle, which is the same fault the flag exists to fix and more obvious,
  * because a shadow reads as a surface.
+ *
+ * A sticky at low opacity is the sixth. The twin is a separate element at full
+ * strength, so under a sheet at half strength it shows through as a grey block.
  */
 function noTwin(item: Item): boolean {
-  return NO_TWIN.has(item.type) || item.meta?.bare === true;
+  return NO_TWIN.has(item.type) || item.meta?.bare === true
+    || (item.type === 'note' && item.meta?.faded === true);
 }
 
 /**
