@@ -16,7 +16,7 @@ import { ask } from './dialog.ts';
 import {
   board,
   timelineSteps, timelineAt, timelineStale, goTo, editStep, stepEditable,
-  timelineBytes, trimmable, trimTimeline, describeStep, nameStep,
+  timelineBytes, trimmable, trimTimeline, describeStep, nameStep, deleteTimeline,
 } from '../state.ts';
 
 /**
@@ -189,7 +189,9 @@ export function initTimeline() {
     event.preventDefault();
     openAnchored(dot.getBoundingClientRect(), entries, { label: 'Change this step' });
   });
-  track?.addEventListener('scroll', () => { placeMarker(); paintScroll(); }, { passive: true });
+  // A finger's pan and a trackpad's sideways swipe scroll natively: held to the
+  // current step here, as every scroll the page makes itself is.
+  track?.addEventListener('scroll', () => { scrollToStep(track!.scrollLeft); placeMarker(); paintScroll(); }, { passive: true });
   wireMarker();
   wireScroll();
   // A press anywhere but the play button pauses a replay.
@@ -199,7 +201,7 @@ export function initTimeline() {
     pause();
   }, true);
   if (typeof ResizeObserver === 'function') {
-    new ResizeObserver(() => { writeDock(); placeMarker(); paintScroll(); }).observe(strip);
+    new ResizeObserver(() => { writeDock(); fitView(); placeMarker(); paintScroll(); }).observe(strip);
   }
   // On from now on, off to begin with on a phone, then whatever was last chosen here.
   const saved = readPref(PREF);
@@ -269,7 +271,9 @@ function stepKeys(event: KeyboardEvent) {
   pause();
   if (target >= 0 && target <= last && target !== at) goTo(target);
   // render() rebuilt the marks, so the focus goes to the one the board is at.
-  track?.querySelector<HTMLElement>('.tl-step.is-at')?.focus();
+  // It is in view already (fitView), and a focus that scrolled would land
+  // between two steps.
+  track?.querySelector<HTMLElement>('.tl-step.is-at')?.focus({ preventScroll: true });
 }
 
 /** Replay from here to the newest step, or from the start when there is nothing ahead. */
@@ -333,31 +337,66 @@ function render() {
   where.title = stale ? 'This history does not match this board' : '';
   // Nothing to play with no steps, and nothing works on a stale history.
   if (playButton) playButton.disabled = stale || !steps.length;
-  keepInView(track.querySelector<HTMLElement>('.tl-step.is-at'));
+  fitView();
   placeMarker();
   paintScroll();
 }
 
 /**
- * Scroll the steps so the one the board stands on shows, and the playhead in
- * the gap after it. scrollIntoView() stopped at the mark's own edge, which
- * left the playhead behind the newest step just out of view.
+ * One mark and the gap after it: the distance the steps scroll by. The track
+ * moves by whole steps only and is sized to whole steps (fitView), so no mark
+ * is ever drawn cut at either end of it. 0 while the bar is down.
  */
-function keepInView(dot: HTMLElement | null) {
-  if (!dot || !track) return;
-  const view = track.getBoundingClientRect();
-  const left = dot.getBoundingClientRect().left;
-  const right = gapAfter(dot) + PLAYHEAD_ROOM;
-  if (right > view.right) track.scrollLeft += right - view.right;
-  else if (left < view.left) track.scrollLeft -= view.left - left;
+function pitch(): number {
+  const dot = track?.querySelector<HTMLElement>('.tl-step');
+  if (!track || !dot?.offsetWidth) return 0;
+  return dot.offsetWidth + (parseFloat(getComputedStyle(track).columnGap) || 0);
 }
 
-/** Half the playhead's flag, so the whole flag shows past the gap's middle. */
-const PLAYHEAD_ROOM = 5;
+/**
+ * Scroll to the whole step nearest `left`, as far as the step the board stands
+ * on allows: every way of scrolling stops where that step would leave the
+ * view, so it is on screen at all times. Moving the playhead, a click on a mark
+ * or the arrow keys walk further, and the view follows them.
+ */
+function scrollToStep(left: number) {
+  if (!track) return;
+  const p = pitch();
+  if (!p) { track.scrollLeft = left; return; }
+  const room = track.scrollWidth - track.clientWidth;
+  let to = Math.round(left / p) * p;
+  const dot = track.querySelector<HTMLElement>('.tl-step.is-at');
+  if (dot) {
+    const index = [...track.children].indexOf(dot);
+    const fits = Math.max(1, Math.round(track.clientWidth / p));
+    to = Math.max((index - fits + 1) * p, Math.min(index * p, to));
+  }
+  to = Math.max(0, Math.min(room, to));
+  if (track.scrollLeft !== to) track.scrollLeft = to;
+}
+
+/**
+ * Size the track, and the scrollbar over it, to as many whole steps as the bar
+ * has room for, and bring the step the board stands on into view. On every
+ * render and every change of the bar's width: a narrower window takes steps
+ * off the view, never the one the board is at.
+ */
+function fitView() {
+  if (!track || !rail || !scrollBar) return;
+  const p = pitch();
+  if (!p) return;
+  const width = `${Math.max(1, Math.floor(rail.clientWidth / p)) * p}px`;
+  track.style.width = width;
+  scrollBar.style.width = width;
+  // Where it is, held to the current step: the playhead's gap after the last
+  // whole step is inside the view, because the view is whole steps wide.
+  scrollToStep(track.scrollLeft);
+}
 
 /**
  * The playhead, in the gap after the step the board stands on, so the mark to
- * its left is the last step shown. Hidden when that gap is scrolled away.
+ * its left is the last step shown. Hidden when that gap is scrolled away. The
+ * track starts at the rail's left edge and may stop short of its right.
  */
 function placeMarker() {
   if (!marker || !track || !rail) return;
@@ -365,7 +404,7 @@ function placeMarker() {
   if (!dot) { marker.hidden = true; return; }
   const box = rail.getBoundingClientRect();
   const x = gapAfter(dot) - box.left;
-  marker.hidden = x < 0 || x > box.width;
+  marker.hidden = x < 0 || x > track.clientWidth;
   marker.style.left = `${x}px`;
 }
 
@@ -416,7 +455,7 @@ function wireScroll() {
     const start = list.scrollLeft;
     // Pixels of track per pixel of thumb travel.
     const rate = (list.scrollWidth - list.clientWidth) / Math.max(1, bar.clientWidth - grip.offsetWidth);
-    const move = (e: PointerEvent) => { list.scrollLeft = start + (e.clientX - from) * rate; };
+    const move = (e: PointerEvent) => { scrollToStep(start + (e.clientX - from) * rate); };
     const up = () => {
       grip.classList.remove('is-dragging');
       grip.removeEventListener('pointermove', move);
@@ -431,13 +470,22 @@ function wireScroll() {
     if (event.button !== 0 || event.target === grip) return;
     const box = bar.getBoundingClientRect();
     const share = (event.clientX - box.left) / Math.max(1, box.width);
-    list.scrollTo({ left: share * list.scrollWidth - list.clientWidth / 2, behavior: 'smooth' });
+    scrollToStep(share * list.scrollWidth - list.clientWidth / 2);
   });
-  // A wheel turns the steps sideways: there is no system bar to aim at now.
+  // A wheel turns the steps sideways, a whole step at a time: there is no
+  // system bar to aim at now. A trackpad's small turns add up to a step; a
+  // line (Firefox's wheel notch) is a step.
+  let spun = 0;
   list.addEventListener('wheel', event => {
     if (event.deltaX || !event.deltaY || list.scrollWidth <= list.clientWidth) return;
     event.preventDefault();
-    list.scrollLeft += event.deltaY;
+    const p = pitch();
+    if (!p) return;
+    spun += event.deltaMode === 1 ? event.deltaY * p : event.deltaY;
+    const by = Math.trunc(spun / p);
+    if (!by) return;
+    spun -= by * p;
+    scrollToStep(list.scrollLeft + by * p);
   }, { passive: false });
 }
 
@@ -510,51 +558,75 @@ async function namePoint() {
 }
 
 /**
- * Behind the gear: naming the point the board stands on, how big the history
- * is, the trim, and Hide timeline. The trim folds steps older than 30 days
- * into the starting state, never across a named point, and says so rather
- * than disappearing when there is nothing to fold.
+ * Behind the gear: the things to do first, together, and then how big the
+ * history is, as a line to read under them. The acts are naming the point the
+ * board stands on, the trim, deleting the whole history, and Hide timeline.
  *
  * The name row is absent at the start of the board, where there is no step
  * to name, and on a stale history, where nothing here works. Its word
- * changes because the act does: naming a named point is renaming it.
+ * changes because the act does: naming a named point is renaming it. The
+ * trim folds steps older than 30 days into the starting state, never across
+ * a named point, and is absent when there is nothing that old to fold. Delete
+ * is absent with no steps, and works on a stale history, which is the one
+ * thing still worth doing with it.
  */
 function gearEntries(): MenuEntry[] {
   const steps = timelineSteps();
   const at = timelineAt();
   const count = trimmable();
-  const rows: MenuEntry[] = [];
-  if (at && !timelineStale()) {
-    rows.push({
+  return [
+    {
       label: steps[at - 1]?.name ? 'Rename this point' : 'Name this point',
+      hidden: !at || timelineStale(),
       action: () => { void namePoint(); },
-    });
-  }
-  rows.push({
-    label: `${steps.length} step${steps.length === 1 ? '' : 's'}, ${formatBytes(timelineBytes())}`,
-    disabled: true,
-  });
-  rows.push(count
-    ? {
+    },
+    {
       label: `Fold in ${count} step${count === 1 ? '' : 's'} older than 30 days`,
+      hidden: !count,
       action: () => {
         const went = trimTimeline();
         if (went) toast(`Folded ${went} step${went === 1 ? '' : 's'} into the starting state`);
         if (open) render();
       },
-    }
-    : { label: 'Nothing older than 30 days to fold in', disabled: true });
-  // Show timeline in the panel brings it back, and the toast says where, since
-  // a bar that goes from its own menu leaves nothing on screen to find it by.
-  rows.push({ sep: true }, {
-    label: 'Hide timeline',
-    action: () => {
-      if (!open) return;
-      toggleTimeline();
-      toast('Timeline hidden - Show timeline in the sidebar brings it back');
     },
+    { label: 'Delete timeline', danger: true, hidden: !steps.length, action: () => { void deleteHistory(); } },
+    // Show timeline in the panel brings it back, and the toast says where, since
+    // a bar that goes from its own menu leaves nothing on screen to find it by.
+    {
+      label: 'Hide timeline',
+      action: () => {
+        if (!open) return;
+        toggleTimeline();
+        toast('Timeline hidden - Show timeline in the sidebar brings it back');
+      },
+    },
+    { sep: true },
+    {
+      label: `${steps.length} step${steps.length === 1 ? '' : 's'}, ${formatBytes(timelineBytes())}`,
+      disabled: true,
+    },
+  ];
+}
+
+/**
+ * Delete the whole history, after asking: the board as it stands becomes the
+ * start, and the steps, their names and the undo stack all go. The board
+ * itself does not change, which the question says, because "delete" next to
+ * a board reads as the board.
+ */
+async function deleteHistory() {
+  const n = timelineSteps().length;
+  const answer = await ask({
+    title: 'Delete the timeline?',
+    body: `All ${n} step${n === 1 ? '' : 's'} go, with their names, and the board as it`
+      + ' is now becomes the start. The board itself does not change. This cannot'
+      + ' be undone.',
+    go: 'Delete timeline',
   });
-  return rows;
+  if (answer !== 'go') return;
+  pause();
+  deleteTimeline();
+  toast('Timeline deleted');
 }
 
 type Step = ReturnType<typeof timelineSteps>[number];

@@ -6,7 +6,8 @@
 #mobile-header-edit-btn,
 #mobile-find-btn {
   position: fixed;
-  top: max(16px, env(safe-area-inset-top));
+  /* Level with the toolbar and with an open panel's top. */
+  top: max(var(--panel-inset), env(safe-area-inset-top));
   left: max(16px, env(safe-area-inset-left));
   z-index: var(--z-panel);
   width: var(--chrome-button-w);
@@ -105,19 +106,28 @@
 /* Edit button stays reachable above the sidebar. */
 #sidebar.is-open ~ #mobile-header-edit-btn { z-index: calc(var(--z-overlay) + 1); }
 
+/* How far a panel stands off the window's edges. One number, because the
+   toolbar, the menu button, the foot bars, the tour bar and the Playlist all
+   line up on a panel's edge (chrome.css, timeline.css, mobile.css). 12px at
+   phone width, where the controls in the corners stand 12px off (mobile.css). */
+:root { --panel-inset: 14px; }
+
 /* Non-modal: the canvas stays interactive with the sidebar open. */
 #sidebar {
   position: fixed;
   z-index: var(--z-overlay);
-  top: max(14px, env(safe-area-inset-top));
-  bottom: calc(max(14px, env(safe-area-inset-bottom)) + var(--dock));
-  left: max(14px, env(safe-area-inset-left));
+  top: max(var(--panel-inset), env(safe-area-inset-top));
+  bottom: calc(max(var(--panel-inset), env(safe-area-inset-bottom)) + var(--dock));
+  left: max(var(--panel-inset), env(safe-area-inset-left));
   width: min(var(--sidebar-w), calc(100vw - 28px));
   display: flex;
   flex-direction: column;
   background: var(--paper-card);
   border: var(--hairline) solid var(--rule-2);
-  border-radius: var(--ogee);
+  /* --leaf, the toolbar's corner: the sheet stands level with the toolbar and
+     the zoom pill along the top, and a rounder corner beside theirs read as
+     a mismatch. The header panel is the same sheet. */
+  border-radius: var(--leaf);
   box-shadow: var(--shadow-2);
   transform: translateX(calc(-100% - 22px));
   opacity: 0;
@@ -138,15 +148,15 @@
 #header-panel {
   position: fixed;
   z-index: var(--z-overlay);
-  top: max(14px, env(safe-area-inset-top));
-  bottom: calc(max(14px, env(safe-area-inset-bottom)) + var(--dock));
-  right: max(14px, env(safe-area-inset-right));
+  top: max(var(--panel-inset), env(safe-area-inset-top));
+  bottom: calc(max(var(--panel-inset), env(safe-area-inset-bottom)) + var(--dock));
+  right: max(var(--panel-inset), env(safe-area-inset-right));
   width: min(var(--sidebar-w), calc(100vw - 28px));
   display: flex;
   flex-direction: column;
   background: var(--paper-card);
   border: var(--hairline) solid var(--rule-2);
-  border-radius: var(--ogee);
+  border-radius: var(--leaf);
   box-shadow: var(--shadow-2);
   transform: translateX(calc(100% + 22px));
   opacity: 0;
@@ -752,7 +762,9 @@
   padding: 4px 0;
   font-style: var(--body-italic);
 }
-.keys li span { color: var(--ink-3); text-align: right; }
+.keys li span:not(.key-combo) { color: var(--ink-3); text-align: right; }
+/* A row's keys stay together at its left, with the "+" between them. */
+.key-combo { flex: none; display: inline-flex; align-items: center; gap: 4px; }
 kbd {
   font-family: var(--font-mono);
   font-style: normal;
@@ -765,6 +777,15 @@ kbd {
   background: var(--paper);
   color: var(--ink);
   white-space: nowrap;
+}
+/* In the Keys list each cap is a key: a one-letter one is square, and a longer
+   one is the same height and grows sideways. */
+.keys kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 6px;
 }
 
 .side-foot {

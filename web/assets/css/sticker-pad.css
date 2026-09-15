@@ -19,7 +19,7 @@
   flex-direction: column;
   background: var(--paper-card);
   border: var(--hairline) solid var(--rule-2);
-  border-radius: var(--ogee);
+  border-radius: var(--radius);
   box-shadow: var(--shadow-2);
   overflow: hidden;
   transform-origin: bottom right;

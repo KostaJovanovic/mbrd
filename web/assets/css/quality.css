@@ -52,6 +52,16 @@
   font-size: clamp(11px, calc(var(--half-min, 120px) * 0.09), 20px);
 }
 
+/* Round, not nearly round. --leaf is 20px at this end, which caps a 35px
+   control to a pill but left the 42-45px glass buttons and the two short
+   drawer buttons a pixel or two short of one: a circle drawn slightly wrong.
+   These go the rest of the way. A new glass control joins this list. */
+:root[data-whimsy="0"] :is(#menu-btn, #mobile-header-edit-btn, #mobile-find-btn,
+  #drawer-btn, #history-ctl, #zoom-ctl, #toolbar, #toolbar-tools,
+  .field .pigment-swatch, .drawer-title-back, .drawer-empty) {
+  border-radius: var(--radius-pill);
+}
+
 /* Origin mark shape per tier: Softish keeps the compass ring, Harsh squares
    it to a registration mark. Middle is the unset default (rounded square). */
 #origin-mark .om-ring,

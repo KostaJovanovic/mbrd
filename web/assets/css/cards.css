@@ -274,13 +274,13 @@
   display: flex;
   gap: 8px;
   padding: 8px 10px;
-  /* --ogee, because that is what this is: a panel with controls in it. It read
+  /* --radius, the corner of every panel with controls in it. It read
      var(--radius-md, 14px) for a long time and --radius-md has never existed,
      so every board at every tier got the 14px fallback - a rounded bar floating
      over square cards on the plain tier, and a tight one over 26px cards on the
-     soft. The fallback was near enough to the middle tier's --ogee that nobody
-     saw it, which is exactly why it lasted. */
-  border-radius: var(--ogee);
+     soft. The fallback was near enough to the middle tier's panel corner that
+     nobody saw it, which is exactly why it lasted. */
+  border-radius: var(--radius);
   background: var(--paper-card);
   box-shadow:
     0 3px 10px color-mix(in srgb, var(--ink) 16%, transparent),
@@ -307,10 +307,11 @@
   height: 36px;
   padding: 0 8px;
   border: 0;
-  /* --leaf sizes controls; this is one. The old var(--radius-xs, 8px) named the
-     small-fry token and then handed it a fallback twice its value, so whichever
-     way it resolved it was wrong about something. */
-  border-radius: var(--leaf);
+  /* The bar's corner less the bar's 8px padding, so a button in the bar's
+     corner runs parallel to it: 5px at the middle, and a full pill at Softish,
+     where the 36px button caps the 18px. --leaf left it rounder than the bar
+     around it. */
+  border-radius: max(0px, calc(var(--radius) - 8px));
   background: transparent;
   color: var(--ink-2);
   font: inherit;

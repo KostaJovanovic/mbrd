@@ -235,7 +235,8 @@
   padding: 0;
   /* --board-hairline, not --hairline: this box is inside the world transform. */
   border: var(--board-hairline) solid var(--rule-2);
-  border-radius: 50%;
+  /* A disc on the soft tiers and a square at Harsh: a badge, not a circle with a meaning. */
+  border-radius: var(--radius-pill);
   background: var(--paper-card);
   color: var(--ink-2);
   cursor: pointer;

@@ -24,7 +24,7 @@ export const TOKENS = new Set([
   '--lift-drag', '--lift-hover', '--ls-scale', '--note-1', '--note-2',
   '--note-3', '--note-4', '--note-radius', '--note-shadow',
   '--note-wash-amber', '--note-wash-graphite', '--note-wash-olive',
-  '--note-wash-terracotta', '--ogee',
+  '--note-wash-terracotta',
   '--paper', '--paper-2', '--paper-3', '--paper-card', '--radius',
   '--radius-pill', '--radius-sm', '--radius-xs', '--rule', '--rule-2', '--sel-corner',
   '--sel-gap', '--sel-line', '--sel-reach', '--select', '--select-fill',

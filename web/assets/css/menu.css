@@ -18,7 +18,7 @@
   width: min(560px, calc(100vw - 32px));
   padding: 6px;
   border: var(--hairline) solid var(--rule-2);
-  border-radius: var(--ogee);
+  border-radius: var(--radius);
   background: var(--paper-card);
   box-shadow: var(--shadow-2);
   animation: ctx-in var(--dur-fast) var(--ease);
@@ -27,9 +27,9 @@
   width: 100%;
   padding: 11px 13px;
   border: 0;
-  /* max(0px) because --ogee is 0 on the plain tier and a bare
+  /* max(0px) because --radius is 0 on the plain tier and a bare
      subtraction gives -6px, which the browser drops entirely. */
-  border-radius: max(0px, calc(var(--ogee) - 6px));
+  border-radius: max(0px, calc(var(--radius) - 6px));
   background: none;
   font-family: var(--font-display);
   font-size: var(--t-title);
@@ -60,7 +60,7 @@
   width: 100%;
   padding: 7px 9px;
   border: 0;
-  border-radius: max(0px, calc(var(--ogee) - 6px));
+  border-radius: max(0px, calc(var(--radius) - 6px));
   background: none;
   text-align: left;
   cursor: pointer;

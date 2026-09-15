@@ -38,7 +38,7 @@
   /* Transparent border + padding-box clip = inset thumb. */
   border: 3px solid transparent;
   background-clip: padding-box;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
 }
 @media (hover: hover) {
   ::-webkit-scrollbar-thumb:hover { background: var(--ink-3); background-clip: padding-box; }

@@ -19,10 +19,10 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  /* 14px at the sides is the panels' inset (sidebar.css), so Play stands under
-     the sidebar's edge and the gear under the header panel's. */
-  padding: 4px max(14px, env(safe-area-inset-right))
-           max(4px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+  /* The panels' inset at the sides (sidebar.css), so Play stands under the
+     sidebar's edge and the gear under the header panel's. */
+  padding: 4px max(var(--panel-inset), env(safe-area-inset-right))
+           max(4px, env(safe-area-inset-bottom)) max(var(--panel-inset), env(safe-area-inset-left));
   min-height: var(--chrome-button-h);
   border-top: var(--hairline) solid var(--rule-2);
   background: var(--paper-card);
@@ -149,6 +149,9 @@
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
+  /* By whole steps: ui/timeline-view.ts sizes the track to whole steps and
+     scrolls it by them, and the snap holds a finger's pan to the same. */
+  scroll-snap-type: x mandatory;
 }
 #timeline-strip .tl-track::-webkit-scrollbar { display: none; }
 
@@ -205,6 +208,7 @@
   background: none;
   color: var(--ink-3);
   cursor: pointer;
+  scroll-snap-align: start;
 }
 /* The baseline: a segment per step that meets its neighbours' in the gaps,
    so it scrolls with the marks. It starts and ends under the outer marks. */
@@ -240,14 +244,15 @@
 #timeline-strip .tl-step.is-ahead::after { opacity: 0.42; }
 #timeline-strip .tl-step.is-at::after { background: var(--ink-2); }
 
-/* The mark: glyph for what was done. --leaf corner, --tl-mark size. */
+/* The mark: glyph for what was done, --tl-mark size. Round, and square at
+   Harsh: --leaf left the 22px mark a pixel short of a circle at Middle. */
 #timeline-strip .tl-step .tl-dot {
   position: relative;
   display: grid;
   place-items: center;
   width: var(--tl-mark);
   height: var(--tl-mark);
-  border-radius: var(--leaf);
+  border-radius: var(--radius-pill);
   background: var(--paper-card);
   color: var(--ink-3);
   transition: color var(--dur-fast) var(--ease),

@@ -21,7 +21,7 @@
 #drop-overlay div {
   padding: 16px 30px;
   border: 2px dashed var(--accent-text);
-  border-radius: var(--ogee);
+  border-radius: var(--radius);
   background: var(--paper-card);
   box-shadow: var(--shadow-2);
   /* Off the type scale on purpose: a banner read at a glance during a drag. */

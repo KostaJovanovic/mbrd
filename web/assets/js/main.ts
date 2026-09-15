@@ -23,6 +23,7 @@ import {
   ensureGhostCards, reseedGhostCards, hasContent, dismissGhosts,
   leaveNotFoundBoard, isContent,
   defaultBoardTitle,
+  goTo, timelineSteps, timelineStale,
 } from './state.ts';
 import { freezePrefs } from './prefs.ts';
 import { homePath, isPatchPage, isNotFoundPage, openingFace, openingShare } from './page.ts';
@@ -524,6 +525,11 @@ const started = (async function start() {
     // After seeding — mounting cards emits 'items' and would re-enter.
     if (notFound) bus.on('items', onFirstContent);
   }
+  // A reload opens at the newest step. The file keeps the playhead where it
+  // stood, so a board left after a few undos came back that many steps back,
+  // with the newest steps ahead of it. Not on a stale history, which replays
+  // nothing, and not on opening a file, which is not a reload.
+  if (restored && !timelineStale()) goTo(timelineSteps().length);
   // Restore the URL-requested lens (e.g. #timeline). After session, before
   // openingView() — mobile reframes the view and an earlier read would be lost.
   const face = (notFound || isPatch) ? null : openingFace();
