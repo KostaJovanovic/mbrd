@@ -841,7 +841,7 @@ export function setItemBare(id: string, bare: unknown) {
 }
 
 /**
- * Draw a sticky at half strength. Notes only - the row that took "No card"'s
+ * Draw a sticky's paper at 60%, its words solid. Notes only - the row that took "No card"'s
  * place on them. Stored only when true, like `bare`.
  */
 export function setItemFaded(id: string, faded: unknown) {

@@ -438,7 +438,11 @@ function paintFence({ ctx, it, w, h, look, scale }: Paint) {
 function paintNote({ ctx, it, w, h, look, scale }: Paint) {
   ctx.fillStyle = readToken(`--note-${(Number(it.meta?.tint) || 1)}`) || '#fff7d6';
   roundRect(ctx, -w / 2, -h / 2, w, h, Math.min(w, h) * 0.06);
+  // Low opacity: the paper at 60% and the words solid, as cards.css draws it.
+  const alpha = ctx.globalAlpha;
+  if (itemFaded(it)) ctx.globalAlpha = alpha * 0.6;
   ctx.fill();
+  ctx.globalAlpha = alpha;
   if (look.detail !== 'full') return;
 
   // noteWords() and not flattenNoteRich() - see the header and note-model.ts.
@@ -1058,12 +1062,10 @@ async function renderBoardCanvas(detail: Detail = 'full', maxEdge = MAX_EDGE) {
     // a border and shadow back on export - a bug visible only in the export,
     // seen only by whoever prints one.
     //
-    // And a sticky at low opacity, which the canvas draws at half strength with
-    // no shadow twin (noTwin() in canvas/items.ts). Both here, so the export
-    // shows the same note.
+    // And a sticky at low opacity, which the canvas draws with no shadow twin
+    // (noTwin() in canvas/items.ts). paintNote() thins its paper.
     const faded = it.type === 'note' && itemFaded(it);
     const lifted = it.type !== 'sticker' && it.type !== 'fence' && it.meta?.bare !== true && !faded;
-    if (faded) ctx.globalAlpha = 0.5;
     withShadow(ctx, look, lifted, scale);
     await painterFor(it)({ ctx, it, w: it.w * scale, h: it.h * scale, look, scale });
     withShadow(ctx, look, false, scale);

@@ -675,7 +675,7 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // Also avoids a confusing double-tick alongside the Fill/Fit radio pair.
     { label: 'No card', icon: 'i-cut-out', check: bare, hidden: !bareable,
       action: () => cmds!.setItemBare(id, !bare) },
-    // A sticky's answer in the same place: the paper stays, at half strength.
+    // A sticky's answer in the same place: the paper stays, see-through.
     { label: 'Low opacity', icon: 'i-low-opacity', check: faded, hidden: !fadeable,
       action: () => cmds!.setItemFaded(id, !faded) },
     // OBJ up-axis is ambiguous — per-item, not in Appearance.

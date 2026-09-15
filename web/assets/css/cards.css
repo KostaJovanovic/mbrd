@@ -118,14 +118,23 @@
 }
 
 /* "Low opacity" on a sticky - the row that took "No card"'s place on notes.
-   Paper, words and ring go to half strength together, and the shadow twin goes
-   (noTwin() in canvas/items.ts).
+   The paper goes to 60% and the words stay solid, so the board shows through
+   the sheet and the note still reads. The pointer, or an edit, brings the
+   paper back to full. The shadow twin goes (noTwin() in canvas/items.ts),
+   because it would show through the sheet as a grey block.
 
-   filter: opacity() and not opacity, because .item already uses opacity for
-   the tag filter (0.16) and a lifted board (0.6). This rule would win those on
-   specificity, and a filtered note would come back to 0.5. A filter multiplies
-   with them instead. Full strength while the text is edited, so it can be read. */
-.item[data-type="note"][data-faded]:not(.is-editing) { filter: opacity(0.5); }
+   background-color alone on the card, so the adhesive band over it stays and
+   the change can fade. The pad colour on the item goes, or the two layers
+   would stack to more than 60%. Not on a note with no paper, which the rules
+   above have already emptied. */
+.item[data-type="note"][data-faded]:not([data-bare]) { background: none; }
+.item[data-type="note"][data-faded]:not([data-bare]) .card {
+  background-color: color-mix(in srgb, var(--note-paper) 60%, transparent);
+  transition: background-color var(--dur-fast) var(--ease);
+}
+.item[data-type="note"][data-faded]:not([data-bare]):is(:hover, .is-editing) .card {
+  background-color: var(--note-paper);
+}
 
 /* A note is a column of formatted block-lines (renderers.ts/note). The column
    carries the note's font, its size (through --note-scale) and its vertical

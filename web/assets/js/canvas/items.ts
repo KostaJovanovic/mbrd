@@ -259,7 +259,14 @@ export function initItems(world: HTMLElement, viewport: Viewport) {
   // all of which change what a sticky is fixed to without touching the
   // selection. It costs one question per selected id, which is what keeps it
   // affordable on 'geom' - see the docstring.
-  bus.on('items', delta => { reconcile(delta); reindex(delta); sync(); paintGrips(); });
+  bus.on('items', delta => {
+    reconcile(delta);
+    reindex(delta);
+    // No delta is a wholesale change - a load or a Timeline replay.
+    if (!delta) redrawChanged();
+    sync();
+    paintGrips();
+  });
   bus.on('geom', ids => {
     for (const id of ids) {
       // The one per-item index write on a hot path: a moved card has to change
@@ -1178,6 +1185,7 @@ function build(item: Item) {
   const el = buildItem(item, tilt, item.id === pickedId);
 
   nodes.set(item.id, el);
+  drawnFrom.set(el, item);
   // The title card carries its own drop shadow in CSS (box-shadow on
   // .title-card), because the 3:2 card is smaller than its snapped item box and
   // a twin placed at the box would sit taller than the card it shadows.
@@ -1262,7 +1270,7 @@ const NO_TWIN = new Set(['title', 'ghost', 'fence', 'sticker']);
  * because a shadow reads as a surface.
  *
  * A sticky at low opacity is the sixth. The twin is a separate element at full
- * strength, so under a sheet at half strength it shows through as a grey block.
+ * strength, so under see-through paper it shows through as a grey block.
  */
 function noTwin(item: Item): boolean {
   return NO_TWIN.has(item.type) || item.meta?.bare === true
@@ -1311,11 +1319,38 @@ function syncTwin(el: HTMLElement, item: Item) {
   if (shadowLayerEl && !twin.isConnected) shadowLayerEl.append(twin);
 }
 
+/**
+ * The item each card was last drawn from, by node.
+ *
+ * A Timeline replay puts back a whole board of new item objects and announces
+ * it as 'items' with no delta. That reconciles the cards that went and places
+ * the rest, but it rebuilds none of them, so a card kept the look it had: a note
+ * stayed faded after its fade was stepped back. redrawChanged() compares each
+ * card with the item it came from and rebuilds the ones that differ.
+ */
+const drawnFrom = new WeakMap<HTMLElement, Item>();
+
+/** The parts of an item a card draws. Geometry is placeNode()'s. */
+const sameFace = (a: Item, b: Item) => a.type === b.type && a.name === b.name
+  && a.asset === b.asset && JSON.stringify(a.meta ?? null) === JSON.stringify(b.meta ?? null);
+
+/** Rebuild every card whose item is a new object with a different face. */
+function redrawChanged() {
+  for (const [id, el] of nodes) {
+    const was = drawnFrom.get(el);
+    const now = byId(id);
+    if (!now || now === was) continue;
+    if (was && sameFace(was, now)) drawnFrom.set(el, now);
+    else rebuild(id);
+  }
+}
+
 /** Rebuild one item's content in place (note edits, renames). */
 function rebuild(id: string) {
   const el = nodes.get(id);
   const item = byId(id);
   if (!el || !item) return;
+  drawnFrom.set(el, item);
   // Non-null: buildItem() appends the body to every card it makes, and a node in
   // this map is a card it made. The two below are the same argument - farHead()
   // appends both of its lines before it returns the head they are in.

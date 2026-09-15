@@ -85,6 +85,11 @@ date: 14 September 2026
   - so going back and forth could quietly put them back. The Timeline now
   compares the board with the one its record describes before it records or
   replays, and a test holds every board field to a round trip.
+- [fix] **A step through the Timeline redraws the cards it changes.** A replay
+  announced the whole board, which only placed the cards again, so a card kept
+  the look it had: a note stayed faded after its fade was stepped back, and lost
+  its shadow. The canvas now compares each card with the item it was drawn from
+  and redraws the ones whose name, file or settings differ.
 - **The history moved out of `board.json`.** A `.mbrd` now carries it as
   `timeline/base.json` and `timeline/steps.jsonl`, one step to a line, and a torn
   line marks the history stale rather than losing the board. Every older `.mbrd`
@@ -173,12 +178,11 @@ date: 14 September 2026
   quarter turn, and caches it by hash. Desktop layout only: the Feed already draws
   Fit tiles at their shape, and on the packed Mobile grid a grown card would land
   on its neighbours. Anchored cards keep their size, as under `Reset size`.
-- [new] **A sticky offers `Low opacity` where it offered `No card`.** The note
-  draws at half strength - paper, words and ring together - through a CSS
-  `filter: opacity()`, so it multiplies with the tag filter and a lifted board
-  rather than fighting them on specificity. Its shadow twin goes, since at full
-  strength it showed through the sheet as a grey block, and the export paints the
-  same note. It comes back to full strength while its text is edited. A note that
+- [new] **A sticky offers `Low opacity` where it offered `No card`.** The paper
+  goes to 60% and the words stay solid, and the pointer or an edit brings the
+  paper back to full. Only the card's background colour changes, so the adhesive
+  band stays and the change fades. Its shadow twin goes, since it showed through
+  the sheet as a grey block, and the export paints the same note. A note that
   already has no paper still shows `No card`, ticked, so the paper can come back.
   Pictures and models keep `No card`.
 - [fix] **Below 40% zoom a card's buttons go.** The anchor and pin badges and the
