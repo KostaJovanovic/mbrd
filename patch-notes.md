@@ -157,7 +157,7 @@ back to the board.
 ## Releases
 
 ## Unpacked
-version: 0.318 - 0.391
+version: 0.318 - 0.402
 date: 14 September 2026
 
 - **An archive drops in as one card you can open, the Timeline moved to the foot
@@ -187,6 +187,16 @@ date: 14 September 2026
   as a note set to `Low opacity`, where it kept the look it had.
 - [fix] **`Play` lines up with the sidebar's edge,** its triangle sits in the
   middle of the button, and the gear has the outline and ground of a button.
+- [new] **While `Play` runs, the board is there to watch.** A press pans, the tools
+  that would change it are dimmed, and a drop or a paste is turned away with a
+  note that says to press `Pause`. Only `Pause` stops a replay, where any press
+  on the page used to.
+- [new] **`Delete timeline` in the gear** clears the whole history after asking.
+  The board as it stands becomes the start, and the board itself does not change.
+- [fix] **A reload opens at the newest step,** where a board left after a few
+  undos came back that many steps behind.
+- [fix] **The steps scroll a whole step at a time,** so no mark is cut in half at
+  either end of the bar, and the scrollbar and the wheel reach the oldest steps.
 
 ### The tour
 - [new] **A board with no tour offers `Create tour`,** and `Take the tour` and
@@ -238,6 +248,19 @@ date: 14 September 2026
 - [fix] **Below 40% zoom the buttons on a card go** - the anchor and pin badges
   and the title card's pen and `T`. An audio card's play button fits inside the
   card, and one with cover art shows the art with the button over it.
+- [new] **`Tilt cards` on the Look tab.** Switched off, every card stands square;
+  a card you drag still tilts in your hand. It is on to begin with.
+- [new] **A card wider than eight grid squares or taller than six rests
+  straight,** and takes its own lean back when you make it smaller again.
+- [fix] **A card lifts under the pointer by the same amount at every zoom,**
+  where far out it jumped by most of its own height.
+- [fix] **`Fit`, recentring and the zoom buttons centre in the room an open
+  sidebar leaves,** rather than behind the panel.
+- [fix] **Connection lines hold still while you carry a card.** Its own lines run
+  straight, and everything is routed once when you put it down, where the whole
+  board used to reroute each time your hand rested.
+- [fix] **The close cross no longer shows a hole in its middle** in Firefox at
+  Harsh.
 
 ### The sidebar and the toolbar
 - [new] **Every dropdown in the sidebar is the app's own picker,** and the font
@@ -261,6 +284,23 @@ date: 14 September 2026
   `Reset`. A new board keeps its name on one line.
 - [fix] **The player and the buttons along the foot sit level with the
   sidebar,** 14 pixels off the bottom of the window.
+- [new] **The Keys list draws every key as a keycap.**
+- [fix] **The toolbar keeps up with a window being resized,** where it trailed
+  behind and stepped after it.
+- [fix] **The sidebar's shadow no longer darkens the Timeline** under it.
+
+### The look
+- [new] **Corners travel when the whimsy dial moves.** Every corner on screen
+  eases into its new shape along with the colours, rather than jumping, and into
+  Harsh they go quicker but still visibly.
+- [fix] **Cards no longer pop up in place after a load or a change of look.**
+  Their lift and lean travel as they should while the colours fade.
+- [new] **The corners agree.** Panels that sat a couple of pixels rounder than
+  their neighbours match now, and the sidebar wears the toolbar's corner, level
+  with it along the top.
+- [new] **Every button on the glass is square,** 42 pixels or 45 on a touch
+  screen, the zoom control's three parts included. At Softish they are fully
+  round, and at Harsh the badges, closes and pick circles are square.
 
 ### The Feed and the phone
 - [new] **Every Feed tile looks like its card on the board** - style tiles, fonts
@@ -272,6 +312,10 @@ date: 14 September 2026
   each tap picks one. The menu, `Delete` and `Tags` then act on them all.
 - [new] **An audio tile on the Feed has its play button in the middle,** as a
   video tile does.
+- [new] **Notes stuck on a card ride its tile on the Feed,** where each had a
+  tile of its own somewhere else. A small sticky in the corner counts them, and a
+  press lays them open over the card. `Find` on one of them opens its card's
+  notes.
 - [fix] **A picture set to `Fit` takes its own shape on the Feed,** tiles stand on
   a soft shadow at full quality, and on a phone the Feed runs edge to edge with
   `Find` at the top right.

@@ -12,7 +12,7 @@ import {
   rolledAway, rolledFences,
   travelling, isFence, isLocked, dragRoot, isPinned, isSticky, stuckTo, resettle,
   copyItems, cutItems, pasteItems, clipboardSize, clipboardBounds, clipboardHasOurs,
-  baseStep, timelinePlaying,
+  baseStep, timelinePlaying, fenceAt,
 } from '../state.ts';
 import { zoomMs } from './viewport.ts';
 import type { Viewport } from './viewport.ts';
@@ -29,6 +29,7 @@ import { fitMode, linkURL } from './renderers.ts';
 import { embedFor, embedFloor } from './embed.ts';
 import { queryRect, queryAround } from './spatial.ts';
 import { holdRoutes } from './web.ts';
+import { startEdgePan } from './edge-pan.ts';
 import { isDesktop } from '../platform/platform.ts';
 
 const DRAG_SLOP = 3;      // screen px before a press becomes a drag
@@ -1329,6 +1330,37 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   };
 
   /**
+   * The cards a fence carries through a resize, put on the lattice. The carry
+   * places each at its fraction of the fence, which lands between lines, so on
+   * a snapped board every card left the grid it stood on. Each now snaps its own
+   * low edges, as a dragged card does. A note stuck to a card takes its host's
+   * shift instead, so it stays where it was on the card.
+   */
+  function snapCarried(riders: ResizeTarget[]) {
+    const byRider = new Map(riders.map(r => [r.id, r]));
+    const shifts = new Map<string, Point>();
+    const shiftOf = (r: ResizeTarget): Point => {
+      const known = shifts.get(r.id);
+      if (known) return known;
+      // Held at nothing while the host is asked, so a loop of notes ends here.
+      shifts.set(r.id, { x: 0, y: 0 });
+      const host = stuckTo(byId(r.id));
+      const carrier = host ? byRider.get(host.id) : undefined;
+      const low = { x: r.x - r.w / 2, y: r.y - r.h / 2 };
+      const shift = carrier
+        ? shiftOf(carrier)
+        : { x: snapLowFor(low.x, true) - low.x, y: snapLowFor(low.y, true) - low.y };
+      shifts.set(r.id, shift);
+      return shift;
+    };
+    for (const r of riders) {
+      const shift = shiftOf(r);
+      r.x += shift.x;
+      r.y += shift.y;
+    }
+  }
+
+  /**
    * One axis of a resize, against this board's current step and seam.
    *
    * The arithmetic is resizeAxisOn() at module scope; this is the two readings
@@ -2271,11 +2303,23 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       marquee.hidden = false;
       drawMarquee(band);
       applyMarquee(band);
+      followEdge(e);
       return;
     }
 
+    track(e.clientX, e.clientY, e.shiftKey);
+    followEdge(e);
+  });
+
+  /**
+   * One step of a marquee, a move or a resize, with the pointer at this screen
+   * point. The tail of the pointermove handler, and a function of its own so
+   * the edge loop can run it again at a still pointer while the board pans
+   * under it - see followEdge().
+   */
+  function track(clientX: number, clientY: number, shiftKey: boolean) {
     if (gesture.mode === 'marquee') {
-      const p = vp.toWorld(e.clientX, e.clientY);
+      const p = vp.toWorld(clientX, clientY);
       gesture.x1 = p.x; gesture.y1 = p.y;
       drawMarquee(gesture);
       applyMarquee(gesture);
@@ -2287,7 +2331,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // reads below happen inside callbacks (`find`, `flatMap`) as well as out
       // of them, and a name that is the move says the same thing in both.
       const drag = gesture;
-      const p = vp.toWorld(e.clientX, e.clientY);
+      const p = vp.toWorld(clientX, clientY);
       const dx = p.x - drag.start.x, dy = p.y - drag.start.y;
       if (!drag.moved && Math.hypot(dx * vp.zoom, dy * vp.zoom) < DRAG_SLOP) return;
       // The press has become a drag. Raise now, so the stack change belongs to
@@ -2360,7 +2404,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       const grip = gesture;
       const it = byId(grip.id);
       if (!it) { abortGesture(); return; }
-      const p = vp.toWorld(e.clientX, e.clientY);
+      const p = vp.toWorld(clientX, clientY);
       const dx = p.x - grip.start.x, dy = p.y - grip.start.y;
       // Zero on an axis the handle does not touch: dragging the east edge must
       // leave the height alone, where a corner moves both.
@@ -2385,9 +2429,11 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
           const at = stuckPlacement(f.box, grip.box, host);
           return { id: f.id, x: at.x, y: at.y, w: f.box.w, h: f.box.h, rot: f.box.rot, z: f.box.z };
         });
+        // A fence resized on the grid lands what it carries on the grid too.
+        if (grip.holds && grip.snap) snapCarried(riders);
         applyGeom([host, ...riders]);
       };
-      if (grip.lockAspect !== e.shiftKey) {       // XOR: shift inverts the default
+      if (grip.lockAspect !== shiftKey) {         // XOR: shift inverts the default
         // The dragged side leads and the other follows it at the picture's own
         // proportion. The side you are watching move is the right one to lead:
         // it is the one being aimed.
@@ -2498,7 +2544,25 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         w, h, rot: it.rot, z: it.z,
       });
     }
-  });
+  }
+
+  // A move, a band or a grip held near the edge of the room the board is seen
+  // in pans the board (canvas/edge-pan.ts), and each step runs track() again at
+  // the still pointer, so what is carried stays under it. Started once the drag
+  // is under way with one pointer down, and stopped in releaseGesture(), the one
+  // way back to idle.
+  let lastDrag: { x: number, y: number, shift: boolean } | null = null;
+  let stopEdge: (() => void) | null = null;
+  function followEdge(e: PointerEvent) {
+    lastDrag = { x: e.clientX, y: e.clientY, shift: e.shiftKey };
+    if (stopEdge || pointers.size !== 1) return;
+    if (gesture.mode !== 'marquee' && gesture.mode !== 'resize'
+      && !(gesture.mode === 'move' && gesture.moved)) return;
+    stopEdge = startEdgePan(vp, {
+      point: () => lastDrag,
+      onPan: () => { if (lastDrag) track(lastDrag.x, lastDrag.y, lastDrag.shift); },
+    });
+  }
 
   const endPointer = (e: PointerEvent) => {
     // The mirror of onDown's first line, and it was missing.
@@ -2678,6 +2742,10 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
    * a second release would be idle -> idle, which the table refuses.
    */
   function releaseGesture(commit = true) {
+    // The edge loop is the drag's, and every drag ends here - see followEdge().
+    stopEdge?.();
+    stopEdge = null;
+    lastDrag = null;
     // A drop that found a host is the way back from Unstick, and it is the only
     // way back - there is no "stick to this card" menu entry, because putting it
     // on the card is already how you say that. In front of the commit, not
@@ -3245,9 +3313,12 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
    * And it is passed on to the menu, which draws one row - Select multiple - for
    * a finger and not for a pointer that has a Shift key beside it.
    */
-  function openMenuAt(x: number, y: number, id: string | null, touch = false) {
+  function openMenuAt(x: number, y: number, hit: string | null, touch = false) {
     // Every row on it edits or starts something, and the Timeline is playing.
     if (timelinePlaying()) return;
+    // A fence's body lets presses through to the board (fences.css), so a
+    // press inside one finds no item. Its menu is found by where the press is.
+    const id = hit ?? fenceBodyAt(x, y);
     // `touch` is the same fact twice: the menu keeps the selection (below), and
     // the menu itself is told, because one of its rows is the finger's answer to
     // a Shift key and has no business on a menu a mouse opened.
@@ -3257,5 +3328,17 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     if (id && !selection.has(id)) select([id], isMultiSelect());
     if (!id && !keep && !isMultiSelect()) clearSelection();
     cmds.contextMenu(x, y, id, selection.size, { touch });
+  }
+
+  /**
+   * The innermost fence whose open body is under this screen point, or null.
+   * Not a rolled fence, which draws only its bar, nor one folded away inside
+   * one. Desktop layout only, as every containment answer is.
+   */
+  function fenceBodyAt(x: number, y: number): string | null {
+    if (board.layoutMode === 'mobile') return null;
+    const p = vp.toWorld(x, y);
+    const rolled = rolledFences();
+    return fenceAt(p.x, p.y, f => f.meta?.rolled !== true && !rolledAway(f, rolled))?.id ?? null;
   }
 }

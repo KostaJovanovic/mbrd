@@ -84,7 +84,7 @@ win:
     - target: nsis
       arch: [x64]
   icon: icons/icon.ico
-  # Unsigned for now, and the download page has to say so - see plan §1. The
+  # Unsigned for now, and the release notes have to say so (release.yml). The
   # layout leaves signing a config change: a certificateFile and a password in
   # the workflow's secrets, and nothing here moves.
 
@@ -141,13 +141,13 @@ mac:
   # Intel Mac cuts out pictures with the browser's worker), and ffmpeg
   # (evermeet.cx builds it for Intel, and Apple silicon runs it through
   # Rosetta). If a merge ever fails past this, the fallback is
-  # `arch: [arm64, x64]` and chip detection on the download page (plan §1).
+  # `arch: [arm64, x64]` and a file per chip in the release notes (plan §1).
   x64ArchFiles: '{**/node_modules/@img/**,**/node_modules/onnxruntime-node/**,Contents/Resources/ffmpeg/**}'
 
 dmg:
   # No .dmg.blockmap: nothing reads it.
   writeUpdateInfo: false
-  # The version in the name, as on Windows. macOS only opens the download page
+  # The version in the name, as on Windows. macOS only opens the release page
   # (updates.ts), so no pattern reads this one.
   artifactName: mbrd-mac-universal-${version}.${ext}
 

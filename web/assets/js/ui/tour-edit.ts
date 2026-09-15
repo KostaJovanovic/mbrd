@@ -11,8 +11,7 @@ import { toast } from '../notify.ts';
 import { openAnchored } from './menu.ts';
 import type { MenuEntry } from './menu.ts';
 import { paintTourMarks, setSpot, setTourMarks } from '../canvas/items.ts';
-import { previewStop, setStopActions, startTour, tourActive } from './tour.ts';
-import type { StopMoves } from './tour.ts';
+import { previewStop, startTour, tourActive } from './tour.ts';
 
 /** The bar, built once by initTourEdit(). */
 let host: HTMLElement | null = null;
@@ -54,8 +53,6 @@ export function initTourEdit() {
   // The marks on the cards. canvas/items.ts draws them and asks this back -
   // see applyTourMark() there for why the mark can't be written from here.
   setTourMarks({ markFor, press, hover: id => peekStop(id ? stopOf(id) : -1) });
-  // The running tour's bar offers the same actions as a chip's menu here.
-  setStopActions((i, moves) => stopEntries(i, i + 1, moves));
   // The peek: pointer over the bar lays the order onto the board itself - see
   // :root.is-tour-peek in item-chrome.css. A class rather than a selector,
   // since the bar is a child of <body> and the cards are inside #viewport -
@@ -436,38 +433,29 @@ function hint(): HTMLElement {
 // hint says the menu exists, so the right-click isn't a hidden feature.
 
 /**
- * The rows for one stop. Only what applies to this one is in the list. One
- * list for two bars: this one's chip menu, and a running tour's bar (see
- * setStopActions() in ui/tour.ts), which differ only in where they land after.
+ * The rows for one stop. Only what applies to this one is in the list. The
+ * one place these are offered: a running tour's bar used to carry them as
+ * icon buttons, and a tour being shown is not the moment to rebuild it.
  */
-function stopEntries(i: number, name: number, moves: StopMoves): MenuEntry[] {
+function chipEntries(i: number, name: number): MenuEntry[] {
   const cards = board.tour[i]?.cards ?? [];
   const last = board.tour.length - 1;
   return [
     { label: `Split stop ${name} into ${cards.length}`, icon: 'i-distribute-h',
-      hidden: cards.length < 2, action: () => moves.split(i) },
+      hidden: cards.length < 2, action: () => splitAt(i) },
     { label: 'Join with the stop before', icon: 'i-arrow-back',
-      hidden: i <= 0, action: () => moves.join(i - 1) },
+      hidden: i <= 0, action: () => joinAt(i - 1) },
     { label: 'Join with the stop after', icon: 'i-arrow-fwd',
-      hidden: i >= last, action: () => moves.join(i) },
+      hidden: i >= last, action: () => joinAt(i) },
     { sep: true },
-    { label: 'Show this stop', icon: 'i-fit-card', action: () => moves.show(i) },
+    { label: 'Show this stop', icon: 'i-fit-card', action: () => previewStop(i) },
     { sep: true },
     { label: cards.length > 1 ? `Take these ${cards.length} cards off the tour`
       : 'Take this card off the tour',
-    icon: 'i-close', danger: true, action: () => moves.takeOff(i) },
+    icon: 'i-close', danger: true,
+    action: () => { removeTourCards(board.tour[i]?.cards ?? []); paint(); } },
   ];
 }
-
-/** What the chip menu's rows do here: the foot row follows the stop it was on. */
-const EDITOR_MOVES: StopMoves = {
-  split: i => splitAt(i),
-  join: i => joinAt(i),
-  show: i => previewStop(i),
-  takeOff: i => { removeTourCards(board.tour[i]?.cards ?? []); paint(); },
-};
-
-const chipEntries = (i: number, name: number) => stopEntries(i, name, EDITOR_MOVES);
 
 /**
  * Delete with a stop picked in the bar: the stop comes off the tour and its

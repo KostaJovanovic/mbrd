@@ -28,7 +28,7 @@ stated at the top of that file.
 ## Releases
 
 ## Unpacked
-version: 0.318 - 0.391
+version: 0.318 - 0.402
 date: 14 September 2026
 
 - **Two lists worked through in one day.** The afternoon cleared the fix list
@@ -95,6 +95,40 @@ date: 14 September 2026
   `Play` stands under the sidebar's edge and the gear under the header panel's.
   The play triangle moved one unit left, to the middle of its button. The gear
   now has the edge, ground and lift that `Play` has, where it was a bare icon.
+- [new] **While `Play` runs the board is read-only.** `commit()` refuses every
+  edit and puts back a caller that had already changed the board, every press on
+  the canvas pans, a card's own controls and a double-click included, and only
+  the keys that move the view, `Esc` and `Ctrl+S` still work. A drop shows no
+  overlay and a paste lands nowhere. The toolbar's editing tools, undo and redo,
+  the drawer and the masthead pen go inert and dim to 40%, `Find` stays, and the
+  gear is disabled. A refused edit says `The board cannot change while the
+  timeline plays. Press Pause first.`, at most once in two and a half seconds.
+  Only `Pause` stops a replay, besides its own last step and another board
+  loading: a press anywhere used to pause it, as did any edit. `Hide timeline`
+  while it plays says to pause first, since the bar holds `Pause`.
+- [new] **`Delete timeline` in the gear.** It asks first, then drops every step,
+  their names and the undo stack, and the board as it stands becomes the start.
+  The board does not change and the next save writes it without the old history.
+  The gear now lists what it does first - name, fold, delete, hide - and the size
+  of the history as a line under them, and the fold row is absent rather than
+  greyed when nothing is old enough to fold.
+- [fix] **A reload opens at the newest step.** The file keeps the playhead where
+  it stood, so a board left after a few undos came back that many steps back,
+  with the newest steps ahead of it. Not on a stale history, and not on opening a
+  file.
+- [fix] **The steps move by whole steps.** The track is sized to as many whole
+  steps as the bar has room for, so no mark is ever drawn cut at either end, and
+  the wheel, the scrollbar and a finger's swipe all land on a step. Every scroll
+  the page makes itself keeps the current step in view. The reader's own do not,
+  so the scrollbar and the wheel reach the oldest steps, and the next change of
+  step brings the view back.
+- [fix] **Play and Pause sit in the middle of their button.** The glyphs are 16
+  pixels on an even 38-pixel rail, so neither starts on a half pixel, which
+  Firefox rounded and set the two bars of Pause a pixel off. The triangle stands
+  one pixel right, where its weight reads as centred.
+- [fix] **The sidebar's shadow stops at the Timeline.** Both panels end above the
+  bar and their shadow falls downward, so it darkened the strip; it is clipped at
+  the bar's top edge now.
 - **The history moved out of `board.json`.** A `.mbrd` now carries it as
   `timeline/base.json` and `timeline/steps.jsonl`, one step to a line, and a torn
   line marks the history stale rather than losing the board. Every older `.mbrd`
@@ -214,6 +248,32 @@ date: 14 September 2026
   kind and its rule left the head. A card with a sleeve wore its kind and name
   over the art, because the rule that hides the head lost on specificity to the
   rule that shows it. Now it shows the art with the button centred on it.
+- [new] **`Tilt cards` on the Look tab,** a box above `Show grid`, on by default.
+  Off stands every card square on Softish and Middle, and a drag still tilts the
+  card in the hand. Harsh stands cards square anyway, so there the box has no
+  say. The shadow twins, the connection routes and the export read the same
+  setting. Desktop only, like `Show grid`, and not an undo step.
+- [new] **A card wider than eight grid spaces or taller than six rests
+  straight,** where only a card wider than ten did. A resize across that line
+  straightens the card on the frame it crosses and gives it back its own angle,
+  not a new one, when it comes back inside; a card built too large is dealt a
+  lean the first time it fits. Fences and stickers are left alone.
+- [fix] **The hover lift is in board units,** as the grow is, so the pop looks the
+  same at every zoom. In screen pixels it was a fixed jump that threw a card at
+  far zoom by most of its own height. The drag lift stays in screen pixels, since
+  that card sits under the pointer.
+- [fix] **`Fit`, recentring and the zoom buttons centre in the room an open
+  sidebar leaves.** The view asks how far the panel reaches in, the same reach
+  the sidebar pans by, and frames in what is left. Not on a Mobile board, and not
+  where the panel covers the screen.
+- [fix] **Connection lines hold still under a carried card.** While a card is in
+  the hand nothing reroutes: every other line keeps the route it had, the held
+  card's own lines run dead straight to the cards they join, and one pass routes
+  the lot on the drop. Routing on a pause rerouted the whole board under a hand
+  that was only resting.
+- [fix] **The close, plus and zoom-in crosses draw each stroke as its own path.**
+  As two subpaths of one path the strokes can cancel where they cross, and
+  Firefox left a hole in the middle of the close cross at Harsh.
 
 ### The sidebar, the menus and the toolbar
 
@@ -281,8 +341,54 @@ date: 14 September 2026
   and it rides the top of the panel's head, as far from the top as from the side.
   Sans labels stay upright at the middle and harsh tiers, and the palette picker
   and the pigment swatch are the size of the rest.
+- [new] **The Keys list draws each key as a cap:** 30 pixels high, a one-letter
+  key square and a longer one growing sideways, with a row's keys kept together
+  at its left and the `+` between them.
+- [fix] **The toolbar follows a window being resized exactly.** Its slide is for a
+  panel coming in at its side, and every move of a dragged window restarted it
+  from wherever the last had got to, so the bar trailed the window and stepped
+  after it. The slide comes back once the window has been still for a moment.
+- [fix] **The credits' round faces have a round focus ring,** standing off the
+  picture, where a baseline gap under the image made it an oval.
 
-### The Feed and the phone
+### The look
+
+- [new] **The corners travel between whimsy tiers.** Moving the dial hangs a class
+  on the page for as long as the colours fade, and for that time every element's
+  own transitions give way to one on its corners, so the type, the shadows and
+  the grid still change at once. Board cards and Feed tiles ease only while on
+  screen and at 40% or closer; further out a card is a speck. Into Harsh the
+  corners go in 40% of the fade, where they took Harsh's own tenth of a second,
+  which read as no animation, and the run restarts on the first two frames, since
+  the tier change can hold the page longer than the run lasted. The inner rule of
+  a card at Harsh and of a ghost card at Softish is made unseen rather than
+  removed, so it eases with the card instead of appearing at its end radius, and
+  the whimsy dial's ghost is a pill at Softish.
+- [fix] **A card's lift, lean and grow travel through the fade.** The fade zeroed
+  every transition so nothing chased the sheet's colours, and a card popped up
+  with no travel after every load and every tier change. The movement reads no
+  colour and is exempt now; the hover ring still is not.
+- [new] **One panel corner.** The sidebar, the dialogs, `Find`, the player and the
+  drawer wore a corner a hair over the one the menus, the library and the Feed's
+  sheet wore, two panel corners on one screen a couple of pixels apart. The
+  larger one went. The sidebar and the header panel then took the toolbar's
+  corner, since they stand level with it and the zoom pill along the top, and the
+  menus, the sticker pad and the Feed's floating sheet followed them. Buttons in
+  the corner of a bar run parallel to it.
+- [new] **The glass buttons are square,** 42 pixels with a mouse and 45 on
+  touch, where they were 42 by 40 and 46. The zoom pill's three parts, the
+  history pair and the icon-only toolbar are each a row of those squares, their
+  ring drawn inside rather than as a border that took height off every one. The
+  toolbar, the menu button and an open panel's top stand on one inset, 12 pixels
+  at phone width, and the foot row's heights are the button's own. The toolbar's
+  words sit a pixel higher, where a centred row read as low.
+- [new] **A pill is a real length now,** 26 pixels rather than 999, since 999
+  cannot travel between tiers: it spends the whole way above every box's
+  half-height and snaps in the last frames. At Harsh it is zero, so the card
+  badges, the viewer's close over a photograph, the Feed's pick circles and the
+  Timeline's marks are square there. At Softish the glass controls the corner
+  scale left a pixel or two short of round are rounded the rest of the way.
+
 
 - [new] **Feed tiles are their canvas cards.** Style tiles, fonts, models,
   generic cards and gone cards draw the board's own renderer at the item's shape,
@@ -302,6 +408,15 @@ date: 14 September 2026
   `Tags` act on the whole group.
 - [new] **An audio tile's play button sits in the middle of the tile,** 44 pixels
   across, as a video tile's does, where it was a small badge in the corner.
+- [new] **A stuck note rides its host's tile.** On the wall it had a tile of its
+  own, somewhere else in the order, cut off from the card it is about. Now it
+  takes no slot: a small sticky in the tile's top-right corner, in the top note's
+  colour, counts the notes, and a press lays them open over the tile on a scrim,
+  top note first, scrolling inside the tile when there are many. A press on a
+  note opens it, a press between them folds them away, and the tile remembers
+  being open when it scrolls out and back. A note on a note rides the first host
+  with a tile. `Find` on a stuck note shows its host with the notes open. While
+  the Timeline plays the tile menus do not open.
 - [fix] **The Feed on a phone.** At full quality a tile stands on a soft drop
   shadow, a picture set to `Fit` takes its own shape as it loads rather than the
   shape of its card's box on the board, below 600 pixels the Feed sheet runs the
@@ -393,7 +508,8 @@ date: 14 September 2026
   Explorer writes it.
 - **The board format grew:** `hadMusic` at the top level, the `archive` and
   `folder` card types, a fence's `tint` and `rolled`, `demosaiced` on a developed
-  RAW card, `faded` on a note at low opacity, and the history's own two files. An
+  RAW card, `faded` on a note at low opacity, the board setting `tilt`, and the
+  history's own two files. An
   older build shows the new cards as plain named cards and writes them back
   untouched. A board with no Mobile header at all now opens with `Wrap long names`
   off, and a header written before that setting existed still reads as wrapped.
@@ -436,7 +552,11 @@ date: 14 September 2026
 - **The patch notes gained 13 and 14 September.** A check against the 9am day
   break moved the start of Pocket Size to 0.304, and this archive gained the days
   from 0.235 to 0.303, which only the page carried. The last comments that named the fix list point at its record in
-  `research/old/`.
+  `research/old/`. A second pass took Unpacked to 0.402, the last save before
+  09:00 on 15 September.
+- **A dev server on a link-local address is a dev server.** The app and the
+  service worker treat 169.254 hosts as local, as they did the private ranges,
+  so a server reached over a direct cable stops being cached at the last version.
 - **Credit where it is due:** the credits name ONNX Runtime, u2netp, Geist Mono,
   the evermeet.cx and John Van Sickle FFmpeg builds, Electron, sharp and
   Capacitor, and libarchive.js, which opens 7z and RAR. LibRaw arrived with

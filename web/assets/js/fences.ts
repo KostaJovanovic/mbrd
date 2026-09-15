@@ -103,12 +103,15 @@ function measure(it: Boxed): Item | null | undefined {
   return best;
 }
 
-/** Smallest fence at a world point, or null. Not memoised — only called on menu open. Desktop only. */
-export function fenceAt(x: number, y: number): Item | null {
+/**
+ * Smallest fence at a world point, or null, among those `keep` accepts. Not
+ * memoised — only called on menu open. Desktop only.
+ */
+export function fenceAt(x: number, y: number, keep?: (fence: Item) => boolean): Item | null {
   let best: Item | null = null;
   let bestArea = Infinity;
   for (const it of board.items) {
-    if (!isFence(it)) continue;
+    if (!isFence(it) || (keep && !keep(it))) continue;
     const rect = desktopBox(it);
     if (!rect) continue;
     const area = areaOf(rect);

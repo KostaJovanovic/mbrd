@@ -253,14 +253,22 @@ export const deviceRatio = () =>
 const LOD_ZOOM = 0.4 * BASE_ZOOM;
 
 /**
- * How far out a selected card still shows its resize grips.
- *
- * Well below the chrome rung (LOD_ZOOM): a card at a tenth of its size is a
- * swatch with no room for a label, but its corners are still a thing you reach
- * for to resize it - so the grips outlast the labels by two rungs and go only
- * when the card is too small to aim at.
+ * The swatch rung: below it a card is picture, tint or paper and nothing else -
+ * no head, no tour mark (the zoom-tiny rules in the CSS).
  */
-const GRIP_MIN_ZOOM = 0.1 * BASE_ZOOM;
+const SWATCH_ZOOM = 0.1 * BASE_ZOOM;
+
+/**
+ * How far out a selected card can still be resized.
+ *
+ * Well below the chrome rung (LOD_ZOOM), since a card with no room for a label
+ * still has corners worth reaching for. But at 15% the whole board is in view
+ * and the card is being carried across it, not sized, and a grip there covers
+ * more of the card than the card shows. So the grips go, and the ring says so -
+ * see the zoom-no-resize rules in the CSS. 0.155 because the corner prints a
+ * rounded percentage: everything that reads "15%" is past the rung.
+ */
+const RESIZE_MIN_ZOOM = 0.155 * BASE_ZOOM;
 
 /**
  * Where a corner grip stops lapping onto the card and clips to its outside half.
@@ -559,6 +567,19 @@ export class Viewport {
   _shift() {
     if (this.isMobile) return 0;
     return clamp(this._cover() - this.left, 0, this.width) / 2;
+  }
+
+  /**
+   * The part of the viewport the board can be seen in, in client px: its box
+   * less an open panel's reach on the left, as _shift() reads it. What a drag
+   * held at an edge pans against (canvas/edge-pan.ts).
+   */
+  room() {
+    const cover = this.isMobile ? 0 : clamp(this._cover() - this.left, 0, this.width);
+    return {
+      left: this.left + cover, top: this.top,
+      right: this.left + this.width, bottom: this.top + this.height,
+    };
   }
 
   /**
@@ -1181,10 +1202,9 @@ export class Viewport {
     this.world.classList.toggle('zoom-far', z < farZoom());
     // A second, lower rung just for the resize grips. Labels and the item bar
     // become noise once a card is a swatch (zoom-far, 40%), but the corners stay
-    // worth grabbing much further out - a card at 15% is still a thing you resize.
-    // So the grips ride their own threshold down to GRIP_MIN_ZOOM and vanish only
-    // below it.
-    this.world.classList.toggle('zoom-tiny', z < GRIP_MIN_ZOOM);
+    // worth grabbing further out. From 15% down a card moves and does not resize.
+    this.world.classList.toggle('zoom-no-resize', z < RESIZE_MIN_ZOOM);
+    this.world.classList.toggle('zoom-tiny', z < SWATCH_ZOOM);
     // Below this a corner grip clips to its outside half and the whole card face
     // becomes a move target - see the zoom-grab rules in the CSS. Its own rung
     // (25%), lower than the chrome one, because it is about the card being too

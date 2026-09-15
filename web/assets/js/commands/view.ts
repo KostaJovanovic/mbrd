@@ -1,6 +1,6 @@
 // View commands: camera, lenses (Canvas/Feed/Playlist), debug overlays,
 // zoom lock, scale/appearance/quality resets, the way out to the patch notes,
-// the download page and the update check. The only
+// the way to the apps and the update check. The only
 // command run that takes the Viewport — fit, recenter, and zoom lock are
 // the app's entire camera relationship. resetAppearance is injected
 // because ui/appearance.ts touches globals at import time.
@@ -18,6 +18,15 @@ import { cueLogOn, dumpCueLog, setCueLog } from '../cuelume/engine.ts';
 import { onNarrowScreen, travelMs } from '../canvas/viewport.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 import type { ViewPerf } from '../perf/view-perf.ts';
+
+/**
+ * Where every app is downloaded from: the latest release in the public
+ * KostaJovanovic/mbrd-release. Not a file in it, since each file's name carries
+ * its version and a fixed link dies on the next release, and not the private
+ * KostaJovanovic/mbrd, which answers anybody signed out with a 404. The
+ * desktop's updater opens the same page (desktop/updates.ts).
+ */
+export const RELEASES = 'https://github.com/KostaJovanovic/mbrd-release/releases/latest';
 import { togglePlayback } from '../canvas/audio.ts';
 import { currentLens, setLens } from '../ui/board-view.ts';
 import {
@@ -210,8 +219,9 @@ export function viewCommands(vp: CommandViewport, { resetAppearance, perf }: Vie
     // (the desktop shell asks for the flush first), and in-place navigation avoids
     // the theme flash a new tab would show.
     patchNotes: () => { location.href = homePath() + 'patch'; },
-    // The download page, the way patchNotes goes to /patch.
-    getApp: () => { location.href = homePath() + 'download'; },
+    // The latest release on GitHub, in a new tab, so the board stays open. No
+    // leaving question (ui/leaving.ts): this button says where it goes.
+    getApp: () => { window.open(RELEASES, '_blank', 'noopener,noreferrer'); },
     // The shell answers in its own dialogs. On the web this does nothing.
     checkUpdates: () => platform.updates.check(),
   };

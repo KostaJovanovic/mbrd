@@ -180,7 +180,13 @@
 @keyframes rise { from { opacity: 0; transform: translateY(10px) rotate(-3deg); } }
 
 @media (prefers-reduced-motion: reduce) {
-  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  /* One lap too - an `infinite` loop cut in duration alone strobes. See the
+     quality block in quality.css. */
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 
   /* Exception: a stopped indeterminate bar reads as false progress at 38%.
      Draw it as a full dim track instead; the counting bar can stand still. */

@@ -186,5 +186,45 @@ test('the wired sites read the dial rather than a constant', async () => {
   // flag can't creep back in.
   assert.doesNotMatch(web, /from '\.\.\/quality\.ts'/,
     'connections are drawn whatever the dial says - see canvas/web.ts');
-  assert.match(stills, /!quality\.motion \|\| vp\.zoom < stillZoom\(\)/, 'motion off freezes at any zoom');
+  assert.match(stills, /const held = !quality\.motion;/, 'motion off freezes at any zoom');
+});
+
+test('Animated GIFs off holds GIFs still and leaves photographs alone', async () => {
+  // Motion off used to set is-stilled, the zoom rung's class - which is also
+  // what swaps every photograph to its hundred-pixel thumbnail. At Light that
+  // meant every photo drawn from its thumbnail at every zoom, and every card
+  // blinking as the swap landed on mount. The two reasons now have two classes.
+  const read = path => readFile(new URL(`../web/assets/${path}`, import.meta.url), 'utf8');
+  const [stills, css] = await Promise.all([read('js/canvas/stills.ts'), read('css/items.css')]);
+  assert.match(stills, /classList\.toggle\('is-stilled', far\)/, 'is-stilled is the rung and only the rung');
+  assert.match(stills, /classList\.toggle\('is-held', held\)/, 'motion off has its own class');
+  const held = css.match(/#world\.is-held[^{]*\{/g) || [];
+  assert.ok(held.length > 0, 'nothing in items.css answers is-held');
+  for (const rule of held) assert.match(rule, /img\[data-gif\]/, `is-held reaches past GIFs: ${rule}`);
+});
+
+test('no stop reaches for the original sooner than Full', async () => {
+  // Measured against its own copy, Light - the smallest copy - swapped in the
+  // full original at the smallest card size, the opposite of what it is for.
+  const { swapEdge } = await import('../web/assets/js/canvas/hires.ts');
+  const { copyEdge } = await import('../web/assets/js/canvas/display.ts');
+  setQualityLevel('full');
+  const full = swapEdge();
+  for (const { id } of QUALITY_LEVELS) {
+    setQualityLevel(id);
+    assert.equal(swapEdge(), full, `${id} swaps at a different size from Full`);
+    assert.ok(swapEdge() >= copyEdge(), `${id} swaps before its own copy upscales`);
+  }
+});
+
+test('Animations off cuts loops to one lap, not only to a short one', async () => {
+  // Duration alone turns an `infinite` animation into a strobe: a hundred
+  // thousand laps a second, sampled at a random point every frame.
+  const read = name => readFile(new URL(`../web/assets/css/${name}`, import.meta.url), 'utf8');
+  const [quality, status] = await Promise.all([read('quality.css'), read('status.css')]);
+  const off = quality.match(/:root\[data-q-anim="off"\] \* \{[^}]*\}/);
+  assert.ok(off, 'the Animations-off block moved');
+  assert.match(off[0], /animation-iteration-count: 1 !important/, 'Animations off lets loops strobe');
+  assert.match(status, /prefers-reduced-motion[\s\S]*animation-iteration-count: 1 !important/,
+    'reduced motion lets loops strobe');
 });

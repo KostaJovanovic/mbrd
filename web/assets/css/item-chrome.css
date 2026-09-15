@@ -256,9 +256,13 @@
 /* Off from the chrome rung (40%) down, with the labels and the item bar: that
    far out a badge is clutter on a card too small to press it on. */
 #world.zoom-far .item-badge { display: none; }
-/* Grips survive two rungs below the chrome drop — gone only when the card is
-   too small to aim at (GRIP_MIN_ZOOM in viewport.ts). */
-#world.zoom-tiny .grip { display: none; }
+/* Grips survive two rungs below the chrome drop and go at 15%
+   (RESIZE_MIN_ZOOM in viewport.ts): that far out a card is carried, not
+   sized. No grip on screen is no grip under the pointer, so this rule is
+   the whole refusal. The corner marks go with them, and the ring turns
+   dashed - a selection that moves and does not stretch. */
+#world.zoom-no-resize .grip { display: none; }
+#world.zoom-no-resize .item.is-selected::before { border-style: dashed; }
 
 /* The corner mark — the selection ring drawn heavier at each corner. Only
    the two outward-facing borders are drawn; the inward pair would close it
@@ -345,12 +349,16 @@
   height: var(--grip-out);
 }
 
-/* Debug: paint the corner grab hitbox. Toggled by mbrd.debugGrips() or
-   the #grips hash. */
-[data-debug-grips] .grip:not(.grip-edge)::before {
+/* Debug: paint every grab hitbox, corners and sides. Toggled by
+   mbrd.debugGrips() or the #grips hash. The sides take a lighter wash, so
+   where a corner laps onto a side strip the two still read apart. */
+[data-debug-grips] .grip::before {
   background: color-mix(in srgb, var(--select) 28%, transparent);
   outline: max(1px, calc(1px * var(--iz))) solid var(--select);
   outline-offset: calc(-1 * max(1px, calc(1px * var(--iz))));
+}
+[data-debug-grips] .grip-edge::before {
+  background: color-mix(in srgb, var(--select) 14%, transparent);
 }
 
 /* Interior controls (play button, link anchor, waveform) ride above the grips
@@ -504,7 +512,6 @@
 
 /* Fallback without color-mix() (WebKit < 16.2). */
 @supports not (color: color-mix(in srgb, red, blue)) {
-  [data-debug-grips] .grip:not(.grip-edge)::before {
-    background: rgb(var(--select-c) / 28%);
-  }
+  [data-debug-grips] .grip::before { background: rgb(var(--select-c) / 28%); }
+  [data-debug-grips] .grip-edge::before { background: rgb(var(--select-c) / 14%); }
 }

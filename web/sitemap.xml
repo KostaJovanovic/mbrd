@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Four URLs. This file was written with one, saying it was here so that there
+  Three URLs. This file was written with one, saying it was here so that there
   was somewhere obvious to add the second page the day there was one - and
-  /patch was that page, then /privacy, and now /download.
+  /patch was that page, then /privacy. /download came and went: the apps are
+  on GitHub, and Get the app goes straight there.
 
   lab.html is deliberately still not in here. It is a bench for looking at what
   the pigment extractor produced, it carries a meta robots tag saying so, and a
@@ -27,8 +28,5 @@
   </url>
   <url>
     <loc>https://mbrd.valjdakosta.com/privacy</loc>
-  </url>
-  <url>
-    <loc>https://mbrd.valjdakosta.com/download</loc>
   </url>
 </urlset>

@@ -186,7 +186,7 @@
          when it started. All counted from the source. -->
     <p class="pn-tally">
       <span>35 releases</span>
-      <span>402 commits</span>
+      <span>403 commits</span>
       <span>since 24 July 2026</span>
     </p>
   </header>
@@ -195,11 +195,11 @@
 <li class="pn-rel" id="r-unpacked">
   <div class="pn-margin" aria-hidden="true">
     <span class="pn-mark"></span>
-    <span class="pn-count">74</span>
+    <span class="pn-count">85</span>
   </div>
   <article class="pn-plate">
     <header class="pn-plate-head">
-      <p class="pn-ver">0.318 - 0.391</p>
+      <p class="pn-ver">0.318 - 0.402</p>
       <h2 class="pn-name">Unpacked</h2>
       <p class="pn-date">14 September 2026</p>
     </header>
@@ -218,6 +218,10 @@
       <li><span class="pn-tag is-fix">Fix</span><strong>Going back and forth in the Timeline no longer loses changes that were never steps,</strong> such as the board's title or a setting.</li>
       <li><span class="pn-tag is-fix">Fix</span><strong>Stepping through the Timeline redraws a card whose look changed,</strong> such as a note set to <code>Low opacity</code>, where it kept the look it had.</li>
       <li><span class="pn-tag is-fix">Fix</span><strong><code>Play</code> lines up with the sidebar's edge,</strong> its triangle sits in the middle of the button, and the gear has the outline and ground of a button.</li>
+      <li><span class="pn-tag is-new">New</span><strong>While <code>Play</code> runs, the board is there to watch.</strong> A press pans, the tools that would change it are dimmed, and a drop or a paste is turned away with a note that says to press <code>Pause</code>. Only <code>Pause</code> stops a replay, where any press on the page used to.</li>
+      <li><span class="pn-tag is-new">New</span><strong><code>Delete timeline</code> in the gear</strong> clears the whole history after asking. The board as it stands becomes the start, and the board itself does not change.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A reload opens at the newest step,</strong> where a board left after a few undos came back that many steps behind.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The steps scroll a whole step at a time,</strong> so no mark is cut in half at either end of the bar, and the scrollbar and the wheel reach the oldest steps.</li>
     </ul>
     <h3 class="pn-part">The tour</h3>
     <ul class="pn-notes">
@@ -243,6 +247,12 @@
       <li><span class="pn-tag is-new">New</span><strong>Holding Ctrl while you scroll moves the board up and down,</strong> as Shift moves it across. A pinch on a touchpad still zooms.</li>
       <li><span class="pn-tag is-fix">Fix</span><strong>A note's name no longer starts with <code>#</code>.</strong> Find, the Timeline, the tour and a note seen from far out show its words without the heading mark.</li>
       <li><span class="pn-tag is-fix">Fix</span><strong>Below 40% zoom the buttons on a card go</strong> - the anchor and pin badges and the title card's pen and <code>T</code>. An audio card's play button fits inside the card, and one with cover art shows the art with the button over it.</li>
+      <li><span class="pn-tag is-new">New</span><strong><code>Tilt cards</code> on the Look tab.</strong> Switched off, every card stands square; a card you drag still tilts in your hand. It is on to begin with.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A card wider than eight grid squares or taller than six rests straight,</strong> and takes its own lean back when you make it smaller again.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A card lifts under the pointer by the same amount at every zoom,</strong> where far out it jumped by most of its own height.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong><code>Fit</code>, recentring and the zoom buttons centre in the room an open sidebar leaves,</strong> rather than behind the panel.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Connection lines hold still while you carry a card.</strong> Its own lines run straight, and everything is routed once when you put it down, where the whole board used to reroute each time your hand rested.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The close cross no longer shows a hole in its middle</strong> in Firefox at Harsh.</li>
     </ul>
     <h3 class="pn-part">The sidebar and the toolbar</h3>
     <ul class="pn-notes">
@@ -253,6 +263,16 @@
       <li><span class="pn-tag is-new">New</span><strong>The sidebar fills the screen only at 600 pixels wide or less,</strong> where it did from 700. Between the two it stays a panel at the side, with the board beside it, and it no longer fades away while you drag one of its sliders.</li>
       <li><span class="pn-tag is-new">New</span><strong>The header editor was tidied.</strong> The font is the sidebar's own picker with <code>Default</code> at the top, the size reads in pixels and every step shows, <code>Line height</code> appears only while <code>Wrap long names</code> is on, and <code>Start over</code> is <code>Reset</code>. A new board keeps its name on one line.</li>
       <li><span class="pn-tag is-fix">Fix</span><strong>The player and the buttons along the foot sit level with the sidebar,</strong> 14 pixels off the bottom of the window.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The Keys list draws every key as a keycap.</strong></li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The toolbar keeps up with a window being resized,</strong> where it trailed behind and stepped after it.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The sidebar's shadow no longer darkens the Timeline</strong> under it.</li>
+    </ul>
+    <h3 class="pn-part">The look</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>Corners travel when the whimsy dial moves.</strong> Every corner on screen eases into its new shape along with the colours, rather than jumping, and into Harsh they go quicker but still visibly.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Cards no longer pop up in place after a load or a change of look.</strong> Their lift and lean travel as they should while the colours fade.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The corners agree.</strong> Panels that sat a couple of pixels rounder than their neighbours match now, and the sidebar wears the toolbar's corner, level with it along the top.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Every button on the glass is square,</strong> 42 pixels or 45 on a touch screen, the zoom control's three parts included. At Softish they are fully round, and at Harsh the badges, closes and pick circles are square.</li>
     </ul>
     <h3 class="pn-part">The Feed and the phone</h3>
     <ul class="pn-notes">
@@ -260,6 +280,7 @@
       <li><span class="pn-tag is-new">New</span><strong>A press on the Feed's title opens the masthead editor,</strong> and <code>Find</code> scrolls the Feed to what it found and rings it.</li>
       <li><span class="pn-tag is-new">New</span><strong>Cards on the Feed can be selected.</strong> A click with Ctrl, Shift or Cmd picks one, and on a phone a long press offers <code>Select multiple</code>, after which each tap picks one. The menu, <code>Delete</code> and <code>Tags</code> then act on them all.</li>
       <li><span class="pn-tag is-new">New</span><strong>An audio tile on the Feed has its play button in the middle,</strong> as a video tile does.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Notes stuck on a card ride its tile on the Feed,</strong> where each had a tile of its own somewhere else. A small sticky in the corner counts them, and a press lays them open over the card. <code>Find</code> on one of them opens its card's notes.</li>
       <li><span class="pn-tag is-fix">Fix</span><strong>A picture set to <code>Fit</code> takes its own shape on the Feed,</strong> tiles stand on a soft shadow at full quality, and on a phone the Feed runs edge to edge with <code>Find</code> at the top right.</li>
       <li><span class="pn-tag is-fix">Fix</span><strong>The phone lost the controls that did nothing there</strong> - key hints, <code>Reload board</code> and <code>Anchor</code> on a Feed tile, and the grid and spacing settings in the sidebar. An empty Playlist has a way back to the board.</li>
     </ul>
@@ -1060,7 +1081,7 @@
   </ol>
 
   <footer class="pn-foot">
-    <span><span class="wm">mbrd</span> 0.402 by valjdakosta</span>
+    <span><span class="wm">mbrd</span> 0.403 by valjdakosta</span>
     <a href="/">Back to the board</a>
   </footer>
  </div>

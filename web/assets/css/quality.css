@@ -190,12 +190,38 @@
   backdrop-filter: none !important;
 }
 
-/* Animations: catches hand-written durations the token flatten misses. */
+/* Animations: catches hand-written durations the token flatten misses.
+   One lap as well as a hundredth of a millisecond: an `infinite` loop cut in
+   duration alone runs a hundred thousand laps a second, so every frame lands
+   at a random point in it - a strobe, and a frame asked for on every vsync for
+   as long as it is on screen. */
 :root[data-quality="light"]:not([data-q-anim]) *,
 :root[data-q-anim="off"] * {
   animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
   transition-duration: 0.01ms !important;
 }
+
+/* Where one lap ends on the wrong frame to hold, the answer the
+   prefers-reduced-motion block beside each animation already gives. Repeated
+   here because the dial cannot reach inside a media query. The splash is the
+   one that matters most: index.html sets the level before first paint, and a
+   splash card's last frame is invisible. */
+:root[data-quality="light"]:not([data-q-anim]) :is(.splash-card, .splash-line),
+:root[data-q-anim="off"] :is(.splash-card, .splash-line) { animation: none; }
+:root[data-quality="light"]:not([data-q-anim]) .splash-card,
+:root[data-q-anim="off"] .splash-card { transform: rotate(var(--splash-tilt, 0deg)); }
+/* A stopped indeterminate bar reads as progress stuck at 38%. */
+:root[data-quality="light"]:not([data-q-anim]) #busy:not(.is-counting) #busy-fill,
+:root[data-q-anim="off"] #busy:not(.is-counting) #busy-fill {
+  width: 100%;
+  opacity: 0.4;
+  animation: none;
+}
+:root[data-quality="light"]:not([data-q-anim]) #darkroom.dk-busy #darkroom-plate,
+:root[data-q-anim="off"] #darkroom.dk-busy #darkroom-plate { animation: none; opacity: 0.62; }
+:root[data-quality="light"]:not([data-q-anim]) .pl-eq i,
+:root[data-q-anim="off"] .pl-eq i { animation: none; transform: scaleY(0.7); }
 
 /* ---------------------------------------------------------------------------
    System preferences

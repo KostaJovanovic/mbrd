@@ -64,7 +64,7 @@ After the push it runs `gh workflow run release.yml`, and
 `.github/workflows/release.yml` builds Windows, macOS, Linux and Android and
 publishes all four at once in the **public** `KostaJovanovic/mbrd-release`. This
 repository is private, and GitHub answers a private repository's releases with a
-404 to anybody signed out, so the download page and the updaters read the other
+404 to anybody signed out, so `Get the app` and the updaters read the other
 one. A plain push starts nothing. There is no update file in a release: the apps
 read GitHub's API and find their file by the part of its name before the version
 (`desktop/updates.ts`, `MbrdUpdate.java`), so **a release file's name is a

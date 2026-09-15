@@ -148,7 +148,8 @@
 
 /* The steps ui/toolbar.ts takes as the room shrinks: every tool with its
    word, then icons only, then Colour, Link and Stickers behind More, as the
-   phone has them. */
+   phone has them. The move from one to the next is its morph(), in script,
+   because the fit has to measure the new step before anything is drawn. */
 #toolbar:is([data-fit="icons"], [data-fit="more"]) button span { display: none; }
 /* Icons only: each tool one square glass button. */
 #toolbar:is([data-fit="icons"], [data-fit="more"]) button {
@@ -834,22 +835,12 @@
   min-width: 0;
   padding: 0 6px 2px;
 }
-/* The bottom one: back, how far, forward, the stop's actions, and out. Back,
-   forward and out keep their places; the actions take the middle. */
+/* The bottom one: back, how far, forward, and out at the far end. Nothing that
+   edits the tour - that is the editor's (ui/tour-edit.ts). */
 #tour .tour-controls {
   display: flex;
   align-items: center;
   gap: 4px;
-}
-#tour .tour-acts {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  justify-content: center;
-  gap: 2px;
-}
-@media (hover: hover) {
-  #tour .tour-act.is-danger:hover { color: var(--danger); }
 }
 /* Both sizes here were the scale's own values written as numbers - 13 is
    --t-small and 11 is --t-tiny at the middle tier - so they read as on-scale
@@ -925,9 +916,9 @@
 #tour button:focus-visible:not(:disabled) { background: var(--paper-2); color: var(--accent-deep); }
 #tour button svg { width: var(--icon-glyph); height: var(--icon-glyph); }
 /* The one thing the close does not share, and it is space rather than shape:
-   stepping and leaving are different errands, and two more pixels between them
-   is enough to say so without drawing anything. */
-#tour .tour-close { margin-left: 2px; }
+   stepping and leaving are different errands, so it keeps the far end of the
+   strip, where it sat while the stop's actions filled the middle. */
+#tour .tour-close { margin-left: auto; }
 
 /* Idle - fifteen seconds of nothing, and the furniture goes.
    ui/idle.ts puts the class on and takes it off; what counts as "something

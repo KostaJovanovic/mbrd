@@ -40,21 +40,27 @@ export function initStills(world: HTMLElement, vp: ZoomSource): void {
   worldEl = world;
 
   const update = () => {
-    // Matches viewport.ts's `<` for the same rung. Also freezes when
-    // quality.motion is off — the only way to reach Mobile boards.
-    const want = !quality.motion || vp.zoom < stillZoom();
+    // Two reasons to hold a GIF, and two classes. The rung (matching
+    // viewport.ts's `<`) is is-stilled, which also swaps every photograph to
+    // its hundred-pixel thumbnail (items.css). quality.motion off - the only
+    // way to reach Mobile boards - is is-held, which touches GIFs alone: it
+    // used to set is-stilled too, and Light drew every photo from its thumbnail
+    // at every zoom, blinking each card as the swap landed.
+    const far = vp.zoom < stillZoom();
+    const held = !quality.motion;
+    const want = far || held;
     if (want !== stilled) {
       stilled = want;
       // Shoot before swapping — capture the frame that was visible.
       if (want) capture(true);
-      world.classList.toggle('is-stilled', want);
-      return;
+    } else if (want && !sweep) {
+      // Still frozen: catch GIFs remounted by culling since last pass. Throttled
+      // to one rAF sweep per frame — childElementCount cannot detect set changes.
+      sweep = requestAnimationFrame(() => { sweep = 0; capture(false); });
     }
-    // Still frozen: catch GIFs remounted by culling since last pass. Throttled
-    // to one rAF sweep per frame — childElementCount cannot detect set changes.
-    if (!want) return;
-    if (sweep) return;
-    sweep = requestAnimationFrame(() => { sweep = 0; capture(false); });
+    // Forced toggles, so a frame on the same side of both writes nothing.
+    world.classList.toggle('is-stilled', far);
+    world.classList.toggle('is-held', held);
   };
 
   recheck = update;

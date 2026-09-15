@@ -113,7 +113,7 @@ Capacitor's server answers `index.html` for every path with no extension, and
 its `RouteProcessor` only ever sees `/index.html`. So `MbrdShell` installs
 `MbrdWebViewClient`, which asks `MbrdRouter` for the file. A path ending in `/`
 gets `index.html`, a path with no extension tries `<path>.html` first
-(`/patch`, `/download`, `/privacy`), and nothing outside the staged tree is
+(`/patch`, `/privacy`), and nothing outside the staged tree is
 served. A path with no file is a plain 404, as on the desktop. The staged tree
 is `mbrd-files.txt`, so each "does this exist" is a set lookup.
 
