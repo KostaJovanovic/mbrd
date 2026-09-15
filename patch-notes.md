@@ -157,7 +157,7 @@ back to the board.
 ## Releases
 
 ## Unpacked
-version: 0.318 - 0.381
+version: 0.318 - 0.389
 date: 14 September 2026
 
 - **An archive drops in as one card you can open, the Timeline moved to the foot
@@ -220,6 +220,9 @@ date: 14 September 2026
   the size the dial asks for rather than at the light display copy.
 - [fix] **The interface sounds start switched off.** They are experimental, so
   they wait until you turn them on, and everybody was set back to off once.
+- [new] **A photo or video set to `Fit` takes the shape of its picture.** The card
+  keeps its shorter side and the longer one follows the picture, in the same undo
+  step as the switch, and a corner drag keeps that shape until you hold Shift.
 
 ### The sidebar and the toolbar
 - [new] **Every dropdown in the sidebar is the app's own picker,** and the font
@@ -232,13 +235,21 @@ date: 14 September 2026
   drops its words, then tucks Colour, Link and Stickers behind `More`, as the room
   runs short.
 - [new] **Opening or closing the sidebar pans the board by half its width,** so
-  what you were looking at stays in sight.
+  what you were looking at stays in sight. The Playlist moves over with it and
+  centres in the room the panel leaves.
+- [new] **The header editor was tidied.** The font is the sidebar's own picker
+  with `Default` at the top, the size reads in pixels and every step shows,
+  `Line height` appears only while `Wrap long names` is on, and `Start over` is
+  `Reset`. A new board keeps its name on one line.
 
 ### The Feed and the phone
 - [new] **Every Feed tile looks like its card on the board** - style tiles, fonts
   and 3D models included - and a video plays in its tile with a tap.
 - [new] **A press on the Feed's title opens the masthead editor,** and `Find`
   scrolls the Feed to what it found and rings it.
+- [new] **Cards on the Feed can be selected.** A click with Ctrl, Shift or Cmd
+  picks one, and on a phone a long press offers `Select multiple`, after which
+  each tap picks one. The menu, `Delete` and `Tags` then act on them all.
 - [fix] **A picture set to `Fit` takes its own shape on the Feed,** tiles stand on
   a soft shadow at full quality, and on a phone the Feed runs edge to edge with
   `Find` at the top right.
@@ -296,7 +307,7 @@ date: 14 September 2026
   the research notes were audited and tidied.
 
 ## Pocket Size
-version: 0.305 - 0.317
+version: 0.304 - 0.317
 date: 13 September 2026
 
 - **mbrd is an Android app now,** the same board as the website and the desktop,
@@ -330,7 +341,7 @@ date: 13 September 2026
   stop short of quitting.
 
 ## Well Connected
-version: 0.297 - 0.304
+version: 0.297 - 0.303
 date: 12 September 2026
 
 - **The lines between cards were rebuilt, photos grew a lighter stand-in, and

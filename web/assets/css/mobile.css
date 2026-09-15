@@ -232,7 +232,7 @@
 /* The multi-select mode. On the canvas it is a frame round the window, but
    here the window is mostly tiles, so each tile a tap now picks wears an empty
    circle, and a picked one a filled circle with a tick. Top left, clear of the
-   audio tile's badge in the other corner. */
+   play buttons in the middle of the audio and video tiles. */
 :root.is-picking .feed-tile:not([data-kind="hint"])::after {
   content: '';
   position: absolute;
@@ -300,12 +300,15 @@
   border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--accent) 58%, var(--ink-3));
 }
-/* The audio tile's corner badge: a small play glyph on a paper chip, saying this
-   is audio and a tap opens it in the player. */
+/* The audio tile's play button: a play glyph on a paper chip in the middle of
+   the tile, where the video tile has its own, saying a tap plays it. The glyph
+   takes no nudge: PLAY_ICON's path already sits a little right of its box,
+   which is what centres a triangle to the eye. */
 .feed-tile-badge {
   position: absolute;
-  top: 8px; right: 8px;
-  width: 26px; height: 26px;
+  inset: 0;
+  margin: auto;
+  width: 44px; height: 44px;
   display: grid;
   place-items: center;
   border-radius: 50%;
@@ -313,7 +316,7 @@
   color: var(--accent-text);
   box-shadow: var(--shadow-1);
 }
-.feed-tile-badge svg { width: 11px; height: 11px; margin-left: 1px; }
+.feed-tile-badge svg { width: 22px; height: 22px; }
 .feed-tile-cap {
   position: absolute;
   left: 0; right: 0; bottom: 0;

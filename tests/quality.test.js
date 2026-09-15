@@ -90,7 +90,7 @@ test('a hand-set flag outranks the dial, and moving the dial drops it', () => {
   assert.equal(qualityOverridden('shadows'), false);
 });
 
-test('Start over hands every flag back to the dial', () => {
+test('Reset hands every flag back to the dial', () => {
   fresh();
   setQualityLevel('full');
   setQualityOverride('blur', false);
