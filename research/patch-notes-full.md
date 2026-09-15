@@ -90,6 +90,11 @@ date: 14 September 2026
   the look it had: a note stayed faded after its fade was stepped back, and lost
   its shadow. The canvas now compares each card with the item it was drawn from
   and redraws the ones whose name, file or settings differ.
+- [fix] **`Play` and the gear line up with the panels, and the gear is a
+  button.** The bar's side padding went from 10px to 14px, the panels' inset, so
+  `Play` stands under the sidebar's edge and the gear under the header panel's.
+  The play triangle moved one unit left, to the middle of its button. The gear
+  now has the edge, ground and lift that `Play` has, where it was a bare icon.
 - **The history moved out of `board.json`.** A `.mbrd` now carries it as
   `timeline/base.json` and `timeline/steps.jsonl`, one step to a line, and a torn
   line marks the history stale rather than losing the board. Every older `.mbrd`
