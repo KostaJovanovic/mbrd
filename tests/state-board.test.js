@@ -552,6 +552,27 @@ test('media fit is a board-wide default with an undoable per-item override', () 
   assert.equal(byId('pic').meta.fit, 'contain', 'the per-item override round-trips');
 });
 
+test('Fit can bring the card to its picture in the same step, and one undo puts both back', () => {
+  fresh([{ id: 'pic', type: 'image', asset: { hash: hash('a'), embedded: true }, w: 300, h: 200 }]);
+  setSetting('mediaFit', 'cover');
+  const [row] = snapshotGeom(['pic']);
+  setItemFit('pic', 'contain', [{ ...row, w: 356 }]);
+  assert.equal(byId('pic').meta.fit, 'contain');
+  assert.equal(byId('pic').w, 356);
+  undo();
+  assert.equal(byId('pic').meta.fit, undefined, 'one undo clears the fit...');
+  assert.equal(byId('pic').w, 300, '...and puts the box back');
+  redo();
+  assert.equal(byId('pic').w, 356);
+
+  // A card already set to Fit can be brought to shape again on its own.
+  setItemFit('pic', 'contain', [{ ...row, w: 400 }]);
+  assert.equal(byId('pic').w, 400);
+  undo();
+  assert.equal(byId('pic').w, 356);
+  assert.equal(byId('pic').meta.fit, 'contain', 'the fit it already had stays');
+});
+
 test('paletteSources is a board-wide count, clamped and round-tripped', () => {
   fresh();
   assert.equal(board.paletteSources, 12, 'defaults to the count the feature always used');

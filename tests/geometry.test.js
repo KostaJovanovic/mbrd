@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 
 import {
   rotatedExtents, itemBounds, itemInRect, itemWithinRect, itemRadius, pointInItem, topEdge,
-  corners, overlapFraction, segmentMeetsRect, viewShift,
+  corners, overlapFraction, segmentMeetsRect, viewShift, pictureShape, MIN_SIZE,
 } from '../web/assets/js/geometry.ts';
 import { item } from './helpers.js';
 
@@ -402,4 +402,42 @@ test('a pan and a zoom that cancel at one corner still count at another', () => 
 test('it is symmetric in the two views', () => {
   const a = view(0, 0, 1), b = view(7, -3, 1.4);
   assert.ok(near(viewShift(a, b, RECT), viewShift(b, a, RECT)));
+});
+
+// ---------------------------------------------------------------------------
+// A card brought to its picture's shape, for Fit
+// ---------------------------------------------------------------------------
+
+test('a Fit card keeps its shorter side and the longer follows the picture', () => {
+  const wide = pictureShape({ w: 300, h: 200 }, 16 / 9);
+  close(wide.h, 200, 'the height is the shorter side, and it stays');
+  close(wide.w, 200 * 16 / 9, 'the width follows the picture');
+  const tall = pictureShape({ w: 200, h: 300 }, 3 / 4);
+  close(tall.w, 200, 'the width is the shorter side, and it stays');
+  close(tall.h, 200 * 4 / 3, 'the height follows the picture');
+});
+
+test('the longer side follows even when the picture turns the card the other way', () => {
+  const box = pictureShape({ w: 300, h: 200 }, 2 / 3);
+  close(box.h, 200, 'the shorter side stays');
+  close(box.w, 200 * 2 / 3, 'the longer side becomes the picture, which Fit already shows');
+});
+
+test('a square card shrinks to the picture on either side', () => {
+  const wide = pictureShape({ w: 200, h: 200 }, 2);
+  assert.deepEqual([wide.w, wide.h], [200, 100]);
+  const tall = pictureShape({ w: 200, h: 200 }, 0.5);
+  assert.deepEqual([tall.w, tall.h], [100, 200]);
+});
+
+test('the size floor scales both sides, so the proportion holds', () => {
+  const box = pictureShape({ w: 60, h: 100 }, 5);
+  close(box.h, MIN_SIZE, 'the short side is lifted to the floor');
+  close(box.w / box.h, 5, 'and the proportion is the picture’s');
+});
+
+test('a proportion that is not one leaves the card as it is', () => {
+  for (const ratio of [0, -1, NaN, Infinity]) {
+    assert.deepEqual(pictureShape({ w: 300, h: 200 }, ratio), { w: 300, h: 200 });
+  }
 });

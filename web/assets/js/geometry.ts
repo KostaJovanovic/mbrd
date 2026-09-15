@@ -62,6 +62,24 @@ export function latticeBox(box: Box, step: number) {
   };
 }
 
+/**
+ * A card brought to its picture's proportion (`ratio`, w/h), for Fit: the
+ * card's shorter side stays and the longer one follows the picture. A square
+ * card keeps the side that lies along the picture's long way, so it shrinks to
+ * the picture Fit already shows instead of growing past it. Both sides are
+ * scaled together into [MIN_SIZE, MAX_SIZE], because clamping one side alone
+ * would change the proportion this exists to hold.
+ */
+export function pictureShape(box: Size, ratio: number) {
+  if (!(ratio > 0 && Number.isFinite(ratio))) return { w: box.w, h: box.h };
+  const keepW = box.w < box.h || (box.w === box.h && ratio >= 1);
+  const w = keepW ? box.w : box.h * ratio;
+  const h = keepW ? box.w / ratio : box.h;
+  let k = Math.min(1, MAX_SIZE / Math.max(w, h));
+  k = Math.max(k, MIN_SIZE / Math.min(w, h));
+  return { w: w * k, h: h * k };
+}
+
 /** Half-extents of the AABB around a rotated item. At rot=0, just (w/2, h/2). */
 export function rotatedExtents(it: Size) {
   const rot = it.rot || 0;

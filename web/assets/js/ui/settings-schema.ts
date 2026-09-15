@@ -11,6 +11,7 @@ const selectionSize = () => selection.size;
 const tourStops = () => board.tour.length;
 import { ARRANGEMENTS, MOBILE_ARRANGEMENTS } from '../arrange/arrangements.ts';
 import { currentLens } from './board-view.ts';
+import { setMediaFit } from './board-actions.ts';
 import { timelineShown, toggleTimeline } from './timeline-view.ts';
 import { paletteSwatches } from './palettes.ts';
 import { itemBounds } from '../geometry.ts';
@@ -805,10 +806,11 @@ export const SECTIONS: Section[] = [
         get: () => board.settings.web !== false, set: v => setSetting('web', v) },
       // Checked = photos and videos fill their card and crop; unchecked = the
       // whole picture fits inside and letterboxes. Board-wide default; a single
-      // item overrides it from its right-click menu.
+      // item overrides it from its right-click menu. Unchecking it also brings
+      // each card to its picture's shape (setMediaFit, board-actions.ts).
       { id: 'opt-mediafit', type: 'check', label: 'Fill photos & videos',
         get: () => board.mediaFit !== 'contain',
-        set: v => setSetting('mediaFit', v ? 'cover' : 'contain') },
+        set: v => setMediaFit(v) },
       // Volume was the last row here and is not any more, for a reason that has
       // outlived one move: in the panel it was a control you had to go and find,
       // two clicks from the sound it was about, and it sat there the rest of the

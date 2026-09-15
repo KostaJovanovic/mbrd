@@ -430,6 +430,49 @@ export async function measureSize(type: string, file: File): Promise<MeasuredSiz
   }
 }
 
+/**
+ * The proportion (w/h) of the picture a photo or video card shows, with its
+ * crop and quarter turn, or null when nothing can be measured. Fit brings a
+ * card to it (fitShapes in ui/board-actions.ts).
+ *
+ * Read off the smallest copy that is exact: a photo's display copy (uncropped,
+ * 1024 on the long side), a video's poster frame, and the file itself only
+ * when neither is there. Not the thumbnail: at 100 wide, its rounding shows as
+ * a band of paper on a large card. The crop and the turn are arithmetic here,
+ * because the display copy that carries them lives only in this session.
+ */
+export async function pictureRatio(item: Item): Promise<number | null> {
+  if (item.type !== 'image' && item.type !== 'video') return null;
+  const video = item.type === 'video';
+  const stills = video ? [metaStr(item.meta?.cover)] : [metaStr(item.meta?.display), shownHash(item)];
+  let size: Size | null = null;
+  for (const hash of stills) {
+    size = await naturalSize('image', hash);
+    if (size) break;
+  }
+  if (!size && video) size = await naturalSize('video', item.asset?.hash);
+  if (!size) return null;
+  const crop = itemCrop(item);
+  const ratio = crop ? (size.w * crop.w) / (size.h * crop.h) : size.w / size.h;
+  const rot = itemRotate(item);
+  return rot === 90 || rot === 270 ? 1 / ratio : ratio;
+}
+
+/** Pixel sizes by content id. A hash names its bytes, so an answer never goes stale. */
+const naturalSizes = new Map<string, Size | null>();
+
+async function naturalSize(type: string, hash: string | null | undefined): Promise<Size | null> {
+  if (!hash) return null;
+  if (naturalSizes.has(hash)) return naturalSizes.get(hash) ?? null;
+  const blob = getAsset(hash)?.blob;
+  if (!blob) return null;
+  // SAFETY: measureSize() reads the type and the bytes. Its one name read, in isSvgImage(), goes
+  // through extOf(), which takes the absent name of a Blob as ''. resetSize() passes a Blob the same way.
+  const size = (await measureSize(type, blob as File).catch(() => null))?.natural ?? null;
+  naturalSizes.set(hash, size);
+  return size;
+}
+
 /** An SVG, by MIME or by extension - the same either/or classify() uses. */
 function isSvgImage(file: File): boolean {
   return (file.type || '').toLowerCase() === 'image/svg+xml'
