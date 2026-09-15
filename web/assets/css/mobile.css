@@ -221,6 +221,40 @@
 @media (prefers-reduced-motion: reduce) {
   .feed-tile.is-found { animation: none; }
 }
+/* A selected tile (ui/feed.ts paints it off the board's selection): the
+   canvas's selection colour, as a ring outside the tile so the picture stays
+   whole. An outline, as the Find ring above is. */
+.feed-tile.is-selected {
+  outline: 2.5px solid var(--select);
+  outline-offset: 2px;
+}
+/* The multi-select mode. On the canvas it is a frame round the window, but
+   here the window is mostly tiles, so each tile a tap now picks wears an empty
+   circle, and a picked one a filled circle with a tick. Top left, clear of the
+   audio tile's badge in the other corner. */
+:root.is-picking .feed-tile:not([data-kind="hint"])::after {
+  content: '';
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  box-sizing: border-box;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.22);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  color: #fff;
+  font: 700 13px/1 var(--font-body);
+  pointer-events: none;
+}
+:root.is-picking .feed-tile.is-selected::after {
+  content: '\2713';
+  background: var(--select);
+}
 .feed-tile video { width: 100%; height: 100%; object-fit: cover; background: #000; display: block; }
 
 /* A card drawn by the canvas's renderer at its board size, scaled to the tile

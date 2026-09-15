@@ -295,7 +295,9 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
       const on = !isMultiSelect();
       setMultiSelect(on);
       // Standing mark synced off the bus in main.ts so every exit clears it.
-      if (on) toast('Tap cards to add them. Drag a selected one to move them all.');
+      // The Feed has no drag, so the second sentence is the canvas's alone.
+      if (on) toast(board.layoutMode === 'mobile' ? 'Tap cards to add them.'
+        : 'Tap cards to add them. Drag a selected one to move them all.');
     },
     undo, redo,
     deleteSelection: () => {

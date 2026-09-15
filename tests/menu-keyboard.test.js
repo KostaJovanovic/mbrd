@@ -118,11 +118,29 @@ test('the Feed aims its menu at the tile that was pressed', () => {
   const feed = code(read(join(JS, 'ui', 'feed.ts')));
   assert.match(feed, /function openTileMenu\(x: number, y: number, id: string\)/,
     'the Feed opens its menu without retargeting again');
-  assert.match(feed, /if \(!selection\.has\(id\)\) select\(\[id\]\);/,
-    'openTileMenu() no longer retargets the selection');
-  assert.match(feed, /cmds\?\.contextMenu\(x, y, id, selection\.size, \{ mobile: true \}\)/,
-    'the Feed is back to telling the menu a hardcoded count');
+  assert.match(feed, /if \(!selection\.has\(id\)\) select\(\[id\], isMultiSelect\(\)\);/,
+    'openTileMenu() no longer retargets the selection, or drops the group in the multi-select mode');
+  assert.match(feed, /cmds\?\.contextMenu\(x, y, id, selection\.size, \{ mobile: true, touch: pressType === 'touch' \}\)/,
+    'the Feed is back to telling the menu a hardcoded count, or no longer says a finger opened it');
   // Both routes: the mouse's contextmenu and the finger's hold timer.
   assert.equal((feed.match(/openTileMenu\(/g) || []).length, 3,
     'one of the two ways into the Feed menu bypasses the retarget');
+});
+
+test('the Feed can select tiles, and shows which ones it has', () => {
+  // The Feed had no way to hold more than the one tile its menu aims at, and
+  // drew no selection at all, so Delete or Tags on a group was canvas-only.
+  const feed = code(read(join(JS, 'ui', 'feed.ts')));
+  const pick = feed.slice(feed.indexOf('e.shiftKey || e.ctrlKey || e.metaKey || isMultiSelect()'));
+  assert.ok(pick.length < feed.length, 'a modifier or the multi-select mode no longer picks a tile');
+  assert.match(pick, /e\.stopImmediatePropagation\(\);\s*if \(!deselect\(id\)\) select\(\[id\], true\);/,
+    'a pick no longer toggles the tile, or lets the tile open as well');
+  assert.match(feed, /bus\.on\('selection', paintSelection\)/, 'the Feed stopped repainting the selection');
+  assert.match(feed, /if \(selection\.has\(item\.id\)\) el\.classList\.add\('is-selected'\)/,
+    'a tile built while selected comes up without its ring');
+  // The menu row that starts the mode on a phone, which the Feed used to drop.
+  assert.match(menu, /\/\/ The Feed too[^\n]*\n\s*\.\.\.multiSelectEntry\(\),/,
+    'the Feed menu no longer offers Select multiple');
+  const css = read(join(JS, '..', 'css', 'mobile.css'));
+  assert.match(css, /\.feed-tile\.is-selected \{/, 'a selected tile has no ring');
 });
