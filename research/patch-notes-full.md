@@ -190,6 +190,16 @@ date: 14 September 2026
   the sheet as a grey block, and the export paints the same note. A note that
   already has no paper still shows `No card`, ticked, so the paper can come back.
   Pictures and models keep `No card`.
+- [fix] **A faded sticky is see-through at Harsh, and whole again far out.** The
+  Harsh rule for a sticky's paper outranked the fade and painted it solid. Both
+  now read one `--note-sheet` colour, which the fade sets. Below the far-zoom
+  rung the note's body is down and the item is the whole note, and a faded one
+  had no colour there, so it was a name floating on the board. It takes the pad
+  colour back at that zoom.
+- [new] **Ctrl and the wheel move the board up and down,** as Shift and the wheel
+  move it across. A touchpad pinch also arrives as a wheel event with Ctrl set,
+  so the canvas watches the Control key itself: a Ctrl that is really held pans,
+  and a pinch, which presses no key, still zooms.
 - [fix] **Below 40% zoom a card's buttons go.** The anchor and pin badges and the
   title card's pen and `T` stayed until 10%. They now go with the labels at the
   far-zoom rung, and the title card's raise and hover bridge follow it.

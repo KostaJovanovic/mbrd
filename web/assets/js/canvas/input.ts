@@ -321,7 +321,8 @@ export function resizeHandleAction(
 // ---------------------------------------------------------------------------
 // The wheel that is not always a wheel — touchpad scroll vs mouse zoom.
 // No API says which device sent the event, so this is a heuristic:
-// ctrlKey = pinch (reliable), deltaMode = mouse, fractional dx = pad.
+// ctrlKey with no Control key down = pinch (reliable), deltaMode = mouse,
+// fractional dx = pad.
 // Answer is latched per burst so a fast swipe inherits the slow start.
 // ---------------------------------------------------------------------------
 
@@ -508,9 +509,10 @@ function classifyWheel(e: WheelSample, dx: number, dy: number): WheelKind {
  *
  * Deltas come out in pixels whatever the event counted in, so the caller never
  * has to know about deltaMode. A pinch is always a zoom and never latches the
- * device - somebody holding control over a real wheel is asking for the same
- * thing, and letting that decide what the next plain notch means would be a
- * modifier key with an after-effect.
+ * device. Every engine reports a pinch as a wheel event with ctrlKey set and
+ * no key pressed, and `ctrlHeld` is what tells the two apart: the caller
+ * watches the Control key itself, and a Control that is really held pans up
+ * and down, the vertical twin of Shift below.
  *
  * A two-finger scroll is *railed*, and the rail comes in two strengths. A swipe
  * committed to one axis has the other suppressed outright - straight sideways
@@ -528,15 +530,15 @@ function classifyWheel(e: WheelSample, dx: number, dy: number): WheelKind {
  * Applied *after* the device is latched, never as part of it: a mouse user
  * holding Shift is asking for a pan and is still holding a mouse, and letting
  * that answer stand would zoom-lock into pan for the next notch after they let
- * go of the key.
+ * go of the key. Control is applied at the same point for the same reason.
  */
-export function readWheel(e: WheelSample, pageHeight = 800): WheelAction {
+export function readWheel(e: WheelSample, pageHeight = 800, ctrlHeld = false): WheelAction {
   const scale = e.deltaMode === 1 ? WHEEL_LINE : e.deltaMode === 2 ? pageHeight : 1;
   const dx = (e.deltaX || 0) * scale;
   const dy = (e.deltaY || 0) * scale;
   const zoom = (rate: number) => Math.exp(-clamp(dy, -WHEEL_MAX_STEP, WHEEL_MAX_STEP) * rate);
 
-  if (e.ctrlKey) return { kind: 'zoom', dx, dy, factor: zoom(PINCH_ZOOM_RATE) };
+  if (e.ctrlKey && !ctrlHeld) return { kind: 'zoom', dx, dy, factor: zoom(PINCH_ZOOM_RATE) };
 
   const at = e.timeStamp || 0;
   const fresh = at - wheelAt > WHEEL_STREAM_MS;
@@ -555,6 +557,8 @@ export function readWheel(e: WheelSample, pageHeight = 800): WheelAction {
   // several of them turn Shift+scroll into a horizontal delta on the way past,
   // and swapping a second time would put it back where it started.
   if (e.shiftKey) return { kind: 'pan', dx: dx || dy, dy: 0, factor: 1 };
+  // A held Control, and not a pinch, which returned above.
+  if (e.ctrlKey) return { kind: 'pan', dx: 0, dy: dy || dx, factor: 1 };
 
   if (kind === 'zoom') return { kind, dx, dy, factor: zoom(WHEEL_ZOOM_RATE) };
   return { kind, ...unrail(dx, dy), factor: 1 };
@@ -1117,6 +1121,9 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   }
 
   let spaceDown = false;
+  // The Control key, pressed on the keyboard. A pinch sets ctrlKey on its
+  // wheel events without one, so this is how readWheel() tells them apart.
+  let ctrlDown = false;
   // Linux/X11 pastes the primary selection on a middle click. A middle *click*
   // here should still paste - that is the platform's paste gesture - but a middle
   // *drag* means "pan", and the paste it fires on release would dump the
@@ -2789,7 +2796,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // preventDefault and not before it: returning bare would hand the notch
     // back to the page and scroll the document behind the board.
     if (cmds.inTour?.()) return;
-    const w = readWheel(e, vp.height);
+    const w = readWheel(e, vp.height, ctrlDown);
     // Mobile is a fixed-width feed with one navigable axis, so everything that
     // arrives moves the feed along it - a sideways swipe and a Shift+wheel
     // included, since neither has anywhere else to go. A pinch too: there is
@@ -2891,6 +2898,8 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     !!document.querySelector('dialog[open]') || !!document.getElementById('ctx-menu');
 
   addEventListener('keydown', e => {
+    // Before every early return: the wheel asks about the key wherever the focus is.
+    if (e.key === 'Control') ctrlDown = true;
     if (typingInto(e.target)) {
       if (e.key === 'Escape') { markClosed(e); e.target.blur(); }
       return;
@@ -3008,11 +3017,14 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
 
   addEventListener('keyup', e => {
     if (e.code === 'Space') { spaceDown = false; setPanCursor(); }
+    if (e.key === 'Control') ctrlDown = false;
   });
   // A blur (alt-tab) never delivers the keyup, which would leave pan mode stuck.
   // A pointercancel likewise reports no button, so the middle-button guard is
   // cleared here too rather than trusting the lift to carry it.
-  addEventListener('blur', () => { spaceDown = false; midPaste.down = false; setPanCursor(); });
+  addEventListener('blur', () => {
+    spaceDown = false; ctrlDown = false; midPaste.down = false; setPanCursor();
+  });
 
   // Swallow the primary-selection paste a middle *drag* fires on release. Capture
   // phase and window-wide, so it runs before the note editor's own paste and the
