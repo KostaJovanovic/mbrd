@@ -343,9 +343,12 @@ export function normalizeMediaFit(value: unknown) {
  * highest *count* the sampler defaults to (MAX_SOURCES); asking for all of them
  * lifts that, which is the whole of what this option does.
  */
+/** How many pictures a Dynamic palette reads, on a board nobody has told otherwise. */
+export const DEFAULT_PALETTE_SOURCES = 12;
+
 export function normalizePaletteSources(value: unknown) {
   const n = Math.round(Number(value));
-  if (!Number.isFinite(n)) return 12;
+  if (!Number.isFinite(n)) return DEFAULT_PALETTE_SOURCES;
   return n === 0 ? 0 : Math.max(1, Math.min(24, n));
 }
 

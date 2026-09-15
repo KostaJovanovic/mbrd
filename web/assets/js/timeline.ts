@@ -1,7 +1,9 @@
 // Step ledger: every board change as a reversible JSON diff. Sealed (replay
-// exactly) unless a step carries an `op`. Below state.ts — may never import it.
+// exactly) unless a step carries an `op`. Both layouts are kept apart, so one
+// history serves the Canvas and the Feed. Below state.ts — may never import it.
 
-import { board, dropIdIndex } from './board-model.ts';
+import { board, byId, dropIdIndex, layoutSettingsOf } from './board-model.ts';
+import type { Geometry, Item, LayoutMode } from './board-model.ts';
 import { bus, selection, markDirty } from './board-store.ts';
 import { itemHashes, isRecord, uid } from './util.ts';
 
@@ -12,7 +14,15 @@ import { itemHashes, isRecord, uid } from './util.ts';
 /** Items as id → JSON string. Keyed so a nudge diff is one item, not the whole array. */
 type Keyed = Record<string, string>;
 
-/** The board reduced to comparable text. Nothing derived, nothing live. */
+/**
+ * The board reduced to comparable text. Nothing derived, nothing live.
+ *
+ * **The two layouts are kept apart.** A card's place (x, y, w, h, rot, z and
+ * the presnap memo) is not in `items`: each layout's places are in `desktop`
+ * and `mobile`, whichever of them is on screen. So a step says which layout it
+ * moved a card in, and one history replays on the Canvas and on the Feed. A
+ * switch between the two used to wipe it (LEDGER_VERSION).
+ */
 type Snap = {
   items: Keyed,
   itemOrder: string[],
@@ -61,12 +71,22 @@ export type Step = {
 type SerializedStep = Pick<Step, 'id' | 'at' | 'label' | 'run' | 'delta'> & { name?: string };
 
 /** Board fields beyond the four keyed lists. `versions` excluded — a full copy would dwarf every step.
+ *  Not `settings` and `arrangement`, the live layout's copies of `layoutSettings`
+ *  and `arrangements`, which restore() makes again. Not `layoutMode`, which layout
+ *  is on screen: a trip through the history leaves that alone.
  *  Exported for tests/timeline-drift.test.js, which holds every one of them to a trip. */
 export const REST_FIELDS = [
-  'title', 'view', 'sharedAppearance', 'layoutSettings', 'settings',
-  'arrangement', 'arrangements', 'layoutMode', 'mobileHeader', 'titleHidden',
-  'mediaFit', 'paletteSources', 'connections', 'audioOrder', 'tour',
+  'title', 'view', 'sharedAppearance', 'layoutSettings', 'arrangements',
+  'mobileHeader', 'titleHidden', 'mediaFit', 'paletteSources', 'connections',
+  'audioOrder', 'tour',
 ] as const;
+
+/**
+ * 2: places kept per layout (see Snap). A ledger with no version kept each
+ * place on its card, and would replay with every card in the wrong place, so
+ * adoptTimeline() leaves one out and the board opens with no past.
+ */
+const LEDGER_VERSION = 2;
 
 /** Type-checked cast — every REST_FIELDS name is a board key. */
 type RestField = typeof REST_FIELDS[number];
@@ -86,11 +106,69 @@ const keyed = (list: { id: string }[]): [Keyed, string[]] => {
   return [out, order];
 };
 
+/** The layout that is not on screen. */
+const otherOf = (mode: LayoutMode): LayoutMode => (mode === 'desktop' ? 'mobile' : 'desktop');
+
+/** The fields a layout owns. The rest of a card is the same in both layouts. */
+const PLACE_KEYS = ['x', 'y', 'w', 'h', 'rot', 'z'] as const;
+const PLACE = new Set<string>(PLACE_KEYS);
+
+/** A card without its place, which belongs to a layout (see Snap). */
+function placeless(item: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(item)) {
+    if (PLACE.has(key)) continue;
+    if (key === 'meta' && isRecord(value) && 'presnap' in value) {
+      const meta = { ...value };
+      delete meta.presnap;
+      out.meta = meta;
+    } else {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
+/** A card's place in the live layout, in the shape a stored layout holds it
+ *  (geometryOf() in layout.ts), so the two compare as text. */
+function placeOf(item: Item): Geometry {
+  const place: Geometry = {
+    id: item.id, x: item.x, y: item.y, w: item.w, h: item.h, rot: item.rot, z: item.z,
+  };
+  const memo: unknown = item.meta?.presnap;
+  const { x, y, w, h }: Record<string, unknown> = isRecord(memo) ? memo : {};
+  if (typeof x === 'number' && typeof y === 'number'
+    && typeof w === 'number' && typeof h === 'number') place.presnap = { x, y, w, h };
+  return place;
+}
+
+/** A card given its place back, out of a stored layout's text. */
+function placed(item: Item, text: string | undefined): Item {
+  if (typeof text !== 'string') return item;
+  const place: unknown = JSON.parse(text);
+  if (!isRecord(place)) return item;
+  for (const key of PLACE_KEYS) {
+    const value = place[key];
+    if (typeof value === 'number') item[key] = value;
+  }
+  if (isRecord(place.presnap)) item.meta = { ...item.meta, presnap: { ...place.presnap } };
+  return item;
+}
+
 /** The board as it stands, as text. */
 export function snapshot(): Snap {
-  const [items, itemOrder] = keyed(board.items);
-  const [desktop] = keyed(board.layouts.desktop);
-  const [mobile] = keyed(board.layouts.mobile);
+  const mode = board.layoutMode;
+  const items: Keyed = {};
+  const itemOrder: string[] = [];
+  const live: Keyed = {};
+  for (const item of board.items) {
+    items[item.id] = JSON.stringify(placeless(item));
+    live[item.id] = JSON.stringify(placeOf(item));
+    itemOrder.push(item.id);
+  }
+  // board.layouts is the truth for the layout off screen. The live layout's
+  // entry there is written only at a switch, so its places come off the cards.
+  const [stored] = keyed(board.layouts[otherOf(mode)]);
   // Keyed by the item's id, not the entry's - a TrashEntry has no id of its own.
   const trash: Keyed = {};
   const trashOrder: string[] = [];
@@ -100,12 +178,38 @@ export function snapshot(): Snap {
   }
   const rest: Record<string, string> = {};
   for (const field of REST_FIELDS) rest[field] = JSON.stringify(board[field]);
-  return { items, itemOrder, desktop, mobile, trash, trashOrder, rest };
+  // The same for settings: the live layout's are in `settings`.
+  rest.layoutSettings = JSON.stringify({
+    ...board.layoutSettings, [mode]: layoutSettingsOf(board.settings),
+  });
+  return {
+    items,
+    itemOrder,
+    desktop: mode === 'desktop' ? live : stored,
+    mobile: mode === 'mobile' ? live : stored,
+    trash,
+    trashOrder,
+    rest,
+  };
 }
 
-/** Put a snapshot back on the board, wholesale. What a checkpoint is for. */
+/**
+ * What restore() leaves to layout.ts, the work a switch does in setBoardMode():
+ * the live settings made from the stored ones, and every card put in its place
+ * in the live layout, where a card with no place there is given one. Injected,
+ * as the stack dropper is, because layout.ts reaches this module through history.ts.
+ */
+let settle: (() => void) | null = null;
+export function setSettle(fn: (() => void) | null) { settle = fn; }
+
+/** Put a snapshot back on the board, wholesale, in the layout on screen. */
 export function restore(snap: Snap) {
-  board.items = snap.itemOrder.map(id => JSON.parse(snap.items[id]));
+  const mode = board.layoutMode;
+  const here = snap[mode];
+  const there = snap[otherOf(mode)];
+  // A card with no place in this layout yet takes the other one's, as a live
+  // card does at a switch, and settle() then finds it a place here.
+  board.items = snap.itemOrder.map(id => placed(JSON.parse(snap.items[id]), here[id] ?? there[id]));
   // Right after the assignment: board-model.ts's id index normally drops on
   // an 'items' announcement, but a replay announces nothing until it's
   // done - without this, byId() during a rebuild would answer out of the
@@ -120,6 +224,7 @@ export function restore(snap: Snap) {
     const live: RestBag = board;
     live[field] = JSON.parse(snap.rest[field]);
   }
+  settle?.();
 }
 
 function keyedDelta(before: Keyed, after: Keyed,
@@ -164,8 +269,6 @@ export function diff(before: Snap, after: Snap): Delta | null {
   return Object.keys(out).length ? out : null;
 }
 
-const side = <T>(pair: [T, T], forward: boolean) => (forward ? pair[1] : pair[0]);
-
 /** Merge only the fields that differ between `from` and `to` into `held`. Top-level keys only. */
 function mergeChanged(
   held: unknown, from: Record<string, unknown>, to: Record<string, unknown>,
@@ -178,74 +281,6 @@ function mergeChanged(
     else delete next[key];
   }
   return next;
-}
-
-// Unconstrained in T: trash carries its id on `item`, not itself.
-function applyKeyed<T>(
-  current: T[], delta: KeyedDelta, forward: boolean, idOf: (v: T) => string,
-): T[] {
-  // Map preserves object identity for untouched items (id index, gestures hold refs).
-  const map = new Map<string, T>();
-  for (const entry of current) map.set(idOf(entry), entry);
-  for (const id of Object.keys(delta.changed)) {
-    const pair = delta.changed[id];
-    const want = side(pair, forward);
-    const leaving = side(pair, !forward);
-    const held = map.get(id);
-    if (want == null) { map.delete(id); continue; }
-    // Only changed fields — writing the whole object would let the next sealed
-    // step quietly restore old values (e.g. position) alongside its own change.
-    if (leaving == null || !held) { map.set(id, JSON.parse(want)); continue; }
-    // SAFETY: values came from JSON.parse of serialize() output; mergeChanged replaces, never invents.
-    map.set(id, mergeChanged(held, JSON.parse(leaving), JSON.parse(want)) as T);
-  }
-  const order = delta.order
-    ? side(delta.order, forward)
-    : current.map(idOf).filter(id => map.has(id));
-  const out: T[] = [];
-  const placed = new Set<string>();
-  for (const id of order) {
-    const entry = map.get(id);
-    if (!entry || placed.has(id)) continue;
-    out.push(entry);
-    placed.add(id);
-  }
-  // Items the recorded order omits still belong on the board (malformed step guard).
-  for (const [id, entry] of map) if (!placed.has(id)) out.push(entry);
-  return out;
-}
-
-/** Move the board one step, in either direction. */
-export function apply(delta: Delta, forward: boolean) {
-  if (delta.items) {
-    board.items = applyKeyed(board.items, delta.items, forward, i => i.id);
-    dropIdIndex();
-  }
-  if (delta.desktop) {
-    board.layouts.desktop = applyKeyed(board.layouts.desktop, delta.desktop, forward, g => g.id);
-  }
-  if (delta.mobile) {
-    board.layouts.mobile = applyKeyed(board.layouts.mobile, delta.mobile, forward, g => g.id);
-  }
-  if (delta.trash) {
-    board.trash = applyKeyed(board.trash, delta.trash, forward, t => t.item.id);
-  }
-  if (delta.rest) {
-    const live: RestBag = board;
-    // Walked over REST_FIELDS so `field` stays typed as RestField.
-    for (const field of REST_FIELDS) {
-      const pair = delta.rest[field];
-      if (!pair) continue;
-      const to = JSON.parse(side(pair, forward));
-      const from = JSON.parse(side(pair, !forward));
-      // Merge only changed keys — writing the whole settings object resets other settings.
-      const plain = isRecord(to) && isRecord(from) && isRecord(live[field]);
-      // SAFETY: `plain` guards isRecord() on all three.
-      live[field] = plain
-        ? mergeChanged(live[field], from as Record<string, unknown>, to as Record<string, unknown>)
-        : to;
-    }
-  }
 }
 
 /** One step folded into the one before it. See Step.run. */
@@ -304,6 +339,17 @@ let checkpoints = new Map<number, Snap>();
 /** Whether the steps still describe the board they claim to. See fingerprint(). */
 let stale = false;
 
+/**
+ * How many of the steps just ahead of the marker undo stepped back over. A
+ * new step replaces those, as undo does everywhere. The steps past them were
+ * reached on the Timeline, and a new step goes in before them (recordStep()).
+ */
+let undone = 0;
+
+/** The step the next one may fold into. Null once the marker has moved, so a
+ *  change made after a trip back starts a step of its own, never rewrites an old one. */
+let lastPlaced: Step | null = null;
+
 // ---------------------------------------------------------------------------
 // Drift: what the board did outside the ledger
 // ---------------------------------------------------------------------------
@@ -360,6 +406,15 @@ const KEYED_SECTIONS = ['items', 'desktop', 'mobile', 'trash'] as const;
 
 /** Write what the board did outside the ledger into every stored board. */
 function absorbDrift(live: Snap = snapshot()) {
+  // With no step yet, the board before step 0 is the board now. That is how the
+  // title card, which the app seeds after a load and records nothing for, is on
+  // the board at every point of the history rather than gone on the first trip.
+  if (!steps.length) {
+    base = live;
+    synced = live;
+    checkpoints = new Map();
+    return;
+  }
   const drift = diff(synced, live);
   synced = live;
   if (!drift) return;
@@ -457,6 +512,8 @@ export function resetTimeline() {
   synced = base;
   checkpoints = new Map();
   stale = false;
+  undone = 0;
+  lastPlaced = null;
   forgetBytes();
 }
 
@@ -475,16 +532,31 @@ export function recordStep(label: string, before: Snap): Step | null {
   synced = after;
   const delta = diff(before, after);
   if (!delta) return null;
-  // New action with marker rolled back — drop everything ahead (like undo).
-  if (at < steps.length) {
-    steps.length = at;
-    for (const key of [...checkpoints.keys()]) if (key > at) checkpoints.delete(key);
+  // With the marker rolled back, what undo stepped over goes, as it does
+  // everywhere. The rest of what is ahead was reached on the Timeline: it is
+  // taken off, and laid back on after this step, so an edit in the past
+  // never costs the work that came after it.
+  const ahead = steps.splice(at);
+  ahead.splice(0, undone);
+  undone = 0;
+  if (ahead.length) {
+    for (const key of checkpoints.keys()) if (key > at) checkpoints.delete(key);
   }
+  const step = place(label, delta, op, after);
+  if (ahead.length) layAhead(ahead, after);
+  if (steps.length > TIMELINE_STEP_CAP) foldOldest(steps.length - TIMELINE_STEP_CAP);
+  return step;
+}
+
+/** Put a new difference on the end of the ledger, or fold it into the step before. */
+function place(
+  label: string, delta: Delta, op: Step['op'] | null, after: Snap,
+): Step | null {
   // Collapse on rule + subject. See runKey() and opRunKey().
   const subject = runKey(delta);
   const run = subject && op ? opRunKey(op.name, subject) : subject;
   const prev = steps[steps.length - 1];
-  if (run && prev && prev.run === run) {
+  if (run && prev && prev === lastPlaced && prev.run === run) {
     prev.delta = mergeDelta(prev.delta, delta);
     prev.at = Date.now();
     prev.label = label;
@@ -500,6 +572,7 @@ export function recordStep(label: string, before: Snap): Step | null {
       steps.pop();
       checkpoints.delete(at);
       at = steps.length;
+      lastPlaced = null;
       return null;
     }
     // **A checkpoint on this mark now describes a board that never existed**:
@@ -512,9 +585,116 @@ export function recordStep(label: string, before: Snap): Step | null {
   if (op) step.op = op;
   steps.push(step);
   at = steps.length;
+  lastPlaced = step;
   if (at % CHECKPOINT_EVERY === 0) checkpoints.set(at, after);
-  if (steps.length > TIMELINE_STEP_CAP) foldOldest(steps.length - TIMELINE_STEP_CAP);
   return step;
+}
+
+/**
+ * Put steps back on the end of the ledger, each laid onto the board the steps
+ * before it leave, and each rewritten to say what it did there. `from` is the
+ * board at the marker, and is not changed.
+ */
+function layAhead(ahead: Step[], from: Snap) {
+  const snap = copySnap(from);
+  for (const step of ahead) {
+    try {
+      step.delta = layOnto(snap, step.delta, true);
+      step.broken = false;
+    } catch {
+      // A step read from a file can be any shape. Kept and marked, as a
+      // replay marks one.
+      step.broken = true;
+    }
+    steps.push(step);
+    if (steps.length % CHECKPOINT_EVERY === 0) checkpoints.set(steps.length, copySnap(snap));
+  }
+  forgetBytes();
+}
+
+/** A snapshot that shares no container with `snap`. The text inside is immutable. */
+const copySnap = (snap: Snap): Snap => ({
+  items: { ...snap.items },
+  itemOrder: [...snap.itemOrder],
+  desktop: { ...snap.desktop },
+  mobile: { ...snap.mobile },
+  trash: { ...snap.trash },
+  trashOrder: [...snap.trashOrder],
+  rest: { ...snap.rest },
+});
+
+/** A stored entry by id. By type, so a name like `constructor` finds nothing. */
+const entryOf = (map: Keyed, id: string): string | null =>
+  (typeof map[id] === 'string' ? map[id] : null);
+
+/** A step's change merged into stored text: only the top-level fields it changed.
+ *  Writing the whole object would let the next step quietly put back old values
+ *  (a position, a setting) alongside its own change. */
+function mergeTopText(held: string, from: string, to: string): string {
+  try {
+    const [h, f, t]: unknown[] = [JSON.parse(held), JSON.parse(from), JSON.parse(to)];
+    return isRecord(h) && isRecord(f) && isRecord(t) ? JSON.stringify(mergeChanged(h, f, t)) : to;
+  } catch {
+    return to;
+  }
+}
+
+/**
+ * Lay one step onto a stored board, and return the difference it made there:
+ * the step as it reads on this history. Every replay goes through here, and
+ * the board is written once, at the end (restore()), which is what lets a
+ * replay work in whichever layout is on screen.
+ *
+ * `strict` is for laying a step onto a history it was not recorded on. There
+ * a change to a card the board no longer has is dropped rather than bringing
+ * the card back: a card deleted in the past stays deleted, whatever a later
+ * step did to it. A replay writes such a card whole, as it always has.
+ */
+function layOnto(snap: Snap, delta: Delta, strict = false): Delta {
+  const out: Delta = {};
+  for (const section of KEYED_SECTIONS) {
+    const part = delta[section];
+    if (!part) continue;
+    const held = snap[section];
+    const changed: KeyedDelta['changed'] = {};
+    for (const [id, [from, to]] of Object.entries(part.changed)) {
+      const was = entryOf(held, id);
+      if (strict && from != null && to != null && was == null) continue;
+      const now = to == null ? null : was == null || from == null ? to : mergeTopText(was, from, to);
+      if (now === was) continue;
+      if (now == null) delete held[id];
+      else held[id] = now;
+      changed[id] = [was, now];
+    }
+    const next: KeyedDelta = { changed };
+    const orderKey = section === 'items' ? 'itemOrder' : section === 'trash' ? 'trashOrder' : null;
+    if (orderKey) {
+      const was = snap[orderKey];
+      // The step's own order first, then everything it does not mention.
+      const now: string[] = [];
+      const placed = new Set<string>();
+      for (const id of [...(part.order ? part.order[1] : was), ...was, ...Object.keys(held)]) {
+        if (placed.has(id) || entryOf(held, id) == null) continue;
+        placed.add(id);
+        now.push(id);
+      }
+      if (now.length !== was.length || now.some((id, i) => id !== was[i])) {
+        next.order = [was, now];
+        snap[orderKey] = now;
+      }
+    }
+    if (Object.keys(changed).length || next.order) out[section] = next;
+  }
+  const rest: Record<string, [string, string]> = {};
+  for (const [field, [from, to]] of Object.entries(delta.rest || {})) {
+    const was = snap.rest[field];
+    const now = was == null ? to : mergeTopText(was, from, to);
+    if (now === was) continue;
+    snap.rest[field] = now;
+    rest[field] = [was, now];
+  }
+  if (Object.keys(rest).length) out.rest = rest;
+  return out;
 }
 
 /** Run key for an op step: name in front so different rules over the same cards stay separate. */
@@ -563,17 +743,34 @@ function changedFields(before: string, after: string): string[] {
 
 /** Note that undo/redo moved the board — they tell this module which way, not the reverse. */
 export function markerBack() {
-  if (at > 0) at -= 1;}
+  if (at <= 0) return;
+  at -= 1;
+  undone += 1;
+  lastPlaced = null;
+}
 
 export function markerForward() {
-  if (at < steps.length) at += 1;}
+  if (at >= steps.length) return;
+  at += 1;
+  undone = Math.max(0, undone - 1);
+  lastPlaced = null;
+}
 
-/** Drop the newest step, for a caller withdrawing something it did itself. */
-export function dropLastStep() {
-  if (at !== steps.length || !steps.length) return;
-  steps.pop();
-  checkpoints.delete(at);
-  at = steps.length;}
+/**
+ * Drop the step behind the marker, for a caller withdrawing something it did
+ * itself. `id` is the step the caller's command wrote, so a command that
+ * wrote none takes nothing. The steps ahead are laid back onto the board the
+ * caller's undo left, since they were laid on top of the one withdrawn.
+ */
+export function dropLastStep(id: string | null) {
+  if (!at || !id || steps[at - 1].id !== id) return;
+  const ahead = steps.splice(at - 1).slice(1);
+  for (const key of checkpoints.keys()) if (key >= at) checkpoints.delete(key);
+  at -= 1;
+  lastPlaced = null;
+  if (ahead.length) layAhead(ahead, snapshot());
+  forgetBytes();
+}
 
 /** Measured byte size of the history (not estimated — wrong estimates skip or mis-trigger trim). */
 let bytesFor = -1;
@@ -622,25 +819,17 @@ export function trimTimeline(now = Date.now()): number {
 function foldOldest(count: number) {
   const take = Math.min(count, at);
   if (take <= 0) return;
-  const snap = base;
-  restoreInto(snap, steps.slice(0, take));
+  // In text, so the live board is not touched.
+  const snap = copySnap(base);
+  for (const step of steps.slice(0, take)) {
+    // A step that cannot be laid is folded without its change, as a replay skips it.
+    try { layOnto(snap, step.delta); } catch { /* skipped */ }
+  }
   base = snap;
   steps = steps.slice(take);
   at -= take;
   checkpoints = new Map();
   forgetBytes();
-}
-
-/** Apply steps to a snapshot without touching the board. Used by foldOldest. */
-function restoreInto(snap: Snap, run: Step[]) {
-  // Early return: applying a run round-trips the live board through JSON, breaking object identity.
-  if (!run.length) return;
-  const keep = snapshot();
-  restore(snap);
-  for (const step of run) apply(step.delta, true);
-  const folded = snapshot();
-  restore(keep);
-  Object.assign(snap, folded);
 }
 
 // ---------------------------------------------------------------------------
@@ -656,26 +845,28 @@ export function replayTo(target: number) {
   absorbDrift();
   const want = Math.max(0, Math.min(target, steps.length));
   let from = 0;
-  let snap = base;
+  let start = base;
   for (const [mark, saved] of checkpoints) {
-    if (mark <= want && mark > from) { from = mark; snap = saved; }
+    if (mark <= want && mark > from) { from = mark; start = saved; }
   }
-  restore(snap);
+  const snap = copySnap(start);
   for (let i = from; i < want; i += 1) {
     // Marked and skipped, never fatal - one bad step must not cost every
     // step after it, nor leave the board silently stuck halfway.
     try {
-      apply(steps[i].delta, true);
+      layOnto(snap, steps[i].delta);
       steps[i].broken = false;
     } catch {
       steps[i].broken = true;
     }
     const next = i + 1;
     if (next % CHECKPOINT_EVERY === 0 && !checkpoints.has(next)) {
-      checkpoints.set(next, snapshot());
+      checkpoints.set(next, copySnap(snap));
     }
   }
+  restore(snap);
   at = want;
+  lastPlaced = null;
   synced = snapshot();
 }
 
@@ -696,6 +887,9 @@ function announce() {
 export function stepBack(): boolean {
   if (at <= 0) return false;
   replayTo(at - 1);
+  // Undo, though by replay: an edit from here replaces this step, as it
+  // would after the closure undo.
+  undone += 1;
   announce();
   return true;
 }
@@ -703,6 +897,7 @@ export function stepBack(): boolean {
 export function stepForward(): boolean {
   if (at >= steps.length) return false;
   replayTo(at + 1);
+  undone = Math.max(0, undone - 1);
   announce();
   return true;
 }
@@ -712,6 +907,9 @@ export function goTo(target: number): boolean {
   const want = Math.max(0, Math.min(target, steps.length));
   if (want === at) return false;
   replayTo(want);
+  // A trip on the Timeline, not an undo: an edit from here goes in before
+  // the steps ahead and keeps them.
+  undone = 0;
   // Undo stack described the previous board — drop it.
   dropStacks?.();
   announce();
@@ -736,10 +934,14 @@ export function rebuildFrom(index: number) {
   replayTo(from);
   replaying = true;
   try {
+    // A sealed step is laid in text, and the board is written only when a rule
+    // needs it to run on, or at the end.
+    let laid: Snap | null = null;
     for (let i = from; i < steps.length; i += 1) {
       const step = steps[i];
-      const before = snapshot();
       if (stepEditable(step)) {
+        if (laid) { restore(laid); laid = null; }
+        const before = snapshot();
         try {
           OPS.get(step.op!.name)!(step.op!.params);
           step.broken = false;
@@ -749,19 +951,24 @@ export function rebuildFrom(index: number) {
         // Re-record so scrubbing back uses the new answer.
         step.delta = diff(before, snapshot()) || {};
       } else {
+        laid ??= snapshot();
         try {
-          apply(step.delta, true);
+          // Strict and rewritten, as after an edit in the past: the rule's new
+          // answer is a past this step was not recorded on.
+          step.delta = layOnto(laid, step.delta, true);
           step.broken = false;
         } catch {
           step.broken = true;
         }
       }
     }
+    if (laid) restore(laid);
   } finally {
     // Finally: leaving `replaying` latched silently stops all future recording.
     replaying = false;
   }
   at = steps.length;
+  undone = 0;
   synced = snapshot();
   // All checkpoints behind the rebuild are stale — drop them.
   checkpoints = new Map();
@@ -794,9 +1001,11 @@ export function describeStep(step: Step): StepSubject {
   // Cards → bin → geometry profiles, roughly the order a person recognises.
   for (const section of [step.delta.items, step.delta.trash,
                          step.delta.desktop, step.delta.mobile]) {
-    const pairs = Object.values(section?.changed || {});
-    if (!pairs.length) continue;
-    return { count: pairs.length, name: nameOfPair(pairs[0]) };
+    const changed = section?.changed || {};
+    const ids = Object.keys(changed);
+    if (!ids.length) continue;
+    // A move carries only a place, which has no name, so the card says it.
+    return { count: ids.length, name: nameOfPair(changed[ids[0]]) || nameOf(byId(ids[0])) };
   }
   return { count: 0, name: '' };
 }
@@ -807,16 +1016,23 @@ function nameOfPair([before, after]: [string | null, string | null]): string {
     if (!raw) continue;
     let value: unknown;
     try { value = JSON.parse(raw); } catch { continue; }
-    // Bin entry is { at, item }; card is itself. One unwrap covers both.
-    const rec = isRecord(value) && isRecord(value.item) ? value.item : value;
-    if (!isRecord(rec)) continue;
-    if (typeof rec.name === 'string' && rec.name.trim()) return rec.name.trim();
-    const meta = isRecord(rec.meta) ? rec.meta : null;
-    const text = typeof meta?.text === 'string' ? meta.text : '';
-    const first = text.split('\n')[0].trim();
-    if (first) return first.length > 28 ? `${first.slice(0, 27)}...` : first;
-    if (typeof rec.type === 'string' && rec.type) return rec.type;
+    const name = nameOf(value);
+    if (name) return name;
   }
+  return '';
+}
+
+/** What to call a card or a bin entry, or '' for anything else. */
+function nameOf(value: unknown): string {
+  // Bin entry is { at, item }; card is itself. One unwrap covers both.
+  const rec = isRecord(value) && isRecord(value.item) ? value.item : value;
+  if (!isRecord(rec)) return '';
+  if (typeof rec.name === 'string' && rec.name.trim()) return rec.name.trim();
+  const meta = isRecord(rec.meta) ? rec.meta : null;
+  const text = typeof meta?.text === 'string' ? meta.text : '';
+  const first = text.split('\n')[0].trim();
+  if (first) return first.length > 28 ? `${first.slice(0, 27)}...` : first;
+  if (typeof rec.type === 'string' && rec.type) return rec.type;
   return '';
 }
 
@@ -861,6 +1077,7 @@ export function serializeTimeline(fingerprintOf = '') {
   // The stored `base` must carry the drift too, or a reopened board loses it.
   absorbDrift();
   return {
+    version: LEDGER_VERSION,
     base,
     at,
     fingerprint: fingerprintOf,
@@ -908,7 +1125,7 @@ function readSnap(raw: unknown): Snap | null {
 /** Load a stored timeline. Marks it stale if the steps disagree with the board. */
 export function adoptTimeline(raw: unknown, doc?: unknown) {
   resetTimeline();
-  if (!isRecord(raw) || !Array.isArray(raw.steps)) return;
+  if (!isRecord(raw) || !Array.isArray(raw.steps) || raw.version !== LEDGER_VERSION) return;
   const readBase = readSnap(raw.base);
   if (!readBase) return;
   const parsed: Step[] = [];

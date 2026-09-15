@@ -70,7 +70,7 @@ import { initNowPlaying } from './ui/nowplaying.ts';
 import { initToolbar } from './ui/toolbar.ts';
 import { initFlyouts } from './ui/flyout.ts';
 import { initStickerWindow } from './ui/sticker-window.ts';
-import { initAppearance, resetAppearance, setWhimsy } from './ui/appearance.ts';
+import { initAppearance, resetLook, setWhimsy } from './ui/appearance.ts';
 import { initFonts } from './ui/fonts.ts';
 import { initMobileHeaderEditor, isPanelOpen as isHeaderPanelOpen, closePanel as closeHeaderPanel, styleFeedMasthead } from './ui/mobile-header.ts';
 import { initAudio } from './canvas/audio.ts';
@@ -137,7 +137,8 @@ initBoardView(vp);
 initBoardActions(vp);
 // Profiler created here so cmds can arm it from the Debug fold.
 const viewPerf = createViewPerf(vp);
-const cmds = createCommands(vp, { resetAppearance, setWhimsy, perf: viewPerf });
+// The Look tab's Reset takes the picture count back with the look.
+const cmds = createCommands(vp, { resetAppearance: resetLook, setWhimsy, perf: viewPerf });
 
 // Native menu maps command names to cmds. Optional chaining guards against an
 // older shell naming a command this build removed.

@@ -1722,6 +1722,39 @@ export function setTitle(title: unknown) {
   bus.emit('board');
 }
 
+/** Rename the board by hand: one undo, and one Timeline step for a run of
+ *  renames. setTitle() stays quiet for the app's own writes (the save picker, a load). */
+export function renameBoard(title: unknown) {
+  const next = cleanBoardTitle(title) || 'Untitled board';
+  const prev = board.title;
+  if (next === prev) return;
+  commit('Rename board', () => setTitle(next), () => setTitle(prev));
+}
+
+/**
+ * Change the look as one step. `from` is the look before a drag began, for a
+ * panel that showed the drag live: the step runs from where it started. Emits
+ * 'board', which is what ui/appearance.ts repaints the look from on an undo.
+ */
+export function commitAppearance(next: unknown, from: unknown = structuredClone(board.settings.appearance),
+  label = 'Whimsy') {
+  const write = (look: unknown) => () => { setAppearance(look); bus.emit('board'); };
+  commit(label, write(next), write(from), 1, write(from));
+}
+
+/**
+ * Restyle the header - the Feed's masthead and the Canvas title card - as one
+ * step. `from` is the style before a slider drag began, for a panel that wrote
+ * the drag live: the step then runs from where the drag started, so a drag is
+ * one step, as a move is, and a run of them folds into one on the Timeline.
+ */
+export function commitHeader(next: unknown, from: MobileHeader = board.mobileHeader) {
+  const header = normalizeMobileHeader(next);
+  const write = (value: MobileHeader) => () => setSetting('mobileHeader', value);
+  if (sameHeader(from, header)) { write(header)(); return; }
+  commit('Edit header', write(header), write(from), 1, write(from));
+}
+
 /**
  * Replace the whole board (open / new). Clears selection and history.
  *

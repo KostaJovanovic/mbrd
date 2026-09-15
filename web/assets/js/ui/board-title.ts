@@ -4,8 +4,7 @@
 
 import { el, makeEditable, markClosed, selectContents, caretToEnd } from '../util.ts';
 import {
-  board, bus, setTitle, markDirty,
-  cleanBoardTitle, cleanBoardTitleDraft, isDefaultTitle,
+  board, bus, renameBoard, cleanBoardTitle, cleanBoardTitleDraft, isDefaultTitle,
 } from '../state.ts';
 
 /**
@@ -83,8 +82,8 @@ export function paintMobileTitle() {
  * the two only differ once somebody renames a board opened from a .mbrd,
  * which is the whole point of the feature.
  *
- * setTitle() deliberately doesn't mark the board dirty itself: the save
- * picker also calls it, right after a save, where re-dirtying would be wrong.
+ * Through renameBoard(), which commits: a rename is a Timeline step. setTitle()
+ * is the quiet write the save picker makes right after a save.
  *
  * Takes the element rather than an id because the two callers own their own
  * markup: the sidebar's field from the settings schema, the masthead's
@@ -99,8 +98,7 @@ export function wireTitleField(input: HTMLInputElement | null) {
   input.addEventListener('change', () => {
     const next = cleanBoardTitle(input.value);
     if (next === titleValue()) return;
-    setTitle(next);
-    markDirty();
+    renameBoard(next);
   });
   input.addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
@@ -206,11 +204,7 @@ function editBoardName(node: HTMLElement | null) {
     // simply stay on screen.
     paintMobileTitle();
     if (!keep || typed === board.title) return;
-    setTitle(typed);
-    // setTitle() deliberately does not dirty the board - it is also called by
-    // the save picker - so the rename says so itself, as the sidebar's field
-    // does.
-    markDirty();
+    renameBoard(typed);
     paintMobileTitle();
   }
 

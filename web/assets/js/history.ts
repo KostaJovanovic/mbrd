@@ -98,7 +98,7 @@ export function takeBack(cmd: Command | null) {
   settleDrift();
   cmd.undo();
   // Erase from the timeline too, or a cancelled note leaves a dot on the strip.
-  dropLastStep();
+  dropLastStep(cmd.step ?? null);
   ledgerMoved();
   heldWeight -= cmd.weight;
   markDirty();
@@ -189,8 +189,8 @@ export function clearHistory() {
   undoStack.length = 0;
   redoStack.length = 0;
   heldWeight = 0;
-  // Ledger restarts from the current board. This also wipes history on layout
-  // switch (setBoardMode calls clearHistory) — rebasing is phase 2 work.
+  // Ledger restarts from the current board. A layout switch does not come
+  // here: it drops the stacks alone (setBoardMode calls dropStacks).
   resetTimeline();
   historyChanged();
 }

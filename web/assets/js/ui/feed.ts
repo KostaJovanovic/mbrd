@@ -132,7 +132,7 @@ type Sizable = Pick<Slot, 'kind' | 'span' | 'embed'>;
 export interface FeedCommands {
   addStickerAt: (shape: string, at: Point) => void;
   contextMenu: (x: number, y: number, id: string | null, count: number,
-    opts?: { mobile?: boolean, touch?: boolean }) => void;
+    opts?: { mobile?: boolean, touch?: boolean, selectAll?: () => void }) => void;
 }
 
 /**
@@ -187,7 +187,7 @@ let mastheadObs: IntersectionObserver | null = null;
 const HOLD_MS = 500;
 const HOLD_SLOP = 10;
 let holdTimer = 0;
-let holdFrom: { x: number; y: number; id: string } | null = null;
+let holdFrom: { x: number; y: number; id: string | null } | null = null;
 let heldOpen = false;
 
 function cancelHold() {
@@ -292,6 +292,13 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
     cmds?.contextMenu(x, y, id, selection.size, { mobile: true, touch: pressType === 'touch' });
   }
 
+  /** Off every tile, the board's own menu, as the canvas opens on bare ground. */
+  function openSheetMenu(x: number, y: number) {
+    // Select all takes the tiles the wall shows, never the title or a sticker.
+    const shown = () => slots.filter(s => s.kind !== 'hint' && s.kind !== 'fence').map(s => s.item.id);
+    cmds?.contextMenu(x, y, null, selection.size, { mobile: true, selectAll: () => select(shown()) });
+  }
+
   // The right-click slot, which the Feed did not own.
   //
   // The canvas's one contextmenu listener is bound to #viewport
@@ -307,13 +314,11 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
   // check, the same shape of decision in the same file.
   root.addEventListener('contextmenu', e => {
     const id = tileIdAt(e.target);
-    // Off a tile the browser menu is welcome to it - there is nothing this app
-    // can usefully offer for the sheet itself, and suppressing a menu to then
-    // show nothing is a press that goes nowhere.
-    if (!id) return;
     e.preventDefault();
     cancelHold();
-    openTileMenu(e.clientX, e.clientY, id);
+    if (heldOpen) return;
+    if (id) openTileMenu(e.clientX, e.clientY, id);
+    else openSheetMenu(e.clientX, e.clientY);
   });
   root.addEventListener('pointerdown', e => {
     // Touch only. A mouse has the button above, and a pen reports its own
@@ -326,16 +331,17 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
     // and swallow the *next* tap. The click this eats belongs to the press
     // that opened the menu, so clearing it on the following press is bounded.
     heldOpen = false;
-    const id = tileIdAt(e.target);
-    if (!id) return;
-    holdFrom = { x: e.clientX, y: e.clientY, id };
+    cancelHold();
+    holdFrom = { x: e.clientX, y: e.clientY, id: tileIdAt(e.target) };
     holdTimer = setTimeout(() => {
       holdTimer = 0;
       if (!holdFrom) return;
       // Suppress the tap that would otherwise follow: the tile's own click
       // handler opens the viewer, and a hold shouldn't open both a menu and an item.
       heldOpen = true;
-      openTileMenu(holdFrom.x, holdFrom.y, holdFrom.id);
+      const { x, y, id } = holdFrom;
+      if (id) openTileMenu(x, y, id);
+      else openSheetMenu(x, y);
     }, HOLD_MS);
   }, { passive: true });
   // A finger that moved is scrolling, and a scroll is not a hold. The slop is

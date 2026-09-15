@@ -38,14 +38,15 @@
 :root[data-board-mode="mobile"][data-feed-lens="playlist"] #mobile-header-edit-btn { display: none; }
 /* Playlist has no selection or undo — editing chrome hidden */
 :root[data-board-mode="mobile"][data-feed-lens="playlist"] .drawer-row { display: none; }
-/* The Playlist moves right as the sidebar comes in, and centres in the room
-   the panel leaves, as the toolbar does (chrome.css). #mobile-playlist sits
-   before #sidebar in index.html, so a sibling rule cannot reach it. Above
-   700 px only: narrower, the panel covers the screen. */
+/* The Playlist's column moves right as the sidebar comes in, and centres in
+   the room the panel leaves, as the toolbar does (chrome.css). Padding and not
+   `left`, so the column moves and the background stays under the panel.
+   #mobile-playlist sits before #sidebar in index.html, so a sibling rule
+   cannot reach it. Above 700 px only: narrower, the panel covers the screen. */
 @media not all and (max-width: 700px) {
-  #mobile-playlist { transition: left var(--dur-base) var(--ease-back); }
+  #mobile-playlist { transition: padding-left var(--dur-base) var(--ease-back); }
   :root:has(#sidebar.is-open) #mobile-playlist {
-    left: calc(max(14px, env(safe-area-inset-left)) + min(var(--sidebar-w), 100vw - 28px));
+    padding-left: calc(max(14px, env(safe-area-inset-left)) + min(var(--sidebar-w), 100vw - 28px));
   }
 }
 
@@ -784,6 +785,34 @@
 }
 .pl-row:active { background: var(--paper-3); }
 .pl-row.is-playing { background: color-mix(in srgb, var(--accent) 10%, var(--paper-card)); }
+/* A selected track (ui/playlist.ts), in the canvas's selection colour. Inset,
+   because the sheet clips at its edges and a ring outside would lose its ends. */
+.pl-row.is-selected { box-shadow: inset 0 0 0 2px var(--select); }
+/* The multi-select mode: each row a tap now picks wears the Feed tile's empty
+   circle, and a picked one the filled circle with a tick. On the row's corner
+   and not the cover's, where it would sit on the track's number. */
+:root.is-picking .pl-row::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  box-sizing: border-box;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.22);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  color: #fff;
+  font: 700 11px/1 var(--font-body);
+}
+:root.is-picking .pl-row.is-selected::after {
+  content: '\2713';
+  background: var(--select);
+}
 /* Reordering (ui/playlist.ts). The held row lifts off the sheet and follows
    the pointer on `translate`, which is set from script and so never eased; the
    rows it passes slide aside on theirs. The slide is on only while sorting: on

@@ -481,20 +481,24 @@ export function openAnchored(rect: MenuAnchor, entries: MenuEntry[],
 
 /** Open the context menu. `mobile` = Feed (drops spatial rows, no canvas menu).
  * `touch` = finger opened this (shown to multiSelectEntry). `lead` = rows of
- * the surface's own over the card's (the Playlist's order and hiding), and
- * `rename` = its own in-place rename, where the card is not on screen. */
+ * the surface's own over the card's (the Playlist's order and hiding),
+ * `rename` = its own in-place rename, where the card is not on screen,
+ * `track` = a Playlist row, which has no use for Open, Copy or Tags, and
+ * `selectAll` = the surface's Select all, over the cards it shows. */
 export function openContextMenu(clientX: number, clientY: number, itemId: string | null,
   selectionSize: number,
-  { mobile = false, touch = false, lead = [], rename }:
-    { mobile?: boolean, touch?: boolean, lead?: MenuEntry[], rename?: () => void } = {}) {
+  { mobile = false, touch = false, lead = [], rename, track = false, selectAll }:
+    { mobile?: boolean, touch?: boolean, lead?: MenuEntry[], rename?: () => void,
+      track?: boolean, selectAll?: () => void } = {}) {
   // Module field — only multiSelectEntry() reads it.
   byTouch = touch;
   if (mobile) {
-    if (!itemId) return;
     close();
     opener = focusedNow();
     // No `at` — Feed drops the spatial rows that use it.
-    const own = withoutKeys(itemEntries(itemId, 1, null, true, rename));
+    const own = withoutKeys(itemId
+      ? itemEntries(itemId, selectionSize, null, true, rename, track)
+      : sheetEntries(selectAll));
     render(lead.length ? [...lead, { sep: true }, ...own] : own, clientX, clientY);
     return;
   }
@@ -547,7 +551,7 @@ function titleEntries(_id: string, _at: Point): MenuEntry[] {
 /** Card menu. `mobile` (Feed) hides spatial rows (z-order, zoom, fence, etc.)
  * that have no meaning on a packed wall. One list with flags, not two lists. */
 function itemEntries(id: string, count: number, at: Point | null, mobile = false,
-  rename?: () => void): MenuEntry[] {
+  rename?: () => void, track = false): MenuEntry[] {
   const many = count > 1;
   const what = many ? `${count} items` : 'item';
   // Single-item edits — no caret target for a group.
@@ -567,7 +571,7 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
   // Single RAW card, until it is developed — on Feed too, like crop.
   const demosaicable = !many && cmds!.canDemosaic(id);
   // Selection-wide — content items only (not fences/furniture).
-  const taggable = cmds!.canTag();
+  const taggable = !track && cmds!.canTag();
   const flippable = !many && cmds!.canFlipUpAxis(id);
   // Single-item — you turn one model over.
   const turnable = !many && cmds!.canRotateModel(id);
@@ -585,8 +589,8 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
   // Single fence, canvas only — its colour and its roll-up.
   const fenceItem = !many && !mobile && cmds!.isFenceItem(id);
   const rolled = fenceItem && cmds!.isRolledFence(id);
-  // Single-item — viewer shows one thing at a time.
-  const viewable = !many && cmds!.canViewItem(id);
+  // Single-item — viewer shows one thing at a time. A track plays in its row.
+  const viewable = !track && !many && cmds!.canViewItem(id);
   // Single-item, not on Feed — "the current frame" is per-clip.
   const freezable = !many && !mobile && cmds!.canKeepFrame(id);
   // ── Picture edits fold ──
@@ -640,7 +644,7 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // Copy/Paste instead of Duplicate — paste lands where the cursor is, on any
     // board. Ctrl+D still duplicates. i-duplicate icon on Copy deliberately.
     { label: many ? `Copy ${count} items` : 'Copy', icon: 'i-duplicate', accel: 'Ctrl C',
-      action: () => cmds!.copy() },
+      hidden: track, action: () => cmds!.copy() },
     // Hidden (not greyed) on empty clipboard.
     { label: 'Paste', icon: 'i-paste', accel: 'Ctrl V', hidden: !cmds!.canPaste(),
       action: () => cmds!.paste(at) },
@@ -739,11 +743,10 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
 /** Align/distribute fold — six edges + two axes, one undo step each. */
 /** Touch multi-select toggle. Only shown when a finger opened this menu (mouse
  * has Shift). Stays visible once the mode is on, regardless of pointer type.
- * Not offered on the Playlist, which draws no selection for it to add to. */
-function multiSelectEntry(): MenuEntry[] {
+ * `always` shows it to a mouse as well (sheetEntries). */
+function multiSelectEntry(always = false): MenuEntry[] {
   const on = cmds!.multiSelect();
-  if (!byTouch && !on) return [];
-  if (!on && document.documentElement.dataset.feedLens === 'playlist') return [];
+  if (!byTouch && !on && !always) return [];
   return [{
     label: on ? 'Done selecting' : 'Select multiple',
     icon: 'i-select-all',
@@ -942,6 +945,26 @@ function canvasEntries(at: Point): MenuEntry[] {
   ];
 }
 
+/**
+ * The Feed's and the Playlist's menu off any card: the rows of canvasEntries()
+ * a list can show. The tag filter and Rearrange act on what only the canvas
+ * draws (a dimmed card, a position), so they stay there. Select all is the
+ * surface's own, because the board holds cards the list does not show (the
+ * title, the stickers, every card but the tracks) and a group it cannot see
+ * is a group a Delete takes by surprise. The pick mode is offered to a mouse
+ * too: off a card there is no Shift-click to reach for instead.
+ */
+function sheetEntries(selectAll?: () => void): MenuEntry[] {
+  return [
+    { label: 'Paste', icon: 'i-paste', accel: 'Ctrl V', hidden: !cmds!.canPaste(),
+      action: () => cmds!.paste(null) },
+    { label: 'Select all', icon: 'i-select-all', hidden: !selectAll, action: () => selectAll?.() },
+    ...multiSelectEntry(true),
+    { sep: true },
+    { label: 'Reload board', icon: 'i-reload', action: () => cmds!.reload() },
+  ];
+}
+
 // ---------------------------------------------------------------------------
 // Rendering
 // ---------------------------------------------------------------------------
@@ -1004,6 +1027,10 @@ function fillPanel(panel: HTMLElement, entries: MenuEntry[]) {
   for (const entry of entries) {
     if (entry.hidden) continue;
     if (entry.sep) {
+      // Rows hidden between two rules would leave them touching: one is enough,
+      // and none is wanted at the top.
+      const prev = panel.lastElementChild;
+      if (!prev || prev.classList.contains('ctx-sep')) continue;
       const hr = document.createElement('div');
       hr.className = 'ctx-sep';
       panel.append(hr);
@@ -1083,6 +1110,8 @@ function fillPanel(panel: HTMLElement, entries: MenuEntry[]) {
     }
     panel.append(btn);
   }
+  // Nor at the foot.
+  if (panel.lastElementChild?.classList.contains('ctx-sep')) panel.lastElementChild.remove();
 }
 
 // ---------------------------------------------------------------------------

@@ -136,8 +136,7 @@ function drifted(field, current) {
 test('every field the ledger keeps survives a trip when written outside a step', () => {
   addItems([photo({ x: 0, y: 0 })]);
   addItems([photo({ x: 300, y: 0 })]);
-  // Switching the layout clears the history, so it has no trip to take.
-  for (const field of REST_FIELDS.filter(f => f !== 'layoutMode')) {
+  for (const field of REST_FIELDS) {
     const value = drifted(field, board[field]);
     assert.notEqual(value, undefined, `no drift value for board.${field} - add one to drifted()`);
     board[field] = structuredClone(value);

@@ -11,7 +11,8 @@ import { isRecord } from './util.ts';
 import { splitAppearance } from './layout-settings.ts';
 import { arrange, mobileArrangement, mobileOrder } from './arrange/arrangements.ts';
 import { bus, markDirty } from './board-store.ts';
-import { commit, clearHistory } from './history.ts';
+import { commit, dropStacks } from './history.ts';
+import { setSettle } from './timeline.ts';
 import {
   board, byId, BOARD_MODES, DEFAULT_SETTINGS, MOBILE_TOP_ROWS,
   MOBILE_MIN_ROWS, MOBILE_BOTTOM_ROWS, mobileColumnCount,
@@ -797,8 +798,10 @@ const isLayoutMode = (v: unknown): v is LayoutMode =>
  * Switch which geometry profile is live.
  *
  * Content and the board-wide color identity never move. Geometry, arrangement,
- * and every other setting are exchanged as one profile. History is cleared
- * because neither geometry nor setting undo may replay into the other layout.
+ * and every other setting are exchanged as one profile. The undo stack goes,
+ * because its closures hold one layout's places and settings and would write
+ * them into the other. The Timeline stays: it keeps the two layouts apart
+ * (timeline.ts), and undo falls through to it.
  */
 export function setBoardMode(mode: string | null) {
   // The membership test is what makes the argument a LayoutMode, and it is
@@ -812,12 +815,19 @@ export function setBoardMode(mode: string | null) {
   board.layoutMode = mode;
   activateLayoutSettings(mode);
   writeLayout(completeLayout(mode));
-  clearHistory();
+  dropStacks();
   if (generated) markDirty();
   bus.emit('layout', mode);
   bus.emit('settings', 'profile');
   return true;
 }
+
+// A trip through the Timeline ends with the second half of a switch, onto the
+// layout on screen. See restore() in timeline.ts.
+setSettle(() => {
+  activateLayoutSettings(board.layoutMode);
+  writeLayout(completeLayout(board.layoutMode));
+});
 
 /**
  * Everything that travels when these ids do: the ids themselves, whatever is

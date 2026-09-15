@@ -320,7 +320,7 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
 
     // --- right-click menu ---
     contextMenu: (x: number, y: number, id: string | null, count: number,
-      opts?: { mobile?: boolean, touch?: boolean }) => {
+      opts?: { mobile?: boolean, touch?: boolean, selectAll?: () => void }) => {
       // No card menus in the tour editor: a card there is picked, not worked on.
       if (id && tourEditing()) return;
       openContextMenu(x, y, id, count, opts);
