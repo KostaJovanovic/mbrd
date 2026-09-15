@@ -7,7 +7,7 @@ import { cue } from './cuelume/engine.ts';
 import {
   snapshot, recordStep, markerBack, markerForward, dropLastStep, resetTimeline,
   stepBack, stepForward, stepBackLabel, stepForwardLabel, isReplaying,
-  setStackDropper, settleDrift, ledgerMoved,
+  setStackDropper, settleDrift, ledgerMoved, timelinePlaying,
 } from './timeline.ts';
 
 /** One undo entry. `step` links to the timeline ledger; `weight` drives eviction. */
@@ -65,6 +65,14 @@ export function commit(
   if (isReplaying()) {
     if (rewind) rewind();
     redo();
+    return { label, redo, undo, weight: 1 };
+  }
+  // While the Timeline plays the board is read-only: nothing runs and nothing
+  // is recorded, and a caller that already mutated gets its board put back.
+  // The last net under the gates in the canvas and the chrome.
+  if (timelinePlaying()) {
+    if (rewind) rewind();
+    bus.emit('readonly');
     return { label, redo, undo, weight: 1 };
   }
   if (rewind) rewind();

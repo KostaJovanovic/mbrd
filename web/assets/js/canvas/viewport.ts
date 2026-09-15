@@ -491,6 +491,10 @@ export class Viewport {
   _iz: number;                      // what --iz was last written as
   _dpr: number;                     // what --dpr was last written as - see _setDpr()
   moving: boolean;                  // is the view mid-gesture? - see _moving()
+  // How far an open panel reaches in from the window's left edge, in client px.
+  // ui/sidebar.ts injects it. Fit, recenter and the zoom buttons centre in the
+  // room that leaves - see _shift(). Unwired it is 0, and the room is the window.
+  _cover: () => number;
 
   constructor(viewportEl: HTMLElement, worldEl: HTMLElement, originMark?: HTMLElement | null) {
     this.el = viewportEl;
@@ -517,6 +521,7 @@ export class Viewport {
     this._iz = 0;
     this._dpr = 0;
     this.moving = false;
+    this._cover = () => 0;
 
     this.measure();
     const ro = new ResizeObserver(() => { this.measure(); this.apply(); });
@@ -541,6 +546,31 @@ export class Viewport {
   get cx() { return this.width / 2; }
   get cy() { return this.height / 2; }
   get isMobile() { return this.boardMode === 'mobile'; }
+
+  /** Say how far an open panel covers the viewport's left edge - see _cover. */
+  setCover(cover: () => number) { this._cover = cover; }
+
+  /**
+   * How far the middle of the room a panel leaves sits right of the middle of
+   * the viewport, in CSS px. Asked when a view is framed rather than tracked,
+   * so it is right however the panel came to be open. 0 on a Mobile board,
+   * which is framed by its own rules.
+   */
+  _shift() {
+    if (this.isMobile) return 0;
+    return clamp(this._cover() - this.left, 0, this.width) / 2;
+  }
+
+  /**
+   * viewTo(), with `point` landing in the middle of that room rather than of
+   * the viewport. The offset is in world units at the zoom the journey ends
+   * on, which the zoom lock can overrule, so that is decided here the way
+   * viewTo() decides it.
+   */
+  _frame(point: Point, zoom: number, ms: number) {
+    const z = this.zoomLocked ? this.zoom : clamp(zoom, MIN_ZOOM, MAX_ZOOM);
+    this.viewTo({ x: point.x - this._shift() / z, y: point.y }, zoom, ms);
+  }
 
   _mobileZoom() {
     return mobileZoom(this.width, this.mobileWorldWidth);
@@ -863,7 +893,7 @@ export class Viewport {
   }
 
   recenter(ms = 0) {
-    this.viewTo({ x: 0, y: 0 }, BASE_ZOOM, ms);
+    this._frame({ x: 0, y: 0 }, BASE_ZOOM, ms);
   }
 
   // -------------------------------------------------------------------------
@@ -920,9 +950,9 @@ export class Viewport {
     });
   }
 
-  /** Zoom about the screen centre. */
+  /** Zoom about the middle of the room an open panel leaves - see _shift(). */
   zoomBy(factor: number, ms = 0) {
-    this.zoomAnimAt(this.left + this.cx, this.top + this.cy, factor, ms);
+    this.zoomAnimAt(this.left + this.cx + this._shift(), this.top + this.cy, factor, ms);
   }
 
   /**
@@ -970,6 +1000,9 @@ export class Viewport {
   * at 100% rather than magnified, so a couple of cards do not arrive as
   * wall-sized posters - while a board larger than the window still zooms out to
   * frame the whole of it, which is the case the cap never touches.
+  *
+  * Framed in the room an open panel leaves, not the whole viewport - see
+  * _shift().
   */
   fit(items: readonly Box[] | null | undefined, pad = 80, ms = 0, maxZoom = MAX_ZOOM) {
     if (this.isMobile) {
@@ -979,12 +1012,13 @@ export class Viewport {
     if (!box) return this.recenter(ms);
     const { x0, y0, x1, y1 } = box;
     const w = Math.max(x1 - x0, 1), h = Math.max(y1 - y0, 1);
+    const room = this.width - this._shift() * 2;
     const z = clamp(
-      Math.min((this.width - pad * 2) / w, (this.height - pad * 2) / h),
+      Math.min((room - pad * 2) / w, (this.height - pad * 2) / h),
       MIN_ZOOM,
       Math.min(MAX_ZOOM, maxZoom),
     );
-    this.viewTo({ x: (x0 + x1) / 2, y: (y0 + y1) / 2 }, z, ms);
+    this._frame({ x: (x0 + x1) / 2, y: (y0 + y1) / 2 }, z, ms);
   }
 
   /**

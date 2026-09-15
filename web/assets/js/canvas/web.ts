@@ -201,7 +201,8 @@ function tick() {
 }
 
 // Nothing is routed while anything is moving — straight lines during drag,
-// routed on settle. ROUTE_SETTLE_MS is a settling time, not a debounce.
+// routed on settle. ROUTE_SETTLE_MS is a settling time, not a debounce. And
+// nothing at all while a card is held, however still - see holdRoutes().
 const ROUTE_SETTLE_MS = 110;
 
 /** Max lines per route pass. On-screen first; excess stays straight. */
@@ -218,6 +219,20 @@ const scheduleRoute = () => {
   clearTimeout(routeTimer);
   routeTimer = setTimeout(routePass, ROUTE_SETTLE_MS);
 };
+
+/**
+ * Whether a card is in the hand. While one is, nothing reroutes: every other
+ * line keeps the route it had when the card was picked up, the held card's own
+ * lines run straight to the cards they join (straightSeg), and one pass routes
+ * the lot when it is put down. Routing on a pause instead rerouted the whole
+ * board under a hand that was only resting. canvas/input.ts says when.
+ */
+let carrying = false;
+export function holdRoutes(on: boolean): void {
+  if (carrying === on) return;
+  carrying = on;
+  if (!on) scheduleRoute();
+}
 
 export function initWeb(worldEl: HTMLElement, viewport?: Viewport | null) {
   svg = document.createElementNS(SVG_NS, 'svg');
@@ -373,7 +388,11 @@ function straightSeg(pa: Card, pb: Card, sig: string): Seg {
   const f = bestFaces(pa, pb);
   const ea = pa.bare ? { x: pa.x, y: pa.y } : f.a;
   const eb = pb.bare ? { x: pb.x, y: pb.y } : f.b;
-  const h = Math.min(DRAG_HANDLE * (Math.hypot(eb.x - ea.x, eb.y - ea.y) || 1), HANDLE_MAX);
+  // No handles while a card is held: zero-length ones put the curve's control
+  // points on its ends, so the held card's lines run dead straight until the
+  // drop routes them - see holdRoutes().
+  const h = carrying ? 0
+    : Math.min(DRAG_HANDLE * (Math.hypot(eb.x - ea.x, eb.y - ea.y) || 1), HANDLE_MAX);
   const da = pa.bare ? portDir(pa, pb) : f.na;
   const db = pb.bare ? portDir(pb, pa) : f.nb;
   return {
@@ -573,9 +592,10 @@ function linesNear(self: string, seg: Seg): Point[][] {
   return out;
 }
 
-/** Route all owed lines, on-screen first. Runs once things stop moving. */
+/** Route all owed lines, on-screen first. Runs once things stop moving, and
+ *  never while a card is held - holdRoutes() schedules it again on the drop. */
 function routePass() {
-  if (!svg || !webVisible()) return;
+  if (!svg || !webVisible() || carrying) return;
   const where = new Map<string, Card>(centres().map(p => [p.id, p]));
   const vis = visibleBox(cullMargin(vp));
   const near = (seg: Seg) => !vis ||

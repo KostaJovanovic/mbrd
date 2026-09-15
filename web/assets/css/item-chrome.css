@@ -235,8 +235,10 @@
   padding: 0;
   /* --board-hairline, not --hairline: this box is inside the world transform. */
   border: var(--board-hairline) solid var(--rule-2);
-  /* A disc on the soft tiers and a square at Harsh: a badge, not a circle with a meaning. */
-  border-radius: var(--radius-pill);
+  /* A disc on the soft tiers and a square at Harsh: a badge, not a circle with a
+     meaning. Times --iz like its size, since --radius-pill is a real length now
+     (tokens.css) and a board zoomed far out makes this box large in the world. */
+  border-radius: calc(var(--radius-pill) * var(--iz));
   background: var(--paper-card);
   color: var(--ink-2);
   cursor: pointer;

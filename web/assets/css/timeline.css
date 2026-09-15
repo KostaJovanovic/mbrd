@@ -68,10 +68,18 @@
   color: var(--ink-2);
   box-shadow: var(--shadow-1);
 }
+/* 16px, not --icon-glyph's 15: in the 26px inside of the button that leaves 5px
+   a side, a whole pixel, and the 16-unit symbols draw one unit to the pixel.
+   At 15 the glyph began at half a pixel, Firefox rounds that, and the two thin
+   bars of Pause sat off centre. */
 #timeline-strip :is(.tl-play, .tl-gear) svg {
-  width: var(--icon-glyph);
-  height: var(--icon-glyph);
+  width: 16px;
+  height: 16px;
 }
+/* The triangle's weight sits left of its box, so centred it reads as off to
+   the left: one whole pixel right, which keeps it on the pixel grid above.
+   Only while it shows Play - the two bars of Pause are centred as drawn. */
+#timeline-strip .tl-play[aria-pressed="false"] svg { translate: 1px 0; }
 
 /* Says something only when the history does not match the board. The step
    count it used to show ("5 of 8") went in R33: the playhead says where you
@@ -83,6 +91,13 @@
 }
 #timeline-strip .tl-where:empty { display: none; }
 
+/* While Play runs the board is read-only, and the tools that edit it are inert
+   (paintPlay() in ui/timeline-view.ts). Dimmed, so they read as off. */
+:root.is-replaying :is(#toolbar [inert], #history-ctl[inert], #drawer-btn[inert],
+  #mobile-header-edit-btn[inert]) {
+  opacity: 0.4;
+}
+
 /* Track dimensions, named so the rules below can do arithmetic on them. */
 #timeline-strip {
   --tl-cell: 24px;     /* one mark's column */
@@ -91,7 +106,10 @@
   --tl-gap: 8px;       /* between marks, and the playhead's room: its flag clears both */
   --tl-foot: 6px;      /* the baseline and its ticks, under the marks */
   --tl-bar: 4px;       /* the scrollbar */
-  --tl-bar-gap: 3px;   /* between the scrollbar and the marks */
+  /* Between the scrollbar and the marks. 4 and not 3 so the rail is 38px, an
+     even height: Play and the gear centre on it at a whole pixel, and at 37 the
+     half pixel put the bars of Pause a pixel low in Firefox. */
+  --tl-bar-gap: 4px;
 }
 
 /* The rail: the scrollbar over the track, and the playhead across both. */

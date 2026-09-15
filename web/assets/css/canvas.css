@@ -91,7 +91,8 @@
               rotate var(--dur-base) var(--ease-back),
               opacity var(--dur-base) var(--ease);
 }
-.item-shadow.is-hover { --sh-lift: var(--lift-hover); --sh-grow: var(--grow-hover); }
+/* In board units, as the card's hover lift is (items.css). */
+.item-shadow.is-hover { --sh-lift: calc(var(--lift-hover) / var(--iz)); --sh-grow: var(--grow-hover); }
 /* Selected card holds still (grips must not move). */
 .item-shadow.is-hover.is-selected { --sh-lift: 0px; --sh-grow: 1; }
 .item-shadow.is-dragging { --sh-lift: var(--lift-drag); --sh-grow: var(--grow-hover); }

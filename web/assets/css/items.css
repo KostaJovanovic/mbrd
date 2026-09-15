@@ -36,7 +36,8 @@
   --tilt: 0deg;
   --grow: 1;
   /* opacity rides here rather than separately — `transition` is a shorthand,
-     so a second declaration replaces the whole list. */
+     so a second declaration replaces the whole list. tokens.css repeats this
+     list's order for :root.is-fading, so keep the two in step. */
   transition: box-shadow var(--dur-base) var(--ease),
               translate var(--dur-base) var(--ease-back),
               rotate var(--dur-base) var(--ease-back),
@@ -56,8 +57,13 @@
 .item:hover {
   box-shadow: 0 0 0 var(--board-hairline) var(--rule-2);
 }
+/* The hover lift is divided by --iz to cancel the one in `translate`, so it is
+   in board units and scales with the card, as the grow does: the pop looks the
+   same at every zoom as it does at 100%. In screen pixels it was a fixed jump
+   that threw a card at far zoom by most of its own height. The drag lift stays
+   in screen pixels, because that card sits under the pointer. */
 .item.is-hover {
-  --lift: var(--lift-hover);
+  --lift: calc(var(--lift-hover) / var(--iz));
   --grow: var(--grow-hover);
 }
 /* Selected: now the grab hand appears. */

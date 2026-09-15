@@ -360,6 +360,61 @@
   overflow: hidden;
 }
 
+/* The notes stuck on a card ride its tile (paintRiders() in ui/feed.ts). The
+   button is a small sticky in the top-right corner with the count on it, clear
+   of the pick circle top left and the play badge in the middle. */
+.feed-notes-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 4;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 7px;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: var(--note-1);
+  color: var(--ink);
+  font: 700 var(--t-small)/1 var(--font-body);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+}
+.feed-notes-btn[aria-expanded="true"],
+.feed-notes-btn:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 1px;
+}
+/* The notes laid open over the tile, on a scrim, under the button. A long
+   stack scrolls inside the tile rather than growing it. */
+.feed-notes {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 42px 8px 8px;
+  box-sizing: border-box;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: rgba(0, 0, 0, 0.4);
+}
+.feed-rider {
+  flex: none;
+  padding: 10px 12px;
+  border-radius: var(--radius-xs);
+  background: var(--note-1);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--t-small);
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+}
+
 .feed-link {
   width: 100%;
   height: 100%;
@@ -1007,7 +1062,8 @@
   flex-direction: column;
   background: var(--paper-card);
   border: var(--hairline) solid var(--rule-2);
-  border-radius: var(--radius);
+  /* --leaf, the sidebar's corner: the same floating sheet. */
+  border-radius: var(--leaf);
   box-shadow: var(--shadow-2);
   overflow: hidden;
   transform-origin: bottom right;
