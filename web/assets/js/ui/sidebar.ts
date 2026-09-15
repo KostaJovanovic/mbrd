@@ -33,12 +33,24 @@ let view: Viewport | null = null;
 const MODE_PREF = 'mbrd.boardMode';
 const MOBILE_LAYOUT_QUERY = '(max-width: 700px)';
 
+/** Narrower still, the panel is the whole screen rather than a sheet at the
+ *  side (mobile.css). Between the two it floats over a board you can see. */
+const PANEL_SCREEN_QUERY = '(max-width: 600px)';
+
 /** Match the same narrow-screen breakpoint used by the CSS. */
 export function mobileLayoutDetected(
   media: (query: string) => MediaQueryList | undefined =
     query => globalThis.matchMedia?.(query),
 ): boolean {
   return typeof media === 'function' && !!media(MOBILE_LAYOUT_QUERY)?.matches;
+}
+
+/** Whether an open panel covers the whole screen, by the same query as the CSS. */
+export function panelFillsScreen(
+  media: (query: string) => MediaQueryList | undefined =
+    query => globalThis.matchMedia?.(query),
+): boolean {
+  return typeof media === 'function' && !!media(PANEL_SCREEN_QUERY)?.matches;
 }
 
 /** Isolate one slider under a finger. Headless-testable; event wiring is in initSidebar. */
@@ -106,11 +118,11 @@ export function initSidebar(cmds: SidebarCommands, viewport: Viewport | null = n
     // Via runCommand so rejects surface instead of looking like dead buttons.
     const result: unknown = fn();
     runCommand(result, (btn.textContent || '').trim() || 'That');
-    // On mobile the panel covers the board — close after action.
+    // Where the panel covers the board, close after action.
     // Gated on viewport width, not ctx.mobile (user can set Desktop on a phone).
     // 'if-done' waits for the command to settle before closing.
     const closes = btn.dataset.closesPanel;
-    if (closes === undefined || !mobileLayoutDetected()) return;
+    if (closes === undefined || !panelFillsScreen()) return;
     if (closes === 'if-done') {
       void Promise.resolve(result).then(done => { if (done) close(); }, () => {});
       return;
@@ -192,12 +204,12 @@ function setOpen(want: boolean, remember = true): void {
 /**
  * Pan the board by half of what the panel covers, so what was in the middle of
  * the window stays in the middle of the part the panel leaves free. Not on a
- * phone, where the panel covers the screen, and not on a reload that restores
- * it (restoreOpen() does not remember), since the saved view already allows
- * for it.
+ * Mobile board, and not where the panel covers the screen, and not on a reload
+ * that restores it (restoreOpen() does not remember), since the saved view
+ * already allows for it.
  */
 function panFor(opening: boolean): void {
-  if (!view || !sidebar || view.isMobile || mobileLayoutDetected()) return;
+  if (!view || !sidebar || view.isMobile || panelFillsScreen()) return;
   // offsetLeft and offsetWidth ignore the slide transform, so this is where the
   // panel's right edge is when open, whichever way it is going.
   const reach = sidebar.offsetLeft + sidebar.offsetWidth;

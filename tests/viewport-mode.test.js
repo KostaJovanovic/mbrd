@@ -14,6 +14,7 @@ import { setSetting } from '../web/assets/js/state.ts';
 import {
   createMobileSliderFocus,
   mobileLayoutDetected,
+  panelFillsScreen,
 } from '../web/assets/js/ui/sidebar.ts';
 
 const saved = {};
@@ -62,6 +63,19 @@ test('the Mobile board follows the responsive layout on first use', () => {
     matches: query === '(max-width: 700px)',
   })), true);
   assert.equal(mobileLayoutDetected(() => ({ matches: false })), false);
+});
+
+test('the panel fills the screen from 600px down, narrower than the phone layout', () => {
+  assert.equal(panelFillsScreen(query => ({ matches: query === '(max-width: 600px)' })), true);
+  assert.equal(panelFillsScreen(query => ({ matches: query === '(max-width: 700px)' })), false);
+  // The script and the sheet ask the same width, or a tap in a floating panel
+  // closes it, or a full-screen one pans a board nobody can see.
+  const css = appCss();
+  const at = css.indexOf('@media (max-width: 600px) {\n  /* And with the panel open');
+  assert.ok(at > 0, 'the full-screen panel has its own 600px block');
+  const block = css.slice(at, css.indexOf('\n}\n', at));
+  assert.match(block, /#sidebar,\s*#header-panel \{\s*inset: 0;/);
+  assert.match(block, /#sidebar\.is-open ~ #corner/);
 });
 
 test('Mobile sidebar isolates a range only for the active pointer gesture', () => {

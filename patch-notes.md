@@ -247,6 +247,9 @@ date: 14 September 2026
 - [new] **Opening or closing the sidebar pans the board by half its width,** so
   what you were looking at stays in sight. The Playlist moves over with it and
   centres in the room the panel leaves.
+- [new] **The sidebar fills the screen only at 600 pixels wide or less,** where it
+  did from 700. Between the two it stays a panel at the side, with the board
+  beside it.
 - [new] **The header editor was tidied.** The font is the sidebar's own picker
   with `Default` at the top, the size reads in pixels and every step shows,
   `Line height` appears only while `Wrap long names` is on, and `Start over` is
