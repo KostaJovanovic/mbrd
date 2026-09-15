@@ -79,6 +79,9 @@ type Common = {
    * the single exception to absence-not-disabling, and it applies on /patch.
    */
   needsBoard?: true,
+  /** True and the control shows, greyed, but cannot be changed: the look in
+   *  force already decides it. Tilt cards at Harsh is the case. */
+  idle?: (ctx: Ctx) => boolean,
   /** Sinks the control into its section's one fold. */
   advanced?: boolean,
   /** Another module owns the behaviour; this file only asks for the element. */
@@ -784,6 +787,13 @@ export const SECTIONS: Section[] = [
   {
     id: 'board-grid', tab: 'look', title: 'Board & grid', needsBoard: true,
     controls: [
+      // The lean each card rests at on Softish and Middle. Greyed at Harsh,
+      // which stands every card square whatever this says (quality.css), so
+      // the box there would change nothing. Desktop only: the Feed does not
+      // tilt its tiles.
+      { id: 'opt-tilt', type: 'check', label: 'Tilt cards', when: desktop,
+        idle: () => board.settings.appearance.whimsy === 2,
+        get: () => board.settings.tilt !== false, set: v => setSetting('tilt', v) },
       // The grid, the axes and the readout are drawn over the canvas only, so
       // the Feed has nothing for them to show or hide.
       { id: 'opt-grid', type: 'check', label: 'Show grid', when: desktop,
@@ -1156,7 +1166,7 @@ export const controlVisible = (c: Control, ctx: Ctx) =>
  * this is true of everything, and ui/panel.ts writes no attribute at all.
  */
 export const controlEnabled = (c: Control, section: Section, ctx: Ctx) =>
-  !(ctx.patch && (c.needsBoard || section.needsBoard));
+  !(ctx.patch && (c.needsBoard || section.needsBoard)) && !c.idle?.(ctx);
 
 /**
  * Whether a section has anything left to show.

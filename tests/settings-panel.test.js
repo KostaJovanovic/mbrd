@@ -11,8 +11,9 @@ import { readFile } from 'node:fs/promises';
 
 import { appCss } from './helpers.js';
 import {
-  TABS, SECTIONS, sectionsFor, controlVisible, sectionVisible,
+  TABS, SECTIONS, sectionsFor, controlVisible, controlEnabled, sectionVisible,
 } from '../web/assets/js/ui/settings-schema.ts';
+import { board } from '../web/assets/js/state.ts';
 import { createCommands } from '../web/assets/js/commands.ts';
 
 const DESKTOP = { mobile: false };
@@ -82,6 +83,22 @@ test('a control that can be set can also be read', () => {
   }
 });
 
+test('Tilt cards greys at Harsh and stays live on the other two tiers', () => {
+  // Harsh stands every card square in quality.css, so the box there would
+  // change nothing. Greyed rather than hidden, so the row does not jump.
+  const [section, tilt] = allControls().find(([, c]) => c.id === 'opt-tilt');
+  const was = board.settings.appearance;
+  try {
+    for (const [whimsy, live] of [[0, true], [1, true], [2, false]]) {
+      board.settings.appearance = { ...was, whimsy };
+      assert.equal(controlEnabled(tilt, section, DESKTOP), live, `whimsy ${whimsy}`);
+    }
+  } finally {
+    board.settings.appearance = was;
+  }
+  assert.equal(tilt.get(), true, 'on by default');
+});
+
 test('Mobile is shown the arrangement it has and nothing it has not', () => {
   // setSetting() refuses paper, its orientation and its grips on a
   // Mobile board, so a row for any would be a control that does nothing.
@@ -89,7 +106,7 @@ test('Mobile is shown the arrangement it has and nothing it has not', () => {
   // readout joined it on 2026-09-14 (R18): the Feed packs its wall by order
   // at a fixed gap and draws nothing over it, so none of them did anything.
   for (const id of ['opt-paper', 'paper-orient', 'opt-paper-resize', 'paper-hint',
-    'opt-web', 'spacing', 'opt-snap', 'opt-grid', 'opt-axes', 'opt-hud']) {
+    'opt-web', 'spacing', 'opt-snap', 'opt-tilt', 'opt-grid', 'opt-axes', 'opt-hud']) {
     assert.equal(controlVisible(byId(id), MOBILE), false, `${id} should be absent on Mobile`);
     assert.equal(controlVisible(byId(id), DESKTOP), true, `${id} should be present on Desktop`);
   }

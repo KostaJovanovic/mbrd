@@ -47,18 +47,25 @@
 
 <!-- ═════ Chrome: the drawings that were already in index.html ═════ -->
 
+<!-- The three crosses draw each stroke as a path of its own. As two subpaths of
+     one path, the strokes can cancel where they overlap on some rasterisers,
+     and Firefox on the GPU left a hole in the middle of the close cross. Two
+     paths paint the overlap twice, which an opaque ink does not show. -->
 <symbol id="i-close" viewBox="0 0 16 16">
-  <path d="M4 4l8 8M12 4l-8 8"/>
+  <path d="M4 4l8 8"/>
+  <path d="M12 4l-8 8"/>
 </symbol>
 
 <!-- The toolbar's cross. Also the phone drawer's "Add" and the menu's Add
      files: one action, one face. -->
 <symbol id="i-plus" viewBox="0 0 16 16">
-  <path d="M8 3.2v9.6M3.2 8h9.6"/>
+  <path d="M8 3.2v9.6"/>
+  <path d="M3.2 8h9.6"/>
 </symbol>
 
 <symbol id="i-zoom-in" viewBox="0 0 16 16">
-  <path d="M8 4v8M4 8h8"/>
+  <path d="M8 4v8"/>
+  <path d="M4 8h8"/>
 </symbol>
 
 <symbol id="i-zoom-out" viewBox="0 0 16 16">

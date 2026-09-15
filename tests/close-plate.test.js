@@ -53,7 +53,9 @@ for (const id of ['side-close', 'header-close']) {
 
 test('the close cross is drawn at the centre of its symbol', () => {
   const symbol = /<symbol\b[^>]*id="i-close"[^>]*>([\s\S]*?)<\/symbol>/.exec(sprite);
-  const d = /\bd="([^"]+)"/.exec(symbol[1])[1];
+  // Every stroke's own path, joined: each stroke is a path of its own, so the
+  // two cannot cancel where they cross (icons.svg).
+  const d = [...symbol[1].matchAll(/\bd="([^"]+)"/g)].map(m => m[1]).join(' ');
   // M x y l dx dy, twice: absolute starts, relative strokes.
   const xs = [], ys = [];
   for (const [, mx, my, lx, ly] of d.matchAll(/M\s*([\d.-]+)[\s,]+([\d.-]+)\s*l\s*([\d.-]+)[\s,]+([\d.-]+)/g)) {

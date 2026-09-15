@@ -47,6 +47,9 @@
    because the tokens can be written inline on :root and no selector can
    outrank that. Still inherits the transition, so the board straightens. */
 :root[data-snap] .item { rotate: 0deg; }
+/* Tilt cards off (Look tab): the resting lean goes, and the lean a drag adds
+   stays, since that one is the card in the hand. */
+:root[data-no-tilt] .item { rotate: var(--tilt); }
 
 /* The ring is the pointer indicator; the lift is separate because .is-hover
    covers the hovered card AND its pinned stickies. */

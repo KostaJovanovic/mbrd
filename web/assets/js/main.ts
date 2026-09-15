@@ -86,7 +86,7 @@ import { initTourEdit } from './ui/tour-edit.ts';
 import { createCommands } from './commands.ts';
 import { createViewPerf, initPerfHash } from './perf/view-perf.ts';
 import { initBoardView, openingView, syncBoardMode, syncMobileBoardBounds } from './ui/board-view.ts';
-import { initHud, paintZoom, paintSnap, paintCount } from './ui/hud.ts';
+import { initHud, paintZoom, paintSnap, paintTilt, paintCount } from './ui/hud.ts';
 import { initBoardTitle } from './ui/board-title.ts';
 import { initBoardActions, resetSave } from './ui/board-actions.ts';
 
@@ -338,6 +338,7 @@ bus.on('settings', key => {
   paintGrid(vp);
   if (key === 'hud') el('hud')!.hidden = !board.settings.hud;
   if (key === 'snap') paintSnap();
+  if (key === 'tilt') paintTilt();
 });
 
 // Close title-card editor when the card is deselected (Desktop only).
@@ -390,6 +391,7 @@ bus.on('board:load', () => {
   openingView();
   el('hud')!.hidden = !board.settings.hud;
   paintSnap();
+  paintTilt();
   paintCount();
   // A different board has never been saved.
   resetSave();
@@ -535,6 +537,7 @@ const started = (async function start() {
   if (restored) toast('Restored your last board');
   el('hud')!.hidden = !board.settings.hud;
   paintSnap();
+  paintTilt();
   repaintGround(vp);
   paintCount();
   vp.apply();

@@ -56,6 +56,7 @@ export type BoardSettings = {
   snap: boolean;
   web: boolean;
   hud: boolean;
+  tilt: boolean;
   gridStyle: string;
   gridStep: number;
   mobileColumns: number;
@@ -156,6 +157,8 @@ export const DEFAULT_SETTINGS: BoardSettings = {
   // Named `web` for backward compat with older builds.
   web: true,
   hud: false,
+  // Cards rest at the tier's lean. False stands them square (Look, Tilt cards).
+  tilt: true,
   gridStyle: 'dots',
   gridStep: 64,
   mobileColumns: 6, // desktop compat value; mobile overrides to 8

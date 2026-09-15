@@ -226,6 +226,12 @@ prints. The two differ by `BASE_ZOOM` in `canvas/viewport.ts`: the interface
 calls scale 0.8 "100%", so a board left at 100% records `0.8` here. Readers
 should treat the number as a scale and not multiply it by a hundred.
 
+`settings.tilt` is `false` when the board's cards hang square (Look → Tilt
+cards). Absent or `true` means each card rests at the lean the whimsy tier
+gives it. Harsh and a snapped board stand every card square, whatever this
+says. A reader that ignores it tilts the cards, which is a degradation, not a
+corruption.
+
 `settings.gridStyle` has only ever had one value. It is kept because older
 files carry it, which is the compatibility rule at the bottom of this document
 working as intended.
