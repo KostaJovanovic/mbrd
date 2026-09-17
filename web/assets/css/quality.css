@@ -190,6 +190,19 @@
   backdrop-filter: none !important;
 }
 
+/* Paper grain: a window-sized layer that multiply-blends with the page behind
+   it, repositioned on every pan frame and re-scaled - so resampled - on every
+   zoom frame (canvas/grain.ts). A blended layer cannot be composited past its
+   backdrop, which makes that a full-viewport repaint per frame for a texture
+   nobody looks at while the board is moving. `display: none` rather than
+   `opacity: 0`: a transparent layer is still painted and still blended.
+
+   #grain only, not the world-space grain on a fence or the Mobile sheet: those
+   ride inside the board's own transform, are composited once and cost nothing
+   per frame, so taking them away would be fidelity given up for no speed. */
+:root[data-quality="light"]:not([data-q-grain]) #grain,
+:root[data-q-grain="off"] #grain { display: none; }
+
 /* Animations: catches hand-written durations the token flatten misses.
    One lap as well as a hundredth of a millisecond: an `infinite` loop cut in
    duration alone runs a hundred thousand laps a second, so every frame lands

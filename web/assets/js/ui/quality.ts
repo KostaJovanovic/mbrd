@@ -7,6 +7,7 @@ import { bus } from '../state.ts';
 import { initQuality, onQuality, qualityLevel, quality } from '../quality.ts';
 import { resetItems } from '../canvas/items.ts';
 import { refreshStills } from '../canvas/stills.ts';
+import { refreshHires } from '../canvas/hires.ts';
 import { paintPanel } from './panel.ts';
 
 export function armQuality() {
@@ -19,6 +20,9 @@ export function watchQuality() {
     paintLevel();
     resetItems();
     refreshStills();
+    // resetItems() rebuilds every card on its display copy, so the sweep's
+    // zoom/count guard has to be told the answer it cached is stale.
+    refreshHires();
     bus.emit('settings', 'web');
     paintPanel();
   });
@@ -31,4 +35,5 @@ function paintLevel() {
   root.dataset.qShadows = quality.shadows ? 'on' : 'off';
   root.dataset.qBlur = quality.blur ? 'on' : 'off';
   root.dataset.qAnim = quality.anim ? 'on' : 'off';
+  root.dataset.qGrain = quality.grain ? 'on' : 'off';
 }

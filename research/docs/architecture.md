@@ -554,10 +554,26 @@ keep new ones off it.**
 ## Quality is not board state
 
 `quality.ts` sits in the base layer beside `measure.ts`: one dial (Light /
-Balanced / Full) resolving six flags that `canvas/*` reads — `motion`,
-`shadows`, `blur`, `anim`, `sharpness`, `build`. Full is the default and is
-exactly what shipped before it existed, so the numbers in `PRESETS.full` are the
-constants they replaced (`DISPLAY_MAX`, `BUILD_BUDGET`).
+Balanced / Full) resolving eight flags that `canvas/*` reads — `motion`,
+`shadows`, `blur`, `anim`, `grain`, `hires`, `sharpness`, `build`. Full is the
+default and is exactly what shipped before it existed, so the numbers in
+`PRESETS.full` are the constants they replaced (`DISPLAY_MAX`, `BUILD_BUDGET`).
+
+`grain` and `hires` were the last two added, and they are worth reading as a
+pair because of how they were found. Light was reported as no faster than Full
+on Android, and the reason was that the dial could not reach either of the two
+things a *moving* board actually pays for on a phone. `#grain` is a
+window-sized layer that multiply-blends with the page behind it, so it cannot
+be composited past its backdrop: repositioning it every pan frame and
+re-scaling it every zoom frame is a full-viewport repaint per frame.
+`canvas/hires.ts` swaps a zoomed-in photograph to its untouched original, which
+is ~48 MB decoded and leaves the `<img>` blank until it lands — and its
+threshold is deliberately pinned to Full's copy size at every stop, so on a
+screen at `devicePixelRatio` 3 an ordinary card crossed it at ordinary zoom and
+Light could do nothing about it. Both are off at Light now, and both are on at
+Balanced, which is defined as costing nothing on a board standing still: a
+composited grain layer and a swap that only happens to a card somebody has
+zoomed right into are both free until the board moves.
 
 There were seven. `threads` went when the web stopped being computed on every
 drag frame: a flag that had been a real trade became a switch that silently hid

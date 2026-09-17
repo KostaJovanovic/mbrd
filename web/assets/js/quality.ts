@@ -8,7 +8,7 @@ import { hasOwn, isRecord } from './util.ts';
 
 const PREF = 'mbrd.quality';
 
-/** The three stops, and the six flags they resolve to. */
+/** The three stops, and the eight flags they resolve to. */
 export type QualityLevel = 'light' | 'balanced' | 'full';
 
 export type QualityFlags = {
@@ -16,6 +16,8 @@ export type QualityFlags = {
   shadows: boolean,
   blur: boolean,
   anim: boolean,
+  grain: boolean,
+  hires: boolean,
   sharpness: number,
   build: number,
 };
@@ -46,10 +48,26 @@ export const BUILD_STEPS = [
 
 // Balanced changes only invisible-at-rest things (softer pictures, no panel
 // blur, smaller batches). Light visibly trades fidelity for speed.
+//
+// `grain` and `hires` are the two that cost most on a phone and were the two
+// the dial could not reach, which is why Light was reported as no faster than
+// Full on Android. Both are off at Light and untouched elsewhere:
+//
+//   grain  the paper texture (#grain, canvas/grain.ts) - a window-sized
+//          multiply-blended layer whose tile is repositioned every pan frame
+//          and *resampled* every zoom frame. A blended layer cannot be
+//          composited past its backdrop, so that is a full-viewport repaint
+//          per frame, for a texture nobody is looking at while the board moves.
+//   hires  the zoomed-in swap to the untouched original (canvas/hires.ts). A
+//          camera frame is ~48 MB decoded and the <img> is blank until it
+//          lands, so on a phone - where devicePixelRatio is 3 and the
+//          threshold is crossed by an ordinary card at ordinary zoom - it is
+//          both the stall and the flash. Light shows the display copy at every
+//          zoom instead, which is exactly the trade this stop is for.
 const PRESETS = {
-  full: { motion: true, shadows: true, blur: true, anim: true, sharpness: 1280, build: 12 },
-  balanced: { motion: true, shadows: true, blur: false, anim: true, sharpness: 1152, build: 8 },
-  light: { motion: false, shadows: false, blur: false, anim: false, sharpness: 1024, build: 4 },
+  full: { motion: true, shadows: true, blur: true, anim: true, grain: true, hires: true, sharpness: 1280, build: 12 },
+  balanced: { motion: true, shadows: true, blur: false, anim: true, grain: true, hires: true, sharpness: 1152, build: 8 },
+  light: { motion: false, shadows: false, blur: false, anim: false, grain: false, hires: false, sharpness: 1024, build: 4 },
 } satisfies Record<QualityLevel, QualityFlags>;
 
 const DEFAULT_LEVEL: QualityLevel = 'full';
@@ -60,7 +78,7 @@ const KEYS = Object.keys(PRESETS.full) as QualityKey[];
 const isLevel = (v: unknown): v is QualityLevel =>
   typeof v === 'string' && hasOwn(PRESETS, v);
 
-/** Whether a string names one of the six flags. */
+/** Whether a string names one of the eight flags. */
 const isKey = (v: unknown): v is QualityKey => KEYS.some(k => k === v);
 
 let level: QualityLevel = DEFAULT_LEVEL;

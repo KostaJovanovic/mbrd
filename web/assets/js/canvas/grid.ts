@@ -243,13 +243,24 @@ export function paintGrid(vp: Viewport) {
   const size = sizes.join(', ');
   if (image !== lastImage) { canvas.style.backgroundImage = image; lastImage = image; }
   if (size !== lastSize) { canvas.style.backgroundSize = size; lastSize = size; }
-  // Only uncacheable write — position must track the board. mobilePerfFlags can disable it for profiling.
-  if (mobilePerfFlags.gridPos) canvas.style.backgroundPosition = positions.join(', ');
+  // Position must track the board, so this is the write that cannot be cached
+  // away on a moving board - but it can be on a still one, and "still" is not
+  // only a board nobody is touching. paintGridOnView() lets through any frame
+  // that moved as much as one device pixel, and a slow drift, the settling
+  // frame and a repaint asked for by something other than the view all arrive
+  // here with the same string as last time. Writing background-position on a
+  // window-sized element is a full-viewport repaint, so it is worth a compare.
+  // mobilePerfFlags can disable it for profiling.
+  const position = positions.join(', ');
+  if (mobilePerfFlags.gridPos && position !== lastPosition) {
+    canvas.style.backgroundPosition = position;
+    lastPosition = position;
+  }
   punchHole(canvas, o, vp, box);
 }
 
 // Cache of last written values — clearTiles must keep these in sync or the grid never reappears
-let lastImage = '', lastSize = '', lastMask = '';
+let lastImage = '', lastSize = '', lastMask = '', lastPosition = '';
 
 
 function clearTiles(canvas: HTMLCanvasElement) {
@@ -259,6 +270,7 @@ function clearTiles(canvas: HTMLCanvasElement) {
   lastImage = 'none';
   lastSize = '';
   lastMask = '';
+  lastPosition = '';
 }
 
 // Cut the origin out of the tiled lattice. Hole size comes from --grid-dot in CSS.
@@ -577,7 +589,7 @@ function ensureCanvas(el: HTMLElement): InkCanvas {
     el.prepend(canvas);
     // Fresh canvas has none of the cached state — invalidate so the first
     // paint does not skip its writes.
-    lastImage = lastSize = lastMask = lastBox = '';
+    lastImage = lastSize = lastMask = lastBox = lastPosition = '';
   }
   return canvas;
 }

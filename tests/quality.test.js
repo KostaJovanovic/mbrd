@@ -27,6 +27,11 @@ test('an unset preference is Full, and Full is what the app shipped with', () =>
   assert.equal(quality.shadows, true);
   assert.equal(quality.blur, true);
   assert.equal(quality.anim, true);
+  // Both added after Light was reported as no faster than Full on Android, and
+  // both on at Full for the same reason as the four above: installing the
+  // version that added them must not change what anybody's board looks like.
+  assert.equal(quality.grain, true);
+  assert.equal(quality.hires, true);
 });
 
 test('the dial cannot hide a line somebody drew', () => {
@@ -48,20 +53,52 @@ test('Balanced changes nothing you can see on a board standing still', () => {
   assert.equal(quality.sharpness, 1152);
   assert.equal(quality.blur, false);
   assert.equal(quality.build, 8);
-  // The three that would be visible are untouched.
+  // The ones that would be visible are untouched. The grain and the zoomed-in
+  // original are both in this list on purpose: a board standing still pays
+  // nothing for either - the grain layer is composited once and the swap only
+  // happens to a card somebody has zoomed right into - so the stop that is
+  // defined as costing nothing visible may not take them.
   assert.equal(quality.motion, true);
   assert.equal(quality.shadows, true);
   assert.equal(quality.anim, true);
+  assert.equal(quality.grain, true);
+  assert.equal(quality.hires, true);
 });
 
 test('Light gives something up on every axis', () => {
   fresh();
   setQualityLevel('light');
-  for (const key of ['motion', 'shadows', 'blur', 'anim']) {
+  for (const key of ['motion', 'shadows', 'blur', 'anim', 'grain', 'hires']) {
     assert.equal(quality[key], false, `${key} should be off at Light`);
   }
   assert.equal(quality.sharpness, 1024);
   assert.equal(quality.build, 4);
+});
+
+test('Light turns off the two that a moving board pays for every frame', async () => {
+  // The report this pair was added for: "on Android, light quality, everything
+  // still lags, and as I pan around or even just zoom a little it flashes a
+  // lot". Both costs were real and neither was reachable from the dial, so
+  // Light was doing nothing about the only two things that mattered. Pinned as
+  // wiring, not as numbers, because the numbers are the presets' to state.
+  const read = path => readFile(new URL(`../web/assets/${path}`, import.meta.url), 'utf8');
+  const [grain, hires, css] = await Promise.all([
+    read('js/canvas/grain.ts'), read('js/canvas/hires.ts'), read('css/quality.css'),
+  ]);
+  // The layer is taken off the page, and the per-frame writes onto it stop.
+  assert.match(css, /data-q-grain="off"\] #grain \{ display: none/,
+    'the grain layer is still painted at Light');
+  assert.match(grain, /if \(!quality\.grain\) return;/,
+    'paintGrain still writes to a layer that is not being drawn');
+  // ...and the 48 MB decode is simply not asked for.
+  assert.match(hires, /const allow = quality\.hires;/,
+    'the original swap no longer reads the dial');
+  assert.match(hires, /const wantOriginal = allow &&/,
+    'the flag is read but not applied');
+  // The sweep was walking every mounted photograph on every *pan* frame, to
+  // answer a question only the zoom can change.
+  assert.match(hires, /if \(zoom === lastZoom && count === lastCount\) return;/,
+    'the sweep runs on frames that cannot have changed its answer');
 });
 
 test('the flags object is mutated in place, never replaced', () => {
