@@ -960,9 +960,9 @@ export const SECTIONS: Section[] = [
       // every one of these - and writes an override that outranks the dial from
       // then on. "Reset" at the foot is the way back, the same as
       // Appearance's.
-      // "Animated GIFs" and not "Animate GIFs": the four checkboxes in this row
-      // are things the app has - shadows, backdrops, animations - and a command
-      // among them would read as a button rather than a state.
+      // "Animated GIFs" and not "Animate GIFs": the checkboxes in this row are
+      // things the app has - shadows, backdrops, animations, paper texture -
+      // and a command among them would read as a button rather than a state.
       { id: 'q-motion', type: 'check', label: 'Animated GIFs', advanced: true,
         get: () => quality.motion, set: v => setQualityOverride('motion', v) },
       { id: 'q-shadows', type: 'check', label: 'Card shadows', advanced: true,
@@ -971,6 +971,15 @@ export const SECTIONS: Section[] = [
         get: () => quality.blur, set: v => setQualityOverride('blur', v) },
       { id: 'q-anim', type: 'check', label: 'Animations', advanced: true,
         get: () => quality.anim, set: v => setQualityOverride('anim', v) },
+      // The two that cost most on a phone. "Paper texture" is the window-sized
+      // grain layer and not a fence's or the Mobile sheet's, which are drawn
+      // inside the board's own transform and cost nothing per frame.
+      { id: 'q-grain', type: 'check', label: 'Paper texture', advanced: true,
+        get: () => quality.grain, set: v => setQualityOverride('grain', v) },
+      // Named for what is given up rather than for the mechanism: with it off a
+      // photograph is drawn from its display copy however far you zoom in.
+      { id: 'q-hires', type: 'check', label: 'Full-size photos when zoomed in', advanced: true,
+        get: () => quality.hires, set: v => setQualityOverride('hires', v) },
       { id: 'q-sharpness', type: 'picker', label: 'Picture sharpness', advanced: true,
         options: () => SHARPNESS_STEPS.map(s => ({ value: String(s.px), label: s.label })),
         get: () => String(quality.sharpness),

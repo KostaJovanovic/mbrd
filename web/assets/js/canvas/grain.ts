@@ -6,6 +6,7 @@
 import { deviceRatio } from './viewport.ts';
 import type { Viewport } from './viewport.ts';
 import { sheetBox } from './mobile-frame.ts';
+import { quality } from '../quality.ts';
 import { wrap } from '../util.ts';
 
 // Tile side in world units (matches base.css #grain background-size).
@@ -47,6 +48,10 @@ export function resetGrain(): void {
 // Position and size the grain layer to match the current viewport.
 // Offset is modulo the tile (tiled background repeats), rounded to device pixels.
 export function paintGrain(vp: Viewport): void {
+  // The dial says no texture, and quality.css has already taken the layer off
+  // the page. Returning here is what stops the *writes* - three style
+  // properties per frame on a surface that is not being painted.
+  if (!quality.grain) return;
   const tile = TILE * vp.zoom;
   if (!(tile > 0)) return;
 
