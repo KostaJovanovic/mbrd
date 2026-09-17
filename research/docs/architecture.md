@@ -1637,12 +1637,15 @@ which.
   folder of files, and runs a real ffmpeg. No board lives inside the app:
   every board is a `.mbrd` file, and the ones the app makes are in the boards
   folder, `Documents/mbrd` (`desktop/boards.ts`). New makes the file at once,
-  the edits reach it on a timer, a rename renames it, and the first start moves
+  the autosave writes the edits to it (`writeToFile()` in `storage/session.ts`),
+  adding only what changed, a rename renames it, and the first start moves
   the shelf's packed boards into it (`adoptFolder()` in `storage/storage.ts`).
-  The store stays as the crash copy.
+  The file is the only copy: the store keeps which file is open and where the
+  view was, and a start reopens the file (`readZipBlob()` in `storage/zip.ts`).
 - **Android** (`mobile/`, Capacitor) serves a staged copy of `web/` from
-  `https://app/` with the same policy, and keeps the boards as files in
-  `Documents/mbrd/` when the user allows it. `mobile/README.md` is its map.
+  `https://app/` with the same policy, and keeps the boards the same way in
+  `Documents/mbrd/` (`MbrdBoards.java`) when the user allows it.
+  `mobile/README.md` is its map.
 
 Both shells put **one object** in the page before any script runs:
 `window.mbrdDesktop`, in the shape `Bridge` in `platform/electron.ts` names.

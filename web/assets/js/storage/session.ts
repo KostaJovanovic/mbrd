@@ -1,7 +1,8 @@
 // IndexedDB working cache, background autosave, and boot restore. Split from
 // storage.ts on the question "who owns the file handle" — not this module.
 // The seam is `d` (deps from storage.ts); nothing here imports it back.
-// This is crash recovery only. The durable artefact is the exported .mbrd.
+// On the web this is crash recovery and the durable artefact is an exported
+// .mbrd. In the apps the board's own file is the save, and the store keeps no copy.
 
 import { itemHashes, isRecord } from '../util.ts';
 // Timeline references, read from the stored document like everything else.
@@ -28,6 +29,17 @@ export interface SessionDeps {
   setCreated: (at: string | null) => void;
   exportBoard: () => Promise<boolean>;
   prompt: (opts: PromptOptions) => Promise<string | null>;
+  // The apps. Absent, as in a test wired by hand, is the web.
+  /** Whether the board on screen is a file in the boards folder, which is then
+   *  the save: the autosave writes it, and the store keeps no copy. */
+  fileBacked?: () => boolean;
+  filePath?: () => string | null;
+  /** Resolves once the boards folder is known (adoptFolder()). */
+  settled?: () => Promise<void>;
+  /** Write the board to its file (saveDocument()). */
+  saveFile?: () => Promise<boolean>;
+  /** Boot: open the board file the last run was on. */
+  reopen?: (path: string) => Promise<boolean>;
 }
 
 /** The one dialog this module asks for - see ask() in ui/dialog.ts. */
@@ -214,6 +226,10 @@ async function writeSnapshot() {
       : 'This browser will not store the board (full, or blocked) - export it to a file';
     return false;
   }
+  // Not before the folder is known, or a write at start would put a copy of
+  // the whole board back into the store.
+  await d!.settled?.();
+  if (d!.fileBacked?.()) return writeToFile();
   try {
     // Serialise once — snapshot and asset set must describe the same board.
     const data = serializeBoard();
@@ -272,6 +288,40 @@ async function writeSnapshot() {
   }
 }
 
+/**
+ * The apps: the board's own file is the save. The store keeps which file that
+ * is and where the view was - a pan is not an edit, so the file does not hear
+ * of it - and no copy of the board. The pictures a copy from before kept are
+ * deleted once the file holds the board.
+ */
+async function writeToFile() {
+  if (!(await d!.saveFile!())) {
+    lastFailure = 'The board could not be written to its file';
+    return false;
+  }
+  lastFailure = '';
+  try {
+    const { pan, zoom } = board.view;
+    await idbSet('kv', SESSION_KEY, { file: d!.filePath!(), view: { pan: { ...pan }, zoom }, at: Date.now() });
+    const left = await idbKeys('assets');
+    if (left.length) await idbDelMany('assets', left);
+  } catch (err) {
+    // The board is in its file. What failed is the note of where it is.
+    console.warn('[mbrd] could not note which file the board is:', err);
+  }
+  return true;
+}
+
+/** Boot, in the apps: the board is its file, and the record says which. */
+async function restoreFile(file: string, view: unknown) {
+  if (!(await d!.reopen!(file))) return false;
+  const pan = isRecord(view) && isRecord(view.pan) ? view.pan : null;
+  if (isRecord(view) && pan) {
+    board.view = { pan: { x: Number(pan.x) || 0, y: Number(pan.y) || 0 }, zoom: Number(view.zoom) || 1 };
+  }
+  return true;
+}
+
 /** "2 items (photo.jpg, note) have no stored data", for a message. */
 function describeMissing(data: BoardLike, hashes: string[]) {
   const wanted = new Set(hashes);
@@ -300,6 +350,7 @@ export async function restoreSession() {
     // Comes back as `unknown` — narrowed one key at a time.
     const session = await idbGet('kv', SESSION_KEY);
     if (!isRecord(session)) return false;
+    if (typeof session.file === 'string' && d?.reopen) return await restoreFile(session.file, session.view);
     const stored = session.board;
     if (!isRecord(stored) || !stored.items) return false;
     // Same referencedHashes() as the sweep — bin included. Previously only

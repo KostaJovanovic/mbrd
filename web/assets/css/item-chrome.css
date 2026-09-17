@@ -109,8 +109,18 @@
 #world.zoom-far .item:not(.is-editing) > .far-head:not([hidden]) { display: flex; }
 /* No head over a picture — a photograph is its own name at any size. As
    specific as the rule above, which it has to beat: one class short, it lost,
-   and an audio sleeve wore its kind and name across the art. */
-#world.zoom-far .item:not(.is-editing):has(.card-cover) > .far-head:not([hidden]) { display: none; }
+   and an audio sleeve wore its kind and name across the art.
+
+   Two classes answer "is there a picture here", and the second is a model's.
+   image and video never reach these rules at all (wantsHead in
+   canvas/item-dom.ts builds them no head), but a model card is built like a
+   card that has nothing to look at and then, most of the time, has a
+   photograph of the part in it - the WebP still canvas/model.ts takes the
+   moment you stop turning it. That is a picture on the same terms the sleeve
+   is, so it takes the head off on the same terms too. A model with no still -
+   still reading, being turned, or unreadable - has nothing to look at out here
+   and keeps its label. */
+#world.zoom-far .item:not(.is-editing):has(.card-cover, .model-still) > .far-head:not([hidden]) { display: none; }
 
 /* The kind and its underline. The rule runs the card's measure, not the full
    width, because a specimen label is ruled inside its margins. */
@@ -182,8 +192,15 @@
   z-index: 1;
 }
 /* Body hidden for every card that grew a head — it is the smear the head
-   replaced. Audio keeps its body because its play button survives the rung. */
-#world.zoom-far .item:not(.is-editing):not([data-type="audio"]):has(> .far-head:not([hidden])) .item-body { display: none; }
+   replaced. Two cards keep theirs. Audio, because its play button survives the
+   rung. And any card the rule above took the head *off*: the head is the only
+   thing the body was hidden for, so a card still showing a picture out here
+   must not be emptied behind a label that is not drawn. That second exemption
+   is a model's - it is why a part photographed onto its card stays a picture
+   all the way out, the same as a photograph beside it, rather than becoming a
+   blank card wearing the word "obj". Same test as the rule above, and they have
+   to stay the same test. */
+#world.zoom-far .item:not(.is-editing):not([data-type="audio"]):not(:has(.card-cover, .model-still)):has(> .far-head:not([hidden])) .item-body { display: none; }
 /* ---------------------------------------------------------------------------
    Cheap mode: what the board stops paying for while it is being moved.
    Set by canvas/viewport.ts for the duration of a gesture plus 140ms.

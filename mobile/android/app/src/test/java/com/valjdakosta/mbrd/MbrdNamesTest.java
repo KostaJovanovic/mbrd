@@ -64,6 +64,24 @@ public class MbrdNamesTest {
         assertEquals(".mbrd", MbrdNames.extension(cut));
     }
 
+    /** The same answers as plainName() and nthName() in desktop/board-names.mts,
+     *  so a boards folder names its boards alike on both. */
+    @Test
+    public void aBoardInTheFolderIsNamedAsTheDesktopNamesIt() {
+        assertEquals("My Board.mbrd", MbrdNames.plainName("My Board"));
+        assertEquals("abc.mbrd", MbrdNames.plainName("a/b:c"));
+        assertEquals("X.mbrd", MbrdNames.plainName("X.MBRD"));
+        assertEquals("hidden.mbrd", MbrdNames.plainName("  ..hidden"));
+        assertEquals("trail.mbrd", MbrdNames.plainName("trail. "));
+        assertEquals("a b.mbrd", MbrdNames.plainName("a \t  b"));
+        assertEquals("board.mbrd", MbrdNames.plainName(""));
+        assertEquals("board.mbrd", MbrdNames.plainName(null));
+        assertEquals("_con.mbrd", MbrdNames.plainName("con"));
+        assertEquals("_COM1.notes.mbrd", MbrdNames.plainName("COM1.notes"));
+        assertEquals("b.mbrd", MbrdNames.nthName("b.mbrd", 1));
+        assertEquals("b_(2).mbrd", MbrdNames.nthName("b.mbrd", 2));
+    }
+
     @Test
     public void aClashGetsTheNextNumber() throws IOException {
         File dir = Files.createTempDirectory("mbrd-names").toFile();

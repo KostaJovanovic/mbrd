@@ -246,6 +246,11 @@ public final class MbrdUpdate {
                     return;
                 }
                 if (!manual && System.currentTimeMillis() - prefs.getLong("checked", 0) < EVERY_MS) return;
+                // Said here and not at the press: everything above answers at
+                // once, and this is the one step that takes a noticeable
+                // moment. Without it a press on Check for updates shows
+                // nothing at all until GitHub replies.
+                if (manual) say("Looking for a newer version of mbrd.");
                 HttpURLConnection c = open(feed, "application/vnd.github+json");
                 JSONObject release;
                 try {

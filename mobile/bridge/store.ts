@@ -20,8 +20,8 @@ export async function get(store: string, key: string): Promise<unknown> {
   }
 }
 
-export function set(store: string, key: string, value: unknown): Promise<void> {
-  return transfer({ target: 'store', store, key }, encode(value));
+export async function set(store: string, key: string, value: unknown): Promise<void> {
+  await transfer({ target: 'store', store, key }, encode(value));
 }
 
 export async function del(store: string, key: string): Promise<void> {

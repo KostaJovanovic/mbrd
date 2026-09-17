@@ -184,6 +184,32 @@ export async function append(path: unknown, data: unknown, at: unknown): Promise
   }
 }
 
+/** A tail() longer than this is not a directory worth reading for. */
+const TAIL_MAX = 64 * 1024 * 1024;
+
+/**
+ * A board's size and its last `length` bytes, all of it when shorter: the ZIP
+ * directory, which the page reads the file's layout from (layoutFromTail() in
+ * its storage/zip.ts), so the first save of a run need not write it whole.
+ */
+export async function tail(path: unknown, length: unknown): Promise<{ size: number, data: ArrayBuffer }> {
+  const target = checked(path);
+  if (typeof length !== 'number' || !Number.isSafeInteger(length) || length < 0 || length > TAIL_MAX) {
+    throw new Error('expected a length to read');
+  }
+  const handle = await openFile(target, 'r');
+  try {
+    const { size } = await handle.stat();
+    const n = Math.min(length, size);
+    const data = new ArrayBuffer(n);
+    const { bytesRead } = await handle.read(new Uint8Array(data), 0, n, size - n);
+    if (bytesRead !== n) throw new Error('the file changed on disk while it was read');
+    return { size, data };
+  } finally {
+    await handle.close();
+  }
+}
+
 /** Read a document back. The shelf's file rows are the caller. */
 export async function read(path: unknown): Promise<Handed> {
   return hand(checked(path));

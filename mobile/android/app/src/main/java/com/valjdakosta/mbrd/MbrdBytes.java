@@ -14,6 +14,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.RandomAccessFile;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.regex.Pattern;
@@ -33,16 +34,19 @@ import org.json.JSONObject;
  * Protocol (the page half is transfer() in mobile/bridge/bytes.ts):
  *   {"op":"begin","target":"store","store":..,"key":..,"size":N}  a store value
  *   {"op":"begin","target":"file","path":..,"size":N}             a board, Save
+ *   {"op":"begin","target":"append","path":..,"at":N,"size":N}    a Save's tail
+ *   {"op":"begin","target":"create","suggested":..,"size":N}      a new board
  *   {"op":"begin","target":"stage","xfer":..,"size":N}            for a share
  *   {"op":"begin","target":"ff",..}                                group N
  *   ArrayBuffer | {"op":"chunk","b64":..}                         repeated
  *   {"op":"end"} | {"op":"abort"}
  * Every message gets exactly one JSON ack, in order: {"ok":true} or
- * {"ok":false,"error":..}. The page waits for each ack before the next send, so
+ * {"ok":false,"error":..}, and a create's "end" adds the board's name and path. The page waits for each ack before the next send, so
  * one chunk at most is in flight. Only the app origin (and the dev server) can
  * post: MbrdShell registers the listener with those origins. A store value and a
  * board go to a temp name and are renamed at the end, so a cut transfer never
- * replaces a whole file. MbrdStore and MbrdFiles check every name and path.
+ * replaces a whole file. A tail goes onto the end of its board, and a cut one is
+ * cut back off. MbrdStore and MbrdFiles check every name and path.
  */
 final class MbrdBytes implements WebViewCompat.WebMessageListener {
 
@@ -60,6 +64,11 @@ final class MbrdBytes implements WebViewCompat.WebMessageListener {
     private File target;
     /** What `target` is renamed to at the end, or null to keep it where it is. */
     private File dest;
+    /** A "create": the name `target` is renamed to the first free form of, at the end. */
+    private String createAs;
+    /** The board an "append" writes onto, instead of `target`, and its length before. */
+    private RandomAccessFile tail;
+    private long tailAt;
     private long expected;
     private long written;
 
@@ -109,8 +118,7 @@ final class MbrdBytes implements WebViewCompat.WebMessageListener {
         io.execute(() -> {
             String ack;
             try {
-                handle(text, bytes);
-                ack = OK;
+                ack = handle(text, bytes);
             } catch (Exception e) {
                 reset(true);
                 ack = error(e.getMessage());
@@ -120,20 +128,21 @@ final class MbrdBytes implements WebViewCompat.WebMessageListener {
         });
     }
 
-    private void handle(String text, byte[] bytes) throws IOException, JSONException {
+    /** One message, and the ack it gets. */
+    private String handle(String text, byte[] bytes) throws IOException, JSONException {
         if (bytes != null) {
             write(bytes);
-            return;
+            return OK;
         }
         JSONObject m = new JSONObject(text == null ? "{}" : text);
         switch (m.optString("op")) {
             case "begin":
                 reset(true);
                 begin(m);
-                return;
+                return OK;
             case "chunk":
                 write(Base64.decode(m.getString("b64"), Base64.DEFAULT));
-                return;
+                return OK;
             case "end":
                 if (out == null) throw new IOException("no transfer open");
                 out.close();
@@ -141,13 +150,34 @@ final class MbrdBytes implements WebViewCompat.WebMessageListener {
                 if (expected >= 0 && written != expected) {
                     throw new IOException("transfer was short: " + written + " of " + expected + " bytes");
                 }
+                if (tail != null) {
+                    // On the disk before the page hears it is, as desktop/files.ts.
+                    // A failed sync leaves `tail` set, and reset() cuts it back.
+                    RandomAccessFile done = tail;
+                    done.getFD().sync();
+                    tail = null;
+                    done.close();
+                    return OK;
+                }
+                if (createAs != null) {
+                    // Named now rather than at the start, so a board that took
+                    // the name meanwhile is never replaced. The ack says where.
+                    File made;
+                    synchronized (MbrdBoards.NAMES) {
+                        made = MbrdBoards.freeFile(target.getParentFile(), createAs, null);
+                        if (!target.renameTo(made)) throw new IOException("could not write " + made.getName());
+                    }
+                    target = null;
+                    createAs = null;
+                    return MbrdBoards.ref(made).put("ok", true).toString();
+                }
                 if (dest != null && !target.renameTo(dest)) throw new IOException("could not write " + dest.getName());
                 target = null;
                 dest = null;
-                return;
+                return OK;
             case "abort":
                 reset(true);
-                return;
+                return OK;
             default:
                 throw new IOException("unknown message");
         }
@@ -171,6 +201,15 @@ final class MbrdBytes implements WebViewCompat.WebMessageListener {
                 last = MbrdFiles.checked(m.getString("path"));
                 file = new File(last.getPath() + ".mbrd-tmp");
                 break;
+            case "append":
+                beginAppend(MbrdFiles.checked(m.getString("path")), m.getLong("at"), m.optLong("size", -1));
+                return;
+            case "create":
+                // A new board in the folder (desktop/boards.ts's create()). The
+                // temp name ends in -tmp, so the folder's list skips it.
+                createAs = MbrdNames.plainName(m.getString("suggested"));
+                file = new File(MbrdBoards.folder(), createAs + ".mbrd-tmp");
+                break;
             case "ff":
                 // MbrdFfmpeg arrives with group N.
                 throw new IOException("the ff target is not wired yet");
@@ -183,6 +222,40 @@ final class MbrdBytes implements WebViewCompat.WebMessageListener {
         target = file;
         dest = last;
         out = new BufferedOutputStream(new FileOutputStream(file), 1 << 20);
+    }
+
+    /**
+     * desktop/files.ts's append(): only onto a file exactly `at` bytes long,
+     * which is how long the page's last write left it. Anything else means the
+     * file changed under the page, which then writes it whole. Unbuffered: every
+     * chunk is already 4 MB, and a stream over the file's descriptor would close
+     * it before reset() could cut a failed tail back off.
+     */
+    private void beginAppend(File board, long at, long size) throws IOException {
+        if (at < 0 || !board.isFile()) throw new IOException(board.getName() + " is not there any more");
+        RandomAccessFile raf = new RandomAccessFile(board, "rw");
+        try {
+            if (raf.length() != at) throw new IOException("the file changed on disk since it was last written");
+            raf.seek(at);
+        } catch (IOException e) {
+            raf.close();
+            throw e;
+        }
+        tail = raf;
+        tailAt = at;
+        expected = size;
+        written = 0;
+        out = new OutputStream() {
+            @Override
+            public void write(int b) throws IOException {
+                raf.write(b);
+            }
+
+            @Override
+            public void write(byte[] b, int off, int len) throws IOException {
+                raf.write(b, off, len);
+            }
+        };
     }
 
     private void write(byte[] data) throws IOException {
@@ -205,8 +278,19 @@ final class MbrdBytes implements WebViewCompat.WebMessageListener {
             //noinspection ResultOfMethodCallIgnored
             target.delete();
         }
+        if (tail != null) {
+            // The last whole save stays standing.
+            try {
+                if (deletePartial) tail.setLength(tailAt);
+            } catch (IOException ignored) {}
+            try {
+                tail.close();
+            } catch (IOException ignored) {}
+            tail = null;
+        }
         target = null;
         dest = null;
+        createAs = null;
     }
 
     private static String error(String message) {

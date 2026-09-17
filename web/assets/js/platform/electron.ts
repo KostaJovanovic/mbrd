@@ -29,17 +29,21 @@ export interface Bridge {
     pickOpen(): Promise<HandedFile | null>;
     pickSave(suggested: string): Promise<{ name: string, path: string } | null>;
     pickImport(): Promise<HandedFile[]>;
-    write(path: string, data: ArrayBuffer): Promise<void>;
-    /** A save's tail onto a file `at` bytes long. The Android shell refuses it. */
-    append(path: string, data: ArrayBuffer, at: number): Promise<void>;
+    /** A Blob only to the Android shell, which streams it down its byte
+     *  channel a chunk at a time. Electron's IPC cannot clone one. */
+    write(path: string, data: ArrayBuffer | Blob): Promise<void>;
+    /** A save's tail onto a file `at` bytes long. A Blob as for write(). */
+    append(path: string, data: ArrayBuffer | Blob, at: number): Promise<void>;
+    /** The file's size and its last `length` bytes, which hold its ZIP directory. */
+    tail(path: string, length: number): Promise<{ size: number, data: ArrayBuffer }>;
     read(path: string): Promise<HandedFile>;
     exists(path: string): Promise<boolean>;
   };
-  /** The boards folder. The Android shell answers list() with null, because
-   *  its folder is MbrdRoot's and it keeps no list of its own yet. */
+  /** The boards folder: desktop/boards.ts, and MbrdBoards.java on Android. */
   boards: {
     list(): Promise<{ folder: string, files: FolderBoard[] } | null>;
-    create(suggested: string, data: ArrayBuffer): Promise<{ name: string, path: string }>;
+    /** A Blob as for files.write(). */
+    create(suggested: string, data: ArrayBuffer | Blob): Promise<{ name: string, path: string }>;
     rename(path: string, suggested: string): Promise<{ name: string, path: string } | null>;
     trash(path: string): Promise<void>;
     reveal(): Promise<void>;
@@ -78,7 +82,8 @@ export interface Bridge {
 export interface HandedFile {
   name: string;
   path: string;
-  data: ArrayBuffer;
+  /** A Blob from the Android shell, which fetches a file rather than cloning it. */
+  data: ArrayBuffer | Blob;
 }
 
 /** Tagged wrapper so the far side can tell a Blob from a JSON value. */
@@ -171,11 +176,17 @@ export function electronStore(bridge: Bridge) {
 // The ports
 // ---------------------------------------------------------------------------
 
+/** A board on its way to the shell. A phone given the whole board as one
+ *  ArrayBuffer held all 400 MB of it at once, and copied it again chunk by
+ *  chunk on the way down, so the Android shell takes the Blob. */
+const bytesOf = async (bridge: Bridge, blob: Blob) =>
+  bridge.shell === 'capacitor' ? blob : blob.arrayBuffer();
+
 function electronFolder(bridge: Bridge): BoardFolder {
   return {
     list: () => bridge.boards.list(),
     create: async (suggested, blob) =>
-      refOf(await bridge.boards.create(suggested, await blob.arrayBuffer())),
+      refOf(await bridge.boards.create(suggested, await bytesOf(bridge, blob))),
     async rename(ref, suggested) {
       if (!ref.path) return null;
       const moved = await bridge.boards.rename(ref.path, suggested);
@@ -209,13 +220,18 @@ function electronFiles(bridge: Bridge): FilesPort {
       // No path: prompt for one rather than downloading silently.
       const target = ref.path ?? (await bridge.files.pickSave(ref.name))?.path;
       if (!target) throw abort('Nothing picked');
-      await bridge.files.write(target, await blob.arrayBuffer());
+      await bridge.files.write(target, await bytesOf(bridge, blob));
     },
 
-    // The desktop only: the phone writes a board whole, and its bridge refuses.
-    append: bridge.shell === 'capacitor' ? undefined : async (ref: DocumentRef, blob: Blob, at: number) => {
+    async append(ref: DocumentRef, blob: Blob, at: number) {
       if (!ref.path) throw abort('That document has no file');
-      await bridge.files.append(ref.path, await blob.arrayBuffer(), at);
+      await bridge.files.append(ref.path, await bytesOf(bridge, blob), at);
+    },
+
+    async tail(ref: DocumentRef, length: number) {
+      if (!ref.path) throw abort('That document has no file');
+      const { size, data } = await bridge.files.tail(ref.path, length);
+      return { size, bytes: new Uint8Array(data) };
     },
 
     async pickImport(_spec: PickSpec) {
