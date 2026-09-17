@@ -23,6 +23,8 @@ import {
 import { normalizeBoard } from '../board-schema.ts';
 import { planMerge } from '../merge.ts';
 import { packBoard, packBoardFile, unpackBoard, MIME } from './mbrd.ts';
+import type { PackedBoard } from './mbrd.ts';
+import { layoutFromTail } from './zip.ts';
 import type { ZipLayout } from './zip.ts';
 import { allAssets, clearAssets, getAsset } from './assets.ts';
 import { viewingCopy } from './viewing-copy.ts';
@@ -234,7 +236,8 @@ export async function exportBoard({ pickNew = false, history = true } = {}) {
   try {
     // Picker runs first: choosing a filename renames the board, and the packed
     // title must match. Cancel throws AbortError before any state moves.
-    if (picking && (pickNew || !doc)) {
+    const picked = picking && (pickNew || !doc);
+    if (picked) {
       doc = await platform.files.pickSave(fileNameFor(board.title), PICK_SPEC);
       reportDocument();
     }
@@ -248,18 +251,17 @@ export async function exportBoard({ pickNew = false, history = true } = {}) {
       const data = serializeBoard();
       // Drop the key — a file without a timeline is already a valid older-build shape.
       if (!history) delete data.timeline;
-      const { blob, manifest } = await packBoard(data, { created });
-      created = manifest.created;
 
       // Port writes to handle or downloads. `data.title` for the fallback name
       // (no picker = no rename). `picking &&` keeps the two paths distinct —
       // a stale doc must not write to a file the user never picked. In turn
       // with the file timer, which writes the same file (saveDocument()).
-      if (picking) job.label('Writing the file');
       const target = picking && doc ? doc : { name: fileNameFor(data.title) };
-      // Written whole, so the layout the timer's saves append to is stale.
-      fileLayout = null;
-      await inTurn(() => platform.files.write(target, blob));
+      await inTurn(() => writeBoardFile(target, data, {
+        allowMissing: false,
+        whole: picked,
+        writing: () => { if (picking) job.label('Writing the file'); },
+      }));
     } finally {
       job.end();
     }
@@ -355,7 +357,9 @@ export async function openFile(file: File, ref: DocumentRef | null = null) {
     let opened = false;
     try {
       return await withFreshAssets(async () => {
-        const { manifest, board: data } = await unpackBoard(file);
+        // A file the shell read is the app's own copy, and its pictures stay
+        // where they are in it (readZipBlob()). A picked or dropped File is not.
+        const { manifest, board: data } = await unpackBoard(file, { owned: isDesktop() && !!ref?.path });
         // manifest.app decides whether the stored title needs its underscores
         // decoding - see titleForOpenedBoard(). The field was documented as
         // informational; this is the one thing that reads it.
@@ -1036,7 +1040,7 @@ export async function switchBoard(id: string) {
       file = new File([blob], 'board.mbrd', { type: MIME });
     }
     await withFreshAssets(async () => {
-      const { manifest, board: data } = await unpackBoard(file);
+      const { manifest, board: data } = await unpackBoard(file, { owned: isDesktop() });
       loadBoard(data);
       // A string or nothing, as in openFile() above and for the same reason:
       // this manifest came out of a packed blob rather than out of this run.
@@ -1109,18 +1113,18 @@ export async function deleteLibraryBoard(id: string, { file = '' } = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// The boards folder (desktop)
+// The boards folder (the apps)
 // ---------------------------------------------------------------------------
 //
 // On the desktop no board lives inside the app. That is the web's limit, and a
 // desktop has a disk: every board is a .mbrd file, and the ones the app makes
 // go into the boards folder the shell keeps (Documents/mbrd). The board on
-// screen always has its file. New makes it at once, and the edits reach it on a
-// timer. The store's snapshot (session.ts) stays as the crash copy, so the file
-// can trail it by a few seconds and nothing is lost when it does.
+// screen always has its file. New makes it at once, and the autosave
+// (session.ts) writes the edits to it, adding only what changed. The file is
+// the only copy: the store keeps which file it is and where the view was.
 //
-// Android has the desktop's bridge and no list of its own yet, so its list()
-// answers null, `folder` stays null, and everything here stands down.
+// Android keeps the same folder (MbrdBoards.java): Documents/mbrd with the
+// storage grant. On the web `folder` stays null and everything here stands down.
 
 /** The boards folder, once the shell has named one. */
 let folder: string | null = null;
@@ -1131,20 +1135,50 @@ export const boardFolder = () => folder;
 /** A file in the folder with no shelf row is listed under this id. */
 const FILE_ID = 'file:';
 
-/** How long after an edit the file catches up with it. */
-const FILE_SAVE_MS = 10000;
-let fileTimer = 0;
-
 /**
  * Where this session's last write left each entry of the board's file, so the
- * next save can append only what changed (packBoardFile()). Null until a whole
- * write has happened in this session, and dropped by anything else that writes
- * the file - an export over it, an Optimize - so the next save is whole.
+ * next save can append only what changed (packBoardFile()). Null until a write
+ * has happened in this session, and read from the file's own end until then
+ * (priorLayout()). Save and Export keep it (writeBoardFile()).
  */
 let fileLayout: { path: string, layout: ZipLayout } | null = null;
 
+/** Set by Optimize: the next write is whole, so what it shrank leaves the
+ *  file rather than staying in it as dead bytes. */
+let writeWhole = false;
+
 /** The next save to the board's file writes it whole, compacting it. */
-export function forgetFileLayout() { fileLayout = null; }
+export function forgetFileLayout() { fileLayout = null; writeWhole = true; }
+
+/** Read from a board's end for its directory: 1500 entries make one near
+ *  200 KB. A longer one is read again at its own length, up to TAIL_MAX. */
+const TAIL_READ = 256 * 1024;
+const TAIL_MAX = 32 * 1024 * 1024;
+
+/**
+ * Where each entry of the file at `ref` sits, for an append: this session's
+ * last write to it, or else the file's own directory, read from its end, so
+ * the first save after a start adds what changed instead of the whole board.
+ * Null for no path, no file yet, or a directory that will not read.
+ */
+async function priorLayout(ref: DocumentRef): Promise<ZipLayout | null> {
+  if (!ref.path || writeWhole) return null;
+  if (fileLayout?.path === ref.path) return fileLayout.layout;
+  const tail = platform.files.tail;
+  if (!tail) return null;
+  try {
+    let read = await tail(ref, TAIL_READ);
+    let found = layoutFromTail(read.bytes, read.size);
+    if (typeof found === 'number' && found <= TAIL_MAX) {
+      read = await tail(ref, found);
+      found = layoutFromTail(read.bytes, read.size);
+    }
+    return typeof found === 'number' ? null : found;
+  } catch {
+    // Most often a file that is not there yet. Written whole, as before.
+    return null;
+  }
+}
 
 /** Bumped by every change the file should hear about, so a write that ran
  *  while somebody kept working does not mark the newer work as written. */
@@ -1172,20 +1206,11 @@ let namedTitle = '';
 /** Said once per run of trouble, not once per tick. */
 let warnedFile = false;
 
-function scheduleFileSave() {
-  if (!folder || fileTimer) return;
-  fileTimer = setTimeout(() => {
-    fileTimer = 0;
-    void saveDocument();
-  }, FILE_SAVE_MS);
-}
-
-// An edit dirties the board, and a rename is the one title change that does:
-// a load and a Save both change the title with the flag down.
+// A rename is the one title change that dirties the board: a load and a Save
+// both change the title with the flag down. The edits reach the file through
+// the autosave (session.ts), which calls saveDocument().
 bus.on('board', () => {
-  if (!isDirty()) return;
-  scheduleFileSave();
-  if (folder && board.title !== namedTitle) void renameDocument();
+  if (isDirty() && folder && board.title !== namedTitle) void renameDocument();
 });
 bus.on('board:load', () => { namedTitle = board.title; });
 
@@ -1210,11 +1235,43 @@ async function fileRow() {
  * Write the board on screen to its file, and make the file first if it has none.
  *
  * Answers whether the file now holds the board. Quiet when it works, because
- * this runs on a timer: the dirty mark going out is the whole receipt.
+ * the autosave runs it: the dirty mark going out is the whole receipt.
  */
 export async function saveDocument(): Promise<boolean> {
   await adopted;
   return writeDocument();
+}
+
+/**
+ * Write the board to the file `ref` names, from inside inTurn(). When the
+ * file's layout is known (priorLayout()) and the shell can append, only what
+ * changed goes: a Save that moved one card on a 400 MB board writes that card's
+ * worth. Whole otherwise - `whole` for a file just picked, which may be another
+ * board being replaced - and whole again if the append is refused. Either way
+ * fileLayout then describes the file.
+ */
+async function writeBoardFile(
+  ref: DocumentRef, data: PackedBoard,
+  { allowMissing, whole = false, writing }: { allowMissing: boolean, whole?: boolean, writing?: () => void },
+) {
+  const append = platform.files.append;
+  const prior = append && !whole ? await priorLayout(ref) : null;
+  let packed = await packBoardFile(data, { created, allowMissing, prior });
+  created = packed.manifest.created;
+  writing?.();
+  if (packed.appended && append && prior) {
+    // Refused when the file changed length under the page: written whole.
+    try { await append(ref, packed.blob, prior.size); }
+    catch (err) {
+      console.warn('[mbrd] could not append to the board file, writing it whole:', err);
+      packed = await packBoardFile(data, { created, allowMissing });
+      await platform.files.write(ref, packed.blob);
+    }
+  } else {
+    await platform.files.write(ref, packed.blob);
+  }
+  fileLayout = ref.path ? { path: ref.path, layout: packed.layout } : null;
+  writeWhole = false;
 }
 
 /** saveDocument() without the wait, for adoptFolder(), which is what it waits for. */
@@ -1222,44 +1279,26 @@ function writeDocument(): Promise<boolean> {
   const port = platform.files.folder;
   if (!folder || !port || isNotFoundBoard()) return Promise.resolve(true);
   return inTurn(async () => {
-    // Any write stands for the timer's. A timer left set could fire in the
-    // middle of a board swap, with the asset store already emptied.
-    clearTimeout(fileTimer);
-    fileTimer = 0;
     if (doc?.path && !isDirty()) return true;
     const gen = edits;
     try {
       // A board a picture short still goes to its file, as it goes to the
       // shelf. Refusing would stop the file hearing about every later edit.
       const data = serializeBoard();
-      const append = platform.files.append;
-      const prior = append && doc?.path && fileLayout?.path === doc.path ? fileLayout.layout : null;
-      let packed = await packBoardFile(data, { created, allowMissing: true, prior });
-      created = packed.manifest.created;
       if (doc?.path) {
-        if (packed.appended && append && prior) {
-          // Refused when the file changed length under the page: written whole.
-          try { await append(doc, packed.blob, prior.size); }
-          catch (err) {
-            console.warn('[mbrd] could not append to the board file, writing it whole:', err);
-            packed = await packBoardFile(data, { created, allowMissing: true });
-            await platform.files.write(doc, packed.blob);
-          }
-        } else {
-          await platform.files.write(doc, packed.blob);
-        }
-        fileLayout = { path: doc.path, layout: packed.layout };
+        await writeBoardFile(doc, data, { allowMissing: true });
       } else {
-        const blob = packed.blob;
-        doc = await port.create(fileNameFor(board.title), blob);
+        const packed = await packBoardFile(data, { created, allowMissing: true });
+        created = packed.manifest.created;
+        doc = await port.create(fileNameFor(board.title), packed.blob);
         fileLayout = doc.path ? { path: doc.path, layout: packed.layout } : null;
         namedTitle = board.title;
         reportDocument();
       }
       await fileRow();
       warnedFile = false;
+      // Work done while this wrote is the next autosave's: it loops on it.
       if (edits === gen) markDirty(false);
-      else scheduleFileSave();
       return true;
     } catch (err) {
       console.error('[mbrd] could not write the board to its file:', err);
@@ -1365,6 +1404,37 @@ export function adoptFolder(): Promise<void> {
     toast('Could not open the boards folder: ' + detailOf(err), 'error');
   });
   return adopted;
+}
+
+/**
+ * Boot, in the apps: the board the last run was on, read back from its file,
+ * which is the only copy there is (session.ts keeps none). Read as a Blob the
+ * shell handed over, so its pictures stay where they are in it.
+ */
+async function reopenFile(path: string): Promise<boolean> {
+  const ref: DocumentRef = { name: fileNameOf(path), path };
+  const job = busy('Opening ' + ref.name);
+  try {
+    if (!(await platform.files.exists(ref))) {
+      toast(`${ref.name} has moved or been deleted, so it could not be reopened`, 'error');
+      return false;
+    }
+    const file = await platform.files.read(ref);
+    await withFreshAssets(async () => {
+      const { manifest, board: data } = await unpackBoard(file, { owned: true });
+      loadBoard(data);
+      created = (typeof manifest.created === 'string' && manifest.created) || null;
+    });
+    doc = ref;
+    reportDocument();
+    return true;
+  } catch (err) {
+    console.error(err);
+    toast('Could not reopen ' + ref.name + ': ' + detailOf(err), 'error');
+    return false;
+  } finally {
+    job.end();
+  }
 }
 
 /** Open a board in the folder that has no shelf row yet. */
@@ -1486,6 +1556,11 @@ export function initStorage() {
     setCreated: at => { created = at; },
     exportBoard,
     prompt: opts => prompt(opts),
+    fileBacked: () => !!folder && !!doc?.path,
+    filePath: () => doc?.path ?? null,
+    settled: () => adopted,
+    saveFile: () => saveDocument(),
+    reopen: reopenFile,
   });
   initSessionStorage();
 }

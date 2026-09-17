@@ -180,8 +180,7 @@ export function fileCommands() {
     },
     library: () => openLibrary(),
     // Debug readouts: each toasts the summary and logs the detail. In the apps
-    // there is no browser to name: a board is a file, and the store under it
-    // is only the crash copy.
+    // there is no browser to name: a board is a file, and the only copy.
     boardSafe: () => {
       const { state, detail } = boardSafety();
       const failure = lastSaveFailure();
@@ -194,7 +193,6 @@ export function fileCommands() {
     /** Storage persistence state and per-store breakdown. */
     storageState: async () => {
       // The apps keep boards as files, so the question is where they are.
-      // Android names no folder yet (see boardFolder in storage/storage.ts).
       if (isDesktop()) {
         const home = boardFolder();
         toast(home ? `Boards are kept in ${home}` : 'Boards are kept inside the app');

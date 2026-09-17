@@ -6,6 +6,7 @@
 
 import type { Bridge } from '../../web/assets/js/platform/electron.ts';
 import { BOOT } from './boot.ts';
+import * as boards from './boards.ts';
 import * as files from './files.ts';
 import * as lifecycle from './lifecycle.ts';
 import { call, listen } from './native.ts';
@@ -46,20 +47,19 @@ const api: AndroidBridge = {
     pickSave: files.pickSave,
     pickImport: files.pickImport,
     write: files.write,
-    // The page writes a phone's board whole (platform/electron.ts asks no more).
-    append: notYet('add to the end of a board file'),
+    append: files.append,
+    tail: files.tail,
     read: files.read,
     exists: files.exists,
   }),
 
-  // The desktop's boards folder. The phone's folder is MbrdRoot's, and it keeps
-  // no list of its own yet, so list() answers null and the page asks no more.
+  // The boards folder, MbrdRoot's: Documents/mbrd with the storage grant.
   boards: Object.freeze({
-    list: () => Promise.resolve(null),
-    create: notYet('make a board in its folder'),
-    rename: notYet('rename a board file'),
-    trash: notYet('move a board to the bin'),
-    reveal: notYet('open the boards folder'),
+    list: boards.list,
+    create: boards.create,
+    rename: boards.rename,
+    trash: boards.trash,
+    reveal: boards.reveal,
   }),
 
   native: Object.freeze({

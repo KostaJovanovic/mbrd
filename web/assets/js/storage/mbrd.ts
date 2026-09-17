@@ -2,7 +2,7 @@
 // in timeline/, and content-addressed assets/, notes/, waveforms/. One
 // self-contained file. Items reference bytes as `asset: { hash, embedded: true }`.
 
-import { appendZip, readZip, writeZip, writeZipLayout } from './zip.ts';
+import { appendZip, readZip, readZipBlob, writeZip, writeZipLayout } from './zip.ts';
 import type { ZipEntry, ZipLayout } from './zip.ts';
 import { getAsset, putAsset } from './assets.ts';
 import type { Asset } from './assets.ts';
@@ -508,20 +508,34 @@ function* allItems(board: FileBoard): Generator<FileItem> {
   for (const t of board.trash || []) if (isRecord(t) && isRecord(t.item)) yield t.item;
 }
 
+/** The type a stored asset entry is kept as, or null for any other entry. */
+function assetType(name: string) {
+  if (!name.startsWith(ASSETS_DIR)) return null;
+  const dot = name.lastIndexOf('.');
+  return dot > name.lastIndexOf('/') ? mimeFor(name.slice(dot + 1)) : '';
+}
+
 /**
  * Read a .mbrd Blob. Registers every embedded asset in the asset store and
  * returns `{ manifest, board }` ready for state.loadBoard().
+ *
+ * `owned` is a Blob the app holds and nothing else can change - a board the
+ * shell read for it - whose pictures are then kept as slices of it rather than
+ * copied out (readZipBlob()). Never a File from a picker or a drop.
  */
-export async function unpackBoard(blob: Blob) {
+export async function unpackBoard(blob: Blob, { owned = false }: { owned?: boolean } = {}) {
   // Read, and if oversized, ask the user and retry with `lift`. Keyed by name
   // + size so a declined board does not re-prompt in the same session.
   const name = blobName(blob, 'This board');
-  let files;
+  const read = async (lifted: boolean) => owned
+    ? readZipBlob(blob, { lift: lifted, keep: assetType })
+    : { files: await readZip(blob, { lift: lifted }), blobs: new Map<string, Blob>() };
+  let files, blobs;
   try {
-    files = await readZip(blob);
+    ({ files, blobs } = await read(false));
   } catch (err) {
     if (!await lift(err, consentKey(blob), name, 'Open it')) throw err;
-    files = await readZip(blob, { lift: true });
+    ({ files, blobs } = await read(true));
   }
 
   // The `mimetype` entry, when it leads the archive, names what this is. Another
@@ -629,7 +643,8 @@ export async function unpackBoard(blob: Blob) {
   // Assets last, strictly validated — this is where archive names become
   // trusted identities. Hash must match content (see HASH comment above).
   const registered = new Set<string>();
-  for (const [name, bytes] of files) {
+  const entries: [string, Uint8Array | Blob][] = [...files, ...blobs];
+  for (const [name, data] of entries) {
     if (!name.startsWith(ASSETS_DIR)) continue;
     const file = name.slice(ASSETS_DIR.length);
     // Slug (before `--`) is discarded — it is for human readers only.
@@ -647,13 +662,17 @@ export async function unpackBoard(blob: Blob) {
       throw new Error(`Not a readable .mbrd: content ${hash.slice(0, 8)} is stored twice`);
     }
     // Verify content matches its claimed hash — the only enforcement of
-    // content addressing (dedup, waveforms, sweep all depend on it).
+    // content addressing (dedup, waveforms, sweep all depend on it). A kept
+    // slice is read for it one picture at a time.
+    const bytes = data instanceof Blob ? new Uint8Array(await data.arrayBuffer()) : data;
     if (await sha256(bytes) !== hash) {
       throw new Error(`"${name}" does not contain the data its name claims`);
     }
     registered.add(hash);
-    // Copy out of the archive buffer: subarrays keep the whole ZIP alive.
-    putAsset(hash, new Blob([bytes.slice()], { type: mimeFor(ext) }), { ext, mime: mimeFor(ext) });
+    // A slice of an owned archive is kept as it is. Bytes are copied out of
+    // the archive buffer: subarrays keep the whole ZIP alive.
+    const kept = data instanceof Blob ? data : new Blob([bytes.slice()], { type: mimeFor(ext) });
+    putAsset(hash, kept, { ext, mime: mimeFor(ext) });
   }
 
   return { manifest, board };

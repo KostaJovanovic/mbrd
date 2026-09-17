@@ -159,8 +159,14 @@ asks again. The first run with the grant moves the private store across.
 
 ## Files
 
-- **Save** asks for a name ("Save as", in `Documents/mbrd` or in the app's own
-  folder) and asks again before it replaces a file. **Open** copies a board from
+- **Every board is a file in the board folder**, as on the desktop
+  (`MbrdBoards`, `desktop/boards.ts`'s five calls): the board list reads the
+  folder, New makes a file, a rename renames it, and Delete moves it to
+  `.trash/` inside the folder, which keeps it 30 days. The autosave writes the
+  board on screen to its file a few seconds after an edit and when the app
+  pauses, adding only what changed (the `append` target), and the store keeps no
+  copy of it: only which file it is and where the view was. **Save as** asks for a
+  name and asks again before it replaces a file. **Open** copies a board from
   anywhere into the board folder, `name (2).mbrd` on a clash, except a board
   already there, which opens in place. **Import** copies nothing: each picture,
   clip or document is a token, and its bytes go into the store.

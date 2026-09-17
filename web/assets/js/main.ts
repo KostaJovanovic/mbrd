@@ -218,6 +218,14 @@ initSidebar(cmds, vp);
 // wired after buildPanel(), which built the row. A passing answer to Check for
 // updates is the page's own toast, never a pop-up of the system's
 // (research/old/done-2026-09-15.md, R7). The desktop never calls it.
+// An offer also toasts once, because the row on its own is not an answer: it
+// is the top of the Board tab, Check for updates is a button on the System
+// tab, and on a phone the press closes the panel - so the whole reply to
+// "check for updates" landed somewhere nobody was looking. The toast carries
+// the row's own press as its button, so the update can be taken from where the
+// news arrives. Once per state and version: a download's progress ticks repeat
+// both, and only the first of them says anything.
+let saidOffer = '';
 platform.updates.onOffer(offer => {
   if (offer?.state === 'said') {
     if (offer.note) toast(offer.note);
@@ -225,6 +233,14 @@ platform.updates.onOffer(offer => {
   }
   setUpdateOffer(offer);
   paintPanel();
+  const news = offer ? `${offer.state} ${offer.version}` : '';
+  if (news === saidOffer) return;
+  saidOffer = news;
+  // 'downloading' is already counting on the row, so it offers no button.
+  if (offer?.note) {
+    toast(offer.note, offer.state === 'failed' ? 'error' : '',
+      offer.state === 'downloading' ? undefined : { label: 'Update', run: () => { void cmds.installUpdate(); } });
+  }
 });
 initMobileHeaderEditor(vp);
 initItems(el('world')!, vp);

@@ -63,8 +63,15 @@ export function crc32(bytes: Uint8Array) {
  * is the one thing that stopped a photograph going into the archive as a Blob
  * rather than as bytes. Streaming it is the difference between a peak of every
  * asset resident at once and a peak of one chunk.
+ *
+ * Kept per Blob, which cannot change: a board's pictures are the same Blobs
+ * save after save, and a 400 MB board otherwise read all of them through a
+ * JavaScript loop at every whole write.
  */
+const blobCrcs = new WeakMap<Blob, number>();
 async function crc32Blob(blob: Blob) {
+  const known = blobCrcs.get(blob);
+  if (known !== undefined) return known;
   const reader = blob.stream().getReader();
   let c = CRC_INIT;
   try {
@@ -76,7 +83,9 @@ async function crc32Blob(blob: Blob) {
   } finally {
     await reader.cancel().catch(() => {});
   }
-  return crcEnd(c);
+  const crc = crcEnd(c);
+  blobCrcs.set(blob, crc);
+  return crc;
 }
 
 // --- DEFLATE via the platform ----------------------------------------------
@@ -251,6 +260,60 @@ export type ZipRecord = {
 
 /** A file this module wrote, as the next append needs it: its length, and where each entry sits. */
 export type ZipLayout = { size: number, records: Map<string, ZipRecord> };
+
+/**
+ * A file's layout from its last bytes alone: the end record and the central
+ * directory, never the entries in front of them, so a 400 MB board is read for
+ * a few hundred KB. `tail` is the file's last tail.length bytes, `size` its
+ * length. Answers the layout; or, when `tail` starts inside the directory, how
+ * many bytes from the end it takes; or null for a file this cannot read that
+ * way - a save cut short, a directory that does not add up - which is then
+ * written whole, as it always was.
+ */
+export function layoutFromTail(tail: Uint8Array, size: number): ZipLayout | number | null {
+  if (tail.length < 22 || tail.length > size) return null;
+  const view = new DataView(tail.buffer, tail.byteOffset, tail.byteLength);
+  // Where tail[0] sits in the file.
+  const base = size - tail.length;
+  let eocd = -1;
+  for (let i = tail.length - 22; i >= Math.max(0, tail.length - 22 - 0xffff); i--) {
+    if (view.getUint32(i, true) === EOCD_SIG) { eocd = i; break; }
+  }
+  if (eocd < 0) return null;
+  const count = view.getUint16(eocd + 10, true);
+  const cdSize = view.getUint32(eocd + 12, true);
+  const cdStart = view.getUint32(eocd + 16, true);
+  if (cdStart + cdSize > base + eocd) return null;
+  if (cdStart < base) return size - cdStart;
+  let p = cdStart - base;
+  const end = p + cdSize;
+  const records = new Map<string, ZipRecord>();
+  for (let n = 0; n < count; n++) {
+    if (p + 46 > end || view.getUint32(p, true) !== CD_SIG) return null;
+    const flags = view.getUint16(p + 8, true);
+    const method = view.getUint16(p + 10, true);
+    const time = view.getUint16(p + 12, true);
+    const date = view.getUint16(p + 14, true);
+    const crc = view.getUint32(p + 16, true);
+    const csize = view.getUint32(p + 20, true);
+    const usize = view.getUint32(p + 24, true);
+    const nameLen = view.getUint16(p + 28, true);
+    const extraLen = view.getUint16(p + 30, true);
+    const commentLen = view.getUint16(p + 32, true);
+    const offset = view.getUint32(p + 42, true);
+    if (p + 46 + nameLen > end) return null;
+    const name = entryName(tail.subarray(p + 46, p + 46 + nameLen), flags);
+    p += 46 + nameLen + extraLen + commentLen;
+    if (p > end) return null;
+    if (name.endsWith('/')) continue;
+    // What readZip() would refuse, an append must not point at.
+    if (method !== 0 && method !== 8) return null;
+    if (method === 0 && csize !== usize) return null;
+    if (offset + 30 + nameLen + csize > cdStart || records.has(name)) return null;
+    records.set(name, { offset, crc, csize, usize, method, time, date });
+  }
+  return { size, records };
+}
 
 /**
  * The writer. With no `prior` it writes a whole archive. With one it writes
@@ -434,6 +497,52 @@ export const LIMITS = {
 const tooBig = (n: number) =>
   `This file is ${mb(n)}, past the ${mb(LIMITS.archive)} an archive is normally opened at.`;
 
+const tooMany = (count: number) => oversize(
+  'archive-entries',
+  `This archive declares ${count.toLocaleString()} entries, past the ${LIMITS.entries.toLocaleString()} one is normally opened with.`,
+);
+
+/**
+ * Whether one entry may be read, from what the directory declares. Shared by
+ * both readers, so a ceiling moved in one moves in the other.
+ */
+function admit(
+  name: string, method: number, csize: number, usize: number, totalOut: number,
+  { lift, entryCap, totalCap }: { lift: boolean, entryCap: number, totalCap: number },
+) {
+  if (method !== 0 && method !== 8) {
+    throw new Error(`"${name}" uses unsupported compression method ${method}`);
+  }
+  // Stored means the two sizes are the same number by definition; a file
+  // saying otherwise is malformed however innocently it got that way.
+  if (method === 0 && csize !== usize) {
+    throw new Error(`Corrupt entry "${name}": stored, but its two sizes disagree`);
+  }
+
+  // Everything here is judged from the *declared* size, before a byte is
+  // inflated. That is the point: the cost of a decompression bomb is paid
+  // during the inflate, so the decision has to be made before it starts.
+  if (!lift && usize > entryCap) {
+    throw oversize(
+      'entry-bytes',
+      `"${name}" inside this file is ${mb(usize)} unpacked, past the ${mb(entryCap)} one entry is normally given.`,
+    );
+  }
+  if (!lift && totalOut + usize > totalCap) {
+    throw oversize(
+      'inflated-bytes',
+      `This file unpacks to at least ${mb(totalOut + usize)}, past the ${mb(totalCap)} opened at once.`,
+    );
+  }
+  if (!lift && usize > LIMITS.ratioFloor && csize > 0 && usize / csize > LIMITS.ratio) {
+    throw oversize(
+      'entry-ratio',
+      `"${name}" inside this file is ${mb(csize)} packed and claims ${mb(usize)} unpacked - `
+      + `it expands ${Math.round(usize / csize)} times over.`,
+    );
+  }
+}
+
 /** Bounds-check before a read, with a message that names the file's fault. */
 function within(end: number, size: number, what: string) {
   if (!Number.isFinite(end) || end < 0 || end > size) {
@@ -489,12 +598,7 @@ export async function readZip(
   const cdSize = view.getUint32(eocd + 12, true);
   let p = view.getUint32(eocd + 16, true);
 
-  if (!lift && count > LIMITS.entries) {
-    throw oversize(
-      'archive-entries',
-      `This archive declares ${count.toLocaleString()} entries, past the ${LIMITS.entries.toLocaleString()} one is normally opened with.`,
-    );
-  }
+  if (!lift && count > LIMITS.entries) throw tooMany(count);
   // The directory has to lie inside the file and stop before the record that
   // describes it. A backwards scan for the EOCD signature can land on four
   // bytes that merely look like one from inside compressed data, and this is
@@ -548,37 +652,7 @@ export async function readZip(
     // short remainder rather than fail.
     within(start + csize, size, `the data for "${name}"`);
 
-    if (method !== 0 && method !== 8) {
-      throw new Error(`"${name}" uses unsupported compression method ${method}`);
-    }
-    // Stored means the two sizes are the same number by definition; a file
-    // saying otherwise is malformed however innocently it got that way.
-    if (method === 0 && csize !== usize) {
-      throw new Error(`Corrupt entry "${name}": stored, but its two sizes disagree`);
-    }
-
-    // Everything here is judged from the *declared* size, before a byte is
-    // inflated. That is the point: the cost of a decompression bomb is paid
-    // during the inflate, so the decision has to be made before it starts.
-    if (!lift && usize > entryCap) {
-      throw oversize(
-        'entry-bytes',
-        `"${name}" inside this file is ${mb(usize)} unpacked, past the ${mb(entryCap)} one entry is normally given.`,
-      );
-    }
-    if (!lift && totalOut + usize > totalCap) {
-      throw oversize(
-        'inflated-bytes',
-        `This file unpacks to at least ${mb(totalOut + usize)}, past the ${mb(totalCap)} opened at once.`,
-      );
-    }
-    if (!lift && usize > LIMITS.ratioFloor && csize > 0 && usize / csize > LIMITS.ratio) {
-      throw oversize(
-        'entry-ratio',
-        `"${name}" inside this file is ${mb(csize)} packed and claims ${mb(usize)} unpacked - `
-        + `it expands ${Math.round(usize / csize)} times over.`,
-      );
-    }
+    admit(name, method, csize, usize, totalOut, { lift, entryCap, totalCap });
 
     const raw = bytes.subarray(start, start + csize);
     let data;
@@ -612,6 +686,108 @@ export async function readZip(
     out.set(name, data);
   }
   return out;
+}
+
+/**
+ * readZip() for an archive the app owns as a Blob - a board the shell handed
+ * over - without ever holding it as bytes. Only the end, the directory, each
+ * local header and the entries `keep()` does not want are read. A stored entry
+ * `keep()` names a type for comes back as a slice of the archive, which the
+ * browser composes rather than copies: a 400 MB board used to cost the file,
+ * a copy of it and a copy of every picture in it, and now costs the file.
+ *
+ * Every check readZip() makes is made here, in the same words, and the kept
+ * slices are checksummed too. The one thing this cannot do cheaply is find an
+ * end record past a comment's reach, which only a save cut short leaves; that
+ * archive goes to readZip(), whose search crosses the whole file.
+ *
+ * Not for a File from a picker or a drop: a slice of a file on disk stops
+ * reading when the file changes, and the picture on its card with it.
+ */
+export async function readZipBlob(
+  blob: Blob,
+  { lift = false, keep }: { lift?: boolean, keep: (name: string) => string | null },
+): Promise<{ files: Map<string, Bytes>, blobs: Map<string, Blob> }> {
+  const size = blob.size;
+  if (!lift && size > LIMITS.archive) throw oversize('archive-bytes', tooBig(size));
+  if (size < 22) throw new Error('Not a ZIP archive (too short to hold a directory)');
+  const read = async (from: number, to: number): Promise<Bytes> =>
+    new Uint8Array(await blob.slice(from, to).arrayBuffer());
+
+  const tailFrom = Math.max(0, size - 0xffff - 22);
+  const tail = await read(tailFrom, size);
+  const tv = new DataView(tail.buffer);
+  let eocd = -1;
+  for (let i = tail.length - 22; i >= 0; i--) {
+    if (tv.getUint32(i, true) === EOCD_SIG) { eocd = i; break; }
+  }
+  if (eocd < 0) return { files: await readZip(blob, { lift }), blobs: new Map() };
+
+  const count = tv.getUint16(eocd + 10, true);
+  const cdSize = tv.getUint32(eocd + 12, true);
+  const cdStart = tv.getUint32(eocd + 16, true);
+  if (!lift && count > LIMITS.entries) throw tooMany(count);
+  within(cdStart + cdSize, size, 'the central directory');
+  if (cdStart + cdSize > tailFrom + eocd) throw new Error('Corrupt archive: the central directory overruns its own record');
+
+  const cd = await read(cdStart, cdStart + cdSize);
+  const view = new DataView(cd.buffer);
+  const files = new Map<string, Bytes>();
+  const blobs = new Map<string, Blob>();
+  const caps = { lift, entryCap: LIMITS.entry, totalCap: LIMITS.total };
+  let totalOut = 0;
+  let p = 0;
+  for (let n = 0; n < count; n++) {
+    within(p + 46, cd.length, 'a central-directory entry');
+    if (view.getUint32(p, true) !== CD_SIG) throw new Error('Corrupt central directory');
+    const flags = view.getUint16(p + 8, true);
+    const method = view.getUint16(p + 10, true);
+    const crc = view.getUint32(p + 16, true);
+    const csize = view.getUint32(p + 20, true);
+    const usize = view.getUint32(p + 24, true);
+    const nameLen = view.getUint16(p + 28, true);
+    const extraLen = view.getUint16(p + 30, true);
+    const commentLen = view.getUint16(p + 32, true);
+    const localOff = view.getUint32(p + 42, true);
+    within(p + 46 + nameLen, cd.length, 'an entry name');
+    const name = entryName(cd.subarray(p + 46, p + 46 + nameLen), flags);
+    p += 46 + nameLen + extraLen + commentLen;
+    within(p, cd.length, 'the central directory');
+
+    if (name.endsWith('/')) continue;
+    if (files.has(name) || blobs.has(name)) throw new Error(`Corrupt archive: "${name}" appears twice`);
+
+    // The local header's own lengths place the data, as in readZip().
+    within(localOff + 30, size, `the header for "${name}"`);
+    const local = await read(localOff, localOff + 30);
+    const lv = new DataView(local.buffer);
+    if (lv.getUint32(0, true) !== LOCAL_SIG) throw new Error(`Corrupt entry "${name}"`);
+    const start = localOff + 30 + lv.getUint16(26, true) + lv.getUint16(28, true);
+    within(start + csize, size, `the data for "${name}"`);
+
+    admit(name, method, csize, usize, totalOut, caps);
+
+    const type = method === 0 ? keep(name) : null;
+    if (type !== null) {
+      const slice = blob.slice(start, start + csize, type);
+      if (await crc32Blob(slice) !== crc) throw new Error(`"${name}" is damaged (checksum mismatch)`);
+      blobs.set(name, slice);
+    } else {
+      const raw = await read(start, start + csize);
+      let data = raw;
+      if (method === 8) {
+        if (typeof DecompressionStream === 'undefined') {
+          throw new Error('This browser cannot inflate DEFLATE entries');
+        }
+        data = await inflateRaw(raw, usize, name);
+        if (data.length !== usize) throw new Error(`"${name}" failed to inflate cleanly`);
+      }
+      if (crc32(data) !== crc) throw new Error(`"${name}" is damaged (checksum mismatch)`);
+      files.set(name, data);
+    }
+    totalOut += usize;
+  }
+  return { files, blobs };
 }
 
 /**

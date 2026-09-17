@@ -5,6 +5,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 /**
  * The names the store and the files are kept under. Desktop twin: fileFor() and
@@ -89,6 +90,34 @@ final class MbrdNames {
     static String extension(String name) {
         int dot = name.lastIndexOf('.');
         return dot > 0 && name.length() - dot <= 10 ? name.substring(dot) : "";
+    }
+
+    private static final String BOARD_EXT = ".mbrd";
+    private static final Pattern DEVICE = Pattern.compile("^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$", Pattern.CASE_INSENSITIVE);
+
+    /**
+     * A board's name in the boards folder: desktop/board-names.mts's plainName(),
+     * ported, so a folder copied between a phone and a computer names its boards
+     * alike. No folder, no hidden dot, nothing Windows refuses, and .mbrd.
+     */
+    static String plainName(String suggested) {
+        String stem = (suggested == null ? "" : suggested)
+            .replaceAll("(?i)\\.mbrd$", "")
+            .replaceAll("[<>:\"/\\\\|?*\\x00-\\x1F]", "")
+            .replaceAll("(?U)\\s+", " ")
+            .replaceAll("^[. ]+", "");
+        if (stem.length() > MAX_NAME) stem = stem.substring(0, MAX_NAME);
+        stem = stem.replaceAll("[. ]+$", "");
+        if (stem.isEmpty()) stem = "board";
+        if (DEVICE.matcher(stem.split("\\.")[0]).matches()) stem = "_" + stem;
+        return stem + BOARD_EXT;
+    }
+
+    /** The nth choice for a board's name: "name.mbrd", then "name_(2).mbrd" and
+     *  on, as nthName() in desktop/board-names.mts. */
+    static String nthName(String name, int n) {
+        if (n <= 1) return name;
+        return name.substring(0, name.length() - BOARD_EXT.length()) + "_(" + n + ")" + BOARD_EXT;
     }
 
     /** `name`, or "name (2).ext" and on, whichever `dir` does not hold yet. */

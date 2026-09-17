@@ -58,10 +58,16 @@ export interface FilesPort {
   /**
    * Desktop only: add `blob` to the end of the file, which must be `at` bytes
    * long - a save's tail (appendZip() in storage/zip.ts). Throws, leaving the
-   * file as it was, when the file has changed length since. Absent where a
-   * board is always written whole (the web, the phone).
+   * file as it was, when the file has changed length since. Absent on the
+   * web, where a board is always written whole.
    */
   append?(ref: DocumentRef, blob: Blob, at: number): Promise<void>;
+  /**
+   * A shell only: the file's length, and its last `length` bytes (all of it
+   * when shorter) - the ZIP directory, which the first append of a session
+   * reads the file's layout from (layoutFromTail() in storage/zip.ts).
+   */
+  tail?(ref: DocumentRef, length: number): Promise<{ size: number, bytes: Uint8Array }>;
   /** Desktop only: choose files to add. Web uses import/drop.ts instead. */
   pickImport(spec: PickSpec): Promise<File[]>;
   /** Desktop only: read a document back by path. */

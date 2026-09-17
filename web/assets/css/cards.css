@@ -744,6 +744,20 @@
    expensive thing on the card. Same rung as every other detail (viewport.ts). */
 #world.zoom-far .model-stage { visibility: hidden; }
 
+/* And the filename goes with it, on a card that is showing the part. At this
+   rung every other caption on the board is already down - the item bar, the
+   plate, the label (item-chrome.css) - and this is the same line of type by
+   another route, set at --t-tiny inside the card rather than on a strip under
+   it. At 40% it is four pixels of smear, and the rung exists to take exactly
+   that away. What is left is the picture, edge to edge inside the mount, which
+   is what a photograph beside it shows out here and is the whole of why
+   item-chrome.css stopped drawing this card a headline.
+
+   Only while there is a still: a model still reading, or being turned, has a
+   hidden stage behind this name and the name is all the card has left to say.
+   `flex: none` on the rule above means the picture takes the room back. */
+#world.zoom-far .card-model:has(.model-still) .card-name { display: none; }
+
 /* "No card" on a model - the third reading of the promise the cut-out and the
    sticky make, which is that the paper goes and what was on it stays. Here the
    part stays: same size, same place, same view, standing on the board.

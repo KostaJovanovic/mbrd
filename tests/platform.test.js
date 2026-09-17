@@ -180,6 +180,71 @@ test('Save As asks again even though there is a document', async () => {
   assert.equal(shell.calls.picked.length, 2);
 });
 
+test('a second Save onto the same file adds only its tail, when the shell can append', async () => {
+  // The Android shell as much as the desktop: a 400 MB board rewritten whole
+  // on every Save was the phone's slow save.
+  loadBoard({ title: 'Appended', items: [] });
+  const shell = fakeShell();
+  const appended = [];
+  shell.files.append = async (ref, blob, at) => { appended.push({ ref, blob, at }); };
+  setPlatform(shell);
+
+  await exportBoard({ pickNew: true });
+  const whole = shell.calls.written.at(-1).blob;
+  loadBoard({ title: 'Appended', items: [
+    { id: 'n1', type: 'note', x: 0, y: 0, w: 200, h: 120, meta: { text: 'second save' } },
+  ] });
+  await exportBoard();
+
+  assert.equal(shell.calls.written.length, 1, 'the second Save wrote nothing whole');
+  assert.equal(appended.length, 1);
+  assert.equal(appended[0].ref.path, '/tmp/Appended.mbrd');
+  assert.equal(appended[0].at, whole.size, 'onto the end of what the first Save left');
+  const { board: data } = await unpackBoard(new File([whole, appended[0].blob], 'Appended.mbrd'));
+  // The note's .md sidecar gives its first line a heading marker, and keeps it.
+  assert.equal(data.items[0]?.meta?.text, '# second save', 'and the file now reads as the new board');
+});
+
+test('the first Save after a start adds only its tail, reading the directory from the file\'s end', async () => {
+  // A path nothing in this session wrote stands in for a restart, which
+  // forgets the session's layout. The file's own end says it again.
+  const disk = new Map();
+  const appended = [];
+  const shell = fakeShell();
+  shell.files.write = async (ref, blob) => { disk.set(ref.path, new Uint8Array(await blob.arrayBuffer())); };
+  shell.files.append = async (ref, blob, at) => {
+    const was = disk.get(ref.path);
+    assert.equal(was.length, at, 'appended onto the length the file has');
+    const add = new Uint8Array(await blob.arrayBuffer());
+    const next = new Uint8Array(at + add.length);
+    next.set(was);
+    next.set(add, at);
+    disk.set(ref.path, next);
+    appended.push(at);
+  };
+  shell.files.tail = async (ref, length) => {
+    const file = disk.get(ref.path);
+    if (!file) throw new Error('not there');
+    return { size: file.length, bytes: file.slice(file.length - Math.min(length, file.length)) };
+  };
+  setPlatform(shell);
+
+  loadBoard({ title: 'Restarted', items: [] });
+  await exportBoard({ pickNew: true });
+  assert.equal(appended.length, 0, 'a file just picked is written whole');
+  disk.set('/tmp/Reopened.mbrd', disk.get('/tmp/Restarted.mbrd'));
+  const ref = { name: 'Reopened.mbrd', path: '/tmp/Reopened.mbrd' };
+  assert.equal(await openFile(new File([disk.get(ref.path)], ref.name), ref), true);
+
+  loadBoard({ title: 'Reopened', items: [
+    { id: 'n1', type: 'note', x: 0, y: 0, w: 200, h: 120, meta: { text: 'after a restart' } },
+  ] });
+  await exportBoard();
+  assert.equal(appended.length, 1, 'the first Save onto the reopened file appended');
+  const { board: data } = await unpackBoard(new File([disk.get(ref.path)], ref.name));
+  assert.equal(data.items[0]?.meta?.text, '# after a restart');
+});
+
 test('without a picker the write still happens, under the packed name', async () => {
   // Safari and Firefox. The old code branched between a handle and a
   // download; now both endings are write()'s, and the caller only decides

@@ -951,6 +951,7 @@ function wireFiles(): void {
   ipcMain.handle('files:pickImport', () => files.pickImport(current()));
   ipcMain.handle('files:write', (_e, path: unknown, data: unknown) => files.write(path, data));
   ipcMain.handle('files:append', (_e, path: unknown, data: unknown, at: unknown) => files.append(path, data, at));
+  ipcMain.handle('files:tail', (_e, path: unknown, length: unknown) => files.tail(path, length));
   ipcMain.handle('files:read', (_e, path: unknown) => files.read(path));
   ipcMain.handle('files:exists', (_e, path: unknown) => files.exists(path));
   ipcMain.handle('boards:list', () => boards.list());

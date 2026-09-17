@@ -1061,8 +1061,12 @@ export const SECTIONS: Section[] = [
           title: () => 'mbrd for Windows, macOS, Linux and Android, on GitHub. Opens in a new tab' },
       ] },
       { type: 'buttons', when: isDesktop, buttons: [
+        // The answer is not in this panel - the desktop puts it in the title
+        // bar, the phone in a toast and in the Update row at the top of the
+        // Board tab - so the hint says an answer is coming rather than naming
+        // a place that depends on which app this is.
         { cmd: 'check-updates', label: 'Check for updates', closesPanel: true,
-          title: () => 'Ask for a newer mbrd. The answer comes in a window of its own' },
+          title: () => 'Ask for a newer mbrd. The answer comes back in a moment, and an update to install waits as a button' },
       ] },
     ],
   },

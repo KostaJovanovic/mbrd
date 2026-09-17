@@ -45,7 +45,8 @@ import java.util.concurrent.Executors;
  * Save, Open and Import. Desktop twin: desktop/files.ts, and its rule: the page
  * never names a path this side did not produce. Here that is a path under
  * MbrdRoot's folders (never a hidden one, so never the store), or one this
- * plugin handed out. checked() is that rule, for MbrdBytes' "file" target too.
+ * plugin handed out. checked() is that rule, for MbrdBytes' "file" and "append"
+ * targets and for MbrdBoards too.
  *
  * A file goes to the page as a token, which the bridge fetches from
  * /__mbrd/file/<token>. pickOpen copies a board from anywhere into this run's
@@ -65,10 +66,17 @@ public class MbrdFiles extends Plugin {
 
         final File file;
         final Uri uri;
+        /** Where in `file` the bytes start: past 0 only for tail(). */
+        final long from;
 
         Handed(File file, Uri uri) {
+            this(file, uri, 0);
+        }
+
+        Handed(File file, Uri uri, long from) {
             this.file = file;
             this.uri = uri;
+            this.from = from;
         }
     }
 
@@ -125,7 +133,14 @@ public class MbrdFiles extends Plugin {
         Handed h = TOKENS.remove(token);
         if (h == null) return MbrdWebViewClient.status(404);
         try {
-            InputStream in = h.file != null ? new FileInputStream(h.file) : ctx.getContentResolver().openInputStream(h.uri);
+            InputStream in;
+            if (h.file != null) {
+                FileInputStream f = new FileInputStream(h.file);
+                if (h.from > 0) f.getChannel().position(h.from);
+                in = f;
+            } else {
+                in = ctx.getContentResolver().openInputStream(h.uri);
+            }
             if (in == null) return MbrdWebViewClient.status(404);
             return new WebResourceResponse("application/octet-stream", null, 200, "OK", MbrdWebViewClient.noStore(), in);
         } catch (IOException | SecurityException e) {
@@ -387,6 +402,28 @@ public class MbrdFiles extends Plugin {
             File file = checked(call.getString("path"));
             if (!file.isFile()) throw new IOException(file.getName() + " is not there any more");
             call.resolve(fileResult(file));
+        } catch (IOException e) {
+            call.reject(e.getMessage());
+        }
+    }
+
+    /**
+     * A board's size, and a token for its last `length` bytes: the ZIP directory,
+     * which the page reads the file's layout from (layoutFromTail() in
+     * storage/zip.ts) without reading the pictures in front of it.
+     */
+    @PluginMethod
+    public void tail(PluginCall call) {
+        try {
+            File file = checked(call.getString("path"));
+            if (!file.isFile()) throw new IOException(file.getName() + " is not there any more");
+            long size = file.length();
+            Double asked = call.getDouble("length");
+            long length = asked == null ? 0 : Math.max(0, Math.min(size, (long) Math.floor(asked)));
+            JSObject r = new JSObject();
+            r.put("size", size);
+            r.put("token", token(new Handed(file, null, size - length)));
+            call.resolve(r);
         } catch (IOException e) {
             call.reject(e.getMessage());
         }

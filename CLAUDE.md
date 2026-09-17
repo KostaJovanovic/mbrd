@@ -122,9 +122,11 @@ the two esbuild bundles. See `desktop/scripts/portable.mjs`.
 **Every desktop board is a file.** `desktop/boards.ts` keeps the boards folder:
 `Documents/mbrd`, or `boards/` in the data folder of a portable copy or of a
 run given `--user-data-dir`. That last rule keeps the smoke test out of
-Documents. The page writes the board on screen to its file on a timer
-(`saveDocument()` in `storage/storage.ts`), and the store is the crash copy.
-Android answers `boards.list()` with null and keeps its own folder rules.
+Documents. The autosave (`session.ts`) writes the board on screen to its file
+(`saveDocument()` in `storage/storage.ts`), and the store keeps only which file
+that is and where the view was, never a copy of the board.
+Android keeps the same folder through `MbrdBoards.java`: `MbrdRoot`'s, which
+is `Documents/mbrd` with the storage grant, and its bin is `.trash/` inside it.
 
 The root package still declares four devDependencies and no runtime
 dependency, and `npm test` still installs nothing — that is what the two-package

@@ -20,14 +20,6 @@ import {
   loadBoard, board, markDirty, setTitle, isDirty, serializeBoard,
 } from '../web/assets/js/state.ts';
 
-// The file timer is ten seconds. Unref'd, so it cannot hold the process open.
-const realSetTimeout = globalThis.setTimeout;
-globalThis.setTimeout = (...args) => {
-  const t = realSetTimeout(...args);
-  t?.unref?.();
-  return t;
-};
-
 const HOME = '/home/k/Documents/mbrd';
 const at = name => HOME + '/' + name;
 const nameOf = path => path.slice(path.lastIndexOf('/') + 1);
