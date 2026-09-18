@@ -16,12 +16,13 @@ import { el, div } from '../../util.ts';
 import {
   TOOLS, TUNING, SUBS, yieldsTo, planBoard, makeField, stamp, fieldClear, wearShare, wearOf,
   cardClean, tally, fullTank, tankStep, tankPower, jetShape, handRoom,
-  toolWork, toolWanted, toolShare, webCards, webHolds, peelFor,
+  toolWork, toolWanted, toolShare, webCards, webHolds, peelFor, thumbLayout,
+  printTurn, toPrint,
 } from './mess.ts';
 import type { ToolId, MessKind, Field, Web, Box, Rng, Tank, DebrisPlan, TrackPlan } from './mess.ts';
 import {
   crust, crustMask, paintField, eraseAt, wetAt, sheenAt, gleamAt, runAt,
-  washOf, waterInk,
+  washOf, waterInk, fleckColour,
   debrisNode, placeBit, sizeBit, peelAt, BIT_UNIT, webPath, webSag, webCore, webNode,
   bootMask, paintBoot, BOOT_GRID,
   spiderNode, threadNode, SPIDER_SIZE,
@@ -291,6 +292,10 @@ let layer: HTMLElement | null = null;
 let catcher: HTMLElement | null = null;
 let cards: LiveCard[] = [];
 let webs: LiveWeb[] = [];
+/** The board as it was dealt, for the "before" half of the ending's polaroid:
+ *  where each card was and the colour of what was on it. Taken on the way in,
+ *  because by the ending every one of those colours has been washed off. */
+let dealt: { box: Box, colour: string }[] = [];
 /** The tenant of the biggest web, or null on a board that was dealt none. */
 let spider: LiveSpider | null = null;
 /** The trail across the floor. No card owns these, and the board is not done
@@ -439,6 +444,7 @@ export function startClean(): boolean {
   const plan = planBoard(picked.map(boxOf), rng);
   const byId = new Map(picked.map(i => [i.id, i]));
   cards = plan.cards.map(p => buildCard(byId.get(p.id)!, p)).filter(c => c !== null);
+  dealt = cards.map(c => ({ box: boxOf(c.item), colour: dealtColour(c) }));
   // After the cards, so the trail lies over them: whoever walked through did it
   // once everything else was already on the board.
   buildTracks(plan.tracks);
@@ -550,6 +556,7 @@ export function stopClean(): boolean {
   // this is the reference and nothing else. See the drop, which is the one thing
   // in the mode that outlives the web it started on.
   spider = null;
+  dealt = [];
   tracks = [];
   pending = [];
   document.documentElement.classList.remove('is-cleaning', 'is-clean-done');
@@ -761,7 +768,8 @@ function buildTracks(plan: readonly TrackPlan[]) {
     canvas.style.top = (-p.y - BOOT_H / 2).toFixed(2) + 'px';
     canvas.style.width = BOOT_W + 'px';
     canvas.style.height = BOOT_H + 'px';
-    const deg = (-p.rot * 180) / Math.PI + 90;
+    // One angle for the drawing and for toPrint(), which inverts it.
+    const deg = (printTurn(p.rot) * 180) / Math.PI;
     canvas.style.transform = `rotate(${deg.toFixed(2)}deg)`;
     layer.append(canvas);
     made.push({
@@ -1912,16 +1920,7 @@ function dissolve(card: LiveCard, f: LiveField) {
  * flush on every stamp.
  */
 function toBoot(t: LiveTrack, wx: number, wy: number) {
-  const dx = wx - t.x;
-  const dy = wy - t.y;
-  const a = -(t.rot + Math.PI / 2);
-  const cos = Math.cos(a);
-  const sin = Math.sin(a);
-  // Rotate into the print's frame, then into its box. World y is up and the
-  // box's v runs down, hence the sign on the second row.
-  const px = dx * cos - dy * sin;
-  const py = dx * sin + dy * cos;
-  return { u: px / t.w + 0.5, v: -py / t.h + 0.5 };
+  return toPrint(t, wx, wy);
 }
 
 /**
@@ -2980,10 +2979,10 @@ function paintCount() {
 // ---- the ending ---------------------------------------------------------
 
 /**
- * Nothing closes. The line arrives, the light goes across, the music keeps
- * playing, and the board is there to be looked at for as long as anybody wants
- * to look at it - which is the point of having cleaned it. Done and Escape are
- * the way out, and they are the only ones.
+ * Nothing closes. The light goes across, a polaroid is dealt onto the board, the
+ * music keeps playing, and the board is there to be looked at for as long as
+ * anybody wants to look at it - which is the point of having cleaned it. Done
+ * and Escape are the way out, and they are the only ones.
  */
 function finish() {
   finishing = true;
@@ -2991,14 +2990,104 @@ function finish() {
   if (held) { flyHome(held); held = null; hideCursor(); }
   cue('done');
   document.documentElement.classList.add('is-clean-done');
-  const line = div('clean-line');
-  line.textContent = SPOTLESS;
-  catcher?.append(line);
+  catcher?.append(buildPolaroid());
   paintCanAfterFlight();
   el('clean-tools')?.toggleAttribute('hidden', true);
   el('clean-confirm')?.toggleAttribute('hidden', true);
   el('clean-end')?.toggleAttribute('hidden', false);
   later(() => cue('sweep', { volume: 0.6 }), 700);
+}
+
+/** One frame of the polaroid, in CSS pixels. Two of them side by side and the
+ *  gap between come to about 220. */
+const SHOT_W = 104;
+const SHOT_H = 78;
+const SHOT_PAD = 7;
+
+/**
+ * The colour a card was when it was dealt: its top grime's, since that is the
+ * one anybody saw. A card dealt only debris gets the dust film's warm grey
+ * instead of its pieces' - there is no one colour for a scatter of leaves and a
+ * bottle cap, and "dirty, but not caked" is what that card looked like from the
+ * size of a thumbnail.
+ */
+function dealtColour(card: LiveCard): string {
+  const top = card.fields[card.fields.length - 1];
+  return fleckColour(top ? top.kind : 'film');
+}
+
+/** The board as a drawing: each card a rounded rectangle in its place. The
+ *  before is filled with what was on it; the after is left to clean.css, which
+ *  paints it as the app paints a card. */
+function shot(before: boolean): SVGSVGElement {
+  const svg = ns('svg');
+  svg.setAttribute('class', 'clean-shot' + (before ? ' is-before' : ' is-after'));
+  svg.setAttribute('viewBox', `0 0 ${SHOT_W} ${SHOT_H}`);
+  svg.setAttribute('aria-hidden', 'true');
+  const rects = thumbLayout(dealt.map(d => d.box), SHOT_W, SHOT_H, SHOT_PAD);
+  rects.forEach((t, i) => {
+    const r = ns('rect');
+    r.setAttribute('x', t.x.toFixed(2));
+    r.setAttribute('y', t.y.toFixed(2));
+    r.setAttribute('width', t.w.toFixed(2));
+    r.setAttribute('height', t.h.toFixed(2));
+    r.setAttribute('rx', Math.min(1.5, t.w / 4, t.h / 4).toFixed(2));
+    if (before) r.setAttribute('fill', dealt[i]!.colour);
+    svg.append(r);
+  });
+  return svg;
+}
+
+/**
+ * The ending, dealt as a card: before and after, side by side, and one line.
+ *
+ * Drawn and not captured - there is no screenshot API worth leaning on, and a
+ * schematic of the board is what a before-and-after at this size can show
+ * anyway. **It is never saved, never put on the board and never in the .mbrd**:
+ * it is a node in the glass and it goes when the glass does.
+ *
+ * It can be moved about with the left button, because it is a card and cards
+ * move. That is all it does. Its own listeners stop the press before the glass
+ * sees it, so a drag here is never also a stroke or a pan.
+ */
+function buildPolaroid(): HTMLElement {
+  const card = div('clean-polaroid');
+  const frames = div('clean-shots');
+  frames.append(shot(true), shot(false));
+  const said = document.createElement('p');
+  said.className = 'clean-polaroid-said';
+  said.textContent = SPOTLESS;
+  const count = document.createElement('p');
+  count.className = 'clean-polaroid-count';
+  count.textContent = `${dealt.length} ${dealt.length === 1 ? 'card' : 'cards'}`;
+  card.append(frames, said, count);
+
+  let from: { x: number, y: number, dx: number, dy: number } | null = null;
+  card.addEventListener('pointerdown', e => {
+    e.stopPropagation();
+    if (e.button !== 0) return;
+    e.preventDefault();
+    card.setPointerCapture(e.pointerId);
+    const dx = parseFloat(card.style.getPropertyValue('--drag-x')) || 0;
+    const dy = parseFloat(card.style.getPropertyValue('--drag-y')) || 0;
+    from = { x: e.clientX, y: e.clientY, dx, dy };
+    card.classList.add('is-held');
+  });
+  card.addEventListener('pointermove', e => {
+    e.stopPropagation();
+    if (!from) return;
+    card.style.setProperty('--drag-x', (from.dx + e.clientX - from.x).toFixed(1) + 'px');
+    card.style.setProperty('--drag-y', (from.dy + e.clientY - from.y).toFixed(1) + 'px');
+  });
+  const up = (e: PointerEvent) => {
+    e.stopPropagation();
+    from = null;
+    card.classList.remove('is-held');
+    if (card.hasPointerCapture(e.pointerId)) card.releasePointerCapture(e.pointerId);
+  };
+  card.addEventListener('pointerup', up);
+  card.addEventListener('pointercancel', up);
+  return card;
 }
 
 // ---- music and media ----------------------------------------------------
