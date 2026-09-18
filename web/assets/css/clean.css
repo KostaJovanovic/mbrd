@@ -49,6 +49,16 @@
 .item.is-clean-held .item-body img[data-gif] + img.still.is-ready { display: block; }
 .item.is-clean-held .item-body img[data-gif]:has(+ .still.is-ready) { display: none; }
 
+/* The same class drains a dirty card's colour, and the colour comes back when
+   the last of its mess is gone - so the board regains its colour card by card.
+   On .item-body, which is where the content is: .item's own background is the
+   neutral card stock, and its transition list is a shorthand this sheet must
+   not replace. The card's own picture adjustments go first and still apply.
+   The same slow pace both ways - the board drains as the mess arrives, and a
+   card coming clean blooms back rather than switching on. */
+:root.is-cleaning .item-body { transition: filter 1.2s var(--clean-ease); }
+.item.is-clean-held .item-body { filter: var(--item-filter, ) saturate(0.15); }
+
 /* ---------------------------------------------------------------------------
    The dirt
 
@@ -300,6 +310,47 @@
   50% { transform: rotate(3deg) translateY(-0.3px); }
 }
 
+/* The robot vacuum. Placed by clean.ts, which turns only the body inside it:
+   the shadow is on this box, which never turns, so it always falls down the
+   screen - see robotNode(). Above the webs and the prints, because it drives
+   over both. */
+.clean-robot {
+  position: absolute;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 2px rgb(30 26 20 / 0.45));
+}
+
+.clean-robot svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* The mop pad, out of sight until it is fitted, then set down under it. */
+.clean-robot-mop {
+  opacity: 0;
+  transform: scale(0.6);
+  transform-box: view-box;
+  transform-origin: center;
+  transition: opacity 900ms var(--clean-ease), transform 900ms var(--clean-ease);
+}
+
+.clean-robot.has-mop .clean-robot-mop {
+  opacity: 1;
+  transform: none;
+}
+
+/* The one light, breathing slowly: it is on and it is working. quality.css's
+   animation switch stills it on the low tier with everything else. */
+.clean-robot-lamp { animation: clean-lamp 2.4s ease-in-out infinite; }
+
+@keyframes clean-lamp {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+
 /* The thread it comes down on, tied where the strand was. A hairline in the
    layer rather than a path in the web sheet, because the web sheet is the thing
    that has just been swept away. */
@@ -421,13 +472,16 @@
   to { opacity: 1; }
 }
 
-/* A tool is out: the pointer goes away and the drawing takes its place. Space
-   is held: the next press moves the board, so the pointer comes back and the
-   tool is faded out - said before the drag rather than during it, which is the
-   whole point of a held modifier. */
-.clean-catch.has-tool { cursor: none; }
+/* Nothing in hand: the ordinary grab, and grabbing while the board moves. */
 .clean-catch.can-pan { cursor: grab; }
 .clean-catch.is-panning { cursor: grabbing; }
+
+/* A tool is out: the drawing is the pointer, everywhere and all the time - over
+   the bars and their buttons, which each set a pointer of their own (hence the
+   !important rather than a selector for every one), and while the board is
+   dragged, when the tool simply rides along. */
+:root.is-clean-holding,
+:root.is-clean-holding * { cursor: none !important; }
 
 /* The jet's mist and the flecks it throws off. One canvas the size of the
    viewport, inside the glass so it pans with nothing and stays where the hand
@@ -463,9 +517,14 @@
      landed beside its slot rather than in it. Half of 64. */
   margin: -32px 0 0 -32px;
   /* Two shadows: a tight one that seats the tool and a wide soft one that lifts
-     it off the board. One alone reads as a sticker or as a smudge. */
+     it off the board. One alone reads as a sticker or as a smudge.
+
+     The far one grows with the hand's speed - 8px down to 16px, and its blur
+     with it - because a tool swept fast is a tool lifted. --clean-lift is 0..1,
+     eased and written by clean.ts (paintLift()); unset, it is a still hand. */
   filter: drop-shadow(0 1px 1px color-mix(in srgb, var(--ink) 30%, transparent))
-    drop-shadow(0 8px 10px color-mix(in srgb, var(--ink) 24%, transparent));
+    drop-shadow(0 calc(8px + 8px * var(--clean-lift, 0)) calc(10px + 10px * var(--clean-lift, 0))
+      color-mix(in srgb, var(--ink) 24%, transparent));
   transition: opacity 160ms var(--clean-ease);
   pointer-events: none;
   z-index: calc(var(--z-overlay) + 3);
@@ -496,7 +555,10 @@
 /* Over something this tool cannot do anything with. Dimmed rather than swapped
    for a "no" symbol: the tool is still the tool, it just has nothing here. */
 .clean-cursor.is-idle { opacity: 0.4; }
-.clean-cursor.is-hidden { opacity: 0; }
+/* Space is held: the next press moves the board rather than cleaning, said
+   before the drag rather than during it, which is the whole point of a held
+   modifier. Faded, not gone - the tool is the only pointer there is. */
+.clean-cursor.is-faded { opacity: 0.4; }
 
 /* The tilt. clean.ts writes the rotation as an attribute on this group; the
    transition is what turns a jump per pointer event into weight. */
@@ -578,76 +640,23 @@
   z-index: calc(var(--z-overlay) + 3);
 }
 
-/* The ending, dealt as a card: the board before and after, and one line. It
-   arrives from below once the light has crossed, and it stays - there is no
-   timer anywhere in the ending.
-
-   A card in the app's own language, because it is the app's: --paper-card, the
-   item shadow and radius, and a lean off --tilt-max, so the whimsy dial decides
-   how much it leans and Harsh holds it straight. It moves about under the left
-   button like any card; the drag writes --drag-x/--drag-y and nothing else, so
-   the arrival and the lean never fight it for a property. */
-.clean-polaroid {
-  position: absolute;
-  left: calc(50% + var(--drag-x, 0px));
-  top: calc(50% + var(--drag-y, 0px));
-  transform: translate(-50%, -50%);
-  rotate: calc(var(--tilt-max) * -1);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 12px 12px 14px;
+/* The ending's card on its way down: a copy built by the card's own renderer
+   (canvas/spotless.ts, dressed by items.css), over the middle of the screen,
+   held above the board, then falling onto it at the size it will have there.
+   On the body, not in the glass, because the mode has already gone when it
+   lands. Placed by its centre from clean.ts; the fall is a Web Animation there.
+   The corner is the one the board gives a card. */
+.clean-drop {
+  position: fixed;
+  z-index: calc(var(--z-overlay) + 3);
   border-radius: var(--radius);
-  background: var(--paper-card);
-  box-shadow: var(--item-shadow);
-  cursor: grab;
-  touch-action: none;
-  user-select: none;
-  animation: clean-deal 600ms var(--clean-ease) var(--clean-sweep) both;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
 }
 
-.clean-polaroid.is-held { cursor: grabbing; }
-
-@keyframes clean-deal {
-  from { translate: 0 60vh; opacity: 0; }
-  to { translate: 0 0; opacity: 1; }
-}
-
-.clean-shots {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-
-/* A frame is the board: --paper under the cards, the way the board is. */
-.clean-shot {
-  width: 104px;
-  height: 78px;
-  border-radius: 2px;
-  background: var(--paper);
-}
-
-/* After: every card as the app draws a card. The before's fills are the grime's
-   own colours and are set on each rect by clean.ts. */
-.clean-shot.is-after rect {
-  fill: var(--paper-card);
-  stroke: var(--item-border);
-  stroke-width: 0.75;
-}
-
-.clean-polaroid-said {
-  margin: 0;
-  font-family: var(--font-display, serif);
-  font-size: 1.15rem;
-  color: var(--ink);
-}
-
-.clean-polaroid-count {
-  margin: 0;
-  font-size: 0.75rem;
-  color: var(--ink-3);
-}
+/* The real card, already on the board, under the copy that is still falling
+   onto it. Shown the moment the copy lands - see dealCard(). */
+.item.is-clean-arriving { visibility: hidden; }
 
 /* And the light that goes across the whole board behind it. */
 :root.is-clean-done .clean-catch::after {
@@ -851,7 +860,20 @@
   font-variant-numeric: tabular-nums;
   font-size: 0.85rem;
   color: var(--ink-2);
+  /* The spaces between the three spans collapse in a flex row; this is them. */
+  gap: 4px;
 }
+
+/* "3 of 12": the two numbers in the display face, a touch larger, and the word
+   between them quiet, at the count's own size. The spans are clean.ts's; the
+   text they add up to is the aria-live reading, unchanged. */
+#clean-count .count-n {
+  font-family: var(--font-display, serif);
+  font-size: 1.05rem;
+  color: var(--ink);
+}
+
+#clean-count .count-of { color: var(--ink-3); }
 
 #clean-top .clean-x {
   display: inline-flex;
@@ -973,6 +995,27 @@
 
 #clean-can.is-open .can-lid { transform: rotate(-54deg) translate(-1px, -1px); }
 
+/* The bin filling: a leaf tip under the rim after eight pieces, a scrap of
+   paper after twenty (clean.ts, paintFill()). They rise into place rather than
+   appearing, a couple of pixels, the way a full bin's contents push up. The
+   leaf takes the glove's pigment - it was the glove that put it there - and
+   the scrap is the tools' paper body. */
+#clean-can .can-leaf,
+#clean-can .can-scrap {
+  opacity: 0;
+  translate: 0 3px;
+  transition: opacity var(--clean-travel) var(--clean-ease), translate var(--clean-travel) var(--clean-ease);
+}
+
+#clean-can .can-leaf { fill: var(--accent-warm); }
+#clean-can .can-scrap { fill: var(--sticker-body); }
+
+#clean-can.is-some .can-leaf,
+#clean-can.is-full .can-scrap {
+  opacity: 1;
+  translate: 0 0;
+}
+
 /* Something landed in it. A pixel or two of settle, and no more. The transition
    that carries it is in the block above, with the rest of them. */
 #clean-can.is-hit { transform: translateY(1.5px); }
@@ -1015,6 +1058,32 @@
 #clean-confirm button:hover,
 #clean-end button:hover { background: var(--paper-3); }
 
+/* Done is the only thing in the tray at the end, so it takes the tray over:
+   as tall as a tool was, so the tray does not shrink to a lozenge round it, and
+   in the tools' own vocabulary - a paper plate, --paper-2 resting and
+   --paper-3 pressed, with the tray's own --leaf corner - rather than an accent
+   button from somewhere else. The word is set in the display face, which is
+   the face the ending speaks in. */
+#clean-end button {
+  height: 60px;
+  min-width: 132px;
+  padding: 0 28px;
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+  background: var(--paper-2);
+}
+
+#clean-end button:hover,
+#clean-end button:focus-visible { background: var(--paper-3); color: var(--accent-deep); }
+#clean-end button:active { background: var(--paper-3); color: var(--accent-deep); translate: 0 1px; }
+
+/* The bin, gone for good at the end. Hidden it is still a zero-width slot a
+   tool high with its divider drawn beside it, and that is what was holding the
+   tray open as a tall box round a small button. */
+:root.is-clean-done #clean-bar #clean-can { display: none; }
+
 /* A narrow screen. Three tools fit where six did not, so there is one
    breakpoint rather than two and the column never has to shrink to a glyph. */
 @media (width < 560px) {
@@ -1044,7 +1113,8 @@
    channel tokens. */
 @supports not (color: color-mix(in srgb, red, blue)) {
   .clean-cursor {
-    filter: drop-shadow(0 1px 1px rgb(var(--ink-c) / 30%)) drop-shadow(0 8px 10px rgb(var(--ink-c) / 24%));
+    filter: drop-shadow(0 1px 1px rgb(var(--ink-c) / 30%))
+      drop-shadow(0 calc(8px + 8px * var(--clean-lift, 0)) calc(10px + 10px * var(--clean-lift, 0)) rgb(var(--ink-c) / 24%));
   }
   .clean-catch::before {
     background: radial-gradient(ellipse at 50% 46%, transparent 55%, rgb(var(--ink-c) / 16%) 100%);

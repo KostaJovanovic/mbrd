@@ -953,6 +953,12 @@
    screen still talking. If that reads wrong in the hand the answer is a longer
    timer for this one element, not an exemption from fading. */
 :root.is-idle #toolbar,
+/* The Timeline too, though it is docked and the board keeps its room: the
+   band stays empty rather than the board jumping down into it, and jumping
+   back on the first move. Except while Play runs, which is the tour's case -
+   a replay is watched without a hand on anything, and the bar is what it is
+   watched on. */
+:root.is-idle:not(.is-replaying) #timeline-strip,
 /* Including the player, and it is worth saying why: something audible with its
    controls faded out sounds like a thing that cannot be stopped. It can - any
    pointer move, key or wheel brings the whole set back inside a quarter of a

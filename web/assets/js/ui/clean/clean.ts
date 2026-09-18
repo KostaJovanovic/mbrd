@@ -1,13 +1,15 @@
 // The cleaning simulator: the mode the konami code opens, and seven taps on the
 // wordmark. Freezes the cards, lays a dirt layer over them inside #world so pan
 // and zoom still work, and puts one of three tools in your hand. Touches no
-// board state, keeps nothing, and leaves the board exactly as it found it.
+// board state but one: a finished board is left one card, added on the way out.
 // See ./mess.ts for the arithmetic and ./art.ts for the drawing.
 
-import { board, timelinePlaying } from '../../state.ts';
+import { board, timelinePlaying, addItems } from '../../state.ts';
 import type { Item } from '../../board-model.ts';
 import type { Viewport } from '../../canvas/viewport.ts';
-import { tiltOf } from '../../canvas/items.ts';
+import { tiltOf, nodeFor } from '../../canvas/items.ts';
+import { defaultSize } from '../../canvas/renderers.ts';
+import { buildSpotlessCard, SPOTLESS_FRAME } from '../../canvas/spotless.ts';
 import { captureStills } from '../../canvas/stills.ts';
 import { quality } from '../../quality.ts';
 import { cue, sustain } from '../../cuelume/engine.ts';
@@ -17,7 +19,8 @@ import {
   TOOLS, TUNING, SUBS, yieldsTo, planBoard, makeField, stamp, fieldClear, wearShare, wearOf,
   cardClean, tally, fullTank, tankStep, tankPower, jetShape, handRoom,
   toolWork, toolWanted, toolShare, webCards, webHolds, peelFor, thumbLayout,
-  printTurn, toPrint,
+  printTurn, toPrint, fromPrint, robotEats, robotTurn, robotJob, mopPath, MOP_PATTERNS,
+  MOP_INSET,
 } from './mess.ts';
 import type { ToolId, MessKind, Field, Web, Box, Rng, Tank, DebrisPlan, TrackPlan } from './mess.ts';
 import {
@@ -25,7 +28,7 @@ import {
   washOf, waterInk, fleckColour,
   debrisNode, placeBit, sizeBit, peelAt, BIT_UNIT, webPath, webSag, webCore, webNode,
   bootMask, paintBoot, BOOT_GRID,
-  spiderNode, threadNode, SPIDER_SIZE,
+  spiderNode, threadNode, SPIDER_SIZE, robotNode, ROBOT_SIZE, ROBOT_BOX,
 } from './art.ts';
 import type { Crust } from './art.ts';
 
@@ -36,9 +39,6 @@ import type { Crust } from './art.ts';
 const MUSIC = 'assets/audio/clean-loop.opus';
 const MUSIC_GAIN = 0.55;
 const FADE_MS = 1400;
-
-/** What is said when the board is spotless. */
-const SPOTLESS = 'Everything is spotless.';
 
 /** The one ease and the four durations the whole mode moves on. Written here
  *  as well as in clean.css because the Web Animations calls below need them as
@@ -154,18 +154,25 @@ type LiveCard = {
   badgeState: BadgeState,
   badgeShare: number,
   badgeZoom: number,
+  /** The tool this badge was last painted for, and whether that tool was last
+   *  seen with work here - so a check is earned only by watching the work come
+   *  off, never by picking up a tool that had nothing to do or was finished
+   *  while something else was in hand. */
+  badgeTool: ToolId | null,
+  badgeOwed: boolean,
+  /** Until when the check stays up, 0 once it has had its moment. */
+  checkTill: number,
   /** The presentational lean the card is wearing right now, in CSS degrees.
    *  Not item.rot, which is geometry - see leanOf(). */
   lean: number,
   /** Whether the corner has been taken off the live card yet - see setRadius().
    *  A card that was culled when the mode opened has no node to read. */
   rounded: boolean,
-  /** Whether the item under the dirt is a GIF, and its live node while it is
-   *  mounted. Asked once, when the node is first found, so the frame loop pays
-   *  nothing for the cards that are not - which is nearly all of them. See
-   *  paintGif(). */
+  /** Whether the item under the dirt is a GIF, and the live node last written
+   *  to - a remount is a fresh node with none of this mode's classes. See
+   *  paintHeld(). */
   gifs: boolean,
-  gifNode: HTMLElement | null,
+  heldNode: HTMLElement | null,
   fields: LiveField[],
   debris: LiveBit[],
   clean: boolean,
@@ -211,6 +218,46 @@ type LiveSpider = {
   thread: HTMLElement | null,
   /** The walk, in layer pixels a second. Set once, when it lets go. */
   vx: number, vy: number,
+};
+
+/** Somewhere a robot is going, in layer coordinates, and the thing it is going
+ *  for there - a piece, a web, a card or a print. The thing is the claim: no
+ *  two robots ever go for the same one. */
+type RobotSpot = { x: number, y: number, of: RobotJobOf };
+type RobotJobOf = LiveBit | LiveWeb | LiveCard | LiveTrack;
+
+/**
+ * The robot vacuum: what typing the code again, with the mode already up,
+ * lets loose. No card waits on it, but it can finish the whole board by itself:
+ * it picks up every piece, then takes down the webs, then fits a mop and
+ * washes - see robotJob() - and `tally()` sees all of it go.
+ */
+type LiveRobot = {
+  /** The box that stays upright and carries the shadow, and the body inside it
+   *  that turns - see robotNode(). */
+  node: HTMLElement,
+  body: SVGSVGElement,
+  /** Layer coordinates, and the heading in the layer's y-down frame. */
+  x: number, y: number, heading: number,
+  /** Coming on from the edge, at work, fitting its mop, or leaving. */
+  phase: 'in' | 'work' | 'fit' | 'park',
+  /** Radians of a slow on-the-spot turn still to make, while its mop goes on. */
+  spin: number,
+  /** Where it is going, in layer coordinates, and when it last looked. Null is
+   *  nothing to go to, and it wanders. */
+  target: RobotSpot | null,
+  seekAt: number,
+  /** The card it is mopping, the route across it in layer coordinates, and
+   *  how far along the route it is. See planMop(). */
+  plan: { card: LiveCard, path: RobotSpot[], at: number } | null,
+  /** Whether the mop is on, and when fitting it is done. */
+  mop: boolean,
+  fitTill: number,
+  /** No card edge turns it again before this: one bump, one turn. */
+  graceTill: number,
+  /** The card under its middle, so crossing an edge can be noticed. */
+  over: LiveCard | null,
+  hum: Sustain | null,
 };
 
 /**
@@ -298,6 +345,17 @@ let webs: LiveWeb[] = [];
 let dealt: { box: Box, colour: string }[] = [];
 /** The tenant of the biggest web, or null on a board that was dealt none. */
 let spider: LiveSpider | null = null;
+/** The robot vacuums that are out: one more every time the code is typed. */
+let robots: LiveRobot[] = [];
+/** Who did the last piece of work: the hand or the robot. Whoever it is when
+ *  the board comes clean finished it, and the card says so. */
+let lastBy: 'hand' | 'robot' = 'hand';
+/** Pieces thrown in the bin this session, which is how full it looks. */
+let binned = 0;
+/** How far the tool is lifted off the board by the hand's speed, 0..1, and the
+ *  value last written to the cursor - see paintLift(). */
+let raised = 0;
+let raisedShown = -1;
 /** The trail across the floor. No card owns these, and the board is not done
  *  while any of them is still there. */
 let tracks: LiveTrack[] = [];
@@ -487,6 +545,9 @@ export function startClean(): boolean {
  *  handlers under it - the shape every other temporary state here uses. */
 export function stopClean(): boolean {
   if (!on) return false;
+  // A finished board leaves with its card, which falls onto the board as the
+  // mode goes. First, while everything it is made from is still standing.
+  if (finishing) dealCard();
   on = false;
   finishing = false;
   cancelAnimationFrame(raf);
@@ -537,9 +598,10 @@ export function stopClean(): boolean {
   // pixels up and a fraction larger for the rest of the session, on a board
   // that has no idea why.
   for (const woken of document.querySelectorAll('.item.is-woken')) woken.classList.remove('is-woken');
-  // The other class this mode writes onto a real card: a GIF held still while
-  // its card was dirty. Left behind, it is an animation that never comes back
-  // on a board that has no idea why. See paintGif().
+  // The other class this mode writes onto a real card: drained and, for a GIF,
+  // held still while its card was dirty. Left behind, it is a grey card or an
+  // animation that never comes back on a board that has no idea why. See
+  // paintHeld().
   for (const gif of document.querySelectorAll('.item.is-clean-held')) gif.classList.remove('is-clean-held');
   layer = null;
   catcher = null;
@@ -556,10 +618,20 @@ export function stopClean(): boolean {
   // this is the reference and nothing else. See the drop, which is the one thing
   // in the mode that outlives the web it started on.
   spider = null;
+  // Its node went with the layer; its hum would not have.
+  for (const r of robots) r.hum?.stop();
+  robots = [];
+  lastBy = 'hand';
+  // The bar outlives the session, so the bin's fill is taken off it here - the
+  // next run starts with an empty bin.
+  binned = 0;
+  el('clean-can')?.classList.remove('is-some', 'is-full');
+  raised = 0;
+  raisedShown = -1;
   dealt = [];
   tracks = [];
   pending = [];
-  document.documentElement.classList.remove('is-cleaning', 'is-clean-done');
+  document.documentElement.classList.remove('is-cleaning', 'is-clean-done', 'is-clean-holding');
   showBar(false);
   resumeMedia();
   return true;
@@ -625,8 +697,9 @@ function buildCard(item: Item, plan: { fields: MessKind[], debris: DebrisPlan[] 
     ring, ringFg: ring.querySelector('.ring-fg')!,
     debrisDealt: plan.debris.length, websDealt: 0,
     badgeState: '', badgeShare: -1, badgeZoom: 0,
+    badgeTool: null, badgeOwed: false, checkTill: 0,
     lean: 0, rounded: false,
-    gifs: false, gifNode: null,
+    gifs: false, heldNode: null,
     fields: [], debris: [], clean: false,
   };
   setLean(live);
@@ -700,6 +773,9 @@ function buildRing(): SVGSVGElement {
 }
 
 const RING_LEN = 56.55;
+
+/** How long a card's check stays up once the tool in hand has finished it. */
+const CHECK_MS = 4000;
 
 /** A field and the canvas it is painted on. The crust is used twice - once for
  *  the occupancy grid that counts, once for the paint that is seen - which is
@@ -988,7 +1064,9 @@ function showCursor(id: ToolId) {
   cursor.style.setProperty('--clean-tip-y', (((24 - tip.y) * CURSOR_PX) / 48).toFixed(1) + 'px');
   cursor.hidden = false;
   cursor.classList.remove('is-idle');
-  catcher?.classList.add('has-tool');
+  // The whole page, not just the catcher: the tool follows the pointer over
+  // the bars too, and an arrow drawn on top of it there is two pointers.
+  document.documentElement.classList.add('is-clean-holding');
   paintLoad();
   if (at.x < 0) {
     const box = vp.el.getBoundingClientRect();
@@ -1010,7 +1088,7 @@ function showCursor(id: ToolId) {
 }
 
 function hideCursor() {
-  catcher?.classList.remove('has-tool');
+  document.documentElement.classList.remove('is-clean-holding');
   if (!cursor) return;
   cursor.hidden = true;
   cursor.classList.remove('is-idle');
@@ -1066,7 +1144,9 @@ function buildCursor(): HTMLElement {
   cursorUse = ns('use');
   loadG = ns('g');
   loadG.setAttribute('class', 'clean-load');
-  cursorSpin.append(cursorUse, loadG);
+  // The load under the glove, not over it: the hand is palm down and closed
+  // on it, so only what sticks out past the fist shows.
+  cursorSpin.append(loadG, cursorUse);
   svg.append(cursorSpin);
   host.append(svg);
   // The tank, as a bar standing beside the tool rather than a slot drawn into
@@ -1081,17 +1161,25 @@ function buildCursor(): HTMLElement {
 }
 
 /** Where a carried piece sits in the glove, in the symbol's own 48 box. Piled
- *  above the cuff with small offsets, so a full glove looks full without a
- *  number anywhere near it. */
+ *  under the fist with small offsets, so edges poke out past it and a full
+ *  glove looks full without a number anywhere near it. */
 const LOAD_SPOTS = [
   { x: 22, y: 25, r: -8 }, { x: 18, y: 22, r: 14 }, { x: 27, y: 22, r: -20 },
   { x: 21, y: 19, r: 26 }, { x: 25, y: 28, r: -32 },
 ];
 
+/** The glove open and closed. Whole literals rather than a name built from
+ *  parts, so tests/icons.test.js can see both are asked for. */
+const GLOVE_OPEN = 'assets/icons.svg#i-clean-glove';
+const GLOVE_SHUT = 'assets/icons.svg#i-clean-glove-held';
+
 function paintLoad() {
   if (!loadG) return;
   loadG.replaceChildren();
   if (held !== 'glove') return;
+  // The hand closes on what it is holding and opens when it lets go. Same box,
+  // same TIP - see i-clean-glove-held in icons.svg.
+  cursorUse?.setAttribute('href', carried.length ? GLOVE_SHUT : GLOVE_OPEN);
   carried.forEach((bit, i) => {
     const spot = LOAD_SPOTS[Math.min(i, LOAD_SPOTS.length - 1)]!;
     const seat = ns('g');
@@ -1128,7 +1216,7 @@ export function cleanSpace(down: boolean) {
   if (!on || spaceHeld === down) return;
   spaceHeld = down;
   catcher?.classList.toggle('can-pan', down);
-  cursor?.classList.toggle('is-hidden', down);
+  cursor?.classList.toggle('is-faded', down);
 }
 
 /** Whether the tool in hand has anything to bite at this point. Deliberately
@@ -1288,6 +1376,9 @@ function strokeTo(x: number, y: number) {
 }
 
 function endStroke() {
+  // Only a stroke still in a live session: stopClean() comes through here
+  // after its timers are gone, and a dissolve is one of those.
+  if (drawing && on && held === 'washer') settleWashed();
   drawing = false;
   panning = false;
   strokeAt = null;
@@ -1295,6 +1386,18 @@ function endStroke() {
   catcher?.classList.remove('is-panning');
   hiss?.stop();
   hiss = null;
+}
+
+/** The let-go of the jet: every crust and print washed past TUNING.clearAt
+ *  lets its last specks go now, and not while the jet was still on it -
+ *  a patch vanishing under a nozzle still being played over it reads as the
+ *  game taking the work out of the hand. Every card, not just the last one
+ *  touched, since one stroke can cross several. */
+function settleWashed() {
+  for (const card of cards)
+    for (const f of card.fields)
+      if (!f.fading && f.field.total && fieldClear(f.field)) dissolve(card, f);
+  for (const t of tracks) if (!t.fading && fieldClear(t.field)) fadeTrack(t);
 }
 
 /**
@@ -1358,7 +1461,7 @@ function apply(clientX: number, clientY: number, press: boolean) {
   if (tool === 'duster') worked += sweepWebs(w.x, -w.y, radius);
   // The trail belongs to no card, so it is washed here rather than inside the
   // per-card loop above - the jet over bare floor is still the jet working.
-  if (tool === 'washer') worked += workTracks(w.x, w.y, radius, bite);
+  if (tool === 'washer') worked += workTracks(w.x, w.y, radius, bite, false);
 
 
   // The hiss follows the work, which is what makes a tool on the wrong mess
@@ -1374,7 +1477,10 @@ function apply(clientX: number, clientY: number, press: boolean) {
       hiss.level(worked > 0 ? 1 : 0.12);
     }
   }
-  if (worked) paintCount();
+  if (worked) {
+    lastBy = 'hand';
+    paintCount();
+  }
 }
 
 /**
@@ -1460,38 +1566,43 @@ function setRadius(card: LiveCard) {
   // The same node, asked the other question once while it is here: whether
   // there is a GIF under this dirt. Both answers cost a walk to the same
   // element, and a card culled when the mode opened is asked when it comes back.
-  card.gifNode = node;
   card.gifs = !!node.querySelector('img[data-gif]');
-  if (!card.gifs) return;
   // The frame it is showing right now is the picture the card wears until it is
   // clean, so it is taken while the GIF is on screen and decoded.
-  captureStills(node);
-  paintGif(card);
+  if (card.gifs) captureStills(node);
+  card.heldNode = node;
+  paintHeld(card);
 }
 
 /**
- * **A dirty GIF holds still.** A card under an inch of mud playing an animation
- * is the one thing on the board that carries on as if nothing had happened to
- * it, and the moment it comes clean and starts moving is worth more than the
- * loop nobody could see anyway.
+ * **A dirty card is held.** Its colour is drained until the last of its mess
+ * is gone, so the board's colour comes back card by card and the moment one
+ * comes clean is a moment of colour, not only of dirt leaving. clean.css reads
+ * the class.
  *
- * Done with canvas/stills.ts's own machinery rather than a second one: the twin
- * `<img>` beside every GIF is what the zoom rung and the quality dial already
- * swap to, and clean.css asks for it with a class. A twin whose frame never
- * arrived has no `is-ready` and every one of those rules ignores it, so the
- * worst this can do is leave a GIF playing.
+ * **And a dirty GIF holds still.** A card under an inch of mud playing an
+ * animation is the one thing on the board that carries on as if nothing had
+ * happened to it, and the moment it comes clean and starts moving is worth more
+ * than the loop nobody could see anyway. Done with canvas/stills.ts's own
+ * machinery rather than a second one: the twin `<img>` beside every GIF is what
+ * the zoom rung and the quality dial already swap to, and clean.css asks for it
+ * with the same class. A twin whose frame never arrived has no `is-ready` and
+ * every one of those rules ignores it, so the worst this can do is leave a GIF
+ * playing.
+ *
+ * Every card, every frame: a map lookup, and a class write only when the node
+ * or the answer has changed.
  */
-function paintGif(card: LiveCard) {
-  let node = card.gifNode;
-  if (!node?.isConnected) {
-    // Culled and remounted: a fresh node, with a fresh twin that has no frame
-    // in it yet.
-    node = document.querySelector<HTMLElement>(`.item[data-id="${CSS.escape(card.item.id)}"]`);
-    card.gifNode = node;
-    if (!node) return;
-    captureStills(node);
+function paintHeld(card: LiveCard) {
+  const node = nodeFor(card.item.id) ?? null;
+  if (!node) return;
+  if (node !== card.heldNode) {
+    // Remounted: a fresh node, with none of this mode's classes, and a fresh
+    // GIF twin that has no frame in it yet.
+    card.heldNode = node;
+    if (card.gifs) captureStills(node);
   }
-  node.classList.toggle('is-clean-held', !card.clean);
+  if (node.classList.contains('is-clean-held') === card.clean) node.classList.toggle('is-clean-held', !card.clean);
 }
 
 /** Put the card's lean on its dirt, if it has changed. Written as `rotate`, the
@@ -1523,31 +1634,6 @@ function shieldOf(card: LiveCard): ((i: number) => boolean) | null {
   };
 }
 
-/**
- * Everything standing between the jet and one field: the debris lying on the
- * card, and any field dealt on top of this one.
- *
- * **A layered card is washed from the top down, cell by cell rather than field
- * by field.** The under-layer's cell is shielded exactly while the top's cell
- * at the same index still has anything in it - so the jet takes the mud off
- * this patch and starts on the rust beneath it while the mud a hand's width
- * away is untouched. Field by field would mean the whole top coming off before
- * any of the bottom, which is two cleanings and not one card.
- *
- * Composed with the debris predicate rather than replacing it, because a leaf
- * can be lying on a layered card too.
- */
-function coverOf(
-  debris: ((i: number) => boolean) | null, card: LiveCard, f: LiveField,
-): ((i: number) => boolean) | null {
-  const above = card.fields
-    .slice(card.fields.indexOf(f) + 1)
-    .filter(o => !o.fading && o.field.left > 0);
-  if (!above.length) return debris;
-  if (!debris) return (i: number) => above.some(o => o.field.cells[i]! > 0);
-  return (i: number) => debris(i) || above.some(o => o.field.cells[i]! > 0);
-}
-
 function workCard(
   card: LiveCard, u: number, v: number, rx: number, ry: number,
   press: boolean, bite: number, clientX: number, clientY: number,
@@ -1562,14 +1648,11 @@ function workCard(
     // it. What comes off the card is the flecks' business and the runoff's;
     // being wet is the jet's.
     if (bite > 0) sheen(card, u, v, rx, ry);
-    const debris = shieldOf(card);
+    // What is lying over the grime: the debris on the card.
+    const shield = shieldOf(card);
     for (const f of card.fields.slice()) {
       if (f.fading || !f.field.total || !f.field.left) continue;
       const depth = Math.max(1, TUNING.depth[f.kind] ?? 1);
-      // Everything lying over this field: the debris on the card, and any field
-      // dealt above it. `fields` is bottom first, so those are the ones after
-      // it in the list.
-      const shield = coverOf(debris, card, f);
       if (bite > 0) {
         // Whether the cell under the nozzle is on its last pass. One lookup
         // rather than a scan of the grid: the crisp edge is wanted where the
@@ -1603,7 +1686,8 @@ function workCard(
         }
         worked++;
       }
-      if (fieldClear(f.field)) dissolve(card, f);
+      // No dissolve here: the last specks go when the jet is let go, in
+      // settleWashed(), not while it is still being played over them.
     }
     // A piece the jet cannot lift still gets pushed about by it.
     skid(card, u, v, rx, ry);
@@ -1651,11 +1735,23 @@ function cellUnder(f: Field, u: number, v: number): number {
   return f.cells[iy * g + ix]!;
 }
 
-const asState = (c: LiveCard) => ({
+/** The card as it stands, for the badge: how much is left, cell for cell. */
+const liveState = (c: LiveCard) => ({
   id: c.item.id,
   fields: c.fields.filter(f => !f.fading).map(f => f.field),
   debris: c.debris,
 });
+
+/** The card as the counter and the ending see it. A crust counts gone once it
+ *  is dissolving, not the moment it passes TUNING.clearAt: the hand's jet
+ *  leaves the last specks until it is let go (settleWashed()), and a card
+ *  counted clean under a nozzle still washing it would tick the counter - or
+ *  end the board - mid-stroke. Anything with specks left and not yet fading
+ *  reads as wholly dirty. Never the badge's input: its arc would stand still. */
+const asState = (c: LiveCard) => {
+  const s = liveState(c);
+  return { ...s, fields: s.fields.map(f => (f.left ? { ...f, total: 1, left: 1 } : f)) };
+};
 
 function eraseAlpha(f: LiveField, u: number, v: number, rx: number, ry: number, share: number, crisp: boolean) {
   eraseAt(
@@ -1865,9 +1961,25 @@ function drip(card: LiveCard, r: Rivulet) {
  */
 function paintBadge(card: LiveCard, zoom: number) {
   const want = held
-    ? toolWork(asState(card), webs, held, { debris: card.debrisDealt, webs: card.websDealt })
+    ? toolWork(liveState(card), webs, held, { debris: card.debrisDealt, webs: card.websDealt })
     : null;
-  const state: BadgeState = !want ? '' : toolWanted(want) ? 'want' : 'done';
+  if (held !== card.badgeTool) {
+    card.badgeTool = held;
+    card.badgeOwed = false;
+  }
+  // The bang is up for as long as there is work. The check is not a standing
+  // state: it is the moment the work came off, CHECK_MS of it and then gone for
+  // good - a board of finished cards all wearing ticks is noise over the one
+  // card that still has a bang.
+  const now = performance.now();
+  if (want && toolWanted(want)) card.badgeOwed = true;
+  else if (want && card.badgeOwed) {
+    card.badgeOwed = false;
+    card.checkTill = now + CHECK_MS;
+  }
+  const state: BadgeState = !want ? ''
+    : toolWanted(want) ? 'want'
+    : now < card.checkTill ? 'done' : '';
   // Two decimal places: the arc is 56.55 units round, so anything finer than
   // this is below half a pixel and is a DOM write nobody can see.
   const share = want ? Math.round(toolShare(want) * 100) / 100 : 0;
@@ -1875,8 +1987,12 @@ function paintBadge(card: LiveCard, zoom: number) {
   if (state !== card.badgeState) {
     card.badgeState = state;
     card.ring.classList.toggle('is-up', state !== '');
-    card.ring.classList.toggle('is-want', state === 'want');
-    card.ring.classList.toggle('is-done', state === 'done');
+    // Going away, the glyph stays drawn and only the badge fades: a tick
+    // un-drawing itself on the way out reads as the work being taken back.
+    if (state !== '') {
+      card.ring.classList.toggle('is-want', state === 'want');
+      card.ring.classList.toggle('is-done', state === 'done');
+    }
   }
   if (state === '') return;
   if (share !== card.badgeShare) {
@@ -1926,8 +2042,10 @@ function toBoot(t: LiveTrack, wx: number, wy: number) {
 /**
  * The jet over the bare floor. Prints are washed exactly as a card's crust is,
  * and by the same two calls - what differs is only that nobody owns them.
+ * `settle` fades a print the moment it counts clear, which is the robot's way;
+ * the hand's jet leaves that to the let-go (settleWashed()).
  */
-function workTracks(wx: number, wy: number, radius: number, bite: number): number {
+function workTracks(wx: number, wy: number, radius: number, bite: number, settle: boolean): number {
   if (!tracks.length || bite <= 0) return 0;
   let worked = 0;
   for (const t of tracks.slice()) {
@@ -1946,7 +2064,7 @@ function workTracks(wx: number, wy: number, radius: number, bite: number): numbe
       Math.min(1, wearShare(wear.before, wear.taken)), rng, lastPass,
     );
     if (took) worked++;
-    if (fieldClear(t.field)) fadeTrack(t);
+    if (settle && fieldClear(t.field)) fadeTrack(t);
   }
   if (worked) paintCount();
   return worked;
@@ -2014,6 +2132,7 @@ function peelStep(dt: number, now: number) {
       if (!on && !bit.peel) continue;
       bit.peel = on ? Math.min(1, bit.peel + dt / ms) : Math.max(0, bit.peel - dt / PEEL_BACK_MS);
       if (bit.peel >= 1) {
+        lastBy = 'hand';
         scoop(card, bit);
         // workCard() asks this after every touch; a peel finishes off the
         // frame clock instead, so it has to ask for itself.
@@ -2336,7 +2455,9 @@ function placeSpider(s: LiveSpider, dx: number, dy: number) {
   s.node.style.left = (s.x - half).toFixed(2) + 'px';
   s.node.style.top = (s.y - half).toFixed(2) + 'px';
   const deg = (Math.atan2(dy, dx) * 180) / Math.PI + 90;
-  s.node.style.transform = `rotate(${deg.toFixed(1)}deg)`;
+  // The group inside and not the svg, so the shadow stays where the light puts
+  // it - see spiderNode().
+  s.node.firstElementChild?.setAttribute('transform', `rotate(${deg.toFixed(1)})`);
 }
 
 function stepSpider(dt: number, now: number) {
@@ -2446,6 +2567,488 @@ function takeSpider(fade = false) {
   later(() => s.node.remove(), LEAVE_MS);
 }
 
+// ---- the robot ----------------------------------------------------------
+//
+// The second secret inside the first: the code typed again while the mode is up
+// lets a robot vacuum loose on the board. It goes after the nearest job it has -
+// every piece first, then the webs, then it fits a mop and washes the grime and
+// the prints - and a board it finishes gets a card of its own.
+
+/** How long a full on-the-spot turn takes; fitting the mop is half of one. */
+const ROBOT_SPIN_MS = 3000;
+
+/** How long after bumping one card edge another cannot turn it. Long enough to
+ *  get clear of the corner it met; short enough not to be noticed. */
+const ROBOT_GRACE_MS = 600;
+
+/** How far out of the view it has to be before it is gone. */
+const ROBOT_GONE = ROBOT_SIZE;
+
+/** The ground it may roam, in layer coordinates: the dealt cards, and a margin
+ *  round them. Worked out from `dealt`, which does not change, so there is
+ *  nothing to keep up to date. */
+function roamBox() {
+  let x0 = Infinity; let y0 = Infinity; let x1 = -Infinity; let y1 = -Infinity;
+  for (const { box: b } of dealt) {
+    x0 = Math.min(x0, b.x - b.w / 2); x1 = Math.max(x1, b.x + b.w / 2);
+    y0 = Math.min(y0, -b.y - b.h / 2); y1 = Math.max(y1, -b.y + b.h / 2);
+  }
+  const m = TUNING.robot.margin;
+  return { x0: x0 - m, y0: y0 - m, x1: x1 + m, y1: y1 + m };
+}
+
+/** The view, in layer coordinates. visibleRect() is world, and y-up. */
+function viewBox(view: Viewport, grow = 0) {
+  const r = view.visibleRect(grow);
+  return { x0: r.x0, x1: r.x1, y0: -r.y1, y1: -r.y0 };
+}
+
+/**
+ * Where it may roam **right now**: the dealt cards and their margin, cut to the
+ * part of them on screen. Asked every frame, so it follows the camera.
+ *
+ * Not the dealt area alone. That was the first version, and on a board looked
+ * at zoomed in - the ordinary case - the middle of the dealt area was off the
+ * screen: the robot came in at the edge nearest it, drove straight back out
+ * towards it, and was never seen again. A toy nobody can see is not a toy.
+ * With the cards off screen altogether, the screen is the ground.
+ */
+function roamNow(view: Viewport) {
+  const area = roamBox();
+  const seen = viewBox(view, -ROBOT_SIZE / 2);
+  const box = {
+    x0: Math.max(area.x0, seen.x0), y0: Math.max(area.y0, seen.y0),
+    x1: Math.min(area.x1, seen.x1), y1: Math.min(area.y1, seen.y1),
+  };
+  return box.x1 - box.x0 >= ROBOT_SIZE * 2 && box.y1 - box.y0 >= ROBOT_SIZE * 2 ? box : seen;
+}
+
+/** Past this many a code typed again does nothing: every one of them is a
+ *  frame's worth of work and a hum, and a board is only so big. */
+const ROBOT_MOST = 12;
+
+/**
+ * Let one loose - another one every time the code is typed, up to ROBOT_MOST,
+ * and they share the work out (see claimed()). Answers whether the code was
+ * taken, so the keys it was typed with do not also do something else.
+ */
+export function releaseRobot(): boolean {
+  if (!on || finishing || !layer || !vp || !dealt.length) return false;
+  if (robots.length >= ROBOT_MOST) return true;
+  const area = roamNow(vp);
+  const cx = (area.x0 + area.x1) / 2;
+  const cy = (area.y0 + area.y1) / 2;
+  const view = viewBox(vp);
+  const r = ROBOT_SIZE / 2;
+  const across = (lo: number, hi: number, v: number) => Math.min(hi, Math.max(lo, v));
+  // In from whichever edge of the screen is nearest the ground it will roam,
+  // pointing at it. That ground is on screen - see roamNow() - so every edge
+  // is a way in and none of them is a way straight back out.
+  const ways = [
+    { x: view.x0 - r, y: across(view.y0, view.y1, cy), d: cx - view.x0 },
+    { x: view.x1 + r, y: across(view.y0, view.y1, cy), d: view.x1 - cx },
+    { x: across(view.x0, view.x1, cx), y: view.y0 - r, d: cy - view.y0 },
+    { x: across(view.x0, view.x1, cx), y: view.y1 + r, d: view.y1 - cy },
+  ];
+  // The first comes in at the nearest edge; the rest at any edge, so a second
+  // one is not driven straight in on top of the first.
+  const from = robots.length ? ways[Math.floor(rng() * ways.length)]! : ways.reduce((a, b) => (b.d < a.d ? b : a));
+  const { host, body } = robotNode();
+  host.style.width = ROBOT_BOX + 'px';
+  host.style.height = ROBOT_BOX + 'px';
+  layer.append(host);
+  const s: LiveRobot = {
+    node: host, body, x: from.x, y: from.y, heading: Math.atan2(cy - from.y, cx - from.x),
+    phase: 'in', spin: 0, target: null, seekAt: 0, plan: null, mop: false, fitTill: 0,
+    graceTill: 0, over: null,
+    // A low rumble rather than a hiss: filtered noise with the top taken off.
+    // Quieter after the first, so a dozen of them is a room and not a roar.
+    hum: sustain({ filterType: 'lowpass', filterFrequency: 170, filterQ: 0.8, gain: robots.length ? 0.03 : 0.07 }),
+  };
+  robots.push(s);
+  placeRobot(s);
+  return true;
+}
+
+function placeRobot(s: LiveRobot) {
+  const half = ROBOT_BOX / 2;
+  s.node.style.left = (s.x - half).toFixed(2) + 'px';
+  s.node.style.top = (s.y - half).toFixed(2) + 'px';
+  // The body only, drawn front-up like the spider. The box round it stays
+  // upright, and so does the shadow on it.
+  s.body.style.transform = `rotate(${((s.heading * 180) / Math.PI + 90).toFixed(1)}deg)`;
+}
+
+/** Whether a circle of its size at this point is inside the ground it roams. */
+const inRoam = (x: number, y: number, box: ReturnType<typeof roamBox>) => {
+  const r = ROBOT_SIZE / 2;
+  return x - r >= box.x0 && x + r <= box.x1 && y - r >= box.y0 && y + r <= box.y1;
+};
+
+function stepRobots(dt: number, now: number) {
+  // A copy: one driving off the screen at the ending takes itself out.
+  for (const s of robots.slice()) stepRobot(s, dt, now);
+}
+
+function stepRobot(s: LiveRobot, dt: number, now: number) {
+  if (!vp) return;
+  const step = (TUNING.robot.speed * dt) / 1000;
+
+  if (s.phase === 'work' && now - s.seekAt > TUNING.robot.seekMs) {
+    s.seekAt = now;
+    seekJob(s, now);
+  }
+  if (s.phase === 'fit' && now >= s.fitTill) s.phase = 'work';
+
+  if (s.spin > 0) {
+    // On the spot: a vacuum turning round does not also drive.
+    const turn = Math.min(s.spin, ((Math.PI * 2) / ROBOT_SPIN_MS) * dt);
+    s.heading += turn;
+    s.spin -= turn;
+  } else if (s.phase === 'fit') {
+    // Nothing: it has stopped to have its mop put on.
+  } else if (s.phase === 'in') {
+    // Coming on: straight for the middle of the ground on screen, and to work
+    // once it is inside it. Turning at the edge only works from inside the edge.
+    const box = roamNow(vp);
+    s.heading = Math.atan2((box.y0 + box.y1) / 2 - s.y, (box.x0 + box.x1) / 2 - s.x);
+    s.x += Math.cos(s.heading) * step;
+    s.y += Math.sin(s.heading) * step;
+    s.over = cardAt(s.x, -s.y);
+    if (inRoam(s.x, s.y, box)) s.phase = 'work';
+  } else if (s.phase === 'work' && s.target) {
+    // A job: arc round toward it and drive, and stop on it rather than circling
+    // it - a mop has to sit on a patch for a moment to take it off.
+    // On a mopping route, a waypoint reached is the next one set at once, so
+    // it does not stop at every corner of the pattern.
+    if (s.plan && s.plan.at < s.plan.path.length && Math.hypot(s.target.x - s.x, s.target.y - s.y) <= Math.max(3, step)) {
+      s.plan.at++;
+      const next = s.plan.path[s.plan.at];
+      if (next) s.target = next;
+      else s.plan = null;
+    }
+    const dx = s.target.x - s.x;
+    const dy = s.target.y - s.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > 1) {
+      const want = Math.atan2(dy, dx);
+      let off = want - s.heading;
+      off = Math.atan2(Math.sin(off), Math.cos(off));
+      const most = (TUNING.robot.steer * dt) / 1000;
+      s.heading += Math.max(-most, Math.min(most, off));
+      // Slower while it is still turning to face it, so it does not orbit a
+      // target closer than its own turning circle.
+      const go = Math.min(dist, step * Math.max(0.15, Math.cos(off)));
+      s.x += Math.cos(s.heading) * go;
+      s.y += Math.sin(s.heading) * go;
+    }
+  } else if (s.phase === 'work') {
+    // Nothing to do: wander the ground on screen, bumping off card edges.
+    const box = roamNow(vp);
+    let nx = s.x + Math.cos(s.heading) * step;
+    let ny = s.y + Math.sin(s.heading) * step;
+    if (!inRoam(s.x, s.y, box)) {
+      // Left outside it by the camera moving: straight back for the middle.
+      s.heading = Math.atan2((box.y0 + box.y1) / 2 - s.y, (box.x0 + box.x1) / 2 - s.x);
+      s.x += Math.cos(s.heading) * step;
+      s.y += Math.sin(s.heading) * step;
+      s.over = cardAt(s.x, -s.y);
+    } else if (!inRoam(nx, ny, box)) {
+      // Off the edge of the ground: turn until the way ahead is back on it.
+      // Bounded, so a box somehow smaller than the robot cannot hang the frame.
+      for (let i = 0; i < 12 && !inRoam(nx, ny, box); i++) {
+        s.heading += robotTurn(rng);
+        nx = s.x + Math.cos(s.heading) * step;
+        ny = s.y + Math.sin(s.heading) * step;
+      }
+    } else {
+      const under = cardAt(nx, -ny);
+      if (under !== s.over && now > s.graceTill && rng() < TUNING.robot.bumpChance) {
+        // A card's edge: bump and turn. Not every time - see bumpChance.
+        s.heading += robotTurn(rng);
+        s.graceTill = now + ROBOT_GRACE_MS;
+      } else {
+        s.x = nx;
+        s.y = ny;
+        if (under !== s.over) s.graceTill = now + ROBOT_GRACE_MS;
+        s.over = under;
+      }
+    }
+  } else {
+    s.x += Math.cos(s.heading) * step;
+    s.y += Math.sin(s.heading) * step;
+  }
+  placeRobot(s);
+
+  // As loud as it is near the middle of the view, and quiet off at the edges.
+  const view = viewBox(vp);
+  const reach = Math.hypot(view.x1 - view.x0, view.y1 - view.y0) / 2 || 1;
+  const off = Math.hypot(s.x - (view.x0 + view.x1) / 2, s.y - (view.y0 + view.y1) / 2);
+  s.hum?.level(Math.max(0, 1 - off / reach));
+
+  if (s.phase === 'park') {
+    const out = viewBox(vp, ROBOT_GONE);
+    if (s.x < out.x0 || s.x > out.x1 || s.y < out.y0 || s.y > out.y1) takeRobot(s);
+    return;
+  }
+  if (s.phase === 'in' || s.phase === 'fit') return;
+  // Whatever it is over, it deals with - but only in its order. Pieces are
+  // always fair game; the webs wait until the pieces are gone, and the mop
+  // only works once it is on.
+  let did = robotEat(s);
+  const job = jobNow(s);
+  if (job === 'sweep' && sweepWebs(s.x, s.y, TUNING.robot.radius)) did = true;
+  if (s.mop && job === 'mop' && robotMop(s, dt)) did = true;
+  if (!did) return;
+  lastBy = 'robot';
+  paintCount();
+}
+
+/** How much is left of each thing the robot does, and so what it does next. */
+function jobNow(s: LiveRobot) {
+  let debris = loose.length;
+  let grime = tracksLeft();
+  for (const card of cards) {
+    debris += card.debris.length;
+    for (const f of card.fields) if (!f.fading && f.field.left > 0) grime++;
+  }
+  return robotJob(debris, webs.length, grime, s.mop);
+}
+
+/**
+ * Look for the nearest job of the kind it is on, and set off for it. On screen
+ * first - it is a toy, and one that drove off after a piece at the far end of
+ * the board while there was work in front of it would be a toy nobody saw -
+ * and anywhere on the board after that, since it can finish the board alone.
+ */
+function seekJob(s: LiveRobot, now: number) {
+  if (!vp) return;
+  const job = jobNow(s);
+  if (job === 'fit') {
+    s.phase = 'fit';
+    s.fitTill = now + TUNING.robot.fitMs;
+    s.spin = Math.PI;
+    s.target = null;
+    s.mop = true;
+    s.node.classList.add('has-mop');
+    cue('rise', { volume: 0.3 });
+    return;
+  }
+  const spots: RobotSpot[] = [];
+  // A handful tipped back out takes it off its route; it starts a new one after.
+  if (job !== 'mop') s.plan = null;
+  if (job === 'pick') {
+    for (const bit of loose) spots.push({ x: bit.x, y: bit.y, of: bit });
+    for (const card of cards) {
+      for (const bit of card.debris) {
+        const w = fromCard(card, bit.x, bit.y);
+        spots.push({ x: w.x, y: -w.y, of: bit });
+      }
+    }
+  } else if (job === 'sweep') {
+    for (const w of webs) {
+      for (const g of sidesOf(w)) {
+        for (const t of [0.3, 0.5, 0.7]) spots.push({ ...curveAt(g, t), of: w });
+      }
+    }
+  } else if (job === 'mop') {
+    if (planMop(s)) return;
+    dirtySpots(spots);
+  }
+  // Never what another one is already going for. With nothing left that is
+  // not, it has no job and wanders until something comes free.
+  const open = spots.filter(p => !claimed(s, p.of));
+  if (!open.length) { s.target = null; return; }
+  const seen = viewBox(vp);
+  const onScreen = open.filter(p => p.x >= seen.x0 && p.x <= seen.x1 && p.y >= seen.y0 && p.y <= seen.y1);
+  const pool = onScreen.length ? onScreen : open;
+  let best = pool[0]!;
+  let near = Infinity;
+  for (const p of pool) {
+    const d = Math.hypot(p.x - s.x, p.y - s.y);
+    if (d < near) { near = d; best = p; }
+  }
+  s.target = best;
+}
+
+/** Whether another robot is going for this piece, web, card or print, or is
+ *  mopping this card. Two of them after one thing is one of them wasted. */
+const claimed = (s: LiveRobot, of: RobotJobOf) =>
+  robots.some(o => o !== s && (o.target?.of === of || o.plan?.card === of));
+
+/** Whether a card still has grime on it for the mop. */
+const grimy = (card: LiveCard) => card.fields.some(f => !f.fading && f.field.left > 0);
+
+/**
+ * Mop card by card, each along a pattern picked at random for it - a spiral in
+ * from the edge, or back and forth in rows, or in columns - rather than cell by
+ * cell, which had it creeping from one speck to the next. Keeps the route it
+ * is on; when that runs out on a card that is still dirty, it picks again.
+ * Answers false when no card needs it, which leaves the prints.
+ */
+function planMop(s: LiveRobot): boolean {
+  if (s.plan && grimy(s.plan.card) && s.plan.at < s.plan.path.length) {
+    s.target = s.plan.path[s.plan.at]!;
+    return true;
+  }
+  s.plan = null;
+  const grimed = cards.filter(grimy);
+  if (!grimed.length || !vp) return false;
+  // A card another one is mopping, or going for, is left to it.
+  const dirty = grimed.filter(c => !claimed(s, c));
+  if (!dirty.length) return false;
+  const seen = viewBox(vp);
+  const centre = (c: LiveCard) => ({ x: c.item.x, y: -c.item.y });
+  const shown = dirty.filter(c => {
+    const p = centre(c);
+    return p.x >= seen.x0 && p.x <= seen.x1 && p.y >= seen.y0 && p.y <= seen.y1;
+  });
+  const pool = shown.length ? shown : dirty;
+  let card = pool[0]!;
+  let near = Infinity;
+  for (const c of pool) {
+    const p = centre(c);
+    const d = Math.hypot(p.x - s.x, p.y - s.y);
+    if (d < near) { near = d; card = c; }
+  }
+  const { w, h } = card.item;
+  const pattern = MOP_PATTERNS[Math.floor(rng() * MOP_PATTERNS.length)]!;
+  const path = mopPath(pattern, w, h, TUNING.robot.mopLane, TUNING.robot.radius * MOP_INSET).map(p => {
+    const at = fromCard(card, p.x / w, p.y / h);
+    return { x: at.x, y: -at.y, of: card };
+  });
+  s.plan = { card, path, at: 0 };
+  s.target = path[0]!;
+  return true;
+}
+
+/** Every cell the mop could work on right now, in layer coordinates: grime
+ *  with nothing lying over it, and the prints on the floor. */
+function dirtySpots(out: RobotSpot[]) {
+  for (const card of cards) {
+    const shield = shieldOf(card);
+    for (const f of card.fields) {
+      if (f.fading || !f.field.left) continue;
+      const cells = f.field.cells;
+      const g = Math.round(Math.sqrt(cells.length));
+      for (let i = 0; i < cells.length; i++) {
+        if (!cells[i] || shield?.(i)) continue;
+        const w = fromCard(card, ((i % g) + 0.5) / g, (Math.floor(i / g) + 0.5) / g);
+        out.push({ x: w.x, y: -w.y, of: card });
+      }
+    }
+  }
+  for (const t of tracks) {
+    if (t.fading || !t.field.left) continue;
+    const cells = t.field.cells;
+    const g = Math.round(Math.sqrt(cells.length));
+    for (let i = 0; i < cells.length; i++) {
+      if (!cells[i]) continue;
+      const w = fromPrint(t, ((i % g) + 0.5) / g, (Math.floor(i / g) + 0.5) / g);
+      out.push({ x: w.x, y: -w.y, of: t });
+    }
+  }
+}
+
+/**
+ * Wash what is under it: the jet's own work on every card it is over and on the
+ * prints, at the mop's slow bite. No flecks and no rivulets - it is a mop, and
+ * what it takes up it keeps - but the card is wet behind it all the same.
+ */
+function robotMop(s: LiveRobot, dt: number): boolean {
+  const radius = TUNING.robot.radius;
+  const bite = (TUNING.robot.mopBite * dt) / 16.7;
+  let worked = 0;
+  for (const card of cards) {
+    const p = toCard(card, s.x, -s.y);
+    const rx = radius / card.item.w;
+    const ry = radius / card.item.h;
+    if (p.u < -rx || p.u > 1 + rx || p.v < -ry || p.v > 1 + ry) continue;
+    sheen(card, p.u, p.v, rx, ry);
+    const shield = shieldOf(card);
+    for (const f of card.fields.slice()) {
+      if (f.fading || !f.field.total || !f.field.left) continue;
+      const span = Math.max(1, TUNING.depth[f.kind] ?? 1) * SUBS;
+      const lastPass = cellUnder(f.field, p.u, p.v) <= bite * SUBS;
+      const wear = wearOf(f.field, p.u, p.v, rx, ry, bite, span, shield);
+      const took = stamp(f.field, p.u, p.v, rx, ry, bite, shield);
+      eraseAlpha(f, p.u, p.v, rx, ry, wearShare(wear.before, wear.taken), lastPass);
+      if (took) {
+        wetAlpha(f, p.u, p.v, rx, ry);
+        worked++;
+      }
+      if (fieldClear(f.field)) dissolve(card, f);
+    }
+    if (!card.clean && cardClean(asState(card), webs)) markClean(card);
+  }
+  worked += workTracks(s.x, -s.y, radius, bite, true);
+  return worked > 0;
+}
+
+/** Eat what is under it. Loose pieces on the bare board, and pieces on any card
+ *  it is driving across - never what is in the glove, which robotEats() says. */
+function robotEat(s: LiveRobot): boolean {
+  const reach = TUNING.robot.radius;
+  let ate = 0;
+  for (const bit of loose.slice()) {
+    if (!robotEats(bit.kind, 'loose') || Math.hypot(bit.x - s.x, bit.y - s.y) > reach) continue;
+    loose.splice(loose.indexOf(bit), 1);
+    const host = bit.host;
+    bit.host = null;
+    if (host) swallow(host, `translate(${(s.x - bit.x).toFixed(1)}px, ${(s.y - bit.y).toFixed(1)}px) scale(0.2)`);
+    ate++;
+  }
+  for (const card of cards) {
+    let took = false;
+    for (const bit of card.debris.slice()) {
+      if (!robotEats(bit.kind, 'card')) continue;
+      const w = fromCard(card, bit.x, bit.y);
+      if (Math.hypot(w.x - s.x, -w.y - s.y) > reach) continue;
+      card.debris.splice(card.debris.indexOf(bit), 1);
+      const p = toCard(card, s.x, -s.y);
+      swallow(bit.node, `translate(${(p.u * 100).toFixed(2)}px, ${(p.v * 100).toFixed(2)}px) scale(0.2)`);
+      took = true;
+      ate++;
+    }
+    if (took && !card.clean && cardClean(asState(card), webs)) markClean(card);
+  }
+  if (!ate) return false;
+  cue('pick', { volume: 0.22 });
+  return true;
+}
+
+/** Into the robot and gone, over 200ms. Taken out of the counting at once -
+ *  this is only the picture catching up. */
+function swallow(node: Element, to: string) {
+  node.animate([{ opacity: 1 }, { transform: to, opacity: 0 }], { duration: 200, easing: EASE, fill: 'forwards' });
+  later(() => node.remove(), 200);
+}
+
+/** Off to the nearest edge of the screen and away, at the ending. */
+function parkRobots() {
+  if (!vp) return;
+  const view = viewBox(vp);
+  for (const s of robots) {
+    if (s.phase === 'park') continue;
+    s.phase = 'park';
+    s.spin = 0;
+    const ways = [
+      { a: Math.PI, d: s.x - view.x0 },
+      { a: 0, d: view.x1 - s.x },
+      { a: -Math.PI / 2, d: s.y - view.y0 },
+      { a: Math.PI / 2, d: view.y1 - s.y },
+    ];
+    s.heading = ways.reduce((a, b) => (b.d < a.d ? b : a)).a;
+  }
+}
+
+function takeRobot(s: LiveRobot) {
+  const i = robots.indexOf(s);
+  if (i >= 0) robots.splice(i, 1);
+  s.hum?.stop();
+  s.node.remove();
+}
+
 // ---- the bin ------------------------------------------------------------
 
 /**
@@ -2526,12 +3129,16 @@ function emptyHand() {
 
   const going = carried;
   carried = [];
+  // Binning the last handful is finishing the board, and it is the hand's.
+  lastBy = 'hand';
   paintLoad();
   going.forEach((bit, i) => {
     later(() => {
       tossIn(bit.node, to);
       can.classList.add('is-hit');
       later(() => can.classList.remove('is-hit'), 160);
+      binned++;
+      paintFill(can);
       // A few percent apart per piece, so five of them are five sounds and not
       // one sound five times.
       cue('pick', { volume: 0.3 - i * 0.02 });
@@ -2542,6 +3149,20 @@ function emptyHand() {
     can.classList.remove('is-open');
     paintCount();
   }, going.length * 70 + LEAVE_MS);
+}
+
+/** Pieces binned before the first thing shows under the lid, and the second. */
+const BIN_SOME = 8;
+const BIN_FULL = 20;
+
+/**
+ * The bin fills up: a leaf tip under the rim after eight pieces, a scrap of
+ * paper beside it after twenty. Not a count and not a limit - the bin takes
+ * everything, for ever - just the bin looking like somebody has been using it.
+ */
+function paintFill(can: HTMLElement) {
+  can.classList.toggle('is-some', binned >= BIN_SOME);
+  can.classList.toggle('is-full', binned >= BIN_FULL);
 }
 
 /** One piece on its way into the bin: out of the glove, into a node of its own
@@ -2604,6 +3225,32 @@ function sampleSpeed(dt: number) {
   handSpeed += (raw - handSpeed) * (1 - Math.exp(-dt / TUNING.jetSmoothMs));
 }
 
+/** Screen speed at which the tool is lifted all the way, and how long it takes
+ *  to follow the hand up or settle back. */
+const LIFT_FULL = 900;
+const LIFT_MS = 200;
+
+/**
+ * **Height from speed.** A tool swept fast is lifted off the board, and a
+ * lifted thing throws its shadow further and softer: the cursor's far shadow
+ * goes from 8px to 16px as the hand goes from still to 900 screen pixels a
+ * second. One custom property, which clean.css turns into both numbers.
+ *
+ * Screen speed and not world speed, unlike the jet: this is about the tool
+ * under the hand on the glass, and at any zoom a fast hand is a fast hand.
+ * Eased every frame, written only when the hundredths change, so a still hand
+ * writes nothing.
+ */
+function paintLift(dt: number) {
+  if (!cursor) return;
+  const want = Math.min(1, (handSpeed * (vp?.zoom ?? 1)) / LIFT_FULL);
+  raised += (want - raised) * (1 - Math.exp(-dt / LIFT_MS));
+  const shown = Math.round(raised * 100) / 100;
+  if (shown === raisedShown) return;
+  raisedShown = shown;
+  cursor.style.setProperty('--clean-lift', shown.toFixed(2));
+}
+
 function tick() {
   if (!on) return;
   raf = requestAnimationFrame(tick);
@@ -2612,6 +3259,7 @@ function tick() {
   tickAt = now;
   if (pending.length) drainPaint();
   sampleSpeed(dt);
+  paintLift(dt);
 
   // **A held tool goes on working when the hand stops.**
   //
@@ -2689,9 +3337,10 @@ function tick() {
     }
     paintBadge(card, zoom);
     // Only the cards that have one, which setRadius() has already answered.
-    if (card.gifs) paintGif(card);
+    paintHeld(card);
   }
   stepSpider(dt, now);
+  stepRobots(dt, now);
   drawMist(now);
 }
 
@@ -2972,7 +3621,19 @@ export function cleanKey(key: string): boolean {
 function paintCount() {
   const score = tally(cards.map(asState), webs, loose.length, carrying(), tracksLeft());
   const out = el('clean-count');
-  if (out) out.textContent = `${score.clean} of ${score.total}`;
+  // Three spans so the numbers and the word can be set apart (clean.css), and
+  // only when the reading changes: the node is aria-live, and rebuilding it
+  // with the same words would have them read out again for nothing.
+  const said = `${score.clean} of ${score.total}`;
+  if (out && out.textContent !== said) {
+    const part = (cls: string, text: string) => {
+      const s = document.createElement('span');
+      s.className = cls;
+      s.textContent = text;
+      return s;
+    };
+    out.replaceChildren(part('count-n', String(score.clean)), ' ', part('count-of', 'of'), ' ', part('count-n', String(score.total)));
+  }
   if (score.done && !finishing) finish();
 }
 
@@ -2988,21 +3649,18 @@ function finish() {
   finishing = true;
   endStroke();
   if (held) { flyHome(held); held = null; hideCursor(); }
+  // Its work is done too.
+  parkRobots();
   cue('done');
   document.documentElement.classList.add('is-clean-done');
-  catcher?.append(buildPolaroid());
+  // No card yet: it is dealt onto the board on the way out, by Done - see the
+  // top of the teardown, and dealCard().
   paintCanAfterFlight();
   el('clean-tools')?.toggleAttribute('hidden', true);
   el('clean-confirm')?.toggleAttribute('hidden', true);
   el('clean-end')?.toggleAttribute('hidden', false);
   later(() => cue('sweep', { volume: 0.6 }), 700);
 }
-
-/** One frame of the polaroid, in CSS pixels. Two of them side by side and the
- *  gap between come to about 220. */
-const SHOT_W = 104;
-const SHOT_H = 78;
-const SHOT_PAD = 7;
 
 /**
  * The colour a card was when it was dealt: its top grime's, since that is the
@@ -3016,78 +3674,80 @@ function dealtColour(card: LiveCard): string {
   return fleckColour(top ? top.kind : 'film');
 }
 
-/** The board as a drawing: each card a rounded rectangle in its place. The
- *  before is filled with what was on it; the after is left to clean.css, which
- *  paints it as the app paints a card. */
-function shot(before: boolean): SVGSVGElement {
-  const svg = ns('svg');
-  svg.setAttribute('class', 'clean-shot' + (before ? ' is-before' : ' is-after'));
-  svg.setAttribute('viewBox', `0 0 ${SHOT_W} ${SHOT_H}`);
-  svg.setAttribute('aria-hidden', 'true');
-  const rects = thumbLayout(dealt.map(d => d.box), SHOT_W, SHOT_H, SHOT_PAD);
-  rects.forEach((t, i) => {
-    const r = ns('rect');
-    r.setAttribute('x', t.x.toFixed(2));
-    r.setAttribute('y', t.y.toFixed(2));
-    r.setAttribute('width', t.w.toFixed(2));
-    r.setAttribute('height', t.h.toFixed(2));
-    r.setAttribute('rx', Math.min(1.5, t.w / 4, t.h / 4).toFixed(2));
-    if (before) r.setAttribute('fill', dealt[i]!.colour);
-    svg.append(r);
-  });
-  return svg;
-}
+/** How long the card takes to appear over the board, and then to fall onto
+ *  it. Short: this is what happens after somebody pressed Done, and they are
+ *  waiting on nothing but it. */
+const CARD_IN_MS = 220;
+const CARD_FALL_MS = 420;
 
 /**
- * The ending, dealt as a card: before and after, side by side, and one line.
+ * **The card is kept.** On the way out - Done, or Escape at the ending - it
+ * appears over the middle of the screen, held a little above the board, and
+ * falls onto it, where it is an ordinary card named Spotless (type `card`,
+ * canvas/spotless.ts): saved with the board, undoable like any addition, in the
+ * board's palette, and there after the mode has gone. A before-and-after of a
+ * board somebody has just cleaned is a thing worth keeping on it.
  *
- * Drawn and not captured - there is no screenshot API worth leaning on, and a
- * schematic of the board is what a before-and-after at this size can show
- * anyway. **It is never saved, never put on the board and never in the .mbrd**:
- * it is a node in the glass and it goes when the glass does.
+ * What it is made from is written into it now - where each card sat and the
+ * colour of what was on it, and who finished the job - because by the time it
+ * is drawn again the mode and every colour it dealt are gone.
  *
- * It can be moved about with the left button, because it is a card and cards
- * move. That is all it does. Its own listeners stop the press before the glass
- * sees it, so a drag here is never also a stroke or a pan.
+ * The fall is a copy of the card on the body, built by the card's own
+ * renderer, landing at exactly the size the real one has at this zoom; the
+ * real one is hidden under it until then, so the swap is one card for the same
+ * card.
+ *
+ * Called at the top of the teardown, while everything it is made from is still
+ * standing. Only Done and Escape get there, so it is always the board the cards
+ * were cleaned on.
  */
-function buildPolaroid(): HTMLElement {
-  const card = div('clean-polaroid');
-  const frames = div('clean-shots');
-  frames.append(shot(true), shot(false));
-  const said = document.createElement('p');
-  said.className = 'clean-polaroid-said';
-  said.textContent = SPOTLESS;
-  const count = document.createElement('p');
-  count.className = 'clean-polaroid-count';
-  count.textContent = `${dealt.length} ${dealt.length === 1 ? 'card' : 'cards'}`;
-  card.append(frames, said, count);
+function dealCard() {
+  if (!vp || !dealt.length) return;
+  const f = SPOTLESS_FRAME;
+  const two = (n: number) => Math.round(n * 100) / 100;
+  const before = thumbLayout(dealt.map(d => d.box), f.w, f.h, f.pad)
+    .map((t, i) => [two(t.x), two(t.y), two(t.w), two(t.h), dealt[i]!.colour]);
+  const size = defaultSize('card');
+  const meta: Record<string, unknown> = { before, cards: dealt.length };
+  // Written only when it was the robot: absent is the ordinary card.
+  if (lastBy === 'robot') meta.by = 'robot';
+  const [item] = addItems([{
+    type: 'card',
+    name: 'Spotless',
+    x: vp.pan.x, y: vp.pan.y, w: size.w, h: size.h,
+    meta,
+  }], 'Add spotless card');
+  if (!item) return;
 
-  let from: { x: number, y: number, dx: number, dy: number } | null = null;
-  card.addEventListener('pointerdown', e => {
-    e.stopPropagation();
-    if (e.button !== 0) return;
-    e.preventDefault();
-    card.setPointerCapture(e.pointerId);
-    const dx = parseFloat(card.style.getPropertyValue('--drag-x')) || 0;
-    const dy = parseFloat(card.style.getPropertyValue('--drag-y')) || 0;
-    from = { x: e.clientX, y: e.clientY, dx, dy };
-    card.classList.add('is-held');
+  const real = document.querySelector<HTMLElement>(`.item[data-id="${CSS.escape(item.id)}"]`);
+  const copy = div('clean-drop');
+  copy.append(buildSpotlessCard(item));
+  copy.style.left = (vp.left + vp.cx).toFixed(1) + 'px';
+  copy.style.top = (vp.top + vp.cy).toFixed(1) + 'px';
+  copy.style.width = size.w + 'px';
+  copy.style.height = size.h + 'px';
+  document.body.append(copy);
+  real?.classList.add('is-clean-arriving');
+  // Held above the board: bigger than it will be, never smaller than itself,
+  // and with a long soft shadow; then down, the shadow drawing in under it.
+  const land = vp.zoom;
+  const held = Math.max(1.1, land * 1.3);
+  const place = (s: number, lift: number) =>
+    `translate(-50%, -50%) translateY(${(-lift).toFixed(1)}px) scale(${s.toFixed(3)})`;
+  const high = 'drop-shadow(0 22px 26px rgb(30 26 20 / 0.34))';
+  const low = 'drop-shadow(0 1px 2px rgb(30 26 20 / 0.3))';
+  const fall = copy.animate([
+    { transform: place(held, 26), opacity: 0, filter: high, easing: EASE },
+    { transform: place(held, 26), opacity: 1, filter: high, easing: 'cubic-bezier(0.5, 0, 0.75, 0)',
+      offset: CARD_IN_MS / (CARD_IN_MS + CARD_FALL_MS) },
+    { transform: place(land, 0), opacity: 1, filter: low },
+  ], { duration: CARD_IN_MS + CARD_FALL_MS, fill: 'forwards' });
+  // A promise rather than a timer: the session's timers were cleared the moment
+  // the mode closed, and this outlives it by design.
+  void fall.finished.catch(() => null).then(() => {
+    real?.classList.remove('is-clean-arriving');
+    copy.remove();
   });
-  card.addEventListener('pointermove', e => {
-    e.stopPropagation();
-    if (!from) return;
-    card.style.setProperty('--drag-x', (from.dx + e.clientX - from.x).toFixed(1) + 'px');
-    card.style.setProperty('--drag-y', (from.dy + e.clientY - from.y).toFixed(1) + 'px');
-  });
-  const up = (e: PointerEvent) => {
-    e.stopPropagation();
-    from = null;
-    card.classList.remove('is-held');
-    if (card.hasPointerCapture(e.pointerId)) card.releasePointerCapture(e.pointerId);
-  };
-  card.addEventListener('pointerup', up);
-  card.addEventListener('pointercancel', up);
-  return card;
 }
 
 // ---- music and media ----------------------------------------------------

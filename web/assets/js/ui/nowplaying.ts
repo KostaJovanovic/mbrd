@@ -14,6 +14,8 @@ import { onNarrowScreen } from '../canvas/viewport.ts';
 import { tickSlider } from './controls.ts';
 import { setLens, currentLens } from './board-view.ts';
 import { togglePlayerWindow, isPlayerWindowOpen } from './playlist.ts';
+import { openAnchored } from './menu.ts';
+import type { MenuEntry } from './menu.ts';
 import { baseName, clamp, markClosed } from '../util.ts';
 import { seekInnerHTML, sizeSeekWave, reportPlayError } from '../media/transport.ts';
 import type { NowPlaying } from '../canvas/audio.ts';
@@ -179,6 +181,14 @@ export function initNowPlaying() {
     if (e.key === 'Escape') { markClosed(e); close(); e.stopPropagation(); }
   });
   lineEl!.addEventListener('keydown', onSeekKey);
+
+  // Right-click: the bar's buttons as rows, plus a mute the bar has no room for.
+  bar.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    if (!nowPlaying()) return;
+    openAnchored({ left: e.clientX, right: e.clientX, top: e.clientY, bottom: e.clientY },
+      menuEntries(), { label: 'Player' });
+  });
 
   onNowPlaying(show);
   show(nowPlaying());
@@ -355,6 +365,43 @@ function openPlaylist() {
 const playlistOpen = () => (board.layoutMode === 'mobile'
   ? currentLens() === 'playlist'
   : isPlayerWindowOpen());
+
+/** The volume a mute from the menu put away, or 0 when nothing is muted from here. */
+let mutedFrom = 0;
+
+/**
+ * The right-click rows. Next and the playlist appear exactly when their
+ * buttons do, and the mute only where the volume slider does.
+ */
+function menuEntries(): MenuEntry[] {
+  const sound = nowPlaying()?.el;
+  const muted = getVolume() === 0;
+  return [
+    { label: sound?.paused ? 'Play' : 'Pause', action: togglePlay },
+    { label: 'Next track', hidden: !nextBtn || nextBtn.hidden, action: queueNext },
+    { sep: true },
+    {
+      label: muted ? 'Unmute' : 'Mute',
+      hidden: volumeLocked(),
+      action: () => {
+        if (muted) {
+          setVolume(mutedFrom || sliderToVolume(0.77));
+          mutedFrom = 0;
+        } else {
+          mutedFrom = getVolume();
+          setVolume(0);
+        }
+      },
+    },
+    {
+      label: playlistOpen() ? 'Close the playlist' : 'Open the playlist',
+      hidden: !listBtn || listBtn.hidden,
+      action: openPlaylist,
+    },
+    { sep: true },
+    { label: 'Stop and close', action: close },
+  ];
+}
 
 /** Play or pause whatever the bar is bound to. */
 function togglePlay() {

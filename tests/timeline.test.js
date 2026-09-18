@@ -19,7 +19,7 @@ import {
 import {
   timelineSteps, timelineAt, timelineStale, timelineHashes, replayTo, goTo,
   serializeTimeline, fingerprint, registerOp, declareOp, editStep, stepEditable,
-  trimmable, trimTimeline, adoptTimeline,
+  trimmable, trimTimeline, adoptTimeline, deleteStep, deleteAhead,
 } from '../web/assets/js/timeline.ts';
 import { packBoard, unpackBoard } from '../web/assets/js/storage/mbrd.ts';
 import { fresh, photo, note } from './state-fixtures.js';
@@ -867,4 +867,72 @@ test('a run merged into a checkpointed step still replays', () => {
   replayTo(0);
   replayTo(50);
   assert.equal(fingerprint(), top, 'the checkpoint at 50 was a step and a half old');
+});
+
+// ---------------------------------------------------------------------------
+// Deleting steps
+// ---------------------------------------------------------------------------
+
+test('deleting a step behind the marker takes its change off the board and keeps the rest', () => {
+  const [a] = addItems([photo({ x: 0, y: 0 })]);
+  move(a.id, 40, 0);
+  renameItem(a.id, 'Renamed');
+  assert.equal(deleteStep(1), true);
+  assert.deepEqual(labels(), ['Add', 'Rename']);
+  assert.equal(timelineAt(), 2);
+  assert.equal(byId(a.id).x, 0, 'the deleted move is still on the board');
+  assert.equal(byId(a.id).name, 'Renamed', 'the step after it was lost');
+  // Undo would run closures written against the old history.
+  assert.deepEqual(historyDepth(), { undo: 0, redo: 0 });
+});
+
+test('deleting an add takes the later changes to that card with it', () => {
+  const [a] = addItems([photo({ x: 0, y: 0 })]);
+  const [b] = addItems([photo({ x: 500, y: 0 })]);
+  move(a.id, 40, 0);
+  move(b.id, 40, 0);
+  deleteStep(0);
+  assert.equal(byId(a.id), undefined);
+  assert.equal(byId(b.id).x, 540);
+  // The move of `a` had nothing left to do, so it left no mark.
+  assert.deepEqual(labels(), ['Add', 'Move']);
+  assert.equal(timelineAt(), 2);
+});
+
+test('deleting a step ahead of the marker leaves the board alone', () => {
+  const [a] = addItems([photo({ x: 0, y: 0 })]);
+  move(a.id, 40, 0);
+  renameItem(a.id, 'Renamed');
+  goTo(1);
+  const here = fingerprint();
+  deleteStep(2);
+  assert.equal(fingerprint(), here);
+  assert.equal(timelineAt(), 1);
+  assert.deepEqual(labels(), ['Add', 'Move']);
+  goTo(2);
+  assert.equal(byId(a.id).x, 40);
+  assert.notEqual(byId(a.id).name, 'Renamed', 'the deleted rename came back');
+});
+
+test('deleting the steps ahead keeps the board and the past', () => {
+  const [a] = addItems([photo({ x: 0, y: 0 })]);
+  move(a.id, 40, 0);
+  renameItem(a.id, 'Renamed');
+  goTo(1);
+  const here = fingerprint();
+  assert.equal(deleteAhead(), 2);
+  assert.equal(fingerprint(), here);
+  assert.deepEqual(labels(), ['Add']);
+  assert.equal(timelineAt(), 1);
+  assert.equal(deleteAhead(), 0, 'nothing is ahead now');
+  // A new edit lands after the kept step, with nothing laid back after it.
+  move(a.id, 10, 0);
+  assert.deepEqual(labels(), ['Add', 'Move']);
+});
+
+test('deleting refuses a position with no step', () => {
+  addItems([photo({ x: 0, y: 0 })]);
+  assert.equal(deleteStep(-1), false);
+  assert.equal(deleteStep(1), false);
+  assert.equal(timelineSteps().length, 1);
 });

@@ -14,13 +14,13 @@ import {
   konamiMatcher, KONAMI, tapMatcher, TAPS, TAP_GAP_MS, TAP_SPAN_MS,
 } from '../web/assets/js/ui/clean/konami.ts';
 import {
-  MESS, TOOLS, GRIMES, DEBRIS, GRIME_FOR, grimesFor, LAYERS, layersFor, TUNING, yieldsTo, planTracks,
+  MESS, TOOLS, GRIMES, DEBRIS, GRIME_FOR, grimesFor, TUNING, yieldsTo, planTracks,
   makeField, emptyField, coverage, fieldClear, stamp,
   fullTank, tankStep, tankPower, bulkOf, handRoom,
   gapBetween, trioWebs, spreadOf, webCards, webHolds, trianglesOverlap,
   planBoard, cardClean, tally, jetShape, SUBS, wearShare, WEAR_MAX, wearOf,
   toolWork, toolWanted, toolShare, peelFor, thumbLayout,
-  printTurn, toPrint,
+  printTurn, toPrint, fromPrint, robotEats, robotTurn, robotJob, mopPath, MOP_PATTERNS, MOP_INSET,
 } from '../web/assets/js/ui/clean/mess.ts';
 import { crust, crustAt, crustMask, webCore, bootAt } from '../web/assets/js/ui/clean/art.ts';
 
@@ -453,59 +453,6 @@ test('worn crust never sits in the band where it cannot be seen', () => {
   }
 });
 
-test('the jet takes nothing from an under-layer until the top has let go of that cell', () => {
-  // The shield clean.ts composes, reproduced here over the pure parts: a cell
-  // of the under-layer is protected exactly while the top's cell at the same
-  // index still has something in it. Per cell and not per field - the jet takes
-  // the mud off this patch and starts on the rust beneath it while the mud a
-  // hand's width away is untouched.
-  const under = makeField('rust', () => true, 32, 3);
-  const top = makeField('mud', () => true, 32, 2);
-  const shield = i => top.cells[i] > 0;
-  const was = under.left;
-
-  // Wash a small patch until the top there is gone.
-  for (let i = 0; i < 40 && top.left === top.total; i++) stamp(top, 0.5, 0.5, 0.1, 0.1, 1);
-  assert.ok(top.left < top.total, 'the fixture never cleared any of the top');
-  assert.equal(under.left, was, 'the under-layer lost cells while the top still covered them');
-
-  // Now the same patch bites through to the rust, and only there.
-  for (let i = 0; i < 40; i++) stamp(under, 0.5, 0.5, 0.1, 0.1, 1, shield);
-  assert.ok(under.left < was, 'the under-layer was never reached');
-
-  // Everywhere the top is still whole, the rust is still whole too.
-  const g = 32;
-  for (let i = 0; i < g * g; i++)
-    if (top.cells[i] > 0) assert.ok(under.cells[i] > 0, `cell ${i} lost its rust through the mud`);
-});
-
-test('a layered card is not clean until both of its grimes are', () => {
-  const under = makeField('rust', () => true, 32, 3);
-  const top = makeField('mud', () => true, 32, 2);
-  const card = { id: 'a', fields: [under, top], debris: [] };
-  assert.equal(cardClean(card, []), false);
-  top.left = 0;
-  assert.equal(cardClean(card, []), false, 'the top alone is not the card');
-  under.left = 0;
-  assert.equal(cardClean(card, []), true);
-});
-
-test('the badge counts both layers as one job', () => {
-  // Two fields, one arc: what is owed here is the whole card, not the top of
-  // it. A badge that filled and reset would read as the work being undone.
-  const under = makeField('rust', () => true, 32, 3);
-  const top = makeField('mud', () => true, 32, 2);
-  const card = { id: 'a', fields: [under, top], debris: [] };
-  const w = toolWork(card, [], 'washer', { debris: 0, webs: 0 });
-  assert.equal(w.left, under.left + top.left);
-  assert.equal(w.total, under.total + top.total);
-  assert.equal(toolShare(w), 0, 'a freshly dealt layered card is at the start of its arc');
-  top.left = 0;
-  assert.ok(toolShare(toolWork(card, [], 'washer', { debris: 0, webs: 0 })) > 0,
-    'clearing the top moved the arc not at all');
-  assert.ok(toolShare(toolWork(card, [], 'washer', { debris: 0, webs: 0 })) < 1,
-    'clearing the top finished the arc, with the rust still there');
-});
 
 test('a zero radius is a no-op rather than a divide by zero', () => {
   const f = makeField('mud', () => true);
@@ -1429,59 +1376,19 @@ test('an empty board plans nothing and asks for nothing', () => {
   assert.deepEqual(plan.webs, []);
 });
 
-test('a card carries one grime or two, never more, and debris may lie on either', () => {
-  // A card used to be held to one grime, on the reasoning that two would be two
-  // reveals fighting for the same pixels. They are not, so long as the top one
-  // shields the one under it: the jet takes the mud off and what is underneath
-  // is still not the card, which is the reveal happening twice. Three would be.
+test('a card carries one grime at most, and debris may lie on it', () => {
+  // Two grimes stacked, the top shielding the one under it, was dealt for a
+  // while and taken out: clearing a card only to find it still dirty read as
+  // the washer not working.
   let stacked = 0;
-  let layered = 0;
-  for (let seed = 1; seed <= 40; seed++) {
-    const boxes = Array.from({ length: 5 }, (_, i) => box(`c${i}`, i * 400, 0));
+  for (let seed = 1; seed <= 60; seed++) {
+    const boxes = Array.from({ length: 6 }, (_, i) => box(`c${i}`, i * 400, 0));
     for (const card of planBoard(boxes, rng(seed)).cards) {
-      assert.ok(card.fields.length <= 2, `seed ${seed} dealt ${card.id} ${card.fields.length} grimes`);
-      if (card.fields.length === 2) layered++;
+      assert.ok(card.fields.length <= 1, `seed ${seed} dealt ${card.id} ${card.fields.length} grimes`);
       if (card.fields.length && card.debris.length) stacked++;
     }
   }
   assert.ok(stacked > 0, 'debris never once landed on grime - the deal is not independent');
-  assert.ok(layered > 0, 'no card was ever dealt two layers');
-});
-
-test('a layered card is dealt bottom first, and the top is the shallower', () => {
-  // Order is load-bearing: clean.ts shields a field with everything after it in
-  // the list. Reversed, the jet would be shielded from the layer on top by the
-  // one underneath and the card could never be cleaned at all.
-  for (const [top, under] of LAYERS) {
-    assert.ok(TUNING.depth[top] <= TUNING.depth[under],
-      `${top} over ${under} puts the deeper grime on top`);
-    assert.equal(MESS[top].family, 'field');
-    assert.equal(MESS[under].family, 'field');
-  }
-  for (let seed = 1; seed <= 60; seed++) {
-    const boxes = Array.from({ length: 6 }, (_, i) => box(`c${i}`, i * 400, 0));
-    for (const card of planBoard(boxes, rng(seed)).cards) {
-      if (card.fields.length !== 2) continue;
-      const [under, top] = card.fields;
-      assert.ok(LAYERS.some(([t, u]) => t === top && u === under),
-        `${top} over ${under} is not a pair anybody allowed`);
-    }
-  }
-});
-
-test('a layer is only dealt where both its halves suit the card', () => {
-  // A note is not given mud over rust merely because the pair exists - both
-  // halves have to be grimes that type can get in the first place.
-  for (const type of [...Object.keys(GRIME_FOR), 'sticker', undefined]) {
-    const allowed = grimesFor(type);
-    for (const [top, under] of layersFor(type)) {
-      assert.ok(allowed.includes(top), `${type} may be dealt ${top} on top, which it cannot get`);
-      assert.ok(allowed.includes(under), `${type} may be dealt ${under} under, which it cannot get`);
-    }
-  }
-  // And the mechanism is reachable: at least one type can actually be layered,
-  // or layeredChance is a number that does nothing.
-  assert.ok(Object.keys(GRIME_FOR).some(t => layersFor(t).length), 'no card type can be layered');
 });
 
 test('every dealt mess is one the table knows, and debris sits on the card', () => {
@@ -1505,6 +1412,142 @@ test('gum is a single stuck thing, and paper and caps come in ones and twos', ()
       assert.ok(count(kind) <= TUNING.fewPieces[1],
         `seed ${seed} dealt ${count(kind)} of ${kind} to one card`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// the robot
+// ---------------------------------------------------------------------------
+
+test('the robot eats loose and on-card debris, and never what is in the hand', () => {
+  for (const kind of DEBRIS) {
+    assert.equal(robotEats(kind, 'loose'), true, `${kind} lying on the board was left`);
+    assert.equal(robotEats(kind, 'card'), true, `${kind} on a card it drove over was left`);
+    assert.equal(robotEats(kind, 'hand'), false, `${kind} was taken out of the glove`);
+  }
+  // Grime, webs and prints are not pieces, wherever they are.
+  for (const [kind, def] of Object.entries(MESS)) {
+    if (def.family === 'debris') continue;
+    for (const at of ['loose', 'card', 'hand'])
+      assert.equal(robotEats(kind, at), false, `the robot ate ${kind}`);
+  }
+});
+
+test('a bump turns the robot 45 to 160 degrees, either way', () => {
+  const r = rng(5);
+  const seen = { left: 0, right: 0 };
+  for (let i = 0; i < 400; i++) {
+    const turn = robotTurn(r);
+    const deg = Math.abs(turn) * 180 / Math.PI;
+    assert.ok(deg >= 45 - 1e-9 && deg <= 160 + 1e-9, `a turn of ${deg.toFixed(1)} degrees`);
+    seen[turn < 0 ? 'left' : 'right']++;
+  }
+  assert.ok(seen.left > 100 && seen.right > 100, 'it only ever turns one way');
+});
+
+test('the robot picks up, then sweeps, then fits its mop, then washes', () => {
+  assert.equal(robotJob(3, 2, 5, false), 'pick', 'webs and grime wait for the pieces');
+  assert.equal(robotJob(3, 0, 5, true), 'pick', 'a handful tipped back out comes before the mop');
+  assert.equal(robotJob(0, 2, 5, false), 'sweep', 'grime waits for the webs');
+  assert.equal(robotJob(0, 0, 5, false), 'fit', 'no mop, no washing');
+  assert.equal(robotJob(0, 0, 5, true), 'mop');
+  assert.equal(robotJob(0, 0, 0, false), 'none', 'a clean board needs no mop fitted');
+  assert.equal(robotJob(0, 0, 0, true), 'none');
+});
+
+test('every mop pattern passes the mop over the whole card', () => {
+  // Distance from a point to the route, which is a polyline.
+  const toRoute = (path, x, y) => {
+    let best = Infinity;
+    for (let i = 0; i + 1 < path.length; i++) {
+      const a = path[i], b = path[i + 1];
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const len = dx * dx + dy * dy || 1;
+      const t = Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / len));
+      best = Math.min(best, Math.hypot(a.x + t * dx - x, a.y + t * dy - y));
+    }
+    return best;
+  };
+  const { radius, mopLane } = TUNING.robot;
+  const inset = radius * MOP_INSET;
+  assert.ok(mopLane < radius * 2, 'lanes wider than the mop leave stripes');
+  for (const pattern of MOP_PATTERNS) {
+    for (const [w, h] of [[256, 192], [200, 112], [72, 72], [600, 90], [48, 300]]) {
+      const path = mopPath(pattern, w, h, mopLane, inset);
+      assert.ok(path.length >= 2 && path.length < 2000, `${pattern} on ${w}x${h}: ${path.length} points`);
+      for (const p of path) {
+        assert.ok(p.x >= 0 && p.x <= w && p.y >= 0 && p.y <= h, `${pattern} leaves a ${w}x${h} card`);
+      }
+      // Every point on the card is under the mop somewhere along the way.
+      for (let y = 0; y <= h; y += 6) {
+        for (let x = 0; x <= w; x += 6) {
+          assert.ok(toRoute(path, x, y) <= radius + 1e-9,
+            `${pattern} on ${w}x${h} never mops (${x}, ${y})`);
+        }
+      }
+    }
+  }
+});
+
+test('a print cell found by fromPrint() is where toPrint() says it is', () => {
+  // The robot drives to fromPrint()'s answer and washes with toPrint(); if the
+  // two disagree it sits beside the dirt scrubbing clean floor.
+  const t = { x: 40, y: -120, w: 36, h: 90 };
+  for (const rot of [0, 0.7, Math.PI / 2, 2.4, -1.1]) {
+    for (const [u, v] of [[0.5, 0.5], [0.1, 0.9], [0.8, 0.2]]) {
+      const w = fromPrint({ ...t, rot }, u, v);
+      const back = toPrint({ ...t, rot }, w.x, w.y);
+      assert.ok(Math.abs(back.u - u) < 1e-9 && Math.abs(back.v - v) < 1e-9,
+        `rot ${rot}: (${u}, ${v}) came back as (${back.u.toFixed(3)}, ${back.v.toFixed(3)})`);
+    }
+  }
+});
+
+test('a check is a moment, not a standing state', () => {
+  const src = readFileSync(new URL('../web/assets/js/ui/clean/clean.ts', import.meta.url), 'utf8');
+  assert.match(src, /const CHECK_MS = 4000;/);
+  // Earned only by work seen coming off under this tool, and then timed out.
+  assert.match(src, /else if \(want && card\.badgeOwed\) \{\s*card\.badgeOwed = false;\s*card\.checkTill = now \+ CHECK_MS;/,
+    'a check is not earned by the work coming off');
+  assert.match(src, /now < card\.checkTill \? 'done' : ''/, 'a check stays up for ever');
+});
+
+test('the hand\'s jet finishes a crust on the let-go, not under the nozzle', () => {
+  const src = readFileSync(new URL('../web/assets/js/ui/clean/clean.ts', import.meta.url), 'utf8');
+  const work = src.slice(src.indexOf('function workCard('), src.indexOf('function cellUnder('));
+  assert.ok(work.length > 0, 'workCard() moved - find it again');
+  assert.doesNotMatch(work, /dissolve\(/, 'the hand dissolves mid-stroke');
+  assert.match(src, /if \(drawing && on && held === 'washer'\) settleWashed\(\);/, 'the let-go never settles');
+  assert.match(src, /workTracks\(w\.x, w\.y, radius, bite, false\)/, 'the hand fades prints mid-stroke');
+  // Nor does a card count clean before its crust is dissolving.
+  assert.match(src, /f\.left \? \{ \.\.\.f, total: 1, left: 1 \} : f/, 'a card counts clean mid-stroke');
+  // ...but the badge still reads the real amount, or its arc stands still.
+  assert.match(src, /toolWork\(liveState\(card\)/, 'the badge reads the counting view');
+});
+
+test('the robot fits its mop and washes, and its board gets its own card', () => {
+  // The wiring, as text: the mode is the only place these meet.
+  const src = readFileSync(new URL('../web/assets/js/ui/clean/clean.ts', import.meta.url), 'utf8');
+  assert.match(src, /classList\.add\('has-mop'\)/, 'the mop is never shown');
+  assert.match(src, /robotMop\(s, dt\)/, 'the mop never washes');
+  assert.match(src, /if \(lastBy === 'robot'\) meta\.by = 'robot'/, 'the card never learns who finished');
+  // Two robots never go for one thing: a claim is by the thing itself, and
+  // there is no falling back to sharing when everything is taken.
+  assert.match(src, /o\.target\?\.of === of \|\| o\.plan\?\.card === of/, 'a claim is not by the thing');
+  assert.match(src, /spots\.filter\(p => !claimed\(s, p\.of\)\)/, 'seekJob ignores claims');
+  assert.match(src, /grimed\.filter\(c => !claimed\(s, c\)\)/, 'planMop ignores claims');
+  assert.doesNotMatch(src, /\.length \? (free|unmopped) :/, 'a taken job is shared after all');
+});
+
+test('the code typed again with the mode up releases the robot', () => {
+  // The wiring, as text: a matched code while the mode is up must go to
+  // releaseRobot() and not to startClean(), which refuses and lets the keys
+  // fall through - and the mode's own key branch must still feed the matcher.
+  const cmds = readFileSync(new URL('../web/assets/js/commands.ts', import.meta.url), 'utf8');
+  const feed = cmds.slice(cmds.indexOf('cleanFeed:'), cmds.indexOf('cleanTap:'));
+  assert.match(feed, /cleanActive\(\)\) return releaseRobot\(\)/);
+  const input = readFileSync(new URL('../web/assets/js/canvas/input.ts', import.meta.url), 'utf8');
+  const active = input.slice(input.indexOf('if (cmds.cleanActive?.())'), input.indexOf('const mod = e.ctrlKey'));
+  assert.match(active, /cmds\.cleanFeed\?\.\(e\.key\)/, 'the mode swallows the code before it can be matched');
 });
 
 // ---------------------------------------------------------------------------

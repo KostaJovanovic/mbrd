@@ -10,6 +10,9 @@ import { cue } from '../cuelume/engine.ts';
 import { setConnectPick } from '../canvas/items.ts';
 // Draft line from the picked card — same state as the ring.
 import { setDraftFrom } from '../canvas/web.ts';
+import { openAnchored } from './menu.ts';
+import type { MenuEntry } from './menu.ts';
+import { openFlyout } from './flyout.ts';
 
 /** data-cmd="add-files" -> cmds.addFiles. The panel's own mapping. */
 const camel = (s: string): string => s.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase());
@@ -46,6 +49,18 @@ export function initToolbar(cmds: ToolbarCommands): void {
     setOpen(false);
   });
 
+  // Right-click: a tool with a flyout opens it, at once and without the
+  // hover; anywhere else on the bar, every tool as a row, the ones folded
+  // behind More included.
+  bar!.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    // SAFETY: as the click listener above.
+    const btn = (e.target as Element).closest<HTMLElement>('[data-cmd]');
+    if (btn && openFlyout(btn)) return;
+    openAnchored({ left: e.clientX, right: e.clientX, top: e.clientY, bottom: e.clientY },
+      toolEntries(), { label: 'Tools' });
+  });
+
   // New board or layout change: close drawer and disarm.
   bus.on('board:load', () => { setOpen(false); setArmed(false); });
   bus.on('layout', () => { setOpen(false); setArmed(false); scheduleFit(); });
@@ -71,6 +86,31 @@ export function initToolbar(cmds: ToolbarCommands): void {
   bar!.addEventListener('animationend', e => {
     if (e.animationName === 'toolbar-relaid') bar!.classList.remove('is-relaid');
   });
+}
+
+/**
+ * The tools as menu rows, read off the bar so a new button is a new row with
+ * no edit here. A row presses its button, so it goes through the one dispatch
+ * above. More is left out, since its tools are rows already, and so is a tool
+ * this layout hides (data-desktop on a phone).
+ */
+function toolEntries(): MenuEntry[] {
+  const entries: MenuEntry[] = [];
+  for (const btn of tools?.querySelectorAll<HTMLButtonElement>('[data-cmd]') ?? []) {
+    if (btn.dataset.cmd === 'more-tools' || btn.hidden || btn.disabled) continue;
+    if (!btn.hasAttribute('data-more') && getComputedStyle(btn).display === 'none') continue;
+    const label = btn.querySelector('span')?.textContent?.trim();
+    if (!label) continue;
+    const icon = btn.querySelector('use')?.getAttribute('href')?.split('#')[1];
+    const pressed = btn.getAttribute('aria-pressed');
+    entries.push({
+      label,
+      icon,
+      check: pressed === null ? undefined : pressed === 'true',
+      action: () => btn.click(),
+    });
+  }
+  return entries;
 }
 
 let relayTimer = 0;

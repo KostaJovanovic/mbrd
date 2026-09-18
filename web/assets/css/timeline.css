@@ -28,6 +28,8 @@
   background: var(--paper-card);
   -webkit-user-select: none;
   user-select: none;
+  /* The quick half of the idle fade: coming back (chrome.css). */
+  transition: opacity var(--dur-base) var(--ease);
 }
 #timeline-strip[hidden] { display: none; }
 

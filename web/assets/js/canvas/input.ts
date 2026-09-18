@@ -3010,6 +3010,9 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // Space is hold-to-pan on a board and stays hold-to-pan in there, which
       // is the one thing the mode borrows rather than reinventing.
       if (e.code === 'Space') { cmds.cleanSpace?.(true); e.preventDefault(); return; }
+      // The code is still listened for in here: typed again, it lets the robot
+      // vacuum loose. None of its keys is a digit, so it never picks a tool.
+      if (cmds.cleanFeed?.(e.key)) { e.preventDefault(); return; }
       if (cmds.cleanKey?.(e.key)) e.preventDefault();
       return;
     }

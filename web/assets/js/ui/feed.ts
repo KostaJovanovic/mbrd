@@ -560,7 +560,7 @@ function kindOf(item: Item): TileKind {
 }
 
 /** The types the Feed draws with the canvas's own renderer. See kindOf(). */
-const CARD_TYPES = new Set(['style-tile', 'font', 'model', 'generic', 'gone', 'archive', 'folder']);
+const CARD_TYPES = new Set(['style-tile', 'font', 'model', 'generic', 'gone', 'archive', 'folder', 'card']);
 
 /**
  * The player a link becomes, or null. The same door the canvas card uses

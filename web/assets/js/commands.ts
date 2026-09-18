@@ -37,7 +37,7 @@ import { closeToolbar, isOpen as isToolbarOpen, isArmed as isConnectorArmed } fr
 import { openContextMenu, openAnchored, justDismissed } from './ui/menu.ts';
 import { tourEditing } from './ui/tour-edit.ts';
 import { tourActive } from './ui/tour.ts';
-import { startClean, cleanActive, cleanKey, cleanSpace, cleanEscape } from './ui/clean/clean.ts';
+import { startClean, cleanActive, cleanKey, cleanSpace, cleanEscape, releaseRobot } from './ui/clean/clean.ts';
 import { konamiMatcher, tapMatcher } from './ui/clean/konami.ts';
 import { open as openSearch } from './ui/search.ts';
 import { toggleStickerWindow } from './ui/sticker-window.ts';
@@ -247,12 +247,20 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     // clean, so the keys fall through and mean what they always did.
     // The tour guards stay here as well as in startClean(): the matcher is fed
     // either way, so a code typed across the end of a tour is not half-eaten.
-    cleanFeed: (key: string) =>
-      konami(key) && !tourActive() && !tourEditing() && startClean(),
+    //
+    // Typed again with the mode already up, the same code lets the robot vacuum
+    // loose instead - the second secret inside the first. That is why this is
+    // also fed while the mode owns the keyboard (canvas/input.ts).
+    cleanFeed: (key: string) => {
+      if (!konami(key)) return false;
+      if (cleanActive()) return releaseRobot();
+      return !tourActive() && !tourEditing() && startClean();
+    },
     // Seven taps on the wordmark, the way in on a phone. The sidebar is closed
     // first: it is the whole screen at that width and the board is behind it.
     cleanTap: () => {
       if (!taps(performance.now())) return false;
+      if (cleanActive()) return releaseRobot();
       closeSidebar();
       return startClean();
     },

@@ -781,6 +781,60 @@ export function dropLastStep(id: string | null) {
   forgetBytes();
 }
 
+/**
+ * Take the step at `index` out of the history, as if it was never done. The
+ * steps after it are laid again, strictly, onto the board the steps before it
+ * leave, as after an edit in the past: a later change to a card this step
+ * brought in has nothing to land on and goes too. The board changes only when
+ * the step is behind the marker. False on a stale history or a missing step.
+ */
+export function deleteStep(index: number): boolean {
+  if (stale || !Number.isInteger(index) || index < 0 || index >= steps.length) return false;
+  let to = at > index ? at - 1 : at;
+  replayTo(index);
+  const ahead = steps.splice(index).slice(1);
+  for (const key of checkpoints.keys()) if (key > index) checkpoints.delete(key);
+  if (ahead.length) {
+    layAhead(ahead, snapshot());
+    // A step left with nothing to do goes too - a move of a card this step
+    // added - or it stays on the strip as a mark that does nothing. Named
+    // ones stay: a name is somebody's landmark.
+    for (let i = steps.length - 1; i >= index; i -= 1) {
+      if (Object.keys(steps[i].delta).length || steps[i].name) continue;
+      steps.splice(i, 1);
+      if (i < to) to -= 1;
+    }
+    // layAhead() filed its checkpoints by position, which the splice moved.
+    for (const key of checkpoints.keys()) if (key > index) checkpoints.delete(key);
+  }
+  replayTo(to);
+  undone = 0;
+  // Every closure on the stacks was written against the old history.
+  dropStacks?.();
+  forgetBytes();
+  announce();
+  markDirty();
+  bus.emit('history');
+  return true;
+}
+
+/**
+ * Delete every step past the marker. The board does not change. Returns how
+ * many went: 0 on a stale history or with nothing ahead.
+ */
+export function deleteAhead(): number {
+  if (stale || at >= steps.length) return 0;
+  const went = steps.splice(at).length;
+  for (const key of checkpoints.keys()) if (key > at) checkpoints.delete(key);
+  undone = 0;
+  // Redo would run a step that is gone. Undo goes too: the dropper takes both.
+  dropStacks?.();
+  forgetBytes();
+  markDirty();
+  bus.emit('history');
+  return went;
+}
+
 /** Measured byte size of the history (not estimated — wrong estimates skip or mis-trigger trim). */
 let bytesFor = -1;
 let bytesWas = 0;
@@ -988,12 +1042,13 @@ export function rebuildFrom(index: number) {
   bus.emit('history');
 }
 
-/** Name the current step (a landmark on the strip). False at position 0. */
-export function nameStep(name: unknown): boolean {
-  if (at <= 0 || typeof name !== 'string') return false;
+/** Name a step, the current one by default (a landmark on the strip). False with no step there. */
+export function nameStep(name: unknown, index = at - 1): boolean {
+  const step = steps[index];
+  if (!step || typeof name !== 'string') return false;
   const trimmed = name.trim().slice(0, 120);
-  if (trimmed) steps[at - 1].name = trimmed;
-  else delete steps[at - 1].name;
+  if (trimmed) step.name = trimmed;
+  else delete step.name;
   bus.emit('history');
   return true;
 }

@@ -406,6 +406,58 @@
 }
 .item[data-type="style-tile"]:is(:hover, :focus-within, .is-editing) .item-bar { opacity: 1; }
 
+/* The card a cleaned board leaves (canvas/spotless.ts). One SVG face edge to
+   edge; the "before" rectangles bring their own colours and everything else is
+   the palette's. Under the pointer the face gives way to a second line. */
+.spotless-card {
+  padding: 0;
+  overflow: hidden;
+}
+.spotless-face {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.spotless-frame { fill: var(--paper); }
+.spotless-after {
+  fill: var(--paper-card);
+  stroke: var(--item-border);
+  stroke-width: 0.75;
+}
+.spotless-said {
+  fill: var(--ink);
+  font-family: var(--font-display);
+  font-size: 18px;
+  text-anchor: middle;
+}
+.spotless-count {
+  fill: var(--ink-3);
+  font-family: var(--font-body);
+  font-size: 12px;
+  text-anchor: middle;
+}
+.spotless-hover {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12%;
+  background: var(--paper-card);
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  line-height: 1.3;
+  text-align: center;
+  text-wrap: balance;
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease);
+  pointer-events: none;
+}
+.item[data-type="card"]:hover .spotless-hover { opacity: 1; }
+/* Its name is "Spotless", and the face already says more than that. */
+.item[data-type="card"]:not(.is-editing) .item-bar { display: none; }
+
 .style-tile-strip {
   flex: 1;
   min-height: 0;
