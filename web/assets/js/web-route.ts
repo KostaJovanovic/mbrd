@@ -24,11 +24,6 @@ export type RouteOpts = {
   fromSlot?: Slot,
   toSlot?: Slot,
   avoid?: Point[][],
-  // Force the departure/arrival face instead of the dominant-axis one. The curve
-  // fallback routes once to learn which way the path really leaves each card, then
-  // re-routes with the matching face so the line meets it square, not grazing.
-  fromFace?: Side,
-  toFace?: Side,
 };
 
 /** Degrees to radians, for the one place here that needs the card's own frame. */
@@ -66,6 +61,14 @@ const CORNER_ROUND = 24;
 /** A routed end may reach a little further than a corner for a clean, flowing
  *  perpendicular exit from the card face. */
 const END_ROUND = 44;
+/** A sideways step up to this long, in a Softish route, is drawn as one S - see
+ *  curveLegs(). Longer steps keep their two rounded corners. */
+const JOG_MAX = 120;
+/** How far along the run an S may spread, as a multiple of its sideways step. */
+const JOG_SPREAD = 3;
+/** The straight a Softish line keeps at a card's side before it curves: the
+ *  stub the router leaves by (clearance plus two) and a little more. */
+const END_STRAIGHT = CLEARANCE + 12;
 /** Ceiling on an *open-space* corner. A go-around that clears the card cloud has
  *  room to sweep, so its corner rounds far past CORNER_ROUND into a smooth arc
  *  rather than a stiff right angle — but never unbounded, or a lone long leg
@@ -88,11 +91,10 @@ export const TURN_COST = 60;
 /** Running along an existing line costs this multiple of distance. Crossings are free. */
 export const OVERLAP_COST = 4;
 
-/** Max full A* searches during face escalation (cheap L is tried on all 16 pairs).
- *  High enough to reach every face pair at both pad levels: a card stacked on an
- *  endpoint seals its near faces, and the clean route leaves from a far one, which
- *  is late in the i+j ordering. Only genuinely hard routes ever reach this rung. */
-const MAX_FACE_SEARCHES = 30;
+/** How many band-widths of its length a Softish curve may spend in its own card's
+ *  band. A square exit spends one, and one arriving at a slant a little more; one
+ *  that turns and lies along the card spends the length of the card's side. */
+const HUG_SPAN = 2;
 
 /** Max obstacles per route. Past this, nearest are kept and the rest dropped. */
 export const MAX_OBSTACLES = 40;
@@ -138,13 +140,6 @@ type Side = 'x+' | 'x-' | 'y+' | 'y-';
 
 const OPPOSITE: Record<Side, Side> = { 'x+': 'x-', 'x-': 'x+', 'y+': 'y-', 'y-': 'y+' };
 
-/** The face whose outward normal a direction points along — its dominant axis. */
-function sideTowards(d: Point): Side {
-  return Math.abs(d.x) >= Math.abs(d.y)
-    ? (d.x >= 0 ? 'x+' : 'x-')
-    : (d.y >= 0 ? 'y+' : 'y-');
-}
-
 /** Anchor on a named face, spread by slot so multiple lines fan out. */
 function faceAnchor(from: Box, side: Side, slot: Slot = MIDDLE): Anchor {
   const box = blockOf(from);
@@ -172,6 +167,45 @@ export function anchorsFor(from: Box, to: Point, slot?: Slot): Anchor[] {
     : [upright, sideways];
   const sides = [...near, ...near.map(s => OPPOSITE[s])];
   return sides.map(s => faceAnchor(from, s, slot));
+}
+
+/** The same anchor with its stub pushed past a margin of `pad`, so the stub ends
+ *  outside its own card's padded block and the search can move away from it. */
+function stubPast(an: Anchor, pad: number): Anchor {
+  const reach = Math.max(STUB, pad + 2);
+  const n = unit(an.stub.x - an.edge.x, an.stub.y - an.edge.y);
+  return { edge: an.edge, stub: { x: an.edge.x + n.x * reach, y: an.edge.y + n.y * reach } };
+}
+
+/** The search heading (0 right, 1 left, 2 down, 3 up) of a direction on one axis. */
+const headingOf = (d: Point) => (Math.abs(d.x) >= Math.abs(d.y) ? (d.x >= 0 ? 0 : 1) : (d.y >= 0 ? 2 : 3));
+
+/** Unit outward normal of the face of `box` that `p` lies on (the nearest face). */
+function faceNormal(p: Point, it: Box): Point {
+  const k = blockOf(it);
+  const gaps = [
+    { d: Math.abs(p.x - k.x1), n: { x: 1, y: 0 } },
+    { d: Math.abs(p.x - k.x0), n: { x: -1, y: 0 } },
+    { d: Math.abs(p.y - k.y1), n: { x: 0, y: 1 } },
+    { d: Math.abs(p.y - k.y0), n: { x: 0, y: -1 } },
+  ];
+  return gaps.reduce((a, b) => (b.d < a.d ? b : a)).n;
+}
+
+/** Whether a path runs inside its own cards' margin anywhere but where it leaves
+ *  and reaches them: the first leg may cross `from`'s margin and the last `to`'s,
+ *  and every other leg must keep `pad` off each. A leg that turns at the stub and
+ *  runs along the face is the line lying against its card, and is refused here. */
+function hugsOwn(points: Point[], from: Box, to: Box, pad: number): boolean {
+  if (pad <= 0) return false;
+  const near = blockOf(from, pad), far = blockOf(to, pad);
+  const n = points.length;
+  for (let i = 1; i < n; i++) {
+    const p = points[i - 1], q = points[i];
+    if (i > 1 && segmentBlocked(p.x, p.y, q.x, q.y, near)) return true;
+    if (i < n - 1 && segmentBlocked(p.x, p.y, q.x, q.y, far)) return true;
+  }
+  return false;
 }
 
 /** Dominant-axis anchor only (anchorsFor()[0]). */
@@ -281,10 +315,9 @@ export function routeConnection(
   // Four ways out of each end; other 15 pairs are escalation at the bottom.
   const as = anchorsFor(from, to, opts.fromSlot);
   const bs = anchorsFor(to, from, opts.toSlot);
-  // Default to the dominant-axis face; honour a forced face when the caller has
-  // already learnt which way the route leaves (see the curve fallback re-route).
-  const a = opts.fromFace ? faceAnchor(from, opts.fromFace) : as[0];
-  const b = opts.toFace ? faceAnchor(to, opts.toFace) : bs[0];
+  // The dominant-axis face first; the other fifteen pairs are the escalation.
+  const a = as[0];
+  const b = bs[0];
 
   // Other lines already drawn (empty = no overlap avoidance).
   const avoid = segmentsOf(opts.avoid);
@@ -346,6 +379,8 @@ export function routeConnection(
     // Small on purpose — the full clearance rejects the natural short curve
     // between two cards that sit close, sending it the long way round.
     const ownEnds = [blockOf(from, 12), blockOf(to, 12)];
+    // And the band a curve may only cross, never lie along - see cubicHugs().
+    const band: [Bounds, Bounds] = [blockOf(from, clearance), blockOf(to, clearance)];
     // Fast path: the natural facing pair — the exact faces the drag preview shows
     // (bestFaces: distance and turn, no obstacle bias, no handle term). If its
     // cubic clears every card, take it, so a settled line matches the one drawn in
@@ -364,7 +399,8 @@ export function routeConnection(
     // forced dodge stays tight; here the eye wants the generous one.
     for (const s of [DRAG_HANDLE, 0.3, 0.2, 0.12, 0.08]) {
       const h = Math.min(s * natDist, HANDLE_MAX);
-      if (cubicClear(nat.a, nat.na, h, nat.b, nat.nb, h, nearMiss, ownEnds)) {
+      if (cubicClear(nat.a, nat.na, h, nat.b, nat.nb, h, nearMiss, ownEnds)
+        && !cubicHugs(nat.a, nat.na, h, nat.b, nat.nb, h, band, clearance)) {
         return { points: [nat.a, nat.b],
           ends: [{ x: nat.na.x * h, y: nat.na.y * h }, { x: nat.nb.x * h, y: nat.nb.y * h }] };
       }
@@ -389,7 +425,8 @@ export function routeConnection(
         let h = 0;
         for (const s of [0.08, 0.14, 0.22, 0.32, 0.45]) {
           const hh = Math.min(s * dist, HANDLE_MAX);
-          if (cubicClear(ai.edge, dirA, hh, bj.edge, dirB, hh, avoid, ownEnds)) {
+          if (cubicClear(ai.edge, dirA, hh, bj.edge, dirB, hh, avoid, ownEnds)
+            && !cubicHugs(ai.edge, dirA, hh, bj.edge, dirB, hh, band, clearance)) {
             h = hh;
             break;
           }
@@ -413,31 +450,18 @@ export function routeConnection(
     // Middle anchors here too, so the fallback also leaves from a face centre.
     const dd = Math.hypot(to.x - from.x, to.y - from.y) || 1;
     const hh = 0.2 * dd;
-    // Route, pull straight, and read the direction the path leaves each end by.
-    const runOrth = (o: RouteOpts) => {
-      const r = routeConnection(from, to, obstacles, { ...opts, ...o, shape: 'square' });
-      const pts = r.points.length <= 2 ? r.points
-        : pull(r.points, [...blocksOf(ordered, clearance, false), ...ends]);
-      const k = pts.length;
-      return {
-        pts, blocked: r.blocked,
-        nA: unit(pts[1].x - pts[0].x, pts[1].y - pts[0].y),
-        nB: unit(pts[k - 2].x - pts[k - 1].x, pts[k - 2].y - pts[k - 1].y),
-      };
-    };
-    let route = runOrth({ fromSlot: undefined, toSlot: undefined });
-    // The default anchor is the dominant-axis face; if the path actually leaves by a
-    // different face, that face grazes (the line runs parallel to the side it joins).
-    // Re-route from the faces the path uses, so it meets each card square (~90 deg).
-    const defA = sideTowards(unit(a.edge.x - from.x, a.edge.y - from.y));
-    const defB = sideTowards(unit(b.edge.x - to.x, b.edge.y - to.y));
-    const wantA = sideTowards(route.nA), wantB = sideTowards(route.nB);
-    if (!route.blocked && (wantA !== defA || wantB !== defB)) {
-      const re = runOrth({ fromFace: wantA, toFace: wantB, fromSlot: undefined, toSlot: undefined });
-      if (!re.blocked && re.pts.length >= 2) route = re;
-    }
-    const pulled = route.pts;
-    const nA = route.nA, nB = route.nB;
+    // Route, then pull straight. The two end cards are pulled against at the full
+    // clearance, which pins each stub: a pull that dropped one let the line leave
+    // its card at a slant and slide along the face, and the handle read off that
+    // slanted leg then steered the curve along the card instead of away from it.
+    const r = routeConnection(from, to, obstacles, { ...opts, shape: 'square' });
+    const pulled = r.points.length <= 2 ? r.points
+      : pull(r.points, [...blocksOf(ordered, clearance, false), blockOf(from, clearance), blockOf(to, clearance)]);
+    const route = { blocked: r.blocked };
+    // Each end leaves along the normal of the face it is actually on, which is not
+    // always the one the dominant axis picks - the route may have taken another.
+    const nA = faceNormal(pulled[0], from);
+    const nB = faceNormal(pulled[pulled.length - 1], to);
     // Inherit the orthogonal route's verdict: if even it could only give the
     // obstacle-ignoring elbow, this curve cannot be drawn clear either.
     const ends2: [Point, Point] = [{ x: nA.x * hh, y: nA.y * hh }, { x: nB.x * hh, y: nB.y * hh }];
@@ -487,7 +511,7 @@ export function routeConnection(
     for (const ai of as) {
       for (const bj of bs) {
         const l = simple(ai, bj, withEnds);
-        if (!l || laidOn(l.points, avoid)) continue;
+        if (!l || laidOn(l.points, avoid) || hugsOwn(l.points, from, to, clearance)) continue;
         let len = 0;
         for (let i = 1; i < l.points.length; i++) {
           len += Math.abs(l.points[i].x - l.points[i - 1].x)
@@ -513,21 +537,46 @@ export function routeConnection(
   // Two-bend L path — the answer on most boards, before building a lattice.
   const easyBlocks = blocksAt(clearance, true);
   const easy = simple(a, b, [...easyBlocks, ...ends]);
-  // Reject if it overlaps an existing line — hand to the search which can price it.
-  if (easy && !laidOn(easy.points, avoid)) return done(easy.points, ordered, clearance, true);
+  // Reject if it overlaps an existing line, or turns along its own card's face —
+  // hand to the search, which can price both.
+  if (easy && !laidOn(easy.points, avoid) && !hugsOwn(easy.points, from, to, clearance)) {
+    return done(easy.points, ordered, clearance, true);
+  }
 
-  // Concession ladder — give up room before giving up the route:
-  //   1. full clearance  2. a third  3. zero  4. zero minus overlapping cards
-  //   5. all 16 face pairs (cheap L, then lattice up to MAX_FACE_SEARCHES).
+  // Concession ladder — give up room before giving up the route, every rung over
+  // all sixteen ways out: 1. full clearance  2. a third  3. zero
+  // 4. zero minus the cards that overlap an end.
   const overlapsEnd = (k: Bounds) => ends.some(e =>
     k.x0 < e.x1 - EPS && k.x1 > e.x0 + EPS && k.y0 < e.y1 - EPS && k.y1 > e.y0 + EPS);
 
-  const attempt = (pool: Bounds[], a: Anchor, b: Anchor) => {
+  /** The search from any side of `from` to any side of `to`. Each side is an edge
+   *  point and a stub straight out of it, past the card's own margin: the line
+   *  leaves square to the side and only turns once it is clear. The two end cards
+   *  keep that margin like every other card, so the rest of the route can never
+   *  come back and run along either of them. Which side it leaves and enters by is
+   *  whichever the cheapest route uses - chosen by the route, not guessed from the
+   *  direction of the other card before anything has looked at the board. */
+  const attempt = (pool: Bounds[], pad: number) => {
+    const sides: Side[] = ['x+', 'x-', 'y+', 'y-'];
+    const own = [blockOf(from, pad), blockOf(to, pad)];
+    // A side is no way out if a card lies across its stub.
+    const open = (an: Anchor) => !pool.some(k => segmentBlocked(an.edge.x, an.edge.y, an.stub.x, an.stub.y, k));
+    const aa = sides.map(s => stubPast(faceAnchor(from, s, opts.fromSlot), pad)).filter(open);
+    const bb = sides.map(s => stubPast(faceAnchor(to, s, opts.toSlot), pad)).filter(open);
+    if (!aa.length || !bb.length) return null;
     // End cards' edges in the lattice too — lets routes escape under overlapping cards.
     // An outer lane, one clearance+stub beyond the whole obstacle span, so a route
     // can travel AROUND a dense cluster whose cards overlap and leave no corridor.
-    let all = [...pool, ...ends];
+    let all = [...pool, ...own];
     const M = clearance + STUB;
+    // A lane down the middle of the gap between the two cards on each axis, so a
+    // dog-leg can turn there rather than along the side of either card.
+    const fb = blockOf(from), tb = blockOf(to);
+    const mid = (a0: number, a1: number, b0: number, b1: number, ac: number, bc: number) =>
+      a1 < b0 ? (a1 + b0) / 2 : b1 < a0 ? (b1 + a0) / 2 : (ac + bc) / 2;
+    const midX = mid(fb.x0, fb.x1, tb.x0, tb.x1, from.x, to.x);
+    const midY = mid(fb.y0, fb.y1, tb.y0, tb.y1, from.y, to.y);
+    const ports = [...aa, ...bb];
     const bounds = () => {
       let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
       for (const k of all) {
@@ -539,10 +588,10 @@ export function routeConnection(
       return { x0, x1, y0, y1 };
     };
     const make = () => {
-      const bb = bounds();
-      xs = lattice([a.edge.x, a.stub.x, b.edge.x, b.stub.x, bb.x0 - M, bb.x1 + M,
+      const bx = bounds();
+      xs = lattice([...ports.flatMap(p => [p.edge.x, p.stub.x]), midX, bx.x0 - M, bx.x1 + M,
         ...all.flatMap(k => [k.x0, k.x1])]);
-      ys = lattice([a.edge.y, a.stub.y, b.edge.y, b.stub.y, bb.y0 - M, bb.y1 + M,
+      ys = lattice([...ports.flatMap(p => [p.edge.y, p.stub.y]), midY, bx.y0 - M, bx.y1 + M,
         ...all.flatMap(k => [k.y0, k.y1])]);
     };
     let xs: number[] = [], ys: number[] = [];
@@ -550,21 +599,26 @@ export function routeConnection(
     // Too big → shed furthest cards rather than give up.
     while (xs.length * ys.length > MAX_NODES && pool.length) {
       pool = pool.slice(0, pool.length - 1);
-      all = [...pool, ...ends];
+      all = [...pool, ...own];
       make();
     }
     if (xs.length * ys.length > MAX_NODES) return null;
 
-    const xi = xs.indexOf(nearestIn(xs, a.stub.x));
-    const yi = ys.indexOf(nearestIn(ys, a.stub.y));
-    const xj = xs.indexOf(nearestIn(xs, b.stub.x));
-    const yj = ys.indexOf(nearestIn(ys, b.stub.y));
-
-    const path = search(xs, ys, all, xi, yi, xj, yj, avoid);
-    if (!path) return null;
+    // A stub as the search sees it: its lattice node, and the heading along the
+    // stub - out of the card for a start, into the card for a goal.
+    const port = (an: Anchor, out: boolean): Port => ({
+      x: xs.indexOf(nearestIn(xs, an.stub.x)),
+      y: ys.indexOf(nearestIn(ys, an.stub.y)),
+      dir: headingOf(out
+        ? { x: an.stub.x - an.edge.x, y: an.stub.y - an.edge.y }
+        : { x: an.edge.x - an.stub.x, y: an.edge.y - an.stub.y }),
+    });
+    const found = search(xs, ys, all, aa.map(p => port(p, true)), bb.map(p => port(p, false)), avoid);
+    if (!found) return null;
+    const a = aa[found.start], b = bb[found.goal];
     // Stubs bracket the search's answer, edges bracket the stubs; trim()
     // sheds the duplicate when a stub lands exactly on a lattice node.
-    return { points: trim([a.edge, a.stub, ...path, b.stub, b.edge]) };
+    return { points: trim([a.edge, a.stub, ...found.points, b.stub, b.edge]) };
   };
 
   // Snapped attempt is its own rung above the ladder (quantizing can close corridors).
@@ -572,49 +626,21 @@ export function routeConnection(
     ? [[clearance, true], [clearance, false], [clearance / 3, false], [0, false]]
     : [[clearance, false], [clearance / 3, false], [0, false]];
 
+  // Every rung searches all sixteen ways out at once (see attempt()), so a card
+  // parked against one side of an end - or stacked on it - is routed round by
+  // another side at the full margin before any margin is given up.
   for (const [pad, snap] of rungs) {
     const pool = blocksAt(pad, snap);
-    const got = attempt(pool, a, b);
+    const got = attempt(pool, pad);
     if (got) return done(got.points, ordered, pad, snap);
-  }
-
-  // Rung five: the other fifteen ways out, ordered by `i + j` so giving up
-  // one end's preferred face is tried before giving up both. Keeps every card —
-  // a clean route around a card stacked on the endpoint (out of its far face)
-  // is found here, and must be tried BEFORE the uncovered rung below, which would
-  // otherwise route straight through that card the moment it is removed.
-  const pairs: [number, number][] = [];
-  for (let sum = 1; sum <= 6; sum++) {
-    for (let i = 0; i < 4; i++) {
-      const j = sum - i;
-      if (j >= 0 && j < 4) pairs.push([i, j]);
-    }
-  }
-  let searches = 0;
-  // No snapping - quantizing was given up long before this rung.
-  const faceRungs: [number, boolean][] = [[clearance, false], [0, false]];
-  for (const [pad, snap] of faceRungs) {
-    const pool = blocksOf(ordered, pad, snap);
-    const withEnds = [...pool, ...ends];
-    // Cheap L on every pair before building a lattice.
-    for (const [i, j] of pairs) {
-      const got = simple(as[i], bs[j], withEnds);
-      if (got && !laidOn(got.points, avoid)) return done(got.points, ordered, pad, snap);
-    }
-    for (const [i, j] of pairs) {
-      if (searches >= MAX_FACE_SEARCHES) break;
-      searches++;
-      const got = attempt(pool, as[i], bs[j]);
-      if (got) return done(got.points, ordered, pad, snap);
-    }
   }
 
   // Last resort before giving up: drop cards that overlap an endpoint (a card
   // stacked on your own card cannot be avoided) and route out from under them.
-  // After the face search, so a genuine way around is always preferred.
+  // After every side has been searched, so a genuine way around is always preferred.
   const uncovered = ordered.filter(it => !overlapsEnd(blockOf(it)));
   if (uncovered.length !== ordered.length) {
-    const got = attempt(blocksOf(uncovered, 0, false), a, b);
+    const got = attempt(blocksOf(uncovered, 0, false), 0);
     if (got) return done(got.points, uncovered, 0, false);
   }
 
@@ -747,19 +773,31 @@ export function trim(points: Point[]) {
     const upright = Math.abs(before.x - here.x) < EPS && Math.abs(here.x - after.x) < EPS;
     if (flat || upright) out.splice(i, 1);
   }
+  // Shedding the middle of an out-and-back leaves its two ends side by side.
+  for (let i = out.length - 1; i > 0; i--) {
+    if (Math.abs(out[i].x - out[i - 1].x) < EPS && Math.abs(out[i].y - out[i - 1].y) < EPS) out.splice(i, 1);
+  }
   return out;
 }
 
+/** A stub as the search sees it: lattice indices, and the heading that runs along
+ *  the stub - out of its card for a start, into its card for a goal. */
+type Port = { x: number, y: number, dir: number };
+
 /** A* over the lattice with turn penalty. State is (node, heading) — four states per node,
- *  because leaving cost depends on arrival heading. Manhattan heuristic, binary heap. */
+ *  because leaving cost depends on arrival heading. Manhattan heuristic, binary heap.
+ *  Several starts and several goals: it finds the cheapest route from any start to
+ *  any goal, and says which of each it used. */
 function search(
   xs: number[], ys: number[], blocks: Bounds[],
-  xi: number, yi: number, xj: number, yj: number,
+  starts: Port[], goals: Port[],
   avoid: Run[] = [],
 ) {
   const W = xs.length, H = ys.length;
   const N = W * H;
-  if (xi < 0 || yi < 0 || xj < 0 || yj < 0) return null;
+  starts = starts.filter(p => p.x >= 0 && p.y >= 0);
+  goals = goals.filter(p => p.x >= 0 && p.y >= 0);
+  if (!starts.length || !goals.length) return null;
 
   // Precompute passability per lattice edge (relaxed from both ends).
   const okRight = new Uint8Array(N);   // node -> the edge to (x+1, y) is clear
@@ -773,33 +811,38 @@ function search(
     for (const k of blocks) if (segmentBlocked(ax, ay, bx, by, k)) return false;
     return true;
   };
+  const charge = (flat: boolean, line: number, lo: number, hi: number) =>
+    overlapLen(flat, line, lo, hi, avoid) * OVERLAP_COST;
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       if (x + 1 < W) {
         const ok = clear(xs[x], ys[y], xs[x + 1], ys[y]);
         okRight[at(x, y)] = ok ? 1 : 0;
-        if (ok && overRight) {
-          overRight[at(x, y)] = overlapLen(true, ys[y], xs[x], xs[x + 1], avoid) * OVERLAP_COST;
-        }
+        if (ok && overRight) overRight[at(x, y)] = charge(true, ys[y], xs[x], xs[x + 1]);
       }
       if (y + 1 < H) {
         const ok = clear(xs[x], ys[y], xs[x], ys[y + 1]);
         okDown[at(x, y)] = ok ? 1 : 0;
-        if (ok && overDown) {
-          overDown[at(x, y)] = overlapLen(false, xs[x], ys[y], ys[y + 1], avoid) * OVERLAP_COST;
-        }
+        if (ok && overDown) overDown[at(x, y)] = charge(false, xs[x], ys[y], ys[y + 1]);
       }
     }
   }
 
-  // 0=right, 1=left, 2=down, 3=up. Start seeded in all four (no "not yet moving" state).
+  // 0=right, 1=left, 2=down, 3=up. Each start is seeded in the heading its stub
+  // already runs in, so a turn straight off the stub - along the card's own side -
+  // pays for its bend like any other.
   const STATES = N * 4;
   const g = new Float64Array(STATES).fill(Infinity);
   const from = new Int32Array(STATES).fill(-1);
   const done = new Uint8Array(STATES);
   const open: number[] = [];
 
-  const h = (x: number, y: number) => Math.abs(xs[x] - xs[xj]) + Math.abs(ys[y] - ys[yj]);
+  // Nearest goal by Manhattan distance: still never an overestimate.
+  const h = (x: number, y: number) => {
+    let best = Infinity;
+    for (const q of goals) best = Math.min(best, Math.abs(xs[x] - xs[q.x]) + Math.abs(ys[y] - ys[q.y]));
+    return best;
+  };
 
   // Binary heap; `f` carried beside state for cheap sift comparisons.
   const fs: number[] = [];
@@ -835,13 +878,22 @@ function search(
     return top;
   };
 
-  for (let d = 0; d < 4; d++) {
-    const s = at(xi, yi) * 4 + d;
+  const origin = new Int8Array(N).fill(-1);
+  starts.forEach((p, i) => {
+    const s = at(p.x, p.y) * 4 + p.dir;
+    origin[at(p.x, p.y)] = i;
     g[s] = 0;
-    push(s, h(xi, yi));
-  }
+    push(s, h(p.x, p.y));
+  });
 
-  const goal = at(xj, yj);
+  const goalAt = new Int8Array(N).fill(-1);
+  goals.forEach((q, i) => { goalAt[at(q.x, q.y)] = i; });
+  // Arriving at a far stub in any heading but the one that enters its side is a
+  // bend still to make there, and is charged as one.
+  const lastTurn = (node: number, nd: number) => {
+    const q = goalAt[node];
+    return q >= 0 && nd !== goals[q].dir ? TURN_COST : 0;
+  };
   while (open.length) {
     const s = pop();
     if (done[s]) continue;
@@ -849,7 +901,11 @@ function search(
 
     const node = s >> 2;
     const dir = s & 3;
-    if (node === goal) return walkBack(xs, ys, W, from, s);
+    if (goalAt[node] >= 0) {
+      let root = s;
+      while (from[root] >= 0) root = from[root];
+      return { points: walkBack(xs, ys, W, from, s), start: origin[root >> 2], goal: goalAt[node] };
+    }
 
     const x = node % W;
     const y = (node / W) | 0;
@@ -859,8 +915,11 @@ function search(
       if (!passable) return;
       const next = at(nx, ny) * 4 + nd;
       if (done[next]) return;
+      // Doubling straight back (0<->1, 2<->3) is two bends, not one: priced as one,
+      // a route would run out along its stub and straight back to the card.
+      const turn = nd === dir ? 0 : nd === (dir ^ 1) ? TURN_COST * 2 : TURN_COST;
       const cost = Math.abs(xs[nx] - xs[x]) + Math.abs(ys[ny] - ys[y]) +
-                   (nd === dir ? 0 : TURN_COST) + extra;
+                   turn + extra + lastTurn(at(nx, ny), nd);
       if (g[s] + cost >= g[next]) return;
       g[next] = g[s] + cost;
       from[next] = s;
@@ -947,6 +1006,32 @@ function cubicClear(
     prev = pt;
   }
   return true;
+}
+
+/** Whether the cubic lies along either of its own cards. A curve leaving square
+ *  crosses its card's band (`own`, the card grown by the clearance) in about the
+ *  band's width; one that bends back and runs beside the card spends far longer in
+ *  it. Where the two bands overlap - two cards close together - the curve is in
+ *  the gap between them, which it has to cross, and that is not counted. */
+function cubicHugs(
+  p0: Point, dirA: Point, hA: number, p1: Point, dirB: Point, hB: number,
+  own: [Bounds, Bounds], pad: number,
+): boolean {
+  const c1 = { x: p0.x + dirA.x * hA, y: p0.y + dirA.y * hA };
+  const c2 = { x: p1.x + dirB.x * hB, y: p1.y + dirB.y * hB };
+  const inside = (p: Point, k: Bounds) => p.x > k.x0 && p.x < k.x1 && p.y > k.y0 && p.y < k.y1;
+  const STEPS = 48;
+  const spent = [0, 0];
+  let prev = p0;
+  for (let i = 1; i <= STEPS; i++) {
+    const pt = bezier(p0, c1, c2, p1, i / STEPS);
+    const len = Math.hypot(pt.x - prev.x, pt.y - prev.y);
+    const inA = inside(pt, own[0]), inB = inside(pt, own[1]);
+    if (inA && !inB) spent[0] += len;
+    if (inB && !inA) spent[1] += len;
+    prev = pt;
+  }
+  return spent[0] > pad * HUG_SPAN || spent[1] > pad * HUG_SPAN;
 }
 
 /** Handle along a card's face normal, or — with no normal given — along the
@@ -1044,9 +1129,47 @@ function curveLegs(
   // round across the whole leg — that is what curves a long straight departure into
   // its turn. Wide in the open, the fillets swallow the straight runs into one
   // flowing curve; tight in a corridor, they stay small — smooth either way.
+  // A small sideways step - two turns in opposite senses with the line going on
+  // in the same direction - is one gentle S, not two corners. Rounded as two
+  // fillets it had room only for the step itself, and drew as a cramped wiggle
+  // right under the card. So the S is spread back along the run before it and on
+  // along the run after, as far as JOG_SPREAD times the step, keeping the straight
+  // padding at a card's side intact. How far is also bounded by the two corners'
+  // rounding room (caps), which is what the router shrinks when a curve clips a
+  // card - so an S that would clip shrinks back towards the two plain corners.
+  const sLeg: boolean[] = Array.from({ length: m }, () => false);
+  const sTan: Point[] = Array.from({ length: m }, () => ({ x: 0, y: 0 }));
+  for (let i = 1; i + 2 <= m - 1; i++) {
+    const din = dir(P[i - 1], P[i]), dout = dir(P[i + 1], P[i + 2]);
+    if (din.x * dout.x + din.y * dout.y < 0.999) continue;
+    const step = len(P[i], P[i + 1]);
+    if (step > JOG_MAX) continue;
+    const inLeg = len(P[i - 1], P[i]), outLeg = len(P[i + 1], P[i + 2]);
+    // A leg that runs to a card keeps its straight padding; one between two
+    // corners keeps half of itself for the corner at its other end.
+    const availIn = i - 1 === 0 ? inLeg - END_STRAIGHT : inLeg / 2;
+    const availOut = i + 2 === m - 1 ? outLeg - END_STRAIGHT : outLeg / 2;
+    const want = Math.min(step * JOG_SPREAD, C[i] + C[i + 1]);
+    const sOut = Math.max(0, Math.min(availOut, want / 2));
+    const sIn = Math.max(0, Math.min(availIn, want - sOut));
+    const sOut2 = Math.max(0, Math.min(availOut, want - sIn));
+    // Room for no more than the step itself is no gentler than two corners.
+    if (sIn + sOut2 < step) continue;
+    P[i] = along(P[i], P[i - 1], sIn);
+    P[i + 1] = along(P[i + 1], P[i + 2], sOut2);
+    sLeg[i] = true;
+    sTan[i] = din;
+    i++;
+  }
+  // The tangent a curve arrives at and leaves each point along: an S leg's is the
+  // run it sits in, every other leg's is its own direction.
+  const inTan = (i: number) => (sLeg[i - 1] ? sTan[i - 1] : dir(P[i - 1], P[i]));
+  const outTanAt = (i: number) => (sLeg[i] ? sTan[i] : dir(P[i], P[i + 1]));
+
   const K = 0.55; // control arm as a fraction of the radius — a near-circular arc.
   const R: number[] = Array.from({ length: m }, () => 0);
-  for (let i = 1; i < m - 1; i++) R[i] = Math.min(C[i], MAX_CORNER_ROUND);
+  // The two ends of an S do not turn, so they carry no fillet.
+  for (let i = 1; i < m - 1; i++) R[i] = sLeg[i - 1] || sLeg[i] ? 0 : Math.min(C[i], MAX_CORNER_ROUND);
   R[1] = Math.min(R[1], len(P[0], P[1]));
   R[m - 2] = Math.min(R[m - 2], len(P[m - 2], P[m - 1]));
   for (let i = 1; i < m - 2; i++) {
@@ -1058,7 +1181,7 @@ function curveLegs(
   let outTan = t0 ? unit(t0.x, t0.y) : dir(P[0], P[1]);
   for (let i = 1; i < m - 1; i++) {
     const here = P[i];
-    const inD = dir(P[i - 1], here), outD = dir(here, P[i + 1]);
+    const inD = inTan(i), outD = outTanAt(i);
     const r = R[i];
     const tin = { x: here.x - inD.x * r, y: here.y - inD.y * r };
     const tout = { x: here.x + outD.x * r, y: here.y + outD.y * r };
@@ -1070,8 +1193,9 @@ function curveLegs(
       c2: { x: tin.x - inD.x * run * 0.4, y: tin.y - inD.y * run * 0.4 },
       p: tin,
     });
-    // The fillet: tangent to the incoming leg at tin, the outgoing at tout.
-    legs.push({
+    // The fillet: tangent to the incoming leg at tin, the outgoing at tout. None at
+    // a point that does not turn (the ends of an S).
+    if (r > EPS) legs.push({
       c1: { x: tin.x + inD.x * r * K, y: tin.y + inD.y * r * K },
       c2: { x: tout.x - outD.x * r * K, y: tout.y - outD.y * r * K },
       p: tout,

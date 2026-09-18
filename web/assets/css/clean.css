@@ -995,27 +995,6 @@
 
 #clean-can.is-open .can-lid { transform: rotate(-54deg) translate(-1px, -1px); }
 
-/* The bin filling: a leaf tip under the rim after eight pieces, a scrap of
-   paper after twenty (clean.ts, paintFill()). They rise into place rather than
-   appearing, a couple of pixels, the way a full bin's contents push up. The
-   leaf takes the glove's pigment - it was the glove that put it there - and
-   the scrap is the tools' paper body. */
-#clean-can .can-leaf,
-#clean-can .can-scrap {
-  opacity: 0;
-  translate: 0 3px;
-  transition: opacity var(--clean-travel) var(--clean-ease), translate var(--clean-travel) var(--clean-ease);
-}
-
-#clean-can .can-leaf { fill: var(--accent-warm); }
-#clean-can .can-scrap { fill: var(--sticker-body); }
-
-#clean-can.is-some .can-leaf,
-#clean-can.is-full .can-scrap {
-  opacity: 1;
-  translate: 0 0;
-}
-
 /* Something landed in it. A pixel or two of settle, and no more. The transition
    that carries it is in the block above, with the rest of them. */
 #clean-can.is-hit { transform: translateY(1.5px); }

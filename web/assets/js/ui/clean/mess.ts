@@ -436,7 +436,7 @@ export type Field = {
    *  Uint16Array and not the byte array it was. See SUBS. */
   cells: Uint16Array,
   /** Cells set when it was dealt - the denominator, so a thin crust and a
-   *  thick one both finish at the same 95%. */
+   *  thick one both finish at the same share, TUNING.clearAt. */
   total: number,
   left: number,
 };
@@ -501,7 +501,7 @@ export const fieldClear = (f: Field) => coverage(f) <= 1 - TUNING.clearAt;
  *
  * `skip` is the shield a piece of debris casts over the crust it is lying on.
  * Passed in rather than read from anything here, so this module still knows
- * nothing about what a leaf is - see canClean() in clean.ts.
+ * nothing about what a leaf is - see shieldOf() in clean.ts.
  *
  * Returns the cells *finished*, which is what the sound and the particles read -
  * a pass that only thinned the crust has taken nothing yet.

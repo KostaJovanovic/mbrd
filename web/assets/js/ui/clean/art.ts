@@ -1759,7 +1759,7 @@ export function spiderNode(rng: Rng): SVGSVGElement {
 export const ROBOT_SIZE = 60;
 
 /** Room round the disc in the robot's drawing, for what sticks out of it: the
- *  side brushes at the front and the mop pad under it. */
+ *  mop pad under it and its fringe. */
 export const ROBOT_BOX = ROBOT_SIZE + 16;
 
 /**
@@ -1775,9 +1775,9 @@ export const ROBOT_BOX = ROBOT_SIZE + 16;
  * belongs to the machine turns.
  *
  * The body: a warm dark shell, a lighter lid, the bumper - a darker band round
- * the front half - one small amber light, a seam, and two side brushes splayed
- * out at the front corners, which are what says "this end first" from any
- * distance. Under it all, hidden until clean.ts fits it, a mop pad.
+ * the front half - one small amber light, and a seam. The bumper and the light
+ * are what say "this end first". Under it all, hidden until clean.ts fits it, a
+ * mop pad.
  */
 export function robotNode(): { host: HTMLElement, body: SVGSVGElement } {
   const r = ROBOT_SIZE / 2;
@@ -1803,17 +1803,7 @@ export function robotNode(): { host: HTMLElement, body: SVGSVGElement } {
   }
   mop.append(line(fringe.trim(), '#b8ae9d', 0.9));
   body.append(mop);
-  // Side brushes, at the two front corners, three bristles each.
-  for (const side of [-1, 1]) {
-    const cx = side * r * 0.66;
-    const cy = -r * 0.64;
-    let d = '';
-    for (let i = 0; i < 3; i++) {
-      const a = -Math.PI / 2 + side * (0.5 + i * 0.75);
-      d += ` M${f2(cx)} ${f2(cy)} l${f2(Math.cos(a) * 7.5)} ${f2(Math.sin(a) * 7.5)}`;
-    }
-    body.append(line(d.trim(), '#3a332c', 0.8));
-  }
+  // No side brushes: at this size their bristles read as hair.
   body.append(shape('circle', { r: r - 0.5, fill: '#4a423a', stroke: '#2b2520', 'stroke-width': 0.8 }));
   // The bumper: the front half of the rim, a shade darker and a hair proud.
   const rim = `M${f2(-(r - 2.2))} 0 A ${f2(r - 2.2)} ${f2(r - 2.2)} 0 0 1 ${f2(r - 2.2)} 0`;
