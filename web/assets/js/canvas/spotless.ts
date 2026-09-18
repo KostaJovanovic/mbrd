@@ -1,0 +1,115 @@
+// The card the cleaning simulator leaves on the board: the board before and
+// after, a line, and a second line under the pointer. A type of its own rather
+// than a picture, so it follows the palette like every other card. Its frames
+// are written into `meta` when it is made (ui/clean/clean.ts), and read back
+// through spotlessRects(), which trusts nothing in a file it did not write.
+
+import type { Item } from '../board-model.ts';
+
+/** One frame of the two, and the room round the board inside it. The card's
+ *  whole face is drawn to FACE_W x FACE_H and scales with the card. */
+export const SPOTLESS_FRAME = { w: 104, h: 78, pad: 7 } as const;
+
+const PAD = 12;
+const GAP = 8;
+const FACE_W = PAD * 2 + SPOTLESS_FRAME.w * 2 + GAP;
+const FACE_H = PAD + SPOTLESS_FRAME.h + 36 + 22 + PAD;
+
+/** What was on the board, as it was dealt: where each card sat in a frame, and
+ *  the colour of what was on it. */
+export type SpotlessRect = { x: number, y: number, w: number, h: number, colour: string };
+
+/** More than any board the mode deals from, and small enough that a crafted
+ *  file cannot make one card draw a hundred thousand rectangles. */
+const MOST = 400;
+
+/** A colour as the mode writes one - `rgb(132 100 66)` or a hex - and nothing
+ *  else. It only ever reaches setAttribute(), but a file is a file. */
+const COLOUR = /^(#[0-9a-f]{3,8}|rgba?\([0-9 .,%/]{1,40}\))$/i;
+
+/** meta.before read back: every entry that is four finite numbers inside the
+ *  frame and a colour, and nothing else. */
+export function spotlessRects(before: unknown): SpotlessRect[] {
+  if (!Array.isArray(before)) return [];
+  const out: SpotlessRect[] = [];
+  for (const entry of before.slice(0, MOST)) {
+    if (!Array.isArray(entry) || entry.length !== 5) continue;
+    const [x, y, w, h, colour] = entry;
+    if (typeof colour !== 'string' || !COLOUR.test(colour)) continue;
+    const nums = [x, y, w, h];
+    if (!nums.every(n => typeof n === 'number' && Number.isFinite(n))) continue;
+    // SAFETY: every one of the four was just checked to be a finite number.
+    const [nx, ny, nw, nh] = nums as number[];
+    if (nx < 0 || ny < 0 || nw <= 0 || nh <= 0) continue;
+    if (nx + nw > SPOTLESS_FRAME.w + 0.01 || ny + nh > SPOTLESS_FRAME.h + 0.01) continue;
+    out.push({ x: nx, y: ny, w: nw, h: nh, colour });
+  }
+  return out;
+}
+
+/** Who finished the board. The robot's card says something else. */
+export const spotlessBy = (item: Item): 'hand' | 'robot' => (item.meta?.by === 'robot' ? 'robot' : 'hand');
+
+/** The line on the card, and the one under the pointer. Placeholders the
+ *  maintainer means to replace, kept together so that is one edit. */
+export const SPOTLESS_WORDS = {
+  hand: { said: 'Everything is spotless.', hover: 'I cleaned the whole board and all I got was this lousy card' },
+  robot: { said: 'The future, today', hover: 'This will be cleaning in 2013' },
+} as const;
+
+const NS = 'http://www.w3.org/2000/svg';
+
+function el<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number>) {
+  const node = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, String(v));
+  return node;
+}
+
+const cardsSaid = (n: number) => `${n} ${n === 1 ? 'card' : 'cards'}`;
+
+/**
+ * The card. One SVG for the whole face, so it keeps its layout at any size the
+ * card is dragged to. The "before" rectangles carry the colours written into
+ * the item; the "after" ones and every other colour are the stylesheet's
+ * (items.css), which is what keeps the card in the board's palette.
+ */
+export function buildSpotlessCard(item: Item): HTMLElement {
+  const card = document.createElement('div');
+  card.className = 'card spotless-card';
+  const by = spotlessBy(item);
+  const words = SPOTLESS_WORDS[by];
+  const rects = spotlessRects(item.meta?.before);
+  const count = typeof item.meta?.cards === 'number' && item.meta.cards >= 0 ? Math.floor(item.meta.cards) : rects.length;
+
+  const face = el('svg', { viewBox: `0 0 ${FACE_W} ${FACE_H}`, class: 'spotless-face', 'aria-hidden': 'true' });
+  for (const [n, before] of [[0, true], [1, false]] as const) {
+    const ox = PAD + n * (SPOTLESS_FRAME.w + GAP);
+    face.append(el('rect', {
+      x: ox, y: PAD, width: SPOTLESS_FRAME.w, height: SPOTLESS_FRAME.h, rx: 2, class: 'spotless-frame',
+    }));
+    for (const r of rects) {
+      const box = el('rect', {
+        x: (ox + r.x).toFixed(2), y: (PAD + r.y).toFixed(2),
+        width: r.w.toFixed(2), height: r.h.toFixed(2),
+        rx: Math.min(1.5, r.w / 4, r.h / 4).toFixed(2),
+        class: before ? 'spotless-before' : 'spotless-after',
+      });
+      if (before) box.setAttribute('fill', r.colour);
+      face.append(box);
+    }
+  }
+  const said = el('text', { x: FACE_W / 2, y: PAD + SPOTLESS_FRAME.h + 30, class: 'spotless-said' });
+  said.textContent = words.said;
+  const counted = el('text', { x: FACE_W / 2, y: PAD + SPOTLESS_FRAME.h + 50, class: 'spotless-count' });
+  counted.textContent = cardsSaid(count);
+  face.append(said, counted);
+
+  const hover = document.createElement('div');
+  hover.className = 'spotless-hover';
+  hover.textContent = words.hover;
+  card.append(face, hover);
+  return card;
+}
+
+/** The card's box on the board: the face's own shape at a card's size. */
+export const SPOTLESS_SIZE = { w: 336, h: Math.round((336 * FACE_H) / FACE_W) };

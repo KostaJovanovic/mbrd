@@ -24,9 +24,10 @@ const defined = new Set(
     .filter(Boolean));
 
 /**
- * Every icon the app asks for, with where it asked. Three shapes: markup in
- * index.html, the name handed to icon() or an `icon:` field, and a <use href>
- * built into a string.
+ * Every icon the app asks for, with where it asked. Four shapes: markup in
+ * index.html, the name handed to icon() or an `icon:` field, a <use href>
+ * built into a string, and a sprite URL held whole in a single-quoted string
+ * for a script to hand to setAttribute() (the cleaning glove's open and shut).
  *
  * Swept over every module rather than listed by hand - a hand-kept list of
  * files went stale twice already, reporting a real reference as an orphan.
@@ -37,6 +38,7 @@ const iconNames = (text, where) => [
   ...[...text.matchAll(/href="assets\/icons\.svg#([^"]+)"/g)],
   ...[...text.matchAll(/icon: '(i-[a-z0-9-]+)'/g)],
   ...[...text.matchAll(/icon\('(i-[a-z0-9-]+)'/g)],
+  ...[...text.matchAll(/'assets\/icons\.svg#(i-[a-z0-9-]+)'/g)],
 ].map(m => [m[1], where]);
 
 const referenced = [
@@ -79,7 +81,7 @@ test('no comment in the sprite holds two hyphens in a row', () => {
  * being deliberately given up.
  */
 const CLEAN_BOX = new Set([
-  'i-clean-glove', 'i-clean-washer', 'i-clean-duster',
+  'i-clean-glove', 'i-clean-glove-held', 'i-clean-washer', 'i-clean-duster',
   'i-clean-can', 'i-clean-can-lid',
 ]);
 

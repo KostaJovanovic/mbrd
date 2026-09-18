@@ -3,7 +3,7 @@
 // it rather than under it. Its height is --dock, which #viewport and every piece
 // of bottom-anchored furniture add to their inset. Play on the left, one mark
 // per step in the middle with a playhead in the gap after the step shown and a
-// page-drawn scrollbar above, and the rest behind a gear.
+// page-drawn scrollbar above, and the rest behind a gear and the right-click.
 
 import { bus } from '../board-store.ts';
 import { toast } from '../notify.ts';
@@ -17,7 +17,7 @@ import {
   board,
   timelineSteps, timelineAt, timelineStale, goTo, editStep, stepEditable,
   timelineBytes, trimmable, trimTimeline, describeStep, nameStep, deleteTimeline,
-  setTimelinePlaying,
+  deleteStep, deleteAhead, setTimelinePlaying,
 } from '../state.ts';
 
 /**
@@ -182,18 +182,19 @@ export function initTimeline() {
     goTo(Number(dot.dataset.at));
   });
   track?.addEventListener('keydown', stepKeys);
-  // Right-click edits, where there is a rule to edit: left is *take me
-  // there*, right is *do this differently*, the same gesture every other
-  // menu in the app opens with.
-  track?.addEventListener('contextmenu', event => {
-    const dot = rowUnder(event, '.tl-step');
-    if (!dot?.dataset.at) return;
-    if (playing) { event.preventDefault(); return; }
-    const index = Number(dot.dataset.at) - 1;
-    const entries = editEntries(index);
-    if (!entries.length) return;
+  // Right-click is the app's menu everywhere on the bar, never the browser's:
+  // on a mark, what can be done to that step; anywhere else, the gear's rows.
+  // Left is *take me there*, right is *do something to it*.
+  strip.addEventListener('contextmenu', event => {
     event.preventDefault();
-    openAnchored(dot.getBoundingClientRect(), entries, { label: 'Change this step' });
+    if (playing) return;
+    const dot = rowUnder(event, '.tl-step');
+    if (dot?.dataset.at) {
+      openAnchored(dot.getBoundingClientRect(), stepEntries(Number(dot.dataset.at)), { label: 'Step' });
+      return;
+    }
+    const { clientX: x, clientY: y } = event;
+    openAnchored({ left: x, right: x, top: y, bottom: y }, gearEntries(), { label: 'Timeline' });
   });
   // A finger's pan and a trackpad's sideways swipe scroll natively, held to
   // whole steps here.
@@ -554,14 +555,13 @@ function nearestStep(x: number): number | null {
 }
 
 /**
- * Give the point the board is standing on a name, and only that point.
- * nameStep() names where the marker is. A name on a step is a landmark, and
- * keeps it from being folded away when an old history is trimmed.
+ * Give the step at `position` a name - the point the board stands on, from
+ * the gear, or any mark, from its right-click. A name on a step is a
+ * landmark, and keeps it from being folded away when an old history is trimmed.
  */
-async function namePoint() {
-  const at = timelineAt();
-  if (!at || timelineStale()) return;
-  const step = timelineSteps()[at - 1];
+async function namePoint(position = timelineAt()) {
+  if (!position || timelineStale()) return;
+  const step = timelineSteps()[position - 1];
   if (!step) return;
   const named = !!step.name;
   const given = await ask({
@@ -571,27 +571,65 @@ async function namePoint() {
     go: named ? 'Rename' : 'Name it',
     field: { value: step.name || '', placeholder: sentenceFor(step), maxLength: 120 },
   });
-  // An empty box is an answer: "take the name off this one".
-  if (given !== null) nameStep(given);
+  // An empty box is an answer: "take the name off this one". The step is
+  // found again by id: the history can change while the dialog is open.
+  if (given === null) return;
+  const index = timelineSteps().indexOf(step);
+  if (index >= 0) nameStep(given, index);
+}
+
+/**
+ * What the right-click on a mark offers: go there, change its rule where it
+ * has one, name it, delete it. The start mark is a position, not a step, so
+ * it has only the first. A stale history offers nothing that changes it.
+ */
+function stepEntries(position: number): MenuEntry[] {
+  const at = timelineAt();
+  const stale = timelineStale();
+  const step = position ? timelineSteps()[position - 1] : null;
+  const edits = step && !stale ? editEntries(position - 1) : [];
+  const entries: MenuEntry[] = [{
+    label: position ? 'Go to this step' : 'Go to the start',
+    disabled: position === at || stale,
+    action: () => { goTo(position); },
+  }];
+  if (edits.length) entries.push({ sep: true }, ...edits);
+  if (!step || stale) return entries;
+  entries.push(
+    { sep: true },
+    { label: step.name ? 'Rename this step' : 'Name this step', action: () => { void namePoint(position); } },
+    {
+      label: 'Delete this step',
+      danger: true,
+      action: () => {
+        const index = timelineSteps().indexOf(step);
+        if (index >= 0 && deleteStep(index)) toast('Step deleted');
+      },
+    },
+  );
+  return entries;
 }
 
 /**
  * Behind the gear: the things to do first, together, and then how big the
  * history is, as a line to read under them. The acts are naming the point the
- * board stands on, the trim, deleting the whole history, and Hide timeline.
+ * board stands on, the trim, deleting the steps ahead of it, deleting the
+ * whole history, and Hide timeline. A right-click off the marks opens these too.
  *
  * The name row is absent at the start of the board, where there is no step
  * to name, and on a stale history, where nothing here works. Its word
  * changes because the act does: naming a named point is renaming it. The
  * trim folds steps older than 30 days into the starting state, never across
- * a named point, and is absent when there is nothing that old to fold. Delete
- * is absent with no steps, and works on a stale history, which is the one
+ * a named point, and is absent when there is nothing that old to fold. The
+ * steps ahead are absent at the newest step and on a stale history. Delete
+ * timeline is absent with no steps, and works on a stale history, which is the one
  * thing still worth doing with it.
  */
 function gearEntries(): MenuEntry[] {
   const steps = timelineSteps();
   const at = timelineAt();
   const count = trimmable();
+  const ahead = steps.length - at;
   return [
     {
       label: steps[at - 1]?.name ? 'Rename this point' : 'Name this point',
@@ -606,6 +644,12 @@ function gearEntries(): MenuEntry[] {
         if (went) toast(`Folded ${went} step${went === 1 ? '' : 's'} into the starting state`);
         if (open) render();
       },
+    },
+    {
+      label: `Delete ${ahead} step${ahead === 1 ? '' : 's'} after this point`,
+      danger: true,
+      hidden: !ahead || timelineStale(),
+      action: () => { void deleteFuture(); },
     },
     { label: 'Delete timeline', danger: true, hidden: !steps.length, action: () => { void deleteHistory(); } },
     // Show timeline in the panel brings it back, and the toast says where, since
@@ -641,6 +685,25 @@ async function deleteHistory() {
   pause();
   deleteTimeline();
   toast('Timeline deleted');
+}
+
+/**
+ * Delete every step after the point the board stands on, after asking. The
+ * board does not change; what goes is the way forward from it.
+ */
+async function deleteFuture() {
+  const ahead = timelineSteps().length - timelineAt();
+  if (ahead <= 0) return;
+  const answer = await ask({
+    title: 'Delete the steps after this point?',
+    body: `The ${ahead === 1 ? 'step' : `${ahead} steps`} after this point will be deleted.`
+      + ' The board stays as it is now. There is no going back.',
+    go: 'Delete',
+  });
+  if (answer !== 'go') return;
+  pause();
+  const went = deleteAhead();
+  if (went) toast(`Deleted ${went} step${went === 1 ? '' : 's'}`);
 }
 
 type Step = ReturnType<typeof timelineSteps>[number];

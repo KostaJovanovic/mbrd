@@ -3,7 +3,11 @@
 // videos keep their decoder, blob URLs must be revoked, parsed PDFs hold the
 // whole file. No document reach at import time (tests/imports.test.js).
 
-import { bus, byId, itemAdjust, itemCrop, itemRotate, itemMatte, flipTransform } from '../state.ts';
+import { board, bus, byId, select, itemAdjust, itemCrop, itemRotate, itemMatte, flipTransform } from '../state.ts';
+import { copyItems } from '../clipboard.ts';
+import { openAnchored } from './menu.ts';
+import type { MenuEntry } from './menu.ts';
+import { openExternal } from './leaving.ts';
 import { displayURLReady, ensureDisplay } from '../canvas/display.ts';
 import { assetURL, getAsset, readText } from '../storage/assets.ts';
 import { baseName, formatBytes } from '../util.ts';
@@ -45,11 +49,32 @@ let releaseDoc: (() => void) | null = null;
 /** The open PDF, if this viewing is one. Parsed documents are not small. */
 let pdfDoc: { destroy: () => void } | null = null;
 
-export function initViewer() {
+/** The item this viewing shows, or null. What the right-click acts on. */
+let shownId: string | null = null;
+
+/** The one camera command the right-click needs. Injected: commands.ts imports this module. */
+export interface ViewerCommands {
+  zoomToSelection: () => void;
+}
+let cmds: ViewerCommands | null = null;
+
+export function initViewer(commands?: ViewerCommands) {
+  cmds = commands ?? null;
   // SAFETY: #viewer is the <dialog> in index.html; the showModal test in
   // openViewer() is the real guard and covers engines without dialog support too.
   dlg = document.getElementById('viewer') as HTMLDialogElement | null;
   if (!dlg) return;
+  // Right-click: what can be done with the thing on show. Text keeps the
+  // browser's menu once some of it is selected, and a field always does -
+  // copying words out of a document is the browser's job, not this menu's.
+  dlg.addEventListener('contextmenu', e => {
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+    if (getSelection()?.isCollapsed === false) return;
+    e.preventDefault();
+    if (!shownId) return;
+    openAnchored({ left: e.clientX, right: e.clientX, top: e.clientY, bottom: e.clientY },
+      viewerEntries(shownId), { label: 'Viewer' });
+  });
   titleEl = document.getElementById('viewer-title');
   metaEl = document.getElementById('viewer-meta');
   bodyEl = document.getElementById('viewer-body');
@@ -119,6 +144,7 @@ export function openViewer(id: string) {
   // answered this; this just writes it down.
   if (view === VIEWS.image || view === VIEWS.video) dlg.dataset.media = '';
   else delete dlg.dataset.media;
+  shownId = id;
   view(item, bodyEl!);
   // The picture, once mounted - a clip is left out deliberately: wheel/drag
   // over its controls should press them, not zoom.
@@ -132,6 +158,40 @@ export function openViewer(id: string) {
 
 function closeViewer() {
   if (dlg?.open) dlg.close();   // 'close' runs teardown
+}
+
+/**
+ * The right-click rows. Show on board is the way from here back to the card,
+ * and is absent on the Feed, which has no camera to fly. Fit is there only
+ * while the picture is zoomed, and the link row only on a link.
+ */
+function viewerEntries(id: string): MenuEntry[] {
+  const item = byId(id);
+  const url = item?.type === 'link' ? linkURL(item.meta?.url) : null;
+  const zoomed = !!bodyEl?.querySelector('.viewer-media.is-zoomed');
+  return [
+    {
+      label: 'Show on board',
+      icon: 'i-zoom-to',
+      hidden: !cmds || board.layoutMode === 'mobile',
+      action: () => {
+        closeViewer();
+        select([id]);
+        cmds?.zoomToSelection();
+      },
+    },
+    { label: 'Fit to the window', hidden: !zoomed, action: () => zoomReset?.() },
+    { label: 'Open in the browser', icon: 'i-link', hidden: !url, action: () => { if (url) void openExternal(url.href); } },
+    {
+      label: 'Copy',
+      action: () => {
+        const text = copyItems([id]);
+        if (text) navigator.clipboard?.writeText(text).catch(() => {});
+      },
+    },
+    { sep: true },
+    { label: 'Close', icon: 'i-close', action: closeViewer },
+  ];
 }
 
 /**
@@ -161,6 +221,8 @@ function teardown() {
   // and must run before the body is emptied.
   detachZoom?.();
   detachZoom = null;
+  zoomReset = null;
+  shownId = null;
   bodyEl?.replaceChildren();
   delete dlg!.dataset.type;
   delete dlg!.dataset.media;
@@ -172,6 +234,8 @@ function teardown() {
 
 /** Torn down with the viewing. See teardown(). */
 let detachZoom: (() => void) | null = null;
+/** Back to fitted, for the right-click's Fit row. Torn down with the zoom. */
+let zoomReset: (() => void) | null = null;
 
 /** How far in a picture goes. Past this a photograph is pixels, not detail. */
 const ZOOM_MAX = 8;
@@ -215,6 +279,7 @@ function attachZoomPan(img: HTMLElement, stage: HTMLElement): () => void {
     img.classList.toggle('is-zoomed', scale > 1);
   };
   const reset = () => { scale = 1; tx = 0; ty = 0; paint(); };
+  zoomReset = reset;
 
   const clampPan = () => {
     // offsetWidth is the laid-out (fitted) size - the transform doesn't

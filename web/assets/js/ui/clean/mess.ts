@@ -99,34 +99,6 @@ export const GRIME_FOR: Partial<Record<ItemType, MessKind[]>> = {
 export const grimesFor = (type?: ItemType): MessKind[] =>
   (type && GRIME_FOR[type]) || GRIMES;
 
-/**
- * What may lie on top of what, as `[top, under]`.
- *
- * A short list rather than a rule, because most pairs are nonsense: mud dries
- * on top of rust because both are weather, and dust settles on ink and on
- * coffee because both are things that dried there first. Tar under anything
- * would never be reached, and ink over coffee is two stains fighting for the
- * same pixels.
- *
- * **The top must be the shallower**, and `tests/clean.test.js` holds that. The
- * under-layer is shielded until the top's cell is gone, so a deep top over a
- * shallow under is a long wait followed by a moment - the reveal the wrong way
- * round.
- */
-export const LAYERS: readonly (readonly [MessKind, MessKind])[] = [
-  ['mud', 'rust'],
-  ['film', 'ink'],
-  ['film', 'coffee'],
-];
-
-/** The layers a card could be dealt, given the grimes its type allows. Both
- *  halves must be on that list: a note is not dealt mud over rust just because
- *  the pair exists. */
-export const layersFor = (type?: ItemType): readonly (readonly [MessKind, MessKind])[] => {
-  const allowed = grimesFor(type);
-  return LAYERS.filter(([top, under]) => allowed.includes(top) && allowed.includes(under));
-};
-
 /** The loose things. Two of them - tape and a sticky note - are *stuck* to the
  *  card rather than lying on it, which is the peel below and not a second
  *  family: what they are is still a thing the glove takes away. */
@@ -139,6 +111,114 @@ export const yieldsTo = (kind: MessKind, tool: ToolId) => MESS[kind].tool === to
  *  that simply lifts. A piece with a time here does not answer a press at all -
  *  see TUNING.peelMs. */
 export const peelFor = (kind: MessKind): number => TUNING.peelMs[kind] ?? 0;
+
+/** Where a piece of debris is, as the robot vacuum sees it: lying on the bare
+ *  board, lying on a card, or in the glove. */
+export type PieceAt = 'loose' | 'card' | 'hand';
+
+/**
+ * Whether the robot vacuum eats a piece. Debris only - grime, webs and prints
+ * are not pieces and a vacuum has no business with them - and never what is in
+ * the glove: taking something out of somebody's hand is not cleaning, it is
+ * theft, and it would empty a handful on its way to the bin.
+ */
+export const robotEats = (kind: MessKind, at: PieceAt): boolean =>
+  MESS[kind].family === 'debris' && at !== 'hand';
+
+/** The robot's turn after a bump, in radians: 45 to 160 degrees either way,
+ *  which is the real thing's bump-and-turn and what keeps it from tracing the
+ *  same line back and forth. */
+export function robotTurn(rng: Rng): number {
+  const [lo, hi] = TUNING.robot.turnDeg;
+  const deg = lo + rng() * (hi - lo);
+  return ((rng() < 0.5 ? -1 : 1) * deg * Math.PI) / 180;
+}
+
+/** How far in from a card's edge its outermost lane runs, as a share of the
+ *  mop's radius. Close enough that the edge between two lanes that only meet
+ *  there - the ends of the rows, the tops of the columns - is still reached:
+ *  at 0.7 a corner between two lanes was a hair out of reach. */
+export const MOP_INSET = 0.6;
+
+/** The three ways the robot mops a card, one picked at random per card. */
+export const MOP_PATTERNS = ['spiral', 'rows', 'columns'] as const;
+export type MopPattern = typeof MOP_PATTERNS[number];
+
+/** Where the lanes go across one side: from `inset` to `side - inset`, `lane`
+ *  apart or a little closer so the last lands exactly on the far edge. A side
+ *  too short for two lanes gets one, down its middle. */
+function lanes(side: number, lane: number, inset: number): number[] {
+  const span = side - inset * 2;
+  if (span <= 0) return [side / 2];
+  const n = Math.ceil(span / lane);
+  return Array.from({ length: n + 1 }, (_, i) => inset + (span * i) / n);
+}
+
+/**
+ * The route the robot drives to mop a card, as waypoints in the card's own
+ * pixels (x right, y down, 0..w and 0..h). Lanes `lane` apart, which is less
+ * than the mop is wide so every stretch is covered twice, and `inset` in from
+ * the edge, which the mop's own radius reaches past.
+ *
+ * - `rows`: back and forth across the card, top to bottom
+ * - `columns`: up and down it, left to right
+ * - `spiral`: round the edge and inward, a lane in each lap
+ */
+export function mopPath(
+  pattern: MopPattern, w: number, h: number, lane: number, inset: number,
+): { x: number, y: number }[] {
+  const xs = lanes(w, lane, inset);
+  const ys = lanes(h, lane, inset);
+  const out: { x: number, y: number }[] = [];
+  if (pattern === 'rows') {
+    ys.forEach((y, i) => {
+      const [a, b] = i % 2 ? [xs[xs.length - 1]!, xs[0]!] : [xs[0]!, xs[xs.length - 1]!];
+      out.push({ x: a, y }, { x: b, y });
+    });
+    return out;
+  }
+  if (pattern === 'columns') {
+    xs.forEach((x, i) => {
+      const [a, b] = i % 2 ? [ys[ys.length - 1]!, ys[0]!] : [ys[0]!, ys[ys.length - 1]!];
+      out.push({ x, y: a }, { x, y: b });
+    });
+    return out;
+  }
+  let l = xs[0]!;
+  let t = ys[0]!;
+  let r = xs[xs.length - 1]!;
+  let b = ys[ys.length - 1]!;
+  // Bounded, so no size of card can make this run away.
+  for (let lap = 0; lap < 200 && l <= r && t <= b; lap++) {
+    out.push({ x: l, y: t }, { x: r, y: t }, { x: r, y: b }, { x: l, y: b });
+    if (t + lane <= b) out.push({ x: l, y: t + lane });
+    l += lane; t += lane; r -= lane; b -= lane;
+  }
+  // What the laps left in the middle is a strip under two lanes across, so one
+  // pass down its long side finishes it.
+  if (l <= r) out.push({ x: l, y: h / 2 }, { x: r, y: h / 2 });
+  else if (t <= b) out.push({ x: w / 2, y: t }, { x: w / 2, y: b });
+  else out.push({ x: w / 2, y: h / 2 });
+  return out;
+}
+
+/** What the robot is doing, in the order it does it. */
+export type RobotJob = 'pick' | 'sweep' | 'fit' | 'mop' | 'none';
+
+/**
+ * The robot's next job, from what is left on the board. It works the way the
+ * tools are laid out: everything a glove would pick up first, then the webs,
+ * and only once both are gone does it stop to fit its mop and start on the
+ * grime and the prints - which is also the only order that works, since the
+ * debris shields the crust under it. Asked again all the time, so a handful
+ * tipped back out puts it back to picking.
+ */
+export function robotJob(debris: number, webs: number, grime: number, mop: boolean): RobotJob {
+  if (debris > 0) return 'pick';
+  if (webs > 0) return 'sweep';
+  if (grime <= 0) return 'none';
+  return mop ? 'mop' : 'fit';
+}
 
 // ---- tuning -------------------------------------------------------------
 // Every rate the game's pace depends on, in one block, because pacing is found
@@ -161,9 +241,13 @@ type Tuning = {
   handful: number,
   gumTugs: number,
   peelMs: Record<string, number>,
+  robot: {
+    speed: number, radius: number, steer: number, seekMs: number, fitMs: number,
+    mopBite: number, mopLane: number,
+    turnDeg: [number, number], bumpChance: number, margin: number,
+  },
   grimeChance: number,
   debrisChance: number,
-  layeredChance: number,
   trackChance: number,
   trackCards: number,
   trackStep: number,
@@ -195,7 +279,7 @@ export const TUNING: Tuning = {
   grid: 32,
   /** Cleared share at which the last specks dissolve on their own. Hunting one
    *  surviving pixel is the opposite of relaxing. */
-  clearAt: 0.95,
+  clearAt: 0.97,
   /** Share of the grid a dealt field fills. The crust is a layer over the whole
    *  card, edge to edge, so that washing it is a reveal - see art.ts. */
   cover: 1,
@@ -230,14 +314,33 @@ export const TUNING: Tuning = {
    *  asks - letting go early lays it back down and costs nothing. There is no
    *  counter behind this and nothing to fail. */
   peelMs: { tape: 700, sticky: 400 },
+  /** The robot vacuum, the second secret inside the first. World units.
+   *  - `speed`     a second - a trundle, but it has a whole board to do
+   *  - `radius`    half its 60-unit disc, and the reach it eats, sweeps and
+   *                mops within
+   *  - `steer`     radians a second it turns toward its next job, so it arcs
+   *                onto a target rather than snapping to face it
+   *  - `seekMs`    how often it looks again for the nearest job
+   *  - `fitMs`     how long fitting the mop takes, turning on the spot
+   *  - `mopBite`   passes a frame at sixty frames a second. Enough that one
+   *                run of its pattern takes tar off: at `speed`, a point
+   *                between two lanes is under the mop for about forty frames
+   *  - `mopLane`   how far apart its lanes run - under its 60-unit width, so
+   *                the lanes overlap and nothing is left between them
+   *  - `turnDeg`   the range of a bump-and-turn, when there is nothing to do
+   *  - `bumpChance` how often a card's edge turns it rather than letting it
+   *                 climb on - a real one mounts a rug sometimes and bounces off
+   *                 it others, and always bouncing would keep it off every card
+   *  - `margin`    how far past the dealt cards it may roam */
+  robot: {
+    speed: 110, radius: 30, steer: 5, seekMs: 250, fitMs: 1400, mopBite: 0.2, mopLane: 44,
+    turnDeg: [45, 160], bumpChance: 0.6, margin: 120,
+  },
   /** How often a card is dealt each of the two, independently - so a card can
    *  carry leaves lying on rust, which is where the glove-then-washer order
    *  comes from. */
   grimeChance: 0.7,
   debrisChance: 0.5,
-  /** How often a card that got grime got two of it, one over the other. Low:
-   *  the second reveal is a thing to come across, not the ordinary case. */
-  layeredChance: 0.2,
   /** Half the boards get a trail, and only boards with this many cards - on
    *  two cards there is no "across the board" for it to go. */
   trackChance: 0.5,
@@ -311,9 +414,10 @@ export const TUNING: Tuning = {
    *  frames is noise - the jet would flutter between wide and narrow on a hand
    *  that is holding still. */
   jetSmoothMs: 120,
-  /** Six seconds of full pressure, two in which it weakens to nothing, and
-   *  1.7 to fill again. The rest is not a punishment, it is the beat. */
-  tank: { fullMs: 6000, fadeMs: 2000, refillMs: 1700 },
+  /** Eight and a half seconds of full pressure, two in which it weakens to
+   *  nothing, and 1.7 to fill again. The rest is not a punishment, it is the
+   *  beat. */
+  tank: { fullMs: 8500, fadeMs: 2000, refillMs: 1700 },
 };
 
 // ---- fields -------------------------------------------------------------
@@ -804,6 +908,19 @@ export function toPrint(
   };
 }
 
+/** The other way: a point in a print's 0..1 box out to world coordinates. What
+ *  the robot drives to when it goes after a print's last dirty cells. */
+export function fromPrint(
+  t: { x: number, y: number, rot: number, w: number, h: number }, u: number, v: number,
+): { x: number, y: number } {
+  const a = (u - 0.5) * t.w;
+  const b = (v - 0.5) * t.h;
+  const turn = printTurn(t.rot);
+  const cos = Math.cos(turn);
+  const sin = Math.sin(turn);
+  return { x: t.x + a * cos - b * sin, y: t.y - (a * sin + b * cos) };
+}
+
 /**
  * A trail of prints across the board: somebody walked through, before any of
  * this, and did not wipe their feet.
@@ -918,19 +1035,10 @@ export function planBoard(boxes: readonly Box[], rng: Rng = Math.random): BoardP
 
 function deal(id: string, type: ItemType | undefined, rng: Rng): CardPlan {
   const card: CardPlan = { id, fields: [], debris: [] };
-  if (rng() < TUNING.grimeChance) {
-    // Two layers now and then, bottom first: the jet takes the top off and what
-    // is under it is still not the card. Rolled before the single grime so the
-    // two branches are one decision and not a grime that sometimes grows a
-    // second one.
-    const pairs = layersFor(type);
-    if (pairs.length && rng() < TUNING.layeredChance) {
-      const [top, under] = pick(rng, pairs);
-      card.fields.push(under, top);
-    } else {
-      card.fields.push(pick(rng, grimesFor(type)));
-    }
-  }
+  // One grime at most. Two stacked, the top shielding the one under it, was
+  // tried and taken out: the jet clearing a card only to find it still dirty
+  // read as the washer not working.
+  if (rng() < TUNING.grimeChance) card.fields.push(pick(rng, grimesFor(type)));
   if (rng() < TUNING.debrisChance) card.debris = scatter(pick(rng, DEBRIS), rng);
   // Neither rolled: somebody has to sweep this card too.
   if (!card.fields.length && !card.debris.length) card.debris = scatter(pick(rng, DEBRIS), rng);

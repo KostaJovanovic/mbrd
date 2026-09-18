@@ -114,6 +114,17 @@ function later() {
   closeTimer = setTimeout(() => { closeTimer = 0; close(); }, LINGER);
 }
 
+/**
+ * Open a tool's flyout at once and focused, for a right-click (ui/toolbar.ts).
+ * False for a tool with none, or before initFlyouts().
+ */
+export function openFlyout(btn: HTMLElement): boolean {
+  if (!cmds || !bar || !btn.dataset.cmd || !FLYOUTS[btn.dataset.cmd]) return false;
+  hold();
+  open(btn, true);
+  return true;
+}
+
 /** Open a flyout. delay=0 for keyboard/swap, DWELL for first hover. */
 function open(btn: HTMLElement, focus: boolean, delay = 0) {
   clearTimeout(openTimer);

@@ -725,6 +725,32 @@
   </g>
 </symbol>
 
+<!-- The same glove, closed on what it is holding - seen from above, palm down
+     on the board, which is how a hand picks something up. So what shows is the
+     back of the hand: the four knuckles along the top where the fingers fold
+     away under it, the grooves between them, and the three seams a work glove
+     has across its back. The fingertips are underneath, round what it is
+     holding; of the thumb only its outer joint shows, low on the left where
+     the open glove's thumb is, tucked in against the fist. Same turn, same cuff - so clean.ts's
+     TIP and the load it draws above the cuff are where they were, and swapping
+     one for the other reads as the hand closing, not as a new tool. -->
+<symbol id="i-clean-glove-held" viewBox="0 0 48 48">
+  <g transform="rotate(-28 24 26)" stroke-linejoin="round" stroke-linecap="round">
+    <path stroke="none" d="M15.4 35h16.2l1.9 7.6a1.7 1.7 0 0 1-1.7 2.1H15.2a1.7 1.7 0 0 1-1.7-2.1z"/>
+    <path fill="none" stroke-width="3.4" stroke-linecap="butt" d="M14.4 40.4h18.4"/>
+    <path fill="none" stroke="currentColor" stroke-width="2.2"
+          d="M15.4 35h16.2l1.9 7.6a1.7 1.7 0 0 1-1.7 2.1H15.2a1.7 1.7 0 0 1-1.7-2.1z"/>
+    <path stroke="currentColor" stroke-width="2.2"
+          d="M13.8 25.2c-2.6-.2-4.4 1.6-4.2 4.2.2 2.8 2.4 4.6 5.2 4.4"/>
+    <path stroke="currentColor" stroke-width="2.2"
+          d="M13.2 26v-6.6a3.2 3.2 0 0 1 4.8-2.8 3 3 0 0 1 4.8-.6 3 3 0 0 1 4.8.2 3 3 0 0 1 4.8 1.6V28c0 4-2 7-5 8.5H17c-2.6-1.6-3.8-4-3.8-7z"/>
+    <path fill="none" stroke="currentColor" stroke-width="1.6"
+          d="M18 16.9v2.6M22.8 16.2v2.8M27.6 16.4v2.7"/>
+    <path fill="none" stroke="currentColor" stroke-width="1.3"
+          d="M18.4 23.6q.4 4.4 0 8.4M23 23.2v9.2M27.6 23.6q-.4 4.4 0 8.4"/>
+  </g>
+</symbol>
+
 <!-- The gun: grip, body, lance, and the fan coming off the tip. The fan stays
      in the drawing even though the mode throws real mist, because in the bar
      there is no mist and a lance alone is a stick. The pale slot in the body is

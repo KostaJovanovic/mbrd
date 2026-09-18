@@ -1741,8 +1741,104 @@ export function spiderNode(rng: Rng): SVGSVGElement {
   body.append(line('M-0.8 -2.4 L-1.7 -3.4', shell, 0.4));
   body.append(line('M0.8 -2.4 L1.7 -3.4', shell, 0.4));
 
-  host.append(legs[0], legs[1], body);
+  // Everything that turns with its heading goes in one group, which clean.ts
+  // turns; the svg itself never turns, so the shadow its CSS filter draws stays
+  // below it. A filter on a turned element is turned with it, and a spider
+  // walking down the screen cast its shadow up it.
+  const turn = svg('g');
+  turn.setAttribute('class', 'clean-spider-turn');
+  turn.append(legs[0], legs[1], body);
+  host.append(turn);
   return host;
+}
+
+// ---- the robot -----------------------------------------------------------
+
+/** Across, in world pixels. The host's viewBox is this box, centred, so the
+ *  drawing's units are the board's. */
+export const ROBOT_SIZE = 60;
+
+/** Room round the disc in the robot's drawing, for what sticks out of it: the
+ *  side brushes at the front and the mop pad under it. */
+export const ROBOT_BOX = ROBOT_SIZE + 16;
+
+/**
+ * A robot vacuum seen from above, in two layers.
+ *
+ * `body` turns with its heading, and is drawn front toward `-y`, like the
+ * spider. `host` does not turn, and carries what must not: the shadow (a CSS
+ * filter on it, in clean.css) and the light on the lid. A filter is drawn in
+ * the element's own frame *before* its transform, so a shadow on the turning
+ * layer turned with it - driving down the screen, the shadow fell upward and
+ * the highlight sat at the bottom, and the robot read as lit from below and
+ * reversing. Everything that comes from the room stays still; everything that
+ * belongs to the machine turns.
+ *
+ * The body: a warm dark shell, a lighter lid, the bumper - a darker band round
+ * the front half - one small amber light, a seam, and two side brushes splayed
+ * out at the front corners, which are what says "this end first" from any
+ * distance. Under it all, hidden until clean.ts fits it, a mop pad.
+ */
+export function robotNode(): { host: HTMLElement, body: SVGSVGElement } {
+  const r = ROBOT_SIZE / 2;
+  const half = ROBOT_BOX / 2;
+  const box = `${-half} ${-half} ${ROBOT_BOX} ${ROBOT_BOX}`;
+  const host = document.createElement('div');
+  host.className = 'clean-robot';
+
+  const body = svg('svg');
+  body.setAttribute('class', 'clean-robot-body');
+  body.setAttribute('viewBox', box);
+  // The mop pad: a fringed disc of cloth a little wider than the robot,
+  // showing round its edge and trailing strands behind.
+  const mop = svg('g');
+  mop.setAttribute('class', 'clean-robot-mop');
+  mop.append(shape('circle', { r: r + 3.2, fill: '#d9d1c2', stroke: '#9c9282', 'stroke-width': 0.6 }));
+  let fringe = '';
+  for (let i = 0; i < 13; i++) {
+    const a = Math.PI * (0.22 + (i / 12) * 0.56);
+    const x = Math.cos(a) * (r + 2.4);
+    const y = Math.sin(a) * (r + 2.4);
+    fringe += ` M${f2(x)} ${f2(y)} l${f2(Math.cos(a) * 3.4)} ${f2(Math.sin(a) * 3.4)}`;
+  }
+  mop.append(line(fringe.trim(), '#b8ae9d', 0.9));
+  body.append(mop);
+  // Side brushes, at the two front corners, three bristles each.
+  for (const side of [-1, 1]) {
+    const cx = side * r * 0.66;
+    const cy = -r * 0.64;
+    let d = '';
+    for (let i = 0; i < 3; i++) {
+      const a = -Math.PI / 2 + side * (0.5 + i * 0.75);
+      d += ` M${f2(cx)} ${f2(cy)} l${f2(Math.cos(a) * 7.5)} ${f2(Math.sin(a) * 7.5)}`;
+    }
+    body.append(line(d.trim(), '#3a332c', 0.8));
+  }
+  body.append(shape('circle', { r: r - 0.5, fill: '#4a423a', stroke: '#2b2520', 'stroke-width': 0.8 }));
+  // The bumper: the front half of the rim, a shade darker and a hair proud.
+  const rim = `M${f2(-(r - 2.2))} 0 A ${f2(r - 2.2)} ${f2(r - 2.2)} 0 0 1 ${f2(r - 2.2)} 0`;
+  body.append(line(rim, '#2b2520', 3.4));
+  body.append(line(rim, '#6d6358', 0.6, 0.6));
+  body.append(shape('circle', { r: r * 0.7, fill: '#6d6358', stroke: '#3a332c', 'stroke-width': 0.6 }));
+  // A seam across the lid, and the button in the middle of it.
+  body.append(line(`M${f2(-r * 0.68)} ${f2(r * 0.18)} L${f2(r * 0.68)} ${f2(r * 0.18)}`, '#3a332c', 0.5, 0.7));
+  body.append(shape('circle', { r: r * 0.1, fill: '#554c43', stroke: '#3a332c', 'stroke-width': 0.4 }));
+  // The light, at the front, with a little glow round it.
+  body.append(shape('circle', { cy: -r * 0.52, r: 2.6, fill: '#e0a21c', stroke: 'none', opacity: 0.3 }));
+  const lamp = shape('circle', { cy: -r * 0.52, r: 1.3, fill: '#f2b531', stroke: 'none' });
+  lamp.setAttribute('class', 'clean-robot-lamp');
+  body.append(lamp);
+
+  // The room's light on the lid: upper left, whichever way the robot faces.
+  const sheen = svg('svg');
+  sheen.setAttribute('viewBox', box);
+  sheen.append(shape('ellipse', {
+    cx: -r * 0.22, cy: -r * 0.24, rx: r * 0.4, ry: r * 0.26,
+    fill: '#8a8074', stroke: 'none', opacity: 0.4,
+    transform: `rotate(-30 ${f2(-r * 0.22)} ${f2(-r * 0.24)})`,
+  }));
+  host.append(body, sheen);
+  return { host, body };
 }
 
 /** The thread it comes down on: a hairline in the layer, tied where the strand

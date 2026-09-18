@@ -268,7 +268,7 @@ initMobileFrame(vp);
 initFeed(vp, cmds, styleFeedMasthead);
 initPlaylist(vp, cmds, styleFeedMasthead);
 // Full-size viewer. Reads board + assets directly; no viewport needed.
-initViewer();
+initViewer(cmds);
 // Crop + adjustment dials. Same as viewer: opened by id, writes through state.ts.
 initDarkroom();
 // Inventory (board contents + sizes). Takes vp for the camera.

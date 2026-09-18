@@ -61,6 +61,16 @@ export function initTourEdit() {
   // pointerenter/leave, not over/out: those don't refire per chip and button.
   host.addEventListener('pointerenter', () => peek(true));
   host.addEventListener('pointerleave', () => peek(false));
+  // Right-click off the chips: the bar's own verbs. A chip opens its own menu
+  // first and says so with preventDefault(); the caption field keeps the
+  // browser's, which is where paste and spelling live.
+  host.addEventListener('contextmenu', e => {
+    if (e.defaultPrevented || !editing) return;
+    if (e.target instanceof HTMLInputElement) return;
+    e.preventDefault();
+    openAnchored({ left: e.clientX, right: e.clientX, top: e.clientY, bottom: e.clientY },
+      barEntries(), { label: 'Tour' });
+  });
   // Every way the bar can go stale: `tour` (the list), `items` (a card
   // deleted/restored under it), `selection` (Add button + hint line, the
   // noisiest - hence the early return in paint() when the mode is off).
@@ -454,6 +464,27 @@ function chipEntries(i: number, name: number): MenuEntry[] {
       : 'Take this card off the tour',
     icon: 'i-close', danger: true,
     action: () => { removeTourCards(board.tour[i]?.cards ?? []); paint(); } },
+  ];
+}
+
+/** The bar's right-click rows, off the chips: its two buttons and its cross. */
+function barEntries(): MenuEntry[] {
+  const { on, off } = pickedCards();
+  const cutting = !!on.length && !off.length;
+  const n = cutting ? on.length : off.length;
+  return [
+    {
+      label: cutting ? 'Take off the tour' : n > 1 ? `Add ${n} cards as one stop` : 'Add stop',
+      disabled: !n,
+      action: addOrCut,
+    },
+    {
+      label: 'Take the tour',
+      disabled: !board.tour.length,
+      action: () => { if (startTour()) { editing = false; paint(); } },
+    },
+    { sep: true },
+    { label: 'Stop editing the tour', action: () => { editing = false; paint(); } },
   ];
 }
 

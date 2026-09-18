@@ -112,6 +112,8 @@ const NO_HEAD = new Set([
   'style-tile', // three labelled bands and two face names already. A plate over
               // the top would be a fourth heading on a card that is nothing but
               // headings.
+  'card',     // the cleaning simulator's card (canvas/spotless.ts): its own
+              // line is printed on it already, in the display face.
 ]);
 
 export const wantsHead = (item: ItemFragment): boolean => !NO_HEAD.has(item.type ?? '');

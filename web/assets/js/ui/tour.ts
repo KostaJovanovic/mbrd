@@ -12,6 +12,8 @@ import { BASE_ZOOM, travelMs } from '../canvas/viewport.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 import { nodeFor, setSpot } from '../canvas/items.ts';
 import { nowPlaying, ownerOf, registeredPlayers } from '../canvas/audio.ts';
+import { openAnchored } from './menu.ts';
+import type { MenuEntry } from './menu.ts';
 
 /** One resolved stop — never held across an event. */
 type Stop = { items: Item[], caption: string };
@@ -75,6 +77,14 @@ export function initTour(viewport: Viewport) {
   prevBtn?.addEventListener('click', () => stepTour(-1));
   nextBtn?.addEventListener('click', () => stepTour(1));
   bar.querySelector('.tour-close')?.addEventListener('click', () => stopTour());
+  // Right-click: the bar's buttons as rows, and every stop by name. Nothing
+  // that edits the tour, for the reason paint() gives.
+  bar.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    if (at < 0) return;
+    openAnchored({ left: e.clientX, right: e.clientX, top: e.clientY, bottom: e.clientY },
+      barEntries(), { label: 'Tour' });
+  });
 
   // Tour edited while running — repaint (the clamp in paint() handles vanished stops).
   bus.on('tour', () => { if (tourActive()) paint(); });
@@ -211,6 +221,25 @@ function play(id: string) {
   const media = el?.querySelector<HTMLMediaElement>('video, audio');
   if (media && !media.paused) return;
   el?.querySelector<HTMLButtonElement>('.vbig, .transport .play')?.click();
+}
+
+/** The running bar's right-click rows. */
+function barEntries(): MenuEntry[] {
+  const list = stops();
+  return [
+    { label: 'The stop before', disabled: at <= 0, action: () => stepTour(-1) },
+    { label: 'The next stop', disabled: at >= list.length - 1, action: () => stepTour(1) },
+    {
+      label: 'Go to stop',
+      sub: list.map((stop, i) => ({
+        label: `${i + 1}. ${stopLabel(stop).text}`,
+        check: i === at,
+        action: () => { goToStop(i); },
+      })),
+    },
+    { sep: true },
+    { label: 'End the tour', action: () => { stopTour(); } },
+  ];
 }
 
 /** Label for the bar: first name + count; full list in title attribute. */
