@@ -4,7 +4,7 @@
 // board state but one: a finished board is left one card, added on the way out.
 // See ./mess.ts for the arithmetic and ./art.ts for the drawing.
 
-import { board, timelinePlaying, addItems } from '../../state.ts';
+import { bus, board, timelinePlaying, addItems } from '../../state.ts';
 import type { Item } from '../../board-model.ts';
 import type { Viewport } from '../../canvas/viewport.ts';
 import { tiltOf, nodeFor } from '../../canvas/items.ts';
@@ -350,8 +350,6 @@ let robots: LiveRobot[] = [];
 /** Who did the last piece of work: the hand or the robot. Whoever it is when
  *  the board comes clean finished it, and the card says so. */
 let lastBy: 'hand' | 'robot' = 'hand';
-/** Pieces thrown in the bin this session, which is how full it looks. */
-let binned = 0;
 /** How far the tool is lifted off the board by the hand's speed, 0..1, and the
  *  value last written to the cursor - see paintLift(). */
 let raised = 0;
@@ -416,6 +414,15 @@ let loadG: SVGGElement | null = null;
 let mist: HTMLCanvasElement | null = null;
 let mistCtx: CanvasRenderingContext2D | null = null;
 let motes: Mote[] = [];
+/** Where the glass is on screen, kept by an observer rather than read per
+ *  frame: tick() writes styles every frame, and a layout read after them in
+ *  drawMist() was a forced layout on every one, even with the hand still. */
+let catchBox = { left: 0, top: 0, w: 0, h: 0 };
+let catchWatch: ResizeObserver | null = null;
+/** The gauge's last written level, so a still tank writes nothing. */
+let gaugeShown = -1;
+/** Work was done since the count was last painted - see apply(). */
+let countOwed = false;
 
 // ---- end session state --------------------------------------------------
 
@@ -446,6 +453,24 @@ export function initClean(viewport: Viewport) {
   vp = viewport;
   worldEl = viewport.world;
   wireBar();
+  // Another board under the dirt: every card points at an item that is gone.
+  // Leave, and without the card - it was earned on the board that went.
+  bus.on('board:load', () => {
+    if (!on) return;
+    finishing = false;
+    stopClean();
+  });
+  // Nothing lands on the board while it is being cleaned. import/drop.ts
+  // listens on the window in the bubble phase; these run in the capture phase
+  // ahead of it and stop the event there. The dragover still has to be
+  // prevented, or the browser opens a dropped file in the tab.
+  const refuse = (e: Event) => {
+    if (!on) return;
+    e.stopImmediatePropagation();
+    if (e.type !== 'dragenter') e.preventDefault();
+    if (e instanceof DragEvent && e.dataTransfer) e.dataTransfer.dropEffect = 'none';
+  };
+  for (const type of ['dragenter', 'dragover', 'drop', 'paste']) addEventListener(type, refuse, true);
 }
 
 // ---- entering and leaving ----------------------------------------------
@@ -522,6 +547,17 @@ export function startClean(): boolean {
   catcher.append(buildMist());
   vp.el.append(catcher);
   bindPointer(catcher);
+  const glass = catcher;
+  const measure = () => {
+    const box = glass.getBoundingClientRect();
+    catchBox = { left: box.left, top: box.top, w: glass.clientWidth, h: glass.clientHeight };
+  };
+  measure();
+  // The glass for its own size, and the page for a move that does not resize
+  // it - chrome opening beside the viewport shifts it along.
+  catchWatch = new ResizeObserver(measure);
+  catchWatch.observe(glass);
+  catchWatch.observe(document.documentElement);
   // On the body rather than inside the glass: the glass opens a stacking
   // context at --z-overlay, and a tool carried over the bar has to be drawn on
   // top of the bar - which is a page-level thing two rungs above it.
@@ -603,6 +639,9 @@ export function stopClean(): boolean {
   // animation that never comes back on a board that has no idea why. See
   // paintHeld().
   for (const gif of document.querySelectorAll('.item.is-clean-held')) gif.classList.remove('is-clean-held');
+  // And off the ones culled right now: canvas/items.ts keeps some nodes off the
+  // page to mount again later, and a document query cannot see those.
+  for (const card of cards) card.heldNode?.classList.remove('is-clean-held');
   layer = null;
   catcher = null;
   cursor = null;
@@ -612,6 +651,11 @@ export function stopClean(): boolean {
   loadG = null;
   mist = null;
   mistCtx = null;
+  catchWatch?.disconnect();
+  catchWatch = null;
+  catchBox = { left: 0, top: 0, w: 0, h: 0 };
+  gaugeShown = -1;
+  countOwed = false;
   cards = [];
   webs = [];
   // Its node and its thread are both inside the layer that has just gone, so
@@ -622,10 +666,6 @@ export function stopClean(): boolean {
   for (const r of robots) r.hum?.stop();
   robots = [];
   lastBy = 'hand';
-  // The bar outlives the session, so the bin's fill is taken off it here - the
-  // next run starts with an empty bin.
-  binned = 0;
-  el('clean-can')?.classList.remove('is-some', 'is-full');
   raised = 0;
   raisedShown = -1;
   dealt = [];
@@ -798,8 +838,8 @@ function makeLive(kind: MessKind, item: Item): LiveField {
   return live;
 }
 
-/** Per frame. Two is about 10ms on a desktop and still finishes thirty cards
- *  inside a second, which is shorter than the camera takes to settle. */
+/** Crusts painted per frame. One still finishes thirty cards in half a second
+ *  of frames, and keeps the cost of any one frame to a single crust. */
 const PAINT_PER_FRAME = 1;
 
 function drainPaint() {
@@ -1219,40 +1259,62 @@ export function cleanSpace(down: boolean) {
   cursor?.classList.toggle('is-faded', down);
 }
 
-/** Whether the tool in hand has anything to bite at this point. Deliberately
- *  asks about *this* tool: the duster over one of a cobweb's strands is work,
- *  and the same press with the washer is a pan. */
+/** How far off a piece or a crust the pointer may be and still be on it, in
+ *  screen pixels: a finger's slack. */
+const GRAB_SLACK = 10;
+
+/** How far from a piece's middle counts as on it, in world pixels at size 1.
+ *  A leaf is about ten units of BIT_UNIT long, so this is half of one. */
+const PIECE_HIT = 5 * BIT_UNIT;
+
+/**
+ * Whether the pointer is *on* something the tool in hand can work - the one
+ * question a press asks before it decides between working and moving the
+ * board. Deliberately asks about *this* tool: a cobweb's strand is work for
+ * the duster and a pan for the washer.
+ *
+ * **On it, not near it.** This used to be the tool's whole reach, and a card's
+ * whole face plus the reach round it for the glove - so between two dirty cards
+ * every press was work and the board could not be grabbed at all. Now: the
+ * glove on a piece itself, the jet on a crust or a print itself, the duster
+ * within its sweep of a strand. Everywhere else a press moves the board. The
+ * reach still decides what a stroke takes once it has started.
+ */
 function underTool(clientX: number, clientY: number): boolean {
   if (!vp || !held) return false;
   const w = vp.toWorld(clientX, clientY);
-  const radius = TUNING.reach[held].radius;
+  const slack = GRAB_SLACK / vp.zoom;
+  // The duster keeps its reach: a strand is a hairline, and the gesture is a
+  // sweep *across* it, which starts beside it. Webs are few and short, so the
+  // board between cards is still free nearly everywhere.
   if (held === 'duster')
-    return webs.some(web => nearCurve(w.x, -w.y, web) <= radius);
-  // A glove with no room left is not over work, it is over somewhere to put
-  // what it is holding - which is rule 4 in intent(), and is why this asks
-  // whether the piece would fit rather than only whether it is there. Without
-  // it a full hand over a pile of leaves is a press that does nothing at all.
-  const room = (kind: MessKind) => handRoom(carried.map(c => c.kind), kind);
-  if (held === 'glove'
-    && loose.some(b => room(b.kind) && Math.hypot(b.x - w.x, b.y + w.y) <= radius)) return true;
-  // A print on the bare floor is work, so the press washes rather than pans.
-  // Without this the one mess between the cards could not be touched.
-  if (held === 'washer' && tracks.some(t => {
-    if (t.fading || !t.field.left) return false;
-    const p = toBoot(t, w.x, w.y);
-    return p.u >= -radius / t.w && p.u <= 1 + radius / t.w
-      && p.v >= -radius / t.h && p.v <= 1 + radius / t.h;
-  })) return true;
-  for (const card of cards) {
-    const p = toCard(card, w.x, w.y);
-    const rx = radius / card.item.w;
-    const ry = radius / card.item.h;
-    if (p.u < -rx || p.u > 1 + rx || p.v < -ry || p.v > 1 + ry) continue;
-    if (held === 'glove' && card.debris.some(b => room(b.kind))) return true;
-    if (held === 'washer'
-      && card.fields.some(f => !f.fading && f.field.left && yieldsTo(f.kind, 'washer'))) return true;
+    return webs.some(web => nearCurve(w.x, -w.y, web) <= TUNING.reach.duster.radius);
+  if (held === 'glove') {
+    // A glove with no room left is not over work, it is over somewhere to put
+    // what it is holding - which is rule 4 in intent(). Without it a full hand
+    // over a pile of leaves is a press that does nothing at all.
+    const room = (kind: MessKind) => handRoom(carried.map(c => c.kind), kind);
+    const hit = (b: LiveBit) => PIECE_HIT * b.size + slack;
+    if (loose.some(b => room(b.kind) && Math.hypot(b.x - w.x, b.y + w.y) <= hit(b))) return true;
+    return cards.some(card => {
+      const p = toCard(card, w.x, w.y);
+      return card.debris.some(b => room(b.kind)
+        && Math.hypot((b.x - p.u) * card.item.w, (b.y - p.v) * card.item.h) <= hit(b));
+    });
   }
-  return false;
+  // The jet: on a print on the bare floor, or on a card with crust left.
+  const inside = (u: number, v: number, sw: number, sh: number) =>
+    u >= -slack / sw && u <= 1 + slack / sw && v >= -slack / sh && v <= 1 + slack / sh;
+  if (tracks.some(t => {
+    if (t.fading || !t.field.left) return false;
+    const p = toPrint(t, w.x, w.y);
+    return inside(p.u, p.v, t.w, t.h);
+  })) return true;
+  return cards.some(card => {
+    if (!card.fields.some(f => !f.fading && f.field.left && yieldsTo(f.kind, 'washer'))) return false;
+    const p = toCard(card, w.x, w.y);
+    return inside(p.u, p.v, card.item.w, card.item.h);
+  });
 }
 
 function bindPointer(node: HTMLElement) {
@@ -1267,8 +1329,13 @@ function bindPointer(node: HTMLElement) {
     byTouch(e);
     // The right button is the way out of the tool, not a second pan. Nothing
     // else in the app opens a menu here, so there is nothing to lose.
-    if (e.button === 2) { putDown(); return; }
+    //
+    // Captured first all the same: `pointers` has been counted, and only a
+    // captured pointer is sure to bring its pointerup back here. Released over
+    // the bar, it never came, and every press after it counted as a second
+    // finger.
     node.setPointerCapture(e.pointerId);
+    if (e.button === 2) { putDown(); return; }
     last = { x: e.clientX, y: e.clientY };
     moveCursor(e.clientX, e.clientY);
     const want = intent(e, e.clientX, e.clientY);
@@ -1377,8 +1444,11 @@ function strokeTo(x: number, y: number) {
 
 function endStroke() {
   // Only a stroke still in a live session: stopClean() comes through here
-  // after its timers are gone, and a dissolve is one of those.
-  if (drawing && on && held === 'washer') settleWashed();
+  // after its timers are gone, and a dissolve is one of those. Not asked which
+  // tool is held: a swap or a put-down mid-stroke has already changed `held`
+  // by the time it gets here, and only the hand's jet ever leaves a crust
+  // waiting, so settling after any stroke settles exactly those.
+  if (drawing && on) settleWashed();
   drawing = false;
   panning = false;
   strokeAt = null;
@@ -1457,7 +1527,7 @@ function apply(clientX: number, clientY: number, press: boolean) {
     if (p.u < -rx || p.u > 1 + rx || p.v < -ry || p.v > 1 + ry) continue;
     worked += workCard(card, p.u, p.v, rx, ry, press, bite, clientX, clientY);
   }
-  if (tool === 'glove') worked += scoopLoose(w.x, -w.y, radius, press);
+  if (tool === 'glove') worked += scoopLoose(w.x, -w.y, radius);
   if (tool === 'duster') worked += sweepWebs(w.x, -w.y, radius);
   // The trail belongs to no card, so it is washed here rather than inside the
   // per-card loop above - the jet over bare floor is still the jet working.
@@ -1479,7 +1549,9 @@ function apply(clientX: number, clientY: number, press: boolean) {
   }
   if (worked) {
     lastBy = 'hand';
-    paintCount();
+    // Counted once a frame, in tick(): a fast stroke is up to MAX_DABS of these
+    // in one pointer event, and the count reads every card on the board.
+    countOwed = true;
   }
 }
 
@@ -1559,8 +1631,8 @@ function leanOf(item: Item): number {
  */
 function setRadius(card: LiveCard) {
   if (card.rounded) return;
-  const node = document.querySelector<HTMLElement>(`.item[data-id="${CSS.escape(card.item.id)}"]`);
-  if (!node) return;
+  const node = nodeFor(card.item.id);
+  if (!node?.isConnected) return;
   card.box.style.borderRadius = getComputedStyle(node).borderRadius;
   card.rounded = true;
   // The same node, asked the other question once while it is here: whether
@@ -1595,7 +1667,7 @@ function setRadius(card: LiveCard) {
  */
 function paintHeld(card: LiveCard) {
   const node = nodeFor(card.item.id) ?? null;
-  if (!node) return;
+  if (!node?.isConnected) return;
   if (node !== card.heldNode) {
     // Remounted: a fresh node, with none of this mode's classes, and a fresh
     // GIF twin that has no frame in it yet.
@@ -1651,7 +1723,9 @@ function workCard(
     // What is lying over the grime: the debris on the card.
     const shield = shieldOf(card);
     for (const f of card.fields.slice()) {
-      if (f.fading || !f.field.total || !f.field.left) continue;
+      // A crust whose grid is all washed is still painted until the let-go
+      // dissolves it, so the jet keeps erasing it - see workTracks().
+      if (f.fading || !f.field.total) continue;
       const depth = Math.max(1, TUNING.depth[f.kind] ?? 1);
       if (bite > 0) {
         // Whether the cell under the nozzle is on its last pass. One lookup
@@ -1750,7 +1824,9 @@ const liveState = (c: LiveCard) => ({
  *  reads as wholly dirty. Never the badge's input: its arc would stand still. */
 const asState = (c: LiveCard) => {
   const s = liveState(c);
-  return { ...s, fields: s.fields.map(f => (f.left ? { ...f, total: 1, left: 1 } : f)) };
+  // `total`, not `left`: a crust washed to its very last cell mid-stroke is
+  // still waiting for the let-go. Dissolving ones are already gone from `s`.
+  return { ...s, fields: s.fields.map(f => (f.total ? { ...f, total: 1, left: 1 } : f)) };
 };
 
 function eraseAlpha(f: LiveField, u: number, v: number, rx: number, ry: number, share: number, crisp: boolean) {
@@ -1786,7 +1862,7 @@ function sheen(card: LiveCard, u: number, v: number, rx: number, ry: number) {
 /** How often the front of the jet may gleam. Not a nicety: this paints onto the
  *  sheen's canvas, which takes two seconds to fade, so it is the one effect here
  *  that *accumulates*. Called from the washer's pass, and a pass is one
- *  interpolated step of a stroke - up to forty-eight of them for a single
+ *  interpolated step of a stroke - up to MAX_DABS of them for a single
  *  pointer event, and again for every coalesced one. */
 const GLEAM_MS = 60;
 
@@ -2028,18 +2104,6 @@ function dissolve(card: LiveCard, f: LiveField) {
 // ---- the trail ----------------------------------------------------------
 
 /**
- * A world point in one print's own 0..1 box, undoing its turn.
- *
- * The print is drawn toe-up and turned by the walk's heading, so this undoes
- * the same quarter turn `buildTracks()` added - and gets it from `rot` rather
- * than reading the transform back, because a style read here would be a layout
- * flush on every stamp.
- */
-function toBoot(t: LiveTrack, wx: number, wy: number) {
-  return toPrint(t, wx, wy);
-}
-
-/**
  * The jet over the bare floor. Prints are washed exactly as a card's crust is,
  * and by the same two calls - what differs is only that nobody owns them.
  * `settle` fades a print the moment it counts clear, which is the robot's way;
@@ -2049,24 +2113,29 @@ function workTracks(wx: number, wy: number, radius: number, bite: number, settle
   if (!tracks.length || bite <= 0) return 0;
   let worked = 0;
   for (const t of tracks.slice()) {
-    if (t.fading || !t.field.left) continue;
-    const p = toBoot(t, wx, wy);
+    // Not "while it has cells left": a print whose grid is all washed can still
+    // have mud painted on it, and since it waits for the let-go to fade, the jet
+    // has to go on taking that paint off. Skipping it froze the smear mid-stroke.
+    if (t.fading) continue;
+    // In the print's own box, from `rot` (mess.ts) rather than the transform
+    // read back, which would be a layout flush on every stamp.
+    const p = toPrint(t, wx, wy);
     const rx = radius / t.w;
     const ry = radius / t.h;
     if (p.u < -rx || p.u > 1 + rx || p.v < -ry || p.v > 1 + ry) continue;
-    const span = SUBS;
-    const wear = wearOf(t.field, p.u, p.v, rx, ry, bite, span);
-    const lastPass = true;
+    // A print is one pass deep, and every pass over it is its last: the
+    // crisp erase always.
+    const wear = wearOf(t.field, p.u, p.v, rx, ry, bite, SUBS);
     const took = stamp(t.field, p.u, p.v, rx, ry, bite);
     eraseAt(
       t.ctx, p.u * t.canvas.width, p.v * t.canvas.height,
       rx * t.canvas.width, ry * t.canvas.height,
-      Math.min(1, wearShare(wear.before, wear.taken)), rng, lastPass,
+      Math.min(1, wearShare(wear.before, wear.taken)), rng, true,
     );
     if (took) worked++;
     if (settle && fieldClear(t.field)) fadeTrack(t);
   }
-  if (worked) paintCount();
+  if (worked) countOwed = true;
   return worked;
 }
 
@@ -2128,9 +2197,13 @@ function peelStep(dt: number, now: number) {
     for (const bit of card.debris.slice()) {
       const ms = peelFor(bit.kind);
       if (!ms) continue;
-      const on = drawing && held === 'glove' && now - bit.pulledAt < PEEL_GRACE_MS;
-      if (!on && !bit.peel) continue;
-      bit.peel = on ? Math.min(1, bit.peel + dt / ms) : Math.max(0, bit.peel - dt / PEEL_BACK_MS);
+      const pulling = drawing && held === 'glove' && now - bit.pulledAt < PEEL_GRACE_MS;
+      if (!pulling && !bit.peel) continue;
+      bit.peel = pulling ? Math.min(1, bit.peel + dt / ms) : Math.max(0, bit.peel - dt / PEEL_BACK_MS);
+      // Room was asked when the glove went on the strip, not now - and two strips
+      // under one glove finish on the same frame. The one there is no room for
+      // stays at the brink, and eases back once the glove stops holding it.
+      if (bit.peel >= 1 && !handRoom(carried.map(c => c.kind), bit.kind)) bit.peel = 0.99;
       if (bit.peel >= 1) {
         lastBy = 'hand';
         scoop(card, bit);
@@ -2155,17 +2228,13 @@ function scoop(card: LiveCard, bit: LiveBit) {
   takeIntoHand(bit);
 }
 
-function scoopLoose(wx: number, wy: number, radius: number, press: boolean): number {
+function scoopLoose(wx: number, wy: number, radius: number): number {
   let took = 0;
   for (const bit of loose.slice()) {
     if (Math.hypot(bit.x - wx, bit.y - wy) > radius) continue;
     if (!handRoom(carried.map(c => c.kind), bit.kind)) continue;
-    if (bit.tough > 1) {
-      if (!press) continue;
-      bit.tough--;
-      took++;
-      continue;
-    }
+    // No gum tugs here: gum that has been tipped out is off its card and no
+    // longer stuck to anything (dropHandful() lays it down with tough = 1).
     loose.splice(loose.indexOf(bit), 1);
     bit.host?.remove();
     bit.host = null;
@@ -2209,6 +2278,9 @@ function dropHandful(clientX: number, clientY: number) {
       sizeOnCard(bit.node, onto.item);
       placeBit(bit.node, bit.x * 100, bit.y * 100);
       onto.debris.push(bit);
+      // The badge's denominator: a card dealt none, or fewer than now lie on
+      // it, would read a full arc with a bang on it.
+      onto.debrisDealt = Math.max(onto.debrisDealt, onto.debris.length);
       if (onto.clean) {
         onto.clean = false;
         onto.box.classList.remove('is-clean');
@@ -2853,7 +2925,7 @@ function seekJob(s: LiveRobot, now: number) {
     }
   } else if (job === 'mop') {
     if (planMop(s)) return;
-    dirtySpots(spots);
+    dirtySpots(spots, s);
   }
   // Never what another one is already going for. With nothing left that is
   // not, it has no job and wanders until something comes free.
@@ -2923,9 +2995,12 @@ function planMop(s: LiveRobot): boolean {
 }
 
 /** Every cell the mop could work on right now, in layer coordinates: grime
- *  with nothing lying over it, and the prints on the floor. */
-function dirtySpots(out: RobotSpot[]) {
+ *  with nothing lying over it, and the prints on the floor. Not on anything
+ *  another robot has claimed - the caller would only throw those away, and
+ *  late in a busy board that was thirty cards of cells per robot per seek. */
+function dirtySpots(out: RobotSpot[], s: LiveRobot) {
   for (const card of cards) {
+    if (claimed(s, card)) continue;
     const shield = shieldOf(card);
     for (const f of card.fields) {
       if (f.fading || !f.field.left) continue;
@@ -2939,7 +3014,7 @@ function dirtySpots(out: RobotSpot[]) {
     }
   }
   for (const t of tracks) {
-    if (t.fading || !t.field.left) continue;
+    if (t.fading || !t.field.left || claimed(s, t)) continue;
     const cells = t.field.cells;
     const g = Math.round(Math.sqrt(cells.length));
     for (let i = 0; i < cells.length; i++) {
@@ -3137,8 +3212,6 @@ function emptyHand() {
       tossIn(bit.node, to);
       can.classList.add('is-hit');
       later(() => can.classList.remove('is-hit'), 160);
-      binned++;
-      paintFill(can);
       // A few percent apart per piece, so five of them are five sounds and not
       // one sound five times.
       cue('pick', { volume: 0.3 - i * 0.02 });
@@ -3149,20 +3222,6 @@ function emptyHand() {
     can.classList.remove('is-open');
     paintCount();
   }, going.length * 70 + LEAVE_MS);
-}
-
-/** Pieces binned before the first thing shows under the lid, and the second. */
-const BIN_SOME = 8;
-const BIN_FULL = 20;
-
-/**
- * The bin fills up: a leaf tip under the rim after eight pieces, a scrap of
- * paper beside it after twenty. Not a count and not a limit - the bin takes
- * everything, for ever - just the bin looking like somebody has been using it.
- */
-function paintFill(can: HTMLElement) {
-  can.classList.toggle('is-some', binned >= BIN_SOME);
-  can.classList.toggle('is-full', binned >= BIN_FULL);
 }
 
 /** One piece on its way into the bin: out of the glove, into a node of its own
@@ -3287,12 +3346,18 @@ function tick() {
     if (drawing && power > 0) puff(power, jetShape(handSpeed).radius);
   }
   paintGauge();
+  if (countOwed) {
+    countOwed = false;
+    paintCount();
+  }
 
   // At most one corner taken per frame. Every card whose node existed when the
   // mode opened was done there; this is for the ones that were culled, and it
   // is a style flush apiece - thirty of them in one frame is the stall the
   // painting is already queued to avoid.
-  const square = cards.find(c => !c.rounded);
+  // Only among the ones mounted now: the first unrounded card may never come on
+  // screen, and asking it again every frame starved every card behind it.
+  const square = cards.find(c => !c.rounded && nodeFor(c.item.id)?.isConnected);
   if (square) setRadius(square);
 
   // Read once for the badges: they all counter-scale against the same number,
@@ -3301,8 +3366,9 @@ function tick() {
   const zoom = vp?.zoom ?? 1;
   for (const card of cards) {
     // A card that was culled and has come back is wearing a lean it was dealt
-    // afresh, so this is re-read rather than remembered. Two inline-style reads
-    // per card per frame, which is a string lookup and not a style flush.
+    // afresh, so this is re-read rather than remembered. leanOf() reads the
+    // item and the root's data- flags, which is attribute lookups and not a
+    // style flush.
     setLean(card);
     drawRuns(card, dt, now);
     if (card.wetAt) {
@@ -3336,7 +3402,7 @@ function tick() {
       }
     }
     paintBadge(card, zoom);
-    // Only the cards that have one, which setRadius() has already answered.
+    // Every card: drained until clean, and a GIF held still - see paintHeld().
     paintHeld(card);
   }
   stepSpider(dt, now);
@@ -3349,7 +3415,10 @@ function tick() {
  *  second for as long as the tool is out. */
 function paintGauge() {
   if (!tankFill) return;
-  tankFill.style.transform = `scaleY(${(held === 'washer' ? tank.level : 1).toFixed(3)})`;
+  const level = Math.round((held === 'washer' ? tank.level : 1) * 1000) / 1000;
+  if (level === gaugeShown) return;
+  gaugeShown = level;
+  tankFill.style.transform = `scaleY(${level.toFixed(3)})`;
 }
 
 // ---- mist and flecks ----------------------------------------------------
@@ -3374,7 +3443,7 @@ const richly = () => quality.motion;
  * The mist, and the one thing about it that is easy to get wrong.
  *
  * It is emitted **per frame, at the nozzle**, and not from apply(). apply() runs
- * once per interpolated step of a stroke - up to forty-eight times for a single
+ * once per interpolated step of a stroke - up to MAX_DABS times for a single
  * pointer event, and again for every coalesced one - so puffing from there laid
  * a few motes at every point the jet had passed through and the mist came out as
  * a solid ribbon down the whole sweep. A jet is at one place at a time. Mist
@@ -3471,13 +3540,13 @@ function fleck(x: number, y: number, kind: MessKind, took: number) {
 
 function drawMist(now: number) {
   if (!mist || !mistCtx || !catcher) return;
-  const w = catcher.clientWidth;
-  const h = catcher.clientHeight;
+  // The observed box, never a layout read - see catchBox.
+  const { w, h } = catchBox;
+  const box = catchBox;
   if (!w || !h) return;
   if (mist.width !== w || mist.height !== h) { mist.width = w; mist.height = h; }
   mistCtx.clearRect(0, 0, w, h);
   if (!motes.length) return;
-  const box = catcher.getBoundingClientRect();
   const alive: Mote[] = [];
   for (const m of motes) {
     const t = (now - m.at) / m.ms;
@@ -3538,7 +3607,10 @@ function onBarClick(e: MouseEvent) {
   const btn = target.closest<HTMLElement>('[data-clean]');
   const what = btn?.dataset.clean;
   if (!what) return;
-  if (what === 'close') { askLeave(true); return; }
+  // At the ending there is nothing left to leave dirty: the ✕ is Done, as
+  // Escape is. Asking there offered a "Keep cleaning" onto a bar whose tools
+  // refuse to lift once the board is finishing.
+  if (what === 'close') { if (finishing) stopClean(); else askLeave(true); return; }
   if (what === 'stay') { askLeave(false); return; }
   if (what === 'leave') { stopClean(); return; }
   if (what === 'can') { emptyHand(); return; }
@@ -3731,14 +3803,14 @@ function dealCard() {
   // Held above the board: bigger than it will be, never smaller than itself,
   // and with a long soft shadow; then down, the shadow drawing in under it.
   const land = vp.zoom;
-  const held = Math.max(1.1, land * 1.3);
+  const aloft = Math.max(1.1, land * 1.3);
   const place = (s: number, lift: number) =>
     `translate(-50%, -50%) translateY(${(-lift).toFixed(1)}px) scale(${s.toFixed(3)})`;
   const high = 'drop-shadow(0 22px 26px rgb(30 26 20 / 0.34))';
   const low = 'drop-shadow(0 1px 2px rgb(30 26 20 / 0.3))';
   const fall = copy.animate([
-    { transform: place(held, 26), opacity: 0, filter: high, easing: EASE },
-    { transform: place(held, 26), opacity: 1, filter: high, easing: 'cubic-bezier(0.5, 0, 0.75, 0)',
+    { transform: place(aloft, 26), opacity: 0, filter: high, easing: EASE },
+    { transform: place(aloft, 26), opacity: 1, filter: high, easing: 'cubic-bezier(0.5, 0, 0.75, 0)',
       offset: CARD_IN_MS / (CARD_IN_MS + CARD_FALL_MS) },
     { transform: place(land, 0), opacity: 1, filter: low },
   ], { duration: CARD_IN_MS + CARD_FALL_MS, fill: 'forwards' });
@@ -3753,13 +3825,20 @@ function dealCard() {
 // ---- music and media ----------------------------------------------------
 
 function startMusic() {
-  music = new Audio(MUSIC);
-  music.loop = true;
-  music.volume = 0;
+  const track = new Audio(MUSIC);
+  music = track;
+  track.loop = true;
+  track.volume = 0;
   // A missing file is the ordinary case in a fresh clone - the loop is not in
   // the repository. Silence is the right failure, and not a console full of it.
-  music.addEventListener('error', () => { music = null; }, { once: true });
-  void music.play().then(() => fadeMusic(MUSIC_GAIN)).catch(() => { music = null; });
+  //
+  // Both let go of *this* element only. stopMusic() empties a finished track's
+  // src, which fires `error` on it and rejects a play() still pending - and if
+  // a new session has started by then, a bare `music = null` dropped the new
+  // session's loop, which stopClean() could then never stop.
+  const drop = () => { if (music === track) music = null; };
+  track.addEventListener('error', drop, { once: true });
+  void track.play().then(() => fadeMusic(MUSIC_GAIN)).catch(drop);
 }
 
 function stopMusic() {

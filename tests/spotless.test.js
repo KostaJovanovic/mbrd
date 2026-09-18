@@ -5,7 +5,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { spotlessRects, spotlessBy, SPOTLESS_FRAME, SPOTLESS_WORDS } from '../web/assets/js/canvas/spotless.ts';
+import { spotlessRects, spotlessBy, spotlessCount, SPOTLESS_FRAME, SPOTLESS_WORDS } from '../web/assets/js/canvas/spotless.ts';
+
+test('a spotless card says a real count or the one it drew', () => {
+  assert.equal(spotlessCount(12, 3), 12);
+  assert.equal(spotlessCount(12.7, 3), 12);
+  for (const bad of [JSON.parse('1e999'), -1, Number.NaN, '12', null, undefined, 1e6])
+    assert.equal(spotlessCount(bad, 3), 3, `${String(bad)} got through`);
+});
 
 test('a spotless card reads back what the mode wrote', () => {
   const got = spotlessRects([[7, 7, 20, 12, 'rgb(132 100 66)'], [40.5, 30, 10, 10, '#a0b0c0']]);

@@ -67,6 +67,18 @@ function el<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, 
 
 const cardsSaid = (n: number) => `${n} ${n === 1 ? 'card' : 'cards'}`;
 
+/** Far past any board the mode would deal (it cleans thirty at most), and short
+ *  of a number that stops reading as a count. */
+const SPOTLESS_MOST = 9999;
+
+/** How many cards the card says were cleaned. From a file the app may not have
+ *  written, so a finite whole number in range or the drawing's own count - a
+ *  1e999 in the JSON is Infinity, and "Infinity cards" is not a card. */
+export function spotlessCount(said: unknown, drawn: number): number {
+  if (typeof said !== 'number' || !Number.isFinite(said) || said < 0 || said > SPOTLESS_MOST) return drawn;
+  return Math.floor(said);
+}
+
 /**
  * The card. One SVG for the whole face, so it keeps its layout at any size the
  * card is dragged to. The "before" rectangles carry the colours written into
@@ -79,7 +91,7 @@ export function buildSpotlessCard(item: Item): HTMLElement {
   const by = spotlessBy(item);
   const words = SPOTLESS_WORDS[by];
   const rects = spotlessRects(item.meta?.before);
-  const count = typeof item.meta?.cards === 'number' && item.meta.cards >= 0 ? Math.floor(item.meta.cards) : rects.length;
+  const count = spotlessCount(item.meta?.cards, rects.length);
 
   const face = el('svg', { viewBox: `0 0 ${FACE_W} ${FACE_H}`, class: 'spotless-face', 'aria-hidden': 'true' });
   for (const [n, before] of [[0, true], [1, false]] as const) {

@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 
 import {
   routeConnection, anchorFor, anchorsFor, blockOf, trim, pathData,
-  endOf, intoMiddles, exitTowards,
+  endOf, intoMiddles, exitTowards, curvePoints,
   CLEARANCE, STUB, TURN_COST, MAX_OBSTACLES, PULL_CLEARANCE, OVERLAP_COST,
 } from '../web/assets/js/web-route.ts';
 
@@ -517,13 +517,14 @@ test('a route gets off a line that is already there', () => {
   assertOrthogonal(again.points, 'avoid');
   // Measured as length, not "no leg on that line" - both routes' stubs
   // are on it by construction, arriving at the same two cards. The cost
-  // is for the long run between them.
+  // is for the long run between them, so the first and last legs are not
+  // counted.
   let along = 0;
-  for (let i = 1; i < again.points.length; i++) {
+  for (let i = 2; i < again.points.length - 1; i++) {
     const p = again.points[i - 1], q = again.points[i];
     if (Math.abs(p.y) < 1e-3 && Math.abs(q.y) < 1e-3) along += Math.abs(q.x - p.x);
   }
-  assert.ok(along <= STUB * 2 + 1,
+  assert.ok(again.points.length > 2 && along <= 1,
     `the second route ran ${along} units of the same corridor: ${JSON.stringify(again.points)}`);
 });
 
@@ -626,4 +627,69 @@ test('the route the router found is kept whole underneath the added stubs', () =
   const points = [{ x: 50, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 100 }];
   const out = intoMiddles(points, bare(0, 0), bare(200, 140));
   assert.deepEqual(out.slice(1, -1), points, 'every point the router chose survives, in order');
+});
+
+// ---------------------------------------------------------------------------
+// A line gets clear of its own card, it does not lie along it
+// ---------------------------------------------------------------------------
+
+/** How far a drawn line runs within `near` of its own card before it gets clear,
+ *  past the `near` any square exit spends. Only the half of the line nearest the
+ *  card is read, so the far card's approach is not counted against this one. */
+function lying(pts, it, near = 12) {
+  const k = blockOf(it, 0);
+  const gapTo = p => Math.hypot(Math.max(k.x0 - p.x, 0, p.x - k.x1), Math.max(k.y0 - p.y, 0, p.y - k.y1));
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) total += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+  let at = 0, last = 0;
+  for (let i = 1; i < pts.length && at <= total / 2; i++) {
+    const a = pts[i - 1], b = pts[i];
+    const len = Math.hypot(b.x - a.x, b.y - a.y);
+    const n = Math.max(1, Math.ceil(len / 4));
+    for (let j = 1; j <= n; j++) {
+      const s = at + (len * j) / n;
+      if (s > total / 2) break;
+      if (gapTo({ x: a.x + ((b.x - a.x) * j) / n, y: a.y + ((b.y - a.y) * j) / n }) < near) last = s;
+    }
+    at += len;
+  }
+  return Math.max(0, last - near);
+}
+
+test('a line leaves its card and does not lie along it, on a board with room', () => {
+  // The bug this pins: a line that stepped a stub off its card and then turned
+  // and ran down the card's own side a few units off it, or - the search
+  // treating its own two cards as having no margin - traced the card's edge
+  // outright. Seeded random boards rather than one arrangement, because every
+  // hand-built case fixed one of those and the next arrangement found another.
+  // Every card here is 80 apart, so there is always room to get clear; a tight
+  // gap between two cards is not what this is about.
+  let seed = 3;
+  const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+  const gap = (p, q) => Math.hypot(
+    Math.max(0, Math.abs(p.x - q.x) - (p.w + q.w) / 2), Math.max(0, Math.abs(p.y - q.y) - (p.h + q.h) / 2));
+  const worst = { curve: 0, square: 0, grid: 0 };
+  for (let n = 0; n < 40; n++) {
+    const cards = [];
+    for (let t = 0; cards.length < 7 && t < 300; t++) {
+      const c = card(rnd() * 1800, rnd() * 1300, 140 + rnd() * 260, 110 + rnd() * 240);
+      if (cards.every(o => gap(o, c) >= 80)) cards.push(c);
+    }
+    for (let i = 0; i < 5; i++) {
+      const a = cards[Math.floor(rnd() * cards.length)], b = cards[Math.floor(rnd() * cards.length)];
+      if (a === b) continue;
+      const others = cards.filter(c => c !== a && c !== b);
+      for (const shape of ['curve', 'square', 'grid']) {
+        const r = routeConnection(a, b, others, { shape, step: 32, clearance: shape === 'curve' ? CLEARANCE + 8 : CLEARANCE });
+        if (r.blocked) continue;
+        const drawn = shape === 'curve' ? curvePoints(r.points, r.ends, r.caps, 24) : r.points;
+        worst[shape] = Math.max(worst[shape], lying(drawn, a), lying(drawn.slice().reverse(), b));
+      }
+    }
+  }
+  // Orthogonal routes turn only once they are clear. A curve may round its first
+  // corner from the face itself, which grazes for a few units at most.
+  assert.equal(worst.square, 0, `a square route lay ${worst.square} along its card`);
+  assert.equal(worst.grid, 0, `a grid route lay ${worst.grid} along its card`);
+  assert.ok(worst.curve <= 30, `a curve lay ${worst.curve} along its card`);
 });

@@ -1502,6 +1502,31 @@ test('a print cell found by fromPrint() is where toPrint() says it is', () => {
   }
 });
 
+test('a press between the mess moves the board', () => {
+  const src = readFileSync(new URL('../web/assets/js/ui/clean/clean.ts', import.meta.url), 'utf8');
+  const under = src.slice(src.indexOf('function underTool('), src.indexOf('function bindPointer('));
+  assert.ok(under.length > 0, 'underTool() moved - find it again');
+  // The glove is working only on a piece itself, never on the card around it.
+  assert.match(under, /<= hit\(b\)/, 'the glove works anywhere near a piece');
+  assert.doesNotMatch(under, /card\.debris\.some\(b => room\(b\.kind\)\)\) return true/, 'a whole card is work for the glove');
+  // The jet only on a crust or a print, with a finger's slack and no more.
+  assert.doesNotMatch(under, /TUNING\.reach\[held\]/, 'the jet works a reach away from any crust');
+});
+
+test('what a session ends cannot reach into the next one', () => {
+  const src = readFileSync(new URL('../web/assets/js/ui/clean/clean.ts', import.meta.url), 'utf8');
+  // An old track's error, fired by stopMusic() emptying its src, let go of
+  // whatever was playing - the next session's loop, which then never stopped.
+  assert.match(src, /const drop = \(\) => \{ if \(music === track\) music = null; \};/, 'an old track drops the new one');
+  assert.doesNotMatch(src, /catch\(\(\) => \{ music = null; \}\)/, 'a rejected play drops the new track');
+  // A board swapped under the mode ends it, without a card for the new board.
+  assert.match(src, /bus\.on\('board:load', \(\) => \{\s*if \(!on\) return;\s*finishing = false;\s*stopClean\(\);/,
+    'a board load leaves the mode up over the wrong board');
+  // And nothing is dropped or pasted onto the board while it is being cleaned.
+  assert.match(src, /for \(const type of \['dragenter', 'dragover', 'drop', 'paste'\]\) addEventListener\(type, refuse, true\);/,
+    'drops and pastes land on a board being cleaned');
+});
+
 test('a check is a moment, not a standing state', () => {
   const src = readFileSync(new URL('../web/assets/js/ui/clean/clean.ts', import.meta.url), 'utf8');
   assert.match(src, /const CHECK_MS = 4000;/);
@@ -1516,10 +1541,17 @@ test('the hand\'s jet finishes a crust on the let-go, not under the nozzle', () 
   const work = src.slice(src.indexOf('function workCard('), src.indexOf('function cellUnder('));
   assert.ok(work.length > 0, 'workCard() moved - find it again');
   assert.doesNotMatch(work, /dissolve\(/, 'the hand dissolves mid-stroke');
-  assert.match(src, /if \(drawing && on && held === 'washer'\) settleWashed\(\);/, 'the let-go never settles');
+  // Whatever is held by then: a swap mid-stroke has already changed it.
+  assert.match(src, /if \(drawing && on\) settleWashed\(\);/, 'the let-go never settles, or not after a swap');
   assert.match(src, /workTracks\(w\.x, w\.y, radius, bite, false\)/, 'the hand fades prints mid-stroke');
+  // Waiting for the let-go, a washed grid still has paint on it: the jet must
+  // not stop erasing just because no cells are left.
+  assert.doesNotMatch(work, /f\.fading \|\| !f\.field\.total \|\| !f\.field\.left/, 'a washed crust freezes mid-stroke');
+  const prints = src.slice(src.indexOf('function workTracks('), src.indexOf('function fadeTrack('));
+  assert.ok(prints.length > 0, 'workTracks() moved - find it again');
+  assert.doesNotMatch(prints, /!t\.field\.left/, 'a washed print freezes mid-stroke');
   // Nor does a card count clean before its crust is dissolving.
-  assert.match(src, /f\.left \? \{ \.\.\.f, total: 1, left: 1 \} : f/, 'a card counts clean mid-stroke');
+  assert.match(src, /f\.total \? \{ \.\.\.f, total: 1, left: 1 \} : f/, 'a card counts clean mid-stroke');
   // ...but the badge still reads the real amount, or its arc stands still.
   assert.match(src, /toolWork\(liveState\(card\)/, 'the badge reads the counting view');
 });

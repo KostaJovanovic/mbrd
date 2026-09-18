@@ -3153,6 +3153,8 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   // cleared here too rather than trusting the lift to carry it.
   addEventListener('blur', () => {
     spaceDown = false; ctrlDown = false; midPaste.down = false; setPanCursor();
+    // The cleaning mode keeps its own Space, fed from the keyup above.
+    cmds.cleanSpace?.(false);
   });
 
   // Swallow the primary-selection paste a middle *drag* fires on release. Capture
