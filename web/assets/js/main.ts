@@ -31,6 +31,7 @@ import { Viewport } from './canvas/viewport.ts';
 import { paintGrid, paintGridOnView } from './canvas/grid.ts';
 import { initGrain, paintGrain } from './canvas/grain.ts';
 import { initFarLands } from './canvas/farlands.ts';
+import { initClean } from './ui/clean/clean.ts';
 import { initPaper } from './canvas/paper.ts';
 import { initMobileFrame } from './canvas/mobile-frame.ts';
 import { repaintGround, forgetLookInk } from './canvas/ground.ts';
@@ -245,6 +246,9 @@ platform.updates.onOffer(offer => {
 initMobileHeaderEditor(vp);
 initItems(el('world')!, vp);
 initWeb(el('world')!, vp);
+// The konami-code easter egg (ui/clean/). Nothing happens until the code is
+// typed; this only hands it the camera and wires its bar.
+initClean(vp);
 // Sweeps hint cards on first real content. After initItems so nodes are mounted.
 // cmds passed because canvas/ may not import ui/ (whimsy dial on the hint card).
 initGhosts(cmds);

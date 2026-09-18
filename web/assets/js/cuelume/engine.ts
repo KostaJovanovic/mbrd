@@ -421,6 +421,9 @@ function sleepLater(context: AudioContext): void {
   if (idleTimer) clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
     idleTimer = null;
+    // A running sustain is not quiet, however long it has been since a cue.
+    // Suspending under one kills a hiss mid-stroke. See sustain().
+    if (sustaining) return;
     // Only from running. Suspending a context the browser has already suspended
     // for its own reasons throws in some builds and buys nothing in the rest.
     if (context.state === 'running') void context.suspend().catch(() => {});
@@ -736,6 +739,139 @@ export function cue(name: Cue, opts: CueOptions = {}): void {
 export function playRecipe(recipe: SoundRecipe, volume = 1): void {
   if (muted()) return;
   render(recipe, volume, 0, logging ? { cue: 'lab', sound: 'custom' } : null);
+}
+
+// ---------------------------------------------------------------------------
+// Sustained sound
+// ---------------------------------------------------------------------------
+
+/**
+ * A sound that lasts as long as something is happening, rather than marking the
+ * instant it happened.
+ *
+ * Every recipe in this palette is an envelope with an attack and a decay and no
+ * sustain, because a cue is feedback and feedback is an event. A spray hiss and
+ * a cloth on glass are not events - they last exactly as long as the hand is
+ * moving, and firing a one-shot every sixty milliseconds to fake one produces a
+ * stutter, which is the sound of a bug rather than of water.
+ *
+ * So this is the one thing in the engine that is not a cue: a looping noise
+ * source through a filter, with a gain the caller drives. It is deliberately not
+ * expressible in RECIPES - the table is vendored from Cuelume number for number
+ * and gains no rows here. The engine gains a capability; the palette does not
+ * change.
+ */
+export type SustainSpec = {
+  filterType: BiquadFilterType,
+  filterFrequency: number,
+  filterQ: number,
+  /** Ceiling, reached when the caller asks for 1. */
+  gain: number,
+};
+
+export type Sustain = {
+  /** How hard it is working now, 0..1. Ramped, never stepped: a gain written
+   *  straight to value clicks, and a click is the one thing a hiss must not do. */
+  level(to: number): void,
+  /** Where the filter sits, in Hz. Ramped for the same reason `level` is - a
+   *  cutoff written straight to value is a step somebody hears as a click, and
+   *  the whole point of moving it is that the change should be gradual. A
+   *  second dial rather than a second sustain, because a pressure washer losing
+   *  pressure is one sound getting duller, not two sounds crossfading. */
+  tone(frequency: number): void,
+  stop(): void,
+};
+
+/** How many sustains are running. The idle timer must not suspend the context
+ *  out from under one - five seconds of no *cues* is not five seconds of quiet. */
+let sustaining = 0;
+
+const RAMP = 0.06;
+
+/** A handle that does nothing, for every path where there will be no sound. */
+const SILENT: Sustain = { level: () => {}, tone: () => {}, stop: () => {} };
+
+export function sustain(spec: SustainSpec): Sustain {
+  const stop = refusal();
+  if (stop) {
+    if (logging) record('sustain', 'noise', stop);
+    return SILENT;
+  }
+  const context = getAudioContext();
+  if (!context) {
+    if (logging) record('sustain', 'noise', 'no-audio');
+    return SILENT;
+  }
+
+  const output = getOutput(context);
+  const gain = context.createGain();
+  gain.gain.value = 0;
+  gain.connect(output);
+
+  const filter = context.createBiquadFilter();
+  filter.type = spec.filterType;
+  filter.frequency.value = spec.filterFrequency;
+  filter.Q.value = spec.filterQ;
+  filter.connect(gain);
+
+  const source = context.createBufferSource();
+  source.buffer = getNoise(context);
+  source.loop = true;
+  source.connect(filter);
+
+  let live = true;
+  sustaining++;
+
+  // Unlike a cue, a sustain that starts late is still the sound of the thing
+  // that is *still happening* - so there is no staleness deadline here. It
+  // starts when the context can run and stops when the caller says.
+  const begin = () => {
+    if (!live) return;
+    try { source.start(); } catch { /* already started, or refused */ }
+  };
+  if (context.state === 'running') begin();
+  else { try { void wake(context).then(begin, () => {}); } catch { /* blocked */ } }
+
+  if (logging) record('sustain', 'noise', context.state === 'running' ? 'played' : 'resumed');
+
+  return {
+    level(to: number) {
+      if (!live) return;
+      const want = Math.min(1, Math.max(0, to)) * spec.gain * GAIN_AT[level];
+      const at = context.currentTime;
+      gain.gain.cancelScheduledValues(at);
+      gain.gain.setValueAtTime(gain.gain.value, at);
+      gain.gain.linearRampToValueAtTime(want, at + RAMP);
+    },
+    tone(frequency: number) {
+      if (!live) return;
+      // Floored well above nothing: a biquad at 0 Hz is not a quiet filter, it
+      // is an undefined one, and some implementations answer with a click.
+      const want = Math.max(40, frequency);
+      const at = context.currentTime;
+      filter.frequency.cancelScheduledValues(at);
+      filter.frequency.setValueAtTime(filter.frequency.value, at);
+      filter.frequency.linearRampToValueAtTime(want, at + RAMP);
+    },
+    stop() {
+      if (!live) return;
+      live = false;
+      sustaining = Math.max(0, sustaining - 1);
+      const at = context.currentTime;
+      gain.gain.cancelScheduledValues(at);
+      gain.gain.setValueAtTime(gain.gain.value, at);
+      gain.gain.linearRampToValueAtTime(0, at + RAMP);
+      // Stopped after the ramp has run, not on it: a source torn down mid-ramp
+      // takes the rest of the fade with it and ends on the click this avoids.
+      setTimeout(() => {
+        try { source.stop(); } catch { /* never started */ }
+        source.disconnect();
+        filter.disconnect();
+        gain.disconnect();
+        if (!sustaining) sleepLater(context);
+      }, (RAMP + 0.05) * 1000);
+    },
+  };
 }
 
 /** What the log wants to say about this render, or null when it is off. */

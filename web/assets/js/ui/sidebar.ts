@@ -113,6 +113,14 @@ export function initSidebar(cmds: SidebarCommands, viewport: Viewport | null = n
   globalThis.addEventListener('pointercancel', endSliderFocus);
   sidebar!.addEventListener('lostpointercapture', endSliderFocus, true);
 
+  // Seven quick taps on the wordmark. The h1 and not #version, which is a
+  // data-cmd button whose first tap would open the patch notes - and a way in
+  // that opens something else on the way is not a way in. The counting is a
+  // pure matcher in ui/clean/konami.ts, held by the command table; this is one
+  // listener that forwards a press, which is all the sidebar knows about it.
+  const mark = sidebar!.querySelector<HTMLElement>('.wordmark h1');
+  mark?.addEventListener('click', () => { cmds.cleanTap?.(); });
+
   sidebar!.addEventListener('click', e => {
     // SAFETY: the listener is on #sidebar, and a click is dispatched at an element under it.
     const btn = (e.target as Element).closest<HTMLElement>('[data-cmd]');

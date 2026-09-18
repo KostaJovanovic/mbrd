@@ -284,9 +284,17 @@ included — `tests/sw.test.js` reads that list by pulling out single-quoted run
   what lets it keep boards in sync; a provider that cannot is absent from that
   half rather than failing in it. The picker, once there are two, is one
   `openAnchored()` call and never a second menu. `research/docs/cloud.md` is the
-  specification. **`config.ts` ships empty and `tests/share.test.js` asserts
-  it**, so the rows are absent rather than broken in a checkout nobody has
-  registered an application for.
+  specification. **The rule in `config.ts` is both identifiers or neither, and
+  `tests/share.test.js` is what holds it** — a client id with no API key is the
+  one state worth a test, because sign-in and upload both work and only the
+  recipient's fetch fails, days later, with nothing to explain it.
+  `canShareLink()` is the switch that keeps the rows absent rather than broken,
+  so either state is a legal checkout. The web pair ships filled (both are
+  origin-restricted and safe in the clear — the argument is in `config.ts`'s own
+  header); `GOOGLE_DESKTOP_CLIENT_ID` and its secret ship empty, which keeps
+  Drive out of the desktop app rather than broken in it. When both halves are
+  present the test also checks they are the shape Google issues, which catches
+  the usual paste of a client *secret* where the client id goes.
 - **A new class of asset reference** → `itemHashes()` / `timelineHashes()` **and**
   `boardAssetHashes()` in `storage/mbrd.ts`, which is what the cloud sync uploads
   from. The packer and that walk are two implementations bound by an assertion in

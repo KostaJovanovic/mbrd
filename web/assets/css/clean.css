@@ -1,0 +1,906 @@
+/* The cleaning simulator (ui/clean/clean.ts): the dirt layer inside #world, the
+   sheet of glass that catches every pointer, the tool drawn under the hand, and
+   the one bar left standing. Nothing here applies unless :root carries
+   .is-cleaning, which only the two ways in put there. Loaded after timeline.css
+   and before quality.css, so the quality dial still wins on every animation
+   below. */
+
+/* One ease and four durations for the whole mode, written once. Nothing in here
+   snaps and nothing bounces: it is a zen thing, and a spring in it would be a
+   different feeling arriving in the middle of this one.
+
+   The maintainer sometimes looks at this over Remote Desktop, where animation
+   arrives as a jump or not at all. That is the protocol, not the numbers. */
+:root {
+  --clean-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --clean-travel: 320ms;
+  --clean-leave: 450ms;
+  --clean-shine: 600ms;
+  --clean-sweep: 2200ms;
+}
+
+/* ---------------------------------------------------------------------------
+   The takeover
+
+   Hiding the rest of the chrome is one word in chrome.css, beside .is-touring,
+   which already does exactly this for the tour. What is here is the other half:
+   the cards stop answering. Every card, not just the ones that are dirty - the
+   board is frozen, and a card that still lifts under the pointer while its
+   neighbour is being washed is the mode leaking.
+   --------------------------------------------------------------------------- */
+
+:root.is-cleaning .item,
+:root.is-cleaning .item *,
+:root.is-cleaning .item-shadow { pointer-events: none; }
+
+/* The paper texture stays, quieter: it is the surface being cleaned. */
+:root.is-cleaning #grain { opacity: 0.4; }
+
+/* ---------------------------------------------------------------------------
+   The dirt
+
+   A zero-sized box inside #world whose children are placed by the same
+   arithmetic as the cards. It costs nothing in layout and inherits the world
+   transform, which is the whole reason pan and zoom keep working.
+   --------------------------------------------------------------------------- */
+
+/* Addressed by class, not by the `dirt` id it also carries: the element is made
+   when the mode opens and is not in index.html, and tests/element-ids.test.js
+   holds every id a stylesheet names to one that is. The id is for the console. */
+.clean-layer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  /* The glass above catches everything. Nothing in here is ever a target, which
+     is also why hit-testing is arithmetic rather than elementFromPoint(). */
+  pointer-events: none;
+}
+
+/* The corner is written on from clean.ts, copied off the card underneath - a
+   card's radius is per item type and capped at half its shorter side, so no
+   token here can name it. This is the fallback for the frame or two before that
+   read lands, and for a card that is culled and has no node to read. */
+.clean-card {
+  position: absolute;
+  overflow: hidden;
+  border-radius: min(var(--radius), var(--half-min, 9999px));
+}
+
+.clean-grime,
+.clean-run,
+.clean-wet,
+.clean-bits {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* The crust is generated small and drawn up, so it is always being scaled.
+   Smooth is right for dirt; a crisp edge would read as a sticker rather than as
+   something settled on the card. It is also painted a frame or two after the
+   mode opens (see drainPaint), which the fade turns from a pop into the mess
+   arriving. */
+.clean-grime {
+  image-rendering: auto;
+  opacity: 0;
+}
+
+/* Four fifths, not whole: what is under the crust shows faintly through it, so
+   there is always something you are cleaning *towards*. */
+.clean-grime.clean-settled {
+  opacity: 0.8;
+  transition: opacity 260ms var(--clean-ease);
+}
+
+/* The sheen the jet leaves. Above the crust and below the debris, opacity
+   driven per frame by clean.ts rather than by a transition, because it has to
+   restart from full every time the jet passes over again. */
+.clean-wet {
+  opacity: 0;
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+/* Dirty water running off. Over the crust and under the sheen, normal blend, so
+   a rivulet crosses grime it has not cleaned yet - which is the point of it.
+   No opacity of its own: art.ts paints every wash at its own alpha and the
+   canvas is faded down each frame, so each trail dies of its own age. */
+.clean-run { pointer-events: none; }
+
+.clean-bits { overflow: visible; }
+
+/* A piece of debris. The outer group carries where it is, as a transform the
+   skid and the tug both ease along; the inner carries how it is turned, as an
+   attribute nothing animates. See debrisNode(). */
+.clean-bit {
+  transition: transform 300ms var(--clean-ease);
+}
+
+/* A piece's shadow is its own drawing again in currentColor (art.ts), and this
+   is what currentColor is: the palette's ink, the way --item-shadow is. */
+.clean-bit-shade { color: var(--ink); }
+
+/* Gum that has been pulled at and has not come off yet. Slower on the way back
+   than a snap would be - it is rubbery, not springy. */
+.clean-bit.clean-resist {
+  transition: transform 260ms var(--clean-ease);
+}
+
+/* Debris tipped out onto the bare board. One little SVG per piece, placed in
+   the dirt layer's own coordinates. */
+.clean-loose {
+  position: absolute;
+  width: 100px;
+  height: 100px;
+  overflow: visible;
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------------------
+   The badge
+
+   What the tool in hand still owes this card, at its top-right, counter-scaled
+   by clean.ts so it is one size on screen at any zoom. A red disc and a bang
+   while there is work, the arc closing as it comes off, a check when there is
+   none - and nothing at all while no tool is held, which is the state the mode
+   opens in and returns to. That last rule is what keeps it from being a
+   dashboard: the badges are an answer to picking a tool up, not furniture.
+
+   The disc carries the red and the glyph stays the near-white every mark on
+   this layer is drawn in. The other way round - a dark bang on the dark disc -
+   was tried on paper and does not read at 24px over grime.
+   --------------------------------------------------------------------------- */
+
+.clean-ring {
+  position: absolute;
+  right: 3px;
+  top: 3px;
+  width: 24px;
+  height: 24px;
+  overflow: visible;
+  transform-origin: 100% 0;
+  opacity: 0;
+  transition: opacity 260ms var(--clean-ease);
+  pointer-events: none;
+}
+
+.clean-ring.is-up { opacity: 1; }
+
+.clean-ring .ring-bg {
+  fill: rgb(20 20 18 / 0.35);
+  stroke: rgb(250 250 248 / 0.3);
+  stroke-width: 2;
+  transition: fill 260ms var(--clean-ease);
+}
+
+.clean-ring .ring-fg {
+  fill: none;
+  stroke: rgb(250 250 248 / 0.92);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 12px 12px;
+  transition: stroke-dashoffset 160ms linear;
+}
+
+/* Both glyphs are held back by their own length and drawn on, rather than
+   appearing - which is why each carries a dasharray and neither is hidden. The
+   bang's is the stem, the gap and the dot together. */
+.clean-ring .ring-tick,
+.clean-ring .ring-bang {
+  fill: none;
+  stroke: rgb(250 250 248 / 0.95);
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.clean-ring .ring-tick {
+  stroke-dasharray: 14;
+  stroke-dashoffset: 14;
+}
+
+.clean-ring .ring-bang {
+  stroke-dasharray: 7;
+  stroke-dashoffset: 7;
+}
+
+/* Wanted here: the disc goes red and the bang draws on. The arc stays white
+   and keeps closing, so the circle completing is legible against it. */
+.clean-ring.is-want .ring-bg { fill: var(--danger); }
+.clean-ring.is-want .ring-bang {
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset var(--clean-travel) var(--clean-ease);
+}
+
+/* Nothing left: the ring closes into a check. */
+.clean-ring.is-done .ring-fg { opacity: 0; }
+.clean-ring.is-done .ring-tick {
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset var(--clean-travel) var(--clean-ease);
+}
+
+/* One shadow for every strand at once, on the sheet they share. A web is pale
+   and so is the board: without the shadow under it, it is a web only over a
+   dark card and nothing at all over the paper between them, which is exactly
+   where webs hang. */
+.clean-webs {
+  position: absolute;
+  overflow: visible;
+  filter: drop-shadow(0 1.5px 1px rgb(30 26 20 / 0.45));
+}
+
+.clean-web {
+  fill: none;
+  stroke: rgb(250 249 245 / 0.86);
+  stroke-width: 1.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* What leaving looks like, for a washed-off crust and a swept web alike.
+   450ms is what clean.ts waits before it removes the node. */
+.clean-gone {
+  animation: clean-gone var(--clean-leave) var(--clean-ease) forwards;
+  pointer-events: none;
+}
+
+/* Fades where it lies. It used to swell on the way out, which is right for a
+   bubble and wrong for a crust: the last of the mud growing as it leaves reads
+   as the mess coming back. */
+@keyframes clean-gone {
+  to { opacity: 0; }
+}
+
+/* A card that just came clean. The light is the smaller half of it now - the
+   card itself waking up is the event, and a full-strength sweep over a card
+   that is also moving is two things happening to one card. */
+.clean-card.is-clean::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg,
+    transparent 38%,
+    rgb(255 255 255 / 0.35) 50%,
+    transparent 62%);
+  animation: clean-shine var(--clean-shine) var(--clean-ease) forwards;
+  pointer-events: none;
+}
+
+/* The card wakes up: the real item does exactly what it does under the pointer,
+   and the dirt layer's box - which is carrying the light above - goes with it,
+   or the light slides across a card that is lifting away from underneath it.
+
+   The tokens and not a transform of our own, so the whimsy dial decides how much
+   a card moves. At Harsh --lift-hover is 0 and --grow-hover is 1 and nothing
+   moves at all, which is that tier working rather than this failing.
+   --lift-hover unmultiplied is the number items.css arrives at: its --lift is
+   divided by --iz and then multiplied by it again in `translate`. */
+:root.is-cleaning .item.is-woken {
+  --lift: calc(var(--lift-hover) / var(--iz));
+  --grow: var(--grow-hover);
+}
+
+.clean-card {
+  transition: translate var(--dur-base) var(--ease-back),
+    scale var(--dur-base) var(--ease-back);
+}
+
+.clean-card.is-woken {
+  translate: 0 var(--lift-hover);
+  scale: var(--grow-hover);
+}
+
+@keyframes clean-shine {
+  from { transform: translateX(-120%); }
+  to { transform: translateX(120%); opacity: 0; }
+}
+
+/* ---------------------------------------------------------------------------
+   The glass
+
+   A sheet inside the viewport element that every pointer lands on. Inside it,
+   rather than over the whole page, so a wheel this does not handle still
+   bubbles to canvas/input.ts and zooms - the camera stays free.
+   --------------------------------------------------------------------------- */
+
+.clean-catch {
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-overlay);
+  /* One finger cleans; the browser must not also decide it was a scroll. */
+  touch-action: none;
+  /* With a tool in hand the tool is drawn under the pointer instead. With
+     nothing in hand the ordinary grab cursor is right, because with nothing in
+     hand the only thing a press can do is move the board. */
+  cursor: grab;
+}
+
+/* The room goes a little quiet around the edges while the mode is up. It is the
+   only thing here that says "somewhere else" rather than "the app, with dirt on
+   it", and it costs one gradient that never repaints. */
+.clean-catch::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 46%,
+    transparent 55%,
+    color-mix(in srgb, var(--ink) 16%, transparent) 100%);
+  pointer-events: none;
+  animation: clean-dusk 900ms var(--clean-ease) both;
+}
+
+@keyframes clean-dusk {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* A tool is out: the pointer goes away and the drawing takes its place. Space
+   is held: the next press moves the board, so the pointer comes back and the
+   tool is faded out - said before the drag rather than during it, which is the
+   whole point of a held modifier. */
+.clean-catch.has-tool { cursor: none; }
+.clean-catch.can-pan { cursor: grab; }
+.clean-catch.is-panning { cursor: grabbing; }
+
+/* The jet's mist and the flecks it throws off. One canvas the size of the
+   viewport, inside the glass so it pans with nothing and stays where the hand
+   is - the particles are in screen space by design. */
+.clean-mist {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* ---------------------------------------------------------------------------
+   The tool in hand
+
+   On the body rather than inside the glass: the glass opens a stacking context
+   at --z-overlay, and a tool carried over the bar has to be drawn on top of the
+   bar, which is two rungs above that. 56px, and its own illustration - a 16px
+   glyph blown up three and a half times is why the first pass never felt held.
+   --------------------------------------------------------------------------- */
+
+.clean-cursor {
+  position: fixed;
+  left: var(--clean-x, -200px);
+  top: var(--clean-y, -200px);
+  /* CURSOR_PX in clean.ts is this number. */
+  width: 64px;
+  height: 64px;
+  /* Centred on the point with a margin and not with translate(-50%, -50%),
+     because `transform` is the one slot the flights animate. A keyframe replaces
+     the whole property, so a base transform here means every keyframe has to
+     repeat it exactly - and the one that did not is why a tool flying home
+     landed beside its slot rather than in it. Half of 64. */
+  margin: -32px 0 0 -32px;
+  /* Two shadows: a tight one that seats the tool and a wide soft one that lifts
+     it off the board. One alone reads as a sticker or as a smudge. */
+  filter: drop-shadow(0 1px 1px color-mix(in srgb, var(--ink) 30%, transparent))
+    drop-shadow(0 8px 10px color-mix(in srgb, var(--ink) 24%, transparent));
+  transition: opacity 160ms var(--clean-ease);
+  pointer-events: none;
+  z-index: calc(var(--z-overlay) + 3);
+}
+
+.clean-cursor[hidden] { display: none; }
+
+/* Shifted so the tool's working end is under the pointer and the rest of it
+   trails down and to the right, the way a hand holds it. clean.ts writes the two
+   offsets per tool (TIP there). */
+.clean-cursor svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  transform: translate(var(--clean-tip-x, 0px), var(--clean-tip-y, 0px));
+  transition: transform var(--clean-travel) var(--clean-ease);
+}
+
+/* A finger covers the thing it is working on, so the drawing steps out from
+   under it. The point itself still bites where the finger is. */
+.clean-cursor.is-touch svg {
+  transform: translate(calc(var(--clean-tip-x, 0px) - 36px), calc(var(--clean-tip-y, 0px) - 36px));
+}
+
+/* A tool flying home is centred on its path, not hung from its tip. */
+.clean-cursor.is-ghost svg { transform: none; }
+
+/* Over something this tool cannot do anything with. Dimmed rather than swapped
+   for a "no" symbol: the tool is still the tool, it just has nothing here. */
+.clean-cursor.is-idle { opacity: 0.4; }
+.clean-cursor.is-hidden { opacity: 0; }
+
+/* The tilt. clean.ts writes the rotation as an attribute on this group; the
+   transition is what turns a jump per pointer event into weight. */
+.clean-spin { transition: transform 180ms var(--clean-ease); }
+
+/* ---------------------------------------------------------------------------
+   The tank
+
+   A bar standing beside the washer, and only beside the washer. It was a slot
+   drawn into the gun's body to begin with, which was wrong twice over: it turned
+   with the tool's tilt, so the level had to be read at an angle, and it was six
+   pixels of a drawing somebody is holding while looking at the card under it.
+   Outside the SVG, so the lean does not reach it.
+   --------------------------------------------------------------------------- */
+
+/* To the *left* of the gun, beside its grip, where a tank hangs - and not to
+   the right, where the lance is.
+
+   It follows the drawing rather than the box. The tool is hung from its working
+   end (--clean-tip-*, written per tool in clean.ts), so what is drawn sits well
+   off-centre inside the 64px host: the washer is pushed some seventeen pixels
+   right and twenty-four down, and the svg draws past its box. A bar placed
+   against the box was therefore placed against nothing in particular, and for
+   the one tool shifted furthest it landed straight on the lance. Tracking the
+   same two offsets keeps the gap to the drawing the same whatever is held. */
+.clean-tank {
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  width: 8px;
+  height: 46px;
+  margin: -23px 10px 0 0;
+  translate: var(--clean-tip-x, 0px) var(--clean-tip-y, 0px);
+  transition: translate var(--clean-travel) var(--clean-ease);
+  border-radius: 4px;
+  background: var(--paper-3);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.3), 0 1px 3px rgb(0 0 0 / 0.35);
+  overflow: hidden;
+  display: none;
+}
+
+.clean-cursor[data-tool="washer"] .clean-tank { display: block; }
+
+/* The washer's own pigment, not a water blue: blue is a colour this app has no
+   token for, and a level reads as a level in any colour. Scaled rather than
+   sized, so the sixty writes a second it takes are the compositor's. */
+.clean-tank-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: 4px;
+  background: var(--accent);
+  transform-origin: 50% 100%;
+  transition: transform 120ms linear;
+}
+
+/* A finger covers the tool, so the drawing steps out from under it - and the
+   bar goes with the drawing, since it is the tool's reading and not the point's.
+   The same offset as the svg above. */
+.clean-cursor.is-touch .clean-tank {
+  translate: calc(var(--clean-tip-x, 0px) - 36px) calc(var(--clean-tip-y, 0px) - 36px);
+}
+
+/* There is no footprint ring. The tool's own drawing is where it bites, and a
+   circle around it said the same thing twice while sitting between the hand and
+   the grime it was there to reveal. */
+
+/* A piece on its way into the bin. Its own fixed node, so it can cross from the
+   hand to the bar without belonging to either. */
+.clean-fly {
+  position: fixed;
+  width: 56px;
+  height: 56px;
+  overflow: visible;
+  pointer-events: none;
+  z-index: calc(var(--z-overlay) + 3);
+}
+
+/* What is said when the board is spotless. It arrives and it stays: there is no
+   timer anywhere in the ending, and the board is there to be looked at. */
+.clean-line {
+  position: absolute;
+  left: 50%;
+  top: 44%;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-display, serif);
+  font-size: clamp(1.4rem, 3.4vw, 2.4rem);
+  color: var(--ink, #2b2b28);
+  text-align: center;
+  text-wrap: balance;
+  opacity: 0;
+  animation: clean-said 1200ms var(--clean-ease) 400ms forwards;
+  pointer-events: none;
+}
+
+@keyframes clean-said {
+  to { opacity: 1; }
+}
+
+/* And the light that goes across the whole board behind it. */
+:root.is-clean-done .clean-catch::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg,
+    transparent 40%,
+    rgb(255 255 255 / 0.4) 50%,
+    transparent 60%);
+  animation: clean-sweep var(--clean-sweep) var(--clean-ease) forwards;
+  pointer-events: none;
+}
+
+@keyframes clean-sweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+
+/* ---------------------------------------------------------------------------
+   The bar
+
+   Centred on the window rather than inside --foot-left / --foot-right. Those
+   insets exist to keep a bar clear of the bin row and the zoom cluster, and in
+   this mode both of those are hidden - reserving room for furniture that is not
+   drawn would push the bar off-centre for nothing.
+   --------------------------------------------------------------------------- */
+
+/* Above the glass, not at --z-chrome with the rest of the furniture. #viewport
+   is fixed with z-index:auto, so it opens no stacking context and the sheet
+   inside it at --z-overlay competes directly with anything on the page below
+   that. At chrome height the glass covered the bar and swallowed every press on
+   it - the bar looked right and did nothing. */
+#clean-bar {
+  position: fixed;
+  z-index: calc(var(--z-overlay) + 2);
+  bottom: max(18px, env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: calc(var(--leaf) * 1.4);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  /* A tray the tools rest in, so it sits a little heavier on the board than a
+     toolbar does: a contact shadow and a long soft one. */
+  box-shadow: 0 1px 1px color-mix(in srgb, var(--ink) 12%, transparent),
+    0 14px 30px -10px color-mix(in srgb, var(--ink) 36%, transparent);
+  max-width: calc(100vw - 24px);
+  animation: clean-bar-in 520ms var(--clean-ease) both;
+}
+
+#clean-bar[hidden] { display: none; }
+
+/* It rises into place when the mode opens. `display` flipping from none is
+   what restarts it, so this costs no script. */
+@keyframes clean-bar-in {
+  from { opacity: 0; transform: translate(-50%, 18px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+#clean-tools,
+#clean-confirm,
+#clean-end {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#clean-tools[hidden],
+#clean-confirm[hidden],
+#clean-end[hidden] { display: none; }
+
+/* The same reactions as #toolbar's buttons - paper-2 on hover, paper-3 pressed -
+   because this is the app's toolbar for the length of the mode and a second
+   vocabulary of hovers would say it is something else.
+   A tool is a column: illustration over name. */
+#clean-bar button {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 76px;
+  padding: 6px 2px 6px;
+  border: 0;
+  border-radius: var(--leaf);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+  transition: background-color 200ms var(--clean-ease);
+}
+
+/* The tools and the bin are drawn in the stickers' line language: a paper body,
+   an inked outline, one band of pigment. A <use> renders in a shadow tree no
+   rule can reach, so the three colours go in as the three paints that inherit
+   through one - `fill` is the body, `color` is the line (the symbols say
+   currentColor), and `stroke` is the pigment, taken by the few shapes in each
+   symbol that set no stroke of their own. All three are palette tokens, so the
+   tools change with the board's palette the way its stickers do. */
+#clean-bar .ico,
+.clean-cursor svg {
+  fill: var(--sticker-body);
+  color: var(--ink);
+  stroke: var(--accent);
+}
+
+#clean-bar [data-clean="glove"] .ico,
+.clean-cursor[data-tool="glove"] svg { stroke: var(--accent-warm); }
+
+#clean-bar [data-clean="duster"] .ico,
+.clean-cursor[data-tool="duster"] svg { stroke: var(--accent-deep); }
+
+#clean-can .ico { stroke: var(--rule-2); }
+
+/* A tool lifts a little towards the hand that is about to take it. */
+#clean-tools button[aria-pressed] .ico {
+  transition: transform var(--clean-travel) var(--clean-ease), opacity var(--clean-travel) var(--clean-ease),
+    filter var(--clean-travel) var(--clean-ease);
+  filter: drop-shadow(0 2px 2px color-mix(in srgb, var(--ink) 22%, transparent));
+}
+
+#clean-tools button[aria-pressed]:not(.is-out):hover .ico { transform: translateY(-3px) rotate(-4deg); }
+
+#clean-bar button[hidden] { display: none; }
+
+#clean-bar button span {
+  font-size: 0.68rem;
+  line-height: 1;
+  letter-spacing: 0.01em;
+}
+
+#clean-bar button:hover,
+#clean-bar button:focus-visible { background: var(--paper-2); color: var(--accent-deep); }
+#clean-bar button:active { background: var(--paper-3); color: var(--accent-deep); }
+
+/* A tool that is in the hand. The slot keeps its width - the row must not jump
+   when a tool leaves it - and shows where the tool went from: a dashed outline
+   of the space it was in, and nothing else. */
+#clean-bar button.is-out {
+  background: none;
+  cursor: default;
+}
+
+/* What is left in the slot is the tool's own outline pressed into the tray - the
+   drawing itself, flattened to a faint grey - so the slot says which tool goes
+   back there. A dashed box said only that something was missing. */
+#clean-bar button.is-out .ico {
+  opacity: 0.16;
+  filter: grayscale(1) brightness(0.4);
+}
+
+#clean-bar button.is-out span { opacity: 0.45; }
+
+#clean-bar button.is-out {
+  background: var(--paper-2);
+  box-shadow: inset 0 1px 3px color-mix(in srgb, var(--ink) 14%, transparent);
+}
+
+#clean-bar .ico { width: 42px; height: 42px; overflow: visible; }
+
+/* The count and the way out, in the top corner, away from the tray.
+   The tray at the foot is for what is in the hand; these two are the session's
+   and not the hand's, and a way out standing in the row of tools read as a
+   fourth tool. The ✕ is the app's ordinary button - .btn-row's paper, hairline
+   and leaf, and its lift, grow and press off the whimsy dial - because leaving
+   is an ordinary thing to do and the mode has no other buttons like it. */
+#clean-top {
+  position: fixed;
+  z-index: calc(var(--z-overlay) + 2);
+  top: max(14px, env(safe-area-inset-top));
+  right: max(14px, env(safe-area-inset-right));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  animation: clean-top-in 520ms var(--clean-ease) both;
+}
+
+#clean-top[hidden] { display: none; }
+
+/* Down from the edge it is pinned to, the way the bar comes up from its own. */
+@keyframes clean-top-in {
+  from { opacity: 0; translate: 0 -12px; }
+}
+
+#clean-count {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  min-width: 5ch;
+  padding: 0 10px;
+  justify-content: center;
+  border: var(--hairline) solid var(--rule);
+  border-radius: var(--leaf);
+  background: var(--paper);
+  box-shadow: 0 1px 1px color-mix(in srgb, var(--ink) 12%, transparent);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+  color: var(--ink-2);
+}
+
+#clean-top .clean-x {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  background: var(--paper);
+  box-shadow: 0 1px 1px color-mix(in srgb, var(--ink) 12%, transparent);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease),
+    border-color var(--dur-fast) var(--ease),
+    transform var(--dur-base) var(--ease-back),
+    color var(--dur-fast) var(--ease);
+}
+
+@media (hover: hover) {
+  #clean-top .clean-x:hover {
+    background: var(--paper-2);
+    border-color: var(--accent-text);
+    color: var(--accent-deep);
+    transform: translateY(var(--btn-lift)) scale(var(--btn-grow));
+  }
+}
+
+#clean-top .clean-x:focus-visible { background: var(--paper-2); color: var(--accent-deep); }
+
+#clean-top .clean-x:active {
+  transform: scale(var(--btn-press));
+  background: var(--paper-3);
+  /* Faster curve on press - the hover's spring is too slow for a click. */
+  transition: transform var(--dur-fast) var(--ease-in), background var(--dur-fast) var(--ease);
+}
+
+/* The close glyph is one of the app's own icons and is drawn as they are. */
+#clean-top .clean-x .ico {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+}
+
+/* The bin, immediately left of the glove, and only there while the glove is in
+   hand - a jet and a duster have nothing to throw away. Bigger than a button's
+   glyph because it is a target you throw at with a full hand.
+
+   In the bar's flow, at the left end, and the bar grows to take it: 200ms of
+   width and light together, so the plate arrives by being made room for rather
+   than by appearing over something. It cannot use `hidden` - display:none has
+   nothing to animate from - so the empty state is a zero width the glyph is
+   clipped to, and the negative margin cancels the flex gap a zero-width item
+   would still be holding open. `inert` is what keeps a button nobody can see
+   out of the tab order; clean.ts sets both together.
+
+   Every declaration here is under `#clean-bar #clean-can` and not `#clean-can`
+   alone: the tool rule above is `#clean-bar button`, which carries an element
+   name and so outranks a lone id. The bin spent a version reading
+   `position: relative` off that rule while claiming to be absolute, and landed
+   a bar-width off the screen. */
+#clean-bar #clean-can {
+  width: 0;
+  min-width: 0;
+  margin: 0 -8px 0 0;
+  padding: 4px 0;
+  overflow: hidden;
+  opacity: 0;
+  border-right: var(--hairline) solid var(--rule);
+  border-radius: 0;
+  transition: width 200ms var(--clean-ease), margin-right 200ms var(--clean-ease),
+    opacity 200ms var(--clean-ease), transform 140ms var(--clean-ease),
+    background-color 200ms var(--clean-ease);
+}
+
+#clean-bar #clean-can.is-shown {
+  width: 72px;
+  margin-right: 2px;
+  opacity: 1;
+}
+
+#clean-can .ico { width: 54px; height: 54px; overflow: visible; }
+
+/* The drawing grows with the room it is being given, rather than being revealed
+   through a widening slot. A 54px bin centred in a 20px box is clipped to a
+   vertical slice of itself, and a slice of a bin looks like a drawing that has
+   gone wrong rather than like a bin arriving. */
+#clean-bar #clean-can .ico { transition: scale 200ms var(--clean-ease); }
+#clean-bar #clean-can:not(.is-shown) .ico { scale: 0.4; }
+
+/* Hinged at the left end of the rim, in the symbol's own 48 box. */
+#clean-can .can-lid {
+  transform-origin: 8px 19px;
+  transition: transform var(--clean-travel) var(--clean-ease);
+}
+
+#clean-can.is-open .can-lid { transform: rotate(-54deg) translate(-1px, -1px); }
+
+/* Something landed in it. A pixel or two of settle, and no more. The transition
+   that carries it is in the block above, with the rest of them. */
+#clean-can.is-hit { transform: translateY(1.5px); }
+
+/* A hand that cannot let go asked what to do with what is in it. This is the
+   answer, and there is no other: the bin glows for a second. */
+#clean-can.is-asking {
+  background: var(--paper-2);
+  /* clean.ts holds the class for a second; this ends just inside that. */
+  animation: clean-ask 960ms var(--clean-ease);
+}
+
+/* One slow breath of light, in and out. A hard ring that snaps on is an alarm. */
+@keyframes clean-ask {
+  0%, 100% { box-shadow: 0 0 0 0 transparent; }
+  45% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-warm) 55%, transparent),
+      0 0 22px color-mix(in srgb, var(--accent-warm) 45%, transparent);
+  }
+}
+
+/* The ✕ asks before it acts, in the bar rather than in a dialog: a dialog would
+   take the top layer and put a scrim over the board somebody is looking at. */
+#clean-confirm span {
+  padding: 0 6px;
+  font-size: 0.88rem;
+  color: var(--ink);
+}
+
+#clean-confirm button,
+#clean-end button {
+  width: auto;
+  padding: 0 14px;
+  height: 34px;
+  font: inherit;
+  font-size: 0.85rem;
+  background: var(--paper-2);
+}
+
+#clean-confirm button:hover,
+#clean-end button:hover { background: var(--paper-3); }
+
+/* A narrow screen. Three tools fit where six did not, so there is one
+   breakpoint rather than two and the column never has to shrink to a glyph. */
+@media (width < 560px) {
+  #clean-bar { gap: 2px; padding: 5px 6px; }
+  #clean-bar button { width: 60px; }
+  #clean-bar button span { font-size: 0.62rem; }
+  #clean-bar .ico { width: 34px; height: 34px; }
+  #clean-can .ico { width: 44px; height: 44px; }
+  /* The gap is 2px here, so that is what the empty bin has to give back. */
+  #clean-bar #clean-can { margin-right: -2px; }
+  #clean-bar #clean-can.is-shown { width: 56px; margin-right: 2px; }
+  #clean-top {
+    top: max(10px, env(safe-area-inset-top));
+    right: max(10px, env(safe-area-inset-right));
+    gap: 6px;
+  }
+  /* The glyph alone. The button keeps its aria-label, so the name is still
+     there for anything that reads rather than looks. */
+  #clean-top .clean-x span { display: none; }
+  #clean-top .clean-x { padding: 0 8px; }
+  #clean-count { padding: 0 8px; font-size: 0.75rem; }
+}
+
+/* A browser with no color-mix() drops a whole declaration that uses it, which
+   here would be every shadow in the mode. The same shadows again, from the
+   channel tokens. */
+@supports not (color: color-mix(in srgb, red, blue)) {
+  .clean-cursor {
+    filter: drop-shadow(0 1px 1px rgb(var(--ink-c) / 30%)) drop-shadow(0 8px 10px rgb(var(--ink-c) / 24%));
+  }
+  .clean-catch::before {
+    background: radial-gradient(ellipse at 50% 46%, transparent 55%, rgb(var(--ink-c) / 16%) 100%);
+  }
+  #clean-bar {
+    box-shadow: 0 1px 1px rgb(var(--ink-c) / 12%), 0 14px 30px -10px rgb(var(--ink-c) / 36%);
+  }
+  #clean-tools button[aria-pressed] .ico { filter: drop-shadow(0 2px 2px rgb(var(--ink-c) / 22%)); }
+  #clean-bar button.is-out { box-shadow: inset 0 1px 3px rgb(var(--ink-c) / 14%); }
+  /* The breath of light is a keyframe, and a keyframe cannot be conditional on
+     its own contents: a steady ring for the second instead. */
+  #clean-can.is-asking {
+    animation: none;
+    box-shadow: 0 0 0 3px rgb(var(--accent-warm-c) / 55%);
+  }
+}

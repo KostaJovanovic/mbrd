@@ -1057,6 +1057,16 @@ type InputCommands = {
   // and never bins a card. Answers whether it took the key.
   tourEditing?(): boolean,
   tourEditDelete?(): boolean,
+  // The konami easter egg (ui/clean/), reached only through here because this
+  // module may not import ui/. cleanFeed takes every key and answers true on
+  // the one that opened it; the other three are how the mode, once up, owns
+  // the keyboard. cleanEscape is a chain rather than a leave - it puts the tool
+  // down first, and asks before it ever shuts the mode.
+  cleanFeed?(key: string): boolean,
+  cleanActive?(): boolean,
+  cleanKey?(key: string): boolean,
+  cleanSpace?(down: boolean): void,
+  cleanEscape?(): boolean,
 };
 
 export function initInput(vp: Viewport, cmds: InputCommands): void {
@@ -2991,10 +3001,34 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       return;
     }
     if (shortcutsSuppressed(e.defaultPrevented, overlayOwnsKeyboard())) return;
+
+    // While it is up, the mode owns the keyboard: digits pick a tool, Escape
+    // walks its own chain (here rather than in the one below), and nothing else
+    // reaches a board that is meant to be frozen.
+    if (cmds.cleanActive?.()) {
+      if (e.key === 'Escape') { if (cmds.cleanEscape?.()) markClosed(e); return; }
+      // Space is hold-to-pan on a board and stays hold-to-pan in there, which
+      // is the one thing the mode borrows rather than reinventing.
+      if (e.code === 'Space') { cmds.cleanSpace?.(true); e.preventDefault(); return; }
+      if (cmds.cleanKey?.(e.key)) e.preventDefault();
+      return;
+    }
+
     const mod = e.ctrlKey || e.metaKey;
     // While the Timeline plays only the keys that move the view, Escape, and
     // Ctrl+S, which saves the board as it stands in the replay.
     if (timelinePlaying() && (mod ? e.key.toLowerCase() !== 's' : !(VIEW_KEYS.has(e.key) || e.code === 'Space'))) return;
+
+    // The konami code, one key at a time. The matcher is pure and lives in
+    // ui/clean/, which this module may not import - so it is reached through
+    // cmds, like everything else over the layering line.
+    //
+    // Below the guard above on purpose. A replay drives the board on its own
+    // clock and a tour drives the camera on another; the egg freezes the cards
+    // and takes the screen, and two of those running at once is three owners of
+    // one board. cleanFeed refuses in both, and answers true only on the press
+    // that actually opened something.
+    if (cmds.cleanFeed?.(e.key)) { e.preventDefault(); return; }
 
     // Let a focused control have its own keys. The shortcuts with a modifier
     // are still ours - Ctrl+S means save wherever the focus happens to be.
@@ -3069,6 +3103,8 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       case '+': case '=': vp.zoomBy(1.25, zoomMs()); break;
       case '-': case '_': vp.zoomBy(1 / 1.25, zoomMs()); break;
       case 'Escape': {
+        // The cleaning simulator is not in this chain: while it is up it owns
+        // the keyboard outright and answers Escape above, before the switch.
         // A running tour first: Escape is the way out of every temporary state
         // in this app, and while the bar is up the tour is the outermost of them.
         // It answers false when there is none, so the ordinary three still run.
@@ -3105,6 +3141,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   });
 
   addEventListener('keyup', e => {
+    if (e.code === 'Space') cmds.cleanSpace?.(false);
     if (e.code === 'Space') { spaceDown = false; setPanCursor(); }
     if (e.key === 'Control') ctrlDown = false;
   });

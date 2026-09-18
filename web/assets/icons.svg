@@ -683,4 +683,129 @@
   <rect x="6.2" y="2.2" width="3.6" height="3" rx="1"/>
 </symbol>
 
+<!-- ═════ The cleaning tools (ui/clean/) ═════
+
+     The one place in this file drawn to a 48 box and in colour, and the reason
+     is that these are not icons. Three of them are the thing in your hand for
+     the length of the mode, drawn at 56px under the pointer with a load piled
+     in them or a gauge running down them; the fourth is a bin you throw at.
+     A 16px monochrome glyph scaled up three and a half times is a blurred
+     suggestion of a tool, which is exactly what the first pass shipped and
+     exactly what made none of the six feel held.
+
+     So: fills, their own colours, and enough shape to survive being the
+     largest thing on the screen. The bar draws the same four small, where they
+     still read because the silhouettes differ in outline and not in detail.
+     tests/icons.test.js knows about the box by name - see CLEAN_BOX there.
+
+     clean.ts draws three things over these, in the cursor's own SVG and in the
+     same coordinates: the gauge into the washer's slot, the wrap around the
+     duster's plume, and the glove's load above its cuff. Moving any of those
+     shapes means moving the numbers in clean.ts with them. -->
+
+<!-- Palm forward, four fingers and a thumb, cuff at the wrist. Rubber yellow,
+     because a glove that is the colour of the ink reads as a mitten and the
+     one thing it has to say from across a board is "this is a hand". -->
+<!-- Every tool below is drawn the way a right hand holds it: working end up and
+     to the left, handle down and to the right, lit from the upper left. The
+     working end is what clean.ts puts under the pointer (TIP there), so the
+     tool never sits on top of the thing it is cleaning. Turning one of these
+     means moving its TIP. -->
+<symbol id="i-clean-glove" viewBox="0 0 48 48">
+  <g transform="rotate(-28 24 26)" stroke-linejoin="round" stroke-linecap="round">
+    <path stroke="none" d="M15.4 35h16.2l1.9 7.6a1.7 1.7 0 0 1-1.7 2.1H15.2a1.7 1.7 0 0 1-1.7-2.1z"/>
+    <path fill="none" stroke-width="3.4" stroke-linecap="butt" d="M14.4 40.4h18.4"/>
+    <path fill="none" stroke="currentColor" stroke-width="2.2"
+          d="M15.4 35h16.2l1.9 7.6a1.7 1.7 0 0 1-1.7 2.1H15.2a1.7 1.7 0 0 1-1.7-2.1z"/>
+    <path stroke="currentColor" stroke-width="2.2"
+          d="M13.4 23.2c-2.4-2.6-5.4-3.4-7.2-1.8-1.7 1.6-1.2 4.2.8 6.2l6.6 6.2z"/>
+    <path stroke="currentColor" stroke-width="2.2"
+          d="M13.2 22V11.3a2.3 2.3 0 0 1 4.6 0V19h.7V7.8a2.3 2.3 0 0 1 4.6 0V19h.8V8.8a2.3 2.3 0 0 1 4.6 0v10.6h.7v-6.6a2.3 2.3 0 0 1 4.6 0V28c0 4-2 7-5 8.5H17c-2.6-1.6-3.8-4-3.8-7z"/>
+    <path fill="none" stroke="currentColor" stroke-width="1.6" d="M17.4 29q5.6 3 11.6-1"/>
+  </g>
+</symbol>
+
+<!-- The gun: grip, body, lance, and the fan coming off the tip. The fan stays
+     in the drawing even though the mode throws real mist, because in the bar
+     there is no mist and a lance alone is a stick. The pale slot in the body is
+     where the tank gauge is drawn. -->
+<!-- Drawn pointing left and turned 45 degrees as a whole, so every number below
+     is in the gun's own frame. The glass tank on its back is where clean.ts
+     draws the gauge, inside a group carrying this same turn. -->
+<symbol id="i-clean-washer" viewBox="0 0 48 48">
+  <g transform="rotate(45 24 24)" stroke-linejoin="round" stroke-linecap="round">
+    <path fill="none" stroke="currentColor" stroke-width="2.4" d="M34.6 40c.8 4.6 5.4 5.8 8.6 3"/>
+    <path stroke="currentColor" stroke-width="1.8" d="M6 18.4h17v3.2H6z"/>
+    <path fill="none" stroke-width="5" stroke-linecap="butt" d="M1.6 20h5"/>
+    <path fill="none" stroke="currentColor" stroke-width="1.8" d="M1.6 17.5h5v5h-5z"/>
+    <path stroke="currentColor" stroke-width="1.8" d="M31 5.6h4a2 2 0 0 1 2 2v7.6h-8V7.6a2 2 0 0 1 2-2z"/>
+    <path fill="currentColor" stroke="none" d="M31.2 3.2h3.6v2.4h-3.6z"/>
+    <path fill="currentColor" stroke="currentColor" stroke-width="1.6"
+          d="M30.5 26h7.2l2.2 13.4a2 2 0 0 1-2 2.3h-4.4a2 2 0 0 1-2-1.6z"/>
+    <path fill="none" stroke="currentColor" stroke-width="1.8" d="M30 26.6c-2.6.8-3.8 3.2-3 6.2l3.6 1.4"/>
+    <path stroke="currentColor" stroke-width="2.2"
+          d="M24 14.6h13.6a3.4 3.4 0 0 1 3.4 3.4v5.2a3.4 3.4 0 0 1-3.4 3.4H27l-3-2.6z"/>
+    <path fill="none" stroke-width="3" d="M28.8 20.6h8"/>
+  </g>
+</symbol>
+
+<!-- Handle, ferrule, plume. Three feathers rather than a cloud: a duster and a
+     brush are the same object until the head is obviously soft, and soft at
+     this size means separate strands with daylight between them. -->
+<!-- A feather duster: a fan of dark feathers, a fan of pale ones laid over the
+     gaps between them, a ferrule and a turned handle with a loop to hang it by.
+     Two fans rather than one so the head has depth and a ragged soft edge. -->
+<symbol id="i-clean-duster" viewBox="0 0 48 48">
+  <g transform="rotate(-40 24 24)" stroke-linejoin="round" stroke-linecap="round">
+    <path stroke="none" d="M22.3 28h3.4l.8 13.6a2.5 2.5 0 0 1-5 0z"/>
+    <path fill="none" stroke-width="3" stroke-linecap="butt" d="M21.4 37.600h5.200"/>
+    <path fill="none" stroke="currentColor" stroke-width="2" d="M22.3 28h3.4l.8 13.6a2.5 2.5 0 0 1-5 0z"/>
+    <g transform="translate(24 25.5)" stroke="currentColor" stroke-width="1.7">
+      <path transform="rotate(-84)" d="M0 0C3.4-4.5 3.4-12 0-15-3.4-12-3.4-4.5 0 0z"/>
+      <path transform="rotate(-56)" d="M0 0C3.4-4.5 3.4-12 0-16-3.4-12-3.4-4.5 0 0z"/>
+      <path transform="rotate(-28)" d="M0 0C3.4-4.5 3.4-13 0-17-3.4-13-3.4-4.5 0 0z"/>
+      <path d="M0 0C3.4-4.5 3.4-13 0-17.6-3.4-13-3.4-4.5 0 0z"/>
+      <path transform="rotate(28)" d="M0 0C3.4-4.5 3.4-13 0-17-3.4-13-3.4-4.5 0 0z"/>
+      <path transform="rotate(56)" d="M0 0C3.4-4.5 3.4-12 0-16-3.4-12-3.4-4.5 0 0z"/>
+      <path transform="rotate(84)" d="M0 0C3.4-4.5 3.4-12 0-15-3.4-12-3.4-4.5 0 0z"/>
+    </g>
+    <!-- The spines, in the tool's accent: no stroke of their own, so they take
+         the one the page hands down. -->
+    <g transform="translate(24 25.5)" fill="none" stroke-width="1.8">
+      <path transform="rotate(-84)" d="M0-5v-6"/>
+      <path transform="rotate(-56)" d="M0-5v-7"/>
+      <path transform="rotate(-28)" d="M0-5v-8"/>
+      <path d="M0-5v-8.600"/>
+      <path transform="rotate(28)" d="M0-5v-8"/>
+      <path transform="rotate(56)" d="M0-5v-7"/>
+      <path transform="rotate(84)" d="M0-5v-6"/>
+    </g>
+    <path fill="currentColor" stroke="currentColor" stroke-width="1.4" d="M21.4 24h5.2l-.5 4.4h-4.2z"/>
+  </g>
+</symbol>
+
+<!-- The can, without its lid: a tapered body with three ribs. Drawn a shade
+     warmer than the chrome around it so it does not read as another button. -->
+<symbol id="i-clean-can" viewBox="0 0 48 48">
+  <g stroke-linejoin="round" stroke-linecap="round">
+    <path stroke="none" d="M10.6 17.4h26.8l-2.5 25a2.4 2.4 0 0 1-2.4 2.2h-17a2.4 2.4 0 0 1-2.4-2.2z"/>
+    <path fill="none" stroke-width="3.2" stroke-linecap="butt" d="M11 24.6h26"/>
+    <path fill="none" stroke="currentColor" stroke-width="2.2"
+          d="M10.6 17.4h26.8l-2.5 25a2.4 2.4 0 0 1-2.4 2.2h-17a2.4 2.4 0 0 1-2.4-2.2z"/>
+    <path fill="none" stroke="currentColor" stroke-width="1.6" d="M18.4 29.600l.6 10M24 29.600v10M29.600 29.600l-.6 10"/>
+    <!-- The mouth: ink, so an open lid shows somewhere for things to go. -->
+    <path fill="currentColor" stroke="currentColor" stroke-width="2.2" d="M10.6 17.400h26.800"/>
+  </g>
+</symbol>
+
+<!-- Its lid, as its own symbol so the page can hinge it: a <use> is an ordinary
+     element and can be rotated, where a shape inside a symbol is in a shadow
+     tree nothing can reach. clean.ts turns it about the left end of the rim. -->
+<symbol id="i-clean-can-lid" viewBox="0 0 48 48">
+  <g stroke="currentColor" stroke-linejoin="round" stroke-linecap="round">
+    <path fill="none" stroke-width="2" d="M20.6 10.400c0-4.400 6.800-4.400 6.800 0"/>
+    <path stroke-width="2.200" d="M7.600 17.200c0-4.200 7.200-7 16.400-7s16.400 2.800 16.400 7v1.600a1 1 0 0 1-1 1H8.600a1 1 0 0 1-1-1z"/>
+  </g>
+</symbol>
+
 </svg>

@@ -108,6 +108,7 @@
 <link rel="stylesheet" href="assets/css/sticker-pad.css">
 <link rel="stylesheet" href="assets/css/mobile.css">
 <link rel="stylesheet" href="assets/css/timeline.css">
+<link rel="stylesheet" href="assets/css/clean.css">
 <link rel="stylesheet" href="assets/css/quality.css">
 <script>
   /* Before first paint: apply the saved look - whimsy level, palette, and any
@@ -595,6 +596,69 @@
       <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-close"/></svg>
     </button>
   </div>
+</div>
+
+<!-- The cleaning bar (ui/clean/clean.ts). After #tour for the same sibling
+     reason, and it is the only chrome .is-cleaning leaves standing. Hidden
+     until the konami code opens the thing it belongs to. -->
+<div id="clean-bar" hidden>
+  <!-- The bin, then the three tools. The count and the way out are not in here
+       at all - they are in #clean-top, at the other corner.
+       The bin comes first because it belongs to the glove and the glove is
+       first, and it is *only there while the glove is in hand* - there is
+       nothing to throw away with a jet or a duster. It is in the row, and the
+       bar grows sideways to take it over 200ms (clean.css); `inert` rather
+       than `hidden` is the closed state, because display:none has nothing to
+       animate from.
+       Illustration over a name, not a glyph alone: the name is the first
+       lesson and the silhouette is what you use after that. The <span> is
+       aria-hidden because the button's own aria-label already says it.
+       A slot whose tool is in hand carries .is-out and keeps its width - see
+       clean.css. The bin and the Done button are outside #clean-tools so the
+       "Leave it dirty?" swap does not take them with it.
+       The lid is its own <use> so it can hinge: a shape inside a <symbol>
+       renders in a shadow tree and no rule in the page can reach it. -->
+  <button type="button" id="clean-can" data-clean="can" inert aria-label="Empty it into the bin" title="Empty it into the bin">
+    <svg class="ico" aria-hidden="true" viewBox="0 0 48 48">
+      <use href="assets/icons.svg#i-clean-can"/>
+      <use class="can-lid" href="assets/icons.svg#i-clean-can-lid"/>
+    </svg>
+  </button>
+  <div id="clean-tools">
+    <button type="button" data-clean="glove" aria-pressed="false" aria-label="Glove" title="Glove  1">
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-clean-glove"/></svg>
+      <span aria-hidden="true">Glove</span>
+    </button>
+    <button type="button" data-clean="washer" aria-pressed="false" aria-label="Pressure washer" title="Pressure washer  2">
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-clean-washer"/></svg>
+      <span aria-hidden="true">Washer</span>
+    </button>
+    <button type="button" data-clean="duster" aria-pressed="false" aria-label="Duster" title="Duster  3">
+      <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-clean-duster"/></svg>
+      <span aria-hidden="true">Duster</span>
+    </button>
+  </div>
+  <div id="clean-confirm" hidden>
+    <span>Leave it dirty?</span>
+    <button type="button" data-clean="leave">Leave it</button>
+    <button type="button" data-clean="stay">Keep cleaning</button>
+  </div>
+  <div id="clean-end" hidden>
+    <button type="button" data-clean="leave">Done</button>
+  </div>
+</div>
+
+<!-- How much is left, and the way out. In the opposite corner from the tray:
+     the tray is for what is in the hand, and a way out standing in the row of
+     tools read as a fourth tool. clean.ts wires its clicks through the same
+     handler as the bar's, on data-clean. After #clean-bar so no sibling rule
+     aimed at the bar loses sight of it. -->
+<div id="clean-top" hidden>
+  <span id="clean-count" role="status" aria-live="polite"></span>
+  <button type="button" class="clean-x" data-clean="close" aria-label="Stop cleaning" title="Stop cleaning  Esc">
+    <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-close"/></svg>
+    <span aria-hidden="true">Stop cleaning</span>
+  </button>
 </div>
 
 <div id="drop-overlay" hidden><div>let it fall</div></div>

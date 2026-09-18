@@ -36,6 +36,9 @@ import { close as closeSidebar, isOpen as isSidebarOpen } from './ui/sidebar.ts'
 import { closeToolbar, isOpen as isToolbarOpen, isArmed as isConnectorArmed } from './ui/toolbar.ts';
 import { openContextMenu, openAnchored, justDismissed } from './ui/menu.ts';
 import { tourEditing } from './ui/tour-edit.ts';
+import { tourActive } from './ui/tour.ts';
+import { startClean, cleanActive, cleanKey, cleanSpace, cleanEscape } from './ui/clean/clean.ts';
+import { konamiMatcher, tapMatcher } from './ui/clean/konami.ts';
 import { open as openSearch } from './ui/search.ts';
 import { toggleStickerWindow } from './ui/sticker-window.ts';
 import {
@@ -62,6 +65,12 @@ export { sharedFence };
 // linkTyped now lives beside linkURL in renderers.ts; re-exported so
 // tests/toolbar.test.js and any other caller keep importing it from here.
 export { linkTyped };
+
+/** One matcher of each for the session, at module scope so a half-typed code or
+ *  a half-drummed run of taps survives whatever rebuilds the command table.
+ *  See cleanFeed and cleanTap below. */
+const konami = konamiMatcher();
+const taps = tapMatcher();
 
 /** Structural viewport subset this file needs — view centre for "add" commands, fit() for zoom. */
 export interface CommandsViewport extends CommandViewport {
@@ -225,6 +234,32 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     ...fenceCommands(),
 
     clearData: () => armClear(),
+
+    // The easter egg behind the konami code (ui/clean/). Six entries and no
+    // markup anywhere references them, which is the whole of "hidden" here -
+    // an entry in this object carries no metadata to hide it with. Routed
+    // through cmds rather than listeners of their own so the one keydown in
+    // canvas/input.ts stays the only one in the app, and so the sidebar's tap
+    // is a command like every other thing a press in the sidebar does.
+    // Both matchers are held here rather than in input.ts because canvas/ may
+    // not import ui/. Each answers true only on the press that both completes
+    // the run and opens something - on an empty board there is nothing to
+    // clean, so the keys fall through and mean what they always did.
+    // The tour guards stay here as well as in startClean(): the matcher is fed
+    // either way, so a code typed across the end of a tour is not half-eaten.
+    cleanFeed: (key: string) =>
+      konami(key) && !tourActive() && !tourEditing() && startClean(),
+    // Seven taps on the wordmark, the way in on a phone. The sidebar is closed
+    // first: it is the whole screen at that width and the board is behind it.
+    cleanTap: () => {
+      if (!taps(performance.now())) return false;
+      closeSidebar();
+      return startClean();
+    },
+    cleanActive: () => cleanActive(),
+    cleanKey: (key: string) => cleanKey(key),
+    cleanSpace: (down: boolean) => cleanSpace(down),
+    cleanEscape: () => cleanEscape(),
 
     // Two commands (all vs selection) so each is honest about what it touches.
     // Ghosts excluded — they are about to leave and should not get slots.
