@@ -68,6 +68,21 @@ test('no comment in the sprite holds two hyphens in a row', () => {
   }
 });
 
+/**
+ * The one set drawn to a bigger box, and the only names allowed to be.
+ *
+ * The cleaning simulator's four are illustrations, not icons: three of them are
+ * the thing in the hand at 56px for the length of the mode, with a gauge and a
+ * load drawn over them, and a 16px glyph scaled three and a half times is a
+ * blur. Named here one by one rather than by prefix, so a fifth has to be
+ * argued for in this file - which is where "every symbol is one weight" is
+ * being deliberately given up.
+ */
+const CLEAN_BOX = new Set([
+  'i-clean-glove', 'i-clean-washer', 'i-clean-duster',
+  'i-clean-can', 'i-clean-can-lid',
+]);
+
 test('every symbol is drawn to the same box', () => {
   // viewBox has no CSS equivalent - a symbol drawn to a different box is
   // scaled to the wrapper's 16px and lands at a different weight.
@@ -81,8 +96,16 @@ test('every symbol is drawn to the same box', () => {
   assert.equal(symbols.length, defined.size, 'a symbol the attribute scan cannot see');
   for (const { id, box } of symbols) {
     assert.ok(id, `a symbol with no id: viewBox ${box}`);
-    assert.equal(box, '0 0 16 16', `${id} is drawn in ${box}`);
+    assert.equal(box, CLEAN_BOX.has(id) ? '0 0 48 48' : '0 0 16 16',
+      `${id} is drawn in ${box}`);
   }
+});
+
+test('the bigger box is not a door somebody walked through', () => {
+  // Every name on the exception list has to exist, or the list is a licence
+  // nobody is using and the next 48-box symbol slips in against a stale entry.
+  const stale = [...CLEAN_BOX].filter(id => !defined.has(id));
+  assert.deepEqual(stale, [], `on the 48-box list but not in the sprite: ${stale.join(', ')}`);
 });
 
 test('the sprite is in the service worker shell', () => {

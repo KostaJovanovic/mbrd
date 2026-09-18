@@ -989,7 +989,10 @@
    decision somebody made - it is exactly where they left it when the tour ends.
    #tour itself is not on the list, and neither is #toast: see presentation()
    in ui/tour.ts for both. */
-:root:is(.is-touring, .is-tour-edit) :is(
+/* .is-cleaning joins the two tour states here rather than repeating the list:
+   the cleaning simulator (ui/clean/) hides exactly the same furniture and for
+   the same reason. Its own bar is not on the list, so it stays. */
+:root:is(.is-touring, .is-tour-edit, .is-cleaning) :is(
   #menu-btn,
   #mobile-header-edit-btn,
   #mobile-find-btn,

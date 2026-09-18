@@ -434,6 +434,7 @@ function sleepLater(context) {
   if (idleTimer) clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
     idleTimer = null;
+    if (sustaining) return;
     if (context.state === "running") void context.suspend().catch(() => {
     });
   }, IDLE_MS);
@@ -508,6 +509,7 @@ function playRecipe(recipe, volume = 1) {
   if (muted()) return;
   render(recipe, volume, 0, logging ? { cue: "lab", sound: "custom" } : null);
 }
+var sustaining = 0;
 function render(recipe, volume, detune, note) {
   const say = (outcome) => {
     if (note) record(note.cue, note.sound, outcome);
