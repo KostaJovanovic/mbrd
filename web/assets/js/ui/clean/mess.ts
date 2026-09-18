@@ -2,7 +2,11 @@
 // occupancy grid a jet clears, the pressure tank, what a glove will hold, and
 // the pairing that strings a cobweb across three cards. Pure - no DOM, no
 // canvas, no state.ts - so the whole of the game's arithmetic is testable in
-// Node, and the drawing in art.ts stays a drawing.
+// Node, and the drawing in art.ts stays a drawing. The one import is a type,
+// erased at build: GRIME_FOR is keyed by the board's own item types and a table
+// of string keys is a table of guesses nothing checks.
+
+import type { ItemType } from '../../board-model.ts';
 
 /** The three tools, in the order they appear in the bar and in the order the
  *  digit keys pick them. Three, and each one is *held*: the bar is where a tool
@@ -17,14 +21,18 @@ export type ToolId = typeof TOOLS[number]['id'];
 
 export type MessKind =
   | 'mud' | 'rust' | 'tar'
-  | 'leaves' | 'crumbs' | 'gum' | 'paper' | 'cap' | 'dust'
-  | 'cobweb';
+  | 'coffee' | 'ink' | 'film'
+  | 'leaves' | 'crumbs' | 'gum' | 'paper' | 'cap' | 'dust' | 'tape' | 'sticky'
+  | 'cobweb' | 'track';
 
 /** How a mess is drawn and hit, which decides who owns it:
  *  - `field`  a caked layer on one card, washed off by the jet
  *  - `debris` discrete drawn things, picked up by the handful
- *  - `web`    strung across three cards, and owned by none of them */
-export type MessFamily = 'field' | 'debris' | 'web';
+ *  - `web`    strung across three cards, and owned by none of them
+ *  - `track`  a trail of prints over the board, owned by no card either - the
+ *             web's counterpart for the washer, and the reason the jet has
+ *             something to do on the bare board between the cards */
+export type MessFamily = 'field' | 'debris' | 'web' | 'track';
 
 export type MessDef = {
   tool: ToolId,
@@ -38,24 +46,99 @@ export const MESS = {
   mud: { tool: 'washer', family: 'field', label: 'caked mud' },
   rust: { tool: 'washer', family: 'field', label: 'rust' },
   tar: { tool: 'washer', family: 'field', label: 'tar' },
+  coffee: { tool: 'washer', family: 'field', label: 'a coffee ring' },
+  ink: { tool: 'washer', family: 'field', label: 'ink' },
+  film: { tool: 'washer', family: 'field', label: 'a film of dust' },
   leaves: { tool: 'glove', family: 'debris', bulk: 1, label: 'leaves' },
   crumbs: { tool: 'glove', family: 'debris', bulk: 1, label: 'crumbs' },
   gum: { tool: 'glove', family: 'debris', bulk: 1, label: 'gum' },
   paper: { tool: 'glove', family: 'debris', bulk: 2, label: 'crumpled paper' },
   cap: { tool: 'glove', family: 'debris', bulk: 1, label: 'a bottle cap' },
   dust: { tool: 'glove', family: 'debris', bulk: 1, label: 'a ball of dust' },
+  tape: { tool: 'glove', family: 'debris', bulk: 1, label: 'masking tape' },
+  sticky: { tool: 'glove', family: 'debris', bulk: 1, label: 'a sticky note' },
   cobweb: { tool: 'duster', family: 'web', label: 'cobweb' },
+  track: { tool: 'washer', family: 'track', label: 'muddy prints' },
 } satisfies Record<MessKind, MessDef>;
 
 /** The three caked grimes, weighted as they are dealt: mud is the common one,
- *  tar the one you are pleased to find. */
+ *  tar the one you are pleased to find. What a card gets when nothing in
+ *  `GRIME_FOR` has an opinion about it. */
 export const GRIMES: MessKind[] = ['mud', 'mud', 'mud', 'rust', 'rust', 'tar'];
 
-/** The five loose things. */
-export const DEBRIS: MessKind[] = ['leaves', 'crumbs', 'gum', 'paper', 'cap', 'dust'];
+/**
+ * What lands on what. A note gets coffee and ink far more often than mud,
+ * because that is what happens to paper somebody works over; a video gets the
+ * dust of a thing nobody has touched in a while.
+ *
+ * **Weighted, never exclusive.** Every list keeps some of the caked three in
+ * it, so a photograph can still be found under mud one time in a few - a table
+ * that said "notes get coffee, pictures get mud" would deal the same board
+ * every time, only sorted. Anything not named here keeps `GRIMES`.
+ */
+export const GRIME_FOR: Partial<Record<ItemType, MessKind[]>> = {
+  // Paper somebody has worked over.
+  note: ['coffee', 'coffee', 'coffee', 'ink', 'ink', 'film', 'mud', 'rust'],
+  text: ['coffee', 'coffee', 'ink', 'ink', 'film', 'mud', 'rust'],
+  title: ['coffee', 'ink', 'ink', 'film', 'mud', 'rust'],
+  // Things nobody has touched in a while.
+  audio: ['film', 'film', 'film', 'mud', 'rust', 'tar'],
+  video: ['film', 'film', 'film', 'mud', 'rust', 'tar'],
+  link: ['film', 'film', 'film', 'mud', 'rust', 'tar'],
+  font: ['film', 'film', 'ink', 'mud', 'rust'],
+  archive: ['film', 'film', 'mud', 'mud', 'rust', 'tar'],
+  folder: ['film', 'film', 'mud', 'mud', 'rust', 'tar'],
+  generic: ['film', 'film', 'mud', 'mud', 'rust', 'tar'],
+  // A model is a thing out of a workshop, and gets what a workshop leaves.
+  model: ['mud', 'mud', 'rust', 'rust', 'tar', 'film'],
+};
+
+/** The grimes a card of this type may be dealt. Never empty: an unlisted type
+ *  is not a card with nothing wrong with it, it is a card nobody wrote a rule
+ *  for, and it gets the caked three. */
+export const grimesFor = (type?: ItemType): MessKind[] =>
+  (type && GRIME_FOR[type]) || GRIMES;
+
+/**
+ * What may lie on top of what, as `[top, under]`.
+ *
+ * A short list rather than a rule, because most pairs are nonsense: mud dries
+ * on top of rust because both are weather, and dust settles on ink and on
+ * coffee because both are things that dried there first. Tar under anything
+ * would never be reached, and ink over coffee is two stains fighting for the
+ * same pixels.
+ *
+ * **The top must be the shallower**, and `tests/clean.test.js` holds that. The
+ * under-layer is shielded until the top's cell is gone, so a deep top over a
+ * shallow under is a long wait followed by a moment - the reveal the wrong way
+ * round.
+ */
+export const LAYERS: readonly (readonly [MessKind, MessKind])[] = [
+  ['mud', 'rust'],
+  ['film', 'ink'],
+  ['film', 'coffee'],
+];
+
+/** The layers a card could be dealt, given the grimes its type allows. Both
+ *  halves must be on that list: a note is not dealt mud over rust just because
+ *  the pair exists. */
+export const layersFor = (type?: ItemType): readonly (readonly [MessKind, MessKind])[] => {
+  const allowed = grimesFor(type);
+  return LAYERS.filter(([top, under]) => allowed.includes(top) && allowed.includes(under));
+};
+
+/** The loose things. Two of them - tape and a sticky note - are *stuck* to the
+ *  card rather than lying on it, which is the peel below and not a second
+ *  family: what they are is still a thing the glove takes away. */
+export const DEBRIS: MessKind[] = ['leaves', 'crumbs', 'gum', 'paper', 'cap', 'dust', 'tape', 'sticky'];
 
 /** Whether this tool is the one that bites. Everything else is a dull thud. */
 export const yieldsTo = (kind: MessKind, tool: ToolId) => MESS[kind].tool === tool;
+
+/** How long this piece takes to peel away under a hand held on it, or 0 for one
+ *  that simply lifts. A piece with a time here does not answer a press at all -
+ *  see TUNING.peelMs. */
+export const peelFor = (kind: MessKind): number => TUNING.peelMs[kind] ?? 0;
 
 // ---- tuning -------------------------------------------------------------
 // Every rate the game's pace depends on, in one block, because pacing is found
@@ -77,8 +160,15 @@ type Tuning = {
   webRoom: number,
   handful: number,
   gumTugs: number,
+  peelMs: Record<string, number>,
   grimeChance: number,
   debrisChance: number,
+  layeredChance: number,
+  trackChance: number,
+  trackCards: number,
+  trackStep: number,
+  trackWidth: number,
+  trackMax: number,
   depth: Record<string, number>,
   reach: Record<ToolId, { radius: number }>,
   jet: readonly JetRow[],
@@ -131,14 +221,36 @@ export const TUNING: Tuning = {
   handful: 5,
   /** Presses gum takes before it comes away. */
   gumTugs: 3,
+  /** How long a *stuck* piece takes to peel, under a hand that stays on it. A
+   *  kind that is not in here simply lifts, which is nearly all of them.
+   *
+   *  Tape is the long one on purpose: it is the one piece of the mess that asks
+   *  for a moment rather than for aim or for pressure, and a moment is all it
+   *  asks - letting go early lays it back down and costs nothing. There is no
+   *  counter behind this and nothing to fail. */
+  peelMs: { tape: 700, sticky: 400 },
   /** How often a card is dealt each of the two, independently - so a card can
    *  carry leaves lying on rust, which is where the glove-then-washer order
    *  comes from. */
   grimeChance: 0.7,
   debrisChance: 0.5,
+  /** How often a card that got grime got two of it, one over the other. Low:
+   *  the second reveal is a thing to come across, not the ordinary case. */
+  layeredChance: 0.2,
+  /** Half the boards get a trail, and only boards with this many cards - on
+   *  two cards there is no "across the board" for it to go. */
+  trackChance: 0.5,
+  trackCards: 4,
+  /** The stride, and how far apart the two feet are, in world px. */
+  trackStep: 70,
+  trackWidth: 46,
+  /** The most prints a trail may leave. A *spacing* rather than a truncation:
+   *  past this the walk lengthens its stride instead of stopping half way
+   *  across the board. A wide board must not turn a walk into a job. */
+  trackMax: 16,
   /** Passes of the jet a cell of each grime takes before it is gone. Thick
    *  things take longer, and tar is the one you settle in for. */
-  depth: { mud: 2, rust: 3, tar: 5 },
+  depth: { mud: 2, rust: 3, tar: 5, coffee: 2, ink: 3, film: 1 },
   /** How wide each tool's touch is. The washer is the narrow one on purpose:
    *  aiming the jet is the play. */
   reach: {
@@ -172,11 +284,19 @@ export const TUNING: Tuning = {
    *
    *  The work runs 0.78 / 0.22 / 0.10 - a crawl does three and a half times what
    *  an ordinary sweep does and nearly eight times what a fast one does. A fast
-   *  sweep thins mud; it does not finish it. */
+   *  sweep thins mud; it does not finish it.
+   *
+   *  **The speeds are the trade's, the multipliers are the jet's.** These three
+   *  were stretched by 40% (40/250/700 as they were) and nothing else moved: a
+   *  hand may now go half again as fast before the jet begins to give anything
+   *  up, because the old first row put the knee at a speed an ordinary stroke was
+   *  already past and the washer felt like it wanted a crawl rather than a
+   *  slow hand. Stretching the axis keeps every relation above intact - the rows
+   *  are the same jet, reached later. */
   jet: [
-    { speed: 40, radius: 0.7, bite: 1.6 },
-    { speed: 250, radius: 1, bite: 0.22 },
-    { speed: 700, radius: 1.35, bite: 0.055 },
+    { speed: 56, radius: 0.7, bite: 1.6 },
+    { speed: 350, radius: 1, bite: 0.22 },
+    { speed: 980, radius: 1.35, bite: 0.055 },
   ],
   /** Smoothing on the speed the curve is read at. Raw pointer speed between two
    *  frames is noise - the jet would flutter between wide and narrow on a hand
@@ -496,7 +616,9 @@ export const handRoom = (carried: readonly MessKind[], piece: MessKind): boolean
 
 // ---- cobwebs ------------------------------------------------------------
 
-export type Box = { id: string, x: number, y: number, w: number, h: number };
+/** A card as the dealer sees it. `type` is the item's own kind, and decides
+ *  which grimes it is a candidate for - see `GRIME_FOR`. */
+export type Box = { id: string, x: number, y: number, w: number, h: number, type?: ItemType };
 
 /**
  * A web spans **three** cards, not two, and is one thing: three strands round a
@@ -632,11 +754,103 @@ export function trioWebs(boxes: readonly Box[], rng: Rng = Math.random): Web[] {
   return out;
 }
 
+// ---- muddy tracks -------------------------------------------------------
+
+/** One print: where it is in world coordinates, which way it points, and which
+ *  foot it was. `side` alternates along the trail, because somebody walking
+ *  puts one foot either side of the line they walk along. */
+export type TrackPlan = { x: number, y: number, rot: number, side: 1 | -1 };
+
+/**
+ * A trail of prints across the board: somebody walked through, before any of
+ * this, and did not wipe their feet.
+ *
+ * This is the washer's counterpart to the cobweb - a mess that belongs to no
+ * card. Without it the jet has nothing to do anywhere but on a card, and the
+ * bare board between them is not part of the game at all.
+ *
+ * The line is a quadratic through the cards' own bounds, entering and leaving
+ * past the outermost of them, so the walk crosses the board rather than
+ * starting in the middle of it. Prints fall every `trackStep` along it,
+ * alternating left and right, each turned to face along the path.
+ *
+ * Pure: the drawing is `art.ts`'s and the hit testing is `clean.ts`'s.
+ */
+export function planTracks(boxes: readonly Box[], rng: Rng = Math.random): TrackPlan[] {
+  if (boxes.length < TUNING.trackCards || rng() >= TUNING.trackChance) return [];
+  let x0 = Infinity; let y0 = Infinity; let x1 = -Infinity; let y1 = -Infinity;
+  for (const b of boxes) {
+    x0 = Math.min(x0, b.x - b.w / 2); x1 = Math.max(x1, b.x + b.w / 2);
+    y0 = Math.min(y0, b.y - b.h / 2); y1 = Math.max(y1, b.y + b.h / 2);
+  }
+  const w = x1 - x0;
+  const h = y1 - y0;
+  if (!(w > 0) || !(h > 0)) return [];
+
+  // In one side and out of another, past the edge at both ends.
+  const pad = Math.max(w, h) * 0.15 + 120;
+  const a = { x: x0 - pad, y: y0 + rand(rng, 0.1, 0.9) * h };
+  const b = { x: x1 + pad, y: y0 + rand(rng, 0.1, 0.9) * h };
+  // The bend, off to one side of the straight line between them. A walk is not
+  // a ruler, and a perfectly straight trail reads as a decoration.
+  const mx = (a.x + b.x) / 2;
+  const my = (a.y + b.y) / 2 + rand(rng, -0.35, 0.35) * h;
+
+  const at = (t: number) => {
+    const k = 1 - t;
+    return { x: k * k * a.x + 2 * k * t * mx + t * t * b.x, y: k * k * a.y + 2 * k * t * my + t * t * b.y };
+  };
+
+  const steps = 400;
+  // How long the walk is, before placing anything on it. The stride follows
+  // from that: **the cap is a spacing, not a truncation.** Capping the count
+  // instead left the last print in the middle of the board, which is somebody
+  // who walked half way across and stopped.
+  let walk = 0;
+  for (let i = 1, q = at(0); i <= steps; i++) {
+    const p = at(i / steps);
+    walk += Math.hypot(p.x - q.x, p.y - q.y);
+    q = p;
+  }
+  const stride = Math.max(TUNING.trackStep, walk / TUNING.trackMax);
+
+  // Walk the curve in small steps and drop a print every stride of arc, so the
+  // spacing is even however hard the curve bends. Stepping in `t` would bunch
+  // the prints wherever it is tightest.
+  const out: TrackPlan[] = [];
+  let since = stride;
+  let prev = at(0);
+  let side: 1 | -1 = rng() < 0.5 ? 1 : -1;
+  for (let i = 1; i <= steps; i++) {
+    const p = at(i / steps);
+    const seg = Math.hypot(p.x - prev.x, p.y - prev.y);
+    since += seg;
+    if (since >= stride) {
+      since = 0;
+      const dx = p.x - prev.x;
+      const dy = p.y - prev.y;
+      const len = Math.hypot(dx, dy) || 1;
+      // Off to one side of the line, and facing along it. The y flip is not
+      // this module's business - these are the board's own coordinates.
+      const off = TUNING.trackWidth / 2;
+      out.push({
+        x: p.x + (-dy / len) * off * side + rand(rng, -4, 4),
+        y: p.y + (dx / len) * off * side + rand(rng, -4, 4),
+        rot: Math.atan2(dy, dx) + rand(rng, -0.12, 0.12),
+        side,
+      });
+      side = side === 1 ? -1 : 1;
+    }
+    prev = p;
+  }
+  return out;
+}
+
 // ---- dealing ------------------------------------------------------------
 
 export type DebrisPlan = { kind: MessKind, x: number, y: number, rot: number, size: number };
 export type CardPlan = { id: string, fields: MessKind[], debris: DebrisPlan[] };
-export type BoardPlan = { cards: CardPlan[], webs: Web[] };
+export type BoardPlan = { cards: CardPlan[], webs: Web[], tracks: TrackPlan[] };
 
 /**
  * Which cards get dirty, and with what. Random every time - the mess has no
@@ -653,15 +867,27 @@ export type BoardPlan = { cards: CardPlan[], webs: Web[] };
  * drawing, and on a board that has no such trio its slot is simply absent.
  */
 export function planBoard(boxes: readonly Box[], rng: Rng = Math.random): BoardPlan {
-  const cards: CardPlan[] = boxes.map(box => deal(box.id, rng));
-  guaranteeGrime(cards, rng);
+  const cards: CardPlan[] = boxes.map(box => deal(box.id, box.type, rng));
+  guaranteeGrime(cards, rng, boxes);
   guaranteeDebris(cards, rng);
-  return { cards, webs: trioWebs(boxes, rng) };
+  return { cards, webs: trioWebs(boxes, rng), tracks: planTracks(boxes, rng) };
 }
 
-function deal(id: string, rng: Rng): CardPlan {
+function deal(id: string, type: ItemType | undefined, rng: Rng): CardPlan {
   const card: CardPlan = { id, fields: [], debris: [] };
-  if (rng() < TUNING.grimeChance) card.fields.push(pick(rng, GRIMES));
+  if (rng() < TUNING.grimeChance) {
+    // Two layers now and then, bottom first: the jet takes the top off and what
+    // is under it is still not the card. Rolled before the single grime so the
+    // two branches are one decision and not a grime that sometimes grows a
+    // second one.
+    const pairs = layersFor(type);
+    if (pairs.length && rng() < TUNING.layeredChance) {
+      const [top, under] = pick(rng, pairs);
+      card.fields.push(under, top);
+    } else {
+      card.fields.push(pick(rng, grimesFor(type)));
+    }
+  }
   if (rng() < TUNING.debrisChance) card.debris = scatter(pick(rng, DEBRIS), rng);
   // Neither rolled: somebody has to sweep this card too.
   if (!card.fields.length && !card.debris.length) card.debris = scatter(pick(rng, DEBRIS), rng);
@@ -670,10 +896,12 @@ function deal(id: string, rng: Rng): CardPlan {
 
 function scatter(kind: MessKind, rng: Rng): DebrisPlan[] {
   // Gum is a single stuck thing, not a scatter - one peel, not nine. Paper,
-  // caps and balls of dust come in ones and twos; only leaves and crumbs arrive
-  // by the handful.
+  // caps, balls of dust, tape and sticky notes come in ones and twos; only
+  // leaves and crumbs arrive by the handful. Two strips of tape is somebody who
+  // taped something down; nine is a prank.
+  const few = ['paper', 'cap', 'dust', 'tape', 'sticky'];
   const n = kind === 'gum' ? 1
-    : kind === 'paper' || kind === 'cap' || kind === 'dust' ? randInt(rng, ...TUNING.fewPieces)
+    : few.includes(kind) ? randInt(rng, ...TUNING.fewPieces)
       : randInt(rng, ...TUNING.perPatch);
   const cx = rand(rng, 0.25, 0.75);
   const cy = rand(rng, 0.25, 0.75);
@@ -690,9 +918,10 @@ function scatter(kind: MessKind, rng: Rng): DebrisPlan[] {
 
 /** Add to the emptiest card rather than re-dealing the board: a card may carry
  *  both now, so a guarantee has nothing to overwrite. */
-function guaranteeGrime(cards: CardPlan[], rng: Rng) {
+function guaranteeGrime(cards: CardPlan[], rng: Rng, boxes: readonly Box[]) {
   if (!cards.length || cards.some(c => c.fields.length)) return;
-  pick(rng, cards).fields.push(pick(rng, GRIMES));
+  const card = pick(rng, cards);
+  card.fields.push(pick(rng, grimesFor(boxes.find(b => b.id === card.id)?.type)));
 }
 
 function guaranteeDebris(cards: CardPlan[], rng: Rng) {
@@ -725,21 +954,27 @@ export function cardClean(card: CardState, webs: readonly Web[]): boolean {
 /**
  * Cards clean, out of cards dealt, and whether the board is finished.
  *
- * Two things outside the cards can hold the board back, and both are things
- * somebody is still holding or has put down: debris tipped out onto the bare
- * board (`loose`), and a glove that has not been emptied (`carrying`). A board
- * is not spotless while the mess is in your hand.
+ * Three things outside the cards can hold the board back: debris tipped out
+ * onto the bare board (`loose`), a glove that has not been emptied
+ * (`carrying`), and prints still on the floor (`tracks`). A board is not
+ * spotless while the mess is in your hand, and it is not spotless while
+ * somebody's footprints are still across it.
+ *
+ * **`clean` and `total` stay cards.** The count in the bar reads "3 of 12" and
+ * has always meant cards; folding prints into it would make the number jump
+ * about as the trail came up, and a count that does not match what you can see
+ * on the board is worse than no count.
  */
 export function tally(
   cards: readonly CardState[], webs: readonly Web[],
-  loose = 0, carrying = false,
+  loose = 0, carrying = false, tracks = 0,
 ) {
   let clean = 0;
   for (const c of cards) if (cardClean(c, webs)) clean++;
   return {
     clean,
     total: cards.length,
-    done: clean === cards.length && loose === 0 && !carrying,
+    done: clean === cards.length && loose === 0 && !carrying && tracks === 0,
   };
 }
 
@@ -756,7 +991,7 @@ export type ToolWork = { left: number, total: number };
  *  rather than written out again here. A denominator is only added for a tool
  *  that could have been dealt something in that family - otherwise picking up
  *  the duster would put every card's debris count in the duster's total. */
-const FAMILY_TOOLS: Record<MessFamily, ToolId[]> = { field: [], debris: [], web: [] };
+const FAMILY_TOOLS: Record<MessFamily, ToolId[]> = { field: [], debris: [], web: [], track: [] };
 // SAFETY: MESS is `satisfies Record<MessKind, MessDef>`, so its keys are
 // exactly MessKind and nothing can be in there that is not one.
 for (const kind of Object.keys(MESS) as MessKind[]) {
