@@ -19,7 +19,8 @@ import {
   fullTank, tankStep, tankPower, bulkOf, handRoom,
   gapBetween, trioWebs, spreadOf, webCards, webHolds, trianglesOverlap,
   planBoard, cardClean, tally, jetShape, SUBS, wearShare, WEAR_MAX, wearOf,
-  toolWork, toolWanted, toolShare, peelFor,
+  toolWork, toolWanted, toolShare, peelFor, thumbLayout,
+  printTurn, toPrint,
 } from '../web/assets/js/ui/clean/mess.ts';
 import { crust, crustAt, crustMask, webCore, bootAt } from '../web/assets/js/ui/clean/art.ts';
 
@@ -1088,24 +1089,54 @@ test('the walk crosses the board rather than starting in the middle of it', () =
   }
 });
 
-test('a print is a sole with tread cut out of it, not a blob', () => {
-  // The tread is where the boot did *not* touch the floor. Drawn as marks
-  // instead it reads as a rubber stamp, which was the first attempt.
-  const g = 40;
-  let on = 0;
+test('a print is a sole of lugs inside a rim, not a blob and not a barcode', () => {
+  const g = 60;
+  const at = (ix, iy) => bootAt((ix + 0.5) / g, (iy + 0.5) / g);
+  let pressed = 0;
   for (let iy = 0; iy < g; iy++)
-    for (let ix = 0; ix < g; ix++) if (bootAt((ix + 0.5) / g, (iy + 0.5) / g)) on++;
-  const share = on / (g * g);
-  assert.ok(share > 0.15 && share < 0.55, `the sole covers ${(share * 100).toFixed(0)}% of its box`);
+    for (let ix = 0; ix < g; ix++) if (at(ix, iy) > 0.4) pressed++;
+  const share = pressed / (g * g);
+  assert.ok(share > 0.1 && share < 0.5, `the lugs and rim cover ${(share * 100).toFixed(0)}% of the box`);
+  for (let iy = 0; iy < g; iy++)
+    for (let ix = 0; ix < g; ix++) {
+      const v = at(ix, iy);
+      assert.ok(v >= 0 && v <= 1, `density ${v} at ${ix},${iy}`);
+    }
   assert.equal(bootAt(0.5, -0.2), 0, 'the print reached outside its box');
   assert.equal(bootAt(1.4, 0.5), 0, 'the print reached outside its box');
-  // The arch: a gap right across, between sole and heel.
+  // The arch: a gap right across, between forefoot and heel.
   for (let ix = 0; ix < g; ix++)
     assert.equal(bootAt((ix + 0.5) / g, 0.6), 0, 'the boot has no arch');
-  // And there is tread: some row inside the sole is broken by it.
-  const row = y => Array.from({ length: g }, (_, ix) => bootAt((ix + 0.5) / g, y));
-  assert.ok([0.2, 0.3, 0.4, 0.5].some(y => row(y).every(v => !v)),
-    'no tread bar was ever cut out of the sole');
+  // Tread, along the middle of the forefoot: lugs and grooves both.
+  const spine = Array.from({ length: 30 }, (_, i) => bootAt(0.5, 0.1 + i * 0.013));
+  assert.ok(spine.some(v => v > 0.7) && spine.some(v => v < 0.3), 'the forefoot has no lugs');
+  // And the thing it used to get wrong: no row across the forefoot is empty,
+  // because the rim holds its edges. Bars cut edge to edge read as a barcode.
+  for (let iy = Math.round(0.12 * g); iy < Math.round(0.5 * g); iy++) {
+    const row = Array.from({ length: g }, (_, ix) => at(ix, iy));
+    assert.ok(row.some(v => v > 0.4), `row ${iy} of the forefoot is cut right across`);
+  }
+});
+
+test('washing a print lands where the jet is, not opposite it', () => {
+  // toPrint() inverts the rotation the canvas is drawn at. Place a point in the
+  // print's box, carry it into the world the way the CSS does, and ask for it
+  // back. Off by half a turn it comes back reflected through the middle, which
+  // is the bug this pins: washing the toe cleaned the heel.
+  const t = { x: 300, y: -120, w: 44, h: 90 };
+  for (const rot of [0, 0.7, Math.PI / 2, 2.4, -1.1]) {
+    const a = printTurn(rot);
+    for (const [u, v] of [[0.2, 0.1], [0.8, 0.9], [0.5, 0.25]]) {
+      const bx = (u - 0.5) * t.w;
+      const by = (v - 0.5) * t.h;
+      // CSS rotate(a) in the layer's y-down frame, then layer to world.
+      const sx = bx * Math.cos(a) - by * Math.sin(a);
+      const sy = bx * Math.sin(a) + by * Math.cos(a);
+      const back = toPrint({ ...t, rot }, t.x + sx, t.y - sy);
+      assert.ok(Math.abs(back.u - u) < 1e-9 && Math.abs(back.v - v) < 1e-9,
+        `rot ${rot}: (${u}, ${v}) came back as (${back.u.toFixed(3)}, ${back.v.toFixed(3)})`);
+    }
+  }
 });
 
 test('the board is not spotless while a print is still on the floor', () => {
@@ -1273,10 +1304,29 @@ test('the jet is tight and hard slow, wide and light fast', () => {
   // is reached by interpolating to t=1, and `1.6 + (0.22 - 1.6)` is not 0.22.
   const near = (got, want, what) =>
     assert.ok(Math.abs(got - want) < 1e-9, `${what}: ${got} is not ${want}`);
+  // The radius is read at the hand's speed and the bite at a hand jetHold times
+  // slower, so a row's bite is reached jetHold times later than its radius.
   for (const row of TUNING.jet) {
-    const got = jetShape(row.speed);
-    near(got.radius, row.radius, `radius at ${row.speed}`);
-    near(got.bite, row.bite, `bite at ${row.speed}`);
+    near(jetShape(row.speed).radius, row.radius, `radius at ${row.speed}`);
+    near(jetShape(row.speed * TUNING.jetHold).bite, row.bite, `bite at ${row.speed * TUNING.jetHold}`);
+  }
+});
+
+test('holding the bite longer does not shrink the jet', () => {
+  // The first way this was tried stretched the whole curve, and the same
+  // stroke came out with a narrower jet - which plays as a weaker one.
+  assert.ok(TUNING.jetHold >= 1, 'a hold below one would make the bite fall sooner');
+  const base = TUNING.jet;
+  for (const speed of [0, 40, 100, 250, 500, 700, 900]) {
+    // The radius column alone, read straight off the rows.
+    let want = base[0].radius;
+    for (let i = 1; i < base.length; i++) {
+      const a = base[i - 1];
+      const b = base[i];
+      if (speed >= b.speed) want = b.radius;
+      else if (speed > a.speed) want = a.radius + (b.radius - a.radius) * (speed - a.speed) / (b.speed - a.speed);
+    }
+    assert.ok(Math.abs(jetShape(speed).radius - want) < 1e-9, `the jet at ${speed} is not the width it was`);
   }
 });
 
@@ -1318,13 +1368,22 @@ const jetWork = speed => {
   return radius * radius * bite;
 };
 
-test('going slowly is worth it: the work a pass does falls as the hand speeds up', () => {
-  let last = Infinity;
-  for (let speed = 0; speed <= 900; speed += 25) {
-    const work = jetWork(speed);
-    assert.ok(work <= last + 1e-9, `work rose at ${speed}: ${work} after ${last}`);
-    last = work;
-  }
+test('going slowly is worth it: past an unhurried sweep the work only falls', () => {
+  // Not from a standstill any more. jetHold lets the work climb a little from a
+  // crawl to an easy sweep - the maintainer's call, so a slow hand is not the
+  // only good one - but never far, and from the ordinary sweep up it falls.
+  const crawl = jetWork(0);
+  let peak = 0;
+  for (let speed = 0; speed <= 900; speed += 5) peak = Math.max(peak, jetWork(speed));
+  assert.ok(peak <= crawl * 1.15, `an easy sweep does ${(peak / crawl).toFixed(2)}x a crawl - going fast is being paid for`);
+  // From the ordinary sweep up, faster is never meaningfully better. The radius
+  // and the bite turn their corners at different speeds now, so there is a
+  // plateau of a percent or so between them rather than a clean fall - which is
+  // flat, not a reward - and then it falls to about half.
+  const sweep = jetWork(250 * TUNING.jetHold);
+  for (let speed = 250 * TUNING.jetHold; speed <= 900; speed += 25)
+    assert.ok(jetWork(speed) <= sweep * 1.02, `a sweep at ${speed} beats the ordinary one`);
+  assert.ok(jetWork(900) < sweep * 0.6, 'a fast sweep is nearly as good as an ordinary one');
 });
 
 test('a slow hand does several times the work of a fast one, not a fraction more', () => {
@@ -1335,8 +1394,9 @@ test('a slow hand does several times the work of a fast one, not a fraction more
     `slow ${jetWork(0).toFixed(3)} must beat fast ${jetWork(900).toFixed(3)} by more than 3x`,
   );
   // And the middle of the curve must not be a flat spot either: it was, and a
-  // normal sweep was as good as a crawl while covering twice as much card.
-  assert.ok(jetWork(40) > jetWork(250) * 1.3, 'a crawl must beat an ordinary sweep clearly');
+  // normal sweep was as good as a crawl while covering twice as much card. The
+  // ordinary sweep is the second row's speed, moved out by the hold.
+  assert.ok(jetWork(40) > jetWork(250 * TUNING.jetHold) * 1.3, 'a crawl must beat an ordinary sweep clearly');
 });
 
 // ---------------------------------------------------------------------------
@@ -1445,6 +1505,37 @@ test('gum is a single stuck thing, and paper and caps come in ones and twos', ()
       assert.ok(count(kind) <= TUNING.fewPieces[1],
         `seed ${seed} dealt ${count(kind)} of ${kind} to one card`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// the polaroid
+// ---------------------------------------------------------------------------
+
+test('the polaroid fits every card inside its frame, in order', () => {
+  const boxes = [box('a', 0, 0), box('b', 900, 300), box('c', -400, -700)];
+  const got = thumbLayout(boxes, 104, 78, 7);
+  assert.equal(got.length, boxes.length);
+  for (const t of got) {
+    assert.ok(t.x >= 7 - 1e-9 && t.y >= 7 - 1e-9, 'a card is in the margin');
+    assert.ok(t.x + t.w <= 104 - 7 + 1e-9 && t.y + t.h <= 78 - 7 + 1e-9, 'a card is off the frame');
+  }
+  // World y is up and the frame's is down: the highest card is the topmost.
+  assert.ok(got[1].y < got[0].y && got[0].y < got[2].y, 'the board came out upside down');
+});
+
+test('the polaroid keeps the board in proportion and centres it', () => {
+  // One wide card: the frame is 4:3 and the card 2:1, so it spans the width and
+  // sits in the middle of the height.
+  const [t] = thumbLayout([{ id: 'a', x: 50, y: 50, w: 200, h: 100 }], 104, 78, 7);
+  assert.ok(Math.abs(t.w / t.h - 2) < 1e-9, 'the card was squashed');
+  assert.ok(Math.abs(t.x - 7) < 1e-9 && Math.abs(t.x + t.w - 97) < 1e-9);
+  assert.ok(Math.abs(t.y + t.h / 2 - 39) < 1e-9, 'not centred on the spare axis');
+});
+
+test('a polaroid of nothing is empty, and no card is drawn as nothing', () => {
+  assert.deepEqual(thumbLayout([], 104, 78, 7), []);
+  const tiny = thumbLayout([box('a', 0, 0), { id: 'b', x: 99999, y: 0, w: 1, h: 1 }], 104, 78, 7);
+  for (const t of tiny) assert.ok(t.w >= 1 && t.h >= 1, 'a card vanished from the picture');
 });
 
 // ---------------------------------------------------------------------------

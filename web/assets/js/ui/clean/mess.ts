@@ -172,6 +172,7 @@ type Tuning = {
   depth: Record<string, number>,
   reach: Record<ToolId, { radius: number }>,
   jet: readonly JetRow[],
+  jetHold: number,
   jetSmoothMs: number,
   tank: { fullMs: number, fadeMs: number, refillMs: number },
 };
@@ -286,18 +287,26 @@ export const TUNING: Tuning = {
    *  an ordinary sweep does and nearly eight times what a fast one does. A fast
    *  sweep thins mud; it does not finish it.
    *
-   *  **The speeds are the trade's, the multipliers are the jet's.** These three
-   *  were stretched by 40% (40/250/700 as they were) and nothing else moved: a
-   *  hand may now go half again as fast before the jet begins to give anything
-   *  up, because the old first row put the knee at a speed an ordinary stroke was
-   *  already past and the washer felt like it wanted a crawl rather than a
-   *  slow hand. Stretching the axis keeps every relation above intact - the rows
-   *  are the same jet, reached later. */
+   *  **Do not stretch the speeds to buy a faster hand.** They were once moved
+   *  40% out (56/350/980) and it played markedly worse: the radius grows with
+   *  speed on the same axis, so the same stroke got a smaller jet, and a smaller
+   *  jet reads as a weaker one however much bite it carries. `jetHold` below is
+   *  what that was reaching for. */
   jet: [
-    { speed: 56, radius: 0.7, bite: 1.6 },
-    { speed: 350, radius: 1, bite: 0.22 },
-    { speed: 980, radius: 1.35, bite: 0.055 },
+    { speed: 40, radius: 0.7, bite: 1.6 },
+    { speed: 250, radius: 1, bite: 0.22 },
+    { speed: 700, radius: 1.35, bite: 0.055 },
   ],
+  /** How much faster the hand may go before the *bite* falls, as a stretch on
+   *  the speed the bite is read at. The radius is read at the true speed, so the
+   *  circle is exactly as wide as it was; only the scrubbing holds on longer.
+   *
+   *  **This bends the rule above on purpose**, at the maintainer's call
+   *  (2026-09-18): the work a pass does now climbs a little from a crawl to an
+   *  unhurried sweep - about ten percent at its peak, near 100 units a second -
+   *  and falls from there as before. A crawl is no longer the best stroke, just a
+   *  good one; a fast sweep is still a small fraction of either. */
+  jetHold: 1.4,
   /** Smoothing on the speed the curve is read at. Raw pointer speed between two
    *  frames is noise - the jet would flutter between wide and narrow on a hand
    *  that is holding still. */
@@ -439,8 +448,16 @@ export function stamp(
  * Both numbers are multipliers: `radius` on `reach.washer.radius`, `bite` on
  * the pass a stamp takes. Tank power multiplies the result at the call site, so
  * this stays a function of the hand alone.
+ *
+ * The radius is read at the hand's speed and the bite at that speed over
+ * `TUNING.jetHold` - see there.
  */
 export function jetShape(speed: number): { radius: number, bite: number } {
+  return { radius: jetRow(speed).radius, bite: jetRow(speed / TUNING.jetHold).bite };
+}
+
+/** Both columns of the curve at one speed. */
+function jetRow(speed: number): { radius: number, bite: number } {
   const rows = TUNING.jet;
   const first = rows[0]!;
   const last = rows[rows.length - 1]!;
@@ -761,6 +778,32 @@ export function trioWebs(boxes: readonly Box[], rng: Rng = Math.random): Web[] {
  *  puts one foot either side of the line they walk along. */
 export type TrackPlan = { x: number, y: number, rot: number, side: 1 | -1 };
 
+/** The turn a print's canvas is drawn at, in radians, clockwise on screen - the
+ *  walk's own heading, flipped into the layer's y-down frame, plus a quarter
+ *  turn because a print is drawn toe-up and a heading of zero runs along x. */
+export const printTurn = (rot: number) => -rot + Math.PI / 2;
+
+/**
+ * A world point in a print's own 0..1 box, where its occupancy grid and its
+ * canvas both live. The exact inverse of the drawing's rotation - see
+ * printTurn(). It once used an angle half a turn off, and washing one end of a
+ * boot cleaned the other.
+ */
+export function toPrint(
+  t: { x: number, y: number, rot: number, w: number, h: number }, wx: number, wy: number,
+): { u: number, v: number } {
+  // Into the layer's y-down frame first, which is where the rotation lives.
+  const sx = wx - t.x;
+  const sy = -(wy - t.y);
+  const a = printTurn(t.rot);
+  const cos = Math.cos(a);
+  const sin = Math.sin(a);
+  return {
+    u: (sx * cos + sy * sin) / t.w + 0.5,
+    v: (-sx * sin + sy * cos) / t.h + 0.5,
+  };
+}
+
 /**
  * A trail of prints across the board: somebody walked through, before any of
  * this, and did not wipe their feet.
@@ -931,6 +974,43 @@ function guaranteeDebris(cards: CardPlan[], rng: Rng) {
   const spare = cards.filter(c => !c.fields.length);
   const card = pick(rng, spare.length ? spare : cards);
   card.debris = scatter(pick(rng, DEBRIS), rng);
+}
+
+// ---- the polaroid -------------------------------------------------------
+
+/** One card in the ending's schematic, in the frame's own pixels, y down. */
+export type Thumb = { x: number, y: number, w: number, h: number };
+
+/**
+ * The dealt cards, fitted into a `w` x `h` frame with `pad` all round - the
+ * board as the polaroid draws it, each card a rectangle in its place.
+ *
+ * One scale for both axes, so the board keeps its shape; centred on whichever
+ * axis has room to spare. World y is up and the frame's is down, which is the
+ * flip every other thing in this mode makes. A card too small to see at that
+ * scale is still given a pixel, since a card that was cleaned and then drawn as
+ * nothing is a card the picture forgot.
+ */
+export function thumbLayout(boxes: readonly Box[], w: number, h: number, pad: number): Thumb[] {
+  if (!boxes.length) return [];
+  let x0 = Infinity; let x1 = -Infinity; let top = -Infinity; let bottom = Infinity;
+  for (const b of boxes) {
+    x0 = Math.min(x0, b.x - b.w / 2);
+    x1 = Math.max(x1, b.x + b.w / 2);
+    top = Math.max(top, b.y + b.h / 2);
+    bottom = Math.min(bottom, b.y - b.h / 2);
+  }
+  const bw = Math.max(1e-6, x1 - x0);
+  const bh = Math.max(1e-6, top - bottom);
+  const s = Math.min((w - 2 * pad) / bw, (h - 2 * pad) / bh);
+  const ox = (w - bw * s) / 2;
+  const oy = (h - bh * s) / 2;
+  return boxes.map(b => ({
+    x: ox + (b.x - b.w / 2 - x0) * s,
+    y: oy + (top - (b.y + b.h / 2)) * s,
+    w: Math.max(1, b.w * s),
+    h: Math.max(1, b.h * s),
+  }));
 }
 
 // ---- counting -----------------------------------------------------------

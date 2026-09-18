@@ -1336,16 +1336,24 @@ function sticky(rng: Rng) {
 export const BOOT_GRID = 12;
 
 /**
- * Whether a point in the print's own 0..1 box is under the sole.
+ * How much mud a point in the print's own 0..1 box was given, 0 to 1.
  *
- * A heel and a sole, separated by the waist of the boot, with three tread bars
- * cut out of the sole and one out of the heel. Cut out, rather than drawn on:
- * the tread is where the boot did *not* touch the floor, so a print is the
- * negative of the thing that made it. Drawing the bars as marks reads as a
- * rubber stamp, which was the first attempt.
+ * A forefoot and a heel, apart at the arch, which never touches. Each is a
+ * **rim** round the outside - the band every walking boot has, and what gives a
+ * print its outline - and inside it rows of **lugs**: blocks laid like brickwork,
+ * bent into chevrons pointing at the toe on the forefoot and straight across on
+ * the heel. The mud is where the lugs pressed, with a thin smear in the grooves
+ * between them, because a muddy sole leaves a little everywhere.
+ *
+ * It was once a sole with three bars cut straight across it. Seen from above,
+ * three full-width gaps are not tread, they are a barcode - and a flat fill of
+ * the caked-mud surface inside made each strip a slab of tiles. Tread is a
+ * pattern of small pieces; nothing in a real one runs edge to edge.
  */
 export function bootAt(x: number, y: number): number {
   if (x < 0 || x > 1 || y < 0 || y > 1) return 0;
+  // The arch.
+  if (y > 0.56 && y < 0.64) return 0;
   // Round the toe and the heel, and pull the waist in.
   const cx = 0.5 + (y < 0.5 ? Math.sin(y * 6.0) * 0.03 : 0);
   // Half-width down the length: wide at the ball, narrow at the waist, medium
@@ -1357,45 +1365,63 @@ export function bootAt(x: number, y: number): number {
           : y < 0.70 ? 0.18 + ((y - 0.62) / 0.08) * 0.06
             : y < 0.94 ? 0.24
               : 0.24 * Math.sqrt(Math.max(0, (1 - y) / 0.06));
-  if (Math.abs(x - cx) > half) return 0;
-  // The gap between sole and heel, where the arch never touches.
-  if (y > 0.56 && y < 0.64) return 0;
-  // Tread: bars across the sole, and one across the heel.
-  const bar = y < 0.56
-    ? Math.abs(((y - 0.06) / 0.125 % 1) - 0.5) < 0.16
-    : Math.abs(((y - 0.70) / 0.12 % 1) - 0.5) < 0.16;
-  return bar ? 0 : 1;
+  const off = Math.abs(x - cx);
+  if (off >= half) return 0;
+  // Soft at the outline: a boot presses its edge in last and least.
+  const edge = smooth(0, 0.035, half - off);
+  // Across the sole, 0 in the middle and 1 at its edge.
+  const u = off / Math.max(half, 1e-3);
+  // The rim. Broken up and down the length by the ends of the lug rows, as it is
+  // on a real sole, rather than drawn as one unbroken line.
+  if (u > 0.76) return edge * (0.7 + 0.3 * smooth(0.2, 0.4, Math.abs(((y * 14) % 1) - 0.5) * 2));
+  const heel = y >= 0.6;
+  const pitch = heel ? 0.068 : 0.074;
+  // Chevrons: a row sits further from the toe at the sides than in the middle.
+  const r = (y - (heel ? 0.645 : 0.035) - (heel ? 0 : u * 0.05)) / pitch;
+  const row = Math.floor(r);
+  const fr = r - row;
+  const cols = heel ? 2 : 3;
+  const c = ((x - cx) / half * 0.5 + 0.5) * cols + (row % 2 ? 0.5 : 0);
+  const fc = c - Math.floor(c);
+  const lug = smooth(0.12, 0.26, fr) * smooth(0.12, 0.26, 1 - fr)
+    * smooth(0.08, 0.2, fc) * smooth(0.08, 0.2, 1 - fc);
+  return edge * (0.14 + 0.86 * lug);
 }
 
-/** The predicate a print's occupancy grid is filled from. */
-export const bootMask = () => (x: number, y: number) => bootAt(x, y) > 0;
+/** The predicate a print's occupancy grid is filled from: the rim and the lugs,
+ *  and not the smear in the grooves, which goes with them. */
+export const bootMask = () => (x: number, y: number) => bootAt(x, y) > 0.4;
 
 /**
- * Paint one print: the mud surface, lit like every other mess, cut to the sole.
- *
- * The same `mud` material the caked grime uses, so a print and a muddy card are
- * plainly the same stuff - which is the point of a trail that walks over both.
+ * Paint one print: mud pressed off a sole, which is flat and wet rather than
+ * caked. A print is thin - it has not had time to dry and crack, and at a fifth
+ * of a card's size the caked surface's plates came out bigger than the lugs. So
+ * the mud's own colours, a fine grain, and the uneven pressure of a step: the
+ * ball and the heel bite, and mud never comes off a sole evenly.
  */
 export function paintBoot(
   ctx: CanvasRenderingContext2D, seed: number, w: number, h: number, rich: boolean,
 ) {
   const img = ctx.createImageData(w, h);
   const px = img.data;
-  const m = materialOf('mud');
+  const [dr, dg, db] = materialOf('mud').wash;
   for (let iy = 0; iy < h; iy++)
     for (let ix = 0; ix < w; ix++) {
       const x = (ix + 0.5) / w;
       const y = (iy + 0.5) / h;
       const i = (iy * w + ix) * 4;
-      if (!bootAt(x, y)) { px[i + 3] = 0; continue; }
-      m.surface(seed, x, y, rich);
-      // Thinner at the edges of the sole, because a boot presses hardest in the
-      // middle and a print with a hard outline is a sticker.
-      const edge = Math.min(1, Math.min(x, 1 - x, y, 1 - y) * 6);
-      px[i] = Math.max(0, Math.min(255, sR));
-      px[i + 1] = Math.max(0, Math.min(255, sG));
-      px[i + 2] = Math.max(0, Math.min(255, sB));
-      px[i + 3] = Math.max(0, Math.min(255, 235 * edge));
+      const k = bootAt(x, y);
+      if (k <= 0.01) { px[i + 3] = 0; continue; }
+      // The box is twice as tall as it is wide, so y runs at twice the rate to
+      // keep the noise round.
+      const press = clamp01(0.62 + 0.55 * fbm(x * 5, y * 10, seed, 2));
+      const grain = rich ? gfbm(x * 40, y * 80, seed + 7, 2) : gnoise(x * 40, y * 80, seed + 7);
+      // Thicker mud is darker; the smear in the grooves is thin and light.
+      const lift = (1 - k) * 34 + (grain - 0.5) * 22;
+      px[i] = Math.max(0, Math.min(255, dr + lift));
+      px[i + 1] = Math.max(0, Math.min(255, dg + lift * 0.8));
+      px[i + 2] = Math.max(0, Math.min(255, db + lift * 0.6));
+      px[i + 3] = Math.max(0, Math.min(255, 235 * clamp01(k * press * 1.15)));
     }
   ctx.putImageData(img, 0, 0);
 }

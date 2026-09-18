@@ -512,8 +512,9 @@
    Outside the SVG, so the lean does not reach it.
    --------------------------------------------------------------------------- */
 
-/* To the *left* of the gun, beside its grip, where a tank hangs - and not to
-   the right, where the lance is.
+/* To the *right* of the gun. The lance points up and to the left from the
+   nozzle under the pointer, so the right is the side with nothing on it, and a
+   bar on the left sat between the hand and the lance it was reporting on.
 
    It follows the drawing rather than the box. The tool is hung from its working
    end (--clean-tip-*, written per tool in clean.ts), so what is drawn sits well
@@ -524,11 +525,14 @@
    same two offsets keeps the gap to the drawing the same whatever is held. */
 .clean-tank {
   position: absolute;
-  right: 100%;
+  /* Hung from the nozzle, the drawing ends about fifteen pixels past the host's
+     right edge, and the translate below moves this bar seventeen: so 10px of
+     margin leaves about 12 between the gun and the bar. */
+  left: 100%;
   top: 50%;
   width: 8px;
   height: 46px;
-  margin: -23px 10px 0 0;
+  margin: -23px 0 0 10px;
   translate: var(--clean-tip-x, 0px) var(--clean-tip-y, 0px);
   transition: translate var(--clean-travel) var(--clean-ease);
   border-radius: 4px;
@@ -574,25 +578,75 @@
   z-index: calc(var(--z-overlay) + 3);
 }
 
-/* What is said when the board is spotless. It arrives and it stays: there is no
-   timer anywhere in the ending, and the board is there to be looked at. */
-.clean-line {
+/* The ending, dealt as a card: the board before and after, and one line. It
+   arrives from below once the light has crossed, and it stays - there is no
+   timer anywhere in the ending.
+
+   A card in the app's own language, because it is the app's: --paper-card, the
+   item shadow and radius, and a lean off --tilt-max, so the whimsy dial decides
+   how much it leans and Harsh holds it straight. It moves about under the left
+   button like any card; the drag writes --drag-x/--drag-y and nothing else, so
+   the arrival and the lean never fight it for a property. */
+.clean-polaroid {
   position: absolute;
-  left: 50%;
-  top: 44%;
+  left: calc(50% + var(--drag-x, 0px));
+  top: calc(50% + var(--drag-y, 0px));
   transform: translate(-50%, -50%);
-  font-family: var(--font-display, serif);
-  font-size: clamp(1.4rem, 3.4vw, 2.4rem);
-  color: var(--ink, #2b2b28);
-  text-align: center;
-  text-wrap: balance;
-  opacity: 0;
-  animation: clean-said 1200ms var(--clean-ease) 400ms forwards;
-  pointer-events: none;
+  rotate: calc(var(--tilt-max) * -1);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 12px 14px;
+  border-radius: var(--radius);
+  background: var(--paper-card);
+  box-shadow: var(--item-shadow);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  animation: clean-deal 600ms var(--clean-ease) var(--clean-sweep) both;
 }
 
-@keyframes clean-said {
-  to { opacity: 1; }
+.clean-polaroid.is-held { cursor: grabbing; }
+
+@keyframes clean-deal {
+  from { translate: 0 60vh; opacity: 0; }
+  to { translate: 0 0; opacity: 1; }
+}
+
+.clean-shots {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+/* A frame is the board: --paper under the cards, the way the board is. */
+.clean-shot {
+  width: 104px;
+  height: 78px;
+  border-radius: 2px;
+  background: var(--paper);
+}
+
+/* After: every card as the app draws a card. The before's fills are the grime's
+   own colours and are set on each rect by clean.ts. */
+.clean-shot.is-after rect {
+  fill: var(--paper-card);
+  stroke: var(--item-border);
+  stroke-width: 0.75;
+}
+
+.clean-polaroid-said {
+  margin: 0;
+  font-family: var(--font-display, serif);
+  font-size: 1.15rem;
+  color: var(--ink);
+}
+
+.clean-polaroid-count {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--ink-3);
 }
 
 /* And the light that goes across the whole board behind it. */
@@ -869,11 +923,24 @@
   padding: 4px 0;
   overflow: hidden;
   opacity: 0;
-  border-right: var(--hairline) solid var(--rule);
-  border-radius: 0;
   transition: width 200ms var(--clean-ease), margin-right 200ms var(--clean-ease),
     opacity 200ms var(--clean-ease), transform 140ms var(--clean-ease),
     background-color 200ms var(--clean-ease);
+}
+
+/* The rule between the bin and the tools. Its own mark rather than the button's
+   right border, because a border forced the button square: a rounded corner
+   bends its border with it, so the bin was the one plate in the bar whose hover
+   and press ignored the whimsy tier's --leaf. Centred in the gap to the glove -
+   the flex gap plus the 2px margin the shown bin keeps. */
+#clean-bar #clean-can::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  right: -5px;
+  width: var(--hairline);
+  background: var(--rule);
 }
 
 /* Shown, and no longer clipped. The hidden overflow above is what holds the
@@ -958,6 +1025,7 @@
   #clean-can .ico { width: 44px; height: 44px; }
   /* The gap is 2px here, so that is what the empty bin has to give back. */
   #clean-bar #clean-can { margin-right: -2px; }
+  #clean-bar #clean-can::after { right: -2px; }
   #clean-bar #clean-can.is-shown { width: 56px; margin-right: 2px; }
   #clean-top {
     top: max(10px, env(safe-area-inset-top));
