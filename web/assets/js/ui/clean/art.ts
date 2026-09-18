@@ -159,18 +159,59 @@ export const crust = (kind: MessKind, rng: Rng): Crust =>
  *  the same shape. */
 const CRUST_AT = 0.35;
 
+/** Blobs in a spill, and how big each one is against the card. A spill is a few
+ *  overlapping rounds - a cup set down three times - not one. */
+const COFFEE_RINGS = 4;
+const INK_BLOTS = 5;
+
+/**
+ * Where a point falls inside a spill of `n` blobs, as a signed distance from
+ * its boundary: positive inside, and larger the deeper in.
+ *
+ * The blobs are rolled from the seed alone, so this is the same answer every
+ * time it is asked - which is what lets `crustAt()` and the surfaces above read
+ * it independently without ever disagreeing about where the spill is.
+ */
+function blotAt(seed: number, x: number, y: number, n: number, size: number) {
+  let edge = -1;
+  for (let i = 0; i < n; i++) {
+    const cx = 0.5 + (hash(i, 1, seed) - 0.5) * 0.62;
+    const cy = 0.5 + (hash(i, 2, seed) - 0.5) * 0.62;
+    const r = size * (0.55 + hash(i, 3, seed) * 0.9);
+    // Squashed a little, and each one differently: a cup leaves an ellipse
+    // unless it was set down dead flat.
+    const sx = 0.8 + hash(i, 4, seed) * 0.45;
+    const dx = (x - cx) / (r * sx);
+    const dy = (y - cy) / r;
+    // The rim wanders, or every ring is a drawn circle.
+    const wob = (gnoise(x * 6 + i * 3, y * 6, seed + i) - 0.5) * 0.22;
+    edge = Math.max(edge, 1 - Math.hypot(dx, dy) + wob);
+  }
+  return { edge };
+}
+
+/** Kinds that are a spill on the card rather than a layer over the whole of it.
+ *  A spill that is a rectangle is not a spill. */
+const SPILLS: Record<string, { n: number, size: number }> = {
+  coffee: { n: COFFEE_RINGS, size: 0.26 },
+  ink: { n: INK_BLOTS, size: 0.2 },
+};
+
 /**
  * How thick the crust is at a point in 0..1 card space: 0 is bare card, 1 is
  * the full layer. The grid predicate and the paint both read this, which is the
- * one rule this module exists to keep - and the reason it is still a function
- * now that its answer is so plain.
+ * one rule this module exists to keep.
  */
-export function crustAt(_c: Crust, x: number, y: number): number {
-  // Edge to edge. It used to stop at an irregular rim with a few bare bites
-  // taken out of it, and at four fifths opacity that rim read as the crust
-  // having been put on crooked rather than as the crust having an edge. The
-  // card's own rounded corners are the only outline it has now.
-  return x >= 0 && x <= 1 && y >= 0 && y <= 1 ? 1 : 0;
+export function crustAt(c: Crust, x: number, y: number): number {
+  if (x < 0 || x > 1 || y < 0 || y > 1) return 0;
+  const spill = SPILLS[c.kind];
+  // Edge to edge for the caked grimes. It used to stop at an irregular rim with
+  // a few bare bites taken out of it, and at four fifths opacity that rim read
+  // as the crust having been put on crooked rather than as the crust having an
+  // edge. The card's own rounded corners are the only outline those have now.
+  if (!spill) return 1;
+  // A spill has a shape, and this is the same shape its surface paints.
+  return clamp01(blotAt(c.seed, x, y, spill.n, spill.size).edge * 6);
 }
 
 /** The predicate mess.ts fills its occupancy grid from. */
@@ -322,10 +363,79 @@ const tar: Surface = (seed, x, y, rich) => {
   sWet = 1;
 };
 
+/**
+ * Coffee. Barely a surface at all: a stain is *in* the paper, not on it, so the
+ * relief is almost nothing and everything that makes it read is the tide line.
+ *
+ * Coffee dries darkest at its edge - the liquid creeps outward and the solids
+ * are carried with it and left there. So the darkness here is a function of
+ * distance from the spill's own boundary rather than of any noise, which is
+ * also what puts a ring under every overlapping ring. The middle is deliberately
+ * see-through: the one grime you can read the card through.
+ */
+const coffee: Surface = (seed, x, y, rich) => {
+  // The same blobs crustAt() masked, read from the same place - a second copy
+  // of these numbers is the mask and the paint drifting apart.
+  const b = blotAt(seed, x, y, SPILLS.coffee!.n, SPILLS.coffee!.size);
+  // How near this point is to the edge of whatever ring it is inside.
+  const tide = smooth(0.22, 0.02, b.edge) * 0.8 + smooth(0.6, 0.3, b.edge) * 0.2;
+  const grain = rich ? gfbm(x * 40, y * 40, seed + 71, 2) : gnoise(x * 40, y * 40, seed + 71);
+  sH = tide * 0.5 + grain * 0.1;
+  // Sepia, and light in the middle: 0.35 alpha of stain over a pale card is
+  // what a coffee ring is, and a solid brown rectangle is what it is not.
+  const dark = 0.3 + tide * 0.7;
+  sR = mix(206, 128, dark) + grain * 8;
+  sG = mix(176, 88, dark) + grain * 6;
+  sB = mix(138, 58, dark) + grain * 4;
+  sWet = 0.2;
+};
+
+/**
+ * Ink. Blots with dense centres and capillary edges - the feathering where it
+ * has wicked along the paper's fibres, which is the only thing that tells ink
+ * from paint. Warm near-black, the app's own ink rather than a blue-black.
+ */
+const ink: Surface = (seed, x, y, rich) => {
+  const b = blotAt(seed, x, y, SPILLS.ink!.n, SPILLS.ink!.size);
+  // Fibres: the boundary is pushed in and out at high frequency, so the edge
+  // frays instead of cutting.
+  const fray = (gfbm(x * 34, y * 34, seed + 81, rich ? 3 : 2) - 0.5) * 0.09;
+  const body = smooth(0.0, 0.16, b.edge + fray);
+  sH = body * 0.7 + (rich ? gfbm(x * 25, y * 25, seed + 82, 2) * 0.12 : 0);
+  const v = gnoise(x * 28, y * 28, seed + 83);
+  sR = 34 + (1 - body) * 26 + v * 5;
+  sG = 26 + (1 - body) * 20 + v * 4;
+  sB = 19 + (1 - body) * 15 + v * 3;
+  sWet = 0.35;
+};
+
+/**
+ * A settled dust film. Flat, matte, fine and even - the whole of it is the
+ * grain and the streaks somebody's fingers left wiping through it, which are
+ * what say "dust" rather than "grey card".
+ */
+const film: Surface = (seed, x, y, rich) => {
+  const grain = rich ? gfbm(x * 70, y * 70, seed + 91, 2) : gnoise(x * 70, y * 70, seed + 91);
+  // Streaks: a few slow bands, warped, where the film is thinner.
+  const wy = y + (gnoise(x * 1.7, y * 1.7, seed + 92) - 0.5) * 0.5;
+  const band = 1 - Math.abs(2 * fbm(x * 1.3, wy * 7, seed + 93, 2) - 1);
+  const wipe = smooth(0.62, 0.95, band) * 0.75;
+  sH = grain * 0.22 + (1 - wipe) * 0.12;
+  // Warm grey: the dust in this room is off a paper board, not off a road.
+  const k = 1 - wipe * 0.55;
+  sR = (176 + grain * 22) * k;
+  sG = (168 + grain * 20) * k;
+  sB = (154 + grain * 18) * k;
+  sWet = 0;
+};
+
 const MATERIAL: Record<string, Material> = {
   mud: { surface: mud, relief: 0.016, gloss: 0, shine: 1, fleck: 'rgb(132 100 66)', wash: [96, 72, 46] },
   rust: { surface: rust, relief: 0.018, gloss: 0, shine: 1, fleck: 'rgb(150 74 30)', wash: [108, 54, 24] },
   tar: { surface: tar, relief: 0.020, gloss: 0.8, shine: 60, fleck: 'rgb(44 34 25)', wash: [34, 26, 19] },
+  coffee: { surface: coffee, relief: 0.004, gloss: 0.1, shine: 12, fleck: 'rgb(150 108 70)', wash: [120, 86, 54] },
+  ink: { surface: ink, relief: 0.006, gloss: 0.25, shine: 26, fleck: 'rgb(48 38 28)', wash: [38, 30, 22] },
+  film: { surface: film, relief: 0.008, gloss: 0, shine: 1, fleck: 'rgb(178 170 156)', wash: [134 , 128, 116] },
 };
 
 const materialOf = (kind: MessKind) => MATERIAL[kind] ?? MATERIAL.mud!;
@@ -714,7 +824,9 @@ export function debrisNode(d: DebrisPlan, rng: Rng): SVGGElement {
       : d.kind === 'paper' ? paper(rng)
         : d.kind === 'cap' ? cap(rng)
           : d.kind === 'dust' ? dust(rng)
-          : crumb(rng);
+            : d.kind === 'tape' ? tape(rng)
+              : d.kind === 'sticky' ? sticky(rng)
+              : crumb(rng);
   // Lying on the crust, not printed into it. An offset dark copy rather than a
   // filter: a blur filter per node is a separate render surface each, and there
   // are up to ten of these on every card.
@@ -1069,6 +1181,225 @@ function cap(rng: Rng) {
   return g;
 }
 
+/**
+ * Everything that peels rather than lifting is drawn inside one of these, and
+ * `peelAt()` is the only thing that ever writes to it.
+ *
+ * It is a group *inside* the piece's art rather than the art's own root, because
+ * shadowOf() clones the art and renames the root - so a peel group one level
+ * down is cloned intact and the shadow comes up off the card with the piece
+ * above it, which is most of what makes a peel read as a peel.
+ *
+ * `far` is the end it stays stuck by, in the drawing's own units.
+ */
+function peelGroup(far: number): SVGGElement {
+  const g = svg('g');
+  g.setAttribute('class', 'clean-peel');
+  g.dataset.far = far.toFixed(2);
+  return g;
+}
+
+/** How much of its length a piece gives up over a full peel. Not all of it: a
+ *  strip that scales to nothing is gone from the card before it ever reaches the
+ *  hand, and what turns up in the glove a frame later reads as a second object
+ *  rather than as the thing that was just peeled off. */
+const PEEL_SHRINK = 0.55;
+
+/** How far a piece has peeled, 0 (flat on the card) to 1 (off it). Written on
+ *  the piece and on its shadow both - see peelGroup(). */
+export function peelAt(node: SVGGElement, t: number) {
+  const k = 1 - clamp01(t) * PEEL_SHRINK;
+  for (const g of node.querySelectorAll<SVGGElement>('.clean-peel')) {
+    const far = Number(g.dataset.far) || 0;
+    g.setAttribute('transform',
+      `translate(0 ${f2(far)}) scale(1 ${k.toFixed(3)}) translate(0 ${f2(-far)})`);
+  }
+}
+
+/** Yellowed paper, its edge, and the back of the tape where it has lifted. */
+const TAPE_TINTS = [
+  ['#e9dcb4', '#cfbf91', '#f5eed6'],
+  ['#e3d3a6', '#c6b384', '#f1e8cb'],
+  ['#efe4c4', '#d5c79e', '#f8f2de'],
+];
+
+/**
+ * A torn strip of masking tape, lying along its own `y` so the peel has a
+ * length to run down.
+ *
+ * Both short ends are serrated, because tape is torn and not cut - a strip with
+ * two straight ends is a rectangle, and a rectangle on a card is a label. The
+ * lifted corner is the whole invitation: it says where to put the glove, and it
+ * is the point the strip comes away from.
+ */
+function tape(rng: Rng) {
+  const g = svg('g');
+  const l = rand(rng, 9, 13);
+  const w = rand(rng, 3, 3.8);
+  const top = -l / 2;
+  const bot = l / 2;
+  const peel = peelGroup(bot);
+  const [body, edge, back] = TAPE_TINTS[Math.floor(rng() * TAPE_TINTS.length)]!;
+  const teeth = 5;
+  let d = `M${f2(-w / 2)} ${f2(top)}`;
+  for (let i = 1; i <= teeth; i++)
+    d += ` L${f2(-w / 2 + (w * i) / teeth)} ${f2(top + (i % 2 ? 0.45 : 0))}`;
+  d += ` L${f2(w / 2)} ${f2(bot)}`;
+  for (let i = 1; i <= teeth; i++)
+    d += ` L${f2(w / 2 - (w * i) / teeth)} ${f2(bot - (i % 2 ? 0.45 : 0))}`;
+  d += ' Z';
+  peel.append(shape('path', { d, fill: body!, stroke: edge!, 'stroke-width': 0.14 }));
+  // The fibres in the crepe, which are what stop a flat fill reading as plastic.
+  let fibres = '';
+  for (let i = 0; i < 7; i++) {
+    const x = rand(rng, -w * 0.42, w * 0.42);
+    const from = rand(rng, top + 0.6, top + l * 0.4);
+    fibres += ` M${f2(x)} ${f2(from)} L${f2(x + rand(rng, -0.25, 0.25))} ${f2(from + rand(rng, l * 0.2, l * 0.5))}`;
+  }
+  peel.append(line(fibres.trim(), edge!, 0.09, 0.55));
+  // The lifted corner, and what it casts on the card. Drawn last, over the
+  // strip, because it is folded back on top of it.
+  const lift = rand(rng, 1.8, 2.6);
+  const fold = `M${f2(-w / 2)} ${f2(top + lift)} L${f2(w * 0.18)} ${f2(top - 0.1)} L${f2(-w * 0.1)} ${f2(top + lift * 1.15)} Z`;
+  peel.append(fill(fold, 'rgb(0 0 0 / 0.16)', 1));
+  peel.append(shape('path', {
+    d: `M${f2(-w / 2 + 0.25)} ${f2(top + lift - 0.2)} L${f2(w * 0.12)} ${f2(top + 0.1)} L${f2(-w * 0.14)} ${f2(top + lift * 0.95)} Z`,
+    fill: back!, stroke: edge!, 'stroke-width': 0.12,
+  }));
+  g.append(peel);
+  return g;
+}
+
+/**
+ * A sticky note, curled off the card at its top edge - the one piece of the
+ * mess allowed a palette token, because it is the app's own stationery and a
+ * note on this board should be one of the four colours notes are.
+ *
+ * The token goes in as `var(--note-N)` on the fill attribute rather than through
+ * a class: shadowOf() rewrites fills as attributes, and an attribute cannot
+ * beat a class rule - the shadow would have come out the colour of the note.
+ */
+function sticky(rng: Rng) {
+  const g = svg('g');
+  const s = rand(rng, 6.4, 7.6);
+  const half = s / 2;
+  const peel = peelGroup(half);
+  const tint = `var(--note-${1 + Math.floor(rng() * 4)})`;
+  const curl = rand(rng, 1.1, 1.8);
+  const lip = -half + curl;
+  // The sheet, from under the curl down.
+  peel.append(shape('path', {
+    d: `M${f2(-half)} ${f2(lip)} L${f2(half)} ${f2(lip)} L${f2(half)} ${f2(half)} L${f2(-half)} ${f2(half)} Z`,
+    fill: tint, stroke: 'rgb(0 0 0 / 0.16)', 'stroke-width': 0.12,
+  }));
+  // Two strokes of somebody's pen. A blank note is a coloured square.
+  let pen = '';
+  for (let i = 0; i < 2; i++) {
+    const y = lip + (i + 1) * (s - curl) * 0.3;
+    pen += ` M${f2(-half * 0.55)} ${f2(y)} Q${f2(rand(rng, -1, 1))} ${f2(y - 0.35)} ${f2(half * rand(rng, 0.2, 0.6))} ${f2(y)}`;
+  }
+  peel.append(line(pen.trim(), 'rgb(40 34 26 / 0.45)', 0.16));
+  // What the lip throws onto the sheet below it, and then the lip: the back of
+  // the paper, which is paler than its face.
+  peel.append(fill(
+    `M${f2(-half)} ${f2(lip)} Q0 ${f2(lip + curl * 0.9)} ${f2(half)} ${f2(lip)}`
+    + ` L${f2(half)} ${f2(lip + 0.55)} Q0 ${f2(lip + curl * 0.9 + 0.55)} ${f2(-half)} ${f2(lip + 0.55)} Z`,
+    'rgb(0 0 0 / 0.13)',
+  ));
+  peel.append(shape('path', {
+    d: `M${f2(-half)} ${f2(-half)} Q0 ${f2(-half + 0.7)} ${f2(half)} ${f2(-half)}`
+      + ` L${f2(half)} ${f2(lip)} Q0 ${f2(lip + curl * 0.9)} ${f2(-half)} ${f2(lip)} Z`,
+    fill: tint, stroke: 'rgb(0 0 0 / 0.14)', 'stroke-width': 0.12,
+  }));
+  peel.append(fill(
+    `M${f2(-half)} ${f2(-half)} Q0 ${f2(-half + 0.7)} ${f2(half)} ${f2(-half)}`
+    + ` L${f2(half)} ${f2(lip)} Q0 ${f2(lip + curl * 0.9)} ${f2(-half)} ${f2(lip)} Z`,
+    'rgb(255 253 246 / 0.45)',
+  ));
+  g.append(peel);
+  return g;
+}
+
+// ---- boot prints ---------------------------------------------------------
+
+/**
+ * The print's occupancy grid, a side like every other field's.
+ *
+ * Square over a boot-shaped box, so a cell is tall and thin in world units -
+ * which is exactly what a card's cells already are on any card that is not
+ * square, and `stamp()` reads a field's side back off `cells.length`. A second
+ * grid shape would be a second set of arithmetic for one mess.
+ *
+ * Coarse at twelve: a print is a fifth the size of a card and does not want a
+ * card's worth of bookkeeping.
+ */
+export const BOOT_GRID = 12;
+
+/**
+ * Whether a point in the print's own 0..1 box is under the sole.
+ *
+ * A heel and a sole, separated by the waist of the boot, with three tread bars
+ * cut out of the sole and one out of the heel. Cut out, rather than drawn on:
+ * the tread is where the boot did *not* touch the floor, so a print is the
+ * negative of the thing that made it. Drawing the bars as marks reads as a
+ * rubber stamp, which was the first attempt.
+ */
+export function bootAt(x: number, y: number): number {
+  if (x < 0 || x > 1 || y < 0 || y > 1) return 0;
+  // Round the toe and the heel, and pull the waist in.
+  const cx = 0.5 + (y < 0.5 ? Math.sin(y * 6.0) * 0.03 : 0);
+  // Half-width down the length: wide at the ball, narrow at the waist, medium
+  // at the heel.
+  const half = y < 0.10 ? 0.30 * Math.sqrt(Math.max(0, y / 0.10))
+    : y < 0.34 ? 0.30
+      : y < 0.52 ? 0.30 - ((y - 0.34) / 0.18) * 0.12
+        : y < 0.62 ? 0.18
+          : y < 0.70 ? 0.18 + ((y - 0.62) / 0.08) * 0.06
+            : y < 0.94 ? 0.24
+              : 0.24 * Math.sqrt(Math.max(0, (1 - y) / 0.06));
+  if (Math.abs(x - cx) > half) return 0;
+  // The gap between sole and heel, where the arch never touches.
+  if (y > 0.56 && y < 0.64) return 0;
+  // Tread: bars across the sole, and one across the heel.
+  const bar = y < 0.56
+    ? Math.abs(((y - 0.06) / 0.125 % 1) - 0.5) < 0.16
+    : Math.abs(((y - 0.70) / 0.12 % 1) - 0.5) < 0.16;
+  return bar ? 0 : 1;
+}
+
+/** The predicate a print's occupancy grid is filled from. */
+export const bootMask = () => (x: number, y: number) => bootAt(x, y) > 0;
+
+/**
+ * Paint one print: the mud surface, lit like every other mess, cut to the sole.
+ *
+ * The same `mud` material the caked grime uses, so a print and a muddy card are
+ * plainly the same stuff - which is the point of a trail that walks over both.
+ */
+export function paintBoot(
+  ctx: CanvasRenderingContext2D, seed: number, w: number, h: number, rich: boolean,
+) {
+  const img = ctx.createImageData(w, h);
+  const px = img.data;
+  const m = materialOf('mud');
+  for (let iy = 0; iy < h; iy++)
+    for (let ix = 0; ix < w; ix++) {
+      const x = (ix + 0.5) / w;
+      const y = (iy + 0.5) / h;
+      const i = (iy * w + ix) * 4;
+      if (!bootAt(x, y)) { px[i + 3] = 0; continue; }
+      m.surface(seed, x, y, rich);
+      // Thinner at the edges of the sole, because a boot presses hardest in the
+      // middle and a print with a hard outline is a sticker.
+      const edge = Math.min(1, Math.min(x, 1 - x, y, 1 - y) * 6);
+      px[i] = Math.max(0, Math.min(255, sR));
+      px[i + 1] = Math.max(0, Math.min(255, sG));
+      px[i + 2] = Math.max(0, Math.min(255, sB));
+      px[i + 3] = Math.max(0, Math.min(255, 235 * edge));
+    }
+  ctx.putImageData(img, 0, 0);
+}
+
 // ---- cobwebs -------------------------------------------------------------
 
 /** How far the lowest strand of a web of this span droops. Rolled once and kept
@@ -1318,5 +1649,82 @@ export function webNode(d: string): SVGPathElement {
   p.setAttribute('class', 'clean-web');
   p.setAttribute('d', d);
   return p;
+}
+
+// ---- the spider ----------------------------------------------------------
+
+/** How wide the spider is, legs included, in world pixels. Its host's viewBox is
+ *  this box exactly, centred on nothing - so a unit of the drawing below is a
+ *  world pixel and the numbers in it are the size on the board. */
+export const SPIDER_SIZE = 14;
+
+/**
+ * The one spider, drawn head-up: `-y` is the way it faces, so clean.ts turns it
+ * with a single rotation off its heading.
+ *
+ * Eight legs in two interleaved groups rather than a left set and a right one.
+ * A spider walks its first and third leg on one side with its second and fourth
+ * on the other, and the two groups here are exactly those two teams - which is
+ * why alternating them reads as walking and alternating sides reads as rowing.
+ * The shuffle itself is clean.css's, one animation per group half a cycle apart.
+ */
+export function spiderNode(rng: Rng): SVGSVGElement {
+  const host = svg('svg');
+  host.setAttribute('class', 'clean-spider');
+  const half = SPIDER_SIZE / 2;
+  host.setAttribute('viewBox', `${-half} ${-half} ${SPIDER_SIZE} ${SPIDER_SIZE}`);
+  // Warm dark, like everything else on this board: a black spider would be the
+  // one cold thing in the mess.
+  const shell = '#2f231a';
+  const back = '#241a12';
+  const lit = '#6b5440';
+
+  const legs: [SVGGElement, SVGGElement] = [svg('g'), svg('g')];
+  legs[0].setAttribute('class', 'clean-spider-legs');
+  legs[1].setAttribute('class', 'clean-spider-legs is-b');
+  for (let i = 0; i < 4; i++) {
+    // Front legs reach forward and long, back legs trail; the knee is above the
+    // line between shoulder and foot, which is the whole of a spider's stance.
+    const along = -2.2 + i * 1.5;
+    const out = 2.6 + (i === 0 || i === 3 ? 0.6 : 1.1);
+    const reach = out + rand(rng, 1.4, 2.2);
+    const lift = -1.1 - rand(rng, 0.5, 1.1) + i * 0.25;
+    for (const side of [-1, 1] as const) {
+      const d = `M${f2(side * 0.9)} ${f2(along)}`
+        + ` L${f2(side * out)} ${f2(along + lift)}`
+        + ` L${f2(side * reach)} ${f2(along + lift + rand(rng, 1.6, 2.4))}`;
+      // Team A is the front-left and back-left with the middle two on the right;
+      // team B is the mirror of it. `(i + side)` is odd for one and even for the
+      // other, which is that split written once.
+      legs[(i + (side > 0 ? 1 : 0)) % 2]!.append(line(d, shell, 0.5));
+    }
+  }
+
+  const body = svg('g');
+  // Abdomen behind, cephalothorax in front, and the abdomen is the bigger of the
+  // two - a spider seen from above is mostly abdomen.
+  body.append(shape('ellipse', { cx: 0, cy: 2.1, rx: 2.2, ry: 2.9, fill: back, stroke: 'none' }));
+  body.append(shape('ellipse', { cx: 0, cy: -1.4, rx: 1.5, ry: 1.7, fill: shell, stroke: 'none' }));
+  // A pale fleck on each, where the light is coming from.
+  body.append(shape('ellipse', {
+    cx: -0.7, cy: 1.1, rx: 0.7, ry: 1, fill: lit, stroke: 'none', opacity: 0.45,
+    transform: 'rotate(-20 -0.7 1.1)',
+  }));
+  body.append(shape('circle', { cx: -0.5, cy: -1.8, r: 0.4, fill: lit, stroke: 'none', opacity: 0.4 }));
+  // The palps, which are what stops the front end being a full stop.
+  body.append(line('M-0.8 -2.4 L-1.7 -3.4', shell, 0.4));
+  body.append(line('M0.8 -2.4 L1.7 -3.4', shell, 0.4));
+
+  host.append(legs[0], legs[1], body);
+  return host;
+}
+
+/** The thread it comes down on: a hairline in the layer, tied where the strand
+ *  was. Its own element rather than a path in the web sheet, because the web
+ *  sheet is the thing that has just been swept away. */
+export function threadNode(): HTMLElement {
+  const node = document.createElement('div');
+  node.className = 'clean-thread';
+  return node;
 }
 

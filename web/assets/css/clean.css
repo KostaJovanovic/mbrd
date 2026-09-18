@@ -36,6 +36,19 @@
 /* The paper texture stays, quieter: it is the surface being cleaned. */
 :root.is-cleaning #grain { opacity: 0.4; }
 
+/* A dirty GIF holds still, and starts again the moment its card comes clean.
+   A card under an inch of mud carrying on as though nothing had happened to it
+   is the one thing on the board not taking part, and the frame where it picks
+   up again is worth more than the loop nobody could see under the crust.
+
+   The same twin <img> and the same swap canvas/stills.ts already uses for the
+   zoom rung and for the quality dial - clean.ts writes the class per card and
+   asks that module to shoot the frame. `is-ready` is on the twin only once its
+   picture has loaded, so a capture that never arrived leaves the GIF playing
+   rather than blanking the card. */
+.item.is-clean-held .item-body img[data-gif] + img.still.is-ready { display: block; }
+.item.is-clean-held .item-body img[data-gif]:has(+ .still.is-ready) { display: none; }
+
 /* ---------------------------------------------------------------------------
    The dirt
 
@@ -90,7 +103,13 @@
 }
 
 /* Four fifths, not whole: what is under the crust shows faintly through it, so
-   there is always something you are cleaning *towards*. */
+   there is always something you are cleaning *towards*.
+
+   This is per canvas, and a layered card has two of them stacked - so where
+   both remain the card is nearly hidden, and where only the under-layer is left
+   it is not. That difference is the whole point of layering: the reveal happens
+   twice. clean.ts appends the fields bottom first, which is what puts the top
+   layer on top. */
 .clean-grime.clean-settled {
   opacity: 0.8;
   transition: opacity 260ms var(--clean-ease);
@@ -242,8 +261,71 @@
   stroke-linejoin: round;
 }
 
-/* What leaving looks like, for a washed-off crust and a swept web alike.
-   450ms is what clean.ts waits before it removes the node. */
+/* The tenant of the biggest web. Placed in the dirt layer's own coordinates and
+   turned by clean.ts, which is also what drives the drop and the walk - this
+   sheet owns the leg shuffle and nothing else.
+
+   Its own shadow rather than the webs' sheet: it leaves that sheet behind the
+   moment the web is swept, and walks off across the board on its own. */
+.clean-spider {
+  position: absolute;
+  overflow: visible;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 1px rgb(30 26 20 / 0.4));
+}
+
+/* Two teams of four - the first and third leg on one side with the second and
+   fourth on the other, which is the diagonal gait a spider actually walks. Half
+   a cycle apart, so one team is always down. */
+.clean-spider-legs {
+  transform-box: view-box;
+  transform-origin: center;
+  animation: clean-shuffle 2.4s ease-in-out infinite;
+}
+
+.clean-spider-legs.is-b { animation-delay: -1.2s; }
+
+/* A stroll is the same shuffle, quick. */
+.clean-spider.is-walking .clean-spider-legs { animation-duration: 0.5s; }
+
+/* The tier where nothing moves on its own. It sits still and goes with its web -
+   see dropSpider(). */
+.clean-spider.is-still .clean-spider-legs { animation: none; }
+
+/* Two keyframes, which is all a shuffle is: the legs gather and reach again. A
+   rotation rather than a translation, so the far side of the body swings more
+   than the near one and the whole thing reads as pushing rather than sliding. */
+@keyframes clean-shuffle {
+  0%, 100% { transform: rotate(-3deg) translateY(0.3px); }
+  50% { transform: rotate(3deg) translateY(-0.3px); }
+}
+
+/* The thread it comes down on, tied where the strand was. A hairline in the
+   layer rather than a path in the web sheet, because the web sheet is the thing
+   that has just been swept away. */
+.clean-thread {
+  position: absolute;
+  width: 1px;
+  pointer-events: none;
+  background: rgb(250 249 245 / 0.8);
+}
+
+/* The trail across the floor. Absolutely placed in the dirt layer like a card
+   box, but owned by no card - it sits after them in document order, because
+   whoever walked through did it once everything else was already on the board,
+   and a print under a card is a print nobody can wash.
+
+   Smooth scaling for the same reason the crust has it: a print is generated at
+   three pixels to the world unit and drawn up. */
+.clean-track {
+  position: absolute;
+  image-rendering: auto;
+  pointer-events: none;
+  opacity: 0.86;
+}
+
+/* What leaving looks like, for a washed-off crust, a swept web and a washed
+   print alike. 450ms is what clean.ts waits before it removes the node. */
 .clean-gone {
   animation: clean-gone var(--clean-leave) var(--clean-ease) forwards;
   pointer-events: none;
@@ -794,10 +876,17 @@
     background-color 200ms var(--clean-ease);
 }
 
+/* Shown, and no longer clipped. The hidden overflow above is what holds the
+   glyph inside a zero-width slot while the bin is away; once it is here it is a
+   54px drawing in a 72px button whose lid *swings out of that box* when it
+   opens, and the clip took the corner off both the lid and the rim. The arrival
+   is carried by the scale below rather than by the clip, which is what lets this
+   be dropped the moment there is room. */
 #clean-bar #clean-can.is-shown {
   width: 72px;
   margin-right: 2px;
   opacity: 1;
+  overflow: visible;
 }
 
 #clean-can .ico { width: 54px; height: 54px; overflow: visible; }

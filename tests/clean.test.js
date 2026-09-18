@@ -14,22 +14,33 @@ import {
   konamiMatcher, KONAMI, tapMatcher, TAPS, TAP_GAP_MS, TAP_SPAN_MS,
 } from '../web/assets/js/ui/clean/konami.ts';
 import {
-  MESS, TOOLS, GRIMES, DEBRIS, TUNING, yieldsTo,
+  MESS, TOOLS, GRIMES, DEBRIS, GRIME_FOR, grimesFor, LAYERS, layersFor, TUNING, yieldsTo, planTracks,
   makeField, emptyField, coverage, fieldClear, stamp,
   fullTank, tankStep, tankPower, bulkOf, handRoom,
   gapBetween, trioWebs, spreadOf, webCards, webHolds, trianglesOverlap,
   planBoard, cardClean, tally, jetShape, SUBS, wearShare, WEAR_MAX, wearOf,
-  toolWork, toolWanted, toolShare,
+  toolWork, toolWanted, toolShare, peelFor,
 } from '../web/assets/js/ui/clean/mess.ts';
-import { crust, crustAt, crustMask, webCore } from '../web/assets/js/ui/clean/art.ts';
+import { crust, crustAt, crustMask, webCore, bootAt } from '../web/assets/js/ui/clean/art.ts';
 
-/** Deterministic PRNG, so a failing deal is reproducible rather than a one-off. */
+/**
+ * Deterministic PRNG, so a failing deal is reproducible rather than a one-off.
+ *
+ * Warmed before it is handed out. An xorshift seeded with a small integer takes
+ * a few rounds to look random, and every test here seeds it with 1, 2, 3 - so
+ * the *first* value was strongly correlated across seeds. A coin flip read off
+ * it came up the same way eighty times running, which silently turned a
+ * one-in-two chance into a certainty and hid the fact that nothing was testing
+ * the other branch.
+ */
 function rng(seed = 1) {
-  let h = seed >>> 0;
-  return () => {
+  let h = (seed >>> 0) || 1;
+  const next = () => {
     h ^= h << 13; h ^= h >>> 17; h ^= h << 5; h >>>= 0;
     return h / 0x100000000;
   };
+  for (let i = 0; i < 8; i++) next();
+  return next;
 }
 
 const box = (id, x, y, w = 100, h = 100) => ({ id, x, y, w, h });
@@ -238,15 +249,60 @@ test('every piece of debris has a bulk and every grime a depth', () => {
   }
 });
 
-test('the two deal lists name only things the table knows', () => {
+test('the deal lists name only things the table knows', () => {
   for (const kind of GRIMES) assert.equal(MESS[kind].family, 'field', `${kind} is not a grime`);
   for (const kind of DEBRIS) assert.equal(MESS[kind].family, 'debris', `${kind} is not debris`);
-  // Every kind of each is reachable from its list, or it is a drawing nobody
-  // will ever see.
+  // Every list in GRIME_FOR too, so a kind cannot be given to a card type it is
+  // not a field for.
+  for (const [type, list] of Object.entries(GRIME_FOR)) {
+    assert.ok(list.length, `${type} resolves to nothing`);
+    for (const kind of list)
+      assert.equal(MESS[kind].family, 'field', `${type} may be dealt ${kind}, which is not a grime`);
+  }
+  // Every kind is reachable from some list, or it is a drawing nobody will ever
+  // see. A field may arrive through GRIMES or through any GRIME_FOR entry.
+  const dealtFields = new Set([...GRIMES, ...Object.values(GRIME_FOR).flat()]);
   for (const [kind, def] of Object.entries(MESS)) {
-    if (def.family === 'field') assert.ok(GRIMES.includes(kind), `${kind} is never dealt`);
+    if (def.family === 'field') assert.ok(dealtFields.has(kind), `${kind} is never dealt`);
     if (def.family === 'debris') assert.ok(DEBRIS.includes(kind), `${kind} is never dealt`);
   }
+});
+
+test('every card type resolves to grimes, and an unknown one still gets some', () => {
+  // grimesFor() must never hand back an empty list: a card type nobody wrote a
+  // rule for is not a clean card, it is a card with no rule.
+  for (const type of Object.keys(GRIME_FOR))
+    assert.ok(grimesFor(type).length, `${type} resolves to nothing`);
+  assert.deepEqual(grimesFor(undefined), GRIMES);
+  assert.deepEqual(grimesFor('sticker'), GRIMES, 'an unlisted type falls back to the caked three');
+});
+
+test('no card type is dealt only one kind of grime', () => {
+  // Weighted, never exclusive. A table that said "notes get coffee, pictures
+  // get mud" would deal the same board every time, only sorted.
+  for (const [type, list] of Object.entries(GRIME_FOR))
+    assert.ok(new Set(list).size >= 3, `${type} can only ever be dealt ${new Set(list).size} kinds`);
+});
+
+test('a note is dealt paper grime far more often than mud', () => {
+  // The point of the table: what lands on a thing follows from what the thing
+  // is. Checked as a share over many deals rather than on one, because the
+  // whole design is weights.
+  const boxes = Array.from({ length: 12 }, (_, i) =>
+    ({ id: `n${i}`, x: i * 400, y: 0, w: 200, h: 200, type: 'note' }));
+  let paper = 0;
+  let caked = 0;
+  for (let seed = 1; seed <= 60; seed++)
+    for (const card of planBoard(boxes, rng(seed)).cards)
+      for (const kind of card.fields) {
+        if (kind === 'coffee' || kind === 'ink') paper++;
+        if (kind === 'mud' || kind === 'rust' || kind === 'tar') caked++;
+      }
+  // A clear majority rather than a landslide: a note can also be dealt mud over
+  // rust, which puts two caked grimes on one card at once, so the margin here
+  // is smaller than the weights alone would suggest.
+  assert.ok(paper > caked * 1.4, `notes got ${paper} paper grimes and ${caked} caked`);
+  assert.ok(caked > 0, 'a note must still be able to get mud, or the table is exclusive');
 });
 
 test('the cobweb is the only mess that belongs to a pair of cards', () => {
@@ -396,6 +452,60 @@ test('worn crust never sits in the band where it cannot be seen', () => {
   }
 });
 
+test('the jet takes nothing from an under-layer until the top has let go of that cell', () => {
+  // The shield clean.ts composes, reproduced here over the pure parts: a cell
+  // of the under-layer is protected exactly while the top's cell at the same
+  // index still has something in it. Per cell and not per field - the jet takes
+  // the mud off this patch and starts on the rust beneath it while the mud a
+  // hand's width away is untouched.
+  const under = makeField('rust', () => true, 32, 3);
+  const top = makeField('mud', () => true, 32, 2);
+  const shield = i => top.cells[i] > 0;
+  const was = under.left;
+
+  // Wash a small patch until the top there is gone.
+  for (let i = 0; i < 40 && top.left === top.total; i++) stamp(top, 0.5, 0.5, 0.1, 0.1, 1);
+  assert.ok(top.left < top.total, 'the fixture never cleared any of the top');
+  assert.equal(under.left, was, 'the under-layer lost cells while the top still covered them');
+
+  // Now the same patch bites through to the rust, and only there.
+  for (let i = 0; i < 40; i++) stamp(under, 0.5, 0.5, 0.1, 0.1, 1, shield);
+  assert.ok(under.left < was, 'the under-layer was never reached');
+
+  // Everywhere the top is still whole, the rust is still whole too.
+  const g = 32;
+  for (let i = 0; i < g * g; i++)
+    if (top.cells[i] > 0) assert.ok(under.cells[i] > 0, `cell ${i} lost its rust through the mud`);
+});
+
+test('a layered card is not clean until both of its grimes are', () => {
+  const under = makeField('rust', () => true, 32, 3);
+  const top = makeField('mud', () => true, 32, 2);
+  const card = { id: 'a', fields: [under, top], debris: [] };
+  assert.equal(cardClean(card, []), false);
+  top.left = 0;
+  assert.equal(cardClean(card, []), false, 'the top alone is not the card');
+  under.left = 0;
+  assert.equal(cardClean(card, []), true);
+});
+
+test('the badge counts both layers as one job', () => {
+  // Two fields, one arc: what is owed here is the whole card, not the top of
+  // it. A badge that filled and reset would read as the work being undone.
+  const under = makeField('rust', () => true, 32, 3);
+  const top = makeField('mud', () => true, 32, 2);
+  const card = { id: 'a', fields: [under, top], debris: [] };
+  const w = toolWork(card, [], 'washer', { debris: 0, webs: 0 });
+  assert.equal(w.left, under.left + top.left);
+  assert.equal(w.total, under.total + top.total);
+  assert.equal(toolShare(w), 0, 'a freshly dealt layered card is at the start of its arc');
+  top.left = 0;
+  assert.ok(toolShare(toolWork(card, [], 'washer', { debris: 0, webs: 0 })) > 0,
+    'clearing the top moved the arc not at all');
+  assert.ok(toolShare(toolWork(card, [], 'washer', { debris: 0, webs: 0 })) < 1,
+    'clearing the top finished the arc, with the rust still there');
+});
+
 test('a zero radius is a no-op rather than a divide by zero', () => {
   const f = makeField('mud', () => true);
   assert.equal(stamp(f, 0.5, 0.5, 0, 0), 0);
@@ -501,6 +611,70 @@ test('the middle of a card is always under the crust, and outside it is not', ()
     assert.equal(crustAt(c, 0.5, 0.5), 1, `seed ${seed} left a hole in the middle`);
     assert.equal(crustAt(c, 0.5, -0.4) < 0.35, true, 'the crust reached off the card');
   }
+});
+
+test('a spill has a shape, and a caked grime does not', () => {
+  // The exception to edge-to-edge, and the reason for it: a spill that is a
+  // rectangle is not a spill. Coffee and ink are meant to leave most of the
+  // card showing; mud, rust, tar and a film of dust cover the lot.
+  const grid = TUNING.grid;
+  const share = (kind, seed) =>
+    makeField(kind, crustMask(crust(kind, rng(seed))), grid, 1).total / (grid * grid);
+  for (let seed = 1; seed <= 30; seed++) {
+    for (const kind of ['mud', 'rust', 'tar', 'film'])
+      assert.ok(share(kind, seed) >= 0.99,
+        `${kind} covered only ${(share(kind, seed) * 100).toFixed(1)}% - it should be edge to edge`);
+    for (const kind of ['coffee', 'ink']) {
+      const s = share(kind, seed);
+      assert.ok(s > 0.2 && s < 0.8, `${kind} covered ${(s * 100).toFixed(1)}% of its card`);
+    }
+  }
+});
+
+test('a spill is in one place on the card rather than sprayed over it', () => {
+  // A blot count that drifted up, or a size that drifted down, would give a
+  // speckle that reads as grain and washes like confetti. The spill's cells
+  // have to hold together.
+  const grid = TUNING.grid;
+  for (let seed = 1; seed <= 20; seed++) {
+    const c = crust('coffee', rng(seed));
+    // The covered cells' spread about their own middle, as a share of the card.
+    let n = 0; let mx = 0; let my = 0;
+    const on = [];
+    for (let iy = 0; iy < grid; iy++)
+      for (let ix = 0; ix < grid; ix++) {
+        const x = (ix + 0.5) / grid; const y = (iy + 0.5) / grid;
+        if (crustAt(c, x, y) < 0.35) continue;
+        on.push([x, y]); mx += x; my += y; n++;
+      }
+    assert.ok(n > 0, `seed ${seed} dealt a coffee ring with nothing in it`);
+    mx /= n; my /= n;
+    let far = 0;
+    for (const [x, y] of on) far = Math.max(far, Math.hypot(x - mx, y - my));
+    assert.ok(far < 0.75, `seed ${seed} spread its spill ${far.toFixed(2)} across the card`);
+  }
+});
+
+test('a spill is see-through in the middle and darkest at its edge', () => {
+  // Which is what coffee does: the liquid creeps outward and leaves its solids
+  // at the boundary. Read off crustAt(), which is the same shape the surface
+  // paints - a tide line drawn without a matching mask would wash off wrong.
+  const c = crust('coffee', rng(3));
+  const grid = TUNING.grid;
+  let interior = 0; let rim = 0; let iN = 0; let rN = 0;
+  for (let iy = 0; iy < grid; iy++)
+    for (let ix = 0; ix < grid; ix++) {
+      const x = (ix + 0.5) / grid; const y = (iy + 0.5) / grid;
+      const t = crustAt(c, x, y);
+      if (t <= 0) continue;
+      // A cell is on the rim if any neighbour is off the spill.
+      const edge = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+        .some(([dx, dy]) => crustAt(c, x + dx / grid, y + dy / grid) <= 0);
+      if (edge) { rim += t; rN++; } else { interior += t; iN++; }
+    }
+  assert.ok(iN > 0 && rN > 0, 'the spill has no inside or no edge');
+  assert.ok(rim / rN < interior / iN,
+    'the spill is not thinner at its edge, so crustAt is not describing a blot');
 });
 
 // ---------------------------------------------------------------------------
@@ -843,6 +1017,110 @@ test('a web holds all three of its cards back, and letting go frees all three', 
 });
 
 // ---------------------------------------------------------------------------
+// muddy tracks
+// ---------------------------------------------------------------------------
+
+/** A board wide enough to walk across. */
+const walkable = n => Array.from({ length: n }, (_, i) =>
+  box(`c${i}`, (i % 4) * 300, Math.floor(i / 4) * 300, 200, 200));
+
+test('a small board is never walked across', () => {
+  // There is no "across the board" on two cards, and a trail that starts and
+  // stops inside one screen reads as litter rather than as somebody passing.
+  for (let seed = 1; seed <= 20; seed++)
+    for (let n = 0; n < TUNING.trackCards; n++)
+      assert.deepEqual(planTracks(walkable(n), rng(seed)), [],
+        `${n} cards got a trail`);
+});
+
+test('about half of big boards get a trail, and it is never endless', () => {
+  let with_ = 0;
+  for (let seed = 1; seed <= 80; seed++) {
+    const t = planTracks(walkable(9), rng(seed));
+    if (!t.length) continue;
+    with_++;
+    assert.ok(t.length >= 4, `a trail of only ${t.length} prints is not a walk`);
+    assert.ok(t.length <= TUNING.trackMax, `a trail of ${t.length} prints is a job`);
+  }
+  assert.ok(with_ > 20 && with_ < 70, `${with_} of 80 boards got a trail`);
+});
+
+test('the prints are numbers, and alternate feet', () => {
+  for (let seed = 1; seed <= 40; seed++) {
+    const t = planTracks(walkable(9), rng(seed));
+    if (!t.length) continue;
+    for (const p of t) {
+      for (const v of [p.x, p.y, p.rot])
+        assert.ok(Number.isFinite(v), `seed ${seed} planted a print at ${p.x},${p.y} facing ${p.rot}`);
+      assert.ok(p.side === 1 || p.side === -1, `side ${p.side}`);
+    }
+    // Left, right, left: somebody walking puts one foot either side of the line
+    // they walk along, and a trail that does not alternate is a hopping man.
+    for (let i = 1; i < t.length; i++)
+      assert.notEqual(t[i].side, t[i - 1].side, `seed ${seed} put two ${t[i].side} feet in a row`);
+  }
+});
+
+test('the prints are evenly spaced however hard the walk bends', () => {
+  // Stepped by arc length, not by curve parameter - stepping in `t` bunches
+  // the prints wherever the curve is tightest, which is a walk that slows down
+  // in the corners.
+  for (let seed = 1; seed <= 40; seed++) {
+    const t = planTracks(walkable(9), rng(seed));
+    if (t.length < 3) continue;
+    const gaps = [];
+    for (let i = 1; i < t.length; i++) gaps.push(Math.hypot(t[i].x - t[i - 1].x, t[i].y - t[i - 1].y));
+    const lo = Math.min(...gaps);
+    const hi = Math.max(...gaps);
+    assert.ok(hi < lo * 2.2, `seed ${seed} spaced its prints ${lo.toFixed(0)} to ${hi.toFixed(0)} apart`);
+  }
+});
+
+test('the walk crosses the board rather than starting in the middle of it', () => {
+  for (let seed = 1; seed <= 40; seed++) {
+    const boxes = walkable(9);
+    const t = planTracks(boxes, rng(seed));
+    if (!t.length) continue;
+    let x0 = Infinity; let x1 = -Infinity;
+    for (const b of boxes) { x0 = Math.min(x0, b.x - b.w / 2); x1 = Math.max(x1, b.x + b.w / 2); }
+    assert.ok(t[0].x < x0, `seed ${seed} began its walk inside the board`);
+    assert.ok(t[t.length - 1].x > x1, `seed ${seed} ended its walk inside the board`);
+  }
+});
+
+test('a print is a sole with tread cut out of it, not a blob', () => {
+  // The tread is where the boot did *not* touch the floor. Drawn as marks
+  // instead it reads as a rubber stamp, which was the first attempt.
+  const g = 40;
+  let on = 0;
+  for (let iy = 0; iy < g; iy++)
+    for (let ix = 0; ix < g; ix++) if (bootAt((ix + 0.5) / g, (iy + 0.5) / g)) on++;
+  const share = on / (g * g);
+  assert.ok(share > 0.15 && share < 0.55, `the sole covers ${(share * 100).toFixed(0)}% of its box`);
+  assert.equal(bootAt(0.5, -0.2), 0, 'the print reached outside its box');
+  assert.equal(bootAt(1.4, 0.5), 0, 'the print reached outside its box');
+  // The arch: a gap right across, between sole and heel.
+  for (let ix = 0; ix < g; ix++)
+    assert.equal(bootAt((ix + 0.5) / g, 0.6), 0, 'the boot has no arch');
+  // And there is tread: some row inside the sole is broken by it.
+  const row = y => Array.from({ length: g }, (_, ix) => bootAt((ix + 0.5) / g, y));
+  assert.ok([0.2, 0.3, 0.4, 0.5].some(y => row(y).every(v => !v)),
+    'no tread bar was ever cut out of the sole');
+});
+
+test('the board is not spotless while a print is still on the floor', () => {
+  const cards = [clean('a'), clean('b')];
+  assert.equal(tally(cards, [], 0, false, 3).done, false, 'footprints must hold the board back');
+  assert.equal(tally(cards, [], 0, false, 0).done, true);
+  // But the count in the bar stays cards: a number that jumped about as the
+  // trail came up would not match what anybody can see.
+  assert.deepEqual(
+    { clean: tally(cards, [], 0, false, 3).clean, total: tally(cards, [], 0, false, 3).total },
+    { clean: 2, total: 2 },
+  );
+});
+
+// ---------------------------------------------------------------------------
 // counting
 // ---------------------------------------------------------------------------
 
@@ -971,9 +1249,9 @@ test('the badge fills as the jet works and is full before the field dissolves', 
 });
 
 test('the badge routes by the mess table and not by a family written out here', () => {
-  // The guard for the kinds still to come: coffee, ink and film are the
-  // washer's, tape and sticky residue are not yet decided. Whichever tool a
-  // kind names in MESS is the tool that must see it.
+  // The guard for kinds added later: coffee, ink and film went to the washer,
+  // tape and sticky notes to the glove, and nothing here had to be told.
+  // Whichever tool a kind names in MESS is the tool that must see it.
   for (const kind of DEBRIS) {
     const card = { id: 'a', fields: [], debris: [{ kind }] };
     const owed = TOOLS.filter(t => toolWork(card, [], t.id, { debris: 1, webs: 0 }).left > 0);
@@ -1091,19 +1369,59 @@ test('an empty board plans nothing and asks for nothing', () => {
   assert.deepEqual(plan.webs, []);
 });
 
-test('a card never carries two grimes, and debris may lie on one', () => {
-  // The one bit of order the game has: a leaf on rust is gloved off before the
-  // jet can reach what it was lying on. Two grimes on one card would be two
-  // reveals fighting for the same pixels.
+test('a card carries one grime or two, never more, and debris may lie on either', () => {
+  // A card used to be held to one grime, on the reasoning that two would be two
+  // reveals fighting for the same pixels. They are not, so long as the top one
+  // shields the one under it: the jet takes the mud off and what is underneath
+  // is still not the card, which is the reveal happening twice. Three would be.
   let stacked = 0;
+  let layered = 0;
   for (let seed = 1; seed <= 40; seed++) {
     const boxes = Array.from({ length: 5 }, (_, i) => box(`c${i}`, i * 400, 0));
     for (const card of planBoard(boxes, rng(seed)).cards) {
-      assert.ok(card.fields.length <= 1, `seed ${seed} dealt ${card.id} two grimes`);
+      assert.ok(card.fields.length <= 2, `seed ${seed} dealt ${card.id} ${card.fields.length} grimes`);
+      if (card.fields.length === 2) layered++;
       if (card.fields.length && card.debris.length) stacked++;
     }
   }
   assert.ok(stacked > 0, 'debris never once landed on grime - the deal is not independent');
+  assert.ok(layered > 0, 'no card was ever dealt two layers');
+});
+
+test('a layered card is dealt bottom first, and the top is the shallower', () => {
+  // Order is load-bearing: clean.ts shields a field with everything after it in
+  // the list. Reversed, the jet would be shielded from the layer on top by the
+  // one underneath and the card could never be cleaned at all.
+  for (const [top, under] of LAYERS) {
+    assert.ok(TUNING.depth[top] <= TUNING.depth[under],
+      `${top} over ${under} puts the deeper grime on top`);
+    assert.equal(MESS[top].family, 'field');
+    assert.equal(MESS[under].family, 'field');
+  }
+  for (let seed = 1; seed <= 60; seed++) {
+    const boxes = Array.from({ length: 6 }, (_, i) => box(`c${i}`, i * 400, 0));
+    for (const card of planBoard(boxes, rng(seed)).cards) {
+      if (card.fields.length !== 2) continue;
+      const [under, top] = card.fields;
+      assert.ok(LAYERS.some(([t, u]) => t === top && u === under),
+        `${top} over ${under} is not a pair anybody allowed`);
+    }
+  }
+});
+
+test('a layer is only dealt where both its halves suit the card', () => {
+  // A note is not given mud over rust merely because the pair exists - both
+  // halves have to be grimes that type can get in the first place.
+  for (const type of [...Object.keys(GRIME_FOR), 'sticker', undefined]) {
+    const allowed = grimesFor(type);
+    for (const [top, under] of layersFor(type)) {
+      assert.ok(allowed.includes(top), `${type} may be dealt ${top} on top, which it cannot get`);
+      assert.ok(allowed.includes(under), `${type} may be dealt ${under} under, which it cannot get`);
+    }
+  }
+  // And the mechanism is reachable: at least one type can actually be layered,
+  // or layeredChance is a number that does nothing.
+  assert.ok(Object.keys(GRIME_FOR).some(t => layersFor(t).length), 'no card type can be layered');
 });
 
 test('every dealt mess is one the table knows, and debris sits on the card', () => {
@@ -1123,10 +1441,47 @@ test('gum is a single stuck thing, and paper and caps come in ones and twos', ()
     const debris = plan.cards[0].debris;
     const count = kind => debris.filter(d => d.kind === kind).length;
     assert.ok(count('gum') <= 1, `seed ${seed} dealt ${count('gum')} pieces of gum to one card`);
-    for (const kind of ['paper', 'cap'])
+    for (const kind of ['paper', 'cap', 'dust', 'tape', 'sticky'])
       assert.ok(count(kind) <= TUNING.fewPieces[1],
         `seed ${seed} dealt ${count(kind)} of ${kind} to one card`);
   }
+});
+
+// ---------------------------------------------------------------------------
+// tape and sticky notes
+// ---------------------------------------------------------------------------
+
+test('tape and a sticky note are glove debris, one bulk each, and are dealt', () => {
+  for (const kind of ['tape', 'sticky']) {
+    assert.equal(MESS[kind].family, 'debris', `${kind} is not debris`);
+    assert.equal(MESS[kind].tool, 'glove', `${kind} is not the glove's`);
+    assert.equal(MESS[kind].bulk, 1, `${kind} should take one place in the hand`);
+    assert.ok(DEBRIS.includes(kind), `${kind} is in the table but never dealt`);
+  }
+});
+
+test('only stuck things peel, and tape takes longer than a note', () => {
+  assert.equal(peelFor('tape'), 700);
+  assert.equal(peelFor('sticky'), 400);
+  // Everything else lifts on a touch, gum included - gum keeps its tugs.
+  for (const kind of Object.keys(MESS))
+    if (kind !== 'tape' && kind !== 'sticky') assert.equal(peelFor(kind), 0, `${kind} peels`);
+  // A peel is a glove thing: a peel time on a field or a web would be a number
+  // nothing ever reads.
+  for (const kind of Object.keys(TUNING.peelMs)) {
+    assert.ok(kind in MESS, `peelMs names ${kind}, which is not a mess`);
+    assert.equal(MESS[kind].tool, 'glove', `${kind} peels but is not the glove's`);
+  }
+});
+
+test('a board that deals debris long enough deals tape and notes too', () => {
+  // Not a rate - only that neither is a drawing nobody will ever see.
+  const seen = new Set();
+  for (let seed = 1; seed <= 400 && seen.size < 2; seed++) {
+    for (const card of planBoard([box('a', 0, 0)], rng(seed)).cards)
+      for (const d of card.debris) if (d.kind === 'tape' || d.kind === 'sticky') seen.add(d.kind);
+  }
+  assert.deepEqual([...seen].sort(), ['sticky', 'tape']);
 });
 
 test('a patch is one kind of debris, not a sweepings pile', () => {

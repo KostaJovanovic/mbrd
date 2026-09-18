@@ -72,10 +72,23 @@ export function initStills(world: HTMLElement, vp: ZoomSource): void {
 /** Re-evaluate freeze state. Called by the quality dial when motion changes. */
 export const refreshStills = () => recheck();
 
+/**
+ * Shoot the twins under `el`, so something else can hold those GIFs still with
+ * a class of its own - the cleaning mode parks a dirty card's GIF until the card
+ * comes clean (clean.css).
+ *
+ * Fills in blanks only. A twin that never gets its frame stays without
+ * `is-ready`, and every rule that swaps to one asks for that class: the worst a
+ * failed capture can do is leave the GIF playing, never blank the card.
+ */
+export function captureStills(el: Element): void {
+  capture(false, el);
+}
+
 /** @param force  true to re-shoot every twin, false to fill in only the blanks. */
-function capture(force: boolean) {
-  if (!worldEl) return;
-  for (const img of worldEl.querySelectorAll<HTMLImageElement>('img[data-gif]')) {
+function capture(force: boolean, root: Element | null = worldEl) {
+  if (!root) return;
+  for (const img of root.querySelectorAll<HTMLImageElement>('img[data-gif]')) {
     // SAFETY: the twin is the GIF's next sibling. Every .still built (renderers.ts, model.ts)
     // is an <img>, and the class is tested next.
     const twin = img.nextElementSibling as StillImage | null;

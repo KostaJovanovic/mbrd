@@ -8,6 +8,7 @@ import { board, timelinePlaying } from '../../state.ts';
 import type { Item } from '../../board-model.ts';
 import type { Viewport } from '../../canvas/viewport.ts';
 import { tiltOf } from '../../canvas/items.ts';
+import { captureStills } from '../../canvas/stills.ts';
 import { quality } from '../../quality.ts';
 import { cue, sustain } from '../../cuelume/engine.ts';
 import type { Sustain } from '../../cuelume/engine.ts';
@@ -15,13 +16,15 @@ import { el, div } from '../../util.ts';
 import {
   TOOLS, TUNING, SUBS, yieldsTo, planBoard, makeField, stamp, fieldClear, wearShare, wearOf,
   cardClean, tally, fullTank, tankStep, tankPower, jetShape, handRoom,
-  toolWork, toolWanted, toolShare, webCards, webHolds,
+  toolWork, toolWanted, toolShare, webCards, webHolds, peelFor,
 } from './mess.ts';
-import type { ToolId, MessKind, Field, Web, Box, Rng, Tank, DebrisPlan } from './mess.ts';
+import type { ToolId, MessKind, Field, Web, Box, Rng, Tank, DebrisPlan, TrackPlan } from './mess.ts';
 import {
   crust, crustMask, paintField, eraseAt, wetAt, sheenAt, gleamAt, runAt,
   washOf, waterInk,
-  debrisNode, placeBit, sizeBit, BIT_UNIT, webPath, webSag, webCore, webNode,
+  debrisNode, placeBit, sizeBit, peelAt, BIT_UNIT, webPath, webSag, webCore, webNode,
+  bootMask, paintBoot, BOOT_GRID,
+  spiderNode, threadNode, SPIDER_SIZE,
 } from './art.ts';
 import type { Crust } from './art.ts';
 
@@ -105,6 +108,10 @@ type LiveBit = {
   size: number,
   /** Presses left. Gum resists; a crumb does not. */
   tough: number,
+  /** How far a stuck piece has peeled, 0 to 1, and when the glove was last on
+   *  it. Both are 0 for everything that simply lifts - see peelStep(). */
+  peel: number,
+  pulledAt: number,
   /** The little SVG a loose piece carries with it; null while it is on a card. */
   host: SVGSVGElement | null,
 };
@@ -138,15 +145,26 @@ type LiveCard = {
   debrisDealt: number,
   websDealt: number,
   /** What was last written to the badge, so a frame that would change nothing
-   *  touches no DOM. Thirty cards times sixty frames is the hot path here. */
+   *  touches no DOM. Thirty cards times sixty frames is the hot path here.
+   *
+   *  `badgeZoom` is the zoom this badge's counter-scale was **written at**, and
+   *  it is per card rather than one number for the board on purpose - see
+   *  paintBadge(). */
   badgeState: BadgeState,
   badgeShare: number,
+  badgeZoom: number,
   /** The presentational lean the card is wearing right now, in CSS degrees.
    *  Not item.rot, which is geometry - see leanOf(). */
   lean: number,
   /** Whether the corner has been taken off the live card yet - see setRadius().
    *  A card that was culled when the mode opened has no node to read. */
   rounded: boolean,
+  /** Whether the item under the dirt is a GIF, and its live node while it is
+   *  mounted. Asked once, when the node is first found, so the frame loop pays
+   *  nothing for the cards that are not - which is nearly all of them. See
+   *  paintGif(). */
+  gifs: boolean,
+  gifNode: HTMLElement | null,
   fields: LiveField[],
   debris: LiveBit[],
   clean: boolean,
@@ -164,6 +182,52 @@ type WebLeg = {
  *  them takes the web and frees all three cards at once. */
 type LiveWeb = Web & { node: SVGPathElement, legs: WebLeg[] };
 
+/**
+ * The one spider, and the only thing in the layer that moves on its own.
+ *
+ * It is not a mess: `tally()` has never heard of it, no tool touches it, and
+ * nothing anywhere is waiting for it to be gone. It sits on the biggest web
+ * until somebody takes that web away, and then it leaves - which is the whole
+ * of it.
+ */
+type LiveSpider = {
+  node: SVGSVGElement,
+  /** The web it is sitting on, and which of its strands. Kept by identity, so
+   *  sweeping any *other* web leaves it where it is. */
+  web: LiveWeb,
+  leg: WebLeg,
+  /** Where along that strand it is, and where it is heading - 0..1. A scuttle
+   *  is nothing but a new `toU`. */
+  u: number,
+  toU: number,
+  phase: 'idle' | 'drop' | 'walk',
+  /** Layer coordinates, which for the two moving phases are the truth and for
+   *  the idle one are read back off the strand every frame. */
+  x: number, y: number,
+  /** Where the drop thread is tied, and when the drop began. */
+  anchorX: number, anchorY: number,
+  dropAt: number,
+  thread: HTMLElement | null,
+  /** The walk, in layer pixels a second. Set once, when it lets go. */
+  vx: number, vy: number,
+};
+
+/**
+ * One boot print on the floor. Owned by no card - it sits in the dirt layer
+ * above every card, because whoever walked through did it after everything
+ * else was already there, and a print that went under a card would be a print
+ * nobody could wash.
+ */
+type LiveTrack = {
+  canvas: HTMLCanvasElement,
+  ctx: CanvasRenderingContext2D,
+  field: Field,
+  /** World coordinates of the print's centre, and its turn in radians. */
+  x: number, y: number, rot: number,
+  w: number, h: number,
+  fading: boolean,
+};
+
 /** One speck of mist or one fleck of grime, on the overlay canvas. Three
  *  colours rather than one because a speck is painted as a gradient: its middle,
  *  its middle at half, and the same hue at zero. Built once at birth - a speck
@@ -171,6 +235,9 @@ type LiveWeb = Web & { node: SVGPathElement, legs: WebLeg[] };
  *  one thing in this file on a hot path. */
 type Mote = {
   x: number, y: number, vx: number, vy: number,
+  /** How hard it falls, in screen pixels a second squared. Spray and grime are
+   *  wet and heavy; dust off a swept web is neither, and rises. */
+  sink: number,
   at: number, ms: number, r: number,
   fill: string, fade: string, gone: string,
 };
@@ -224,6 +291,11 @@ let layer: HTMLElement | null = null;
 let catcher: HTMLElement | null = null;
 let cards: LiveCard[] = [];
 let webs: LiveWeb[] = [];
+/** The tenant of the biggest web, or null on a board that was dealt none. */
+let spider: LiveSpider | null = null;
+/** The trail across the floor. No card owns these, and the board is not done
+ *  while any of them is still there. */
+let tracks: LiveTrack[] = [];
 /** Debris tipped out onto the bare board. Scoopable like any other, and the
  *  board is not done while any of it is lying there. */
 let loose: LiveBit[] = [];
@@ -367,7 +439,11 @@ export function startClean(): boolean {
   const plan = planBoard(picked.map(boxOf), rng);
   const byId = new Map(picked.map(i => [i.id, i]));
   cards = plan.cards.map(p => buildCard(byId.get(p.id)!, p)).filter(c => c !== null);
+  // After the cards, so the trail lies over them: whoever walked through did it
+  // once everything else was already on the board.
+  buildTracks(plan.tracks);
   buildWebs(plan.webs, byId);
+  buildSpider();
   // The badge's web denominator, once the strands that could actually be drawn
   // are known - buildWebs drops any whose card was culled, and a card must not
   // be asked to sweep a strand that was never hung.
@@ -434,10 +510,6 @@ export function stopClean(): boolean {
   gleamAtMs = 0;
   appliedAt = 0;
   tickAt = 0;
-  // Not a number the next run may inherit: its badges are new nodes wearing no
-  // transform at all, and a second run opened at the same zoom as the first
-  // would match this and never counter-scale one of them.
-  badgeZoom = 0;
   tiltMax = 0;
   at = { x: -200, y: -200 };
   tank = fullTank();
@@ -459,6 +531,10 @@ export function stopClean(): boolean {
   // pixels up and a fraction larger for the rest of the session, on a board
   // that has no idea why.
   for (const woken of document.querySelectorAll('.item.is-woken')) woken.classList.remove('is-woken');
+  // The other class this mode writes onto a real card: a GIF held still while
+  // its card was dirty. Left behind, it is an animation that never comes back
+  // on a board that has no idea why. See paintGif().
+  for (const gif of document.querySelectorAll('.item.is-clean-held')) gif.classList.remove('is-clean-held');
   layer = null;
   catcher = null;
   cursor = null;
@@ -470,6 +546,11 @@ export function stopClean(): boolean {
   mistCtx = null;
   cards = [];
   webs = [];
+  // Its node and its thread are both inside the layer that has just gone, so
+  // this is the reference and nothing else. See the drop, which is the one thing
+  // in the mode that outlives the web it started on.
+  spider = null;
+  tracks = [];
   pending = [];
   document.documentElement.classList.remove('is-cleaning', 'is-clean-done');
   showBar(false);
@@ -495,7 +576,9 @@ function pickCards(): Item[] {
     .slice(0, TUNING.maxCards);
 }
 
-const boxOf = (i: Item): Box => ({ id: i.id, x: i.x, y: i.y, w: i.w, h: i.h });
+/** The item as the dealer needs it. `type` rides along so a note can be dealt
+ *  coffee and a video a film of dust - see GRIME_FOR in mess.ts. */
+const boxOf = (i: Item): Box => ({ id: i.id, x: i.x, y: i.y, w: i.w, h: i.h, type: i.type });
 
 const ns = <K extends keyof SVGElementTagNameMap>(tag: K) =>
   document.createElementNS('http://www.w3.org/2000/svg', tag);
@@ -534,8 +617,9 @@ function buildCard(item: Item, plan: { fields: MessKind[], debris: DebrisPlan[] 
     run, runCtx: run.getContext('2d')!, runs: [], runAt: 0, runTill: 0,
     ring, ringFg: ring.querySelector('.ring-fg')!,
     debrisDealt: plan.debris.length, websDealt: 0,
-    badgeState: '', badgeShare: -1,
+    badgeState: '', badgeShare: -1, badgeZoom: 0,
     lean: 0, rounded: false,
+    gifs: false, gifNode: null,
     fields: [], debris: [], clean: false,
   };
   setLean(live);
@@ -547,7 +631,7 @@ function buildCard(item: Item, plan: { fields: MessKind[], debris: DebrisPlan[] 
     sizeOnCard(node, item);
     live.debris.push({
       node, kind: d.kind, x: d.x, y: d.y, size: d.size,
-      tough: d.kind === 'gum' ? TUNING.gumTugs : 1, host: null,
+      tough: d.kind === 'gum' ? TUNING.gumTugs : 1, peel: 0, pulledAt: 0, host: null,
     });
   }
   for (const f of live.fields) box.append(f.canvas);
@@ -652,6 +736,42 @@ const sizeOnCard = (node: SVGGElement, item: Item) =>
 
 const texSide = (world: number) =>
   Math.max(TEX_MIN, Math.min(TEX_MAX, Math.round(world)));
+
+/** How big a print is drawn, in world units, and the pixels it is painted at.
+ *  Small enough that sixteen of them cost about one card's worth of canvas. */
+const BOOT_W = 44;
+const BOOT_H = 90;
+const BOOT_PX = 3;
+
+function buildTracks(plan: readonly TrackPlan[]) {
+  if (!layer || !plan.length) return;
+  const made: LiveTrack[] = [];
+  for (const p of plan) {
+    const canvas = document.createElement('canvas');
+    canvas.className = 'clean-track';
+    canvas.width = BOOT_W * BOOT_PX;
+    canvas.height = BOOT_H * BOOT_PX;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) continue;
+    paintBoot(ctx, Math.floor(rng() * 0x7fffffff), canvas.width, canvas.height, quality.grain);
+    // Placed by its centre, and the same world-y-is-up flip every other thing
+    // in this layer uses. The rotation is the walk's own heading plus a quarter
+    // turn, because a print is drawn toe-up and the path runs along x.
+    canvas.style.left = (p.x - BOOT_W / 2).toFixed(2) + 'px';
+    canvas.style.top = (-p.y - BOOT_H / 2).toFixed(2) + 'px';
+    canvas.style.width = BOOT_W + 'px';
+    canvas.style.height = BOOT_H + 'px';
+    const deg = (-p.rot * 180) / Math.PI + 90;
+    canvas.style.transform = `rotate(${deg.toFixed(2)}deg)`;
+    layer.append(canvas);
+    made.push({
+      canvas, ctx,
+      field: makeField('track', bootMask(), BOOT_GRID, 1),
+      x: p.x, y: p.y, rot: p.rot, w: BOOT_W, h: BOOT_H, fading: false,
+    });
+  }
+  tracks = made;
+}
 
 /** The three sides of the triangle, as pairs into `webCards()`. */
 const WEB_SIDES: readonly [number, number][] = [[0, 1], [1, 2], [2, 0]];
@@ -1019,6 +1139,14 @@ function underTool(clientX: number, clientY: number): boolean {
   const room = (kind: MessKind) => handRoom(carried.map(c => c.kind), kind);
   if (held === 'glove'
     && loose.some(b => room(b.kind) && Math.hypot(b.x - w.x, b.y + w.y) <= radius)) return true;
+  // A print on the bare floor is work, so the press washes rather than pans.
+  // Without this the one mess between the cards could not be touched.
+  if (held === 'washer' && tracks.some(t => {
+    if (t.fading || !t.field.left) return false;
+    const p = toBoot(t, w.x, w.y);
+    return p.u >= -radius / t.w && p.u <= 1 + radius / t.w
+      && p.v >= -radius / t.h && p.v <= 1 + radius / t.h;
+  })) return true;
   for (const card of cards) {
     const p = toCard(card, w.x, w.y);
     const rx = radius / card.item.w;
@@ -1220,6 +1348,9 @@ function apply(clientX: number, clientY: number, press: boolean) {
   }
   if (tool === 'glove') worked += scoopLoose(w.x, -w.y, radius, press);
   if (tool === 'duster') worked += sweepWebs(w.x, -w.y, radius);
+  // The trail belongs to no card, so it is washed here rather than inside the
+  // per-card loop above - the jet over bare floor is still the jet working.
+  if (tool === 'washer') worked += workTracks(w.x, w.y, radius, bite);
 
 
   // The hiss follows the work, which is what makes a tool on the wrong mess
@@ -1318,6 +1449,41 @@ function setRadius(card: LiveCard) {
   if (!node) return;
   card.box.style.borderRadius = getComputedStyle(node).borderRadius;
   card.rounded = true;
+  // The same node, asked the other question once while it is here: whether
+  // there is a GIF under this dirt. Both answers cost a walk to the same
+  // element, and a card culled when the mode opened is asked when it comes back.
+  card.gifNode = node;
+  card.gifs = !!node.querySelector('img[data-gif]');
+  if (!card.gifs) return;
+  // The frame it is showing right now is the picture the card wears until it is
+  // clean, so it is taken while the GIF is on screen and decoded.
+  captureStills(node);
+  paintGif(card);
+}
+
+/**
+ * **A dirty GIF holds still.** A card under an inch of mud playing an animation
+ * is the one thing on the board that carries on as if nothing had happened to
+ * it, and the moment it comes clean and starts moving is worth more than the
+ * loop nobody could see anyway.
+ *
+ * Done with canvas/stills.ts's own machinery rather than a second one: the twin
+ * `<img>` beside every GIF is what the zoom rung and the quality dial already
+ * swap to, and clean.css asks for it with a class. A twin whose frame never
+ * arrived has no `is-ready` and every one of those rules ignores it, so the
+ * worst this can do is leave a GIF playing.
+ */
+function paintGif(card: LiveCard) {
+  let node = card.gifNode;
+  if (!node?.isConnected) {
+    // Culled and remounted: a fresh node, with a fresh twin that has no frame
+    // in it yet.
+    node = document.querySelector<HTMLElement>(`.item[data-id="${CSS.escape(card.item.id)}"]`);
+    card.gifNode = node;
+    if (!node) return;
+    captureStills(node);
+  }
+  node.classList.toggle('is-clean-held', !card.clean);
 }
 
 /** Put the card's lean on its dirt, if it has changed. Written as `rotate`, the
@@ -1349,6 +1515,31 @@ function shieldOf(card: LiveCard): ((i: number) => boolean) | null {
   };
 }
 
+/**
+ * Everything standing between the jet and one field: the debris lying on the
+ * card, and any field dealt on top of this one.
+ *
+ * **A layered card is washed from the top down, cell by cell rather than field
+ * by field.** The under-layer's cell is shielded exactly while the top's cell
+ * at the same index still has anything in it - so the jet takes the mud off
+ * this patch and starts on the rust beneath it while the mud a hand's width
+ * away is untouched. Field by field would mean the whole top coming off before
+ * any of the bottom, which is two cleanings and not one card.
+ *
+ * Composed with the debris predicate rather than replacing it, because a leaf
+ * can be lying on a layered card too.
+ */
+function coverOf(
+  debris: ((i: number) => boolean) | null, card: LiveCard, f: LiveField,
+): ((i: number) => boolean) | null {
+  const above = card.fields
+    .slice(card.fields.indexOf(f) + 1)
+    .filter(o => !o.fading && o.field.left > 0);
+  if (!above.length) return debris;
+  if (!debris) return (i: number) => above.some(o => o.field.cells[i]! > 0);
+  return (i: number) => debris(i) || above.some(o => o.field.cells[i]! > 0);
+}
+
 function workCard(
   card: LiveCard, u: number, v: number, rx: number, ry: number,
   press: boolean, bite: number, clientX: number, clientY: number,
@@ -1363,10 +1554,14 @@ function workCard(
     // it. What comes off the card is the flecks' business and the runoff's;
     // being wet is the jet's.
     if (bite > 0) sheen(card, u, v, rx, ry);
-    const shield = shieldOf(card);
+    const debris = shieldOf(card);
     for (const f of card.fields.slice()) {
       if (f.fading || !f.field.total || !f.field.left) continue;
       const depth = Math.max(1, TUNING.depth[f.kind] ?? 1);
+      // Everything lying over this field: the debris on the card, and any field
+      // dealt above it. `fields` is bottom first, so those are the ones after
+      // it in the list.
+      const shield = coverOf(debris, card, f);
       if (bite > 0) {
         // Whether the cell under the nozzle is on its last pass. One lookup
         // rather than a scan of the grid: the crisp edge is wanted where the
@@ -1410,6 +1605,15 @@ function workCard(
     for (const bit of card.debris.slice()) {
       if (Math.hypot((bit.x - u) * card.item.w, (bit.y - v) * card.item.h) > TUNING.reach.glove.radius) continue;
       if (!handRoom(carried.map(c => c.kind), bit.kind)) continue;
+      // Tape and a sticky note are stuck down, and a press does not lift them.
+      // The glove being on one is all this records; the peel itself runs on the
+      // frame clock in peelStep(), because this runs once per step of a stroke
+      // and a moving hand would otherwise peel faster than a still one.
+      if (peelFor(bit.kind)) {
+        bit.pulledAt = performance.now();
+        worked++;
+        continue;
+      }
       // Gum takes three presses, each of which stretches it toward the glove
       // and lets it go again. A sweep does not count: it is a thing to pull at.
       if (bit.tough > 1) {
@@ -1626,7 +1830,7 @@ function drip(card: LiveCard, r: Rivulet) {
   const zoom = vp.zoom;
   motes.push({
     x: seat.x, y: seat.y,
-    vx: 0, vy: (DRIP_FALL * zoom) / 0.6,
+    vx: 0, vy: (DRIP_FALL * zoom) / 0.6, sink: FALL,
     at: performance.now(), ms: 600,
     r: 2.2 * zoom,
     ...moteInk(wr, wg, wb, 0.5),
@@ -1635,17 +1839,21 @@ function drip(card: LiveCard, r: Rivulet) {
 
 // ---- the badge ----------------------------------------------------------
 
-/** The zoom the badges were last counter-scaled against. One number for the
- *  whole board: they all sit at the same scale, so a frame at an unchanged
- *  zoom writes no transforms at all. */
-let badgeZoom = 0;
-
 /**
  * What the tool in hand still owes this card, at its corner.
  *
  * Every card, every frame a tool is held - which is why nothing below touches
  * the DOM unless the answer has actually moved. With no tool in hand there is
  * no question, and the badges are simply not there.
+ *
+ * **The zoom it skips a write against is the one it last wrote, per card.** It
+ * was one number for the whole board, advanced by tick() every frame whether or
+ * not any badge had been painted - so while the badges were hidden it went on
+ * tracking the live zoom, and putting a tool back in hand found it already
+ * equal and skipped the counter-scale. The badges came back wearing the size
+ * they had when they were last on screen, and stayed wrong until the next zoom
+ * while they were visible. A cache has to hold what was written, not what was
+ * current when nothing was.
  */
 function paintBadge(card: LiveCard, zoom: number) {
   const want = held
@@ -1667,7 +1875,10 @@ function paintBadge(card: LiveCard, zoom: number) {
     card.badgeShare = share;
     card.ringFg.setAttribute('stroke-dashoffset', (RING_LEN * (1 - share)).toFixed(2));
   }
-  if (zoom !== badgeZoom) card.ring.style.transform = `scale(${(1 / zoom).toFixed(3)})`;
+  if (zoom !== card.badgeZoom) {
+    card.badgeZoom = zoom;
+    card.ring.style.transform = `scale(${(1 / zoom).toFixed(3)})`;
+  }
 }
 
 /** Every badge at once: on a tool changing hands, where waiting for the next
@@ -1675,7 +1886,6 @@ function paintBadge(card: LiveCard, zoom: number) {
 function paintBadges() {
   const zoom = vp?.zoom ?? 1;
   for (const card of cards) paintBadge(card, zoom);
-  badgeZoom = zoom;
 }
 
 function dissolve(card: LiveCard, f: LiveField) {
@@ -1691,6 +1901,73 @@ function dissolve(card: LiveCard, f: LiveField) {
   }, LEAVE_MS);
 }
 
+// ---- the trail ----------------------------------------------------------
+
+/**
+ * A world point in one print's own 0..1 box, undoing its turn.
+ *
+ * The print is drawn toe-up and turned by the walk's heading, so this undoes
+ * the same quarter turn `buildTracks()` added - and gets it from `rot` rather
+ * than reading the transform back, because a style read here would be a layout
+ * flush on every stamp.
+ */
+function toBoot(t: LiveTrack, wx: number, wy: number) {
+  const dx = wx - t.x;
+  const dy = wy - t.y;
+  const a = -(t.rot + Math.PI / 2);
+  const cos = Math.cos(a);
+  const sin = Math.sin(a);
+  // Rotate into the print's frame, then into its box. World y is up and the
+  // box's v runs down, hence the sign on the second row.
+  const px = dx * cos - dy * sin;
+  const py = dx * sin + dy * cos;
+  return { u: px / t.w + 0.5, v: -py / t.h + 0.5 };
+}
+
+/**
+ * The jet over the bare floor. Prints are washed exactly as a card's crust is,
+ * and by the same two calls - what differs is only that nobody owns them.
+ */
+function workTracks(wx: number, wy: number, radius: number, bite: number): number {
+  if (!tracks.length || bite <= 0) return 0;
+  let worked = 0;
+  for (const t of tracks.slice()) {
+    if (t.fading || !t.field.left) continue;
+    const p = toBoot(t, wx, wy);
+    const rx = radius / t.w;
+    const ry = radius / t.h;
+    if (p.u < -rx || p.u > 1 + rx || p.v < -ry || p.v > 1 + ry) continue;
+    const span = SUBS;
+    const wear = wearOf(t.field, p.u, p.v, rx, ry, bite, span);
+    const lastPass = true;
+    const took = stamp(t.field, p.u, p.v, rx, ry, bite);
+    eraseAt(
+      t.ctx, p.u * t.canvas.width, p.v * t.canvas.height,
+      rx * t.canvas.width, ry * t.canvas.height,
+      Math.min(1, wearShare(wear.before, wear.taken)), rng, lastPass,
+    );
+    if (took) worked++;
+    if (fieldClear(t.field)) fadeTrack(t);
+  }
+  if (worked) paintCount();
+  return worked;
+}
+
+function fadeTrack(t: LiveTrack) {
+  if (t.fading) return;
+  t.fading = true;
+  t.canvas.classList.add('clean-gone');
+  later(() => {
+    t.canvas.remove();
+    const i = tracks.indexOf(t);
+    if (i >= 0) tracks.splice(i, 1);
+    paintCount();
+  }, LEAVE_MS);
+}
+
+/** Prints still holding the board back. A fading one is already spoken for. */
+const tracksLeft = () => tracks.filter(t => !t.fading).length;
+
 // ---- the glove ----------------------------------------------------------
 
 /** Pull the gum toward the hand and let it snap back. Both ends of the motion
@@ -1705,6 +1982,51 @@ function tug(bit: LiveBit, u: number, v: number) {
     placeBit(bit.node, bit.x * 100, bit.y * 100);
     later(() => bit.node.classList.remove('clean-resist'), 320);
   }, 260);
+}
+
+/** How long after the glove was last on a stuck piece it still counts as
+ *  holding it. A few frames, so one slow frame does not let it drop back. */
+const PEEL_GRACE_MS = 90;
+
+/** How long a half-peeled piece takes to settle back when the hand lets go. */
+const PEEL_BACK_MS = 260;
+
+/** How far towards the hand the lifted corner leans at a full peel, as a share
+ *  of the way from where the piece lies to where the glove is. */
+const PEEL_REACH = 0.2;
+
+/**
+ * Peel whatever the glove is holding down on, and lay back whatever it has let
+ * go of. Once a frame, on the frame's own clock - see workCard().
+ *
+ * The strip shortens toward the end it is still stuck by while its lifted
+ * corner leans after the glove, and at the end of the peel it joins the hand
+ * like anything else. Letting go early eases it back flat. Nothing is counted
+ * and nothing can go wrong: it just takes a moment.
+ */
+function peelStep(dt: number, now: number) {
+  if (!vp) return;
+  const hand = vp.toWorld(at.x, at.y);
+  for (const card of cards) {
+    for (const bit of card.debris.slice()) {
+      const ms = peelFor(bit.kind);
+      if (!ms) continue;
+      const on = drawing && held === 'glove' && now - bit.pulledAt < PEEL_GRACE_MS;
+      if (!on && !bit.peel) continue;
+      bit.peel = on ? Math.min(1, bit.peel + dt / ms) : Math.max(0, bit.peel - dt / PEEL_BACK_MS);
+      if (bit.peel >= 1) {
+        scoop(card, bit);
+        // workCard() asks this after every touch; a peel finishes off the
+        // frame clock instead, so it has to ask for itself.
+        if (!card.clean && cardClean(asState(card), webs)) markClean(card);
+        continue;
+      }
+      peelAt(bit.node, bit.peel);
+      const p = toCard(card, hand.x, hand.y);
+      const lean = bit.peel * PEEL_REACH;
+      placeBit(bit.node, (bit.x + (p.u - bit.x) * lean) * 100, (bit.y + (p.v - bit.y) * lean) * 100);
+    }
+  }
 }
 
 /** A piece leaves the card and joins the hand. The same node, re-parented -
@@ -1738,6 +2060,10 @@ function scoopLoose(wx: number, wy: number, radius: number, press: boolean): num
 function takeIntoHand(bit: LiveBit) {
   bit.node.classList.remove('clean-resist');
   bit.node.style.transform = '';
+  // Full length again in the hand: the shortening was the peel, not the piece.
+  if (bit.peel) peelAt(bit.node, 0);
+  bit.peel = 0;
+  bit.pulledAt = 0;
   carried.push(bit);
   paintLoad();
   cue('pick', { volume: 0.4 });
@@ -1897,12 +2223,29 @@ function sweepWebs(lx: number, ly: number, radius: number): number {
       { duration: LEAVE_MS, easing: EASE, fill: 'forwards' },
     );
     later(() => w.node.remove(), LEAVE_MS);
+    // Whoever was living in it has to go somewhere. Only its own web: sweeping
+    // another one leaves it exactly where it is.
+    if (spider?.web === w) dropSpider();
+    webMotes(w);
     cue('pick', { volume: 0.32 });
     took++;
     // Any of the three may have been waiting only on this.
     for (const c of cards) if (!c.clean && cardClean(asState(c), webs)) markClean(c);
   }
   return took;
+}
+
+/** A point on one strand, in the layer's coordinates. The strand is the same
+ *  quadratic art.ts draws - the sag is carried on the leg for exactly this, so
+ *  what is hit and what is walked along are the curve that is on screen. */
+function curveAt(g: WebLeg, t: number) {
+  const mx = (g.ax + g.bx) / 2;
+  const my = (g.ay + g.by) / 2 + g.sag;
+  const k = 1 - t;
+  return {
+    x: k * k * g.ax + 2 * k * t * mx + t * t * g.bx,
+    y: k * k * g.ay + 2 * k * t * my + t * t * g.by,
+  };
 }
 
 /** Distance from a point to the nearest of a web's three strands, by sampling
@@ -1912,17 +2255,196 @@ function sweepWebs(lx: number, ly: number, radius: number): number {
 function nearCurve(x: number, y: number, w: LiveWeb): number {
   let best = Infinity;
   for (const g of w.legs) {
-    const mx = (g.ax + g.bx) / 2;
-    const my = (g.ay + g.by) / 2 + g.sag;
     for (let i = 0; i <= 12; i++) {
-      const t = i / 12;
-      const k = 1 - t;
-      const px = k * k * g.ax + 2 * k * t * mx + t * t * g.bx;
-      const py = k * k * g.ay + 2 * k * t * my + t * t * g.by;
-      best = Math.min(best, Math.hypot(px - x, py - y));
+      const p = curveAt(g, i / 12);
+      best = Math.min(best, Math.hypot(p.x - x, p.y - y));
     }
   }
   return best;
+}
+
+// ---- the spider ---------------------------------------------------------
+//
+// One, on the biggest web, and nothing in the mode depends on it. It is not in
+// `tally()`, it cannot be hit, picked up or washed, and no card is waiting for
+// it to go. What it is for is that a web somebody walks up to should turn out to
+// have somebody living in it.
+
+/** Where along its strand it idles, and how far one scare moves it. */
+const SPIDER_AT = 0.4;
+const SPIDER_SCUTTLE = 0.14;
+
+/** How near the hand has to come to be worth moving for, in **world** pixels -
+ *  the hand is a thing on the board, and a distance in screen pixels would make
+ *  the spider braver at every zoom out. */
+const SPIDER_NEAR = 60;
+
+/** The scuttle, in shares of the strand a second, and the walk, in world pixels
+ *  a second. A scuttle is quick and short; the walk is a stroll. */
+const SPIDER_SLIP = 0.45;
+const SPIDER_WALK = 90;
+
+/** How far it comes down its thread when the web goes, and how long that takes. */
+const SPIDER_DROP = 90;
+const SPIDER_DROP_MS = 600;
+
+/** How far under the strand it hangs, in layer pixels. Sitting *on* the line
+ *  reads as a spider stuck to it; a web is walked from below. */
+const SPIDER_UNDER = 3;
+
+/** The triangle's own sides, out of the legs a web keeps. buildWebs() pushes
+ *  every fourth radius on after them for the hit test, and a spider walking
+ *  along a radius would be walking through the middle of the web. */
+const sidesOf = (w: LiveWeb) => w.legs.slice(0, WEB_SIDES.length);
+
+function buildSpider() {
+  if (!layer || !webs.length) return;
+  // The biggest web by its longest side. Not at random: the one web on the board
+  // with a tenant should be the one somebody is most likely to walk up to.
+  let best = webs[0]!;
+  let span = -1;
+  for (const w of webs) {
+    for (const g of sidesOf(w)) {
+      const len = Math.hypot(g.bx - g.ax, g.by - g.ay);
+      if (len > span) { span = len; best = w; }
+    }
+  }
+  // The lowest of its three strands, measured at the middle, which is where a
+  // sagging strand is lowest. A spider is under the bottom of its web.
+  const leg = sidesOf(best).reduce((low, g) => (curveAt(g, 0.5).y > curveAt(low, 0.5).y ? g : low));
+  const node = spiderNode(rng);
+  node.style.width = SPIDER_SIZE + 'px';
+  node.style.height = SPIDER_SIZE + 'px';
+  // Still on the low tier, where nothing else in the mode moves either. It does
+  // not scuttle and it does not drop - it goes with its web.
+  if (!quality.anim) node.classList.add('is-still');
+  layer.append(node);
+  spider = {
+    node, web: best, leg,
+    u: SPIDER_AT, toU: SPIDER_AT,
+    phase: 'idle',
+    x: 0, y: 0,
+    anchorX: 0, anchorY: 0, dropAt: 0, thread: null,
+    vx: 0, vy: 0,
+  };
+  stepSpider(0, performance.now());
+}
+
+/** Where it is and which way it is facing. The drawing faces `-y`, so a heading
+ *  of zero is up the layer and everything else is that turned. */
+function placeSpider(s: LiveSpider, dx: number, dy: number) {
+  const half = SPIDER_SIZE / 2;
+  s.node.style.left = (s.x - half).toFixed(2) + 'px';
+  s.node.style.top = (s.y - half).toFixed(2) + 'px';
+  const deg = (Math.atan2(dy, dx) * 180) / Math.PI + 90;
+  s.node.style.transform = `rotate(${deg.toFixed(1)}deg)`;
+}
+
+function stepSpider(dt: number, now: number) {
+  const s = spider;
+  if (!s || !vp) return;
+
+  if (s.phase === 'idle') {
+    if (quality.anim) {
+      const w = vp.toWorld(at.x, at.y);
+      const px = w.x;
+      const py = -w.y;
+      // Only when it has finished the last one: a hand held still over it must
+      // not push it along the strand a fraction at a time for ever.
+      if (s.u === s.toU && Math.hypot(px - s.x, py - s.y) < SPIDER_NEAR) {
+        const ahead = curveAt(s.leg, Math.min(1, s.u + 0.05));
+        const back = curveAt(s.leg, Math.max(0, s.u - 0.05));
+        const away = Math.hypot(ahead.x - px, ahead.y - py) > Math.hypot(back.x - px, back.y - py) ? 1 : -1;
+        // Never onto the last tenth at either end, where the strand disappears
+        // into a card and a spider would be standing on the paper.
+        s.toU = Math.min(0.9, Math.max(0.1, s.u + away * SPIDER_SCUTTLE));
+      }
+      const step = (SPIDER_SLIP * dt) / 1000;
+      s.u += Math.min(step, Math.max(-step, s.toU - s.u));
+      if (Math.abs(s.toU - s.u) < 1e-4) s.u = s.toU;
+    }
+    const p = curveAt(s.leg, s.u);
+    const ahead = curveAt(s.leg, Math.min(1, s.u + 0.02));
+    const back = curveAt(s.leg, Math.max(0, s.u - 0.02));
+    s.x = p.x;
+    s.y = p.y + SPIDER_UNDER;
+    s.node.classList.toggle('is-walking', s.u !== s.toU);
+    placeSpider(s, ahead.x - back.x, ahead.y - back.y);
+    return;
+  }
+
+  if (s.phase === 'drop') {
+    const t = Math.min(1, (now - s.dropAt) / SPIDER_DROP_MS);
+    // Eased out, so it comes to rest on the thread rather than stopping dead.
+    const fall = SPIDER_DROP * (1 - (1 - t) * (1 - t));
+    s.x = s.anchorX;
+    s.y = s.anchorY + fall;
+    if (s.thread) s.thread.style.height = fall.toFixed(1) + 'px';
+    // Head down, which is the way a spider goes down its own thread: the silk
+    // comes off the far end of it.
+    placeSpider(s, 0, 1);
+    if (t >= 1) letGo(s, vp);
+    return;
+  }
+
+  s.x += (s.vx * dt) / 1000;
+  s.y += (s.vy * dt) / 1000;
+  placeSpider(s, s.vx, s.vy);
+  // Gone when it has left the screen, whatever the camera has done in the
+  // meantime - visibleRect() is arithmetic off pan and zoom and costs no layout.
+  const box = vp.visibleRect(SPIDER_SIZE * 2);
+  if (s.x < box.x0 || s.x > box.x1 || s.y < -box.y1 || s.y > -box.y0) takeSpider();
+}
+
+/** The web it was on has just been swept. */
+function dropSpider() {
+  const s = spider;
+  if (!s || s.phase !== 'idle' || !layer) return;
+  // On the low tier it goes with the web instead. The drop and the walk are the
+  // one thing in this mode that is not a transition and cannot be turned into
+  // one, so the tier that says "nothing moves on its own" gets nothing.
+  if (!quality.anim) { takeSpider(true); return; }
+  s.phase = 'drop';
+  s.anchorX = s.x;
+  s.anchorY = s.y;
+  s.dropAt = performance.now();
+  const thread = threadNode();
+  thread.style.left = s.anchorX.toFixed(2) + 'px';
+  thread.style.top = s.anchorY.toFixed(2) + 'px';
+  thread.style.height = '0px';
+  layer.append(thread);
+  s.thread = thread;
+}
+
+/** The thread is let go of at the bottom of the drop, and the walk begins:
+ *  straight out to whichever edge of the screen is nearest. */
+function letGo(s: LiveSpider, view: Viewport) {
+  s.thread?.remove();
+  s.thread = null;
+  s.phase = 'walk';
+  s.node.classList.add('is-walking');
+  const box = view.visibleRect();
+  const ways = [
+    { dx: -1, dy: 0, d: s.x - box.x0 },
+    { dx: 1, dy: 0, d: box.x1 - s.x },
+    { dx: 0, dy: -1, d: s.y + box.y1 },
+    { dx: 0, dy: 1, d: -box.y0 - s.y },
+  ];
+  const out = ways.reduce((a, b) => (b.d < a.d ? b : a));
+  s.vx = out.dx * SPIDER_WALK;
+  s.vy = out.dy * SPIDER_WALK;
+}
+
+/** Off the board, either because it walked off it or because the tier it is on
+ *  does not let it walk. */
+function takeSpider(fade = false) {
+  const s = spider;
+  if (!s) return;
+  spider = null;
+  s.thread?.remove();
+  if (!fade) { s.node.remove(); return; }
+  s.node.classList.add('clean-gone');
+  later(() => s.node.remove(), LEAVE_MS);
 }
 
 // ---- the bin ------------------------------------------------------------
@@ -2105,6 +2627,9 @@ function tick() {
   // already assumed: a still hand is the tightest, hardest the jet gets, which
   // is no use at all if a still hand is not touching anything.
   if (drawing && held && now - appliedAt > FRAME_MS) apply(at.x, at.y, false);
+  // After that touch, so a hand held still on a strip of tape has put the glove
+  // on it this frame before the peel asks whether it is there.
+  peelStep(dt, now);
 
   // The tank drains while the trigger is down and fills the moment it is not,
   // and the mist comes off the nozzle for as long as there is pressure behind
@@ -2164,8 +2689,10 @@ function tick() {
       }
     }
     paintBadge(card, zoom);
+    // Only the cards that have one, which setRadius() has already answered.
+    if (card.gifs) paintGif(card);
   }
-  badgeZoom = zoom;
+  stepSpider(dt, now);
   drawMist(now);
 }
 
@@ -2212,6 +2739,37 @@ const richly = () => quality.motion;
  */
 const PUFF_MS = 320;
 
+/** What spray and grime fall at, in screen pixels a second squared. */
+const FALL = 180;
+
+/**
+ * Dust shaken out of a strand as the duster takes it: a few pale specks that
+ * rise off the web and drift, on the same canvas as the spray.
+ *
+ * Six to ten, halved on the low tier like everything else on this canvas. Each
+ * rises from a point *on* one of the triangle's strands, not from the duster -
+ * it is the web the dust was in, and the web is the thing that has just gone.
+ */
+function webMotes(w: LiveWeb) {
+  if (!vp) return;
+  const now = performance.now();
+  const n = Math.round((6 + rng() * 4) * (richly() ? 1 : 0.5));
+  const sides = sidesOf(w);
+  for (let i = 0; i < n; i++) {
+    const p = curveAt(sides[Math.floor(rng() * sides.length)]!, rng());
+    // Layer to world is a flip of y; world to client is the camera, plus where
+    // the viewport sits on the page, which is what drawMist() takes back off.
+    const s = vp.toScreen(p.x, -p.y);
+    motes.push({
+      x: s.x + vp.left, y: s.y + vp.top,
+      vx: (rng() - 0.5) * 36, vy: -10 - rng() * 22, sink: -4,
+      at: now, ms: 1400 * (0.8 + rng() * 0.4),
+      r: 1 + rng() * 0.5,
+      ...moteInk(250, 246, 235, 0.6),
+    });
+  }
+}
+
 function puff(power: number, spread = 1) {
   const n = richly() ? 2 : 1;
   for (let i = 0; i < n; i++) {
@@ -2225,7 +2783,7 @@ function puff(power: number, spread = 1) {
       // the only place the pressure curve is visible. `spread` is the same
       // radius multiplier the stamp is using, so the two cannot disagree.
       x: at.x + (rng() - 0.5) * 8 * spread, y: at.y + (rng() - 0.5) * 8 * spread,
-      vx: Math.cos(a) * s, vy: Math.sin(a) * s - 26,
+      vx: Math.cos(a) * s, vy: Math.sin(a) * s - 26, sink: FALL,
       at: performance.now(), ms: PUFF_MS * (0.7 + rng() * 0.6),
       r: (1.6 + rng() * 2.4) * spread,
       // Water, and water is cold. It came out of the tank and has touched
@@ -2255,7 +2813,7 @@ function fleck(x: number, y: number, kind: MessKind, took: number) {
     const s = 50 + rng() * 120;
     motes.push({
       x, y,
-      vx: Math.cos(a) * s, vy: Math.sin(a) * s - 60,
+      vx: Math.cos(a) * s, vy: Math.sin(a) * s - 60, sink: FALL,
       at: now, ms: 320 + rng() * 240,
       r: 1.1 + rng() * 1.8,
       ...moteInk(fr, fg, fb, 0.8),
@@ -2279,7 +2837,7 @@ function drawMist(now: number) {
     alive.push(m);
     const age = (now - m.at) / 1000;
     const x = m.x - box.left + m.vx * age;
-    const y = m.y - box.top + m.vy * age + 180 * age * age;
+    const y = m.y - box.top + m.vy * age + m.sink * age * age;
     const r = m.r * (1 + t);
     mistCtx.globalAlpha = (1 - t) * 0.9;
     // A soft-edged speck, not a disc. A flat fill has a hard rim at every size,
@@ -2413,7 +2971,7 @@ export function cleanKey(key: string): boolean {
  *  gone - its grime, its debris, and any web still touching it - so the number
  *  is the goal and not the effort. */
 function paintCount() {
-  const score = tally(cards.map(asState), webs, loose.length, carrying());
+  const score = tally(cards.map(asState), webs, loose.length, carrying(), tracksLeft());
   const out = el('clean-count');
   if (out) out.textContent = `${score.clean} of ${score.total}`;
   if (score.done && !finishing) finish();
