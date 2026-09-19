@@ -30,6 +30,7 @@
     "web/assets/app.js.map",
     "web/assets/lab-pigments.js",
     "web/assets/lab-sound.js",
+    "web/assets/lab-grime.js",
     ".agent/**",
     ".agents/**",
     ".claude/**",

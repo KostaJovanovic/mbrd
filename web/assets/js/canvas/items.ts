@@ -1240,6 +1240,11 @@ function build(item: Item) {
     el.classList.add('is-rolled-away');
     shadows.get(item.id)?.classList.add('is-rolled-away');
   }
+  // Left out of the cleaning game, for the same reason again.
+  if (cleanOut(item.id)) {
+    el.classList.add('is-clean-out');
+    shadows.get(item.id)?.classList.add('is-clean-out');
+  }
   // And the tour mark, for the third time in the same words - see the block
   // above applyTourMark(). A card panned off screen and back is a new node, and
   // the editor is a mode somebody spends minutes in doing exactly that.
@@ -1926,6 +1931,30 @@ function paintRolled() {
     const away = rolledAway(byId(id), next);
     el.classList.toggle('is-rolled-away', away);
     shadows.get(id)?.classList.toggle('is-rolled-away', away);
+  }
+}
+
+/** The cards the cleaning game dealt a mess to, while it is up and left some
+ *  out; null otherwise. Read again at build. */
+let cleanPlay: Set<string> | null = null;
+
+const cleanOut = (id: string) => !!cleanPlay && !cleanPlay.has(id);
+
+/**
+ * Hide every card the cleaning game left out, or show them all again with null.
+ *
+ * Hidden rather than dimmed, like a rolled-up fence: a card with no mess on it
+ * beside the ones being washed is a card that looks forgotten. The set is the
+ * cards in play rather than the ones left out, so a card that was off screen
+ * when the game began comes back hidden when it is panned to - see build().
+ */
+export function setCleanPlay(ids: Set<string> | null) {
+  if (!ids && !cleanPlay) return;
+  cleanPlay = ids;
+  for (const [id, el] of nodes) {
+    const out = cleanOut(id);
+    el.classList.toggle('is-clean-out', out);
+    shadows.get(id)?.classList.toggle('is-clean-out', out);
   }
 }
 

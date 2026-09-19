@@ -614,8 +614,8 @@
        lesson and the silhouette is what you use after that. The <span> is
        aria-hidden because the button's own aria-label already says it.
        A slot whose tool is in hand carries .is-out and keeps its width - see
-       clean.css. The bin and the Done button are outside #clean-tools so the
-       "Leave it dirty?" swap does not take them with it.
+       clean.css. The Done button is outside #clean-tools so the ending's swap
+       does not take it with it.
        The lid is its own <use> so it can hinge: a shape inside a <symbol>
        renders in a shadow tree and no rule in the page can reach it. -->
   <button type="button" id="clean-can" data-clean="can" inert aria-label="Empty it into the bin" title="Empty it into the bin">
@@ -638,11 +638,6 @@
       <span aria-hidden="true">Duster</span>
     </button>
   </div>
-  <div id="clean-confirm" hidden>
-    <span>Leave it dirty?</span>
-    <button type="button" data-clean="leave">Leave it</button>
-    <button type="button" data-clean="stay">Keep cleaning</button>
-  </div>
   <div id="clean-end" hidden>
     <button type="button" data-clean="leave">Done</button>
   </div>
@@ -652,13 +647,20 @@
      the tray is for what is in the hand, and a way out standing in the row of
      tools read as a fourth tool. clean.ts wires its clicks through the same
      handler as the bar's, on data-clean. After #clean-bar so no sibling rule
-     aimed at the bar loses sight of it. -->
+     aimed at the bar loses sight of it.
+     "Leave it dirty?" takes the ✕'s place when it is pressed: the question is
+     asked where the hand already is, not across the screen in the tray. -->
 <div id="clean-top" hidden>
   <span id="clean-count" role="status" aria-live="polite"></span>
   <button type="button" class="clean-x" data-clean="close" aria-label="Stop cleaning" title="Stop cleaning  Esc">
     <svg class="ico" aria-hidden="true"><use href="assets/icons.svg#i-close"/></svg>
     <span aria-hidden="true">Stop cleaning</span>
   </button>
+  <div id="clean-confirm" hidden>
+    <span>Leave it dirty?</span>
+    <button type="button" data-clean="leave">Leave it</button>
+    <button type="button" data-clean="stay">Keep cleaning</button>
+  </div>
 </div>
 
 <div id="drop-overlay" hidden><div>let it fall</div></div>

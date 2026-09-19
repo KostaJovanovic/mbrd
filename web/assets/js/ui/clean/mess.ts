@@ -20,7 +20,7 @@ export const TOOLS = [
 export type ToolId = typeof TOOLS[number]['id'];
 
 export type MessKind =
-  | 'mud' | 'rust' | 'tar'
+  | 'lime' | 'dirt' | 'rust' | 'tar'
   | 'coffee' | 'ink' | 'film'
   | 'leaves' | 'crumbs' | 'gum' | 'paper' | 'cap' | 'dust' | 'tape' | 'sticky'
   | 'cobweb' | 'track';
@@ -43,7 +43,8 @@ export type MessDef = {
 };
 
 export const MESS = {
-  mud: { tool: 'washer', family: 'field', label: 'caked mud' },
+  lime: { tool: 'washer', family: 'field', label: 'limescale' },
+  dirt: { tool: 'washer', family: 'field', label: 'windblown dirt' },
   rust: { tool: 'washer', family: 'field', label: 'rust' },
   tar: { tool: 'washer', family: 'field', label: 'tar' },
   coffee: { tool: 'washer', family: 'field', label: 'a coffee ring' },
@@ -61,36 +62,37 @@ export const MESS = {
   track: { tool: 'washer', family: 'track', label: 'muddy prints' },
 } satisfies Record<MessKind, MessDef>;
 
-/** The three caked grimes, weighted as they are dealt: mud is the common one,
- *  tar the one you are pleased to find. What a card gets when nothing in
- *  `GRIME_FOR` has an opinion about it. */
-export const GRIMES: MessKind[] = ['mud', 'mud', 'mud', 'rust', 'rust', 'tar'];
+/** The caked grimes and the dust, weighted as they are dealt to a picture:
+ *  limescale, dirt and rust the common ones, tar the one you are pleased to
+ *  find. Once half of every picture was mud, and a board was mostly one grime.
+ *  What a card gets when nothing in `GRIME_FOR` has an opinion about it. */
+export const GRIMES: MessKind[] = ['lime', 'lime', 'dirt', 'dirt', 'rust', 'rust', 'tar', 'film'];
 
 /**
- * What lands on what. A note gets coffee and ink far more often than mud,
- * because that is what happens to paper somebody works over; a video gets the
- * dust of a thing nobody has touched in a while.
+ * What lands on what. A note gets coffee and ink far more often than
+ * limescale, because that is what happens to paper somebody works over; a
+ * video gets the dust of a thing nobody has touched in a while.
  *
  * **Weighted, never exclusive.** Every list keeps some of the caked three in
- * it, so a photograph can still be found under mud one time in a few - a table
- * that said "notes get coffee, pictures get mud" would deal the same board
- * every time, only sorted. Anything not named here keeps `GRIMES`.
+ * it, so a photograph can still be found under limescale one time in a few - a
+ * table that said "notes get coffee, pictures get limescale" would deal the
+ * same board every time, only sorted. Anything not named here keeps `GRIMES`.
  */
 export const GRIME_FOR: Partial<Record<ItemType, MessKind[]>> = {
   // Paper somebody has worked over.
-  note: ['coffee', 'coffee', 'coffee', 'ink', 'ink', 'film', 'mud', 'rust'],
-  text: ['coffee', 'coffee', 'ink', 'ink', 'film', 'mud', 'rust'],
-  title: ['coffee', 'ink', 'ink', 'film', 'mud', 'rust'],
+  note: ['coffee', 'coffee', 'coffee', 'ink', 'ink', 'film', 'lime', 'rust'],
+  text: ['coffee', 'coffee', 'ink', 'ink', 'film', 'lime', 'rust'],
+  title: ['coffee', 'ink', 'ink', 'film', 'lime', 'rust'],
   // Things nobody has touched in a while.
-  audio: ['film', 'film', 'film', 'mud', 'rust', 'tar'],
-  video: ['film', 'film', 'film', 'mud', 'rust', 'tar'],
-  link: ['film', 'film', 'film', 'mud', 'rust', 'tar'],
-  font: ['film', 'film', 'ink', 'mud', 'rust'],
-  archive: ['film', 'film', 'mud', 'mud', 'rust', 'tar'],
-  folder: ['film', 'film', 'mud', 'mud', 'rust', 'tar'],
-  generic: ['film', 'film', 'mud', 'mud', 'rust', 'tar'],
+  audio: ['film', 'film', 'film', 'lime', 'rust', 'tar'],
+  video: ['film', 'film', 'film', 'lime', 'rust', 'tar'],
+  link: ['film', 'film', 'film', 'lime', 'rust', 'tar'],
+  font: ['film', 'film', 'ink', 'lime', 'rust'],
+  archive: ['film', 'film', 'lime', 'dirt', 'rust', 'tar'],
+  folder: ['film', 'film', 'lime', 'dirt', 'rust', 'tar'],
+  generic: ['film', 'film', 'lime', 'dirt', 'rust', 'tar'],
   // A model is a thing out of a workshop, and gets what a workshop leaves.
-  model: ['mud', 'mud', 'rust', 'rust', 'tar', 'film'],
+  model: ['dirt', 'dirt', 'lime', 'rust', 'rust', 'tar', 'film'],
 };
 
 /** The grimes a card of this type may be dealt. Never empty: an unlisted type
@@ -268,7 +270,7 @@ export type JetRow = { speed: number, radius: number, bite: number };
 export const TUNING: Tuning = {
   /** Cards that get dirty at all, nearest the centre of the board's bounds. A
    *  500-card board would otherwise be a chore and a frame-rate problem. */
-  maxCards: 30,
+  maxCards: 25,
   /** Things in a patch of the loose stuff that comes in handfuls. */
   perPatch: [4, 10],
   /** And in a patch of the stuff that does not: paper and caps arrive in ones
@@ -354,7 +356,7 @@ export const TUNING: Tuning = {
   trackMax: 16,
   /** Passes of the jet a cell of each grime takes before it is gone. Thick
    *  things take longer, and tar is the one you settle in for. */
-  depth: { mud: 2, rust: 3, tar: 5, coffee: 2, ink: 3, film: 1 },
+  depth: { lime: 2, dirt: 2, rust: 3, tar: 5, coffee: 2, ink: 3, film: 1 },
   /** How wide each tool's touch is. The washer is the narrow one on purpose:
    *  aiming the jet is the play. */
   reach: {
@@ -388,7 +390,7 @@ export const TUNING: Tuning = {
    *
    *  The work runs 0.78 / 0.22 / 0.10 - a crawl does three and a half times what
    *  an ordinary sweep does and nearly eight times what a fast one does. A fast
-   *  sweep thins mud; it does not finish it.
+   *  sweep thins limescale; it does not finish it.
    *
    *  **Do not stretch the speeds to buy a faster hand.** They were once moved
    *  40% out (56/350/980) and it played markedly worse: the radius grows with

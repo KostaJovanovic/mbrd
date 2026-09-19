@@ -33,6 +33,14 @@
 :root.is-cleaning .item *,
 :root.is-cleaning .item-shadow { pointer-events: none; }
 
+/* A board bigger than the game (TUNING.maxCards): the cards it left out go out
+   of sight while it is up, written by setCleanPlay() in canvas/items.ts, and
+   the connection lines go with them - a line to a hidden card points at
+   nothing, and the lines are routed as one layer. */
+.item.is-clean-out,
+.item-shadow.is-clean-out,
+:root.is-clean-culled #web { visibility: hidden; }
+
 /* The paper texture stays, quieter: it is the surface being cleaned. */
 :root.is-cleaning #grain { opacity: 0.4; }
 
@@ -112,16 +120,16 @@
   opacity: 0;
 }
 
-/* Four fifths, not whole: what is under the crust shows faintly through it, so
-   there is always something you are cleaning *towards*.
+/* Whole here: how see-through a crust is lives in its pixels (LOOK's `cover`,
+   art.ts, four fifths by default), so it can differ card by card.
 
-   This is per canvas, and a layered card has two of them stacked - so where
+   That is per canvas, and a layered card has two of them stacked - so where
    both remain the card is nearly hidden, and where only the under-layer is left
    it is not. That difference is the whole point of layering: the reveal happens
    twice. clean.ts appends the fields bottom first, which is what puts the top
    layer on top. */
 .clean-grime.clean-settled {
-  opacity: 0.8;
+  opacity: 1;
   transition: opacity 260ms var(--clean-ease);
 }
 
@@ -721,7 +729,6 @@
 }
 
 #clean-tools,
-#clean-confirm,
 #clean-end {
   display: flex;
   align-items: center;
@@ -1016,47 +1023,104 @@
   }
 }
 
-/* The ✕ asks before it acts, in the bar rather than in a dialog: a dialog would
-   take the top layer and put a scrim over the board somebody is looking at. */
-#clean-confirm span {
-  padding: 0 6px;
-  font-size: 0.88rem;
-  color: var(--ink);
+/* The ✕ asks before it acts, in its own place in the corner rather than in a
+   dialog: a dialog would take the top layer and put a scrim over the board
+   somebody is looking at, and asking in the tray put the question across the
+   screen from the button that raised it. One plate, the ✕'s paper and
+   hairline, with the two answers inside it as the tray's paper-2 plates.
+   Exactly the ✕'s 34px, border included, so the corner does not grow a few
+   pixels when the question opens: the answers take whatever height is left. */
+#clean-confirm {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  height: 34px;
+  padding: 3px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  background: var(--paper);
+  box-shadow: 0 1px 1px color-mix(in srgb, var(--ink) 12%, transparent),
+    0 8px 20px -8px color-mix(in srgb, var(--ink) 30%, transparent);
+  animation: clean-ask-in 200ms var(--clean-ease) both;
 }
 
-#clean-confirm button,
-#clean-end button {
-  width: auto;
-  padding: 0 14px;
-  height: 34px;
+#clean-top .clean-x[hidden] { display: none; }
+
+@keyframes clean-ask-in {
+  from { opacity: 0; translate: 0 -4px; }
+}
+
+#clean-confirm span {
+  align-self: center;
+  padding: 0 6px;
+  font-size: 0.85rem;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+#clean-confirm button {
+  padding: 0 12px;
+  border: 0;
+  /* --radius-xs, as the tour bar's pair: 3px inside the plate's --leaf, a
+     --leaf of their own draws a rounder curve than the one around them. */
+  border-radius: var(--radius-xs);
+  background: var(--paper-2);
+  color: var(--ink);
   font: inherit;
   font-size: 0.85rem;
-  background: var(--paper-2);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 200ms var(--clean-ease), color 200ms var(--clean-ease);
 }
 
 #clean-confirm button:hover,
-#clean-end button:hover { background: var(--paper-3); }
+#clean-confirm button:focus-visible { background: var(--paper-3); color: var(--accent-deep); }
 
-/* Done is the only thing in the tray at the end, so it takes the tray over:
-   as tall as a tool was, so the tray does not shrink to a lozenge round it, and
-   in the tools' own vocabulary - a paper plate, --paper-2 resting and
-   --paper-3 pressed, with the tray's own --leaf corner - rather than an accent
-   button from somewhere else. The word is set in the display face, which is
-   the face the ending speaks in. */
+/* Done is the app's primary button and nothing of the mode's own: .btn-row's
+   .primary in sidebar.css - accent ground, accent-deep hairline, --leaf corner,
+   the body face, and the lift, grow and press off the whimsy dial. It is the
+   one thing left to do and it is a verb like any other verb in the app; a 60px
+   paper plate in the display face read as a leftover tool slot. The tray's own
+   padding shrinks to fit it rather than standing round it as a tall box. */
+:root.is-clean-done #clean-bar { padding: 6px; }
+
 #clean-end button {
-  height: 60px;
-  min-width: 132px;
-  padding: 0 28px;
-  font-family: var(--font-display);
-  font-size: 1.2rem;
-  letter-spacing: 0.01em;
-  color: var(--ink);
-  background: var(--paper-2);
+  width: auto;
+  min-width: 112px;
+  height: 38px;
+  padding: 0 22px;
+  flex-direction: row;
+  border: var(--hairline) solid var(--accent-deep);
+  border-radius: var(--leaf);
+  background: var(--accent);
+  color: var(--accent-fg);
+  font: inherit;
+  font-size: 0.9rem;
+  letter-spacing: calc(0.03em * var(--ls-scale));
+  transition: background var(--dur-fast) var(--ease),
+    transform var(--dur-base) var(--ease-back);
 }
 
-#clean-end button:hover,
-#clean-end button:focus-visible { background: var(--paper-3); color: var(--accent-deep); }
-#clean-end button:active { background: var(--paper-3); color: var(--accent-deep); translate: 0 1px; }
+/* At Harsh the accent can sit close to the paper - the ink edge .primary
+   takes there, for the same reason. */
+:root[data-whimsy="2"] #clean-end button { border-color: var(--ink); }
+
+@media (hover: hover) {
+  #clean-end button:hover {
+    background: var(--accent-deep);
+    color: var(--accent-fg);
+    transform: translateY(var(--btn-lift)) scale(var(--btn-grow));
+  }
+}
+
+#clean-end button:focus-visible { background: var(--accent-deep); color: var(--accent-fg); }
+
+#clean-end button:active {
+  background: var(--accent-deep);
+  color: var(--accent-fg);
+  transform: scale(var(--btn-press));
+  transition: transform var(--dur-fast) var(--ease-in), background var(--dur-fast) var(--ease);
+}
 
 /* The bin, gone for good at the end. Hidden it is still a zero-width slot a
    tool high with its divider drawn beside it, and that is what was holding the
@@ -1085,6 +1149,9 @@
   #clean-top .clean-x span { display: none; }
   #clean-top .clean-x { padding: 0 8px; }
   #clean-count { padding: 0 8px; font-size: 0.75rem; }
+  /* The question and both answers have to fit beside the count on a phone. */
+  #clean-confirm span { padding: 0 4px; font-size: 0.75rem; }
+  #clean-confirm button { padding: 0 8px; font-size: 0.75rem; }
 }
 
 /* A browser with no color-mix() drops a whole declaration that uses it, which
@@ -1103,6 +1170,9 @@
   }
   #clean-tools button[aria-pressed] .ico { filter: drop-shadow(0 2px 2px rgb(var(--ink-c) / 22%)); }
   #clean-bar button.is-out { box-shadow: inset 0 1px 3px rgb(var(--ink-c) / 14%); }
+  #clean-confirm {
+    box-shadow: 0 1px 1px rgb(var(--ink-c) / 12%), 0 8px 20px -8px rgb(var(--ink-c) / 30%);
+  }
   /* The breath of light is a keyframe, and a keyframe cannot be conditional on
      its own contents: a steady ring for the second instead. */
   #clean-can.is-asking {

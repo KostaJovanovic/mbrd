@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en" data-theme="lab">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mbrd — grime lab</title>
+<!-- Grime bench. Not part of the app. Paints through the real art.ts via
+     assets/lab-grime.js (npm run build / npm run dev:grime). Off the design
+     system on purpose (own colours, no tokens.css). Lives in web/ because the
+     dev server roots there. noindex, not robots.txt Disallow. -->
+<meta name="robots" content="noindex, nofollow">
+<style>
+:root {
+  --ink: #17181b;
+  --paper: #fbfbf9;
+  --board: #ece6da;
+  --line: #d8d8d2;
+  --faint: #7b7c80;
+  --hot: #1d4ed8;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  height: 100vh;
+  background: var(--paper);
+  color: var(--ink);
+  font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+aside { overflow-y: auto; padding: 16px; border-right: 1px solid var(--line); }
+main { overflow: auto; padding: 16px 20px; background: var(--board); }
+h1 { font-size: 15px; font-weight: 600; margin: 0 0 4px; }
+h2 { font-size: 12px; font-weight: 600; margin: 18px 0 6px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.08em; }
+h3 { font-size: 12px; font-weight: 600; margin: 0 0 6px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.08em; }
+p.lede { margin: 0 0 4px; color: var(--faint); }
+button, select {
+  font: inherit;
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #fff;
+  color: inherit;
+  cursor: pointer;
+}
+button:hover { border-color: var(--faint); }
+button[aria-pressed="true"] { background: var(--hot); border-color: var(--hot); color: #fff; }
+.bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.bar label { display: flex; gap: 6px; align-items: center; color: var(--faint); }
+.section { border-top: 1px solid var(--line); padding: 6px 0; }
+.section summary { cursor: pointer; font-weight: 600; }
+.section .blurb { margin: 2px 0 6px; color: var(--faint); }
+.field { display: grid; grid-template-columns: 9ch 1fr 6ch; gap: 8px; align-items: center; padding: 1px 0; }
+.field .name { color: var(--faint); }
+.field.is-moved .name { color: var(--hot); font-weight: 600; }
+.field .value { text-align: right; font-variant-numeric: tabular-nums; }
+.field input { width: 100%; }
+#out { white-space: pre; overflow-x: auto; border: 1px solid var(--line); border-radius: 4px; padding: 8px; background: #fff; min-height: 2em; font-size: 12px; }
+.row { margin-bottom: 22px; }
+.row[hidden] { display: none; }
+.strip { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; }
+.card {
+  position: relative;
+  flex: none;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 18%), 0 8px 18px -10px rgb(0 0 0 / 35%);
+}
+.card canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.card .crust { cursor: crosshair; touch-action: none; }
+.card .tag {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  padding: 0 5px;
+  border-radius: 3px;
+  background: rgb(255 255 255 / 85%);
+  font-size: 11px;
+  pointer-events: none;
+}
+.dealt { padding-bottom: 18px; border-bottom: 1px dashed #b9b2a4; }
+.is-compare .tune-only,
+body:not(.is-compare) .compare-only { display: none; }
+#modes { margin: 12px 0 8px; }
+.compare { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 28px; align-items: start; }
+.look .look-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.look h3 { font-size: 14px; color: var(--ink); margin: 0; }
+.look h4 { font-size: 11px; font-weight: 400; color: var(--faint); margin: 14px 0 6px; }
+.look .blurb { margin: 2px 0 0; color: var(--faint); }
+.look .strip { gap: 10px; }
+</style>
+</head>
+<body>
+
+<aside>
+  <h1>grime lab</h1>
+  <p class="lede">Every caked grime, painted by the game's own code. Drag on a card to wash it.</p>
+
+  <div id="modes" class="bar">
+    <button type="button" data-mode="compare">compare looks</button>
+    <button type="button" data-mode="tune">tune</button>
+  </div>
+
+  <div class="bar compare-only">
+    <button id="reseed-compare" type="button">new seeds</button>
+    <button id="unwash-compare" type="button">unwash</button>
+  </div>
+  <p class="lede compare-only">Four looks on the same cards, side by side. "tune this" opens one on the sliders.</p>
+
+  <div class="tune-only">
+  <p class="lede">Double-click a slider's name to reset it. Settings survive a reload.</p>
+
+  <h2>show</h2>
+  <div id="kinds" class="bar"></div>
+  <p class="lede">Shift-click shows one alone.</p>
+
+  <h2>bench</h2>
+  <div class="bar">
+    <label>cards <input id="per-row" type="range" min="1" max="12" step="1" value="6"></label>
+    <select id="shape">
+      <option value="mixed">mixed shapes</option>
+      <option value="landscape">landscape</option>
+      <option value="square">square</option>
+      <option value="portrait">portrait</option>
+    </select>
+  </div>
+  <div class="bar">
+    <label><input id="rich" type="checkbox" checked> full quality</label>
+  </div>
+  <div class="bar">
+    <button id="reseed" type="button">new seeds</button>
+    <button id="unwash" type="button">unwash</button>
+    <button id="reset" type="button">reset all</button>
+  </div>
+
+  <h2>start from</h2>
+  <div id="presets" class="bar"></div>
+  <p class="lede">Each sets every knob from the defaults. Cover (how see-through) is in "all", and per grime.</p>
+
+  <h2>knobs</h2>
+  <div id="knobs"></div>
+
+  <h2>what moved</h2>
+  <div id="out"></div>
+  <div class="bar"><button id="copy" type="button">copy</button></div>
+  </div>
+</aside>
+
+<main id="board"></main>
+
+<script type="module">
+import { initGrimeLab } from './assets/lab-grime.js';
+initGrimeLab();
+</script>
+</body>
+</html>

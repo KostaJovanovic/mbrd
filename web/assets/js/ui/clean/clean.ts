@@ -7,7 +7,7 @@
 import { bus, board, timelinePlaying, addItems } from '../../state.ts';
 import type { Item } from '../../board-model.ts';
 import type { Viewport } from '../../canvas/viewport.ts';
-import { tiltOf, nodeFor } from '../../canvas/items.ts';
+import { tiltOf, nodeFor, setCleanPlay } from '../../canvas/items.ts';
 import { defaultSize } from '../../canvas/renderers.ts';
 import { buildSpotlessCard, SPOTLESS_FRAME } from '../../canvas/spotless.ts';
 import { captureStills } from '../../canvas/stills.ts';
@@ -568,6 +568,12 @@ export function startClean(): boolean {
   // stopClean(), which refuses while the mode is not yet officially up.
   on = true;
   document.documentElement.classList.add('is-cleaning');
+  // A board bigger than the game: the cards left out go out of sight, and the
+  // connection lines with them, since a line to a hidden card points at nothing.
+  if (picked.length < playable().length) {
+    setCleanPlay(new Set(picked.map(i => i.id)));
+    document.documentElement.classList.add('is-clean-culled');
+  }
   pauseMedia();
   showBar(true);
   paintCount();
@@ -671,7 +677,8 @@ export function stopClean(): boolean {
   dealt = [];
   tracks = [];
   pending = [];
-  document.documentElement.classList.remove('is-cleaning', 'is-clean-done', 'is-clean-holding');
+  document.documentElement.classList.remove('is-cleaning', 'is-clean-done', 'is-clean-holding', 'is-clean-culled');
+  setCleanPlay(null);
   showBar(false);
   resumeMedia();
   return true;
@@ -683,7 +690,7 @@ export function stopClean(): boolean {
  * scatter across a board they would have to go looking around.
  */
 function pickCards(): Item[] {
-  const items = board.items.filter(i => i.type !== 'ghost' && i.w > 0 && i.h > 0);
+  const items = playable();
   if (items.length <= TUNING.maxCards) return items;
   let cx = 0;
   let cy = 0;
@@ -694,6 +701,8 @@ function pickCards(): Item[] {
     .sort((a, b) => Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy))
     .slice(0, TUNING.maxCards);
 }
+
+const playable = () => board.items.filter(i => i.type !== 'ghost' && i.w > 0 && i.h > 0);
 
 /** The item as the dealer needs it. `type` rides along so a note can be dealt
  *  coffee and a video a film of dust - see GRIME_FOR in mess.ts. */
@@ -1001,6 +1010,8 @@ const slotFor = (id: ToolId) =>
  */
 function lift(id: ToolId) {
   if (!on || finishing) return;
+  // Reaching for a tool answers "Leave it dirty?" as plainly as the button does.
+  if (asking()) askLeave(false);
   if (held === id) { putDown(); return; }
   if (held && carrying()) { nudgeCan(); return; }
   const slot = slotFor(id);
@@ -2185,8 +2196,9 @@ const PEEL_REACH = 0.2;
  * Peel whatever the glove is holding down on, and lay back whatever it has let
  * go of. Once a frame, on the frame's own clock - see workCard().
  *
- * The strip shortens toward the end it is still stuck by while its lifted
- * corner leans after the glove, and at the end of the peel it joins the hand
+ * The strip folds back on itself from its free end toward the end it is still
+ * stuck by (peelAt() in art.ts) while it leans after the glove, and at the end
+ * of the peel it joins the hand
  * like anything else. Letting go early eases it back flat. Nothing is counted
  * and nothing can go wrong: it just takes a moment.
  */
@@ -2247,7 +2259,7 @@ function scoopLoose(wx: number, wy: number, radius: number): number {
 function takeIntoHand(bit: LiveBit) {
   bit.node.classList.remove('clean-resist');
   bit.node.style.transform = '';
-  // Full length again in the hand: the shortening was the peel, not the piece.
+  // Flat and whole again in the hand: the fold was the peel, not the piece.
   if (bit.peel) peelAt(bit.node, 0);
   bit.peel = 0;
   bit.pulledAt = 0;
@@ -3139,7 +3151,7 @@ function takeRobot(s: LiveRobot) {
 function paintCan() {
   const can = el('clean-can');
   if (!can) return;
-  const want = on && !finishing && held === 'glove' && !asking();
+  const want = on && !finishing && held === 'glove';
   if (can.classList.contains('is-shown') === want) return;
   // Not `hidden`: the bar grows sideways to take it over 200ms and display:none
   // has nothing to animate from. `inert` is what keeps a button at zero width
@@ -3647,11 +3659,22 @@ function showBar(want: boolean) {
   paintCan();
 }
 
-/** The ✕ asks rather than acts: leaving halfway through is a thing to mean. */
+/** The ✕ asks rather than acts: leaving halfway through is a thing to mean.
+ *  The question takes the ✕'s own place in the corner, and the tray is left
+ *  alone - picking a tool up is an answer too (see lift()). */
 function askLeave(want: boolean) {
-  el('clean-confirm')?.toggleAttribute('hidden', !want);
-  el('clean-tools')?.toggleAttribute('hidden', want);
-  paintCan();
+  const x = topBar?.querySelector<HTMLElement>('.clean-x');
+  const ask = el('clean-confirm');
+  // Focus follows the swap, but only focus that was already there: a button
+  // that has just been hidden drops it on the body. Never taken from the board
+  // otherwise - Space is the pan key here, and a focused button eats it.
+  const focused = document.activeElement;
+  const fromX = !!x && focused === x;
+  const fromAsk = !!ask && !!focused && ask.contains(focused);
+  ask?.toggleAttribute('hidden', !want);
+  x?.toggleAttribute('hidden', want);
+  if (want && fromX) ask?.querySelector<HTMLElement>('[data-clean="stay"]')?.focus();
+  if (!want && fromAsk) x?.focus();
 }
 
 const asking = () => el('clean-confirm')?.hidden === false;
@@ -3659,20 +3682,21 @@ const asking = () => el('clean-confirm')?.hidden === false;
 /**
  * Escape, as one chain rather than one meaning.
  *
- * Holding something → put it down. Holding something with a hand full → the
- * bin says what to do, and nothing else happens. Empty-handed → ask. Asked
- * already → leave. It answers true whenever the mode is up, so canvas/input.ts
- * marks the key as taken either way.
+ * Asked already → leave, whatever is in the hand: the question is on screen
+ * and Escape is its second press, as it would be with nothing held. Holding
+ * something → put it down. Holding something with a hand full → the bin says
+ * what to do, and nothing else happens. Empty-handed → ask. It answers true
+ * whenever the mode is up, so canvas/input.ts marks the key as taken either way.
  */
 export function cleanEscape(): boolean {
   if (!on) return false;
   if (finishing) { stopClean(); return true; }
+  if (asking()) { stopClean(); return true; }
   if (held) {
     if (carrying()) nudgeCan();
     else putDown();
     return true;
   }
-  if (asking()) { stopClean(); return true; }
   askLeave(true);
   return true;
 }
@@ -3729,7 +3753,10 @@ function finish() {
   // top of the teardown, and dealCard().
   paintCanAfterFlight();
   el('clean-tools')?.toggleAttribute('hidden', true);
-  el('clean-confirm')?.toggleAttribute('hidden', true);
+  // Through askLeave(), which puts the ✕ back: a board finished while the
+  // question was up - the robot can do that - would otherwise end with no way
+  // out in the corner.
+  askLeave(false);
   el('clean-end')?.toggleAttribute('hidden', false);
   later(() => cue('sweep', { volume: 0.6 }), 700);
 }
