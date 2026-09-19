@@ -16,6 +16,19 @@
   background-color: transparent;   /* the paper on <body> shows through */
   background-repeat: repeat;
   contain: layout paint;
+  /* Taking the band back, eased, so the board's edge slides up under the
+     Timeline as it fades in rather than cutting the cards off in one frame. */
+  transition: bottom var(--dur-base) var(--ease);
+}
+/* Wherever the Timeline fades (chrome.css: idle, a tour, cleaning) the board
+   takes its band. Stopping above an invisible bar left an empty strip of paper
+   with the grid ending at it and the cards cut off along it - which read as
+   the bar still there with only its buttons gone. Canvas/viewport.ts holds the
+   board still as the box grows, so nothing on it moves. Giving the band is
+   instant: the bar is still opaque at that moment and covers the change. */
+:root:is(.is-idle:not(.is-replaying), .is-touring, .is-tour-edit, .is-cleaning) #viewport {
+  bottom: 0;
+  transition: none;
 }
 /* Restore selection on editable surfaces. `text`, not `auto` (auto inherits
    `none` back). Both spellings for WebKit < 17. */

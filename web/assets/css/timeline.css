@@ -3,7 +3,9 @@
    Docked along the foot of the window on every width. The
    board ends above it: ui/timeline-view.ts writes the bar's
    height to --dock, which #viewport and the bottom-anchored
-   furniture add to their inset (chrome.css and the rest).
+   furniture add to their inset (chrome.css and the rest) -
+   except while the bar is faded, when the board takes the
+   band back (canvas.css, #viewport).
    Drawn after the history bar in Fusion 360: the marks sit
    close on a baseline, the playhead stands in the gap after
    the step shown, and a slim scrollbar of the page's own

@@ -481,6 +481,7 @@ export class Viewport {
   height: number;
   left: number;
   top: number;
+  _winH: number;                    // the window's height at the last measure()
   // Where the Mobile board comes to rest under the chrome buttons. Cached
   // rather than asked for on every clamp: _mobileTopPan() runs on each frame
   // of a pan, and reading a rect there would measure layout mid-gesture.
@@ -520,6 +521,7 @@ export class Viewport {
     this.height = 0;
     this.left = 0;
     this.top = 0;
+    this._winH = 0;
     this._topPad = MOBILE_TOP_PAD;
     this._rawY = null;
     this.bus = emitter();
@@ -539,6 +541,17 @@ export class Viewport {
 
   measure() {
     const r = this.el.getBoundingClientRect();
+    // The box changed height under a window that did not: the Timeline's band
+    // given to the board or taken back (canvas.css). Its top is where it was,
+    // so hold what is on screen there rather than re-centring, which slid the
+    // whole board half a band every time the bar faded or came back. Through
+    // globalThis because the tests build a Viewport with no window.
+    const winH = globalThis.innerHeight ?? 0;
+    if (!this.isMobile && this.height > 0 && r.height !== this.height
+        && r.top === this.top && r.width === this.width && winH === this._winH) {
+      this.pan.y -= (r.height - this.height) / 2 / this.zoom;
+    }
+    this._winH = winH;
     this.left = r.left;
     this.top = r.top;
     this.width = r.width;

@@ -101,21 +101,18 @@ function gfbm(x: number, y: number, seed: number, octaves: number): number {
   return sum / norm;
 }
 
-// Cellular noise answers three things at once, and allocating an object for
+// Cellular noise answers two things at once, and allocating an object for
 // them per pixel would be most of this module's cost. Module scratch instead;
 // read straight after the call.
 let cellF1 = 0;
-let cellF2 = 0;
 let cellId = 0;
 
-/** Distance to the nearest and second-nearest feature point, and a stable 0..1
- *  id for the nearest - which is what lets one plate of mud be paler than the
- *  one beside it. */
+/** Distance to the nearest feature point, and a stable 0..1 id for it - which
+ *  is what lets one pit be deeper than the one beside it. */
 function cells(x: number, y: number, seed: number) {
   const xi = Math.floor(x);
   const yi = Math.floor(y);
   let f1 = 9;
-  let f2 = 9;
   let id = 0;
   for (let dy = -1; dy <= 1; dy++)
     for (let dx = -1; dx <= 1; dx++) {
@@ -125,10 +122,9 @@ function cells(x: number, y: number, seed: number) {
       const px = cx + (h & 0xffff) / 65536 - x;
       const py = cy + (h >>> 16) / 65536 - y;
       const d = px * px + py * py;
-      if (d < f1) { f2 = f1; f1 = d; id = h; } else if (d < f2) f2 = d;
+      if (d < f1) { f1 = d; id = h; }
     }
   cellF1 = Math.sqrt(f1);
-  cellF2 = Math.sqrt(f2);
   cellId = ((Math.imul(id, 2654435761) >>> 0) / 4294967296);
 }
 
@@ -159,10 +155,86 @@ export const crust = (kind: MessKind, rng: Rng): Crust =>
  *  the same shape. */
 const CRUST_AT = 0.35;
 
-/** Blobs in a spill, and how big each one is against the card. A spill is a few
- *  overlapping rounds - a cup set down three times - not one. */
-const COFFEE_RINGS = 4;
-const INK_BLOTS = 5;
+/** The knobs every grime shares. `scale` is how big its features are drawn -
+ *  2 is twice as big - and `tone`, `sat` and `warmth` grade its colour after
+ *  the material has picked it: brightness, saturation, and a push toward orange
+ *  (positive) or blue-grey (negative). `cover` is how opaque the crust is:
+ *  under 1 the card shows faintly through it, so there is always something
+ *  you are cleaning *towards*. `bands` steps the light into that many flat
+ *  levels, the way an illustration shades - 0 leaves it smooth. `patch` is how
+ *  unevenly it lies - thick drifts and thin places, 0 an even coat - and
+ *  `edge` how much of it has gathered toward the card's rim, where dirt does.
+ *  `poster` flattens its brightness into that many levels, hue kept - with
+ *  `bands`, the two halves of an illustrated look. 0 leaves it continuous. */
+type Common = {
+  scale: number, relief: number, gloss: number, shine: number,
+  tone: number, sat: number, warmth: number, cover: number, bands: number,
+  patch: number, edge: number, poster: number,
+};
+
+const common = (relief: number, gloss = 0, shine = 1): Common => ({
+  scale: 1, relief, gloss, shine, tone: 1, sat: 1, warmth: 0, cover: 0.8, bands: 0,
+  patch: 0, edge: 0, poster: 0,
+});
+
+/**
+ * Every number a grime's look is tuned by, in one table the game only reads.
+ * web/lab-grime.html writes it from sliders and prints what it changed, which
+ * is how these are meant to move: by eye, on the bench, then pasted back here.
+ * The defaults are the look chosen on that bench as "varied": natural
+ * materials, and every card its own in size, tone, warmth and thickness.
+ *
+ * `relief` is the height of the surface detail as a share of the card's long
+ * side; `gloss` and `shine` are specular strength and tightness.
+ */
+export const LOOK = {
+  /** Degrees round the screen (0 is right, -90 up) and up off the card, and
+   *  how dark a face turned fully away from it gets. */
+  light: { azimuth: -127.5, elevation: 40.9, ambient: 0.3 },
+  /** How far one card's crust may stray from the next of its kind: its scale
+   *  in octaves either way, its tone and cover as a share, its warmth. Rolled
+   *  from the card's seed, so a card keeps its look across a repaint. */
+  vary: { scale: 0.7, tone: 0.12, warmth: 0.3, cover: 0.1, patch: 0.25 },
+  /** How many tide marks the drying left, how much of it has built up into
+   *  crust, how much cover the thin film between keeps, how much iron has
+   *  yellowed it, and the share of places a dried drop left a spot. */
+  lime: { ...common(0.012), patch: 0.3, edge: 0.35, cover: 0.85, rings: 5, crust: 0.45, film: 0.45, stain: 0.35, spots: 0.35 },
+  /** How strongly it piled into drifts, how streaked along the wind, how
+   *  close the ripples lie, how gritty the soil, and how much cover the
+   *  scoured places keep. */
+  dirt: { ...common(0.014), patch: 0.2, cover: 0.9, drift: 0.7, scour: 0.6, ripples: 16, grit: 0.4, thin: 0.35 },
+  /** Flake frequency, where old gives way to orange (lower is more orange),
+   *  how many pits, how much of it has blistered into lifting scale, how
+   *  strongly it runs down in streaks, and how far across the card it has
+   *  spread from where it started (1 is about to reach the far side). Always
+   *  opaque - see `rust`. */
+  rust: { ...common(0.03), patch: 0.3, edge: 0.25, flakes: 12, age: 0.4, pits: 0.12, scaly: 0.7, runs: 0.6, spread: 0.76 },
+  /** How deep the sag wrinkles are, and the share of cells with a blister. */
+  tar: { ...common(0.02, 0.8, 60), patch: 0.15, wrinkles: 0.2, blisters: 0.2 },
+  /** A spill is a few overlapping rounds - a cup set down three times - not
+   *  one: how many, how big against the card, how much of the darkness is
+   *  the tide line rather than the body, and how much cover the body keeps
+   *  (1 is as solid as the ring; a stain is in the paper and thin). */
+  coffee: { ...common(0.004, 0.1, 12), blots: 4, size: 0.26, tide: 0.9, body: 0.35, drops: 3 },
+  /** Blots, their size, how far the edge frays along the fibres, the
+   *  droplets thrown clear, and how much darker it dried at its rim. */
+  ink: { ...common(0.006, 0.25, 26), blots: 5, size: 0.2, fray: 0.15, drops: 6, rim: 0.6 },
+  /** How much the finger wipes thin it, the grain's frequency, how many wipes
+   *  cross it and how narrow they are (higher is finer). */
+  film: { ...common(0.008), edge: 0.3, patch: 0.3, cover: 0.75, wipe: 0.75, grain: 70, streaks: 4, fine: 0.7 },
+};
+
+/** The grimes with a look of their own in `LOOK`, in the lab's order. */
+export const GRIME_KINDS = ['lime', 'dirt', 'rust', 'tar', 'coffee', 'ink', 'film'] as const;
+export type Grime = typeof GRIME_KINDS[number];
+
+const isGrime = (kind: string): kind is Grime => GRIME_KINDS.some(g => g === kind);
+
+const lookOf = (kind: MessKind): Common => (isGrime(kind) ? LOOK[kind] : LOOK.lime);
+
+/** A spill's blobs, or null for a grime that covers the card edge to edge. */
+const spillOf = (kind: MessKind) =>
+  (kind === 'coffee' ? LOOK.coffee : kind === 'ink' ? LOOK.ink : null);
 
 /**
  * Where a point falls inside a spill of `n` blobs, as a signed distance from
@@ -190,12 +262,53 @@ function blotAt(seed: number, x: number, y: number, n: number, size: number) {
   return { edge };
 }
 
-/** Kinds that are a spill on the card rather than a layer over the whole of it.
- *  A spill that is a rectangle is not a spill. */
-const SPILLS: Record<string, { n: number, size: number }> = {
-  coffee: { n: COFFEE_RINGS, size: 0.26 },
-  ink: { n: INK_BLOTS, size: 0.2 },
-};
+/**
+ * A spill's whole outline: its blobs, and the droplets thrown clear of them
+ * when it landed - small, round, and scattered wider than the blobs, which is
+ * what says *splashed* rather than *placed*. One function for the mask and the
+ * paint, as blotAt() is.
+ */
+function spillEdge(spill: { blots: number, size: number, drops: number }, seed: number, x: number, y: number) {
+  let edge = blotAt(seed, x, y, Math.round(spill.blots), spill.size).edge;
+  const drops = Math.round(spill.drops);
+  for (let j = 0; j < drops; j++) {
+    const cx = 0.5 + (hash(j, 11, seed) - 0.5) * 0.9;
+    const cy = 0.5 + (hash(j, 12, seed) - 0.5) * 0.9;
+    const r = spill.size * (0.1 + hash(j, 13, seed) * 0.14);
+    edge = Math.max(edge, 1 - Math.hypot(x - cx, y - cy) / r);
+  }
+  return edge;
+}
+
+/**
+ * How far behind rust's advancing front a point is, in card space: positive
+ * where it has already taken the card, and larger the longer ago. Rust starts
+ * where the damp got in first - one side, or one corner, rolled per card - and
+ * creeps across toward the other along a ragged front, a little faster along
+ * the rim, with a few spots started ahead of it. What it has not reached yet is
+ * bare card, which is what makes it read as *taking over* rather than as a coat
+ * of brown paint. `spread` is how far across it has got.
+ */
+function rustFront(seed: number, x: number, y: number) {
+  // Where it started: a side (0-3: left, right, top, bottom) or a corner (4-7).
+  const from = Math.floor(hash(0, 70, seed) * 8);
+  const fx = from & 1 ? 1 - x : x;
+  const fy = (from < 4 ? from & 1 : from & 2) ? 1 - y : y;
+  // How far across the card from there, 0 at the start and about 1 at the far
+  // side. A corner spreads as a quarter circle, so it is scaled to reach the far
+  // corner at a little over 1, as a side reaches the far side at 1.
+  const across = from < 4 ? (from & 2 ? fy : fx) : Math.hypot(fx, fy) / 1.25;
+  const rim = Math.min(x, 1 - x, y, 1 - y);
+  const n = gfbm(x * 3.2, y * 3.2, seed + 71, 3);
+  const rag = gnoise(x * 18, y * 18, seed + 72) + gnoise(x * 45, y * 45, seed + 74) * 0.5;
+  const reach = LOOK.rust.spread * (0.92 + 0.16 * hash(1, 70, seed));
+  let front = reach - across + 0.12 * (1 - smooth(0, 0.12, rim))
+    + (n - 0.5) * 0.4 + (rag - 0.75) * 0.07;
+  // Spots that started on their own, on a scratch, ahead of the front.
+  cells(x * 7, y * 7, seed + 73);
+  if (cellId < 0.3) front = Math.max(front, 0.05 * (0.4 + cellId * 3) - cellF1 * 0.14);
+  return front;
+}
 
 /**
  * How thick the crust is at a point in 0..1 card space: 0 is bare card, 1 is
@@ -204,14 +317,20 @@ const SPILLS: Record<string, { n: number, size: number }> = {
  */
 export function crustAt(c: Crust, x: number, y: number): number {
   if (x < 0 || x > 1 || y < 0 || y > 1) return 0;
-  const spill = SPILLS[c.kind];
+  // Rust's edge is steep: a wide one fades through translucent, and rust
+  // cannot be that.
+  if (c.kind === 'rust') return clamp01(CRUST_AT + rustFront(c.seed, x, y) * 60);
+  // Kinds that are a spill on the card rather than a layer over the whole of
+  // it. A spill that is a rectangle is not a spill.
+  const spill = spillOf(c.kind);
   // Edge to edge for the caked grimes. It used to stop at an irregular rim with
   // a few bare bites taken out of it, and at four fifths opacity that rim read
   // as the crust having been put on crooked rather than as the crust having an
   // edge. The card's own rounded corners are the only outline those have now.
+  // Rust, above, is the exception: its edge is the front it is advancing on.
   if (!spill) return 1;
   // A spill has a shape, and this is the same shape its surface paints.
-  return clamp01(blotAt(c.seed, x, y, spill.n, spill.size).edge * 6);
+  return clamp01(spillEdge(spill, c.seed, x, y) * 6);
 }
 
 /** The predicate mess.ts fills its occupancy grid from. */
@@ -236,16 +355,22 @@ let sG = 0;
 let sB = 0;
 /** Extra shine at this point, 0..1, scaled by the material's gloss. */
 let sWet = 1;
+/** How much of the crust's cover this point has, 0..1: a stain is thin in the
+ *  middle and a dust film thin where a finger went. 1 unless a material says. */
+let sA = 1;
 
-type Surface = (seed: number, x: number, y: number, rich: boolean) => void;
+/** `x`, `y` are the texture's space - the card's long side is 1, over the
+ *  grime's scale - and `u`, `v` the card's own 0..1, which is the space
+ *  crustAt() answers in. A spill finds its blobs in the second: found in the
+ *  first they sat somewhere else than its mask on any card that is not square. */
+type Surface = (seed: number, x: number, y: number, rich: boolean, u: number, v: number) => void;
 
 type Material = {
   surface: Surface,
-  /** Height of the surface detail, as a share of the card's long side. */
-  relief: number,
-  /** Specular strength and tightness. */
-  gloss: number,
-  shine: number,
+  /** Set on a material that cannot be see-through - rust is the metal itself
+   *  corroded, not something lying on it. It then ignores cover and draws its
+   *  thin places in this colour instead: for rust, the orange of new bloom. */
+  bloom?: readonly [number, number, number],
   /** What a fleck thrown off it looks like. */
   fleck: string,
   /** The colour water carrying this grime away is, as channels rather than a
@@ -255,82 +380,205 @@ type Material = {
 };
 
 /**
- * Dried, cracked mud. Plates from cellular noise: the gap between the nearest
- * and second-nearest point is small exactly along the borders between cells,
- * so thresholding it gives a crack network that closes into polygons, the way
- * real mud does and a noise contour never will. Plates dish slightly - higher
- * at the rim than the middle - because they curl as they dry.
+ * Limescale: what hard water leaves when it dries. The one pale grime, which
+ * is why it replaced caked mud - a third brown crust beside rust and tar, and
+ * the one every picture got half the time.
+ *
+ * Three things make it read. **Tide lines**: the water dried back in stages,
+ * and each stage left a thin raised rim of mineral, so the lines are contours
+ * of one slow field - nested, never crossing, like the rings in a kettle.
+ * **Crust**: where it pooled longest it built up into chalky lumps, cells of
+ * cellular noise gathered where that field is high. **Film**: everywhere else
+ * it is a thin milky haze the picture shows through. Chalk white and cream,
+ * with a little iron-yellow staining where the water carried some.
  */
-const mud: Surface = (seed, x, y, rich) => {
-  const wx = x + (gnoise(x * 5, y * 5, seed + 11) - 0.5) * 0.09;
-  const wy = y + (gnoise(x * 5 + 9, y * 5 + 3, seed + 12) - 0.5) * 0.09;
-  cells(wx * 6.5, wy * 6.5, seed + 3);
-  const edge = cellF2 - cellF1;
-  const id = cellId;
-  const plate = smooth(0.01, 0.12, edge);
-  const curl = smooth(0.5, 0.08, edge) * 0.22;
-  let hair = 0;
-  if (rich) {
-    // Hairlines across the plate tops: a finer network, shallow, and only where
-    // the big cracks are not already.
-    cells(wx * 17, wy * 17, seed + 5);
-    hair = (1 - smooth(0.0, 0.05, cellF2 - cellF1)) * plate;
-  }
-  const grain = gfbm(x * 46, y * 46, seed + 21, rich ? 3 : 2);
-  const lump = gfbm(x * 7, y * 7, seed + 22, 2);
-  sH = plate * (0.62 + curl) + lump * 0.3 + grain * 0.10 - hair * 0.10;
+const lime: Surface = (seed, x, y, rich) => {
+  const L = LOOK.lime;
+  const wx = x + (gnoise(x * 2.2, y * 2.2, seed + 61) - 0.5) * 0.08;
+  const wy = y + (gnoise(x * 2.2 + 4, y * 2.2 + 9, seed + 62) - 0.5) * 0.08;
+  // The level the water dried back through: slow and smooth, so its contours
+  // nest as tide marks do instead of wandering like a map's. Gradient noise,
+  // because value noise draws its lattice in the contours.
+  const level = gfbm(wx * 1.3, wy * 1.3, seed + 63, 2);
+  // Tide marks: a band just behind each step, crisp on the side the water
+  // stopped at and fading back the way it came - a deposit, not a drawn line.
+  const t = level * L.rings;
+  const f = t - Math.floor(t);
+  const reach = 0.16 + 0.1 * gnoise(x * 7, y * 7, seed + 64);
+  const ring = smooth(0, 0.02, f) * smooth(reach, 0, f);
+  // Crust: grit gathered where it pooled longest, in small clustered lumps.
+  cells(wx * 11, wy * 11, seed + 65);
+  const lumpy = smooth(0.5, 0.1, cellF1);
+  const pooled = smooth(0.7 - L.crust * 0.5, 0.84 - L.crust * 0.5, level);
+  const crust = clamp01(pooled * (0.45 + 0.55 * lumpy));
+  // Spots: drops that dried where they landed, each a white ring round a thin
+  // clouded middle - the mark hard water leaves on glass.
+  cells(x * 13, y * 13, seed + 68);
+  const r0 = 0.16 + cellId * 0.2;
+  const spot = cellId < L.spots
+    ? smooth(0.05, 0, Math.abs(cellF1 - r0)) + smooth(r0, r0 * 0.4, cellF1) * 0.3
+    : 0;
+  const grain = rich ? gfbm(x * 70, y * 70, seed + 66, 2) : gnoise(x * 70, y * 70, seed + 66);
+  sH = crust * 0.55 + ring * 0.3 + spot * 0.25 + grain * (0.12 + 0.35 * crust);
 
-  // Pale and dusty on top, darker where it is still damp, nearly black down the
-  // cracks. Each plate a slightly different tan.
-  const damp = smooth(0.45, 0.75, gfbm(x * 2.4 + 5, y * 2.4, seed + 23, 2));
-  const tint = 0.88 + id * 0.24;
-  let r = mix(176, 116, damp) * tint;
-  let g = mix(142, 86, damp) * tint;
-  let b = mix(102, 58, damp) * tint;
-  const dust = (grain - 0.5) * 34;
-  r += dust; g += dust * 0.9; b += dust * 0.75;
-  const pit = 1 - plate * 0.78 - hair * 0.3;
-  const k = 1 - clamp01(pit) * 0.80;
-  sR = r * k; sG = g * k; sB = b * k;
+  // Milky grey-cream film, chalk-white crust, marks and spots.
+  const solid = clamp01(Math.max(crust, ring * 0.8, spot * 0.9));
+  let r = mix(206, 240, solid) + (grain - 0.5) * 18;
+  let g = mix(204, 236, solid) + (grain - 0.5) * 18;
+  let b = mix(194, 222, solid) + (grain - 0.5) * 16;
+  // Iron: a warm yellowing in a few slow patches, strongest in the crust.
+  const iron = smooth(0.55, 0.8, gfbm(x * 2.2 + 7, y * 2.2, seed + 67, 2)) * L.stain * (0.4 + 0.6 * solid);
+  r = mix(r, 212, iron); g = mix(g, 182, iron); b = mix(b, 118, iron);
+  sR = r; sG = g; sB = b;
   sWet = 0;
+  // The film is thin and the picture shows through it; crust and rims do not.
+  sA = mix(L.film, 1, solid);
 };
 
 /**
- * Rust. Scale, not smear: small flakes lifting at their edges over a pitted
- * ground, in the three colours rust actually is - a dark brown where it is old
- * and deep, the orange everybody means by the word, and a pale ochre bloom
- * where it is new. It took the place of moss, which was a green the rest of
- * this app has no word for; every colour here is a neighbour of the palette's
- * own terracotta and sienna.
+ * Dirt: soil the wind carried in and let settle over the card, the way a
+ * windowsill fills after a dry storm. Heavier and browner than the dust film,
+ * and everything about it says *wind*:
+ *
+ * - **Streaks along the wind**, where it scoured thin and where it laid down
+ *   thick - noise stretched along the wind's direction.
+ * - **Drifts**: a few slow banks where it piled up.
+ * - **Ripples across the wind**, as blown sand makes: long gentle backs facing
+ *   the wind and short steep faces away from it, so the light picks them out.
+ *
+ * Each card has its own wind, from its seed. The soil itself is a fine sandy
+ * grain with the odd bit of grit in it.
  */
-const rust: Surface = (seed, x, y, rich) => {
+const dirt: Surface = (seed, x, y, rich) => {
+  const L = LOOK.dirt;
+  // The wind, mostly across the card rather than up or down it.
+  const a = (hash(0, 71, seed) - 0.5) * 1.4 + (hash(1, 71, seed) < 0.5 ? 0 : Math.PI);
+  const dx = Math.cos(a);
+  const dy = Math.sin(a);
+  const along = x * dx + y * dy;
+  const across = -x * dy + y * dx;
+  // Streaks: long along the wind, narrow across it.
+  const streak = gfbm(along * 1.4, across * 7, seed + 72, 3);
+  // Drifts: slow banks, round rather than streaked.
+  const drift = gfbm(x * 1.6 + 3, y * 1.6, seed + 73, 2);
+  const banks = 0.5 + (drift - 0.5) * 1.6 * L.drift;
+  const thick = clamp01(banks + (streak - 0.5) * 1.4 * L.scour);
+  // Ripples: a sawtooth across the wind, bent by a slow warp and its spacing
+  // wandering, so no crest is a ruled line - and only in patches, where the
+  // soil lay deep enough and the wind steady enough to shape it.
+  const bend = (gnoise(across * 2.5, along * 1.5, seed + 74) - 0.5) * 1.4;
+  const f = along * L.ripples * (0.85 + 0.3 * drift) + bend;
+  const p = f - Math.floor(f);
+  const where = smooth(0.4, 0.7, gnoise(x * 2.1 + 5, y * 2.1, seed + 77));
+  const ripple = (p < 0.78 ? p / 0.78 : (1 - p) / 0.22) * smooth(0.3, 0.65, thick) * where;
+  // The soil, and the grit in it.
+  const grain = rich ? gfbm(x * 80, y * 80, seed + 75, 2) : gnoise(x * 80, y * 80, seed + 75);
+  cells(x * 40, y * 40, seed + 76);
+  const grit = cellId > 1 - L.grit * 0.1 ? smooth(0.26, 0.1, cellF1) : 0;
+  // Height from the banks and the ripples only. The streaks are long thin
+  // stretches of gradient noise, and lit as relief they draw the noise's own
+  // lattice across the card as a woven grid; they are carried by the colour
+  // and the cover instead, which is how a scour mark reads anyway.
+  sH = clamp01(banks) * 0.6 + ripple * 0.14 + grain * 0.18 + grit * 0.35;
+
+  // Dusty earth: pale ochre where it lies thin and dry on the crests, a deeper
+  // brown where it has piled up.
+  let r = mix(172, 118, thick) + (grain - 0.5) * 26 + ripple * 8;
+  let g = mix(142, 90, thick) + (grain - 0.5) * 22 + ripple * 7;
+  let b = mix(106, 62, thick) + (grain - 0.5) * 16 + ripple * 5;
+  if (grit) { r = mix(r, 74, grit); g = mix(g, 62, grit); b = mix(b, 50, grit); }
+  sR = r; sG = g; sB = b;
+  sWet = 0;
+  // Where the wind scoured it the card shows through; never bare, since the
+  // whole card counts dirty until it is washed.
+  sA = mix(L.thin, 1, smooth(0.1, 0.6, thick));
+};
+
+/** The colour of the mud a boot leaves, which outlived the mud grime: prints on
+ *  the floor are still muddy. */
+const MUD_WASH: readonly [number, number, number] = [96, 72, 46];
+
+/**
+ * Rust: the metal itself turned to oxide, so opaque everywhere (its Material
+ * has a bloom, which is what says so). It took the place of moss, which was a
+ * green the rest of this app has no word for; every colour here is a
+ * neighbour of the palette's own terracotta and sienna.
+ *
+ * Its first version was a polygon net of flakes over the whole card in one
+ * bright orange, which read as reptile skin. Rust is mostly *ground*:
+ *
+ * - **The ground** is a dark red-brown oxide, rough at a fine scale - a
+ *   granular crust, not a smooth one.
+ * - **Colour comes in patches**: old dark brown to near black, the red-brown
+ *   of settled rust, and orange bloom where it is active, from a slow field
+ *   with fairly sharp edges between them.
+ * - **Scale lifts only in places**: where a patch has blistered, flakes of
+ *   different sizes stand up with a bright rim on the edge that lifted and a
+ *   dark gap under it. Everywhere else there are no flakes at all.
+ * - **Runs** hang down from the worst of it, because rust is carried by water.
+ * - **Pits** cluster, small and near black, where it has eaten in.
+ * - **It is advancing** (see rustFront()): bright orange and still thin at the
+ *   front, old, dark and flaking worst where it took hold first, at the rim.
+ */
+const rust: Surface = (seed, x, y, rich, u, v) => {
+  const L = LOOK.rust;
   const wx = x + (gnoise(x * 4, y * 4, seed + 31) - 0.5) * 0.10;
   const wy = y + (gnoise(x * 4 + 7, y * 4 + 13, seed + 32) - 0.5) * 0.10;
-  cells(wx * 13, wy * 13, seed + 33);
-  const flake = smooth(0.0, 0.2, cellF2 - cellF1);
-  const id = cellId;
-  // Pits: about one cell in four has rusted through to something darker.
-  cells(wx * 9, wy * 9, seed + 34);
-  const pit = cellId > 0.74 ? smooth(0.34, 0.06, cellF1) : 0;
-  const grit = rich ? gfbm(x * 60, y * 60, seed + 35, 2) : gnoise(x * 60, y * 60, seed + 35);
-  const swell = gfbm(x * 5, y * 5, seed + 36, 2);
-  // The flakes are relief only, and slight. Drawn into the colour as well they
-  // made a second cracked-mud, which is the one thing this must not be.
-  sH = flake * (0.10 + id * 0.12) + swell * 0.6 + grit * 0.22 - pit * 0.5;
+  // 0 at the front, 1 well behind it.
+  const deep = smooth(0.0, 0.3, rustFront(seed, u, v));
+  // The fine granular crust everything sits on.
+  const grit = rich ? gfbm(x * 70, y * 70, seed + 35, 3) : gnoise(x * 70, y * 70, seed + 35);
+  const swell = gfbm(x * 4.5, y * 4.5, seed + 36, 2);
+  // Where it has blistered into scale: a slow field, and more of it the longer
+  // the rust has been there. The front is too young to have lifted.
+  const lift = L.scaly * (0.25 + 0.9 * deep);
+  const scaly = smooth(1 - lift - 0.08, 1 - lift + 0.08, gfbm(wx * 2.4 + 11, wy * 2.4, seed + 39, 2));
+  // Where it is scaly, the top layer has broken away in places and left holes
+  // with ragged edges. Contours of a noise field, roughened by the grit, and
+  // not cells: a cell's straight sides drew a net of polygons, which rust has
+  // nowhere.
+  const f = L.flakes * 0.5;
+  const sheet = gfbm(wx * f, wy * f, seed + 33, 3) + (grit - 0.5) * 0.12;
+  // No cracks across what is left: a contour line through noise meanders, and
+  // a field of them read as worm tracks.
+  const hole = scaly * smooth(0.56, 0.575, sheet);
+  // A flake curls up off the metal toward its broken edge, so it rises there
+  // before it drops into the hole: lit on one side, a hard shadow on the other.
+  const near = smooth(0.44, 0.56, sheet);
+  const curl = scaly * near * (1 - hole);
+  const flake = scaly - hole;
+  // Pits: clustered, small, eaten in.
+  const cluster = smooth(0.55, 0.75, gnoise(x * 3 + 21, y * 3, seed + 41));
+  cells(wx * 22, wy * 22, seed + 34);
+  const pit = cellId > 1 - L.pits * (0.4 + 1.2 * cluster) ? smooth(0.3, 0.08, cellF1) : 0;
+  // Thin at the front, piled up behind it.
+  sH = (swell * 0.45 + grit * 0.5) * (0.5 + 0.5 * deep) + flake * 0.5 + curl * 0.9 - pit * 0.5;
 
-  // Old -> orange -> bloom, along a slow field, so a card has regions of each,
-  // and run downwards in streaks, because rust is carried by water.
-  const run = gfbm(x * 15, y * 2.2, seed + 38, 2);
-  const age = gfbm(x * 3.2 + 9, y * 3.2, seed + 37, 3) * 0.7 + run * 0.3;
-  const t = clamp01((age - 0.34) * 3 + (grit - 0.5) * 0.7);
-  let r = t < 0.5 ? mix(84, 176, t * 2) : mix(176, 214, (t - 0.5) * 2);
-  let g = t < 0.5 ? mix(42, 84, t * 2) : mix(84, 138, (t - 0.5) * 2);
-  let b = t < 0.5 ? mix(24, 30, t * 2) : mix(30, 58, (t - 0.5) * 2);
-  const tint = 0.86 + id * 0.26;
-  r *= tint; g *= tint; b *= tint;
-  // Down the seams between flakes, and in the pits, it is nearly black.
-  const k = 1 - (1 - flake) * 0.14 - pit * 0.65;
-  sR = r * k; sG = g * k; sB = b * k;
+  // Patches of age, and runs hanging down from the worst of them.
+  const run = gfbm(x * 18, y * 1.8, seed + 38, 2);
+  const age = gfbm(wx * 2.8 + 9, wy * 2.8, seed + 37, 3);
+  // Soft steps between the ages: sharp ones made a tortoiseshell of dark and
+  // orange blotches with nothing between them. Orange at the front, where it
+  // is active, and older the further behind it.
+  const t = clamp01(0.5 + (age - L.age - 0.1) * 2.4 + (grit - 0.5) * 0.4 + (run - 0.5) * L.runs
+    + (1 - deep) * 0.45 - deep * 0.15);
+  // Near black -> red-brown -> orange bloom, with most of the card in the
+  // red-brown middle: bloom is where it is active, not what it is.
+  let r = t < 0.72 ? mix(58, 128, smooth(0.1, 0.72, t)) : mix(128, 186, (t - 0.72) / 0.28);
+  let g = t < 0.72 ? mix(32, 56, smooth(0.1, 0.72, t)) : mix(56, 92, (t - 0.72) / 0.28);
+  let b = t < 0.72 ? mix(22, 32, smooth(0.1, 0.72, t)) : mix(32, 40, (t - 0.72) / 0.28);
+  // Grain in the colour as well as the light: rust is never one flat tone.
+  const speck = (grit - 0.5) * 52;
+  r += speck; g += speck * 0.5; b += speck * 0.28;
+  // Under a hole is the darker layer the scale grew from, with a little new
+  // orange coming through it; a curling edge shows the paler fresh oxide.
+  const k = 1 - hole * 0.5 - pit * 0.7;
+  const fresh = hole * smooth(0.45, 0.7, grit);
+  const lip = curl * near;
+  r = r * k + lip * 34 + fresh * 38;
+  g = g * k + lip * 17 + fresh * 16;
+  b = b * k + lip * 5 + fresh * 4;
+  sR = r; sG = g; sB = b;
   sWet = 0;
 };
 
@@ -341,6 +589,7 @@ const rust: Surface = (seed, x, y, rich) => {
  * not there. The albedo barely matters.
  */
 const tar: Surface = (seed, x, y, rich) => {
+  const L = LOOK.tar;
   const wx = x + (gnoise(x * 2.2, y * 2.2, seed + 51) - 0.5) * 0.3;
   const wy = y + (gnoise(x * 2.2 + 5, y * 2.2 + 11, seed + 52) - 0.5) * 0.3;
   const flow = gfbm(wx * 3.1, wy * 3.1, seed + 53, rich ? 3 : 2);
@@ -351,8 +600,8 @@ const tar: Surface = (seed, x, y, rich) => {
   const ridge = 1 - Math.abs(2 * fbm(wx * 3.5, wy * 17, seed + 55, 2) - 1);
   // Blisters: a dome around about one feature point in five.
   cells(x * 8, y * 8, seed + 56);
-  const blister = cellId > 0.8 ? smooth(0.2, 0.0, cellF1) : 0;
-  sH = flow * 2.4 + ridge * ridge * where * 0.2 + blister * 0.3;
+  const blister = cellId > 1 - L.blisters ? smooth(0.2, 0.0, cellF1) : 0;
+  sH = flow * 2.4 + ridge * ridge * where * L.wrinkles + blister * 0.3;
 
   // The app's own ink, which is a warm brown-black and not a blue one. A cold
   // black is the one colour on this board that would have come from elsewhere.
@@ -373,12 +622,13 @@ const tar: Surface = (seed, x, y, rich) => {
  * also what puts a ring under every overlapping ring. The middle is deliberately
  * see-through: the one grime you can read the card through.
  */
-const coffee: Surface = (seed, x, y, rich) => {
+const coffee: Surface = (seed, x, y, rich, u, v) => {
+  const L = LOOK.coffee;
   // The same blobs crustAt() masked, read from the same place - a second copy
   // of these numbers is the mask and the paint drifting apart.
-  const b = blotAt(seed, x, y, SPILLS.coffee!.n, SPILLS.coffee!.size);
+  const edge = spillEdge(L, seed, u, v);
   // How near this point is to the edge of whatever ring it is inside.
-  const tide = smooth(0.22, 0.02, b.edge) * 0.8 + smooth(0.6, 0.3, b.edge) * 0.2;
+  const tide = smooth(0.22, 0.02, edge) * L.tide + smooth(0.6, 0.3, edge) * (1 - L.tide);
   const grain = rich ? gfbm(x * 40, y * 40, seed + 71, 2) : gnoise(x * 40, y * 40, seed + 71);
   sH = tide * 0.5 + grain * 0.1;
   // Sepia, and light in the middle: 0.35 alpha of stain over a pale card is
@@ -388,6 +638,7 @@ const coffee: Surface = (seed, x, y, rich) => {
   sG = mix(176, 88, dark) + grain * 6;
   sB = mix(138, 58, dark) + grain * 4;
   sWet = 0.2;
+  sA = mix(L.body, 1, clamp01(tide * 1.4));
 };
 
 /**
@@ -395,18 +646,24 @@ const coffee: Surface = (seed, x, y, rich) => {
  * has wicked along the paper's fibres, which is the only thing that tells ink
  * from paint. Warm near-black, the app's own ink rather than a blue-black.
  */
-const ink: Surface = (seed, x, y, rich) => {
-  const b = blotAt(seed, x, y, SPILLS.ink!.n, SPILLS.ink!.size);
+const ink: Surface = (seed, x, y, rich, u, v) => {
+  const L = LOOK.ink;
+  const edge = spillEdge(L, seed, u, v);
   // Fibres: the boundary is pushed in and out at high frequency, so the edge
   // frays instead of cutting.
-  const fray = (gfbm(x * 34, y * 34, seed + 81, rich ? 3 : 2) - 0.5) * 0.09;
-  const body = smooth(0.0, 0.16, b.edge + fray);
-  sH = body * 0.7 + (rich ? gfbm(x * 25, y * 25, seed + 82, 2) * 0.12 : 0);
-  const v = gnoise(x * 28, y * 28, seed + 83);
-  sR = 34 + (1 - body) * 26 + v * 5;
-  sG = 26 + (1 - body) * 20 + v * 4;
-  sB = 19 + (1 - body) * 15 + v * 3;
+  const fray = (gfbm(x * 34, y * 34, seed + 81, rich ? 3 : 2) - 0.5) * L.fray;
+  const body = smooth(0.0, 0.16, edge + fray);
+  // Ink dries darkest where it stopped, as coffee does, and a touch thinner in
+  // the middle of a big blot - a rim of solid black round a deep one.
+  const rim = smooth(0.3, 0.04, edge) * L.rim;
+  sH = body * 0.7 + rim * 0.3 + (rich ? gfbm(x * 25, y * 25, seed + 82, 2) * 0.12 : 0);
+  const n = gnoise(x * 28, y * 28, seed + 83);
+  const lift = (1 - body) + (1 - rim) * L.rim * 0.9;
+  sR = 34 + lift * 26 + n * 5;
+  sG = 26 + lift * 20 + n * 4;
+  sB = 19 + lift * 15 + n * 3;
   sWet = 0.35;
+  sA = 1 - (1 - rim) * L.rim * 0.25;
 };
 
 /**
@@ -415,30 +672,42 @@ const ink: Surface = (seed, x, y, rich) => {
  * what say "dust" rather than "grey card".
  */
 const film: Surface = (seed, x, y, rich) => {
-  const grain = rich ? gfbm(x * 70, y * 70, seed + 91, 2) : gnoise(x * 70, y * 70, seed + 91);
+  const L = LOOK.film;
+  const f = L.grain;
+  const grain = rich ? gfbm(x * f, y * f, seed + 91, 2) : gnoise(x * f, y * f, seed + 91);
   // Streaks: a few slow bands, warped, where the film is thinner.
   const wy = y + (gnoise(x * 1.7, y * 1.7, seed + 92) - 0.5) * 0.5;
-  const band = 1 - Math.abs(2 * fbm(x * 1.3, wy * 7, seed + 93, 2) - 1);
-  const wipe = smooth(0.62, 0.95, band) * 0.75;
-  sH = grain * 0.22 + (1 - wipe) * 0.12;
+  const band = 1 - Math.abs(2 * fbm(x * 1.3, wy * L.streaks, seed + 93, 2) - 1);
+  // Finer is narrower and cleaner: a fingertip drawn through the film leaves a
+  // lane with the card showing in it, not a darker wave across it.
+  const lo = 0.62 + L.fine * 0.3;
+  const wipe = smooth(lo, Math.min(0.99, lo + 0.33 - L.fine * 0.2), band) * L.wipe;
+  // Specks: the odd bigger mote settled in the film, which is what reads as
+  // dust at a glance and not as a grey tint.
+  cells(x * 38, y * 38, seed + 94);
+  const speck = L.fine > 0 && cellId > 0.9 ? smooth(0.16, 0.04, cellF1) * L.fine : 0;
+  sH = grain * 0.22 + (1 - wipe) * 0.12 + speck * 0.4;
   // Warm grey: the dust in this room is off a paper board, not off a road.
-  const k = 1 - wipe * 0.55;
+  const k = (1 - wipe * 0.55 * (1 - L.fine)) * (1 - speck * 0.35);
   sR = (176 + grain * 22) * k;
   sG = (168 + grain * 20) * k;
   sB = (154 + grain * 18) * k;
   sWet = 0;
+  sA = 1 - wipe * L.fine * 0.85;
 };
 
 const MATERIAL: Record<string, Material> = {
-  mud: { surface: mud, relief: 0.016, gloss: 0, shine: 1, fleck: 'rgb(132 100 66)', wash: [96, 72, 46] },
-  rust: { surface: rust, relief: 0.018, gloss: 0, shine: 1, fleck: 'rgb(150 74 30)', wash: [108, 54, 24] },
-  tar: { surface: tar, relief: 0.020, gloss: 0.8, shine: 60, fleck: 'rgb(44 34 25)', wash: [34, 26, 19] },
-  coffee: { surface: coffee, relief: 0.004, gloss: 0.1, shine: 12, fleck: 'rgb(150 108 70)', wash: [120, 86, 54] },
-  ink: { surface: ink, relief: 0.006, gloss: 0.25, shine: 26, fleck: 'rgb(48 38 28)', wash: [38, 30, 22] },
-  film: { surface: film, relief: 0.008, gloss: 0, shine: 1, fleck: 'rgb(178 170 156)', wash: [134 , 128, 116] },
+  // Milky: limescale in water is a cloud, not a colour.
+  lime: { surface: lime, fleck: 'rgb(226 222 208)', wash: [184, 184, 176] },
+  dirt: { surface: dirt, fleck: 'rgb(118 90 62)', wash: [96, 72, 46] },
+  rust: { surface: rust, fleck: 'rgb(150 74 30)', wash: [108, 54, 24], bloom: [180, 96, 44] },
+  tar: { surface: tar, fleck: 'rgb(44 34 25)', wash: [34, 26, 19] },
+  coffee: { surface: coffee, fleck: 'rgb(150 108 70)', wash: [120, 86, 54] },
+  ink: { surface: ink, fleck: 'rgb(48 38 28)', wash: [38, 30, 22] },
+  film: { surface: film, fleck: 'rgb(178 170 156)', wash: [134 , 128, 116] },
 };
 
-const materialOf = (kind: MessKind) => MATERIAL[kind] ?? MATERIAL.mud!;
+const materialOf = (kind: MessKind) => MATERIAL[kind] ?? MATERIAL.lime!;
 
 /** The colour a fleck thrown off this grime should be, for the jet's particles. */
 export const fleckColour = (kind: MessKind): string => materialOf(kind).fleck;
@@ -485,14 +754,20 @@ export function washOf(kind: MessKind, dirt = 1): readonly [number, number, numb
 const NOISE_MAX = 232;
 const NOISE_LIGHT = 150;
 
-// The light in this mode comes from up and left, and a little towards the eye.
-const LX = -0.46;
-const LY = -0.60;
-const LZ = 0.655;
-// Halfway between the light and the eye, for the highlight.
-const HX = -0.253;
-const HY = -0.330;
-const HZ = 0.910;
+/** The light in this mode comes from up and left, and a little towards the eye
+ *  (LOOK.light), and the half-vector between it and the eye, for the
+ *  highlight. Worked out per crust rather than once, because the lab moves it. */
+function lightOf() {
+  const az = (LOOK.light.azimuth * Math.PI) / 180;
+  const el = (clamp(LOOK.light.elevation, 5, 90) * Math.PI) / 180;
+  const lx = Math.cos(az) * Math.cos(el);
+  const ly = Math.sin(az) * Math.cos(el);
+  const lz = Math.sin(el);
+  const hn = Math.hypot(lx, ly, lz + 1);
+  return { lx, ly, lz, hx: lx / hn, hy: ly / hn, hz: (lz + 1) / hn, ambient: clamp01(LOOK.light.ambient) };
+}
+
+const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
 
 /**
  * Paint a card's crust onto its canvas.
@@ -511,22 +786,45 @@ export function paintField(
   ctx.drawImage(tile(c, nw, nh, rich), 0, 0, w, h);
 }
 
-/** The generated crust, in its own small buffer. Two passes: heights and
- *  colour, then light from the heights. */
+/** The generated crust, in its own small buffer. */
 function tile(c: Crust, w: number, h: number, rich: boolean): HTMLCanvasElement {
-  const m = materialOf(c.kind);
   const out = document.createElement('canvas');
   out.width = w;
   out.height = h;
   const into = out.getContext('2d');
   if (!into) return out;
   const img = into.createImageData(w, h);
-  const px = img.data;
+  img.data.set(crustPixels(c, w, h, rich));
+  into.putImageData(img, 0, 0);
+  return out;
+}
+
+/**
+ * A crust as straight RGBA, with no canvas anywhere near it - which is what
+ * lets tools/grime-shots.mjs draw every grime to a PNG in Node and look at it.
+ * Two passes: heights and colour, then light from the heights.
+ */
+export function crustPixels(c: Crust, w: number, h: number, rich = true): Uint8ClampedArray {
+  const m = materialOf(c.kind);
+  const k = lookOf(c.kind);
+  const { lx, ly, lz, hx, hy, hz, ambient } = lightOf();
+  // This card's own roll off LOOK.vary, each in -1..1 and each from its seed,
+  // so two cards of one grime can differ and one card never flickers.
+  const roll = (i: number) => hash(i, 97, c.seed) * 2 - 1;
+  const size = Math.max(0.05, k.scale * 2 ** (LOOK.vary.scale * roll(1)));
+  const tone = k.tone * (1 + LOOK.vary.tone * roll(2));
+  const warmth = k.warmth + LOOK.vary.warmth * roll(3);
+  const cover = m.bloom ? 1 : clamp01(k.cover * (1 + LOOK.vary.cover * roll(4)));
+  const bands = Math.round(k.bands);
+  const poster = Math.round(k.poster);
+  const patch = clamp01(k.patch + LOOK.vary.patch * roll(5));
+  const px = new Uint8ClampedArray(w * h * 4);
 
   const n = w * h;
   const thick = new Float32Array(n);
   const high = new Float32Array(n);
   const wet = new Float32Array(n);
+  const dens = new Float32Array(n);
   const col = new Float32Array(n * 3);
   // The materials are sampled in a space where the card's long side is 1, so a
   // plate of mud is as wide as it is tall on a card that is not square.
@@ -542,12 +840,40 @@ function tile(c: Crust, w: number, h: number, rich: boolean): HTMLCanvasElement 
       if (t <= 0.02) continue;
       const i = y * w + x;
       thick[i] = t;
-      m.surface(c.seed, u * ax, v * ay, rich);
-      high[i] = sH * m.relief;
+      sA = 1;
+      m.surface(c.seed, (u * ax) / size, (v * ay) / size, rich, u, v);
+      // How thick it lies here: drifts and thin places from a slow field, and
+      // thinner toward the middle when it has gathered at the rim. Never thin
+      // to nothing - a place the eye reads as clean has to count as clean,
+      // and crustAt() still counts every point of a caked grime dirty.
+      let d = 1;
+      if (patch > 0) d -= patch * 0.7 * (1 - smooth(0.3, 0.7, gfbm(u * ax * 2.2, v * ay * 2.2, c.seed + 401, 3)));
+      if (k.edge > 0) {
+        const rim = Math.min(u, 1 - u, v, 1 - v) * 2;
+        d -= k.edge * 0.55 * smooth(0.15, 0.85, rim);
+      }
+      // An opaque material is never thin in the sense of see-through: what is
+      // thin about it is its colour, which goes to the material's bloom.
+      const thin = 1 - Math.max(0.3, d);
+      dens[i] = m.bloom ? 1 : Math.max(0.3, d) * sA;
+      if (m.bloom && thin > 0) {
+        // Part of the way, so a thin place is a warmer patch and not a flat
+        // wash of one colour over a whole region.
+        const [br, bg, bb] = m.bloom;
+        const s = thin * 0.6;
+        sR = mix(sR, br, s); sG = mix(sG, bg, s); sB = mix(sB, bb, s);
+      }
+      // Relief is a share of the long side, and a feature drawn bigger stands
+      // proportionally taller, or scale would flatten what it enlarges. A thin
+      // place is flatter than a thick one.
+      high[i] = sH * k.relief * size * (0.4 + 0.6 * Math.max(0.3, d));
       wet[i] = sWet;
-      col[i * 3] = sR;
-      col[i * 3 + 1] = sG;
-      col[i * 3 + 2] = sB;
+      // The grade: saturation about the pixel's own grey, then tone, then
+      // warmth. All three are the identity at their defaults.
+      const grey = sR * 0.299 + sG * 0.587 + sB * 0.114;
+      col[i * 3] = (grey + (sR - grey) * k.sat) * tone + warmth * 24;
+      col[i * 3 + 1] = (grey + (sG - grey) * k.sat) * tone + warmth * 6;
+      col[i * 3 + 2] = (grey + (sB - grey) * k.sat) * tone - warmth * 24;
     }
   }
 
@@ -571,15 +897,16 @@ function tile(c: Crust, w: number, h: number, rich: boolean): HTMLCanvasElement 
       const nz = inv;
 
       // Flat ground reads as 1, so the albedo above is the colour in the open.
-      const lit = Math.max(0, nx * LX + ny * LY + nz * LZ) / LZ;
-      const k = 0.30 + 0.70 * lit;
-      let r = col[i * 3]! * k;
-      let g = col[i * 3 + 1]! * k;
-      let b = col[i * 3 + 2]! * k;
+      let lit = Math.max(0, nx * lx + ny * ly + nz * lz) / lz;
+      if (bands >= 2) lit = Math.round(lit * (bands - 1)) / (bands - 1);
+      const shade = ambient + (1 - ambient) * lit;
+      let r = col[i * 3]! * shade;
+      let g = col[i * 3 + 1]! * shade;
+      let b = col[i * 3 + 2]! * shade;
 
-      if (m.gloss) {
-        const wetness = m.gloss * wet[i]!;
-        const s = Math.pow(Math.max(0, nx * HX + ny * HY + nz * HZ), m.shine) * wetness;
+      if (k.gloss) {
+        const wetness = k.gloss * wet[i]!;
+        const s = Math.pow(Math.max(0, nx * hx + ny * hy + nz * hz), k.shine) * wetness;
         // The room that is not there: faces tilted up the screen pick up the
         // colour of the paper around them, broad and faint. It is most of what
         // reads as "wet", and being paper-coloured is what keeps it in this app.
@@ -589,16 +916,23 @@ function tile(c: Crust, w: number, h: number, rich: boolean): HTMLCanvasElement 
         b += (160 - b) * sky + (236 - b) * s;
       }
 
-      // Painted opaque. The four fifths it is seen at is the canvas's opacity in
-      // clean.css, so the jet erases a solid layer and the look stays one number.
+      if (poster >= 2) {
+        const lum = r * 0.299 + g * 0.587 + b * 0.114;
+        const q = (Math.round((lum / 255) * (poster - 1)) / (poster - 1)) * 255;
+        const f = lum > 1 ? q / lum : 1;
+        r *= f; g *= f; b *= f;
+      }
+
+      // Cover goes into the pixels rather than onto the canvas's opacity, so it
+      // can differ card by card. The jet's bite is destination-out, which
+      // takes a share of whatever alpha is there, so it washes the same.
       px[o] = r;
       px[o + 1] = g;
       px[o + 2] = b;
-      px[o + 3] = a * 255;
+      px[o + 3] = a * cover * dens[i]! * 255;
     }
   }
-  into.putImageData(img, 0, 0);
-  return out;
+  return px;
 }
 
 /**
@@ -887,6 +1221,14 @@ function shadowOf(art: SVGGElement, rot: number): SVGGElement {
     if (stroke && stroke !== 'none') node.setAttribute('stroke', 'currentColor');
     // Highlights are drawn faint; their shadow is not a highlight.
     node.removeAttribute('opacity');
+  }
+  // A peel's cut, copied with its id: a second element under one id is one
+  // the page will not answer for, so the copy gets its own.
+  for (const clip of shade.querySelectorAll('clipPath')) {
+    const was = clip.id;
+    clip.id = was + '-shade';
+    for (const user of shade.querySelectorAll(`[clip-path="url(#${was})"]`))
+      user.setAttribute('clip-path', `url(#${clip.id})`);
   }
   return shade;
 }
@@ -1190,29 +1532,76 @@ function cap(rng: Rng) {
  * down is cloned intact and the shadow comes up off the card with the piece
  * above it, which is most of what makes a peel read as a peel.
  *
- * `far` is the end it stays stuck by, in the drawing's own units.
+ * `near` is the end it comes away from and `far` the end it stays stuck by,
+ * along the drawing's own y; `half` is half its width.
  */
-function peelGroup(far: number): SVGGElement {
+function peelGroup(near: number, far: number, half: number): SVGGElement {
   const g = svg('g');
   g.setAttribute('class', 'clean-peel');
+  g.dataset.near = near.toFixed(2);
   g.dataset.far = far.toFixed(2);
+  g.dataset.half = half.toFixed(2);
   return g;
 }
 
-/** How much of its length a piece gives up over a full peel. Not all of it: a
- *  strip that scales to nothing is gone from the card before it ever reaches the
- *  hand, and what turns up in the glove a frame later reads as a second object
- *  rather than as the thing that was just peeled off. */
-const PEEL_SHRINK = 0.55;
+let peelSeq = 0;
+
+/**
+ * Once the art is in a peel group: cut it at a fold line and give it a flap.
+ *
+ * A peel is a fold. The part still stuck stays exactly as it was drawn, cut off
+ * at the fold, and the part that has come away is folded back over it showing
+ * its back - paler, with its own shadow on what is still stuck. The first
+ * version squashed the whole piece toward its stuck end instead, which read as
+ * the piece shrinking rather than as anything coming off.
+ */
+function peelReady(peel: SVGGElement, back: string, edge: string) {
+  const id = `clean-peel-${++peelSeq}`;
+  const art = svg('g');
+  art.setAttribute('clip-path', `url(#${id})`);
+  art.append(...peel.childNodes);
+  const clip = svg('clipPath');
+  clip.id = id;
+  clip.append(shape('rect', { class: 'clean-peel-cut', x: -50, y: -50, width: 100, height: 100 }));
+  peel.append(
+    clip, art,
+    shape('path', { class: 'clean-peel-drop', d: '', fill: 'rgb(0 0 0 / 0.2)', stroke: 'none' }),
+    shape('path', { class: 'clean-peel-flap', d: '', fill: back, stroke: edge, 'stroke-width': 0.12 }),
+    shape('path', { class: 'clean-peel-flap', d: '', fill: 'rgb(255 253 246 / 0.3)', stroke: 'none' }),
+  );
+}
+
+/** How long the folded-back flap looks against the length that came away: it
+ *  is lifting off the card toward the eye, so it is seen foreshortened. */
+const PEEL_FORE = 0.7;
 
 /** How far a piece has peeled, 0 (flat on the card) to 1 (off it). Written on
  *  the piece and on its shadow both - see peelGroup(). */
 export function peelAt(node: SVGGElement, t: number) {
-  const k = 1 - clamp01(t) * PEEL_SHRINK;
+  const k = clamp01(t);
   for (const g of node.querySelectorAll<SVGGElement>('.clean-peel')) {
+    const near = Number(g.dataset.near) || 0;
     const far = Number(g.dataset.far) || 0;
-    g.setAttribute('transform',
-      `translate(0 ${f2(far)}) scale(1 ${k.toFixed(3)}) translate(0 ${f2(-far)})`);
+    const half = Number(g.dataset.half) || 0;
+    // The fold line, running across the piece, from the free end to the stuck one.
+    const fold = near + (far - near) * k;
+    const cut = g.querySelector('.clean-peel-cut');
+    // Untouched, nothing is cut: the rect reaches well past both ends.
+    cut?.setAttribute('y', f2(k > 0 ? fold : -50));
+    cut?.setAttribute('height', f2(k > 0 ? far - fold + 50 : 100));
+    // Folded back the other way from where it came off, a touch wider at its
+    // free end, which is nearer the eye.
+    const len = (fold - near) * PEEL_FORE;
+    const end = fold + Math.sign(far - near) * len;
+    const w = half * (1 + 0.1 * k);
+    const flap = k > 0
+      ? `M${f2(-half)} ${f2(fold)} L${f2(half)} ${f2(fold)} L${f2(w)} ${f2(end)} L${f2(-w)} ${f2(end)} Z`
+      : '';
+    for (const p of g.querySelectorAll('.clean-peel-flap')) p.setAttribute('d', flap);
+    // Its shadow falls further the higher it stands.
+    const drop = g.querySelector('.clean-peel-drop');
+    drop?.setAttribute('d', flap);
+    drop?.setAttribute('transform', `translate(${f2(0.5 * len * 0.25)} ${f2(0.7 * len * 0.25)})`);
   }
 }
 
@@ -1238,7 +1627,7 @@ function tape(rng: Rng) {
   const w = rand(rng, 3, 3.8);
   const top = -l / 2;
   const bot = l / 2;
-  const peel = peelGroup(bot);
+  const peel = peelGroup(top, bot, w / 2);
   const [body, edge, back] = TAPE_TINTS[Math.floor(rng() * TAPE_TINTS.length)]!;
   const teeth = 5;
   let d = `M${f2(-w / 2)} ${f2(top)}`;
@@ -1266,6 +1655,7 @@ function tape(rng: Rng) {
     d: `M${f2(-w / 2 + 0.25)} ${f2(top + lift - 0.2)} L${f2(w * 0.12)} ${f2(top + 0.1)} L${f2(-w * 0.14)} ${f2(top + lift * 0.95)} Z`,
     fill: back!, stroke: edge!, 'stroke-width': 0.12,
   }));
+  peelReady(peel, back!, edge!);
   g.append(peel);
   return g;
 }
@@ -1283,7 +1673,7 @@ function sticky(rng: Rng) {
   const g = svg('g');
   const s = rand(rng, 6.4, 7.6);
   const half = s / 2;
-  const peel = peelGroup(half);
+  const peel = peelGroup(-half, half, half);
   const tint = `var(--note-${1 + Math.floor(rng() * 4)})`;
   const curl = rand(rng, 1.1, 1.8);
   const lip = -half + curl;
@@ -1316,6 +1706,7 @@ function sticky(rng: Rng) {
     + ` L${f2(half)} ${f2(lip)} Q0 ${f2(lip + curl * 0.9)} ${f2(-half)} ${f2(lip)} Z`,
     'rgb(255 253 246 / 0.45)',
   ));
+  peelReady(peel, tint, 'rgb(0 0 0 / 0.14)');
   g.append(peel);
   return g;
 }
@@ -1404,7 +1795,7 @@ export function paintBoot(
 ) {
   const img = ctx.createImageData(w, h);
   const px = img.data;
-  const [dr, dg, db] = materialOf('mud').wash;
+  const [dr, dg, db] = MUD_WASH;
   for (let iy = 0; iy < h; iy++)
     for (let ix = 0; ix < w; ix++) {
       const x = (ix + 0.5) / w;

@@ -953,9 +953,9 @@
    screen still talking. If that reads wrong in the hand the answer is a longer
    timer for this one element, not an exemption from fading. */
 :root.is-idle #toolbar,
-/* The Timeline too, though it is docked and the board keeps its room: the
-   band stays empty rather than the board jumping down into it, and jumping
-   back on the first move. Except while Play runs, which is the tour's case -
+/* The Timeline too, though it is docked: the board takes its band while it is
+   gone and is held still as it does (canvas.css, #viewport), so nothing jumps
+   either way. Except while Play runs, which is the tour's case -
    a replay is watched without a hand on anything, and the bar is what it is
    watched on. */
 :root.is-idle:not(.is-replaying) #timeline-strip,

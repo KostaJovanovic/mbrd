@@ -280,12 +280,12 @@ test('every card type resolves to grimes, and an unknown one still gets some', (
 
 test('no card type is dealt only one kind of grime', () => {
   // Weighted, never exclusive. A table that said "notes get coffee, pictures
-  // get mud" would deal the same board every time, only sorted.
+  // get limescale" would deal the same board every time, only sorted.
   for (const [type, list] of Object.entries(GRIME_FOR))
     assert.ok(new Set(list).size >= 3, `${type} can only ever be dealt ${new Set(list).size} kinds`);
 });
 
-test('a note is dealt paper grime far more often than mud', () => {
+test('a note is dealt paper grime far more often than limescale', () => {
   // The point of the table: what lands on a thing follows from what the thing
   // is. Checked as a share over many deals rather than on one, because the
   // whole design is weights.
@@ -297,13 +297,13 @@ test('a note is dealt paper grime far more often than mud', () => {
     for (const card of planBoard(boxes, rng(seed)).cards)
       for (const kind of card.fields) {
         if (kind === 'coffee' || kind === 'ink') paper++;
-        if (kind === 'mud' || kind === 'rust' || kind === 'tar') caked++;
+        if (kind === 'lime' || kind === 'dirt' || kind === 'rust' || kind === 'tar') caked++;
       }
-  // A clear majority rather than a landslide: a note can also be dealt mud over
-  // rust, which puts two caked grimes on one card at once, so the margin here
-  // is smaller than the weights alone would suggest.
+  // A clear majority rather than a landslide: a note can also be dealt
+  // limescale over rust, which puts two caked grimes on one card at once, so
+  // the margin here is smaller than the weights alone would suggest.
   assert.ok(paper > caked * 1.4, `notes got ${paper} paper grimes and ${caked} caked`);
-  assert.ok(caked > 0, 'a note must still be able to get mud, or the table is exclusive');
+  assert.ok(caked > 0, 'a note must still be able to get limescale, or the table is exclusive');
 });
 
 test('the cobweb is the only mess that belongs to a pair of cards', () => {
@@ -311,11 +311,11 @@ test('the cobweb is the only mess that belongs to a pair of cards', () => {
   assert.deepEqual(webs, ['cobweb']);
 });
 
-test('tar is the deepest thing on the board and mud the shallowest', () => {
+test('tar is the deepest thing on the board and limescale the shallowest', () => {
   // Not a fact about the numbers so much as about the shape of the session:
   // the reward for finding tar is that it takes a while.
   assert.ok(TUNING.depth.tar > TUNING.depth.rust);
-  assert.ok(TUNING.depth.rust > TUNING.depth.mud);
+  assert.ok(TUNING.depth.rust > TUNING.depth.lime);
 });
 
 // ---------------------------------------------------------------------------
@@ -323,13 +323,13 @@ test('tar is the deepest thing on the board and mud the shallowest', () => {
 // ---------------------------------------------------------------------------
 
 test('a field that was dealt nothing is already clean', () => {
-  const f = emptyField('mud');
+  const f = emptyField('lime');
   assert.equal(coverage(f), 0);
   assert.equal(fieldClear(f), true);
 });
 
 test('a full field starts at 1 and clears at the threshold, not at zero', () => {
-  const f = makeField('mud', () => true);
+  const f = makeField('lime', () => true);
   assert.equal(coverage(f), 1);
   assert.equal(fieldClear(f), false);
   // Take everything but a hair under the threshold's worth of cells.
@@ -341,7 +341,7 @@ test('a full field starts at 1 and clears at the threshold, not at zero', () => 
 });
 
 test('a stamp takes the cells it covers and no others', () => {
-  const f = makeField('mud', () => true);
+  const f = makeField('lime', () => true);
   const took = stamp(f, 0.5, 0.5, 0.25, 0.25);
   assert.ok(took > 0);
   assert.equal(f.left, f.total - took);
@@ -352,7 +352,7 @@ test('a stamp takes the cells it covers and no others', () => {
 });
 
 test('stamping the same place twice takes nothing the second time', () => {
-  const f = makeField('mud', () => true);
+  const f = makeField('lime', () => true);
   stamp(f, 0.5, 0.5, 0.3, 0.3);
   assert.equal(stamp(f, 0.5, 0.5, 0.3, 0.3), 0);
 });
@@ -371,7 +371,7 @@ test('a shielded cell is left alone and counts for nothing', () => {
   // The shield is what a piece of debris casts over the crust it lies on, and
   // is the whole of the rule that the glove comes before the jet.
   const grid = TUNING.grid;
-  const f = makeField('mud', () => true, grid, 1);
+  const f = makeField('lime', () => true, grid, 1);
   const half = i => (i % grid) < grid / 2;
   const took = stamp(f, 0.5, 0.5, 0.5, 0.5, 99, half);
   assert.ok(took > 0, 'the shield covered everything');
@@ -379,7 +379,7 @@ test('a shielded cell is left alone and counts for nothing', () => {
     if (half(i)) assert.equal(f.cells[i], SUBS, `shielded cell ${i} was taken`);
   assert.equal(f.left, f.total - took, 'the count and the grid disagree');
   // And with nothing shielded the same stroke takes strictly more.
-  const open = makeField('mud', () => true, grid, 1);
+  const open = makeField('lime', () => true, grid, 1);
   assert.ok(stamp(open, 0.5, 0.5, 0.5, 0.5, 99, null) > took);
 });
 
@@ -388,7 +388,7 @@ test('a bite smaller than a pass thins the crust rather than skipping it', () =>
   // not intermittent. Whole passes meant a bite of 0.05 was banked until it
   // crossed 1 and then spent all at once: one stamp in twenty did every bit of
   // the work and the other nineteen did nothing, which reads as a fire rate.
-  const f = makeField('mud', () => true, TUNING.grid, 1);
+  const f = makeField('lime', () => true, TUNING.grid, 1);
   const cell = () => f.cells[Math.floor(TUNING.grid / 2) * TUNING.grid + Math.floor(TUNING.grid / 2)];
   const full = cell();
   assert.equal(stamp(f, 0.5, 0.5, 0.3, 0.3, 0.05), 0, 'a fifth of a pass finished a cell');
@@ -455,7 +455,7 @@ test('worn crust never sits in the band where it cannot be seen', () => {
 
 
 test('a zero radius is a no-op rather than a divide by zero', () => {
-  const f = makeField('mud', () => true);
+  const f = makeField('lime', () => true);
   assert.equal(stamp(f, 0.5, 0.5, 0, 0), 0);
   assert.equal(f.left, f.total);
 });
@@ -466,7 +466,7 @@ test('the wear is read off the whole disc, not off the cell under the nozzle', (
   // branch - and that erase covers the forty-odd cells around it, most of
   // which still had their crust. Bare centre, dirty surroundings.
   const span = 2 * SUBS;
-  const f = makeField('mud', () => true, 32, 2);
+  const f = makeField('lime', () => true, 32, 2);
   // Clear a single cell and leave everything else alone. Aimed at a cell's
   // centre rather than at 0.5, which on a 32 grid is a boundary between four.
   const mid = 16.5 / 32;
@@ -486,7 +486,7 @@ test('holding the jet still on a cleaned spot does not wash away what is round i
   // contrived one, and it used to take the crust to 1e-13 of its alpha while
   // the grid barely moved - invisible, and still counted dirty.
   const span = 2 * SUBS;
-  const f = makeField('mud', () => true, 32, 2);
+  const f = makeField('lime', () => true, 32, 2);
   const mid = 16.5 / 32;
   stamp(f, mid, mid, 0.02, 0.02, 99);
 
@@ -506,7 +506,7 @@ test('holding the jet still on a cleaned spot does not wash away what is round i
 
 test('the shield keeps the crust under a piece of debris from being washed through it', () => {
   const span = SUBS;
-  const f = makeField('mud', () => true, 32, 1);
+  const f = makeField('lime', () => true, 32, 1);
   const grid = 32;
   // Everything in the left half is under something.
   const skip = i => (i % grid) < grid / 2;
@@ -521,7 +521,7 @@ test('the shield keeps the crust under a piece of debris from being washed throu
 test('a disc with nothing left in it erases outright', () => {
   // The other half of the rule: once the crust really is gone the last of it
   // must leave, rather than lingering as a film nobody can wash off.
-  const f = makeField('mud', () => true, 32, 1);
+  const f = makeField('lime', () => true, 32, 1);
   stamp(f, 0.5, 0.5, 0.3, 0.3, 99);
   const wear = wearOf(f, 0.5, 0.5, 0.15, 0.15, 1, SUBS);
   assert.deepEqual(wear, { before: 0, taken: 0 });
@@ -535,12 +535,13 @@ test('a disc with nothing left in it erases outright', () => {
 test('a dealt crust covers nearly the whole card', () => {
   // The reveal is the reward, and there is nothing to reveal if the crust is a
   // film over a card you can already read. 85% is the floor; the target is the
-  // 90% in TUNING.cover.
+  // 90% in TUNING.cover. Rust is left out: it has a front it is advancing on,
+  // and its own share is held with the spills below.
   const grid = TUNING.grid;
   let worst = 1;
   let sum = 0;
   for (let seed = 1; seed <= 40; seed++) {
-    for (const kind of ['mud', 'rust', 'tar']) {
+    for (const kind of ['lime', 'dirt', 'tar']) {
       const f = makeField(kind, crustMask(crust(kind, rng(seed))), grid, 1);
       const share = f.total / (grid * grid);
       worst = Math.min(worst, share);
@@ -555,7 +556,7 @@ test('a dealt crust covers nearly the whole card', () => {
 
 test('the middle of a card is always under the crust, and outside it is not', () => {
   for (let seed = 1; seed <= 20; seed++) {
-    const c = crust('mud', rng(seed));
+    const c = crust('lime', rng(seed));
     assert.equal(crustAt(c, 0.5, 0.5), 1, `seed ${seed} left a hole in the middle`);
     assert.equal(crustAt(c, 0.5, -0.4) < 0.35, true, 'the crust reached off the card');
   }
@@ -564,14 +565,19 @@ test('the middle of a card is always under the crust, and outside it is not', ()
 test('a spill has a shape, and a caked grime does not', () => {
   // The exception to edge-to-edge, and the reason for it: a spill that is a
   // rectangle is not a spill. Coffee and ink are meant to leave most of the
-  // card showing; mud, rust, tar and a film of dust cover the lot.
+  // card showing; limescale, dirt, tar and a film of dust cover the lot.
+  // Dirt is thin on its far side, but thin is in the paint: it still counts.
+  // Rust is between: it is taking the card over from one side or corner, so
+  // the far part is still bare - some, but never most of it.
   const grid = TUNING.grid;
   const share = (kind, seed) =>
     makeField(kind, crustMask(crust(kind, rng(seed))), grid, 1).total / (grid * grid);
   for (let seed = 1; seed <= 30; seed++) {
-    for (const kind of ['mud', 'rust', 'tar', 'film'])
+    for (const kind of ['lime', 'dirt', 'tar', 'film'])
       assert.ok(share(kind, seed) >= 0.99,
         `${kind} covered only ${(share(kind, seed) * 100).toFixed(1)}% - it should be edge to edge`);
+    const rust = share('rust', seed);
+    assert.ok(rust >= 0.55 && rust < 0.97, `rust covered ${(rust * 100).toFixed(1)}% of its card`);
     for (const kind of ['coffee', 'ink']) {
       const s = share(kind, seed);
       assert.ok(s > 0.2 && s < 0.8, `${kind} covered ${(s * 100).toFixed(1)}% of its card`);
@@ -1140,7 +1146,7 @@ test('one speck of debris is enough to hold a card back', () => {
 });
 
 test('a card is clean once every field is past the threshold', () => {
-  const f = makeField('mud', () => true);
+  const f = makeField('lime', () => true);
   const card = { id: 'a', fields: [f], debris: [] };
   assert.equal(cardClean(card, []), false);
   f.left = 0;
@@ -1155,7 +1161,7 @@ test('a card is clean once every field is past the threshold', () => {
 const NONE = { debris: 0, webs: 0 };
 
 test('each family is counted for its own tool and for no other', () => {
-  const f = makeField('mud', () => true);
+  const f = makeField('lime', () => true);
   const card = { id: 'a', fields: [f], debris: [{ kind: 'leaves' }], webs: 0 };
   const webs = [{ a: 'a', b: 'b', c: 'c' }];
   const dealt = { debris: 1, webs: 1 };
@@ -1211,7 +1217,7 @@ test('a web is owed by all three of the cards it names', () => {
 });
 
 test('the badge fills as the jet works and is full before the field dissolves', () => {
-  const f = makeField('mud', () => true);
+  const f = makeField('lime', () => true);
   const card = { id: 'a', fields: [f], debris: [] };
   const share = () => toolShare(toolWork(card, [], 'washer', NONE));
 
