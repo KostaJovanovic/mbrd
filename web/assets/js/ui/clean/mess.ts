@@ -109,10 +109,10 @@ export const DEBRIS: MessKind[] = ['leaves', 'crumbs', 'gum', 'paper', 'cap', 'd
 /** Whether this tool is the one that bites. Everything else is a dull thud. */
 export const yieldsTo = (kind: MessKind, tool: ToolId) => MESS[kind].tool === tool;
 
-/** How long this piece takes to peel away under a hand held on it, or 0 for one
- *  that simply lifts. A piece with a time here does not answer a press at all -
- *  see TUNING.peelMs. */
-export const peelFor = (kind: MessKind): number => TUNING.peelMs[kind] ?? 0;
+/** How far the glove has to pull this piece to peel it away, in screen pixels,
+ *  or 0 for one that simply lifts. A piece with a length here does not answer a
+ *  press at all - see TUNING.peelSwipe. */
+export const peelFor = (kind: MessKind): number => TUNING.peelSwipe[kind] ?? 0;
 
 /** Where a piece of debris is, as the robot vacuum sees it: lying on the bare
  *  board, lying on a card, or in the glove. */
@@ -242,7 +242,7 @@ type Tuning = {
   webRoom: number,
   handful: number,
   gumTugs: number,
-  peelMs: Record<string, number>,
+  peelSwipe: Record<string, number>,
   robot: {
     speed: number, radius: number, steer: number, seekMs: number, fitMs: number,
     mopBite: number, mopLane: number,
@@ -308,14 +308,15 @@ export const TUNING: Tuning = {
   handful: 5,
   /** Presses gum takes before it comes away. */
   gumTugs: 3,
-  /** How long a *stuck* piece takes to peel, under a hand that stays on it. A
-   *  kind that is not in here simply lifts, which is nearly all of them.
+  /** How far a *stuck* piece has to be pulled to come away, in screen pixels
+   *  from where the glove took hold of it. A kind that is not in here simply
+   *  lifts, which is nearly all of them.
    *
-   *  Tape is the long one on purpose: it is the one piece of the mess that asks
-   *  for a moment rather than for aim or for pressure, and a moment is all it
-   *  asks - letting go early lays it back down and costs nothing. There is no
-   *  counter behind this and nothing to fail. */
-  peelMs: { tape: 700, sticky: 400 },
+   *  A swipe, not a hold: it was once a time under a hand that stayed on it,
+   *  and holding still is not how anybody gets tape off anything. Screen pixels
+   *  so the pull is the same stretch of the arm at any zoom. Tape is the long
+   *  one. Letting go early lays it back down and costs nothing. */
+  peelSwipe: { tape: 150, sticky: 90 },
   /** The robot vacuum, the second secret inside the first. World units.
    *  - `speed`     a second - a trundle, but it has a whole board to do
    *  - `radius`    half its 60-unit disc, and the reach it eats, sweeps and
