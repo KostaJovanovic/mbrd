@@ -31,6 +31,8 @@ import {
   spiderNode, threadNode, SPIDER_SIZE, robotNode, ROBOT_SIZE, ROBOT_BOX,
 } from './art.ts';
 import type { Crust } from './art.ts';
+import { playIntro } from './intro.ts';
+import type { Intro } from './intro.ts';
 
 /** The spa loop. The file is the maintainer's to supply and is deliberately not
  *  in sw.js's SHELL - precaching a few megabytes of music for the handful of
@@ -109,10 +111,11 @@ type LiveBit = {
   size: number,
   /** Presses left. Gum resists; a crumb does not. */
   tough: number,
-  /** How far a stuck piece has peeled, 0 to 1, and when the glove was last on
-   *  it. Both are 0 for everything that simply lifts - see peelStep(). */
+  /** How far a stuck piece has peeled, 0 to 1, and where on screen the glove
+   *  took hold of it - null while nothing has. Nothing else ever sets either -
+   *  see peelStep(). */
   peel: number,
-  pulledAt: number,
+  grab: { x: number, y: number } | null,
   /** The little SVG a loose piece carries with it; null while it is on a card. */
   host: SVGSVGElement | null,
 };
@@ -423,6 +426,9 @@ let catchWatch: ResizeObserver | null = null;
 let gaugeShown = -1;
 /** Work was done since the count was last painted - see apply(). */
 let countOwed = false;
+/** The opening (./intro.ts) while it is on screen. It owns the keys it wants
+ *  until the star has opened. */
+let intro: Intro | null = null;
 
 // ---- end session state --------------------------------------------------
 
@@ -471,6 +477,17 @@ export function initClean(viewport: Viewport) {
     if (e instanceof DragEvent && e.dataTransfer) e.dataTransfer.dropEffect = 'none';
   };
   for (const type of ['dragenter', 'dragover', 'drop', 'paste']) addEventListener(type, refuse, true);
+  // No right-click menu anywhere while it is up - the board's, the bar's or
+  // the browser's. The right button puts the tool down on the glass, and a menu
+  // over a board somebody is cleaning is chrome this mode took away. Stopped
+  // here, ahead of canvas/input.ts's listener on #viewport, which the glass is
+  // inside: a preventDefault on the glass alone left that one opening the
+  // board's menu.
+  addEventListener('contextmenu', e => {
+    if (!on) return;
+    e.stopImmediatePropagation();
+    e.preventDefault();
+  }, true);
 }
 
 // ---- entering and leaving ----------------------------------------------
@@ -575,11 +592,16 @@ export function startClean(): boolean {
     document.documentElement.classList.add('is-clean-culled');
   }
   pauseMedia();
-  showBar(true);
   paintCount();
-  startMusic();
-  cue('arrive');
   raf = requestAnimationFrame(tick);
+  // The board is dealt and waiting under the black. The bar, the music and the
+  // arrival wait for the star to open, so they arrive with the board.
+  intro = playIntro(() => {
+    intro = null;
+    showBar(true);
+    startMusic();
+    cue('arrive');
+  }, quality.anim);
   return true;
 }
 
@@ -662,6 +684,8 @@ export function stopClean(): boolean {
   catchBox = { left: 0, top: 0, w: 0, h: 0 };
   gaugeShown = -1;
   countOwed = false;
+  intro?.stop();
+  intro = null;
   cards = [];
   webs = [];
   // Its node and its thread are both inside the layer that has just gone, so
@@ -760,7 +784,7 @@ function buildCard(item: Item, plan: { fields: MessKind[], debris: DebrisPlan[] 
     sizeOnCard(node, item);
     live.debris.push({
       node, kind: d.kind, x: d.x, y: d.y, size: d.size,
-      tough: d.kind === 'gum' ? TUNING.gumTugs : 1, peel: 0, pulledAt: 0, host: null,
+      tough: d.kind === 'gum' ? TUNING.gumTugs : 1, peel: 0, grab: null, host: null,
     });
   }
   for (const f of live.fields) box.append(f.canvas);
@@ -1266,6 +1290,11 @@ function intent(e: PointerEvent, x: number, y: number): 'pan' | 'work' | 'drop' 
 export function cleanSpace(down: boolean) {
   if (!on || spaceHeld === down) return;
   spaceHeld = down;
+  // Space goes on with the opening, once a press: a held key repeats.
+  if (intro) {
+    if (down) intro.advance();
+    return;
+  }
   catcher?.classList.toggle('can-pan', down);
   cursor?.classList.toggle('is-faded', down);
 }
@@ -1381,9 +1410,7 @@ function bindPointer(node: HTMLElement) {
   };
   node.addEventListener('pointerup', up);
   node.addEventListener('pointercancel', up);
-  // No context menu on the glass: the right button puts the tool down here, and
-  // a menu over a board somebody is cleaning is chrome this mode took away.
-  node.addEventListener('contextmenu', e => e.preventDefault());
+  // No context menu on the glass: see the capture listener in initClean().
 }
 
 /**
@@ -1782,12 +1809,14 @@ function workCard(
     for (const bit of card.debris.slice()) {
       if (Math.hypot((bit.x - u) * card.item.w, (bit.y - v) * card.item.h) > TUNING.reach.glove.radius) continue;
       if (!handRoom(carried.map(c => c.kind), bit.kind)) continue;
-      // Tape and a sticky note are stuck down, and a press does not lift them.
-      // The glove being on one is all this records; the peel itself runs on the
-      // frame clock in peelStep(), because this runs once per step of a stroke
-      // and a moving hand would otherwise peel faster than a still one.
+      // Tape and a sticky note are stuck down, and a press does not lift them:
+      // the glove takes hold, and pulling away is what peels them. Where it took
+      // hold is all this records; the peel runs in peelStep().
       if (peelFor(bit.kind)) {
-        bit.pulledAt = performance.now();
+        if (!bit.grab) {
+          bit.grab = { x: clientX, y: clientY };
+          cue('pick', { volume: 0.2 });
+        }
         worked++;
         continue;
       }
@@ -2181,12 +2210,14 @@ function tug(bit: LiveBit, u: number, v: number) {
   }, 260);
 }
 
-/** How long after the glove was last on a stuck piece it still counts as
- *  holding it. A few frames, so one slow frame does not let it drop back. */
-const PEEL_GRACE_MS = 90;
+/** How far a stuck piece lifts the moment the glove takes hold, before any
+ *  pull, and how quickly the peel follows the hand. */
+const PEEL_HINT = 0.14;
+const PEEL_EASE_MS = 70;
 
-/** How long a half-peeled piece takes to settle back when the hand lets go. */
-const PEEL_BACK_MS = 260;
+/** How a piece settles back when the hand lets go: the time it takes to lose
+ *  about two thirds of whatever peel it had. */
+const PEEL_BACK_MS = 130;
 
 /** How far towards the hand the lifted corner leans at a full peel, as a share
  *  of the way from where the piece lies to where the glove is. */
@@ -2196,22 +2227,41 @@ const PEEL_REACH = 0.2;
  * Peel whatever the glove is holding down on, and lay back whatever it has let
  * go of. Once a frame, on the frame's own clock - see workCard().
  *
- * The strip folds back on itself from its free end toward the end it is still
- * stuck by (peelAt() in art.ts) while it leans after the glove, and at the end
- * of the peel it joins the hand
- * like anything else. Letting go early eases it back flat. Nothing is counted
- * and nothing can go wrong: it just takes a moment.
+ * **A swipe.** Once the glove has hold of a piece it keeps it for as long as
+ * the button is down, wherever the hand goes, and the peel is how far the hand
+ * has got from where it took hold - the furthest yet, so a hand wobbling back
+ * does not stick the piece down again. A click or a hold that does not move
+ * lifts it by PEEL_HINT and no further. The strip
+ * folds back on itself from its free end toward the end it is still stuck by
+ * (peelAt() in art.ts) while it leans after the glove, and at the end of the
+ * pull it joins the hand like anything else. Letting go early eases it back
+ * flat. Nothing is counted and nothing can go wrong.
  */
-function peelStep(dt: number, now: number) {
+function peelStep(dt: number) {
   if (!vp) return;
   const hand = vp.toWorld(at.x, at.y);
+  const holding = drawing && held === 'glove';
   for (const card of cards) {
     for (const bit of card.debris.slice()) {
-      const ms = peelFor(bit.kind);
-      if (!ms) continue;
-      const pulling = drawing && held === 'glove' && now - bit.pulledAt < PEEL_GRACE_MS;
-      if (!pulling && !bit.peel) continue;
-      bit.peel = pulling ? Math.min(1, bit.peel + dt / ms) : Math.max(0, bit.peel - dt / PEEL_BACK_MS);
+      const swipe = peelFor(bit.kind);
+      if (!swipe) continue;
+      if (!holding) bit.grab = null;
+      if (!bit.grab && !bit.peel) continue;
+      if (bit.grab) {
+        // Taking hold lifts the free end a little on its own - the piece
+        // answering the glove, and the hint that it wants pulling. The pull
+        // runs on from there.
+        const pulled = Math.min(1, Math.hypot(at.x - bit.grab.x, at.y - bit.grab.y) / swipe);
+        const want = PEEL_HINT + (1 - PEEL_HINT) * pulled;
+        // Eased toward, so the hint lifts rather than snapping up; the last of
+        // the pull is exact, or an ease would never quite arrive at 1.
+        bit.peel = want >= 1 ? 1 : Math.max(bit.peel, bit.peel + (want - bit.peel) * (1 - Math.exp(-dt / PEEL_EASE_MS)));
+      } else {
+        // Eased out rather than at a fixed rate: at a fixed rate a click's hint
+        // was gone again in a frame or two, which is a flicker and not a lift.
+        bit.peel *= Math.exp(-dt / PEEL_BACK_MS);
+        if (bit.peel < 0.01) bit.peel = 0;
+      }
       // Room was asked when the glove went on the strip, not now - and two strips
       // under one glove finish on the same frame. The one there is no room for
       // stays at the brink, and eases back once the glove stops holding it.
@@ -2262,7 +2312,7 @@ function takeIntoHand(bit: LiveBit) {
   // Flat and whole again in the hand: the fold was the peel, not the piece.
   if (bit.peel) peelAt(bit.node, 0);
   bit.peel = 0;
-  bit.pulledAt = 0;
+  bit.grab = null;
   carried.push(bit);
   paintLoad();
   cue('pick', { volume: 0.4 });
@@ -3347,7 +3397,7 @@ function tick() {
   if (drawing && held && now - appliedAt > FRAME_MS) apply(at.x, at.y, false);
   // After that touch, so a hand held still on a strip of tape has put the glove
   // on it this frame before the peel asks whether it is there.
-  peelStep(dt, now);
+  peelStep(dt);
 
   // The tank drains while the trigger is down and fills the moment it is not,
   // and the mist comes off the nozzle for as long as there is pressure behind
@@ -3690,6 +3740,8 @@ const asking = () => el('clean-confirm')?.hidden === false;
  */
 export function cleanEscape(): boolean {
   if (!on) return false;
+  // Past the opening, not out of the mode: a second Escape asks to leave.
+  if (intro) { intro.skip(); return true; }
   if (finishing) { stopClean(); return true; }
   if (asking()) { stopClean(); return true; }
   if (held) {
@@ -3705,6 +3757,11 @@ export function cleanEscape(): boolean {
  *  owns the one keydown listener in the app. */
 export function cleanKey(key: string): boolean {
   if (!on) return false;
+  // Enter goes on with the opening; nothing else reaches a board still dark.
+  if (intro) {
+    if (key === 'Enter') intro.advance();
+    return true;
+  }
   const n = Number(key);
   if (!Number.isInteger(n) || n < 1 || n > TOOLS.length) return false;
   lift(TOOLS[n - 1]!.id);

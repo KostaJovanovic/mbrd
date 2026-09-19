@@ -1632,16 +1632,16 @@ test('tape and a sticky note are glove debris, one bulk each, and are dealt', ()
   }
 });
 
-test('only stuck things peel, and tape takes longer than a note', () => {
-  assert.equal(peelFor('tape'), 700);
-  assert.equal(peelFor('sticky'), 400);
+test('only stuck things peel, and tape takes a longer pull than a note', () => {
+  assert.ok(peelFor('tape') > peelFor('sticky'));
+  assert.ok(peelFor('sticky') > 0);
   // Everything else lifts on a touch, gum included - gum keeps its tugs.
   for (const kind of Object.keys(MESS))
     if (kind !== 'tape' && kind !== 'sticky') assert.equal(peelFor(kind), 0, `${kind} peels`);
-  // A peel is a glove thing: a peel time on a field or a web would be a number
-  // nothing ever reads.
-  for (const kind of Object.keys(TUNING.peelMs)) {
-    assert.ok(kind in MESS, `peelMs names ${kind}, which is not a mess`);
+  // A peel is a glove thing: a pull length on a field or a web would be a
+  // number nothing ever reads.
+  for (const kind of Object.keys(TUNING.peelSwipe)) {
+    assert.ok(kind in MESS, `peelSwipe names ${kind}, which is not a mess`);
     assert.equal(MESS[kind].tool, 'glove', `${kind} peels but is not the glove's`);
   }
 });
