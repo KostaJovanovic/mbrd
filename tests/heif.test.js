@@ -75,6 +75,7 @@ function heic({
   brand = 'heic', cols = 2, rows = 2, cells = [1, 2, 3, 4], tileType = 'hvc1',
   width = 96, height = 96, rotate = 0, mirror = null, gridInIdat = true,
   primary = 5, tileLen = 64, extraTileBytes = 0, dropIdat = false,
+  cell = null,
 } = {}) {
   const ftyp = box('ftyp', ascii(brand), u32(0), ascii('mif1'), ascii(brand));
   // The grid descriptor: version, flags (0 = 16-bit output size), rows-1, cols-1.
@@ -102,13 +103,22 @@ function heic({
     box('dimg', u16(5), u16(cells.length), ...cells.map(u16)));
 
   const props = [box('hvcC', HVCC), full('ispe', 0, 0, u32(width), u32(height))];
-  if (rotate) props.push(box('irot', u8(rotate & 3)));
-  if (mirror !== null) props.push(box('imir', u8(mirror & 1)));
+  // A cell's own ispe, where a caller wants the tiles to measure differently
+  // from the picture they make - which is every real grid, and is what the
+  // composer reads the cell size off.
+  let cellProp = 2;
+  if (cell) {
+    props.push(full('ispe', 0, 0, u32(cell.w), u32(cell.h)));
+    cellProp = props.length;
+  }
+  const turns = [];
+  if (rotate) { props.push(box('irot', u8(rotate & 3))); turns.push(props.length); }
+  if (mirror !== null) { props.push(box('imir', u8(mirror & 1))); turns.push(props.length); }
   const ipco = box('ipco', ...props);
-  // Every tile gets the hvcC and the ispe; the grid gets whatever turns it.
+  // Every tile gets the hvcC and an ispe; the grid gets whatever turns it.
   const assoc = [
-    ...cells.map(id => cat(u16(id), u8(2), u8(0x81), u8(2))),
-    cat(u16(5), u8(props.length - 2), ...props.slice(2).map((_, i) => u8(3 + i))),
+    ...cells.map(id => cat(u16(id), u8(2), u8(0x81), u8(cellProp))),
+    cat(u16(5), u8(turns.length), ...turns.map(u8)),
   ];
   const ipma = full('ipma', 0, 0, u32(assoc.length), ...assoc);
   const iprp = box('iprp', ipco, ipma);
@@ -172,6 +182,38 @@ test('a 2x2 grid is read as four tiles in raster order', () => {
   // The order the dimg reference gave, not the order iloc happened to store.
   for (let i = 0; i < 4; i++) assert.deepEqual([...plan.tiles[i]], [...tile(i + 1)]);
   assert.deepEqual([...plan.hvcC], [...HVCC]);
+});
+
+test('the cell size is read off the tiles, because the frame lies about it', () => {
+  // The bug this pins cost a photograph. Chrome and Edge hand back a 512x512
+  // grid cell reporting displayWidth 1280x720 - a default from somewhere in the
+  // video pipeline - while codedWidth is the truthful 512. The composer used to
+  // believe the frame, drew every cell at 1280x720 on a 1280x720 lattice, and
+  // laid the four cells a moon was in past the right edge of the canvas. The
+  // file came out a black rectangle in both, and perfect in Firefox and in the
+  // desktop app. The container says 512 and the container is what is read.
+  const plan = readPlan(heic({ cols: 2, rows: 2, width: 96, height: 96, cell: { w: 48, h: 48 } }));
+  assert.ok(plan);
+  assert.equal(plan.cellW, 48, 'the cell is the tiles’ ispe');
+  assert.equal(plan.cellH, 48);
+  assert.equal(plan.width, 96, 'and the picture is still the grid descriptor’s');
+  assert.equal(plan.height, 96);
+});
+
+test('a tile with no ispe leaves the cell size to be asked of the frame', () => {
+  // Zero is the "the file did not say" answer, and the only thing that sends
+  // layout() back to the frame - where it reads codedWidth before displayWidth.
+  const plan = readPlan(whole());
+  assert.ok(plan);
+  assert.equal(plan.cellW, 96, 'the fixture shares one ispe between tiles and grid');
+  assert.equal(plan.cellH, 96);
+});
+
+test('a single hvc1 item is its own cell', () => {
+  const plan = readPlan(heic({ primary: 1 }));
+  assert.ok(plan);
+  assert.equal(plan.cellW, plan.width);
+  assert.equal(plan.cellH, plan.height);
 });
 
 test('a grid descriptor stored in idat is found there', () => {
