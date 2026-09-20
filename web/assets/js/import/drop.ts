@@ -110,7 +110,7 @@ export const MAX_FILES = 500;
  * not a destructive-action guard.
  */
 export type ImportPrompt =
-  (opts: { title: string, body: string, go: string }) => Promise<string>;
+  (opts: { title: string, body: string, go: string, cancel?: string }) => Promise<string>;
 
 let confirmImport: ImportPrompt | null = null;
 export function setImportPrompt(fn: ImportPrompt | null | undefined) {
@@ -206,7 +206,10 @@ export function initDrop(vp: DropViewport) {
     const at = vp.toWorld(pt.x, pt.y);
     // Files first: a drag can carry both files and a URL; files are the intent.
     if (hasFiles(e.dataTransfer)) {
-      const incoming = await filesFrom(e.dataTransfer);
+      // The overlay is already down and importFiles() has not started, so a
+      // folder walk of any size happens on a screen showing nothing at all.
+      const walk = busy('Reading the drop');
+      const incoming = await filesFrom(e.dataTransfer).finally(() => walk.end());
       await importFiles([...incoming.files, ...incoming.folders], at, {
         avoidOverlap: incoming.fromFolder,
         truncated: incoming.truncated,
@@ -382,17 +385,31 @@ export async function importFiles(
   // One warning for the whole drop if anything is over warnBytes.
   // After .mbrd and font extraction — those are not imported as content.
   const big = files.filter((f): f is File => isFile(f) && (f.size || 0) > IMPORT_LIMITS.warnBytes);
+  // Declined by the user rather than refused by the app. Counted from here
+  // because the large-file answer below is the first thing that can skip one.
+  let overBudget = 0;
   if (big.length && confirmImport) {
+    const rest = files.length - big.length;
     const answer = await confirmImport({
       title: big.length === 1 ? 'Large file' : 'Large files',
-      // Name+size for one file, count for several.
-      body: big.length === 1
+      // Name+size for one file, count for several. When there is something else
+      // in the drop, say what declining leaves behind — the button skips rather
+      // than cancels, and that is not what a Cancel usually means.
+      body: (big.length === 1
         ? `${big[0].name} is ${mb(big[0].size)}.`
-        : `${big.length} files are over ${mb(IMPORT_LIMITS.warnBytes)}.`,
+        : `${big.length} files are over ${mb(IMPORT_LIMITS.warnBytes)}.`)
+        + (rest ? ` The other ${rest === 1 ? 'file comes' : rest + ' come'} in either way.` : ''),
       go: 'Import',
+      cancel: big.length === 1 ? 'Skip it' : 'Skip them',
     });
-    // Cancel means the whole drop, not just the big files.
-    if (answer !== 'go') return [];
+    // Declining skips the large files, not the drop: one heavy file in a folder
+    // of two hundred must not throw the other hundred and ninety-nine away.
+    // Calling off the whole import is the Cancel on the busy strip below.
+    if (answer !== 'go') {
+      const skip = new Set<Incoming>(big);
+      files = files.filter(f => !skip.has(f));
+      overBudget += big.length;
+    }
   }
 
   // filesFrom() already capped at MAX_FILES; `truncated` reports whether it did.
@@ -417,9 +434,23 @@ export async function importFiles(
   // Byte budget: the memory boundary (the 500-file cap is UX only). Sequential —
   // budget questions must be answered one at a time. See import/budget.ts.
   const budget = makeByteBudget();
-  let overBudget = 0;
   const keep: Incoming[] = [];
+  // Cancel button on the busy strip: during the scan it takes the whole import,
+  // during the read it stops starting new files and keeps what finished.
+  const control = new AbortController();
+  let cancelled = false;
+  // The strip goes up here rather than at the read below. pixelCrossing() reads
+  // 128 KB off each file in turn, so a phone handed a folder of two hundred
+  // spends seconds in this loop with nothing on screen, and a screen that does
+  // nothing reads as a press that did nothing. Relabelled for the read, not
+  // replaced — one strip, one cancel, no gap between the two halves.
+  const job = busy(files.length > 1 ? `Checking ${files.length} files` : 'Checking',
+    files.length > 1 ? { onCancel: () => { cancelled = true; control.abort(); } } : {});
+  let scanned = 0;
   for (const f of files) {
+    // Nothing has landed yet, so cancelling here means none of it.
+    if (control.signal.aborted) { keep.length = 0; break; }
+    job.step(++scanned, files.length);
     // A card already made, or a folder whose files are filed one at a time.
     if (!isFile(f)) { keep.push(f); continue; }
     const reasons = budget.check(f.size || 0);
@@ -435,11 +466,17 @@ export async function importFiles(
   }
   files = keep;
   if (!files.length) {
+    job.end();
     budget.release();
+    if (cancelled) { toast('Import stopped'); return []; }
     // Not an error — every file was described and the user declined.
     toast(overBudget ? 'Nothing imported' : 'Those files are too large to import', overBudget ? '' : 'error');
     return [];
   }
+  // Same strip, second half. step() resets the count so the scan's full bar
+  // does not stand there looking finished until the first file is read.
+  job.label(files.length > 1 ? `Reading ${files.length} files` : 'Reading');
+  job.step(0, files.length);
 
   // Bounded work pool (IMPORT_WORKERS at a time). Results land by index
   // so the arrangement sees file order, not completion order.
@@ -451,11 +488,6 @@ export async function importFiles(
   let next = 0;
   // How many started (not finished) — workers finish out of order.
   let settled = 0;
-  // Cancel button on the busy strip: stop starting new files, keep what finished.
-  const control = new AbortController();
-  let cancelled = false;
-  const job = busy(files.length > 1 ? `Reading ${files.length} files` : 'Reading',
-    files.length > 1 ? { onCancel: () => { cancelled = true; control.abort(); } } : {});
   const worker = async () => {
     for (;;) {
       if (control.signal.aborted) return;

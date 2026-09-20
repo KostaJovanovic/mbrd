@@ -144,7 +144,7 @@ function openStickerWindow() {
 /** The slide-out backstop, so a close that never sees transitionend finishes. */
 let exitTimer = 0;
 
-function closeStickerWindow() {
+export function closeStickerWindow() {
   if (!win) return;
   const el = win;
   win = null;

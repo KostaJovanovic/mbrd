@@ -37,7 +37,11 @@
    --------------------------------------------------------- */
 #busy {
   position: fixed;
-  z-index: var(--z-toast);
+  /* Below the sidebar, the panels and the menus on purpose. An import runs for
+     as long as it runs and the user carries on working over it; a card parked
+     on top of whatever they opened next is in the way of the thing they meant
+     to look at. It reappears the moment that closes. */
+  z-index: var(--z-busy);
   /* Below the toolbar. mobile.css resets this when the bar moves to the foot. */
   top: calc(max(14px, env(safe-area-inset-top)) + var(--toolbar-h) + 10px);
   left: 50%;
@@ -187,6 +191,12 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+
+  /* The canvas at 0s, not 0.01ms, and the argument is written out beside the
+     same pair of rules in quality.css: under #viewport a duration is not a
+     shortening but a transition where there was none, on every property the
+     pan and zoom frames rewrite. */
+  #viewport, #viewport * { transition-duration: 0s !important; }
 
   /* Exception: a stopped indeterminate bar reads as false progress at 38%.
      Draw it as a full dim track instead; the counting bar can stand still. */

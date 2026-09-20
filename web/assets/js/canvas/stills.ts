@@ -12,8 +12,10 @@ import type { Viewport } from './viewport.ts';
 /** Long edge of a captured frame. It is only ever shown at a third size. */
 const MAX_STILL = 640;
 
-/** Minimal viewport dependency: zoom level and change listener. */
-type ZoomSource = Pick<Viewport, 'zoom' | 'onChange'>;
+/** Minimal viewport dependency: zoom level, whether it is mid-gesture, and a
+ *  change listener. `moving` absent (a test's stand-in) reads as at rest, which
+ *  is the behaviour this module had before it asked. */
+type ZoomSource = Pick<Viewport, 'zoom' | 'onChange'> & Partial<Pick<Viewport, 'moving'>>;
 
 /** Twin <img> with its current blob URL. URL tracked on the node so
  * releaseStills() can revoke it — blob URLs outlive the element otherwise. */
@@ -33,6 +35,8 @@ let worldEl: HTMLElement | null = null;
 let stilled = false;
 /** A sweep already booked for this frame - see the throttle in update(). */
 let sweep = 0;
+/** A capture the gesture put off, taken on the settling frame - see update(). */
+let owed = false;
 /** The live update, so a quality change can ask the question again. */
 let recheck = () => {};
 
@@ -49,11 +53,23 @@ export function initStills(world: HTMLElement, vp: ZoomSource): void {
     const far = vp.zoom < stillZoom();
     const held = !quality.motion;
     const want = far || held;
+    // Not while the board is moving, and this is the one line that keeps a
+    // pinch smooth. A shot is a readback of pixels from the GPU, and a traced
+    // pinch on an Android phone put each one at about 110ms - a hitch you can
+    // see, landing exactly on the frame that crosses the rung. Owed instead,
+    // and paid on the settling frame, which the viewport emits for precisely
+    // this kind of work. What it costs is a GIF that plays on for the length of
+    // the gesture: the twin has no frame yet, no rule swaps to a twin without
+    // `is-ready`, so the card keeps showing the real picture until it does.
+    const still = !vp.moving;
     if (want !== stilled) {
       stilled = want;
       // Shoot before swapping — capture the frame that was visible.
-      if (want) capture(true);
-    } else if (want && !sweep) {
+      if (want) { if (still) capture(true); else owed = true; }
+    } else if (want && owed && still) {
+      owed = false;
+      capture(true);
+    } else if (want && still && !sweep) {
       // Still frozen: catch GIFs remounted by culling since last pass. Throttled
       // to one rAF sweep per frame — childElementCount cannot detect set changes.
       sweep = requestAnimationFrame(() => { sweep = 0; capture(false); });

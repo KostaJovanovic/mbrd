@@ -4,7 +4,7 @@
 
 import {
   board, bus, selection, removeItems, restoreItems, emptyTrash, select,
-  restoreTitleCard, isTitleHidden, clipHomeId, stuckHostId,
+  restoreTitleCard, isTitleHidden, titleCardShape, clipHomeId, stuckHostId, isKeepsake,
 } from '../state.ts';
 import { formatBytes, div, el, markClosed } from '../util.ts';
 import { buildItem, restingTilt, kindName } from '../canvas/item-dom.ts';
@@ -120,9 +120,18 @@ let button: HTMLElement | null = null;
 let win: HTMLElement | null = null;
 /** The scrolling region inside it. */
 let body: HTMLElement | null = null;
-/** The Empty button and the title card's way back, repainted as the bin changes. */
+/** The Empty button and the Special switch, repainted as the bin changes. */
 let emptyBtn: HTMLButtonElement | null = null;
-let titleRestore: HTMLButtonElement | null = null;
+let specialBtn: HTMLButtonElement | null = null;
+/** The window's name, which says which of the two shelves is on show. */
+let titleEl: HTMLElement | null = null;
+/**
+ * Which half of the drawer is on show. The ordinary shelves hold what was
+ * thrown away; Special holds what cannot be thrown away - the title card and
+ * every cleaning card (isKeepsake(), trash.ts). Session-only, like the sticker
+ * pad's category: a drawer opens on its shelves.
+ */
+let special = false;
 /** The move and resize grabs' detaches, called on close. */
 let detachGrabs: (() => void)[] = [];
 
@@ -165,7 +174,7 @@ export function initDrawer(viewport: Viewport) {
   // A board swap closes the window too, same reason as the sticker pad: a
   // window floating over a board that no longer exists would look like a bug.
   bus.on('board:load', () => { closeDrawer(); paintButton(); });
-  bus.on('trash', () => { paintButton(); if (win) fill(); });
+  bus.on('trash', () => { paintButton(); if (win) { paintHead(); fill(); } });
   bus.on('selection', paintButton);
 
   // Escape closes it, not in the capture phase (unlike the sticker pad's
@@ -207,20 +216,22 @@ function openDrawer() {
 
   const head = div('drawer-head');
   const title = div('drawer-title');
-  title.textContent = 'Drawer';
   const spacer = div('drawer-spacer');
 
-  // The title card, when thrown away, isn't filed among ordinary items - it's
-  // a singleton with no shelf card, so it gets its own way back in the
-  // header, shown only while actually gone. restoreTitleCard() emits 'trash',
-  // which hides this button again on its own.
-  titleRestore = document.createElement('button');
-  titleRestore.type = 'button';
-  titleRestore.className = 'drawer-title-back';
-  titleRestore.append(icon('i-title'), document.createTextNode('Title card'));
-  titleRestore.title = 'Bring back the title card';
-  titleRestore.setAttribute('aria-label', 'Bring back the title card');
-  titleRestore.addEventListener('click', () => { cue('pick'); restoreTitleCard(); });
+  // The switch between the two shelves. The Special one holds what the drawer
+  // will not throw out, the title card among it - which is why the title card's
+  // own way back lives in there rather than up here.
+  specialBtn = document.createElement('button');
+  specialBtn.type = 'button';
+  specialBtn.className = 'drawer-special';
+  specialBtn.textContent = 'Special';
+  specialBtn.addEventListener('click', () => {
+    cue('pick');
+    special = !special;
+    paintHead();
+    fill();
+    body?.scrollTo({ top: 0 });
+  });
 
   emptyBtn = document.createElement('button');
   emptyBtn.type = 'button';
@@ -236,8 +247,9 @@ function openDrawer() {
   close.append(icon('i-close'));
   close.addEventListener('click', () => { cue('pick'); closeDrawer(); });
 
-  head.append(title, spacer, titleRestore, emptyBtn, close);
+  head.append(title, spacer, specialBtn, emptyBtn, close);
   detachGrabs.push(makeWindowDrag(win, head));
+  titleEl = title;
 
   body = div('drawer-body');
   body.addEventListener('pointerdown', startDrag);
@@ -252,6 +264,10 @@ function openDrawer() {
   detachGrabs.push(makeWindowResize(win, resize, { minW: 320, minH: 220 }));
 
   document.body.append(win);
+  // A drawer always opens on its shelves: Special is somewhere you go, not a
+  // state the window remembers between openings.
+  special = false;
+  paintHead();
   fill();
   button?.setAttribute('aria-expanded', 'true');
 
@@ -263,13 +279,15 @@ function openDrawer() {
 /** The slide-out backstop, so a close that never sees transitionend finishes. */
 let exitTimer = 0;
 
-function closeDrawer() {
+export function closeDrawer() {
   if (!win) return;
   const node = win;
   win = null;
   body = null;
   emptyBtn = null;
-  titleRestore = null;
+  specialBtn = null;
+  titleEl = null;
+  special = false;
   // Take the move/resize grab listeners off window before the element goes.
   detachGrabs.forEach(fn => fn());
   detachGrabs = [];
@@ -306,6 +324,40 @@ function paintButton() {
 // The shelves
 // ---------------------------------------------------------------------------
 
+/** What the drawer is holding, either side of the switch. Keepsakes are absent
+ *  from the shelves - there is exactly one place each of them is. */
+const binned = () => board.trash.filter(t => !isKeepsake(t.item));
+const keepsakes = () => board.trash.filter(t => isKeepsake(t.item));
+
+/** How many things are in the Special half, the title card included. */
+const specialCount = () => keepsakes().length + (isTitleHidden() ? 1 : 0);
+
+/** The window's name, the switch's state, and whether Empty is offered at all -
+ *  it is not, in a half of the drawer where nothing can be thrown out. */
+function paintHead() {
+  // An empty Special shelf has no button and is not a place you can be: the
+  // switch appears when there is something behind it, and a shelf emptied while
+  // it is open puts you back among the ordinary ones. Nothing here says what
+  // would be kept - a button that isn't there gives nothing away.
+  const n = specialCount();
+  if (!n) special = false;
+  if (titleEl) titleEl.textContent = special ? 'Special' : 'Drawer';
+  win?.classList.toggle('is-special', special);
+  if (specialBtn) {
+    specialBtn.hidden = !n;
+    specialBtn.classList.toggle('is-on', special);
+    specialBtn.setAttribute('aria-pressed', String(special));
+    specialBtn.title = special
+      ? 'Back to what was thrown away'
+      : `${n} ${n === 1 ? 'thing' : 'things'} kept for good`;
+    specialBtn.setAttribute('aria-label', specialBtn.title);
+  }
+  if (emptyBtn) {
+    emptyBtn.hidden = special;
+    emptyBtn.disabled = !binned().length;
+  }
+}
+
 /**
  * Build the whole body: the shelves, or the "nothing in here" line. Rebuilt
  * whole, not patched - an entry arriving or leaving reshuffles which shelf
@@ -315,14 +367,17 @@ function fill() {
   if (!body) return;
   clearShelves();
   body.replaceChildren();
+  if (special) { fillSpecial(); return; }
 
-  const entries = board.trash;
-  if (emptyBtn) emptyBtn.disabled = !entries.length;
-  if (titleRestore) titleRestore.hidden = !isTitleHidden();
+  const entries = binned();
 
   if (!entries.length) {
     const none = div('drawer-none');
-    none.textContent = 'Nothing thrown away yet.';
+    // Said when there is something kept, so an empty drawer holding a cleaning
+    // card does not read as an empty drawer holding nothing.
+    none.textContent = specialCount()
+      ? 'Nothing thrown away. What is kept is on the Special shelf.'
+      : 'Nothing thrown away yet.';
     body.append(none);
     return;
   }
@@ -343,6 +398,75 @@ function fill() {
   body.append(hint);
 
   watch();
+}
+
+/**
+ * The other half: what the drawer keeps for good.
+ *
+ * The title card first - hidden rather than binned, so it has no entry to drag
+ * and takes a slot of its own with a press for its way back - and then every
+ * cleaning card, which are ordinary entries restored by the same drag as
+ * anything else. Neither can be emptied (isKeepsake(), trash.ts), so there is
+ * no Empty button in here and nothing in here is at risk from the one outside.
+ *
+ * The board's own cards are not listed. This is the drawer, and a thing on the
+ * board is not in it - what is archived here is what has left the board and is
+ * being kept anyway.
+ */
+function fillSpecial() {
+  if (!body) return;
+  const kept = keepsakes();
+  const titleGone = isTitleHidden();
+
+  // Reachable only for an instant - paintHead() drops the switch the moment
+  // this shelf is bare - and it says nothing about what would have been on it.
+  if (!kept.length && !titleGone) {
+    const none = div('drawer-none');
+    none.textContent = 'Nothing kept.';
+    body.append(none);
+    return;
+  }
+
+  const cells: HTMLElement[] = [];
+  if (titleGone) {
+    const slot = titleSlot();
+    slots.push(slot);
+    cells.push(slot.el);
+  }
+  for (const entry of kept) {
+    const slot = makeSlot([entry]);
+    slots.push(slot);
+    cells.push(slot.el);
+  }
+  for (let i = 0; i < cells.length; i += PER_SHELF) {
+    const shelf = div('drawer-shelf');
+    shelf.append(...cells.slice(i, i + PER_SHELF));
+    body.append(shelf);
+  }
+
+  const hint = div('drawer-hint');
+  hint.textContent = 'Kept for good — emptying the drawer leaves these here.';
+  body.append(hint);
+
+  watch();
+}
+
+/**
+ * The title card's slot: the card itself, drawn from titleCardShape() through
+ * the same buildItem() every other slot uses, so it reads as the card it is
+ * rather than as a note about it.
+ *
+ * It is the one slot with nothing in the bin behind it - the title card is
+ * hidden, not thrown away - so the drag and the Enter key, which both go
+ * looking for a bin entry, would find nothing. `data-title` is how the two of
+ * them know to call restoreTitleCard() instead, and a press is its way back.
+ */
+function titleSlot(): Slot {
+  const slot = makeSlot([{ item: titleCardShape(), at: 0 }]);
+  slot.el.dataset.title = '1';
+  delete slot.el.dataset.id;
+  slot.el.setAttribute('aria-label', 'Bring back the title card');
+  return slot;
 }
 
 /**
@@ -578,7 +702,9 @@ function ago(at: number) {
  * drawer; how much was a file is what 'trash:purged' says (see emptyTrash()).
  */
 async function confirmEmpty() {
-  const n = board.trash.length;
+  // Keepsakes are not counted and not going: what the question offers to throw
+  // out is what emptyTrash() will actually throw out.
+  const n = binned().length;
   if (!n) return;
   const answer = await ask({
     title: 'Empty the drawer?',
@@ -608,7 +734,9 @@ function restoreByKey(e: KeyboardEvent) {
   const slot = (e.target as Element).closest?.<HTMLElement>('.drawer-slot');
   if (!slot) return;
   e.preventDefault();
-  // Every .drawer-slot is built by makeSlot() above, which writes the id onto it.
+  // The title card has no bin entry to restore - see titleSlot().
+  if (slot.dataset.title) { cue('pick'); restoreTitleCard(); return; }
+  // Every other .drawer-slot is built by makeSlot(), which writes the id onto it.
   land([slot.dataset.id!], vp!.toWorld(innerWidth / 2, innerHeight / 2));
 }
 
@@ -618,6 +746,9 @@ function startDrag(e: PointerEvent) {
   // so a press delivered to it landed on an element inside it.
   const slot = (e.target as Element).closest<HTMLElement>('.drawer-slot');
   if (!slot) return;
+  // The title card is not dragged back: it has no bin entry, and its own click
+  // listener is its way home. See titleSlot().
+  if (slot.dataset.title) return;
   // As above: makeSlot() writes the id onto every slot it makes.
   const id = slot.dataset.id!;
   const entry = board.trash.find(t => t.item.id === id);
@@ -713,13 +844,15 @@ function startDrag(e: PointerEvent) {
   addEventListener('pointercancel', onCancel);
 }
 
-/** Put these back, select them, and shut the drawer if that emptied it. */
+/** Put these back, select them, and shut the drawer if that emptied it - both
+ *  halves of it, since a Special shelf with a card still on it is a drawer with
+ *  something in it. */
 function land(ids: string[], at: { x: number, y: number } | null) {
   const back = restoreItems(ids, at);
   if (!back.length) return;
   cue('arrive');
   select(back.map((i: Item) => i.id));
-  if (!board.trash.length) closeDrawer();
+  if (!board.trash.length && !isTitleHidden()) closeDrawer();
 }
 
 /**

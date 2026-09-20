@@ -310,6 +310,24 @@ function rustFront(seed: number, x: number, y: number) {
   return front;
 }
 
+// The last front asked for. crustPixels() asks crustAt() and then the rust
+// surface about the same point, one straight after the other, and the front is
+// the dearest thing either of them reads.
+let frontSeed = NaN;
+let frontX = NaN;
+let frontY = NaN;
+let frontLast = 0;
+
+function frontOf(seed: number, x: number, y: number) {
+  if (seed !== frontSeed || x !== frontX || y !== frontY) {
+    frontSeed = seed;
+    frontX = x;
+    frontY = y;
+    frontLast = rustFront(seed, x, y);
+  }
+  return frontLast;
+}
+
 /**
  * How thick the crust is at a point in 0..1 card space: 0 is bare card, 1 is
  * the full layer. The grid predicate and the paint both read this, which is the
@@ -319,7 +337,7 @@ export function crustAt(c: Crust, x: number, y: number): number {
   if (x < 0 || x > 1 || y < 0 || y > 1) return 0;
   // Rust's edge is steep: a wide one fades through translucent, and rust
   // cannot be that.
-  if (c.kind === 'rust') return clamp01(CRUST_AT + rustFront(c.seed, x, y) * 60);
+  if (c.kind === 'rust') return clamp01(CRUST_AT + frontOf(c.seed, x, y) * 60);
   // Kinds that are a spill on the card rather than a layer over the whole of
   // it. A spill that is a rectangle is not a spill.
   const spill = spillOf(c.kind);
@@ -525,7 +543,7 @@ const rust: Surface = (seed, x, y, rich, u, v) => {
   const wx = x + (gnoise(x * 4, y * 4, seed + 31) - 0.5) * 0.10;
   const wy = y + (gnoise(x * 4 + 7, y * 4 + 13, seed + 32) - 0.5) * 0.10;
   // 0 at the front, 1 well behind it.
-  const deep = smooth(0.0, 0.3, rustFront(seed, u, v));
+  const deep = smooth(0.0, 0.3, frontOf(seed, u, v));
   // The fine granular crust everything sits on.
   const grit = rich ? gfbm(x * 70, y * 70, seed + 35, 3) : gnoise(x * 70, y * 70, seed + 35);
   const swell = gfbm(x * 4.5, y * 4.5, seed + 36, 2);
@@ -779,22 +797,18 @@ const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi 
 export function paintField(
   ctx: CanvasRenderingContext2D, c: Crust, w: number, h: number, rich = true,
 ) {
-  if (w <= 0 || h <= 0) return;
-  const scale = Math.min(1, (rich ? NOISE_MAX : NOISE_LIGHT) / Math.max(w, h));
-  const nw = Math.max(1, Math.round(w * scale));
-  const nh = Math.max(1, Math.round(h * scale));
-  ctx.drawImage(tile(c, nw, nh, rich), 0, 0, w, h);
+  crustPainter(ctx, c, w, h, rich)(Infinity);
 }
 
-/** The generated crust, in its own small buffer. */
-function tile(c: Crust, w: number, h: number, rich: boolean): HTMLCanvasElement {
+/** A generated crust in its own small buffer, to be drawn up from. */
+function tileOf(px: Uint8ClampedArray, w: number, h: number): HTMLCanvasElement {
   const out = document.createElement('canvas');
   out.width = w;
   out.height = h;
   const into = out.getContext('2d');
   if (!into) return out;
   const img = into.createImageData(w, h);
-  img.data.set(crustPixels(c, w, h, rich));
+  img.data.set(px);
   into.putImageData(img, 0, 0);
   return out;
 }
@@ -805,6 +819,38 @@ function tile(c: Crust, w: number, h: number, rich: boolean): HTMLCanvasElement 
  * Two passes: heights and colour, then light from the heights.
  */
 export function crustPixels(c: Crust, w: number, h: number, rich = true): Uint8ClampedArray {
+  const job = crustRows(c, w, h, rich);
+  while (!job.step(Infinity));
+  return job.px;
+}
+
+/**
+ * A crust being painted a few rows at a time: paintField() painted into a
+ * canvas as soon as the rows are done, and a function that works on until the
+ * given `performance.now()` and answers whether it has finished.
+ *
+ * A whole crust is 13 to 45 ms at the rich size, and the mode opening paints
+ * twenty-five of them while the intro's date is rolling on the same thread -
+ * one a frame was a stall every frame of it. Rows under a budget are the same
+ * work spread so thin nothing waits on it. See drainPaint() in clean.ts.
+ */
+export function crustPainter(
+  ctx: CanvasRenderingContext2D, c: Crust, w: number, h: number, rich = true,
+): (until: number) => boolean {
+  if (w <= 0 || h <= 0) return () => true;
+  const scale = Math.min(1, (rich ? NOISE_MAX : NOISE_LIGHT) / Math.max(w, h));
+  const nw = Math.max(1, Math.round(w * scale));
+  const nh = Math.max(1, Math.round(h * scale));
+  const job = crustRows(c, nw, nh, rich);
+  return until => {
+    if (!job.step(until)) return false;
+    ctx.drawImage(tileOf(job.px, nw, nh), 0, 0, w, h);
+    return true;
+  };
+}
+
+/** The two passes of crustPixels(), resumable at any row. */
+function crustRows(c: Crust, w: number, h: number, rich: boolean) {
   const m = materialOf(c.kind);
   const k = lookOf(c.kind);
   const { lx, ly, lz, hx, hy, hz, ambient } = lightOf();
@@ -832,7 +878,7 @@ export function crustPixels(c: Crust, w: number, h: number, rich = true): Uint8C
   const ax = w / long;
   const ay = h / long;
 
-  for (let y = 0; y < h; y++) {
+  const heights = (y: number) => {
     const v = (y + 0.5) / h;
     for (let x = 0; x < w; x++) {
       const u = (x + 0.5) / w;
@@ -875,9 +921,10 @@ export function crustPixels(c: Crust, w: number, h: number, rich = true): Uint8C
       col[i * 3 + 1] = (grey + (sG - grey) * k.sat) * tone + warmth * 6;
       col[i * 3 + 2] = (grey + (sB - grey) * k.sat) * tone - warmth * 24;
     }
-  }
+  };
 
-  for (let y = 0; y < h; y++) {
+  // The light reads the rows either side, so it waits for every height.
+  const light = (y: number) => {
     const y0 = y > 0 ? y - 1 : y;
     const y1 = y < h - 1 ? y + 1 : y;
     for (let x = 0; x < w; x++) {
@@ -931,9 +978,85 @@ export function crustPixels(c: Crust, w: number, h: number, rich = true): Uint8C
       px[o + 2] = b;
       px[o + 3] = a * cover * dens[i]! * 255;
     }
-  }
-  return px;
+  };
+
+  let pass = 0;
+  let row = 0;
+  return {
+    px,
+    /** Rows until `until`, at least one; true once both passes are done. */
+    step(until: number): boolean {
+      while (pass < 2) {
+        if (pass === 0) heights(row); else light(row);
+        if (++row === h) { row = 0; pass++; }
+        if (until !== Infinity && performance.now() >= until) break;
+      }
+      return pass >= 2;
+    },
+  };
 }
+
+// ---------------------------------------------------------------------------
+// Brushes
+//
+// Every soft round mark the tools leave - a bite, a sheen, a gleam, a drop of
+// runoff - is a radial gradient, and each used to build its own: a gradient
+// object, its colour stops parsed from strings, filled once and thrown away.
+// The jet lays up to a hundred and sixty touches per pointer event, several of
+// these each. Drawn once here at full strength instead, and laid down at the
+// strength wanted through globalAlpha - every stop scales with it, so the mark
+// is the same one.
+// ---------------------------------------------------------------------------
+
+type Brush = { image: HTMLCanvasElement, pattern: CanvasPattern | null };
+
+const brushes = new Map<string, Brush>();
+
+/** A brush: one radial gradient from the middle to the edge of a square. */
+function brush(key: string, side: number, stops: readonly (readonly [number, string])[]): Brush {
+  const had = brushes.get(key);
+  if (had) return had;
+  const image = document.createElement('canvas');
+  image.width = side;
+  image.height = side;
+  const g = image.getContext('2d');
+  if (g) {
+    const r = side / 2;
+    const grad = g.createRadialGradient(r, r, 0, r, r, r);
+    for (const [at, colour] of stops) grad.addColorStop(at, colour);
+    g.fillStyle = grad;
+    g.fillRect(0, 0, side, side);
+  }
+  const made = { image, pattern: g?.createPattern(image, 'no-repeat') ?? null };
+  brushes.set(key, made);
+  return made;
+}
+
+/** A brush laid as a disc, of radius `r` about (x, y). */
+function dab(ctx: CanvasRenderingContext2D, b: Brush, x: number, y: number, r: number) {
+  ctx.drawImage(b.image, x - r, y - r, 2 * r, 2 * r);
+}
+
+/**
+ * A brush laid as the ellipse (x, y, rx, ry), sized to the longer radius and
+ * cut by the shorter - a round gradient clipped to an ellipse, which is what
+ * the bite and the sheen have always been. Not the brush stretched to the
+ * ellipse: that softens the short side, and the bite's ragged edge is that cut.
+ */
+function dabEllipse(ctx: CanvasRenderingContext2D, b: Brush, x: number, y: number, rx: number, ry: number) {
+  if (!b.pattern) return;
+  const r = Math.max(rx, ry);
+  const s = (2 * r) / b.image.width;
+  b.pattern.setTransform({ a: s, b: 0, c: 0, d: s, e: x - r, f: y - r });
+  ctx.fillStyle = b.pattern;
+  ctx.beginPath();
+  ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/** A bite's brush is drawn bigger than the rest: the crisp one has an edge. */
+const BITE_PX = 128;
+const SOFT_PX = 64;
 
 /**
  * Take a bite out of a painted crust.
@@ -952,34 +1075,23 @@ export function eraseAt(
   strength: number, rng: Rng, crisp = false,
 ) {
   if (rx <= 0 || ry <= 0 || strength <= 0) return;
+  // Crisper than the ordinary bite, not square. It used to hold full strength
+  // to 82% of the radius and fall to nothing over the last 6%, which is a disc
+  // with an edge on it - and since the caller turns this on whenever the cell
+  // under the nozzle is on its last pass, that is most stamps once an area has
+  // been swept a couple of times. The reveal wants a defined edge, not a cut one.
+  const b = crisp
+    ? brush('bite-crisp', BITE_PX, [[0, '#000'], [0.55, '#000'], [0.86, 'rgba(0,0,0,0.55)'], [1, 'rgba(0,0,0,0)']])
+    : brush('bite', BITE_PX, [[0, '#000'], [0.35, 'rgba(0,0,0,0.82)'], [0.7, 'rgba(0,0,0,0.32)'], [1, 'rgba(0,0,0,0)']]);
   ctx.save();
   ctx.globalCompositeOperation = 'destination-out';
+  ctx.globalAlpha = Math.min(1, strength);
   for (let i = 0; i < 3; i++) {
     const jx = x + (rng() - 0.5) * rx * 0.55;
     const jy = y + (rng() - 0.5) * ry * 0.55;
     const kx = rx * rand(rng, 0.6, 0.92);
     const ky = ry * rand(rng, 0.6, 0.92);
-    const r = Math.max(kx, ky);
-    const grad = ctx.createRadialGradient(jx, jy, 0, jx, jy, r);
-    grad.addColorStop(0, `rgba(0,0,0,${strength})`);
-    if (crisp) {
-      // Crisper than the ordinary bite, not square. It used to hold full
-      // strength to 82% of the radius and fall to nothing over the last 6%,
-      // which is a disc with an edge on it - and since the caller turns this on
-      // whenever the cell under the nozzle is on its last pass, that is most
-      // stamps once an area has been swept a couple of times. The reveal wants
-      // a defined edge, not a cut one.
-      grad.addColorStop(0.55, `rgba(0,0,0,${strength})`);
-      grad.addColorStop(0.86, `rgba(0,0,0,${strength * 0.55})`);
-    } else {
-      grad.addColorStop(0.35, `rgba(0,0,0,${strength * 0.82})`);
-      grad.addColorStop(0.7, `rgba(0,0,0,${strength * 0.32})`);
-    }
-    grad.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.ellipse(jx, jy, kx, ky, 0, 0, Math.PI * 2);
-    ctx.fill();
+    dabEllipse(ctx, b, jx, jy, kx, ky);
   }
   ctx.restore();
 }
@@ -994,19 +1106,20 @@ export function wetAt(
   ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, ry: number, amount: number,
 ) {
   if (rx <= 0 || ry <= 0 || amount <= 0) return;
-  const r = Math.max(rx, ry);
   ctx.save();
   ctx.globalCompositeOperation = 'source-atop';
-  const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
-  grad.addColorStop(0, `rgba(12,14,18,${amount})`);
-  grad.addColorStop(0.6, `rgba(12,14,18,${amount * 0.5})`);
-  grad.addColorStop(1, 'rgba(12,14,18,0)');
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.globalAlpha = Math.min(1, amount);
+  dabEllipse(ctx, brush('damp', SOFT_PX, [
+    [0, 'rgb(12,14,18)'], [0.6, 'rgba(12,14,18,0.5)'], [1, 'rgba(12,14,18,0)'],
+  ]), x, y, rx, ry);
   ctx.restore();
 }
+
+// The sheen and the gleam are faint - a few hundredths of an alpha - and each
+// brush is drawn at its full strength and laid at its real one, so the brush's
+// own eight bits go on the shape of the falloff and not on rounding it off.
+const SHEEN_ALPHA = 0.075;
+const GLEAM_ALPHA = 0.18;
 
 /** The sheen left on a patch the jet has just cleared. Drawn on the card's own
  *  wet overlay, not on the crust, so it fades on its own and counts for
@@ -1014,8 +1127,7 @@ export function wetAt(
 export function sheenAt(
   ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, ry: number,
 ) {
-  const r = Math.max(rx, ry);
-  const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+  if (rx <= 0 || ry <= 0) return;
   // Cool. This is a film of water lying on the card, not a light falling on it,
   // and the one cold thing in the mode is the thing that came out of the tank.
   //
@@ -1025,13 +1137,11 @@ export function sheenAt(
   // that summed to flat white over the whole swept path within one sweep: not a
   // wet card, a sheet of paper laid on top of it. These are the numbers for one
   // stamp; what is seen is half a dozen of them.
-  grad.addColorStop(0, 'rgba(226,240,248,0.075)');
-  grad.addColorStop(0.65, 'rgba(210,228,240,0.035)');
-  grad.addColorStop(1, 'rgba(210,228,240,0)');
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.globalAlpha = SHEEN_ALPHA;
+  dabEllipse(ctx, brush('sheen', SOFT_PX, [
+    [0, 'rgb(226,240,248)'], [0.65, 'rgba(210,228,240,0.467)'], [1, 'rgba(210,228,240,0)'],
+  ]), x, y, rx, ry);
+  ctx.globalAlpha = 1;
 }
 
 /**
@@ -1054,18 +1164,15 @@ export function gleamAt(
   // there.
   const cx = x + dx * r * 0.5 - r * 0.12;
   const cy = y + dy * r * 0.5 - r * 0.18;
-  const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 0.85);
   // A reflection off water, so it takes water's colour and not the room's. It
   // shares the sheen's canvas and the sheen's two-second fade, so it adds to
   // whatever is already there - a third of an alpha every sixtieth of a second
   // is a white patch under a hand that is working slowly.
-  grad.addColorStop(0, 'rgba(242,251,255,0.18)');
-  grad.addColorStop(0.45, 'rgba(222,240,250,0.07)');
-  grad.addColorStop(1, 'rgba(222,240,250,0)');
-  ctx.fillStyle = grad;
-  ctx.beginPath();
-  ctx.arc(cx, cy, r * 0.85, 0, Math.PI * 2);
-  ctx.fill();
+  ctx.globalAlpha = GLEAM_ALPHA;
+  dab(ctx, brush('gleam', SOFT_PX, [
+    [0, 'rgb(242,251,255)'], [0.45, 'rgba(222,240,250,0.389)'], [1, 'rgba(222,240,250,0)'],
+  ]), cx, cy, r * 0.85);
+  ctx.globalAlpha = 1;
 }
 
 /**
@@ -1084,37 +1191,32 @@ export function runAt(
   kind: MessKind, head: boolean, alpha: number, dirt = 1,
 ) {
   if (r <= 0 || alpha <= 0) return;
-  const [wr, wg, wb] = washOf(kind, dirt);
-  const wash = ctx.createRadialGradient(x, y, 0, x, y, r);
-  wash.addColorStop(0, `rgba(${wr},${wg},${wb},${(alpha * 0.55).toFixed(3)})`);
-  wash.addColorStop(0.5, `rgba(${wr},${wg},${wb},${(alpha * 0.3).toFixed(3)})`);
-  wash.addColorStop(1, `rgba(${wr},${wg},${wb},0)`);
-  ctx.fillStyle = wash;
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fill();
-  if (!head) return;
-  // The bead: a touch darker in the middle, and one small warm highlight up and
-  // left of it. Two gradients and no line.
-  const bead = ctx.createRadialGradient(x, y, 0, x, y, r * 0.7);
-  bead.addColorStop(0, `rgba(${wr},${wg},${wb},${(alpha * 0.5).toFixed(3)})`);
-  bead.addColorStop(1, `rgba(${wr},${wg},${wb},0)`);
-  ctx.fillStyle = bead;
-  ctx.beginPath();
-  ctx.arc(x, y, r * 0.7, 0, Math.PI * 2);
-  ctx.fill();
-  // The bead's highlight is the one part of a rivulet that is water and not
-  // what is in it: cold, and up and left of the bead because that is where the
-  // light is. A warm one here made the whole run read as mud with a shine on it.
-  const lx = x - r * 0.3;
-  const ly = y - r * 0.34;
-  const lit = ctx.createRadialGradient(lx, ly, 0, lx, ly, r * 0.5);
-  lit.addColorStop(0, `rgba(234,246,252,${(alpha * 0.55).toFixed(3)})`);
-  lit.addColorStop(1, 'rgba(234,246,252,0)');
-  ctx.fillStyle = lit;
-  ctx.beginPath();
-  ctx.arc(lx, ly, r * 0.5, 0, Math.PI * 2);
-  ctx.fill();
+  // The colour in sixteenths of the way from water to grime: a brush per step
+  // rather than one per drop, and a step is below what anybody can see.
+  const q = Math.round(clamp01(dirt) * 16) / 16;
+  const key = `${kind}:${q}`;
+  const [wr, wg, wb] = washOf(kind, q);
+  ctx.globalAlpha = Math.min(1, alpha * 0.55);
+  dab(ctx, brush('run:' + key, SOFT_PX, [
+    [0, `rgb(${wr},${wg},${wb})`], [0.5, `rgba(${wr},${wg},${wb},0.545)`], [1, `rgba(${wr},${wg},${wb},0)`],
+  ]), x, y, r);
+  if (head) {
+    // The bead: a touch darker in the middle, and one small warm highlight up
+    // and left of it. Two gradients and no line.
+    ctx.globalAlpha = Math.min(1, alpha * 0.5);
+    dab(ctx, brush('bead:' + key, SOFT_PX, [
+      [0, `rgb(${wr},${wg},${wb})`], [1, `rgba(${wr},${wg},${wb},0)`],
+    ]), x, y, r * 0.7);
+    // The bead's highlight is the one part of a rivulet that is water and not
+    // what is in it: cold, and up and left of the bead because that is where
+    // the light is. A warm one here made the whole run read as mud with a shine
+    // on it.
+    ctx.globalAlpha = Math.min(1, alpha * 0.55);
+    dab(ctx, brush('bead-lit', SOFT_PX, [
+      [0, 'rgb(234,246,252)'], [1, 'rgba(234,246,252,0)'],
+    ]), x - r * 0.3, y - r * 0.34, r * 0.5);
+  }
+  ctx.globalAlpha = 1;
 }
 
 // ---- debris --------------------------------------------------------------
@@ -2061,10 +2163,16 @@ export function webCore(
   return { d: d.trim(), hub, spokes, drop };
 }
 
-export function webNode(d: string): SVGPathElement {
+/** A web's strands, or with `shade` the shadow they cast: the same path again,
+ *  dropped a pixel and a half down the screen and drawn under them. A copy and
+ *  not a drop-shadow filter, which rasterised the whole sheet - every strand's
+ *  box plus its margin, board-sized - through an offscreen surface at every
+ *  zoom step. The way the debris is shadowed, see shadowOf(). */
+export function webNode(d: string, shade = false): SVGPathElement {
   const p = document.createElementNS(SVG_NS, 'path');
-  p.setAttribute('class', 'clean-web');
+  p.setAttribute('class', shade ? 'clean-web-shade' : 'clean-web');
   p.setAttribute('d', d);
+  if (shade) p.setAttribute('transform', 'translate(0 1.5)');
   return p;
 }
 

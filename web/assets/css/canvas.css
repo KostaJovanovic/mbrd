@@ -54,9 +54,16 @@
   width: 0;
   height: 0;
   transform-origin: 0 0;
-  /* Permanently promoted. Toggling it on/off added two full re-rasters per
-     interaction and made every hairline flicker. A uniform resample is better. */
-  will-change: transform;
+  /* Permanently promoted - but by the translateZ(0) canvas/viewport.ts writes
+     into the transform, not by `will-change: transform`, which is what used to
+     be here. The promotion is the part that matters and both give it; the hint
+     also pins the layer's raster scale to whatever it was first rastered at,
+     and a board at 30% was still being rastered at 1:1. That is ten screenfuls
+     of texture for one screen, past what Chromium on a phone will hold, and
+     past it the compositor stops drawing - the cards blink out and back. See
+     the note at the transform write. Toggling promotion on and off is still
+     wrong (two full re-rasters per interaction, every hairline flickering),
+     which is why this is permanent and lives in the transform itself. */
   --iz: 1;
   /* A hairline in world space scales with zoom, so 1px at 0.5x paints half a
      device pixel and edges vanish unevenly. * --iz makes it one *screen* pixel.

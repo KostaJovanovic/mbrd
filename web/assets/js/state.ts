@@ -34,14 +34,17 @@ import {
 
 export { clipboardBounds, clipboardHasOurs, clipboardSize, copyItems };
 
+/** Whether any of these may be copied, cut or duplicated - see copyable(). */
+export const canCopyItems = (ids: Iterable<string>) => itemsIn(ids).length > 0;
+
 import {
   removeItems, restoreItems, emptyTrash, setAssetPurge, freezeClip, clipHomeId,
-  stuckHostId,
+  stuckHostId, isKeepsake,
 } from './trash.ts';
 
 export {
   removeItems, restoreItems, emptyTrash, setAssetPurge, freezeClip, clipHomeId,
-  stuckHostId,
+  stuckHostId, isKeepsake,
 };
 import {
   bus, selection, isDirty, markDirty, resetDirty,
@@ -291,6 +294,14 @@ export function ensureTitleCard() {
 /** Whether the Desktop title card is currently thrown away (bin shows its button). */
 export const isTitleHidden = () => !!board.titleHidden;
 
+/**
+ * The title card as it would come back, for anything that has to *draw* it while
+ * it is hidden - the drawer's Special shelf, which shows the card itself rather
+ * than a stand-in for it. Not on the board, not added to it, and not the item
+ * restoreTitleCard() makes: a fresh copy each call, to be rendered and dropped.
+ */
+export const titleCardShape = (): Item => makeTitleItem();
+
 /** Reset the title card to top-centre. Undoable, no-op if already there. */
 export function resetTitlePosition() {
   const item = board.items.find(i => i.type === 'title');
@@ -302,8 +313,9 @@ export function resetTitlePosition() {
   commitGeom('Reset title position', before, [item.id]);
 }
 
-/** Restore the title card from the bin. Undoable. */
-export function restoreTitleCard(at = null) {
+/** Restore the title card from the bin, at a drop point or where it belongs.
+ *  Undoable. `at` is a world point - the drawer drags it back like any card. */
+export function restoreTitleCard(at: { x: number, y: number } | null = null) {
   if (!board.titleHidden && board.items.some(i => i.type === 'title')) return;
   const item = makeTitleItem(at);
   commit('Restore title',

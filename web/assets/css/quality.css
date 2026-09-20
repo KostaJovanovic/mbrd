@@ -215,6 +215,31 @@
   transition-duration: 0.01ms !important;
 }
 
+/* And the canvas is exempt from that last line, at 0s rather than a hundredth
+   of a millisecond. The difference is not the length: it is whether a
+   transition runs at all.
+
+   `transition-property` is `all` until something says otherwise, and almost
+   nothing under #viewport does. A duration of 0.01ms therefore does not shorten
+   those elements' transitions - it gives them transitions they never had, on
+   every property, and the canvas is the one part of the app whose properties are
+   rewritten on every frame of a pan or a zoom. #world's transform, --iz and
+   every length derived from it, a card's left and top: each write became a
+   fresh compositor animation, sixty times a second, and Chrome on a phone
+   answered by re-rasterising the board over and over - which reads as every
+   card on screen unloading and loading again, at Light and at no other stop.
+
+   0s is the state those elements were in before this block: a transition whose
+   duration and delay sum to zero does not run and fires no event. Nothing under
+   #viewport waits on `transitionend` (the exits there are animations, which are
+   untouched above), so there is no event to lose - which is exactly why the
+   chrome outside it keeps the 0.01ms, where a lost `transitionend` would strand
+   a panel mid-close. */
+:root[data-quality="light"]:not([data-q-anim]) :is(#viewport, #viewport *),
+:root[data-q-anim="off"] :is(#viewport, #viewport *) {
+  transition-duration: 0s !important;
+}
+
 /* Where one lap ends on the wrong frame to hold, the answer the
    prefers-reduced-motion block beside each animation already gives. Repeated
    here because the dial cannot reach inside a media query. The splash is the

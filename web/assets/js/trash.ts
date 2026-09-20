@@ -3,6 +3,8 @@
 // binned), and ghosts are dismissed (not binned). emptyTrash() is the only
 // action that destroys bytes — it tombstones items and rewrites the ledger.
 // Connections are not touched — a pair naming a deleted item just stops drawing.
+// Keepsakes (isKeepsake(): the cleaning card) are exempt from the cap and from
+// emptying, which is the whole of the drawer's Special view being permanent.
 // BASE layer — does not import state.ts.
 
 import { bus, selection } from './board-store.ts';
@@ -16,6 +18,39 @@ import { fitBoardMode } from './layout.ts';
 import { itemHashes, isRecord, extOf } from './util.ts';
 // emptyTrash() rewrites the ledger's copies via this.
 import { rewriteRecorded } from './timeline.ts';
+
+/**
+ * **The two things the drawer keeps for good.** A cleaning card (type `card`,
+ * the one the simulator leaves behind - canvas/spotless.ts) records a board
+ * somebody cleaned once and cannot be made again; the title card is not binned
+ * at all, only hidden. Both are shown in the drawer's Special view.
+ *
+ * Kept means two exemptions, both here: a keepsake never counts against
+ * TRASH_LIMIT and is never evicted by it, and emptyTrash() leaves it where it
+ * is. Everything else about it is an ordinary bin entry - it is restored by the
+ * same drag, and undo sees the same steps.
+ */
+export const isKeepsake = (item: Item) => item.type === 'card';
+
+/**
+ * Drop the oldest ordinary entries past the cap and answer them, for undo.
+ *
+ * Replaces `board.trash.splice(TRASH_LIMIT)`: keepsakes are skipped in the
+ * count as well as in the eviction, so a drawer holding ten cleaning cards
+ * still holds a full TRASH_LIMIT of ordinary things beside them. Order is
+ * otherwise untouched - a keepsake stays where it was thrown away.
+ */
+function evictOverLimit(): TrashEntry[] {
+  const out: TrashEntry[] = [];
+  let ordinary = 0;
+  board.trash = board.trash.filter(entry => {
+    if (isKeepsake(entry.item)) return true;
+    if (++ordinary <= TRASH_LIMIT) return true;
+    out.push(entry);
+    return false;
+  });
+  return out;
+}
 
 /**
  * Collect transitive riders for a delete. Returns added ids and a host map
@@ -158,7 +193,7 @@ export function freezeClip(
   commit('Keep this frame',
     () => { if (!swapItem(clip, picture)) return;
             board.trash.unshift(entry);
-            evicted = board.trash.splice(TRASH_LIMIT);
+            evicted = evictOverLimit();
             bus.emit('items', { added: [picture.id], removed: [clip.id] });
             bus.emit('selection'); bus.emit('trash'); },
     () => { if (!swapItem(picture, clip)) return;
@@ -204,7 +239,7 @@ export function removeItems(ids: Iterable<string>, label = 'Delete') {
             set.forEach(id => selection.delete(id));
             if (titleGone) board.titleHidden = true;
             board.trash.unshift(...binned);
-            evicted = board.trash.splice(TRASH_LIMIT);   // [] while under the limit
+            evicted = evictOverLimit();   // [] while under the limit
             bus.emit('items', { added: [], removed: [...set] });
             bus.emit('selection'); bus.emit('trash'); },
     () => { for (const r of removed) board.items.splice(r.index, 0, r.item);
@@ -377,12 +412,17 @@ const tombstone = (item: Item, bytes: number): Item => makeItem(tombstoneRecord(
  * stickers/links come back whole on undo. Step order below is load-bearing.
  */
 export function emptyTrash() {
-  if (!board.trash.length) return;
-  // 1. Hashes still claimed by live items — do not purge these.
+  // Keepsakes are not emptied and do not make the drawer worth emptying: a
+  // drawer holding nothing but cleaning cards has nothing to throw out.
+  const going = board.trash.filter(entry => !isKeepsake(entry.item));
+  const keeping = board.trash.filter(entry => isKeepsake(entry.item));
+  if (!going.length) return;
+  // 1. Hashes still claimed by live items or by a keepsake — do not purge these.
   const kept = new Set<string>();
   for (const it of board.items) for (const hash of allHashes(it)) kept.add(hash);
+  for (const entry of keeping) for (const hash of allHashes(entry.item)) kept.add(hash);
   const doomed = new Set<string>();
-  for (const entry of board.trash) {
+  for (const entry of going) {
     for (const hash of allHashes(entry.item)) if (!kept.has(hash)) doomed.add(hash);
   }
 
@@ -399,7 +439,7 @@ export function emptyTrash() {
   //    the step must see tombstones, not originals.
   let entombed = 0;
   const stones = board.trash.map(entry => {
-    if (!purged(entry.item)) return entry;
+    if (isKeepsake(entry.item) || !purged(entry.item)) return entry;
     entombed += 1;
     return { at: entry.at, item: tombstone(entry.item, weigh(entry.item)) };
   });
@@ -409,7 +449,9 @@ export function emptyTrash() {
   rewriteRecorded(item => (purged(item) ? tombstoneRecord(item, weigh(item)) : null));
 
   commit('Empty trash',
-    () => { board.trash = []; bus.emit('trash'); },
+    // The keepsakes stay, in the order they were in. Undo puts the rest back
+    // around them, which is what `stones` already is.
+    () => { board.trash = board.trash.filter(entry => isKeepsake(entry.item)); bus.emit('trash'); },
     () => { board.trash = stones; bus.emit('trash'); });
   // Outside the closure: undo/redo re-run closures, this fires once.
   if (entombed) bus.emit('trash:purged', { items: entombed, bytes });

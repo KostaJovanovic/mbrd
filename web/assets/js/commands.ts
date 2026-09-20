@@ -11,7 +11,7 @@ import {
   raiseSelection, lowerSelection, selectionHasStackOverlap,
   duplicateItems, select,
   isMultiSelect, setMultiSelect,
-  copyItems, pasteItems, clipboardSize,
+  copyItems, pasteItems, clipboardSize, canCopyItems,
   setBoardMode as selectBoardMode,
   restoreTitleCard, resetTitlePosition,
   isFurniture, isRider, isFence, isLocked, setArrangement,
@@ -34,13 +34,15 @@ import { pickColor } from './ui/color-picker.ts';
 import { getAsset, assetURL } from './storage/assets.ts';
 import { close as closeSidebar, isOpen as isSidebarOpen } from './ui/sidebar.ts';
 import { closeToolbar, isOpen as isToolbarOpen, isArmed as isConnectorArmed } from './ui/toolbar.ts';
-import { openContextMenu, openAnchored, justDismissed } from './ui/menu.ts';
+import { openContextMenu, openAnchored, justDismissed, close as closeMenu } from './ui/menu.ts';
 import { tourEditing } from './ui/tour-edit.ts';
 import { tourActive } from './ui/tour.ts';
 import { startClean, cleanActive, cleanKey, cleanSpace, cleanEscape, releaseRobot } from './ui/clean/clean.ts';
 import { konamiMatcher, tapMatcher } from './ui/clean/konami.ts';
-import { open as openSearch } from './ui/search.ts';
-import { toggleStickerWindow } from './ui/sticker-window.ts';
+import { open as openSearch, close as closeSearch } from './ui/search.ts';
+import { toggleStickerWindow, closeStickerWindow } from './ui/sticker-window.ts';
+import { closeDrawer } from './ui/drawer.ts';
+import { resetPanels } from './ui/panel-stack.ts';
 import {
   openPanel as openHeaderPanel, closePanel as closeHeaderPanel,
   isPanelOpen as isHeaderPanelOpen,
@@ -71,6 +73,24 @@ export { linkTyped };
  *  See cleanFeed and cleanTap below. */
 const konami = konamiMatcher();
 const taps = tapMatcher();
+
+/**
+ * Everything open, closed, as the cleaning game comes up: its intro is played
+ * to an empty screen and the game to a bare board. Closed rather than hidden,
+ * unlike a tour. The panel stack goes first, or closing the top one would open
+ * the one under it again. Answers true so it can end the chain that opened it.
+ */
+function clearStage(): true {
+  resetPanels();
+  closeMenu();
+  closeSearch();
+  closeStickerWindow();
+  closeDrawer();
+  closeSidebar();
+  closeHeaderPanel();
+  closeToolbar();
+  return true;
+}
 
 /** Structural viewport subset this file needs — view centre for "add" commands, fit() for zoom. */
 export interface CommandsViewport extends CommandViewport {
@@ -254,7 +274,7 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     cleanFeed: (key: string) => {
       if (!konami(key)) return false;
       if (cleanActive()) return releaseRobot();
-      return !tourActive() && !tourEditing() && startClean();
+      return !tourActive() && !tourEditing() && startClean() && clearStage();
     },
     // Seven taps on the wordmark, the way in on a phone. The sidebar is closed
     // first: it is the whole screen at that width and the board is behind it.
@@ -262,7 +282,7 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
       if (!taps(performance.now())) return false;
       if (cleanActive()) return releaseRobot();
       closeSidebar();
-      return startClean();
+      return startClean() && clearStage();
     },
     cleanActive: () => cleanActive(),
     cleanKey: (key: string) => cleanKey(key),
@@ -388,6 +408,7 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
       if (copies.length) select(copies.map((i: Item) => i.id));
     },
     canPaste: () => clipboardSize() > 0,
+    canCopy: () => canCopyItems(selection),
     zoomToSelection: () => {
       const items = board.items.filter(i => selection.has(i.id));
       if (items.length) vp.fit(items, 120, travelMs());
