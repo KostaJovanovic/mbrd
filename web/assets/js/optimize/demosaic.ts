@@ -37,10 +37,12 @@ const CANVAS_PIXELS = 4096 * 4096;
 const QUALITY = 0.92;
 
 /** The part of LibRaw's settings this sets. See the libraw-wasm readme for the rest. */
-type Settings = { useCameraWb: boolean, outputBps: number, outputColor: number };
+type Settings = {
+  useCameraWb: boolean, outputBps: number, outputColor: number, halfSize: boolean,
+};
 
 /** As-shot white balance, which is what the camera's own preview used. 8 bits, sRGB. */
-const SETTINGS: Settings = { useCameraWb: true, outputBps: 8, outputColor: 1 };
+const SETTINGS: Settings = { useCameraWb: true, outputBps: 8, outputColor: 1, halfSize: false };
 
 /** A developed picture and its size. */
 export type Developed = { blob: Blob, width: number, height: number };
@@ -79,12 +81,18 @@ export function isRaw(it: {
 /**
  * Develop one RAW. One LibRaw per call, disposed after: a wasm heap never
  * shrinks, so ending the worker is the only way to give the memory back.
+ *
+ * `half` takes LibRaw's half-size path, which reads one pixel per sensor site
+ * instead of interpolating four: a sixth of the time and a quarter of the
+ * memory, for a picture still over the display ceiling on any camera made this
+ * century. It is what the importer develops with (import/drop.ts) - the
+ * Demosaic row is the one that asks for every pixel.
  */
-export async function demosaic(raw: Blob, lift = false): Promise<Developed> {
+export async function demosaic(raw: Blob, lift = false, half = false): Promise<Developed> {
   const { default: LibRaw } = await loadLib();
   const lib = new LibRaw();
   try {
-    await lib.open(new Uint8Array(await raw.arrayBuffer()), SETTINGS);
+    await lib.open(new Uint8Array(await raw.arrayBuffer()), { ...SETTINGS, halfSize: half });
     const facts = await lib.metadata();
     const w = Number(facts?.width) || 0;
     const h = Number(facts?.height) || 0;

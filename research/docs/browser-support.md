@@ -185,19 +185,32 @@ Deliberate boundaries rather than bugs, documented so they read as stated scope:
   play button. The clip itself still plays where the browser can decode it; only
   the still is affected. This is cross-browser, not a Safari quirk — Safari is the
   one desktop browser that decodes HEVC natively and so rarely reaches this path.
-- **A HEIC with only a small embedded preview is not a portable board.** Safari
-  decodes HEIC and no other engine does, so `import/drop.ts` cuts the camera's
-  own JPEG out of one on the way in and stores it beside the untouched original
-  — see `NOT_PORTABLE` in `import/preview.ts`. That preview only becomes the
-  pixels the card draws when it is at least `PORTABLE_MIN_EDGE` (1280) on its
-  long edge, which is the display ceiling, so adopting it costs the viewer
-  nothing. Where a file carries only a small thumbnail there is nothing worth
-  adopting, and the board is honestly less portable: the photograph is perfect
-  on the phone and a named card on a desktop. Converting the original instead
-  would be the fix, and this app does not rewrite the bytes somebody imported.
-  Newly relevant rather than new: **Safari 27 stops converting HEIC to JPEG on
-  the way through a file input**, which it lists as a bug fix, so from iOS 27 a
-  photo added on a phone arrives as a HEIC where it used to arrive as a JPEG.
+- **A HEIC is drawn by a video decoder, not an image one.** Safari decodes HEIC
+  in an `<img>` and no other engine does, so `import/drop.ts` puts a picture
+  every engine can draw beside the untouched original on the way in — see
+  `NOT_PORTABLE` in `import/preview.ts`. It looks in three places, and the third
+  is the one that always answers: the camera's own baked JPEG where there is
+  one, and otherwise the HEVC itself, read out of the container by
+  `import/heif.ts` and handed to WebCodecs. That last path needs a **secure
+  context** (`VideoDecoder` is undefined on plain `http://` that is not
+  localhost, which is why a LAN dev server shows grey cards the deploy does not)
+  and an HEVC decoder on the machine, which every current desktop and phone has.
+  Where none of the three answers, the card is a named one, as it always was.
+  A baked JPEG only becomes the pixels a card draws when it is at least
+  `PORTABLE_MIN_EDGE` (1280) on its long edge, the display ceiling, so adopting
+  it costs the viewer nothing. Newly relevant rather than new: **Safari 27 stops
+  converting HEIC to JPEG on the way through a file input**, which it lists as a
+  bug fix, so from iOS 27 a photo added on a phone arrives as a HEIC where it
+  used to arrive as a JPEG.
+- **A camera RAW with no baked preview is developed on the way in.** Most RAWs
+  carry a full-size JPEG the camera wrote for its own screen; some — a Samsung
+  `.dng` among them — carry none at all, and those used to land as grey named
+  cards. `import/drop.ts` now develops one with LibRaw at half size (about a
+  fifth of a second for twelve megapixels, and still over the display ceiling),
+  which costs nothing on the ninety-nine RAWs in a hundred that never reach it.
+  This is also what keeps the **Demosaic** row reachable: it is only offered on
+  an image card, so a RAW that imported as a generic one could never be
+  developed at all.
 - **No keyboard navigation on the spatial canvas.** Board items carry `role` and
   an accessible name for assistive tech (`canvas/items.ts`), but there is no
   roving-tabindex / arrow-to-move-focus / Enter-to-select model yet: items are
