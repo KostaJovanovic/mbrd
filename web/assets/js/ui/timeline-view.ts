@@ -68,6 +68,19 @@ const LOCKED = '#toolbar [data-cmd]:not([data-cmd="find"]), #history-ctl, #drawe
 const PLAY = { icon: 'i-tl-play', said: 'Play the history' };
 const PAUSE = { icon: 'i-tl-pause', said: 'Pause' };
 
+/**
+ * The command surface, as this module sees it: one camera move, pressed after
+ * every step a replay draws. Injected like ui/hud.ts's, to keep commands.ts out
+ * of this module's imports — and it is `cmds.fit` rather than `vp.fit` so the
+ * replay frames the board exactly as the F key does, Mobile's parked title card
+ * excluded and all.
+ */
+export interface TimelineCommands {
+  fit: () => void;
+}
+
+let cmds: TimelineCommands | null = null;
+
 /** A phone, for the one decision made on it: the bar starts closed there. */
 const phone = () => typeof matchMedia === 'function' && matchMedia('(max-width: 720px)').matches;
 
@@ -146,7 +159,8 @@ function sentenceFor(step: Step): string {
   return name ? `${said} ${name}` : said;
 }
 
-export function initTimeline() {
+export function initTimeline(commands: TimelineCommands) {
+  cmds = commands;
   // The bus first and outside the guard below, like every init here.
   // Only Pause stops a replay, besides its own last step and a board that goes:
   // nothing can edit the board while it runs (see paintPlay()).
@@ -282,13 +296,28 @@ function stepKeys(event: KeyboardEvent) {
   track?.querySelector<HTMLElement>('.tl-step.is-at')?.focus({ preventScroll: true });
 }
 
+/**
+ * Frame the board the replay has just drawn. Every step, because a history
+ * builds a board up: framed once at the start, the last hour of work happens
+ * off the edge of the window, and a replay nobody can see is no replay.
+ *
+ * The move is animated and outlasts the step (travelMs is 400ms against
+ * STEP_MS's 286), which is the point — vp.fit reads the pan it interrupts as
+ * its own start, so the camera eases the whole way rather than cutting on every
+ * mark. A step that leaves the bounds alone costs nothing: viewTo returns
+ * without animating when the target is where the view already is.
+ */
+const frameBoard = () => cmds?.fit();
+
 /** Replay from here to the newest step, or from the start when there is nothing ahead. */
 function play() {
   if (!timelineSteps().length) return;
   if (timelineAt() >= timelineSteps().length) goTo(0);
+  frameBoard();
   playing = window.setInterval(() => {
     const at = timelineAt();
     if (at < timelineSteps().length) goTo(at + 1);
+    frameBoard();
     if (timelineAt() >= timelineSteps().length) pause();
   }, STEP_MS);
   setTimelinePlaying(true);

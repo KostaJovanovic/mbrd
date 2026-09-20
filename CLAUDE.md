@@ -52,6 +52,15 @@ save.bat release    # the same, pushed, then GitHub builds every app and publish
 save.bat portable   # build the web bundle, then desktop/portable/ — no commit
 ```
 
+**Commit freely; never push.** A commit on the current branch, `main` included,
+needs no permission and no branch of its own. Anything that leaves this machine
+— `git push`, `save.bat release`, answering yes to `save.bat`'s push prompt,
+`gh workflow run`, `gh pr create` — is the maintainer's to run, every time, even
+when the work is finished and the push looks like the obvious last step. Say the
+commit is ready and stop there. The reason is that a push deploys: wrangler
+serves the committed bundle, and `save.bat release` publishes four installers
+that the updaters in every installed copy then read.
+
 `save.bat` does not rebuild `desktop/portable/`, the portable copy. That is
 option 6 in its menu, or `save.bat portable`. It builds the web bundle first,
 because electron-builder copies `web/` as it is. It takes about ninety

@@ -36,6 +36,13 @@ export type Inventory = {
   /** Every stored blob, and what they add up to. */
   bytes: number;
   assets: number;
+  /**
+   * Every stored file under the one holder keeping it alive. With
+   * `orphans.count` these four add up to `assets`, which is the point: the
+   * file count is always larger than the card count and this is where the
+   * difference goes.
+   */
+  held: { field: number; drawer: number; timeline: number };
   /** The heaviest first, capped - see TOP. */
   largest: InventoryAsset[];
   orphans: { count: number; bytes: number };
@@ -51,26 +58,31 @@ const TOP = 10;
  * touches `document` inside its own call, but this does not touch it at all.
  */
 export function boardInventory(): Inventory {
-  // The reference union, same one packBoard() writes with: a card in the bin
-  // still owns its bytes, since the whole point of the bin is that it can
-  // come back.
-  const referenced = new Set<string>();
+  // The reference union, same one packBoard() writes with: a card in the
+  // drawer still owns its bytes, since the whole point of the drawer is that
+  // it can come back. Kept as three sets rather than one so the report can
+  // name which holder is keeping each file alive.
+  const onField = new Set<string>();
   // Walked into a map, not a set - the jump needs to know *which* card, not
   // only that there is one. Same walk, one more line, no second pass.
   const users = new Map<string, string[]>();
   for (const item of board.items) {
     for (const h of itemHashes(item)) {
-      referenced.add(h);
+      onField.add(h);
       const list = users.get(h);
       if (list) list.push(item.id);
       else users.set(h, [item.id]);
     }
   }
-  for (const t of board.trash) for (const h of itemHashes(t.item)) referenced.add(h);
-  // The third reference: asked of timeline.ts rather than walked here, so the
+  const inDrawer = new Set<string>();
+  for (const t of board.trash) for (const h of itemHashes(t.item)) inDrawer.add(h);
+  // The third holder: asked of timeline.ts rather than walked here, so the
   // two cannot disagree about what is rubbish. No argument, so it reads the
-  // live ledger - this is a report on the session, not on a file.
-  for (const h of timelineHashes()) referenced.add(h);
+  // live ledger - this is a report on the session, not on a file. It carries
+  // both sides of every step, so a picture deleted an hour ago is still
+  // stored and still not rubbish, which is usually the whole of the gap
+  // between the card count and the file count.
+  const inTimeline = timelineHashes();
 
   const counts = new Map<string, number>();
   for (const item of board.items) {
@@ -80,9 +92,20 @@ export function boardInventory(): Inventory {
   let bytes = 0;
   let orphanBytes = 0;
   let orphanCount = 0;
+  const held = { field: 0, drawer: 0, timeline: 0 };
   const all: InventoryAsset[] = [];
   for (const [hash, asset] of allAssets()) {
-    const orphan = !referenced.has(hash);
+    // One file, one holder, strongest claim first. A picture on the field is
+    // also inside half the Timeline's steps, so counting it under both would
+    // make the three numbers add up to more than there are files. Attributing
+    // it to the field instead leaves `timeline` meaning what a reader wants it
+    // to mean: the files nothing on screen is using any more.
+    const where = onField.has(hash) ? 'field'
+      : inDrawer.has(hash) ? 'drawer'
+      : inTimeline.has(hash) ? 'timeline'
+      : null;
+    if (where) held[where]++;
+    const orphan = !where;
     bytes += asset.size;
     if (orphan) { orphanCount++; orphanBytes += asset.size; }
     all.push({
@@ -105,6 +128,7 @@ export function boardInventory(): Inventory {
     binned: board.trash.length,
     bytes,
     assets: all.length,
+    held,
     largest: all.slice(0, TOP),
     orphans: { count: orphanCount, bytes: orphanBytes },
   };
@@ -193,16 +217,30 @@ export function openInventory(): void {
 function report(inv: Inventory): HTMLElement[] {
   const out: HTMLElement[] = [];
 
-  out.push(line('inv-total', `${formatBytes(inv.bytes)} in ${inv.assets} `
-    + `${inv.assets === 1 ? 'file' : 'files'}`));
+  // Cards first, files second. The file count leads nowhere as a headline:
+  // it is always the larger number and never the one asked about, because a
+  // picture keeps an original, a display copy and a thumbnail, and because
+  // the Timeline holds on to everything it would have to put back.
+  out.push(line('inv-total', `${inv.items} ${inv.items === 1 ? 'card' : 'cards'}`));
 
   const kinds = inv.kinds.map(k => `${k.count} ${kindLabel(k.type, k.count)}`).join(', ');
   out.push(line('inv-kinds', kinds || 'Nothing on this board yet'));
 
   if (inv.binned) {
     out.push(line('inv-binned',
-      `${inv.binned} in the bin, still carrying ${inv.binned === 1 ? 'its' : 'their'} bytes`));
+      `${inv.binned} more in the drawer, still ${inv.binned === 1 ? 'carrying its' : 'carrying their'} bytes`));
   }
+
+  out.push(line('inv-files', `${formatBytes(inv.bytes)} in ${inv.assets} `
+    + `${inv.assets === 1 ? 'file' : 'files'}`));
+  // The split under the total, and the reason it is here at all: 96 files
+  // over 27 cards is a number nobody can account for until it says where the
+  // other sixty-nine went. Only the holders that hold something are named.
+  const where: string[] = [];
+  if (inv.held.field) where.push(`${inv.held.field} on the field`);
+  if (inv.held.drawer) where.push(`${inv.held.drawer} in the drawer`);
+  if (inv.held.timeline) where.push(`${inv.held.timeline} held by the Timeline`);
+  if (where.length) out.push(line('inv-where', where.join(', ')));
 
   if (inv.largest.length) {
     out.push(heading('The heaviest'));

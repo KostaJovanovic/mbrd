@@ -723,10 +723,19 @@ textarea.lp-url {
   font-weight: 400;
   color: var(--ink);
 }
-.inv-kinds, .inv-binned, .inv-orphans {
+.inv-kinds, .inv-binned, .inv-orphans, .inv-where {
   margin: 0 0 10px;
   font-size: var(--t-small);
   color: var(--ink-2);
+}
+/* The weight, as a second heading under the count: what the board is, then
+   what it costs. Display face to answer .inv-total, a size down from it. */
+.inv-files {
+  margin: 16px 0 2px;
+  font-family: var(--font-display);
+  font-size: var(--t-body);
+  font-style: var(--display-italic);
+  color: var(--ink);
 }
 .inv-orphans { margin-top: 14px; color: var(--ink-3); }
 .inv-head {
