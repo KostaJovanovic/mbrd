@@ -1212,6 +1212,29 @@ const slotFor = (id: ToolId) =>
   document.querySelector<HTMLElement>(`#clean-tools [data-clean="${id}"]`);
 
 /**
+ * What a slot says about its tool: taken, or back in the tray.
+ *
+ * Two marks for "taken", and which one is the whole difference between the two
+ * ways the mode is played. With a cursor the tool is *drawn under the hand*, so
+ * the slot is an empty space with the tool's outline pressed into it -
+ * `is-out`. Under a finger nothing is drawn at all (see showCursor), so the slot
+ * is the only picture of the tool there is: it stays lit and full-colour -
+ * `is-in-hand` - because a flattened grey outline would be saying the tool is
+ * nowhere.
+ *
+ * Both are always removed and only one added, since `touching` can change inside
+ * a session - a touchscreen laptop has a mouse too, and the mark a slot took on
+ * the way out must not be the one it is still wearing on the way back.
+ */
+function markSlot(id: ToolId, taken: boolean) {
+  const slot = slotFor(id);
+  if (!slot) return;
+  slot.classList.remove('is-out', 'is-in-hand');
+  if (taken) slot.classList.add(touching ? 'is-in-hand' : 'is-out');
+  slot.setAttribute('aria-pressed', String(taken));
+}
+
+/**
  * Pick a tool up, or swap to it, or - if it is the one already in hand - put it
  * down. One press, whichever of the three it turns out to be.
  *
@@ -1229,8 +1252,7 @@ function lift(id: ToolId) {
   if (!slot || slot.hidden) return;
   const going = held;
   held = id;
-  slot.classList.add('is-out');
-  slot.setAttribute('aria-pressed', 'true');
+  markSlot(id, true);
   if (going) flyHome(going);
   showCursor(id);
   paintCanAfterFlight();
@@ -1286,6 +1308,10 @@ function flyHome(id: ToolId) {
   const slot = slotFor(id);
   endStroke();
   if (!slot) return;
+  // Nothing flies under a finger: there was no tool drawn over the board to fly
+  // from, and a tool sailing out of a point nobody's hand is at reads as the
+  // mode having put something down somewhere else. The slot simply lights down.
+  if (touching) { markSlot(id, false); return; }
   const seat = slotSeat(id);
   const ghost = toolSvg(id);
   ghost.className = 'clean-cursor is-ghost';
@@ -1304,14 +1330,25 @@ function flyHome(id: ToolId) {
   );
   later(() => {
     ghost.remove();
-    slot.classList.remove('is-out');
-    slot.setAttribute('aria-pressed', 'false');
+    markSlot(id, false);
   }, TRAVEL_MS);
 }
 
-/** Bring the held tool out of its slot and into the hand. On a touchscreen
- *  there is no hover point to fly to, so it arrives in the middle of the
- *  viewport and waits for the finger. */
+/**
+ * Bring the held tool out of its slot and into the hand.
+ *
+ * **Under a finger there is no tool in the hand, because the hand is the tool.**
+ * The drawing used to arrive in the middle of the viewport and then follow the
+ * finger, offset up and left so as not to be covered - which put the picture of
+ * the tool a centimetre from the place it bites, over a board where a press that
+ * lands off its mess pans instead. The tray says which tool is in hand (see
+ * markSlot) and the finger says where it is; the only thing left over the board
+ * is the washer's gauge, which is a reading and has to be somewhere.
+ *
+ * So: no arrival, no flight, and no seat in the middle of the screen. The host
+ * stays where it was - off the page until a finger lands - and the sheet draws
+ * nothing of it but the tank (clean.css, `.is-touch`).
+ */
 function showCursor(id: ToolId) {
   if (!cursor || !cursorUse || !vp) return;
   cursorUse.setAttribute('href', `assets/icons.svg#i-clean-${id}`);
@@ -1330,6 +1367,7 @@ function showCursor(id: ToolId) {
   // the bars too, and an arrow drawn on top of it there is two pointers.
   document.documentElement.classList.add('is-clean-holding');
   paintLoad();
+  if (touching) { moveCursor(at.x, at.y); return; }
   if (at.x < 0) {
     const box = vp.el.getBoundingClientRect();
     at = { x: box.left + box.width / 2, y: box.top + box.height / 2 };
@@ -1436,6 +1474,15 @@ const GLOVE_OPEN = 'assets/icons.svg#i-clean-glove';
 const GLOVE_SHUT = 'assets/icons.svg#i-clean-glove-held';
 
 function paintLoad() {
+  // The tray's own glove closes too, and on a touchscreen it is the only one
+  // that does: with no drawing under the finger, a full glove and an empty one
+  // would look exactly alike, and what is in the hand is the one thing a glove
+  // has to say. Above the guard below, and written on every call rather than only
+  // when the glove is out - a slot left wearing a fist over a hand that has been
+  // emptied, put down or closed with the mode is the whole of what can go wrong
+  // here, and showBar() calls this on the way in and on the way out for that.
+  slotFor('glove')?.querySelector('use')
+    ?.setAttribute('href', held === 'glove' && carried.length ? GLOVE_SHUT : GLOVE_OPEN);
   if (!loadG) return;
   loadG.replaceChildren();
   if (held !== 'glove') return;
@@ -3800,15 +3847,21 @@ function tick() {
   drawMist(now);
 }
 
-/** The bar beside the washer, every frame. A scale rather than a height, so it
- *  is the compositor's to do and not the layout's - this runs sixty times a
- *  second for as long as the tool is out. */
+/**
+ * The washer's gauge, every frame. A scale rather than a height, so it is the
+ * compositor's to do and not the layout's - this runs sixty times a second for
+ * as long as the tool is out.
+ *
+ * The *number* is written here and the axis is the stylesheet's, because the
+ * gauge stands upright beside a cursor and lies flat above a finger, and which
+ * way it fills is a fact about the drawing rather than about the tank.
+ */
 function paintGauge() {
   if (!tankFill) return;
   const level = Math.round((held === 'washer' ? tank.level : 1) * 1000) / 1000;
   if (level === gaugeShown) return;
   gaugeShown = level;
-  tankFill.style.transform = `scaleY(${level.toFixed(3)})`;
+  tankFill.style.setProperty('--clean-tank', level.toFixed(3));
 }
 
 // ---- mist and flecks ----------------------------------------------------
@@ -4024,8 +4077,16 @@ function wireBar() {
   // mode leaves standing (see showBar): with `cursor: none` over the whole page
   // there is nothing else drawn there, so a tool that stopped at the glass's edge
   // would read as the pointer having been lost.
-  for (const node of [bar, el('corner')])
+  //
+  // And the press is where the mode learns it is being played by hand: a tap on a
+  // tool is usually the first pointer event of a session, and `lift()` has to
+  // know already - the slot it lights and the flight it does not make both depend
+  // on it (markSlot, showCursor). Before this the first tool of every session
+  // came out as a drawing under a finger that was not there.
+  for (const node of [bar, el('corner')]) {
+    node?.addEventListener('pointerdown', byTouch);
     node?.addEventListener('pointermove', e => { if (on && held) moveCursor(e.clientX, e.clientY); });
+  }
 }
 
 function showBar(want: boolean) {
@@ -4050,12 +4111,13 @@ function showBar(want: boolean) {
   for (const { id } of TOOLS) {
     const slot = slotFor(id);
     if (!slot) continue;
-    slot.classList.remove('is-out');
-    slot.setAttribute('aria-pressed', 'false');
+    markSlot(id, false);
     // A board whose cards are all spread out has no cobwebs on it, and a tool
     // with nothing to do is worse than an absent one.
     slot.hidden = want && id === 'duster' && !webs.length;
   }
+  // And the glove open, whichever way this session ended - see paintLoad().
+  paintLoad();
   paintCan();
 }
 
