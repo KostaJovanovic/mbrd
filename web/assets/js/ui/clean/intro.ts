@@ -34,6 +34,19 @@ const RATE_GROW = 2.1;
 /** The lost date on screen before anybody speaks. */
 const LOST_MS = 1100;
 
+/**
+ * How long the opening ignores a press to go on.
+ *
+ * The way in on a phone is seven quick taps on the wordmark, and a finger
+ * drumming at that rate does not stop dead on the seventh: the eighth lands on
+ * an overlay that appeared a moment ago and throws away the part it was tapping
+ * to see. TAP_GAP_MS in ./konami.ts is 600, so a tap that was still part of the
+ * run is inside this and a press somebody meant is not.
+ *
+ * Only `advance()`. Escape is `skip()` and is never a stray finger.
+ */
+const DEAF_MS = 1000;
+
 /** A letter, and the extra beat after a stop or a comma. */
 const CHAR_MS = 32;
 const STOP_MS = 220;
@@ -105,6 +118,8 @@ function starPath(): string {
  */
 export function playIntro(onDone: () => void, motion: boolean, onDark: () => void = () => {}): Intro {
   const timers = new Set<ReturnType<typeof setTimeout>>();
+  /** When the overlay went up, for DEAF_MS. */
+  const bornAt = performance.now();
   let raf = 0;
   let phase: 'dark' | 'date' | 'lost' | 'talk' | 'reveal' | 'gone' = 'dark';
   const later = (fn: () => void, ms: number) => {
@@ -460,6 +475,8 @@ export function playIntro(onDone: () => void, motion: boolean, onDark: () => voi
 
   // ---- what clean.ts calls ----
   function advance() {
+    // The tail of the run that opened the mode - see DEAF_MS.
+    if (performance.now() - bornAt < DEAF_MS) return;
     if (phase === 'dark' || phase === 'date') {
       // Past the running date - the lines are the part worth waiting for.
       cancelAnimationFrame(raf);

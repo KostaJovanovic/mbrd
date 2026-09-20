@@ -135,6 +135,62 @@ test('the ending has no timer that closes it', () => {
 });
 
 // ---------------------------------------------------------------------------
+// One finger, two fingers, and a finger whose up never came
+//
+// All four read the source, for the reason the block above gives: the mode is a
+// drawing, and what is being held here is the bookkeeping behind a gesture
+// rather than anything a call can return. Every one of them is a phone bug that
+// shipped: the tools looked dead and the board panned instead.
+// ---------------------------------------------------------------------------
+
+test('the pointer count is the map size and never a tally of its own', () => {
+  // Two bookkeepings for one thing are two things that disagree, and the one
+  // that drifts is the count - after which every press is a second finger and
+  // the session can only pan. The pinch needs the points, so the points win.
+  assert.equal(/pointers\s*(\+\+|--|\+=|-=)/.test(CLEAN_TS), false,
+    'pointers is counted by hand again - it is fingers.size');
+  assert.equal(/pointers\s*=\s*Math\.max/.test(CLEAN_TS), false,
+    'the old decrement is back');
+  const writes = [...CLEAN_TS.matchAll(/pointers = fingers\.size/g)].length;
+  assert.ok(writes >= 2, `the count is written from the map ${writes} times, want the down and the up`);
+});
+
+test('a primary press throws away a pointer whose up never came', () => {
+  // A press with nothing else down is the one moment the map can be known to be
+  // wrong, and a lost pointerup is ordinary on a phone: the system takes the
+  // gesture, the finger leaves over the browser's own chrome. Without this the
+  // mode never recovers inside the session.
+  const down = CLEAN_TS.slice(CLEAN_TS.indexOf("node.addEventListener('pointerdown'"));
+  const head = down.slice(0, down.indexOf('pointers = fingers.size'));
+  assert.match(head, /e\.isPrimary/, 'nothing prunes the map on a fresh gesture');
+  assert.match(head, /fingers\.clear\(\)/, 'the stale pointers are kept');
+  assert.match(head, /endStroke\(\)/,
+    'a `panning` left standing is read before `drawing` - the press would still pan');
+});
+
+test('two fingers zoom as well as pan', () => {
+  // The mode took a second finger as a pan and nothing else, which on a phone
+  // was no way to zoom at all: no wheel, and the digits belong to the tools.
+  const pinch = bodyOf('function pinchTo(');
+  assert.match(pinch, /panByScreen\(/, 'the pinch does not carry the board');
+  assert.match(pinch, /zoomAt\(/, 'the pinch does not zoom');
+  const move = CLEAN_TS.slice(CLEAN_TS.indexOf("node.addEventListener('pointermove'"));
+  assert.match(move.slice(0, move.indexOf('\n  });')), /pointers > 1\) \{ pinchTo\(\)/,
+    'a second finger no longer reaches the pinch');
+});
+
+test('the zoom cluster is drawn by the mode and gated on the tray', () => {
+  // The one piece of ordinary chrome the mode leaves standing, and it waits for
+  // the star with the tray rather than standing alone over the black.
+  const css = readFileSync(
+    fileURLToPath(new URL('../web/assets/css/clean.css', import.meta.url)), 'utf8');
+  assert.match(css, /\.is-clean-chrome #corner/,
+    'clean.css no longer puts the zoom cluster back');
+  assert.match(bodyOf('function showBar('), /classList\.toggle\('is-clean-chrome'/,
+    'nothing writes the class clean.css is waiting for');
+});
+
+// ---------------------------------------------------------------------------
 // konami
 // ---------------------------------------------------------------------------
 

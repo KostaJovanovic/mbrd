@@ -859,9 +859,12 @@
    The bar
 
    Centred on the window rather than inside --foot-left / --foot-right. Those
-   insets exist to keep a bar clear of the bin row and the zoom cluster, and in
-   this mode both of those are hidden - reserving room for furniture that is not
-   drawn would push the bar off-centre for nothing.
+   insets exist to keep a bar clear of the bin row and the zoom cluster along the
+   foot, and neither is down there while this is up: the bin row is hidden with
+   the rest of the chrome, and the zoom cluster - the one piece the mode keeps -
+   is pinned to the top left instead (see "The camera, left standing" below).
+   Reserving room for furniture that is not drawn would push the bar off-centre
+   for nothing.
    --------------------------------------------------------------------------- */
 
 /* Above the glass, not at --z-chrome with the rest of the furniture. #viewport
@@ -1298,6 +1301,48 @@
    tray open as a tall box round a small button. */
 :root.is-clean-done #clean-bar #clean-can { display: none; }
 
+/* ---------------------------------------------------------------------------
+   The camera, left standing
+
+   Every other piece of furniture goes out with .is-cleaning - one word in
+   chrome.css, beside the two tour states. The zoom cluster comes back, and it is
+   the only one that does. The tools are aimed at cards at whatever size the
+   board was fitted to, and on a phone there is no wheel, no keys of its own and
+   - until this - no way to make a card bigger than a thumbnail. That read as
+   tools that could not be used at all rather than as tools that are hard to aim,
+   because a press that misses its mess does not do nothing: it pans the board.
+
+   Three things have to be undone to draw it. The opacity and pointer-events
+   that rule sets. The z-index, because #corner sits at --z-chrome and the glass
+   above it at --z-overlay would swallow every press aimed at it - which is the
+   bug #clean-bar's own block already records. And the corner it is pinned to:
+   on a phone mobile.css puts it at the top right, which in here is the count and
+   the way out.
+
+   Top left on every width, rather than a desktop's corner and a phone's: it is
+   the one corner the mode claims nothing in, and a control that moves between
+   tiers is two placements to keep clear of the tray. Gated on .is-clean-chrome
+   and not .is-cleaning so it arrives with the tray when the star opens
+   (showBar() in clean.ts) - a zoom control over the black would otherwise be the
+   only thing on screen for the whole of the opening. */
+:root.is-cleaning.is-clean-chrome #corner {
+  z-index: calc(var(--z-overlay) + 2);
+  top: max(14px, env(safe-area-inset-top));
+  bottom: auto;
+  left: max(14px, env(safe-area-inset-left));
+  right: auto;
+  align-items: flex-start;
+  opacity: 1;
+  pointer-events: auto;
+  /* In from the edge it is pinned to, as #clean-top comes in from its own. */
+  animation: clean-top-in 520ms var(--clean-ease) both;
+}
+
+/* The ruler and the coordinate readout are not the camera, and they are not
+   here: one measures a board nobody is measuring, the other reports a pointer
+   that has been taken away and replaced with a tool. The pill on its own. */
+:root.is-cleaning :is(#scale-bar, #hud) { display: none; }
+
 /* A narrow screen. Three tools fit where six did not, so there is one
    breakpoint rather than two and the column never has to shrink to a glyph. */
 @media (width < 560px) {
@@ -1323,6 +1368,16 @@
   /* The question and both answers have to fit beside the count on a phone. */
   #clean-confirm span { padding: 0 4px; font-size: 0.75rem; }
   #clean-confirm button { padding: 0 8px; font-size: 0.75rem; }
+  /* And the zoom pill goes to the row under them rather than beside them. Six
+     segments is about 270px and the count with its ✕ is about 110: they share
+     the top edge down to roughly 510px of window and collide below that. Pinned
+     under #clean-top rather than the other way round, so the way out stays in
+     the very corner it is in at every other width. 34px is #clean-count's own
+     min-height, 8px the gap the two rows keep. */
+  :root.is-cleaning.is-clean-chrome #corner {
+    top: calc(max(10px, env(safe-area-inset-top)) + 34px + 8px);
+    left: max(10px, env(safe-area-inset-left));
+  }
 }
 
 /* A browser with no color-mix() drops a whole declaration that uses it, which
