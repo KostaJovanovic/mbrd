@@ -1556,6 +1556,12 @@ test('the music never loops, and comes back in past its own opening', () => {
   assert.ok(start > 0, 'LOOP_START is at the top of the file - the opening figure repeats');
   // Before the decay at ~134s, and so before the silence that follows it.
   assert.ok(end > start && end <= 134, `LOOP_END ${end} reaches the track's ending`);
+  // The track repeats itself every 105.70s - measured, see clean.ts. A loop of
+  // any other length joins mid-phrase onto material that does not match, and no
+  // crossfade hides it. Moving one of the two and not the other is a one-line
+  // edit that sounds broken and breaks nothing a test would otherwise see.
+  assert.ok(Math.abs((end - start) - 105.70) < 0.05,
+    `the loop is ${(end - start).toFixed(2)}s - it has to be the track's 105.70s period`);
   // The join has to be wide enough that the frame clock's aim cannot be heard
   // inside it. A handover timed to tens of milliseconds under a fade measured
   // in seconds is inaudible; shorten this and the timing starts to show.
