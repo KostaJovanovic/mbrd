@@ -56,6 +56,15 @@
 #drawer-btn:hover svg { transform: scale(var(--btn-grow)) translateY(var(--btn-lift)); }
 /* Something is in there -- full strength. */
 #drawer-btn.has-things { color: var(--accent-deep); border-color: var(--accent-text); }
+/* Wearing the bin: the press deletes what is selected, and the colour says so
+   before the tooltip has to. An attribute weighs what a class does, so these
+   two win on source order alone -- they must stay below both rules above, and
+   below the empty drawer's desaturate: a selection is a delete either way. */
+#drawer-btn[data-face="i-delete"] {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--rule-2));
+}
+#drawer-btn[data-face="i-delete"] svg { filter: none; }
 
 /* Autosave mark. Quietest thing in the corner -- no card, no shadow.
    Leaves slowly, arrives quickly. */

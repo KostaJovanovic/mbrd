@@ -303,10 +303,24 @@ export function closeDrawer() {
   button?.setAttribute('aria-expanded', 'false');
 }
 
+/** The two faces of the corner button, named so tests/icons.test.js reads both.
+ *  With something selected the press deletes it, so the button says so. */
+const DRAWER_FACE = 'i-drawer';
+const DELETE_FACE = 'i-delete';
+
 function paintButton() {
   if (!button) return;
   const entries = board.trash;
   button.classList.toggle('has-things', entries.length > 0);
+  // The glyph follows the role, not the contents: a bin while something is
+  // selected, the drawer otherwise. Written only on a change - this runs on
+  // every selection event, and replaceChildren() on every one of them would
+  // restart the button's own hover transition under the pointer.
+  const face = selection.size ? DELETE_FACE : DRAWER_FACE;
+  if (button.dataset.face !== face) {
+    button.dataset.face = face;
+    button.replaceChildren(icon(face));
+  }
   // The button's state is colour alone, invisible to a screen reader, so the
   // name spells it out in words - and may as well carry the exact count too.
   const name = selection.size
@@ -373,11 +387,7 @@ function fill() {
 
   if (!entries.length) {
     const none = div('drawer-none');
-    // Said when there is something kept, so an empty drawer holding a cleaning
-    // card does not read as an empty drawer holding nothing.
-    none.textContent = specialCount()
-      ? 'Nothing thrown away. What is kept is on the Special shelf.'
-      : 'Nothing thrown away yet.';
+    none.textContent = 'Nothing thrown away yet.';
     body.append(none);
     return;
   }
@@ -443,10 +453,6 @@ function fillSpecial() {
     shelf.append(...cells.slice(i, i + PER_SHELF));
     body.append(shelf);
   }
-
-  const hint = div('drawer-hint');
-  hint.textContent = 'Kept for good — emptying the drawer leaves these here.';
-  body.append(hint);
 
   watch();
 }
@@ -734,8 +740,8 @@ function restoreByKey(e: KeyboardEvent) {
   const slot = (e.target as Element).closest?.<HTMLElement>('.drawer-slot');
   if (!slot) return;
   e.preventDefault();
-  // The title card has no bin entry to restore - see titleSlot().
-  if (slot.dataset.title) { cue('pick'); restoreTitleCard(); return; }
+  // The title card has no bin entry to lift out - see titleSlot().
+  if (slot.dataset.title) { landTitle(vp!.toWorld(innerWidth / 2, innerHeight / 2)); return; }
   // Every other .drawer-slot is built by makeSlot(), which writes the id onto it.
   land([slot.dataset.id!], vp!.toWorld(innerWidth / 2, innerHeight / 2));
 }
@@ -746,13 +752,13 @@ function startDrag(e: PointerEvent) {
   // so a press delivered to it landed on an element inside it.
   const slot = (e.target as Element).closest<HTMLElement>('.drawer-slot');
   if (!slot) return;
-  // The title card is not dragged back: it has no bin entry, and its own click
-  // listener is its way home. See titleSlot().
-  if (slot.dataset.title) return;
+  // The title card is dragged like anything else, and lands like anything else -
+  // it just has no bin entry behind it, so the lookup is skipped and the drop
+  // goes through restoreTitleCard(). See titleSlot() and land().
+  const isTitle = !!slot.dataset.title;
   // As above: makeSlot() writes the id onto every slot it makes.
-  const id = slot.dataset.id!;
-  const entry = board.trash.find(t => t.item.id === id);
-  if (!entry) return;
+  const id = slot.dataset.id ?? '';
+  if (!isTitle && !board.trash.some(t => t.item.id === id)) return;
 
   // **Nothing is decided here, and no preventDefault.** The press may be a
   // tap, or - far more often on a phone - the start of a scroll. Swallowing
@@ -825,9 +831,12 @@ function startDrag(e: PointerEvent) {
       if (lifted || !home) return;
     }
 
+    const where = vp!.toWorld(ev.clientX, ev.clientY);
+    // Dropped onto the board, and there is no bin entry to take it out of.
+    if (isTitle) { landTitle(where); return; }
     // A clip going home ignores the drop point - restoreItems() puts it
     // back on its own card, wherever that is now.
-    land([id], home ? null : vp!.toWorld(ev.clientX, ev.clientY));
+    land([id], home ? null : where);
   };
 
   const onCancel = () => {
@@ -842,6 +851,18 @@ function startDrag(e: PointerEvent) {
   addEventListener('pointermove', onMove);
   addEventListener('pointerup', onUp);
   addEventListener('pointercancel', onCancel);
+}
+
+/**
+ * The title card, back on the board where it was dropped. Its own function
+ * because it was never in the bin: restoreTitleCard() clears `titleHidden`
+ * rather than lifting an entry out, and there is nothing to select afterwards
+ * that the card's own arrival does not already say.
+ */
+function landTitle(at: { x: number, y: number }) {
+  restoreTitleCard(at);
+  cue('arrive');
+  if (!board.trash.length) closeDrawer();
 }
 
 /** Put these back, select them, and shut the drawer if that emptied it - both
