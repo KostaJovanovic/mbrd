@@ -239,7 +239,19 @@ export function refForHandle(handle: FileSystemFileHandle): DocumentRef {
   return refFor(handle);
 }
 
-const canPick = () => hasWindow() && typeof window.showSaveFilePicker === 'function';
+/**
+ * Cleared the first time the platform hands back a handle it will not let us
+ * write - see write(). A picker that cannot write is worse than no picker: it
+ * creates the file before it refuses, so every export leaves another empty one
+ * behind. After the first refusal the export is a download from the start.
+ *
+ * A reload asks again, which is the right amount of memory for this: the cost
+ * of being wrong is exports that download rather than write through a handle,
+ * and that is the path Safari and Firefox take on every save already.
+ */
+let pickerWrites = true;
+
+const canPick = () => pickerWrites && hasWindow() && typeof window.showSaveFilePicker === 'function';
 
 const webFiles: FilesPort = {
   folder: null,
@@ -284,6 +296,7 @@ const webFiles: FilesPort = {
     try {
       writable = await handle.createWritable();
     } catch {
+      pickerWrites = false;
       download(blob, ref.name);
       return;
     }

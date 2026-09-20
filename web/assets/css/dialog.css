@@ -268,8 +268,38 @@ textarea.lp-url {
 }
 
 /* Credits sheet — wider than the question to fit a quote on two lines. */
-#credits { max-width: min(480px, calc(100vw - 32px)); }
+#credits {
+  max-width: min(480px, calc(100vw - 32px));
+  overflow: hidden;
+}
+/* The sheet holds its shape and .credits-scroll inside it takes the overflow.
+   A <dialog> left to scroll itself reserves the scrollbar's strip inside its
+   own border box, and Chromium does not round that strip — at --radius 26px
+   both right corners visibly square off the moment the fold is open.
+   [open] is load-bearing: a closed <dialog> is hidden by the UA's
+   `dialog:not([open]) { display: none }`, and any author `display` beats the
+   UA sheet whatever its specificity — an unqualified `display: flex` here
+   leaves the credits sitting on the board from boot. */
+#credits[open] {
+  display: flex;
+  flex-direction: column;
+}
 #credits h2 { margin-bottom: 16px; }
+.credits-scroll {
+  overflow-y: auto;
+  /* Without this a flex item refuses to shrink under its content and the
+     scrollbar lands back on the sheet. */
+  min-height: 0;
+  /* The bar rides inside the sheet's own padding rather than on its edge. The
+     -6px on the left pays for the summary's negative margin below, which would
+     otherwise poke out of this box and raise a horizontal bar. The 8px on top
+     is room for the first face to lift and grow under the pointer — an
+     overflow box clips its own first row, and --btn-lift -3px with --btn-grow
+     1.04 and a shadow puts the top of that circle outside it. Each negative
+     margin pays its padding back, so nothing on the page moves. */
+  margin: -8px -10px 0 -6px;
+  padding: 8px 10px 0 6px;
+}
 .credit-list {
   margin: 0 0 18px;
   padding: 0;

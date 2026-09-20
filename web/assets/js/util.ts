@@ -230,6 +230,11 @@ export const itemHashes = (
     // The baked ~1024px display copy (optimize/picture.ts, import/drop.ts). A
     // derived asset like the thumb, so it packs and syncs by the same walk.
     item?.meta?.display,
+    // The file a picture was decoded from, kept beside it: the .heic or the
+    // camera RAW a card's WebP was made out of (import/drop.ts). Packed and
+    // synced like any other reference, and dropped by the optimiser, which is
+    // the one thing on the board that deliberately throws an original away.
+    item?.meta?.source,
     // Legacy key — nothing writes it but old boards still carry it.
     item?.meta?.poster,
     // A folder card out of an archive points into it; a folder dropped from
@@ -238,6 +243,31 @@ export const itemHashes = (
     item?.meta?.archive,
     ...(Array.isArray(item?.meta?.files) ? item.meta.files.map(f => (isRecord(f) ? f.hash : null)) : []),
   ].filter((h): h is string => typeof h === 'string' && h.length > 0);
+
+/**
+ * What a card arrived as, which is not always what it holds.
+ *
+ * A HEIC or a camera RAW imported since the decoders landed keeps its *picture*
+ * at asset.hash and the file it was made from at meta.source - so meta.ext says
+ * `webp`, and origName is the only place the .heic or the sensor is still
+ * named. Boards written before that, and every other format, answer from
+ * meta.ext exactly as they always did. Both shapes have to read for as long as
+ * old boards open, which is why this is one function and not a condition
+ * written out at each of its callers.
+ *
+ * Lowercased, like extOf(). Empty string when there is nothing to go on.
+ */
+export const cameFrom = (
+  item: { name?: string, meta?: Record<string, unknown> | null } | null | undefined,
+): string => {
+  const meta = item?.meta;
+  if (typeof meta?.source === 'string' && meta.source
+    && typeof meta.origName === 'string' && meta.origName) {
+    return extOf(meta.origName);
+  }
+  const ext = typeof meta?.ext === 'string' && meta.ext ? meta.ext : extOf(item?.name);
+  return ext.toLowerCase();
+};
 
 /**
  * Whether this is a dev server (localhost/LAN). Memoised — deferred to first

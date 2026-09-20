@@ -447,22 +447,28 @@ export function itemMetaCommands() {
     },
 
     /**
-     * Develop a camera RAW from its sensor data.
+     * Develop a camera RAW from its sensor data, at every pixel.
      *
-     * A RAW card draws the JPEG its camera stored inside the file (see
-     * import/preview.ts), which is what the camera made of the shot and is
-     * sometimes a postage stamp. This runs LibRaw over the sensor itself and
-     * puts the result where that preview was, as one undoable step. The RAW
-     * stays the card's file. Several seconds of work in a worker, so a second
-     * press on the same card while it runs does nothing.
+     * The sensor is wherever this card keeps it. A RAW imported since the
+     * importer started developing them holds the developed picture at
+     * asset.hash and the RAW itself at meta.source (import/drop.ts), and what
+     * the importer made is a *half-size* develop - a fifth of the time, and
+     * the reason a folder of RAWs is not a minute of waiting. This row is the
+     * other half of that bargain: it reads the same sensor again and asks for
+     * all of it. On a board written before that, the RAW is still the card's
+     * file and the card draws whatever preview the camera baked in, which is
+     * sometimes a postage stamp; rawBytes() answers for both shapes.
+     *
+     * Several seconds of work in a worker, so a second press on the same card
+     * while it runs does nothing.
      */
     canDemosaic: (id: string) => {
       const it = byId(id);
-      return isRaw(it) && it?.meta?.demosaiced !== true && !!getAsset(it?.asset?.hash);
+      return isRaw(it) && it?.meta?.demosaiced !== true && !!rawBytes(it);
     },
     demosaic: async (id: string) => {
       const it = byId(id);
-      const asset = getAsset(it?.asset?.hash);
+      const asset = rawBytes(it);
       if (!it || !asset || !isRaw(it) || developing.has(id)) return;
       developing.add(id);
       const name = it.name || asset.name || 'this RAW';
@@ -477,21 +483,37 @@ export function itemMetaCommands() {
           made = await demosaic(asset.blob, true);
         }
         const file = derivedFile(made.blob, 'demosaic');
-        const preview = await addFile(file);
+        const picture = await addFile(file);
         const [thumb, display] = await Promise.all([
           thumbFor(file, made.width).catch(() => null),
           displayFor(file).catch(() => null),
         ]);
-        setItemDemosaiced(id, { preview, thumb: thumb?.hash, display: display?.hash });
-        toast('Demosaiced. Undo puts the camera preview back.');
+        setItemDemosaiced(id, {
+          picture, thumb: thumb?.hash, display: display?.hash,
+          mime: made.blob.type,
+          // The card's file where it holds one already, its stand-in where the
+          // RAW is still the file - see setItemDemosaiced().
+          asItsFile: !!byId(id)?.meta?.source,
+        });
+        toast('Demosaiced. Undo puts the picture back.');
       } catch (err) {
         console.warn('[mbrd] could not demosaic', name, err);
-        toast('Could not demosaic this RAW - the card keeps the camera preview', 'error');
+        toast('Could not demosaic this RAW - the card keeps the picture it had', 'error');
       } finally {
         developing.delete(id);
       }
     },
   };
+}
+
+/**
+ * The sensor data on a RAW card, whichever of the two shapes it is in: at
+ * meta.source on a card whose file is already a developed picture, and at
+ * asset.hash on a board written before the importer developed them.
+ */
+function rawBytes(it: { asset?: { hash?: string } | null, meta?: { source?: unknown } | null } | null | undefined) {
+  const source = it?.meta?.source;
+  return getAsset(typeof source === 'string' && source ? source : it?.asset?.hash);
 }
 
 /** RAW cards being developed now - see demosaic() above. */

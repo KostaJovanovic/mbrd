@@ -160,6 +160,7 @@ var SOUND_NAMES = (
 var CUES = {
   pick: { sound: "toggle" },
   tap: { sound: "tick" },
+  say: { sound: "press" },
   on: { sound: "pulse" },
   off: { sound: "pulse", reverse: true },
   rise: { sound: "chime" },

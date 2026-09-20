@@ -659,6 +659,12 @@ export type AssetSwap = {
   // The new asset is a plain picture that draws itself - a RAW, developed and
   // shrunk. Its stand-ins go with the old bytes, and ext/mime follow the new.
   plain?: { ext: string, mime: string },
+  // Forget meta.source: the .heic or the camera RAW a card's picture was
+  // decoded from at import. The one original this does not move to meta.was,
+  // because there is nothing to come back for - the card has drawn the
+  // decoded picture since the day it arrived. Undo restores the reference like
+  // any other field, so the bytes leave on the first save after that.
+  dropSource?: boolean,
 };
 
 export function swapAssets(swaps: AssetSwap[] | null | undefined, label = 'Optimize board') {
@@ -671,12 +677,15 @@ export function swapAssets(swaps: AssetSwap[] | null | undefined, label = 'Optim
   });
 
   // No actual swaps → mark items as seen outside the undo stack.
-  const swapping = list.some(({ id, asset, cover }) => {
+  const swapping = list.some(({ id, asset, cover, dropSource }) => {
     const it = byId(id)!;
     return (isHash(asset) && it.asset?.hash && asset !== it.asset.hash) ||
            (isHash(cover) && isHash(it.meta?.cover) && cover !== it.meta.cover) ||
            (asset === null && !!it.asset) ||
-           (cover === null && isHash(it.meta?.cover));
+           (cover === null && isHash(it.meta?.cover)) ||
+           // Throwing an original away is a change, and an undoable one, even
+           // on a card whose picture was already small enough to keep.
+           (!!dropSource && isHash(it.meta?.source));
   });
   if (!swapping) {
     for (const { id } of list) {
@@ -688,10 +697,14 @@ export function swapAssets(swaps: AssetSwap[] | null | undefined, label = 'Optim
   }
 
   const forward = () => {
-    for (const { id, asset, cover, plain } of list) {
+    for (const { id, asset, cover, plain, dropSource } of list) {
       const it = byId(id);
       if (!it) continue;
       const meta = { ...it.meta };
+      // Before the branches below, and unconditional on whether the picture
+      // itself changed: a card already inside the ceiling still gives back the
+      // whole weight of the file it was decoded from.
+      if (dropSource) delete meta.source;
       // null = remove reference. Original pinned by `was` for undo.
       if (asset === null && it.asset?.hash) {
         if (!isHash(meta.was)) meta.was = it.asset.hash;
@@ -1058,29 +1071,53 @@ export function setItemMatte(id: string, matte: unknown) {
 }
 
 /**
- * Put a developed RAW on its card: the demosaiced picture becomes meta.preview,
- * with the thumbnail and display copy cut from it. One undo entry, and Undo
- * puts the camera's own preview back with the copies cut from that. The
- * original RAW stays asset.hash throughout. `demosaiced` is what stops the menu
- * offering it twice.
+ * Put a developed RAW on its card, with the thumbnail and display copy cut
+ * from it. One undo entry, and Undo puts back exactly what was there.
+ *
+ * Where it goes depends on which shape the card is in, which is what
+ * `asItsFile` says. A RAW imported since the importer started developing them
+ * already holds a picture at asset.hash and the sensor at meta.source, so the
+ * full develop *replaces the file* and meta.source is untouched - the sensor
+ * stays until the optimiser throws it away. On a board written before that,
+ * the RAW is still the file and the developed picture goes where the camera's
+ * own preview was.
+ *
+ * `demosaiced` is what stops the menu offering it twice, in both shapes.
  */
-export function setItemDemosaiced(id: string, picture: { preview: unknown, thumb?: unknown, display?: unknown }) {
+export function setItemDemosaiced(id: string, picture: {
+  picture: unknown, thumb?: unknown, display?: unknown, mime?: unknown, asItsFile?: boolean,
+}) {
   const it = byId(id);
-  if (!it || it.type !== 'image' || !isHash(picture.preview)) return;
-  const before: Record<string, unknown> = { ...it.meta };
-  const after: Record<string, unknown> = { ...it.meta, preview: picture.preview, demosaiced: true };
-  // Copies of the camera's preview are not copies of this picture.
+  if (!it || it.type !== 'image' || !isHash(picture.picture)) return;
+  const beforeMeta: Record<string, unknown> = { ...it.meta };
+  const beforeAsset = it.asset ? { ...it.asset } : null;
+  const after: Record<string, unknown> = { ...it.meta, demosaiced: true };
+  // Copies of the picture that was there are not copies of this one.
   delete after.thumb;
   delete after.display;
   if (isHash(picture.thumb)) after.thumb = picture.thumb;
   if (isHash(picture.display)) after.display = picture.display;
-  const write = (meta: typeof before) => {
+  const mime = typeof picture.mime === 'string' ? picture.mime : '';
+  if (picture.asItsFile) {
+    after.mime = mime;
+    if (mime.startsWith('image/')) after.ext = mime.slice('image/'.length);
+    // The card's file is the picture now; there is no stand-in left to keep.
+    delete after.preview;
+  } else {
+    after.preview = picture.picture;
+  }
+  const write = (meta: typeof beforeMeta, asset: typeof beforeAsset) => {
     const item = byId(id);
     if (!item) return;
     item.meta = { ...meta };
+    if (asset) item.asset = { ...asset };
     bus.emit('item', id);
   };
-  commit('Demosaic', () => write(after), () => write(before));
+  const afterAsset = picture.asItsFile && beforeAsset
+    ? { ...beforeAsset, hash: picture.picture as string } : beforeAsset;
+  commit('Demosaic',
+    () => write(after, afterAsset),
+    () => write(beforeMeta, beforeAsset));
 }
 
 /** Two axis maps with the same tags and values, whatever order those were written in. */

@@ -681,7 +681,7 @@ export function makeItem(partial: Record<string, unknown>): Item {
 
 // Must match itemHashes() in util.ts.
 // `archive` is the file a folder card points into (import/unpack.ts).
-const META_HASHES = ['cover', 'shot', 'thumb', 'preview', 'poster', 'archive'];
+const META_HASHES = ['cover', 'shot', 'thumb', 'preview', 'poster', 'archive', 'source'];
 
 // For PDFs, RAWs, PSDs, etc. the displayed picture is meta.preview, not asset.hash.
 export function shownHash(item: Item): string | null {

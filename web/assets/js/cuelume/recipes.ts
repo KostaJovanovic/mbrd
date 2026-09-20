@@ -242,13 +242,18 @@ export const SOUND_NAMES =
 /**
  * What the app is allowed to say happened.
  *
- * Eleven names, nine sounds. on/off and rise/fall are inversions of one
+ * Twelve names, ten sounds. on/off and rise/fall are inversions of one
  * recipe (see invert()). pick/tap sound the same — a different note on
  * drag-end read as a second event; they stay two names because the call
  * sites mean different things.
+ *
+ * `say` is one letter of somebody speaking, and it earns a name of its own
+ * because of the *rate*: it fires every other character of a typed line, some
+ * fifteen times a second, and a 5 kHz tick that reads as crisp once reads as a
+ * cricket at that speed. A voice wants the dullest thing in the palette.
  */
 export type Cue =
-  | 'pick' | 'tap' | 'on' | 'off' | 'rise' | 'fall'
+  | 'pick' | 'tap' | 'say' | 'on' | 'off' | 'rise' | 'fall'
   | 'done' | 'fail' | 'note' | 'arrive' | 'sweep';
 
 /** One tier's answer to one cue: a recipe, optionally played backwards. */
@@ -265,6 +270,7 @@ export type Voice = { sound: SoundName, reverse?: boolean };
 export const CUES = {
   pick:   { sound: 'toggle' },
   tap:    { sound: 'tick' },
+  say:    { sound: 'press' },
   on:     { sound: 'pulse' },
   off:    { sound: 'pulse', reverse: true },
   rise:   { sound: 'chime' },
@@ -286,9 +292,11 @@ export const isCue = (value: unknown): value is Cue =>
 
 /** Spare recipes — no cue names them. tests/cuelume.test.js checks both
  *  directions. droplet/release/press were tried on `pick` and rejected
- *  (disliked or inaudible despite high peak dBFS). */
+ *  (disliked or inaudible despite high peak dBFS); `press` has since been given
+ *  `say`, where being the dullest and quietest thing in the table is the
+ *  qualification rather than the objection. */
 export const IDLE_SOUNDS: SoundName[] = [
-  'sparkle', 'droplet', 'bloom', 'whisper', 'press', 'release', 'loading', 'scan',
+  'sparkle', 'droplet', 'bloom', 'whisper', 'release', 'loading', 'scan',
 ];
 
 /** The voice for one cue. Kept as a function — this is where a future

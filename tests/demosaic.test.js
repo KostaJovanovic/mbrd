@@ -28,6 +28,16 @@ const rawCard = (meta = {}) => photo({
   meta: { ext: 'cr2', mime: '', preview: PREVIEW, thumb: THUMB, display: DISPLAY, ...meta },
 });
 
+// What the import makes of a RAW now: the developed picture is the card's file,
+// and the sensor data is kept beside it at `source` until Optimize drops it.
+const devCard = (meta = {}) => photo({
+  id: 'r', name: 'IMG_0001.webp', asset: { hash: WEBP },
+  meta: {
+    ext: 'webp', mime: 'image/webp', source: RAW, origName: 'IMG_0001.CR2',
+    thumb: THUMB, ...meta,
+  },
+});
+
 beforeEach(() => {
   setBoardMode('desktop');
   clearAssets();
@@ -38,6 +48,8 @@ beforeEach(() => {
     { name: 'display.webp', ext: 'webp', mime: 'image/webp' });
   putAsset(DEV, new Blob([new Uint8Array(2048)], { type: 'image/jpeg' }),
     { name: 'demosaic.jpeg', ext: 'jpeg', mime: 'image/jpeg' });
+  putAsset(WEBP, new Blob([new Uint8Array(1536)], { type: 'image/webp' }),
+    { name: 'IMG_0001.webp', ext: 'webp', mime: 'image/webp' });
   loadBoard({ title: 'T', items: [rawCard()] });
 });
 
@@ -49,10 +61,27 @@ test('a RAW is a picture card whose file arrived as a camera RAW', () => {
   assert.equal(isRaw({ type: 'generic', name: 'x.cr2', asset: { hash: RAW }, meta: { ext: 'cr2' } }), false,
     'a RAW with no preview in it lands as a named card, and stays one');
   assert.equal(isRaw({ type: 'image', name: 'x.cr2', meta: { ext: 'cr2' } }), false, 'no file, nothing to develop');
+  assert.equal(isRaw(devCard()), true,
+    'the card file is a WebP, but the file that arrived was a RAW and is still beside it');
+});
+
+test('Optimize drops the sensor file a developed card keeps beside it', () => {
+  loadBoard({ title: 'T', items: [devCard()] });
+  const plan = planOptimize();
+  assert.deepEqual(plan.pictures.map(j => j.hash), [WEBP],
+    'the RAW behind it is not a job of its own - it is about to be thrown away');
+  assert.ok(!plan.pictures[0].raw, 'and it is not developed a second time');
+  swapAssets([{ id: 'r', dropSource: true }]);
+  let it = byId('r');
+  assert.equal('source' in it.meta, false);
+  assert.equal(it.asset.hash, WEBP, 'the picture on screen does not change');
+  undo();
+  it = byId('r');
+  assert.equal(it.meta.source, RAW, 'undo puts the sensor file back');
 });
 
 test('Demosaic is one undo step that swaps the preview and the copies cut from it', () => {
-  setItemDemosaiced('r', { preview: DEV, thumb: DEV_THUMB });
+  setItemDemosaiced('r', { picture: DEV, thumb: DEV_THUMB });
   let it = byId('r');
   assert.equal(it.meta.preview, DEV);
   assert.equal(it.meta.thumb, DEV_THUMB);
@@ -69,8 +98,26 @@ test('Demosaic is one undo step that swaps the preview and the copies cut from i
   assert.equal(byId('r').meta.preview, DEV);
 });
 
+test('on a card the import already developed, Demosaic replaces the file itself', () => {
+  loadBoard({ title: 'T', items: [devCard()] });
+  setItemDemosaiced('r', { picture: DEV, thumb: DEV_THUMB, mime: 'image/jpeg', asItsFile: true });
+  let it = byId('r');
+  assert.equal(it.asset.hash, DEV, 'the better picture became the card file');
+  assert.equal(it.meta.mime, 'image/jpeg');
+  assert.equal(it.meta.ext, 'jpeg');
+  assert.equal(it.meta.source, RAW, 'the sensor file stays beside it for Optimize to drop');
+  assert.equal('preview' in it.meta, false, 'the file is the picture; there is no stand-in left');
+  assert.equal(it.meta.thumb, DEV_THUMB);
+  assert.equal(isRaw(it), true, 'the row still offers a fuller develop');
+  undo();
+  it = byId('r');
+  assert.equal(it.asset.hash, WEBP);
+  assert.equal(it.meta.ext, 'webp');
+  assert.equal(it.meta.source, RAW);
+});
+
 test('Demosaic refuses anything that is not a picture it can point at', () => {
-  setItemDemosaiced('r', { preview: 'not a hash' });
+  setItemDemosaiced('r', { picture: 'not a hash' });
   assert.equal(byId('r').meta.preview, PREVIEW);
 });
 

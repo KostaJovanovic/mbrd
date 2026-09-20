@@ -6,9 +6,9 @@
 // (heif-worker.js) answers everywhere and is what runs when it is. Null only
 // when both decline; the caller has the embedded-preview path behind this.
 
-import { surface, surfaceToBlob } from '../canvas/surface.ts';
+import { surface, surfaceToPhoto } from '../canvas/surface.ts';
 import type { Surface } from '../canvas/surface.ts';
-import { extOf } from '../util.ts';
+import { cameFrom } from '../util.ts';
 import { HEIC_EXTS } from './formats.ts';
 
 // Ceilings - "the file is lying" backstops, not refusals. Past any of them the
@@ -27,8 +27,11 @@ const MAX_ITEM_BYTES = 64 * 1024 * 1024;
  * to fit - the original file is kept either way, so nothing is lost. */
 const CANVAS_PIXELS = 4096 * 4096;
 
-/** JPEG because every engine decodes it, and Safari's canvas cannot write WebP. */
-const QUALITY = 0.92;
+/** WebP, at the quality a photograph survives being kept at. This picture is
+ *  the card's file rather than a stand-in behind one, so it is written once and
+ *  read forever - see surfaceToPhoto(), which answers JPEG where WebP is not
+ *  available. */
+const QUALITY = 0.9;
 
 /** Brands that mean "there is a HEVC still in here". `mif1` is the generic
  * image brand AVIF also carries, which is why the item type is checked too. */
@@ -80,8 +83,11 @@ export async function heifPicture(file: File): Promise<File | null> {
     const blob = await viaWebCodecs(file) ?? await viaLibheif(file);
     if (!blob) return null;
     // The original's stem, so a card that falls back to a filename still says
-    // something recognisable - the same reason nativePreview() does it.
-    return new File([blob], file.name.replace(/\.[^.]*$/, '') + '.jpg', { type: 'image/jpeg' });
+    // something recognisable - the same reason nativePreview() does it. The
+    // extension follows what the canvas actually wrote, which is WebP
+    // everywhere but Safari.
+    const ext = blob.type === 'image/webp' ? '.webp' : '.jpg';
+    return new File([blob], file.name.replace(/\.[^.]*$/, '') + ext, { type: blob.type });
   } catch {
     // A picture that throws is a picture we did not find.
     return null;
@@ -185,8 +191,7 @@ export function isHeic(it: {
   type?: string, name?: string, asset?: { hash?: string } | null, meta?: Record<string, unknown> | null,
 } | null | undefined): boolean {
   if (it?.type !== 'image' || !it.asset?.hash) return false;
-  const ext = typeof it.meta?.ext === 'string' && it.meta.ext ? it.meta.ext : extOf(it.name);
-  return HEIC_EXTS.has(ext.toLowerCase());
+  return HEIC_EXTS.has(cameFrom(it));
 }
 
 /**
@@ -606,8 +611,7 @@ async function draw(plan: Plan): Promise<Blob | null> {
     if (sheet.failed || !sheet.laid || sheet.drawn !== plan.tiles.length) return null;
     const { face } = sheet.laid;
     face.ctx.restore();
-    const blob = await surfaceToBlob(face, 'image/jpeg', QUALITY);
-    return blob?.size ? blob : null;
+    return await surfaceToPhoto(face, QUALITY);
   } catch {
     return null;
   } finally {

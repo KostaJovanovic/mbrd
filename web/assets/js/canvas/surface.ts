@@ -84,6 +84,26 @@ function probeReads(): boolean {
 }
 
 /**
+ * A photograph off this surface, as the smallest format the engine will write.
+ *
+ * WebP, or JPEG where the canvas will not write one - which is Safari, and
+ * which is why surfaceToBlob()'s own fallback is no use here: it answers PNG,
+ * and a full-resolution PNG of a twelve-megapixel photograph is forty megabytes
+ * where the WebP is one. The same two-step optimize/picture.ts takes, hoisted
+ * here because the decoders in import/heif.ts and optimize/demosaic.ts now
+ * write the picture a card actually keeps rather than a stand-in behind one.
+ */
+export async function surfaceToPhoto(
+  face: Surface,
+  quality: number,
+): Promise<Blob | null> {
+  const webp = await surfaceToBlob(face, 'image/webp', quality);
+  if (webp?.type.toLowerCase() === 'image/webp' && webp.size) return webp;
+  const jpeg = await surfaceToBlob(face, 'image/jpeg', quality);
+  return jpeg?.size ? jpeg : null;
+}
+
+/**
  * Encode the surface as bytes. Caller must check blob.type — Safari substitutes
  * PNG for WebP silently (toBlob), while convertToBlob rejects instead. The
  * try/catch unifies both: unsupported type falls back to PNG, the one format

@@ -109,6 +109,9 @@ type ItemMeta = {
   ext?: string,
   opt?: string[],
   demosaiced?: boolean,
+  // The .heic or the camera RAW this card's picture was decoded from at
+  // import (import/drop.ts). Never encoded and never kept - see planOptimize().
+  source?: string,
 };
 
 type ItemView = {
@@ -142,6 +145,7 @@ type Swap = {
   asset: string | undefined,
   cover: string | null | undefined,
   plain?: { ext: string, mime: string },
+  dropSource?: boolean,
 };
 
 /**
@@ -194,13 +198,21 @@ export function planOptimize(): Plan {
     // A camera RAW is developed and then shrunk like any photograph, and the
     // result replaces it. Its preview and display copy go with it, so they are
     // not jobs of their own.
-    const raw = isRaw(item) && !!getAsset(item.asset?.hash);
+    //
+    // Only where asset.hash is still the undecodable file, which is the shape
+    // boards written before the decoders carry. Since then a HEIC or a RAW
+    // imports with its *picture* at asset.hash and the original at
+    // meta.source (import/drop.ts), and that card is an ordinary photograph
+    // to everything here - it needs no decoder, and handing its WebP to
+    // demosaic() would be a failure dressed as a plan.
+    const stale = !item.meta?.source;
+    const raw = stale && isRaw(item) && !!getAsset(item.asset?.hash);
     // A HEIC is the same story with a different decoder, and it was the one
     // photograph the optimiser counted and then quietly left alone: its bytes
     // reach shrinkPicture(), createImageBitmap() refuses them, and null means
     // "leave it alone". The largest file on a phone's board, promised in the
     // dialog and never shrunk. See encodeOne().
-    const heif = !raw && isHeic(item) && !!getAsset(item.asset?.hash);
+    const heif = stale && !raw && isHeic(item) && !!getAsset(item.asset?.hash);
     const decoded = raw || heif;
     for (const hash of itemHashes(item)) {
       if (seen.has(hash)) continue;
@@ -208,6 +220,12 @@ export function planOptimize(): Plan {
       const ownHeif = heif && hash === item.asset?.hash;
       const own = ownRaw || ownHeif;
       if (decoded && !own && (hash === item.meta?.preview || hash === item.meta?.display)) continue;
+      // The .heic or the sensor a card's picture was decoded from. Never a job:
+      // no encoder here can read it, and it is not kept either - optimising is
+      // what throws it away. Counted in neither the promise nor the work; the
+      // saving it gives back is the whole of its own weight, and it comes off
+      // the next save rather than out of an encoder. See the swap below.
+      if (hash === item.meta?.source) continue;
       // A thumbnail is already the smallest this app knows how to make: a
       // hundred pixels of WebP at quality 0.5, cut by makeThumb(). Counting it
       // here would put a second entry on the dialog for every photograph on the
@@ -494,8 +512,17 @@ export async function runOptimize(
     const type = asset ? typeOf.get(asset) || '' : '';
     const plain = asset && (isRaw(item) || isHeic(item)) && type.startsWith('image/')
       ? { ext: type.slice('image/'.length), mime: type } : undefined;
-    if (asset !== undefined || cover !== undefined || itemHashes(item).some(h => looked.has(h))) {
-      swaps.push({ id: item.id, asset, cover, plain });
+    // The one original the optimiser throws away rather than keeps. Every other
+    // swap puts the old bytes under meta.was, where Undo and then "discard the
+    // originals" decide their fate; a .heic or a .dng behind a picture the card
+    // already draws is weight with nothing to come back for, and dropping it is
+    // most of what optimising such a board saves. Undo still restores the
+    // reference - it is on the step's before side like everything else - so the
+    // bytes go on the first save after that, not before.
+    const dropSource = typeof item.meta?.source === 'string' && !!item.meta.source;
+    if (asset !== undefined || cover !== undefined || dropSource
+      || itemHashes(item).some(h => looked.has(h))) {
+      swaps.push({ id: item.id, asset, cover, plain, dropSource });
     }
   }
   report.emptied = plan.empty.length;

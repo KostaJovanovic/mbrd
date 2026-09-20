@@ -262,7 +262,13 @@ export function playIntro(onDone: () => void, motion: boolean, onDark: () => voi
   root.addEventListener('transitionend', e => {
     if (e.target === root && e.propertyName === 'opacity') covered();
   });
-  later(covered, DARK_MS);
+  // Deliberately **not** one of `timers`: reveal() clears those, and a skip
+  // inside the first DARK_MS took this with it - after which onDark() never ran,
+  // the mess stayed at opacity 0 for the whole session and the star opened onto
+  // a board with nothing on it to clean. The wait is the mode's, not the
+  // intro's, and a skip does not excuse it. Cleared only by stop(), where the
+  // mode is going anyway.
+  const darkAt = setTimeout(covered, DARK_MS);
 
   // ---- the date ----
   let spinFrom = 0;
@@ -379,8 +385,10 @@ export function playIntro(onDone: () => void, motion: boolean, onDark: () => voi
     typed.textContent = text.slice(0, shown);
     if (shown >= partEnd()) { done(); return; }
     const ch = text[shown - 1]!;
-    // Every other letter, quietly: a voice, not a typewriter.
-    if (shown % 2 && ch !== ' ') cue('tap');
+    // Every other letter, quietly: a voice, not a typewriter. `say` and not
+    // `tap` - fifteen 5 kHz ticks a second is a cricket, and what this wants is
+    // the dull muted knock at the bottom of the palette. See CUES.
+    if (shown % 2 && ch !== ' ') cue('say', { volume: 0.55 });
     later(type, ch === '.' || ch === '?' || ch === '!' ? STOP_MS : ch === ',' ? COMMA_MS : CHAR_MS);
   }
 
@@ -441,6 +449,11 @@ export function playIntro(onDone: () => void, motion: boolean, onDark: () => voi
   function finish() {
     if (phase === 'gone') return;
     phase = 'gone';
+    // The mess is on the board before the board is handed over. The timer above
+    // has almost always seen to this long ago; a skip fast enough to beat it
+    // (motion off, where the black fades out in 450ms) must not open onto a
+    // clean board and land the dirt a moment later.
+    covered();
     root.remove();
     onDone();
   }
@@ -467,6 +480,7 @@ export function playIntro(onDone: () => void, motion: boolean, onDark: () => voi
     skip: reveal,
     stop() {
       phase = 'gone';
+      clearTimeout(darkAt);
       for (const t of timers) clearTimeout(t);
       timers.clear();
       cancelAnimationFrame(raf);

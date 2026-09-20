@@ -10,6 +10,7 @@ import {
   isLocked, snapshotGeom, applyGeom, commitGeom,
 } from '../state.ts';
 import { assetURL } from '../storage/assets.ts';
+import { shownHash } from '../board-model.ts';
 import { cutout, matteAvailable } from '../canvas/matte.ts';
 import { surface } from '../canvas/surface.ts';
 import { tickSlider } from './controls.ts';
@@ -208,7 +209,12 @@ export function canEditPicture(id: string): boolean {
   const it = byId(id);
   if (!it || it.type !== 'image' || !it.asset?.hash) return false;
   if (it.meta?.gif || String(it.meta?.ext || '').toLowerCase() === 'gif') return false;
-  return !!assetURL(it.asset.hash);
+  // shownHash(), not asset.hash: on a board written before the decoders, a
+  // .heic or a .dng sits at asset.hash with the picture at meta.preview, and
+  // reaching past that mounted the undecodable file itself - the darkroom
+  // opened on a photograph and showed nothing at all.
+  const shown = shownHash(it);
+  return !!shown && !!assetURL(shown);
 }
 
 /** Open the darkroom on one picture. */
@@ -229,8 +235,11 @@ export function openDarkroom(id: string) {
   cutoutRun++;
   // The *original*, not the display copy - the copy already has the crop/turn/
   // cutout applied, so editing against it would compose each new rectangle on
-  // top of the last with no way back to the full frame.
-  img!.src = (it.asset?.hash ? assetURL(it.asset.hash) : null) || '';
+  // top of the last with no way back to the full frame. Original still means
+  // the full-size picture and not the file: on an older board the file may be
+  // a .heic or a .dng no engine here will draw. See canEditPicture().
+  const shown = shownHash(it);
+  img!.src = (shown ? assetURL(shown) : null) || '';
   img!.alt = it.name || '';
   writeDials();
   writeRatio();

@@ -208,6 +208,12 @@ jobs:
           if-no-files-found: error
           # Installers and disk images are compressed already.
           compression-level: 0
+          # These live only long enough for publish to collect them, minutes
+          # later. The default is 90 days, and four apps a release at about
+          # 1.5 GB a time filled the account's artifact storage: every build
+          # after that failed on the upload, with the apps built and the
+          # release never published. One day is the shortest GitHub accepts.
+          retention-days: 1
 
   android:
     needs: version
@@ -311,12 +317,19 @@ jobs:
           path: out/mbrd-android-*.apk
           if-no-files-found: error
           compression-level: 0
+          # Thrown away a day later - see the desktop upload above.
+          retention-days: 1
 
   publish:
     needs: [version, desktop, android]
     # Off for a test build: the files stay on the run page only.
     if: ${{ inputs.publish }}
     runs-on: ubuntu-24.04
+    # contents for the source tag below; actions to delete old artifacts, which
+    # the top-level block does not grant and the last step needs.
+    permissions:
+      contents: write
+      actions: write
     steps:
       - name: Check for the token
         env:
@@ -391,3 +404,38 @@ jobs:
           else
             gh api "repos/${{ github.repository }}/git/refs" -f "ref=refs/tags/$tag" -f "sha=$GITHUB_SHA"
           fi
+
+      # Four apps is about 1.5 GB, and artifact storage is counted across the
+      # whole account. retention-days on each upload caps how long a set lives;
+      # this caps how many live at once, which is what a day of several
+      # releases needs. The storage filled once and every build after it failed
+      # on the upload - apps built, release never published - which is a
+      # confusing way to find out, because nothing in the build was wrong.
+      #
+      # The last two runs rather than the last one: re-running publish by hand
+      # on the previous release still finds its files. Runs on failure too, so
+      # a release that dies half way does not leave 1.5 GB behind.
+      #
+      # This prunes nothing for a test build, where publish does not run at
+      # all. retention-days is what covers that case.
+      - name: Keep only the last two runs' apps
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          live() {
+            gh api "repos/$REPO/actions/artifacts?per_page=100" --paginate \
+              --jq '.artifacts[] | select(.expired == false) | "\(.workflow_run.id) \(.id) \(.name)"'
+          }
+          keep=$(live | cut -d' ' -f1 | sort -run | head -2)
+          echo "keeping runs: $(echo $keep)"
+          live | while read -r run id name; do
+            if echo "$keep" | grep -qx "$run"; then
+              echo "keep  $name ($run)"
+            else
+              echo "drop  $name ($run)"
+              gh api -X DELETE "repos/$REPO/actions/artifacts/$id" >/dev/null
+            fi
+          done

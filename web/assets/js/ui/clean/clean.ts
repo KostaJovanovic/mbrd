@@ -1625,12 +1625,42 @@ function dragPan(e: PointerEvent) {
   last = { x: e.clientX, y: e.clientY };
 }
 
-/** The jet's hiss and the duster's brush. The glove is silent while it works -
- *  a hand is. */
-const SOUND: Partial<Record<ToolId, { filterType: BiquadFilterType, filterFrequency: number, filterQ: number, gain: number }>> = {
-  washer: { filterType: 'highpass', filterFrequency: 2400, filterQ: 0.5, gain: 0.16 },
-  duster: { filterType: 'bandpass', filterFrequency: 3400, filterQ: 0.7, gain: 0.06 },
+/**
+ * A bed of filtered noise per tool, held while the hand is working. One biquad
+ * each - that is all `sustain()` offers - so the filter *type* is the whole of
+ * the tone, and the choice that matters is how much of the top of the band it
+ * lets through.
+ *
+ * **All three are bandpass or lowpass, and none is a highpass, because a
+ * highpass has no top.** The jet was `highpass 2400`, which on white noise is
+ * every frequency from 2.4 kHz to the edge of hearing at full strength - two
+ * octaves of sibilance, sitting exactly where the ear is most sensitive and
+ * least forgiving. It read as a hiss because it *was* one. A bandpass an octave
+ * lower is the same jet with the top taken off it: water, not steam.
+ *
+ * The gains look large against what they replaced and are not. A single biquad
+ * keeps only its own bandwidth out of the whole band, so narrowing a filter
+ * throws power away faster than it lowers the pitch - see densityOf() in
+ * cuelume/recipes.ts, which is the same arithmetic. These numbers hold the
+ * three beds at about the loudness the old two were, and the softening is all
+ * spectrum rather than level.
+ */
+const SOUND: Record<ToolId, { filterType: BiquadFilterType, filterFrequency: number, filterQ: number, gain: number }> = {
+  // The jet. Its centre is swept by the tank - see apply().
+  washer: { filterType: 'bandpass', filterFrequency: 1200, filterQ: 0.5, gain: 0.3 },
+  // Bristles over a strand. Air, and nothing above the air.
+  duster: { filterType: 'bandpass', filterFrequency: 1900, filterQ: 0.85, gain: 0.08 },
+  // Rubber dragging over card stock: low, dry and dull, with no edge on it at
+  // all. It is the one bed that is silent when the tool is over nothing - see
+  // apply(). A hand in the air makes no sound; a hand on a thing does.
+  glove: { filterType: 'lowpass', filterFrequency: 620, filterQ: 0.9, gain: 0.16 },
 };
+
+/** What the jet's bandpass is swept between, empty tank to full. The top of it
+ *  used to be 3300, which put the jet's centre in the sibilance it has just been
+ *  taken out of; a full tank now reads as pressure rather than as hiss. */
+const JET_LOW = 560;
+const JET_RANGE = 1350;
 
 /** What every tool but the washer answers to: its own reach, its own bite. */
 const ONE_SHAPE = { radius: 1, bite: 1 };
@@ -1676,14 +1706,17 @@ function apply(clientX: number, clientY: number, press: boolean) {
   // The hiss follows the work, which is what makes a tool on the wrong mess
   // sound like nothing rather than like cleaning. For the washer it follows the
   // tank as well, so an emptying one is heard softening before it is seen.
-  const spec = SOUND[tool];
-  if (spec && drawing) {
-    if (!hiss) hiss = sustain(spec);
+  if (drawing) {
+    if (!hiss) hiss = sustain(SOUND[tool]);
     if (tool === 'washer') {
       hiss.level(power * (worked > 0 ? 1 : 0.12));
-      hiss.tone(700 + power * 2600);
+      hiss.tone(JET_LOW + power * JET_RANGE);
     } else {
-      hiss.level(worked > 0 ? 1 : 0.12);
+      // The idle twelfth is the duster's alone. A brush moving through air is a
+      // thing you hear whether or not it has found a strand - but a glove off
+      // its work is a hand in the air, and the scuff is the rubber *on*
+      // something. Nothing, for the glove, is the right sound for nothing.
+      hiss.level(worked > 0 ? 1 : tool === 'duster' ? 0.12 : 0);
     }
   }
   if (worked) {
@@ -3835,6 +3868,12 @@ function showBar(want: boolean) {
   bar.hidden = !want;
   askLeave(false);
   el('clean-end')?.toggleAttribute('hidden', true);
+  // And the row of tools back on. finish() hides it to put Done in its place,
+  // and nothing else ever unhid it - so a second run of the mode, after any
+  // board had been finished, opened an empty tray: the bar there, the three
+  // tools gone, and no way to clean anything. The pair of lines belongs
+  // together, which is why it is here rather than in startClean().
+  el('clean-tools')?.toggleAttribute('hidden', false);
   for (const { id } of TOOLS) {
     const slot = slotFor(id);
     if (!slot) continue;

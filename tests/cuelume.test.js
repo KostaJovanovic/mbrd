@@ -3,7 +3,7 @@
 // Two halves. The **cue map**: a recipe name that doesn't exist resolves to
 // `undefined` and nothing happens, silently - the walk below runs both ways,
 // every cue reaches a recipe and every recipe is reached by a cue or recorded
-// in IDLE_SOUNDS as a spare (nine of seventeen now).
+// in IDLE_SOUNDS as a spare (ten of seventeen now).
 //
 // The **engine** is checked against a stub of Web Audio - what matters is not
 // what a sine sounds like but when this module refuses to make one: before a
@@ -69,7 +69,7 @@ test('the pairs are one recipe played both ways, not two similar noises', () => 
   }
 });
 
-test('isCue admits the eleven names and nothing off the prototype', () => {
+test('isCue admits the twelve names and nothing off the prototype', () => {
   for (const name of CUE_NAMES) assert.ok(isCue(name));
   for (const bad of ['toString', 'constructor', '__proto__', '', null, 7]) {
     assert.equal(isCue(bad), false, `isCue(${String(bad)})`);
