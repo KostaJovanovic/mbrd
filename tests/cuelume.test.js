@@ -633,6 +633,63 @@ test('a locked context queues nothing and plays nothing late', async t => {
   assert.deepEqual(cueLog().map(r => r.outcome), ['resumed']);
 });
 
+test('a resume that never settles is given up on, not carried for the page', async t => {
+  t.after(restoreGlobals);
+  const info = console.info;
+  console.info = () => {};
+  t.after(() => { console.info = info; setCueLog(false); });
+
+  // The shape the cleaning game found, and the worst failure this module has
+  // had. Its spa loop is an <audio> element; a media element taking the audio
+  // focus can leave the context suspended with a resume() the browser is in no
+  // hurry to keep. One cue held the shared wait, every cue behind it was handed
+  // the same promise, and because that promise never settled the callback that
+  // both renders the sound *and* records the entry never ran. The app went
+  // silent for the rest of the page - and the transcript said nothing at all,
+  // which is the one outcome it is supposed to be impossible to get: every other
+  // branch of render() says something. "A press that prints nothing never
+  // reached the engine" was, for this one bug, a lie.
+  let resumes = 0;
+  class NeverWakes extends StubContext {
+    constructor() { super(); this.state = 'suspended'; }
+    resume() { resumes++; return new Promise(() => {}); }
+  }
+
+  // Nothing here waits, so the clock never has to move - it is stubbed only
+  // because record() stamps every entry off it.
+  const clock = 0;
+  stubBrowser();
+  setGlobal('window', { AudioContext: NeverWakes });
+  setGlobal('performance', { now: () => clock });
+  initCuelume('2');
+  setCueLog(true);
+
+  // The deadline is a real timer, so the test owns it rather than waiting a
+  // second for it. Stubbed after initCuelume so only wake()'s own timer lands
+  // here: nothing else in this test gets far enough to arm one.
+  const pending = [];
+  setGlobal('setTimeout', fn => { pending.push(fn); return 0; });
+
+  cue('pick');
+  assert.equal(resumes, 1, 'the first cue asks the context to wake');
+  assert.equal(cueLog().length, 0,
+    'a resume still in flight has nothing to report yet - that silence is the trap');
+  assert.equal(pending.length, 1, 'nothing armed the deadline');
+
+  // Time passes. Nothing settled, and nothing ever will.
+  for (const fire of pending.splice(0)) fire();
+
+  cue('pick');
+  assert.equal(resumes, 2,
+    'the second press was handed the first press\'s dead promise - one hung '
+    + 'resume must not be the last word on whether this app can make a sound');
+
+  // And the shared wait is still shared *within* the deadline, which is the
+  // thing the give-up must not undo: seven presses in a row are one resume.
+  for (let i = 0; i < 5; i++) cue('pick');
+  assert.equal(resumes, 2, 'the give-up turned the shared wait back into a queue');
+});
+
 test('a browser with no Web Audio is silent rather than broken', t => {
   t.after(restoreGlobals);
   built = { contexts: 0, gains: [], oscillators: 0, limiters: 0, oscNodes: [], starts: [], offsets: [], buffers: 0 };

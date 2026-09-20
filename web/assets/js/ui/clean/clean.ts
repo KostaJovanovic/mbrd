@@ -638,8 +638,15 @@ export function startClean(): boolean {
   intro = playIntro(() => {
     intro = null;
     showBar(true);
-    startMusic();
+    // The cue before the music, and that order is load-bearing. An <audio>
+    // element starting can take the audio focus and leave the AudioContext
+    // suspended, so a cue fired in the same turn as `play()` is the one most
+    // likely to meet a context the browser has just taken over. wake() no longer
+    // pins itself when that happens (see WAKE_MS), but there is no reason to walk
+    // into it: the arrival belongs to the star opening, and the loop fades in
+    // over more than a second behind it.
     cue('arrive');
+    startMusic();
   }, quality.anim, showMess);
   return true;
 }

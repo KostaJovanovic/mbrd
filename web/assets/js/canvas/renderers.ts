@@ -338,8 +338,9 @@ export function defaultSize(type: string): Size {
     // Four grid spaces wide, a little over five tall. Portrait: three bands
     // stacked (pictures, pigments, faces) each want the card's full width.
     case 'style-tile': return { w: 256, h: 328 };
-    // The cleaning simulator's card, at the shape of its own face. Born only at
-    // the end of the mode (ui/clean/clean.ts); see canvas/spotless.ts.
+    // The cleaning simulator's card: four grid spaces by three, which its face
+    // is drawn to match. Born only at the end of the mode (ui/clean/clean.ts);
+    // see canvas/spotless.ts.
     case 'card':    return { ...SPOTLESS_SIZE };
     // A named card with room under the name for its one button, clear of the
     // caption plate at the foot. Three grid spaces tall.

@@ -6,14 +6,44 @@
 
 import type { Item } from '../board-model.ts';
 
-/** One frame of the two, and the room round the board inside it. The card's
- *  whole face is drawn to FACE_W x FACE_H and scales with the card. */
+/**
+ * One frame of the two, and the room round the board inside it. The card's whole
+ * face is drawn to FACE_W x FACE_H and scales with the card.
+ *
+ * **Changing these two numbers throws away the "before" on every card already
+ * made.** `meta.before` holds each dealt card's rectangle in *this* frame's
+ * coordinates, and spotlessRects() drops anything that does not fit inside it -
+ * so a frame that shrinks silently empties the left-hand picture on a card
+ * somebody kept. Which is why the face's shape is got out of TEXT_H below and not
+ * out of here: the card has been reshaped twice and the frame has not moved.
+ */
 export const SPOTLESS_FRAME = { w: 104, h: 78, pad: 7 } as const;
 
 const PAD = 12;
 const GAP = 8;
+
+/**
+ * The two lines under the frames: where each sits below them, and the room the
+ * block takes in all.
+ *
+ * TEXT_H is the one number here chosen for the *card* rather than for the type.
+ * The face is one SVG stretched over the card's box, so a viewBox of a different
+ * shape would be letterboxed inside it - bands of bare paper along two edges of
+ * a card whose whole job is to be looked at. The card is four grid spaces by
+ * three (SPOTLESS_SIZE), so the face has to be 4:3, and with the frame fixed at
+ * 104 x 78 and FACE_W therefore 240, that pins FACE_H at 180 and TEXT_H at 78.
+ *
+ * The two baselines are then spread through it rather than left where they were
+ * under a 58-unit block, which would have hung both lines at the top of it with
+ * forty units of nothing underneath.
+ */
+const SAID_Y = 34;
+const COUNT_Y = 58;
+const TEXT_H = 78;
+
+/** 240 x 180, which is 4:3 exactly. See TEXT_H. */
 const FACE_W = PAD * 2 + SPOTLESS_FRAME.w * 2 + GAP;
-const FACE_H = PAD + SPOTLESS_FRAME.h + 36 + 22 + PAD;
+const FACE_H = PAD + SPOTLESS_FRAME.h + TEXT_H + PAD;
 
 /** What was on the board, as it was dealt: where each card sat in a frame, and
  *  the colour of what was on it. */
@@ -110,9 +140,9 @@ export function buildSpotlessCard(item: Item): HTMLElement {
       face.append(box);
     }
   }
-  const said = el('text', { x: FACE_W / 2, y: PAD + SPOTLESS_FRAME.h + 30, class: 'spotless-said' });
+  const said = el('text', { x: FACE_W / 2, y: PAD + SPOTLESS_FRAME.h + SAID_Y, class: 'spotless-said' });
   said.textContent = words.said;
-  const counted = el('text', { x: FACE_W / 2, y: PAD + SPOTLESS_FRAME.h + 50, class: 'spotless-count' });
+  const counted = el('text', { x: FACE_W / 2, y: PAD + SPOTLESS_FRAME.h + COUNT_Y, class: 'spotless-count' });
   counted.textContent = cardsSaid(count);
   face.append(said, counted);
 
@@ -123,5 +153,13 @@ export function buildSpotlessCard(item: Item): HTMLElement {
   return card;
 }
 
-/** The card's box on the board: the face's own shape at a card's size. */
-export const SPOTLESS_SIZE = { w: 336, h: Math.round((336 * FACE_H) / FACE_W) };
+/**
+ * The card's box on the board: **four grid spaces by three** at the default
+ * step, the way every other size in defaultSize() is reckoned - so a snapped
+ * board lays the card where it already is rather than a quarter of a cell off.
+ * It was 336 x 224, which is five and a quarter cells by three and a half.
+ *
+ * Whole cells are what decide the face's shape rather than the other way round.
+ * See TEXT_H.
+ */
+export const SPOTLESS_SIZE = { w: 256, h: 192 };
