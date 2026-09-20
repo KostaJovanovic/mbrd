@@ -3900,8 +3900,13 @@ function tick() {
  * way it fills is a fact about the drawing rather than about the tank.
  */
 function paintGauge() {
-  if (!tankFill) return;
+  if (!tankFill || !cursor) return;
   const level = Math.round((held === 'washer' ? tank.level : 1) * 1000) / 1000;
+  // Full, with nothing pressing: the reading has nothing left to say and goes
+  // (clean.css fades it over 300ms, and only under a finger - see there).
+  // Outside the memo below, because the *trigger* is the trigger coming up and
+  // the level does not change again once it has reached the top.
+  cursor.classList.toggle('is-tank-full', held === 'washer' && !drawing && level >= 1);
   if (level === gaugeShown) return;
   gaugeShown = level;
   tankFill.style.setProperty('--clean-tank', level.toFixed(3));

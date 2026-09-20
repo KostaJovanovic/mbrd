@@ -683,6 +683,24 @@
   transform-origin: 0 50%;
 }
 
+/* Full, with the finger off the glass: the bar goes.
+
+   Under a finger this is the only thing the mode draws on the board, and once
+   the tank has filled it is a bar hanging where a hand used to be, saying that
+   the washer is as ready as it was before anybody touched anything. So it waits
+   out the refill - which is the one thing it is there to show - and then fades.
+   Touch alone: beside a drawn tool the bar is part of the tool's own picture,
+   and a gun that keeps losing its gauge would read as the drawing flickering.
+
+   Out slowly and back at once: the return is the answer to a press, and an
+   answer 300ms late is a control that feels slow. Each direction takes its
+   duration from the state it is going *to*, which is why there are two. */
+.clean-cursor.is-touch .clean-tank { transition: opacity 90ms var(--clean-ease); }
+.clean-cursor.is-touch.is-tank-full .clean-tank {
+  opacity: 0;
+  transition: opacity 300ms var(--clean-ease);
+}
+
 /* There is no footprint ring. The tool's own drawing is where it bites, and a
    circle around it said the same thing twice while sitting between the hand and
    the grime it was there to reveal. */
