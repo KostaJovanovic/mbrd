@@ -1521,16 +1521,49 @@ test('a press between the mess moves the board', () => {
 
 test('what a session ends cannot reach into the next one', () => {
   const src = readFileSync(new URL('../web/assets/js/ui/clean/clean.ts', import.meta.url), 'utf8');
-  // An old track's error, fired by stopMusic() emptying its src, let go of
-  // whatever was playing - the next session's loop, which then never stopped.
-  assert.match(src, /const drop = \(\) => \{ if \(music === track\) music = null; \};/, 'an old track drops the new one');
-  assert.doesNotMatch(src, /catch\(\(\) => \{ music = null; \}\)/, 'a rejected play drops the new track');
+  // An old track's error, fired by emptying its src, let go of whatever was
+  // playing - the next session's music, which then never stopped. The guard is
+  // now the deck's identity rather than one element's, because the music plays
+  // on two elements that hand over; the bug it stops is the same one.
+  assert.match(src, /const drop = \(\) => \{ if \(deck === mine\) shed\(track\); \};/, 'an old track drops the new one');
+  assert.doesNotMatch(src, /catch\(\(\) => \{ deck = \[\]; \}\)/, 'a rejected play drops the new deck');
+  // Every listener and every fade that outlives its element checks the deck it
+  // was started for before it writes anything. A bare one is the same bug back.
+  for (const guarded of [/if \(deck !== mine\) return;/, /if \(deck === mine\) shed\(el\)/])
+    assert.match(src, guarded, 'a stale callback writes to the running session');
   // A board swapped under the mode ends it, without a card for the new board.
   assert.match(src, /bus\.on\('board:load', \(\) => \{\s*if \(!on\) return;\s*finishing = false;\s*stopClean\(\);/,
     'a board load leaves the mode up over the wrong board');
   // And nothing is dropped or pasted onto the board while it is being cleaned.
   assert.match(src, /for \(const type of \['dragenter', 'dragover', 'drop', 'paste'\]\) addEventListener\(type, refuse, true\);/,
     'drops and pastes land on a board being cleaned');
+});
+
+test('the music never loops, and comes back in past its own opening', () => {
+  const src = readFileSync(new URL('../web/assets/js/ui/clean/clean.ts', import.meta.url), 'utf8');
+  // `loop = true` played the track's ending - a decay into 1.08s of digital
+  // silence - and then restarted on the opening figure at full level. Both are
+  // in the file and neither can be fixed in it: a file has no loop point. So
+  // the mode hands over between two elements instead, and the day somebody
+  // writes `loop` again is the day the second of silence comes back.
+  assert.doesNotMatch(src, /\.loop\s*=/, 'the music is looping again - it cannot, see LOOP_START');
+  const num = name => Number(new RegExp(`const ${name} = ([\\d.]+);`).exec(src)?.[1]);
+  const start = num('LOOP_START');
+  const end = num('LOOP_END');
+  const cross = num('CROSS_MS');
+  // Past the opening, which is what "heard once" means. A zero here is the
+  // whole bug back, and it is one character away at all times.
+  assert.ok(start > 0, 'LOOP_START is at the top of the file - the opening figure repeats');
+  // Before the decay at ~134s, and so before the silence that follows it.
+  assert.ok(end > start && end <= 134, `LOOP_END ${end} reaches the track's ending`);
+  // The join has to be wide enough that the frame clock's aim cannot be heard
+  // inside it. A handover timed to tens of milliseconds under a fade measured
+  // in seconds is inaudible; shorten this and the timing starts to show.
+  assert.ok(cross >= 1000, `a ${cross}ms crossfade is short enough to hear the handover land`);
+  // Equal power, not linear: the two ends are different music, so a linear pair
+  // sags 3dB through the middle of every handover.
+  assert.match(src, /Math\.cos\(\(t \* Math\.PI\) \/ 2\)/, 'the handover is not equal-power');
+  assert.match(src, /Math\.sin\(\(t \* Math\.PI\) \/ 2\)/, 'the handover is not equal-power');
 });
 
 test('a check is a moment, not a standing state', () => {

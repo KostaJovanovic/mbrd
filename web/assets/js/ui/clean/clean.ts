@@ -42,6 +42,39 @@ const MUSIC = 'assets/audio/clean-loop.opus';
 const MUSIC_GAIN = 0.55;
 const FADE_MS = 1400;
 
+/**
+ * Where the loop turns over, in seconds into the file - and it is not a loop.
+ *
+ * The file is a piece of music, not a bed: it opens on a figure louder than
+ * anything else in it (its first note is the track's loudest single event) and
+ * it *ends* - a decay from about 134s, and then 1.08 seconds of digital silence
+ * before the last byte. `loop = true` played every bit of that, so the seam was
+ * a second of nothing and then the opening hit at full level, every 2:19.
+ *
+ * So nothing here ever loops. Two elements hand over: the one playing is let go
+ * at LOOP_END, which is before the decay and well before the silence, while a
+ * second comes in at LOOP_START, which is past the opening figure. The figure is
+ * heard once, on the way in, and what repeats is the bed underneath it.
+ *
+ * A crossfade rather than a butt join, because an <audio> element cannot be
+ * scheduled: a handover driven off the frame clock lands within a few tens of
+ * milliseconds of where it was aimed, and CROSS_MS is two orders of magnitude
+ * larger than that error. Being unable to hear the timing is the whole reason
+ * this shape works where `loop` did not - it is not a workaround for the gap,
+ * it is a join wide enough that the gap cannot be found inside it.
+ *
+ * All three are numbers about one particular file. A different loop is a
+ * different three, found the way these were: by looking at where its level
+ * falls away and where its opening lets go.
+ */
+const LOOP_START = 3.9;
+const LOOP_END = 133.5;
+const CROSS_MS = 3000;
+
+/** An element and its share of the handover, 0..1. Two are on the deck only
+ *  while one is in flight; the rest of the time the share is 1. */
+type Deck = { el: HTMLAudioElement, share: number };
+
 /** The one ease and the four durations the whole mode moves on. Written here
  *  as well as in clean.css because the Web Animations calls below need them as
  *  values; the two are the same numbers on purpose. */
@@ -391,7 +424,22 @@ let handSpeed = 0;
  *  clock rather than per pointer event: a coalesced batch of moves arrives at
  *  one timestamp and the speed read off it is nonsense. */
 let speedFrom = { x: 0, y: 0 };
-let music: HTMLAudioElement | null = null;
+/** The elements this session's music is playing on, oldest first - two only
+ *  while a handover is in flight. The **array's identity is the session**: a
+ *  fade left running from the last one checks it before it writes a volume,
+ *  which is the job `music === track` used to do for one element. */
+let deck: Deck[] = [];
+/** The next element, seeked to LOOP_START and waiting. Made long before it is
+ *  wanted on purpose - a fresh element has to fetch, decode and seek, and a
+ *  handover that has to wait for that is the gap this shape exists to remove. */
+let parked: HTMLAudioElement | null = null;
+/** The session's music level, 0..MUSIC_GAIN. An element's volume is this times
+ *  its own share of the handover, so fadeMusic() and the crossfade never fight
+ *  over one `.volume` - they write different halves of the same product. */
+let musicGain = 0;
+/** When the handover in flight began. 0 when none is. */
+let crossAt = 0;
+let musicRaf = 0;
 let hiss: Sustain | null = null;
 let raf = 0;
 let finishing = false;
@@ -4092,47 +4140,141 @@ function dealCard() {
 
 // ---- music and media ----------------------------------------------------
 
+/** Every element on the deck, at the session's level times its own share. The
+ *  one place a music volume is written, so the two things that move it cannot
+ *  overwrite one another. */
+function levelDeck() {
+  for (const d of deck) d.el.volume = Math.max(0, Math.min(1, musicGain * d.share));
+}
+
+/** Let one go, wherever it is. Emptying the src is what actually frees the
+ *  decoder, and it fires `error` - which is why every listener below checks the
+ *  deck it belongs to before acting. */
+function shed(el: HTMLAudioElement) {
+  const at = deck.findIndex(d => d.el === el);
+  if (at >= 0) deck.splice(at, 1);
+  el.pause();
+  el.src = '';
+}
+
 function startMusic() {
+  deck = [];
+  parked = null;
+  musicGain = 0;
+  crossAt = 0;
+  const mine = deck;
   const track = new Audio(MUSIC);
-  music = track;
-  track.loop = true;
   track.volume = 0;
+  deck.push({ el: track, share: 1 });
   // A missing file is the ordinary case in a fresh clone - the loop is not in
   // the repository. Silence is the right failure, and not a console full of it.
   //
-  // Both let go of *this* element only. stopMusic() empties a finished track's
-  // src, which fires `error` on it and rejects a play() still pending - and if
-  // a new session has started by then, a bare `music = null` dropped the new
-  // session's loop, which stopClean() could then never stop.
-  const drop = () => { if (music === track) music = null; };
+  // Both let go of *this* session's deck only. shed() empties a finished
+  // element's src, which fires `error` on it and rejects a play() still pending
+  // - and if a new session has started by then, touching `deck` unguarded would
+  // drop the new session's music, which stopClean() could then never stop.
+  const drop = () => { if (deck === mine) shed(track); };
   track.addEventListener('error', drop, { once: true });
-  void track.play().then(() => fadeMusic(MUSIC_GAIN)).catch(drop);
+  void track.play().then(() => {
+    if (deck !== mine) return;
+    fadeMusic(MUSIC_GAIN);
+    // Parked now, with the whole of the track's run to get ready in.
+    park();
+    musicRaf = requestAnimationFrame(watchMusic);
+  }).catch(drop);
+}
+
+/**
+ * Build the element that will come in next and seek it to LOOP_START.
+ *
+ * The seek has to wait for the metadata: set before it is in, `currentTime` is
+ * dropped on the floor and the element would come in at 0 - on the opening
+ * figure, which is the one thing this is all for.
+ */
+function park() {
+  if (parked) return;
+  const mine = deck;
+  const el = new Audio(MUSIC);
+  el.volume = 0;
+  el.preload = 'auto';
+  el.addEventListener('loadedmetadata', () => {
+    if (deck === mine) el.currentTime = LOOP_START;
+  }, { once: true });
+  el.addEventListener('error', () => { if (parked === el) parked = null; }, { once: true });
+  parked = el;
+}
+
+/** Whether the parked element can come in this instant: seeked to where it is
+ *  wanted and with enough buffered to keep playing. Anything less and the
+ *  handover waits - the track has four seconds of decay after LOOP_END to spare,
+ *  which is far more slack than a cached second element ever needs. */
+const primed = (el: HTMLAudioElement) =>
+  el.readyState >= 3 && Math.abs(el.currentTime - LOOP_START) < 0.5;
+
+/** The frame clock for the music, and the only thing that starts a handover. */
+function watchMusic() {
+  musicRaf = 0;
+  const lead = deck[deck.length - 1];
+  if (!lead) return;
+  const now = performance.now();
+  if (deck.length > 1) {
+    const t = Math.min(1, (now - crossAt) / CROSS_MS);
+    // Equal power. The two ends are different music, so their sum is
+    // uncorrelated and a linear pair would dip by 3dB in the middle of every
+    // handover - a sag once a couple of minutes, which is audible precisely
+    // because nothing else in the bed moves.
+    deck[0]!.share = Math.cos((t * Math.PI) / 2);
+    lead.share = Math.sin((t * Math.PI) / 2);
+    levelDeck();
+    if (t >= 1) shed(deck[0]!.el);
+  } else if (lead.el.currentTime >= LOOP_END && parked && primed(parked)) {
+    const el = parked;
+    parked = null;
+    const mine = deck;
+    deck.push({ el, share: 0 });
+    crossAt = now;
+    levelDeck();
+    el.addEventListener('error', () => { if (deck === mine) shed(el); }, { once: true });
+    void el.play().catch(() => { if (deck === mine) shed(el); });
+    // The one after this, with another two minutes to get ready in.
+    park();
+  }
+  musicRaf = requestAnimationFrame(watchMusic);
 }
 
 function stopMusic() {
-  const going = music;
-  music = null;
-  if (!going) return;
-  const from = going.volume;
+  const going = deck;
+  // A new session gets a fresh array, so the fade below - and any fadeMusic()
+  // still stepping - stops writing to elements this one no longer owns.
+  deck = [];
+  parked = null;
+  crossAt = 0;
+  cancelAnimationFrame(musicRaf);
+  musicRaf = 0;
+  const from = musicGain;
+  musicGain = 0;
+  if (!going.length) return;
   const when = performance.now();
   const step = () => {
     const t = Math.min(1, (performance.now() - when) / FADE_MS);
-    going.volume = Math.max(0, from * (1 - t));
+    for (const d of going) d.el.volume = Math.max(0, from * (1 - t) * d.share);
     if (t < 1) requestAnimationFrame(step);
-    else { going.pause(); going.src = ''; }
+    else for (const d of going) { d.el.pause(); d.el.src = ''; }
   };
   step();
 }
 
 function fadeMusic(to: number) {
-  const going = music;
-  if (!going) return;
-  const from = going.volume;
+  const mine = deck;
+  if (!mine.length) return;
+  const from = musicGain;
   const when = performance.now();
   const step = () => {
-    if (music !== going) return;
+    // The deck this fade was started for. A new session has its own.
+    if (deck !== mine) return;
     const t = Math.min(1, (performance.now() - when) / FADE_MS);
-    going.volume = Math.max(0, Math.min(1, from + (to - from) * t));
+    musicGain = from + (to - from) * t;
+    levelDeck();
     if (t < 1) requestAnimationFrame(step);
   };
   step();
@@ -4143,8 +4285,11 @@ function fadeMusic(to: number) {
 let paused: HTMLMediaElement[] = [];
 
 function pauseMedia() {
+  // Ours are never in the list. They are not in the document either, but a
+  // parked element is playing nothing yet and a shed one is already paused, so
+  // the deck is the check that reads as what it means.
   paused = [...document.querySelectorAll<HTMLMediaElement>('video, audio')]
-    .filter(m => !m.paused && m !== music);
+    .filter(m => !m.paused && !deck.some(d => d.el === m));
   for (const m of paused) m.pause();
 }
 
