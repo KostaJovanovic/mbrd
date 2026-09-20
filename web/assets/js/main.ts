@@ -290,7 +290,8 @@ initDrawer(vp);
 // After initAudio() so the slider shows the stored volume.
 initNowPlaying();
 // After the player — CSS sibling combinator requires this DOM order.
-initTimeline();
+// Takes cmds: Play frames the board after every step it draws.
+initTimeline(cmds);
 initDrop(vp);
 // Unzip and Open on a card. Injected: canvas/ may not reach import/.
 setUnpack(id => { void unpackItem(id); });

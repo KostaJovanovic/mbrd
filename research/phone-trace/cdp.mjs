@@ -100,7 +100,10 @@ const evaluate = (s, expression, awaitPromise = true) =>
 
 const [cmd, arg] = process.argv.slice(2);
 const s = await session();
-if (cmd === 'eval') {
+if (cmd === 'evalfile') {
+  const { readFileSync } = await import('node:fs');
+  console.log(JSON.stringify(await evaluate(s, readFileSync(arg, 'utf8'))));
+} else if (cmd === 'eval') {
   console.log(JSON.stringify(await evaluate(s, arg), null, 2));
 } else if (cmd === 'zoomloop') {
   // The zoom driven from inside the page: one viewTo per frame, no USB round

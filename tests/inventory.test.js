@@ -1,8 +1,12 @@
 // Tests boardInventory(), the arithmetic over the item list and asset store
 // behind the inventory sheet (DOM, untested here). Two rules must hold: sizes
 // come from stored blob size, never a re-decode that would stall a heavy
-// board; and the reference union (live items + bin) matches packBoard()'s,
-// or an orphan report starts calling live assets rubbish.
+// board; and the reference union (live items + drawer + Timeline) matches
+// packBoard()'s, or an orphan report starts calling live assets rubbish.
+//
+// The sheet also splits that union three ways, and the arithmetic only reads
+// as an explanation while the three holders and the orphans add up to every
+// stored file - hence the sum check below.
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -78,6 +82,30 @@ test('a binned card still owns its bytes', () => {
   const inv = boardInventory();
   assert.equal(inv.orphans.count, 0, 'a binned card is not an orphan');
   assert.equal(inv.binned, 1);
+});
+
+test('every file is counted under the one holder keeping it alive', () => {
+  // What the sheet's "70 on the field, 26 held by the Timeline" line is built
+  // on. A file claimed twice - on the field and inside a Timeline step - must
+  // be counted once, under the stronger claim, or the split adds up to more
+  // files than the board has.
+  asset('a'.repeat(64), 500, 'field.png');
+  asset('b'.repeat(64), 400, 'drawer.png');
+  asset('z'.repeat(64), 300, 'stray.png');
+  const [, binned] = addItems([
+    photo({ asset: { hash: 'a'.repeat(64) } }),
+    photo({ asset: { hash: 'b'.repeat(64) } }),
+  ]);
+  removeItems([binned.id]);
+  const inv = boardInventory();
+  assert.equal(inv.held.field, 1);
+  assert.equal(inv.held.drawer, 1, 'a binned card holds its file in the drawer, not the Timeline');
+  assert.equal(inv.orphans.count, 1);
+  assert.equal(
+    inv.held.field + inv.held.drawer + inv.held.timeline + inv.orphans.count,
+    inv.assets,
+    'the three holders and the orphans must add up to every stored file',
+  );
 });
 
 test('an asset no card claims is reported as unused', () => {

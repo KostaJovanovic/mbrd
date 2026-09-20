@@ -269,7 +269,24 @@ const webFiles: FilesPort = {
       download(blob, ref.name);
       return;
     }
-    const writable = await handle.createWritable();
+    // A picker that opens is not a promise that the file can be written.
+    // Samsung Internet on Android answers showSaveFilePicker, hands back a real
+    // handle, and creates the file - then refuses createWritable() with "not
+    // allowed by the user agent or the platform in the current context". What
+    // the export left behind was a zero-byte file in Downloads, an error toast
+    // and no board. The download below is the same answer this port already
+    // gives a browser with no picker at all, so the save lands either way.
+    //
+    // Only around createWritable(), which throws before anything is written. A
+    // failure part-way through the stream has already touched the file, and
+    // quietly writing a second copy beside a half-written one would hide it.
+    let writable;
+    try {
+      writable = await handle.createWritable();
+    } catch {
+      download(blob, ref.name);
+      return;
+    }
     // pipeTo streams chunks rather than buffering; it closes the destination.
     await blob.stream().pipeTo(writable);
   },
