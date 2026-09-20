@@ -8,6 +8,7 @@ import { bus, board, timelinePlaying, addItems } from '../../state.ts';
 import type { Item } from '../../board-model.ts';
 import type { Viewport } from '../../canvas/viewport.ts';
 import { tiltOf, nodeFor, setCleanPlay } from '../../canvas/items.ts';
+import { capturePointerSafely, releasePointerSafely } from '../../canvas/input.ts';
 import { defaultSize } from '../../canvas/renderers.ts';
 import { buildSpotlessCard, SPOTLESS_FRAME } from '../../canvas/spotless.ts';
 import { captureStills } from '../../canvas/stills.ts';
@@ -558,6 +559,8 @@ function later(fn: () => void, ms: number) {
 /** Whether the egg is up. canvas/input.ts asks before it does anything else. */
 export const cleanActive = () => on;
 
+
+
 /** Handed the camera at boot, the way initItems() is. The dirt goes into the
  *  same #world the cards are in, so pan and zoom carry it for free. */
 export function initClean(viewport: Viewport) {
@@ -582,6 +585,12 @@ export function initClean(viewport: Viewport) {
     if (e instanceof DragEvent && e.dataTransfer) e.dataTransfer.dropEffect = 'none';
   };
   for (const type of ['dragenter', 'dragover', 'drop', 'paste']) addEventListener(type, refuse, true);
+  // Every release, wherever it lands - see liftPointer(). Here with the other
+  // page-level listeners rather than in bindPointer(), because the glass is made
+  // fresh for every session and a listener added per session is a listener per
+  // session for ever. It answers to nothing while the mode is down.
+  addEventListener('pointerup', liftPointer, true);
+  addEventListener('pointercancel', liftPointer, true);
   // No right-click menu anywhere while it is up - the board's, the bar's or
   // the browser's. The right button puts the tool down on the glass, and a menu
   // over a board somebody is cleaning is chrome this mode took away. Stopped
@@ -1364,8 +1373,10 @@ function showCursor(id: ToolId) {
   cursor.hidden = false;
   cursor.classList.remove('is-idle');
   // The whole page, not just the catcher: the tool follows the pointer over
-  // the bars too, and an arrow drawn on top of it there is two pointers.
-  document.documentElement.classList.add('is-clean-holding');
+  // the bars too, and an arrow drawn on top of it there is two pointers. Never
+  // under a finger, where there is no drawing to put in the cursor's place -
+  // see byTouch(), which keeps this in step if the hand changes.
+  document.documentElement.classList.toggle('is-clean-holding', !touching);
   paintLoad();
   if (touching) { moveCursor(at.x, at.y); return; }
   if (at.x < 0) {
@@ -1616,6 +1627,15 @@ function bindPointer(node: HTMLElement) {
     if (e.isPrimary) { fingers.clear(); pinch = null; endStroke(); }
     fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     pointers = fingers.size;
+    // Every pointer is captured, the second finger of a pinch included, and that
+    // is what keeps the map honest: **only a captured pointer is sure to bring
+    // its pointerup back here.** The second one used to be counted and not
+    // captured, and its release landed on #viewport - the glass's own parent,
+    // which an event targeted at cannot pass through - so the map kept a finger
+    // that was no longer on the screen and the session was left believing it was
+    // mid-pan. Through the helper, because `setPointerCapture` throws for a
+    // pointer that left between the event being queued and this running.
+    capturePointerSafely(node, e.pointerId);
     // Two fingers are the camera, not the tool. The stroke is abandoned and
     // both are steered here rather than handed down, because canvas/input.ts
     // never saw the first one and cannot start a gesture from half of one.
@@ -1625,12 +1645,6 @@ function bindPointer(node: HTMLElement) {
     byTouch(e);
     // The right button is the way out of the tool, not a second pan. Nothing
     // else in the app opens a menu here, so there is nothing to lose.
-    //
-    // Captured first all the same: `pointers` has been counted, and only a
-    // captured pointer is sure to bring its pointerup back here. Released over
-    // the bar, it never came, and every press after it counted as a second
-    // finger.
-    node.setPointerCapture(e.pointerId);
     if (e.button === 2) { putDown(); return; }
     last = { x: e.clientX, y: e.clientY };
     moveCursor(e.clientX, e.clientY);
@@ -1664,39 +1678,68 @@ function bindPointer(node: HTMLElement) {
     for (const p of events) strokeTo(p.clientX, p.clientY);
   });
 
-  const up = (e: PointerEvent) => {
-    fingers.delete(e.pointerId);
-    pointers = fingers.size;
-    // The pair it was measured against is gone, whichever finger left: carrying
-    // that span forward would jump the zoom by the difference on the next move.
-    pinch = null;
-    // One finger left of a pinch carries on as a pan, the way canvas/input.ts
-    // hands its own pinch over. It made no press of its own, so there is nothing
-    // to ask what it meant, and a finger still on the glass that moves the board
-    // nowhere reads as the mode having let go.
-    if (pointers === 1) {
-      const [p] = [...fingers.values()];
-      last = p ? { x: p.x, y: p.y } : null;
-      panning = true;
-      catcher?.classList.add('is-panning');
-    }
-    if (pointers === 0) { last = null; endStroke(); }
-    if (node.hasPointerCapture?.(e.pointerId)) node.releasePointerCapture(e.pointerId);
-  };
-  node.addEventListener('pointerup', up);
-  node.addEventListener('pointercancel', up);
-  // No context menu on the glass: see the capture listener in initClean().
+  // The release is not bound here: see liftPointer(), which the window carries.
+  // No context menu on the glass either - see the capture listener in initClean().
 }
 
 /**
- * A finger covers the thing it is working on, so on touch the drawing is moved
- * up and left of the point while the *reach ring stays on it* - the ring is
- * where the tool bites and moving that would be a lie. Set from the event
- * rather than from a media query: a touchscreen laptop is both.
+ * A pointer has left, wherever its release happened to land.
+ *
+ * **On the window and not on the glass**, which is the whole of what this
+ * function is for. An up does not reliably come back to the element that saw the
+ * down: the second finger of a pinch is released onto #viewport - the glass's
+ * own parent, which an event targeted there cannot pass through - with or
+ * without an explicit capture on it. Bound to the glass, this never ran for that
+ * finger, and the session was left holding a pointer that was no longer on the
+ * screen and believing it was mid-pan. The next press swept the map clean (see
+ * `isPrimary` in pointerdown), so nothing was visibly broken - but every
+ * question asked in between was answered about a hand that had gone.
+ *
+ * Only pointers this glass saw go down, so a press that began on the tray or the
+ * zoom cluster ends where it began and takes no gesture down with it.
+ */
+function liftPointer(e: PointerEvent) {
+  if (!on || !fingers.delete(e.pointerId)) return;
+  pointers = fingers.size;
+  // The pair it was measured against is gone, whichever finger left: carrying
+  // that span forward would jump the zoom by the difference on the next move.
+  pinch = null;
+  // One finger left of a pinch carries on as a pan, the way canvas/input.ts
+  // hands its own pinch over. It made no press of its own, so there is nothing
+  // to ask what it meant, and a finger still on the glass that moves the board
+  // nowhere reads as the mode having let go.
+  if (pointers === 1) {
+    const [p] = [...fingers.values()];
+    last = p ? { x: p.x, y: p.y } : null;
+    panning = true;
+    catcher?.classList.add('is-panning');
+  }
+  if (pointers === 0) { last = null; endStroke(); }
+  // Through canvas/input.ts's helper, because asking first is not enough:
+  // Firefox answers `hasPointerCapture` true and then refuses the release with
+  // InvalidPointerId, which threw out of this listener and put the app's error
+  // card on screen every time a press ended. The check and the release have to
+  // be one guarded operation, which is the whole of what that helper is.
+  releasePointerSafely(catcher, e.pointerId);
+}
+
+/**
+ * Which kind of hand is on the glass, read from the event rather than from a
+ * media query - a touchscreen laptop is both, and can change its mind inside a
+ * session. Everything that differs between the two is downstream of this: the
+ * tray's mark (markSlot), the gauge's shape (clean.css), and the page's own
+ * cursor.
+ *
+ * **The cursor is hidden only where a tool is drawn in its place.** Under a
+ * finger nothing is drawn, so `cursor: none` over the whole page took the
+ * pointer away and put nothing there - which is fine on a phone, where there is
+ * no pointer, and leaves a touchscreen laptop or a browser's touch simulation
+ * with no pointer at all.
  */
 function byTouch(e: PointerEvent) {
   touching = e.pointerType === 'touch';
   cursor?.classList.toggle('is-touch', touching);
+  if (held) document.documentElement.classList.toggle('is-clean-holding', !touching);
 }
 
 /**

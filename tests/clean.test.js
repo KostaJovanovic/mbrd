@@ -206,6 +206,51 @@ test('under a finger the tray is the tool, and nothing is drawn over the board',
     'a slot mark is named outside markSlot()');
 });
 
+test('a release is heard wherever it lands, not only on the glass', () => {
+  // Chrome sends the second finger of a pinch up onto #viewport - the glass's
+  // own parent, which an event targeted there cannot pass through - so a
+  // listener on the glass never ran for it and the session kept a finger that
+  // was no longer on the screen, believing itself mid-pan.
+  const wired = bodyOf('export function initClean(');
+  assert.match(wired, /addEventListener\('pointerup', liftPointer, true\)/,
+    'the release is bound to the glass again, or not at all');
+  assert.match(wired, /addEventListener\('pointercancel', liftPointer, true\)/,
+    'a cancelled gesture leaves its pointer in the map');
+  // Page-level and permanent, so it must answer to nothing while the mode is
+  // down and nothing that did not start on the glass.
+  const body = bodyOf('function liftPointer(');
+  assert.match(body, /if \(!on \|\| !fingers\.delete\(e\.pointerId\)\) return;/,
+    'the window listener acts on presses that were never the mode\'s');
+});
+
+test('the glass releases its pointers through the guarded helper', () => {
+  // Firefox answers hasPointerCapture() true and then refuses the release with
+  // InvalidPointerId, which threw out of the pointerup listener and put the
+  // app's error card on screen at the end of every press. The check and the
+  // release have to be one guarded operation, which is what canvas/input.ts's
+  // helper is - and the mode is not allowed its own second version.
+  assert.match(CLEAN_TS, /releasePointerSafely\(catcher, e\.pointerId\)/,
+    'the glass no longer releases through the helper');
+  assert.equal(/\.releasePointerCapture\(/.test(CLEAN_TS), false,
+    'a bare releasePointerCapture is back in clean.ts');
+  // Its partner, for the same race in the other direction: setPointerCapture
+  // throws for a pointer that left between the event being queued and this
+  // running, which used to take the whole press down with it.
+  assert.match(CLEAN_TS, /capturePointerSafely\(node, e\.pointerId\)/,
+    'the glass takes capture bare again');
+});
+
+test('the page keeps its cursor where no tool is drawn in its place', () => {
+  // `cursor: none` over the whole page is right while a tool is drawn under the
+  // pointer and wrong under a finger, where nothing is: a touchscreen laptop, or
+  // a browser simulating touch, was left with no pointer at all.
+  const both = bodyOf('function showCursor(') + bodyOf('function byTouch(');
+  assert.equal(/classList\.add\('is-clean-holding'\)/.test(both), false,
+    'the cursor is hidden unconditionally again');
+  assert.match(both, /toggle\('is-clean-holding', !touching\)/,
+    'nothing ties the hidden cursor to there being a drawing');
+});
+
 test('the zoom cluster is drawn by the mode and gated on the tray', () => {
   // The one piece of ordinary chrome the mode leaves standing, and it waits for
   // the star with the tray rather than standing alone over the black.
