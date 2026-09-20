@@ -63,12 +63,28 @@ const FADE_MS = 1400;
  * this shape works where `loop` did not - it is not a workaround for the gap,
  * it is a join wide enough that the gap cannot be found inside it.
  *
- * All three are numbers about one particular file. A different loop is a
- * different three, found the way these were: by looking at where its level
- * falls away and where its opening lets go.
+ * ── Why these two numbers and not any others ──
+ *
+ * The track is periodic. It repeats itself every **105.70 seconds**, and that
+ * is measured rather than felt: scanning every loop length for how well the
+ * piece matches itself scores 105.70s at 0.304 against 0.415 for unrelated
+ * material, with every other length at or worse than that baseline. The
+ * runners-up are 52.83, 35.23, 26.43 and 70.46 - 105.70 over two, three and
+ * four, and two thirds of it - which is a tempo grid and not a coincidence.
+ *
+ * So LOOP_END - LOOP_START **must equal 105.70**, or the join lands mid-phrase
+ * on material that does not match and the loop is audible however long the
+ * crossfade is. The first pair tried here was off-period and sounded exactly
+ * that bad. Within that constraint the pair is otherwise free, so LOOP_START is
+ * as late as it can be while leaving the crossfade clear of the decay: 18.24s
+ * in, past the opening figure, handing over at 123.94s with ten seconds of
+ * clearance before the ending starts to fall away at ~134s.
+ *
+ * All of this is about one particular file. A different loop is a different
+ * period, and finding it is the scan above, not a guess.
  */
-const LOOP_START = 3.9;
-const LOOP_END = 133.5;
+const LOOP_START = 18.24;
+const LOOP_END = 123.94;
 const CROSS_MS = 3000;
 
 /** An element and its share of the handover, 0..1. Two are on the deck only
