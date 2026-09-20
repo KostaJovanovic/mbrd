@@ -58,7 +58,7 @@
    These go the rest of the way. A new glass control joins this list. */
 :root[data-whimsy="0"] :is(#menu-btn, #mobile-header-edit-btn, #mobile-find-btn,
   #drawer-btn, #history-ctl, #zoom-ctl, #toolbar, #toolbar-tools,
-  .field .pigment-swatch, .drawer-title-back, .drawer-empty) {
+  .field .pigment-swatch, .drawer-special, .drawer-empty) {
   border-radius: var(--radius-pill);
 }
 
