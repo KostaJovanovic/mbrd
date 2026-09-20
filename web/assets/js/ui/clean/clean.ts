@@ -476,7 +476,19 @@ let messHidden = false;
 let cull: Set<string> | null = null;
 let drawing = false;
 let panning = false;
+/** Every pointer on the glass, at where it was last seen. `pointers` is this
+ *  map's size and nothing else writes it: the count was here on its own until
+ *  the pinch needed the two points as well, and one thing counted twice is two
+ *  things that disagree. */
+let fingers = new Map<number, { x: number, y: number }>();
 let pointers = 0;
+/** The two-finger gesture in flight: the span between the pair and where its
+ *  middle sat, as of the last move. Null while fewer than two are down. */
+let pinch: { dist: number, x: number, y: number } | null = null;
+/** Whether the hand on the glass is a finger. Read from the event rather than
+ *  from a media query - a touchscreen laptop is both - and it buys the larger
+ *  slack in grabSlack() as well as the offset drawing. */
+let touching = false;
 let last: { x: number, y: number } | null = null;
 let strokeAt: { x: number, y: number } | null = null;
 /** Distance still to walk before the next touch of the tool is laid, carried
@@ -737,7 +749,10 @@ export function stopClean(): boolean {
   // next run counted as a second finger, the left button panned, and nothing
   // could be cleaned again until the page was reloaded.
   endStroke();
+  fingers = new Map();
   pointers = 0;
+  pinch = null;
+  touching = false;
   last = null;
   spaceHeld = false;
   held = null;
@@ -1471,9 +1486,19 @@ export function cleanSpace(down: boolean) {
   cursor?.classList.toggle('is-faded', down);
 }
 
-/** How far off a piece or a crust the pointer may be and still be on it, in
- *  screen pixels: a finger's slack. */
+/**
+ * How far off a piece or a crust the pointer may be and still be on it, in
+ * screen pixels: a hand's slack.
+ *
+ * A finger gets more than twice a cursor's, because a fingertip covers some
+ * nine millimetres of screen where a cursor covers a pixel and the hand cannot
+ * see under itself. The number matters more here than it looks: a press that
+ * misses does not do nothing, it pans the board - so on a phone a slack too
+ * small reads as tools that cannot be used at all.
+ */
 const GRAB_SLACK = 10;
+const GRAB_SLACK_TOUCH = 22;
+const grabSlack = () => (touching ? GRAB_SLACK_TOUCH : GRAB_SLACK);
 
 /** How far from a piece's middle counts as on it, in world pixels at size 1.
  *  A leaf is about ten units of BIT_UNIT long, so this is half of one. */
@@ -1495,7 +1520,7 @@ const PIECE_HIT = 5 * BIT_UNIT;
 function underTool(clientX: number, clientY: number): boolean {
   if (!vp || !held) return false;
   const w = vp.toWorld(clientX, clientY);
-  const slack = GRAB_SLACK / vp.zoom;
+  const slack = grabSlack() / vp.zoom;
   // The duster keeps its reach: a strand is a hairline, and the gesture is a
   // sweep *across* it, which starts beside it. Webs are few and short, so the
   // board between cards is still free nearly everywhere.
@@ -1531,11 +1556,23 @@ function underTool(clientX: number, clientY: number): boolean {
 
 function bindPointer(node: HTMLElement) {
   node.addEventListener('pointerdown', e => {
-    pointers++;
+    // A primary press is the first of its gesture, which is proof that nothing
+    // else is down - so it is also the one chance to throw away a pointer whose
+    // up never came. One does go missing: the system takes a gesture away, a
+    // finger leaves over the browser's own chrome, the glass goes while a button
+    // is held. Left in the map, it made every later press a second finger, and
+    // the session could only ever pan again - the shape of bug the block of
+    // session state above was written for, arriving this time from outside.
+    // endStroke() with it, because a gesture outlives a lost pointer too: a
+    // `panning` left standing is read before `drawing` on every move below, so a
+    // press that means work would still have moved the board.
+    if (e.isPrimary) { fingers.clear(); pinch = null; endStroke(); }
+    fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    pointers = fingers.size;
     // Two fingers are the camera, not the tool. The stroke is abandoned and
     // both are steered here rather than handed down, because canvas/input.ts
     // never saw the first one and cannot start a gesture from half of one.
-    if (pointers > 1) { endStroke(); last = null; return; }
+    if (pointers > 1) { endStroke(); last = null; pinch = null; return; }
     e.stopPropagation();
     e.preventDefault();
     byTouch(e);
@@ -1560,9 +1597,14 @@ function bindPointer(node: HTMLElement) {
   });
 
   node.addEventListener('pointermove', e => {
+    // Only a pointer this glass saw go down: a mouse crossing the board with no
+    // button held is a move with nothing to put in the map, and a stale entry
+    // would be one half of a pinch that is not happening.
+    if (fingers.has(e.pointerId)) fingers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     byTouch(e);
     moveCursor(e.clientX, e.clientY);
-    if (pointers > 1 || panning) { dragPan(e); return; }
+    if (pointers > 1) { pinchTo(); return; }
+    if (panning) { dragPan(e); return; }
     e.stopPropagation();
     // With nothing held down the cursor still says whether this tool has
     // anything to do here.
@@ -1576,7 +1618,21 @@ function bindPointer(node: HTMLElement) {
   });
 
   const up = (e: PointerEvent) => {
-    pointers = Math.max(0, pointers - 1);
+    fingers.delete(e.pointerId);
+    pointers = fingers.size;
+    // The pair it was measured against is gone, whichever finger left: carrying
+    // that span forward would jump the zoom by the difference on the next move.
+    pinch = null;
+    // One finger left of a pinch carries on as a pan, the way canvas/input.ts
+    // hands its own pinch over. It made no press of its own, so there is nothing
+    // to ask what it meant, and a finger still on the glass that moves the board
+    // nowhere reads as the mode having let go.
+    if (pointers === 1) {
+      const [p] = [...fingers.values()];
+      last = p ? { x: p.x, y: p.y } : null;
+      panning = true;
+      catcher?.classList.add('is-panning');
+    }
     if (pointers === 0) { last = null; endStroke(); }
     if (node.hasPointerCapture?.(e.pointerId)) node.releasePointerCapture(e.pointerId);
   };
@@ -1592,7 +1648,38 @@ function bindPointer(node: HTMLElement) {
  * rather than from a media query: a touchscreen laptop is both.
  */
 function byTouch(e: PointerEvent) {
-  cursor?.classList.toggle('is-touch', e.pointerType === 'touch');
+  touching = e.pointerType === 'touch';
+  cursor?.classList.toggle('is-touch', touching);
+}
+
+/**
+ * Two fingers: the camera, both ways.
+ *
+ * A second finger used to mean a pan and nothing else, which on a phone left no
+ * way to zoom at all - there is no wheel, the digits are the tools', and the
+ * zoom cluster was hidden with the rest of the chrome. That is why the tools
+ * read as unusable there rather than as imprecise: everything is aimed at a
+ * board fitted to a small screen, a press that misses pans instead, and there
+ * was no way to make the target bigger. The pill (see showBar) is the other half
+ * of the answer; this is the gesture anybody tries first.
+ *
+ * The same two lines canvas/input.ts's pinch runs, and in the same order: the
+ * middle carries the board, the span carries the zoom. `zoomAt` refuses under a
+ * held zoom on its own, so the lock in the pill governs a pinch too.
+ */
+function pinchTo() {
+  if (!vp || fingers.size < 2) return;
+  const [a, b] = [...fingers.values()];
+  if (!a || !b) return;
+  const dist = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+  const x = (a.x + b.x) / 2;
+  const y = (a.y + b.y) / 2;
+  // The first move of a gesture only seats it: a ratio against nothing is a jump.
+  if (pinch) {
+    vp.panByScreen(x - pinch.x, y - pinch.y);
+    vp.zoomAt(x, y, dist / pinch.dist);
+  }
+  pinch = { dist, x, y };
 }
 
 /**
@@ -1681,10 +1768,14 @@ function settleWashed() {
 }
 
 /**
- * Move the board under the hand - an empty hand, a tool with nothing under it,
- * the middle button, a held Space, or two fingers. Not pinch-to-zoom:
- * Viewport.zoomAt() refuses on a mobile board, so a pinch would work on a
- * touchscreen laptop and silently do nothing on a phone. The wheel zooms.
+ * Move the board under one hand - an empty hand, a tool with nothing under it,
+ * the middle button, a held Space, or the finger left over from a pinch. Two
+ * fingers go to pinchTo() instead, which pans and zooms together.
+ *
+ * It was once written here that a pinch could not be offered because
+ * `Viewport.zoomAt()` refuses on a mobile board. It does, and it never comes up:
+ * `canOpen()` refuses to start the mode on one in the first place, so every board
+ * under this glass is a board the camera is free on.
  */
 function dragPan(e: PointerEvent) {
   if (!vp || !e.isPrimary) return;
@@ -3929,12 +4020,23 @@ function wireBar() {
   if (!bar) return;
   bar.addEventListener('click', onBarClick);
   // The tool follows the hand onto the bar, which is the only way to see it
-  // over the bin it is being emptied into.
-  bar.addEventListener('pointermove', e => { if (on && held) moveCursor(e.clientX, e.clientY); });
+  // over the bin it is being emptied into - and onto the zoom cluster, which the
+  // mode leaves standing (see showBar): with `cursor: none` over the whole page
+  // there is nothing else drawn there, so a tool that stopped at the glass's edge
+  // would read as the pointer having been lost.
+  for (const node of [bar, el('corner')])
+    node?.addEventListener('pointermove', e => { if (on && held) moveCursor(e.clientX, e.clientY); });
 }
 
 function showBar(want: boolean) {
   if (topBar) topBar.hidden = !want;
+  // The zoom cluster comes and goes with the tray, and clean.css is what puts it
+  // back on the glass. It is the one piece of ordinary chrome the mode leaves
+  // standing, because without it a phone has no way to zoom at all and the tools
+  // are aimed at whatever size the board was fitted to. It waits for the star
+  // with everything else: a control over the black would be the one thing on
+  // screen during the opening.
+  document.documentElement.classList.toggle('is-clean-chrome', want);
   if (!bar) return;
   bar.hidden = !want;
   askLeave(false);
