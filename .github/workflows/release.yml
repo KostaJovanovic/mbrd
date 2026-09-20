@@ -71,10 +71,47 @@ permissions:
 jobs:
   version:
     runs-on: ubuntu-24.04
+    # actions: write for the prune below, which the top-level block does not
+    # grant; contents: read is all the checkout needs.
+    permissions:
+      contents: read
+      actions: write
     outputs:
       version: ${{ steps.v.outputs.version }}
       label: ${{ steps.v.outputs.label }}
     steps:
+      # Artifact storage is counted across the whole account and one release is
+      # about 1.5 GB, so only one set may be live at a time. This runs BEFORE
+      # the builds on purpose. A prune that runs after them cannot recover the
+      # state it exists to prevent: storage full -> every upload fails -> the
+      # build jobs fail -> publish is skipped -> the prune never runs, and the
+      # next release finds the storage just as full. That deadlock cost the
+      # v0.422 and v0.423 releases, with nothing wrong in either build.
+      #
+      # Every OTHER run's artifacts, not the last two: at 1.5 GB a set, two
+      # kept sets plus this one is already over the quota. Nothing is lost by
+      # it - re-running a previous run's publish by hand re-runs no job here,
+      # and retention-days: 1 on each upload would have taken them within a day
+      # anyway. It is this run's own set that publish needs, and this step
+      # cannot see it yet.
+      - name: Make room for this run's apps
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$REPO/actions/artifacts?per_page=100" --paginate \
+            --jq '.artifacts[] | select(.expired == false) | "\(.workflow_run.id) \(.id) \(.name) \(.size_in_bytes)"' \
+            | while read -r run id name size; do
+            if [ "$run" = "$RUN" ]; then
+              echo "keep  $name ($run)"
+            else
+              echo "drop  $name ($run, $size bytes)"
+              gh api -X DELETE "repos/$REPO/actions/artifacts/$id" >/dev/null
+            fi
+          done
+
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
@@ -325,11 +362,11 @@ jobs:
     # Off for a test build: the files stay on the run page only.
     if: ${{ inputs.publish }}
     runs-on: ubuntu-24.04
-    # contents for the source tag below; actions to delete old artifacts, which
-    # the top-level block does not grant and the last step needs.
+    # contents for the source tag below. The artifacts are pruned by the
+    # version job, before the builds, which is the only place a prune survives
+    # a failed upload - see its comment.
     permissions:
       contents: write
-      actions: write
     steps:
       - name: Check for the token
         env:
@@ -404,38 +441,3 @@ jobs:
           else
             gh api "repos/${{ github.repository }}/git/refs" -f "ref=refs/tags/$tag" -f "sha=$GITHUB_SHA"
           fi
-
-      # Four apps is about 1.5 GB, and artifact storage is counted across the
-      # whole account. retention-days on each upload caps how long a set lives;
-      # this caps how many live at once, which is what a day of several
-      # releases needs. The storage filled once and every build after it failed
-      # on the upload - apps built, release never published - which is a
-      # confusing way to find out, because nothing in the build was wrong.
-      #
-      # The last two runs rather than the last one: re-running publish by hand
-      # on the previous release still finds its files. Runs on failure too, so
-      # a release that dies half way does not leave 1.5 GB behind.
-      #
-      # This prunes nothing for a test build, where publish does not run at
-      # all. retention-days is what covers that case.
-      - name: Keep only the last two runs' apps
-        if: always()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-          live() {
-            gh api "repos/$REPO/actions/artifacts?per_page=100" --paginate \
-              --jq '.artifacts[] | select(.expired == false) | "\(.workflow_run.id) \(.id) \(.name)"'
-          }
-          keep=$(live | cut -d' ' -f1 | sort -run | head -2)
-          echo "keeping runs: $(echo $keep)"
-          live | while read -r run id name; do
-            if echo "$keep" | grep -qx "$run"; then
-              echo "keep  $name ($run)"
-            else
-              echo "drop  $name ($run)"
-              gh api -X DELETE "repos/$REPO/actions/artifacts/$id" >/dev/null
-            fi
-          done
