@@ -179,6 +179,33 @@ test('two fingers zoom as well as pan', () => {
     'a second finger no longer reaches the pinch');
 });
 
+test('under a finger the tray is the tool, and nothing is drawn over the board', () => {
+  // The drawing used to be offset up and left of the finger so the hand would
+  // not cover it, which put the picture of the tool a centimetre from the place
+  // it bites. Now: no drawing at all, a lit slot instead of the emptied one, and
+  // the gauge lying flat above the point, because it is a reading and has to be
+  // somewhere.
+  const css = readFileSync(
+    fileURLToPath(new URL('../web/assets/css/clean.css', import.meta.url)), 'utf8');
+  assert.match(css, /\.clean-cursor\.is-touch svg \{ display: none; \}/,
+    'the tool is drawn under a finger again');
+  assert.match(css, /\.clean-cursor\.is-touch \.clean-tank \{[^}]*bottom:/,
+    'the gauge is not lifted above the finger');
+  assert.match(css, /\.clean-cursor\.is-touch \.clean-tank-fill \{[^}]*scaleX/,
+    'the flat gauge does not fill along its length');
+  assert.match(css, /#clean-bar button\.is-in-hand \{/, 'no slot mark for a tool held by a finger');
+  // The level is a number and the axis is the sheet's, or the flat gauge fills
+  // downwards. One writer, one property.
+  assert.match(bodyOf('function paintGauge('), /setProperty\('--clean-tank'/,
+    'the gauge writes a transform again, which fixes its axis in script');
+  // One writer for both marks, so a slot cannot be left wearing the other one
+  // when `touching` changes inside a session - which it can: a touchscreen
+  // laptop has a mouse too.
+  const elsewhere = CLEAN_TS.replace(bodyOf('function markSlot('), '');
+  assert.equal(/'is-out'|'is-in-hand'/.test(elsewhere), false,
+    'a slot mark is named outside markSlot()');
+});
+
 test('the zoom cluster is drawn by the mode and gated on the tray', () => {
   // The one piece of ordinary chrome the mode leaves standing, and it waits for
   // the star with the tray rather than standing alone over the black.

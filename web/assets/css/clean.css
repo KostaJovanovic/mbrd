@@ -566,11 +566,23 @@
   transition: transform var(--clean-travel) var(--clean-ease);
 }
 
-/* A finger covers the thing it is working on, so the drawing steps out from
-   under it. The point itself still bites where the finger is. */
-.clean-cursor.is-touch svg {
-  transform: translate(calc(var(--clean-tip-x, 0px) - 36px), calc(var(--clean-tip-y, 0px) - 36px));
-}
+/* Under a finger the tool is not drawn at all.
+
+   It used to be drawn offset up and left of the point so the hand would not
+   cover it, which put the picture of the tool a centimetre from the place it
+   bites - on a board where a press that lands off its mess pans instead of
+   working. Aiming by the drawing therefore missed, every time, and the tools read
+   as broken rather than as displaced. The tray says which tool is in hand (a lit
+   slot, .is-in-hand below) and the finger says where it is, which between them is
+   everything the drawing was carrying. The host stays - the washer's gauge is a
+   reading and has to be somewhere - and see showCursor() in clean.ts, which stops
+   flying it in and out. */
+.clean-cursor.is-touch svg { display: none; }
+
+/* And the two dimmings go with it: they dimmed a drawing, and all that is left
+   here is the gauge. A tank that fades because the tool is over nothing would be
+   a reading that comes and goes for a reason that has nothing to do with it. */
+.clean-cursor.is-touch:is(.is-idle, .is-faded) { opacity: 1; }
 
 /* A tool flying home is centred on its path, not hung from its tip. */
 .clean-cursor.is-ghost svg { transform: none; }
@@ -632,20 +644,43 @@
 /* The washer's own pigment, not a water blue: blue is a colour this app has no
    token for, and a level reads as a level in any colour. Scaled rather than
    sized, so the sixty writes a second it takes are the compositor's. */
+/* The level is one number written by paintGauge() (--clean-tank, 0..1) and the
+   axis it fills along is this sheet's, because the gauge stands upright beside a
+   cursor and lies flat above a finger. Filling up from the foot. */
 .clean-tank-fill {
   position: absolute;
   inset: 0;
   border-radius: 4px;
   background: var(--accent);
+  transform: scaleY(var(--clean-tank, 1));
   transform-origin: 50% 100%;
   transition: transform 120ms linear;
 }
 
-/* A finger covers the tool, so the drawing steps out from under it - and the
-   bar goes with the drawing, since it is the tool's reading and not the point's.
-   The same offset as the svg above. */
+/* Above the finger, and lying down.
+
+   Nothing else is drawn under a finger (see the svg rule above), so the gauge is
+   on its own and does not have to keep clear of a lance any more - which is what
+   put it out to the right. Above rather than beside: to the right of the point it
+   is under the hand of anybody right-handed and behind the wrist of anybody left-
+   handed, while above it is clear of both, and horizontal is the shape a reading
+   takes when it is not standing next to something. Far enough up to clear a
+   fingertip: the host is 64px and centred on the point, so its top edge is 32px
+   clear, and the 10px puts the bar at about 45. */
 .clean-cursor.is-touch .clean-tank {
-  translate: calc(var(--clean-tip-x, 0px) - 36px) calc(var(--clean-tip-y, 0px) - 36px);
+  left: 50%;
+  top: auto;
+  bottom: calc(100% + 10px);
+  width: 62px;
+  height: 9px;
+  margin: 0;
+  translate: -50% 0;
+}
+
+/* Filling from the left, which is the same gauge turned a quarter. */
+.clean-cursor.is-touch .clean-tank-fill {
+  transform: scaleX(var(--clean-tank, 1));
+  transform-origin: 0 50%;
 }
 
 /* There is no footprint ring. The tool's own drawing is where it bites, and a
@@ -1001,6 +1036,23 @@
   box-shadow: inset 0 1px 3px color-mix(in srgb, var(--ink) 14%, transparent);
 }
 
+/* The same tool in hand, under a finger: lit rather than emptied.
+
+   Nothing is drawn over the board there (.clean-cursor.is-touch above), so this
+   slot is the only picture of the tool and the outline .is-out leaves would be
+   saying it is nowhere. The selection is the app's own "something is in hand"
+   mark, the one .sticker-tile.is-armed wears for the same sentence, and it is
+   loud on purpose: on a touchscreen it is the only thing on screen that knows
+   which tool a press is about to use. */
+#clean-bar button.is-in-hand {
+  background: var(--select-fill);
+  box-shadow: inset 0 0 0 2px var(--select);
+}
+
+/* And the glyph keeps its colours and stands a little out of the tray, the way
+   the drawing used to stand off the board. */
+#clean-bar button.is-in-hand .ico { transform: translateY(-2px); }
+
 #clean-bar .ico { width: 42px; height: 42px; overflow: visible; }
 
 /* The count and the way out, in the top corner, away from the tray.
@@ -1315,27 +1367,49 @@
    Three things have to be undone to draw it. The opacity and pointer-events
    that rule sets. The z-index, because #corner sits at --z-chrome and the glass
    above it at --z-overlay would swallow every press aimed at it - which is the
-   bug #clean-bar's own block already records. And the corner it is pinned to:
-   on a phone mobile.css puts it at the top right, which in here is the count and
-   the way out.
+   bug #clean-bar's own block already records. And, on a phone, the corner it is
+   pinned to: mobile.css sends it to the *top* right there, which in here is the
+   count and the way out.
 
-   Top left on every width, rather than a desktop's corner and a phone's: it is
-   the one corner the mode claims nothing in, and a control that moves between
-   tiers is two placements to keep clear of the tray. Gated on .is-clean-chrome
-   and not .is-cleaning so it arrives with the tray when the star opens
-   (showBar() in clean.ts) - a zoom control over the black would otherwise be the
-   only thing on screen for the whole of the opening. */
+   So it stays in the bottom right on every width - the desktop pin, restated
+   from chrome.css - because that is where somebody who wants the zoom looks for
+   it, and a control that moves between tiers is two placements to keep clear of.
+   Gated on .is-clean-chrome and not .is-cleaning so it arrives with the tray when
+   the star opens (showBar() in clean.ts) - a zoom control over the black would
+   otherwise be the only thing on screen for the whole of the opening. */
 :root.is-cleaning.is-clean-chrome #corner {
   z-index: calc(var(--z-overlay) + 2);
-  top: max(14px, env(safe-area-inset-top));
-  bottom: auto;
-  left: max(14px, env(safe-area-inset-left));
-  right: auto;
-  align-items: flex-start;
+  top: auto;
+  /* No --dock in it, unlike chrome.css's own: the docked Timeline is one of the
+     things the mode hides, and canvas.css already gives the board that band back
+     while it is faded. Left in, the cluster floated a strip's height off the
+     bottom of a screen with no strip on it. The tray's own inset says the same. */
+  bottom: max(14px, env(safe-area-inset-bottom));
+  left: auto;
+  right: max(16px, env(safe-area-inset-right));
+  align-items: flex-end;
   opacity: 1;
   pointer-events: auto;
-  /* In from the edge it is pinned to, as #clean-top comes in from its own. */
-  animation: clean-top-in 520ms var(--clean-ease) both;
+  /* Up from the edge it is pinned to, as the tray comes up from its own. */
+  animation: clean-corner-in 520ms var(--clean-ease) both;
+}
+
+@keyframes clean-corner-in {
+  from { opacity: 0; translate: 0 12px; }
+}
+
+/* Above the tray rather than beside it, once the two would meet along the foot.
+
+   The cluster is about 250px and keeps 226 of inset and gap to its right; the
+   tray is up to 334 wide and centred on the window. They clear each other from
+   about 880px of window and not below it, and the tray is the one thing in the
+   mode that must not be reached over - so the cluster is what moves. 96px is the
+   tray at its tallest (86px here, 71 under the narrow breakpoint) plus a gap,
+   which leaves the shorter one more room and neither overlapping. */
+@media (width < 900px) {
+  :root.is-cleaning.is-clean-chrome #corner {
+    bottom: calc(max(14px, env(safe-area-inset-bottom)) + 96px);
+  }
 }
 
 /* The ruler and the coordinate readout are not the camera, and they are not
@@ -1368,15 +1442,11 @@
   /* The question and both answers have to fit beside the count on a phone. */
   #clean-confirm span { padding: 0 4px; font-size: 0.75rem; }
   #clean-confirm button { padding: 0 8px; font-size: 0.75rem; }
-  /* And the zoom pill goes to the row under them rather than beside them. Six
-     segments is about 270px and the count with its ✕ is about 110: they share
-     the top edge down to roughly 510px of window and collide below that. Pinned
-     under #clean-top rather than the other way round, so the way out stays in
-     the very corner it is in at every other width. 34px is #clean-count's own
-     min-height, 8px the gap the two rows keep. */
+  /* The cluster keeps the mode's own 10px inset at this width, as the count and
+     the tray do. It is already standing above the tray (the rule over 900px of
+     window, above) - this is only the side. */
   :root.is-cleaning.is-clean-chrome #corner {
-    top: calc(max(10px, env(safe-area-inset-top)) + 34px + 8px);
-    left: max(10px, env(safe-area-inset-left));
+    right: max(10px, env(safe-area-inset-right));
   }
 }
 
