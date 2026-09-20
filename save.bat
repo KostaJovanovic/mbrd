@@ -15,6 +15,13 @@ rem not part of a save. It has its own menu option, `portable` (:portableonly).
 set FORCE_MODE=0
 set COMMIT_ONLY=0
 set RELEASE_MODE=0
+rem Which systems a release builds, passed to the workflow as `systems`. Two by
+rem default, because those are the two this machine runs and a macOS minute
+rem bills at ten times a Linux one. `save.bat release all` and menu option 7
+rem ask for all four. The workflow's own default is `all`, and deliberately
+rem disagrees with this one: there it is only reached by a hand-started run
+rem from the Actions tab, where an incomplete release costs more than minutes.
+set "RELEASE_SYSTEMS=windows-android"
 set ACTION=%~1
 
 rem The branch that is actually checked out.
@@ -38,7 +45,10 @@ if /i "%ACTION%"=="--force"   (set "FORCE_MODE=1" & set "ACTION=save")
 if /i "%ACTION%"=="commit"    (set "COMMIT_ONLY=1" & set "ACTION=save")
 if /i "%ACTION%"=="--commit"  (set "COMMIT_ONLY=1" & set "ACTION=save")
 if /i "%ACTION%"=="--no-push" (set "COMMIT_ONLY=1" & set "ACTION=save")
+rem `save.bat release` builds the two; `save.bat release all` builds all four.
+rem %~2 is read here, at parse time, which is why it is safe inside the block.
 if /i "%ACTION%"=="release"   (set "RELEASE_MODE=1" & set "ACTION=save")
+if "%RELEASE_MODE%"=="1" if /i "%~2"=="all" (set "RELEASE_SYSTEMS=all")
 if /i "%ACTION%"=="save"   goto checkrepo
 if /i "%ACTION%"=="push"    goto push
 if /i "%ACTION%"=="pull"    goto pull
@@ -48,23 +58,31 @@ if /i "%ACTION%"=="portable" goto portableonly
 echo.
 echo === git ===
 echo.
-echo   1  release  add + commit + push, then build and publish the apps on GitHub
-echo   2  save     add + commit + push
-echo   3  commit   add + commit, no push
-echo   4  push     push current branch
-echo   5  pull     pull current branch
-echo   6  portable build desktop\portable\, no commit
-echo   7  quit
+echo   1  commit      add + commit, no push
+echo   2  save        add + commit + push
+echo   3  release     add + commit + push, then build Windows and Android
+echo   4  pull        pull current branch
+echo   5  push        push current branch
+echo   6  portable    build desktop\portable\, no commit
+echo   7  release-all the same as 3, with macOS and Linux as well
+echo   8  quit
 echo.
-set /p CHOICE=select [1-7]:
+set /p CHOICE=select [1-8]:
 rem Quoted, for the reason the lines above the menu give.
-if "%CHOICE%"=="1" (set "RELEASE_MODE=1" & goto checkrepo)
+rem
+rem 3 and 7 differ by one workflow input. A macOS minute bills at ten times a
+rem Linux one and a Windows minute at twice, so the two systems that are not
+rem run here cost more than the two that are: 3 starts no macOS or Linux
+rem runner at all. The release it publishes carries two files and says so, and
+rem a macOS or Linux copy sees a version it cannot download until the next 7.
+if "%CHOICE%"=="1" (set "COMMIT_ONLY=1" & goto checkrepo)
 if "%CHOICE%"=="2" goto checkrepo
-if "%CHOICE%"=="3" (set "COMMIT_ONLY=1" & goto checkrepo)
-if "%CHOICE%"=="4" goto push
-if "%CHOICE%"=="5" goto pull
+if "%CHOICE%"=="3" (set "RELEASE_MODE=1" & goto checkrepo)
+if "%CHOICE%"=="4" goto pull
+if "%CHOICE%"=="5" goto push
 if "%CHOICE%"=="6" goto portableonly
-if "%CHOICE%"=="7" exit /b 0
+if "%CHOICE%"=="7" (set "RELEASE_MODE=1" & set "RELEASE_SYSTEMS=all" & goto checkrepo)
+if "%CHOICE%"=="8" exit /b 0
 echo [err]  invalid choice
 goto menu
 
@@ -328,18 +346,23 @@ echo [git]  push skipped
 if "%RELEASE_MODE%"=="1" echo [warn] nothing was pushed, so no release was started
 goto end
 
-rem Option 1 (`release`): start the "Release apps" workflow once the push is in.
-rem It builds Windows, macOS and Linux on GitHub and publishes one release in
-rem the public KostaJovanovic/mbrd-release (.github/workflows/release.yml), with
-rem the branch just pushed. It needs the GitHub CLI, logged in. Non-fatal: the
+rem Options 3 and 7 (`release`, `release all`): start the "Release apps"
+rem workflow once the push is in. It builds the systems RELEASE_SYSTEMS names
+rem on GitHub and publishes one release in the public
+rem KostaJovanovic/mbrd-release (.github/workflows/release.yml), with the
+rem branch just pushed. It needs the GitHub CLI, logged in. Non-fatal: the
 rem commit and the push already happened, and the Actions tab can still start
 rem the workflow by hand.
 :runrelease
 where gh >nul 2>nul
 if errorlevel 1 goto releasenogh
 echo.
-echo [gh]   start Release apps for v%VERLABEL%
-gh workflow run release.yml -R KostaJovanovic/mbrd --ref %BRANCH% -f publish=true
+if "%RELEASE_SYSTEMS%"=="all" (
+  echo [gh]   start Release apps for v%VERLABEL% - Windows, macOS, Linux, Android
+) else (
+  echo [gh]   start Release apps for v%VERLABEL% - Windows and Android only
+)
+gh workflow run release.yml -R KostaJovanovic/mbrd --ref %BRANCH% -f publish=true -f systems=%RELEASE_SYSTEMS%
 if errorlevel 1 goto releasefail
 echo [gh]   started - the release goes live when every build is done:
 echo        https://github.com/KostaJovanovic/mbrd/actions/workflows/release.yml
