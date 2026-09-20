@@ -48,7 +48,8 @@ npm run typecheck   # tsc --noEmit, strict, every .ts under web/assets/js
 npm run dev:lab     # watch build for web/lab.html, the pigment lab
 npm run dev:sound   # watch build for web/lab-sound.html, the sound lab
 save.bat            # version stamps → build → commit → optionally push
-save.bat release    # the same, pushed, then GitHub builds every app and publishes them
+save.bat release    # the same, pushed, then GitHub builds Windows + Android and publishes
+save.bat release all # the same, with macOS and Linux too — four systems, ten times the minutes
 save.bat portable   # build the web bundle, then desktop/portable/ — no commit
 ```
 
@@ -68,10 +69,10 @@ seconds and can download Electron, and the folder is gitignored, so nothing
 built there is committed, pushed or deployed. A failed build leaves the old copy
 in place. It needs `desktop/node_modules`.
 
-**A release is `save.bat release` (option 1 in its menu), and nothing else.**
+**A release is `save.bat release` (option 3 in its menu), and nothing else.**
 After the push it runs `gh workflow run release.yml`, and
-`.github/workflows/release.yml` builds Windows, macOS, Linux and Android and
-publishes all four at once in the **public** `KostaJovanovic/mbrd-release`. This
+`.github/workflows/release.yml` builds and publishes into the **public**
+`KostaJovanovic/mbrd-release`. This
 repository is private, and GitHub answers a private repository's releases with a
 404 to anybody signed out, so `Get the app` and the updaters read the other
 one. A plain push starts nothing. There is no update file in a release: the apps
@@ -79,6 +80,29 @@ read GitHub's API and find their file by the part of its name before the version
 (`desktop/updates.ts`, `MbrdUpdate.java`), so **a release file's name is a
 contract**, which `tests/desktop-package.test.js` holds. The secrets the workflow
 reads are the maintainer's.
+
+**Which systems that builds is the whole cost of a release.** Option 3 and
+`save.bat release` build **Windows and Android**; option 7 and `save.bat
+release all` add macOS and Linux. A macOS minute bills at ten times a Linux
+one, so the two absent systems cost more than the two present. The short run
+starts no macOS or Linux runner at all — the `systems` input shortens the
+matrix rather than skipping jobs — and its release carries two files and says
+so in its notes. A macOS or Linux copy then sees a version it cannot download
+until the next full release, which updates it straight there; nothing is
+stranded, because the updaters store a check time and never a version
+(`desktop/updates.ts`). The workflow's own default is `all`, disagreeing with
+`save.bat`'s on purpose: it is reached only by a hand-started run from the
+Actions tab, where an incomplete release costs more than minutes.
+
+**Nothing in a release goes through Actions artifact storage.** Each build job
+uploads its file straight into a **draft** release that the version job opened,
+and publish flips the draft visible once every expected name is in it. The
+draft is what keeps the all-at-once rule: GitHub's latest-release endpoint,
+which every updater reads, excludes drafts. Storage is 0.5 GB on this account
+and one release set is about 1.3 GB, so the old collect-then-publish shape
+could never fit — it filled, every upload was refused, and the cleanup step sat
+in the job that a failed upload skips. **Do not reintroduce
+`actions/upload-artifact` for the apps.**
 
 The desktop shell is a **second package** under `desktop/` with its own
 `node_modules`, and needs its own `npm install` before any of this:

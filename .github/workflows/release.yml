@@ -77,6 +77,23 @@ on:
         description: Publish the release
         type: boolean
         default: true
+      # A macOS minute bills at ten times a Linux one and a Windows minute at
+      # twice, so the two systems the maintainer does not run cost more than
+      # the two he does. "windows-android" starts no macOS or Linux runner at
+      # all - it is the matrix that is short, not the jobs that skip - and the
+      # release then carries two files and says so.
+      #
+      # It defaults to `all` on purpose, against the usual flow: save.bat
+      # always passes this explicitly, so the default is only ever reached by
+      # a hand-started run from the Actions tab, and there the costly mistake
+      # is publishing an incomplete release, not spending four minutes.
+      systems:
+        description: Which systems to build
+        type: choice
+        default: all
+        options:
+          - all
+          - windows-android
 
 # Two runs at once would race to create the same release.
 concurrency:
@@ -98,6 +115,7 @@ jobs:
     outputs:
       version: ${{ steps.v.outputs.version }}
       label: ${{ steps.v.outputs.label }}
+      desktop: ${{ steps.m.outputs.desktop }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -111,6 +129,27 @@ jobs:
       # No install first: the suite needs none, which ci.yml also holds.
       - name: Test
         run: npm test
+
+      # The desktop matrix, decided here rather than in the job, because a
+      # matrix that never lists macOS starts no macOS runner - which is the
+      # whole saving. A job-level `if` would start one and bill for it.
+      # Android is not in here: it builds every time, on the Linux rate.
+      - name: Which systems build
+        id: m
+        env:
+          SYSTEMS: ${{ inputs.systems }}
+        run: |
+          set -euo pipefail
+          win='{"name":"windows","os":"windows-latest","platform":"win32","target":"--win","asar":"out/win-unpacked/resources/app.asar"}'
+          mac='{"name":"macos","os":"macos-latest","platform":"darwin","target":"--mac","asar":"out/mac-universal/mbrd.app/Contents/Resources/app.asar"}'
+          lin='{"name":"linux","os":"ubuntu-24.04","platform":"linux","target":"--linux","asar":"out/linux-unpacked/resources/app.asar"}'
+          if [ "$SYSTEMS" = "all" ]; then
+            echo "desktop=[$win,$mac,$lin]" >> "$GITHUB_OUTPUT"
+            echo "building Windows, macOS and Linux, and Android"
+          else
+            echo "desktop=[$win]" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Two systems only::Building Windows and Android. The release will carry two files, and macOS and Linux copies will see a version they cannot download until the next full release."
+          fi
 
       # The place the build jobs upload into, opened before any of them start.
       # A draft is invisible: it is absent from the releases page and from the
@@ -159,22 +198,10 @@ jobs:
       # jobs" is enough to recover.
       fail-fast: false
       matrix:
-        include:
-          - name: windows
-            os: windows-latest
-            platform: win32
-            target: --win
-            asar: out/win-unpacked/resources/app.asar
-          - name: macos
-            os: macos-latest
-            platform: darwin
-            target: --mac
-            asar: out/mac-universal/mbrd.app/Contents/Resources/app.asar
-          - name: linux
-            os: ubuntu-24.04
-            platform: linux
-            target: --linux
-            asar: out/linux-unpacked/resources/app.asar
+        # Written by the version job's "Which systems build" step, which is
+        # where the three entries now live. One name per row: windows, macos,
+        # linux, with os, platform, target and asar on each.
+        include: ${{ fromJSON(needs.version.outputs.desktop) }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     defaults:
@@ -407,20 +434,22 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
           VERSION: ${{ needs.version.outputs.version }}
+          SYSTEMS: ${{ inputs.systems }}
         run: |
           set -euo pipefail
           tag="v$VERSION"
+          want=("mbrd-Windows-$VERSION.exe" "mbrd-android-$VERSION.apk")
+          if [ "$SYSTEMS" = "all" ]; then
+            want+=("mbrd-mac-universal-$VERSION.dmg" \
+                   "mbrd-linux-x64-$VERSION.AppImage" \
+                   "mbrd-linux-x64-$VERSION.deb")
+          fi
           have=$(gh release view "$tag" -R KostaJovanovic/mbrd-release --json assets --jq '.assets[].name')
           echo "$have"
           missing=0
-          for want in \
-            "mbrd-Windows-$VERSION.exe" \
-            "mbrd-mac-universal-$VERSION.dmg" \
-            "mbrd-linux-x64-$VERSION.AppImage" \
-            "mbrd-linux-x64-$VERSION.deb" \
-            "mbrd-android-$VERSION.apk"; do
-            if ! echo "$have" | grep -qxF "$want"; then
-              echo "::error title=Missing app::$want is not in the draft $tag. Re-run the job that builds it; the draft keeps what is already there."
+          for name in "${want[@]}"; do
+            if ! echo "$have" | grep -qxF "$name"; then
+              echo "::error title=Missing app::$name is not in the draft $tag. Re-run the job that builds it; the draft keeps what is already there."
               missing=1
             fi
           done
@@ -431,33 +460,63 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
           VERSION: ${{ needs.version.outputs.version }}
           LABEL: ${{ needs.version.outputs.label }}
+          SYSTEMS: ${{ inputs.systems }}
         run: |
           set -euo pipefail
           repo=KostaJovanovic/mbrd-release
           tag="v$VERSION"
           dl="https://github.com/$repo/releases/download/$tag"
+          # Only the files that are actually in the release get a row. A table
+          # offering four downloads where two answer 404 is worse than a table
+          # that says which two systems this one is for - and a macOS copy is
+          # sent to this page by its own update check, so it is read.
           cat > notes.md <<EOF
           Every mbrd app, in one place. Pick the file for your system.
 
           | System | Download | Updates |
           |---|---|---|
           | Windows | [mbrd-Windows-$VERSION.exe]($dl/mbrd-Windows-$VERSION.exe) | Installs itself. A portable copy tells you |
+          EOF
+          if [ "$SYSTEMS" = "all" ]; then
+            cat >> notes.md <<EOF
           | macOS, Apple silicon and Intel | [mbrd-mac-universal-$VERSION.dmg]($dl/mbrd-mac-universal-$VERSION.dmg) | Tells you |
           | Linux | [mbrd-linux-x64-$VERSION.AppImage]($dl/mbrd-linux-x64-$VERSION.AppImage) | Installs itself |
           | Linux, Debian and Ubuntu | [mbrd-linux-x64-$VERSION.deb]($dl/mbrd-linux-x64-$VERSION.deb) | Tells you |
+          EOF
+          fi
+          cat >> notes.md <<EOF
           | Android 7 and later | [mbrd-android-$VERSION.apk]($dl/mbrd-android-$VERSION.apk) | Asks, then installs |
 
-          The macOS, Linux and Android builds are new and less tested than the Windows one.
+          EOF
+          if [ "$SYSTEMS" != "all" ]; then
+            cat >> notes.md <<EOF
+          **This release is Windows and Android only.** If mbrd on macOS or Linux told you $VERSION is out, it is not there for your system - stay on the version you have, and the next release that carries all four will update you straight to it.
+
+          EOF
+          fi
+          if [ "$SYSTEMS" = "all" ]; then
+            echo "The macOS, Linux and Android builds are new and less tested than the Windows one." >> notes.md
+          else
+            echo "The Android build is new and less tested than the Windows one." >> notes.md
+          fi
+          cat >> notes.md <<EOF
 
           No build carries a paid signing certificate yet, so each system asks once:
 
           - **Windows:** SmartScreen stops the first run. Click **More info**, then **Run anyway**.
+          EOF
+          if [ "$SYSTEMS" = "all" ]; then
+            cat >> notes.md <<EOF
           - **macOS:** open the app once and close the warning. Then open **System Settings > Privacy & Security** and click **Open Anyway**. On macOS 15 and later the old right-click, Open trick no longer works. If Finder says the app is damaged, it is not: run xattr -d com.apple.quarantine /Applications/mbrd.app in Terminal, then open it normally.
           - **Linux:** make the AppImage executable with chmod +x, then run it. Or install the .deb with sudo apt install ./mbrd-linux-x64-$VERSION.deb, and .mbrd files open on a double-click.
+          EOF
+          fi
+          cat >> notes.md <<EOF
           - **Android:** when Android asks, allow your browser or file manager to install apps.
 
           Built from commit $GITHUB_SHA.
           EOF
+          cat notes.md
           # The whole publication, in one call: the five files are already in
           # the draft and the step above has counted them. --draft=false is
           # what makes them visible, and it is the first moment any installed
