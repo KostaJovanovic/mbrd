@@ -5,8 +5,8 @@
 
 import { RAW_EXTS } from '../import/formats.ts';
 import { oversize } from '../consent.ts';
-import { extOf } from '../util.ts';
-import { surface, surfaceToBlob } from '../canvas/surface.ts';
+import { cameFrom } from '../util.ts';
+import { surface, surfaceToPhoto } from '../canvas/surface.ts';
 
 /** The libraw-wasm release in web/assets/vendor/libraw/, which wraps LibRaw 0.22.1. */
 export const LIBRAW_VERSION = '1.6.0';
@@ -33,8 +33,11 @@ export const SENSOR_PIXELS = 64 * 1024 * 1024;
  */
 const CANVAS_PIXELS = 4096 * 4096;
 
-/** JPEG because every engine decodes it, and Safari's canvas cannot write WebP. */
-const QUALITY = 0.92;
+/** WebP, at the quality a photograph survives being kept at. The developed
+ *  picture is the card's file rather than a stand-in behind one, so it is
+ *  written once and read forever - see surfaceToPhoto(), which answers JPEG
+ *  where WebP is not available. */
+const QUALITY = 0.9;
 
 /** The part of LibRaw's settings this sets. See the libraw-wasm readme for the rest. */
 type Settings = {
@@ -74,8 +77,7 @@ export function isRaw(it: {
   type?: string, name?: string, asset?: { hash?: string } | null, meta?: Record<string, unknown> | null,
 } | null | undefined): boolean {
   if (it?.type !== 'image' || !it.asset?.hash) return false;
-  const ext = typeof it.meta?.ext === 'string' && it.meta.ext ? it.meta.ext : extOf(it.name);
-  return RAW_EXTS.has(ext.toLowerCase());
+  return RAW_EXTS.has(cameFrom(it));
 }
 
 /**
@@ -144,7 +146,7 @@ async function draw(img: Picture): Promise<Developed> {
   } else {
     face.ctx.putImageData(full, 0, 0);
   }
-  const blob = await surfaceToBlob(face, 'image/jpeg', QUALITY);
+  const blob = await surfaceToPhoto(face, QUALITY);
   if (!blob?.size) throw new Error('The developed picture could not be written');
   return { blob, width: tw, height: th };
 }

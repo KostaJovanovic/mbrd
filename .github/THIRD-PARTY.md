@@ -63,6 +63,19 @@ covers the path data, not any right in the mark. Each is drawn in its brand
 colour where that reads on the board paper, and in the board ink where the mark
 is black (X, GitHub, Patreon, TikTok, Threads, Medium).
 
+## Music
+
+| Track | File | Source | Licence | Licence file |
+| --- | --- | --- | --- | --- |
+| Ambient Piano, by leberch | `web/assets/audio/clean-loop.opus` | https://pixabay.com/music/ambient-ambient-piano-595681/ | Pixabay Content License | — (no notice required) |
+
+The loop the cleaning mode plays. The Pixabay Content License grants irrevocable
+use with no attribution asked for, so the row above and the line in the credits
+sheet record where it came from rather than discharging a condition. It is the
+only recorded audio the app carries — everything else you hear is synthesised by
+Cuelume from numbers — and it is deliberately outside `SHELL` (`web/sw.js`), so
+nobody pays a megabyte of precache for a mode most people never open.
+
 ## Code
 
 | Module | Files | Source | Licence | Licence file |

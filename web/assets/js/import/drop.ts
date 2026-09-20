@@ -23,7 +23,7 @@ import { coverArt, mayHaveArt } from './artwork.ts';
 import { mediaFacts } from './containers.ts';
 import { embeddedPreview, NOT_PORTABLE, PORTABLE_MIN_EDGE } from './preview.ts';
 import { heifPicture } from './heif.ts';
-import { RAW_EXTS } from './formats.ts';
+import { HEIC_EXTS, RAW_EXTS } from './formats.ts';
 // Statically, unlike import/pdf.ts below it: this one reaches storage/zip.ts and
 // nothing else, and the zip reader is already in memory - it is what opens every
 // .mbrd. There is no dependency to defer and so no reason to defer it.
@@ -895,7 +895,29 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
       }
     }
   }
-  const hash = await addFile(file);
+  const original = await addFile(file);
+  /**
+   * A HEIC or a camera RAW, where the decode worked: the picture *is* the
+   * card's file, and the file that was dropped is kept beside it under
+   * meta.source.
+   *
+   * Every other undecodable format keeps the older shape - original at
+   * asset.hash, stand-in at meta.preview - and boards written before this
+   * carry that shape for HEIC and RAW too, so both are still read everywhere.
+   * The difference is what the rest of the app sees. A stand-in is a thing
+   * each reader has to remember to ask for, through shownHash(), and every one
+   * that forgets reaches for asset.hash and gets bytes no browser will draw:
+   * Edit picture mounted the .dng itself and showed nothing at all. Making the
+   * decoded picture the file deletes that whole class of bug rather than
+   * fixing its instances.
+   *
+   * Only these two because only these two are decoded here. A PSD or a JPEG XL
+   * is still whatever preview.ts could find inside it, which may be a
+   * thumbnail, and promoting a thumbnail to "the photograph" would be a lie.
+   */
+  const decodedHere = !!previewFile && !!previewHash
+    && (HEIC_EXTS.has(extOf(file.name)) || RAW_EXTS.has(extOf(file.name)));
+  const hash = decodedHere && previewHash ? previewHash : original;
   // What the container itself says: how long it runs, and how big its picture
   // is. Read for every clip and every track, because it costs one slice of the
   // header and answers two questions this app otherwise has to ask a decoder -
@@ -978,9 +1000,12 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
   // test `'preview' in meta`, and a key holding undefined would put an empty
   // slot into an archive path. They are written by assignment for that reason.
   const meta: ItemMeta = {
-    mime: file.type || '',
-    ext: extOf(file.name),
-    size: file.size,
+    // What the card's own file is, which for a decoded HEIC or RAW is the
+    // WebP rather than the thing that was dropped. origName below still says
+    // what that was, and meta.source below still holds its bytes.
+    mime: decodedHere ? previewFile!.type : (file.type || ''),
+    ext: decodedHere ? extOf(previewFile!.name) : extOf(file.name),
+    size: decodedHere ? previewFile!.size : file.size,
     mtime: file.lastModified || 0,
     // The name the file arrived under, kept even after it is renamed, because
     // clearing a name is meant to give this back - see state.ts/renameItem.
@@ -1019,11 +1044,18 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
   // grabbed from a clip is a different picture from the one being imported, and
   // neither is ever a cut-out.
   if (type === 'image' && !previewFile && thumb?.cutout) meta.bare = true;
-  // The decodable stand-in for a picture the browser won't draw. asset.hash
-  // below is still the untouched original; the image renderer draws this when it
-  // is present. Preserved and packed like any other content id - see
-  // META_HASHES in board-model.ts and itemHashes() in util.ts.
-  if (previewHash) meta.preview = previewHash;
+  // Two shapes, one slot each, and never both.
+  //
+  //   source  - a HEIC or a RAW: asset.hash is the picture, this is the file it
+  //             was decoded from. Kept so nothing is lost, and the one thing
+  //             the optimiser deliberately throws away.
+  //   preview - everything else undecodable: asset.hash is the untouched
+  //             original and the image renderer draws this instead.
+  //
+  // Both are preserved and packed like any other content id - see META_HASHES
+  // in board-model.ts and itemHashes() in util.ts.
+  if (decodedHere) meta.source = original;
+  else if (previewHash !== null) meta.preview = previewHash;
   return {
     type,
     name: file.name,
@@ -1524,7 +1556,11 @@ async function developedRaw(file: File, lift: boolean): Promise<File | null> {
     const { demosaic } = await import('../optimize/demosaic.ts');
     const made = await demosaic(file, lift, true);
     const stem = file.name.replace(/\.[^.]*$/, '');
-    return new File([made.blob], stem + '.jpg', { type: 'image/jpeg' });
+    // The name follows the bytes, never the other way round: demosaic() writes
+    // a WebP where the canvas will make one and falls back to a JPEG where it
+    // will not, and this File is what the card's mime and ext are read from.
+    const ext = made.blob.type === 'image/webp' ? '.webp' : '.jpg';
+    return new File([made.blob], stem + ext, { type: made.blob.type || 'image/jpeg' });
   } catch (err) {
     // The sensor ceiling is a question for asking() to put; everything else -
     // a format LibRaw will not open, a wasm that would not load - is this

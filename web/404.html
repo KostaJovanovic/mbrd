@@ -849,6 +849,13 @@
      committed files, not GitHub URLs — no external requests, works offline. -->
 <dialog id="credits" aria-labelledby="credits-title">
   <h2 id="credits-title">Credits</h2>
+  <!-- The scroller. The sheet itself must not scroll: a scrolling <dialog>
+       reserves the scrollbar's strip inside its own border box and Chromium
+       does not round that strip, so both right corners square off once the
+       fold is open. One box in costs nothing and pins the title and Close.
+       Its children keep their indentation — re-indenting 170 lines would bury
+       every real change to this sheet in whitespace. -->
+  <div class="credits-scroll">
   <ul class="credit-list">
     <li class="credit">
       <!-- Face links to same destination as the name. tabindex -1 + aria-hidden
@@ -918,6 +925,12 @@
         <span class="credits-lic">MIT</span>
         <span class="credits-by">Danila</span>
         <span class="credits-why">The interface sounds, synthesised live.</span>
+      </li>
+      <li>
+        <a href="https://pixabay.com/music/ambient-ambient-piano-595681/" target="_blank" rel="noopener noreferrer">Ambient Piano</a>
+        <span class="credits-lic">Pixabay Content License</span>
+        <span class="credits-by">leberch</span>
+        <span class="credits-why">i like how calm it is, clears my mind</span>
       </li>
       <li>
         <a href="https://github.com/googlefonts/Playfair" target="_blank" rel="noopener noreferrer">Playfair</a>,
@@ -1025,6 +1038,7 @@
       </li>
     </ul>
   </details>
+  </div>
 
   <!-- .ask-row, same as every other dialog. -->
   <div class="ask-row">
