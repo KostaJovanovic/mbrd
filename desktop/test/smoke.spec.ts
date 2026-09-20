@@ -165,6 +165,15 @@ test('What Changed shows the changelog in the board window, and the board comes 
   // board's first load, so on a slow runner it can arrive between the counts.
   const windows = () => app.evaluate(({ BrowserWindow }) =>
     BrowserWindow.getAllWindows().filter(w => w.isVisible()).length);
+  // And the baseline waits for that panel, because main.ts builds it in the
+  // same turn that first shows the window, one line later. ready() returns on
+  // the first card, which is well before the load event that turn hangs on -
+  // the fonts and icons.svg are still arriving - so a baseline read straight
+  // after it counts nothing at all, and the window revealed later reads as a
+  // second one. The v0.423 macOS runner failed here with "no second window",
+  // 0 against 1, and the app log put the panel's own load after the assert.
+  await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length),
+    { timeout: 60_000, message: 'the hidden menu panel is built' }).toBeGreaterThan(1);
   const before = await windows();
   await board.evaluate(() => {
     window.mbrd!.board.title = 'Changelog trip';
