@@ -55,6 +55,12 @@ export type Plan = {
   /** The size the container says the finished picture is. */
   width: number,
   height: number,
+  /**
+   * The size the container says one cell is, off the tiles' own `ispe`. Zero
+   * when the file does not say - see layout(), which then has to ask the frame.
+   */
+  cellW: number,
+  cellH: number,
   /** Quarter-turns anti-clockwise (irot), and the mirror (imir) before them. */
   rotate: number,
   mirror: 'none' | 'x' | 'y',
@@ -316,11 +322,12 @@ export function readPlan(b: Uint8Array): Plan | null {
     const data = payload(b, root, idat);
     if (!cfg || !data) return null;
     const box = props(root, 'ispe');
+    const w = box ? u32(b, box.body + 4) : 0;
+    const h = box ? u32(b, box.body + 8) : 0;
     return {
       hvcC: b.subarray(cfg.body, cfg.end),
       tiles: [data], cols: 1, rows: 1,
-      width: box ? u32(b, box.body + 4) : 0,
-      height: box ? u32(b, box.body + 8) : 0,
+      width: w, height: h, cellW: w, cellH: h,
       ...transform(b, root, props),
     };
   }
@@ -343,6 +350,10 @@ export function readPlan(b: Uint8Array): Plan | null {
 
   let hvcC: Uint8Array | null = null;
   const tiles: Uint8Array[] = [];
+  // The cells' own ispe, which is the only trustworthy statement of how big one
+  // is. See layout(): the frame's is not one.
+  let cellW = 0;
+  let cellH = 0;
   for (const id of cells) {
     const tile = items.get(id);
     if (!tile || tile.type !== 'hvc1') return null;
@@ -352,11 +363,16 @@ export function readPlan(b: Uint8Array): Plan | null {
       const cfg = props(tile, 'hvcC');
       if (!cfg) return null;
       hvcC = b.subarray(cfg.body, cfg.end);
+      const box = props(tile, 'ispe');
+      if (box) { cellW = u32(b, box.body + 4); cellH = u32(b, box.body + 8); }
     }
     tiles.push(data);
   }
   if (!hvcC) return null;
-  return { hvcC, tiles, cols, rows, width, height, ...transform(b, root, props) };
+  return {
+    hvcC, tiles, cols, rows, width, height, cellW, cellH,
+    ...transform(b, root, props),
+  };
 }
 
 /** The irot / imir pair, read off whichever item carries them. */
@@ -551,7 +567,7 @@ export function codecName(hvcC: Uint8Array): string {
 }
 
 /**
- * Every tile decoded and composed, written as a JPEG.
+ * Every tile decoded and composed, written as a picture.
  *
  * One decoder for the whole grid: the cells share a configuration and each is
  * an IDR of its own, so they go in as one sequence. Each frame is drawn and
@@ -629,8 +645,19 @@ type Sheet = { face: Surface, scale: number, cell: { w: number, h: number } };
  * restores it before encoding.
  */
 function layout(plan: Plan, frame: VideoFrame): Sheet | null {
-  const w0 = frame.displayWidth || frame.codedWidth;
-  const h0 = frame.displayHeight || frame.codedHeight;
+  // The container's ispe first, and the frame only where the file did not say.
+  //
+  // Not belt and braces - `displayWidth` is wrong in Chrome and in Edge for
+  // exactly these frames. A 512x512 cell decoded out of a grid comes back
+  // reporting 1280x720, a default from somewhere in the video pipeline, while
+  // `codedWidth` is the truthful 512. Trusting it drew every cell of a moon
+  // shot at 1280x720 on a 1280x720 lattice: the top left of the picture held
+  // the top left cell stretched over six, and the four cells the moon was in
+  // were laid past the right edge of the canvas and thrown away. The photograph
+  // came out a black rectangle, in Edge and in Chrome, byte for byte, and was
+  // perfect in Firefox and in the desktop app. See tests/heif.test.js.
+  const w0 = plan.cellW || frame.codedWidth || frame.displayWidth;
+  const h0 = plan.cellH || frame.codedHeight || frame.displayHeight;
   if (!(w0 > 0 && h0 > 0)) return null;
 
   // The grid's own size when it is believable, the cells' otherwise: a grid is

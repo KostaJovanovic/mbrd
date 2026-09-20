@@ -139,6 +139,11 @@ test('boardAssetHashes names exactly what the packer writes', async () => {
   const live = await stubAsset('live');
   const cover = await stubAsset('cover', { body: 'cover-bytes' });
   const display = await stubAsset('display', { body: 'display-bytes' });
+  // The .heic or the camera RAW a card's picture was decoded from, kept beside
+  // it until Optimize drops it. A whole class of its own since the decoders
+  // arrived, and one a board carries for as long as the original is worth
+  // having - so a sync that skipped it would lose the only copy.
+  const source = await stubAsset('source', { ext: 'heic', mime: 'image/heic', body: 'heic-bytes' });
   const binned = await stubAsset('binned', { body: 'binned-bytes' });
   const face = await stubAsset('face', { ext: 'woff2', mime: 'font/woff2', body: 'face-bytes' });
   const stepped = await stubAsset('stepped', { body: 'stepped-bytes' });
@@ -150,7 +155,7 @@ test('boardAssetHashes names exactly what the packer writes', async () => {
     item({ id: 'f2', type: 'folder', name: 'raw', meta: { files: [{ path: 'a.png', hash: filed, size: 11 }], count: 1 } }),
   ];
 
-  const board = boardOf([withAsset(live, { id: 'i1', name: 'a.png', meta: { cover, display } }), ...folders], {
+  const board = boardOf([withAsset(live, { id: 'i1', name: 'a.png', meta: { cover, display, source } }), ...folders], {
     trash: [{ at: 1, item: withAsset(binned, { id: 'i9', name: 'b.png' }) }],
     settings: { fonts: [{ hash: face, family: 'Test Face' }] },
     timeline: {
@@ -179,7 +184,7 @@ test('boardAssetHashes names exactly what the packer writes', async () => {
   );
   // The guard on the guard: two empty sets are deepEqual, so a stubAsset()
   // that stopped registering anything would pass while proving nothing.
-  assert.equal(written.size, 8);
+  assert.equal(written.size, 9);
 });
 
 // ---------------------------------------------------------------------------

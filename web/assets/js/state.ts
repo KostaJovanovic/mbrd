@@ -1113,6 +1113,8 @@ export function setItemDemosaiced(id: string, picture: {
     if (asset) item.asset = { ...asset };
     bus.emit('item', id);
   };
+  // SAFETY: isHash(picture.picture) is the guard this function opens with, and
+  // nothing below reassigns it.
   const afterAsset = picture.asItsFile && beforeAsset
     ? { ...beforeAsset, hash: picture.picture as string } : beforeAsset;
   commit('Demosaic',
