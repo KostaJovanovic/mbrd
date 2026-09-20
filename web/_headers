@@ -169,3 +169,12 @@
 # is developed. Pinned by LIBRAW_VERSION in optimize/demosaic.ts.
 /assets/vendor/libraw/worker.js
   ! Content-Security-Policy
+
+# libheif, through heic2any (HEIC on an origin with no WebCodecs): a classic
+# worker that importScripts the vendored build. No wasm here and no network -
+# it is JavaScript - but libheif reaches Emscripten's embind, which builds its
+# exports with `new Function`, and the page carries no 'unsafe-eval'. Loaded on
+# the first HEIC that WebCodecs did not already draw. Pinned by
+# HEIC2ANY_VERSION in import/heif.ts.
+/assets/js/import/heif-worker.js
+  ! Content-Security-Policy

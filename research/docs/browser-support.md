@@ -188,14 +188,19 @@ Deliberate boundaries rather than bugs, documented so they read as stated scope:
 - **A HEIC is drawn by a video decoder, not an image one.** Safari decodes HEIC
   in an `<img>` and no other engine does, so `import/drop.ts` puts a picture
   every engine can draw beside the untouched original on the way in — see
-  `NOT_PORTABLE` in `import/preview.ts`. It looks in three places, and the third
-  is the one that always answers: the camera's own baked JPEG where there is
-  one, and otherwise the HEVC itself, read out of the container by
-  `import/heif.ts` and handed to WebCodecs. That last path needs a **secure
-  context** (`VideoDecoder` is undefined on plain `http://` that is not
-  localhost, which is why a LAN dev server shows grey cards the deploy does not)
-  and an HEVC decoder on the machine, which every current desktop and phone has.
-  Where none of the three answers, the card is a named one, as it always was.
+  `NOT_PORTABLE` in `import/preview.ts`. `import/heif.ts` reads the container
+  itself and decodes the HEVC inside it, through whichever of **two** decoders
+  is there. WebCodecs first — the machine's own, a fifth of a second for a
+  forty-eight-tile grid, and no download. Vendored libheif second
+  (`import/heif-worker.js`, heic2any), a megabyte and a third and five times
+  slower, fetched only when the first one was not available.
+  It has to exist: **`VideoDecoder` is undefined outside a secure context**, so
+  on a plain-http LAN or link-local dev address — the case `web/sw.js`
+  deliberately supports — WebCodecs is simply absent, and before the second
+  decoder landed the same file drew on `localhost` and became a named card one
+  address over. Measured: `http://localhost:6273` → `typeof VideoDecoder ===
+  'function'`, no `heic2any.min.js` request; `http://169.254.83.107:6273` →
+  `'undefined'`, `heic2any.min.js` fetched, same photograph on the card.
   A baked JPEG only becomes the pixels a card draws when it is at least
   `PORTABLE_MIN_EDGE` (1280) on its long edge, the display ceiling, so adopting
   it costs the viewer nothing. Newly relevant rather than new: **Safari 27 stops
