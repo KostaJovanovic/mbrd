@@ -63,11 +63,15 @@ export type Plan = {
  */
 export async function heifPicture(file: File): Promise<File | null> {
   if (file.size < 16 || file.size > MAX_BYTES) return null;
-  if (typeof VideoDecoder !== 'function' || typeof EncodedVideoChunk !== 'function') return null;
   try {
     // The brand first, off sixty-four bytes: every other file this is offered -
-    // a PSD, a RAW, a video - is turned away without reading the whole of it.
+    // a PSD, a RAW, a video - is turned away without reading the whole of it,
+    // and before the one branch below that says anything out loud.
     if (!isHeif(new Uint8Array(await file.slice(0, 64).arrayBuffer()))) return null;
+    if (typeof VideoDecoder !== 'function' || typeof EncodedVideoChunk !== 'function') {
+      noDecoder();
+      return null;
+    }
     const plan = readPlan(new Uint8Array(await file.arrayBuffer()));
     if (!plan) return null;
     const blob = await draw(plan);
@@ -79,6 +83,27 @@ export async function heifPicture(file: File): Promise<File | null> {
     // A picture that throws is a picture we did not find.
     return null;
   }
+}
+
+/**
+ * Said once a session, and the only thing this module says at all.
+ *
+ * `VideoDecoder` is undefined outside a **secure context**, so a HEIC draws on
+ * https, on localhost and in the desktop shell, and becomes a grey named card
+ * over a plain-http LAN or link-local address - the dev-server case, which
+ * web/sw.js deliberately supports. Without this line that difference is
+ * invisible: the same file, the same build, two different cards, nothing
+ * logged. Everything else here is a quiet null, because the caller has another
+ * path behind it; this one has no path behind it and no other way to be found.
+ */
+let toldAboutDecoder = false;
+
+function noDecoder() {
+  if (toldAboutDecoder) return;
+  toldAboutDecoder = true;
+  console.warn('[mbrd] this page has no VideoDecoder, so a HEIC cannot be drawn here. '
+    + 'WebCodecs needs a secure context: https, http://localhost, or the desktop app. '
+    + `This page is ${self.location.origin}, secure=${self.isSecureContext}.`);
 }
 
 /**
