@@ -12,6 +12,7 @@ import { coverArt, audioTags } from '../import/artwork.ts';
 import { shrinkPicture, makeThumb, MAX_SIDE, MAX_SIDE_COVER, QUALITY } from './picture.ts';
 import { toOpus, opusAvailable } from './opus.ts';
 import { demosaic, isRaw } from './demosaic.ts';
+import { heifPicture, isHeic } from '../import/heif.ts';
 import { platform } from '../platform/platform.ts';
 
 /** Which of the encoders a file belongs to. Null is "leave it alone". */
@@ -28,6 +29,10 @@ type Job = {
   // is the picture the Demosaic row already made, where it made one.
   raw?: boolean,
   developed?: string,
+  // A HEIC, decoded before it is shrunk, for the same reason and by the same
+  // branch. No `developed` twin: a decode is a fifth of a second where a
+  // demosaic is seconds, so there is nothing worth carrying across.
+  heif?: boolean,
 };
 
 /** A card carrying a file with no bytes in it, and which half of it is hollow. */
@@ -190,10 +195,19 @@ export function planOptimize(): Plan {
     // result replaces it. Its preview and display copy go with it, so they are
     // not jobs of their own.
     const raw = isRaw(item) && !!getAsset(item.asset?.hash);
+    // A HEIC is the same story with a different decoder, and it was the one
+    // photograph the optimiser counted and then quietly left alone: its bytes
+    // reach shrinkPicture(), createImageBitmap() refuses them, and null means
+    // "leave it alone". The largest file on a phone's board, promised in the
+    // dialog and never shrunk. See encodeOne().
+    const heif = !raw && isHeic(item) && !!getAsset(item.asset?.hash);
+    const decoded = raw || heif;
     for (const hash of itemHashes(item)) {
       if (seen.has(hash)) continue;
       const ownRaw = raw && hash === item.asset?.hash;
-      if (raw && !ownRaw && (hash === item.meta?.preview || hash === item.meta?.display)) continue;
+      const ownHeif = heif && hash === item.asset?.hash;
+      const own = ownRaw || ownHeif;
+      if (decoded && !own && (hash === item.meta?.preview || hash === item.meta?.display)) continue;
       // A thumbnail is already the smallest this app knows how to make: a
       // hundred pixels of WebP at quality 0.5, cut by makeThumb(). Counting it
       // here would put a second entry on the dialog for every photograph on the
@@ -208,13 +222,16 @@ export function planOptimize(): Plan {
       // would be handed nothing, and a dialog promising to shrink a file whose
       // size is already zero is a promise it cannot keep.
       if (!asset.size) continue;
-      // Not for a RAW: a build that could not develop one marked it as looked
-      // at, and that answer was about the build rather than the file.
-      if (marked.has(hash) && !ownRaw) { plan.done++; continue; }
+      // Not for a RAW or a HEIC: a build that could not develop or decode one
+      // marked it as looked at, and that answer was about the build rather than
+      // the file. For a HEIC it can be about the *origin* - WebCodecs is absent
+      // outside a secure context - so a board marked on one address must be
+      // offered again on another.
+      if (marked.has(hash) && !own) { plan.done++; continue; }
       plan.total += asset.size;
       const isCover = hash !== item.asset?.hash;
       const name = asset.name || item.name || '';
-      const kind = ownRaw ? 'image' : mediaKind({
+      const kind = own ? 'image' : mediaKind({
         mime: asset.mime || '',
         ext: extOf(name) || item.meta?.ext || extOf(item.name) || '',
         type: item.type,
@@ -225,6 +242,7 @@ export function planOptimize(): Plan {
         entry.raw = true;
         if (item.meta?.demosaiced && item.meta.preview) entry.developed = item.meta.preview;
       }
+      if (ownHeif) entry.heif = true;
       if (kind === 'image') plan.pictures.push(entry);
       else if (kind === 'audio') plan.sounds.push(entry);
       // Video is bucketed with the skips on the web - counted so a dialog can
@@ -470,10 +488,11 @@ export async function runOptimize(
     const cover = hollowCover.has(item.id) ? null : replacement.get(item.meta?.cover);
     // `!== undefined`, not truthiness: null is a real instruction here, and the
     // falsy test this used to be would have skipped every cover being dropped.
-    // A developed RAW is a plain photograph now. Asked of the item as it still
-    // is, before swapAssets() rewrites its ext.
+    // A developed RAW or a decoded HEIC is a plain photograph now - one every
+    // engine draws, with no stand-in needed behind it. Asked of the item as it
+    // still is, before swapAssets() rewrites its ext.
     const type = asset ? typeOf.get(asset) || '' : '';
-    const plain = asset && isRaw(item) && type.startsWith('image/')
+    const plain = asset && (isRaw(item) || isHeic(item)) && type.startsWith('image/')
       ? { ext: type.slice('image/'.length), mime: type } : undefined;
     if (asset !== undefined || cover !== undefined || itemHashes(item).some(h => looked.has(h))) {
       swaps.push({ id: item.id, asset, cover, plain });
@@ -755,6 +774,15 @@ async function encodeOne(asset: AssetEntry, job: Job) {
   if (job.raw) {
     const developed = job.developed ? getAsset(job.developed)?.blob : null;
     const picture = developed || (await inTurn(() => demosaic(asset.blob))).blob;
+    return shrinkPicture(picture, { maxSide: MAX_SIDE, quality: QUALITY });
+  }
+  // A HEIC: decoded, then shrunk like any photograph. Decoded again rather
+  // than taken from meta.preview, because that hash may be a stand-in from a
+  // third path - a small JPEG the camera baked in - and shrinking a postage
+  // stamp into a 1200px card is how an optimiser loses a photograph.
+  if (job.heif) {
+    const picture = await heifPicture(new File([asset.blob], job.name || 'photo.heic'));
+    if (!picture) return null;
     return shrinkPicture(picture, { maxSide: MAX_SIDE, quality: QUALITY });
   }
   // job.kind is the category planOptimize() resolved (see mediaKind), not a

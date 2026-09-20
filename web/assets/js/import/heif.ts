@@ -8,6 +8,8 @@
 
 import { surface, surfaceToBlob } from '../canvas/surface.ts';
 import type { Surface } from '../canvas/surface.ts';
+import { extOf } from '../util.ts';
+import { HEIC_EXTS } from './formats.ts';
 
 // Ceilings - "the file is lying" backstops, not refusals. Past any of them the
 // read gives up and returns null, exactly as it does for a truncated box. None
@@ -171,6 +173,20 @@ function ensureWorker(): Worker {
   };
   worker = w;
   return w;
+}
+
+/**
+ * A photograph whose own bytes are a HEIF still: the card the optimiser has to
+ * decode before it can shrink anything. By the extension it arrived with, since
+ * the registry forgets names - the same shape, and for the same reason, as
+ * isRaw() in optimize/demosaic.ts.
+ */
+export function isHeic(it: {
+  type?: string, name?: string, asset?: { hash?: string } | null, meta?: Record<string, unknown> | null,
+} | null | undefined): boolean {
+  if (it?.type !== 'image' || !it.asset?.hash) return false;
+  const ext = typeof it.meta?.ext === 'string' && it.meta.ext ? it.meta.ext : extOf(it.name);
+  return HEIC_EXTS.has(ext.toLowerCase());
 }
 
 /**

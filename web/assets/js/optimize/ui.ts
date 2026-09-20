@@ -61,6 +61,17 @@ export async function optimizeBoard() {
     lines.push(`${raws === 1 ? 'The camera RAW is' : `${raws} camera RAWs are`} demosaiced first, ` +
       'which takes a few seconds each.');
   }
+  // Said for the same reason, at a tenth the cost: a HEIC has to be decoded
+  // before it can be shrunk, and on a page with no WebCodecs that is libheif
+  // rather than the machine's own decoder, which is about a second a photograph.
+  const heics = plan.pictures.filter(job => job.heif).length;
+  if (heics) {
+    lines.push(heics === 1
+      ? 'The HEIC photograph is decoded first, and becomes an ordinary picture '
+        + 'any browser can open.'
+      : `${heics} HEIC photographs are decoded first, and become ordinary pictures `
+        + 'any browser can open.');
+  }
   if (plan.sounds.length) {
     lines.push(opusAvailable()
       ? `Sound becomes Opus at ${OPUS_KBPS}k, keeping its tags and its album art.`
