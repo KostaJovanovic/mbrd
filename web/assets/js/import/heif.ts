@@ -1,8 +1,10 @@
 // A HEIF still (.heic/.heif) turned into a picture, for the engines that will
-// not decode one. The container is read here - by hand, like every reader in
-// this folder - and the HEVC inside it is handed to WebCodecs, which every
-// engine that plays video already has. Null for anything missing or malformed:
-// the caller has the embedded-preview path behind this one.
+// not decode one. Two decoders, and the second is not a luxury: the container
+// is read here by hand and its HEVC handed to WebCodecs, which is fast and is
+// the machine's own decoder - but `VideoDecoder` does not exist outside a
+// secure context, so that path is absent over plain http. Vendored libheif
+// (heif-worker.js) answers everywhere and is what runs when it is. Null only
+// when both decline; the caller has the embedded-preview path behind this.
 
 import { surface, surfaceToBlob } from '../canvas/surface.ts';
 import type { Surface } from '../canvas/surface.ts';
@@ -56,25 +58,24 @@ export type Plan = {
 /**
  * Decode a HEIF still to a JPEG this browser can draw, or null.
  *
+ * WebCodecs first: it is the machine's own HEVC decoder, a fifth of a second
+ * for a twelve-megapixel grid, and it costs no download. libheif second, which
+ * is a megabyte and a bit and five times slower, and is the only one of the two
+ * that exists on a plain-http origin. Second means second - a board of HEICs on
+ * https never fetches it.
+ *
  * Null covers every "not for us" as well as every failure: a file that is not
- * HEIF, a browser with no WebCodecs, an HEVC profile the machine has no decoder
- * for. The caller treats all of them the same way, which is why none of them
+ * HEIF, a container neither decoder can make sense of, a machine with no HEVC
+ * at all. The caller treats all of them the same way, which is why none of them
  * throws.
  */
 export async function heifPicture(file: File): Promise<File | null> {
   if (file.size < 16 || file.size > MAX_BYTES) return null;
   try {
     // The brand first, off sixty-four bytes: every other file this is offered -
-    // a PSD, a RAW, a video - is turned away without reading the whole of it,
-    // and before the one branch below that says anything out loud.
+    // a PSD, a RAW, a video - is turned away without reading the whole of it.
     if (!isHeif(new Uint8Array(await file.slice(0, 64).arrayBuffer()))) return null;
-    if (typeof VideoDecoder !== 'function' || typeof EncodedVideoChunk !== 'function') {
-      noDecoder();
-      return null;
-    }
-    const plan = readPlan(new Uint8Array(await file.arrayBuffer()));
-    if (!plan) return null;
-    const blob = await draw(plan);
+    const blob = await viaWebCodecs(file) ?? await viaLibheif(file);
     if (!blob) return null;
     // The original's stem, so a card that falls back to a filename still says
     // something recognisable - the same reason nativePreview() does it.
@@ -85,25 +86,91 @@ export async function heifPicture(file: File): Promise<File | null> {
   }
 }
 
-/**
- * Said once a session, and the only thing this module says at all.
- *
- * `VideoDecoder` is undefined outside a **secure context**, so a HEIC draws on
- * https, on localhost and in the desktop shell, and becomes a grey named card
- * over a plain-http LAN or link-local address - the dev-server case, which
- * web/sw.js deliberately supports. Without this line that difference is
- * invisible: the same file, the same build, two different cards, nothing
- * logged. Everything else here is a quiet null, because the caller has another
- * path behind it; this one has no path behind it and no other way to be found.
- */
-let toldAboutDecoder = false;
+/** The fast path: this module's own container reader, and the machine's decoder. */
+async function viaWebCodecs(file: File): Promise<Blob | null> {
+  if (typeof VideoDecoder !== 'function' || typeof EncodedVideoChunk !== 'function') return null;
+  const plan = readPlan(new Uint8Array(await file.arrayBuffer()));
+  if (!plan) return null;
+  return await draw(plan);
+}
 
-function noDecoder() {
-  if (toldAboutDecoder) return;
-  toldAboutDecoder = true;
-  console.warn('[mbrd] this page has no VideoDecoder, so a HEIC cannot be drawn here. '
-    + 'WebCodecs needs a secure context: https, http://localhost, or the desktop app. '
-    + `This page is ${self.location.origin}, secure=${self.isSecureContext}.`);
+// ---------------------------------------------------------------------------
+// libheif, the path that does not care where the page came from
+// ---------------------------------------------------------------------------
+
+/** The vendored heic2any release in web/assets/vendor/heic2any/, which wraps
+ *  libheif and libde265 compiled to JavaScript. */
+export const HEIC2ANY_VERSION = '0.0.4';
+
+/** Named here, and not inside the worker, so tests/csp.test.js reads the one
+ *  path _headers exempts: libheif reaches `new Function` through embind, which
+ *  the page's own policy does not allow. */
+export const WORKER_URL = './assets/js/import/heif-worker.js';
+
+/** Generous, and a backstop against a worker that died rather than a limit on
+ *  an honest decode: a phone's grid is a second, a 100-megapixel still is more. */
+const DECODE_MS = 120_000;
+
+type Reply = { id: number, blob?: Blob, error?: string };
+
+let worker: Worker | null = null;
+let nextId = 1;
+/** Decodes in flight, by id. One worker, many files, answered out of order. */
+const waiting = new Map<number, (msg: Reply) => void>();
+
+/**
+ * The slow path, and the only one on a plain-http origin. Spawned on the first
+ * HEIC that needs it, so a board with none never fetches the megabyte - and on
+ * https it is never reached at all, because WebCodecs answered first.
+ */
+async function viaLibheif(file: File): Promise<Blob | null> {
+  if (typeof Worker !== 'function' || typeof OffscreenCanvas !== 'function') return null;
+  try {
+    const bytes = await file.arrayBuffer();
+    const reply = await run(bytes);
+    return reply.blob?.size ? reply.blob : null;
+  } catch (err) {
+    console.warn('[mbrd] heif: libheif could not decode', file.name, err);
+    return null;
+  }
+}
+
+function run(bytes: ArrayBuffer): Promise<Reply> {
+  const w = ensureWorker();
+  const id = nextId++;
+  return new Promise<Reply>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      waiting.delete(id);
+      reject(new Error('the decoder did not answer'));
+    }, DECODE_MS);
+    waiting.set(id, msg => {
+      clearTimeout(timer);
+      if (msg.error) reject(new Error(msg.error));
+      else resolve(msg);
+    });
+    // Transferred rather than copied - the page has no further use for them.
+    w.postMessage({ id, bytes }, [bytes]);
+  });
+}
+
+function ensureWorker(): Worker {
+  if (worker) return worker;
+  // Not cached on failure: the next file spawns a fresh one, which is what
+  // makes a worker killed for memory a slow import rather than a dead feature.
+  const w = new Worker(WORKER_URL);
+  w.onmessage = (e: MessageEvent<Reply>) => {
+    const done = waiting.get(e.data?.id);
+    if (!done) return;                 // a decode that timed out and gave up
+    waiting.delete(e.data.id);
+    done(e.data);
+  };
+  w.onerror = () => {
+    for (const [id, done] of waiting) { waiting.delete(id); done({ id, error: 'the decoder stopped' }); }
+    if (worker === w) worker = null;
+    w.terminate();
+  };
+  worker = w;
+  return w;
 }
 
 /**

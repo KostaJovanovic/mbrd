@@ -76,8 +76,9 @@ is black (X, GitHub, Patreon, TikTok, Threads, Medium).
 | libraw-wasm 1.6.0 (LibRaw 0.22.1) | `web/assets/vendor/libraw/index.js`, `web/assets/vendor/libraw/worker.js`, `web/assets/vendor/libraw/libraw.js`, `web/assets/vendor/libraw/libraw.wasm` | https://github.com/ybouane/LibRaw-Wasm, https://github.com/LibRaw/LibRaw | ISC, LGPL-2.1 | `web/assets/vendor/libraw/LICENSE.txt` |
 | onnxruntime-web 1.23.0 | `web/assets/vendor/onnxruntime/ort.wasm.min.mjs`, `web/assets/vendor/onnxruntime/ort-wasm-simd-threaded.mjs`, `web/assets/vendor/onnxruntime/ort-wasm-simd-threaded.wasm` | https://github.com/microsoft/onnxruntime | MIT | `web/assets/vendor/onnxruntime/LICENSE.txt` |
 | u2netp (model weights) | `web/assets/vendor/u2netp/u2netp.onnx` | https://github.com/xuebinqin/U-2-Net | Apache-2.0 | `web/assets/vendor/u2netp/LICENSE.txt` |
+| heic2any 0.0.4 (libheif, libde265) | `web/assets/vendor/heic2any/heic2any.min.js` | https://github.com/alexcorvi/heic2any, https://github.com/strukturag/libheif | MIT, LGPL-3.0 | `web/assets/vendor/heic2any/LICENSE.txt` |
 
-Nine vendored builds, none of them modified, each loaded only when a file or a
+Ten vendored builds, none of them modified, each loaded only when a file or a
 command that needs it is used and none of them in `SHELL`.
 
 **onnxruntime-web** runs **u2netp**, the model behind the background remover,
@@ -147,6 +148,21 @@ alone (`web/_headers`), and none of them passes through esbuild. Replacing
 `libraw.wasm` with another build of it needs nothing here rebuilt. Without it a
 RAW card keeps the preview its camera stored in the file (`import/preview.ts`),
 which is what every RAW card drew before this arrived.
+
+**heic2any** is libheif and libde265 compiled to *JavaScript* rather than
+WebAssembly — which is why it is a megabyte and a third, and why it is the
+second of two HEIC decoders rather than the first. `import/heif.ts` reads the
+container itself and gives the HEVC to WebCodecs, which is the machine's own
+decoder and needs no download; this is what runs when `VideoDecoder` is absent,
+which it is on every origin that is not secure. That file pins the version, and
+the same run-time-loading argument made for OCCT and LibRaw above applies
+unchanged: `web/assets/js/import/heif-worker.js` loads it with
+`importScripts`, the site policy is removed for that worker alone
+(`web/_headers`), and nothing here passes through esbuild. The exemption is for
+`new Function` rather than for wasm — Emscripten's embind builds libheif's
+exports with it, and the page carries no `'unsafe-eval'`. The wrapper is MIT;
+libheif and libde265 are LGPL-3.0-or-later, by the same authors, and are taken
+here under that.
 
 The ffmpeg core (`@ffmpeg/core` 0.12.6, MIT over LGPL-2.1 — the npm package is
 MIT and the FFmpeg build inside it is LGPL-2.1 —

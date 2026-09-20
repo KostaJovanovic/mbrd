@@ -18,13 +18,20 @@ import { JS, walk } from './helpers.js';
  */
 const CLASSIC_WORKERS = [
   'optimize/media-worker.js', 'import/tiff-worker.js', 'mesh/occt-worker.js',
+  // The HEIC decoder. Classic for the reason the other three are - it
+  // importScripts a vendored build that assigns itself to `self` - and it
+  // shims `self.window` and `self.document` in its body, because heic2any was
+  // written for a page and checks for both before it will run. So it is a
+  // module that touches the DOM at import by construction, which is the whole
+  // reason this list exists.
+  'import/heif-worker.js',
 ];
 
 /** Workers that are ES modules but are still workers, and so still not units. */
 const MODULE_WORKERS = ['canvas/matte-worker.js'];
 
-/** The six documented exceptions — main.ts, ui/appearance.ts (both touch the
- *  DOM at import), and the four workers (classic or ES-module). Anything else
+/** The seven documented exceptions — main.ts, ui/appearance.ts (both touch the
+ *  DOM at import), and the five workers (classic or ES-module). Anything else
  *  appearing here is a regression. */
 const DOM_ENTRY_POINTS = new Set([
   'main.ts', 'ui/appearance.ts', ...CLASSIC_WORKERS, ...MODULE_WORKERS,
@@ -41,8 +48,8 @@ test('every module is listed as testable or as a DOM entry point', () => {
   // The list is the rule's only escape hatch, so its size is part of the
   // rule - otherwise a new name here quietly exempts a module from the thing
   // that makes the suite possible.
-  assert.equal(DOM_ENTRY_POINTS.size, 6,
-    'there are six documented DOM entry points; a seventh needs the argument '
+  assert.equal(DOM_ENTRY_POINTS.size, 7,
+    'there are seven documented DOM entry points; an eighth needs the argument '
     + 'for it written into the comment above, not just the name added');
 });
 
