@@ -14,6 +14,7 @@ import { nodeFor, setSpot } from '../canvas/items.ts';
 import { nowPlaying, ownerOf, registeredPlayers } from '../canvas/audio.ts';
 import { openAnchored } from './menu.ts';
 import type { MenuEntry } from './menu.ts';
+import { close as closeSidebar } from './sidebar.ts';
 
 /** One resolved stop — never held across an event. */
 type Stop = { items: Item[], caption: string };
@@ -111,6 +112,9 @@ export function startTour() {
   // and a ring and grips left on a card - often the editor's last stop, since
   // pressing a chip selects its cards - would sit in every frame of the showing.
   clearSelection();
+  // The panel is hidden while touring but would still count as cover, and
+  // every stop would be framed off-centre in the room it no longer takes.
+  closeSidebar();
   bar.hidden = false;
   // Hide all chrome.
   presentation(true);

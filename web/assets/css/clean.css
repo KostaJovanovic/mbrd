@@ -90,6 +90,12 @@
   pointer-events: none;
 }
 
+/* Held back until the intro's black is solid, so nothing of the mess is seen
+   arriving. No transition either way: there is a black sheet over it when it
+   goes, and the crusts have their own fade once they are painted. See
+   showMess() in ui/clean/clean.ts. */
+.clean-layer.is-waiting { opacity: 0; }
+
 /* The corner is written on from clean.ts, copied off the card underneath - a
    card's radius is per item type and capped at half its shorter side, so no
    token here can name it. This is the fallback for the frame or two before that
@@ -261,14 +267,23 @@
   transition: stroke-dashoffset var(--clean-travel) var(--clean-ease);
 }
 
-/* One shadow for every strand at once, on the sheet they share. A web is pale
-   and so is the board: without the shadow under it, it is a web only over a
-   dark card and nothing at all over the paper between them, which is exactly
-   where webs hang. */
 .clean-webs {
   position: absolute;
   overflow: visible;
-  filter: drop-shadow(0 1.5px 1px rgb(30 26 20 / 0.45));
+}
+
+/* A web is pale and so is the board: without a shadow under it, it is a web
+   only over a dark card and nothing at all over the paper between them, which
+   is exactly where webs hang. Its own path again, dropped down the screen
+   (art.ts, webNode()) rather than a drop-shadow filter over the whole sheet -
+   the sheet is board-sized and a filter re-rasterised all of it at every zoom
+   step. Wider and fainter than the strand, which is what the blur was doing. */
+.clean-web-shade {
+  fill: none;
+  stroke: rgb(30 26 20 / 0.3);
+  stroke-width: 2.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .clean-web {
@@ -715,7 +730,6 @@
 }
 
 .clean-intro-dark { fill: color-mix(in srgb, var(--ink) 22%, #000); }
-
 .clean-intro-stage {
   position: absolute;
   inset: 0;
@@ -757,6 +771,16 @@
   display: flex;
   flex-direction: column;
   will-change: transform;
+}
+
+/* The per-reel motion blurs live in here and nothing is drawn from it - a
+   filter referenced from HTML is measured in the referring element's own
+   pixels, so this sheet needs no size of its own. See playIntro(). */
+.clean-intro-fx {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
 }
 
 .clean-intro-reel > span {

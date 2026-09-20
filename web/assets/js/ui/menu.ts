@@ -176,6 +176,7 @@ export interface MenuCommands {
   copy: () => void;
   paste: (at: Point | null) => void;
   canPaste: () => boolean;
+  canCopy: () => boolean;
   zoomToSelection: () => void;
   deleteSelection: () => void;
   // The title card
@@ -648,8 +649,9 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
       action: () => linkURL ? cmds!.openLink(id) : cmds!.openViewer(id) },
     // Copy/Paste instead of Duplicate — paste lands where the cursor is, on any
     // board. Ctrl+D still duplicates. i-duplicate icon on Copy deliberately.
+    // Hidden when nothing picked may be copied - the cleaned board's card.
     { label: many ? `Copy ${count} items` : 'Copy', icon: 'i-duplicate', accel: 'Ctrl C',
-      hidden: track, action: () => cmds!.copy() },
+      hidden: track || !cmds!.canCopy(), action: () => cmds!.copy() },
     // Hidden (not greyed) on empty clipboard.
     { label: 'Paste', icon: 'i-paste', accel: 'Ctrl V', hidden: !cmds!.canPaste(),
       action: () => cmds!.paste(at) },

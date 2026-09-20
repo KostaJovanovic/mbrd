@@ -218,9 +218,22 @@ function rustFront(seed, x, y) {
   if (cellId < 0.3) front = Math.max(front, 0.05 * (0.4 + cellId * 3) - cellF1 * 0.14);
   return front;
 }
+var frontSeed = NaN;
+var frontX = NaN;
+var frontY = NaN;
+var frontLast = 0;
+function frontOf(seed, x, y) {
+  if (seed !== frontSeed || x !== frontX || y !== frontY) {
+    frontSeed = seed;
+    frontX = x;
+    frontY = y;
+    frontLast = rustFront(seed, x, y);
+  }
+  return frontLast;
+}
 function crustAt(c, x, y) {
   if (x < 0 || x > 1 || y < 0 || y > 1) return 0;
-  if (c.kind === "rust") return clamp01(CRUST_AT + rustFront(c.seed, x, y) * 60);
+  if (c.kind === "rust") return clamp01(CRUST_AT + frontOf(c.seed, x, y) * 60);
   const spill = spillOf(c.kind);
   if (!spill) return 1;
   return clamp01(spillEdge(spill, c.seed, x, y) * 6);
@@ -301,7 +314,7 @@ var rust = (seed, x, y, rich, u, v) => {
   const L = LOOK.rust;
   const wx = x + (gnoise(x * 4, y * 4, seed + 31) - 0.5) * 0.1;
   const wy = y + (gnoise(x * 4 + 7, y * 4 + 13, seed + 32) - 0.5) * 0.1;
-  const deep = smooth(0, 0.3, rustFront(seed, u, v));
+  const deep = smooth(0, 0.3, frontOf(seed, u, v));
   const grit = rich ? gfbm(x * 70, y * 70, seed + 35, 3) : gnoise(x * 70, y * 70, seed + 35);
   const swell = gfbm(x * 4.5, y * 4.5, seed + 36, 2);
   const lift = L.scaly * (0.25 + 0.9 * deep);
@@ -423,24 +436,32 @@ function lightOf() {
 }
 var clamp = (v, lo, hi) => v < lo ? lo : v > hi ? hi : v;
 function paintField(ctx, c, w, h, rich = true) {
-  if (w <= 0 || h <= 0) return;
-  const scale = Math.min(1, (rich ? NOISE_MAX : NOISE_LIGHT) / Math.max(w, h));
-  const nw = Math.max(1, Math.round(w * scale));
-  const nh = Math.max(1, Math.round(h * scale));
-  ctx.drawImage(tile(c, nw, nh, rich), 0, 0, w, h);
+  crustPainter(ctx, c, w, h, rich)(Infinity);
 }
-function tile(c, w, h, rich) {
+function tileOf(px, w, h) {
   const out = document.createElement("canvas");
   out.width = w;
   out.height = h;
   const into = out.getContext("2d");
   if (!into) return out;
   const img = into.createImageData(w, h);
-  img.data.set(crustPixels(c, w, h, rich));
+  img.data.set(px);
   into.putImageData(img, 0, 0);
   return out;
 }
-function crustPixels(c, w, h, rich = true) {
+function crustPainter(ctx, c, w, h, rich = true) {
+  if (w <= 0 || h <= 0) return () => true;
+  const scale = Math.min(1, (rich ? NOISE_MAX : NOISE_LIGHT) / Math.max(w, h));
+  const nw = Math.max(1, Math.round(w * scale));
+  const nh = Math.max(1, Math.round(h * scale));
+  const job = crustRows(c, nw, nh, rich);
+  return (until) => {
+    if (!job.step(until)) return false;
+    ctx.drawImage(tileOf(job.px, nw, nh), 0, 0, w, h);
+    return true;
+  };
+}
+function crustRows(c, w, h, rich) {
   const m = materialOf(c.kind);
   const k = lookOf(c.kind);
   const { lx, ly, lz, hx, hy, hz, ambient } = lightOf();
@@ -462,7 +483,7 @@ function crustPixels(c, w, h, rich = true) {
   const long = Math.max(w, h);
   const ax = w / long;
   const ay = h / long;
-  for (let y = 0; y < h; y++) {
+  const heights = (y) => {
     const v = (y + 0.5) / h;
     for (let x = 0; x < w; x++) {
       const u = (x + 0.5) / w;
@@ -494,8 +515,8 @@ function crustPixels(c, w, h, rich = true) {
       col[i * 3 + 1] = (grey + (sG - grey) * k.sat) * tone + warmth * 6;
       col[i * 3 + 2] = (grey + (sB - grey) * k.sat) * tone - warmth * 24;
     }
-  }
-  for (let y = 0; y < h; y++) {
+  };
+  const light = (y) => {
     const y0 = y > 0 ? y - 1 : y;
     const y1 = y < h - 1 ? y + 1 : y;
     for (let x = 0; x < w; x++) {
@@ -538,33 +559,68 @@ function crustPixels(c, w, h, rich = true) {
       px[o + 2] = b;
       px[o + 3] = a * cover * dens[i] * 255;
     }
-  }
-  return px;
+  };
+  let pass = 0;
+  let row = 0;
+  return {
+    px,
+    /** Rows until `until`, at least one; true once both passes are done. */
+    step(until) {
+      while (pass < 2) {
+        if (pass === 0) heights(row);
+        else light(row);
+        if (++row === h) {
+          row = 0;
+          pass++;
+        }
+        if (until !== Infinity && performance.now() >= until) break;
+      }
+      return pass >= 2;
+    }
+  };
 }
+var brushes = /* @__PURE__ */ new Map();
+function brush(key, side, stops) {
+  const had = brushes.get(key);
+  if (had) return had;
+  const image = document.createElement("canvas");
+  image.width = side;
+  image.height = side;
+  const g = image.getContext("2d");
+  if (g) {
+    const r = side / 2;
+    const grad = g.createRadialGradient(r, r, 0, r, r, r);
+    for (const [at, colour] of stops) grad.addColorStop(at, colour);
+    g.fillStyle = grad;
+    g.fillRect(0, 0, side, side);
+  }
+  const made = { image, pattern: g?.createPattern(image, "no-repeat") ?? null };
+  brushes.set(key, made);
+  return made;
+}
+function dabEllipse(ctx, b, x, y, rx, ry) {
+  if (!b.pattern) return;
+  const r = Math.max(rx, ry);
+  const s = 2 * r / b.image.width;
+  b.pattern.setTransform({ a: s, b: 0, c: 0, d: s, e: x - r, f: y - r });
+  ctx.fillStyle = b.pattern;
+  ctx.beginPath();
+  ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+var BITE_PX = 128;
 function eraseAt(ctx, x, y, rx, ry, strength, rng2, crisp = false) {
   if (rx <= 0 || ry <= 0 || strength <= 0) return;
+  const b = crisp ? brush("bite-crisp", BITE_PX, [[0, "#000"], [0.55, "#000"], [0.86, "rgba(0,0,0,0.55)"], [1, "rgba(0,0,0,0)"]]) : brush("bite", BITE_PX, [[0, "#000"], [0.35, "rgba(0,0,0,0.82)"], [0.7, "rgba(0,0,0,0.32)"], [1, "rgba(0,0,0,0)"]]);
   ctx.save();
   ctx.globalCompositeOperation = "destination-out";
+  ctx.globalAlpha = Math.min(1, strength);
   for (let i = 0; i < 3; i++) {
     const jx = x + (rng2() - 0.5) * rx * 0.55;
     const jy = y + (rng2() - 0.5) * ry * 0.55;
     const kx = rx * rand(rng2, 0.6, 0.92);
     const ky = ry * rand(rng2, 0.6, 0.92);
-    const r = Math.max(kx, ky);
-    const grad = ctx.createRadialGradient(jx, jy, 0, jx, jy, r);
-    grad.addColorStop(0, `rgba(0,0,0,${strength})`);
-    if (crisp) {
-      grad.addColorStop(0.55, `rgba(0,0,0,${strength})`);
-      grad.addColorStop(0.86, `rgba(0,0,0,${strength * 0.55})`);
-    } else {
-      grad.addColorStop(0.35, `rgba(0,0,0,${strength * 0.82})`);
-      grad.addColorStop(0.7, `rgba(0,0,0,${strength * 0.32})`);
-    }
-    grad.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.ellipse(jx, jy, kx, ky, 0, 0, Math.PI * 2);
-    ctx.fill();
+    dabEllipse(ctx, b, jx, jy, kx, ky);
   }
   ctx.restore();
 }

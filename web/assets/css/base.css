@@ -6,12 +6,14 @@
 :root {
   --z-chrome:      20;
   --z-chrome-over: 21;
+  /* The waiting strip is feedback, not an answer wanted now: it reports on work
+     the user has already left alone, so anything they opened since covers it. */
+  --z-busy:        22;
   --z-sweep:       24;
   --z-drop:        25;
   --z-panel:       30;
   --z-overlay:     40;
   --z-status:      50;
-  --z-toast:       55;
   --z-menu:        60;
   --z-search:      70;
   --z-splash:      90;

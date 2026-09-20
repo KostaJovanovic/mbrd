@@ -172,8 +172,27 @@ const VIEW_SETTLE_MS = 140;
  */
 const IZ_STEP = 0.08;
 
-/** `v` snapped to the nearest rung of a ladder that steps by IZ_STEP. */
-const izRung = (v: number) => Math.exp(Math.round(Math.log(v) / IZ_STEP) * IZ_STEP);
+/**
+ * And the ladder a *zoom* climbs, which is three times coarser again.
+ *
+ * The rung above was measured against a pan, where --iz does not change at all
+ * and the occasional write costs nothing. A pinch changes it on every frame, and
+ * on a phone one of those writes is the most expensive thing in the frame: a
+ * traced pinch on an Android phone spent 28ms of each 55ms frame inside
+ * recalcStyle, invalidated by this one property. Coarsening it to 0.25 halves
+ * the main frame - the same trade IZ_STEP already makes, taken as far as it goes
+ * before the chrome's error becomes visible.
+ *
+ * 0.25 is about twelve per cent at worst, against four for IZ_STEP. Nobody can
+ * see a grip an eighth too big *while the board is still growing under their
+ * fingers*, which is the only time this ladder is in use: the exact value is
+ * written the moment the pinch ends (see _moving), and a pan never leaves the
+ * fine ladder at all.
+ */
+const IZ_STEP_MOVING = 0.25;
+
+/** `v` snapped to the nearest rung of a ladder that steps by `step`. */
+const izRung = (v: number, step = IZ_STEP) => Math.exp(Math.round(Math.log(v) / step) * step);
 
 // How a thrown board comes to rest - see glide().
 //
@@ -1205,13 +1224,28 @@ export class Viewport {
     //
     // +panY (not -panY): items are laid out at cssY = -worldY, so the vertical
     // translate has to undo that flip as well as apply the pan.
+    // translateZ(0) is what promotes this layer, and it is here rather than as a
+    // `will-change: transform` in the CSS for a reason that only shows on a
+    // phone. Both promote; only the hint *pins the raster scale*. Chromium
+    // rasters a will-change layer once, at the scale it first saw, and keeps
+    // that scale through every zoom - so at 30% the board was still being
+    // rastered at 1:1 and the tiles for one screenful covered ten screenfuls of
+    // texture. Past the compositor's budget it stops drawing: `tile memory
+    // limits exceeded, some content may not draw`, and a frame arrives with the
+    // cards missing. That is the blink, and it is why it came on when the board
+    // was zoomed out and never at 100%. A 3D transform carries no hint, so the
+    // raster scale follows the zoom and a screenful costs a screenful.
     this.world.style.transform =
-      `translate(${(-this.pan.x * z).toFixed(3)}px, ${(this.pan.y * z).toFixed(3)}px) scale(${z})`;
+      `translate(${(-this.pan.x * z).toFixed(3)}px, ${(this.pan.y * z).toFixed(3)}px) scale(${z}) translateZ(0)`;
     // Item chrome multiplies by --iz to stay a constant size on screen. On a
     // rung of its own ladder while the board is moving, and exact again as soon
     // as it stops - see IZ_STEP, and _moving() below, which is what puts it
     // back.
-    this._setIz(izRung(1 / z));
+    // The coarse ladder only while a gesture is in flight - see IZ_STEP_MOVING.
+    // `moving` is still last frame's answer here, since _moving() runs below;
+    // that is right, because the frame that starts a gesture is the one frame
+    // whose exact value is already on the page.
+    this._setIz(izRung(1 / z, this.moving ? IZ_STEP_MOVING : IZ_STEP));
     this.world.classList.toggle('zoom-far', z < farZoom());
     // A second, lower rung just for the resize grips. Labels and the item bar
     // become noise once a card is a swatch (zoom-far, 40%), but the corners stay

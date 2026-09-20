@@ -77,11 +77,6 @@
   <path d="M11.4 2.6a1.6 1.6 0 0 1 2.2 2.2L6.3 12.1l-3 .8.8-3z"/>
 </symbol>
 
-<!-- The Desktop title card, which is a letter because the card is a word. -->
-<symbol id="i-title" viewBox="0 0 16 16">
-  <path d="M4 4.5h8M8 4.5v7"/>
-</symbol>
-
 <!-- The saved flash, and the tick on a checked menu toggle. -->
 <symbol id="i-check" viewBox="0 0 16 16">
   <path d="M3.5 8.5l3 3 6-7"/>

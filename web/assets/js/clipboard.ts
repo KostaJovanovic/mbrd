@@ -14,11 +14,18 @@ export function copyHex(hex: string) {
   navigator.clipboard?.writeText(hex).then(() => toast(`Copied ${hex}`), () => {});
 }
 
-/** Items for a copy-shaped operation, z-sorted. Title card excluded — it is a singleton. */
+/**
+ * Whether an item may be copied, cut or duplicated. Two never are: the title
+ * card, which is a singleton, and the card a cleaned board leaves behind
+ * (canvas/spotless.ts), which is earned - a copy of it is one nobody earned.
+ */
+export const copyable = (i: Item) => i.type !== 'title' && i.type !== 'card';
+
+/** Items for a copy-shaped operation, z-sorted, the uncopyable left out. */
 export function itemsIn(ids: Iterable<string>) {
   const set = ids instanceof Set ? ids : new Set(ids);
   return board.items
-    .filter(i => set.has(i.id) && i.type !== 'title')
+    .filter(i => set.has(i.id) && copyable(i))
     .sort((a, b) => (a.z || 0) - (b.z || 0));
 }
 

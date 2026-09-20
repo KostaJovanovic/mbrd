@@ -22,9 +22,9 @@ import {
   printTurn, toPrint, fromPrint, robotEats, robotTurn, robotJob, mopPath, MOP_PATTERNS,
   MOP_INSET,
 } from './mess.ts';
-import type { ToolId, MessKind, Field, Web, Box, Rng, Tank, DebrisPlan, TrackPlan } from './mess.ts';
+import type { ToolId, MessKind, Field, Web, Box, Rng, Tank, DebrisPlan, TrackPlan, CardState } from './mess.ts';
 import {
-  crust, crustMask, paintField, eraseAt, wetAt, sheenAt, gleamAt, runAt,
+  crust, crustMask, crustPainter, eraseAt, wetAt, sheenAt, gleamAt, runAt,
   washOf, waterInk, fleckColour,
   debrisNode, placeBit, sizeBit, peelAt, BIT_UNIT, webPath, webSag, webCore, webNode,
   bootMask, paintBoot, BOOT_GRID,
@@ -100,6 +100,11 @@ type LiveField = {
   canvas: HTMLCanvasElement,
   ctx: CanvasRenderingContext2D,
   fading: boolean,
+  /** Whether its crust is on the canvas yet, and the painter part of the way
+   *  through it - see drainPaint(). No tool works a crust that is not there
+   *  to see: the paint would land over a grid already half washed. */
+  painted: boolean,
+  paint: ((until: number) => boolean) | null,
 };
 
 type LiveBit = {
@@ -178,6 +183,15 @@ type LiveCard = {
   heldNode: HTMLElement | null,
   fields: LiveField[],
   debris: LiveBit[],
+  /** The card as the counting sees it: its crusts that are not dissolving,
+   *  and its debris - the same array as `debris`, never a copy. Kept rather
+   *  than built per ask, because the badge asks for every card every frame.
+   *  Only dissolve() changes which crusts are in it. */
+  state: CardState,
+  /** The crust its debris is lying over, and the frame that was worked out
+   *  on - see shieldOf(). */
+  shield: ((i: number) => boolean) | null,
+  shieldAt: number,
   clean: boolean,
 };
 
@@ -191,7 +205,7 @@ type WebLeg = {
 
 /** The three strands are one `<path>` and one thing to sweep: touching any of
  *  them takes the web and frees all three cards at once. */
-type LiveWeb = Web & { node: SVGPathElement, legs: WebLeg[] };
+type LiveWeb = Web & { node: SVGPathElement, shade: SVGPathElement, legs: WebLeg[] };
 
 /**
  * The one spider, and the only thing in the layer that moves on its own.
@@ -383,6 +397,19 @@ let raf = 0;
 let finishing = false;
 let rng: Rng = Math.random;
 let pending: LiveField[] = [];
+/**
+ * The mess is dealt but nothing of it is on screen yet: the black takes 600ms
+ * to come up and the board shows through it all the way, so everything waits
+ * behind it. Cleared by showMess() the moment the black is solid - after which
+ * the crusts paint, settle and drain their cards' colour with five seconds of
+ * intro still to run over the top, and the star opens on a board that has been
+ * dirty for some time.
+ */
+let messHidden = false;
+/** Which cards the game is playing with, when it is not playing with all of
+ *  them - the rest go out of sight, behind the black. Null when every playable
+ *  card is in. See showMess(). */
+let cull: Set<string> | null = null;
 let drawing = false;
 let panning = false;
 let pointers = 0;
@@ -417,6 +444,8 @@ let loadG: SVGGElement | null = null;
 let mist: HTMLCanvasElement | null = null;
 let mistCtx: CanvasRenderingContext2D | null = null;
 let motes: Mote[] = [];
+/** Whether anything is drawn on the mist canvas - see drawMist(). */
+let mistInk = false;
 /** Where the glass is on screen, kept by an observer rather than read per
  *  frame: tick() writes styles every frame, and a layout read after them in
  *  drawMist() was a forced layout on every one, even with the hand still. */
@@ -538,12 +567,23 @@ export function startClean(): boolean {
 
   layer = div('clean-layer');
   layer.id = 'dirt';
+  // Nothing of it on screen until the black is solid. See showMess().
+  messHidden = true;
+  layer.classList.add('is-waiting');
   layer.style.zIndex = String(DIRT_Z);
   worldEl.append(layer);
 
   const plan = planBoard(picked.map(boxOf), rng);
   const byId = new Map(picked.map(i => [i.id, i]));
-  cards = plan.cards.map(p => buildCard(byId.get(p.id)!, p)).filter(c => c !== null);
+  // Every corner read before anything is written. Read card by card while the
+  // cards were being built, each read came after the last card's writes and
+  // paid for a fresh style pass - twenty-five of them in one keypress.
+  const corners = new Map<string, string>();
+  for (const i of picked) {
+    const node = nodeFor(i.id);
+    if (node?.isConnected) corners.set(i.id, getComputedStyle(node).borderRadius);
+  }
+  cards = plan.cards.map(p => buildCard(byId.get(p.id)!, p, corners.get(p.id))).filter(c => c !== null);
   dealt = cards.map(c => ({ box: boxOf(c.item), colour: dealtColour(c) }));
   // After the cards, so the trail lies over them: whoever walked through did it
   // once everything else was already on the board.
@@ -587,10 +627,9 @@ export function startClean(): boolean {
   document.documentElement.classList.add('is-cleaning');
   // A board bigger than the game: the cards left out go out of sight, and the
   // connection lines with them, since a line to a hidden card points at nothing.
-  if (picked.length < playable().length) {
-    setCleanPlay(new Set(picked.map(i => i.id)));
-    document.documentElement.classList.add('is-clean-culled');
-  }
+  // Decided here and done behind the black (showMess()) - cards vanishing is the
+  // most visible thing the mode does on its way in, and nobody should see it.
+  cull = picked.length < playable().length ? new Set(picked.map(i => i.id)) : null;
   pauseMedia();
   paintCount();
   raf = requestAnimationFrame(tick);
@@ -601,7 +640,7 @@ export function startClean(): boolean {
     showBar(true);
     startMusic();
     cue('arrive');
-  }, quality.anim);
+  }, quality.anim, showMess);
   return true;
 }
 
@@ -679,6 +718,7 @@ export function stopClean(): boolean {
   loadG = null;
   mist = null;
   mistCtx = null;
+  mistInk = false;
   catchWatch?.disconnect();
   catchWatch = null;
   catchBox = { left: 0, top: 0, w: 0, h: 0 };
@@ -701,6 +741,8 @@ export function stopClean(): boolean {
   dealt = [];
   tracks = [];
   pending = [];
+  messHidden = false;
+  cull = null;
   document.documentElement.classList.remove('is-cleaning', 'is-clean-done', 'is-clean-holding', 'is-clean-culled');
   setCleanPlay(null);
   showBar(false);
@@ -737,7 +779,9 @@ const ns = <K extends keyof SVGElementTagNameMap>(tag: K) =>
 
 // ---- building -----------------------------------------------------------
 
-function buildCard(item: Item, plan: { fields: MessKind[], debris: DebrisPlan[] }): LiveCard | null {
+function buildCard(
+  item: Item, plan: { fields: MessKind[], debris: DebrisPlan[] }, corner: string | undefined,
+): LiveCard | null {
   if (!layer) return null;
   const box = div('clean-card');
   // The same arithmetic placeBox() uses in canvas/items.ts: world y is up and
@@ -753,14 +797,13 @@ function buildCard(item: Item, plan: { fields: MessKind[], debris: DebrisPlan[] 
   box.style.setProperty('--half-min', (Math.min(item.w, item.h) / 2).toFixed(2) + 'px');
   if (item.rot) box.style.transform = `rotate(${-item.rot}deg)`;
 
+  // Folded away until the jet first gets them wet - see unfold().
   const wet = document.createElement('canvas');
   wet.className = 'clean-wet';
-  wet.width = texSide(item.w);
-  wet.height = texSide(item.h);
+  fold(wet);
   const run = document.createElement('canvas');
   run.className = 'clean-run';
-  run.width = texSide(item.w);
-  run.height = texSide(item.h);
+  fold(run);
   const ring = buildRing();
 
   const live: LiveCard = {
@@ -773,10 +816,11 @@ function buildCard(item: Item, plan: { fields: MessKind[], debris: DebrisPlan[] 
     badgeTool: null, badgeOwed: false, checkTill: 0,
     lean: 0, rounded: false,
     gifs: false, heldNode: null,
-    fields: [], debris: [], clean: false,
+    fields: [], debris: [], state: { id: item.id, fields: [], debris: [] },
+    shield: null, shieldAt: -1, clean: false,
   };
   setLean(live);
-  setRadius(live);
+  setRadius(live, corner);
   for (const kind of plan.fields) live.fields.push(makeLive(kind, item));
   for (const d of plan.debris) {
     const node = debrisNode(d, rng);
@@ -787,6 +831,7 @@ function buildCard(item: Item, plan: { fields: MessKind[], debris: DebrisPlan[] 
       tough: d.kind === 'gum' ? TUNING.gumTugs : 1, peel: 0, grab: null, host: null,
     });
   }
+  live.state = { id: item.id, fields: live.fields.map(f => f.field), debris: live.debris };
   for (const f of live.fields) box.append(f.canvas);
   // Runoff over the crust and under the sheen and the debris: a rivulet crosses
   // grime it has not cleaned yet, which is the point of it.
@@ -861,7 +906,9 @@ function makeLive(kind: MessKind, item: Item): LiveField {
   const ctx = canvas.getContext('2d')!;
   const c = crust(kind, rng);
   const field = makeField(kind, crustMask(c), TUNING.grid, TUNING.depth[kind] ?? 1);
-  const live: LiveField = { kind, field, crust: c, canvas, ctx, fading: false };
+  const live: LiveField = {
+    kind, field, crust: c, canvas, ctx, fading: false, painted: !field.total, paint: null,
+  };
   // Counted now, painted over the next few frames. The grid is cheap and the
   // noise is not, and doing every card's noise in the keypress that opened the
   // mode is half a second of frozen window. Queued instead, the cards are dirty
@@ -871,17 +918,48 @@ function makeLive(kind: MessKind, item: Item): LiveField {
   return live;
 }
 
-/** Crusts painted per frame. One still finishes thirty cards in half a second
- *  of frames, and keeps the cost of any one frame to a single crust. */
-const PAINT_PER_FRAME = 1;
+/**
+ * Milliseconds of crust painting per frame. A whole crust is 13 to 45 ms, and
+ * one a frame - which is what this was - stalled every frame of the intro's
+ * rolling date, which is moved by script on this same thread. At six a frame
+ * twenty-five cards take about two seconds of frames, all of them under the
+ * black, which is the point: the mess is dealt, painted and settled while
+ * nobody can see it, and the star opens onto a board that is already dirty.
+ * With motion off the intro is gone at once and the board is on show, so it may
+ * take a little more and be done sooner.
+ */
+const PAINT_MS = 6;
+const PAINT_MS_STILL = 12;
 
 function drainPaint() {
-  for (let i = 0; i < PAINT_PER_FRAME; i++) {
-    const live = pending.shift();
-    if (!live) return;
-    if (live.fading) continue;
-    paintField(live.ctx, live.crust, live.canvas.width, live.canvas.height, quality.grain);
+  const until = performance.now() + (quality.anim ? PAINT_MS : PAINT_MS_STILL);
+  while (pending.length) {
+    const live = pending[0]!;
+    if (live.fading) { pending.shift(); continue; }
+    live.paint ??= crustPainter(live.ctx, live.crust, live.canvas.width, live.canvas.height, quality.grain);
+    if (!live.paint(until)) return;
+    pending.shift();
+    live.paint = null;
+    live.painted = true;
     live.canvas.classList.add('clean-settled');
+    if (performance.now() >= until) return;
+  }
+}
+
+/**
+ * The black is solid: let the mess be seen, which is to say let it happen.
+ *
+ * No fade and nothing gradual - there is a black sheet over it, so the switch
+ * costs nothing to hide. What follows it is the two seconds of crust painting
+ * and the cards draining their colour, all of it behind the intro.
+ */
+function showMess() {
+  if (!messHidden) return;
+  messHidden = false;
+  layer?.classList.remove('is-waiting');
+  if (cull) {
+    setCleanPlay(cull);
+    document.documentElement.classList.add('is-clean-culled');
   }
 }
 
@@ -892,6 +970,27 @@ const sizeOnCard = (node: SVGGElement, item: Item) =>
 
 const texSide = (world: number) =>
   Math.max(TEX_MIN, Math.min(TEX_MAX, Math.round(world)));
+
+/**
+ * The sheen and the runoff have a canvas each on every card, and only the card
+ * under the jet ever has anything on them. At full size they were a mebibyte
+ * apiece whether used or not - fifty of them idle on a board of twenty-five -
+ * and every idle sheen still a blended layer. So they sit at no size and out of
+ * the page until the jet reaches the card, and go back the same way once they
+ * have faded. A canvas resized is a canvas cleared, which is also the clear.
+ */
+function unfold(canvas: HTMLCanvasElement, item: Item) {
+  if (canvas.width) return;
+  canvas.width = texSide(item.w);
+  canvas.height = texSide(item.h);
+  canvas.hidden = false;
+}
+
+function fold(canvas: HTMLCanvasElement) {
+  canvas.width = 0;
+  canvas.height = 0;
+  canvas.hidden = true;
+}
 
 /** How big a print is drawn, in world units, and the pixels it is painted at.
  *  Small enough that sixteen of them cost about one card's worth of canvas. */
@@ -973,7 +1072,7 @@ function buildWebs(list: readonly Web[], byId: Map<string, Item>) {
     }
     // One path for the sides and the middle both: the web is one thing to
     // sweep, and a single node is what lets the leave animation take all of it.
-    made.push({ ...w, node: webNode(d), legs });
+    made.push({ ...w, node: webNode(d), shade: webNode(d, true), legs });
   }
   if (!made.length) return;
   // One SVG for every strand, its viewBox in the layer's own coordinates so a
@@ -993,6 +1092,8 @@ function buildWebs(list: readonly Web[], byId: Map<string, Item>) {
   svg.style.top = y0 + 'px';
   svg.style.width = (x1 - x0) + 'px';
   svg.style.height = (y1 - y0) + 'px';
+  // Every shadow before every strand, so no web's shadow falls across another.
+  for (const w of made) svg.append(w.shade);
   for (const w of made) svg.append(w.node);
   // Removed with the whole dirt layer on the way out, which is why nothing
   // holds a reference to it past here.
@@ -1667,11 +1768,11 @@ function leanOf(item: Item): number {
  * until it comes back, which is fine, since a card nobody can see does not have
  * a corner anybody can see either.
  */
-function setRadius(card: LiveCard) {
+function setRadius(card: LiveCard, known?: string) {
   if (card.rounded) return;
   const node = nodeFor(card.item.id);
   if (!node?.isConnected) return;
-  card.box.style.borderRadius = getComputedStyle(node).borderRadius;
+  card.box.style.borderRadius = known ?? getComputedStyle(node).borderRadius;
   card.rounded = true;
   // The same node, asked the other question once while it is here: whether
   // there is a GIF under this dirt. Both answers cost a walk to the same
@@ -1704,6 +1805,10 @@ function setRadius(card: LiveCard) {
  * or the answer has changed.
  */
 function paintHeld(card: LiveCard) {
+  // The colour drains behind the black too: it is a 1.2s transition, and
+  // started before the black was solid it is the one part of the mess arriving
+  // that would still be moving when the star opened. See showMess().
+  if (messHidden) return;
   const node = nodeFor(card.item.id) ?? null;
   if (!node?.isConnected) return;
   if (node !== card.heldNode) {
@@ -1734,14 +1839,28 @@ function setLean(card: LiveCard) {
  * it is lying on.
  */
 function shieldOf(card: LiveCard): ((i: number) => boolean) | null {
+  // Once a frame per card, not once a touch: the jet asks up to a hundred and
+  // sixty times per pointer event, and the answer is a walk over every cell
+  // near every piece. A piece skidded or picked up mid-frame is a frame late
+  // leaving the crust under it, which nobody can see.
+  if (card.shieldAt === tickAt) return card.shield;
+  card.shieldAt = tickAt;
+  card.shield = null;
   if (!card.debris.length) return null;
   const g = TUNING.grid;
-  const bits = card.debris.map(b => ({ x: b.x, y: b.y, r: SHADE_R * b.size }));
-  return (i: number) => {
-    const u = ((i % g) + 0.5) / g;
-    const v = (Math.floor(i / g) + 0.5) / g;
-    return bits.some(b => Math.hypot(b.x - u, b.y - v) <= b.r);
-  };
+  const under = new Uint8Array(g * g);
+  for (const b of card.debris) {
+    const r = SHADE_R * b.size;
+    const x0 = Math.max(0, Math.floor((b.x - r) * g));
+    const x1 = Math.min(g - 1, Math.ceil((b.x + r) * g));
+    const y0 = Math.max(0, Math.floor((b.y - r) * g));
+    const y1 = Math.min(g - 1, Math.ceil((b.y + r) * g));
+    for (let iy = y0; iy <= y1; iy++)
+      for (let ix = x0; ix <= x1; ix++)
+        if (Math.hypot(b.x - (ix + 0.5) / g, b.y - (iy + 0.5) / g) <= r) under[iy * g + ix] = 1;
+  }
+  card.shield = (i: number) => under[i] === 1;
+  return card.shield;
 }
 
 function workCard(
@@ -1760,10 +1879,11 @@ function workCard(
     if (bite > 0) sheen(card, u, v, rx, ry);
     // What is lying over the grime: the debris on the card.
     const shield = shieldOf(card);
-    for (const f of card.fields.slice()) {
+    // Not a copy: nothing in here takes a crust off the card - see below.
+    for (const f of card.fields) {
       // A crust whose grid is all washed is still painted until the let-go
       // dissolves it, so the jet keeps erasing it - see workTracks().
-      if (f.fading || !f.field.total) continue;
+      if (f.fading || !f.field.total || !f.painted) continue;
       const depth = Math.max(1, TUNING.depth[f.kind] ?? 1);
       if (bite > 0) {
         // Whether the cell under the nozzle is on its last pass. One lookup
@@ -1835,7 +1955,7 @@ function workCard(
     }
   }
 
-  if (!card.clean && cardClean(asState(card), webs)) markClean(card);
+  if (!card.clean && cleanNow(card)) markClean(card);
   return worked;
 }
 
@@ -1850,11 +1970,7 @@ function cellUnder(f: Field, u: number, v: number): number {
 }
 
 /** The card as it stands, for the badge: how much is left, cell for cell. */
-const liveState = (c: LiveCard) => ({
-  id: c.item.id,
-  fields: c.fields.filter(f => !f.fading).map(f => f.field),
-  debris: c.debris,
-});
+const liveState = (c: LiveCard): CardState => c.state;
 
 /** The card as the counter and the ending see it. A crust counts gone once it
  *  is dissolving, not the moment it passes TUNING.clearAt: the hand's jet
@@ -1868,6 +1984,13 @@ const asState = (c: LiveCard) => {
   // still waiting for the let-go. Dissolving ones are already gone from `s`.
   return { ...s, fields: s.fields.map(f => (f.total ? { ...f, total: 1, left: 1 } : f)) };
 };
+
+/** `cardClean(asState(c), webs)` without building the state: every crust not
+ *  yet dissolving reads as wholly dirty, so the card is clean only with none
+ *  left and no debris or web. For the two callers that ask at every touch of a
+ *  tool - the rest ask once, on an event, and read the rule itself. */
+const cleanNow = (c: LiveCard) =>
+  !c.debris.length && c.state.fields.every(f => !f.total) && !webs.some(w => webHolds(w, c.item.id));
 
 function eraseAlpha(f: LiveField, u: number, v: number, rx: number, ry: number, share: number, crisp: boolean) {
   eraseAt(
@@ -1890,13 +2013,16 @@ function wetAlpha(f: LiveField, u: number, v: number, rx: number, ry: number) {
 /** The sheen left behind on the card itself. Its own canvas above the crust, so
  *  it fades on its own clock and is never in the way of the erase below it. */
 function sheen(card: LiveCard, u: number, v: number, rx: number, ry: number) {
+  unfold(card.wet, card.item);
   sheenAt(
     card.wetCtx,
     u * card.wet.width, v * card.wet.height,
     rx * card.wet.width, ry * card.wet.height,
   );
+  // The opacity is tick()'s to write, once a frame, from this: a sheen just
+  // laid is at its peak there, and writing it here as well was a style write
+  // at every touch of the jet.
   card.wetAt = performance.now();
-  card.wet.style.opacity = String(SHEEN_PEAK);
 }
 
 /** How often the front of the jet may gleam. Not a nicety: this paints onto the
@@ -1964,6 +2090,7 @@ function startRun(card: LiveCard, u: number, v: number, kind: MessKind, took: nu
   if (!richly() && rng() < 0.5) return;
   card.runAt = now;
   card.runTill = now + RUN_TAIL_MS;
+  unfold(card.run, card.item);
   card.run.style.opacity = '1';
   card.runs.push({ x: u, y: v, drift: (rng() - 0.5) * 0.02, born: now, kind });
 }
@@ -2026,7 +2153,7 @@ function drawRuns(card: LiveCard, dt: number, now: number) {
   const left = card.runTill - now;
   card.run.style.opacity = Math.min(1, Math.max(0, left / RUN_OUT_MS)).toFixed(3);
   if (left <= 0) {
-    ctx.clearRect(0, 0, w, h);
+    fold(card.run);
     card.run.style.opacity = '0';
     card.runTill = 0;
   }
@@ -2131,6 +2258,7 @@ function paintBadges() {
 function dissolve(card: LiveCard, f: LiveField) {
   if (f.fading) return;
   f.fading = true;
+  card.state.fields = card.fields.filter(x => !x.fading).map(x => x.field);
   f.canvas.classList.add('clean-gone');
   later(() => {
     f.canvas.remove();
@@ -2469,12 +2597,14 @@ function sweepWebs(lx: number, ly: number, radius: number): number {
     // The strand comes away from the middle out, which is where the duster met
     // it, rather than fading where it hangs.
     const len = w.node.getTotalLength?.() ?? 400;
-    w.node.style.strokeDasharray = String(len);
-    w.node.animate(
-      [{ strokeDashoffset: '0' }, { strokeDashoffset: String(len) }],
-      { duration: LEAVE_MS, easing: EASE, fill: 'forwards' },
-    );
-    later(() => w.node.remove(), LEAVE_MS);
+    for (const path of [w.shade, w.node]) {
+      path.style.strokeDasharray = String(len);
+      path.animate(
+        [{ strokeDashoffset: '0' }, { strokeDashoffset: String(len) }],
+        { duration: LEAVE_MS, easing: EASE, fill: 'forwards' },
+      );
+      later(() => path.remove(), LEAVE_MS);
+    }
     // Whoever was living in it has to go somewhere. Only its own web: sweeping
     // another one leaves it exactly where it is.
     if (spider?.web === w) dropSpider();
@@ -3104,7 +3234,7 @@ function robotMop(s: LiveRobot, dt: number): boolean {
     sheen(card, p.u, p.v, rx, ry);
     const shield = shieldOf(card);
     for (const f of card.fields.slice()) {
-      if (f.fading || !f.field.total || !f.field.left) continue;
+      if (f.fading || !f.field.total || !f.field.left || !f.painted) continue;
       const span = Math.max(1, TUNING.depth[f.kind] ?? 1) * SUBS;
       const lastPass = cellUnder(f.field, p.u, p.v) <= bite * SUBS;
       const wear = wearOf(f.field, p.u, p.v, rx, ry, bite, span, shield);
@@ -3116,7 +3246,7 @@ function robotMop(s: LiveRobot, dt: number): boolean {
       }
       if (fieldClear(f.field)) dissolve(card, f);
     }
-    if (!card.clean && cardClean(asState(card), webs)) markClean(card);
+    if (!card.clean && cleanNow(card)) markClean(card);
   }
   worked += workTracks(s.x, -s.y, radius, bite, true);
   return worked > 0;
@@ -3378,7 +3508,10 @@ function tick() {
   const now = performance.now();
   const dt = tickAt ? Math.min(100, now - tickAt) : 16;
   tickAt = now;
-  if (pending.length) drainPaint();
+  // Not while the board is still showing through the black: a crust that lands
+  // there is one somebody watched land. The wait is 600ms of an intro that runs
+  // for six seconds, so the queue still empties long before the star.
+  if (!messHidden && pending.length) drainPaint();
   sampleSpeed(dt);
   paintLift(dt);
 
@@ -3458,7 +3591,7 @@ function tick() {
       const out = Math.min(1, Math.max(0, (SHEEN_MS - age) / SHEEN_OUT_MS));
       card.wet.style.opacity = (out * SHEEN_PEAK).toFixed(3);
       if (age > SHEEN_MS) {
-        ctx.clearRect(0, 0, card.wet.width, card.wet.height);
+        fold(card.wet);
         card.wet.style.opacity = '0';
         card.wetAt = 0;
       }
@@ -3606,8 +3739,13 @@ function drawMist(now: number) {
   const { w, h } = catchBox;
   const box = catchBox;
   if (!w || !h) return;
-  if (mist.width !== w || mist.height !== h) { mist.width = w; mist.height = h; }
-  mistCtx.clearRect(0, 0, w, h);
+  // Resizing clears it.
+  if (mist.width !== w || mist.height !== h) { mist.width = w; mist.height = h; mistInk = false; }
+  // Cleared only when there is something on it. A cleared canvas is a changed
+  // canvas, and clearing an empty one every frame had the compositor upload a
+  // whole viewport of nothing sixty times a second while the hand was still.
+  if (mistInk) mistCtx.clearRect(0, 0, w, h);
+  mistInk = motes.length > 0;
   if (!motes.length) return;
   const alive: Mote[] = [];
   for (const m of motes) {

@@ -205,8 +205,8 @@
 }
 .drawer-spacer { flex: 1 1 auto; }
 
-/* Title card's way back. Shown only while the card is gone. */
-.drawer-title-back,
+/* The switch to the Special shelf, and the destructive button beside it. */
+.drawer-special,
 .drawer-empty {
   flex: none;
   padding: 2px 7px;
@@ -216,15 +216,20 @@
   font-size: var(--t-tiny);
   cursor: pointer;
 }
-.drawer-title-back {
+.drawer-special {
   display: flex;
   align-items: center;
   gap: 4px;
   color: var(--accent-deep);
 }
-.drawer-title-back .ico { width: 13px; height: 13px; }
-.drawer-title-back:hover { border-color: var(--accent-text); }
-.drawer-title-back[hidden] { display: none; }
+.drawer-special:hover { border-color: var(--accent-text); }
+/* Held in while that shelf is the one on show. */
+.drawer-special.is-on {
+  border-color: var(--accent-text);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.drawer-special[hidden],
+.drawer-empty[hidden] { display: none; }
 /* Destructive -- wears danger colour at rest. Asks before acting. */
 .drawer-empty { color: var(--danger); }
 .drawer-empty:hover { border-color: var(--danger); }
@@ -251,6 +256,27 @@
 .drawer-close:active { background: var(--paper-3); }
 .drawer-close:focus-visible { background: var(--paper-2); color: var(--accent-deep); }
 .drawer-close svg { width: var(--icon-glyph); height: var(--icon-glyph); }
+
+/* ---------------------------------------------------------------------------
+   The Special shelf: the same window, dressed for what it holds.
+
+   Nothing moves - the head, the shelves and the slots are the ones above, so
+   the switch changes what is in the drawer and not where anything is. What it
+   adds is a warmer ground and a gilt edge, the difference between a drawer you
+   throw things into and a case you keep things in. See fillSpecial()
+   (ui/drawer.ts). --------------------------------------------------------- */
+#drawer-window.is-special {
+  border-color: var(--accent-text);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 9%, transparent), transparent 42%),
+    var(--paper-card);
+  box-shadow: var(--shadow-2), inset 0 0 0 var(--hairline) color-mix(in srgb, var(--accent) 30%, transparent);
+}
+#drawer-window.is-special .drawer-head { border-bottom-color: var(--accent-text); }
+#drawer-window.is-special .drawer-title { color: var(--accent-deep); }
+#drawer-window.is-special .drawer-shelf {
+  border-bottom-color: color-mix(in srgb, var(--accent) 45%, var(--rule-2));
+}
 
 .drawer-body {
   flex: 1 1 auto;

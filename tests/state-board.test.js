@@ -13,7 +13,7 @@ import {
   cutItems, clipboardSize, renameItem, setSetting, setItemFit, snapshotGeom,
   applyGeom, commitGeom, setBoardMode, mobileBoardWidth, mobileBoardTop,
   mobileBoardBottom, baseStep, placeMobileItems, ensureTitleCard,
-  restoreTitleCard, isTitleHidden, resetTitlePosition, TITLE_ID,
+  restoreTitleCard, isTitleHidden, resetTitlePosition, TITLE_ID, canCopyItems,
 } from '../web/assets/js/state.ts';
 import { dropIdIndex } from '../web/assets/js/board-model.ts';
 import { itemBounds, overlapFraction, CELL_GAP } from '../web/assets/js/geometry.ts';
@@ -690,6 +690,27 @@ test('the title card cannot be copied, cut or duplicated, and a group skips it',
   // Cutting a group leaves the title card on the board (not copied, not binned).
   cutItems(['a', TITLE_ID]);
   assert.equal(board.items.some(i => i.id === TITLE_ID), true, 'the title card survives a cut');
+});
+
+test('the card a cleaned board earns cannot be copied, cut or duplicated', () => {
+  // Earned by cleaning the board (ui/clean/clean.ts), and a copy of it is one
+  // nobody earned.
+  fresh([photo({ id: 'a', w: 100, h: 100 }), { id: 's', type: 'card', x: 0, y: 0, w: 336, h: 300, name: 'Spotless' }]);
+
+  assert.equal(canCopyItems(['s']), false, 'the menu would offer Copy');
+  assert.equal(canCopyItems(['a', 's']), true);
+  assert.equal(copyItems(['s']), '', 'it copies to nothing');
+  assert.equal(clipboardSize(), 0);
+  assert.equal(duplicateItems(['s']).length, 0, 'it duplicates');
+
+  copyItems(['a', 's']);
+  assert.equal(clipboardSize(), 1, 'a group takes it onto the clipboard');
+  assert.equal(duplicateItems(['a', 's']).length, 1, 'a group duplicates it');
+
+  // Cut is copy and delete, and a cut one could be pasted any number of times.
+  cutItems(['a', 's']);
+  assert.equal(board.items.some(i => i.id === 's'), true, 'a cut takes it off the board');
+  assert.equal(board.items.filter(i => i.type === 'card').length, 1, 'still one of it');
 });
 
 test('resetTitlePosition sends the card home, undoably, and no-ops when already there', () => {
