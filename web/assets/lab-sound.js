@@ -442,17 +442,22 @@ function sleepLater(context) {
 }
 var STALE_MS = 200;
 var waking = null;
+var WAKE_MS = 1e3;
 function wake(context) {
   if (!waking) {
-    waking = Promise.resolve(context.resume()).then(
+    const mine = Promise.resolve(context.resume()).then(
       () => {
-        waking = null;
+        if (waking === mine) waking = null;
       },
       (reason) => {
-        waking = null;
+        if (waking === mine) waking = null;
         throw reason;
       }
     );
+    waking = mine;
+    setTimeout(() => {
+      if (waking === mine) waking = null;
+    }, WAKE_MS);
   }
   return waking;
 }

@@ -471,15 +471,46 @@ const STALE_MS = 200;
  */
 let waking: Promise<void> | null = null;
 
+/**
+ * How long a resume may be in flight before the next cue is allowed to ask
+ * again.
+ *
+ * **Without this the paragraph above is a trap rather than a fix.** `waking` is
+ * cleared when its promise settles, and the whole point of the paragraph is that
+ * a `resume()` may never settle - so one hung resume pinned this for the life of
+ * the page, and every cue after it was handed a promise whose `.then` would
+ * never run. That is silence with *no entry in the transcript*, which no other
+ * path in this module can produce: render() says something on every branch it
+ * reaches. The engine simply stopped, and the log said nothing had been asked.
+ *
+ * It was found by playing the cleaning game, which is the one thing in the app
+ * that starts an `<audio>` element of its own - a media element taking the audio
+ * focus is exactly the case where the browser holds the context and answers
+ * resume() with a promise it is in no hurry to keep.
+ *
+ * A second is long enough that it never fires on our own idle suspend (single
+ * digit milliseconds) and short enough that the next press gets a fresh try.
+ * Giving up does not cancel the resume - it cannot - it only stops this being
+ * the last word on the subject. The caller's own STALE_MS deadline is what keeps
+ * the abandoned one from making a noise later.
+ */
+const WAKE_MS = 1000;
+
 function wake(context: AudioContext): Promise<void> {
   if (!waking) {
     // Normalised to a plain Promise<void>: some browsers still return undefined
     // from resume() rather than a promise, and a caller here only ever wants to
     // know that the wait is over.
-    waking = Promise.resolve(context.resume()).then(
-      () => { waking = null; },
-      reason => { waking = null; throw reason; },
+    //
+    // Each settle checks it is still the one in flight before clearing, which it
+    // did not have to before there was a deadline: an abandoned resume that
+    // finally lands must not clear the *next* one out from under it.
+    const mine: Promise<void> = Promise.resolve(context.resume()).then(
+      () => { if (waking === mine) waking = null; },
+      reason => { if (waking === mine) waking = null; throw reason; },
     );
+    waking = mine;
+    setTimeout(() => { if (waking === mine) waking = null; }, WAKE_MS);
   }
   return waking;
 }
