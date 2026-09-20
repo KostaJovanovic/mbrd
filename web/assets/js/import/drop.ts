@@ -12,7 +12,7 @@ import {
 import { cleanPath } from './archive.ts';
 import { addFile, derivedFile } from '../storage/assets.ts';
 import { makeByteBudget, overPixelBudget, pixelCrossing, IMPORT_LIMITS } from './budget.ts';
-import { allow, isAllowed, lift, fileKey, mb as consentMb } from '../consent.ts';
+import { allow, isAllowed, isOversize, lift, fileKey, mb as consentMb } from '../consent.ts';
 import {
   classify, defaultSize, measureSize, fitToBox, linkURL, linkDraft, videoFrame,
   videoDrawsBlank, pictureIsFlat, swatchHex, SWATCH_DEFAULT,
@@ -22,6 +22,8 @@ import { arrange, mobileOrder } from '../arrange/arrangements.ts';
 import { coverArt, mayHaveArt } from './artwork.ts';
 import { mediaFacts } from './containers.ts';
 import { embeddedPreview, NOT_PORTABLE, PORTABLE_MIN_EDGE } from './preview.ts';
+import { heifPicture } from './heif.ts';
+import { RAW_EXTS } from './formats.ts';
 // Statically, unlike import/pdf.ts below it: this one reaches storage/zip.ts and
 // nothing else, and the zip reader is already in memory - it is what opens every
 // .mbrd. There is no dependency to defer and so no reason to defer it.
@@ -846,8 +848,25 @@ async function prepareFile(file: File, stats = { undecodable: 0 }): Promise<Draf
       //
       // Unwired, and for every format the shell does not know, this resolves
       // null and the embedded-preview path runs exactly as it always did.
+      //
+      // Four paths, cheapest first, and each one null for a file it is not
+      // for. The two on the ends read the picture itself; the two in the
+      // middle look for one somebody already made:
+      //
+      //   nativePreview   the shell's own decoder, where there is a shell
+      //   heifPicture     the HEVC in a .heic, through WebCodecs
+      //   embeddedPreview the JPEG the camera baked in, where it baked one
+      //   developedRaw    the sensor, demosaiced, for a RAW that baked none
+      //
+      // The last two are the pair that matters for a photograph taken at
+      // night: a Samsung .dng carries no preview at all, and before this ran
+      // it became a grey named card - a card isRaw() then refuses, since it
+      // asks for an image, so the Demosaic row was absent from exactly the
+      // files that needed it.
       const preview = await nativePreview(file)
-        ?? await asking(file, l => embeddedPreview(file, l));
+        ?? await heifPicture(file)
+        ?? await asking(file, l => embeddedPreview(file, l))
+        ?? await asking(file, l => developedRaw(file, l));
       // Budgeted for the same reason the baked path above now is. preview.ts
       // verifies the lead bytes are FF D8 FF and admits a JPEG up to MAX_JPEG
       // (128 MB) with no dimension check at all - so a .dng whose
@@ -1482,5 +1501,35 @@ async function nativePreview(file: File): Promise<File | null> {
     // The bitmap holds decoded pixels until it is closed, and a board of
     // photographs would otherwise hold every one of them at once.
     bitmap.close();
+  }
+}
+
+/**
+ * A camera RAW developed into a picture - the path of last resort, for the
+ * RAWs that carry no preview for the three readers above this one to find.
+ * Null for everything that is not a RAW.
+ *
+ * Half-size on purpose (see demosaic()): a fifth of a second rather than a
+ * second and a bit, and still over the display ceiling on any camera. The
+ * Demosaic row is unchanged and still develops every pixel - which is the
+ * point of importing as an image card rather than a grey one, because that
+ * row is only offered on an image.
+ *
+ * LibRaw is behind a dynamic import for the reason every heavy reader here is:
+ * a board with no RAW on it should not fetch a megabyte and a half of wasm.
+ */
+async function developedRaw(file: File, lift: boolean): Promise<File | null> {
+  if (!RAW_EXTS.has(extOf(file.name))) return null;
+  try {
+    const { demosaic } = await import('../optimize/demosaic.ts');
+    const made = await demosaic(file, lift, true);
+    const stem = file.name.replace(/\.[^.]*$/, '');
+    return new File([made.blob], stem + '.jpg', { type: 'image/jpeg' });
+  } catch (err) {
+    // The sensor ceiling is a question for asking() to put; everything else -
+    // a format LibRaw will not open, a wasm that would not load - is this
+    // path having nothing to offer, and the caller has a grey card behind it.
+    if (isOversize(err)) throw err;
+    return null;
   }
 }
