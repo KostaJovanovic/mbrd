@@ -319,7 +319,17 @@ function slideBox(body: HTMLElement, opening: boolean): Animation {
   const { duration, easing } = foldMotion(opening);
   // Only while it moves. Left on, it would clip every focus ring in the box
   // for the rest of the panel's life.
+  //
+  // Clipped at the growing edge only. A row hovered mid-slide lifts and grows
+  // past the box (--btn-lift, --btn-grow), and a plain `hidden` sheared it off
+  // at the top and both sides. `clip` with a margin lets it stand out that far
+  // without the overflow counting towards the panel's scroll height, and the
+  // clip-path takes the margin back off the bottom, which is where the reveal
+  // is. An engine without `clip` keeps `hidden`, the old look.
   body.style.overflow = 'hidden';
+  body.style.overflow = 'clip';
+  body.style.setProperty('overflow-clip-margin', `${SLIDE_BLEED}px`);
+  body.style.clipPath = `inset(-${SLIDE_BLEED}px -${SLIDE_BLEED}px 0 -${SLIDE_BLEED}px)`;
   // And for the same length: the rows inside stop animating their own hover.
   // See .is-sliding in sidebar.css - a row that arrives under a pointer that
   // never moved is hovered on the frame it appears, and its own transition is
@@ -344,8 +354,14 @@ function settleBox(body: HTMLElement, anim: Animation) {
   // it ended up is the caller's state to hold, not a held keyframe's.
   anim.cancel();
   body.style.overflow = '';
+  body.style.removeProperty('overflow-clip-margin');
+  body.style.clipPath = '';
   body.classList.remove('is-sliding');
 }
+
+/** How far a hovered row may stand out of a moving box: Softish's 3px lift and
+ *  its 1.04 grow on a full-width button, with room to spare. */
+const SLIDE_BLEED = 12;
 
 /** Where a fold's rows live. Falls back to the fold for a shape with no body. */
 function foldBody(details: HTMLDetailsElement): HTMLElement {
@@ -392,7 +408,29 @@ function paintReveal(r: Reveal, shown: boolean) {
     r.running = null;
     settleBox(r.box, anim);
     if (!shown) r.box.hidden = true;
+    else bringIntoView(r.box);
   }, () => {});   // cancelled mid-flight by the change that replaced it
+}
+
+/**
+ * Scroll the panel just far enough to show rows that opened below its foot -
+ * the Paper rows open under the button that asked for them, which is often the
+ * bottom of the panel. Never past the top of their section, so the button that
+ * opened them stays on screen. After the movement rather than during it: until
+ * the box has its height there is nothing below to scroll to.
+ */
+function bringIntoView(box: HTMLElement) {
+  const scroller = box.closest<HTMLElement>('.side-body');
+  if (!scroller) return;
+  const view = scroller.getBoundingClientRect();
+  const pad = Number.parseFloat(getComputedStyle(scroller).paddingBottom) || 0;
+  const below = box.getBoundingClientRect().bottom + pad - view.bottom;
+  if (below <= 0) return;
+  const top = (box.closest('.side-sec') ?? box).getBoundingClientRect().top - view.top;
+  const by = Math.min(below, Math.max(0, top));
+  if (by <= 0) return;
+  const still = !!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  scroller.scrollBy({ top: by, behavior: still ? 'auto' : 'smooth' });
 }
 
 function buildControl(c: Control, _spec: Section) {

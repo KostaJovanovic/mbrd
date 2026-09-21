@@ -652,8 +652,12 @@
      straight tails poking out of the pill's ends - which the hover scale then
      enlarges into the lines you can see. Clamped here, the arcs meet exactly
      and there is nothing left to reconcile. Middle (10px) and Harsh (0) are
-     under the cap already, which is why only Softish ever showed it. */
-  --ctl-radius: min(var(--leaf), calc(var(--ctl-h) / 2));
+     under the cap already, which is why only Softish ever showed it.
+     Exactly half was still not enough in motion: mid-hover the scale puts the
+     box at a fraction of a device pixel, the two radii come out a rounding
+     error over the edge, and the tails flashed back for a frame or two. Half a
+     pixel short is invisible at rest and never meets the edge. */
+  --ctl-radius: min(var(--leaf), calc(var(--ctl-h) / 2 - 0.5px));
 }
 .field { display: block; margin-bottom: var(--field-gap); }
 .field > span {
