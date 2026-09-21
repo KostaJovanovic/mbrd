@@ -541,7 +541,19 @@ function sameRich(a: unknown, b: unknown): boolean {
   return x.every((block: unknown, i) => {
     const other: unknown = y[i];
     return isRecord(block) && isRecord(other) && block.tag === other.tag &&
-      block.align === other.align && block.text === other.text && block.wash === other.wash;
+      block.align === other.align && block.text === other.text && block.wash === other.wash &&
+      sameRuns(block.runs, other.runs);
+  });
+}
+
+/** Two lines' runs, field by field - a restyle changes these and nothing else. */
+function sameRuns(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  return a.every((run: unknown, i) => {
+    const other: unknown = b[i];
+    return isRecord(run) && isRecord(other) && run.text === other.text && run.title === other.title &&
+      run.font === other.font && run.size === other.size && run.wash === other.wash;
   });
 }
 

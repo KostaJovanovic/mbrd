@@ -244,6 +244,22 @@
   <path d="M3 4.8h10M3 8h10M3 11.2h6.5"/>
 </symbol>
 
+<!-- ═════ The note toolbar ═════ -->
+
+<!-- Title and text: a big T and a small one on the same baseline, the pair
+     reading as big words and ordinary ones. They replaced H1 and a pilcrow,
+     which are the markup's names for these and not the writer's. Two paths
+     each, for the reason the crosses above give. -->
+<symbol id="i-note-title" viewBox="0 0 16 16">
+  <path d="M3 3.2h10"/>
+  <path d="M8 3.2v9.6"/>
+</symbol>
+
+<symbol id="i-note-text" viewBox="0 0 16 16">
+  <path d="M5.2 7.6h5.6"/>
+  <path d="M8 7.6v5.2"/>
+</symbol>
+
 <!-- A name tag.
      Three attempts at drawing the app's own name plate came first, and all
      three failed the same way: a plate wide enough to look like a plate is

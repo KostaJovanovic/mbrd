@@ -32,7 +32,7 @@ import { ensureDisplay, displayURLReady, bakedServes } from './display.ts';
 import { meshKind } from '../mesh.ts';
 import { faceName, pixelHash, TILE_SWATCHES } from '../style-tile.ts';
 import { buildSpotlessCard, SPOTLESS_SIZE } from './spotless.ts';
-import { normalizeNoteRich, applyNoteStyle, buildNoteLine } from './note-model.ts';
+import { normalizeNoteRich, applyNoteStyle, buildNoteLine, blockRuns } from './note-model.ts';
 import type { NoteRichInput } from './note-model.ts';
 import {
   stickerArt, DEFAULT_SHAPE, stickerShape, stickerTint,
@@ -1043,12 +1043,11 @@ const RENDERERS = {
   },
 
   /**
-   * A note is a short run of formatted lines - a heading, a subheading,
-   * paragraphs - each an editable block with its own alignment, laid out in a
-   * `.note-rich` column that carries the note's font, size and vertical
-   * placement. The model is normalizeNoteRich(): meta.rich when it is there,
-   * meta.text parsed back when it is not, so a legacy note still reads titled.
-   * canvas/notes.ts edits the same blocks and writes both halves back.
+   * A note is a short run of lines, each a row of styled runs (title or text,
+   * face, size, marker), laid out in a `.note-rich` column that carries the
+   * note's sheet look. The model is normalizeNoteRich(): meta.rich when it is
+   * there, meta.text parsed back when it is not, so a legacy note still reads
+   * titled. canvas/notes.ts edits the same lines and writes both halves back.
    */
   note(item: Item) {
     const card = document.createElement('div');
@@ -1065,7 +1064,7 @@ const RENDERERS = {
     const wrap = document.createElement('div');
     wrap.className = 'note-rich';
     applyNoteStyle(wrap, rich);
-    for (const block of rich.blocks) wrap.append(buildNoteLine(block));
+    for (const block of rich.blocks) wrap.append(buildNoteLine(blockRuns(block, rich), block.align));
     card.append(wrap);
     return card;
   },
