@@ -1,13 +1,15 @@
-// Board snapshot — composites every item onto a canvas, exports PNG or
+// Board snapshot — composites every item onto a canvas, exports JPEG or
 // one-page hand-written PDF. Manual compositing because foreignObject
 // taints the canvas. detail 'full' for exports, 'thumb' for the library
-// card — one parameter so the two renderers can't disagree.
+// card — one parameter so the two renderers can't disagree. What a full
+// export contains and how big it comes out is ExportOpts, below, which
+// ui/export-options.ts fills from the box it shows.
 
 import { readToken } from '../util.ts';
 import { board, adjustFilter, itemCrop, itemFaded, itemFlip, itemRotate, itemMatte } from '../state.ts';
 import { itemBounds } from '../geometry.ts';
 import { assetURL, getAsset } from '../storage/assets.ts';
-import { paperMm, toUnits } from '../measure.ts';
+import { paperMm, toUnits, clampScale, MM_PER_INCH } from '../measure.ts';
 import { connMeta, pairKey } from '../board-model.ts';
 import { CLEARANCE, routeConnection, pathData } from '../web-route.ts';
 import type { RouteOpts } from '../web-route.ts';
@@ -24,6 +26,7 @@ import { describeExt } from '../import/formats.ts';
 import { extOf, formatBytes } from '../util.ts';
 import { STICKER_SPRITE, STICKER_VIEWBOX } from '../stickers/catalogue.ts';
 import type { Item, ItemType } from '../board-model.ts';
+import { encodeJpeg } from './jpeg.ts';
 
 /** Which of the two jobs a render is for - see the head of this file. */
 export type Detail = 'full' | 'thumb';
@@ -34,10 +37,70 @@ export type Detail = 'full' | 'thumb';
  */
 const STICKER_GRID = +STICKER_VIEWBOX.split(' ')[2] || 256;
 
-/** A frame of clear board around the outermost items, in world units. */
+/** The thumbnail's frame of clear board around the outermost items, in world
+ *  units. An export measures its own margin in millimetres - see ExportOpts. */
 const MARGIN = 48;
 /** The longest edge the output is allowed to reach, so a huge board still fits. */
 const MAX_EDGE = 8000;
+
+/**
+ * What one export is, as the box that offers it settles it.
+ *
+ * All seven are the person's to change and none is remembered past the
+ * session - ui/export-options.ts holds the working copy. Kept here beside
+ * the renderer that obeys them so a new option cannot exist in the box and
+ * not in the picture.
+ *
+ * `ppi` is the whole of the resolution question: the board knows how many
+ * world units make a millimetre (settings.scale), so a dots-per-inch figure
+ * fixes the pixel size of everything on it. A sheet of A4 at 300 comes out
+ * 2480 x 3508 - the size a printer expects - however the board is scaled.
+ */
+export interface ExportOpts {
+  /** Dots per inch of real board. The export's only size control. */
+  ppi: number;
+  /** JPEG quality, 0..1 - the image and the picture inside the PDF both. */
+  quality: number;
+  /** Clear board around the outermost items, in millimetres. */
+  margin: number;
+  /** Draw the connections between cards. */
+  web: boolean;
+  /** Draw the paper sheet's outline, where the board shows one. */
+  sheet: boolean;
+  /** Draw the board's lattice. */
+  grid: boolean;
+  /** Draw the stock speckle over the whole picture. */
+  grain: boolean;
+}
+
+/**
+ * What an export is before anybody touches it.
+ *
+ * 300 ppi is what a print wants. The texture is off because it is the board's
+ * surface rather than anything on it, and a sheet handed to somebody else is
+ * about what is on the board; the lattice is off because it is a working aid
+ * rather than content.
+ *
+ * Quality 97 on libjpeg's scale, always 4:4:4 - which is why the encoding is
+ * ui/jpeg.ts and not canvas.toBlob(): the engine picks a canvas's chroma
+ * sampling, and Blink picks 4:2:0 at every quality, 0.97 included. Full colour
+ * resolution is what keeps a card's coloured text and ruled edges clean.
+ */
+export const EXPORT_DEFAULTS: ExportOpts = {
+  ppi: 300,
+  quality: 0.97,
+  margin: 10,
+  web: true,
+  sheet: true,
+  grid: false,
+  grain: false,
+};
+
+/** Canvas pixels per world unit, and its inverse. The ppi rule, both ways. */
+export const pixelsPerUnit = (ppi: number, scale: unknown) =>
+  (ppi > 0 ? ppi : EXPORT_DEFAULTS.ppi) / MM_PER_INCH / clampScale(scale);
+export const ppiOf = (pxPerUnit: number, scale: unknown) =>
+  pxPerUnit * clampScale(scale) * MM_PER_INCH;
 
 /**
  * The most pixels a canvas may hold, whatever shape they are in.
@@ -99,18 +162,25 @@ function drawsPastArea(): boolean {
  * the area cap is about a canvas the engine won't draw at all (MAX_AREA).
  * `areaCap` is Infinity for every engine but WebKit. Passed in rather than
  * read here, keeping the probe the caller's to run and this pure arithmetic.
- * Exported for testing without a board, a document or forty painters. Never
- * enlarges - a small board draws at 1:1.
+ * Exported for testing without a board, a document or forty painters.
+ *
+ * `want` is what the caller asked for and the only thing this can return
+ * that is not a ceiling: the ppi the export box names, as pixels per world
+ * unit. It defaults to 1, which is the thumbnail's question and was once the
+ * only one - a board was drawn at its own size and shrunk if it was too big
+ * to hold. Both ceilings still bind, so asking for 600 ppi of a wall-sized
+ * board gets whatever fits rather than a blank canvas.
  */
 export function exportScale(
   worldW: number,
   worldH: number,
   maxEdge = MAX_EDGE,
   areaCap = MAX_AREA,
+  want = 1,
 ): number {
   const byEdge = maxEdge / Math.max(worldW, worldH);
   const byArea = Math.sqrt(areaCap / (worldW * worldH));
-  return Math.min(1, byEdge, byArea);
+  return Math.min(want, byEdge, byArea);
 }
 
 /**
@@ -120,8 +190,8 @@ export function exportScale(
  * produce, and only ask the engine if that's past the ceiling. Nearly every
  * export costs nothing; the ones asking for 64 megapixels pay one allocation, once.
  */
-function areaBudget(worldW: number, worldH: number, maxEdge: number): number {
-  const byEdge = Math.min(1, maxEdge / Math.max(worldW, worldH));
+function areaBudget(worldW: number, worldH: number, maxEdge: number, want = 1): number {
+  const byEdge = Math.min(want, maxEdge / Math.max(worldW, worldH));
   const wanted = worldW * byEdge * worldH * byEdge;
   if (wanted <= MAX_AREA) return MAX_AREA;   // never reached; the edge cap already binds
   return drawsPastArea() ? Infinity : MAX_AREA;
@@ -196,6 +266,8 @@ type Look = {
   grid: { minor: string, major: string, harsh: boolean } | null;
   /** The web's own stroke and base weight, in world units. */
   web: { line: string, weight: number } | null;
+  /** Whether the paper sheet's outline is drawn, where the board shows one. */
+  sheet: boolean;
   grain: number;
 };
 
@@ -243,7 +315,13 @@ function maxLean(): number {
   return Math.abs(parseFloat(readToken('--tilt-max'))) || 0;
 }
 
-function readLook(detail: Detail): Look {
+/**
+ * Four of these read an option as well as the board's own setting, and the
+ * `&&` is the rule: the box can leave a mark out, never put one in that the
+ * board is not wearing. A thumbnail asks none of them - it is the board's
+ * portrait rather than anybody's export, so it keeps the settings alone.
+ */
+function readLook(detail: Detail, opts: ExportOpts): Look {
   const full = detail === 'full';
   const grain = parseFloat(readToken('--grain'));
   return {
@@ -257,18 +335,19 @@ function readLook(detail: Detail): Look {
     body: fontOf('--font-body', 'system-ui, sans-serif'),
     lean: full ? maxLean() : 0,
     shadow: full ? readShadow() : null,
-    grid: full && board.settings.grid ? {
+    grid: full && opts.grid && board.settings.grid ? {
       minor: readToken('--grid-minor') || 'rgba(0,0,0,0.08)',
       major: readToken('--grid-major') || 'rgba(0,0,0,0.14)',
       // harshGrid(), not a bare '2': the crosses tier is canvas/grid.ts's
       // constant, not a second spelling of it here.
       harsh: harshGrid(),
     } : null,
-    web: full && board.settings.web ? {
+    web: full && opts.web && board.settings.web ? {
       line: readToken('--web-line') || '#9a9384',
       weight: parseFloat(readToken('--web-weight')) || 2,
     } : null,
-    grain: full && Number.isFinite(grain) ? grain : 0,
+    sheet: full ? opts.sheet : true,
+    grain: full && opts.grain && Number.isFinite(grain) ? grain : 0,
   };
 }
 
@@ -784,8 +863,9 @@ function paintPaper(
 ) {
   const s = board.settings;
   // A sheet put away is not in the picture either — `paper` still names a size
-  // while it is down, so the id alone no longer answers this.
-  const mm = s.paperShow ? paperMm(s.paper, s.paperLandscape) : null;
+  // while it is down, so the id alone no longer answers this. Nor is one the
+  // export box was asked to leave out (look.sheet).
+  const mm = s.paperShow && look.sheet ? paperMm(s.paper, s.paperLandscape) : null;
   if (!mm) return;
   const w = toUnits(mm.w, s.scale), h = toUnits(mm.h, s.scale);
   if (!(w > 0 && h > 0)) return;
@@ -989,6 +1069,69 @@ function paintGrain(ctx: CanvasRenderingContext2D, look: Look, W: number, H: num
 // The render
 // ---------------------------------------------------------------------------
 
+/** Everything about the picture that is arithmetic, settled before a canvas exists. */
+type Plan = {
+  items: Item[];
+  /** The items' own bounding box, before the margin. */
+  b: { x0: number, y0: number, x1: number, y1: number };
+  /** The clear frame around them, in world units. */
+  margin: number;
+  /** Canvas pixels per world unit, after both ceilings. */
+  scale: number;
+  w: number;
+  h: number;
+  /** What `scale` works out as in dots per inch - what was asked for, or less. */
+  ppi: number;
+};
+
+/**
+ * How big this board comes out at these options, and at what resolution.
+ *
+ * Pulled out of the render so the export box can show the answer beside the
+ * controls without drawing anything, and so the two can never disagree about
+ * it. Null when the board is empty, which is what both callers do nothing on.
+ */
+function planRender(detail: Detail, opts: ExportOpts, maxEdge: number): Plan | null {
+  const items = drawable();
+  const b = itemBounds(items);
+  if (!b) return null;
+
+  // A thumbnail keeps the old flat margin and the old question - draw the
+  // board at its own size, shrunk to fit. An export measures both in the
+  // world: a margin in millimetres of board, a scale in dots per inch of it.
+  const full = detail === 'full';
+  const margin = full ? toUnits(Math.max(0, opts.margin), board.settings.scale) : MARGIN;
+  const worldW = (b.x1 - b.x0) + margin * 2;
+  const worldH = (b.y1 - b.y0) + margin * 2;
+  const want = full ? pixelsPerUnit(opts.ppi, board.settings.scale) : 1;
+  const scale = exportScale(worldW, worldH, maxEdge, areaBudget(worldW, worldH, maxEdge, want), want);
+  return {
+    items, b, margin, scale,
+    w: Math.max(1, Math.ceil(worldW * scale)),
+    h: Math.max(1, Math.ceil(worldH * scale)),
+    ppi: ppiOf(scale, board.settings.scale),
+  };
+}
+
+/**
+ * The picture these options would produce, for the box that offers them -
+ * pixels, dots per inch, and whether a ceiling took the resolution down.
+ * Null on an empty board.
+ */
+export function exportSize(opts: ExportOpts) {
+  const plan = planRender('full', opts, MAX_EDGE);
+  if (!plan) return null;
+  const want = pixelsPerUnit(opts.ppi, board.settings.scale);
+  return {
+    w: plan.w,
+    h: plan.h,
+    ppi: plan.ppi,
+    // A hair of slack: `want` and `scale` are the same arithmetic when
+    // nothing binds, but only to the last bit of a float.
+    capped: plan.scale < want * 0.9999,
+  };
+}
+
 /**
  * The whole board on a canvas, or null if there is nothing on it.
  *
@@ -1004,16 +1147,10 @@ function paintGrain(ctx: CanvasRenderingContext2D, look: Look, W: number, H: num
  * screen, straight for the rest, until an optional durable `meta.tilt` is
  * added deliberately rather than as an export side effect.
  */
-async function renderBoardCanvas(detail: Detail = 'full', maxEdge = MAX_EDGE) {
-  const items = drawable();
-  const b = itemBounds(items);
-  if (!b) return null;
-
-  const worldW = (b.x1 - b.x0) + MARGIN * 2;
-  const worldH = (b.y1 - b.y0) + MARGIN * 2;
-  const scale = exportScale(worldW, worldH, maxEdge, areaBudget(worldW, worldH, maxEdge));
-  const W = Math.max(1, Math.ceil(worldW * scale));
-  const H = Math.max(1, Math.ceil(worldH * scale));
+async function renderBoardCanvas(detail: Detail, opts: ExportOpts, maxEdge = MAX_EDGE) {
+  const plan = planRender(detail, opts, maxEdge);
+  if (!plan) return null;
+  const { items, b, margin, scale, w: W, h: H } = plan;
 
   const canvas = document.createElement('canvas');
   canvas.width = W;
@@ -1029,17 +1166,17 @@ async function renderBoardCanvas(detail: Detail = 'full', maxEdge = MAX_EDGE) {
     try { await document.fonts.ready; } catch { /* no font manager: the stack falls back */ }
   }
 
-  const look = readLook(detail);
+  const look = readLook(detail, opts);
   const project: Project = (x, y) => ({
-    x: ((x - b.x0) + MARGIN) * scale,
-    y: ((b.y1 - y) + MARGIN) * scale,
+    x: ((x - b.x0) + margin) * scale,
+    y: ((b.y1 - y) + margin) * scale,
   });
 
   ctx.fillStyle = look.paper;
   ctx.fillRect(0, 0, W, H);
 
   paintGrid(ctx, look, project, {
-    x0: b.x0 - MARGIN, y0: b.y0 - MARGIN, x1: b.x1 + MARGIN, y1: b.y1 + MARGIN,
+    x0: b.x0 - margin, y0: b.y0 - margin, x1: b.x1 + margin, y1: b.y1 + margin,
   }, scale);
   paintPaper(ctx, look, project, scale);
   paintWeb(ctx, look, items, project, scale);
@@ -1076,16 +1213,34 @@ async function renderBoardCanvas(detail: Detail = 'full', maxEdge = MAX_EDGE) {
 
   // Last, over everything, the way the layer sits over the board.
   paintGrain(ctx, look, W, H);
-  return { canvas, w: W, h: H };
+  return { canvas, w: W, h: H, ppi: plan.ppi };
 }
 
-const toBlob = (canvas: HTMLCanvasElement, type: string, quality?: number): Promise<Blob | null> =>
-  new Promise(resolve => canvas.toBlob(resolve, type, quality));
+/**
+ * The board as 4:4:4 JPEG bytes, or null. Through ui/jpeg.ts rather than
+ * toBlob() for the sampling - see EXPORT_DEFAULTS - with the ppi written into
+ * the file so it opens at the size it was drawn for.
+ */
+async function boardJpeg(opts: ExportOpts) {
+  const shot = await renderBoardCanvas('full', opts);
+  const ctx = shot?.canvas.getContext('2d');
+  if (!shot || !ctx) return null;
+  const bytes = await encodeJpeg(ctx.getImageData(0, 0, shot.w, shot.h),
+    { quality: opts.quality * 100, ppi: shot.ppi });
+  return { bytes, w: shot.w, h: shot.h, ppi: shot.ppi };
+}
 
-/** The board as a PNG blob, or null. */
-export async function boardPng() {
-  const shot = await renderBoardCanvas('full');
-  return shot ? toBlob(shot.canvas, 'image/png') : null;
+/**
+ * The board as a JPEG blob, or null.
+ *
+ * JPEG rather than PNG since the export grew a resolution: an A4 board at
+ * 300 ppi is nine megapixels of photographs, and as a PNG that is tens of
+ * megabytes for a picture with no transparency in it - the paper is filled
+ * first, edge to edge.
+ */
+export async function boardImage(opts: ExportOpts) {
+  const jpeg = await boardJpeg(opts);
+  return jpeg ? new Blob([jpeg.bytes], { type: 'image/jpeg' }) : null;
 }
 
 /**
@@ -1105,7 +1260,7 @@ export async function boardThumb(max = 360) {
   // platform canvas/display.ts exists to protect, for a picture ending up
   // 360px wide. Four times the target leaves room for a smooth downscale,
   // costing ~2MB instead of 256.
-  const shot = await renderBoardCanvas('thumb', max * 4);
+  const shot = await renderBoardCanvas('thumb', EXPORT_DEFAULTS, max * 4);
   if (!shot) return null;
   const scale = Math.min(1, max / Math.max(shot.w, shot.h));
   const tw = Math.max(1, Math.round(shot.w * scale));
@@ -1131,13 +1286,13 @@ export async function boardThumb(max = 360) {
 }
 
 /** The board as a one-page PDF blob, or null. */
-export async function boardPdf() {
-  const shot = await renderBoardCanvas('full');
-  if (!shot) return null;
-  const jpeg = await toBlob(shot.canvas, 'image/jpeg', 0.92);
-  if (!jpeg) return null;
-  return buildPdf(new Uint8Array(await jpeg.arrayBuffer()), shot.w, shot.h);
+export async function boardPdf(opts: ExportOpts) {
+  const jpeg = await boardJpeg(opts);
+  return jpeg ? buildPdf(jpeg.bytes, jpeg.w, jpeg.h, jpeg.ppi) : null;
 }
+
+/** PostScript points to the inch - the PDF's one unit of length. */
+const PT_PER_INCH = 72;
 
 /**
  * A single-page PDF wrapping one JPEG, written by hand.
@@ -1145,13 +1300,22 @@ export async function boardPdf() {
  * Five objects (catalog, pages, page, image, one-line content stream) plus a
  * cross-reference table. The JPEG rides in verbatim under /DCTDecode, which
  * is why the canvas is encoded as JPEG here and not PNG - a PDF speaks JPEG
- * directly, where PNG would need decoding and re-deflating. The page is the
- * image's own pixel size in points, so it prints at 72dpi.
+ * directly, where PNG would need decoding and re-deflating.
+ *
+ * The page is the board's real size: `ppi` is the resolution the picture was
+ * drawn at, so w/ppi inches across. Before the export had a resolution the
+ * page was the pixel count in points, which printed a sheet of A4 drawn at
+ * 300 ppi as a poster four times too wide. Exported for the test.
  */
 // The buffer is named in the array types below because a Blob part has to be
 // one that is not shared: a Uint8Array over a SharedArrayBuffer is not a
 // BlobPart, and `Uint8Array` alone leaves which one it is open.
-function buildPdf(jpeg: Uint8Array<ArrayBuffer>, w: number, h: number) {
+export function buildPdf(jpeg: Uint8Array<ArrayBuffer>, w: number, h: number, ppi: number) {
+  // Two decimals of a point is a few thousandths of a millimetre - past it
+  // the numbers are noise that some readers print in full.
+  const perPx = PT_PER_INCH / (ppi > 0 ? ppi : PT_PER_INCH);
+  const pw = +(w * perPx).toFixed(2);
+  const ph = +(h * perPx).toFixed(2);
   const enc = new TextEncoder();
   const parts: Uint8Array<ArrayBuffer>[] = [];
   let len = 0;
@@ -1174,7 +1338,7 @@ function buildPdf(jpeg: Uint8Array<ArrayBuffer>, w: number, h: number) {
 
   obj(1, '<< /Type /Catalog /Pages 2 0 R >>');
   obj(2, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>');
-  obj(3, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${w} ${h}]`
+  obj(3, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pw} ${ph}]`
     + ` /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`);
 
   offsets[4] = len;
@@ -1184,7 +1348,8 @@ function buildPdf(jpeg: Uint8Array<ArrayBuffer>, w: number, h: number) {
   push(jpeg);
   push('\nendstream\nendobj\n');
 
-  const content = `q ${w} 0 0 ${h} 0 0 cm /Im0 Do Q`;
+  // The image XObject is a unit square; this stretches it over the page.
+  const content = `q ${pw} 0 0 ${ph} 0 0 cm /Im0 Do Q`;
   obj(5, `<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
 
   const xrefAt = len;

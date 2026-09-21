@@ -748,6 +748,42 @@
   </div>
 </dialog>
 
+<!-- Export options. Asked by Save image and Save PDF before either draws;
+     filled and read by ui/export-options.js. -->
+<dialog id="export-opts" aria-labelledby="xo-title">
+  <h2 id="xo-title">Save image</h2>
+  <label class="lp-label" for="xo-ppi">Detail</label>
+  <div class="xo-line">
+    <input id="xo-ppi" class="lp-input xo-num" type="number" min="36" max="1200" step="1"
+           inputmode="numeric" autocomplete="off">
+    <span class="xo-unit">ppi</span>
+    <output id="xo-size" class="xo-note" for="xo-ppi xo-margin"></output>
+  </div>
+  <label class="lp-label" for="xo-quality">Quality</label>
+  <div class="xo-line xo-dial">
+    <input id="xo-quality" type="range" min="50" max="100" step="1">
+    <output id="xo-quality-out" class="xo-unit" for="xo-quality"></output>
+  </div>
+  <label class="lp-label" for="xo-margin">Margin</label>
+  <div class="xo-line">
+    <input id="xo-margin" class="lp-input xo-num" type="number" min="0" max="200" step="1"
+           inputmode="decimal" autocomplete="off">
+    <span class="xo-unit">mm</span>
+  </div>
+  <fieldset id="xo-include" class="xo-include">
+    <legend class="lp-label">Include</legend>
+    <label class="xo-check"><input type="checkbox" id="xo-web"> Connections</label>
+    <label class="xo-check"><input type="checkbox" id="xo-sheet"> Sheet outline</label>
+    <label class="xo-check"><input type="checkbox" id="xo-grid"> Board grid</label>
+    <label class="xo-check"><input type="checkbox" id="xo-grain"> Paper texture</label>
+  </fieldset>
+  <div class="ask-row">
+    <span class="ask-gap"></span>
+    <button type="button" id="xo-cancel">Cancel</button>
+    <button type="button" id="xo-go">Save</button>
+  </div>
+</dialog>
+
 <!-- Viewer: one item full-window. ui/viewer.js dispatches by type into the body.
      Head stays fixed, body scrolls. -->
 <dialog id="viewer" aria-labelledby="viewer-title">

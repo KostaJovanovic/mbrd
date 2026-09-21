@@ -450,12 +450,13 @@ export const SECTIONS: Section[] = [
       { type: 'buttons', advanced: true,
         when: () => typeof navigator !== 'undefined' && typeof navigator.canShare === 'function',
         buttons: [{ cmd: 'share', label: 'Send file', closesPanel: true }] },
-      // A picture of the board, for showing rather than reopening - a PNG to
+      // A picture of the board, for showing rather than reopening - a JPEG to
       // send or a PDF to print. Derived artefacts, not board files; see
-      // cmds.exportImage.
+      // exportPicture() in commands/file.ts. The ellipsis is the box each
+      // opens first (ui/export-options.ts).
       { type: 'buttons', advanced: true, buttons: [
-        { cmd: 'export-image', label: 'Save image', closesPanel: true },
-        { cmd: 'export-pdf', label: 'Save PDF', closesPanel: true },
+        { cmd: 'export-image', label: 'Save image…', closesPanel: true },
+        { cmd: 'export-pdf', label: 'Save PDF…', closesPanel: true },
       ] },
     ],
   },

@@ -1,12 +1,12 @@
 /* =========================================================
-   dialog.css — question, credits, darkroom and inventory dialogs.
-   Shared sheet dressing for #ask, #credits, #inventory.
+   dialog.css — question, credits, darkroom, inventory, link and export
+   dialogs. Shared sheet dressing for all but the darkroom.
    The note composer (#compose) is the exception: no card, no sheet.
    ========================================================= */
 
 /* Shared sheet dressing. The two selectors tie on specificity, so width
    overrides below rely on document order. */
-#ask, #credits, #inventory, #link-props {
+#ask, #credits, #inventory, #link-props, #export-opts {
   max-width: min(420px, calc(100vw - 32px));
   padding: 22px 24px 18px;
   border: var(--hairline) solid var(--rule-2);
@@ -18,13 +18,14 @@
   margin: auto;
   animation: ask-in var(--dur-base) var(--ease-back);
 }
-#ask::backdrop, #credits::backdrop, #inventory::backdrop, #link-props::backdrop {
+#ask::backdrop, #credits::backdrop, #inventory::backdrop, #link-props::backdrop,
+#export-opts::backdrop {
   /* Ink-tinted so the scrim dims into the palette instead of going grey. */
   background: color-mix(in srgb, var(--ink) 42%, transparent);
   -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
 }
-#ask h2, #credits h2, #inventory h2, #link-props h2 {
+#ask h2, #credits h2, #inventory h2, #link-props h2, #export-opts h2 {
   margin: 0 0 8px;
   font-family: var(--font-display);
   font-size: var(--t-title);
@@ -149,6 +150,56 @@ textarea.lp-url {
   outline: var(--sel-line) solid var(--select);
   outline-offset: var(--sel-gap);
 }
+
+/* ── Export options ────────────────────────────────────────────────────────
+   Labels and fields borrow the link box's look (.lp-label, .lp-input); each
+   control sits on one line with its unit, and the ppi line carries the
+   readout of what that comes to. The quality slider's track is drawn in
+   sidebar.css's :is() list — .xo-dial is an entry on it. */
+#export-opts { width: min(380px, calc(100vw - 32px)); }
+.xo-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.xo-line .xo-num { width: 6.5em; flex: none; }
+.xo-dial input[type="range"] { flex: 1 1 auto; min-width: 0; }
+.xo-unit {
+  flex: none;
+  min-width: 2.5em;
+  font-size: var(--t-small);
+  color: var(--ink-2);
+}
+.xo-note {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  color: var(--ink-3);
+  text-align: right;
+}
+.xo-include {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+  margin: 0 0 18px;
+  padding: 0;
+  border: 0;
+}
+.xo-include[hidden] { display: none; }
+/* A legend will not sit in a grid cell by itself; span it across. */
+.xo-include legend { grid-column: 1 / -1; padding: 0; }
+.xo-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--t-small);
+  color: var(--ink);
+  cursor: pointer;
+}
+.xo-check[hidden] { display: none; }
+.xo-check input { margin: 0; accent-color: var(--accent-text); }
 
 .ask-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 /* Pushes paired answers to the far end; collapses when the row wraps. */
@@ -961,6 +1012,7 @@ button.inv-line:focus-visible {
   #inventory::backdrop,
   #compose::backdrop,
   #link-props::backdrop,
+  #export-opts::backdrop,
   #darkroom::backdrop { background: rgb(var(--ink-c) / 42%); }
   #darkroom-frame { box-shadow: 0 0 0 100vmax rgb(var(--ink-c) / 55%); }
   .dk-tool[aria-pressed="true"] { border-color: rgb(var(--accent-c) / 40%); }

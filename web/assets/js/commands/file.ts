@@ -1,4 +1,4 @@
-// File commands: New, Open, Save, Export, Share, PNG/PDF, cloud sync,
+// File commands: New, Open, Save, Export, Share, JPEG/PDF, cloud sync,
 // and the optimizer. No Viewport dependency — a board being written
 // out has no camera. Session policy lives in ui/board-actions.ts.
 
@@ -23,7 +23,9 @@ import { connectCloud } from '../ui/cloud-connect.ts';
 import { homePath } from '../page.ts';
 import { assetBytes } from '../storage/assets.ts';
 import { openLibrary } from '../ui/library.ts';
-import { boardPdf, boardPng } from '../ui/snapshot.ts';
+import { boardImage, boardPdf, exportSize, EXPORT_DEFAULTS } from '../ui/snapshot.ts';
+import { askExportOptions } from '../ui/export-options.ts';
+import type { ExportKind } from '../ui/export-options.ts';
 import { saveWithCooldown } from '../ui/board-actions.ts';
 import { isDesktop, platform } from '../platform/platform.ts';
 
@@ -31,6 +33,27 @@ import { isDesktop, platform } from '../platform/platform.ts';
 function boardArtefactName(ext: string): string {
   const base = (board.title || '').replace(/[^\w -]+/g, '').trim().slice(0, 60) || 'board';
   return `${base}.${ext}`;
+}
+
+/**
+ * Save image and Save PDF: ask how, then draw. Derived artefacts composited
+ * by ui/snapshot.ts, not the live DOM. An empty board is said before the box
+ * opens rather than after somebody has filled it in.
+ */
+async function exportPicture(kind: ExportKind): Promise<void> {
+  if (!exportSize(EXPORT_DEFAULTS)) { toast('There is nothing on the board to save yet'); return; }
+  const opts = await askExportOptions(kind);
+  if (!opts) return;
+  const job = busy('Drawing the board');
+  try {
+    const blob = kind === 'pdf' ? await boardPdf(opts) : await boardImage(opts);
+    if (!blob) { toast('There is nothing on the board to save yet'); return; }
+    saveBlob(blob, boardArtefactName(kind === 'pdf' ? 'pdf' : 'jpg'));
+    toast(kind === 'pdf' ? 'Saved a PDF of the board' : 'Saved a picture of the board');
+  } catch (err) {
+    console.error(err);
+    toast('Could not draw the board: ' + why(err), 'error');
+  } finally { job.end(); }
 }
 
 /** Human name for a storage slice; unknown names pass through. */
@@ -483,31 +506,8 @@ export function fileCommands() {
     },
     // Opens the library, which shows local and cloud boards in one list.
     cloudOpen: () => openLibrary(),
-    // Derived artefacts: composited via ui/snapshot.ts, not the live DOM.
-    exportImage: async () => {
-      const job = busy('Drawing the board');
-      try {
-        const blob = await boardPng();
-        if (!blob) { toast('There is nothing on the board to save yet'); return; }
-        saveBlob(blob, boardArtefactName('png'));
-        toast('Saved a picture of the board');
-      } catch (err) {
-        console.error(err);
-        toast('Could not draw the board: ' + why(err), 'error');
-      } finally { job.end(); }
-    },
-    exportPdf: async () => {
-      const job = busy('Drawing the board');
-      try {
-        const blob = await boardPdf();
-        if (!blob) { toast('There is nothing on the board to save yet'); return; }
-        saveBlob(blob, boardArtefactName('pdf'));
-        toast('Saved a PDF of the board');
-      } catch (err) {
-        console.error(err);
-        toast('Could not draw the board: ' + why(err), 'error');
-      } finally { job.end(); }
-    },
+    exportImage: () => exportPicture('image'),
+    exportPdf: () => exportPicture('pdf'),
     // Dynamic import: the encoder is ~30 MB and loaded only on demand.
     optimize: () => import('../optimize/ui.ts').then(m => m.optimizeBoard()),
     discardOriginals: () => import('../optimize/ui.ts').then(m => m.discardOptimizeOriginals()),
