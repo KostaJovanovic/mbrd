@@ -104,7 +104,10 @@ final class MbrdNames {
         String stem = (suggested == null ? "" : suggested)
             .replaceAll("(?i)\\.mbrd$", "")
             .replaceAll("[<>:\"/\\\\|?*\\x00-\\x1F]", "")
-            .replaceAll("(?U)\\s+", " ")
+            // JS's \s, spelled out: Android's regex engine refuses Java's
+            // Unicode-classes flag, and every board write threw on it
+            // (tests/android-regex.test.js).
+            .replaceAll("[\\s\\p{Z}\\uFEFF]+", " ")
             .replaceAll("^[. ]+", "");
         if (stem.length() > MAX_NAME) stem = stem.substring(0, MAX_NAME);
         stem = stem.replaceAll("[. ]+$", "");
