@@ -306,9 +306,9 @@ export function defaultSize(type: string): Size {
     case 'model':   return { w: 224, h: 224 };
     // Square, off a square pad. Small: a note is an annotation, not a thing on
     // the board, and at the old 240 it outweighed the photos it annotated.
-    // Left at 120 (well clear of MIN_SIZE 48 in canvas/input.ts) while
-    // everything around it came down.
-    case 'note':    return { w: 120, h: 120 };
+    // 160 rather than the 120 it sat at: at 120 a title wrapped after a word or
+    // two and the note came out a column, not the sheet the composer showed.
+    case 'note':    return { w: 160, h: 160 };
     // Square and *fixed*, not a fraction of whatever it lands on - else the
     // same star comes out three sizes on three photographs. Smaller than a
     // note: a note is written, a sticker is a mark. 72 (a quarter off the
