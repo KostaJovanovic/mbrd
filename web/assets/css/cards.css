@@ -484,7 +484,7 @@
 /* Running out. The colour carries it and the weight backs the colour up, which
    matters on a board wearing a palette where --danger is not far from --ink-2.
    Weight rather than size: this sits under a sheet that grows as it is written,
-   and a counter that changed size at forty characters left would move the sheet
+   and a counter that changed size at twenty characters left would move the sheet
    under the caret. */
 .note-count.is-low { color: var(--danger); font-weight: 600; }
 
