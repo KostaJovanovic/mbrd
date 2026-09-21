@@ -46,7 +46,7 @@ const MAX_EDGE = 8000;
 /**
  * What one export is, as the box that offers it settles it.
  *
- * All eight are the person's to change and none is remembered past the
+ * All nine are the person's to change and none is remembered past the
  * session - ui/export-options.ts holds the working copy. Kept here beside
  * the renderer that obeys them so a new option cannot exist in the box and
  * not in the picture.
@@ -73,6 +73,8 @@ export interface ExportOpts {
   grain: boolean;
   /** Lean the cards as the board leans them; off stands them all up. */
   tilt: boolean;
+  /** Draw the cards' shadows, as the board's underlay does. */
+  shadows: boolean;
 }
 
 /**
@@ -97,6 +99,7 @@ export const EXPORT_DEFAULTS: ExportOpts = {
   grid: false,
   grain: false,
   tilt: true,
+  shadows: true,
 };
 
 /** Canvas pixels per world unit, and its inverse. The ppi rule, both ways. */
@@ -266,6 +269,8 @@ type Look = {
   lean: number;
   /** The underlay's shadows, cards and notes apart, as the twins wear them. */
   shadows: Shadows | null;
+  /** A card's corner radius, world units - the resolved --radius. */
+  radius: number;
   /** The lattice's two inks, and whether it is drawn as crosses. */
   grid: { minor: string, major: string, harsh: boolean } | null;
   /** The web's own stroke and base weight, in world units. */
@@ -352,11 +357,25 @@ function readShadows(): Shadows | null {
   return { card: card.layers, note: note.layers, radius: card.radius, noteRadius: note.radius };
 }
 
+/** --radius resolved to world units, the way readShadows() resolves it. */
+function readRadius(): number {
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:absolute;left:-9999px;top:0;width:100px;height:100px';
+  probe.style.borderRadius = 'var(--radius)';
+  document.body.appendChild(probe);
+  const r = parseFloat(getComputedStyle(probe).borderTopLeftRadius) || 0;
+  probe.remove();
+  return r;
+}
+
 /**
  * Whether the board leans its cards at all right now - the question the
  * export box asks before offering to stand them up.
  */
 export const boardTilts = () => maxLean() > 0;
+
+/** Whether the board's cards cast shadows at this look - some whimsy tiers draw none. */
+export const boardShadows = () => readShadows() !== null;
 
 /**
  * How far a card leans, in degrees, at this look.
@@ -374,7 +393,7 @@ function maxLean(): number {
 }
 
 /**
- * Five of these read an option as well as the board's own setting, and the
+ * Six of these read an option as well as the board's own setting, and the
  * `&&` is the rule: the box can leave a mark out, never put one in that the
  * board is not wearing. A thumbnail asks none of them - it is the board's
  * portrait rather than anybody's export, so it keeps the settings alone.
@@ -392,7 +411,8 @@ function readLook(detail: Detail, opts: ExportOpts): Look {
     display: fontOf('--font-display', 'system-ui, sans-serif'),
     body: fontOf('--font-body', 'system-ui, sans-serif'),
     lean: full && opts.tilt ? maxLean() : 0,
-    shadows: full ? readShadows() : null,
+    shadows: full && opts.shadows ? readShadows() : null,
+    radius: readRadius(),
     grid: full && opts.grid && board.settings.grid ? {
       minor: readToken('--grid-minor') || 'rgba(0,0,0,0.08)',
       major: readToken('--grid-major') || 'rgba(0,0,0,0.14)',
@@ -459,7 +479,7 @@ function paintShadows(
     if (!layers.length) continue;
     const r0 = (note ? s.noteRadius : s.radius) * scale;
     const w = it.w * scale;
-    const h = it.h * scale;
+    const h = cardHeight(it, w, it.h * scale);
     const at = project(it.x, it.y);
     ctx.save();
     ctx.translate(at.x, at.y);
@@ -604,7 +624,149 @@ const PAINTERS: Partial<Record<ItemType, Painter>> = {
   swatch: paintSwatch,
   fence: paintFence,
   note: paintNote,
+  title: paintTitle,
 };
+
+/**
+ * The height of the card an item draws, in the units `h` is in. Only the title
+ * differs: a 3:2 card centred in an item box that snapping can make taller
+ * (canvas.css .title-card), so its shadow and paper are that card, not the box.
+ */
+const cardHeight = (it: Item, w: number, h: number) =>
+  it.type === 'title' ? Math.min(h, w * 2 / 3) : h;
+
+/** The board's name as the title card sets it - lines, face, size, placement. */
+type TitleSet = {
+  lines: string[];
+  font: string;
+  color: string;
+  opacity: number;
+  /** Letter spacing and line height as fractions of the font size. */
+  tracking: number;
+  leading: number | null;
+  /** Font size as a fraction of the card's width. */
+  size: number;
+  stretch: number;
+  offset: number;
+};
+
+/**
+ * The name's lines as the card on screen broke them, read out of the layout.
+ *
+ * The live name wraps with `text-wrap: balance`, which a canvas has no way to
+ * reproduce by measuring - its answer is the browser's. So the characters are
+ * walked with a Range and a new line starts wherever the next one drops by
+ * more than half a line; that holds on a leaning card, whose lines slope by
+ * far less than that across the card.
+ */
+function liveLines(node: HTMLElement): string[] | null {
+  const text = node.firstChild;
+  if (!(text instanceof Text) || !text.data) return null;
+  const range = document.createRange();
+  const lines: string[] = [];
+  let line = '';
+  let top = NaN;
+  for (let i = 0; i < text.data.length; i++) {
+    range.setStart(text, i);
+    range.setEnd(text, i + 1);
+    const r = range.getBoundingClientRect();
+    if (r.height > 0 && Number.isFinite(top) && r.top - top > r.height / 2) {
+      lines.push(line.trim());
+      line = '';
+    }
+    if (r.height > 0 && (!Number.isFinite(top) || r.top - top > r.height / 2)) top = r.top;
+    line += text.data[i];
+  }
+  if (line.trim()) lines.push(line.trim());
+  // The card clamps at four rows (-webkit-line-clamp).
+  return lines.slice(0, 4);
+}
+
+/**
+ * Everything about the name's setting that the style panel decides, read off
+ * the mounted card's computed style - ui/mobile-header.ts writes the face,
+ * weight, axes and dials inline, and resolving them any other way would be a
+ * second copy of that module. Null when the card is not mounted (culled, or a
+ * Feed board, which has no title card), and the painter falls back to the
+ * stylesheet's defaults.
+ */
+function readTitleSet(it: Item): TitleSet | null {
+  const node = document.querySelector<HTMLElement>(`.item[data-id="${CSS.escape(it.id)}"] .title-name`);
+  const card = node?.parentElement;
+  if (!node || !card || !(card.offsetWidth > 0)) return null;
+  const cs = getComputedStyle(node);
+  const px = parseFloat(cs.fontSize) || 0;
+  if (!(px > 0)) return null;
+  const lines = liveLines(node);
+  if (!lines?.length) return null;
+  const lh = parseFloat(cs.lineHeight);
+  const ls = parseFloat(cs.letterSpacing);
+  return {
+    lines,
+    font: `${cs.fontStyle} ${cs.fontWeight} {SIZE}px ${cs.fontFamily}`,
+    color: cs.color,
+    opacity: parseFloat(cs.opacity) || 1,
+    tracking: Number.isFinite(ls) ? ls / px : 0,
+    leading: Number.isFinite(lh) ? lh / px : null,
+    size: px / card.offsetWidth,
+    stretch: parseFloat(cs.getPropertyValue('--mobile-title-stretch')) || 1,
+    offset: parseFloat(cs.getPropertyValue('--mobile-title-offset')) || 0,
+  };
+}
+
+/**
+ * The title card: the board's name on a 3:2 card of paper.
+ *
+ * It fell through to paintMedia() before, which looks for a picture and then
+ * for the item's `name` - a title item has neither, its words being
+ * board.title - so every export carried an empty box where the name was.
+ * Drawn to canvas.css: centred 3:2 card, --paper-card with a hairline, the
+ * name centred in it with the masthead's padding (0.2em over, 0.45em under),
+ * nudged by the offset and stretched by the height dial about 50% 52%.
+ */
+function paintTitle({ ctx, it, w, h, look, scale }: Paint) {
+  const ch = cardHeight(it, w, h);
+  const r = Math.min(look.radius * scale, w / 2, ch / 2);
+  ctx.save();
+  ctx.fillStyle = readToken('--paper-card') || look.card;
+  roundRect(ctx, -w / 2, -ch / 2, w, ch, r);
+  ctx.fill();
+  const hair = Math.max(1, scale);
+  ctx.strokeStyle = readToken('--item-border') || look.rule;
+  ctx.lineWidth = hair;
+  roundRect(ctx, -w / 2 + hair / 2, -ch / 2 + hair / 2, w - hair, ch - hair, Math.max(0, r - hair / 2));
+  ctx.stroke();
+  if (look.detail !== 'full' || !board.title) { ctx.restore(); return; }
+
+  roundRect(ctx, -w / 2, -ch / 2, w, ch, r);
+  ctx.clip();
+  const set = readTitleSet(it);
+  const size = (set?.size ?? 0.13) * w;
+  ctx.font = set ? set.font.replace('{SIZE}', String(size)) : `700 ${size}px ${look.display}`;
+  ctx.fillStyle = set?.color ?? look.ink;
+  ctx.globalAlpha = set?.opacity ?? 1;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  if ('letterSpacing' in ctx) ctx.letterSpacing = `${(set?.tracking ?? 0) * size}px`;
+  const lines = set?.lines ?? [board.title];
+  const m = ctx.measureText('Hg');
+  const ascent = m.fontBoundingBoxAscent || size * 0.8;
+  const descent = m.fontBoundingBoxDescent || size * 0.2;
+  // `line-height: normal` is the face's own ascent and descent.
+  const lh = set?.leading ? set.leading * size : ascent + descent;
+  const boxH = lines.length * lh + size * 0.65;
+  const boxTop = -boxH / 2;
+  ctx.translate(0, ch * (set?.offset ?? 0) / 100);
+  const origin = boxTop + boxH * 0.52;
+  ctx.translate(0, origin);
+  ctx.scale(1, set?.stretch ?? 1);
+  ctx.translate(0, -origin);
+  const half = (lh - ascent - descent) / 2;
+  lines.forEach((line, i) => {
+    ctx.fillText(line, 0, boxTop + size * 0.2 + i * lh + half + ascent);
+  });
+  ctx.restore();
+}
 
 const painterFor = (it: Item): Painter => PAINTERS[it.type] || paintMedia;
 
