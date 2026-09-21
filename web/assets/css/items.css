@@ -432,7 +432,8 @@
 
 /* The card a cleaned board leaves (canvas/spotless.ts). One SVG face edge to
    edge; the "before" rectangles bring their own colours and everything else is
-   the palette's. Under the pointer the face gives way to a second line. */
+   the palette's. Under the pointer, or selected, the face gives way to a
+   second line. */
 .spotless-card {
   padding: 0;
   overflow: hidden;
@@ -478,7 +479,7 @@
   transition: opacity var(--dur-base) var(--ease);
   pointer-events: none;
 }
-.item[data-type="card"]:hover .spotless-hover { opacity: 1; }
+.item[data-type="card"]:is(:hover, .is-selected) .spotless-hover { opacity: 1; }
 /* The song button: a bare note by the corner, arriving with the hover line.
    Three things each lose it the press. `pointer-events: auto`, because
    .item-body turns them off for everything in a card. z-index 3, over the
@@ -503,7 +504,7 @@
   opacity: 0;
   transition: opacity var(--dur-base) var(--ease), color var(--dur-fast) var(--ease);
 }
-/* Selected as well, which is the only hover a phone has. */
+/* Selected as well, like the line, which is the only hover a phone has. */
 .item[data-type="card"]:is(:hover, .is-selected) .spotless-song,
 .spotless-song:focus-visible { opacity: 1; }
 .spotless-song:hover,
