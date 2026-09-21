@@ -138,7 +138,7 @@ import { bus, tagFilter } from './board-store.ts';
  * What a sticky may hold as it is written. Past it the editor turns the note
  * into a .md document on close (canvas/notes.ts) - a sticky is a few lines.
  */
-export const NOTE_SHEET_MAX = 240;
+export const NOTE_SHEET_MAX = 120;
 /**
  * What a stored note may hold. The old sheet limit, kept as the ceiling on
  * load so notes written before NOTE_SHEET_MAX existed come back whole.

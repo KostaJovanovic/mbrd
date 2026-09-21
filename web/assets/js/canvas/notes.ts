@@ -480,7 +480,8 @@ export function editNote(
     const left = NOTE_SHEET_MAX - flatLength(wrap);
     // Past the limit nothing is refused: the counter says what closing will do.
     counter.textContent = left < 0 ? 'becomes a .md file' : left + ' left';
-    counter.classList.toggle('is-low', left <= 40);
+    // A sixth of the sheet: warns in time without going red a third of the way in.
+    counter.classList.toggle('is-low', left <= 20);
   };
   // What the note said when opened. Only an edit converts: an old note already
   // over the sheet limit, opened and closed unchanged, stays a note.
