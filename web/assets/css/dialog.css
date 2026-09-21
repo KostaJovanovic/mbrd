@@ -334,18 +334,9 @@ textarea.lp-url {
   /* No board transition — the card is being written on, not moved. */
   transition: none;
 }
-/* Only the sheet and the counter survive; grips, ring and bar belong to a
-   thing you can drag, which a note being composed is not. */
-#compose-mount .item > :not(.item-body, .note-count) { display: none; }
-
-/* Counter in the button row. Board positioning stripped; aligned to buttons. */
-#compose .ask-gap > .note-count {
-  position: static;
-  transform: none;
-  margin: 0;
-  align-self: center;
-  text-align: left;
-}
+/* Only the sheet survives (the counter is on it); grips, ring and bar belong
+   to a thing you can drag, which a note being composed is not. */
+#compose-mount .item > :not(.item-body) { display: none; }
 
 /* The toolbar in the dialog. Wraps only when the window is narrower than the
    controls — one row by default, two on a phone. */
