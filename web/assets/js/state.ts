@@ -178,7 +178,10 @@ function remapRecorded(
     }
   }
 
-  return changed ? { ...rec, asset, ...(meta ? { meta } : {}) } : null;
+  if (!changed) return null;
+  const out: Record<string, unknown> = { ...rec, asset };
+  if (meta) out.meta = meta;
+  return out;
 }
 
 import {
