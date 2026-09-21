@@ -283,12 +283,19 @@
 
 /* The corner mark — the selection ring drawn heavier at each corner. Only
    the two outward-facing borders are drawn; the inward pair would close it
-   into a floating box. */
+   into a floating box.
+   A border width floors to whole device pixels before the zoom transform, so
+   zoomed in past about 160% the corner's 3.2 * --iz and the ring's 2 * --iz
+   both floored to one pixel and the corners vanished into the ring. The floor
+   is one device pixel past the ring as it is actually drawn. */
 .grip:not(.grip-edge)::after {
+  --px: var(--device-px, 1px);
+  --sel-ring: max(var(--px), round(down, calc(var(--sel-line) * var(--iz)), var(--px)));
   content: '';
   position: absolute;
   inset: 0;
-  border: calc(var(--sel-corner) * var(--grip-swell, 1) * var(--iz)) solid var(--select);
+  border: calc(max(var(--sel-corner) * var(--iz), var(--sel-ring) + var(--px)) * var(--grip-swell, 1))
+    solid var(--select);
   pointer-events: none;
   transition: border-width var(--dur-fast) var(--ease);
 }
