@@ -134,6 +134,15 @@ import { splitAppearance, mergeAppearance } from './layout-settings.ts';
 import type { Look } from './layout-settings.ts';
 import { bus, tagFilter } from './board-store.ts';
 
+/**
+ * What a sticky may hold as it is written. Past it the editor turns the note
+ * into a .md document on close (canvas/notes.ts) - a sticky is a few lines.
+ */
+export const NOTE_SHEET_MAX = 240;
+/**
+ * What a stored note may hold. The old sheet limit, kept as the ceiling on
+ * load so notes written before NOTE_SHEET_MAX existed come back whole.
+ */
 export const NOTE_MAX = 512;
 
 // `size` as % of strip width, `stretch` as vertical scale (100=normal),

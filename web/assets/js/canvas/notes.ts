@@ -1,10 +1,11 @@
 // Note editor. Turns .note-rich into a contenteditable with a floating toolbar
 // for alignment, font, size, kind. Blocks live in meta.rich; meta.text is the
 // plaintext kept for search. The box grows to fit (never hides text). A note
-// whose content is just a URL becomes a link item on close — see linkify().
+// whose content is just a URL becomes a link item on close — see linkify() —
+// and one written past NOTE_SHEET_MAX becomes a .md document — see setNoteOverflow().
 
 import {
-  byId, bus, markDirty, setNoteContent, retypeItem, board, NOTE_MAX,
+  byId, bus, markDirty, setNoteContent, retypeItem, board, NOTE_SHEET_MAX,
   lastCommand, takeBack, removeItems,
 } from '../state.ts';
 import { nodeFor, onViewChange, screenBoxOf, viewportClientRect } from './items.ts';
@@ -33,6 +34,17 @@ export type NoteMenu = (
 
 let openMenu: NoteMenu | null = null;
 export function setNoteMenu(fn: NoteMenu | null) { openMenu = fn; }
+
+/**
+ * Injected: replace note `id` with a .md document holding `markdown`, as one
+ * undoable step. Resolves false if it could not. Injected because making a
+ * document means hashing a file, which is import/'s job (layering). Unwired, a
+ * note over the limit is cut to what a stored note may hold instead.
+ */
+export type NoteOverflow = (id: string, markdown: string) => Promise<boolean>;
+
+let overflow: NoteOverflow | null = null;
+export function setNoteOverflow(fn: NoteOverflow | null) { overflow = fn; }
 
 /** getSelection() non-null — null only for detached documents, never an active editor. */
 const selectionNow = () => getSelection()!;
@@ -184,12 +196,17 @@ function caretTo(line: Element, offset: number) {
   sel.addRange(range);
 }
 
-/** The flattened length right now - what would land in meta.text. */
-function flatLength(wrap: HTMLElement): number {
-  const lines = [...wrap.querySelectorAll<HTMLElement>('.note-line')];
-  return lines.reduce((n, line, i) =>
-    n + NOTE_MARKER[lineTag(line)].length + textOf(line).length + (i ? 1 : 0), 0);
+/**
+ * The note as Markdown right now, uncapped - what would land in meta.text, or
+ * in the .md file when it has outgrown the sheet. readRich() caps; this does not.
+ */
+function flatMarkdown(wrap: HTMLElement): string {
+  return [...wrap.querySelectorAll<HTMLElement>('.note-line')]
+    .map(line => NOTE_MARKER[lineTag(line)] + textOf(line).replace(/\n/g, ' '))
+    .join('\n');
 }
+
+const flatLength = (wrap: HTMLElement) => flatMarkdown(wrap).length;
 
 /** The rich model as the DOM currently stands, sanitised and capped. */
 function readRich(wrap: HTMLElement) {
@@ -452,7 +469,7 @@ export function editNote(
   node.classList.add('is-editing');
   makeEditable(wrap);
 
-  // Character count — invisible limit feels like a broken keyboard.
+  // Character count — an invisible limit would turn a note into a file by surprise.
   const counter = document.createElement('div');
   counter.className = 'note-count';
   // On the sheet, in its bottom padding — board and composer alike. A sibling
@@ -460,10 +477,14 @@ export function editNote(
   // SAFETY: editableNote() found .note-rich inside a .card, so it has a parent.
   wrap.parentElement!.append(counter);
   const refreshCount = () => {
-    const left = NOTE_MAX - flatLength(wrap);
-    counter.textContent = left + ' left';
+    const left = NOTE_SHEET_MAX - flatLength(wrap);
+    // Past the limit nothing is refused: the counter says what closing will do.
+    counter.textContent = left < 0 ? 'becomes a .md file' : left + ' left';
     counter.classList.toggle('is-low', left <= 40);
   };
+  // What the note said when opened. Only an edit converts: an old note already
+  // over the sheet limit, opened and closed unchanged, stays a note.
+  const openedAs = flatMarkdown(wrap);
 
   const reflectNow = () => {
     const line = currentLine(wrap);
@@ -556,15 +577,6 @@ export function editNote(
   const onResize = () => { measureBar(); placeToolbar(); };
   addEventListener('resize', onResize);
 
-  // beforeinput: refusing the keystroke keeps the caret in place (truncating after would not).
-  const onBeforeInput = (e: InputEvent) => {
-    if (e.inputType.startsWith('delete') || e.inputType === 'historyUndo') return;
-    if (e.inputType === 'insertFromPaste') return;         // handled by onPaste
-    const adding = (e.data ?? '').length || 1;
-    const selected = String(selectionNow()).length;
-    if (flatLength(wrap) - selected + adding > NOTE_MAX) e.preventDefault();
-  };
-
   // Markdown-style `# ` / `## ` at line start → promote to H1/H2.
   const autoformat = () => {
     const line = currentLine(wrap);
@@ -631,7 +643,6 @@ export function editNote(
       e.preventDefault();
       const line = currentLine(wrap);
       if (!line) return;
-      if (flatLength(wrap) + 1 > NOTE_MAX) return;   // a new line is a newline char
       const off = caretOffset(line);
       const full = textOf(line);
       line.textContent = full.slice(0, off);
@@ -666,10 +677,8 @@ export function editNote(
   // Plaintext paste, split on newlines into block lines.
   const onPaste = (e: ClipboardEvent) => {
     e.preventDefault();
-    let text = e.clipboardData?.getData('text/plain') ?? '';
-    const room = NOTE_MAX - flatLength(wrap) + String(selectionNow()).length;
-    if (room <= 0) return;
-    text = text.slice(0, room);
+    // Uncapped, like typing - a long paste makes the note a file on close.
+    const text = (e.clipboardData?.getData('text/plain') ?? '').replace(/\r\n?/g, '\n');
     const sel = selectionNow();
     if (sel.rangeCount && !sel.isCollapsed) sel.getRangeAt(0).deleteContents();
     const line = currentLine(wrap);
@@ -726,7 +735,6 @@ export function editNote(
     if (done) return;
     done = true;
     if (editing?.finish === finish) editing = null;
-    wrap.removeEventListener('beforeinput', onBeforeInput);
     wrap.removeEventListener('input', onInput);
     wrap.removeEventListener('keydown', onKey);
     wrap.removeEventListener('paste', onPaste);
@@ -745,12 +753,21 @@ export function editNote(
     const text = flattenNoteRich(rich);
     // linkify replaces the item — nothing left to write, but onDone still fires.
     if (linkify(id, text)) { onDone?.(text); return; }
+    const markdown = flatMarkdown(wrap);
+    if (overflow && markdown.length > NOTE_SHEET_MAX && markdown !== openedAs) {
+      // Asynchronous (the file is hashed). The note keeps its old words until
+      // the document replaces it; if that fails, the note keeps what fits.
+      void overflow(id, markdown).then(ok => {
+        if (!ok) { setNoteContent(id, rich, text); growNote(id); }
+      });
+      onDone?.(markdown);
+      return;
+    }
     setNoteContent(id, rich, text);
     growNote(id);
     onDone?.(text);
   }
 
-  wrap.addEventListener('beforeinput', onBeforeInput);
   wrap.addEventListener('input', onInput);
   wrap.addEventListener('keydown', onKey);
   wrap.addEventListener('paste', onPaste);
@@ -854,6 +871,9 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>) {
         if (after && after.parentNode === home) home.insertBefore(node, after);
         else home.appendChild(node);
       } else node.remove();
+      // Outgrown: a document is replacing this note, so it is not grown or
+      // landed - the document's own card arrives instead.
+      if (text && text.length > NOTE_SHEET_MAX) return;
       if (text?.trim()) {
         // Re-grow at board width — dialog grows went to the stand-in.
         growNote(id);

@@ -7,7 +7,7 @@ import { toast, busy } from '../notify.ts';
 import { cue } from '../cuelume/engine.ts';
 import {
   board, bus, addItems, replaceItem, select, setItemCover, NOTE_MAX, baseStep, startSettling,
-  timelinePlaying,
+  timelinePlaying, retypeItem,
 } from '../state.ts';
 import { cleanPath } from './archive.ts';
 import { addFile, derivedFile } from '../storage/assets.ts';
@@ -312,6 +312,26 @@ function pastedName(text: string): string {
 
 /** A fence or a thematic break: a line of Markdown with no words in it. */
 const PASTE_NAME_SKIP = /^ {0,3}(```|~~~|((\*\s*){3,}|(-\s*){3,}|(_\s*){3,})$)/;
+
+/**
+ * A note written past NOTE_SHEET_MAX, replaced in place by the .md document
+ * pasted text would have made - one undo step back to the note. Wired into
+ * canvas/notes.ts by main.ts (setNoteOverflow). The document's own x/y are
+ * dropped so it lands where the note was.
+ */
+export async function noteToFile(id: string, markdown: string): Promise<boolean> {
+  try {
+    const { x: _x, y: _y, ...draft } = await prepareFile(pastedFile(markdown));
+    // The note may have been deleted while the file was hashed.
+    if (!retypeItem(id, draft, 'Turn note into file')) return false;
+    toast(`Too long for a sticky - saved as ${draft.name}`);
+    return true;
+  } catch (err) {
+    console.error('[mbrd] note to file failed', err);
+    toast('Could not save the note as a file', 'error');
+    return false;
+  }
+}
 
 /** Open OS file picker for content. Attributes set explicitly: a cancelled picker fires no change. */
 export function pickFiles() {
