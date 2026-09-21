@@ -69,7 +69,7 @@ export interface ExportOpts {
   sheet: boolean;
   /** Draw the board's lattice. */
   grid: boolean;
-  /** Draw the stock speckle over the whole picture. */
+  /** Draw the paper's texture - the board's own tile, under everything. */
   grain: boolean;
 }
 
@@ -1016,50 +1016,40 @@ function arrowHead(
 }
 
 /**
- * The stock, last - written with an eye on the file rather than the picture.
+ * The paper's texture - the board's own tile, laid the way the board lays it.
  *
- * Noise is the worst case a JPEG can be handed: it destroys inter-block
- * prediction, so full-strength grain over an 8000px export costs several
- * times the file size for a texture that reads as artefacts anyway. Drawn
- * at a fraction of the board's own strength (GRAIN_EXPORT) and coarse - one
- * speck per few pixels, matching a printed sheet's stock at this scale.
+ * It used to be a speckle invented here, random flecks over everything,
+ * which looked like static and nothing like the embossed stock on screen.
+ * So this restates base.css's `#grain` rule rather than imitating its look:
+ * the same image, TILE world units square and anchored at the world origin
+ * (canvas/grain.ts), multiplied in at 0.8 x --grain. And it is drawn where
+ * the layer sits - on the ground, under the lattice and every card, since
+ * #grain comes before #viewport in index.html and neither has a z-index.
+ *
+ * The image's address is read off the live layer's computed style, so the
+ * stylesheet stays the one place it is written and the bundle's location
+ * never enters into it.
  */
-const GRAIN_EXPORT = 0.35;
-const GRAIN_CELL = 3;
+const GRAIN_TILE = 512;   // world units - canvas/grain.ts's TILE, base.css's 512px
+const GRAIN_ALPHA = 0.8;  // base.css: opacity calc(0.8 * var(--grain) ...)
 
-function paintGrain(ctx: CanvasRenderingContext2D, look: Look, W: number, H: number) {
-  const strength = look.grain * GRAIN_EXPORT;
+async function paintGrain(
+  ctx: CanvasRenderingContext2D, look: Look, project: Project, scale: number, W: number, H: number,
+) {
+  const strength = look.grain * GRAIN_ALPHA;
   if (!(strength > 0.002)) return;
-  const tile = document.createElement('canvas');
-  const side = 128;
-  tile.width = side;
-  tile.height = side;
-  const tctx = tile.getContext('2d');
-  if (!tctx) return;
-  const img = tctx.createImageData(side, side);
-  // A deterministic speckle rather than Math.random, so two exports of one
-  // board are the same file - seeded by item count, enough to stop every
-  // board wearing an identical pattern.
-  let seed = (board.items.length * 2654435761) >>> 0;
-  const next = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296;
-  for (let y = 0; y < side; y += GRAIN_CELL) {
-    for (let x = 0; x < side; x += GRAIN_CELL) {
-      const v = Math.round(next() * 255);
-      const a = Math.round(next() * 255 * strength);
-      for (let dy = 0; dy < GRAIN_CELL && y + dy < side; dy++) {
-        for (let dx = 0; dx < GRAIN_CELL && x + dx < side; dx++) {
-          const i = ((y + dy) * side + (x + dx)) * 4;
-          img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
-          img.data[i + 3] = a;
-        }
-      }
-    }
-  }
-  tctx.putImageData(img, 0, 0);
-  const pattern = ctx.createPattern(tile, 'repeat');
+  const layer = document.getElementById('grain');
+  const url = layer ? getComputedStyle(layer).backgroundImage.match(/url\(["']?([^"')]+)["']?\)/)?.[1] : null;
+  const img = await loadImage(url ?? null);
+  if (!img || !img.naturalWidth) return;
+  const pattern = ctx.createPattern(img, 'repeat');
   if (!pattern) return;
+  const at = project(0, 0);
+  const k = (GRAIN_TILE * scale) / img.naturalWidth;
+  pattern.setTransform(new DOMMatrix([k, 0, 0, k, at.x, at.y]));
   ctx.save();
-  ctx.globalCompositeOperation = 'overlay';
+  ctx.globalCompositeOperation = 'multiply';
+  ctx.globalAlpha = Math.min(1, strength);
   ctx.fillStyle = pattern;
   ctx.fillRect(0, 0, W, H);
   ctx.restore();
@@ -1174,6 +1164,8 @@ async function renderBoardCanvas(detail: Detail, opts: ExportOpts, maxEdge = MAX
 
   ctx.fillStyle = look.paper;
   ctx.fillRect(0, 0, W, H);
+  // On the ground, under the lattice and the cards - where the layer sits.
+  await paintGrain(ctx, look, project, scale, W, H);
 
   paintGrid(ctx, look, project, {
     x0: b.x0 - margin, y0: b.y0 - margin, x1: b.x1 + margin, y1: b.y1 + margin,
@@ -1211,8 +1203,6 @@ async function renderBoardCanvas(detail: Detail, opts: ExportOpts, maxEdge = MAX
     ctx.restore();
   }
 
-  // Last, over everything, the way the layer sits over the board.
-  paintGrain(ctx, look, W, H);
   return { canvas, w: W, h: H, ppi: plan.ppi };
 }
 
