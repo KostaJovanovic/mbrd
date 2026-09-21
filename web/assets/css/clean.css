@@ -1389,45 +1389,41 @@
    pinned to: mobile.css sends it to the *top* right there, which in here is the
    count and the way out.
 
-   So it stays in the bottom right on every width - the desktop pin, restated
-   from chrome.css - because that is where somebody who wants the zoom looks for
-   it, and a control that moves between tiers is two placements to keep clear of.
+   Top left, on every width and either kind of device rather than a desktop's
+   corner and a phone's: it is the one corner the mode claims nothing in - the
+   count and the way out have the other one, the tray has the foot - so there is
+   one placement to keep clear of instead of two, and the cluster never has to
+   stand over the tray to stay out of its way.
    Gated on .is-clean-chrome and not .is-cleaning so it arrives with the tray when
    the star opens (showBar() in clean.ts) - a zoom control over the black would
    otherwise be the only thing on screen for the whole of the opening. */
 :root.is-cleaning.is-clean-chrome #corner {
   z-index: calc(var(--z-overlay) + 2);
-  top: auto;
-  /* No --dock in it, unlike chrome.css's own: the docked Timeline is one of the
-     things the mode hides, and canvas.css already gives the board that band back
-     while it is faded. Left in, the cluster floated a strip's height off the
-     bottom of a screen with no strip on it. The tray's own inset says the same. */
-  bottom: max(14px, env(safe-area-inset-bottom));
-  left: auto;
-  right: max(16px, env(safe-area-inset-right));
-  align-items: flex-end;
+  top: max(14px, env(safe-area-inset-top));
+  bottom: auto;
+  left: max(14px, env(safe-area-inset-left));
+  right: auto;
+  align-items: flex-start;
   opacity: 1;
   pointer-events: auto;
-  /* Up from the edge it is pinned to, as the tray comes up from its own. */
-  animation: clean-corner-in 520ms var(--clean-ease) both;
+  /* In from the edge it is pinned to, as #clean-top comes in from its own. */
+  animation: clean-top-in 520ms var(--clean-ease) both;
 }
 
-@keyframes clean-corner-in {
-  from { opacity: 0; translate: 0 12px; }
-}
-
-/* Above the tray rather than beside it, once the two would meet along the foot.
-
-   The cluster is about 250px and keeps 226 of inset and gap to its right; the
-   tray is up to 334 wide and centred on the window. They clear each other from
-   about 880px of window and not below it, and the tray is the one thing in the
-   mode that must not be reached over - so the cluster is what moves. 96px is the
-   tray at its tallest (86px here, 71 under the narrow breakpoint) plus a gap,
-   which leaves the shorter one more room and neither overlapping. */
-@media (width < 900px) {
-  :root.is-cleaning.is-clean-chrome #corner {
-    bottom: calc(max(14px, env(safe-area-inset-bottom)) + 96px);
-  }
+/* Out, in, and how far out you are - and nothing else.
+   Fit, back-to-0,0 and the lock are journeys and a setting, and this is a game
+   played with one hand on the board: three more segments of answers to questions
+   nobody asks while scrubbing a card, and on a phone they were half the width of
+   the only control the mode leaves standing. The lock goes further than hidden -
+   startClean() takes it off and stopClean() puts it back, because a held
+   magnification is exactly what makes the tools impossible to aim.
+   The ring round the pill is an outline drawn over its segments, and each end
+   segment clears it with a transparent border of its own; `+` is the last one
+   there is now, so it takes the clearance the lock used to. */
+:root.is-cleaning.is-clean-chrome #zoom-ctl
+  > :is([data-zoom="fit"], [data-zoom="home"], #zoom-lock) { display: none; }
+:root.is-cleaning.is-clean-chrome #zoom-ctl > [data-zoom="in"] {
+  border-right: var(--hairline) solid transparent;
 }
 
 /* The ruler and the coordinate readout are not the camera, and they are not

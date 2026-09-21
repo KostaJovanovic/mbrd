@@ -16,8 +16,9 @@ import { quality } from '../../quality.ts';
 import { cue, sustain } from '../../cuelume/engine.ts';
 import type { Sustain } from '../../cuelume/engine.ts';
 import { el, div } from '../../util.ts';
+import { paintZoom } from '../hud.ts';
 import {
-  TOOLS, TUNING, SUBS, yieldsTo, planBoard, makeField, stamp, fieldClear, wearShare, wearOf,
+  TOOLS, TUNING, SUBS, yieldsTo, planBoard, makeField, stamp, fieldClear, fieldClearHeld, wearShare, wearOf,
   cardClean, tally, fullTank, tankStep, tankPower, jetShape, handRoom,
   toolWork, toolWanted, toolShare, webCards, webHolds, peelFor, thumbLayout,
   printTurn, toPrint, fromPrint, robotEats, robotTurn, robotJob, mopPath, MOP_PATTERNS,
@@ -490,6 +491,14 @@ let pinch: { dist: number, x: number, y: number } | null = null;
  *  from a media query - a touchscreen laptop is both - and it buys the larger
  *  slack in grabSlack() as well as the offset drawing. */
 let touching = false;
+/** Whether the zoom was locked when the mode opened, so leaving can put it back.
+ *  The mode unlocks it on the way in: every tool is aimed at a card, and a board
+ *  held at one magnification is a board that cannot be aimed at - which on a
+ *  phone, where the whole thing is fitted to a hand's width, is the difference
+ *  between a game and a row of thumbnails. Nothing persists the lock
+ *  (canvas/viewport.ts holds it and no more), so this is the only copy of an
+ *  answer somebody gave before the mode opened. */
+let wasZoomLocked = false;
 let last: { x: number, y: number } | null = null;
 let strokeAt: { x: number, y: number } | null = null;
 /** Distance still to walk before the next touch of the tool is laid, carried
@@ -706,6 +715,15 @@ export function startClean(): boolean {
   cursor = buildCursor();
   document.body.append(cursor);
 
+  // The zoom comes off its lock for the length of the mode, and the pill is
+  // repainted because a locked one greys its own buttons out. Held, every tool
+  // would be aimed at whatever size the board happened to be fitted to, and the
+  // lock's own button is not in the mode's pill to undo it with (clean.css).
+  // Put back in stopClean(), which is the only other place that touches it.
+  wasZoomLocked = vp.zoomLocked;
+  vp.zoomLocked = false;
+  paintZoom(true);
+
   // Before paintCount(), which can reach finish() - and finish() ends in
   // stopClean(), which refuses while the mode is not yet officially up.
   on = true;
@@ -840,6 +858,11 @@ export function stopClean(): boolean {
   cull = null;
   document.documentElement.classList.remove('is-cleaning', 'is-clean-done', 'is-clean-holding', 'is-clean-culled');
   setCleanPlay(null);
+  // The lock as it was found. Only ever true here if startClean() saw it on, and
+  // nothing inside the mode can have changed it - the button is not drawn.
+  if (vp && wasZoomLocked) vp.zoomLocked = true;
+  wasZoomLocked = false;
+  paintZoom(true);
   showBar(false);
   resumeMedia();
   return true;
@@ -1855,6 +1878,27 @@ function settleWashed() {
     for (const f of card.fields)
       if (!f.fading && f.field.total && fieldClear(f.field)) dissolve(card, f);
   for (const t of tracks) if (!t.fading && fieldClear(t.field)) fadeTrack(t);
+}
+
+/**
+ * The same let-go, asked of a jet that is still running - see TUNING.holdAt.
+ *
+ * The rule above is the one that shapes the feeling and it stands: between 97
+ * and 99 a crust is work somebody is doing, and taking it away under the nozzle
+ * is taking it out of their hand. This is the other end of that. A hand that
+ * holds the jet on a card it has already finished is not being given anything,
+ * it is waiting for a card that will not admit it is done - and letting go to
+ * collect the last hundredth is a thing to learn rather than a thing to feel.
+ *
+ * Once a frame while the trigger is down (tick), not once a dab: a stroke lays
+ * up to MAX_DABS of those in one event, and coverage() is a division per field
+ * either way.
+ */
+function settleHeld() {
+  for (const card of cards)
+    for (const f of card.fields)
+      if (!f.fading && f.field.total && fieldClearHeld(f.field)) dissolve(card, f);
+  for (const t of tracks) if (!t.fading && t.field.total && fieldClearHeld(t.field)) fadeTrack(t);
 }
 
 /**
@@ -3824,6 +3868,8 @@ function tick() {
     tank = tankStep(tank, dt, drawing);
     const power = tankPower(tank);
     if (drawing && power > 0) puff(power, jetShape(handSpeed).radius);
+    // And a crust worked past TUNING.holdAt goes without the trigger coming up.
+    if (drawing) settleHeld();
   }
   paintGauge();
   if (countOwed) {
