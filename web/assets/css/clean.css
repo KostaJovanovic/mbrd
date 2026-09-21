@@ -1100,7 +1100,11 @@
 #clean-count {
   display: inline-flex;
   align-items: center;
-  min-height: 34px;
+  /* One height for the whole top row, the zoom cluster in the other corner
+     included: --chrome-button-h is a segment of that pill, and it grows to 45px
+     under a finger. A plate of its own size stood a dozen pixels short of the
+     pill across the screen from it, on the axis the eye reads first. */
+  min-height: var(--chrome-button-h);
   min-width: 5ch;
   padding: 0 10px;
   justify-content: center;
@@ -1130,7 +1134,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 34px;
+  min-height: var(--chrome-button-h);
   padding: 0 12px;
   border: var(--hairline) solid var(--rule-2);
   border-radius: var(--leaf);
@@ -1272,13 +1276,13 @@
    somebody is looking at, and asking in the tray put the question across the
    screen from the button that raised it. One plate, the ✕'s paper and
    hairline, with the two answers inside it as the tray's paper-2 plates.
-   Exactly the ✕'s 34px, border included, so the corner does not grow a few
+   Exactly the ✕'s height, border included, so the corner does not grow a few
    pixels when the question opens: the answers take whatever height is left. */
 #clean-confirm {
   display: flex;
   align-items: stretch;
   gap: 2px;
-  height: 34px;
+  height: var(--chrome-button-h);
   padding: 3px;
   border: var(--hairline) solid var(--rule-2);
   border-radius: var(--leaf);
@@ -1426,6 +1430,20 @@
   border-right: var(--hairline) solid transparent;
 }
 
+/* While the ✕ is asking, the camera stands down. "Leave it dirty?" is the only
+   thing on screen with an answer in it, and the pill across the top from it is
+   an invitation to do something else with the same hand. Faded rather than
+   removed, over the 200ms the question arrives in, and on #zoom-ctl rather than
+   on #corner: the corner's own opacity belongs to clean-top-in, which holds it
+   under the animation for as long as the mode is open. */
+:root.is-cleaning.is-clean-chrome #zoom-ctl {
+  transition: opacity 200ms var(--clean-ease);
+}
+:root.is-cleaning.is-clean-chrome:has(#clean-confirm:not([hidden])) #zoom-ctl {
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* The ruler and the coordinate readout are not the camera, and they are not
    here: one measures a board nobody is measuring, the other reports a pointer
    that has been taken away and replaced with a tool. The pill on its own. */
@@ -1457,10 +1475,13 @@
   #clean-confirm span { padding: 0 4px; font-size: 0.75rem; }
   #clean-confirm button { padding: 0 8px; font-size: 0.75rem; }
   /* The cluster keeps the mode's own 10px inset at this width, as the count and
-     the tray do. It is already standing above the tray (the rule over 900px of
-     window, above) - this is only the side. */
+     the way out do - both insets, so the pill and the count sit on one line
+     across the top. Never `right` here: the corner is pinned left in the mode,
+     and a left and a right together stretch its box the width of the screen,
+     where it stands over the board catching presses meant for a card. */
   :root.is-cleaning.is-clean-chrome #corner {
-    right: max(10px, env(safe-area-inset-right));
+    top: max(10px, env(safe-area-inset-top));
+    left: max(10px, env(safe-area-inset-left));
   }
 }
 

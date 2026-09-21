@@ -262,6 +262,28 @@ test('the zoom cluster is drawn by the mode and gated on the tray', () => {
     'nothing writes the class clean.css is waiting for');
 });
 
+test('the top row is one line of one height, and stands down to be asked', () => {
+  // Three plates across the top - the zoom pill in one corner, the count and
+  // the way out in the other - and a finger grows the pill's segments to 45px
+  // while a hard-coded 34px stayed where it was. The heights are written once,
+  // as the token, and the narrow-screen inset moves both corners or neither.
+  const css = readFileSync(
+    fileURLToPath(new URL('../web/assets/css/clean.css', import.meta.url)), 'utf8');
+  for (const [sel, re] of [
+    ['#clean-count', /#clean-count \{[^}]*min-height: var\(--chrome-button-h\)/],
+    ['the ✕', /#clean-top \.clean-x \{[^}]*min-height: var\(--chrome-button-h\)/],
+    ['the question', /#clean-confirm \{[^}]*height: var\(--chrome-button-h\)/],
+  ]) assert.match(css, re, `${sel} no longer stands as tall as a pill segment`);
+  const narrow = /@media \(width < 560px\) \{[\s\S]*?\n\}/.exec(css)?.[0] ?? '';
+  const corner = /:root\.is-cleaning\.is-clean-chrome #corner \{[^}]*\}/.exec(narrow)?.[0] ?? '';
+  assert.match(corner, /top: max\(10px/, 'the cluster keeps the wide inset while the count moves up');
+  // Both insets on one axis stretch a fixed box the width of the screen, and
+  // #corner takes presses - it would stand over the board along the whole top.
+  assert.doesNotMatch(corner, /right:/, 'the cluster is pinned left and right at once');
+  assert.match(css, /:has\(#clean-confirm:not\(\[hidden\]\)\) #zoom-ctl \{[^}]*opacity: 0/,
+    'the camera no longer stands down while the ✕ is asking');
+});
+
 // ---------------------------------------------------------------------------
 // konami
 // ---------------------------------------------------------------------------
