@@ -992,33 +992,45 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>) {
   // Must check editability before moving the card into the dialog.
   if (!editableNote(id)) { editNote(id); return; }
 
-  // Draw the note at a standard width (EDIT_W), not its own board size — the
-  // dialog is for writing, not for layout.
+  // The note laid out at its own board width and magnified, not re-laid at a
+  // dialog width: the words wrap in the composer exactly where they will wrap
+  // on the board, so what is written is what lands. Magnified up to EDIT_W,
+  // never shrunk below life size, and held inside the window.
   const prevWidth = node.style.width;
   const prevHeight = node.style.height;
   const prevHalfW = node.style.getPropertyValue('--half-w');
+  const boardW = byId(id)?.w || EDIT_W;
+  const zoom = Math.min(Math.max(EDIT_W / boardW, 1), EDIT_ZOOM_MAX, (innerWidth - 48) / boardW);
 
   // Bookmark the card's position in the world layer for restoration.
   const home = node.parentElement;
   const after = node.nextSibling;
   mount.append(node);
 
-  // Clamp sheet width to what the dialog viewport can hold (innerWidth − 48/32).
-  const sheetW = Math.min(Math.max(200, Math.min(EDIT_W, innerWidth - 48)), innerWidth - 32);
-  node.style.width = sheetW + 'px';
+  node.style.width = boardW + 'px';
   // --half-w must match — margins are width-dependent (cards.css).
-  node.style.setProperty('--half-w', (sheetW / 2) + 'px');
-  // Min height = sheetW so short notes are a square sheet, not a strip.
-  // Measured after mount — a culled card in the world layer answers 0.
-  const fit = () => { node.style.height = Math.max(sheetW, noteHeight(id)) + 'px'; };
+  node.style.setProperty('--half-w', (boardW / 2) + 'px');
+  // Min height = the width so short notes are a square sheet, not a strip.
+  // Measured after mount — a culled card in the world layer answers 0. The
+  // mount takes the magnified box, since a transform does not move layout.
+  const fit = () => {
+    const h = Math.max(boardW, noteHeight(id));
+    node.style.height = h + 'px';
+    mount.style.width = boardW * zoom + 'px';
+    mount.style.height = h * zoom + 'px';
+  };
   // Registered before editNote(), which grows the note as part of starting.
   standIn = { id, fit };
   fit();
 
-  // Remove the board's inline transform (sub-pixel snap / rotation) while in
-  // the dialog. Stashed and restored — placeBox() does not rerun on return.
+  // The board's inline transform (sub-pixel snap / rotation) swapped for the
+  // magnification while in the dialog. Stashed and restored — placeBox() does
+  // not rerun on return.
   const worldTransform = node.style.transform;
-  node.style.transform = '';
+  node.style.transform = `scale(${zoom})`;
+  // Item chrome (the ring) is sized in --iz so it holds its size under the
+  // board's zoom; the magnification is a zoom too.
+  mount.style.setProperty('--iz', String(1 / zoom));
 
   // Both buttons live inside #compose in index.html.
   const go = document.getElementById('compose-go')!;
@@ -1039,6 +1051,9 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>) {
       node.style.height = prevHeight;
       node.style.setProperty('--half-w', prevHalfW);
       node.style.transform = worldTransform;
+      mount.style.width = '';
+      mount.style.height = '';
+      mount.style.removeProperty('--iz');
       dlg.close();
       // Sibling may have been detached by culling — append as fallback.
       if (home) {
@@ -1084,8 +1099,10 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>) {
   dlg.addEventListener('cancel', onEscape);
 }
 
-/** Composer sheet width. Life-size, not magnified — close to a typical note width. */
+/** Composer sheet width a note is magnified up to: a default note at 2x. */
 const EDIT_W = 320;
+/** The most the composer magnifies - a note resized small is not blown up to a poster. */
+const EDIT_ZOOM_MAX = 2.25;
 
 /** The open editor, if any. Only one at a time — opening another fires focusout. */
 let editing: { id: string; finish: (discard?: boolean) => void } | null = null;

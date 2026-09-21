@@ -334,11 +334,21 @@ textarea.lp-url {
   /* No board transition — the card is being written on, not moved. */
   transition: none;
 }
+/* The card is laid out at its board size and magnified by an inline scale()
+   (canvas/notes.ts, openComposer), so it wraps exactly as it will on the
+   board; the mount is sized to the scaled box for the dialog's layout. */
+#compose-mount .item {
+  transform-origin: 0 0;
+  /* The card's own board lean (--item-tilt, items.css) stays on the board;
+     the composer's one tilt is the tier's, below. */
+  rotate: none;
+}
+
 /* At the soft end of the whimsy axis (tier 0) the sheet being written lies a
    little crooked, the way a pad does on a desk. Not at Middle or Harsh, where
    cards on the board straighten too and a tilted sheet would be the one thing
-   out of line. */
-:root[data-whimsy="0"] #compose-mount .item { transform: rotate(-1.6deg); }
+   out of line. On the mount, since the card's own transform is the scale. */
+:root[data-whimsy="0"] #compose-mount { transform: rotate(-1.6deg); }
 
 /* Only the sheet survives (the counter is on it); grips, ring and bar belong
    to a thing you can drag, which a note being composed is not. */
