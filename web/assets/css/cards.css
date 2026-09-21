@@ -455,16 +455,17 @@
 .note-toolbar .ntb-ico-va-middle { background-position: center 6px, center 10px; }
 .note-toolbar .ntb-ico-va-bottom { background-position: center 11px, center 15px; }
 
-/* How much room is left, while a note is being written. Outside .item-body so
-   the body's clip cannot cut it off, and scaled by --iz like the rest of the
-   item chrome so it stays the same size on screen at any zoom. */
-.note-count {
+/* How much room is left, while a note is being written. On the sheet, in the
+   bottom-right corner of its padding: the text column ends where the padding
+   starts (growNote() keeps it so), so the two never overlap, and absolute
+   positioning keeps it out of noteHeight()'s measurement. Sized off the pad
+   like the rest of the sheet, so it reads as writing on the note rather than
+   chrome over it. */
+.item[data-type="note"] .note-count {
   position: absolute;
-  right: 0;
-  top: 100%;
-  margin-top: calc(6px * var(--iz));
-  transform: scale(var(--iz));
-  transform-origin: 100% 0;
+  right: var(--note-pad);
+  bottom: calc(var(--note-pad) * 0.18);
+  line-height: 1;
   font-family: var(--font-display);
   /* One step up the ramp from --t-tiny, and one step up the ink from --ink-3.
      It was the smallest size in the ramp set in the faintest ink there is, in
@@ -472,8 +473,9 @@
      being quiet at once, and the note above this rule says the one thing this
      must not be is a limit you find out about by hitting it. Still the quietest
      thing on a note being written, which is right: it is a number you glance at
-     twice and read once. */
-  font-size: var(--t-small);
+     twice and read once. The min() keeps it inside the padding on a narrow
+     note, where the pad shrinks below the size of the type. */
+  font-size: min(var(--t-small), calc(var(--note-pad) * 0.7));
   font-style: var(--display-italic);
   color: var(--ink-2);
   white-space: nowrap;

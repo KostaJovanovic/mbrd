@@ -455,10 +455,10 @@ export function editNote(
   // Character count — invisible limit feels like a broken keyboard.
   const counter = document.createElement('div');
   counter.className = 'note-count';
-  // In the composer, placed in the dialog's .ask-gap — on the card itself the
-  // counter inherits the card's scale/rotation and lands in the wrong spot.
-  const slot = surface?.querySelector<HTMLElement>('.ask-gap');
-  (slot || node).append(counter);
+  // On the sheet, in its bottom padding — board and composer alike. A sibling
+  // of .note-rich, never inside it: that column is the contenteditable.
+  // SAFETY: editableNote() found .note-rich inside a .card, so it has a parent.
+  wrap.parentElement!.append(counter);
   const refreshCount = () => {
     const left = NOTE_MAX - flatLength(wrap);
     counter.textContent = left + ' left';
