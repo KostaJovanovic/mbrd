@@ -731,23 +731,29 @@ test('resetTitlePosition sends the card home, undoably, and no-ops when already 
 
 test('Mobile refuses a paper sheet however it is asked', () => {
   fresh([photo({ id: 'card', w: 200, h: 100 })]);
+  setSetting('paperShow', true);
   setSetting('paper', 'a4');
   setSetting('paperResize', true);
 
   setBoardMode('mobile');
-  assert.equal(board.settings.paper, '', 'the switch takes the sheet down');
+  // `paperShow` is the one key the switch pins - a sheet that is not drawn
+  // cannot be wrong about its size, and Mobile's profile keeps its own.
+  assert.equal(board.settings.paperShow, false, 'the switch takes the sheet down');
   assert.equal(board.settings.paperResize, false);
 
   // The switch-time fixup runs once; this is the write that used to get past it.
+  setSetting('paperShow', true);
   setSetting('paper', 'letter');
   setSetting('paperLandscape', true);
   setSetting('paperResize', true);
-  assert.equal(board.settings.paper, '');
+  assert.equal(board.settings.paperShow, false);
+  assert.equal(board.settings.paper, 'a4', 'the size is refused along with the sheet');
   assert.equal(board.settings.paperLandscape, false);
   assert.equal(board.settings.paperResize, false);
 
   setBoardMode('desktop');
-  assert.equal(board.settings.paper, 'a4', 'Desktop still has the sheet it had');
+  assert.equal(board.settings.paperShow, true, 'Desktop still has the sheet it had');
+  assert.equal(board.settings.paper, 'a4');
   assert.equal(board.settings.paperResize, true);
 });
 
@@ -779,6 +785,39 @@ test('settings that are not an object fall back to the defaults', () => {
   loadBoard({ title: 'T', items: [], settings: 'nope' });
   assert.equal(board.settings.grid, true);
   assert.deepEqual(board.settings.appearance.vars, {});
+});
+
+// A file written before showing a sheet and choosing its size became two keys
+// says "no sheet" by leaving `paper` empty. It carries no flag to read, so the
+// flag is read back out of the id - and getting that backwards is silent in
+// both directions: every old board either grows a sheet it never had or loses
+// the one it did.
+test('a board written before paperShow reads its sheet out of the size', () => {
+  setBoardMode('desktop');
+  loadBoard({ title: 'T', items: [], settings: { paper: 'letter' } });
+  assert.equal(board.settings.paperShow, true, 'a size on file means the sheet was up');
+  assert.equal(board.settings.paper, 'letter');
+
+  loadBoard({ title: 'T', items: [], settings: { paper: '' } });
+  assert.equal(board.settings.paperShow, false, 'an empty size means it was down');
+  assert.equal(board.settings.paper, 'a4', 'and the size falls back to the default');
+
+  // A size this version has never heard of drew nothing before and draws
+  // nothing now, by the same road.
+  loadBoard({ title: 'T', items: [], settings: { paper: 'b5' } });
+  assert.equal(board.settings.paperShow, false);
+  assert.equal(board.settings.paper, 'a4');
+});
+
+test('a board written since carries the flag, and the flag is believed', () => {
+  setBoardMode('desktop');
+  // The state the old shape could not hold: a sheet put away, its size kept.
+  loadBoard({ title: 'T', items: [], settings: { paper: 'a3', paperShow: false } });
+  assert.equal(board.settings.paperShow, false);
+  assert.equal(board.settings.paper, 'a3', 'the size survives being put away');
+
+  loadBoard({ title: 'T', items: [], settings: { paper: 'a3', paperShow: true } });
+  assert.equal(board.settings.paperShow, true);
 });
 
 test('a trash entry with no item is skipped', () => {

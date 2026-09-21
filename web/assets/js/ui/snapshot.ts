@@ -783,7 +783,9 @@ function paintPaper(
   ctx: CanvasRenderingContext2D, look: Look, project: Project, scale: number,
 ) {
   const s = board.settings;
-  const mm = paperMm(s.paper, s.paperLandscape);
+  // A sheet put away is not in the picture either — `paper` still names a size
+  // while it is down, so the id alone no longer answers this.
+  const mm = s.paperShow ? paperMm(s.paper, s.paperLandscape) : null;
   if (!mm) return;
   const w = toUnits(mm.w, s.scale), h = toUnits(mm.h, s.scale);
   if (!(w > 0 && h > 0)) return;

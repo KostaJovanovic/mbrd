@@ -6,7 +6,7 @@
 import { clamp } from '../util.ts';
 import { bus, selection } from '../state.ts';
 import {
-  PAUSE_ICON, PLAY_ICON, bindScrub, clock, reportPlayError,
+  PAUSE_ICON, PLAY_ICON, bindScrub, clock, reportPlayError, trackLength,
 } from '../media/transport.ts';
 import { nowPlaying } from './audio.ts';
 import type { Track } from './playlist-queue.ts';
@@ -88,26 +88,33 @@ export function buildTransport(
     paint();
   };
 
+  /** The counted length beats the engine's guess — see trackLength(). */
+  const length = () => trackLength(sound, item.meta?.duration);
+
   // Debounce text/aria writes to once per second — only the clip fill moves each frame.
   let lastSec = -1;
   let lastMax = -1;
   const paint = () => {
-    const at = sound.duration ? clamp(sound.currentTime / sound.duration, 0, 1) : 0;
+    const dur = length();
+    const at = dur ? clamp(sound.currentTime / dur, 0, 1) : 0;
     // Clip reveals shaped ink — cheaper than resizing individual bars.
     fill.style.clipPath = `inset(0 ${((1 - at) * 100).toFixed(3)}% 0 0)`;
-    const max = Math.round(sound.duration || 0);
+    const max = Math.round(dur);
     if (max !== lastMax) {
       lastMax = max;
       wave.setAttribute('aria-valuemax', String(max));
+      // A length that arrives late is what the clock is showing while stopped,
+      // and the second counter below would not notice it on its own.
+      lastSec = -1;
     }
     const sec = Math.round(sound.currentTime || 0);
     if (sec !== lastSec) {
       lastSec = sec;
       // Show duration when stopped, position when playing.
-      time.textContent = clock(sound.currentTime || sound.duration || 0);
+      time.textContent = clock(sound.currentTime || dur);
       wave.setAttribute('aria-valuenow', String(sec));
       wave.setAttribute('aria-valuetext',
-        `${clock(sound.currentTime || 0)} of ${clock(sound.duration || 0)}`);
+        `${clock(sound.currentTime || 0)} of ${clock(dur)}`);
     }
   };
 
@@ -174,19 +181,21 @@ export function buildTransport(
   bindScrub(wave, clientX => {
     // Only while playing — paused scrub conflicts with card dragging.
     if (sound.paused) return;
-    if (!sound.duration) return;
+    const dur = length();
+    if (!dur) return;
     const box = wave.getBoundingClientRect();
     if (!box.width) return;
-    sound.currentTime = clamp((clientX - box.left) / box.width, 0, 1) * sound.duration;
+    sound.currentTime = clamp((clientX - box.left) / box.width, 0, 1) * dur;
     paint();
   });
 
   /** Seek by `secs`, or to an absolute point when `to` is given. */
   const seekBy = (secs: number, to: number | null = null) => {
     if (sound.paused) return;
-    if (!sound.duration) return;
+    const dur = length();
+    if (!dur) return;
     const next = to != null ? to : sound.currentTime + secs;
-    sound.currentTime = clamp(next, 0, sound.duration);
+    sound.currentTime = clamp(next, 0, dur);
     paint();
   };
 
@@ -199,7 +208,7 @@ export function buildTransport(
       case 'PageUp': seekBy(30); break;
       case 'PageDown': seekBy(-30); break;
       case 'Home': seekBy(0, 0); break;
-      case 'End': seekBy(0, sound.duration); break;
+      case 'End': seekBy(0, length()); break;
       case ' ': case 'Enter': play.click(); break;
       default: return;
     }

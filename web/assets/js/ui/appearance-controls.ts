@@ -51,6 +51,8 @@ export type LookDeps = {
   goDynamic: () => void,
   sourceCount: () => number,
   dynamicOn: () => boolean,
+  /** A pigment written by hand rather than by a palette or by the pictures. */
+  handPicked: () => boolean,
 };
 
 // Filled by initAppearanceControls() before any use.
@@ -77,6 +79,15 @@ export const inputs = new Map<string, Row>();
 
 // Sentinel for the "colours from photos" palette mode. Not a real palette name.
 export const DYNAMIC = 'dynamic';
+
+/**
+ * Sentinel for a pigment chosen by hand. Not a real palette name either, and
+ * unlike Dynamic it is not a row in the menu: it is a state the control is
+ * *put into* from the Pigment row below it, and picking any palette drops
+ * every pigment token (setPalette in ui/appearance.ts), so the next choice
+ * from the menu forgets it. The word it reads as is in settings-schema.ts.
+ */
+export const CUSTOM = 'custom';
 
 export function buildControls() {
   const hosts: Record<string, HTMLElement> = {};
@@ -110,10 +121,18 @@ export function buildControls() {
       input = document.createElement('button');
       input.type = 'button';
       input.className = 'pigment-swatch';
+      const swatch = input;
       input.addEventListener('click', async () => {
         const raw = (d.current().vars[c.var] ?? getComputedStyle(ROOT!).getPropertyValue(c.var)).trim();
         const picked = await pickColor({ title: 'Pigment', value: toHex(raw) || '#000000' });
-        if (picked) d.setVar(c.var, picked);
+        if (!picked) return;
+        d.setVar(c.var, picked);
+        // setVar() deliberately repaints nothing - it runs on every frame of a
+        // colour drag - and this is the one control whose own face is the value
+        // it just wrote. Without this the swatch kept the old colour until
+        // something else called syncControls(), which on a quiet board is the
+        // next reload.
+        swatch.style.background = picked;
       });
     } else {
       input = document.createElement('input');
@@ -202,7 +221,11 @@ export function syncPaletteMode() {
   const el = document.getElementById('opt-palette');
   // Dispatch repaint rather than calling paintPicker() to avoid a circular import.
   if (el) {
-    el.dataset.value = dynamic ? DYNAMIC : (d.current().palette || '');
+    // Dynamic first: it is also a look with pigment tokens written into it,
+    // and the machine having chosen them is the more useful of the two facts.
+    el.dataset.value = dynamic ? DYNAMIC
+      : d.handPicked() ? CUSTOM
+      : (d.current().palette || '');
     el.dispatchEvent(new CustomEvent('repaint'));
   }
   // Source-count dial only applies in dynamic mode.

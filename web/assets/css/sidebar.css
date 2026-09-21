@@ -391,7 +391,7 @@
   font: inherit;
   text-align: left;
   border: var(--hairline) solid var(--rule-2);
-  border-radius: var(--leaf);
+  border-radius: var(--ctl-radius);
   background: var(--paper);
   cursor: pointer;
   transition: border-color var(--dur-fast) var(--ease),
@@ -439,6 +439,10 @@
 .advanced > summary {
   display: flex;
   align-items: center;
+  /* Centred, word and caret together: these are the one control in the panel
+     that is a word rather than a box, and left-aligned they read as another
+     heading. */
+  justify-content: center;
   gap: 6px;
   padding: 5px 0;
   cursor: pointer;
@@ -452,24 +456,87 @@
 }
 .advanced > summary::-webkit-details-marker { display: none; }
 .advanced > summary:hover { color: var(--accent-text); }
-/* Drawn caret — rotates on open. */
-.advanced > summary::before {
+/* Drawn caret — rotates on open. ::after, so it follows the word it belongs to
+   rather than leading it.
+   It costs no width: -10px is its own 4px plus the 6px gap, handed back, so the
+   flex row measures the word alone and centres that. The arrow then hangs off
+   the word's right where the eye expects it, and the label sits where it would
+   sit with no arrow at all. */
+.advanced > summary::after {
   content: "";
   flex: none;
+  margin-right: -10px;
   width: 0; height: 0;
   border-left: 4px solid currentColor;
   border-top: 3.5px solid transparent;
   border-bottom: 3.5px solid transparent;
   transition: transform var(--dur-fast) var(--ease);
 }
-.advanced[open] > summary::before { transform: rotate(90deg) translateX(1px); }
-.advanced[open] > summary { margin-bottom: 7px; }
+/* Open, the label is at the foot of what it opened and the arrow is the way
+   back, so it points up the way it came. The nudge is mirrored with it: it is
+   there to keep the ink centred after a quarter turn, not to move it. The
+   folds that stay on top turn the other way, below - down is where their rows
+   still are. */
+.advanced[open] > summary::after { transform: rotate(-90deg) translateX(-1px); }
+
+/* ---- opening and shutting one ----
+   The drawer's own movement is in ui/panel.ts (openAndShut), not here, and for
+   one reason: it is a height, and a height only pushes the rest of the panel
+   about if it is in pixels. Every CSS-only way to say "grow to your own
+   height" fails on this box - `auto 0fr` and `auto 1fr` both resolve to the
+   content in a grid whose own height is auto (measured on this fold: 453px
+   either way), and interpolate-size is not in Gecko - so the number is
+   measured and the movement is run from script, reading the tokens below so
+   the whimsy tier and the quality dial still own the pace.
+
+   What stays here is the part that is not the movement: the box the rows are
+   measured in, and the caret's turn. */
+.fold-body { min-height: 0; }
+/* The caret turns back at the *start* of the close rather than snapping at the
+   end of it: `open` is still on the whole way out - that is what the close is
+   - so the rule that rotates it needs saying again, the other way. The
+   transition on it is already there. */
+.advanced[open].is-closing > summary::after { transform: none; }
+
+/* Open, the word travels to the foot of what it opened. It is the way back,
+   and the way back belongs at the end of the thing you are reading rather than
+   above it - the same place a "show less" sits anywhere else. Nothing moves it
+   by hand: the rows grow in the box above it, so it rides down on the same
+   animation and rides back up on the close.
+   `order` rather than a second element, and only while open, so the markup
+   stays one summary and one body whichever way round they are drawn. */
+.advanced[open] {
+  display: flex;
+  flex-direction: column;
+}
+/* `display` from an author sheet beats the UA's `[hidden]`, and paintFold()
+   hides a fold whose every row is hidden. Without this, the rule above would
+   put those back on screen. */
+.advanced[hidden] { display: none; }
+.advanced[open] > summary { order: 1; }
+/* The gap between the rows and the label sits on the body, never on the
+   summary. Spacing that exists only while the fold is open is still there on
+   the last frame of a close and gone the moment `open` comes off - a few
+   pixels snapping shut after the movement has already finished. On the body it
+   is measured and animated with the height (openAndShut, ui/panel.ts), so it
+   arrives at zero exactly when the rows do. */
+.advanced > .fold-body { margin-bottom: 7px; }
 
 /* A fold that IS the section heading (e.g. keyboard legend, Paper).
    ui/panel.ts marks these when the section has no h2 of its own. */
 .advanced.is-head { margin-top: 0; }
-.advanced.is-head > summary { padding-top: 0; }
-.advanced.is-head[open] > summary { margin-bottom: 11px; }
+/* And it sits where an h2 sits: a heading is the left edge of the column,
+   whatever the toggles inside a section do. */
+.advanced.is-head > summary {
+  justify-content: flex-start;
+  padding-top: 0;
+}
+.advanced.is-head[open] > summary { order: 0; }
+/* Its gap is above the rows, not under them - the label stays on top - and
+   eleven, the space an h2 keeps under itself. Same rule as above: on the body,
+   so the close does not end on a jump. */
+.advanced.is-head > .fold-body { margin: 11px 0 0; }
+.advanced.is-head[open] > summary::after { transform: rotate(90deg) translateX(1px); }
 
 /* Wraps so nowrap buttons do not push each other off-screen. */
 .btn-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
@@ -480,7 +547,7 @@
   padding: 0 12px;
   color: var(--ink);
   border: var(--hairline) solid var(--rule-2);
-  border-radius: var(--leaf);
+  border-radius: var(--ctl-radius);
   background: var(--paper);
   cursor: pointer;
   white-space: nowrap;
@@ -552,7 +619,24 @@
   color: var(--paper-card);
 }
 
-.field { display: block; margin-bottom: 11px; }
+/* The gap a field carries underneath it, named because a second rule needs the
+   same number: a (?) trailing a row of fields has to be lifted by exactly this
+   to sit on the controls' line rather than on the floor of the box. */
+:root {
+  --field-gap: 11px;
+  /* Every box in the panel - select, picker, button, tip - is this tall. */
+  --ctl-h: calc(35px * var(--density));
+  /* And this round: --leaf, but never more than half the height.
+     At Softish --leaf is 20px against a 35px box, so the two corners down one
+     side ask for 40px of a 35px edge and the engine has to scale both radii
+     down itself. Gecko reconciles that imperfectly and leaves a pair of short
+     straight tails poking out of the pill's ends - which the hover scale then
+     enlarges into the lines you can see. Clamped here, the arcs meet exactly
+     and there is nothing left to reconcile. Middle (10px) and Harsh (0) are
+     under the cap already, which is why only Softish ever showed it. */
+  --ctl-radius: min(var(--leaf), calc(var(--ctl-h) / 2));
+}
+.field { display: block; margin-bottom: var(--field-gap); }
 .field > span {
   display: flex;
   justify-content: space-between;
@@ -594,7 +678,7 @@
   appearance: none;
   -webkit-appearance: none;
   border: var(--hairline) solid var(--rule-2);
-  border-radius: var(--leaf);
+  border-radius: var(--ctl-radius);
   background: var(--paper);
   cursor: pointer;
 }
@@ -762,6 +846,54 @@
   color: var(--ink-3);
 }
 .hint em { font-style: normal; color: var(--accent-text); }
+
+/* A hint folded behind a (?), and the row it explains, in one grid: the row
+   takes the first cell, the marker sits at its end, and the paragraph opens
+   across both underneath. Two cells apart, which is why this is a button and
+   `hidden` rather than a <details> — see buildHint() in ui/panel.ts. */
+.tip-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  /* Bottoms aligned, as .field-pair is: the marker lines up with the controls
+     it follows, not with their labels. */
+  align-items: end;
+  gap: 0 8px;
+}
+.tip-row > .hint { grid-column: 1 / -1; }
+.tip-btn {
+  /* The selects' and pickers' own box, squared: same height, same hairline,
+     same paper, and --leaf for the corners - so it rounds and unrounds with
+     the whimsy dial instead of staying a circle on a squared-off board. */
+  height: calc(35px * var(--density));
+  aspect-ratio: 1;
+  /* The row it trails is a stack of fields, and a field carries --field-gap
+     underneath - so aligning to the bottom of that box put the marker a gap
+     low. The same gap here lifts it back onto the controls' line. */
+  margin-bottom: var(--field-gap);
+  display: grid;
+  place-content: center;
+  padding: 0;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--ctl-radius);
+  background: var(--paper);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: var(--t-small);
+  font-style: normal;
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease),
+              border-color var(--dur-fast) var(--ease),
+              color var(--dur-fast) var(--ease);
+}
+@media (hover: hover) {
+  .tip-btn:hover { border-color: var(--accent-text); background: var(--paper-2); }
+}
+.tip-btn[aria-expanded="true"] {
+  border-color: var(--accent-text);
+  background: var(--paper-3);
+  color: var(--accent-text);
+}
 
 .keys { margin: 0; padding: 0; list-style: none; font-size: var(--t-small); color: var(--ink-2); }
 .keys li {

@@ -1,6 +1,7 @@
 // Drawer — deleted items as cards on a shelf, built with buildItem().
 // Three per shelf, dealt not reflowed. Piles are one slot. Items return
-// by drag, not button. Mounts lazily on scroll-into-view.
+// by drag, not button. Mounts lazily on scroll-into-view. Flies in from the
+// left edge like the sidebar, which hides it; it cannot be moved or resized.
 
 import {
   board, bus, selection, removeItems, restoreItems, emptyTrash, select,
@@ -18,7 +19,7 @@ import { ask } from './dialog.ts';
 // Icon builder for this window's header marks; uses createElementNS, keeping
 // innerHTML out of a module that draws items from a .mbrd someone else wrote.
 import { icon } from './menu.ts';
-import { makeWindowDrag, makeWindowResize } from './float-window.ts';
+import { showSheet, hideSheet } from './sheet.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 import type { Item, TrashEntry } from '../board-model.ts';
 import { shownName } from '../board-model.ts';
@@ -132,8 +133,6 @@ let titleEl: HTMLElement | null = null;
  * pad's category: a drawer opens on its shelves.
  */
 let special = false;
-/** The move and resize grabs' detaches, called on close. */
-let detachGrabs: (() => void)[] = [];
 
 let ghost: HTMLElement | null = null;
 
@@ -248,20 +247,12 @@ function openDrawer() {
   close.addEventListener('click', () => { cue('pick'); closeDrawer(); });
 
   head.append(title, spacer, specialBtn, emptyBtn, close);
-  detachGrabs.push(makeWindowDrag(win, head));
   titleEl = title;
 
   body = div('drawer-body');
   body.addEventListener('pointerdown', startDrag);
   body.addEventListener('keydown', restoreByKey);
   win.append(head, body);
-
-  const resize = div('drawer-resize');
-  resize.setAttribute('aria-hidden', 'true');
-  win.append(resize);
-  // 320 across, not the sticker pad's 260: a shelf is always three cards
-  // wide, and a narrower window breaks that promise. See drawer.css.
-  detachGrabs.push(makeWindowResize(win, resize, { minW: 320, minH: 220 }));
 
   document.body.append(win);
   // A drawer always opens on its shelves: Special is somewhere you go, not a
@@ -270,14 +261,8 @@ function openDrawer() {
   paintHead();
   fill();
   button?.setAttribute('aria-expanded', 'true');
-
-  // Up into place next frame - it needs two computed styles to run between for
-  // the transition to take, the same as the sticker pad and the player window.
-  requestAnimationFrame(() => win?.classList.add('is-open'));
+  showSheet(win);
 }
-
-/** The slide-out backstop, so a close that never sees transitionend finishes. */
-let exitTimer = 0;
 
 export function closeDrawer() {
   if (!win) return;
@@ -288,18 +273,11 @@ export function closeDrawer() {
   specialBtn = null;
   titleEl = null;
   special = false;
-  // Take the move/resize grab listeners off window before the element goes.
-  detachGrabs.forEach(fn => fn());
-  detachGrabs = [];
-  // And every mounted card's decoder, picture and model stage - handed back
+  // Every mounted card's decoder, picture and model stage - handed back
   // here, not on removal, since the element stays in the document through
   // the slide-out below.
   clearShelves();
-  node.classList.remove('is-open');
-  clearTimeout(exitTimer);
-  const done = () => { clearTimeout(exitTimer); node.remove(); };
-  node.addEventListener('transitionend', e => { if (e.propertyName === 'transform') done(); }, { once: true });
-  exitTimer = setTimeout(done, 500);
+  hideSheet(node);
   button?.setAttribute('aria-expanded', 'false');
 }
 

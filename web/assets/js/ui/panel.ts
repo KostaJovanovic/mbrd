@@ -161,9 +161,19 @@ function buildSection(spec: Section) {
   for (const c of spec.controls) {
     const node = buildControl(c, spec);
     if (!node) continue;
-    if (!c.advanced) { el.append(node); continue; }
-    if (!fold) fold = buildFold(spec);
-    fold.append(node);
+    const host = c.advanced ? foldBody(fold ??= buildFold(spec)) : el;
+    // A tip comes back as an empty box wanting the row it explains. Moving the
+    // last-built row into it is what puts the (?) at the end of that row
+    // instead of on a line of its own - see buildHint().
+    //
+    // Never the summary: a tip first in a fold has nothing above it but the
+    // fold's own label, and swallowing that would leave the section with no
+    // way to open.
+    const prev = host.lastElementChild;
+    if (c.type === 'hint' && c.tip && prev && prev.tagName !== 'SUMMARY') {
+      node.prepend(prev);
+    }
+    host.append(node);
   }
   building = null;
   if (fold) el.append(fold);
@@ -180,8 +190,121 @@ function buildFold(spec: Section) {
   if (spec.foldId) details.id = spec.foldId;
   const summary = make('summary');
   summary.textContent = spec.fold || spec.foldLabel || 'Advanced';
-  details.append(summary);
+  // The rows go in a box of their own rather than straight into the <details>.
+  // It is what opening animates: the drawer is one grid row growing from
+  // nothing, and a row can only grow if there is exactly one thing in it. See
+  // .fold-body in sidebar.css.
+  details.append(summary, make('div', 'fold-body'));
+  openAndShut(details, summary);
   return details;
+}
+
+/** A CSS time token as milliseconds. Both `0.24s` and `150ms` arrive here. */
+function tokenMs(name: string): number {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const n = Number.parseFloat(raw);
+  if (!Number.isFinite(n)) return 0;
+  return raw.endsWith('ms') ? n : n * 1000;
+}
+
+const token = (name: string) =>
+  getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+/**
+ * How a fold moves, read off the sheet rather than written here - so the
+ * whimsy tier owns the pace, and quality.css's flattened durations are obeyed
+ * by an animation its `!important` cannot reach.
+ *
+ * The tier moves the *speed*, and only the speed: 0.4s at Softish, 0.24s at
+ * Middle, 0.15s at Harsh. No tier overshoots. `--ease-back` was the obvious
+ * curve for opening and is the wrong one here - a drawer of settings that goes
+ * past its height and comes back is a row of controls that arrives twice, and
+ * the taller the fold the further it travels to say nothing. What a fold has
+ * instead is `--ease`, which is the same curve the panel it lives in slides on.
+ *
+ * Shutting asks for `--ease-in` and gets the opposite, on purpose: the close
+ * plays the same keyframes in reverse, and a reversed animation reverses its
+ * easing with them. So the curve that would gather speed on the way out
+ * arrives gently instead, which is what a fold settling shut wants. Measured
+ * rather than reasoned, because it is easy to get backwards - the per-frame
+ * step of a close runs 12px down to 5px.
+ */
+function foldMotion(opening: boolean) {
+  const still = !!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  return {
+    duration: still ? 0 : tokenMs('--dur-base'),
+    easing: token(opening ? '--ease' : '--ease-in'),
+  };
+}
+
+/**
+ * Open and shut a fold on a measured height, so what is under it travels with
+ * it in both directions instead of jumping.
+ *
+ * Both halves are script's, not because opening needs it - `open` arrives and
+ * the rows are there - but because closing does: the moment `open` comes off,
+ * a <details> stops rendering its body and there is nothing left to animate.
+ * So the attribute is this function's to write, at the start of an open and at
+ * the end of a shut, and the press never reaches the UA's own toggle.
+ *
+ * `target` is what the fold is moving *towards*, which is not what `open`
+ * says while a close is in flight - press it again there and the answer must
+ * be "open", not "close it a second time".
+ */
+function openAndShut(details: HTMLDetailsElement, summary: HTMLElement) {
+  let running: Animation | null = null;
+  let target: boolean | null = null;
+
+  summary.addEventListener('click', e => {
+    const body = foldBody(details);
+    // No body to measure - a shape this function does not know. Leave the
+    // press to the UA rather than half-animating it.
+    if (body === details) return;
+    e.preventDefault();
+
+    running?.cancel();
+    const opening = !(target ?? details.open);
+    target = opening;
+    if (opening) details.open = true;
+
+    // Read after `open`, or the body is not rendered and measures zero.
+    const full = body.scrollHeight;
+    // The gap between the rows and the label travels with them. It is the
+    // body's margin (sidebar.css) rather than the summary's for exactly this
+    // reason: anything that exists only while the fold is open is still there
+    // on the last frame of a close and gone the instant `open` comes off,
+    // which is a few pixels snapping shut after the movement has finished.
+    const { marginTop, marginBottom } = getComputedStyle(body);
+    const { duration, easing } = foldMotion(opening);
+    // Only while it moves. Left on, it would clip every focus ring in the fold
+    // for the rest of the panel's life.
+    body.style.overflow = 'hidden';
+    const anim = body.animate([
+      { height: '0px', marginTop: '0px', marginBottom: '0px',
+        opacity: 0, transform: 'translateY(-8px)' },
+      { height: `${full}px`, marginTop, marginBottom,
+        opacity: 1, transform: 'none' },
+    ], { duration, easing, direction: opening ? 'normal' : 'reverse', fill: 'both' });
+    running = anim;
+
+    anim.finished.then(() => {
+      if (running !== anim) return;   // a newer press owns the fold now
+      running = null;
+      target = null;
+      // Cancel rather than leave the fill: the body sizes itself again, and
+      // the shut state is the attribute's job, not a held keyframe's.
+      anim.cancel();
+      body.style.overflow = '';
+      details.classList.remove('is-closing');
+      if (!opening) details.open = false;
+    }, () => {});   // cancelled mid-flight by the press that replaced it
+    details.classList.toggle('is-closing', !opening);
+  });
+}
+
+/** Where a fold's rows live. Falls back to the fold for a shape with no body. */
+function foldBody(details: HTMLDetailsElement): HTMLElement {
+  return details.querySelector<HTMLElement>('.fold-body') ?? details;
 }
 
 function buildControl(c: Control, _spec: Section) {
@@ -367,7 +490,9 @@ function paintPicker(el: HTMLElement) {
   const chosen = (c.options?.(ctx()) || []).find(o => o.value === value);
   el.replaceChildren();
   const name = make('span', 'field-picker-name');
-  name.textContent = chosen?.label ?? '';
+  // A value the menu does not offer still has to read as something - see
+  // `unlisted` in settings-schema.ts, and the palette's Custom.
+  name.textContent = chosen?.label ?? c.unlisted?.(value) ?? '';
   el.append(name);
   const chips = c.swatches?.(value) ?? [];
   if (!chips.length) return;
@@ -383,9 +508,9 @@ function paintPicker(el: HTMLElement) {
 /**
  * A row of buttons. None wired here - every one carries `data-cmd` and is
  * answered by ui/sidebar.ts's delegated listener. The paper orientation pair
- * is the exception, carrying `data-orient` instead, since choosing an
- * orientation with no sheet up also raises a sheet - a rule about paper, not
- * a command.
+ * is the exception, carrying `data-orient` instead: it writes one setting to
+ * one of two values rather than running an action, and ui/sidebar.ts wires it
+ * directly.
  */
 function buildButtons(c: ButtonsControl) {
   const row = make('div', 'btn-row');
@@ -427,8 +552,35 @@ function buildHint(c: HintControl) {
   // `html` is a literal in settings-schema.ts, never file or board content -
   // it exists so a hint can italicise one word.
   if (c.html) p.innerHTML = c.html;
-  register(c, p, null, null);
-  return p;
+  if (!c.tip) { register(c, p, null, null); return p; }
+
+  // A tip is the same paragraph, closed, with a (?) to open it. The row it
+  // explains is moved in by buildSection - this only makes the box for it.
+  //
+  // A button and `hidden`, not <details>: the paragraph has to sit *under* the
+  // whole row while the marker sits at its end, which is two grid cells apart,
+  // and a <details> can only open where it stands.
+  const row = make('div', 'tip-row');
+  const btn = make('button', 'tip-btn');
+  btn.type = 'button';
+  btn.textContent = '?';
+  btn.title = c.tip;
+  btn.setAttribute('aria-label', c.tip);
+  btn.setAttribute('aria-expanded', 'false');
+  if (c.id) btn.setAttribute('aria-controls', c.id);
+  p.hidden = true;
+  btn.addEventListener('click', () => {
+    const open = p.hidden;
+    p.hidden = !open;
+    btn.setAttribute('aria-expanded', String(open));
+    cue('pick');
+  });
+  row.append(btn, p);
+  // The paragraph is registered as a node rather than as the wrap: paint()
+  // writes `hidden` on a wrap from `when`, which would reopen the tip on every
+  // repaint. What paint has to reach here is the text.
+  register(c, btn, null, null, [p]);
+  return row;
 }
 
 function buildKeys(c: KeysControl) {
@@ -525,7 +677,7 @@ function paintFold(section: HTMLElement) {
   for (const fold of section.children) {
     if (!(fold instanceof HTMLDetailsElement)) continue;
     let any = false;
-    for (const row of fold.children) {
+    for (const row of foldBody(fold).children) {
       // The summary is the fold's own label, not one of its rows, so it
       // never keeps one open.
       if (row instanceof HTMLElement && row.tagName !== 'SUMMARY' && !row.hidden) any = true;
@@ -544,7 +696,7 @@ function paintControl({ c: spec, owner, wrap, input, out, nodes }: Built, c: Ctx
   const live = controlEnabled(spec, owner, c);
   wrap.classList.toggle('is-inert', !live);
   if (input) input.disabled = !live;
-  // `nodes` is only ever filled for a buttons row - see register().
+  // `nodes` is filled for a buttons row and for a tip - see register().
   if (spec.type === 'buttons' && nodes) {
     for (let i = 0; i < nodes.length; i++) {
       const b = spec.buttons[i];
@@ -558,7 +710,9 @@ function paintControl({ c: spec, owner, wrap, input, out, nodes }: Built, c: Ctx
     return;
   }
   if (spec.type === 'hint') {
-    if (typeof spec.text === 'function') wrap.textContent = spec.text(c);
+    // A tip's wrap is its (?) button; the words go in the paragraph beside it.
+    const into = nodes?.[0] ?? wrap;
+    if (typeof spec.text === 'function') into.textContent = spec.text(c);
     return;
   }
   if (spec.type === 'picker') {

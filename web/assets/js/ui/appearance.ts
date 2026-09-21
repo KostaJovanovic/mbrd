@@ -97,6 +97,7 @@ export function initAppearance(handlers: { onChange?: () => void } = {}) {
     CONTROLS, HOSTS, WHIMSY, ALL_SOURCES_STOP, ALL_SOURCES_MAX,
     current: () => current,
     setVar, previewWhimsy, settleWhimsy, setPalette, goDynamic, sourceCount, dynamicOn,
+    handPicked,
   });
 
   // Flush pending pref writes on tab close (pagehide for iOS, visibility for discard).
@@ -188,19 +189,28 @@ function previewWhimsy(level: number | string) {
   persist();
   syncControls();          // computed radii, fonts and durations all moved
   reshade();
-  // The grid's shape follows at once. The snap waits for the release: it is a
-  // step of its own, and one taken mid-drag would file the drag into the past.
+  // The grid's shape follows at once.
   bus.emit('settings', 'appearance');
+  // And so does the snap, which is what a level *means* on Desktop: Harsh is a
+  // board on the lattice, and a slider that changes every other thing about the
+  // page as it passes and leaves the cards where they were until it is let go
+  // was showing two halves of one level at two different moments. It waited for
+  // the release because the snap is a step of its own; it still is, and the step
+  // lands where the change did.
+  //
+  // Idempotent by way of setSetting(), which returns on a value it already
+  // holds - so this fires only on the crossing into or out of Harsh, however
+  // many levels the slider passes through on the way.
+  if (whimsyControlsSnap(board.layoutMode)) setSetting('snap', n === HARSH);
 }
 
-/** The slider let go: one step from the look before the drag, and the snap Harsh brings. */
+/** The slider let go: one step from the look before the drag. The snap already happened. */
 function settleWhimsy() {
   if (!whimsyFrom) return;
   const from = whimsyFrom;
   whimsyFrom = null;
   if (sameLook(from, current)) return;
   commitAppearance(cloneLook(current), from);
-  if (whimsyControlsSnap(board.layoutMode)) setSetting('snap', current.whimsy === HARSH);
 }
 
 // Re-derive the sheet at the new whimsy level (paper varies by tier).
@@ -378,6 +388,21 @@ function setPalette(name: string) {
   syncControls();
 }
 
+/**
+ * Whether the colours on screen were chosen here, by hand.
+ *
+ * Derived rather than stored: a pigment token in `vars` that the picture
+ * extraction did not write is one somebody picked, and that is the whole of
+ * the state. Nothing has to be cleared when a palette is chosen, because
+ * setPalette() drops the tokens themselves - so the question stops being true
+ * the moment its evidence goes, and no second flag can disagree with the
+ * colours. It travels in the .mbrd for free too: a board saved on a chosen
+ * pigment opens on one.
+ */
+function handPicked() {
+  return !current.derived && PALETTE_TOKENS.some(key => key in current.vars);
+}
+
 // Remove all inline pigment tokens; the named palette shows through again.
 function dropPigments() {
   if (!PALETTE_TOKENS.some(key => key in current.vars)) return false;
@@ -528,10 +553,13 @@ function setVar(name: string, value: string) {
   //
   // Cleared on the way out as well as the way in, since taking an override back
   // off is still a decision about the look.
-  if (PALETTE_TOKENS.includes(name)) {
+  // The menu is repainted at the end of whichever path runs and not here: it
+  // reads handPicked(), which is a question about `vars`, and asking before
+  // the write would answer about the look one edit ago.
+  const pigment = PALETTE_TOKENS.includes(name);
+  if (pigment) {
     delete current.derived;
     current.auto = false;
-    syncPaletteMode();
   }
   // The embed watermark's viewBox is measured from the display face in JS; a
   // bare CSS var change here does not go through apply(), so refit it by hand.
@@ -543,6 +571,7 @@ function setVar(name: string, value: string) {
     root.style.removeProperty(name);
     applied.delete(name);
     persist();
+    if (pigment) syncPaletteMode();
     if (refitFace) refitEmbedMarks();
     return;
   }
@@ -572,6 +601,7 @@ function setVar(name: string, value: string) {
   // the only control whose value changed is the one under the pointer. Nothing
   // else in the panel reads a pigment.
   if (sheet) paintThemeColour();
+  if (pigment) syncPaletteMode();
   if (refitFace) refitEmbedMarks();
   persist({ soon: true });
 }

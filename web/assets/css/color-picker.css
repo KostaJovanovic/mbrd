@@ -17,6 +17,15 @@
   color: var(--ink);
   margin: auto;
   animation: ask-in var(--dur-base) var(--ease-back);
+  /* A <dialog> is `overflow: auto` in every UA sheet, and nothing in here is
+     ever wider than the sheet - so a horizontal bar can only ever be a few
+     pixels of something poking out, and it costs both bottom corners: the
+     scrollbar's strip is reserved inside the border box and Chromium does not
+     round it. Same failure #credits documents in dialog.css, on the other
+     axis. `clip` rather than `hidden` so the vertical axis is left alone and
+     a short window can still scroll the sheet. */
+  overflow-x: clip;
+  overflow-y: auto;
 }
 /* Only when open: unconditional display would override <dialog>'s display:none. */
 #pick[open] { display: grid; gap: 12px; }
@@ -50,9 +59,13 @@
     hsl(var(--hue, 0) 100% 50%);
 }
 #pick-area:focus { outline: none; }
+/* Rings drawn inside, not around. Both boxes are the full width of the sheet's
+   content, and an outline counts towards scrollable overflow - so a ring that
+   sat outside raised the horizontal bar this dialog has no other use for, the
+   moment focus landed (which is on the square, as soon as it opens). */
 #pick-area:focus-visible {
   outline: var(--sel-line) solid var(--select);
-  outline-offset: var(--sel-gap);
+  outline-offset: calc(var(--sel-gap) * -1);
 }
 /* Two rings so the handle stays visible against both white and black corners. */
 #pick-dot {
@@ -90,12 +103,16 @@
 #pick-hue:focus { outline: none; }
 #pick-hue:focus-visible {
   outline: var(--sel-line) solid var(--select);
-  outline-offset: var(--sel-gap);
+  outline-offset: calc(var(--sel-gap) * -1);
 }
-/* Two vendor thumbs, kept in step: different sizes = different hues. */
+/* Two vendor thumbs, kept in step: different sizes = different hues.
+   `box-sizing` on both: `* { box-sizing: border-box }` in base.css does not
+   reach a vendor pseudo-element, so the 2px ring was making an 18px thumb out
+   of a 14px one - which Gecko lets hang past the end of the track. */
 #pick-hue::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
+  box-sizing: border-box;
   width: 14px;
   height: 14px;
   border-radius: 50%;
@@ -105,6 +122,7 @@
   cursor: pointer;
 }
 #pick-hue::-moz-range-thumb {
+  box-sizing: border-box;
   width: 14px;
   height: 14px;
   border-radius: 50%;

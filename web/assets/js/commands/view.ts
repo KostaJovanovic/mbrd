@@ -136,6 +136,10 @@ export function viewCommands(vp: CommandViewport, { resetAppearance, perf }: Vie
     tourAt: () => tourAt(),
     // Space: play/pause. Returns false when nothing loaded, so Space falls back to pan.
     playPause: () => togglePlayback(),
+    // The sheet up or down, with its size left where it was. A command rather
+    // than a listener on the button, so the row in the panel is the ordinary
+    // `data-cmd` kind and this can be put in a menu later without moving.
+    togglePaper: () => setSetting('paperShow', !board.settings.paperShow),
     scaleFromItem,
     // Resets scale and sheet size together — the sheet is drawn at whatever A4
     // works out to under the current scale.

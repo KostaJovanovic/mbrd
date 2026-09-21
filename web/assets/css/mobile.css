@@ -1047,12 +1047,12 @@
   50% { transform: scaleY(1); }
 }
 
-/* The Desktop Playlist: a little floating window, opening anchored to the
-   bottom-right above the now-playing bar. It is its own surface, not a docked panel
-   - it floats over the board, sized to its content up to a cap, is independent of
-   the header edit bar and the menu (they can be open at the same time), and is
-   draggable by its title bar (ui/playlist.ts makeWindowDrag). It grows up out of its
-   bottom-right corner on open. */
+/* The Desktop Playlist: a panel anchored to the bottom-right above the
+   now-playing bar. It stands over the board, sized to its content up to a cap,
+   and cannot be moved or resized. It flies in from the right edge the way
+   #sidebar does from the left, and shares that edge with the sticker pad and
+   the header edit bar through ui/panel-stack.ts - opening one of the three
+   puts the others away and closing it brings the last one back. */
 .player-window {
   position: fixed;
   z-index: var(--z-overlay);
@@ -1068,8 +1068,9 @@
   border-radius: var(--leaf);
   box-shadow: var(--shadow-2);
   overflow: hidden;
-  transform-origin: bottom right;
-  transform: scale(0.96) translateY(10px);
+  /* The sticker pad's entrance, which is #sidebar's mirrored: out past the
+     right edge, in on --ease-back. The 22px clears the shadow. */
+  transform: translateX(calc(100% + 22px));
   opacity: 0;
   visibility: hidden;
   transition: transform var(--dur-base) var(--ease-back),
@@ -1089,13 +1090,9 @@
   gap: 6px;
   padding: 12px 18px;
   border-bottom: var(--hairline) solid var(--rule-2);
-  cursor: grab;
-  touch-action: none;
   -webkit-user-select: none;
   user-select: none;
 }
-.player-window.is-moving { cursor: grabbing; }
-.player-window.is-moving .player-window-head { cursor: grabbing; }
 .player-window-title {
   font-family: var(--font-display);
   font-size: var(--t-title);
@@ -1147,38 +1144,6 @@
   padding: 6px 8px 12px;
 }
 .player-window-body .feed-empty.is-shown { min-height: 30vh; }
-
-/* The bottom-right resize grip: a small bracket that sits over the corner. It draws
-   an L of two hairlines inside the rounded corner - subtle at rest, the accent under
-   the pointer - and takes the pointer for a resize drag (ui/playlist.ts). */
-.player-window-resize {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  width: 18px;
-  height: 18px;
-  z-index: 2;
-  cursor: nwse-resize;
-  touch-action: none;
-  color: var(--ink-3);
-}
-.player-window-resize::after {
-  content: "";
-  position: absolute;
-  right: 4px;
-  bottom: 4px;
-  width: 7px;
-  height: 7px;
-  border-right: 2px solid currentColor;
-  border-bottom: 2px solid currentColor;
-  border-bottom-right-radius: 2px;
-  opacity: 0.55;
-}
-@media (hover: hover) {
-  .player-window-resize:hover { color: var(--accent-text); }
-}
-.player-window.is-resizing { cursor: nwse-resize; }
-.player-window.is-resizing .player-window-resize { color: var(--accent-text); }
 
 /* The window's player: a real transport, not a play-all button. The now-playing
    track (cover, title, artist) over a seek line and the five controls, driving the

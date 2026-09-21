@@ -1,0 +1,48 @@
+GENERAL
+
+1. the close button of the sidebar is off center, fix it.
+2. make default for sounds off
+3. remove text that explains tiers of the quality slider under it
+4. remove text that explains tiers of the sounds slider under it, just write that its experimental if set to anything but "off"
+5. in the board contents pannel, mp4's cant be hovered
+6. credits pop up: remove "what this is built on" to "More" and move omar into it, credit him for rewriting this app in rust, https://github.com/omznc/mbrd-rs
+7. in the credits pop up leave room for a short paragraph about why i made this program. write a placeholder that tells nothing, do not invent or put words i did not tell you. just a lifeless placehodler
+8. Feed board has problems with displaying many tiles, such as the style tile investigate this thoroughly
+9. remove the native players from tiles on feed board
+10. "open playlist" button should not appear on the player if a video is playing. only songs 
+11. Playlist button in the sidebar should not appear if there is no music on the board. When first song is imported, the playlist window (if on canvas) should appear automatically and the button in the sidebar should show up. the button should never be removed after showing up for the first time, per board.
+12. lets redesign the style tile. i dont like it. the swatches should be sepparate and there should be less of them. only eg. 8 most important colors, and hovering the swatches should show their hex, and clicking them should copy the hex
+13. App should check for updates once per day, and display update now button in the top right part of the title bar, just like discord.
+14. In the look tab of sidebar, Palette has a custom drop down. Make sure all dropdowns in the sidebar are custom like that.
+15. lets redesign the timeline. Instead of it being a pop up, make it take space from the bottom of the window, just like in fusion360 ASK FOR SCREENSHOT IF I DIDNT ALREADY PUT IT IN
+16. refactor the mbrd filetype and how it works, if deemed that its already fine, leave it alone
+17. mbrd app icon on windows does not exist for some reason, shows up as the placeholder paper icon
+18. when opening the sidebar, move the board accordingly so that the same stuff stays on screen
+19. When selecting many things, the fence rectangle is distracting. remove the rectangle completely, leave just the pop up asking
+20. Like stickers, created fences should anchor automatically only 10 seconds after last moving, but for the first time they are created
+21. Anchor and pin icons that appear on the top right corner should be buttons, and tapping them unanchors / unpins the object. the 10s rule applies still
+22. remove text "the column is always packed tight - this is the order it packs in. As placed keeps the one it already has" from the sidebar
+23. on middle whimsy, no sans text should be italic in sidebar
+24. in the custom pop ups (like palette in appearance panel of sidebar) allow tap hold and swiping up and down, and selecting the one the finger was lifted from, like in IOS
+25. palette box, display font/body font boxes and all the other buttons and drop downs should have uniform height. they currently do not
+26. The "advanced" drop down for board (that had add style tile, save image, and save pdf) shouldnt be called advanced, rename it to "More" and move Save as and Export into it
+27. "Boards" pop up displays only the current board. If I save a board, create a new one, and save it, only the new one is displayed (on the website). Investigate this thoroughly
+28. google drive works only on website.
+29. For fences, rename "Delete item" to "Remove fence"
+30. check if all dependencies listed in credits
+31. revise debug pannel. on app version remove browser specific settings
+32. "Moving gifs" rename to "Animated gifs"
+33. picture sharpness setting doesnt seem to do anything
+
+
+TOUR
+
+1. do not show take the tour and edit the tour buttons if the tour does not exist. Just show "Create tour"
+2. During both tour editing and the tour itself, no hover animations should be allowed and moving and resizing cards shouldnt be allowed. Hovering a card with connections should still have the fade out effect
+3. when selecting multiple cards, and clicking the + icon on one of them, all of them should be added to the stop.
+4. when taking the tour, no cards should be interactible AT ALL except the cards in the current step. videos shouldnt be playable, no audio, they shouldnt be openable in lightbox, but gifs should play automatically still
+5. forward and back buttons should be stationary on the screen, not move according to tile name size. the close button too.
+6. hovering tour stops should fade out all except the cards on that stop. the same effect as hovering a card with connections/joins
+7. selecting a tour stop and clicking delete SHOULD NOT DELETE THE CARDS, it should delete the stop itself
+
+Ask me questions. commit regularly, This is a list of issues and you should plan first. Use at most 1 agent. Leave stuff that needs human input (such as google drive) for last. You are free to reorder this list as you please. Make it as context efficient as possible.

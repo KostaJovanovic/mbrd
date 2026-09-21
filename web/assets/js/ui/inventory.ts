@@ -1,15 +1,37 @@
 // Board inventory — what is here and what it weighs. Reports sizes from
-// stored blob lengths, never decodes images. Rows are files by content
-// hash; one file may be under several cards or none (orphan). Orphans
-// are reported, never offered for deletion.
+// stored blob lengths, never decodes images. A row is the file a card
+// arrived as, with the copies the board made of it folded underneath, so
+// the count is the one a person recognises: two pictures dropped, two rows.
+// Orphans are reported, never offered for deletion.
 
-import { board, byId, select, timelineHashes } from '../state.ts';
+import {
+  board, byId, select, timelineHashes, timelinePlaying, timelineAt, timelineSteps,
+  discardOriginals, replaceOldVersions,
+} from '../state.ts';
 import { cue } from '../cuelume/engine.ts';
-import { allAssets, assetURL, getAsset } from '../storage/assets.ts';
+import { toast } from '../notify.ts';
+import { allAssets, assetURL, getAsset, forgetAssets } from '../storage/assets.ts';
 import { travelMs } from '../canvas/viewport.ts';
+import { icon } from './menu.ts';
+import { ask } from './dialog.ts';
 import { itemHashes, el, clamp, formatBytes } from '../util.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 import type { Item } from '../board-model.ts';
+
+/**
+ * What a stored file is to the card keeping it. The order below is the order
+ * of the claim: a hash under two keys is named by the first one that wants it.
+ *
+ * `source` is the file that was dropped and `main` the picture the card shows,
+ * and for a .heic or a camera RAW those are two different files - the card
+ * carries the developed WebP at asset.hash and the original at meta.source
+ * (see origName() in util.ts). For everything else there is no source and the
+ * dropped file *is* main.
+ */
+export type FileRole = 'source' | 'main' | 'display' | 'still' | 'other';
+
+/** What is keeping a file alive. Null is an orphan: nothing is. */
+export type Holder = 'field' | 'drawer' | 'timeline';
 
 /** One asset, as this sheet talks about it. */
 export type InventoryAsset = {
@@ -17,7 +39,11 @@ export type InventoryAsset = {
   name: string;
   ext: string;
   bytes: number;
-  /** Nothing on the board or in the bin points at this one. */
+  /** What the card keeping it made it for. 'other' for a file no card claims. */
+  role: FileRole;
+  /** The one holder with the strongest claim on it - see the walk below. */
+  held: Holder | null;
+  /** Nothing on the board or in the bin points at this one. `held === null`. */
   orphan: boolean;
   /**
    * The live cards using this file, in board order.
@@ -26,6 +52,28 @@ export type InventoryAsset = {
    * nowhere to fly to for it, and a history step is a moment, not a place.
    */
   cards: string[];
+};
+
+/**
+ * One row of the list: a file and every copy the same card keeps of it.
+ *
+ * A picture is three or four stored blobs - the original, the picture it was
+ * developed into, a ~1024px display copy, a thumbnail - and reporting those as
+ * four rows answers a question nobody asked. They add up here instead, and the
+ * row opens to show where its weight went.
+ */
+export type InventoryFile = {
+  /** The file the row is named after: the one dropped, when there is one. */
+  head: InventoryAsset;
+  /** Head first, then its copies, heaviest first. */
+  files: InventoryAsset[];
+  /** What the whole group weighs - the number on the row. */
+  bytes: number;
+  /**
+   * Which holder's list the row belongs in. One value for the group, not one
+   * per file: a group is one card's files and a card is in one place.
+   */
+  held: Holder | null;
 };
 
 export type Inventory = {
@@ -37,14 +85,34 @@ export type Inventory = {
   bytes: number;
   assets: number;
   /**
-   * Every stored file under the one holder keeping it alive. With
-   * `orphans.count` these four add up to `assets`, which is the point: the
-   * file count is always larger than the card count and this is where the
-   * difference goes.
+   * Every stored file, and its weight, under the one holder keeping it alive.
+   * With `orphans` these four add up to `assets` and to `bytes`, which is the
+   * point: the file count is always larger than the card count and this is
+   * where the difference goes.
    */
-  held: { field: number; drawer: number; timeline: number };
-  /** The heaviest first, capped - see TOP. */
-  largest: InventoryAsset[];
+  held: Record<Holder, { count: number; bytes: number }>;
+  /**
+   * How many files a person would say the board has: one per group on the
+   * field, the copies folded in. What the headline counts.
+   */
+  files: number;
+  /** The heaviest group on the field first, capped - see TOP. */
+  largest: InventoryFile[];
+  /**
+   * The same, for the two holders that are not the board itself. Kept apart
+   * rather than sorted into one list because they answer a different question:
+   * these are not the board's files, they are what undo would need to put
+   * back. After an Optimize they are most of the weight and none of the board.
+   */
+  kept: Record<'drawer' | 'timeline', InventoryFile[]>;
+  /**
+   * Every hash the past alone is keeping - uncapped, unlike `kept.timeline`,
+   * because this is not a list to read but the list to free. Nothing on the
+   * field or in the drawer is in it: the holder walk gives each file to the
+   * strongest claim, so what is left here is wanted by the Timeline and by
+   * meta.was, and by nothing a card can still show.
+   */
+  freeable: string[];
   orphans: { count: number; bytes: number };
 };
 
@@ -83,6 +151,18 @@ export function boardInventory(): Inventory {
   // stored and still not rubbish, which is usually the whole of the gap
   // between the card count and the file count.
   const inTimeline = timelineHashes();
+  // The fourth reference and the one itemHashes() does not carry: the picture
+  // an Optimize replaced, pinned at meta.was so undoing it can put the old one
+  // back. The autosave sweep keeps those bytes (referencedHashes,
+  // storage/session.ts), so calling them rubbish here would be the report
+  // being wrong about the one thing it is for. They are the Timeline's kind of
+  // weight - what the past is holding - and counted with it.
+  for (const item of [...board.items, ...board.trash.map(t => t.item)]) {
+    for (const key of ['was', 'wasCover']) {
+      const hash = item.meta?.[key];
+      if (typeof hash === 'string' && hash) inTimeline.add(hash);
+    }
+  }
 
   const counts = new Map<string, number>();
   for (const item of board.items) {
@@ -92,7 +172,11 @@ export function boardInventory(): Inventory {
   let bytes = 0;
   let orphanBytes = 0;
   let orphanCount = 0;
-  const held = { field: 0, drawer: 0, timeline: 0 };
+  const held: Record<Holder, { count: number; bytes: number }> = {
+    field: { count: 0, bytes: 0 },
+    drawer: { count: 0, bytes: 0 },
+    timeline: { count: 0, bytes: 0 },
+  };
   const all: InventoryAsset[] = [];
   for (const [hash, asset] of allAssets()) {
     // One file, one holder, strongest claim first. A picture on the field is
@@ -100,11 +184,11 @@ export function boardInventory(): Inventory {
     // make the three numbers add up to more than there are files. Attributing
     // it to the field instead leaves `timeline` meaning what a reader wants it
     // to mean: the files nothing on screen is using any more.
-    const where = onField.has(hash) ? 'field'
+    const where: Holder | null = onField.has(hash) ? 'field'
       : inDrawer.has(hash) ? 'drawer'
       : inTimeline.has(hash) ? 'timeline'
       : null;
-    if (where) held[where]++;
+    if (where) { held[where].count++; held[where].bytes += asset.size; }
     const orphan = !where;
     bytes += asset.size;
     if (orphan) { orphanCount++; orphanBytes += asset.size; }
@@ -113,6 +197,10 @@ export function boardInventory(): Inventory {
       name: asset.name || '',
       ext: asset.ext || '',
       bytes: asset.size,
+      // Rewritten below for every file a card claims. A file no card points at
+      // keeps this one and stands on its own row.
+      role: 'other',
+      held: where,
       orphan,
       cards: users.get(hash) || [],
     });
@@ -120,6 +208,14 @@ export function boardInventory(): Inventory {
   // Sorted by weight, then by hash, so the order is stable between two opens
   // of an unchanged board rather than at the whim of Map iteration order.
   all.sort((a, b) => b.bytes - a.bytes || (a.hash < b.hash ? -1 : 1));
+
+  // Split by holder rather than listed together. An Optimize leaves the
+  // Timeline holding every original it replaced, and those rows arriving in
+  // the middle of the board's own files is the report that made no sense: a
+  // 27 MB board with 470 KB on it.
+  const groups = groupFiles(all);
+  const of = (holder: Holder) => groups.filter(g => g.held === holder).slice(0, TOP);
+  const field = groups.filter(g => g.held === 'field');
 
   return {
     kinds: [...counts].map(([type, count]) => ({ type, count }))
@@ -129,8 +225,80 @@ export function boardInventory(): Inventory {
     bytes,
     assets: all.length,
     held,
-    largest: all.slice(0, TOP),
+    files: field.length,
+    largest: field.slice(0, TOP),
+    kept: { drawer: of('drawer'), timeline: of('timeline') },
+    freeable: all.filter(a => a.held === 'timeline').map(a => a.hash),
     orphans: { count: orphanCount, bytes: orphanBytes },
+  };
+}
+
+/**
+ * Every stored file, gathered into one group per card.
+ *
+ * Each file lands in exactly one group - claimed by the first card that names
+ * it, live cards before binned ones - so the group weights add up to `bytes`
+ * rather than counting a picture twice because two cards share it. What is
+ * left is the Timeline's: steps are moments rather than cards, and there is
+ * nothing to hang those files off, so each stands on its own row under its own
+ * heading.
+ */
+function groupFiles(all: InventoryAsset[]): InventoryFile[] {
+  const byHash = new Map(all.map(a => [a.hash, a]));
+  const taken = new Set<string>();
+  const groups: InventoryFile[] = [];
+
+  for (const item of [...board.items, ...board.trash.map(t => t.item)]) {
+    const mine: InventoryAsset[] = [];
+    for (const [hash, role] of rolesOf(item)) {
+      const asset = byHash.get(hash);
+      if (!asset || taken.has(hash)) continue;
+      taken.add(hash);
+      asset.role = role;
+      mine.push(asset);
+    }
+    if (mine.length) groups.push(gather(mine));
+  }
+  for (const asset of all) if (!taken.has(asset.hash)) groups.push(gather([asset]));
+
+  // Heaviest group first, ties by hash - the same stable order the flat list
+  // had, for the same reason: two opens of an unchanged board must agree.
+  groups.sort((a, b) => b.bytes - a.bytes || (a.head.hash < b.head.hash ? -1 : 1));
+  return groups;
+}
+
+/** One card's files, hash by hash, under the name of what each one is for. */
+function rolesOf(item: Item): Map<string, FileRole> {
+  const roles = new Map<string, FileRole>();
+  const meta = item.meta;
+  const put = (hash: unknown, role: FileRole) => {
+    if (typeof hash === 'string' && hash && !roles.has(hash)) roles.set(hash, role);
+  };
+  put(meta?.source, 'source');
+  put(item.asset?.hash, 'main');
+  put(meta?.display, 'display');
+  for (const key of ['thumb', 'cover', 'shot', 'poster']) put(meta?.[key], 'still');
+  // The rest of what an item can own - preview, art, an archive, a folder's
+  // listed files. Asked of itemHashes() rather than listed again here, which
+  // is the one place that list is allowed to live.
+  for (const hash of itemHashes(item)) put(hash, 'other');
+  return roles;
+}
+
+/** Name the group after the dropped file, then order the copies by weight. */
+function gather(files: InventoryAsset[]): InventoryFile {
+  const head = files.find(f => f.role === 'source') ?? files.find(f => f.role === 'main') ?? files[0];
+  const rest = files.filter(f => f !== head)
+    .sort((a, b) => b.bytes - a.bytes || (a.hash < b.hash ? -1 : 1));
+  return {
+    head,
+    files: [head, ...rest],
+    bytes: files.reduce((sum, f) => sum + f.bytes, 0),
+    // The head's holder speaks for the group: every file in it belongs to one
+    // card, and that card is in one place. A binned card's files are all the
+    // drawer's even where the Timeline also remembers them, because the walk
+    // above gives each file to the strongest claim first.
+    held: head.held,
   };
 }
 
@@ -231,24 +399,32 @@ function report(inv: Inventory): HTMLElement[] {
       `${inv.binned} more in the drawer, still ${inv.binned === 1 ? 'carrying its' : 'carrying their'} bytes`));
   }
 
-  out.push(line('inv-files', `${formatBytes(inv.bytes)} in ${inv.assets} `
-    + `${inv.assets === 1 ? 'file' : 'files'}`));
-  // The split under the total, and the reason it is here at all: 96 files
-  // over 27 cards is a number nobody can account for until it says where the
-  // other sixty-nine went. Only the holders that hold something are named.
-  const where: string[] = [];
-  if (inv.held.field) where.push(`${inv.held.field} on the field`);
-  if (inv.held.drawer) where.push(`${inv.held.drawer} in the drawer`);
-  if (inv.held.timeline) where.push(`${inv.held.timeline} held by the Timeline`);
-  if (where.length) out.push(line('inv-where', where.join(', ')));
-
-  if (inv.largest.length) {
-    out.push(heading('The heaviest'));
-    const list = document.createElement('ul');
-    list.className = 'inv-list';
-    for (const asset of inv.largest) list.append(assetRow(asset));
-    out.push(list);
+  // The headline weighs the board, not the store: what is on the field, in the
+  // files a person would say they put there, with each one's copies folded in.
+  // Everything else is history, and history goes on the line below.
+  out.push(line('inv-files', `${formatBytes(inv.held.field.bytes)} on the field, in `
+    + `${inv.files} ${inv.files === 1 ? 'file' : 'files'}`));
+  // The store, once, and only when it is a different number - each holder says
+  // its own weight on its own row below, and a line here listing them again
+  // was the same three figures twice over. What it is for: an Optimize can
+  // leave nine tenths of a board's bytes behind the board, and a headline that
+  // only added them up would look like the optimiser had done nothing.
+  if (inv.bytes !== inv.held.field.bytes) {
+    out.push(line('inv-where', `${formatBytes(inv.bytes)} stored in all`));
   }
+
+  out.push(...section('The heaviest', inv.largest));
+  // Named for what they are rather than listed with the board's own files, and
+  // folded away: a reader looking for what a card costs must not have to tell a
+  // live picture from the copy of it undo is holding, and mostly does not want
+  // to see the second list at all.
+  //
+  // Neither heading says "Timeline" or "bin", and that is the point - they say
+  // what the files are and why they are still here. The machinery has names of
+  // its own and the reader of this sheet has not asked about them.
+  out.push(...folded('Waiting in the drawer', inv.kept.drawer, inv.held.drawer));
+  out.push(...folded('Kept in case you undo', inv.kept.timeline, inv.held.timeline,
+    inv.freeable.length ? () => { void freeThePast(); } : undefined));
 
   if (inv.orphans.count) {
     // Reported, never offered for deletion. See the header for why.
@@ -261,35 +437,227 @@ function report(inv: Inventory): HTMLElement[] {
   return out;
 }
 
+/** A heading and its list, or nothing at all when the holder holds nothing. */
+function section(title: string, groups: InventoryFile[]): HTMLElement[] {
+  if (!groups.length) return [];
+  return [heading(title), listOf(groups)];
+}
+
+function listOf(groups: InventoryFile[]): HTMLElement {
+  const list = document.createElement('ul');
+  list.className = 'inv-list';
+  for (const group of groups) list.append(groupRow(group));
+  return list;
+}
+
 /**
- * One file, as a row: name, how many cards want it, weight, and (when a card
- * wants it) a way to go there.
- *
- * The control is the whole row rather than a trailing chevron, so a row that
- * does something is told apart from one that does not at a glance, with a hit
- * target that works with a thumb too.
+ * The same, closed: a twisty, the heading, what the holder weighs in all, and
+ * - for the past, which is the one a reader may want rid of - a way to let it
+ * go. Closed on arrival because these are not the board's files, and a reader
+ * who has not asked about them is reading about the board.
  */
-function assetRow(asset: InventoryAsset): HTMLElement {
+function folded(title: string, groups: InventoryFile[],
+  held: { count: number; bytes: number }, free?: () => void): HTMLElement[] {
+  if (!groups.length) return [];
+  const list = listOf(groups);
+  list.hidden = true;
+  list.id = `inv-kept-${++seq}`;
+  // The heaviest are shown, the rest are counted - the cap is TOP per holder.
+  const shown = groups.reduce((sum, g) => sum + g.files.length, 0);
+  if (held.count > shown) {
+    const more = document.createElement('li');
+    more.className = 'inv-more';
+    more.textContent = `and ${held.count - shown} more`;
+    list.append(more);
+  }
+
+  const bar = document.createElement('div');
+  bar.className = 'inv-fold';
+  const what = `${held.count} ${held.count === 1 ? 'file' : 'files'}`;
+  bar.append(twisty(list, `${title}: show the ${what}`), heading(title),
+    size(formatBytes(held.bytes)));
+  if (free) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'inv-free';
+    btn.textContent = 'Delete';
+    btn.title = 'Delete every earlier version. The timeline keeps its steps and'
+      + ' draws them with the pictures the cards have now.';
+    btn.addEventListener('click', free);
+    bar.append(btn);
+  }
+  return [bar, list];
+}
+
+/**
+ * Delete the bytes the past is holding, and keep the past.
+ *
+ * Three acts, in this order and not another. The live cards stop naming their
+ * originals (`discardOriginals`), which is what lets the autosave sweep let go.
+ * The ledger is rewritten to name today's files in place of the ones going
+ * (`replaceOldVersions`), so every step still draws - a step from before an
+ * Optimize shows the same board, with the optimised pictures on it. Only then
+ * are the bytes freed, because until both of those have run something still
+ * points at them.
+ *
+ * The sheet closes first (a second modal over a modal lands behind it) and
+ * opens again on the numbers this leaves behind.
+ */
+async function freeThePast(): Promise<void> {
+  // A replay puts the board at an earlier moment, and rewriting the ledger
+  // under it would rewrite the moment being stood on. The strip's own rows go
+  // inert while it plays (paintPlay); this one is outside that lock, so it
+  // says so instead.
+  if (timelinePlaying()) {
+    toast('The timeline cannot be changed while it plays. Press Pause first.');
+    return;
+  }
+  // Scrubbed back, the board *is* the past: the cards on it hold the older
+  // pictures, so "what no card is using" names the newer ones and this would
+  // delete the optimised copies and keep the originals - coherent, and exactly
+  // backwards. The present is the only place the question means what it says.
+  if (timelineAt() < timelineSteps().length) {
+    toast('The timeline is standing in the past. Bring it to the end first.');
+    return;
+  }
+  const held = boardInventory().held.timeline;
+  sheetEl()?.close();
+  const answer = await ask({
+    title: 'Delete the earlier versions?',
+    body: `${formatBytes(held.bytes)} of earlier versions goes. The timeline keeps every`
+      + ' step: where a step showed an older copy of a picture, it shows the card\'s'
+      + ' picture as it is now. Undo is emptied. There is no going back.',
+    go: 'Delete them',
+    danger: true,
+  });
+  if (answer !== 'go') { openInventory(); return; }
+
+  // Read again rather than trusting the report the button was drawn from: a
+  // board can change while a dialog is up, and freeing a hash a card has since
+  // taken up would leave a card with a hole in it.
+  const doomed = new Set(boardInventory().freeable);
+  for (const hash of discardOriginals()) doomed.add(hash);
+  replaceOldVersions(doomed);
+  const freed = forgetAssets(doomed);
+  let bytes = 0;
+  for (const size of freed.values()) bytes += size;
+  toast(freed.size
+    ? `${formatBytes(bytes)} freed - ${freed.size} earlier ${freed.size === 1 ? 'version' : 'versions'} deleted`
+    : 'There was nothing left to delete');
+  openInventory();
+}
+
+/**
+ * One group, as a row: the file it is named after, weighing what the whole
+ * group weighs, and - when there are copies - a twisty that opens them
+ * indented underneath.
+ *
+ * Two controls rather than one, because expanding and flying to the card are
+ * two different answers. The line keeps the jump and stays the whole width of
+ * the row, so a row that leads somewhere is told apart from one that does not
+ * at a glance, with a hit target that works with a thumb too.
+ */
+function groupRow(group: InventoryFile): HTMLElement {
   const row = document.createElement('li');
   row.className = 'inv-row';
-  if (asset.orphan) row.dataset.orphan = '';
+  if (group.head.orphan) row.dataset.orphan = '';
 
-  const name = document.createElement('span');
-  name.className = 'inv-name';
+  const head = document.createElement('div');
+  head.className = 'inv-group';
+  let kids: HTMLElement | null = null;
+  if (group.files.length > 1) {
+    kids = document.createElement('ul');
+    kids.className = 'inv-kept';
+    kids.id = `inv-kept-${++seq}`;
+    kids.hidden = true;
+    // Every file, the head included, so the indented weights add up to the
+    // number on the row. Leaving the original out left its 23 MB stated
+    // nowhere and the reader subtracting to find it.
+    for (const file of group.files) {
+      const kid = document.createElement('li');
+      kid.className = 'inv-kid';
+      kid.append(fileLine(file, file.bytes, peekOf([file]), ROLE_LABEL[file.role]));
+      kids.append(kid);
+    }
+    const copies = group.files.length - 1;
+    head.append(twisty(kids, copies === 1 ? 'Show the copy this file keeps'
+      : `Show the ${copies} copies this file keeps`));
+  } else {
+    // An empty slot where the twisty would be, so a row with no copies keeps
+    // the same name column as the rows around it.
+    const slot = document.createElement('span');
+    slot.className = 'inv-slot';
+    head.append(slot);
+  }
+  head.append(fileLine(group.head, group.bytes, peekOf(group.files)));
+  row.append(head);
+  if (kids) row.append(kids);
+  return row;
+}
+
+/** Row ids for aria-controls. Rebuilt with the list on every open. */
+let seq = 0;
+
+/** The disclosure beside a row or a heading. Closed on arrival: what it hides
+ * is the answer to a question, and the question is asked by opening it. */
+function twisty(kids: HTMLElement, label: string): HTMLElement {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'inv-twisty';
+  btn.setAttribute('aria-controls', kids.id);
+  btn.setAttribute('aria-expanded', 'false');
+  btn.setAttribute('aria-label', label);
+  btn.title = label;
+  btn.append(icon('i-chevron-right'));
+  btn.addEventListener('click', () => {
+    const open = btn.getAttribute('aria-expanded') === 'true';
+    btn.setAttribute('aria-expanded', open ? 'false' : 'true');
+    kids.hidden = open;
+    cue('pick');
+  });
+  return btn;
+}
+
+/**
+ * What each file in an opened row is called: what it is for, in words, rather
+ * than what it is called on disk. `display.webp` under a row already named
+ * display.webp explains nothing, and the three copies a picture keeps have no
+ * names a person chose. The filename is still there, in the row's title.
+ *
+ * Empty for `other` - a file no card explains is named after itself.
+ */
+const ROLE_LABEL: Record<FileRole, string> = {
+  source: 'The file as it arrived',
+  main: 'What the card shows',
+  display: 'A screen-sized copy',
+  still: 'A thumbnail',
+  other: '',
+};
+
+/**
+ * One line: name, how many cards want it, weight, and (when a card wants it)
+ * a way to go there. `bytes` is passed rather than read off the asset, since a
+ * group's line carries the group's weight and a copy's carries its own.
+ */
+function fileLine(asset: InventoryAsset, bytes: number, shown: Peek | null,
+  label = ''): HTMLElement {
   // Stored name, else extension, else the first of the hash - a pasted
   // picture has no filename and an empty row looks broken rather than nameless.
-  name.textContent = asset.name || (asset.ext ? `.${asset.ext}` : asset.hash.slice(0, 8));
+  const filename = asset.name || (asset.ext ? `.${asset.ext}` : asset.hash.slice(0, 8));
+  const name = document.createElement('span');
+  name.className = 'inv-name';
+  name.textContent = label || filename;
   const size = document.createElement('span');
   size.className = 'inv-size';
-  size.textContent = formatBytes(asset.bytes);
+  size.textContent = formatBytes(bytes);
 
   const to = asset.cards[0];
   if (!to) {
     const still = document.createElement('div');
     still.className = 'inv-line';
+    if (label) still.title = filename;
     still.append(name, size);
-    row.append(still);
-    return row;
+    return still;
   }
 
   const go = document.createElement('button');
@@ -305,27 +673,25 @@ function assetRow(asset: InventoryAsset): HTMLElement {
     go.append(used);
   }
   go.append(size);
-  go.title = asset.cards.length > 1
+  const where = asset.cards.length > 1
     ? `Go to the first of ${asset.cards.length} cards using this file`
     : 'Go to the card using this file';
+  // The filename leads when the row is showing a label instead - it is the one
+  // thing the words above cannot say, and hover is where it belongs.
+  go.title = label ? `${filename} - ${where}` : where;
   go.addEventListener('click', () => { cue('pick'); jump(to); });
-  // A picture shows itself. A clip plays in the peek, muted, over its card's
-  // still. It used to show only that still, read from `cover` or `poster`,
-  // and a clip the browser plays carries neither - its card decodes the frame
-  // live - so an ordinary mp4 peeked as nothing (R32).
-  const mime = getAsset(asset.hash)?.mime || '';
-  const shown: Peek | null = mime.startsWith('image/') ? { still: asset.hash, clip: null }
-    : mime.startsWith('video/') ? { still: stillOf(byId(to)?.meta), clip: asset.hash }
-    : null;
   if (shown) {
     go.addEventListener('pointerenter', () => showPeek(go, shown));
     go.addEventListener('pointerleave', hidePeek);
     // And by keyboard, since the row is a button and Tab reaches it too.
-    go.addEventListener('focus', () => showPeek(go, shown));
+    // :focus-visible rather than focus, because showModal() hands the focus to
+    // the first control in the dialog and that is the first row - so a plain
+    // `focus` raised a peek the moment the sheet opened, beside a pointer that
+    // was nowhere near it.
+    go.addEventListener('focus', () => { if (go.matches(':focus-visible')) showPeek(go, shown); });
     go.addEventListener('blur', hidePeek);
   }
-  row.append(go);
-  return row;
+  return go;
 }
 
 /**
@@ -368,16 +734,38 @@ let peekImg: HTMLImageElement | null = null;
 let peekClip: HTMLVideoElement | null = null;
 
 /**
- * A clip's still: the keys canvas/renderers.ts reads for a video's poster, in
- * its order, so the peek and the card agree. Null when the clip has none,
- * which is the usual case for one the browser can play.
+ * The pictures a browser draws in an <img>, by MIME and by extension.
+ *
+ * A list rather than `image/*`: a .dng, a .heic and a .tiff are all image/*
+ * and Windows hands Firefox that MIME for them, so the sheet offered a peek
+ * and the <img> then decoded nothing - a white box beside the row. The
+ * extension is the fallback for a file stored with no MIME at all.
  */
-function stillOf(meta: Item['meta'] | undefined): string | null {
-  for (const key of ['cover', 'poster', 'shot', 'thumb']) {
-    const hash = meta?.[key];
-    if (typeof hash === 'string' && hash && getAsset(hash)) return hash;
-  }
-  return null;
+const DRAWABLE = /^image\/(png|jpeg|gif|webp|avif|bmp|svg\+xml|x-icon|vnd\.microsoft\.icon)$/;
+const DRAWABLE_EXT = /^(png|jpe?g|gif|webp|avif|bmp|svg|ico)$/i;
+
+/**
+ * What a row shows in its peek, chosen across the whole group.
+ *
+ * This is what a group buys the reader beyond a shorter list: a camera RAW
+ * cannot be drawn, but the display copy stored beside it can, so the row for a
+ * .dng shows the picture instead of nothing. Preferred in that order - the
+ * ~1024px display copy first, since it is what the card itself draws and it
+ * decodes faster than a 23 MB original.
+ *
+ * A clip plays in the peek, muted, over whatever still the card kept. It used
+ * to show only that still, and a clip the browser plays carries none - its
+ * card decodes the frame live - so an ordinary mp4 peeked as nothing (R32).
+ */
+function peekOf(files: InventoryAsset[]): Peek | null {
+  const ORDER: FileRole[] = ['display', 'still', 'main', 'source', 'other'];
+  const mimeOf = (file: InventoryAsset) => getAsset(file.hash)?.mime || '';
+  const still = files
+    .filter(file => DRAWABLE.test(mimeOf(file)) || DRAWABLE_EXT.test(file.ext))
+    .sort((a, b) => ORDER.indexOf(a.role) - ORDER.indexOf(b.role))[0];
+  const clip = files.find(file => mimeOf(file).startsWith('video/'));
+  if (!still && !clip) return null;
+  return { still: still?.hash ?? null, clip: clip?.hash ?? null };
 }
 
 function showPeek(row: HTMLElement, shown: Peek): void {
@@ -392,6 +780,10 @@ function showPeek(row: HTMLElement, shown: Peek): void {
     peekImg = document.createElement('img');
     // Decorative: the row beside it already names the file.
     peekImg.alt = '';
+    // An original no browser draws - a .dng, a .tiff, a .heic - is still
+    // image/* to the row below, which offers a peek the <img> then decodes
+    // nothing from. An empty box reads as broken; take the box away instead.
+    peekImg.addEventListener('error', () => { if (peekImg && !peekImg.hidden) hidePeek(); });
     peekClip = document.createElement('video');
     // Muted, so it may play without a press. Inline, so a phone does not take
     // it full screen. Looped, since a peek is a glance and not a playback.
@@ -456,4 +848,12 @@ function line(className: string, text: string): HTMLElement {
   p.className = className;
   p.textContent = text;
   return p;
+}
+
+/** A weight in the size column - the same face and figures as a row's. */
+function size(text: string): HTMLElement {
+  const span = document.createElement('span');
+  span.className = 'inv-size';
+  span.textContent = text;
+  return span;
 }

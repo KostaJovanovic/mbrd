@@ -27,6 +27,339 @@ stated at the top of that file.
 
 ## Releases
 
+## From the Camera
+version: 0.415 - 0.428
+date: 20 September 2026
+
+- **A day on the photographs the browser will not draw, and on how a release is
+  built.** HEIC and camera RAW became pictures at import rather than grey named
+  cards, which moved what a card's own file is; the release workflow was rebuilt
+  around a draft release and stopped touching artifact storage.
+
+### HEIC
+
+- [new] **A `.heic` or `.heif` arrives as the picture.** `import/heif.ts` is a
+  hand-written ISO-BMFF reader in the shape of every other reader in that
+  folder: the `meta` box walked for `iinf`, `iloc`, `iprp` and `idat`, the
+  `hvcC` configuration record pulled out, the tiles collected in raster order,
+  and `irot` and `imir` applied at the end. The HEVC goes to WebCodecs, and a
+  grid is stitched on a canvas capped at 4096x4096 - iOS Safari's ceiling, past
+  which it draws nothing and says nothing - and scaled to fit past that.
+- The ceilings are "this file is lying" backstops and none of them is liftable,
+  for the same reason `MAX_IFDS` in `preview.ts` is not: 256 MB a file, 4096
+  boxes, 4096 items, 64 extents an item, 1024 tiles, 64 MB an item. Past any of
+  them the read returns null and the caller falls through to the older path.
+- [new] **A second decoder, vendored.** `VideoDecoder` does not exist outside a
+  secure context, so the same file drew on `localhost` and became a named card
+  one address over - and the LAN dev server is a case `web/sw.js` deliberately
+  supports. libheif (`web/assets/vendor/heic2any/`, `import/heif-worker.js`) is
+  about a megabyte and a bit, five times slower, and fetched only when the first
+  decoder is absent. A board of HEICs on https never asks for it. `_headers`,
+  `.github/THIRD-PARTY.md`, `tests/csp.test.js` and `tests/imports.test.js` all
+  moved with it.
+- [fix] **A grid's cell size is read off the tiles' own `ispe`,** not off the
+  decoded frame: Chrome and Edge report 1280x720 for a 512px cell, which laid a
+  48-tile picture out as a smear.
+
+### RAW, and what a card's file is
+
+- [new] **A RAW that baked no preview is developed at import** - half-size, a
+  fifth of the time, and still over the display ceiling on any camera. Before
+  it, a Samsung `.dng` shot at night became a grey named card, which `isRaw()`
+  then refused, so the `Demosaic` row was absent from exactly the files that
+  needed it. That row is unchanged and still reads every pixel.
+- [new] **`meta.source`, and the decoded picture is the card's file.** For a
+  HEIC or a RAW, `asset.hash` is the WebP the decode wrote and the dropped file
+  is kept beside it at `meta.source`. **This is a `.mbrd` schema addition**:
+  `source` joins `META_HASHES` in `board-model.ts`, `itemHashes()` in `util.ts`
+  and the cloud walk, so it is packed, preserved and synced like any other
+  reference. Boards written earlier keep the original-at-`asset.hash`,
+  stand-in-at-`meta.preview` shape and are still read everywhere.
+- The argument for moving it: a stand-in is a thing every reader has to remember
+  to ask for through `shownHash()`, and each one that forgets reaches for
+  `asset.hash` and gets bytes no engine will draw. Making the picture the file
+  deletes the class rather than its instances. Only these two formats, because
+  only these two are decoded here - promoting a PSD's embedded thumbnail to "the
+  photograph" would be a lie.
+- `surfaceToPhoto()` (`canvas/surface.ts`) writes WebP, or JPEG where the canvas
+  will not write one, which is Safari. `surfaceToBlob()`'s own fallback is PNG
+  and a full-resolution PNG of a twelve-megapixel frame is forty megabytes.
+- [faster] **`Optimize` decodes a HEIC and then shrinks it.** It was the one
+  photograph the optimiser counted and walked past: the bytes reached
+  `shrinkPicture()`, `createImageBitmap()` refused them, and null means "leave it
+  alone". A marked hash is offered again for a HEIC, because the answer can be
+  about the origin rather than the file. `swapAssets()` gained `dropSource`, the
+  one place on the board that deliberately throws an original away.
+- [fix] **`Edit picture` reads `shownHash()`.** On a board written before the
+  decoders it mounted the `.heic` or the `.dng` itself and showed nothing.
+
+### Elsewhere
+
+- [fix] **`Play` frames the board after every step** through an injected
+  `cmds.fit`, so a history that builds a board up is watched rather than
+  happening off the edge of the window. The move outlasts the step (400ms
+  against 286ms) on purpose, so the camera eases rather than cutting.
+- [fix] **Samsung Internet answers `showSaveFilePicker()`, hands back a handle,
+  creates the file, and then refuses `createWritable()`.** What the export left
+  was a zero-byte file in Downloads and an error toast. The fallback is the
+  download this port already gives a browser with no picker, and it is wrapped
+  around `createWritable()` alone - a failure part-way through the stream has
+  already touched the file.
+- [new] **The inventory names the holder of every stored file** - field, drawer
+  or timeline - and prints what the board weighs under the count.
+- [fix] The credits sheet holds its shape and `.credits-scroll` takes the
+  overflow: a `<dialog>` left to scroll itself reserves the scrollbar inside its
+  border box and Chromium squares off both corners at `--radius` 26px.
+- Internal: **the release workflow no longer touches artifact storage.** Each
+  build job uploads straight into a draft release the version job opened, and
+  publish flips the draft visible once every expected name is in it. Storage is
+  0.5 GB on this account and one release set is about 1.3 GB, so the old
+  collect-then-publish shape filled it, every upload was refused, and the cleanup
+  sat in the job a failed upload skips. The prune moved ahead of the builds.
+  `save.bat`'s release builds Windows and Android, and `release all` adds macOS
+  and Linux; the workflow's own default stays `all` for a hand-started run.
+- Internal: `research/phone-zoom-2026-09-20.md` and
+  `research/linux-wheel-2026-09-20.md` written, and the `research/phone-trace/`
+  capture harness taken back out of the tree.
+- Internal: the cleaning simulator gained its sustained loops
+  (`web/assets/audio/loop-at-*.opus`) and another pass over its card's face.
+
+## Steady Hands
+version: 0.413 - 0.414
+date: 19 September 2026
+
+- **The phone blink, traced and killed.** Three separate faults made cards
+  vanish and come back on an Android phone. All three are gone, and the
+  measurements behind them are in `research/phone-zoom-2026-09-20.md`, taken
+  over CDP against a 106-item board on a 1224x2720 dpr-3 panel.
+
+- [fix] **`will-change: transform` pinned the raster scale.** Chromium rasters
+  such a layer once, at the scale it first saw, and keeps it through every zoom,
+  so at 30% the board was still rastered at 1:1 and one screenful covered ten
+  screenfuls of texture. Past the compositor's budget it stops drawing -
+  `tile memory limits exceeded, some content may not draw` - and a frame arrives
+  with the cards missing. A `translateZ(0)` in the transform promotes the layer
+  and carries no hint, so the raster scale follows the zoom.
+- [fix] **`Light` was handing the canvas transitions it never had.**
+  `transition-property` is `all` until something says otherwise, so the animation
+  dial's `transition-duration: 0.01ms` did not shorten anything under `#viewport`
+  - it gave every element a transition on every property, including the ones a
+  pan and a zoom rewrite every frame. Each write became a fresh compositor
+  animation and the phone answered by re-rasterising the board. `0s` for
+  `#viewport` and its descendants, in `quality.css` and in the
+  `prefers-reduced-motion` block in `status.css`; the chrome outside it keeps the
+  0.01ms, where a lost `transitionend` would strand a panel mid-close.
+- [faster] **`--iz` climbs a coarser ladder while a gesture runs.** One write of
+  it invalidated 28ms of each 55ms frame in recalcStyle on a traced pinch.
+  `IZ_STEP_MOVING` is 0.25 against `IZ_STEP`'s 0.08, about twelve per cent at
+  worst, and the exact value is written the moment the gesture ends.
+- [faster] **A GIF's still is owed to the settling frame.** A capture is a
+  readback of pixels from the GPU and each one cost about 110ms, landing exactly
+  on the frame that crosses the rung.
+- [fix] The waiting strip moved to `--z-busy` 22, below the sidebar, the panels
+  and the menus: an import runs for as long as it runs and the user works over
+  it.
+- [new] The Drawer holds two shelves. The ordinary ones hold what was thrown
+  away; `Special` holds what cannot be - the title card and the cleaning cards
+  (`isKeepsake()`). Session-only, like the sticker pad's category, `Empty` is
+  absent inside it, and the switch does not appear until something is behind it.
+- Internal: `copyable()` in `clipboard.ts` refuses the title card and the
+  cleaning card. Phases 1 to 4 of
+  `research/clean-sim-performance-2026-09-19.md` landed. `versionCode` restamped
+  in `mobile/android/app/build.gradle`.
+
+## The Other Button
+version: 0.409 - 0.412
+date: 18 September 2026
+
+- **A right-click means the same thing everywhere, and the joining lines were
+  rewritten.** The Timeline, the player and the toolbar each learned the menu
+  they should have had, and `web-route.ts` lost its face-escalation search.
+
+- [new] **The Timeline answers a right-click on both halves.** On a mark,
+  `stepEntries()`: go there, its rule where it has one, name it, delete it. Off
+  the marks, the gear's own rows. Left is *take me there* and right is *do
+  something to it*, which is the gesture every other menu in the app opens with.
+- [new] **Any mark can be named,** not only the point the board stands on. The
+  step is found again by id after the dialog closes, since the history can change
+  while it is open.
+- [new] **`Delete N steps after this point`** drops everything ahead of the
+  marker and leaves the board alone; `dropStepAt()` takes a single step out of
+  the middle, laying the ones after it strictly onto the board the ones before it
+  leave. A step left with nothing to do goes with it unless it is named - a name
+  is somebody's landmark. Both drop the undo and redo stacks, whose closures were
+  written against the old history.
+- [new] The player's right-click carries its buttons as rows plus a mute the bar
+  has no room for, and a right-click on a toolbar tool opens its flyout at once
+  and focused.
+- [fix] **A joining line no longer lies along the card it leaves.** The face
+  escalation and `MAX_FACE_SEARCHES` are gone, replaced by `stubPast()` - the
+  stub pushed past the padded block so the search can move away from it - and
+  `hugsOwn()`, which refuses a path that runs inside its own cards' margin
+  anywhere but where it leaves and reaches them. At the Softish look a sideways
+  step up to `JOG_MAX` 120 is drawn as one S rather than two rounded corners, and
+  `END_STRAIGHT` keeps a straight at each card's side.
+- [fix] **The board takes the Timeline's band while the bar is faded** and is
+  held still as it does. The viewport now holds what is on screen when its box
+  changes height under a window that did not, rather than re-centring, which slid
+  the board half a band every time the bar went and came back.
+- Internal: the cleaning simulator's second and third pass continued - cards left
+  out of the game are hidden rather than dimmed (`setCleanPlay()`), the mode got
+  its intro, and a bench of its own (`web/lab-grime.html`, `tools/grime-shots.mjs`)
+  with a CSP entry to match.
+
+## Indoor Work
+version: 0.406 - 0.408
+date: 17 September 2026
+
+- **A day entirely on the cleaning simulator, which is why `/patch` says nothing
+  about it.** The page carries only what a reader would notice, and a thing found
+  by accident stops being found the moment a changelog names it. The record is
+  here instead.
+
+- The mode behind the konami code and seven taps on the wordmark
+  (`ui/clean/`, `web/assets/css/clean.css`). Second pass: three tools you hold
+  rather than one cursor, a bin, mud, rust and tar laid at four fifths opacity
+  edge to edge, six kinds of debris, a tank that runs down, and an ending that
+  waits. Third pass: depth in the washing and life in the mess. Both plans are
+  `research/clean-sim-redesign-2026-09-17.md` and
+  `research/clean-sim-third-pass-2026-09-17.md`.
+- Six entries in `cmds` and no markup that references them, which is the whole of
+  "hidden" here. They are routed through the command table rather than listeners
+  of their own, so the one keydown in `canvas/input.ts` stays the only one in the
+  app. Both matchers live at module scope, so a half-typed code survives whatever
+  rebuilds the table, and the tour guards sit beside them so a code typed across
+  the end of a tour is not half-eaten.
+- `cuelume/engine.ts` grew sustained sound: a running sustain holds the context
+  awake, because suspending under one kills a hiss mid-stroke.
+- `.is-cleaning` joins the two tour states in `chrome.css` rather than repeating
+  the list - the mode hides the same furniture for the same reason - and its own
+  bar is not on that list, so it stays.
+
+## Files and Light
+version: 0.404 - 0.405
+date: 16 September 2026
+
+- **Every board on Android became a file, and the quality dial learned to reach
+  the two things that actually cost a phone anything.**
+
+### Boards as files on Android
+
+- [new] `MbrdBoards.java` and `mobile/bridge/boards.ts` answer
+  `desktop/boards.ts`'s five calls: the list reads the folder, `New` makes a
+  file, a rename renames it, and `Delete` moves it to `.trash/` inside the
+  folder, which keeps it 30 days. A new board's bytes go down the byte channel
+  under the `create` target and native names the file once they have all
+  arrived, so the name comes back in the last ack rather than from a plugin call.
+- `session.ts` learned `fileBacked`, `filePath`, `settled`, `saveFile` and
+  `reopen`. Where the board is a file, the autosave writes it and the store keeps
+  only which file it is and where the view was - a pan is not an edit. The
+  pictures an older snapshot kept are deleted once the file holds the board, and
+  nothing is written before the folder is known.
+- [faster] **A 400 MB board no longer sits in the page twice.** The bridge takes
+  a Blob rather than an ArrayBuffer, `fetchBytes` hands back a Blob the WebView
+  keeps out of the page's heap, and `transfer()` keeps `DEPTH` chunks in flight
+  so the read, the crossing and native's disk write overlap. Saves append: the
+  shell answers with the file's length and its last bytes, and `zip.ts` reads the
+  layout off that tail. `unpackBoard(owned)` keeps a board's pictures as slices
+  of the archive rather than copies.
+- [fix] An update offer toasts once per state and version as well as sitting at
+  the top of the Board tab, with the row's own press as the toast's button. The
+  row alone was not an answer to `Check for updates`, which is a button on
+  another tab and closes the panel on a phone.
+
+### Light, on a phone
+
+- [faster] **`grain` and `hires` became flags of their own,** and both are off at
+  Light. They were the two heaviest things on a phone and the dial could reach
+  neither, which is why Light was reported as no faster than Full on Android. The
+  grain is a window-sized multiply-blended layer repositioned every pan frame and
+  resampled every zoom frame, which cannot composite past its backdrop; the
+  zoomed-in swap decodes a ~48 MB camera frame and leaves the `<img>` blank until
+  it lands. Both are on at every other stop, so installing this version changes
+  nothing anybody's board looked like.
+- [faster] `paintGrid()` compares the `background-position` string before writing
+  it - a window-sized element is a full-viewport repaint, and a slow drift, the
+  settling frame and a repaint asked for by something else all arrive with the
+  string they had. `hires` keeps the zoom and the mounted-card count it last
+  answered for, since a pan changes neither, and `deviceRatio()` clamps at 3: a
+  phone claiming 4 reached for a 48 MB frame for a card a third of the way across
+  a 400px screen.
+- [fix] The drawer builds 220px ahead of the scroll at every stop. It was nothing
+  whenever animated GIFs were off, which is Light, so every card was built as it
+  scrolled in and dropped as it left, on the device least able to afford the
+  rebuilds.
+
+## Past the Edge
+version: 0.403
+date: 15 September 2026
+
+- **A drag that reaches the edge of the window pans the board, the toolbar
+  morphs between its fits, and the download page was deleted.**
+
+### Edge panning
+
+- [new] `canvas/edge-pan.ts`: one frame loop per drag, timed by the frame's own
+  interval so the speed is the same at 60 and 120 Hz. `EDGE_BAND` 48, `EDGE_MAX`
+  900 CSS px a second reached at the edge and past it, a squared ramp into the
+  band and `RAMP_MS` 250 to reach speed, `MAX_FRAME_MS` 50 so a stalled tab does
+  not come back with one huge step. A room narrower than three bands shares
+  itself out in thirds. Nothing on a Mobile board.
+- The room is `Viewport.room()` - the viewport's box less an open panel's reach.
+  `input.ts` runs its `track()` again at the still pointer after each step, so
+  what is carried stays under it; the drawer and the sticker pad pass
+  `needsEntry`, since both windows stand on the edge of the screen. The loop is
+  the drag's and stops in `releaseGesture()`, the one way back to idle.
+- The Playlist's reorder scroll was reframed on the same curve and the frame's
+  own interval, carrying the fraction of a pixel a slow edge would otherwise lose
+  to rounding.
+
+### The board
+
+- [new] `RESIZE_MIN_ZOOM` 0.155 and `SWATCH_ZOOM` 0.1 replaced one rung: from 15%
+  down a card is carried and not sized, and the ring says so. 0.155 because the
+  corner prints a rounded percentage, so everything reading "15%" is past it.
+- [new] `fenceBodyAt()` gives the context menu the fence under the press, since a
+  fence's body lets presses through to the board. `snapCarried()` puts the cards
+  a fence carries through a resize back on the lattice, a note stuck to a card
+  taking its host's shift.
+- [fix] `hires` measures against Full's copy at every stop (`swapEdge()`):
+  measured against the copy actually shown, a lower stop reached for the original
+  sooner. `stills.ts` split `is-stilled` from `is-held`, so animations off no
+  longer drew every photograph from its hundred-pixel thumbnail at every zoom.
+
+### The look, and the way out
+
+- [new] The toolbar morphs between its fits: the drawn boxes are read first, so a
+  fit landing mid-morph carries on from the frame on screen, and width,
+  `max-width` and `justify-content` ride in the same keyframes on the tier's
+  `--dur-base` and `--ease` - the pair its `left` slides on, so a panel opening
+  moves and narrows the bar as one motion. Width rather than a transform, because
+  `scaleX` would drag the pill's corners, seams and ring. Reduced motion keeps
+  the fades and drops the movement.
+- [fix] With animations off, nothing strobes: `animation-iteration-count: 1` as
+  well as the shortened duration, since an `infinite` loop cut in duration alone
+  runs a hundred thousand laps a second and asks for a frame on every vsync.
+  Where one lap ends on the wrong frame to hold - the splash, the indeterminate
+  busy bar, the darkroom plate, the player's bars - each is given the answer its
+  own `prefers-reduced-motion` block already gives.
+- [fix] Feed tile shadows are keyed to the shadow flag rather than to the Full
+  stop, which left Balanced flat and made the `Card shadows` switch do nothing
+  there.
+- [fix] A slider being tuned on a phone keeps its whole field lit - name, value
+  and stop names - on a card of its own drawn as a spread shadow, so the track
+  does not move out from under the finger.
+- [new] **`web/download.html` and `download.css` are gone,** with
+  `tests/download.test.js`. `Get the app` opens the latest release in the public
+  `mbrd-release` in a new tab, which is where the desktop updater already sent
+  people, and `tests/get-app.test.js` holds it. The Android router, its test and
+  `mobile/README.md` lost the route with it.
+- Internal: the keys list reads a bare `+` between two keys as a joiner rather
+  than the plus key, and names the desktop's own accelerators. A running tour's
+  bar lost the rows that edit the tour - those are the editor's - and starting a
+  tour clears the selection, since a ring and grips would sit in every frame of
+  the showing. The Feed leaves out the one hint whose rows are canvas gestures.
+
 ## Unpacked
 version: 0.318 - 0.402
 date: 14 September 2026

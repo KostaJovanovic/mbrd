@@ -31,6 +31,8 @@ import { queryRect, queryAround } from './spatial.ts';
 import { holdRoutes } from './web.ts';
 import { startEdgePan } from './edge-pan.ts';
 import { isDesktop } from '../platform/platform.ts';
+import { DEFAULT_WHEEL, wheelPrefs } from '../controls.ts';
+import type { WheelPrefs } from '../controls.ts';
 
 const DRAG_SLOP = 3;      // screen px before a press becomes a drag
 const DOUBLE_TAP_MS = 350;
@@ -543,12 +545,26 @@ function classifyWheel(e: WheelSample, dx: number, dy: number): WheelKind {
  * holding Shift is asking for a pan and is still holding a mouse, and letting
  * that answer stand would zoom-lock into pan for the next notch after they let
  * go of the key. Control is applied at the same point for the same reason.
+ *
+ * `prefs` is the person's answer to what the wheel is *for* (controls.ts), and
+ * it is read as late as possible - after the device, after the modifiers. The
+ * device question has one right answer and the preference cannot change it: a
+ * pad two-finger swipe pans in both modes, because a swipe that zoomed would be
+ * a setting that broke a gesture nobody asked about. Defaulted, so every caller
+ * that does not care, tests included, gets the board's own convention.
  */
-export function readWheel(e: WheelSample, pageHeight = 800, ctrlHeld = false): WheelAction {
+export function readWheel(
+  e: WheelSample, pageHeight = 800, ctrlHeld = false, prefs: WheelPrefs = DEFAULT_WHEEL,
+): WheelAction {
   const scale = e.deltaMode === 1 ? WHEEL_LINE : e.deltaMode === 2 ? pageHeight : 1;
   const dx = (e.deltaX || 0) * scale;
   const dy = (e.deltaY || 0) * scale;
-  const zoom = (rate: number) => Math.exp(-clamp(dy, -WHEEL_MAX_STEP, WHEEL_MAX_STEP) * rate);
+  // `reverse` is the wheel's own, never a pinch's: which way a notch turns is a
+  // convention somebody disagrees with, and which way fingers move apart is a
+  // fact about the hand. Reversing both would make the preference unusable on a
+  // laptop that has each.
+  const zoom = (rate: number, reverse = false) =>
+    Math.exp(-clamp(dy, -WHEEL_MAX_STEP, WHEEL_MAX_STEP) * (reverse ? -rate : rate));
 
   if (e.ctrlKey && !ctrlHeld) return { kind: 'zoom', dx, dy, factor: zoom(PINCH_ZOOM_RATE) };
 
@@ -569,10 +585,26 @@ export function readWheel(e: WheelSample, pageHeight = 800, ctrlHeld = false): W
   // several of them turn Shift+scroll into a horizontal delta on the way past,
   // and swapping a second time would put it back where it started.
   if (e.shiftKey) return { kind: 'pan', dx: dx || dy, dy: 0, factor: 1 };
-  // A held Control, and not a pinch, which returned above.
-  if (e.ctrlKey) return { kind: 'pan', dx: 0, dy: dy || dx, factor: 1 };
+  // A held Control, and not a pinch, which returned above. In `scroll` mode it
+  // is the zoom - the whole point of that mode - and at whichever rate the
+  // device is being read as, since Control on a pad still arrives as a stream
+  // of single figures and the wheel's coefficient would move almost nothing.
+  if (e.ctrlKey) {
+    return prefs.mode === 'scroll'
+      ? { kind: 'zoom', dx, dy,
+          factor: zoom(kind === 'zoom' ? WHEEL_ZOOM_RATE : PINCH_ZOOM_RATE, prefs.reverse) }
+      : { kind: 'pan', dx: 0, dy: dy || dx, factor: 1 };
+  }
 
-  if (kind === 'zoom') return { kind, dx, dy, factor: zoom(WHEEL_ZOOM_RATE) };
+  // `kind` is the device; what it is taken to mean is the preference. In
+  // `scroll` mode a notch pans the board instead, which is the one place the
+  // two come apart - a pad was already panning and keeps doing exactly that,
+  // unrail and all.
+  if (kind === 'zoom') {
+    return prefs.mode === 'scroll'
+      ? { kind: 'pan', dx, dy, factor: 1 }
+      : { kind, dx, dy, factor: zoom(WHEEL_ZOOM_RATE, prefs.reverse) };
+  }
   return { kind, ...unrail(dx, dy), factor: 1 };
 }
 
@@ -1780,10 +1812,20 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // Kept as a field rather than folded into the XOR below because it is the
       // *default* for this grip, and a future one may well want its own.
       //
-      // One default is not false: a photo or video set to Fit. Its box is the
-      // picture's own shape (fitShapes, ui/board-actions.ts), and a free corner
-      // would only put bands of paper back round it. Shift frees it.
-      lockAspect: (it.type === 'image' || it.type === 'video') && fitMode(it) === 'contain',
+      // One default is not false: a photo or video set to Fit, off the grid.
+      // Its box is the picture's own shape (fitShapes, ui/board-actions.ts), and
+      // a free corner would only put bands of paper back round it. Shift frees
+      // it.
+      //
+      // `!snap` is the whole of the exception to that exception. A snapped grip
+      // has already been told what the sides may be - whole cells - and a
+      // proportion is a real number, so the two can only ever be honoured one at
+      // a time: the lattice pass at the tail of the aspect branch is the ratio
+      // being given up to within half a cell, every time, in a way nobody asked
+      // for and nothing shows. On the grid the grid decides, which is what
+      // switching it on said; the lock is Shift's, as it is everywhere else.
+      lockAspect: (it.type === 'image' || it.type === 'video')
+        && fitMode(it) === 'contain' && !snap,
       snap,
     });
   }
@@ -2892,7 +2934,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // preventDefault and not before it: returning bare would hand the notch
     // back to the page and scroll the document behind the board.
     if (cmds.inTour?.()) return;
-    const w = readWheel(e, vp.height, ctrlDown);
+    const w = readWheel(e, vp.height, ctrlDown, wheelPrefs());
     // Mobile is a fixed-width feed with one navigable axis, so everything that
     // arrives moves the feed along it - a sideways swipe and a Shift+wheel
     // included, since neither has anywhere else to go. A pinch too: there is

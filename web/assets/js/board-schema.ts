@@ -268,7 +268,13 @@ function normalizeSettings(raw: unknown, mode: LayoutMode): BoardSettings {
     fonts: normalizeFonts(settings.fonts),
     scale: clampScale(settings.scale),
     units: settings.units === 'imperial' ? 'imperial' : 'metric',
-    paper: paperId,
+    // A size, always - `paperShow` is what says whether it is drawn. Every
+    // file written before that split says "no sheet" by leaving `paper` empty,
+    // and has no flag to read, so the flag is recovered from the id and the id
+    // falls back to the default. A board that had A4 up opens with A4 up; one
+    // that had none opens with none, still remembering A4.
+    paper: paperId || DEFAULT_SETTINGS.paper,
+    paperShow: settings.paperShow == null ? paperId !== '' : !!settings.paperShow,
     paperLandscape: !!settings.paperLandscape,
     paperResize: !!settings.paperResize,
   };

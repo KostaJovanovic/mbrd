@@ -186,13 +186,160 @@
          down: how many releases there are, how many commits they cover, and
          when it started. All counted from the source. -->
     <p class="pn-tally">
-      <span>35 releases</span>
-      <span>428 commits</span>
+      <span>41 releases</span>
+      <span>436 commits</span>
       <span>since 24 July 2026</span>
     </p>
   </header>
 
   <ol class="pn-list">
+<li class="pn-rel" id="r-from-the-camera">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">14</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.415 - 0.428</p>
+      <h2 class="pn-name">From the Camera</h2>
+      <p class="pn-date">20 September 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>A photograph draws on the board whatever the camera saved it as.</strong> iPhone HEICs and camera RAWs are turned into pictures as they land, and the cards that used to arrive grey and nameless arrive as what they are.</li>
+    </ul>
+    <h3 class="pn-part">Photographs</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>A <code>.heic</code> or <code>.heif</code> from an iPhone arrives as the picture.</strong> The file is read here and the picture inside it decoded by the machine's own decoder, about a fifth of a second for a twelve-megapixel one. Where that decoder is missing, a slower one is fetched instead, so the same file draws on every browser and at every address. A picture the phone stored as a grid of tiles comes back whole and the right way up.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A camera RAW that baked no preview is developed as it arrives,</strong> so a night shot saved as a <code>.dng</code> is a photograph rather than a grey card - and <code>Demosaic</code>, which is offered only on a photograph, is there to develop every pixel of it when you want that.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The file you dropped is kept beside the picture,</strong> untouched, and <code>Optimize</code> is the one thing that throws it away.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong><code>Optimize</code> shrinks a HEIC,</strong> where it used to count one and then quietly walk past it - often the largest file on a board made on a phone.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong><code>Edit picture</code> opens on a HEIC or a RAW from an older board,</strong> where it opened on a blank sheet.</li>
+    </ul>
+    <h3 class="pn-part">Around the board</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-fix">Fix</span><strong><code>Play</code> keeps the board in frame as it replays,</strong> so a history that builds a board up is watched rather than happening off the edge of the window.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Saving a board in Samsung Internet no longer leaves an empty file.</strong> Where the browser offers to save and then refuses to write, the board comes down as an ordinary download instead.</li>
+      <li><span class="pn-tag is-new">New</span><strong><code>What this board weighs</code> says where every file is held</strong> - on the board, in the drawer or in the history - as well as what it all comes to.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The credits scroll inside their own sheet,</strong> which keeps its corners.</li>
+      <li class="is-plain"><strong>Maintenance:</strong> a release carries Windows and Android. A macOS or Linux copy sees the new version and waits for the next full release, which updates it straight there.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-steady-hands">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">2</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.413 - 0.414</p>
+      <h2 class="pn-name">Steady Hands</h2>
+      <p class="pn-date">19 September 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>A board on a phone stopped flickering.</strong> Three separate faults made cards vanish and come back, and all three are gone.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Cards no longer disappear while the board is zoomed out,</strong> where a screenful of them could go at once and return on the next touch.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong><code>Light</code> stopped reloading the board as you pan.</strong> Cards dropped out and drew again as the board moved, at that stop and at no other.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>A pinch costs about half of what it did,</strong> so the board keeps up with your fingers. A GIF frozen at far zoom no longer stalls the gesture either.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The title card, once thrown away, comes back from the Drawer's <code>Special</code> shelf</strong> rather than from a button in the Drawer's header.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The waiting strip sits under the panels and the menus.</strong> An import runs for as long as it runs, and it stopped covering whatever you opened while it did.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-the-other-button">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">4</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.409 - 0.412</p>
+      <h2 class="pn-name">The Other Button</h2>
+      <p class="pn-date">18 September 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>A right-click says the same thing everywhere: do something to this.</strong> The Timeline, the player and the toolbar answer it now, and the joining lines were redrawn.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Right-click a step on the Timeline</strong> for the ways to it and through it: go there, change its rule, name it, delete it. Right-click anywhere else on the bar for the gear's own rows. Any mark can be named now, not only the point the board is standing on.</li>
+      <li><span class="pn-tag is-new">New</span><strong><code>Delete N steps after this point</code></strong> in the gear clears the history in front of the marker and leaves the board exactly as it is.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Right-click the player</strong> for its buttons as rows, and a mute the bar has no room for.</li>
+      <li><span class="pn-tag is-new">New</span><strong>Right-click a tool in the toolbar</strong> to open its flyout at once.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A joining line no longer lies along the card it leaves.</strong> It keeps a short straight at each end, and a small sideways step is drawn as one S rather than two corners.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The board takes the Timeline's band while the bar is faded</strong> and is held still as it does, so nothing slides half a band each way.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-indoor-work">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">3</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.406 - 0.408</p>
+      <h2 class="pn-name">Indoor Work</h2>
+      <p class="pn-date">17 September 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>Nothing a reader would notice</strong> - a day of work inside the app.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-files-and-light">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">2</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.404 - 0.405</p>
+      <h2 class="pn-name">Files and Light</h2>
+      <p class="pn-date">16 September 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>On the phone every board became a file, and <code>Light</code> became light.</strong></li>
+      <li><span class="pn-tag is-new">New</span><strong>The Android app keeps each board as a file in the board folder,</strong> as the desktop does: the list reads the folder, <code>New</code> makes a file, a rename renames it, and <code>Delete</code> moves it to a bin that keeps it thirty days. The autosave writes the board to its own file a few seconds after an edit and again when the app goes away, adding only what changed.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>A large board opens and saves on a phone that could not hold it before.</strong> A 400 MB board no longer has to fit in the page twice over.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong><code>Light</code> is finally lighter on a phone.</strong> The paper texture comes off the page, and a photograph you zoom right into draws at once rather than stalling and flashing white first. Those were the two heaviest things on a board and the dial could reach neither.</li>
+      <li><span class="pn-tag is-faster">Faster</span><strong>A pan is smoother on a phone,</strong> with two rounds of work a frame taken out of it that nobody could see anyway.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>An update says so where you are looking.</strong> The offer arrives as a note with its own button as well as sitting at the top of the Board tab.</li>
+    </ul>
+  </article>
+</li>
+<li class="pn-rel" id="r-past-the-edge">
+  <div class="pn-margin" aria-hidden="true">
+    <span class="pn-mark"></span>
+    <span class="pn-count">1</span>
+  </div>
+  <article class="pn-plate">
+    <header class="pn-plate-head">
+      <p class="pn-ver">0.403</p>
+      <h2 class="pn-name">Past the Edge</h2>
+      <p class="pn-date">15 September 2026</p>
+    </header>
+    <ul class="pn-notes">
+      <li class="is-plain"><strong>A drag that reaches the edge of the window carries the board with it,</strong> and the toolbar learned to change size without jumping.</li>
+    </ul>
+    <h3 class="pn-part">Carrying things</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>Drag a card, a band or a corner to the edge of the window and the board pans under it,</strong> so a card can be carried past what the window shows. It starts slowly and picks up the further in you push, and a shape dragged off the sticker pad or a card out of the drawer pans the same way.</li>
+      <li><span class="pn-tag is-new">New</span><strong>The resize grips go at 15%,</strong> and the ring says so: from there down a card is carried rather than sized, and a grip that small covered more of the card than the card showed.</li>
+      <li><span class="pn-tag is-new">New</span><strong>A right-click inside a fence opens the fence's own menu,</strong> and a fence resized on a snapped board puts what it carries back on the grid.</li>
+    </ul>
+    <h3 class="pn-part">The look</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong>The toolbar moves between its sizes rather than snapping,</strong> as a panel opens or the window narrows, each tool gliding from where it was and a word fading in behind the movement.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>With animations off, nothing strobes.</strong> The splash, the waiting bar, the darkroom and the player's bars each hold a frame worth holding, where a stopped loop used to flash.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Card shadows reach the Feed at <code>Balanced</code>,</strong> where its tiles stayed flat and the switch did nothing.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>A slider on a phone keeps its name and its value</strong> on a card of its own while your finger is on it, over the board it is changing.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>Photographs stopped blinking at <code>Light</code> while you zoom,</strong> where every card was being swapped to a thumbnail and back.</li>
+      <li><span class="pn-tag is-fix">Fix</span><strong>The drawer builds its cards ahead of the scroll at every stop,</strong> so they stop popping in and out on the device least able to afford the rebuilds.</li>
+    </ul>
+    <h3 class="pn-part">Around the app</h3>
+    <ul class="pn-notes">
+      <li><span class="pn-tag is-new">New</span><strong><code>Get the app</code> opens the latest release</strong> in a new tab, where the apps and their notes live. The download page it used to open is gone.</li>
+    </ul>
+  </article>
+</li>
 <li class="pn-rel" id="r-unpacked">
   <div class="pn-margin" aria-hidden="true">
     <span class="pn-mark"></span>
@@ -1082,7 +1229,7 @@
   </ol>
 
   <footer class="pn-foot">
-    <span><span class="wm">mbrd</span> 0.428 by valjdakosta</span>
+    <span><span class="wm">mbrd</span> 0.436 by valjdakosta</span>
     <a href="/">Back to the board</a>
   </footer>
  </div>

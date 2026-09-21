@@ -25,7 +25,7 @@ import { resetModels } from '../canvas/model.ts';
 import { flushNoteEdit, noteFloor } from '../canvas/notes.ts';
 import { getAsset } from '../storage/assets.ts';
 import { saveBoard, exportBoard, autosave, clearAllData } from '../storage/storage.ts';
-import { defaultSize, measureSize, pictureRatio } from '../canvas/renderers.ts';
+import { defaultSize, measureSize, pictureRatio, fitMode } from '../canvas/renderers.ts';
 import { arrange, mobileOrder } from '../arrange/arrangements.ts';
 import type { Obstacle } from '../arrange/arrangements.ts';
 import { syncBoardMode } from './board-view.ts';
@@ -257,6 +257,45 @@ export async function fitShapes(items: Item[]): Promise<GeomPatch[]> {
   }));
 }
 
+/**
+ * Every picture showing Fit, brought back to its own proportion. The repair half
+ * of the Fill switch, and Reload board is where it runs.
+ *
+ * A Fit card is *meant* to be the shape of what it holds, and several things can
+ * leave it something else: a corner dragged out of shape (free on the grid - see
+ * lockAspect in canvas/input.ts), a picture whose bytes could not be measured
+ * when it landed so adoptAspect() never fired, a board written by an older
+ * version, a file replaced under a card that kept the old one's box. None of
+ * those announce themselves; what you see is a picture with paper round it.
+ *
+ * `fitMode()` rather than the Fill switch's own filter: this asks what each card
+ * is actually showing, so a single picture set to Fit on a Fill board is included
+ * and one set to Fill on a Fit board is left alone.
+ *
+ * Idempotent, which is what makes it safe on a path somebody can press twice.
+ * pictureShape() of a box that is already the picture's shape is that box, and on
+ * a snapped board the lattice pass lands on the same cells a second time - so a
+ * board that is already right records no step and says so by being silent.
+ *
+ * Deliberately not part of opening a board. It overrules a framing somebody may
+ * have chosen by hand, and doing that uninvited, on every load, would be a repair
+ * nobody asked for; here it is the button's whole job.
+ */
+async function refitPictures() {
+  const showing = board.items.filter(it =>
+    (it.type === 'image' || it.type === 'video') && fitMode(it) === 'contain');
+  if (!showing.length) return;
+  const rows = await fitShapes(showing);
+  if (!rows.length) return;
+  const before = snapshotGeom(rows.map(g => g.id));
+  applyGeom(rows);
+  // Undoable, unlike the rest of Reload board. The others put back a truth the
+  // board had already agreed to; this one changes boxes, and a person who
+  // framed a picture by hand must be able to say no.
+  commitGeom('Fit photos & videos', before, rows.map(g => g.id));
+  toast(rows.length === 1 ? 'One picture refitted' : `${rows.length} pictures refitted`);
+}
+
 /** Bumped by each press of the Fill switch, so a slow Fit cannot land after a later Fill. */
 let mediaFitRun = 0;
 
@@ -330,8 +369,8 @@ export async function scaleFromItem() {
  * Rebuild the live board without replacing its state or clearing its history.
  *
  * This is the deliberate repair path for stale DOM measurements, viewport
- * constraints, cached model renderings, and geometry that no longer agrees
- * with an enabled snap lattice.
+ * constraints, cached model renderings, geometry that no longer agrees with an
+ * enabled snap lattice, and a Fit picture whose card is no longer its shape.
  */
 export function reloadBoard() {
   flushNoteEdit();
@@ -351,6 +390,11 @@ export function reloadBoard() {
   repaintGround(vp!);
   vp!.apply();
   toast('Board reloaded');
+  // Last, and not awaited: every other repair here is arithmetic on numbers the
+  // board already holds, where this one reads pictures back off the disk. The
+  // board is rebuilt and usable while it runs, and it announces itself when it
+  // lands - which is also why its toast is separate from this one.
+  void refitPictures();
 }
 
 /**

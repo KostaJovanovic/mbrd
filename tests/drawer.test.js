@@ -43,8 +43,8 @@ class FakeElement {
 }
 
 /**
- * Enough of a browser to open a floating window in: the document that builds
- * elements, the globals float-window.ts and the shelf watcher reach for, and
+ * Enough of a browser to open the drawer in: the document that builds
+ * elements, the globals the shelf watcher reaches for, and
  * a body to append to. Handed back as a teardown, since a `delete` at the
  * foot of a test only runs when every assertion passed, and a stray browser
  * global makes an unrelated module throw at import (tests/imports.test.js).
@@ -69,8 +69,7 @@ function fakeBrowser(ids) {
   };
   globalThis.addEventListener = () => {};
   globalThis.removeEventListener = () => {};
-  // Never called back: the open path uses it only to add .is-open a frame
-  // later, and a shelf that never gets a frame never mounts a card.
+  // Never called back: a shelf that never gets a frame never mounts a card.
   globalThis.requestAnimationFrame = () => 0;
   globalThis.cancelAnimationFrame = () => {};
   globalThis.IntersectionObserver = class {

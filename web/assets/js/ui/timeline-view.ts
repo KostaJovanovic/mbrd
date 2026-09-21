@@ -135,6 +135,12 @@ const KINDS: Record<string, { icon: string, said: string }> = {
   // replaceItem() in state.ts, from import/unpack.ts.
   'Unzip': { icon: 'i-arrow-up', said: 'Unzipped' },
   'Open folder': { icon: 'i-arrow-up', said: 'Opened' },
+  // swapAssets() in state.ts, whose default label is 'Optimize board'. Keyed on
+  // the first word, which is how every label that starts with it lands here.
+  // It was always a step and always looked like a stray edit - "Changed 4
+  // cards", in the hand of an ordinary one - which is the least recognisable
+  // thing on the strip to be scrubbing back past.
+  'Optimize': { icon: 'i-shrink', said: 'Optimized' },
 };
 
 /** The one every step that is none of the above falls back to. */

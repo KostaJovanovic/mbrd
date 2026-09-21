@@ -8,7 +8,7 @@ import {
   getVolume, onVolume, setVolume, sliderToVolume, volumeToSlider, volumeLocked,
 } from '../canvas/audio.ts';
 import { onQueue, queueNext, queueState, setAdvanceGate } from '../canvas/playlist-queue.ts';
-import { bindScrub, clock, PAUSE_ICON, PLAY_ICON } from '../media/transport.ts';
+import { bindScrub, clock, trackLength, PAUSE_ICON, PLAY_ICON } from '../media/transport.ts';
 import { board, setBoardMode } from '../state.ts';
 import { onNarrowScreen } from '../canvas/viewport.ts';
 import { tickSlider } from './controls.ts';
@@ -246,8 +246,11 @@ function bind(sound: HTMLMediaElement) {
   abort = new AbortController();
   const signal = abort.signal;
 
+  /** What the track says it runs for, over what the engine guessed — trackLength(). */
+  const length = () => trackLength(sound, shown?.meta?.duration);
+
   const paint = () => {
-    const dur = sound.duration || 0;
+    const dur = length();
     const cur = sound.currentTime || 0;
     lineEl!.style.setProperty('--np-progress', (dur ? clamp(cur / dur, 0, 1) : 0).toFixed(4));
     elapsedEl!.textContent = clock(cur);
@@ -277,10 +280,11 @@ function bind(sound: HTMLMediaElement) {
   on('seeked', paint);
 
   seekTo = (clientX: number) => {
-    if (!sound.duration) return;
+    const dur = length();
+    if (!dur) return;
     const box = lineEl!.getBoundingClientRect();
     if (!box.width) return;
-    sound.currentTime = clamp((clientX - box.left) / box.width, 0, 1) * sound.duration;
+    sound.currentTime = clamp((clientX - box.left) / box.width, 0, 1) * dur;
     paint();
   };
 
@@ -291,15 +295,17 @@ function bind(sound: HTMLMediaElement) {
 
 /** The seek line's keyboard: arrows nudge, Home/End jump, space plays. */
 function onSeekKey(e: KeyboardEvent) {
-  const sound = nowPlaying()?.el;
+  const np = nowPlaying();
+  const sound = np?.el;
   if (!sound) return;
   const step = e.shiftKey ? 1 : 5;
-  const set = (to: number) => { if (sound.duration) sound.currentTime = clamp(to, 0, sound.duration); };
+  const dur = trackLength(sound, np?.item?.meta?.duration);
+  const set = (to: number) => { if (dur) sound.currentTime = clamp(to, 0, dur); };
   switch (e.key) {
     case 'ArrowRight': case 'ArrowUp': set(sound.currentTime + step); break;
     case 'ArrowLeft': case 'ArrowDown': set(sound.currentTime - step); break;
     case 'Home': set(0); break;
-    case 'End': set(sound.duration); break;
+    case 'End': set(dur); break;
     case ' ': case 'Enter': togglePlay(); break;
     default: return;
   }

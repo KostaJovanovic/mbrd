@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 
 import { WEB, JS, read } from './helpers.js';
-import { clock } from '../web/assets/js/media/transport.ts';
+import { clock, trackLength } from '../web/assets/js/media/transport.ts';
 
 const code = s => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
 const src = rel => code(read(join(JS, rel)));
@@ -24,6 +24,36 @@ test('the clock never reads NaN', () => {
   assert.equal(clock(0), '0:00');
   assert.equal(clock(61), '1:01');
   assert.equal(clock(599.9), '9:59');
+});
+
+test('the counted length wins over the engine guess', () => {
+  // A containerless .aac has no duration field, so the engine divides the
+  // file by the first frame's bitrate. A 95-minute stream that opens on a
+  // 9-byte silent frame reads as 7319 minutes in Firefox and 97 in
+  // Chromium; import/containers.ts counted 5731s off the frames themselves.
+  assert.equal(trackLength({ duration: 439170 }, 5731.09), 5731.09);
+  // No counted number: the engine's is all there is, and a stream still
+  // loading has none of its own.
+  assert.equal(trackLength({ duration: 300 }, undefined), 300);
+  assert.equal(trackLength({ duration: 300 }, null), 300);
+  assert.equal(trackLength({ duration: Number.NaN }, undefined), 0);
+  // Neither, and the callers read the 0 as "not yet" and refuse to seek.
+  assert.equal(trackLength({ duration: Number.NaN }, Number.NaN), 0);
+  assert.equal(trackLength({ duration: Number.POSITIVE_INFINITY }, 0), 0);
+});
+
+test('no player reads a length off the element behind trackLength', () => {
+  // Three players painted `sound.duration` straight into the clock and the
+  // fill, so a raw .aac read as 7319 minutes on the card, in the bar and in
+  // the playlist window - while the board itself held the right number.
+  // currentTime and seeking are sample-accurate even there, so only the
+  // length is corrected.
+  for (const rel of ['canvas/transport.ts', 'ui/nowplaying.ts', 'ui/playlist.ts']) {
+    const s = src(rel);
+    assert.match(s, /trackLength\(/, `${rel} no longer asks for the counted length`);
+    assert.ok(!/\b(?:sound|s|el)\.duration\b/.test(s),
+      `${rel} reads a length off the media element again`);
+  }
 });
 
 test('every player reports a refused play instead of swallowing it', () => {

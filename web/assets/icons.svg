@@ -329,6 +329,17 @@
   <path d="M2.5 13.5 6.7 9.3"/>
 </symbol>
 
+<!-- Optimize, on the timeline. i-expand with its arms turned inward and
+     nothing else changed: the two are the same act in opposite directions and
+     the pair reads as a pair. Not a file or a disk glyph - what a reader sees
+     on the strip is their own board getting smaller, not a storage medium. -->
+<symbol id="i-shrink" viewBox="0 0 16 16">
+  <path d="M13.5 6.5H9.5V2.5"/>
+  <path d="M9.5 6.5 13.7 2.3"/>
+  <path d="M2.5 9.5H6.5V13.5"/>
+  <path d="M6.5 9.5 2.3 13.7"/>
+</symbol>
+
 <!-- Which way is up, said as plainly as it can be said. -->
 <symbol id="i-upright" viewBox="0 0 16 16">
   <rect x="3" y="3" width="10" height="10" rx="1.5"/>

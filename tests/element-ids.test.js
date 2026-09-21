@@ -25,7 +25,7 @@ const JS_BUILT = {
   'appearance-fonts': 'the font list, poured into a slot the settings schema declares',
   'conn-chip': 'the little editor that follows a selected connection',
   'drawer-ghost': 'the copy of a card that follows the pointer out of the drawer',
-  'drawer-window': 'the drawer of what you deleted - a floating window, built on open',
+  'drawer-window': 'the drawer of what you deleted - a bottom-left panel, built on open',
   'ctx-child': 'the hover submenu flown out beside a fold - the menu node again, once',
   'ctx-menu': 'the right-click menu - every menu in the app is this one node',
   'exit-layer': 'the overlay an exit animation is drawn on, above everything',

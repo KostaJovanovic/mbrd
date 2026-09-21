@@ -14,6 +14,7 @@ import {
   TABS, SECTIONS, sectionsFor, controlVisible, controlEnabled, sectionVisible,
 } from '../web/assets/js/ui/settings-schema.ts';
 import { board } from '../web/assets/js/state.ts';
+import { PAPERS } from '../web/assets/js/measure.ts';
 import { createCommands } from '../web/assets/js/commands.ts';
 
 const DESKTOP = { mobile: false };
@@ -105,11 +106,20 @@ test('Mobile is shown the arrangement it has and nothing it has not', () => {
   // Absence, not disabling. Spacing, snap, the grid, the axes and the
   // readout joined it on 2026-09-14 (R18): the Feed packs its wall by order
   // at a fixed gap and draws nothing over it, so none of them did anything.
-  for (const id of ['opt-paper', 'paper-orient', 'opt-paper-resize', 'paper-hint',
+  // Units joined them when the Paper section became a button that drops the
+  // rest in behind it: a phone can raise no sheet, and no Mobile surface reads
+  // the setting in any case - the scale bar is display:none there, and the
+  // readout that would have is already on this list.
+  const was = board.settings.paperShow;
+  // The Desktop half of the claim is about a board with a sheet up. Without
+  // one the paper rows are absent on Desktop too, which is its own test below.
+  board.settings.paperShow = true;
+  for (const id of ['opt-paper', 'paper-orient', 'opt-paper-resize', 'paper-hint', 'opt-units',
     'opt-web', 'spacing', 'opt-snap', 'opt-tilt', 'opt-grid', 'opt-axes', 'opt-hud']) {
     assert.equal(controlVisible(byId(id), MOBILE), false, `${id} should be absent on Mobile`);
     assert.equal(controlVisible(byId(id), DESKTOP), true, `${id} should be present on Desktop`);
   }
+  board.settings.paperShow = was;
   // No grid-width control the other way round: the Feed packs its
   // columns from the sheet width (ui/feed.ts), so the manual row was
   // retired. Its absence from the schema is the assertion now.
@@ -117,8 +127,11 @@ test('Mobile is shown the arrangement it has and nothing it has not', () => {
 });
 
 test('the settings that are not about a layout are in both', () => {
+  // Units was on this list until the Paper section became Desktop-only in
+  // full. It is in the list above instead - moved rather than dropped, so the
+  // change is recorded in both places it used to be claimed.
   for (const id of ['opt-mediafit',
-    'opt-units', 'opt-whimsy', 'opt-palette', 'opt-quality', 'board-title']) {
+    'opt-whimsy', 'opt-palette', 'opt-quality', 'board-title']) {
     assert.equal(controlVisible(byId(id), MOBILE), true, `${id} missing on Mobile`);
     assert.equal(controlVisible(byId(id), DESKTOP), true, `${id} missing on Desktop`);
   }
@@ -166,11 +179,112 @@ test('a section that is all fold is all fold', () => {
         `${c.id || c.type} in ${s.id} would be drawn above that section's own summary`);
     }
   }
-  // The set the rule was written for is still the set. Debug joined it:
-  // three development toggles nobody using a board reads, a stronger
-  // version of the keyboard legend's argument - the legend is at least read once.
-  assert.deepEqual(SECTIONS.filter(s => s.fold).map(s => s.id),
-                   ['real-size', 'keys', 'debug']);
+  // Two left. Paper was the third and is a heading again: a section
+  // behind one word is one nobody knows is there, and the sheet rows
+  // are what the tab is opened for.
+  assert.deepEqual(SECTIONS.filter(s => s.fold).map(s => s.id), ['keys', 'debug']);
+  const paper = SECTIONS.find(s => s.id === 'real-size');
+  assert.equal(paper.title, 'Paper');
+  assert.equal(paper.controls.some(c => c.advanced), false,
+    'a heading with every row folded under it is the fold it stopped being');
+});
+
+// --- The Paper section's shape ---------------------------------------------
+//
+// Three decisions that read as one row of a table each and are invisible when
+// broken: the sheet is raised by a button rather than by a size, the rows that
+// describe it grey out while it is down instead of standing live over nothing,
+// and Units sits with the readouts it names rather than at the head of the
+// section.
+
+const paperSection = () => SECTIONS.find(s => s.id === 'real-size');
+
+test('the Paper section leads with the sheet, and Units sits with the readouts', () => {
+  assert.deepEqual(
+    paperSection().controls.map(c => c.id ?? c.buttons?.[0]?.cmd ?? c.type),
+    [
+      'paper-show', 'opt-paper', 'paper-orient', 'opt-paper-resize', 'paper-hint',
+      'opt-units', 'reset-scale', 'scale-hint',
+    ],
+  );
+});
+
+test('the size list no longer offers None', () => {
+  // "None" was how a board said it had no sheet. An empty value left in this
+  // list would put `paper` in a state PAPERS has no entry for, which now reads
+  // as a sheet that is up and cannot be drawn.
+  const opts = byId('opt-paper').options(DESKTOP);
+  assert.deepEqual(opts.map(o => o.value), PAPERS.map(p => p.id));
+  for (const o of opts) assert.ok(o.value, 'an option with an empty value is back');
+});
+
+const rowName = c => c.id ?? c.buttons?.[0]?.cmd ?? c.type;
+
+test('the section is one button until there is a sheet, then all of it', () => {
+  const paper = paperSection();
+  const was = board.settings.paperShow;
+  // Everything but the button that raises the sheet - the scale half included.
+  const rows = paper.controls.filter(c => c.id !== 'paper-show');
+
+  board.settings.paperShow = false;
+  for (const c of rows) {
+    assert.equal(controlVisible(c, DESKTOP), false, `${rowName(c)} is on screen over no sheet`);
+  }
+  assert.equal(controlVisible(paper.controls.find(c => c.id === 'paper-show'), DESKTOP), true,
+    'the button that raises a sheet went down with the rows it raises');
+
+  board.settings.paperShow = true;
+  for (const c of rows) {
+    assert.equal(controlVisible(c, DESKTOP), true, `${rowName(c)} did not come back with the sheet`);
+    // Absence, not disabling: they were greyed for a while and are not now.
+    assert.equal(controlEnabled(c, paper, DESKTOP), true, `${rowName(c)} came back greyed`);
+  }
+  board.settings.paperShow = was;
+});
+
+test('the whole section comes down on Mobile, and nothing there misses it', () => {
+  // Mobile can never raise a sheet, so every row's `when` is false and
+  // sectionVisible() takes the heading with them. That is only honest because
+  // no Mobile surface reads settings.units: the scale bar is display:none
+  // there, the readout and the sheet's caption are Desktop-only, and the
+  // picker was changing the wording of one sentence in this panel.
+  const paper = paperSection();
+  const was = board.settings.paperShow;
+
+  for (const flag of [false, true]) {
+    board.settings.paperShow = flag;
+    assert.equal(sectionVisible(paper, MOBILE), false,
+      `Paper is on screen on Mobile with paperShow ${flag}`);
+    for (const c of paper.controls) {
+      assert.equal(controlVisible(c, MOBILE), false, `${rowName(c)} reaches a phone`);
+    }
+  }
+
+  // Desktop still has the heading with the sheet down, so the rule above is
+  // about Mobile and not about the section quietly vanishing everywhere.
+  board.settings.paperShow = false;
+  assert.equal(sectionVisible(paper, DESKTOP), true);
+  board.settings.paperShow = was;
+});
+
+test('the hint measures the sheet and never explains it', () => {
+  // It used to fall back to a sentence describing what a paper outline is,
+  // for the case where there was no sheet. The row is absent without one now,
+  // so measuring is the whole of its job.
+  const was = { show: board.settings.paperShow, resize: board.settings.paperResize };
+  const text = byId('paper-hint').text;
+
+  board.settings.paperShow = true;
+  board.settings.paperResize = false;
+  assert.match(text(DESKTOP), /px, centred on 0,0\./);
+  assert.doesNotMatch(text(DESKTOP), /Outlines a sheet/);
+  // The invitation prints only where the corners will answer it.
+  assert.doesNotMatch(text(DESKTOP), /Drag a corner/);
+  board.settings.paperResize = true;
+  assert.match(text(DESKTOP), /Drag a corner/);
+
+  board.settings.paperResize = was.resize;
+  board.settings.paperShow = was.show;
 });
 
 test('the four demoted controls are below a fold, not gone', () => {
@@ -186,26 +300,38 @@ test('the four demoted controls are below a fold, not gone', () => {
   assert.equal(host.advanced, true);
 });
 
-test('the Look tab opens on three dials, and type is one of them', () => {
-  // The fold is for controls a board is no worse for never touching,
-  // and a typeface is not one: the display serif is the loudest decision
-  // on a board, and a dropped face becomes an entry in these menus - so
-  // hiding them made a feature that worked into one that couldn't be
-  // found. The hint says exactly that and must travel with it.
-  // The hint has two wordings, one per layout: a phone cannot drop, so it
-  // is told the Add button's way in (R18, 2026-09-14).
+test('the Look tab opens on two dials, and the faces are one fold in', () => {
+  // The two that move every token at once stand alone; the type menus,
+  // the faces added to the board and the tip that says how to add one
+  // are together one fold down. The three must not come apart: the tip
+  // is the only place the drop is named, and the list of added faces is
+  // the only way to take one back off.
   const look = SECTIONS.find(s => s.id === 'appearance');
   for (const ctx of [DESKTOP, MOBILE]) {
     const above = look.controls.filter(c => !c.advanced && controlVisible(c, ctx));
-    assert.deepEqual(above.map(c => c.id ?? c.type),
-      ['opt-whimsy', 'opt-palette', 'appearance-type', 'hint', 'appearance-fonts']);
-    assert.match(above[3].html, /\.woff2/, 'the added-face hint stayed with the menus');
-    assert.match(above[3].html, ctx.mobile ? /Add, then Files/ : /Drop a/);
-    // The added-face list rides with the hint and menus, above the
-    // fold, so an added face can be taken back off without opening the
-    // advanced controls.
-    assert.equal(above[4].id, 'appearance-fonts');
+    assert.deepEqual(above.map(c => c.id ?? c.type), ['opt-whimsy', 'opt-palette']);
+    const folded = look.controls.filter(c => c.advanced && controlVisible(c, ctx));
+    assert.deepEqual(folded.slice(0, 3).map(c => c.id),
+      ['appearance-type', 'type-hint', 'appearance-fonts']);
   }
+});
+
+test('the typeface tip is a (?) on the row it explains, in both layouts', () => {
+  // A tip is drawn onto the end of the control built before it
+  // (buildSection, ui/panel.ts), so the two have to be in the same half
+  // of the section - a tip marked advanced after a row that is not
+  // would drag that row into the fold.
+  const look = SECTIONS.find(s => s.id === 'appearance');
+  const i = look.controls.findIndex(c => c.id === 'type-hint');
+  assert.equal(look.controls[i - 1].id, 'appearance-type', 'the row it belongs to');
+  assert.equal(look.controls[i - 1].advanced, look.controls[i].advanced);
+  const tip = look.controls[i];
+  assert.equal(typeof tip.tip, 'string', 'the (?) needs a name to be read out as');
+  assert.equal(tip.html, undefined, 'a tip is prose, painted as text');
+  // A phone cannot drop, so it is told the Add button's way in
+  // (R18, 2026-09-14). One control, both wordings.
+  assert.match(tip.text(DESKTOP), /^Drop a \.woff2/);
+  assert.match(tip.text(MOBILE), /Add, then Files/);
 });
 
 test('the palette source dial has one stop past its highest count', async () => {
@@ -266,6 +392,32 @@ test('the palette menu carries Dynamic, and it is the only way to ask for it', a
     assert.match(tokens, new RegExp(`\\[data-palette=["']?${value}["']?\\]`),
       `${label} is offered by the panel but tokens.css declares no block for it`);
   }
+});
+
+test('a pigment picked by hand reads as Custom, which the menu does not offer', async () => {
+  // The state a colour picked below this menu puts it in. Not a row:
+  // an entry that picks the colour already on screen answers nothing,
+  // and the way back is any palette - setPalette() drops every pigment
+  // token, so the choice is forgotten by the thing that replaces it.
+  const palette = byId('opt-palette');
+  const options = palette.options();
+  assert.equal(typeof palette.unlisted, 'function',
+    'without this the picker draws an empty box for a value it cannot name');
+  assert.equal(palette.unlisted('custom'), 'Custom');
+  assert.equal(palette.unlisted(''), '', 'every other value is the menu\'s to name');
+  assert.equal(options.some(o => o.label === 'Custom' || o.value === 'custom'), false,
+    'Custom is a state the control is put into, never one it offers');
+
+  // The same bargain Dynamic has: one string in two files that do not
+  // import each other.
+  const controls = await readFile(
+    new URL('../web/assets/js/ui/appearance-controls.ts', import.meta.url), 'utf8');
+  assert.equal(controls.match(/CUSTOM = '([a-z0-9-]+)'/)[1], 'custom');
+  // And never a palette name, for the reason Dynamic isn't: a
+  // [data-palette="custom"] block would be a silent clash.
+  const tokens = await readFile(
+    new URL('../web/assets/css/tokens.css', import.meta.url), 'utf8');
+  assert.doesNotMatch(tokens, /\[data-palette=["']?custom/);
 });
 
 test('the whimsy stops keep the id the stylesheet sets them by', async () => {

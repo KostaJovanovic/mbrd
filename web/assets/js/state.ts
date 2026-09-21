@@ -53,13 +53,14 @@ import {
 } from './board-store.ts';
 import {
   commit, undo, redo, historyState, historyDepth, historyWeight,
-  clearHistory, lastCommand, takeBack,
+  clearHistory, dropStacks, lastCommand, takeBack,
 } from './history.ts';
 import {
   adoptTimeline, timelineSteps, timelineAt, timelineStale, timelineHashes, goTo,
   nameStep, declareOp, registerOp, editStep, rebuildFrom, stepEditable,
   timelineBytes, trimmable, trimTimeline, TRIM_BYTES, TRIM_DAYS, deleteStep, deleteAhead,
   replayTo, serializeTimeline, describeStep, timelinePlaying, setTimelinePlaying,
+  rewriteRecorded,
 } from './timeline.ts';
 
 export {
@@ -83,6 +84,101 @@ export { commit, undo, redo, historyState, historyDepth, historyWeight, lastComm
 export function deleteTimeline() {
   clearHistory();
   markDirty();
+}
+
+/**
+ * Let go of the bytes of every earlier version, and leave the history that
+ * named them standing.
+ *
+ * The ledger held the file as it used to be; it gets the file as the card has
+ * it now. Stepping back to before an Optimize still shows that moment - the
+ * same cards, in the same places, named and arranged as they were - drawn with
+ * today's pictures. The alternative was deleting the timeline outright, which
+ * is a steep price for space.
+ *
+ * Per card and per field, because the card is the only thing that knows what
+ * replaced what: a recorded `asset.hash` becomes that card's `asset.hash`, a
+ * recorded `meta.display` its display copy, and a field the card no longer has
+ * at all - the .dng an Optimize threw away - is dropped rather than left
+ * pointing somewhere wrong. A card gone from the board *and* the drawer has
+ * nothing to answer with, and needs none: emptyTrash() is the only thing that
+ * destroys a card's bytes, and it leaves a tombstone holding no files at all.
+ *
+ * Call `discardOriginals()` first, so the live cards have stopped naming what
+ * is going; the recorded copies are stripped of `was`/`wasCover` here.
+ *
+ * The undo stack goes with it - its closures describe a board where those
+ * bytes still existed, which is what dropStacks() is for. The timeline does
+ * not go, and that is the whole point.
+ */
+export function replaceOldVersions(doomed: Set<string>): number {
+  if (!doomed.size) return 0;
+  const now = new Map<string, Item>();
+  for (const item of board.items) now.set(item.id, item);
+  for (const entry of board.trash) now.set(entry.item.id, entry.item);
+  const count = rewriteRecorded(rec => remapRecorded(rec, now, doomed));
+  if (count) { dropStacks(); markDirty(); }
+  return count;
+}
+
+/**
+ * The meta keys that name a file, for the walk above. `was` and `wasCover` are
+ * in it because they name the very thing being let go: a recorded copy that
+ * kept them would point the sweep at bytes that no longer exist.
+ */
+const RECORDED_HASH_KEYS = [
+  'cover', 'shot', 'thumb', 'preview', 'art', 'display', 'source', 'poster',
+  'archive', 'was', 'wasCover',
+];
+
+/** One recorded item, with today's files in place of the doomed ones. Null
+ *  when it names none of them - rewriteRecorded() leaves those untouched. */
+function remapRecorded(
+  rec: Record<string, unknown>, now: Map<string, Item>, doomed: Set<string>,
+): Record<string, unknown> | null {
+  const live = now.get(typeof rec.id === 'string' ? rec.id : '');
+  const fresh = (hash: unknown): hash is string =>
+    typeof hash === 'string' && !!hash && !doomed.has(hash);
+  let changed = false;
+
+  // The picture itself. With no card to ask, the reference goes rather than
+  // dangles - the renderer draws a card with no file, not a broken one.
+  let asset = rec.asset;
+  if (isRecord(asset) && typeof asset.hash === 'string' && doomed.has(asset.hash)) {
+    const hash = live?.asset?.hash;
+    asset = fresh(hash) ? { ...asset, hash } : null;
+    changed = true;
+  }
+
+  const meta = isRecord(rec.meta) ? { ...rec.meta } : null;
+  if (meta) {
+    for (const key of RECORDED_HASH_KEYS) {
+      if (typeof meta[key] !== 'string' || !doomed.has(meta[key])) continue;
+      const hash = live?.meta?.[key];
+      if (fresh(hash)) meta[key] = hash;
+      else delete meta[key];
+      changed = true;
+    }
+    // A folder card's listing, matched by path: the one thing about an entry
+    // that survives a re-import. An entry with no match is dropped, the same
+    // answer as a field the card no longer has.
+    const files = Array.isArray(meta.files) ? meta.files : null;
+    if (files?.some(f => isRecord(f) && typeof f.hash === 'string' && doomed.has(f.hash))) {
+      const byPath = new Map<string, string>();
+      const listed = Array.isArray(live?.meta?.files) ? live.meta.files : [];
+      for (const f of listed) {
+        if (isRecord(f) && typeof f.path === 'string' && fresh(f.hash)) byPath.set(f.path, f.hash);
+      }
+      meta.files = files.flatMap(f => {
+        if (!isRecord(f) || typeof f.hash !== 'string' || !doomed.has(f.hash)) return [f];
+        const hash = byPath.get(typeof f.path === 'string' ? f.path : '');
+        return hash ? [{ ...f, hash }] : [];
+      });
+      changed = true;
+    }
+  }
+
+  return changed ? { ...rec, asset, ...(meta ? { meta } : {}) } : null;
 }
 
 import {
@@ -751,24 +847,34 @@ export function swapAssets(swaps: AssetSwap[] | null | undefined, label = 'Optim
 }
 
 /**
- * Let go of the files the optimiser replaced.
+ * Let go of the files the optimiser replaced: the bytes meta.was and
+ * meta.wasCover keep so that undoing an Optimize can put the old picture back.
  *
  * Undoable in the sense that matters - the *board* is unchanged either way, so
  * this is not on the history at all. What it changes is what the next autosave
- * sweep is allowed to collect: with `was` gone, nothing claims the originals and
- * the browser gets the space back. It is a one-way door and the caller says so
- * before opening it.
+ * sweep is allowed to collect: those two keys are not in itemHashes(), which
+ * drives the packer, but referencedHashes() (storage/session.ts) keeps them on
+ * purpose, so they outlive the undo that wanted them unless something says
+ * otherwise. This is that something. It is a one-way door and the caller says
+ * so before opening it.
+ *
+ * The drawer as well as the board, because a binned card carries its memo too
+ * and can be restored. Returns the hashes let go, for the caller that frees
+ * them - see replaceOldVersions(), which is the other half of the same act.
  */
-export function discardOriginals() {
-  let n = 0;
-  for (const it of board.items) {
-    if (!isHash(it.meta?.was) && !isHash(it.meta?.wasCover)) continue;
+export function discardOriginals(): string[] {
+  const gone: string[] = [];
+  const strip = (it: Item | null | undefined) => {
+    if (!it?.meta || (!isHash(it.meta.was) && !isHash(it.meta.wasCover))) return;
     const { was, wasCover, ...rest } = it.meta;
+    if (isHash(was)) gone.push(was);
+    if (isHash(wasCover)) gone.push(wasCover);
     it.meta = rest;
-    n++;
-  }
-  if (n) markDirty();
-  return n;
+  };
+  for (const it of board.items) strip(it);
+  for (const entry of board.trash) strip(entry.item);
+  if (gone.length) markDirty();
+  return gone;
 }
 
 /** How many items are still holding a pre-optimisation original. */
@@ -1345,7 +1451,7 @@ export function setSetting(key: string, value: unknown) {
   // fixup in activateLayoutSettings() runs once, at the moment of the switch,
   // so without this a later write would put a sheet on the Mobile board.
   if (board.layoutMode === 'mobile' &&
-      ['paper', 'paperLandscape', 'paperResize'].includes(key)) return;
+      ['paperShow', 'paper', 'paperLandscape', 'paperResize'].includes(key)) return;
   if (key === 'mobileColumns') {
     if (board.layoutMode !== 'mobile') return;
     value = mobileColumnCount(value);

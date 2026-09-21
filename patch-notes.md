@@ -25,6 +25,12 @@ So: a feature, a repair somebody could have hit, or a speed-up somebody could
 have felt. Nothing else. If a day has nothing in it for them, say so in one
 plain line and move on.
 
+**The cleaning simulator is never mentioned here, in any form.** Not the mode,
+not the konami code or the seven taps that open it, not its tools, its dirt, its
+sounds or the card a finished board is left. A thing found by accident stops
+being found the moment a changelog names it, so the page stays silent about it
+however large the day's work on it was. The archive carries that work instead.
+
 **The long version is kept, and it is kept somewhere else.**
 `research/patch-notes-full.md` holds every release at the length it was first
 written at, the internal work included. It is an archive - nothing generates
@@ -155,6 +161,151 @@ back to the board.
   work included, lives in `research/patch-notes-full.md`.
 
 ## Releases
+
+## From the Camera
+version: 0.415 - 0.428
+date: 20 September 2026
+
+- **A photograph draws on the board whatever the camera saved it as.** iPhone
+  HEICs and camera RAWs are turned into pictures as they land, and the cards
+  that used to arrive grey and nameless arrive as what they are.
+
+### Photographs
+- [new] **A `.heic` or `.heif` from an iPhone arrives as the picture.** The file
+  is read here and the picture inside it decoded by the machine's own decoder,
+  about a fifth of a second for a twelve-megapixel one. Where that decoder is
+  missing, a slower one is fetched instead, so the same file draws on every
+  browser and at every address. A picture the phone stored as a grid of tiles
+  comes back whole and the right way up.
+- [new] **A camera RAW that baked no preview is developed as it arrives,** so a
+  night shot saved as a `.dng` is a photograph rather than a grey card - and
+  `Demosaic`, which is offered only on a photograph, is there to develop every
+  pixel of it when you want that.
+- [new] **The file you dropped is kept beside the picture,** untouched, and
+  `Optimize` is the one thing that throws it away.
+- [faster] **`Optimize` shrinks a HEIC,** where it used to count one and then
+  quietly walk past it - often the largest file on a board made on a phone.
+- [fix] **`Edit picture` opens on a HEIC or a RAW from an older board,** where
+  it opened on a blank sheet.
+
+### Around the board
+- [fix] **`Play` keeps the board in frame as it replays,** so a history that
+  builds a board up is watched rather than happening off the edge of the window.
+- [fix] **Saving a board in Samsung Internet no longer leaves an empty file.**
+  Where the browser offers to save and then refuses to write, the board comes
+  down as an ordinary download instead.
+- [new] **`What this board weighs` says where every file is held** - on the
+  board, in the drawer or in the history - as well as what it all comes to.
+- [fix] **The credits scroll inside their own sheet,** which keeps its corners.
+- **Maintenance:** a release carries Windows and Android. A macOS or Linux copy
+  sees the new version and waits for the next full release, which updates it
+  straight there.
+
+## Steady Hands
+version: 0.413 - 0.414
+date: 19 September 2026
+
+- **A board on a phone stopped flickering.** Three separate faults made cards
+  vanish and come back, and all three are gone.
+- [fix] **Cards no longer disappear while the board is zoomed out,** where a
+  screenful of them could go at once and return on the next touch.
+- [fix] **`Light` stopped reloading the board as you pan.** Cards dropped out
+  and drew again as the board moved, at that stop and at no other.
+- [faster] **A pinch costs about half of what it did,** so the board keeps up
+  with your fingers. A GIF frozen at far zoom no longer stalls the gesture
+  either.
+- [new] **The title card, once thrown away, comes back from the Drawer's
+  `Special` shelf** rather than from a button in the Drawer's header.
+- [fix] **The waiting strip sits under the panels and the menus.** An import
+  runs for as long as it runs, and it stopped covering whatever you opened while
+  it did.
+
+## The Other Button
+version: 0.409 - 0.412
+date: 18 September 2026
+
+- **A right-click says the same thing everywhere: do something to this.** The
+  Timeline, the player and the toolbar answer it now, and the joining lines were
+  redrawn.
+- [new] **Right-click a step on the Timeline** for the ways to it and through
+  it: go there, change its rule, name it, delete it. Right-click anywhere else
+  on the bar for the gear's own rows. Any mark can be named now, not only the
+  point the board is standing on.
+- [new] **`Delete N steps after this point`** in the gear clears the history in
+  front of the marker and leaves the board exactly as it is.
+- [new] **Right-click the player** for its buttons as rows, and a mute the bar
+  has no room for.
+- [new] **Right-click a tool in the toolbar** to open its flyout at once.
+- [fix] **A joining line no longer lies along the card it leaves.** It keeps a
+  short straight at each end, and a small sideways step is drawn as one S rather
+  than two corners.
+- [fix] **The board takes the Timeline's band while the bar is faded** and is
+  held still as it does, so nothing slides half a band each way.
+
+## Indoor Work
+version: 0.406 - 0.408
+date: 17 September 2026
+
+- **Nothing a reader would notice** - a day of work inside the app.
+
+## Files and Light
+version: 0.404 - 0.405
+date: 16 September 2026
+
+- **On the phone every board became a file, and `Light` became light.**
+- [new] **The Android app keeps each board as a file in the board folder,** as
+  the desktop does: the list reads the folder, `New` makes a file, a rename
+  renames it, and `Delete` moves it to a bin that keeps it thirty days. The
+  autosave writes the board to its own file a few seconds after an edit and
+  again when the app goes away, adding only what changed.
+- [faster] **A large board opens and saves on a phone that could not hold it
+  before.** A 400 MB board no longer has to fit in the page twice over.
+- [faster] **`Light` is finally lighter on a phone.** The paper texture comes off
+  the page, and a photograph you zoom right into draws at once rather than
+  stalling and flashing white first. Those were the two heaviest things on a
+  board and the dial could reach neither.
+- [faster] **A pan is smoother on a phone,** with two rounds of work a frame
+  taken out of it that nobody could see anyway.
+- [fix] **An update says so where you are looking.** The offer arrives as a note
+  with its own button as well as sitting at the top of the Board tab.
+
+## Past the Edge
+version: 0.403
+date: 15 September 2026
+
+- **A drag that reaches the edge of the window carries the board with it,** and
+  the toolbar learned to change size without jumping.
+
+### Carrying things
+- [new] **Drag a card, a band or a corner to the edge of the window and the
+  board pans under it,** so a card can be carried past what the window shows. It
+  starts slowly and picks up the further in you push, and a shape dragged off
+  the sticker pad or a card out of the drawer pans the same way.
+- [new] **The resize grips go at 15%,** and the ring says so: from there down a
+  card is carried rather than sized, and a grip that small covered more of the
+  card than the card showed.
+- [new] **A right-click inside a fence opens the fence's own menu,** and a fence
+  resized on a snapped board puts what it carries back on the grid.
+
+### The look
+- [new] **The toolbar moves between its sizes rather than snapping,** as a panel
+  opens or the window narrows, each tool gliding from where it was and a word
+  fading in behind the movement.
+- [fix] **With animations off, nothing strobes.** The splash, the waiting bar,
+  the darkroom and the player's bars each hold a frame worth holding, where a
+  stopped loop used to flash.
+- [fix] **Card shadows reach the Feed at `Balanced`,** where its tiles stayed
+  flat and the switch did nothing.
+- [fix] **A slider on a phone keeps its name and its value** on a card of its
+  own while your finger is on it, over the board it is changing.
+- [fix] **Photographs stopped blinking at `Light` while you zoom,** where every
+  card was being swapped to a thumbnail and back.
+- [fix] **The drawer builds its cards ahead of the scroll at every stop,** so
+  they stop popping in and out on the device least able to afford the rebuilds.
+
+### Around the app
+- [new] **`Get the app` opens the latest release** in a new tab, where the apps
+  and their notes live. The download page it used to open is gone.
 
 ## Unpacked
 version: 0.318 - 0.402

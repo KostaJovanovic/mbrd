@@ -70,6 +70,26 @@ export const PLAY_ICON =
 export const PAUSE_ICON =
   '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.6 3.2h2.6v9.6H4.6zM8.8 3.2h2.6v9.6H8.8z"/></svg>';
 
+/**
+ * How long the track runs, where the engine and the file disagree.
+ *
+ * `stated` is the file's own answer - ADTS frames counted one by one, or a
+ * container's duration field (import/containers.ts) - and it wins, because for
+ * a stream with no container the engine is guessing: it reads the first frame's
+ * bitrate and divides the file by it. A raw .aac whose first frame is a 9-byte
+ * silent one reads as 7319 minutes in Firefox and as 97 in Chromium, against a
+ * true 95. Only `duration` is wrong in either: `currentTime` counts decoded
+ * samples and a seek lands where it was asked to, so a position needs no
+ * correction and none is applied here.
+ */
+// `stated` is unknown rather than a number because it arrives from an item's
+// meta, which is a Record<string, unknown> — the narrowing belongs here, once.
+export function trackLength(sound: HTMLMediaElement, stated: unknown): number {
+  if (typeof stated === 'number' && Number.isFinite(stated) && stated > 0) return stated;
+  const engine = sound.duration;
+  return Number.isFinite(engine) && engine > 0 ? engine : 0;
+}
+
 /** m:ss. Hours are possible and would be a strange thing to pin to a board. */
 export function clock(secs: number): string {
   // Not Math.max alone — Math.floor(NaN) is NaN, so clamp lets it through.

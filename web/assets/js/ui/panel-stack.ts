@@ -1,7 +1,8 @@
-// Exclusive right-side panel stack. Header edit bar and sticker drawer
-// share one edge; opening one hides the other, closing it restores.
-// Owns no DOM — each panel registers open/close callbacks. The `busy`
-// guard prevents echo when the coordinator itself closes a panel.
+// Exclusive right-side panel stack. The header edit bar, the sticker pad and
+// the Playlist share one edge; opening one hides the other, closing it
+// restores. Owns no DOM — each panel registers open/close callbacks, and the
+// stack is a module variable, so nothing it remembers survives a reload. The
+// `busy` guard prevents echo when the coordinator itself closes a panel.
 
 /** A panel's open/close callbacks. */
 interface PanelDriver {

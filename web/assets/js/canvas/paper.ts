@@ -16,12 +16,18 @@ const MIN_CAPTION_PX = 120;
 /** Below this the four grips overlap and become unusable. Sheet still drawn. */
 const MIN_GRIP_PX = 44;
 
-/** The four corners, in world signs. +y is up, so north is positive. */
-const GRIPS = [
-  { id: 'nw', sx: -1, sy: 1 },
-  { id: 'ne', sx: 1, sy: 1 },
-  { id: 'sw', sx: -1, sy: -1 },
-  { id: 'se', sx: 1, sy: -1 },
+/**
+ * The four corners, in world signs. +y is up, so north is positive.
+ *
+ * `axis` is the diagonal the corner sits on, and so the cursor the whole page
+ * wears while that corner is held. canvas.css gives the grips themselves the
+ * same four values; this copy is for the drag, which has left the grip.
+ */
+export const GRIPS = [
+  { id: 'nw', sx: -1, sy: 1, axis: 'nwse' },
+  { id: 'ne', sx: 1, sy: 1, axis: 'nesw' },
+  { id: 'sw', sx: -1, sy: -1, axis: 'nesw' },
+  { id: 'se', sx: 1, sy: -1, axis: 'nwse' },
 ];
 
 /** A world or screen point, which here are the same two numbers. */
@@ -54,7 +60,9 @@ function draw() {
   // caption is built alongside node — both null or both present.
   if (!node || !caption || !vp) return;
   const s = board.settings;
-  const mm = paperMm(s.paper, s.paperLandscape);
+  // `paperShow` is the gate; the null is the belt to its braces, since paperMm()
+  // may answer for an id it does not know whatever the schema guarantees.
+  const mm = s.paperShow ? paperMm(s.paper, s.paperLandscape) : null;
 
   if (!mm) {
     if (!node.hidden) { node.hidden = true; last = ''; }
@@ -76,9 +84,11 @@ function draw() {
   const bottom = snap(o.y + h / 2);
 
   // Skip style writes when nothing changed. Grips in the key so toggling them
-  // takes effect even without a pan.
+  // takes effect even without a pan; the drag because the caption says more
+  // while one is in flight, and the last frame of a drag and the first frame
+  // after it have the same box.
   const grips = !!s.paperResize && Math.min(w, h) >= MIN_GRIP_PX;
-  const key = `${left}|${top}|${right}|${bottom}|${s.paper}|${s.units}|${grips}`;
+  const key = `${left}|${top}|${right}|${bottom}|${s.paper}|${s.units}|${grips}|${!!drag}`;
   if (key === last) return;
   last = key;
 
@@ -90,11 +100,19 @@ function draw() {
   // One class toggles all four grips at once.
   node.classList.toggle('no-grips', !grips);
 
-  // Sheet name + real-world size — legible feedback while dragging.
+  // Sheet name + real-world size. Scale 1: millimetres are already millimetres,
+  // and formatSize is here for the unit names.
   caption.hidden = w < MIN_CAPTION_PX;
   if (!caption.hidden) {
-    // scale 1: millimetres are already millimetres, just using formatSize for unit display.
-    caption.textContent = `${mm.label} · ${formatSize(mm.w, mm.h, 1, s.units)}`;
+    const real = `${mm.label} · ${formatSize(mm.w, mm.h, 1, s.units)}`;
+    // That much cannot move: A4 is A4 at every scale, and for a while this line
+    // claimed to be drag feedback while printing one constant string. What a
+    // corner drag changes is the *board* — so the sheet's size in board units
+    // is the only number here that answers the gesture, and it prints only
+    // while the gesture is on. Same figure the Paper hint in settings shows.
+    caption.textContent = drag
+      ? `${real} · ${Math.round(toUnits(mm.w, s.scale))} × ${Math.round(toUnits(mm.h, s.scale))} px`
+      : real;
   }
 }
 
@@ -108,8 +126,10 @@ function onDown(e: PointerEvent) {
   // Optional chaining covers harness dispatches on non-element targets.
   // SAFETY: the listener is on #paper, so a real press targets an element in it.
   const grip = (e.target as Element).closest?.<HTMLElement>('[data-grip]');
-  // Check the setting, not just the CSS class — a look must not enable grips.
-  if (!grip || e.button > 0 || !vp || !board.settings.paperResize) return;
+  // Check the settings, not just the CSS class — a look must not enable grips,
+  // and neither must a sheet that has been put away with resize left armed.
+  if (!grip || e.button > 0 || !vp ||
+      !board.settings.paperShow || !board.settings.paperResize) return;
   const spec = GRIPS.find(g => g.id === grip.dataset.grip);
   const mm = paperMm(board.settings.paper, board.settings.paperLandscape);
   if (!spec || !mm) return;
@@ -127,7 +147,11 @@ function onDown(e: PointerEvent) {
   // pan under the drag.
   e.stopPropagation();
   e.preventDefault();
+  // The class is the state (canvas/web.ts reads it to stand its hover down);
+  // the axis is which of the two diagonal cursors the page wears for it.
   document.documentElement.classList.add('is-sizing-paper');
+  document.documentElement.dataset.sizingAxis = spec.axis;
+  draw();
 }
 
 function onMove(e: PointerEvent) {
@@ -151,9 +175,13 @@ function onUp(e: PointerEvent) {
   if (!drag) return;
   drag = null;
   document.documentElement.classList.remove('is-sizing-paper');
+  delete document.documentElement.dataset.sizingAxis;
   // Optional chaining covers non-element targets in test harnesses.
   // SAFETY: the listener is on #paper, so a real release targets an element in it.
   (e.target as Element).releasePointerCapture?.(e.pointerId);
+  // Nothing else redraws on a release — the box is where the last move left it,
+  // and only the caption has to drop back to the sheet's own size.
+  draw();
 }
 
 // ---------------------------------------------------------------------------

@@ -174,19 +174,45 @@ test('raising a card keeps its memory of where it sat before the lattice', () =>
   assert.deepEqual(geom(byId(a.id)), { x: 17, y: -23, w: 90, h: 140 });
 });
 
-test('moving a card on a snapped board does give up the memo', () => {
-  // The other half - a change in x, y, w or h is a placement, the user
-  // overruling where the lattice put the card.
+test('resizing a card on a snapped board does give up the memo', () => {
+  // The other half - a card sized by hand on the lattice is saying that whole
+  // cells are its size now, and there is no earlier size to go back to.
   fresh();
   const [a] = addItems([boxAt(17, -23, 90, 140)]);
   setSetting('snap', true);
   assert.ok(byId(a.id).meta.presnap, 'laid on the lattice, so there is a memo');
 
   const before = snapshotGeom([a.id]);
+  byId(a.id).w += 64;
+  commitGeom('Resize', before, [a.id]);
+
+  assert.ok(!byId(a.id).meta.presnap, 'sized by hand, so the memo goes');
+});
+
+test('moving a card keeps the size it had before the lattice, at the new place', () => {
+  // A drag changes no sides, and used to throw the whole memo away anyway. On a
+  // Fit board that made the mats snapping rounds a picture card into permanent:
+  // leaving the grid no longer gave the card its picture's proportion back.
+  fresh();
+  const [a] = addItems([boxAt(17, -23, 90, 140)]);
+  setSetting('snap', true);
+  const laid = geom(byId(a.id));
+
+  const before = snapshotGeom([a.id]);
   byId(a.id).x += 128;
   commitGeom('Move', before, [a.id]);
 
-  assert.ok(!byId(a.id).meta.presnap, 'placed by hand, so the memo goes');
+  const memo = byId(a.id).meta.presnap;
+  assert.ok(memo, 'the memo survives a move');
+  assert.equal(memo.x, laid.x + 128, 'and it names where the card is now');
+  assert.equal(memo.y, laid.y);
+  assert.equal(memo.w, 90, 'with the size nobody touched');
+  assert.equal(memo.h, 140);
+
+  setSetting('snap', false);
+  assert.deepEqual(geom(byId(a.id)),
+    { x: laid.x + 128, y: laid.y, w: 90, h: 140 },
+    'leaving the grid gives the size back where the card was put');
 });
 
 test('a memo that is not a box is ignored rather than written onto the item', () => {
