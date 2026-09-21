@@ -403,34 +403,40 @@ function paintReveal(r: Reveal, shown: boolean) {
   if (shown) r.box.hidden = false;
   const anim = slideBox(r.box, shown);
   r.running = anim;
+  if (shown) followEdge(r.box, () => r.running === anim);
   anim.finished.then(() => {
     if (r.running !== anim) return;   // a newer turn owns the box now
     r.running = null;
     settleBox(r.box, anim);
     if (!shown) r.box.hidden = true;
-    else bringIntoView(r.box);
   }, () => {});   // cancelled mid-flight by the change that replaced it
 }
 
 /**
- * Scroll the panel just far enough to show rows that opened below its foot -
- * the Paper rows open under the button that asked for them, which is often the
- * bottom of the panel. Never past the top of their section, so the button that
- * opened them stays on screen. After the movement rather than during it: until
- * the box has its height there is nothing below to scroll to.
+ * Keep the growing edge of an opening box on screen, one frame at a time - the
+ * Paper rows open under the button that asked for them, which is often the
+ * bottom of the panel. The scroll rides the box's own height, so it moves on
+ * the fold's curve and finishes when the box does; a smooth scroll started at
+ * the end was a second movement after the first had stopped.
+ *
+ * Never past the top of the section, so the button that opened the rows stays
+ * on screen. The rect is read in a frame callback, after the animation has
+ * been stepped for that frame, so the edge is where it is about to be drawn.
  */
-function bringIntoView(box: HTMLElement) {
+function followEdge(box: HTMLElement, live: () => boolean) {
   const scroller = box.closest<HTMLElement>('.side-body');
   if (!scroller) return;
-  const view = scroller.getBoundingClientRect();
   const pad = Number.parseFloat(getComputedStyle(scroller).paddingBottom) || 0;
-  const below = box.getBoundingClientRect().bottom + pad - view.bottom;
-  if (below <= 0) return;
-  const top = (box.closest('.side-sec') ?? box).getBoundingClientRect().top - view.top;
-  const by = Math.min(below, Math.max(0, top));
-  if (by <= 0) return;
-  const still = !!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-  scroller.scrollBy({ top: by, behavior: still ? 'auto' : 'smooth' });
+  const head = box.closest('.side-sec') ?? box;
+  const step = () => {
+    const view = scroller.getBoundingClientRect();
+    const below = box.getBoundingClientRect().bottom + pad - view.bottom;
+    const room = head.getBoundingClientRect().top - view.top;
+    const by = Math.min(below, room);
+    if (by > 0) scroller.scrollTop += by;
+    if (live()) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
 }
 
 function buildControl(c: Control, _spec: Section) {
