@@ -30,6 +30,9 @@ The changelog source is `patch-notes.md` at the repository root, not in here.
   owed, needs the maintainer (with the phone design calls P6 to P11), and
   ideas. What was done, decided or skipped, with the fix list R1 to R38, is in
   `old/done-2026-09-15.md`.
+- `text-editor-2026-09-22.md` — the plan for a markdown editor in the viewer,
+  in three phases: the editor, Vomit Mode, and `.fountain` screenplays. Not
+  started.
 - `patch-notes-full.md` — **an archive, not open work.** It holds every release
   at the length it was first written, internal work included. Nothing generates
   anything from it.
