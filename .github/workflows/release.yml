@@ -274,7 +274,16 @@ jobs:
           # No Apple certificate: electron-builder.yml sets mac.identity to null
           # and scripts/after-pack.cjs signs ad-hoc. This stops the keychain search.
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: npx electron-builder ${{ matrix.target }} --publish never "-c.extraMetadata.version=${{ needs.version.outputs.version }}"
+        # Three tries, because electron-builder fetches Electron and the NSIS
+        # kit from GitHub mid-build, and one 504 there failed v0.448. What it
+        # already fetched stays in its cache, so a retry repeats only the rest.
+        run: |
+          for try in 1 2 3; do
+            npx electron-builder ${{ matrix.target }} --publish never "-c.extraMetadata.version=${{ needs.version.outputs.version }}" && exit 0
+            echo "::warning title=Build retried::electron-builder failed on try $try"
+            sleep 30
+          done
+          exit 1
 
       # FileAnalyser 9.8 shipped with no title bar: its chrome pages were not in
       # the package. Here they are built into dist/chrome/, which files: ships
