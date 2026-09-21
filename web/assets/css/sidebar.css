@@ -703,10 +703,11 @@
 }
 .field select:hover { border-color: var(--accent-text); }
 
-/* Slider style shared by four hosts: .field, .np-volume, .ctx-range, .dk-dial.
+/* Slider style shared by five hosts: .field, .np-volume, .ctx-range, .dk-dial,
+   .xo-dial.
    :is() keeps them in one rule. quality.css squares the thumb at Harsh.
    Add any new slider to this list or it prints a native track. */
-:is(.field, .np-volume, .ctx-range, .dk-dial) input[type="range"] {
+:is(.field, .np-volume, .ctx-range, .dk-dial, .xo-dial) input[type="range"] {
   width: 100%;
   height: 22px;
   -webkit-appearance: none;
@@ -716,19 +717,19 @@
   /* Without this a finger drag gets reinterpreted as a panel scroll. */
   touch-action: none;
 }
-:is(.field, .np-volume, .ctx-range, .dk-dial) input[type="range"]::-webkit-slider-runnable-track {
+:is(.field, .np-volume, .ctx-range, .dk-dial, .xo-dial) input[type="range"]::-webkit-slider-runnable-track {
   height: 3px;
   border-radius: var(--radius-pill);
   background: linear-gradient(90deg, var(--rule-2), var(--rule));
 }
-:is(.field, .np-volume, .ctx-range, .dk-dial) input[type="range"]::-moz-range-track {
+:is(.field, .np-volume, .ctx-range, .dk-dial, .xo-dial) input[type="range"]::-moz-range-track {
   height: 3px;
   border-radius: var(--radius-pill);
   background: linear-gradient(90deg, var(--rule-2), var(--rule));
 }
 /* background-clip: padding-box on both thumbs — without it the accent fill
    bleeds past the border as a hairline ring at sub-pixel seams. */
-:is(.field, .np-volume, .ctx-range, .dk-dial) input[type="range"]::-webkit-slider-thumb {
+:is(.field, .np-volume, .ctx-range, .dk-dial, .xo-dial) input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 15px; height: 15px;
   margin-top: -6px;
@@ -738,7 +739,7 @@
   background-clip: padding-box;
   transform: rotate(45deg);
 }
-:is(.field, .np-volume, .ctx-range, .dk-dial) input[type="range"]::-moz-range-thumb {
+:is(.field, .np-volume, .ctx-range, .dk-dial, .xo-dial) input[type="range"]::-moz-range-thumb {
   width: 13px; height: 13px;
   border: 1.5px solid var(--paper-card);
   border-radius: var(--radius-xs);
@@ -747,11 +748,11 @@
 }
 /* Remove the browser's thumb focus ring; replace with :focus-visible on the
    track so keyboard users can still find it. */
-:is(.field, .np-volume, .ctx-range, .dk-dial) input[type="range"]::-moz-focus-outer,
+:is(.field, .np-volume, .ctx-range, .dk-dial, .xo-dial) input[type="range"]::-moz-focus-outer,
 #pick-hue::-moz-focus-outer { border: 0; }
-:is(.field, .np-volume, .ctx-range, .dk-dial) input[type="range"]:focus,
+:is(.field, .np-volume, .ctx-range, .dk-dial, .xo-dial) input[type="range"]:focus,
 #pick-hue:focus { outline: none; }
-:is(.field, .np-volume, .ctx-range, .dk-dial) input[type="range"]:focus-visible,
+:is(.field, .np-volume, .ctx-range, .dk-dial, .xo-dial) input[type="range"]:focus-visible,
 #pick-hue:focus-visible {
   outline: var(--sel-line) solid var(--select);
   outline-offset: 2px;

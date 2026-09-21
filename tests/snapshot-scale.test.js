@@ -5,7 +5,10 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { exportScale } from '../web/assets/js/ui/snapshot.ts';
+import {
+  exportScale, pixelsPerUnit, ppiOf, buildPdf, EXPORT_DEFAULTS,
+} from '../web/assets/js/ui/snapshot.ts';
+import { DEFAULT_SCALE, paperMm, toUnits } from '../web/assets/js/measure.ts';
 
 /** What WebKit will draw. A copy, not imported - importing it would stop
  *  testing the limit if the module's copy ever moved. */
@@ -79,4 +82,59 @@ test('the thumbnail keeps its own tighter budget', () => {
   // uncapped side: small because the caller said so, not the engine.
   const out = output(6000, 5000, 1440, Infinity);
   assert.ok(Math.max(out.w, out.h) <= 1440, `long edge ${Math.max(out.w, out.h)} must respect the caller's cap`);
+});
+
+// ---------------------------------------------------------------------------
+// Resolution: dots per inch of board
+// ---------------------------------------------------------------------------
+
+test('a sheet of A4 at 300 ppi is the pixel size a printer expects', () => {
+  // The export box's default, and the reason it is phrased in ppi at all.
+  // Checked at two board scales: the answer is about the paper, not the board.
+  for (const scale of [DEFAULT_SCALE, 1, 12.5]) {
+    const a4 = paperMm('a4');
+    const ppu = pixelsPerUnit(EXPORT_DEFAULTS.ppi, scale);
+    const w = Math.round(toUnits(a4.w, scale) * ppu);
+    const h = Math.round(toUnits(a4.h, scale) * ppu);
+    assert.deepEqual({ w, h }, { w: 2480, h: 3508 }, `at ${scale} units/mm`);
+  }
+});
+
+test('ppiOf undoes pixelsPerUnit', () => {
+  for (const ppi of [72, 150, 300, 600]) {
+    assert.ok(Math.abs(ppiOf(pixelsPerUnit(ppi, DEFAULT_SCALE), DEFAULT_SCALE) - ppi) < 1e-9);
+  }
+});
+
+test('an export may enlarge, but never past either ceiling', () => {
+  // `want` above 1 is new: a small board at 300 ppi comes out bigger than
+  // its own size in world units. The ceilings still win over it.
+  assert.equal(exportScale(1000, 800, 8000, Infinity, 2.5), 2.5, 'what was asked for, when it fits');
+  assert.equal(exportScale(4000, 800, 8000, Infinity, 2.5), 2, 'the edge cap binds first');
+  const s = exportScale(3000, 3000, 8000, CAP, 2.5);
+  assert.ok(Math.ceil(3000 * s) ** 2 <= IOS_CEILING, 'and the area cap still holds where it applies');
+});
+
+test('the defaults are the ones asked for', () => {
+  // Written down because each is a decision rather than a leftover: 300 ppi,
+  // JPEG 97 (4:4:4 - ui/jpeg.ts), no texture, no lattice, the web kept.
+  assert.deepEqual(
+    { ppi: EXPORT_DEFAULTS.ppi, quality: EXPORT_DEFAULTS.quality,
+      grain: EXPORT_DEFAULTS.grain, grid: EXPORT_DEFAULTS.grid,
+      web: EXPORT_DEFAULTS.web, sheet: EXPORT_DEFAULTS.sheet },
+    { ppi: 300, quality: 0.97, grain: false, grid: false, web: true, sheet: true });
+});
+
+test('the PDF page is the board\'s real size, not its pixel count', () => {
+  // An A4 picture at 300 ppi must be an A4 page: 595 x 842 points, to the pixel.
+  // It used to be 2480 x 3508 points - a sheet printed four times too wide.
+  const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
+  return buildPdf(jpeg, 2480, 3508, 300).text().then(pdf => {
+    const box = pdf.match(/\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/);
+    assert.ok(box, 'a MediaBox');
+    assert.ok(Math.abs(+box[1] - 595.2) < 0.1 && Math.abs(+box[2] - 841.92) < 0.1,
+      `page is ${box[1]} x ${box[2]} pt`);
+    assert.match(pdf, /\/Width 2480 \/Height 3508/, 'the image keeps every pixel');
+    assert.match(pdf, new RegExp(`q ${box[1]} 0 0 ${box[2]} 0 0 cm`), 'and fills the page');
+  });
 });

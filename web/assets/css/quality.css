@@ -94,7 +94,7 @@
 
 /* Lozenges become squares. */
 :root[data-whimsy="2"] .grip,
-:root[data-whimsy="2"] :is(.field, .np-volume, .ctx-range, .dk-dial) input[type="range"]::-webkit-slider-thumb { transform: none; }
+:root[data-whimsy="2"] :is(.field, .np-volume, .ctx-range, .dk-dial, .xo-dial) input[type="range"]::-webkit-slider-thumb { transform: none; }
 
 /* Toast sits straight. */
 :root[data-whimsy="2"] .toast-line {
