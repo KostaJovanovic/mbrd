@@ -70,6 +70,7 @@ export function buildPanel(root = document.getElementById('sidebar')) {
   const body = root?.querySelector<HTMLElement>('.side-body');
   if (!strip || !body) return;
   built.length = 0;
+  reveals.length = 0;
   sections.clear();
   tabs.clear();
   strip.replaceChildren();
@@ -157,11 +158,24 @@ function buildSection(spec: Section) {
   // The fold is assembled first and appended last, so a section reads in the
   // schema's order without `advanced` needing to be a nesting level in the data.
   let fold: HTMLDetailsElement | null = null;
+  // The box the current run of `reveal` rows is going into, and null between
+  // runs - so two runs in one section get a box each rather than sharing one
+  // that would animate rows the second run never asked about.
+  let run: Reveal | null = null;
   building = spec;
   for (const c of spec.controls) {
     const node = buildControl(c, spec);
     if (!node) continue;
-    const host = c.advanced ? foldBody(fold ??= buildFold(spec)) : el;
+    if (!c.reveal) run = null;
+    else if (!run) {
+      const box = make('div', 'reveal-body');
+      box.hidden = true;
+      el.append(box);
+      run = { box, specs: [], shown: null, running: null };
+      reveals.push(run);
+    }
+    if (run) run.specs.push(c);
+    const host = c.advanced ? foldBody(fold ??= buildFold(spec)) : (run?.box ?? el);
     // A tip comes back as an empty box wanting the row it explains. Moving the
     // last-built row into it is what puts the (?) at the end of that row
     // instead of on a line of its own - see buildHint().
@@ -267,34 +281,14 @@ function openAndShut(details: HTMLDetailsElement, summary: HTMLElement) {
     target = opening;
     if (opening) details.open = true;
 
-    // Read after `open`, or the body is not rendered and measures zero.
-    const full = body.scrollHeight;
-    // The gap between the rows and the label travels with them. It is the
-    // body's margin (sidebar.css) rather than the summary's for exactly this
-    // reason: anything that exists only while the fold is open is still there
-    // on the last frame of a close and gone the instant `open` comes off,
-    // which is a few pixels snapping shut after the movement has finished.
-    const { marginTop, marginBottom } = getComputedStyle(body);
-    const { duration, easing } = foldMotion(opening);
-    // Only while it moves. Left on, it would clip every focus ring in the fold
-    // for the rest of the panel's life.
-    body.style.overflow = 'hidden';
-    const anim = body.animate([
-      { height: '0px', marginTop: '0px', marginBottom: '0px',
-        opacity: 0, transform: 'translateY(-8px)' },
-      { height: `${full}px`, marginTop, marginBottom,
-        opacity: 1, transform: 'none' },
-    ], { duration, easing, direction: opening ? 'normal' : 'reverse', fill: 'both' });
+    const anim = slideBox(body, opening);
     running = anim;
 
     anim.finished.then(() => {
       if (running !== anim) return;   // a newer press owns the fold now
       running = null;
       target = null;
-      // Cancel rather than leave the fill: the body sizes itself again, and
-      // the shut state is the attribute's job, not a held keyframe's.
-      anim.cancel();
-      body.style.overflow = '';
+      settleBox(body, anim);
       details.classList.remove('is-closing');
       if (!opening) details.open = false;
     }, () => {});   // cancelled mid-flight by the press that replaced it
@@ -302,9 +296,103 @@ function openAndShut(details: HTMLDetailsElement, summary: HTMLElement) {
   });
 }
 
+/**
+ * The movement itself: one box growing from nothing to its own height, or the
+ * same keyframes in reverse.
+ *
+ * A fold makes it, and so does a run of rows marked `reveal` in the table -
+ * one implementation for both, because a second would drift from this one in
+ * pace, in curve, or in the argument written into the keyframes below.
+ *
+ * What the box *means* stays with the caller: a <details> owns its attribute, a
+ * reveal run owns its `hidden`, and both call settleBox() when it lands.
+ */
+function slideBox(body: HTMLElement, opening: boolean): Animation {
+  // Read while the box is rendered, or it measures zero.
+  const full = body.scrollHeight;
+  // The gap between the rows and whatever labels them travels with them. It is
+  // the body's margin (sidebar.css) rather than its neighbour's for exactly
+  // this reason: anything that exists only while the box is open is still
+  // there on the last frame of a close and gone the instant it shuts, which is
+  // a few pixels snapping after the movement has already finished.
+  const { marginTop, marginBottom } = getComputedStyle(body);
+  const { duration, easing } = foldMotion(opening);
+  // Only while it moves. Left on, it would clip every focus ring in the box
+  // for the rest of the panel's life.
+  body.style.overflow = 'hidden';
+  // And for the same length: the rows inside stop animating their own hover.
+  // See .is-sliding in sidebar.css - a row that arrives under a pointer that
+  // never moved is hovered on the frame it appears, and its own transition is
+  // what makes it look unfinished.
+  body.classList.add('is-sliding');
+  // Height and the gap, and deliberately nothing else. A slide and a fade were
+  // in here too, and both are paid for by the rows: a 1px border on a box
+  // offset by a fraction of a pixel antialiases across two rows and washes
+  // out, and a border part way through a fade is a faint one - so a button that
+  // appeared under the pointer arrived hovered and apparently unoutlined for as
+  // long as the movement lasted. The clip does the reveal and the rows stay
+  // crisp from the first frame, which is what a drawer does anyway.
+  return body.animate([
+    { height: '0px', marginTop: '0px', marginBottom: '0px' },
+    { height: `${full}px`, marginTop, marginBottom },
+  ], { duration, easing, direction: opening ? 'normal' : 'reverse', fill: 'both' });
+}
+
+/** Hand the box back its own sizing once the movement has landed. */
+function settleBox(body: HTMLElement, anim: Animation) {
+  // Cancel rather than leave the fill: the box sizes itself again, and where
+  // it ended up is the caller's state to hold, not a held keyframe's.
+  anim.cancel();
+  body.style.overflow = '';
+  body.classList.remove('is-sliding');
+}
+
 /** Where a fold's rows live. Falls back to the fold for a shape with no body. */
 function foldBody(details: HTMLDetailsElement): HTMLElement {
   return details.querySelector<HTMLElement>('.fold-body') ?? details;
+}
+
+// ---------------------------------------------------------------------------
+// Reveal runs
+// ---------------------------------------------------------------------------
+
+/**
+ * A run of consecutive `reveal` rows and the box they share.
+ *
+ * `shown` is what the box is holding now, and `null` until the first paint -
+ * which is what keeps a panel built with the rows already up from playing an
+ * opening animation nobody asked for.
+ */
+type Reveal = {
+  box: HTMLElement, specs: Control[], shown: boolean | null, running: Animation | null,
+};
+const reveals: Reveal[] = [];
+
+/**
+ * Open or shut one reveal box, on the same movement a fold makes.
+ *
+ * The box carries `hidden`, so the rows inside it keep their own `hidden`
+ * untouched (see paintControl) - otherwise every row in a box about to open
+ * would be hidden, the box would measure zero, and the animation would run
+ * from nothing to nothing.
+ */
+function paintReveal(r: Reveal, shown: boolean) {
+  if (r.shown === shown) return;
+  const first = r.shown === null;
+  r.shown = shown;
+  r.running?.cancel();
+  r.running = null;
+  // The first paint is the panel arriving, not a change to watch.
+  if (first || !r.box.isConnected) { r.box.hidden = !shown; return; }
+  if (shown) r.box.hidden = false;
+  const anim = slideBox(r.box, shown);
+  r.running = anim;
+  anim.finished.then(() => {
+    if (r.running !== anim) return;   // a newer turn owns the box now
+    r.running = null;
+    settleBox(r.box, anim);
+    if (!shown) r.box.hidden = true;
+  }, () => {});   // cancelled mid-flight by the change that replaced it
 }
 
 function buildControl(c: Control, _spec: Section) {
@@ -652,6 +740,11 @@ export function paintPanel() {
   if (!built.length) return;
   const c = ctx();
   for (const entry of built) paintControl(entry, c);
+  // After the rows are painted, so a box about to open measures the text and
+  // values it is opening with rather than last turn's. A run is open when any
+  // row in it is - they share a `when` by construction, so that is all of them
+  // or none.
+  for (const r of reveals) paintReveal(r, r.specs.some(s => controlVisible(s, c)));
   for (const spec of SECTIONS) {
     const el = spec.id ? sections.get(spec.id) : null;
     if (!el) continue;
@@ -688,8 +781,11 @@ function paintFold(section: HTMLElement) {
 
 function paintControl({ c: spec, owner, wrap, input, out, nodes }: Built, c: Ctx) {
   // `ownVisibility` is a control whose owner decides when it's on screen for
-  // a reason this table doesn't know - see the palette source count.
-  if (!spec.ownVisibility) wrap.hidden = !controlVisible(spec, c);
+  // a reason this table doesn't know - see the palette source count. `reveal`
+  // is the same thing said by the table: the box the row sits in carries the
+  // `hidden`, because a row that hid itself would leave that box measuring
+  // zero on the frame it is about to grow from. See paintReveal().
+  if (!spec.ownVisibility && !spec.reveal) wrap.hidden = !controlVisible(spec, c);
   // Whether it may be touched (always yes, writing nothing, off the
   // changelog). `disabled` on the control itself, not `pointer-events` on
   // the row, so a screen reader gets the reason too.

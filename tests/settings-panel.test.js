@@ -267,6 +267,46 @@ test('the whole section comes down on Mobile, and nothing there misses it', () =
   board.settings.paperShow = was;
 });
 
+// --- Reveal runs -----------------------------------------------------------
+//
+// `reveal` puts a run of rows in one box that slides open and shut (slideBox,
+// ui/panel.ts). What it animates is a height, so the run has to be one box
+// with one answer - and every way of breaking that is silent on screen: the
+// rows still come and go, just without the movement, or with it running from
+// nothing to nothing.
+
+test('every reveal run is consecutive and agrees on when it is there', () => {
+  for (const s of SECTIONS) {
+    let head = null;
+    for (const c of s.controls) {
+      if (!c.reveal) { head = null; continue; }
+      const name = `${s.id}/${c.id ?? c.type}`;
+      // `advanced` sinks a row into the section's fold, which is a different
+      // box in a different place - it would leave the run's box measuring
+      // less than the rows it thinks it holds.
+      assert.notEqual(c.advanced, true, `${name} is both reveal and advanced`);
+      // Without a `when` the row is always visible, so the box never shuts and
+      // the mark buys nothing.
+      assert.equal(typeof c.when, 'function', `${name} reveals but is always there`);
+      if (!head) head = c;
+      // One predicate per run, by identity: the box is open when any row in it
+      // is, so a row that came and went on its own inside it would change the
+      // height without the movement.
+      else assert.equal(c.when, head.when, `${name} does not share its run's when`);
+    }
+  }
+});
+
+test('the Paper rows are one run behind the button that raises them', () => {
+  const paper = paperSection();
+  // The button is the only row outside the box - it has to stay put, or there
+  // would be nothing on screen to press when the sheet is down.
+  assert.equal(paper.controls[0].id, 'paper-show');
+  assert.equal(paper.controls[0].reveal, undefined);
+  assert.equal(paper.controls.slice(1).every(c => c.reveal === true), true,
+    'a row after the button is outside the box and will not move with it');
+});
+
 test('the hint measures the sheet and never explains it', () => {
   // It used to fall back to a sentence describing what a paper outline is,
   // for the case where there was no sheet. The row is absent without one now,
