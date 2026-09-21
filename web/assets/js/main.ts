@@ -43,7 +43,7 @@ import { initStills } from './canvas/stills.ts';
 import { initHires } from './canvas/hires.ts';
 import { initInput } from './canvas/input.ts';
 import { initPictureShapes } from './canvas/picture-shape.ts';
-import { initDrop, importFiles, setImportPrompt } from './import/drop.ts';
+import { initDrop, importFiles, setImportPrompt, noteToFile } from './import/drop.ts';
 import { unpackItem } from './import/unpack.ts';
 import {
   initStorage, restoreSession, openFile, autosave, setPrompt, setBoardThumb,
@@ -52,7 +52,7 @@ import {
 } from './storage/storage.ts';
 import { looksLikeMbrd } from './storage/mbrd.ts';
 import { boardThumb } from './ui/snapshot.ts';
-import { flushNoteEdit, growNote, setNoteMenu } from './canvas/notes.ts';
+import { flushNoteEdit, growNote, setNoteMenu, setNoteOverflow } from './canvas/notes.ts';
 import { setMarkdownRenderer, setEmbedEnrich } from './canvas/renderers.ts';
 import { enrichEmbed } from './canvas/embed-meta.ts';
 import { renderMarkdown } from './ui/markdown.ts';
@@ -169,6 +169,9 @@ setAssetPurge((hashes: Set<string>) => {
   forgetDisplay(hashes);
   return forgetAssets(hashes);
 });
+// A note written past the sheet limit becomes a .md document — injected
+// because making one hashes a file, and canvas/ may not import import/.
+setNoteOverflow(noteToFile);
 // Note toolbar menu — injected because canvas/ may not import ui/.
 setNoteMenu((anchor, rows, current, pick) => {
   // Second press closes instead of reopening — menu already shut by outside-press.

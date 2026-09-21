@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import {
   board, selection, loadBoard, serializeBoard, addItems, removeItems, undo,
   byId, select, deselect, clearSelection, selectAll, setNoteContent, renameItem,
-  NOTE_MAX, setItemCover, setItemPoster, setTitle, cleanBoardTitle,
+  NOTE_MAX, NOTE_SHEET_MAX, setItemCover, setItemPoster, setTitle, cleanBoardTitle,
   cleanBoardTitleDraft, BOARD_TITLE_MAX, setBoardMode, setItemBare, itemBare,
   setItemFaded, itemFaded, setItemsTagged, setItemUpAxis,
 } from '../web/assets/js/state.ts';
@@ -74,6 +74,15 @@ test('a video still fills an empty picture slot and never replaces a chosen one'
 test('a note is capped on the way in', () => {
   const [a] = addItems([note({ meta: { text: 'x'.repeat(NOTE_MAX + 500) } })]);
   assert.equal(a.meta.text.length, NOTE_MAX);
+});
+
+// The sheet limit is where the editor turns a note into a .md file. It sits
+// under the stored ceiling, so a note written before it existed loads whole.
+test('a note written before the sheet limit loads whole', () => {
+  assert.ok(NOTE_SHEET_MAX < NOTE_MAX);
+  const long = 'x'.repeat(NOTE_SHEET_MAX + 100);
+  const [a] = addItems([note({ meta: { text: long } })]);
+  assert.equal(a.meta.text, long);
 });
 
 // Both drive setNoteContent() with no `rich`, the plain-text case and the
