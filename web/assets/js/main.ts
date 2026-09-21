@@ -228,8 +228,10 @@ initSidebar(cmds, vp);
 // tab, and on a phone the press closes the panel - so the whole reply to
 // "check for updates" landed somewhere nobody was looking. The toast carries
 // the row's own press as its button, so the update can be taken from where the
-// news arrives. Once per state and version: a download's progress ticks repeat
-// both, and only the first of them says anything.
+// news arrives. A download's progress ticks repeat the same state and version,
+// and only the first of them says anything. Any other repeat is an answer to
+// Check for updates - an update found and downloaded at start, asked for again
+// - and must be said again, or the press looks like it did nothing.
 let saidOffer = '';
 platform.updates.onOffer(offer => {
   if (offer?.state === 'said') {
@@ -239,7 +241,7 @@ platform.updates.onOffer(offer => {
   setUpdateOffer(offer);
   paintPanel();
   const news = offer ? `${offer.state} ${offer.version}` : '';
-  if (news === saidOffer) return;
+  if (offer?.state === 'downloading' && news === saidOffer) return;
   saidOffer = news;
   // 'downloading' is already counting on the row, so it offers no button.
   if (offer?.note) {
