@@ -334,6 +334,12 @@ textarea.lp-url {
   /* No board transition — the card is being written on, not moved. */
   transition: none;
 }
+/* At the soft end of the whimsy axis (tier 0) the sheet being written lies a
+   little crooked, the way a pad does on a desk. Not at Middle or Harsh, where
+   cards on the board straighten too and a tilted sheet would be the one thing
+   out of line. */
+:root[data-whimsy="0"] #compose-mount .item { transform: rotate(-1.6deg); }
+
 /* Only the sheet survives (the counter is on it); grips, ring and bar belong
    to a thing you can drag, which a note being composed is not. */
 #compose-mount .item > :not(.item-body) { display: none; }

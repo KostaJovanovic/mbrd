@@ -141,31 +141,18 @@ test('a deleted current track advances rather than restarting the queue', () => 
     'a missing asset stalls the queue again');
 });
 
-test('a marked line keeps its mark through a split and a paste', () => {
-  // buildNoteLine({tag, align, text}) copied alignment and nothing else,
-  // so pressing Enter mid-marked-line left the second half unmarked - a
-  // mark drawn across a sentence came apart where it was typed.
-  const s = src('canvas/notes.ts');
-  const builds = s.match(/buildNoteLine\(\{[\s\S]*?\}\)/g) || [];
-  const fromLine = builds.filter(b => b.includes('align: lineAlign('));
-  assert.ok(fromLine.length >= 2,
-    'the split and the paste no longer build their new line from the current one');
-  for (const b of fromLine) {
-    assert.ok(b.includes('wash: lineWash('),
-      `a line is rebuilt without its mark: ${b.slice(0, 60)}`);
-  }
-});
-
-test('the marker menu marks the lines that were selected when it opened', () => {
+test('the marker and font menus restyle what was selected when they opened', () => {
   // The menu takes focus and ui/menu.ts closes it, handing focus back to
   // the contenteditable, *before* running the row's action. A setWash
   // resolving the selection at that point resolved it against the caret
-  // the hand-back left: three lines selected, one marked.
+  // the hand-back left: three lines selected, one marked. (The split and
+  // paste half of this used to be read off the source here; it is a
+  // behaviour of the run model now, in tests/note-model.test.js.)
   const s = src('canvas/notes.ts');
-  assert.match(s, /setWash\(wash: NoteWash \| null, lines: Element\[\]\): void;/,
-    'setWash() no longer takes the lines it is to mark');
-  assert.match(s, /const lines = api\.linesNow\(\);/,
-    'the marker button no longer reads the selection before opening its menu');
+  assert.match(s, /setWash\(wash: NoteWash \| null, at: Grab \| null\): void;/,
+    'setWash() no longer takes the selection it is to mark');
+  assert.equal((s.match(/const at = api\.grab\(\);/g) || []).length, 2,
+    'the marker and font buttons no longer read the selection before opening their menus');
 });
 
 test('the note colour no longer collides with the whimsy multiplier', () => {

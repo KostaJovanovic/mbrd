@@ -1,5 +1,7 @@
-// Note editor. Turns .note-rich into a contenteditable with a floating toolbar
-// for alignment, font, size, kind. Blocks live in meta.rich; meta.text is the
+// Note editor. Turns .note-rich into a contenteditable with a floating toolbar:
+// title or text, face, size and marker per run, alignment for the whole sheet.
+// A button pressed on a selection restyles it; pressed on a caret it sets the
+// look of what is typed next. Lines of runs live in meta.rich; meta.text is the
 // plaintext kept for search. The box grows to fit (never hides text). A note
 // whose content is just a URL becomes a link item on close — see linkify() —
 // and one written past NOTE_SHEET_MAX becomes a .md document — see setNoteOverflow().
@@ -12,11 +14,12 @@ import { nodeFor, onViewChange, screenBoxOf, viewportClientRect } from './items.
 import { makeEditable, markClosed } from '../util.ts';
 import { linkURL, linkDraft } from './renderers.ts';
 import {
-  normalizeNoteRich, flattenNoteRich, buildNoteLine,
-  NOTE_TAGS, NOTE_ALIGNS, NOTE_FONTS, NOTE_FONT_KEYS, NOTE_MARKER, NOTE_WASHES,
+  flattenNoteRich, buildNoteLine, normalizeRun, tidyRuns, styleOf, styleAt, locate, cutRuns,
+  sliceLines, deleteRange, insertLines, restyle, withPending, linesLength, linesRich, linesMarkdown,
+  NOTE_ALIGNS, NOTE_FONT_KEYS, NOTE_WASHES, NOTE_BLANK,
   NOTE_SIZE_MIN, NOTE_SIZE_MAX, NOTE_SIZE_STEP,
 } from './note-model.ts';
-import type { NoteTag, NoteAlign, NoteValign, NoteFont, NoteWash } from './note-model.ts';
+import type { NoteAlign, NoteFont, NoteWash, NoteStyle, NoteLines } from './note-model.ts';
 import type { Item } from '../board-model.ts';
 
 /**
@@ -45,12 +48,6 @@ export type NoteOverflow = (id: string, markdown: string) => Promise<boolean>;
 
 let overflow: NoteOverflow | null = null;
 export function setNoteOverflow(fn: NoteOverflow | null) { overflow = fn; }
-
-/** getSelection() non-null — null only for detached documents, never an active editor. */
-const selectionNow = () => getSelection()!;
-
-/** Element textContent, always a string (only Document/Doctype return null). */
-const textOf = (el: Element): string => el.textContent!;
 
 /**
  * Height this note needs, in world px, for its text at `width`. Briefly
@@ -121,130 +118,199 @@ export function growNote(id: string) {
 export const noteFloor = (id: string, width?: number | null) => noteHeight(id, width);
 
 // ---------------------------------------------------------------------------
-// Line helpers - the block model, read off the DOM
+// The DOM and the model. The editor reads the column back into lines of runs
+// after the browser has typed into it, and writes lines of runs into it after
+// anything the editor does itself - Enter, a join, a paste, a restyle.
 // ---------------------------------------------------------------------------
 
-// Element, not HTMLElement — sibling walks hand over Element.
-const lineTag = (line: Element): NoteTag =>
-  NOTE_TAGS.find(t => line.classList.contains('note-' + t)) || 'p';
-const lineAlign = (line: Element): NoteAlign =>
-  NOTE_ALIGNS.find(a => line.classList.contains('al-' + a)) || 'left';
-// Returns undefined (not 'none') for unmarked lines. Validated through the
-// allowlist — the attribute is user-editable.
-// SAFETY: every caller passes a .note-line, and buildNoteLine() makes those as <div>s.
-const lineWash = (line: Element): NoteWash | undefined =>
-  NOTE_WASHES.find(w => (line as HTMLElement).dataset.wash === w);
+/** A place in the DOM, as a selection names one. */
+type Point = [Node, number];
 
-function setLineTag(line: Element, tag: NoteTag) {
-  for (const t of NOTE_TAGS) line.classList.toggle('note-' + t, t === tag);
-}
-function setLineAlign(line: Element, align: NoteAlign) {
-  for (const a of NOTE_ALIGNS) line.classList.toggle('al-' + a, a === align);
-}
-function setLineWash(line: Element, wash: NoteWash | null) {
-  // SAFETY: every caller passes a .note-line, and buildNoteLine() makes those as <div>s.
-  const el = line as HTMLElement;
-  if (wash) el.dataset.wash = wash;
-  else delete el.dataset.wash;
-}
+/** A run's words as the DOM holds them, the blank stand-in taken out. */
+const words = (el: Node) => (el.textContent ?? '').replaceAll(NOTE_BLANK, '');
 
-/** The block-line the caret is in, if any. */
-function currentLine(wrap: HTMLElement): HTMLElement | null {
-  const sel = selectionNow();
-  const node = sel.anchorNode;
-  if (!node || !wrap.contains(node)) return null;
-  // SAFETY: caretTo() and the browser put the caret in Text or Element nodes, and nodeType 3
-  // took Text. Text inside wrap always has a parentElement.
-  const el =node.nodeType === 3 ? node.parentElement! : (node as Element);
-  return el.closest<HTMLElement>('.note-line');
-}
-
-/** All block-lines the selection touches; the current one when it is collapsed. */
-function selectedLines(wrap: HTMLElement): HTMLElement[] {
-  const sel = selectionNow();
-  const lines = [...wrap.querySelectorAll<HTMLElement>('.note-line')];
-  if (!sel.rangeCount) { const l = currentLine(wrap); return l ? [l] : []; }
-  const range = sel.getRangeAt(0);
-  if (range.collapsed) { const l = currentLine(wrap); return l ? [l] : []; }
-  const hit = lines.filter(line => range.intersectsNode(line));
-  if (hit.length) return hit;
-  const l = currentLine(wrap);
-  return l ? [l] : [];
-}
-
-/** How far into its line the caret sits, in characters. */
-function caretOffset(line: Element): number {
-  const sel = selectionNow();
-  if (!sel.rangeCount) return 0;
-  const r = sel.getRangeAt(0);
-  const pre = document.createRange();
-  pre.selectNodeContents(line);
-  pre.setEnd(r.endContainer, r.endOffset);
-  return pre.toString().length;
-}
-
-function caretTo(line: Element, offset: number) {
-  const sel = selectionNow();
-  const range = document.createRange();
-  const first = line.firstChild;
-  // SAFETY: nodeType 3 is Text, and the test precedes the cast in the same condition.
-  const t =first && first.nodeType === 3 ? (first as Text) : null;
-  if (t) range.setStart(t, Math.min(offset, t.length));
-  else range.setStart(line, 0);
-  range.collapse(true);
-  sel.removeAllRanges();
-  sel.addRange(range);
+/** The look a run's span carries, off its data attributes, through the model's allowlists. */
+function spanStyle(span: HTMLElement, fallback: NoteStyle): NoteStyle {
+  const d = span.dataset;
+  return styleOf(normalizeRun({
+    title: d.title === '1',
+    font: d.font,
+    size: d.size == null ? undefined : Number(d.size),
+    wash: d.wash,
+  }, fallback));
 }
 
 /**
- * The note as Markdown right now, uncapped - what would land in meta.text, or
- * in the .md file when it has outgrown the sheet. readRich() caps; this does not.
+ * The column as lines of runs, and where each of `points` falls in it as a
+ * model position. `canon` is false when the DOM is not the shape
+ * buildNoteLine() makes - a stray text node, a <br>, a blank beside words, a
+ * run the browser split - which is the editor's cue to write it back clean.
+ * Empty runs are kept: one is either a line's only run or the pending look at
+ * the caret, and tidyRuns() is what decides which.
  */
-function flatMarkdown(wrap: HTMLElement): string {
-  return [...wrap.querySelectorAll<HTMLElement>('.note-line')]
-    .map(line => NOTE_MARKER[lineTag(line)] + textOf(line).replace(/\n/g, ' '))
-    .join('\n');
-}
-
-const flatLength = (wrap: HTMLElement) => flatMarkdown(wrap).length;
-
-/** The rich model as the DOM currently stands, sanitised and capped. */
-function readRich(wrap: HTMLElement) {
-  const blocks = [...wrap.querySelectorAll<HTMLElement>('.note-line')].map(line => ({
-    tag: lineTag(line),
-    align: lineAlign(line),
-    text: textOf(line).replace(/\n/g, ' '),
-    // undefined for unmarked lines; normalizeNoteRich drops the key.
-    wash: lineWash(line),
-  }));
-  return normalizeNoteRich({
-    font: wrap.dataset.font,
-    size: parseFloat(wrap.style.getPropertyValue('--note-scale')) || 1,
-    valign: wrap.dataset.valign,
-    blocks,
+function scan(wrap: HTMLElement, points: Point[], fallback: NoteStyle) {
+  const lines: NoteLines = [];
+  const at = points.map(() => -1);
+  let canon = true;
+  let base = 0;
+  let cur: NoteLines[number] = [];
+  let curLen = 0;
+  const hit = (node: Node, off: number) => {
+    points.forEach(([n, o], i) => { if (at[i] < 0 && n === node && o === off) at[i] = base + curLen; });
+  };
+  const text = (t: Text, style: NoteStyle) => {
+    const raw = t.data;
+    points.forEach(([n, o], i) => {
+      if (at[i] < 0 && n === t) at[i] = base + curLen + raw.slice(0, o).replaceAll(NOTE_BLANK, '').length;
+    });
+    const said = raw.replaceAll(NOTE_BLANK, '').replace(/\n/g, ' ');
+    if ((raw.includes(NOTE_BLANK) && said) || raw.includes('\n')) canon = false;
+    cur.push({ ...style, text: said });
+    curLen += said.length;
+  };
+  // depth 0 is the line itself, 1 inside a run, deeper is markup the browser made.
+  const inline = (el: Node, style: NoteStyle, depth: number) => {
+    const kids = el.childNodes;
+    for (let k = 0; k < kids.length; k++) {
+      hit(el, k);
+      const c = kids[k];
+      if (c instanceof Text) {
+        if (depth === 0) canon = false;
+        text(c, depth === 0 && cur.length ? styleOf(cur[cur.length - 1]) : style);
+      } else if (c instanceof HTMLElement && depth === 0 && c.classList.contains('note-run')) {
+        if (c.childNodes.length !== 1 || !(c.firstChild instanceof Text)) canon = false;
+        inline(c, spanStyle(c, style), 1);
+      } else {
+        canon = false;
+        if (c.nodeName !== 'BR') inline(c, style, depth + 1);
+      }
+    }
+    hit(el, kids.length);
+  };
+  const flush = () => {
+    lines.push(cur.length ? cur : [{ ...fallback, text: '' }]);
+    base += curLen + 1;
+    cur = [];
+    curLen = 0;
+  };
+  const kids = wrap.childNodes;
+  for (let k = 0; k < kids.length; k++) {
+    hit(wrap, k);
+    const c = kids[k];
+    if (c instanceof HTMLElement && c.classList.contains('note-line')) {
+      if (!c.firstChild) canon = false;
+      inline(c, fallback, 0);
+      flush();
+    } else if (c.nodeName === 'BR' || (c instanceof Text && !c.data)) {
+      canon = false;
+    } else {
+      // Something the browser put beside the lines: a line of its own.
+      canon = false;
+      if (c instanceof Text) text(c, fallback);
+      else inline(c, fallback, 1);
+      flush();
+    }
+  }
+  // Past the last line is its end, not the start of a line that is not there.
+  points.forEach(([n, o], i) => {
+    if (at[i] < 0 && n === wrap && o === kids.length) at[i] = Math.max(0, base - 1);
   });
+  if (!lines.length) { canon = false; lines.push([{ ...fallback, text: '' }]); }
+  return { lines, canon, at };
 }
+
+/**
+ * The DOM place for model position `pos`, in a column buildNoteLine() just
+ * wrote. At the seam between two runs it takes the end of the first, so typing
+ * carries on in the look of the character before the caret; in an empty run it
+ * takes the place after the blank, so typing lands inside the run.
+ */
+function pointAt(wrap: HTMLElement, pos: number): Point {
+  let p = Math.max(0, pos);
+  const lines = [...wrap.children];
+  for (let li = 0; li < lines.length; li++) {
+    const spans = [...lines[li].children];
+    const len = spans.reduce((n, s) => n + words(s).length, 0);
+    if (p > len && li < lines.length - 1) { p -= len + 1; continue; }
+    for (const s of spans) {
+      const t = s.firstChild;
+      if (!(t instanceof Text)) continue;
+      const w = words(t).length;
+      if (!w) { if (p === 0) return [t, t.length]; continue; }
+      if (p <= w) return [t, p];
+      p -= w;
+    }
+    return [lines[li], lines[li].childNodes.length];
+  }
+  return [wrap, wrap.childNodes.length];
+}
+
+/** Custom clipboard type: the runs of a copy, so a paste into another note keeps its look. */
+const NOTE_CLIP = 'application/x-mbrd-note';
+
+/**
+ * What a paste puts in. The editor's own copy keeps its runs, each through the
+ * model's allowlists - the clipboard is anybody's to write. Anything else is
+ * plain text, set in `style`, the look at the caret.
+ */
+function pieceFrom(data: DataTransfer | null, style: NoteStyle): NoteLines | null {
+  if (!data) return null;
+  const own = data.getData(NOTE_CLIP);
+  if (own) {
+    try {
+      const raw: unknown = JSON.parse(own);
+      if (Array.isArray(raw) && raw.length) {
+        return raw.map(line => tidyRuns(
+          Array.isArray(line) ? line.map(r => normalizeRun(r, style)) : [], style));
+      }
+    } catch { /* not a copy of ours after all - fall through to its words */ }
+  }
+  const text = data.getData('text/plain');
+  if (!text) return null;
+  return text.replace(/\r\n?/g, '\n').split('\n')
+    .map(w => [{ ...style, text: w.replace(/\t/g, ' ') }]);
+}
+
+/**
+ * The look of the run the character at `pos` is in, when that character is
+ * all the run holds and the line holds more - a run a delete would empty.
+ */
+function loneRun(lines: NoteLines, pos: number): NoteStyle | null {
+  const { li, off } = locate(lines, pos);
+  const runs = lines[li];
+  let p = off;
+  for (const r of runs) {
+    if (p < r.text.length) return r.text.length === 1 && runs.length > 1 ? styleOf(r) : null;
+    p -= r.text.length;
+  }
+  return null;
+}
+
+const sizeBy = (size: number, delta: number) =>
+  Math.min(NOTE_SIZE_MAX, Math.max(NOTE_SIZE_MIN, Math.round((size + delta) * 100) / 100));
 
 // ---------------------------------------------------------------------------
 // The toolbar
 // ---------------------------------------------------------------------------
+
+/** Where the selection was and the look at it - read when a control is pressed. */
+type Grab = { start: number, end: number, style: NoteStyle };
 
 /**
  * Formatting bar over a note being edited. Every control cancels mousedown
  * to keep focus in the editor — a blur would commit the note mid-click.
  */
 type NoteToolbarApi = {
-  setTag(tag: NoteTag): void;
+  setTitle(on: boolean): void;
   setAlign(align: NoteAlign): void;
-  setValign(v: NoteValign): void;
-  /** Lines the caret is on now — read before the menu takes focus. See setWash. */
-  linesNow(): Element[];
+  /** The selection and the look at it now — read before a menu takes focus. See setWash. */
+  grab(): Grab | null;
   /**
-   * `lines` is required: the menu takes focus and the selection shifts before
-   * the row action fires, so lines must be captured on button press.
+   * `at` is required: the menu takes focus and the selection shifts before
+   * the row action fires, so the selection must be captured on button press.
    */
-  setWash(wash: NoteWash | null, lines: Element[]): void;
-  setFont(key: string): void;
+  setWash(wash: NoteWash | null, at: Grab | null): void;
+  setFont(key: string, at: Grab | null): void;
   bumpSize(delta: number): void;
 };
 
@@ -256,31 +322,38 @@ function buildToolbar(api: NoteToolbarApi) {
   // Keep focus in the editor — no control may steal it.
   bar.addEventListener('mousedown', e => { e.stopPropagation(); e.preventDefault(); });
 
-  const groups: Record<string, HTMLDivElement> = {};
-  const group = (name: string) => {
+  const group = () => {
     const g = document.createElement('div');
     g.className = 'ntb-group';
     bar.append(g);
-    groups[name] = g;
     return g;
   };
-  // Text (headings) or CSS-drawn icon (alignment/valign). `icon` is a class suffix.
+  // Text, a CSS-drawn icon (`icon`, a class suffix) or a sprite icon (`sprite`,
+  // the whole href, written out where it is used so tests/icons.test.js sees it).
   const btn = (
     g: HTMLElement,
-    { text, icon, title, fn, key }: {
-      text?: string; icon?: string; title: string; fn: () => void; key?: string;
+    { text, icon, sprite, title, fn, key }: {
+      text?: string; icon?: string; sprite?: string; title: string; fn: () => void; key?: string;
     },
   ) => {
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'ntb-btn' + (icon ? ' ntb-icon' : '');
-    if (icon) {
+    b.className = 'ntb-btn' + (icon || sprite ? ' ntb-icon' : '');
+    if (sprite) {
+      const NS = 'http://www.w3.org/2000/svg';
+      const svg = document.createElementNS(NS, 'svg');
+      svg.setAttribute('class', 'ico');
+      svg.setAttribute('aria-hidden', 'true');
+      const use = document.createElementNS(NS, 'use');
+      use.setAttribute('href', sprite);
+      svg.append(use);
+      b.append(svg);
+    } else if (icon) {
       const span = document.createElement('span');
       span.className = 'ntb-ico ntb-ico-' + icon;
       b.append(span);
     } else {
-      // No icon → text is always provided.
-      b.textContent = text!;
+      b.textContent = text ?? '';
     }
     b.title = title;
     b.setAttribute('aria-label', title);
@@ -290,40 +363,30 @@ function buildToolbar(api: NoteToolbarApi) {
     return b;
   };
 
-  const gTag = group('tag');
-  btn(gTag, { text: 'H1', title: 'Title', fn: () => api.setTag('h1'), key: 'tag:h1' });
-  btn(gTag, { text: 'H2', title: 'Heading', fn: () => api.setTag('h2'), key: 'tag:h2' });
-  btn(gTag, { text: '¶', title: 'Paragraph', fn: () => api.setTag('p'), key: 'tag:p' });
+  // Two kinds, and a title is a look like any other: it can be one word in a
+  // line. The big T and the small one say which is which without a letter
+  // code - H1 and a pilcrow were the editor's words, not the writer's.
+  const gKind = group();
+  btn(gKind, { sprite: 'assets/icons.svg#i-note-title', title: 'Title (Ctrl+B)', fn: () => api.setTitle(true), key: 'kind:title' });
+  btn(gKind, { sprite: 'assets/icons.svg#i-note-text', title: 'Text', fn: () => api.setTitle(false), key: 'kind:text' });
 
-  const gAlign = group('align');
+  const gAlign = group();
   btn(gAlign, { icon: 'al-left', title: 'Align left', fn: () => api.setAlign('left'), key: 'align:left' });
   btn(gAlign, { icon: 'al-center', title: 'Align centre', fn: () => api.setAlign('center'), key: 'align:center' });
   btn(gAlign, { icon: 'al-right', title: 'Align right', fn: () => api.setAlign('right'), key: 'align:right' });
-
-  const gV = group('valign');
-  btn(gV, { icon: 'va-top', title: 'Top', fn: () => api.setValign('top'), key: 'valign:top' });
-  btn(gV, { icon: 'va-middle', title: 'Middle', fn: () => api.setValign('middle'), key: 'valign:middle' });
-  btn(gV, { icon: 'va-bottom', title: 'Bottom', fn: () => api.setValign('bottom'), key: 'valign:bottom' });
 
   // The marker. A button whose face is the colour it will draw with, opening
   // the same menu the font does.
   //
   // A chip and not a glyph, and it is the same argument the menu's own swatch
   // rows are built on: an icon of a highlighter is a drawing of the tool, where
-  // what anybody needs off this button is which colour is on the line the caret
-  // is in. Unmarked, the chip is an empty outline - the absence drawn, rather
-  // than a fifth colour meaning "none".
-  //
-  // Beside the placement controls rather than with the font: this sets one
-  // line, like the headings and unlike the face, which is the whole sheet.
-  const gWash = group('wash');
+  // what anybody needs off this button is which colour is at the caret.
+  // Unmarked, the chip is an empty outline - the absence drawn, rather than a
+  // fifth colour meaning "none".
+  const gWash = group();
   let wash: NoteWash | null = null;
   const washBtn = document.createElement('button');
   washBtn.type = 'button';
-  // `ntb-btn` alone. It carried an `ntb-wash` beside it that no stylesheet
-  // defines - a class that looks like a hook and is not one, which is worse
-  // than none: the next person styling the marker writes a rule against it and
-  // finds it already there, doing nothing.
   washBtn.className = 'ntb-btn';
   washBtn.title = 'Highlight';
   washBtn.setAttribute('aria-label', 'Highlight');
@@ -334,7 +397,7 @@ function buildToolbar(api: NoteToolbarApi) {
   washBtn.addEventListener('click', () => {
     // Read here, before a menu that takes focus is anywhere near the caret -
     // see setWash() in NoteToolbarApi for the whole of why.
-    const lines = api.linesNow();
+    const at = api.grab();
     openMenu?.(
       washBtn,
       // The off row first, which is where a row that undoes the other four
@@ -354,29 +417,17 @@ function buildToolbar(api: NoteToolbarApi) {
       // SAFETY: two assertions and the includes() between them is what makes
       // both hold. The first widens NOTE_WASHES so a plain string can be looked
       // for in it at all; the second is that lookup having answered yes, which
-      // is the only way a string becomes a NoteWash. A key from anywhere else -
-      // an older build's stored value, a hand-edited file - takes the null.
+      // is the only way a string becomes a NoteWash.
       key => api.setWash(
-        (NOTE_WASHES as readonly string[]).includes(key) ? key as NoteWash : null, lines),
+        (NOTE_WASHES as readonly string[]).includes(key) ? key as NoteWash : null, at),
     );
   });
   gWash.append(washBtn);
 
-  // The face, as a button that opens the app's own menu.
-  //
-  // **This was a <select>, and replacing it deleted three workarounds rather
-  // than adding one.** A native dropdown is a piece of the operating system: it
-  // takes focus, which the paragraph over this function says nothing in this bar
-  // may do; it opens a window of its own, which swallowed the pointerup that
-  // would have ended a drag and left the note being dragged by a click that had
-  // already finished; and it had to be let through the focusout guard by tag
-  // name, in a bar whose whole rule is that focus never leaves the editor. Each
-  // of those was a special case written *around* the control. The button has
-  // none of them: it cancels its mousedown like every other button here, the
-  // menu is an element in this page, and the caret never moves.
-  //
-  // Four short words — fine as a menu, unlike the longer settings panel selects.
-  const gFont = group('font');
+  // The face, as a button that opens the app's own menu rather than a <select>:
+  // a native dropdown takes focus, which nothing in this bar may do, and opens
+  // a window of its own that swallowed the pointerup ending a drag.
+  const gFont = group();
   const LABEL: Record<string, string> = { sheet: 'Sheet', sans: 'Sans', serif: 'Serif', mono: 'Mono' };
   let font = NOTE_FONT_KEYS[0];
   const sel = document.createElement('button');
@@ -386,36 +437,31 @@ function buildToolbar(api: NoteToolbarApi) {
   sel.setAttribute('aria-label', 'Font');
   sel.setAttribute('aria-haspopup', 'menu');
   sel.addEventListener('click', () => {
+    const at = api.grab();
     openMenu?.(
       sel,
       NOTE_FONT_KEYS.map(key => ({ value: key, label: LABEL[key] || key })),
       font,
-      key => api.setFont(key),
+      key => api.setFont(key, at),
     );
   });
   gFont.append(sel);
 
-  const gSize = group('size');
-  btn(gSize, { text: 'A−', title: 'Smaller', fn: () => api.bumpSize(-NOTE_SIZE_STEP), key: 'size:down' });
-  btn(gSize, { text: 'A+', title: 'Larger', fn: () => api.bumpSize(NOTE_SIZE_STEP), key: 'size:up' });
+  const gSize = group();
+  btn(gSize, { text: 'A−', title: 'Smaller (Ctrl+Shift+,)', fn: () => api.bumpSize(-NOTE_SIZE_STEP), key: 'size:down' });
+  btn(gSize, { text: 'A+', title: 'Larger (Ctrl+Shift+.)', fn: () => api.bumpSize(NOTE_SIZE_STEP), key: 'size:up' });
 
-  /** Light up the controls that match the line the caret is in. */
-  const reflect = (
-    tag: NoteTag, align: NoteAlign, valign: string, fontKey: string,
-    washKey: NoteWash | undefined,
-  ) => {
+  /** Light up the controls that match the look at the caret. */
+  const reflect = (style: NoteStyle, align: NoteAlign) => {
     for (const b of bar.querySelectorAll<HTMLElement>('.ntb-btn[data-key]')) {
-      // The selector is what makes the attribute present.
-      const [k, v] = b.dataset.key!.split(':');
+      const [k, v] = (b.dataset.key ?? '').split(':');
       b.classList.toggle('is-active',
-        (k === 'tag' && v === tag) || (k === 'align' && v === align) ||
-        (k === 'valign' && v === valign));
+        (k === 'kind' && v === (style.title ? 'title' : 'text')) || (k === 'align' && v === align));
     }
     // Closure state — menus are built fresh each press and need the current value.
-    font = fontKey;
-    sel.textContent = LABEL[fontKey] || fontKey;
-    wash = washKey || null;
-    // Marker button active state — not covered by the data-key loop above.
+    font = style.font;
+    sel.textContent = LABEL[style.font] || style.font;
+    wash = style.wash ?? null;
     washBtn.classList.toggle('is-active', !!wash);
     // Chip colour via data-wash; absent attribute = empty outline in CSS.
     if (wash) washChip.dataset.wash = wash;
@@ -441,27 +487,26 @@ function editableNote(id: string): { found: HTMLElement; rich: HTMLElement } | n
 /**
  * Turn a note into an editable column until focus leaves it. Commits on
  * focusout. `surface`: extra element that counts as "inside" the edit (used by
- * the composer dialog). `onDone(text|null)`: called on commit or discard.
- * `finish(true)` tears down without committing.
+ * the composer dialog). `onDone(text|null, becameFile)`: called on commit or
+ * discard. `finish(true)` tears down without committing.
  */
-export type NoteEdit = { finish: (discard?: boolean) => void };
+export type NoteEdit = { finish: (discard?: boolean) => void; caretToEnd: () => void };
 
 export function editNote(
   id: string,
   { surface = null, onDone = null }: {
     surface?: HTMLElement | null;
-    onDone?: ((text: string | null) => void) | null;
+    onDone?: ((text: string | null, becameFile?: boolean) => void) | null;
   } = {},
 ): NoteEdit {
   const parts = editableNote(id);
-  if (!parts) return { finish: () => {} };
-  const { found, rich } = parts;
+  if (!parts) return { finish: () => {}, caretToEnd: () => {} };
   // Bound again now they are known present. finish() below is a hoisted
   // declaration and the handlers close over both, and TypeScript will not carry
   // a guard into a function it cannot order against - so the guard is spent here
   // once, on two names that are elements from this line down.
-  const node: HTMLElement = found;
-  const wrap: HTMLElement = rich;
+  const node: HTMLElement = parts.found;
+  const wrap: HTMLElement = parts.rich;
 
   // Close any already-open editor to avoid leaked listeners / stuck editable.
   if (editing) editing.finish();
@@ -469,63 +514,151 @@ export function editNote(
   node.classList.add('is-editing');
   makeEditable(wrap);
 
+  // The sheet's alignment, off its first line - one for every line.
+  const firstLine = wrap.querySelector('.note-line');
+  let align: NoteAlign = NOTE_ALIGNS.find(a => firstLine?.classList.contains('al-' + a)) ?? 'left';
+  // The look at the caret when it was last read: what a character takes when
+  // the browser has typed it somewhere with no run around it.
+  let lastStyle: NoteStyle = { title: false, font: 'sheet', size: 1 };
+  // An IME is mid-word. The DOM is the IME's until it ends, so nothing rewrites it.
+  let composing = false;
+
+  /** The column as lines, whether it is clean, and the selection in model positions. */
+  const read = () => {
+    const s = getSelection();
+    const inside = !!s && s.rangeCount > 0 && !!s.anchorNode && !!s.focusNode
+      && wrap.contains(s.anchorNode) && wrap.contains(s.focusNode);
+    const points: Point[] = s && inside && s.anchorNode && s.focusNode
+      ? [[s.anchorNode, s.anchorOffset], [s.focusNode, s.focusOffset]] : [];
+    const { lines, canon, at } = scan(wrap, points, lastStyle);
+    const sel = points.length && at[0] >= 0 && at[1] >= 0
+      ? { start: Math.min(at[0], at[1]), end: Math.max(at[0], at[1]) } : null;
+    return { lines, canon, sel };
+  };
+
+  const render = (lines: NoteLines) => {
+    wrap.replaceChildren(...lines.map(l => buildNoteLine(l, align)));
+  };
+  const place = (start: number, end = start) => {
+    const a = pointAt(wrap, start), b = pointAt(wrap, end);
+    getSelection()?.setBaseAndExtent(a[0], a[1], b[0], b[1]);
+  };
+  /** The caret into run `ri` of line `li`, after its blank - an empty run's only place. */
+  const placeIn = (li: number, ri: number) => {
+    const t = wrap.children[li]?.children[ri]?.firstChild;
+    if (t instanceof Text) getSelection()?.setBaseAndExtent(t, t.length, t, t.length);
+  };
+  const commit = (lines: NoteLines, start: number, end = start) => {
+    render(lines);
+    place(start, end);
+    afterEdit();
+  };
+
+  /**
+   * The look at the selection: an empty run the caret sits in (a pending look,
+   * or an empty line's), else the character before a caret, else the first
+   * character of a selection.
+   */
+  const styleNow = (lines: NoteLines, sel: { start: number, end: number } | null): NoteStyle => {
+    if (!sel) return lastStyle;
+    const anchor = getSelection()?.anchorNode;
+    const el = anchor instanceof Element ? anchor : anchor?.parentElement;
+    const span = el?.closest('.note-run');
+    if (sel.start === sel.end && span instanceof HTMLElement && wrap.contains(span) && !words(span)) {
+      return spanStyle(span, lastStyle);
+    }
+    return sel.start === sel.end ? styleAt(lines, sel.start) : styleAt(lines, sel.start, true);
+  };
+
+  const grab = (): Grab | null => {
+    const { lines, sel } = read();
+    return sel ? { ...sel, style: styleNow(lines, sel) } : null;
+  };
+
+  /**
+   * Restyle what was selected, or with a bare caret set the look the next
+   * character is typed in - an empty run at the caret in that look.
+   */
+  const applyStyle = (fn: (s: NoteStyle) => NoteStyle, at: Grab | null = grab()) => {
+    if (!at) return;
+    // A menu may have had focus; the selection is written back below.
+    wrap.focus();
+    const lines = read().lines.map(l => tidyRuns(l));
+    if (at.start !== at.end) { commit(restyle(lines, at.start, at.end, fn), at.start, at.end); return; }
+    const p = withPending(lines, at.start, fn(at.style));
+    render(p.lines);
+    placeIn(p.li, p.ri);
+    afterEdit();
+  };
+
+  /** Title on or off: off when all of it is title already, otherwise on. */
+  const toggleTitle = () => {
+    const at = grab();
+    if (!at) return;
+    const on = at.start === at.end
+      ? !at.style.title
+      : !sliceLines(read().lines, at.start, at.end).every(l => l.every(r => r.title));
+    applyStyle(s => ({ ...s, title: on }), at);
+  };
+
   // Character count — an invisible limit would turn a note into a file by surprise.
   const counter = document.createElement('div');
   counter.className = 'note-count';
   // On the sheet, in its bottom padding — board and composer alike. A sibling
   // of .note-rich, never inside it: that column is the contenteditable.
-  // SAFETY: editableNote() found .note-rich inside a .card, so it has a parent.
-  wrap.parentElement!.append(counter);
+  wrap.parentElement?.append(counter);
   const refreshCount = () => {
-    const left = NOTE_SHEET_MAX - flatLength(wrap);
+    const left = NOTE_SHEET_MAX - linesLength(read().lines);
     // Past the limit nothing is refused: the counter says what closing will do.
     counter.textContent = left < 0 ? 'becomes a .md file' : left + ' left';
     // A sixth of the sheet: warns in time without going red a third of the way in.
     counter.classList.toggle('is-low', left <= 20);
   };
-  // What the note said when opened. Only an edit converts: an old note already
-  // over the sheet limit, opened and closed unchanged, stays a note.
-  const openedAs = flatMarkdown(wrap);
 
   const reflectNow = () => {
-    const line = currentLine(wrap);
-    toolbar.reflect(
-      line ? lineTag(line) : 'p',
-      line ? lineAlign(line) : 'left',
-      wrap.dataset.valign || 'top',
-      wrap.dataset.font || 'sheet',
-      line ? lineWash(line) : undefined);
+    const { lines, sel } = read();
+    const style = styleNow(lines, sel);
+    if (sel) lastStyle = style;
+    toolbar.reflect(style, align);
   };
 
-  const afterEdit = () => { growNote(id); refreshCount(); reflectNow(); placeToolbar(); };
+  /** A line's kind (its strut) follows its runs after the browser has typed or deleted in it. */
+  const syncKinds = () => {
+    for (const l of wrap.querySelectorAll('.note-line')) {
+      const title = [...l.children].every(s => s instanceof HTMLElement && s.dataset.title === '1');
+      l.classList.toggle('note-h1', title);
+      l.classList.toggle('note-p', !title);
+    }
+  };
+
+  const afterEdit = () => { syncKinds(); growNote(id); refreshCount(); reflectNow(); placeToolbar(); };
 
   const api: NoteToolbarApi = {
-    setTag(tag) { for (const l of selectedLines(wrap)) setLineTag(l, tag); afterEdit(); },
+    setTitle(on) { applyStyle(s => ({ ...s, title: on })); },
     // Alignment applies to all lines at once — a sticky reads as one sheet.
-    setAlign(align) { for (const l of wrap.querySelectorAll<HTMLElement>('.note-line')) setLineAlign(l, align); afterEdit(); },
-    setValign(v) { wrap.dataset.valign = v; afterEdit(); },
-    // Per-line, not per-sheet — highlighting everything says nothing.
-    linesNow: () => selectedLines(wrap),
-    setWash(w, lines) {
-      // A line may have been removed between press and pick.
-      for (const l of lines) if (wrap.contains(l)) setLineWash(l, w);
+    setAlign(a) {
+      align = a;
+      for (const l of wrap.querySelectorAll('.note-line')) {
+        for (const x of NOTE_ALIGNS) l.classList.toggle('al-' + x, x === a);
+      }
       afterEdit();
     },
-    setFont(key) {
+    grab,
+    setWash(w, at) {
+      applyStyle(s => {
+        const next = styleOf(s);
+        if (w) next.wash = w;
+        else delete next.wash;
+        return next;
+      }, at);
+    },
+    setFont(key, at) {
       // SAFETY: `key` is checked against NOTE_FONT_KEYS, which is Object.keys(NOTE_FONTS),
       // and NOTE_FONTS satisfies Record<NoteFont, string>.
-      const font =(NOTE_FONT_KEYS.includes(key) ? key : 'sheet') as NoteFont;
-      wrap.style.fontFamily = NOTE_FONTS[font];
-      wrap.dataset.font = font;
-      afterEdit();
+      const face = (NOTE_FONT_KEYS.includes(key) ? key : 'sheet') as NoteFont;
+      applyStyle(s => ({ ...s, font: face }), at);
     },
-    bumpSize(delta) {
-      let s = (parseFloat(wrap.style.getPropertyValue('--note-scale')) || 1) + delta;
-      s = Math.min(NOTE_SIZE_MAX, Math.max(NOTE_SIZE_MIN, Math.round(s * 100) / 100));
-      // setProperty requires a string.
-      wrap.style.setProperty('--note-scale', String(s));
-      afterEdit();
-    },
+    bumpSize(delta) { applyStyle(s => ({ ...s, size: sizeBy(s.size, delta) })); },
   };
 
   const toolbar = buildToolbar(api);
@@ -578,61 +711,107 @@ export function editNote(
   const onResize = () => { measureBar(); placeToolbar(); };
   addEventListener('resize', onResize);
 
-  // Markdown-style `# ` / `## ` at line start → promote to H1/H2.
-  const autoformat = () => {
-    const line = currentLine(wrap);
-    if (!line) return;
-    const text = textOf(line);
-    let strip = 0, tag: NoteTag | null = null;
-    if (text.startsWith('## ')) { tag = 'h2'; strip = 3; }
-    else if (text.startsWith('# ')) { tag = 'h1'; strip = 2; }
-    // Strip even if already that tag — default H1 + "# " should not leave literal "# ".
-    if (!tag) return;
-    const off = caretOffset(line);
-    setLineTag(line, tag);
-    line.textContent = text.slice(strip);
-    caretTo(line, Math.max(0, off - strip));
+  /** Enter: the line split at the caret. A new line after a title is text - a title is a line, not a mode. */
+  const splitLine = (lines: NoteLines, sel: { start: number, end: number }) => {
+    const style = styleNow(lines, sel);
+    const cut = sel.start !== sel.end ? deleteRange(lines, sel.start, sel.end) : lines;
+    const { li, off } = locate(cut, sel.start);
+    const [left, right] = cutRuns(cut[li], off);
+    const next = right.some(r => r.text) ? right : [{ ...style, title: false, text: '' }];
+    commit([...cut.slice(0, li), tidyRuns(left, style), tidyRuns(next, style), ...cut.slice(li + 1)],
+      sel.start + 1);
   };
 
-  // Some edits leave stray nodes outside .note-line — fold them back into
-  // paragraph lines so readRich sees them. Ensures at least one line exists.
-  const normalizeStructure = () => {
-    let changed = false;
-    for (const node of [...wrap.childNodes]) {
-      // SAFETY: nodeType 1 is Element, tested on the left of the &&.
-      if (node.nodeType === 1 && (node as Element).classList.contains('note-line')) continue;
-      if (node.nodeName === 'BR' || (node.nodeType === 3 && node.textContent === '')) {
-        node.remove();
-        changed = true;
-        continue;
-      }
-      // Inherit formatting from the nearest sibling line, not model defaults.
-      // SAFETY: in find(), nodeType 1 is Element, tested on the left of the &&.
-      const near =[node.previousSibling, node.nextSibling]
-        .find((n): n is Element => !!n && n.nodeType === 1
-          && (n as Element).classList.contains('note-line'));
-      const beside = near ?? null;
-      const line = buildNoteLine({
-        tag: 'p',
-        align: beside ? lineAlign(beside) : 'left',
-        wash: beside ? lineWash(beside) : undefined,
-        text: node.textContent || '',
-      });
-      wrap.replaceChild(line, node);
-      changed = true;
+  // Ordinary typing into a run is the browser's: it is the only path an IME
+  // and a phone keyboard take. Everything that changes the shape of the lines
+  // is done here on the model instead - a split, a join, a selection replaced
+  // or deleted - because the browser's version of each leaves markup behind.
+  const onBeforeInput = (e: InputEvent) => {
+    const t = e.inputType;
+    // No bold/italic of the browser's own; a drag-drop into the sheet is not a paste.
+    if (t.startsWith('format') || t === 'insertFromDrop' || t === 'deleteByDrag') { e.preventDefault(); return; }
+    if (e.isComposing || composing) return;
+    const { lines, sel } = read();
+    if (!sel) return;
+    const ranged = sel.start !== sel.end;
+    if (t === 'insertParagraph' || t === 'insertLineBreak') {
+      e.preventDefault();
+      splitLine(lines, sel);
+      return;
     }
-    if (!wrap.querySelector('.note-line')) {
-      wrap.append(buildNoteLine({ tag: 'h1', align: 'left', text: '' }));
-      changed = true;
+    if (t === 'insertText' && ranged) {
+      // Typing over a selection takes the look of its first character.
+      e.preventDefault();
+      const style = styleAt(lines, sel.start, true);
+      const piece = (e.data ?? '').split('\n').map(w => [{ ...style, text: w }]);
+      const done = insertLines(deleteRange(lines, sel.start, sel.end), sel.start, piece);
+      commit(done.lines, done.end);
+      return;
+    }
+    if (!t.startsWith('delete')) return;
+    if (ranged) {
+      e.preventDefault();
+      commit(deleteRange(lines, sel.start, sel.end), sel.start);
+      return;
+    }
+    const { li, off } = locate(lines, sel.start);
+    const len = lines[li].reduce((n, r) => n + r.text.length, 0);
+    const back = t.includes('Backward');
+    // The last character of a run: the browser would take the run with it and
+    // the next character typed would fall into the run before. Its look stays
+    // pending at the caret instead, as it does in any word processor.
+    const gone = back ? sel.start - 1 : sel.start;
+    const only = (t === 'deleteContentBackward' || t === 'deleteContentForward')
+      && (back ? off > 0 : off < len) ? loneRun(lines, gone) : null;
+    if (only) {
+      e.preventDefault();
+      const p = withPending(deleteRange(lines, gone, gone + 1).map(l => tidyRuns(l)), gone, only);
+      render(p.lines);
+      placeIn(p.li, p.ri);
+      afterEdit();
+    } else if (back && off === 0 && li > 0) {
+      e.preventDefault();
+      commit(deleteRange(lines, sel.start - 1, sel.start), sel.start - 1);
+    } else if (!back && off === len && li < lines.length - 1) {
+      e.preventDefault();
+      commit(deleteRange(lines, sel.start, sel.start + 1), sel.start);
+    }
+  };
+
+  /**
+   * After the browser has typed: write the column back clean if it has left
+   * it untidy, and turn `# ` at a line's start into a title line.
+   */
+  const settle = () => {
+    const { lines, canon, sel } = read();
+    let next = lines;
+    let pos = sel?.start ?? linesLength(lines);
+    let changed = !canon;
+    if (sel && sel.start === sel.end) {
+      const { li, off } = locate(next, pos);
+      const said = next[li].map(r => r.text).join('');
+      const mark = said.startsWith('## ') ? 3 : said.startsWith('# ') ? 2 : 0;
+      if (mark && off >= mark) {
+        const start = pos - off;
+        next = restyle(deleteRange(next, start, start + mark), start, start + said.length - mark,
+          s => ({ ...s, title: true }));
+        pos -= mark;
+        changed = true;
+      }
     }
     if (changed) {
-      const lines = wrap.querySelectorAll<HTMLElement>('.note-line');
-      const last = lines[lines.length - 1];
-      caretTo(last, textOf(last).length);
+      render(next.map(l => tidyRuns(l, lastStyle)));
+      place(pos);
     }
+    afterEdit();
   };
 
-  const onInput = () => { normalizeStructure(); autoformat(); afterEdit(); };
+  const onInput = (e: Event) => {
+    if (composing || (e instanceof InputEvent && e.isComposing)) return;
+    settle();
+  };
+  const onCompStart = () => { composing = true; };
+  const onCompEnd = () => { composing = false; settle(); };
 
   const onKey = (e: KeyboardEvent) => {
     e.stopPropagation();                  // the canvas must not see Delete/space
@@ -640,68 +819,39 @@ export function editNote(
     // not the editor's - there it means "I did not mean to open this", and the
     // surface answers it by discarding rather than by committing.
     if (e.key === 'Escape') { if (!surface) { markClosed(e); finish(); } return; }
-    if (e.key === 'Enter') {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+    if (e.key.toLowerCase() === 'b' && !e.shiftKey) { e.preventDefault(); toggleTitle(); return; }
+    // Ctrl+Shift+. and , - the size keys the common editors use.
+    if (e.shiftKey && (e.code === 'Period' || e.code === 'Comma')) {
       e.preventDefault();
-      const line = currentLine(wrap);
-      if (!line) return;
-      const off = caretOffset(line);
-      const full = textOf(line);
-      line.textContent = full.slice(0, off);
-      // New line inherits wash — a mark across a sentence must not split on Enter.
-      const next = buildNoteLine({
-        tag: 'p', align: lineAlign(line), wash: lineWash(line), text: full.slice(off),
-      });
-      line.after(next);
-      caretTo(next, 0);
-      afterEdit();
-      return;
-    }
-    if (e.key === 'Backspace') {
-      const line = currentLine(wrap);
-      const prev = line?.previousElementSibling;
-      // Only intercept the join: a Backspace anywhere else is ordinary deletion.
-      if (line && prev?.classList.contains('note-line') && caretOffset(line) === 0 &&
-          selectionNow().isCollapsed) {
-        e.preventDefault();
-        const at = textOf(prev).length;
-        // Merged-into line keeps its mark — unless it is empty, in which case
-        // it takes the arriving line's.
-        if (!at) setLineWash(prev, lineWash(line) ?? null);
-        prev.textContent = textOf(prev) + textOf(line);
-        line.remove();
-        caretTo(prev, at);
-        afterEdit();
-      }
+      api.bumpSize(e.code === 'Period' ? NOTE_SIZE_STEP : -NOTE_SIZE_STEP);
     }
   };
 
-  // Plaintext paste, split on newlines into block lines.
+  // Every paste goes through the model: over a selection it replaces it, and
+  // over the whole note (Ctrl+A) that is every line.
   const onPaste = (e: ClipboardEvent) => {
     e.preventDefault();
-    // Uncapped, like typing - a long paste makes the note a file on close.
-    const text = (e.clipboardData?.getData('text/plain') ?? '').replace(/\r\n?/g, '\n');
-    const sel = selectionNow();
-    if (sel.rangeCount && !sel.isCollapsed) sel.getRangeAt(0).deleteContents();
-    const line = currentLine(wrap);
-    if (!line) return;
-    const parts = text.split('\n');
-    const off = caretOffset(line);
-    const full = textOf(line);
-    const head = full.slice(0, off), tail = full.slice(off);
-    line.textContent = head + parts[0];
-    let cur = line;
-    for (let i = 1; i < parts.length; i++) {
-      const last = i === parts.length - 1;
-      cur = insertAfter(cur, buildNoteLine({
-        // Inherits wash from the paste target line.
-        tag: 'p', align: lineAlign(line), wash: lineWash(line),
-        text: last ? parts[i] + tail : parts[i],
-      }));
-    }
-    if (parts.length === 1) caretTo(line, head.length + parts[0].length);
-    else caretTo(cur, parts[parts.length - 1].length);
-    afterEdit();
+    const { lines, sel } = read();
+    if (!sel) return;
+    const piece = pieceFrom(e.clipboardData, styleNow(lines, sel));
+    if (!piece) return;
+    const cut = sel.start !== sel.end ? deleteRange(lines, sel.start, sel.end) : lines;
+    const done = insertLines(cut.map(l => tidyRuns(l)), sel.start, piece);
+    commit(done.lines, done.end);
   };
+
+  const copyOut = (e: ClipboardEvent, cut: boolean) => {
+    const { lines, sel } = read();
+    if (!sel || sel.start === sel.end || !e.clipboardData) return;
+    e.preventDefault();
+    const piece = sliceLines(lines, sel.start, sel.end);
+    e.clipboardData.setData('text/plain', piece.map(l => l.map(r => r.text).join('')).join('\n'));
+    e.clipboardData.setData(NOTE_CLIP, JSON.stringify(piece));
+    if (cut) commit(deleteRange(lines, sel.start, sel.end), sel.start);
+  };
+  const onCopy = (e: ClipboardEvent) => copyOut(e, false);
+  const onCut = (e: ClipboardEvent) => copyOut(e, true);
 
   // The font menu is mounted on <body> (outside the note), so it must be
   // checked explicitly to avoid committing the edit when a menu row is picked.
@@ -710,8 +860,10 @@ export function editNote(
   // focusout: relatedTarget is where focus is going. Toolbar/surface/menu
   // count as "inside" — only truly leaving finishes the edit.
   const onFocusOut = (e: FocusEvent) => {
-    // SAFETY: see above - a focus event out of this document goes to a Node or
-    // to nothing.
+    // The window losing focus - another app, alt-tab - is not leaving the note:
+    // the browser hands focus back to the sheet when the window returns.
+    if (!document.hasFocus()) return;
+    // SAFETY: a focus event out of this document goes to a Node or to nothing.
     const to = e.relatedTarget as Node | null;
     if (node.contains(to) || toolbar.el.contains(to)) return;
     if (surface?.contains(to) || inMenu(to)) return;
@@ -729,16 +881,36 @@ export function editNote(
     finish();
   };
 
-  const onSelect = () => reflectNow();
+  /**
+   * An empty run the caret has left is a look nobody typed in: gone, unless it
+   * is its line's only run. Skipped while the selection is outside the sheet -
+   * a menu has it, and the pending look is what that menu is about to change.
+   */
+  const onSelect = () => {
+    if (composing) return;
+    const s = getSelection();
+    if (!s?.anchorNode || !wrap.contains(s.anchorNode)) return;
+    for (const span of wrap.querySelectorAll<HTMLElement>('.note-line > .note-run')) {
+      if (words(span) || (span.parentElement?.children.length ?? 0) < 2) continue;
+      if (span.contains(s.anchorNode) || span.contains(s.focusNode)) continue;
+      span.remove();
+    }
+    reflectNow();
+  };
 
   let done = false;
   function finish(discard = false) {
     if (done) return;
     done = true;
     if (editing?.finish === finish) editing = null;
+    wrap.removeEventListener('beforeinput', onBeforeInput);
     wrap.removeEventListener('input', onInput);
+    wrap.removeEventListener('compositionstart', onCompStart);
+    wrap.removeEventListener('compositionend', onCompEnd);
     wrap.removeEventListener('keydown', onKey);
     wrap.removeEventListener('paste', onPaste);
+    wrap.removeEventListener('copy', onCopy);
+    wrap.removeEventListener('cut', onCut);
     wrap.removeEventListener('focusout', onFocusOut);
     document.removeEventListener('pointerdown', onDocPointerDown, true);
     document.removeEventListener('selectionchange', onSelect);
@@ -750,40 +922,53 @@ export function editNote(
     toolbar.el.remove();
     node.classList.remove('is-editing');
     if (discard) { onDone?.(null); return; }
-    const rich = readRich(wrap);
+    const lines = read().lines.map(l => tidyRuns(l));
+    const rich = linesRich(lines, align);
     const text = flattenNoteRich(rich);
     // linkify replaces the item — nothing left to write, but onDone still fires.
     if (linkify(id, text)) { onDone?.(text); return; }
-    const markdown = flatMarkdown(wrap);
-    if (overflow && markdown.length > NOTE_SHEET_MAX && markdown !== openedAs) {
+    const markdown = linesMarkdown(lines);
+    if (overflow && linesLength(lines) > NOTE_SHEET_MAX && markdown !== openedAs) {
       // Asynchronous (the file is hashed). The note keeps its old words until
       // the document replaces it; if that fails, the note keeps what fits.
       void overflow(id, markdown).then(ok => {
         if (!ok) { setNoteContent(id, rich, text); growNote(id); }
       });
-      onDone?.(markdown);
+      onDone?.(markdown, true);
       return;
     }
     setNoteContent(id, rich, text);
     growNote(id);
-    onDone?.(text);
+    onDone?.(text, false);
   }
 
+  wrap.addEventListener('beforeinput', onBeforeInput);
   wrap.addEventListener('input', onInput);
+  wrap.addEventListener('compositionstart', onCompStart);
+  wrap.addEventListener('compositionend', onCompEnd);
   wrap.addEventListener('keydown', onKey);
   wrap.addEventListener('paste', onPaste);
+  wrap.addEventListener('copy', onCopy);
+  wrap.addEventListener('cut', onCut);
   wrap.addEventListener('focusout', onFocusOut);
   document.addEventListener('pointerdown', onDocPointerDown, true);
   document.addEventListener('selectionchange', onSelect);
   editing = { id, finish };
+
+  // What the note said when opened. Only an edit converts: an old note already
+  // over the sheet limit, opened and closed unchanged, stays a note.
+  const opened = read().lines;
+  const openedAs = linesMarkdown(opened);
+  lastStyle = styleAt(opened, linesLength(opened));
+  /** Caret at the end of the last line, ready to keep writing. */
+  const caretToEnd = () => {
+    wrap.focus();
+    place(linesLength(read().lines));
+  };
+  caretToEnd();
   refreshCount();
-  // Caret at the end of the last line, ready to keep writing.
-  const lines = wrap.querySelectorAll<HTMLElement>('.note-line');
-  const last = lines[lines.length - 1];
-  if (last) { last.focus?.(); caretTo(last, textOf(last).length); }
-  wrap.focus();
   reflectNow();
-  return { finish };
+  return { finish, caretToEnd };
 }
 
 /** Open the composer dialog on an existing board note. No `added` entry — the
@@ -856,7 +1041,7 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>) {
 
   const handle = editNote(id, {
     surface: dlg,
-    onDone: text => {
+    onDone: (text, becameFile) => {
       go.removeEventListener('click', onGo);
       cancel.removeEventListener('click', onCancel);
       dlg.removeEventListener('cancel', onEscape);
@@ -874,7 +1059,7 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>) {
       } else node.remove();
       // Outgrown: a document is replacing this note, so it is not grown or
       // landed - the document's own card arrives instead.
-      if (text && text.length > NOTE_SHEET_MAX) return;
+      if (becameFile) return;
       if (text?.trim()) {
         // Re-grow at board width — dialog grows went to the stand-in.
         growNote(id);
@@ -898,10 +1083,7 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>) {
   requestAnimationFrame(() => {
     // Guard: dialog may have already closed (double-press, Escape in same frame).
     if (!dlg.open || !mount.contains(sheet)) return;
-    sheet.focus();
-    const lines = sheet.querySelectorAll<HTMLElement>('.note-line');
-    const last = lines[lines.length - 1];
-    if (last) caretTo(last, textOf(last).length);
+    handle.caretToEnd();
   });
 
   const onGo = () => handle.finish();
@@ -916,12 +1098,6 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>) {
 
 /** Composer sheet width. Life-size, not magnified — close to a typical note width. */
 const EDIT_W = 320;
-
-/** Insert `el` after `ref` and return it. */
-function insertAfter<T extends Element>(ref: Element, el: T): T {
-  ref.after(el);
-  return el;
-}
 
 /** The open editor, if any. Only one at a time — opening another fires focusout. */
 let editing: { id: string; finish: (discard?: boolean) => void } | null = null;
