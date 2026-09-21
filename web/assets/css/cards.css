@@ -55,12 +55,12 @@
      sticky is not that. A note is small, and a title that takes a third of the
      sheet before the first word of the body is a title nobody chose - the old
      box-keyed ramp reached --t-display only on notes far bigger than the one
-     anybody actually writes on. Both a step under what they were (the title
+     anybody actually writes on. Both well under what they were (the title
      was the whole --t-title, the body 16px): a 21px title on a sticky read as
      shouting, and the composer, which shows the note magnified, set the
      proportion the board now matches. */
-  --note-t-title: calc(var(--t-title) * 0.86);
-  --note-t-body:  14px;
+  --note-t-title: calc(var(--t-title) * 0.76);
+  --note-t-body:  13px;
   /* The item under the card takes the pad colour too. Two rounded boxes of the
      same radius stacked exactly on top of each other still leave a hairline of
      the lower one showing along the curve, where the antialiasing of the two
