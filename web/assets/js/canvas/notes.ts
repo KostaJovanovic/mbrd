@@ -1,5 +1,6 @@
 // Note editor. Turns .note-rich into a contenteditable with a floating toolbar:
-// title or text, face, size and marker per run, alignment for the whole sheet.
+// title or text, face and marker per run, alignment for the whole sheet. A
+// run's size is kept and drawn (older notes set one) but no longer offered.
 // A button pressed on a selection restyles it; pressed on a caret it sets the
 // look of what is typed next. Lines of runs live in meta.rich; meta.text is the
 // plaintext kept for search. The box grows to fit (never hides text). A note
@@ -17,7 +18,6 @@ import {
   flattenNoteRich, buildNoteLine, normalizeRun, tidyRuns, styleOf, styleAt, locate, cutRuns,
   sliceLines, deleteRange, insertLines, restyle, withPending, linesLength, linesRich, linesMarkdown,
   NOTE_ALIGNS, NOTE_FONT_KEYS, NOTE_WASHES, NOTE_BLANK,
-  NOTE_SIZE_MIN, NOTE_SIZE_MAX, NOTE_SIZE_STEP,
 } from './note-model.ts';
 import type { NoteAlign, NoteFont, NoteWash, NoteStyle, NoteLines } from './note-model.ts';
 import type { Item } from '../board-model.ts';
@@ -286,9 +286,6 @@ function loneRun(lines: NoteLines, pos: number): NoteStyle | null {
   return null;
 }
 
-const sizeBy = (size: number, delta: number) =>
-  Math.min(NOTE_SIZE_MAX, Math.max(NOTE_SIZE_MIN, Math.round((size + delta) * 100) / 100));
-
 // ---------------------------------------------------------------------------
 // The toolbar
 // ---------------------------------------------------------------------------
@@ -311,7 +308,6 @@ type NoteToolbarApi = {
    */
   setWash(wash: NoteWash | null, at: Grab | null): void;
   setFont(key: string, at: Grab | null): void;
-  bumpSize(delta: number): void;
 };
 
 function buildToolbar(api: NoteToolbarApi) {
@@ -375,26 +371,21 @@ function buildToolbar(api: NoteToolbarApi) {
   btn(gAlign, { icon: 'al-center', title: 'Align centre', fn: () => api.setAlign('center'), key: 'align:center' });
   btn(gAlign, { icon: 'al-right', title: 'Align right', fn: () => api.setAlign('right'), key: 'align:right' });
 
-  // The marker. A button whose face is the colour it will draw with, opening
-  // the same menu the font does.
-  //
-  // A chip and not a glyph, and it is the same argument the menu's own swatch
-  // rows are built on: an icon of a highlighter is a drawing of the tool, where
-  // what anybody needs off this button is which colour is at the caret.
-  // Unmarked, the chip is an empty outline - the absence drawn, rather than a
-  // fifth colour meaning "none".
+  // The marker. A highlighter pen with the colour it will draw with as a bar
+  // under it, the way word processors show it: the pen says what the button
+  // is, the bar says which colour is at the caret. Unmarked, the bar is an
+  // empty outline - the absence drawn, rather than a fifth colour meaning "none".
   const gWash = group();
   let wash: NoteWash | null = null;
-  const washBtn = document.createElement('button');
-  washBtn.type = 'button';
-  washBtn.className = 'ntb-btn';
-  washBtn.title = 'Highlight';
-  washBtn.setAttribute('aria-label', 'Highlight');
+  const washBtn = btn(gWash, {
+    sprite: 'assets/icons.svg#i-note-marker', title: 'Highlight', fn: () => pickWash(),
+  });
+  washBtn.classList.add('ntb-marker');
   washBtn.setAttribute('aria-haspopup', 'menu');
   const washChip = document.createElement('span');
   washChip.className = 'ntb-chip';
   washBtn.append(washChip);
-  washBtn.addEventListener('click', () => {
+  function pickWash() {
     // Read here, before a menu that takes focus is anywhere near the caret -
     // see setWash() in NoteToolbarApi for the whole of why.
     const at = api.grab();
@@ -421,8 +412,7 @@ function buildToolbar(api: NoteToolbarApi) {
       key => api.setWash(
         (NOTE_WASHES as readonly string[]).includes(key) ? key as NoteWash : null, at),
     );
-  });
-  gWash.append(washBtn);
+  }
 
   // The face, as a button that opens the app's own menu rather than a <select>:
   // a native dropdown takes focus, which nothing in this bar may do, and opens
@@ -447,22 +437,21 @@ function buildToolbar(api: NoteToolbarApi) {
   });
   gFont.append(sel);
 
-  const gSize = group();
-  btn(gSize, { text: 'A−', title: 'Smaller (Ctrl+Shift+,)', fn: () => api.bumpSize(-NOTE_SIZE_STEP), key: 'size:down' });
-  btn(gSize, { text: 'A+', title: 'Larger (Ctrl+Shift+.)', fn: () => api.bumpSize(NOTE_SIZE_STEP), key: 'size:up' });
-
-  /** Light up the controls that match the look at the caret. */
-  const reflect = (style: NoteStyle, align: NoteAlign) => {
+  /**
+   * Light up the controls that match the look at the caret. `kind` is null
+   * for a selection holding both titles and text, which lights neither.
+   */
+  const reflect = (style: NoteStyle, align: NoteAlign, kind: 'title' | 'text' | null) => {
     for (const b of bar.querySelectorAll<HTMLElement>('.ntb-btn[data-key]')) {
       const [k, v] = (b.dataset.key ?? '').split(':');
-      b.classList.toggle('is-active',
-        (k === 'kind' && v === (style.title ? 'title' : 'text')) || (k === 'align' && v === align));
+      b.classList.toggle('is-active', (k === 'kind' && v === kind) || (k === 'align' && v === align));
     }
     // Closure state — menus are built fresh each press and need the current value.
     font = style.font;
-    sel.textContent = LABEL[style.font] || style.font;
+    sel.textContent = 'Font: ' + (LABEL[style.font] || style.font);
     wash = style.wash ?? null;
-    washBtn.classList.toggle('is-active', !!wash);
+    // No accent fill when marked: the bar is the state, and a colour bar on the
+    // accent is one warm colour laid on another.
     // Chip colour via data-wash; absent attribute = empty outline in CSS.
     if (wash) washChip.dataset.wash = wash;
     else delete washChip.dataset.wash;
@@ -619,7 +608,12 @@ export function editNote(
     const { lines, sel } = read();
     const style = styleNow(lines, sel);
     if (sel) lastStyle = style;
-    toolbar.reflect(style, align);
+    let kind: 'title' | 'text' | null = style.title ? 'title' : 'text';
+    if (sel && sel.start !== sel.end) {
+      const runs = sliceLines(lines, sel.start, sel.end).flat().filter(r => r.text);
+      if (runs.some(r => r.title) && runs.some(r => !r.title)) kind = null;
+    }
+    toolbar.reflect(style, align, kind);
   };
 
   /** A line's kind (its strut) follows its runs after the browser has typed or deleted in it. */
@@ -658,7 +652,6 @@ export function editNote(
       const face = (NOTE_FONT_KEYS.includes(key) ? key : 'sheet') as NoteFont;
       applyStyle(s => ({ ...s, font: face }), at);
     },
-    bumpSize(delta) { applyStyle(s => ({ ...s, size: sizeBy(s.size, delta) })); },
   };
 
   const toolbar = buildToolbar(api);
@@ -820,12 +813,7 @@ export function editNote(
     // surface answers it by discarding rather than by committing.
     if (e.key === 'Escape') { if (!surface) { markClosed(e); finish(); } return; }
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
-    if (e.key.toLowerCase() === 'b' && !e.shiftKey) { e.preventDefault(); toggleTitle(); return; }
-    // Ctrl+Shift+. and , - the size keys the common editors use.
-    if (e.shiftKey && (e.code === 'Period' || e.code === 'Comma')) {
-      e.preventDefault();
-      api.bumpSize(e.code === 'Period' ? NOTE_SIZE_STEP : -NOTE_SIZE_STEP);
-    }
+    if (e.key.toLowerCase() === 'b' && !e.shiftKey) { e.preventDefault(); toggleTitle(); }
   };
 
   // Every paste goes through the model: over a selection it replaces it, and
