@@ -116,6 +116,9 @@ export interface UpdatesPort {
   /** Start a check. The answer comes back through onOffer on the phone, and
    *  on the desktop's title bar, so the promise carries nothing. */
   check(): Promise<void>;
+  /** True where the answer is the page's to show (Android), so the press is
+   *  acknowledged on the page before the answer arrives. */
+  readonly answersOnPage: boolean;
   /** What the shell's updater says for the page to show (Android), or null. */
   onOffer(fn: (offer: UpdateOffer | null) => void): void;
   /** Put the offered update in place. The caller saves the board first. */
@@ -385,6 +388,7 @@ const webNative: NativePort = {
 // The web's updater is the service worker (main.ts), so a check does nothing.
 const webUpdates: UpdatesPort = {
   check: async () => {},
+  answersOnPage: false,
   onOffer: () => {},
   install: async () => {},
 };
