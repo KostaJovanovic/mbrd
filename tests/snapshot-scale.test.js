@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  exportScale, pixelsPerUnit, ppiOf, buildPdf, EXPORT_DEFAULTS,
+  exportScale, pixelsPerUnit, ppiOf, buildPdf, EXPORT_DEFAULTS, parseShadows,
 } from '../web/assets/js/ui/snapshot.ts';
 import { DEFAULT_SCALE, paperMm, toUnits } from '../web/assets/js/measure.ts';
 
@@ -121,8 +121,24 @@ test('the defaults are the ones asked for', () => {
   assert.deepEqual(
     { ppi: EXPORT_DEFAULTS.ppi, quality: EXPORT_DEFAULTS.quality,
       grain: EXPORT_DEFAULTS.grain, grid: EXPORT_DEFAULTS.grid,
-      web: EXPORT_DEFAULTS.web, sheet: EXPORT_DEFAULTS.sheet },
-    { ppi: 300, quality: 0.97, grain: false, grid: false, web: true, sheet: true });
+      web: EXPORT_DEFAULTS.web, sheet: EXPORT_DEFAULTS.sheet, tilt: EXPORT_DEFAULTS.tilt },
+    { ppi: 300, quality: 0.97, grain: false, grid: false, web: true, sheet: true, tilt: true });
+});
+
+test('a shadow stack is read whatever colour syntax the engine computes', () => {
+  // Chromium's computed --item-shadow, verbatim. The export read rgba() only,
+  // so this - every shadow on every board - came back as none.
+  const edge = 'color(srgb 0.192157 0.14902 0.105882 / 0.11) 0px 1px 1px 0px, '
+    + 'color(srgb 0.192157 0.14902 0.105882 / 0.34) 0px 10px 22px -10px';
+  assert.deepEqual(parseShadows(edge), [
+    { color: 'color(srgb 0.192157 0.14902 0.105882 / 0.11)', x: 0, y: 1, blur: 1, spread: 0 },
+    { color: 'color(srgb 0.192157 0.14902 0.105882 / 0.34)', x: 0, y: 10, blur: 22, spread: -10 },
+  ]);
+  // The legacy comma syntax must not be split at its own commas.
+  assert.deepEqual(parseShadows('rgba(0, 0, 0, 0.2) 2px 3px 4px 0px'),
+    [{ color: 'rgba(0, 0, 0, 0.2)', x: 2, y: 3, blur: 4, spread: 0 }]);
+  assert.deepEqual(parseShadows('none'), []);
+  assert.deepEqual(parseShadows('rgb(0, 0, 0) 0px 0px 0px 1px inset'), [], 'nothing casts inward');
 });
 
 test('the PDF page is the board\'s real size, not its pixel count', () => {

@@ -46,7 +46,7 @@ const MAX_EDGE = 8000;
 /**
  * What one export is, as the box that offers it settles it.
  *
- * All seven are the person's to change and none is remembered past the
+ * All eight are the person's to change and none is remembered past the
  * session - ui/export-options.ts holds the working copy. Kept here beside
  * the renderer that obeys them so a new option cannot exist in the box and
  * not in the picture.
@@ -71,6 +71,8 @@ export interface ExportOpts {
   grid: boolean;
   /** Draw the paper's texture - the board's own tile, under everything. */
   grain: boolean;
+  /** Lean the cards as the board leans them; off stands them all up. */
+  tilt: boolean;
 }
 
 /**
@@ -94,6 +96,7 @@ export const EXPORT_DEFAULTS: ExportOpts = {
   sheet: true,
   grid: false,
   grain: false,
+  tilt: true,
 };
 
 /** Canvas pixels per world unit, and its inverse. The ppi rule, both ways. */
@@ -261,7 +264,8 @@ type Look = {
   body: string;
   /** The most a card leans, in degrees - see leanOf(). */
   lean: number;
-  shadow: { color: string, blur: number, dy: number } | null;
+  /** The underlay's shadows, cards and notes apart, as the twins wear them. */
+  shadows: Shadows | null;
   /** The lattice's two inks, and whether it is drawn as crosses. */
   grid: { minor: string, major: string, harsh: boolean } | null;
   /** The web's own stroke and base weight, in world units. */
@@ -275,30 +279,84 @@ type Look = {
 const fontOf = (name: string, fallback: string) =>
   readToken(name) || fallback;
 
+/** One layer of a CSS box-shadow, lengths in world units. */
+export type ShadowLayer = { color: string, x: number, y: number, blur: number, spread: number };
+
+type Shadows = {
+  card: ShadowLayer[];
+  note: ShadowLayer[];
+  /** The twins' corner radii, world units: --radius and --note-radius. */
+  radius: number;
+  noteRadius: number;
+};
+
 /**
- * The card shadow, resolved through the browser rather than parsed as a token.
+ * A computed box-shadow as its layers. Exported for the test.
  *
- * `--shadow-1` is a `color-mix()` expression, and getPropertyValue hands a
- * custom property back unresolved - this file isn't growing a colour-space
- * implementation. So it's set as a real `box-shadow` on a real element and
- * the *computed* value is read back, already resolved. Null at the whimsy
- * extremes where the token is `none`, which a hand-rolled parser would get
- * wrong quietly.
+ * Layers are split on the commas outside parentheses, since a colour function
+ * has commas of its own in some engines. The colour is whatever the engine
+ * computed - `rgb()`, `color(srgb ...)`, a keyword - and is handed to the
+ * canvas as it came; this used to accept `rgba()` alone, and Chromium writes a
+ * `color-mix()` token back as `color(srgb ...)`, so every export came out
+ * with no shadows at all. Inset layers are dropped: nothing here casts inward.
  */
-function readShadow(): Look['shadow'] {
-  const probe = document.createElement('div');
-  probe.style.cssText = 'position:absolute;left:-9999px;top:0;width:1px;height:1px';
-  probe.style.boxShadow = 'var(--shadow-1)';
-  document.body.appendChild(probe);
-  const value = getComputedStyle(probe).boxShadow;
-  probe.remove();
-  if (!value || value === 'none') return null;
-  const color = value.match(/(rgba?\([^)]*\))/)?.[1];
-  const lengths = [...value.matchAll(/(-?[\d.]+)px/g)].map(m => +m[1]);
-  if (!color || lengths.length < 3) return null;
-  // offset-x, offset-y, blur, spread - the order the computed value always uses.
-  return { color, dy: lengths[1] || 0, blur: lengths[2] || 0 };
+export function parseShadows(value: string): ShadowLayer[] {
+  if (!value || value === 'none') return [];
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < value.length; i++) {
+    const c = value[i];
+    if (c === '(') depth++;
+    else if (c === ')') depth--;
+    else if (c === ',' && depth === 0) { parts.push(value.slice(start, i)); start = i + 1; }
+  }
+  parts.push(value.slice(start));
+  return parts.flatMap(part => {
+    if (/\binset\b/.test(part)) return [];
+    const color = part.match(/[a-z-]+\([^()]*\)/i)?.[0] ?? part.match(/\b(transparent|black|white)\b/i)?.[0];
+    if (!color) return [];
+    // offset-x, offset-y, blur, spread - the order computed values use.
+    const n = [...part.replace(color, '').matchAll(/(-?[\d.]+)px/g)].map(m => +m[1]);
+    if (n.length < 2) return [];
+    return [{ color, x: n[0], y: n[1], blur: n[2] || 0, spread: n[3] || 0 }];
+  });
 }
+
+/**
+ * The shadows the underlay draws, resolved through the browser rather than
+ * parsed as tokens.
+ *
+ * `--item-shadow` and `--note-shadow` are `color-mix()` stacks, and
+ * getPropertyValue hands a custom property back unresolved - so each is set
+ * as a real `box-shadow` on a real element and the *computed* value read
+ * back. The radii the same way, through `border-radius`. These are the tokens
+ * `.item-shadow` wears in canvas.css; the export used to read `--shadow-1`, a
+ * different and much fainter shadow. Null at the whimsy tiers where both are
+ * `none`.
+ */
+function readShadows(): Shadows | null {
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:absolute;left:-9999px;top:0;width:100px;height:100px';
+  document.body.appendChild(probe);
+  const read = (shadow: string, radius: string) => {
+    probe.style.boxShadow = `var(${shadow})`;
+    probe.style.borderRadius = `var(${radius})`;
+    const cs = getComputedStyle(probe);
+    return { layers: parseShadows(cs.boxShadow), radius: parseFloat(cs.borderTopLeftRadius) || 0 };
+  };
+  const card = read('--item-shadow', '--radius');
+  const note = read('--note-shadow', '--note-radius');
+  probe.remove();
+  if (!card.layers.length && !note.layers.length) return null;
+  return { card: card.layers, note: note.layers, radius: card.radius, noteRadius: note.radius };
+}
+
+/**
+ * Whether the board leans its cards at all right now - the question the
+ * export box asks before offering to stand them up.
+ */
+export const boardTilts = () => maxLean() > 0;
 
 /**
  * How far a card leans, in degrees, at this look.
@@ -316,7 +374,7 @@ function maxLean(): number {
 }
 
 /**
- * Four of these read an option as well as the board's own setting, and the
+ * Five of these read an option as well as the board's own setting, and the
  * `&&` is the rule: the box can leave a mark out, never put one in that the
  * board is not wearing. A thumbnail asks none of them - it is the board's
  * portrait rather than anybody's export, so it keeps the settings alone.
@@ -333,8 +391,8 @@ function readLook(detail: Detail, opts: ExportOpts): Look {
     rule: readToken('--rule-2') || '#d8d3c6',
     display: fontOf('--font-display', 'system-ui, sans-serif'),
     body: fontOf('--font-body', 'system-ui, sans-serif'),
-    lean: full ? maxLean() : 0,
-    shadow: full ? readShadow() : null,
+    lean: full && opts.tilt ? maxLean() : 0,
+    shadows: full ? readShadows() : null,
     grid: full && opts.grid && board.settings.grid ? {
       minor: readToken('--grid-minor') || 'rgba(0,0,0,0.08)',
       major: readToken('--grid-major') || 'rgba(0,0,0,0.14)',
@@ -351,12 +409,102 @@ function readLook(detail: Detail, opts: ExportOpts): Look {
   };
 }
 
-/** Hang the card shadow on the context, or take it off again. */
-function withShadow(ctx: CanvasRenderingContext2D, look: Look, on: boolean, scale: number) {
-  if (!look.shadow) return;
-  ctx.shadowColor = on ? look.shadow.color : 'transparent';
-  ctx.shadowBlur = on ? look.shadow.blur * scale : 0;
-  ctx.shadowOffsetY = on ? look.shadow.dy * scale : 0;
+/**
+ * How far a card is turned on the canvas, in degrees: its own rotation, then
+ * the lean it's resting at - both in the canvas's y-down sense, so item.rot
+ * is negated where the lean (a CSS rotation) already matches.
+ */
+const turnOf = (it: Item, look: Look) =>
+  -(it.rot || 0) + (it.type === 'fence' ? 0 : tiltOf(it.id) * look.lean);
+
+/**
+ * Whether a card casts a shadow. Not a sticker or a fence - a mark pressed
+ * onto the board and a line drawn round part of it, neither a thing lying on
+ * top. Nor a cut-out, which has no card to cast one (and without this check
+ * grew a border and shadow back on export - a bug seen only by whoever prints
+ * one). Nor a sticky at low opacity, which the board draws with no shadow twin
+ * (noTwin() in canvas/items.ts).
+ */
+const casts = (it: Item) => it.type !== 'sticker' && it.type !== 'fence'
+  && it.meta?.bare !== true && !(it.type === 'note' && itemFaded(it));
+
+/**
+ * Every card's shadow, before any card - the board's own underlay.
+ *
+ * On the board the shadows are twins in #item-shadows, one layer below every
+ * card, so no shadow ever falls across the face of a card behind; hanging the
+ * shadow on each card as it was drawn got that wrong, and also cast a shadow
+ * from every text line and plate inside the card. So this is its own pass,
+ * and each twin is what canvas.css makes it: a rounded box the card's size,
+ * turned as the card is, wearing every layer of the shadow stack.
+ *
+ * A canvas shadow belongs to whatever shape is filled, so the shape is filled
+ * far off the canvas and its shadow thrown back onto it - the usual way to get
+ * a shadow without its shape, and the only way to honour a *spread*, which
+ * the negative-spread layers of --item-shadow lean on. The throw is worked out
+ * through the current transform because shadow offsets ignore it, where a
+ * twin's box-shadow turns with the twin.
+ */
+function paintShadows(
+  ctx: CanvasRenderingContext2D, look: Look, items: Item[], project: Project, scale: number,
+  W: number, H: number,
+) {
+  const s = look.shadows;
+  if (!s) return;
+  const away = (W + H) * 2 + 1000;
+  for (const it of items) {
+    if (!casts(it)) continue;
+    const note = it.type === 'note';
+    const layers = note ? s.note : s.card;
+    if (!layers.length) continue;
+    const r0 = (note ? s.noteRadius : s.radius) * scale;
+    const w = it.w * scale;
+    const h = it.h * scale;
+    const at = project(it.x, it.y);
+    ctx.save();
+    ctx.translate(at.x, at.y);
+    const turn = turnOf(it, look);
+    if (turn) ctx.rotate(turn * Math.PI / 180);
+    const m = ctx.getTransform();
+    ctx.fillStyle = '#000';
+    for (const layer of layers) {
+      const spread = layer.spread * scale;
+      const bw = w + spread * 2;
+      const bh = h + spread * 2;
+      if (!(bw > 0 && bh > 0)) continue;
+      const lx = layer.x * scale + away;
+      const ly = layer.y * scale;
+      ctx.shadowColor = layer.color;
+      ctx.shadowBlur = layer.blur * scale;
+      ctx.shadowOffsetX = m.a * lx + m.c * ly;
+      ctx.shadowOffsetY = m.b * lx + m.d * ly;
+      roundRect(ctx, -bw / 2 - away, -bh / 2, bw, bh, Math.max(0, r0 + spread));
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+
+/** Clear pixels round a staged card, so its edge is sampled against nothing. */
+const STAGE_PAD = 2;
+/** How much larger a turned card is staged than it is drawn, and the most pixels that may cost. */
+const STAGE_OVER = 2;
+const STAGE_MAX = 16_000_000;
+
+/**
+ * Size the stage - the canvas a turned card is painted upright on, one per
+ * render so a preview still drawing cannot paint into an export's - for a
+ * w x h card, which clears it, and hand back a context whose origin is the
+ * card's centre, as a painter expects. Null if the engine will not give one.
+ */
+function setStage(stage: HTMLCanvasElement, w: number, h: number): CanvasRenderingContext2D | null {
+  // Whole pixels either side of the centre, so the centre is where the
+  // painter and drawImage() both think it is.
+  stage.width = Math.ceil(w / 2 + STAGE_PAD) * 2;
+  stage.height = Math.ceil(h / 2 + STAGE_PAD) * 2;
+  const sctx = stage.getContext('2d');
+  sctx?.translate(stage.width / 2, stage.height / 2);
+  return sctx;
 }
 
 // ---------------------------------------------------------------------------
@@ -1174,34 +1322,42 @@ async function renderBoardCanvas(detail: Detail, opts: ExportOpts, maxEdge = MAX
   paintWeb(ctx, look, items, project, scale);
 
   const ordered = [...items].sort((p, q) => (p.z || 0) - (q.z || 0));
+  paintShadows(ctx, look, ordered, project, scale, W, H);
+  const stage = document.createElement('canvas');
   for (const it of ordered) {
     const at = project(it.x, it.y);
+    const w = it.w * scale;
+    const h = it.h * scale;
+    const turn = turnOf(it, look);
     ctx.save();
     ctx.translate(at.x, at.y);
-    // The item's own rotation, then the lean it's resting at - both in the
-    // canvas's y-down sense, so item.rot is negated where the lean (a CSS
-    // rotation) already matches.
-    const lean = it.type === 'fence' ? 0 : tiltOf(it.id) * look.lean;
-    const turn = -(it.rot || 0) + lean;
     if (turn) ctx.rotate(turn * Math.PI / 180);
-    // No shadow under a sticker or a fence - a mark pressed onto the board
-    // and a line drawn round part of it, neither a thing lying on top.
+    // A turned card is painted upright on the stage and set down turned, as
+    // one picture. Painted straight onto the turned canvas, each of its layers
+    // - the photograph, the plate across its foot - clipped and smoothed the
+    // same slanted edge separately, and the paper showed through between them
+    // as a pale fringe. A sticker is one fill and a fence one stroke, with no
+    // layers to part, so both still draw directly.
     //
-    // Nor under a cut-out, the third of that kind and the reason this list
-    // had to be checked: this renderer hangs its own shadow rather than
-    // relying on the stylesheet, so an image without a card would have grown
-    // a border and shadow back on export - a bug visible only in the export,
-    // seen only by whoever prints one.
-    //
-    // And a sticky at low opacity, which the canvas draws with no shadow twin
-    // (noTwin() in canvas/items.ts). paintNote() thins its paper.
-    const faded = it.type === 'note' && itemFaded(it);
-    const lifted = it.type !== 'sticker' && it.type !== 'fence' && it.meta?.bare !== true && !faded;
-    withShadow(ctx, look, lifted, scale);
-    await painterFor(it)({ ctx, it, w: it.w * scale, h: it.h * scale, look, scale });
-    withShadow(ctx, look, false, scale);
+    // Staged at twice the size and brought down as it is turned: at 1:1 the
+    // turn is a second resampling on top of the painter's own, and a
+    // photograph's lettering went visibly soft. Halving while turning is a
+    // downsample, which keeps it. Not past STAGE_MAX, where it stays 1:1.
+    const stageIt = turn && it.type !== 'sticker' && it.type !== 'fence' && w >= 1 && h >= 1;
+    const k = stageIt && w * h * STAGE_OVER * STAGE_OVER <= STAGE_MAX ? STAGE_OVER : 1;
+    const sctx = stageIt ? setStage(stage, w * k, h * k) : null;
+    if (sctx) {
+      await painterFor(it)({ ctx: sctx, it, w: w * k, h: h * k, look, scale: scale * k });
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(stage, -stage.width / 2 / k, -stage.height / 2 / k, stage.width / k, stage.height / k);
+    } else {
+      await painterFor(it)({ ctx, it, w, h, look, scale });
+    }
     ctx.restore();
   }
+  // Let go of the stage's pixels - a card at 300 ppi can be tens of megabytes.
+  stage.width = stage.height = 0;
 
   return { canvas, w: W, h: H, ppi: plan.ppi };
 }

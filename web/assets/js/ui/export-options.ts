@@ -11,7 +11,7 @@
 import { board } from '../state.ts';
 import { readToken } from '../util.ts';
 import { formatSize, MM_PER_INCH } from '../measure.ts';
-import { EXPORT_DEFAULTS, boardPreview, exportSize } from './snapshot.ts';
+import { EXPORT_DEFAULTS, boardPreview, boardTilts, exportSize } from './snapshot.ts';
 import type { ExportOpts } from './snapshot.ts';
 import { cue } from '../cuelume/engine.ts';
 import { onTouch } from '../canvas/viewport.ts';
@@ -19,9 +19,9 @@ import { onTouch } from '../canvas/viewport.ts';
 /** Which of the two buttons asked. Each keeps its own options. */
 export type ExportKind = 'image' | 'pdf';
 
-/** The four marks the box can leave out, each a checkbox and an ExportOpts flag. */
-type Mark = 'web' | 'sheet' | 'grid' | 'grain';
-const MARKS: readonly Mark[] = ['web', 'sheet', 'grid', 'grain'];
+/** What the box can leave out, each a checkbox and an ExportOpts flag. */
+type Mark = 'web' | 'sheet' | 'grid' | 'grain' | 'tilt';
+const MARKS: readonly Mark[] = ['web', 'sheet', 'grid', 'grain', 'tilt'];
 
 /**
  * The bounds a typed number is held to. Below 36 ppi a card's text is a
@@ -90,9 +90,10 @@ export async function askExportOptions(kind: ExportKind): Promise<ExportOpts | n
   const sheet = input('xo-sheet');
   const grid = input('xo-grid');
   const grain = input('xo-grain');
+  const tilt = input('xo-tilt');
   if (!title || !size || !qualityOut || !include || !mount || !caption || !go || !cancel
-      || !ppi || !quality || !margin || !web || !sheet || !grid || !grain) return null;
-  const boxes: Record<Mark, HTMLInputElement> = { web, sheet, grid, grain };
+      || !ppi || !quality || !margin || !web || !sheet || !grid || !grain || !tilt) return null;
+  const boxes: Record<Mark, HTMLInputElement> = { web, sheet, grid, grain, tilt };
 
   if (showing) return null;
   showing = true;
@@ -106,6 +107,7 @@ export async function askExportOptions(kind: ExportKind): Promise<ExportOpts | n
     sheet: !!s.paperShow && !!s.paper,
     grid: !!s.grid,
     grain: (parseFloat(readToken('--grain')) || 0) > 0,
+    tilt: boardTilts(),
   };
 
   title.textContent = kind === 'pdf' ? 'Save PDF' : 'Save image';
@@ -130,10 +132,11 @@ export async function askExportOptions(kind: ExportKind): Promise<ExportOpts | n
     sheet: boxes.sheet.checked,
     grid: boxes.grid.checked,
     grain: boxes.grain.checked,
+    tilt: boxes.tilt.checked,
   });
 
   // The preview is the export drawn small. Only what changes the picture
-  // redraws it - margin and the four marks - since ppi and quality change
+  // redraws it - margin and the checkboxes - since ppi and quality change
   // the file's resolution, which a preview this size cannot show. A redraw
   // loads every picture on the board, so typing is let settle first, and a
   // render that finishes after a newer one started is thrown away.
@@ -141,7 +144,7 @@ export async function askExportOptions(kind: ExportKind): Promise<ExportOpts | n
   let generation = 0;
   let timer = 0;
   const redraw = (o: ExportOpts) => {
-    const key = JSON.stringify([o.margin, o.web, o.sheet, o.grid, o.grain]);
+    const key = JSON.stringify([o.margin, o.web, o.sheet, o.grid, o.grain, o.tilt]);
     if (key === drawn) return;
     drawn = key;
     const mine = ++generation;
