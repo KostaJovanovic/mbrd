@@ -1,7 +1,7 @@
-// Sticker pad: floating window of shapes (drag or tap-then-tap onto the board).
-// Shares move/resize gestures with float-window.ts. Favourites are app-wide
-// (localStorage, not .mbrd) because a board carries your stickers, not your
-// picks. Last category is session-only (module variable).
+// Sticker pad: a panel of shapes (drag or tap-then-tap onto the board). It
+// flies in from the right edge the way the sidebar does and cannot be moved or
+// resized. Favourites are app-wide (localStorage, not .mbrd) because a board
+// carries your stickers, not your picks. Last category is session-only.
 //
 // Nothing here touches `document` at import time - every reach is inside
 // initStickerWindow() or a handler that runs after it.
@@ -14,8 +14,8 @@ import { queryAround } from '../canvas/spatial.ts';
 import { defaultSize } from '../canvas/renderers.ts';
 import { showStickTarget } from '../canvas/items.ts';
 import { startEdgePan } from '../canvas/edge-pan.ts';
-import { makeWindowDrag, makeWindowResize } from './float-window.ts';
 import { registerPanel, panelShown, panelHidden } from './panel-stack.ts';
+import { showSheet, hideSheet } from './sheet.ts';
 import {
   STICKERS, STICKER_CATEGORIES, stickerArt, stickerShape,
 } from '../stickers/catalogue.ts';
@@ -46,7 +46,6 @@ let vp: Viewport | null = null;
 let cmds: StickerCommands | null = null;
 let win: HTMLElement | null = null;        // the window element, or null when closed
 let body: HTMLElement | null = null;       // the scrolling region inside it
-let detachGrabs: (() => void)[] = [];      // grab-listener detaches, called on close
 
 /** The category last placed from, so the next open lands where you left off. */
 let lastCategory = STICKER_CATEGORIES[0][0];
@@ -122,42 +121,23 @@ function openStickerWindow() {
   close.innerHTML = CLOSE_ICON;
   close.addEventListener('click', () => { cue('pick'); closeStickerWindow(); });
   head.append(title, spacer, close);
-  detachGrabs.push(makeWindowDrag(win, head));
 
   body = div('sticker-window-body');
   win.append(head, body);
 
-  const resize = div('sticker-window-resize');
-  resize.setAttribute('aria-hidden', 'true');
-  win.append(resize);
-  detachGrabs.push(makeWindowResize(win, resize, { minW: 240, minH: 200 }));
-
   document.body.append(win);
   renderBody();
   panelShown('stickers');
-
-  // Up into place next frame - it needs two computed styles to run between for
-  // the transition to take, the same as the player window.
-  requestAnimationFrame(() => win?.classList.add('is-open'));
+  showSheet(win);
 }
-
-/** The slide-out backstop, so a close that never sees transitionend finishes. */
-let exitTimer = 0;
 
 export function closeStickerWindow() {
   if (!win) return;
   const el = win;
   win = null;
   body = null;
-  // Take the move/resize grab listeners off window before the element goes.
-  detachGrabs.forEach(fn => fn());
-  detachGrabs = [];
   disarm();
-  el.classList.remove('is-open');
-  clearTimeout(exitTimer);
-  const done = () => { clearTimeout(exitTimer); el.remove(); };
-  el.addEventListener('transitionend', e => { if (e.propertyName === 'transform') done(); }, { once: true });
-  exitTimer = setTimeout(done, 500);
+  hideSheet(el);
   panelHidden('stickers');
 }
 

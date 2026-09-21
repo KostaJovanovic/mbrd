@@ -1,8 +1,8 @@
 /* =========================================================
    mbrd - the sticker pad (ui/sticker-window.ts)
 
-   Floating shape drawer. Shares move/resize with the Playlist's player
-   (ui/float-window.ts) and deliberately matches its proportions.
+   A shelf of shapes that flies in from the right, the sidebar's entrance on
+   the Playlist's corner, and deliberately matches the player's proportions.
    ========================================================= */
 
 /* ---------------------------------------------------------
@@ -23,8 +23,9 @@
   border-radius: var(--leaf);
   box-shadow: var(--shadow-2);
   overflow: hidden;
-  transform-origin: bottom right;
-  transform: scale(0.96) translateY(10px);
+  /* #sidebar's entrance, mirrored: out past the right edge, in on --ease-back.
+     The 22px clears the shadow, so nothing of the sheet shows while it waits. */
+  transform: translateX(calc(100% + 22px));
   opacity: 0;
   visibility: hidden;
   transition: transform var(--dur-base) var(--ease-back),
@@ -44,13 +45,9 @@
   gap: 6px;
   padding: 12px 18px;
   border-bottom: var(--hairline) solid var(--rule-2);
-  cursor: grab;
-  touch-action: none;
   -webkit-user-select: none;
   user-select: none;
 }
-.sticker-window.is-moving,
-.sticker-window.is-moving .sticker-window-head { cursor: grabbing; }
 .sticker-window-title {
   font-family: var(--font-display);
   font-size: var(--t-title);

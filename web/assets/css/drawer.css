@@ -39,7 +39,8 @@
   color: var(--ink-2);
   cursor: pointer;
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
-              border-color var(--dur-fast) var(--ease);
+              border-color var(--dur-fast) var(--ease),
+              opacity var(--dur-base) var(--ease);
 }
 /* Empty drawer recedes -- faint ink, lighter hairline. Not disabled
    (it still opens), just quiet. Must precede :hover for source order. */
@@ -65,6 +66,24 @@
   border-color: color-mix(in srgb, var(--danger) 45%, var(--rule-2));
 }
 #drawer-btn[data-face="i-delete"] svg { filter: none; }
+
+/* The whole row out of the way while the drawer is up. The sheet arrives over
+   this corner, and a button that opens what is already open is a press that
+   does nothing. Off aria-expanded, which openDrawer()/closeDrawer() already
+   keep in step - the alternative is a second flag saying what the attribute
+   says. The undo pill follows by sibling combinator, which is why the button
+   is written before it in index.html: move #history-ctl above #drawer-btn in
+   that row and this half stops applying, silently and only while the drawer
+   is open. Visibility delayed by the fade, as #drawer-dock's rule above does
+   it, so each goes only once it has faded. The keyboard is unaffected
+   throughout - Delete, Ctrl+Z and Ctrl+Shift+Z all still reach. */
+#drawer-btn[aria-expanded="true"],
+#drawer-btn[aria-expanded="true"] ~ #history-ctl {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity var(--dur-base) var(--ease), visibility 0s var(--dur-base);
+}
 
 /* Autosave mark. Quietest thing in the corner -- no card, no shadow.
    Leaves slowly, arrives quickly. */
@@ -117,6 +136,7 @@
   overflow: hidden;
   background: var(--paper-card);
   box-shadow: var(--shadow-1);
+  transition: opacity var(--dur-base) var(--ease);
 }
 #history-ctl button {
   display: grid;
@@ -147,8 +167,9 @@
 
 /* ----------------------------------------------------------
    The drawer window (ui/drawer.ts)
-   Floating window anchored bottom-left. Shares move/resize with the
-   sticker pad (ui/float-window.ts). Cards dealt three to a shelf.
+   A panel anchored bottom-left, flying in from that edge the way #sidebar
+   does - which also hides it. It cannot be moved or resized. Cards dealt
+   three to a shelf.
    ---------------------------------------------------------- */
 #drawer-window {
   position: fixed;
@@ -165,8 +186,8 @@
   border-radius: var(--radius);
   box-shadow: var(--shadow-2);
   overflow: hidden;
-  transform-origin: bottom left;
-  transform: scale(0.96) translateY(10px);
+  /* #sidebar's entrance, off the same edge. The 22px clears the shadow. */
+  transform: translateX(calc(-100% - 22px));
   opacity: 0;
   visibility: hidden;
   transition: transform var(--dur-base) var(--ease-back),
@@ -200,13 +221,9 @@
   gap: 6px;
   padding: 12px 14px 12px 18px;
   border-bottom: var(--hairline) solid var(--rule-2);
-  cursor: grab;
-  touch-action: none;
   -webkit-user-select: none;
   user-select: none;
 }
-#drawer-window.is-moving,
-#drawer-window.is-moving .drawer-head { cursor: grabbing; }
 .drawer-title {
   font-family: var(--font-display);
   font-size: var(--t-title);
@@ -380,16 +397,6 @@
   font-size: var(--t-tiny);
   font-style: var(--display-italic);
   color: var(--ink-3);
-}
-
-.drawer-resize {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  width: 20px;
-  height: 20px;
-  cursor: nwse-resize;
-  touch-action: none;
 }
 
 /* Ghost following the pointer out of the window. */

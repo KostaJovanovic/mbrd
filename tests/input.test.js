@@ -446,6 +446,71 @@ test('Control held on the keyboard pans up and down, where a pinch zooms', () =>
   assert.equal(wheel({ deltaY: 100, timeStamp: 11_020 }).kind, 'zoom');
 });
 
+// ---------------------------------------------------------------------------
+// The two preferences (controls.ts), read at the end of the same pipeline
+// ---------------------------------------------------------------------------
+
+// `held` is the Control key the page saw pressed, the third argument - which a
+// pinch never sends and a person choosing Ctrl+wheel always does.
+const prefWheel = (prefs, props = {}, held = false) => readWheel({
+  deltaX: 0, deltaY: 0, deltaMode: 0, ctrlKey: false, shiftKey: false, timeStamp: 0, ...props,
+}, 800, held, prefs);
+
+test('reversing the zoom turns a notch round and leaves a pinch alone', () => {
+  const REVERSE = { mode: 'zoom', reverse: true };
+  // Down the page zooms *in* once it is reversed - the one thing the
+  // preference is for.
+  assert.ok(prefWheel(REVERSE, { deltaY: 100 }).factor > 1);
+  resetWheelKind();
+  assert.ok(prefWheel(REVERSE, { deltaY: -100, timeStamp: 5_000 }).factor < 1);
+
+  // A pinch is a fact about the hand, not a convention: fingers apart is
+  // closer in whatever the wheel has been set to.
+  resetWheelKind();
+  const pinch = prefWheel(REVERSE, { deltaY: -6, ctrlKey: true, timeStamp: 9_000 });
+  assert.equal(pinch.kind, 'zoom');
+  assert.ok(pinch.factor > 1, 'the pinch must not be reversed with the wheel');
+});
+
+test('in scroll mode a notch pans and Control is what zooms', () => {
+  const SCROLL = { mode: 'scroll', reverse: false };
+  const notch = prefWheel(SCROLL, { deltaY: 100 });
+  assert.deepEqual([notch.kind, notch.dx, notch.dy, notch.factor], ['pan', 0, 100, 1],
+    'the notch that zooms by default moves the board instead');
+
+  // Control held on the keyboard - which in the default mode pans up and down.
+  resetWheelKind();
+  const zoomed = prefWheel(SCROLL, { deltaY: 100, ctrlKey: true, timeStamp: 5_000 }, true);
+  assert.equal(zoomed.kind, 'zoom');
+  assert.ok(zoomed.factor < 1, 'down the page is still out');
+
+  // A pad keeps its own gesture in both modes: a swipe pans, in both axes.
+  resetWheelKind();
+  const swipe = prefWheel(SCROLL, { deltaX: -8, deltaY: 6, timeStamp: 9_000 });
+  assert.equal(swipe.kind, 'pan');
+  assert.deepEqual([swipe.dx, swipe.dy], [-8, 6]);
+
+  // And a pinch still zooms, at the pinch's own rate - the mode changes what a
+  // wheel means, never what fingers mean.
+  resetWheelKind();
+  assert.ok(prefWheel(SCROLL, { deltaY: -6, ctrlKey: true, timeStamp: 13_000 }).factor > 1);
+});
+
+test('the two preferences compose, and a pad zoom under Control is not read at the wheel rate', () => {
+  // Reversed *and* in scroll mode: Control down the page zooms in.
+  const both = { mode: 'scroll', reverse: true };
+  assert.ok(prefWheel(both, { deltaY: 100, ctrlKey: true }, true).factor > 1);
+
+  // A pad burst with Control genuinely held reads as 'pan' by device, so the
+  // zoom it is asked for takes the pinch coefficient. At the wheel's, six
+  // pixels of finger travel would move the board by nothing anybody could see.
+  resetWheelKind();
+  const pad = prefWheel({ mode: 'scroll', reverse: false },
+    { deltaY: -6, ctrlKey: true, timeStamp: 5_000 }, true);
+  assert.equal(pad.kind, 'zoom');
+  assert.ok(pad.factor > 1.05, `a pad pinch-by-Control moved by ${pad.factor}`);
+});
+
 // A swipe, as a burst of events a few milliseconds apart - the lean is
 // measured over a gesture, not one event. Returns the last event's result.
 function swipe(steps) {

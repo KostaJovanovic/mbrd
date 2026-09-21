@@ -742,11 +742,11 @@ export function captureLayoutSettings(mode = board.layoutMode) {
 /** Make one layout's settings and arrangement the live compatibility surface. */
 export function activateLayoutSettings(mode: LayoutMode) {
   if (mode === 'mobile') {
-    // '' rather than 'none': that is what DEFAULT_SETTINGS holds, what the
-    // select's None option carries, and what PAPERS has no entry for. A second
-    // spelling would read as truthy everywhere `settings.paper` is tested.
-    board.layoutSettings.mobile.paper = '';
-    board.layoutSettings.mobile.paperLandscape = false;
+    // The one key that has to be pinned, now that showing a sheet and choosing
+    // a size are two settings: with this false nothing is drawn, so the size
+    // and the orientation under it are inert rather than wrong, and the Mobile
+    // profile keeps whichever sheet the board would put up if it went back.
+    board.layoutSettings.mobile.paperShow = false;
     board.layoutSettings.mobile.paperResize = false;
     // Spacing used to be pinned to zero here alongside the paper keys, and it
     // was the wrong list to be on. Paper is Desktop-only because a fixed-width
@@ -955,15 +955,25 @@ export function commitGeom(
   // now, so it gives up its memory of where it sat before the board was laid
   // on the lattice. Turning snapping off later leaves it exactly here.
   if (board.settings.snap && !options.preservePresnap) {
-    for (let i = 0; i < after.length; i++) {
-      // SNAP_KEYS, not GEOM_KEYS. The memo records where a card sat before the
-      // lattice moved it, and unsnapAll() restores exactly those four - so only
-      // a spatial change can invalidate it. Bring to front rewrites z and
-      // nothing else, which the note below already lists among the callers that
-      // "change no note's position relative to anything", and it was throwing
-      // away the memory of every card it raised. Rotation is deliberately out
-      // too: turning a card does not change its snapped box.
-      if (SNAP_KEYS.some(k => after[i][k] !== was(after[i])[k])) forgetPresnap(byId(after[i].id));
+    for (const a of after) {
+      const b = was(a);
+      // Sized by hand on the lattice: whole cells are this card's size now, and
+      // the memory of the size it had before goes with the rest of the memo.
+      //
+      // A *move* is not that, and used to be treated as though it were. Nothing
+      // touched the sides, so throwing the whole memo away over a drag lost a
+      // size nobody had changed - which on a Fit board is the mats snapping
+      // rounds a picture card into, made permanent by carrying it three cells to
+      // the left. The memo follows the card instead: its remembered size, about
+      // the centre the card now has, so leaving the grid still gives the picture
+      // its own proportion back.
+      //
+      // Rotation is deliberately out of both tests, as it was out of SNAP_KEYS:
+      // turning a card does not change its snapped box. Nor does Bring to front,
+      // which rewrites z and nothing else and was throwing away the memory of
+      // every card it raised.
+      if (a.w !== b.w || a.h !== b.h) forgetPresnap(byId(a.id));
+      else if (a.x !== b.x || a.y !== b.y) carryPresnap(byId(a.id), a.x, a.y);
     }
     after = snapshotGeom(after.map(a => a.id));
   }
@@ -1057,6 +1067,23 @@ function forgetPresnap(it: Item | null | undefined) {
   if (!it?.meta || !('presnap' in it.meta)) return;
   const { presnap, ...rest } = it.meta;
   it.meta = rest;
+}
+
+/**
+ * Move a presnap memo to where the card now is, keeping the size it remembers.
+ *
+ * The half of the memo a drag invalidates and the half it does not. Where a card
+ * sat before the board went onto the lattice stops meaning anything the moment
+ * somebody carries it somewhere else - put it back there on unsnap and it
+ * teleports - but how big it was is untouched by a move, and is exactly what a
+ * Fit picture needs back when the grid is switched off. Written through
+ * usableMemo() like every other read of it: a memo arrives from a .mbrd.
+ */
+function carryPresnap(it: Item | null | undefined, x: number, y: number) {
+  if (!it) return;
+  const pre = usableMemo(it.meta?.presnap);
+  if (!pre) return;
+  it.meta = { ...it.meta, presnap: { ...pre, x, y } };
 }
 
 /** A memo is four finite numbers with a size that is actually a size. */

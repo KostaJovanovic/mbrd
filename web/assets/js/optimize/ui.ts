@@ -186,6 +186,6 @@ export async function discardOptimizeOriginals() {
     cancel: 'Keep them',
   });
   if (answer !== 'go') return;
-  const n = discardOriginals();
+  const n = discardOriginals().length;
   toast(`${n} original${n === 1 ? '' : 's'} released`);
 }

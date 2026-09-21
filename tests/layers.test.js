@@ -145,6 +145,9 @@ const BASE = new Set([
   // The quality dial's flags: canvas/* reads them, ui/quality.ts writes
   // them, so they can't sit in ui/ without inverting the graph.
   'quality.ts',
+  // What the wheel means, for the same reason and read the same way round:
+  // canvas/input.ts asks on every wheel event, the sidebar writes.
+  'controls.ts',
   // The arrangement catalogue: pure, no DOM, no state import. state.ts reads
   // mobileArrangement() from it, which is a downward read.
   'arrange/arrangements.ts',

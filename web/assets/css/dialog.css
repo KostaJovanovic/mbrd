@@ -785,6 +785,96 @@ textarea.lp-url {
    the two measure identically and rows that link do not differ in height. */
 .inv-row { border-bottom: var(--hairline) solid var(--rule); }
 .inv-row:last-child { border-bottom: 0; }
+/* A file and its copies: the twisty, then the line. Both on one flex row so
+   the name column lands in the same place whether or not there is a twisty —
+   which is what .inv-slot below is for. */
+.inv-group { display: flex; align-items: baseline; }
+.inv-group .inv-line { flex: 1; min-width: 0; }
+.inv-twisty, .inv-slot { flex: none; width: 20px; }
+/* Centred against the row, not sat on its baseline. Both rows this lives in
+   are `align-items: baseline` — right for a name beside a size, wrong for a
+   glyph, which a baseline hangs by its own bottom edge and so lifts a line
+   above the text it belongs to. `align-self: stretch` takes it out of that
+   alignment, and the grid centres it in the height it is then given. */
+.inv-twisty {
+  display: grid;
+  place-items: center;
+  align-self: stretch;
+  padding: 0;
+  border: 0;
+  border-radius: var(--leaf);
+  background: none;
+  color: var(--ink-3);
+  cursor: pointer;
+}
+/* Block, so the icon carries no descender space of its own inside the grid. */
+.inv-twisty .ico {
+  display: block;
+  width: 14px;
+  height: 14px;
+  transition: transform var(--dur-fast) var(--ease);
+}
+.inv-twisty[aria-expanded="true"] .ico { transform: rotate(90deg); }
+.inv-twisty:focus { outline: none; }
+.inv-twisty:focus-visible {
+  outline: var(--sel-line) solid var(--select);
+  outline-offset: calc(var(--sel-gap) * -1);
+}
+@media (hover: hover) {
+  .inv-twisty:hover { color: var(--ink); }
+}
+/* The copies, under the file they were made from. Indented past the twisty,
+   so the eye reads them as belonging to the row above rather than as rows. */
+.inv-kept {
+  margin: 0 0 4px 20px;
+  padding: 0;
+  list-style: none;
+}
+.inv-kept[hidden] { display: none; }
+.inv-kid .inv-name, .inv-kid .inv-size { color: var(--ink-3); }
+.inv-kid .inv-line { font-size: var(--t-tiny); }
+
+/* A folded holder: twisty, heading, what it weighs, and — for the past — a
+   way to let it go. The heading keeps its face and loses its top margin to
+   the bar, which carries the spacing for all four. */
+.inv-fold {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 16px 0 0;
+}
+.inv-fold .inv-head { flex: 1; min-width: 0; margin: 0; }
+.inv-fold .inv-size { font-size: var(--t-small); color: var(--ink-2); }
+/* The list a fold opens is its sibling, not its child - the bar is a flex row
+   and a list inside it would lay out as a fourth column. */
+.inv-list[hidden] { display: none; }
+.inv-free {
+  flex: none;
+  padding: 2px 8px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--leaf);
+  background: none;
+  color: var(--ink-3);
+  font: inherit;
+  font-size: var(--t-tiny);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+@media (hover: hover) {
+  .inv-free:hover { border-color: var(--danger); color: var(--danger); }
+}
+.inv-free:focus { outline: none; }
+.inv-free:focus-visible {
+  outline: var(--sel-line) solid var(--select);
+  outline-offset: 2px;
+}
+/* What the cap left out. Counted rather than listed — see TOP in inventory.ts. */
+.inv-more {
+  padding: 4px 6px;
+  font-size: var(--t-tiny);
+  font-style: italic;
+  color: var(--ink-3);
+}
 .inv-line {
   display: flex;
   align-items: baseline;

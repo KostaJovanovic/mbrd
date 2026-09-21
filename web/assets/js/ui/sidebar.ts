@@ -2,7 +2,7 @@
 // isolation, paper orientation, and the board-title wiring. Controls
 // themselves live in settings-schema.ts + panel.ts.
 
-import { board, bus, setSetting } from '../state.ts';
+import { bus, setSetting } from '../state.ts';
 import { VERSION } from '../version.js';
 import { el } from '../util.ts';
 import { readPref, writePref } from '../prefs.ts';
@@ -168,13 +168,20 @@ export function initSidebar(cmds: SidebarCommands, viewport: Viewport | null = n
   restoreOpen();
 }
 
-/** Wire the two paper-orientation buttons. Choosing one with no sheet also sets paper to a4. */
+/**
+ * Wire the two paper-orientation buttons.
+ *
+ * They used to raise an A4 when pressed with no sheet up, because there was no
+ * other way to say "and put one up" - that went with the Show paper button,
+ * which says it in one word, and with it the pair became what it looks like:
+ * one setting written to one of two values. Still `data-orient` rather than
+ * `data-cmd` for exactly that reason - a value, not an action.
+ */
 function wirePaperOrientation(): void {
   const row = document.getElementById('paper-orient');
   if (!row) return;
   for (const btn of row.querySelectorAll<HTMLElement>('[data-orient]')) {
     btn.addEventListener('click', () => {
-      if (!board.settings.paper) setSetting('paper', 'a4');
       setSetting('paperLandscape', btn.dataset.orient === 'landscape');
     });
   }

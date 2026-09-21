@@ -262,8 +262,10 @@ something somebody wrote — but nothing is lost either way, and what the old ru
 produced was a note left hovering over the gap and re-measured onto whatever
 happened to be underneath it.
 
-The drawer is a floating window (`ui/float-window.ts`, shared with the sticker
-pad and the player) of the board's **real cards**, three to a shelf. There is no
+The drawer is a panel of the board's **real cards**, three to a shelf. It
+stands at the bottom-left and flies in from that edge the way `#sidebar` does
+— which is also what hides it — and, like the sticker pad and the player, it
+cannot be moved or resized. There is no
 second drawing of a card in the app: `buildItem()` from `canvas/item-dom.ts` is
 what fills every slot, which is why a note in the drawer is its own words on its
 own pad. Because a real card is a real decoder, a slot mounts its card when it
@@ -1499,8 +1501,11 @@ switched on, which in this codebase is a short list by design: `RENDERERS`, a
   mbrd's rather than Phosphor's, because an id is written into a `.mbrd` as
   `meta.shape` and cannot move when an upstream icon is renamed. It imports
   nothing at all, which makes it the lowest module in the graph.
-- **`ui/sticker-window.ts`** is the pad: a floating window sharing its move and
-  resize gestures with the Playlist's player (`ui/float-window.ts`). Drag a tile
+- **`ui/sticker-window.ts`** is the pad: a panel on the same right-hand edge as
+  the Playlist's player, and one of the three that `ui/panel-stack.ts` keeps to
+  one at a time — opening the player puts the pad away and remembers it, and
+  closing the player brings it back. The stack is a module variable, so a
+  reload starts with everything shut. Drag a tile
   onto the board, or tap a tile and then tap the board — the second is the only
   one that works on a phone and it works on both. Favourites are app-wide and
   live in `localStorage`, not in the `.mbrd`: a board you send somebody carries

@@ -236,6 +236,17 @@ corruption.
 files carry it, which is the compatibility rule at the bottom of this document
 working as intended.
 
+`settings.paperShow` is `true` when the paper sheet is drawn, and
+`settings.paper` names its size (`a4`, `letter`, … — the ids in `PAPERS`,
+`measure.ts`) whether it is drawn or not. The two used to be one key: an empty
+`settings.paper` was how a board said "no sheet", so putting the sheet away
+also forgot which one it had been. **A file with no `paperShow` was written
+then**, and a reader recovers the flag from the id — a known size means the
+sheet was up, an empty or unknown one means it was down — then falls the id
+back to `a4`. A reader that ignores `paperShow` draws a sheet on a board that
+had none, which is a degradation and not a corruption. Both keys are
+Desktop-only and are pinned down in a Mobile profile.
+
 `settings.appearance` is the board's own look: a palette name and a bag of CSS
 custom properties. **`vars` is the only part of a `.mbrd` that reaches the
 browser as code**, and it is gated accordingly — see **Safety**.

@@ -63,6 +63,8 @@ export type BoardSettings = {
   spacing: number;
   scale: number;
   units: string;
+  /** Whether the sheet is drawn. `paper` keeps its size while it is not. */
+  paperShow: boolean;
   paper: string;
   paperLandscape: boolean;
   paperResize: boolean;
@@ -165,7 +167,12 @@ export const DEFAULT_SETTINGS: BoardSettings = {
   spacing: 12,
   scale: DEFAULT_SCALE,
   units: 'metric',
-  paper: '',
+  // Down, at A4. The two used to be one key, with '' meaning no sheet - so a
+  // board that put its sheet away forgot which one it had, and the size, the
+  // orientation and the corner grips were all live over nothing. Splitting them
+  // is what lets those three grey out and keep their answers.
+  paperShow: false,
+  paper: 'a4',
   paperLandscape: false,
   paperResize: false,
   appearance: { palette: '', vars: {} },

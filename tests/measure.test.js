@@ -12,18 +12,27 @@ import {
   PAPERS, paperMm, PX_PER_INCH,
 } from '../web/assets/js/measure.ts';
 
-test('the default scale is life size on screen at 100% zoom', () => {
-  // One world unit is one CSS pixel at 1:1, and CSS fixes an inch at 96 of
-  // them, so life size is exactly when a millimetre buys 96/25.4 units - an
-  // A4 outline at 793.7px wide is a sheet you can hold against the screen.
-  assert.equal(toUnits(MM_PER_INCH, DEFAULT_SCALE), PX_PER_INCH);
+test('the default scale puts A4 at 1325 units down its long side', () => {
+  // The number the default is defined by, checked against the sheet it is
+  // about rather than against itself: measure.ts writes 297 out beside it, and
+  // PAPERS is where A4 actually lives.
   const a4 = paperMm('a4');
-  assert.ok(Math.abs(toUnits(a4.w, DEFAULT_SCALE) - 793.7) < 0.05,
-    `A4 came out ${toUnits(a4.w, DEFAULT_SCALE)} px wide`);
-  // Those 793.7 units read back as the sheet drawn, not 209.9mm of drift.
+  assert.equal(toUnits(a4.h, DEFAULT_SCALE), 1325,
+    `A4 came out ${toUnits(a4.h, DEFAULT_SCALE)} units tall`);
+  assert.ok(Math.abs(toUnits(a4.w, DEFAULT_SCALE) - 936.87) < 0.01,
+    `A4 came out ${toUnits(a4.w, DEFAULT_SCALE)} units wide`);
+  // Those units read back as the sheet drawn, not 209.9mm of drift.
   const back = toMm(toUnits(a4.w, DEFAULT_SCALE), DEFAULT_SCALE);
   assert.equal(formatMm(back), '21 cm');
   assert.equal(formatMm(back, 'imperial'), '8.27 in');
+});
+
+test('the default scale is no longer life size, and nothing claims it is', () => {
+  // It was, and the claim is easy to leave behind in a comment or a readout.
+  // An inch of board is now about 113 CSS pixels at 1:1, not 96.
+  assert.notEqual(toUnits(MM_PER_INCH, DEFAULT_SCALE), PX_PER_INCH);
+  assert.ok(toUnits(MM_PER_INCH, DEFAULT_SCALE) > PX_PER_INCH,
+    'the default got smaller, not larger - check which way round 1325 went');
 });
 
 test('the default scale round-trips like any other', () => {

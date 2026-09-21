@@ -21,6 +21,9 @@ import {
   SHARPNESS_STEPS, BUILD_STEPS,
 } from '../quality.ts';
 import { SOUND_STOPS, cueLogOn, soundLevel, setSoundLevel } from '../cuelume/engine.ts';
+import {
+  wheelMode, setWheelMode, zoomReversed, setZoomReversed,
+} from '../controls.ts';
 import { canShareLink } from '../storage/cloud/provider.ts';
 import { syncedNow } from '../storage/cloud/sync.ts';
 import { anyConnected, cloudProviders } from '../storage/cloud/cloud.ts';
@@ -82,6 +85,19 @@ type Common = {
   /** True and the control shows, greyed, but cannot be changed: the look in
    *  force already decides it. Tilt cards at Harsh is the case. */
   idle?: (ctx: Ctx) => boolean,
+  /**
+   * The run of rows carrying this is drawn inside one box, and the box slides
+   * open and shut as their `when` turns over rather than snapping. Same
+   * movement a fold makes and the same code doing it - see slideBox() in
+   * ui/panel.ts.
+   *
+   * A run, not a set: they must be consecutive in `controls`, because what is
+   * being animated is a height, and a height only carries what is under it if
+   * the rows growing into it are one box. Their `when` should agree for the
+   * same reason - the box is open when any of them is, so a row that comes and
+   * goes on its own inside it would change the height without the movement.
+   */
+  reveal?: boolean,
   /** Sinks the control into its section's one fold. */
   advanced?: boolean,
   /** Another module owns the behaviour; this file only asks for the element. */
@@ -148,6 +164,14 @@ export type PickerControl = Common & {
   type: 'picker', label: string, fieldId?: string,
   options?: (ctx: Ctx) => Option[],
   swatches?: (value: string) => string[],
+  /**
+   * The word for a value no option names: a state the control can be *in* but
+   * cannot be put into. The palette's Custom is the only one - a pigment
+   * chosen by hand is not a palette, and offering it as a row would be an
+   * entry that picks the colour it is already showing. Without this a picker
+   * handed such a value draws an empty box.
+   */
+  unlisted?: (value: string) => string,
   get?: () => string,
   set?: (value: string) => void,
 };
@@ -155,8 +179,17 @@ export type ButtonsControl = Common & {
   type: 'buttons', group?: boolean, ariaLabel?: string, buttons: ButtonSpec[],
 };
 export type SlotControl = Common & { type: 'slot' };
+/**
+ * A line of prose under a row - or, with `tip`, folded behind a (?) at the end
+ * of the row above it.
+ *
+ * `tip` is the button's accessible name, since its face is one character. The
+ * row it joins is the control built immediately before it (buildSection, in
+ * ui/panel.ts), so the two must be in the same half of the section: a tip
+ * marked `advanced` after a row that is not would pull that row into the fold.
+ */
 export type HintControl = Common & {
-  type: 'hint', html?: string, text?: (ctx: Ctx) => string,
+  type: 'hint', html?: string, text?: (ctx: Ctx) => string, tip?: string,
 };
 /** One legend row: its keys, what they do, and - for a key only one build
  *  answers - where it shows. */
@@ -280,16 +313,37 @@ function spread() {
  */
 function paperHint() {
   const s = board.settings;
+  // The row is only on screen with a sheet up (`when: paperUp`), so this asks
+  // about the size alone and never about whether it is drawn.
   const mm = paperMm(s.paper, s.paperLandscape);
-  // The invitation to drag prints only when dragging is on: a hint describing a
-  // gesture the corners will not answer is worse than no hint.
+  // The invitation to drag prints only when dragging is armed: a hint
+  // describing a gesture the corners will not answer is worse than no hint.
   const drag = s.paperResize
     ? ' Drag a corner to match it against the board - that is what sets the scale.'
     : '';
   return mm
     ? `${Math.round(toUnits(mm.w, s.scale))} × ${Math.round(toUnits(mm.h, s.scale))} px, centred on 0,0.${drag}`
-    : 'Outlines a sheet in the middle of the board, at the size it really is.';
+    : '';
 }
+
+/**
+ * There is a sheet. Every row in the section but the button that raises one
+ * asks this, and they are absent rather than greyed when the answer is no -
+ * which is this panel's ordinary rule, the one `idle` is the exception to.
+ *
+ * The whole section, the scale half included: the sheet is what the board is
+ * measured against, so with it down there is nothing for Units to name or for
+ * a reset to put back.
+ *
+ * Mobile can never answer yes - setSetting refuses the keys and
+ * activateLayoutSettings pins the flag false - so the section comes down there
+ * altogether, which sectionVisible() does on its own once every row is hidden.
+ * That costs a phone nothing: the scale bar is display:none on Mobile
+ * (canvas.css), the readout is Desktop-only, and the sheet's own caption is
+ * Desktop by construction, so no Mobile surface reads `settings.units` and the
+ * picker for it was changing the wording of one sentence in this panel.
+ */
+const paperUp = (ctx: Ctx) => !ctx.mobile && board.settings.paperShow;
 
 
 /**
@@ -759,6 +813,13 @@ export const SECTIONS: Section[] = [
       // explains why a copy in JS would be a second definition that drifts.
       { id: 'opt-palette', type: 'picker', label: 'Palette', external: true,
         swatches: paletteSwatches,
+        // Set by hand from the Pigment row below, never from this menu, and
+        // dropped the moment a palette is picked (setPalette drops every
+        // pigment token). 'custom' is CUSTOM in ui/appearance-controls.ts,
+        // which owns the state; this file is data and imports no panel module,
+        // so tests/settings-panel.test.js holds the two strings together - the
+        // same arrangement Dynamic has.
+        unlisted: value => (value === 'custom' ? 'Custom' : ''),
         options: () => [
           { value: 'dynamic', label: 'Dynamic' },
           { value: '', label: 'Papyrus' },
@@ -766,23 +827,28 @@ export const SECTIONS: Section[] = [
           { value: 'tearose', label: 'Tea rose' },
           { value: 'orca', label: 'Orca' },
         ] },
-      // The third dial, and above the fold with the other two. Type is not a
-      // tweak to reach for when Whimsy landed wrong: the display serif is the
-      // loudest decision on a board, it is the first thing anybody goes looking
-      // for, and a face somebody dropped onto the board themselves appears in
-      // this menu - which made a dropped font a feature that worked and could
-      // not be found. Its hint travels with it for the same reason; a line about
-      // dropping a .woff2 is no use in a fold you open after giving up.
-      { id: 'appearance-type', type: 'slot', className: 'field-pair' },
-      // A phone cannot drop, so there the way in is the Add button's file picker,
-      // which sends a font down the same path a drop does.
-      { type: 'hint', when: desktop,
-        html: 'Drop a <code>.woff2</code>, <code>.ttf</code> or <code>.otf</code> on the board to add your own face.' },
-      { type: 'hint', when: ctx => ctx.mobile,
-        html: 'Add your own face with Add, then Files: a <code>.woff2</code>, <code>.ttf</code> or <code>.otf</code>.' },
+      // The two face menus, in the fold with everything else that sets one
+      // token at a time. They stood above it for a year on the argument that a
+      // dropped face appears in them and a feature nobody can find is a feature
+      // that does not work - which the (?) below now answers instead: the way
+      // in is named where the menus are, and the two dials that move the whole
+      // look are what the tab opens on.
+      { id: 'appearance-type', type: 'slot', className: 'field-pair', advanced: true },
+      // The one tip in the panel, and the shape the argument above settled into:
+      // a line nobody needs twice, at the end of the row it is about rather than
+      // under it. Both wordings in one control - a phone cannot drop, so there
+      // the way in is the Add button's file picker, which sends a font down the
+      // same path a drop does. `text` and not `html`, so the two codes are read
+      // as the words they are; a popover is prose, not a row.
+      { id: 'type-hint', type: 'hint', advanced: true, tip: 'Adding your own typeface',
+        text: ctx => (ctx.mobile
+          ? 'Add your own face with Add, then Files: a .woff2, .ttf or .otf.'
+          : 'Drop a .woff2, .ttf or .otf on the board to add your own face.') },
       // The board's own dropped faces, each with a way to take it back off - filled
       // and shown/hidden by ui/fonts.ts, empty (and gone) until one is dropped.
-      { id: 'appearance-fonts', type: 'slot' },
+      // In the fold with the menus it fills: a list of faces over a pair of
+      // menus that were not there would be an answer to nothing.
+      { id: 'appearance-fonts', type: 'slot', advanced: true },
       // Everything below the fold. The three above it between them move every
       // token these set one at a time, which is what makes the rest advanced
       // rather than merely secondary.
@@ -860,31 +926,43 @@ export const SECTIONS: Section[] = [
     // corners *is* how settings.scale gets set, and a heading stood between the
     // gesture and the number it writes.
     //
-    // The whole section is a fold - no h2 of its own, only the summary - and it
-    // is called Paper rather than Real size because the sheet is what somebody
-    // is looking for when they come here. A board that never puts one up never
-    // needs a millimetre either, so all of it is behind one word. Same
-    // arrangement the keyboard legend has, and the reason `fold` exempts a
-    // section from the "keep something above the fold" rule.
-    id: 'real-size', tab: 'look', fold: 'Paper', needsBoard: true,
+    // Called Paper rather than Real size because the sheet is what somebody is
+    // looking for when they come here.
+    //
+    // A heading and not a fold. It was one whole section behind one word, on
+    // the argument that a board which never puts a sheet up never needs a
+    // millimetre either - which is true of the board and not of the person,
+    // who has to know the section exists before the argument can apply to
+    // them. The two sheet rows are the ones anybody comes to this tab for; a
+    // summary reading "Paper" hid the paper.
+    id: 'real-size', tab: 'look', title: 'Paper', needsBoard: true,
     controls: [
-      { id: 'opt-units', type: 'picker', label: 'Units', advanced: true,
-        options: () => [
-          { value: 'metric', label: 'Millimetres, centimetres, metres' },
-          { value: 'imperial', label: 'Inches and feet' },
-        ],
-        get: () => board.settings.units, set: v => setSetting('units', v) },
-      // A sheet is a Desktop question: Mobile is a narrow strip with a fixed
-      // width and no page to fit anything onto, and setSetting() refuses these
-      // three keys there.
-      { id: 'opt-paper', type: 'picker', label: 'Paper outline', when: desktop, advanced: true,
-        options: () => [{ value: '', label: 'None' },
-          ...PAPERS.map(p => ({ value: p.id, label: p.label }))],
+      // The sheet is up or it is down, and that is a button rather than an
+      // entry in the size list. "None" made "no sheet" one of the sizes: it
+      // put raising a sheet and choosing A4 into the same act, it left the
+      // three rows under it live over nothing, and a board that put its sheet
+      // away forgot which one it had been holding. One word, and the word is
+      // what pressing it does.
+      //
+      // A sheet is a Desktop question throughout: Mobile is a narrow strip
+      // with a fixed width and no page to fit anything onto, and setSetting()
+      // refuses all four of these keys there.
+      { id: 'paper-show', type: 'buttons', when: desktop, buttons: [
+        { cmd: 'toggle-paper', label: 'Show paper',
+          says: () => (board.settings.paperShow ? 'Hide paper' : 'Show paper') },
+      ] },
+      // Everything below drops in with the sheet and goes with it - see
+      // paperUp() above. They were greyed for a while instead, on the argument
+      // that a row you can see is a row you know is there; what that actually
+      // built was a section of eight dead controls under one live button, which
+      // is worse than a short section that grows.
+      { id: 'opt-paper', type: 'picker', label: 'Paper outline', when: paperUp, reveal: true,
+        options: () => PAPERS.map(p => ({ value: p.id, label: p.label })),
         get: () => board.settings.paper, set: v => setSetting('paper', v) },
       // Orientation is a radio group in behaviour, drawn with aria-pressed:
       // both states are equally ordinary, and a checkbox saying "landscape"
       // would make one of them the deviation.
-      { id: 'paper-orient', type: 'buttons', when: desktop, advanced: true,
+      { id: 'paper-orient', type: 'buttons', when: paperUp, reveal: true,
         ariaLabel: 'Paper orientation', group: true,
         buttons: [
           { orient: 'portrait', label: 'Portrait',
@@ -896,18 +974,25 @@ export const SECTIONS: Section[] = [
       // board's scale, and a sheet put up to check a layout against should not
       // arrive with that armed on its corners.
       { id: 'opt-paper-resize', type: 'check', label: 'Resize by its corners',
-        when: desktop, advanced: true,
+        when: paperUp, reveal: true,
         get: () => !!board.settings.paperResize, set: v => setSetting('paperResize', v) },
-      { id: 'paper-hint', type: 'hint', when: desktop, advanced: true, text: paperHint },
-      // The scale is set by matching something, never by typing a
-      // units-per-millimetre figure: drag the sheet above, or point at an item
-      // whose real size you already know.
-      { type: 'buttons', advanced: true, buttons: [
-        { cmd: 'scale-from-item', label: 'Set from selection…' },
-      ] },
-      // Dragging the corners is how the scale gets set, which means it is also
-      // how the scale gets lost - and no setting is on the undo stack.
-      { type: 'buttons', when: desktop, advanced: true, buttons: [
+      { id: 'paper-hint', type: 'hint', when: paperUp, reveal: true, text: paperHint },
+      // Below the sheet rather than above them, which is where it was. Units
+      // decide no geometry - they pick the words the two readouts underneath
+      // are said in, so they belong with those rather than at the head of a
+      // block about paper, where the first thing the section asked was a
+      // question nobody had come for.
+      { id: 'opt-units', type: 'picker', label: 'Units', when: paperUp, reveal: true,
+        options: () => [
+          { value: 'metric', label: 'Millimetres, centimetres, metres' },
+          { value: 'imperial', label: 'Inches and feet' },
+        ],
+        get: () => board.settings.units, set: v => setSetting('units', v) },
+      // Dragging the sheet's corners is how the scale gets set - never by
+      // typing a units-per-millimetre figure, which is the same fact said in a
+      // language nobody thinks in. It is also, being the only way, how the
+      // scale gets lost, and no setting is on the undo stack.
+      { type: 'buttons', when: paperUp, reveal: true, buttons: [
         // "Reset scale", not "Reset size". The item menu already ships a row
         // called Reset size (menu.ts) and it does something else entirely:
         // that one puts a card back to its intrinsic size, this one throws
@@ -915,7 +1000,7 @@ export const SECTIONS: Section[] = [
         // word, a settings panel and a right-click apart.
         { cmd: 'reset-scale', label: 'Reset scale' },
       ] },
-      { id: 'scale-hint', type: 'hint', advanced: true,
+      { id: 'scale-hint', type: 'hint', when: paperUp, reveal: true,
         text: () => (board.items.length
           ? `Everything on this board fits in ${formatLength(spread(), board.settings.scale, board.settings.units)}.`
           : 'Drop something in, then measure the board from it.') },
@@ -927,7 +1012,11 @@ export const SECTIONS: Section[] = [
     // The one section that is not about a board at all. See quality.ts: it is
     // per device and never travels inside a .mbrd, because how hard someone
     // else's phone should work is not a property of your moodboard.
-    id: 'quality', tab: 'system', title: 'Quality',
+    // "More settings" rather than "Advanced": the fold now opens with the sound
+    // dial, which is not an advanced anything - it is an ordinary choice that
+    // happens to be off by default. The word has to cover both it and the
+    // quality overrides under it.
+    id: 'quality', tab: 'system', title: 'Quality', foldLabel: 'More settings',
     controls: [
       { id: 'opt-quality', type: 'range', label: 'Quality',
         min: 0, max: 2, step: 1, silent: true,
@@ -949,12 +1038,19 @@ export const SECTIONS: Section[] = [
       // The quality dial deliberately does not touch it. Sound costs nothing to
       // draw, and muting it on a tired phone would be tidying rather than
       // helping.
+      //
+      // Behind the fold, which is where a row that defaults to Off and says
+      // "experimental" of itself belongs: somebody who wants the sounds goes
+      // looking for them once, and everybody else was reading past a dial for a
+      // feature that is not on. It heads the fold rather than joining the
+      // overrides below, because it is a dial of its own and not one of the
+      // quality flags Reset puts back.
       { id: 'opt-sound', type: 'range', label: 'Sounds (experimental)',
-        min: 0, max: 3, step: 1, silent: true,
+        min: 0, max: 3, step: 1, silent: true, advanced: true,
         stops: SOUND_STOPS,
         get: () => soundLevel(),
         set: v => setSoundLevel(v) },
-      { id: 'sound-hint', type: 'hint', when: () => soundLevel() > 0,
+      { id: 'sound-hint', type: 'hint', when: () => soundLevel() > 0, advanced: true,
         text: () => 'Experimental feature. Might suck.' },
       // The overrides. Each reads the resolved flag - so moving the dial moves
       // every one of these - and writes an override that outranks the dial from
@@ -993,6 +1089,35 @@ export const SECTIONS: Section[] = [
         set: v => setQualityOverride('build', +v) },
       { type: 'buttons', advanced: true,
         buttons: [{ cmd: 'reset-quality', label: 'Reset' }] },
+    ],
+  },
+  {
+    // The wheel, and so far nothing else. Both rows are per device and stored
+    // in localStorage (controls.ts) rather than in the board: which mouse is on
+    // the desk is not a property of a moodboard, and a board that arrived with
+    // somebody else's zoom reversed would be a board that broke your hand.
+    //
+    // Between Quality and This browser on purpose - all three are about this
+    // copy of the app - and Canvas only, because the Feed has one axis and
+    // everything that arrives moves it along that axis, so neither row has
+    // anything to change there.
+    id: 'controls', tab: 'system', title: 'Controls', when: desktop,
+    controls: [
+      // A picker rather than a checkbox called "Ctrl to zoom": the two answers
+      // are two conventions, both ordinary, and a checkbox would make one of
+      // them the deviation - the same argument Paper orientation is drawn with.
+      { id: 'opt-wheel', type: 'picker', label: 'Mouse wheel',
+        options: () => [
+          { value: 'zoom', label: 'Zooms the board' },
+          { value: 'scroll', label: 'Pans the board, Ctrl zooms' },
+        ],
+        get: () => wheelMode(), set: v => setWheelMode(v) },
+      // No line under these about the trackpad, though both rows leave it
+      // alone: two fingers pan and a pinch zooms whatever the wheel is set to,
+      // and somebody holding a trackpad finds that out by using it. The rule
+      // is written where it is enforced - readWheel(), in canvas/input.ts.
+      { id: 'opt-wheel-reverse', type: 'check', label: 'Reverse zoom direction',
+        get: () => zoomReversed(), set: v => setZoomReversed(v) },
     ],
   },
   {

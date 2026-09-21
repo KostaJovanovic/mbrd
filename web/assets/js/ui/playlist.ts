@@ -1,6 +1,6 @@
 // Playlist UI: the board's audio in two homes.
 // Mobile lens: album hero + reorderable track list; now-playing bar is the transport.
-// Desktop: floating window with compact transport over a plain list.
+// Desktop: a panel flying in from the right, compact transport over a plain list.
 // Owns no <audio> — drives the shared queue in canvas/playlist-queue.ts.
 // No document access at module scope; everything deferred to initPlaylist().
 
@@ -12,7 +12,7 @@ import {
   clamp, div, actAsButton, makeEditable, markClosed, readToken, selectContents,
 } from '../util.ts';
 import {
-  bindScrub, clock, seekInnerHTML, sizeSeekWave, reportPlayError,
+  bindScrub, clock, seekInnerHTML, sizeSeekWave, reportPlayError, trackLength,
   PAUSE_ICON, PLAY_ICON,
 } from '../media/transport.ts';
 import { mobileOrder, applyAudioOrder } from '../arrange/arrangements.ts';
@@ -25,8 +25,8 @@ import {
 } from '../canvas/playlist-queue.ts';
 import { audioTags, coverArt } from '../import/artwork.ts';
 import { mediaFacts } from '../import/containers.ts';
-import { resetPanels } from './panel-stack.ts';
-import { makeWindowDrag, makeWindowResize } from './float-window.ts';
+import { registerPanel, panelShown, panelHidden, resetPanels } from './panel-stack.ts';
+import { showSheet, hideSheet } from './sheet.ts';
 import { openContextMenu } from './menu.ts';
 import type { MenuEntry } from './menu.ts';
 // Set before mode switch so entering Mobile lands on the requested lens.
@@ -133,7 +133,6 @@ let mobileView: View | null = null;
 let windowEl: HTMLElement | null = null;
 let windowContent: HTMLElement | null = null;
 let windowView: View | null = null;
-let windowDetach: (() => void)[] = [];
 // makePlayer() adds, destroy() removes — self-maintaining.
 const players = new Set<Player>();
 const bindPlayers = () => { for (const p of players) p.bind(); };
@@ -158,6 +157,11 @@ export function initPlaylist(_viewport: Viewport | null, _commands: PlaylistComm
   cmds = _commands;
   const host = document.getElementById('mobile-playlist');
   if (host) mobileView = createView(host, { reorderable: true, variant: 'lens' });
+
+  // The player and the sticker pad stand on the same corner. Opening one puts
+  // the other away and remembers it; closing brings it back. Nothing is
+  // written down, so a reload starts with both shut.
+  registerPanel('playlist', openPlayerWindow, closePlayerWindow);
 
   bus.on('board:load', () => {
     clearQueue(); tagged.clear(); wiredEl = null; resetPanels(); closePlayerWindow(); renderAll();
@@ -265,6 +269,12 @@ function markPlaying() {
 function queueEl() {
   const np = nowPlaying();
   return np && isQueuePlayer(np.el) ? np.el : null;
+}
+
+/** The queue player's length, the counted one where there is one — trackLength(). */
+function queueLength() {
+  const el = queueEl();
+  return el ? trackLength(el, nowPlaying()?.item?.meta?.duration) : 0;
 }
 
 function togglePlay() {
@@ -1088,7 +1098,7 @@ const cssEscape = (s: string) =>
   (typeof window.CSS?.escape === 'function' ? CSS.escape(s) : String(s).replace(/["\\]/g, '\\$&'));
 
 // ---------------------------------------------------------------------------
-// The Desktop floating window
+// The Desktop panel
 // ---------------------------------------------------------------------------
 
 export function togglePlayerWindow() {
@@ -1118,20 +1128,13 @@ function openPlayerWindow() {
   close.innerHTML = CLOSE_ICON;
   close.addEventListener('click', closePlayerWindow);
   head.append(title, spacer, toggle, close);
-  windowDetach.push(makeWindowDrag(windowEl, head));
   windowContent = div('player-window-content');
   windowEl.append(head, windowContent);
   document.body.appendChild(windowEl);
 
-  const resize = div('player-window-resize');
-  resize.setAttribute('aria-hidden', 'true');
-  windowEl.appendChild(resize);
-  windowDetach.push(makeWindowResize(windowEl, resize));
-
   renderWindowBody();
-
-  // Next frame so the transition from scaled-down actually runs.
-  requestAnimationFrame(() => windowEl?.classList.add('is-open'));
+  panelShown('playlist');
+  showSheet(windowEl);
 }
 
 function renderWindowBody() {
@@ -1153,24 +1156,16 @@ function showAlbumView() {
   cmds?.setBoardMode('mobile');
 }
 
-// Per-element backstop: a shared timer lost the first element's backstop on rapid close/reopen.
-const windowExits = new WeakMap<Element, number>();
-
 function closePlayerWindow() {
   if (!windowEl) { markTransport(); return; }
   const el = windowEl;
   windowView?.destroy();
-  windowDetach.forEach(fn => fn());
-  windowDetach = [];
   windowEl = null;
   windowContent = null;
   windowView = null;
-  el.classList.remove('is-open');
-  clearTimeout(windowExits.get(el));
-  const done = () => { clearTimeout(windowExits.get(el)); windowExits.delete(el); el.remove(); };
-  el.addEventListener('transitionend', e => { if (e.propertyName === 'transform') done(); }, { once: true });
-  windowExits.set(el, setTimeout(done, 500));
+  hideSheet(el);
   markTransport();
+  panelHidden('playlist');
 }
 
 // Tells chrome.css the window's transport drives what is sounding, so the
@@ -1227,10 +1222,11 @@ function makePlayer(): Player {
 
   bindScrub(line, clientX => {
     const s = queueEl();
-    if (!s || !s.duration) return;
+    const dur = queueLength();
+    if (!s || !dur) return;
     const box = line.getBoundingClientRect();
     if (!box.width) return;
-    s.currentTime = clamp((clientX - box.left) / box.width, 0, 1) * s.duration;
+    s.currentTime = clamp((clientX - box.left) / box.width, 0, 1) * dur;
     paint();
   });
 
@@ -1240,7 +1236,7 @@ function makePlayer(): Player {
 
   function paint() {
     const s = queueEl();
-    const dur = s?.duration || 0;
+    const dur = queueLength();
     const cur = s?.currentTime || 0;
     line.style.setProperty('--pw-progress', (dur ? clamp(cur / dur, 0, 1) : 0).toFixed(4));
     elapsed.textContent = clock(cur);

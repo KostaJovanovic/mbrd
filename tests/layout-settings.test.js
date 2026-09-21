@@ -161,6 +161,7 @@ test('Desktop and Mobile retain independent settings and local appearance', () =
   setSetting('gridStep', 80);
   setSetting('spacing', 36);
   setSetting('hud', true);
+  setSetting('paperShow', true);
   setSetting('paper', 'a4');
   setSetting('paperLandscape', true);
   setSetting('paperResize', true);
@@ -183,7 +184,9 @@ test('Desktop and Mobile retain independent settings and local appearance', () =
   assert.equal(board.settings.gridStep, 64);
   assert.equal(board.settings.spacing, 0);
   assert.equal(board.settings.hud, false);
-  assert.equal(board.settings.paper, '');
+  // Only `paperShow` is pinned by the switch. Mobile's profile carries a size
+  // and an orientation of its own, at the defaults, ready for nothing.
+  assert.equal(board.settings.paperShow, false);
   assert.equal(board.settings.paperLandscape, false);
   assert.equal(board.settings.paperResize, false);
   assert.deepEqual(board.settings.fonts, [
@@ -202,10 +205,12 @@ test('Desktop and Mobile retain independent settings and local appearance', () =
   assert.equal(board.settings.appearance.vars['--radius'], undefined);
   assert.equal(board.settings.appearance.vars['--font-body'], 'Desktop Face');
 
+  setSetting('paperShow', true);
   setSetting('paper', 'letter');
   setSetting('paperLandscape', true);
   setSetting('paperResize', true);
-  assert.equal(board.settings.paper, '', 'Mobile refuses a sheet after the switch too');
+  assert.equal(board.settings.paperShow, false, 'Mobile refuses a sheet after the switch too');
+  assert.equal(board.settings.paper, 'a4', 'and the size that would have gone with it');
   assert.equal(board.settings.paperLandscape, false);
   assert.equal(board.settings.paperResize, false);
 
@@ -234,6 +239,7 @@ test('Desktop and Mobile retain independent settings and local appearance', () =
   assert.equal(board.settings.mobileColumns, 6);
   assert.equal(board.settings.spacing, 36);
   assert.equal(board.settings.hud, true);
+  assert.equal(board.settings.paperShow, true);
   assert.equal(board.settings.paper, 'a4');
   assert.equal(board.settings.paperLandscape, true);
   assert.equal(board.settings.paperResize, true);

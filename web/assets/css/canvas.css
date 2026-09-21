@@ -174,9 +174,14 @@
 /* Too small on screen for separate targets — outline stays, handles go. */
 #paper.no-grips .paper-grip { display: none; }
 
-/* Held for the drag so the cursor survives leaving the grip. */
+/* Held for the drag so the cursor survives leaving the grip. The axis is the
+   grabbed corner's, set by canvas/paper.ts — one value for all four pointed
+   across the drag on two of them. nwse is the default so a missing attribute
+   still resizes rather than showing an arrow. */
 :root.is-sizing-paper,
 :root.is-sizing-paper * { cursor: nwse-resize !important; }
+:root.is-sizing-paper[data-sizing-axis="nesw"],
+:root.is-sizing-paper[data-sizing-axis="nesw"] * { cursor: nesw-resize !important; }
 /* Above the sheet's top-left corner, out of the enclosed area. */
 #paper-label {
   position: absolute;

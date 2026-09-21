@@ -19,31 +19,41 @@ const MM_PER_FOOT = MM_PER_INCH * 12;
  * "Exactly" in the spec and "approximately" on the glass, and the gap is worth
  * naming: a browser reports 96 px to the inch whatever panel it is running on,
  * so on a 92 dpi monitor a nominal inch is about 4% over and on a phone it is
- * off by a great deal more. Nothing here can fix that, and it is not the number
- * that matters anyway - it matters that a default board starts somewhere real
- * rather than somewhere arbitrary. A board that is *about* physical objects is
- * measured from one of them, which is what the paper corners and "Set from
- * selection" are for.
+ * off by a great deal more. So this is a unit conversion and not a measurement
+ * of anybody's screen. Its one remaining reader wants exactly that much -
+ * MIN_PX_TOUCH in canvas/grid.ts, a finger-sized floor on how close two lattice
+ * dots may be drawn - and the default scale below no longer derives from it. A
+ * board that is *about* physical objects is measured from one of them, which is
+ * what the paper corners and "Set from selection" are for.
  */
 export const PX_PER_INCH = 96;
-const PX_PER_MM = PX_PER_INCH / MM_PER_INCH;
 
 /**
- * The default scale: life size on screen at 100% zoom.
+ * The default scale: a sheet of A4 is 1325 board units down its long side.
  *
- * A board nobody has measured still has to say *something*. "One unit is one
- * millimetre" - what this was first - was the arbitrary answer dressed up as a
- * neutral one, and it made a dropped photograph a 32 cm print. Pinning it to
- * the grid square instead was better but still a number somebody picked.
+ * A board nobody has measured still has to say *something*, and this file has
+ * said three things in turn. "One unit is one millimetre" came first, and made
+ * a dropped photograph a 32 cm print. CSS's own inch came next and had the
+ * better argument: one world unit is one CSS pixel at 1:1 (see viewport.ts), so
+ * at 100% zoom an A4 outline was an A4 you could hold up against the screen,
+ * and the zoom readout was a percentage of something rather than of nothing.
  *
- * This one is not picked at all, and that is the whole of its argument: at 100%
- * zoom, an A4 outline is an A4 you could hold up against the screen. The zoom
- * readout already claims to be a percentage of something, and this is what it
- * is a percentage of. One world unit is one CSS pixel at 1:1 - see viewport.ts
- * - so the scale that makes the board life size is just CSS's pixels per
- * millimetre, and nothing else in the app has to know that.
+ * This is the third, and it gives that up. A4 comes out 1325 x 937, and 100%
+ * zoom shows it about 18% over life size - life size put the sheet at 1123
+ * units, which is smaller than a board is worked on.
+ *
+ * Picked rather than derived, and the honest thing is to say so. The argument
+ * the last one had was precisely that its number was nobody's choice; dressing
+ * a chosen number in those clothes would be the arbitrary answer wearing them,
+ * which is what "one unit is one millimetre" already was.
+ *
+ * Nothing downstream reads the number: every measurement in the app goes
+ * through toMm() and toUnits(), and a board that is about something real is
+ * measured from it rather than inheriting this.
  */
-export const DEFAULT_SCALE = PX_PER_MM;
+const A4_LONG_MM = 297;        // and the short side is 210 - see PAPERS below
+const A4_LONG_UNITS = 1325;
+export const DEFAULT_SCALE = A4_LONG_UNITS / A4_LONG_MM;
 
 /**
  * Guard rails. A scale outside these is a typo, not a board.
