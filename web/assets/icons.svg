@@ -260,6 +260,14 @@
   <path d="M8 7.6v5.2"/>
 </symbol>
 
+<!-- A highlighter, leaning right with its chisel tip at the lower left. Drawn
+     in the top of the box: the button puts the colour it marks in as a bar
+     underneath, so the pen leaves the bottom rows free. -->
+<symbol id="i-note-marker" viewBox="0 0 16 16">
+  <path d="M9.6 1.6l3.3 3.3-5.4 5.4-3.3-3.3z"/>
+  <path d="M4.2 7l-1.4 3.7 1.3 1.3L7.8 10.6"/>
+</symbol>
+
 <!-- A name tag.
      Three attempts at drawing the app's own name plate came first, and all
      three failed the same way: a plate wide enough to look like a plate is

@@ -391,21 +391,23 @@
   background: color-mix(in srgb, var(--ink) 6%, transparent);
 }
 
-/* The marker control, whose face is the colour rather than a picture of a pen.
-   The chip is drawn from --note-wash, which the data-wash block up by the note
-   lines sets - one attribute, one mapping, two very different elements reading
+/* The marker control: a pen, and under it a bar in the colour at the caret.
+   The bar is drawn from --note-wash, which the data-wash block up by the note
+   runs sets - one attribute, one mapping, two very different elements reading
    it.
 
    Unmarked there is no attribute and so no --note-wash, and the fallback is the
    whole of what "none" looks like here: nothing inside a ring - which is now
    what actually happens, rather than what the old `--wash` fallback claimed
    while an inherited `1` shadowed it. The ring is on in both states
-   deliberately, so the chip does not change size or weight as a colour is
+   deliberately, so the bar does not change size or weight as a colour is
    chosen - only what is in it. */
+.note-toolbar .ntb-marker { flex-direction: column; gap: 2px; }
+.note-toolbar .ntb-marker .ico { width: 18px; height: 18px; margin-bottom: -3px; }
 .note-toolbar .ntb-chip {
   display: block;
-  width: 17px;
-  height: 17px;
+  width: 18px;
+  height: 5px;
   /* --radius-xs, which resolves to 4.004px at the middle tier - so this literal
      was the token frozen as the number it happened to be on the day it was
      copied, and the chip stayed rounded when the Corner radius slider went to 0.
