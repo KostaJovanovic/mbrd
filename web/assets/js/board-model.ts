@@ -648,7 +648,7 @@ function size(v: unknown, fallback: number) {
 export const MAX_ITEMS = 20000;
 
 // Shared by the runtime bin and the file reader.
-export const TRASH_LIMIT = 60;
+export const TRASH_LIMIT = 150;
 
 // Deterministic suffix so a given file always loads the same way.
 export function dedupeIds(list: Item[], seen: Set<string>): Item[] {

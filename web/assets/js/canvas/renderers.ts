@@ -437,8 +437,8 @@ export async function measureSize(type: string, file: File): Promise<MeasuredSiz
 
 /**
  * The proportion (w/h) of the picture a photo or video card shows, with its
- * crop and quarter turn, or null when nothing can be measured. Fit brings a
- * card to it (fitShapes in ui/board-actions.ts).
+ * crop and quarter turn, or null when nothing can be measured. The card is
+ * kept to it (canvas/picture-shape.ts).
  *
  * Read off the smallest copy that is exact: a photo's display copy (uncropped,
  * 1024 on the long side), a video's poster frame, and the file itself only
@@ -677,6 +677,23 @@ function markUnplayable(media: HTMLMediaElement, item: Item) {
   body.append(note);
 }
 
+/**
+ * What sits behind a picture letterboxed on the grid: a blurred, dimmed copy
+ * of it where the quality dial allows blur, and nothing - the card's paper -
+ * where it does not. The rules are .pic-well in items.css; unshown, the
+ * background is never fetched.
+ */
+function picWell() {
+  const el = document.createElement('span');
+  el.className = 'pic-well';
+  const haze = document.createElement('span');
+  el.append(haze);
+  return {
+    el,
+    paint: (url: string) => { if (url) haze.style.setProperty('--pic-bg', `url(${JSON.stringify(url)})`); },
+  };
+}
+
 const RENDERERS = {
   image(item: Item) {
     const img = document.createElement('img');
@@ -826,7 +843,17 @@ const RENDERERS = {
     const animated = isAnimated(item);
     const thumbHash = metaStr(item.meta?.thumb);
     const thumb = !animated && !edited && thumbHash && assetURL(thumbHash);
-    if (!animated && !thumb) return img;
+    // The letterbox, blurred: the hundred-pixel thumbnail where it is the right
+    // picture, since a blur needs no more, and otherwise the first thing the card
+    // shows - the display copy, which carries the crop and the turn.
+    const well = picWell();
+    if (thumb) well.paint(thumb);
+    else img.addEventListener('load', () => well.paint(img.currentSrc), { once: true });
+    if (!animated && !thumb) {
+      const pair = document.createDocumentFragment();
+      pair.append(well.el, img);
+      return pair;
+    }
 
     if (animated) img.dataset.gif = '';
     const still = document.createElement('img');
@@ -842,7 +869,7 @@ const RENDERERS = {
       still.src = thumb;
     }
     const pair = document.createDocumentFragment();
-    pair.append(img, still);
+    pair.append(well.el, img, still);
     return pair;
   },
 
@@ -963,7 +990,9 @@ const RENDERERS = {
     // an animated picture travels with its still. The twin goes directly after
     // the <video> because the CSS pairs them with `+`.
     const pair = document.createDocumentFragment();
-    pair.append(v);
+    const well = picWell();
+    if (twinURL || poster) well.paint((twinURL || poster)!);
+    pair.append(well.el, v);
     if (still) pair.append(still);
     pair.append(buildVideoPlayer(item, v));
     return pair;
@@ -2151,12 +2180,20 @@ function adoptAspect(item: Item, nw: number, nh: number) {
 }
 
 /**
- * Object-fit for an item. Only photos and videos are steerable: they take their
- * own meta.fit if it is set, otherwise the board-wide default (board.mediaFit),
- * otherwise fill. Everything else is always contained, as it has always been.
+ * Object-fit for an item. Everything but a photo or video is contained, as it
+ * has always been.
+ *
+ * Off the grid a picture card is its picture's shape (canvas/picture-shape.ts),
+ * so fill and fit show the same thing, and fill is the one that hides the
+ * rounding: a box a pixel off its picture shows a pixel less picture instead of
+ * a hairline of paper. The Feed has no grid, and draws a picture's tile at its
+ * picture's shape (ratioOf in ui/feed.ts). On the grid the card is whole cells
+ * and the two differ, and the choice is the item's own meta.fit, else the
+ * board-wide default (board.mediaFit), else fit.
  */
 export function fitMode(item: Item) {
   if (item.type !== 'image' && item.type !== 'video') return 'contain';
+  if (!board.settings.snap || board.layoutMode === 'mobile') return 'cover';
   const own = item.meta?.fit;
   if (own === 'cover' || own === 'contain') return own;
   return board.mediaFit === 'contain' ? 'contain' : 'cover';

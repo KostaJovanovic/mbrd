@@ -5,10 +5,12 @@
    --------------------------------------------------------- */
 
 /* ---- 0: softish - a photograph becomes a print ---------------------------
-   Mat drawn inside the item (insetting the picture, not growing the card —
-   growing would resize saved items when the slider moves; drawing outside
-   would leave the mat outside the hit area). Every measure is a fraction of
-   --half-min so the mat scales with the print. */
+   Mat drawn inside the item, insetting the picture. The card is made taller
+   than its photo to hold it instead (canvas/picture-shape.ts), so the window
+   is the photo's own shape and nothing is cropped - which is why crossing into
+   Softish reshapes the cards. Every measure is a fraction of --half-min so the
+   mat scales with the print; PRINT_MAT and PRINT_CHIN in geometry.ts are these
+   numbers, and must move with them. */
 /* :not([data-bare]): a cut-out has no card, so the print treatment does not
    apply — it would draw a frame round nothing. */
 :root[data-whimsy="0"] .item[data-type="image"]:not([data-bare]) {
@@ -26,14 +28,12 @@
   width:  calc(100% - var(--mat) * 2);
   height: calc(100% - var(--mat) - var(--chin));
   border-radius: 0;
-  /* Always cover: the mat is the "fit" gesture. Out-specifies data-fit. */
-  object-fit: cover;
-  /* Hairline for pale photos on pale stock. */
+  /* Hairline for pale photos on pale stock. Not round a letterboxed photo,
+     where it would outline the empty window rather than the picture. */
   box-shadow: 0 0 0 var(--board-hairline) color-mix(in srgb, var(--ink) 10%, transparent);
 }
-/* Per-card Fit override still wins (data-fit-own, more specific). */
-:root[data-whimsy="0"] .item[data-type="image"][data-fit-own="contain"]:not([data-bare]) .item-body img {
-  object-fit: contain;
+:root[data-whimsy="0"] .item[data-type="image"][data-fit="contain"]:not([data-bare]) .item-body img {
+  box-shadow: none;
 }
 /* Caption sits on the chin — no translucent bar needed. Stays visible
    (opacity: 1) where other tiers hide it until hover. */

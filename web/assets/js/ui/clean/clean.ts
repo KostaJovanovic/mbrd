@@ -1,10 +1,13 @@
 // The cleaning simulator: the mode the konami code opens, and seven taps on the
 // wordmark. Freezes the cards, lays a dirt layer over them inside #world so pan
 // and zoom still work, and puts one of three tools in your hand. Touches no
-// board state but one: a finished board is left one card, added on the way out.
-// See ./mess.ts for the arithmetic and ./art.ts for the drawing.
+// board state but one: a finished board is left one card, added on the way out,
+// whose button deals the music as a second (dealSong()). See ./mess.ts for the arithmetic and ./art.ts for the drawing.
 
-import { bus, board, timelinePlaying, addItems } from '../../state.ts';
+import { bus, board, timelinePlaying, addItems, byId, select } from '../../state.ts';
+import { importFiles } from '../../import/drop.ts';
+import { addFile } from '../../storage/assets.ts';
+import { toast } from '../../notify.ts';
 import type { Item } from '../../board-model.ts';
 import type { Viewport } from '../../canvas/viewport.ts';
 import { tiltOf, nodeFor, setCleanPlay } from '../../canvas/items.ts';
@@ -4410,6 +4413,52 @@ function dealCard() {
     real?.classList.remove('is-clean-arriving');
     copy.remove();
   });
+}
+
+/** What the song lands on the board as. The file carries no title tag, and
+ *  clean-loop is the repository's name for it, not a listener's. */
+const SONG_NAME = 'Spotless.opus';
+
+/** A press still fetching. A second one before it lands would deal two. */
+let songDealing = false;
+
+/**
+ * The button on the Spotless card: the mode's music as an ordinary audio card,
+ * laid under the card it was asked from. **One on the board at a time** - found
+ * by its bytes, so a copy dropped in by hand counts too, and one in the drawer
+ * does not, since the drawer is not the board. Asked for again, the one there
+ * is selected instead.
+ *
+ * Imported like any drop, so the card is the same card the file would make
+ * dropped on its own. Nothing of the mode is needed: it reads the file off the
+ * site, and the card can be pressed long after the mode has gone.
+ */
+export async function dealSong(id: string) {
+  const card = byId(id);
+  if (!card || songDealing) return;
+  songDealing = true;
+  try {
+    const res = await fetch(MUSIC);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const file = new File([await res.blob()], SONG_NAME, { type: 'audio/ogg' });
+    // The same hash the import files it under, so this is also the lookup.
+    const hash = await addFile(file);
+    const there = board.items.find(i => i.asset?.hash === hash);
+    if (there) {
+      select([there.id]);
+      toast('The song is already on the board');
+      return;
+    }
+    const size = defaultSize('audio');
+    const gap = board.settings.spacing;
+    // World y points up, so under is less.
+    await importFiles([file], { x: card.x, y: card.y - card.h / 2 - gap - size.h / 2 });
+  } catch (err) {
+    console.error('[mbrd] could not deal the song', err);
+    toast('The song could not be loaded', 'error');
+  } finally {
+    songDealing = false;
+  }
 }
 
 // ---- music and media ----------------------------------------------------

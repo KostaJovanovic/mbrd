@@ -335,21 +335,11 @@ export function retilt(el: HTMLElement, item: ItemLike): string | null {
 // ---------------------------------------------------------------------------
 
 /**
- * Write both fit attributes onto a card.
- *
- * data-fit is the *effective* object-fit - the item's own meta.fit if it set
- * one, else the board-wide default - and is what items.css keys the ordinary
- * cover/contain off. data-fit-own carries only the choice made on this card, and
- * exists for one rule: at whimsy 0 an image is a polaroid pinned to cover, which
- * has to hold against the board default (whose contain would otherwise letterbox
- * every Softish photo) but yield to somebody explicitly asking for Fit in the
- * card. data-fit cannot tell those two contains apart; this can.
+ * Write the fit attribute onto a card: the *effective* object-fit (fitMode),
+ * which items.css and the Softish print in quality.css both key off.
  */
 export function writeFit(el: HTMLElement, item: ItemLike): void {
   el.dataset.fit = fitMode(item);
-  const own = item?.meta?.fit;
-  if (own === 'cover' || own === 'contain') el.dataset.fitOwn = own;
-  else delete el.dataset.fitOwn;
   // The cut-out flag, written here for the same reason the fit is: it is a
   // stylesheet question, and the alternative is a renderer that knows about
   // paper. An attribute rather than a class so it reads like the rest of the

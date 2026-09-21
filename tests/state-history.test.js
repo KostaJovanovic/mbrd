@@ -9,8 +9,9 @@ import assert from 'node:assert/strict';
 import {
   board, addItems, removeItems, restoreItems, emptyTrash, undo, redo, byId,
   setBoardMode, setSetting, recheckBoardGeometry, lastCommand, takeBack,
-  snapshotGeom, commitGeom,
+  snapshotGeom, commitGeom, bus,
 } from '../web/assets/js/state.ts';
+import { TRASH_LIMIT } from '../web/assets/js/board-model.ts';
 import { fresh, photo } from './state-fixtures.js';
 
 beforeEach(() => {
@@ -85,39 +86,64 @@ test('emptying the bin is undoable', () => {
 });
 
 test('the bin has a ceiling', () => {
-  const many = addItems(Array.from({ length: 70 }, (_, i) => photo({ x: i })));
+  const many = addItems(Array.from({ length: TRASH_LIMIT + 10 }, (_, i) => photo({ x: i })));
   removeItems(many.map(i => i.id));
-  assert.ok(board.trash.length <= 60, `bin grew to ${board.trash.length}`);
+  assert.ok(board.trash.length <= TRASH_LIMIT, `bin grew to ${board.trash.length}`);
 });
 
 test('undo puts back what the bin dropped to make room', () => {
   // A command must reverse everything it did, including the eviction a
   // delete causes on a full bin. Undo used to remove only the items it had
   // just binned, so the evicted entry was gone for good.
-  const first = addItems(Array.from({ length: 60 }, (_, i) => photo({ x: i, name: `old${i}.png` })));
+  const first = addItems(Array.from({ length: TRASH_LIMIT }, (_, i) => photo({ x: i, name: `old${i}.png` })));
   removeItems(first.map(i => i.id));
   const oldest = board.trash[board.trash.length - 1].item.name;
-  assert.equal(board.trash.length, 60);
+  assert.equal(board.trash.length, TRASH_LIMIT);
 
   const [extra] = addItems([photo({ name: 'new.png' })]);
   removeItems([extra.id]);
-  assert.equal(board.trash.length, 60, 'the bin should still be at its ceiling');
+  assert.equal(board.trash.length, TRASH_LIMIT, 'the bin should still be at its ceiling');
   assert.ok(!board.trash.some(t => t.item.name === oldest), 'the oldest should have been pushed out');
 
   undo();
-  assert.equal(board.trash.length, 60, 'undo should leave the bin as it found it');
+  assert.equal(board.trash.length, TRASH_LIMIT, 'undo should leave the bin as it found it');
   assert.equal(board.trash[board.trash.length - 1].item.name, oldest, 'the evicted entry did not come back');
 });
 
 test('redo evicts again rather than growing the bin', () => {
-  const first = addItems(Array.from({ length: 60 }, (_, i) => photo({ x: i })));
+  const first = addItems(Array.from({ length: TRASH_LIMIT }, (_, i) => photo({ x: i })));
   removeItems(first.map(i => i.id));
   const [extra] = addItems([photo({ name: 'new.png' })]);
   removeItems([extra.id]);
   undo();
   redo();
-  assert.equal(board.trash.length, 60);
+  assert.equal(board.trash.length, TRASH_LIMIT);
   assert.equal(board.trash[0].item.name, 'new.png');
+});
+
+test('the delete that fills the bin warns before anything is dropped', () => {
+  const heard = [];
+  const full = () => heard.push('full');
+  const evicted = n => heard.push(`evicted ${n}`);
+  bus.on('trash:full', full);
+  bus.on('trash:evicted', evicted);
+  try {
+    const first = addItems(Array.from({ length: TRASH_LIMIT - 1 }, (_, i) => photo({ x: i })));
+    removeItems(first.map(i => i.id));
+    assert.deepEqual(heard, [], 'a bin with room left says nothing');
+    const [last] = addItems([photo()]);
+    removeItems([last.id]);
+    assert.deepEqual(heard, ['full'], 'the delete that fills it is the warning');
+    const [over] = addItems([photo()]);
+    removeItems([over.id]);
+    assert.deepEqual(heard, ['full', 'evicted 1'], 'the next one drops, and says so instead');
+    undo();
+    redo();
+    assert.deepEqual(heard, ['full', 'evicted 1'], 'undo and redo announce nothing');
+  } finally {
+    bus.off('trash:full', full);
+    bus.off('trash:evicted', evicted);
+  }
 });
 
 // ---------------------------------------------------------------------------

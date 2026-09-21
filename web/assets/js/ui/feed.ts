@@ -39,6 +39,7 @@ import { armedSticker, disarm } from './sticker-window.ts';
 import { openViewer, canView } from './viewer.ts';
 import { openPanel as openHeaderPanel } from './mobile-header.ts';
 import { unpackItem } from '../import/unpack.ts';
+import { dealSong } from './clean/clean.ts';
 import { renderMarkdown } from './markdown.ts';
 import { shownHash, type Item } from '../board-model.ts';
 import type { Point } from '../geometry.ts';
@@ -410,15 +411,17 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
   // Every press, whatever made it. Capture, so the tile menu's hold reads it.
   root.addEventListener('pointerdown', e => { pressType = e.pointerType; },
     { capture: true, passive: true });
-  // Unzip and Open on an archive or folder tile. Capture too, so the tile's
+  // Unzip and Open on an archive or folder tile, and the song on a Spotless
+  // one. Capture too, so the tile's
   // own tap - open the viewer - never sees a press meant for the button.
   root.addEventListener('click', e => {
-    const button = e.target instanceof Element ? e.target.closest('.card-unpack') : null;
+    const button = e.target instanceof Element ? e.target.closest('.card-unpack, .spotless-song') : null;
     const id = button && tileIdAt(button);
     if (!id) return;
     e.preventDefault();
     e.stopPropagation();
-    void unpackItem(id);
+    if (button.classList.contains('spotless-song')) void dealSong(id);
+    else void unpackItem(id);
   }, true);
 
   bus.on('board:load', () => { seenRatio.clear(); teardown(); render(); });
@@ -429,10 +432,9 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
   bus.on('board', paintMasthead);
   bus.on('fonts', paintMasthead);
   bus.on('selection', paintSelection);
-  // A per-item Fill/Fit change arrives as 'item', the same as on the canvas
-  // (canvas/items.ts): only the object-fit attribute changes, so the tile is
-  // repainted in place rather than rebuilt. Fit and Fill draw a tile at
-  // different shapes (ratioOf()), so the wall may move as well.
+  // A per-item change arrives as 'item', the same as on the canvas
+  // (canvas/items.ts). A crop or a turn changes a picture's shape (ratioOf()),
+  // so the wall may move as well.
   bus.on('item', id => {
     const t = tiles.get(id);
     if (t) writeTileFit(t);
@@ -440,9 +442,6 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
   });
   bus.on('settings', key => {
     if (key === 'arrangement' || key === 'profile') render();
-    // The board-wide Fill/Fit default. Nothing about a tile is rebuilt - each
-    // media tile re-reads its effective fit, exactly as canvas/items.ts does.
-    else if (key === 'mediaFit') { for (const t of tiles.values()) writeTileFit(t); scheduleLayout(); }
     else if (key === 'mobileHeader' || key === 'appearance') paintMasthead();
   });
   onNowPlaying(markPlaying);
@@ -592,12 +591,11 @@ function ratioOf(item: Item) {
   // and a lot of paper.
   if (kind === 'text') return 0.75;
   const r = item.w > 0 && item.h > 0 ? item.w / item.h : 1;
-  // A picture set to Fit takes its own shape once a load has shown it, so it
-  // fills the tile with no band of paper above or below. Clamped far wider
-  // than a Fill tile: a panorama at 4:1 is still a strip a finger can press.
-  if ((kind === 'image' || kind === 'video') && fitMode(item) === 'contain') {
-    return clamp(seenRatio.get(item.id) || r, 0.25, 4);
-  }
+  // A picture takes its own shape once a load has shown it, as its card does
+  // on the board (canvas/picture-shape.ts): the Feed has no grid to fit it to.
+  // Clamped far wider than the rest: a panorama at 4:1 is still a strip a
+  // finger can press.
+  if (kind === 'image' || kind === 'video') return clamp(seenRatio.get(item.id) || r, 0.25, 4);
   return clamp(r, 0.5, 2);
 }
 
@@ -886,13 +884,10 @@ function wantCopy(t: Tile, img: HTMLImageElement,
 }
 
 /**
- * The effective object-fit for a photo or video tile, as the data-fit attribute
- * the CSS keys off - the same choice the canvas card makes through fitMode()
- * (canvas/renderers.ts): the item's own meta.fit, else the board-wide
- * board.mediaFit, else fill. So a picture set to Fit on the board is Fit here,
- * and the Feed stops being the one view that always fills. Only image and video
- * tiles are steerable; nothing else carries the attribute, and neither does the
- * poster-only branch of a video with no clip mounted (it is still an image).
+ * The object-fit for a photo or video tile, as the data-fit attribute the CSS
+ * keys off - fitMode() (canvas/renderers.ts), which on the Feed is fill: the
+ * tile is its picture's shape, and fill hides the rounding. Nothing but image
+ * and video tiles carries the attribute.
  */
 function writeTileFit(t: Tile) {
   if (t.kind === 'image' || t.kind === 'video') t.el.dataset.fit = fitMode(t.item);

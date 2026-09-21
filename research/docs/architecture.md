@@ -243,7 +243,7 @@ on how many entries it has.
 Undo is not the only way back. `ui/drawer.ts` is the Drawer, and the two are
 different models on purpose: undo is a stack, so it returns the *last* thing and
 only if nothing has happened since; the drawer holds everything thrown away
-(`TRASH_LIMIT`, 60) with no relation to what came after, taken back one at a
+(`TRASH_LIMIT`, 150) with no relation to what came after, taken back one at a
 time. Restoring is a **drag** rather than a Restore button, because a deleted
 item remembers where it was and that spot is usually why it was deleted — the
 board has grown into the gap, so the drag is what says where it goes now. Title

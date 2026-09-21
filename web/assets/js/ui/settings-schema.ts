@@ -906,11 +906,12 @@ export const SECTIONS: Section[] = [
       // every board that had the web switched on opening blank.
       { id: 'opt-web', type: 'check', label: 'Show connections', when: desktop,
         get: () => board.settings.web !== false, set: v => setSetting('web', v) },
-      // Checked = photos and videos fill their card and crop; unchecked = the
-      // whole picture fits inside and letterboxes. Board-wide default; a single
-      // item overrides it from its right-click menu. Unchecking it also brings
-      // each card to its picture's shape (setMediaFit, board-actions.ts).
-      { id: 'opt-mediafit', type: 'check', label: 'Fill photos & videos',
+      // On the grid only, since off it a card is its picture's shape: checked =
+      // photos and videos fill their cells and crop; unchecked = the whole
+      // picture fits inside and letterboxes. Board-wide default; a single item
+      // overrides it from its right-click menu.
+      { id: 'opt-mediafit', type: 'check', label: 'Crop photos to the grid',
+        when: ctx => desktop(ctx) && !!board.settings.snap,
         get: () => board.mediaFit !== 'contain',
         set: v => setMediaFit(v) },
       // Volume was the last row here and is not any more, for a reason that has

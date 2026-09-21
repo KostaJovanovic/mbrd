@@ -158,6 +158,30 @@
 .item[data-fit="contain"] .item-body img,
 .item[data-fit="contain"] .item-body video { object-fit: contain; }
 
+/* The letterbox round a picture fitted into grid cells: a blurred, dimmed copy
+   of it where the dial allows blur (renderers.ts picWell), the card's paper
+   where it does not. Sized to the photo window, so a Softish print's mat stays
+   paper - --mat and --chin are unset everywhere else. The haze overhangs the
+   well so the blur has no pale rim, and the well clips it. */
+.pic-well { display: none; }
+:root[data-q-blur="on"] .item[data-fit="contain"]:not([data-bare]) .pic-well {
+  display: block;
+  position: absolute;
+  top: var(--mat, 0px);
+  left: var(--mat, 0px);
+  right: var(--mat, 0px);
+  bottom: var(--chin, 0px);
+  overflow: hidden;
+}
+.pic-well > span {
+  position: absolute;
+  inset: -15%;
+  background: var(--pic-bg, none) center / cover no-repeat;
+  filter: blur(calc(var(--half-min, 120px) * 0.12)) brightness(0.72) saturate(1.1);
+}
+/* In front of the well, which is positioned and would otherwise paint over it. */
+:root[data-q-blur="on"] .item[data-fit="contain"] .item-body :is(img, video) { position: relative; }
+
 /* Picture adjustments as one filter property. `none` default avoids
    promoting every unadjusted card to its own compositor layer. */
 .item-body { filter: var(--item-filter, none); }
@@ -455,6 +479,36 @@
   pointer-events: none;
 }
 .item[data-type="card"]:hover .spotless-hover { opacity: 1; }
+/* The song button: a bare note by the corner, arriving with the hover line.
+   Three things each lose it the press. `pointer-events: auto`, because
+   .item-body turns them off for everything in a card. z-index 3, over the
+   grips (2) like .vbig: the press selects the card, which puts the grips up
+   under the pointer before the release, and the click lands on the grip. And
+   in off the corner, which is the resize grip's to keep. */
+.spotless-song {
+  position: absolute;
+  right: 14px;
+  bottom: 30px;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-3);
+  cursor: pointer;
+  pointer-events: auto;
+  opacity: 0;
+  transition: opacity var(--dur-base) var(--ease), color var(--dur-fast) var(--ease);
+}
+/* Selected as well, which is the only hover a phone has. */
+.item[data-type="card"]:is(:hover, .is-selected) .spotless-song,
+.spotless-song:focus-visible { opacity: 1; }
+.spotless-song:hover,
+.spotless-song:focus-visible { color: var(--accent-text); }
+#world.zoom-far .spotless-song { pointer-events: none; }
 /* Its name is "Spotless", and the face already says more than that. */
 .item[data-type="card"]:not(.is-editing) .item-bar { display: none; }
 

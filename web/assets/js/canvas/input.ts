@@ -18,14 +18,15 @@ import { zoomMs } from './viewport.ts';
 import type { Viewport } from './viewport.ts';
 import {
   itemInRect, itemWithinRect, rotatedExtents,
-  latticeBox, latticeLow, cellInset, MIN_SIZE, MAX_SIZE, CARD_FLOOR_CELLS,
+  latticeBox, latticeLow, latticePicture, cellInset, MIN_SIZE, MAX_SIZE, CARD_FLOOR_CELLS,
 } from '../geometry.ts';
 import type { Box, Bounds, Point } from '../geometry.ts';
 import {
   itemIdFromEvent, ensureMounted, nodeFor, sync as syncItems, editItemName, showStickTarget,
 } from './items.ts';
 import { noteFloor } from './notes.ts';
-import { fitMode, linkURL } from './renderers.ts';
+import { linkURL } from './renderers.ts';
+import { isPicture, cardRatio } from './picture-shape.ts';
 import { embedFor, embedFloor } from './embed.ts';
 import { queryRect, queryAround } from './spatial.ts';
 import { holdRoutes } from './web.ts';
@@ -984,6 +985,12 @@ type ResizeGesture = {
   // A fence's carry, and null for everything else - see carryFloor().
   holds: CarryHold[] | null,
   lockAspect: boolean,
+  // A picture card's own proportion, which the grip holds whatever Shift says;
+  // null on everything else, and on a picture not yet measured, whose box is
+  // held instead.
+  picture: number | null,
+  // The lattice size a held proportion last landed on, null until it has.
+  cells: { w: number, h: number } | null,
   // Whether this grip lands on the lattice at all. The board setting, less the
   // one exception - a sticky lying on something - decided once when the grip is
   // taken. See the note at startResize().
@@ -1793,39 +1800,20 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
           };
         })
         : null,
-      // Nothing is aspect-locked by default any more, media included. A corner
-      // used to hold a photograph's proportion and let shift free it, on the
-      // reasoning that the shape a picture arrived in is the shape it wants -
-      // which is true of the *picture* and not of the box it is shown in. The
-      // body is object-fit: cover, so a box in a new proportion crops rather
-      // than stretches: what a corner drag actually chooses is framing, and a
-      // grip that refuses to give you the framing you are dragging towards is
-      // a grip that fights you. It also cost the same thing an edge drag cost
-      // before it was freed - a photograph could not be landed on the lattice
-      // by its corner, because the followed side came out of a division.
+      // Nothing but a picture is aspect-locked by default. Shift is the lock for
+      // everything else, at both ends: on a corner it holds the proportion, on
+      // an edge it holds it and scales from that side. Kept as a field rather
+      // than folded into the XOR below because it is the *default* for this
+      // grip, and a future one may well want its own.
       //
-      // Shift is the lock now, at both ends and for everything: on a corner it
-      // holds the proportion, on an edge it holds it and scales the whole
-      // picture from that side. The way back from a box dragged out of shape is
-      // Ctrl+Z, or "Reset size", which restores the size it was born at.
-      //
-      // Kept as a field rather than folded into the XOR below because it is the
-      // *default* for this grip, and a future one may well want its own.
-      //
-      // One default is not false: a photo or video set to Fit, off the grid.
-      // Its box is the picture's own shape (fitShapes, ui/board-actions.ts), and
-      // a free corner would only put bands of paper back round it. Shift frees
-      // it.
-      //
-      // `!snap` is the whole of the exception to that exception. A snapped grip
-      // has already been told what the sides may be - whole cells - and a
-      // proportion is a real number, so the two can only ever be honoured one at
-      // a time: the lattice pass at the tail of the aspect branch is the ratio
-      // being given up to within half a cell, every time, in a way nobody asked
-      // for and nothing shows. On the grid the grid decides, which is what
-      // switching it on said; the lock is Shift's, as it is everywhere else.
-      lockAspect: (it.type === 'image' || it.type === 'video')
-        && fitMode(it) === 'contain' && !snap,
+      // A photo or video is not steered by Shift at all: its card is its
+      // picture's shape (canvas/picture-shape.ts), and a free corner would only
+      // put paper round it or cut it. On the grid the aspect branch lands the
+      // pair on whole cells, as near the shape as they allow, and the picture
+      // sits inside them.
+      lockAspect: isPicture(it),
+      picture: isPicture(it) ? cardRatio(it) : null,
+      cells: null,
       snap,
     });
   }
@@ -2468,8 +2456,14 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       const signX = c.includes('e') ? 1 : c.includes('w') ? -1 : 0;
       // 'n' is the +y side of the item, because world y points up.
       const signY = c.includes('n') ? 1 : c.includes('s') ? -1 : 0;
-      let w = resizeAxis(signX, grip.box.x, grip.box.w, dx, grip.snap);
-      let h = resizeAxis(signY, grip.box.y, grip.box.h, dy, grip.snap);
+      // XOR: shift inverts the default - except on a picture, which is always held.
+      const picture = isPicture(it);
+      const locked = picture || grip.lockAspect !== shiftKey;
+      // A held proportion reads the pointer unsnapped and lands on the lattice
+      // once, at the end of its branch: sides snapped first are steps, and the
+      // proportion built from steps jumps a cell at a time.
+      let w = resizeAxis(signX, grip.box.x, grip.box.w, dx, grip.snap && !locked);
+      let h = resizeAxis(signY, grip.box.y, grip.box.h, dy, grip.snap && !locked);
       // Apply the card and carry its stuck notes with it. Each note is placed at
       // the fraction of the card it held when the drag began (grip.box is that
       // start box), so a note near a moving edge is dragged along by that edge and
@@ -2485,12 +2479,18 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         if (grip.holds && grip.snap) snapCarried(riders);
         applyGeom([host, ...riders]);
       };
-      if (grip.lockAspect !== shiftKey) {         // XOR: shift inverts the default
-        // The dragged side leads and the other follows it at the picture's own
-        // proportion. The side you are watching move is the right one to lead:
-        // it is the one being aimed.
-        const ratio = grip.box.w / grip.box.h;
-        if (Math.abs(w - grip.box.w) > Math.abs(h - grip.box.h)) h = w / ratio;
+      if (locked) {
+        const ratio = grip.picture || grip.box.w / grip.box.h;
+        if (signX && signY) {
+          // A corner: the pointer projected onto the diagonal it moves along,
+          // the nearest box of the proportion to where the hand is. It used to
+          // be whichever side had moved further leading the other, which on
+          // any drag that was not a clean diagonal handed the lead back and
+          // forth frame to frame, and the card jumped between two sizes.
+          const k = (w * ratio + h) / (ratio * ratio + 1);
+          w = k * ratio;
+          h = k;
+        } else if (signX) h = w / ratio;   // an edge: the dragged side leads
         else w = h * ratio;
         // The follower can land outside a limit the dragged side never reached,
         // and clamping only the offender would change the ratio - the single
@@ -2500,6 +2500,13 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         // a nuisance, a box too small cannot be grabbed to undo it.
         let k = Math.min(1, MAX_SIZE / Math.max(w, h));
         k = Math.max(k, MIN_SIZE / Math.min(w, h));
+        // A picture's card floor too, for the same reason: the floor further
+        // down lifts one side at a time.
+        if (picture) {
+          const step = stepNow(), seam = 2 * insetFor(grip.snap);
+          k = Math.max(k, (CARD_FLOOR_CELLS.w * step - seam) / w,
+            (CARD_FLOOR_CELLS.h * step - seam) / h);
+        }
         w *= k;
         h *= k;
         // Both sides back onto the lattice afterwards, because a proportion is
@@ -2511,7 +2518,21 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         // the remainder. Snapping is off most of the time and this does
         // nothing then; the proportion is exact again the moment it is.
         if (grip.snap) {
-          const lattice = ontoLattice({ x: 0, y: 0, w, h });
+          // A picture takes the nearby cells nearest its shape rather than each
+          // side's own nearest (latticePicture in geometry.ts).
+          const step = stepNow();
+          let lattice: { w: number, h: number } = picture
+            ? latticePicture({ x: 0, y: 0, w, h }, ratio, step)
+            : ontoLattice({ x: 0, y: 0, w, h });
+          // With a little stickiness: the cells in hand are kept until the
+          // pointer is clearly nearer the next ones, so a hand resting near
+          // the line between two sizes does not flick the card between them.
+          const held = grip.cells;
+          if (held && (held.w !== lattice.w || held.h !== lattice.h)
+            && Math.hypot(w - lattice.w, h - lattice.h) + 0.3 * step > Math.hypot(w - held.w, h - held.h)) {
+            lattice = held;
+          }
+          grip.cells = { w: lattice.w, h: lattice.h };
           w = lattice.w;
           h = lattice.h;
         }

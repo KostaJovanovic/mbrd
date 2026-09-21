@@ -217,6 +217,13 @@ export function initItems(world: HTMLElement, viewport: Viewport) {
       if (id) unpacker?.(id);
       return;
     }
+    // The song under a Spotless card.
+    const song = t?.closest('.spotless-song');
+    if (song) {
+      const id = itemIdFromEvent(song);
+      if (id) songDealer?.(id);
+      return;
+    }
     // A style tile's swatch copies its colour as the palette has it now.
     const swatch = t?.closest<HTMLElement>('.style-tile-swatch');
     if (swatch) {
@@ -283,14 +290,19 @@ export function initItems(world: HTMLElement, viewport: Viewport) {
   // A per-item fit change comes through 'item' (rebuild re-reads fitMode). The
   // board-wide default changes nothing about an item, so it arrives as a plain
   // 'settings' and only the data-fit attribute needs rewriting - no rebuild, no
-  // reflow of the media itself. Items with their own meta.fit keep it.
-  bus.on('settings', key => {
-    if (key !== 'mediaFit') return;
+  // reflow of the media itself. Items with their own meta.fit keep it. The grid
+  // too, since the choice only applies on it (fitMode).
+  const refit = () => {
     for (const [id, el] of nodes) {
       const item = byId(id);
       if (item && (item.type === 'image' || item.type === 'video')) writeFit(el, item);
     }
+  };
+  bus.on('settings', key => {
+    if (key === 'mediaFit' || key === 'snap') refit();
   });
+  // A layout switch brings the other layout's snap with it, unannounced.
+  bus.on('layout', refit);
   // A style tile follows the look on its own everywhere it can - its swatches
   // hold `var(--accent)` rather than a colour and re-resolve when the palette
   // moves under them. The two face *names* are the exception, because they are
@@ -433,6 +445,14 @@ let unpacker: ((id: string) => void) | null = null;
  */
 export function setUnpack(fn: ((id: string) => void) | null) {
   unpacker = fn;
+}
+
+let songDealer: ((id: string) => void) | null = null;
+
+/** What the Spotless card's song button does (ui/clean/clean.ts). Injected for
+ *  the reason setUnpack() is; unwired, the button does nothing. */
+export function setSpotlessSong(fn: ((id: string) => void) | null) {
+  songDealer = fn;
 }
 
 /** Wire the editor up, or `null` to take every mark off. See paintTourMarks(). */

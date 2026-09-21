@@ -1,5 +1,6 @@
 // The card the cleaning simulator leaves on the board: the board before and
-// after, a line, and a second line under the pointer. A type of its own rather
+// after, a line, a second line under the pointer, and a button that lays the
+// mode's song under it. A type of its own rather
 // than a picture, so it follows the palette like every other card. Its frames
 // are written into `meta` when it is made (ui/clean/clean.ts), and read back
 // through spotlessRects(), which trusts nothing in a file it did not write.
@@ -149,8 +150,24 @@ export function buildSpotlessCard(item: Item): HTMLElement {
   const hover = document.createElement('div');
   hover.className = 'spotless-hover';
   hover.textContent = words.hover;
-  card.append(face, hover);
+  card.append(face, hover, songButton());
   return card;
+}
+
+/** The mode's music, dealt under the card as an audio card of its own. The
+ *  press is delegated - canvas/items.ts on the board, ui/feed.ts on the Feed -
+ *  like Unzip's, so a card rebuilt by the cull carries no listener. */
+function songButton() {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'spotless-song';
+  button.setAttribute('aria-label', 'Put the song on the board');
+  button.title = 'Put the song on the board';
+  const svg = el('svg', { class: 'ico', 'aria-hidden': 'true' });
+  const use = el('use', { href: 'assets/icons.svg#i-music' });
+  svg.append(use);
+  button.append(svg);
+  return button;
 }
 
 /**

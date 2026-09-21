@@ -25,7 +25,7 @@ import { nodeFor } from '../canvas/items.ts';
 import { frameOnScreen } from '../canvas/poster.ts';
 import { canView, openViewer } from '../ui/viewer.ts';
 import { canEditPicture, openDarkroom } from '../ui/darkroom.ts';
-import { fitShapes, resetSize } from '../ui/board-actions.ts';
+import { resetSize } from '../ui/board-actions.ts';
 
 /**
  * The members of the selection an anchor can be put on.
@@ -269,25 +269,21 @@ export function itemMetaCommands() {
     setCover: (id: string) => pickCover(id),
     clearCover: (id: string) => setItemCover(id, null),
 
-    // Fill (crop to the card) or fit (whole picture in) - only photos and videos.
-    // itemFit reports the *effective* fit (the item's own override, else the
-    // board-wide default), which is what the menu ticks; setItemFit pins it.
+    // Fill (crop to the cells) or fit (whole picture in) - only photos and
+    // videos, and only on the grid: off it a card is its picture's shape and
+    // the two are the same (fitMode, canvas/renderers.ts). itemFit reports the
+    // *effective* fit, which is what the menu ticks; setItemFit pins it.
     canSetFit: (id: string) => {
       const type = byId(id)?.type;
-      return type === 'image' || type === 'video';
+      return (type === 'image' || type === 'video')
+        && !!board.settings.snap && board.layoutMode !== 'mobile';
     },
     itemFit: (id: string) => {
       const own = byId(id)?.meta?.fit;
       if (own === 'cover' || own === 'contain') return own;
       return board.mediaFit === 'contain' ? 'contain' : 'cover';
     },
-    // Fit also brings the card to its picture's shape, in the same step (see
-    // fitShapes). Fill leaves the box alone: it crops to any shape.
-    setItemFit: async (id: string, fit: string) => {
-      const it = byId(id);
-      const shape = it && fit === 'contain' ? await fitShapes([it]) : [];
-      setItemFit(id, fit, shape);
-    },
+    setItemFit: (id: string, fit: string) => setItemFit(id, fit),
 
     // The card, on or off - and only one at a time, like every other row here.
     // A cut-out is a judgement about *this* item, and the import guess is a

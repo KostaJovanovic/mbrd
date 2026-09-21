@@ -21,6 +21,8 @@ export type BusEvents = {
   view: void,
   trash: void,
   'trash:evicted': number,
+  /** A delete that filled the bin: the next one drops the oldest. */
+  'trash:full': void,
   'trash:purged': { items: number, bytes: number },
   history: void,
   /** An edit refused because the Timeline is playing (history.ts commit()). */

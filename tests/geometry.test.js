@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 
 import {
   rotatedExtents, itemBounds, itemInRect, itemWithinRect, itemRadius, pointInItem, topEdge,
-  corners, overlapFraction, segmentMeetsRect, viewShift, pictureShape, MIN_SIZE,
+  corners, overlapFraction, segmentMeetsRect, viewShift, pictureBox, printRatio, latticePicture, latticeLow, PRINT_MAT, PRINT_CHIN, MIN_SIZE,
 } from '../web/assets/js/geometry.ts';
 import { item } from './helpers.js';
 
@@ -405,39 +405,63 @@ test('it is symmetric in the two views', () => {
 });
 
 // ---------------------------------------------------------------------------
-// A card brought to its picture's shape, for Fit
+// A card brought to its picture's shape, and a Softish print's
 // ---------------------------------------------------------------------------
 
-test('a Fit card keeps its shorter side and the longer follows the picture', () => {
-  const wide = pictureShape({ w: 300, h: 200 }, 16 / 9);
-  close(wide.h, 200, 'the height is the shorter side, and it stays');
-  close(wide.w, 200 * 16 / 9, 'the width follows the picture');
-  const tall = pictureShape({ w: 200, h: 300 }, 3 / 4);
-  close(tall.w, 200, 'the width is the shorter side, and it stays');
-  close(tall.h, 200 * 4 / 3, 'the height follows the picture');
+test('a card takes the picture’s proportion at the area it had', () => {
+  const box = pictureBox({ w: 300, h: 200 }, 16 / 9);
+  close(box.w / box.h, 16 / 9, 'the proportion is the picture’s');
+  close(box.w * box.h, 60000, 'and the area is the card’s');
 });
 
-test('the longer side follows even when the picture turns the card the other way', () => {
-  const box = pictureShape({ w: 300, h: 200 }, 2 / 3);
-  close(box.h, 200, 'the shorter side stays');
-  close(box.w, 200 * 2 / 3, 'the longer side becomes the picture, which Fit already shows');
-});
-
-test('a square card shrinks to the picture on either side', () => {
-  const wide = pictureShape({ w: 200, h: 200 }, 2);
-  assert.deepEqual([wide.w, wide.h], [200, 100]);
-  const tall = pictureShape({ w: 200, h: 200 }, 0.5);
-  assert.deepEqual([tall.w, tall.h], [100, 200]);
+test('a round trip through another proportion comes back where it started', () => {
+  const there = pictureBox({ w: 300, h: 200 }, printRatio(1.5));
+  const back = pictureBox(there, 1.5);
+  close(back.w, 300, 'the width returns');
+  close(back.h, 200, 'the height returns');
 });
 
 test('the size floor scales both sides, so the proportion holds', () => {
-  const box = pictureShape({ w: 60, h: 100 }, 5);
+  const box = pictureBox({ w: 60, h: 60 }, 5);
   close(box.h, MIN_SIZE, 'the short side is lifted to the floor');
   close(box.w / box.h, 5, 'and the proportion is the picture’s');
 });
 
 test('a proportion that is not one leaves the card as it is', () => {
   for (const ratio of [0, -1, NaN, Infinity]) {
-    assert.deepEqual(pictureShape({ w: 300, h: 200 }, ratio), { w: 300, h: 200 });
+    assert.deepEqual(pictureBox({ w: 300, h: 200 }, ratio), { w: 300, h: 200 });
   }
+});
+
+test('a print card leaves its photo window at the picture’s proportion', () => {
+  // The window as quality.css cuts it: a mat each side and above, the chin
+  // below, both off the card's shorter side.
+  const windowOf = (w, h) => {
+    const m = Math.min(w, h);
+    return (w - 2 * PRINT_MAT * m) / (h - (PRINT_MAT + PRINT_CHIN) * m);
+  };
+  for (const ratio of [0.25, 0.75, 1, 1.1, 1.2, 1.5, 16 / 9, 4]) {
+    const card = printRatio(ratio);
+    close(windowOf(card * 300, 300), ratio, `a ${ratio} window`);
+  }
+});
+
+test('a picture on the lattice takes the nearby cells nearest its shape', () => {
+  // Side by side, 314 x 157 snaps to five cells by three (1.69); six by three
+  // is 2.03, the nearer shape, one cell away.
+  const box = latticePicture({ x: 0, y: 0, w: 314, h: 157 }, 2, 64);
+  assert.equal(Math.round((box.w + 2 * 64 * 0.04) / 64), 6);
+  assert.equal(Math.round((box.h + 2 * 64 * 0.04) / 64), 3);
+  // And its edges are on the lattice, like latticeBox()'s.
+  close(box.x - box.w / 2, latticeLow(box.x - box.w / 2, 64), 'the left edge is on a line');
+});
+
+test('a picture on the lattice keeps a box that is already its best fit', () => {
+  const once = latticePicture({ x: 10, y: 10, w: 314, h: 157 }, 2, 64);
+  const twice = latticePicture(once, 2, 64);
+  assert.deepEqual(twice, once);
+});
+
+test('a print is taller than its photo', () => {
+  for (const ratio of [0.5, 1, 2]) assert.ok(printRatio(ratio) < ratio);
 });

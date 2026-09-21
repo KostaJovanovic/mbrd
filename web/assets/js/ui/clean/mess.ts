@@ -288,11 +288,11 @@ export const TUNING: Tuning = {
   /** And the share at which it goes *without* waiting for the trigger.
    *
    *  Above clearAt on purpose, and the gap between them is the whole of the
-   *  rule: between 97 and 99 a crust is still work somebody is doing and is
-   *  theirs to finish, while at a hundredth left there is nothing to take out of
+   *  rule: between 97 and 99.5 a crust is still work somebody is doing and is
+   *  theirs to finish, while at half a hundredth left there is nothing to take out of
    *  anybody's hand - what is left is a card that will not admit it is done, and
    *  a hand still holding the jet on it has asked plainly enough. */
-  holdAt: 0.99,
+  holdAt: 0.995,
   /** Share of the grid a dealt field fills. The crust is a layer over the whole
    *  card, edge to edge, so that washing it is a reveal - see art.ts. */
   cover: 1,

@@ -63,21 +63,68 @@ export function latticeBox(box: Box, step: number) {
 }
 
 /**
- * A card brought to its picture's proportion (`ratio`, w/h), for Fit: the
- * card's shorter side stays and the longer one follows the picture. A square
- * card keeps the side that lies along the picture's long way, so it shrinks to
- * the picture Fit already shows instead of growing past it. Both sides are
+ * A picture's box on the lattice: of the cell counts a cell either way of
+ * where the box already is, the one nearest the picture's proportion, with a
+ * lesser pull towards the area it had. Snapping each side alone takes a 2:1
+ * photo 157 high to three cells and five across, 1.69 - one cell more across is
+ * 2.03, and that is the box this finds. No smaller than the card floor.
+ */
+export function latticePicture(box: Box, ratio: number, step: number) {
+  if (!(ratio > 0 && Number.isFinite(ratio))) return latticeBox(box, step);
+  const gap = 2 * cellInset(step);
+  const side = (cells: number) => Math.min(Math.max(cells * step - gap, MIN_SIZE), MAX_SIZE);
+  const cells = (v: number) => Math.round((v + gap) / step);
+  const area = box.w * box.h;
+  const cw0 = cells(box.w), ch0 = cells(box.h);
+  let best = { w: side(cw0), h: side(ch0) }, score = Infinity;
+  for (let cw = Math.max(CARD_FLOOR_CELLS.w, cw0 - 1); cw <= Math.max(CARD_FLOOR_CELLS.w, cw0 + 1); cw++) {
+    for (let ch = Math.max(CARD_FLOOR_CELLS.h, ch0 - 1); ch <= Math.max(CARD_FLOOR_CELLS.h, ch0 + 1); ch++) {
+      const w = side(cw), h = side(ch);
+      const s = Math.abs(Math.log(w / h / ratio)) + 0.5 * Math.abs(Math.log(w * h / area));
+      if (s < score) { score = s; best = { w, h }; }
+    }
+  }
+  return {
+    x: latticeLow(box.x - best.w / 2, step) + best.w / 2,
+    y: latticeLow(box.y - best.h / 2, step) + best.h / 2,
+    ...best,
+  };
+}
+
+/**
+ * A box brought to a proportion (`ratio`, w/h) at the same area, so a card that
+ * changes shape - a tier switch adding a print's chin, a crop - keeps its weight
+ * on the board and a round trip comes back where it started. Both sides are
  * scaled together into [MIN_SIZE, MAX_SIZE], because clamping one side alone
  * would change the proportion this exists to hold.
  */
-export function pictureShape(box: Size, ratio: number) {
+export function pictureBox(box: Size, ratio: number) {
   if (!(ratio > 0 && Number.isFinite(ratio))) return { w: box.w, h: box.h };
-  const keepW = box.w < box.h || (box.w === box.h && ratio >= 1);
-  const w = keepW ? box.w : box.h * ratio;
-  const h = keepW ? box.w / ratio : box.h;
+  const area = box.w * box.h;
+  const w = Math.sqrt(area * ratio), h = Math.sqrt(area / ratio);
   let k = Math.min(1, MAX_SIZE / Math.max(w, h));
   k = Math.max(k, MIN_SIZE / Math.min(w, h));
   return { w: w * k, h: h * k };
+}
+
+/**
+ * A Softish print's mat and chin, as fractions of the card's shorter side.
+ * quality.css draws them from --half-min (half that side) at twice these.
+ */
+export const PRINT_MAT = 0.04;
+export const PRINT_CHIN = 0.13;
+
+/**
+ * The proportion a print card needs for its photo window to be `ratio`. The
+ * window is the card less a mat each side and above, and the chin below, all
+ * measured off the shorter side - which is the width for a window up to about
+ * 1.11 wide and the height past it, where the two cases meet.
+ */
+export function printRatio(ratio: number) {
+  const tall = (1 - 2 * PRINT_MAT) / (1 - PRINT_MAT - PRINT_CHIN);
+  return ratio <= tall
+    ? 1 / ((1 - 2 * PRINT_MAT) / ratio + PRINT_MAT + PRINT_CHIN)
+    : (1 - PRINT_MAT - PRINT_CHIN) * ratio + 2 * PRINT_MAT;
 }
 
 /** Half-extents of the AABB around a rotated item. At rot=0, just (w/2, h/2). */

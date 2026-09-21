@@ -130,11 +130,20 @@ test('the settings that are not about a layout are in both', () => {
   // Units was on this list until the Paper section became Desktop-only in
   // full. It is in the list above instead - moved rather than dropped, so the
   // change is recorded in both places it used to be claimed.
-  for (const id of ['opt-mediafit',
-    'opt-whimsy', 'opt-palette', 'opt-quality', 'board-title']) {
+  for (const id of ['opt-whimsy', 'opt-palette', 'opt-quality', 'board-title']) {
     assert.equal(controlVisible(byId(id), MOBILE), true, `${id} missing on Mobile`);
     assert.equal(controlVisible(byId(id), DESKTOP), true, `${id} missing on Desktop`);
   }
+});
+
+test('cropping photos to the grid is offered only where there is a grid', () => {
+  const was = board.settings.snap;
+  board.settings.snap = true;
+  assert.equal(controlVisible(byId('opt-mediafit'), DESKTOP), true, 'on a snapped Desktop board');
+  assert.equal(controlVisible(byId('opt-mediafit'), MOBILE), false, 'the Feed has no grid');
+  board.settings.snap = false;
+  assert.equal(controlVisible(byId('opt-mediafit'), DESKTOP), false, 'off the grid a card is its picture');
+  board.settings.snap = was;
 });
 
 test('no tab can show a heading with nothing under it', () => {
