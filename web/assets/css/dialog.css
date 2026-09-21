@@ -156,7 +156,53 @@ textarea.lp-url {
    control sits on one line with its unit, and the ppi line carries the
    readout of what that comes to. The quality slider's track is drawn in
    sidebar.css's :is() list — .xo-dial is an entry on it. */
-#export-opts { width: min(380px, calc(100vw - 32px)); }
+/* Controls on the left, the export drawn small on the right; the preview
+   goes on top instead once the two cannot sit side by side. */
+#export-opts {
+  width: min(720px, calc(100vw - 32px));
+  max-width: min(720px, calc(100vw - 32px));
+}
+.xo-body {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(0, 1.1fr);
+  gap: 12px;
+}
+.xo-controls { min-width: 0; }
+.xo-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin: 0 0 18px;
+}
+/* A well of the board's own ground, the picture sitting in it as a sheet. */
+.xo-preview-mount {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 240px;
+  padding: 16px;
+  border-radius: var(--leaf);
+  background: var(--paper-2);
+  transition: opacity var(--dur-fast) var(--ease);
+}
+.xo-preview-mount.is-stale { opacity: 0.55; }
+.xo-preview-mount canvas {
+  display: block;
+  max-width: 100%;
+  max-height: 320px;
+  width: auto;
+  height: auto;
+  box-shadow: var(--shadow-1);
+}
+.xo-preview .xo-note { text-align: center; }
+@media (max-width: 640px) {
+  .xo-body { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .xo-preview { order: -1; margin-bottom: 4px; }
+  .xo-preview-mount { min-height: 140px; }
+  .xo-preview-mount canvas { max-height: 180px; }
+}
 .xo-line {
   display: flex;
   align-items: center;

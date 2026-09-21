@@ -1231,6 +1231,17 @@ async function boardJpeg(opts: ExportOpts) {
 }
 
 /**
+ * The export as the box previews it: the same 'full' render under the same
+ * options, held to `maxEdge` so it is quick to redraw on every change. Only
+ * the resolution differs from the file - margin, marks, texture and the
+ * page's proportions are the real ones. Null on an empty board.
+ */
+export async function boardPreview(opts: ExportOpts, maxEdge: number) {
+  const shot = await renderBoardCanvas('full', opts, maxEdge);
+  return shot?.canvas ?? null;
+}
+
+/**
  * The board as a JPEG blob, or null.
  *
  * JPEG rather than PNG since the export grew a resolution: an A4 board at

@@ -1,7 +1,8 @@
 // The export box: asked by Save image and Save PDF before either draws. How
 // much detail (dots per inch of board), how hard the JPEG squeezes, how much
-// clear board around the edge, and four marks that can be left out. Held for
-// the session only - every load starts again from EXPORT_DEFAULTS.
+// clear board around the edge, and four marks that can be left out, with the
+// export drawn small beside them. Held for the session only - every load
+// starts again from EXPORT_DEFAULTS.
 //
 // Its own <dialog> (#export-opts in index.html), for the reason link-props.ts
 // has one: ask() holds one field. Reaches document only inside
@@ -9,12 +10,13 @@
 
 import { board } from '../state.ts';
 import { readToken } from '../util.ts';
-import { EXPORT_DEFAULTS, exportSize } from './snapshot.ts';
+import { formatSize, MM_PER_INCH } from '../measure.ts';
+import { EXPORT_DEFAULTS, boardPreview, exportSize } from './snapshot.ts';
 import type { ExportOpts } from './snapshot.ts';
 import { cue } from '../cuelume/engine.ts';
 import { onTouch } from '../canvas/viewport.ts';
 
-/** Which of the two buttons asked. Only the title differs. */
+/** Which of the two buttons asked. Each keeps its own options. */
 export type ExportKind = 'image' | 'pdf';
 
 /** The four marks the box can leave out, each a checkbox and an ExportOpts flag. */
@@ -30,8 +32,20 @@ const PPI_MIN = 36;
 const PPI_MAX = 1200;
 const MARGIN_MAX = 200;
 
-/** The session's working copy. Save writes it; Cancel leaves it. */
-let current: ExportOpts = { ...EXPORT_DEFAULTS };
+/** The preview's long edge in CSS pixels, and how long typing may run before it redraws. */
+const PREVIEW_EDGE = 320;
+const SETTLE_MS = 180;
+
+/**
+ * The session's working copies, one per button. Save writes its own; Cancel
+ * leaves it. Kept apart because the two are asked for different ends - a
+ * picture to send is often wanted lighter than a PDF to print - and a change
+ * made for one should not turn up unasked in the other.
+ */
+const kept: Record<ExportKind, ExportOpts> = {
+  image: { ...EXPORT_DEFAULTS },
+  pdf: { ...EXPORT_DEFAULTS },
+};
 
 // One at a time: a second call while the box is up is ignored, not stacked.
 let showing = false;
@@ -65,6 +79,8 @@ export async function askExportOptions(kind: ExportKind): Promise<ExportOpts | n
   const size = document.getElementById('xo-size');
   const qualityOut = document.getElementById('xo-quality-out');
   const include = document.getElementById('xo-include');
+  const mount = document.getElementById('xo-preview-mount');
+  const caption = document.getElementById('xo-preview-cap');
   const go = document.getElementById('xo-go');
   const cancel = document.getElementById('xo-cancel');
   const ppi = input('xo-ppi');
@@ -74,7 +90,7 @@ export async function askExportOptions(kind: ExportKind): Promise<ExportOpts | n
   const sheet = input('xo-sheet');
   const grid = input('xo-grid');
   const grain = input('xo-grain');
-  if (!title || !size || !qualityOut || !include || !go || !cancel
+  if (!title || !size || !qualityOut || !include || !mount || !caption || !go || !cancel
       || !ppi || !quality || !margin || !web || !sheet || !grid || !grain) return null;
   const boxes: Record<Mark, HTMLInputElement> = { web, sheet, grid, grain };
 
@@ -93,6 +109,7 @@ export async function askExportOptions(kind: ExportKind): Promise<ExportOpts | n
   };
 
   title.textContent = kind === 'pdf' ? 'Save PDF' : 'Save image';
+  const current = kept[kind];
   ppi.value = String(current.ppi);
   quality.value = String(Math.round(current.quality * 100));
   margin.value = String(current.margin);
@@ -107,7 +124,7 @@ export async function askExportOptions(kind: ExportKind): Promise<ExportOpts | n
   /** The options as the box shows them now, bounded. */
   const read = (): ExportOpts => ({
     ppi: Math.round(numberIn(ppi, PPI_MIN, PPI_MAX, current.ppi)),
-    quality: numberIn(quality, 1, 100, current.quality * 100) / 100,
+    quality: numberIn(quality, 0, 100, current.quality * 100) / 100,
     margin: numberIn(margin, 0, MARGIN_MAX, current.margin),
     web: boxes.web.checked,
     sheet: boxes.sheet.checked,
@@ -115,16 +132,47 @@ export async function askExportOptions(kind: ExportKind): Promise<ExportOpts | n
     grain: boxes.grain.checked,
   });
 
+  // The preview is the export drawn small. Only what changes the picture
+  // redraws it - margin and the four marks - since ppi and quality change
+  // the file's resolution, which a preview this size cannot show. A redraw
+  // loads every picture on the board, so typing is let settle first, and a
+  // render that finishes after a newer one started is thrown away.
+  let drawn = '';
+  let generation = 0;
+  let timer = 0;
+  const redraw = (o: ExportOpts) => {
+    const key = JSON.stringify([o.margin, o.web, o.sheet, o.grid, o.grain]);
+    if (key === drawn) return;
+    drawn = key;
+    const mine = ++generation;
+    clearTimeout(timer);
+    mount.classList.add('is-stale');
+    timer = window.setTimeout(() => {
+      const edge = Math.round(PREVIEW_EDGE * Math.min(2, window.devicePixelRatio || 1));
+      boardPreview(o, edge).then(canvas => {
+        if (mine !== generation) return;
+        mount.replaceChildren(...(canvas ? [canvas] : []));
+        mount.classList.remove('is-stale');
+      }, err => { console.error(err); if (mine === generation) mount.classList.remove('is-stale'); });
+    }, drawn && mount.childElementCount ? SETTLE_MS : 0);
+  };
+
   // The readout answers the question the ppi field raises - how big is that? -
   // and says so when a ceiling took the detail down, so the number typed is
-  // never quietly not what came out.
+  // never quietly not what came out. The caption under the preview answers
+  // the other one: how big on paper.
   const paint = () => {
     const o = read();
     qualityOut.textContent = `${Math.round(o.quality * 100)}%`;
+    redraw(o);
     const out = exportSize(o);
-    if (!out) { size.textContent = ''; return; }
+    if (!out) { size.textContent = ''; caption.textContent = ''; return; }
     const px = `${out.w} × ${out.h} px`;
     size.textContent = out.capped ? `${px}, held to ${Math.floor(out.ppi)} ppi` : px;
+    const system = board.settings.units === 'imperial' ? 'imperial' : 'metric';
+    // formatSize() at a scale of 1 reads its units as millimetres.
+    const mm = (n: number) => n / out.ppi * MM_PER_INCH;
+    caption.textContent = `${kind === 'pdf' ? 'Page' : 'Prints at'} ${formatSize(mm(out.w), mm(out.h), 1, system)}`;
   };
 
   return new Promise<ExportOpts | null>(resolve => {
@@ -132,7 +180,7 @@ export async function askExportOptions(kind: ExportKind): Promise<ExportOpts | n
     const close = () => { cue('pick'); el.close(); };
     const save = () => {
       answer = read();
-      current = { ...answer };
+      kept[kind] = { ...answer };
       close();
     };
 
@@ -152,6 +200,10 @@ export async function askExportOptions(kind: ExportKind): Promise<ExportOpts | n
       el.removeEventListener('keydown', onKey);
       el.removeEventListener('input', paint);
       el.removeEventListener('close', onClose);
+      // Nothing late may land, and the picture goes with the box.
+      clearTimeout(timer);
+      generation++;
+      mount.replaceChildren();
       showing = false;
       resolve(answer);
     };
