@@ -26,6 +26,7 @@ rem      used when it is 21 or newer. Otherwise this looks in %USERPROFILE%\.jdk
 rem      and in the runtime Android Studio bundles.
 rem   5. adb installs the debug APK over the previous one and starts it. On every
 rem      phone connected, not the first: a bare `adb install` refuses to choose.
+rem      Only into the profile in use, never the phone's other profiles.
 set "MBRD_MODE=%~1"
 
 rem `if errorlevel` rather than `||`, as in desktop.bat.
@@ -113,7 +114,9 @@ rem One phone: %1 is its serial.
 :phone
 echo.
 echo   Installing on %1...
-adb -s %1 install -r "%MBRD_APK%"
+rem --user current: a bare install lands in every profile on the phone, and a
+rem debug copy left in one blocks the release APK in all of them.
+adb -s %1 install -r --user current "%MBRD_APK%"
 if errorlevel 1 (
   echo   adb could not install on %1. See above.
   exit /b 0
