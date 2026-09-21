@@ -31,17 +31,18 @@ import { Viewport } from './canvas/viewport.ts';
 import { paintGrid, paintGridOnView } from './canvas/grid.ts';
 import { initGrain, paintGrain } from './canvas/grain.ts';
 import { initFarLands } from './canvas/farlands.ts';
-import { initClean } from './ui/clean/clean.ts';
+import { initClean, dealSong } from './ui/clean/clean.ts';
 import { initPaper } from './canvas/paper.ts';
 import { initMobileFrame } from './canvas/mobile-frame.ts';
 import { repaintGround, forgetLookInk } from './canvas/ground.ts';
-import { initItems, resetItems, setUnpack } from './canvas/items.ts';
+import { initItems, resetItems, setUnpack, setSpotlessSong } from './canvas/items.ts';
 import { resetModels } from './canvas/model.ts';
 import { initWeb, joinDump } from './canvas/web.ts';
 import { initGhosts } from './canvas/ghosts.ts';
 import { initStills } from './canvas/stills.ts';
 import { initHires } from './canvas/hires.ts';
 import { initInput } from './canvas/input.ts';
+import { initPictureShapes } from './canvas/picture-shape.ts';
 import { initDrop, importFiles, setImportPrompt } from './import/drop.ts';
 import { unpackItem } from './import/unpack.ts';
 import {
@@ -245,6 +246,8 @@ platform.updates.onOffer(offer => {
 });
 initMobileHeaderEditor(vp);
 initItems(el('world')!, vp);
+// Photo cards follow their pictures' shapes, and a print's at Softish.
+initPictureShapes();
 initWeb(el('world')!, vp);
 // The konami-code easter egg (ui/clean/). Nothing happens until the code is
 // typed; this only hands it the camera and wires its bar.
@@ -295,6 +298,8 @@ initTimeline(cmds);
 initDrop(vp);
 // Unzip and Open on a card. Injected: canvas/ may not reach import/.
 setUnpack(id => { void unpackItem(id); });
+// The song button on the Spotless card, the same way and for the same reason.
+setSpotlessSong(id => { void dealSong(id); });
 // HUD (zoom cluster, undo/redo, readouts). After buildPanel() and cmds.
 initHud(vp, cmds);
 // Toolbar: buttons are data-cmd, needs cmds.

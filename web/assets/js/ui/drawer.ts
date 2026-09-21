@@ -188,6 +188,8 @@ export function initDrawer(viewport: Viewport) {
   // so, since those entries are past getting back by any other means.
   bus.on('trash:evicted', n => toast(
     n === 1 ? 'Drawer full — dropped the oldest item' : `Drawer full — dropped the ${n} oldest items`));
+  // And the warning before the first of those: the bin is exactly full.
+  bus.on('trash:full', () => toast('Drawer full — the next delete drops the oldest item for good'));
   // Emptying deletes files, not just entries, so it's worth saying what went.
   // Count is of *files* only - notes/swatches/stickers had no bytes to begin
   // with. See emptyTrash() in trash.ts.

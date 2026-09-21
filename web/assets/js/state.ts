@@ -243,12 +243,11 @@ export { recheckBoardGeometry };
 export { raiseSelection, lowerSelection, stackOrder, visualStackOrder, stackLayerIds, selectionHasStackOverlap } from './stacking.ts';
 
 export {
-  setBoardMode, mobileBoardTop, mobileBoardBottom, mobileBoardWorldWidth,
+  setBoardMode, mobileBoardTop, mobileBoardBottom, mobileBoardWorldWidth, setLatticeShape,
 } from './layout.ts';
 
 export { baseStep, snapshotGeom, applyGeom, commitGeom, placeMobileItems, mobileBoardWidth, travelling };
 export type { GeomPatch } from './layout.ts';
-import type { GeomPatch } from './layout.ts';
 
 export {
   STICK_MIN, stuckTo, wouldStick, restick,
@@ -944,33 +943,13 @@ export function setItemUpAxis(id: string, axis: unknown) {
 }
 
 /**
- * Per-item fit override (cover/contain). Undoable.
- *
- * `shape` is the card's new box, for a switch to Fit that brings the card to
- * its picture's proportion (fitShapes, ui/board-actions.ts). It rides in the
- * same step as the fit, so one Undo puts back both the fill and the box. It can
- * also come alone, for a card already set to Fit that is pressed again.
+ * Per-item fit override (cover/contain): how the picture meets its grid cells.
+ * Undoable. Changes no box - see fitMode() in canvas/renderers.ts.
  */
-export function setItemFit(id: string, fit: unknown, shape: GeomPatch[] = []) {
+export function setItemFit(id: string, fit: unknown) {
   const it = byId(id);
   if (!it || (it.type !== 'image' && it.type !== 'video')) return;
-  if (!shape.length) {
-    patchMeta(id, 'fit', fit, 'Fit media', oneOf('cover', 'contain'));
-    return;
-  }
-  const pick = oneOf('cover', 'contain');
-  const next = pick(fit);
-  const prev = pick(it.meta?.fit);
-  const before = snapshotGeom(shape.map(g => g.id));
-  const write = (value: unknown, geom: GeomPatch[]) => () => {
-    const item = byId(id);
-    if (!item) return;
-    const { fit: _drop, ...rest } = item.meta || {};
-    item.meta = value == null ? rest : { ...rest, fit: value };
-    bus.emit('item', id);
-    applyGeom(geom);
-  };
-  commit('Fit media', write(next, shape), write(prev, before));
+  patchMeta(id, 'fit', fit, 'Fit media', oneOf('cover', 'contain'));
 }
 
 /**

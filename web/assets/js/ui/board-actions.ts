@@ -16,7 +16,8 @@ import {
   declareOp,
   type GeomPatch,
 } from '../state.ts';
-import { latticeBox, itemBounds, pictureShape, rotatedExtents } from '../geometry.ts';
+import { latticeBox, itemBounds, rotatedExtents, pictureBox } from '../geometry.ts';
+import { conformAll, cardRatio, isPicture } from '../canvas/picture-shape.ts';
 import { travelMs } from '../canvas/viewport.ts';
 import { repaintGround, forgetLookInk } from '../canvas/ground.ts';
 import { barHeight, resetItems } from '../canvas/items.ts';
@@ -25,7 +26,7 @@ import { resetModels } from '../canvas/model.ts';
 import { flushNoteEdit, noteFloor } from '../canvas/notes.ts';
 import { getAsset } from '../storage/assets.ts';
 import { saveBoard, exportBoard, autosave, clearAllData } from '../storage/storage.ts';
-import { defaultSize, measureSize, pictureRatio, fitMode } from '../canvas/renderers.ts';
+import { defaultSize, measureSize } from '../canvas/renderers.ts';
 import { arrange, mobileOrder } from '../arrange/arrangements.ts';
 import type { Obstacle } from '../arrange/arrangements.ts';
 import { syncBoardMode } from './board-view.ts';
@@ -192,8 +193,11 @@ export async function resetSize() {
     const size = blob
       ? await measureSize(it.type, blob as File).catch(() => defaultSize(it.type))
       : defaultSize(it.type);
-    const { w } = size;
-    let { h } = size;
+    // A photograph's born-at size is its picture's; its card's may be a print's.
+    const card = isPicture(it) ? cardRatio(it) : null;
+    let { w, h } = card ? pictureBox(size, card) : size;
+    w = Math.round(w);
+    h = Math.round(h);
     // A note may not be smaller than its own text - the same floor the resize
     // grips respect. Measured at the width being proposed, because narrowing a
     // note rewraps it and makes it taller.
@@ -221,108 +225,17 @@ export async function resetSize() {
 }
 
 /**
- * The boxes that bring photo and video cards to their pictures' proportions,
- * for Fit: the shorter side stays and the longer follows (pictureShape in
- * geometry.ts). Centres and turns stay, as Reset size keeps them. Only cards
- * whose box changes come back, as whole rows for applyGeom().
- *
- * Desktop only. The Feed already draws a Fit tile at its picture's shape
- * (ratioOf in ui/feed.ts), and the Mobile board is a packed grid, where a card
- * that grows lands on its neighbours. Anchored cards keep their size, as they
- * do under Reset size.
- *
- * One card at a time on purpose: each is a decode, and a whole board of them
- * at once would hold every picture in memory together.
+ * The board-wide Fill switch: whether a picture on the grid crops to its cells
+ * or fits inside them. Changes no box - off the grid a card is its picture's
+ * shape either way (canvas/picture-shape.ts), and on it the cells are the box.
+ * One step, so Undo takes it back.
  */
-export async function fitShapes(items: Item[]): Promise<GeomPatch[]> {
-  if (board.layoutMode === 'mobile') return [];
-  const sizes = new Map<string, { w: number, h: number }>();
-  for (const it of items) {
-    if (isLocked(it)) continue;
-    const ratio = await pictureRatio(it);
-    // Read again after the wait, which can let the card move, resize or go.
-    const live = byId(it.id);
-    if (!ratio || !live) continue;
-    const shape = pictureShape(live, ratio);
-    const box = board.settings.snap ? latticeBox({ ...live, ...shape }, baseStep()) : shape;
-    const w = Math.round(box.w), h = Math.round(box.h);
-    if (w !== live.w || h !== live.h) sizes.set(live.id, { w, h });
-  }
-  // Built after the last wait, so every row holds where each card is now.
-  // presnap goes on a snapped board, as commitGeom() drops it for a resize:
-  // the memo holds the card's old shape.
-  const snap = board.settings.snap;
-  return snapshotGeom([...sizes.keys()]).map(g => ({
-    ...g, ...sizes.get(g.id), presnap: snap ? null : g.presnap,
-  }));
-}
-
-/**
- * Every picture showing Fit, brought back to its own proportion. The repair half
- * of the Fill switch, and Reload board is where it runs.
- *
- * A Fit card is *meant* to be the shape of what it holds, and several things can
- * leave it something else: a corner dragged out of shape (free on the grid - see
- * lockAspect in canvas/input.ts), a picture whose bytes could not be measured
- * when it landed so adoptAspect() never fired, a board written by an older
- * version, a file replaced under a card that kept the old one's box. None of
- * those announce themselves; what you see is a picture with paper round it.
- *
- * `fitMode()` rather than the Fill switch's own filter: this asks what each card
- * is actually showing, so a single picture set to Fit on a Fill board is included
- * and one set to Fill on a Fit board is left alone.
- *
- * Idempotent, which is what makes it safe on a path somebody can press twice.
- * pictureShape() of a box that is already the picture's shape is that box, and on
- * a snapped board the lattice pass lands on the same cells a second time - so a
- * board that is already right records no step and says so by being silent.
- *
- * Deliberately not part of opening a board. It overrules a framing somebody may
- * have chosen by hand, and doing that uninvited, on every load, would be a repair
- * nobody asked for; here it is the button's whole job.
- */
-async function refitPictures() {
-  const showing = board.items.filter(it =>
-    (it.type === 'image' || it.type === 'video') && fitMode(it) === 'contain');
-  if (!showing.length) return;
-  const rows = await fitShapes(showing);
-  if (!rows.length) return;
-  const before = snapshotGeom(rows.map(g => g.id));
-  applyGeom(rows);
-  // Undoable, unlike the rest of Reload board. The others put back a truth the
-  // board had already agreed to; this one changes boxes, and a person who
-  // framed a picture by hand must be able to say no.
-  commitGeom('Fit photos & videos', before, rows.map(g => g.id));
-  toast(rows.length === 1 ? 'One picture refitted' : `${rows.length} pictures refitted`);
-}
-
-/** Bumped by each press of the Fill switch, so a slow Fit cannot land after a later Fill. */
-let mediaFitRun = 0;
-
-/**
- * The board-wide Fill switch. Off brings every card that follows the board's
- * default to its picture's shape, in the same step as the switch, so one Undo
- * puts both back. On changes no box, because Fill crops to any shape.
- */
-export async function setMediaFit(fill: boolean) {
-  const run = ++mediaFitRun;
+export function setMediaFit(fill: boolean) {
   const prev = board.mediaFit;
-  if (fill || prev === 'contain') {
-    setSetting('mediaFit', fill ? 'cover' : 'contain');
-    return;
-  }
-  const followers = board.items.filter(i => (i.type === 'image' || i.type === 'video')
-    && i.meta?.fit !== 'cover' && i.meta?.fit !== 'contain');
-  const shape = await fitShapes(followers);
-  if (run !== mediaFitRun) return;
-  if (!shape.length) {
-    setSetting('mediaFit', 'contain');
-    return;
-  }
-  const before = snapshotGeom(shape.map(g => g.id));
-  commit('Fit photos & videos',
-    () => { setSetting('mediaFit', 'contain'); applyGeom(shape); },
-    () => { setSetting('mediaFit', prev); applyGeom(before); });
+  const next = fill ? 'cover' : 'contain';
+  if (prev === next) return;
+  commit(fill ? 'Fill grid cells' : 'Fit in grid cells',
+    () => setSetting('mediaFit', next), () => setSetting('mediaFit', prev));
 }
 
 /**
@@ -392,9 +305,9 @@ export function reloadBoard() {
   toast('Board reloaded');
   // Last, and not awaited: every other repair here is arithmetic on numbers the
   // board already holds, where this one reads pictures back off the disk. The
-  // board is rebuilt and usable while it runs, and it announces itself when it
-  // lands - which is also why its toast is separate from this one.
-  void refitPictures();
+  // board is rebuilt and usable while it runs. On the grid too, which is the
+  // one pass that asks the lattice again.
+  void conformAll(true);
 }
 
 /**

@@ -53,6 +53,17 @@ function evictOverLimit(): TrashEntry[] {
 }
 
 /**
+ * After a delete: what to say about the cap. An eviction is said as one; a
+ * delete that took nothing out but left the bin exactly full is the warning
+ * before the first one, since the next delete is where somebody loses a card.
+ * Outside the commit closures, so undo and redo never re-announce.
+ */
+function announceLimit(evicted: TrashEntry[]) {
+  if (evicted.length) bus.emit('trash:evicted', evicted.length);
+  else if (board.trash.filter(t => !isKeepsake(t.item)).length === TRASH_LIMIT) bus.emit('trash:full');
+}
+
+/**
  * Collect transitive riders for a delete. Returns added ids and a host map
  * (noteId -> hostId). The host map is stamped as meta.stuckOf on binned copies
  * so restoreItems() can rebuild the pile — geometry is unmeasurable in the bin.
@@ -202,7 +213,7 @@ export function freezeClip(
             bus.emit('items', { added: [clip.id], removed: [picture.id] });
             bus.emit('selection'); bus.emit('trash'); });
   // Outside the closure: undo/redo re-run closures with their own cues.
-  if (evicted.length) bus.emit('trash:evicted', evicted.length);
+  announceLimit(evicted);
   cue('fall');
   return picture;
 }
@@ -255,7 +266,7 @@ export function removeItems(ids: Iterable<string>, label = 'Delete') {
     // Weight: removed count. Evicted not included (not yet filled).
     removed.length);
   // Outside the closure: undo/redo re-run closures and must not re-announce.
-  if (evicted.length) bus.emit('trash:evicted', evicted.length);
+  announceLimit(evicted);
   cue('fall');
 }
 

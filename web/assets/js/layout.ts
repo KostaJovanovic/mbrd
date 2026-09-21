@@ -1135,6 +1135,15 @@ export function usableMemo(pre: unknown): Presnap | null {
  *   item whose size is an odd number of cells therefore ends up with its centre
  *   on a half-step, which is correct and is not a rounding error.
  */
+/**
+ * Where a card's own shape puts it on the lattice, or null for the plain
+ * latticeBox(). Injected by canvas/picture-shape.ts, which knows a picture's
+ * proportion; unwired, every card snaps side by side.
+ */
+type LatticeShape = (it: Item, step: number) => SnapBox | null;
+let latticeShape: LatticeShape = () => null;
+export function setLatticeShape(fn: LatticeShape) { latticeShape = fn; }
+
 export function snapAll(snapTo?: boolean) {
   const step = baseStep();
   const before: SnapState[] = [], after: SnapState[] = [];
@@ -1161,7 +1170,7 @@ export function snapAll(snapTo?: boolean) {
   for (const it of board.items) {
     if (isRider(it)) { riders.push(it); continue; }
     const pre = it.meta?.presnap || null;
-    const box = latticeBox(it, step);
+    const box = latticeShape(it, step) || latticeBox(it, step);
     placed.set(it.id, box);
     // A board snapped, unsnapped and snapped again remembers the first
     // position, not the second - the memo is of life before the lattice.

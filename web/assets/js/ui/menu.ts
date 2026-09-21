@@ -607,9 +607,9 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     { label: 'Edit picture…', icon: 'i-crop', hidden: !croppable,
       action: () => cmds!.editPicture(id) },
     // Radio pair — tick shows current, pressing the other switches.
-    { label: 'Fill the card', icon: 'i-fill', check: fills, hidden: !fittable,
+    { label: 'Fill the cells', icon: 'i-fill', check: fills, hidden: !fittable,
       action: () => cmds!.setItemFit(id, 'cover') },
-    { label: 'Fit in the card', icon: 'i-fit-card', check: fittable && !fills,
+    { label: 'Fit in the cells', icon: 'i-fit-card', check: fittable && !fills,
       hidden: !fittable, action: () => cmds!.setItemFit(id, 'contain') },
     // Last — the only row here that adds something new to the board.
     { label: 'Extract palette', icon: 'i-swatch', hidden: !swatchable,

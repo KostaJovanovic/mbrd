@@ -7,7 +7,7 @@
 
 import { readToken } from '../util.ts';
 import { board, adjustFilter, itemCrop, itemFaded, itemFlip, itemRotate, itemMatte } from '../state.ts';
-import { itemBounds } from '../geometry.ts';
+import { itemBounds, PRINT_MAT, PRINT_CHIN } from '../geometry.ts';
 import { assetURL, getAsset } from '../storage/assets.ts';
 import { paperMm, toUnits, clampScale, MM_PER_INCH } from '../measure.ts';
 import { connMeta, pairKey } from '../board-model.ts';
@@ -20,6 +20,7 @@ import { boardGridStep, MAJOR, MAJOR_WEIGHT, harshGrid } from '../canvas/grid.ts
 import { cutout } from '../canvas/matte.ts';
 import { surface } from '../canvas/surface.ts';
 import { fitMode } from '../canvas/renderers.ts';
+import { isPrint } from '../canvas/picture-shape.ts';
 import { noteWords } from '../canvas/note-model.ts';
 import { tiltOf } from '../canvas/items.ts';
 import { describeExt } from '../import/formats.ts';
@@ -882,13 +883,21 @@ async function paintMedia({ ctx, it, w, h, look, scale }: Paint) {
       roundRect(ctx, -w / 2, -h / 2, w, h, radius);
       ctx.clip();
     }
-    // The card behind a contained picture, so letterboxed bands are the card,
-    // not a hole. Never behind a cut-out - those bands are the empty
+    const contain = fitMode(it) === 'contain';
+    // A Softish print: the card is the mat, and the picture sits in a window
+    // above the chin - the same cut quality.css makes, off the same numbers.
+    const print = isPrint(it);
+    const m = Math.min(w, h);
+    const mat = print ? PRINT_MAT * m : 0, chin = print ? PRINT_CHIN * m : 0;
+    const pw = w - 2 * mat, ph = h - mat - chin;
+    // The card behind a print or a contained picture, so letterboxed bands are
+    // the card, not a hole. Never behind a cut-out - those bands are the empty
     // rectangle it exists to remove.
-    if (fitMode(it) === 'contain' && !bare) {
+    if ((print || contain) && !bare) {
       ctx.fillStyle = look.card;
       ctx.fillRect(-w / 2, -h / 2, w, h);
     }
+    ctx.translate(0, (mat - chin) / 2);
     // The mirror is not gated on `detail` the way the grade below is: a grade
     // is a shade nobody can name at thumbnail size, but which way a
     // photograph faces is legible at any size.
@@ -900,12 +909,27 @@ async function paintMedia({ ctx, it, w, h, look, scale }: Paint) {
     const rot = itemRotate(it);
     if (rot) ctx.rotate(rot * Math.PI / 180);
     const quarter = rot === 90 || rot === 270;
+    const bw = quarter ? ph : pw, bh = quarter ? pw : ph;
+    // The letterbox as the board draws it where blur is on: the picture again,
+    // blurred and dimmed, under the whole one (.pic-well in items.css).
+    if (contain && !bare && look.detail === 'full') {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(-bw / 2, -bh / 2, bw, bh);
+      ctx.clip();
+      ctx.filter = `blur(${m * 0.06}px) brightness(0.72) saturate(1.1)`;
+      drawFitted(ctx, img, it, bw * 1.3, bh * 1.3, 'cover');
+      ctx.restore();
+    }
     const filter = look.detail === 'full' ? adjustFilter(it) : null;
     if (filter) ctx.filter = filter;
-    drawFitted(ctx, img, it, quarter ? h : w, quarter ? w : h);
+    drawFitted(ctx, img, it, bw, bh);
     if (filter) ctx.filter = 'none';
     ctx.restore();
-    if (look.detail === 'full') captionBar(ctx, it, w, h, look, scale);
+    if (look.detail === 'full') {
+      if (print) printCaption(ctx, it, w, h, chin, look, scale);
+      else captionBar(ctx, it, w, h, look, scale);
+    }
     return;
   }
 
@@ -977,6 +1001,28 @@ function captionBar(
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   ctx.fillText(name, -w / 2 + size * 0.8, h / 2 - bar / 2, w - size * 1.6);
+  ctx.restore();
+}
+
+/**
+ * A print's name, written on its chin as the board writes it there: centred,
+ * no plate (quality.css, the .item-label rule at Softish).
+ */
+function printCaption(
+  ctx: CanvasRenderingContext2D, it: Item, w: number, h: number, chin: number,
+  look: Look, scale: number,
+) {
+  const name = (it.name || '').trim();
+  if (!name) return;
+  const m = Math.min(w, h);
+  const size = Math.min(Math.max(11 * scale, m * 0.045), 20 * scale);
+  if (size < 5) return;
+  ctx.save();
+  ctx.fillStyle = look.ink;
+  ctx.font = `500 ${size}px ${look.display}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(name, 0, h / 2 - chin / 2, w - 2 * PRINT_MAT * m);
   ctx.restore();
 }
 
@@ -1052,6 +1098,7 @@ async function prepare(it: Item, img: HTMLImageElement): Promise<Ready | null> {
  */
 function drawFitted(
   ctx: CanvasRenderingContext2D, img: Ready, it: Item, w: number, h: number,
+  mode = fitMode(it),
 ) {
   const { src, iw, ih } = img;
   if (!iw || !ih) return;
@@ -1061,7 +1108,7 @@ function drawFitted(
   const sw0 = crop ? crop.w * iw : iw;
   const sh0 = crop ? crop.h * ih : ih;
 
-  if (fitMode(it) === 'contain') {
+  if (mode === 'contain') {
     const s = Math.min(w / sw0, h / sh0);
     const dw = sw0 * s, dh = sh0 * s;
     ctx.drawImage(src, sx0, sy0, sw0, sh0, -dw / 2, -dh / 2, dw, dh);
