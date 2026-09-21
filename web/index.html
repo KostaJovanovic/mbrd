@@ -749,9 +749,12 @@
 </dialog>
 
 <!-- Export options. Asked by Save image and Save PDF before either draws;
-     filled and read by ui/export-options.js. -->
+     filled and read by ui/export-options.js. The preview on the right is
+     the export itself, drawn small - ui/snapshot.js boardPreview(). -->
 <dialog id="export-opts" aria-labelledby="xo-title">
   <h2 id="xo-title">Save image</h2>
+  <div class="xo-body">
+  <div class="xo-controls">
   <label class="lp-label" for="xo-ppi">Detail</label>
   <div class="xo-line">
     <input id="xo-ppi" class="lp-input xo-num" type="number" min="36" max="1200" step="1"
@@ -761,7 +764,7 @@
   </div>
   <label class="lp-label" for="xo-quality">Quality</label>
   <div class="xo-line xo-dial">
-    <input id="xo-quality" type="range" min="50" max="100" step="1">
+    <input id="xo-quality" type="range" min="0" max="100" step="1">
     <output id="xo-quality-out" class="xo-unit" for="xo-quality"></output>
   </div>
   <label class="lp-label" for="xo-margin">Margin</label>
@@ -777,6 +780,12 @@
     <label class="xo-check"><input type="checkbox" id="xo-grid"> Board grid</label>
     <label class="xo-check"><input type="checkbox" id="xo-grain"> Paper texture</label>
   </fieldset>
+  </div>
+  <figure id="xo-preview" class="xo-preview" aria-label="Preview">
+    <div id="xo-preview-mount" class="xo-preview-mount"></div>
+    <figcaption id="xo-preview-cap" class="xo-note"></figcaption>
+  </figure>
+  </div>
   <div class="ask-row">
     <span class="ask-gap"></span>
     <button type="button" id="xo-cancel">Cancel</button>

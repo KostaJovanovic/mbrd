@@ -248,7 +248,8 @@ const SLICE_MS = 24;
 /**
  * RGBA pixels to a baseline 4:4:4 JPEG file.
  *
- * `quality` is 1..100 on libjpeg's scale. `ppi`, when given, goes into the
+ * `quality` is 1..100 on libjpeg's scale; 0 is read as 1, its floor, which
+ * is what the export box's slider means at its left end. `ppi`, when given, goes into the
  * JFIF header as the print density, so an image editor opens the picture at
  * the size it was drawn for rather than at 72 dpi. Alpha is ignored - the
  * export fills its paper edge to edge first.
