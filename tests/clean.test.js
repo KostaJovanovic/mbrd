@@ -15,7 +15,7 @@ import {
 } from '../web/assets/js/ui/clean/konami.ts';
 import {
   MESS, TOOLS, GRIMES, DEBRIS, GRIME_FOR, grimesFor, TUNING, yieldsTo, planTracks,
-  makeField, emptyField, coverage, fieldClear, stamp,
+  makeField, emptyField, coverage, fieldClear, fieldClearHeld, stamp,
   fullTank, tankStep, tankPower, bulkOf, handRoom,
   gapBetween, trioWebs, spreadOf, webCards, webHolds, trianglesOverlap,
   planBoard, cardClean, tally, jetShape, SUBS, wearShare, WEAR_MAX, wearOf,
@@ -466,6 +466,24 @@ test('a full field starts at 1 and clears at the threshold, not at zero', () => 
   assert.equal(fieldClear(f), true, 'the last specks must dissolve on their own');
   f.left = keep + Math.ceil(f.total * 0.02);
   assert.equal(fieldClear(f), false);
+});
+
+test('a held jet clears at a stricter share than a released one', () => {
+  // Two thresholds, and the gap between them is the rule: between clearAt and
+  // holdAt a crust is work somebody is doing and is theirs to finish on the
+  // release, and past holdAt it goes under the nozzle rather than leaving a
+  // hand holding the jet on a card that will not admit it is done.
+  assert.ok(TUNING.holdAt > TUNING.clearAt,
+    'the held rule must be the stricter of the two, or it would take work out of the hand');
+  const f = makeField('lime', () => true);
+  // In the gap: gone on the release, still there under a running jet.
+  f.left = Math.floor(f.total * (1 - (TUNING.clearAt + TUNING.holdAt) / 2));
+  assert.equal(fieldClear(f), true);
+  assert.equal(fieldClearHeld(f), false);
+  // Past the stricter one: gone either way.
+  f.left = Math.floor(f.total * (1 - TUNING.holdAt));
+  assert.equal(fieldClearHeld(f), true, 'a card must finish without the trigger coming up');
+  assert.equal(fieldClear(f), true);
 });
 
 test('a stamp takes the cells it covers and no others', () => {

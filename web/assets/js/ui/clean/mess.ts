@@ -235,6 +235,7 @@ type Tuning = {
   fewPieces: [number, number],
   grid: number,
   clearAt: number,
+  holdAt: number,
   cover: number,
   webGap: number,
   webArea: number,
@@ -280,8 +281,18 @@ export const TUNING: Tuning = {
    *  cheap to hold and fine-grained enough that a stroke feels like it lands. */
   grid: 32,
   /** Cleared share at which the last specks dissolve on their own. Hunting one
-   *  surviving pixel is the opposite of relaxing. */
+   *  surviving pixel is the opposite of relaxing. Asked when the trigger comes
+   *  up - a patch vanishing under a nozzle still being played over it reads as
+   *  the game taking the work out of the hand. */
   clearAt: 0.97,
+  /** And the share at which it goes *without* waiting for the trigger.
+   *
+   *  Above clearAt on purpose, and the gap between them is the whole of the
+   *  rule: between 97 and 99 a crust is still work somebody is doing and is
+   *  theirs to finish, while at a hundredth left there is nothing to take out of
+   *  anybody's hand - what is left is a card that will not admit it is done, and
+   *  a hand still holding the jet on it has asked plainly enough. */
+  holdAt: 0.99,
   /** Share of the grid a dealt field fills. The crust is a layer over the whole
    *  card, edge to edge, so that washing it is a reveal - see art.ts. */
   cover: 1,
@@ -494,8 +505,11 @@ export const emptyField = (kind: MessKind, grid = TUNING.grid): Field =>
  *  was never dealt anything reads 0 - nothing to clean is clean. */
 export const coverage = (f: Field) => (f.total === 0 ? 0 : f.left / f.total);
 
-/** Whether it counts gone. */
+/** Whether it counts gone, which is asked when the trigger comes up. */
 export const fieldClear = (f: Field) => coverage(f) <= 1 - TUNING.clearAt;
+
+/** And whether it goes without being asked - see TUNING.holdAt. */
+export const fieldClearHeld = (f: Field) => coverage(f) <= 1 - TUNING.holdAt;
 
 /**
  * Thin every cell whose centre falls inside the ellipse by `bite`. Radii are in
