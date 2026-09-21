@@ -121,8 +121,9 @@ test('the defaults are the ones asked for', () => {
   assert.deepEqual(
     { ppi: EXPORT_DEFAULTS.ppi, quality: EXPORT_DEFAULTS.quality,
       grain: EXPORT_DEFAULTS.grain, grid: EXPORT_DEFAULTS.grid,
-      web: EXPORT_DEFAULTS.web, sheet: EXPORT_DEFAULTS.sheet, tilt: EXPORT_DEFAULTS.tilt },
-    { ppi: 300, quality: 0.97, grain: false, grid: false, web: true, sheet: true, tilt: true });
+      web: EXPORT_DEFAULTS.web, sheet: EXPORT_DEFAULTS.sheet, tilt: EXPORT_DEFAULTS.tilt,
+      shadows: EXPORT_DEFAULTS.shadows },
+    { ppi: 300, quality: 0.97, grain: false, grid: false, web: true, sheet: true, tilt: true, shadows: true });
 });
 
 test('a shadow stack is read whatever colour syntax the engine computes', () => {

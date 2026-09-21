@@ -11,7 +11,7 @@
 import { board } from '../state.ts';
 import { readToken } from '../util.ts';
 import { formatSize, MM_PER_INCH } from '../measure.ts';
-import { EXPORT_DEFAULTS, boardPreview, boardTilts, exportSize } from './snapshot.ts';
+import { EXPORT_DEFAULTS, boardPreview, boardShadows, boardTilts, exportSize } from './snapshot.ts';
 import type { ExportOpts } from './snapshot.ts';
 import { cue } from '../cuelume/engine.ts';
 import { onTouch } from '../canvas/viewport.ts';
@@ -20,8 +20,8 @@ import { onTouch } from '../canvas/viewport.ts';
 export type ExportKind = 'image' | 'pdf';
 
 /** What the box can leave out, each a checkbox and an ExportOpts flag. */
-type Mark = 'web' | 'sheet' | 'grid' | 'grain' | 'tilt';
-const MARKS: readonly Mark[] = ['web', 'sheet', 'grid', 'grain', 'tilt'];
+type Mark = 'web' | 'sheet' | 'grid' | 'grain' | 'tilt' | 'shadows';
+const MARKS: readonly Mark[] = ['web', 'sheet', 'grid', 'grain', 'tilt', 'shadows'];
 
 /**
  * The bounds a typed number is held to. Below 36 ppi a card's text is a
@@ -91,9 +91,10 @@ export async function askExportOptions(kind: ExportKind): Promise<ExportOpts | n
   const grid = input('xo-grid');
   const grain = input('xo-grain');
   const tilt = input('xo-tilt');
+  const shadows = input('xo-shadows');
   if (!title || !size || !qualityOut || !include || !mount || !caption || !go || !cancel
-      || !ppi || !quality || !margin || !web || !sheet || !grid || !grain || !tilt) return null;
-  const boxes: Record<Mark, HTMLInputElement> = { web, sheet, grid, grain, tilt };
+      || !ppi || !quality || !margin || !web || !sheet || !grid || !grain || !tilt || !shadows) return null;
+  const boxes: Record<Mark, HTMLInputElement> = { web, sheet, grid, grain, tilt, shadows };
 
   if (showing) return null;
   showing = true;
@@ -108,6 +109,7 @@ export async function askExportOptions(kind: ExportKind): Promise<ExportOpts | n
     grid: !!s.grid,
     grain: (parseFloat(readToken('--grain')) || 0) > 0,
     tilt: boardTilts(),
+    shadows: boardShadows(),
   };
 
   title.textContent = kind === 'pdf' ? 'Save PDF' : 'Save image';
@@ -133,6 +135,7 @@ export async function askExportOptions(kind: ExportKind): Promise<ExportOpts | n
     grid: boxes.grid.checked,
     grain: boxes.grain.checked,
     tilt: boxes.tilt.checked,
+    shadows: boxes.shadows.checked,
   });
 
   // The preview is the export drawn small. Only what changes the picture
@@ -144,7 +147,7 @@ export async function askExportOptions(kind: ExportKind): Promise<ExportOpts | n
   let generation = 0;
   let timer = 0;
   const redraw = (o: ExportOpts) => {
-    const key = JSON.stringify([o.margin, o.web, o.sheet, o.grid, o.grain, o.tilt]);
+    const key = JSON.stringify([o.margin, o.web, o.sheet, o.grid, o.grain, o.tilt, o.shadows]);
     if (key === drawn) return;
     drawn = key;
     const mine = ++generation;
