@@ -319,10 +319,14 @@ function electronNative(bridge: Bridge): NativePort {
   };
 }
 
-/** Update port. The desktop answers on the title bar's Update button. */
+/** Update port. The desktop answers on the title bar's Update button. The
+ *  phone answers on the page, so there a failed check is let through for the
+ *  command to say, instead of leaving the press without a word. */
 function electronUpdates(bridge: Bridge): UpdatesPort {
+  const phone = bridge.shell === 'capacitor';
   return {
-    check: () => bridge.updates.check().catch(() => {}),
+    check: () => phone ? bridge.updates.check() : bridge.updates.check().catch(() => {}),
+    answersOnPage: phone,
     onOffer: fn => bridge.updates.onOffer(fn),
     install: () => bridge.updates.install().catch(() => {}),
   };
