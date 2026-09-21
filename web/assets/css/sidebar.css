@@ -492,6 +492,25 @@
    What stays here is the part that is not the movement: the box the rows are
    measured in, and the caret's turn. */
 .fold-body { min-height: 0; }
+
+/* While a box is moving, the rows inside it do not animate anything of their
+   own. A row that arrives under a pointer that never moved is hovered on the
+   frame it appears, and its own 130ms border-colour transition starts from the
+   resting colour - so most of that time is spent on a border somewhere between
+   --rule-2 and the accent, which against the hovered fill is close to no
+   border at all. It reads as a button that came up unoutlined, and it is the
+   row's transition rather than the box's animation that draws it.
+   Set by slideBox() in ui/panel.ts, and off again the moment the box lands. */
+.is-sliding *,
+.is-sliding *::before,
+.is-sliding *::after { transition: none !important; }
+
+/* The same box for a run of rows that comes and goes with a setting rather
+   than with a summary - the Paper section's, behind Show paper. Everything
+   about the movement is shared (slideBox, ui/panel.ts); what is not shared is
+   that this one has no label of its own, so it carries no margin and the rows
+   inside keep the spacing they would have had as children of the section. */
+.reveal-body { min-height: 0; }
 /* The caret turns back at the *start* of the close rather than snapping at the
    end of it: `open` is still on the whole way out - that is what the close is
    - so the rule that rotates it needs saying again, the other way. The
