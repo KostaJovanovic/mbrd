@@ -529,7 +529,7 @@ test('always-zoom makes every plain scroll a zoom, and leaves the explicit gestu
 
 // ---------------------------------------------------------------------------
 // The hi-res wheel on Linux: one detent as several identical fractional deltas
-// (research/linux-wheel-2026-09-20.md). The shape is reasoned, not recorded.
+// (research/old/linux-wheel-2026-09-20.md). The shape is reasoned, not recorded.
 // ---------------------------------------------------------------------------
 
 function burst(deltas, gap = 2) {
