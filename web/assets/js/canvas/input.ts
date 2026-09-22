@@ -367,8 +367,25 @@ export const WHEEL_STREAM_MS = 200;
 const WHEEL_ZOOM_RATE = 0.0016;
 const PINCH_ZOOM_RATE = 0.01;
 
-/** The most one event may be worth, so a flung pad cannot jump the view. */
-const WHEEL_MAX_STEP = 400;
+/**
+ * The most one event may be worth, so a flung pad cannot jump the view.
+ *
+ * One notch and a little. A window that is not focused gets its notches
+ * coalesced into one large delta (seen on Linux), and at 400 that was 1.9x an
+ * event; at this it is about 1.2x, the same as a single Windows notch.
+ */
+const WHEEL_MAX_STEP = 120;
+
+/**
+ * How soon a hi-res wheel has to deliver a detent for it to be read as one.
+ *
+ * Chromium on Linux (Wayland, or X11 with libinput 1.19 or later) breaks one
+ * detent into several fractional deltas of the same size, 53 * v/120 px each,
+ * which classifyWheel() cannot tell from a pad. The run of identical deltas is
+ * the tell, and it has to arrive quickly. **Reasoned, not measured** - see
+ * research/linux-wheel-2026-09-20.md.
+ */
+const HIRES_BURST_MS = 24;
 
 /**
  * How much of the lean is handed back when the platform rails a swipe.
@@ -424,12 +441,34 @@ export type WheelSample = {
   timeStamp: number,
 };
 
-/** What one wheel event is asking for - see readWheel(). */
-export type WheelAction = { kind: WheelKind, dx: number, dy: number, factor: number };
+/**
+ * What one wheel event is asking for - see readWheel().
+ *
+ * `undo` is the pan this burst already made before it turned out to be a hi-res
+ * wheel, in the same sign as `dx` / `dy`. The caller gives it back before the
+ * zoom, in the same frame, so the board never shows the in-between position.
+ */
+export type WheelAction = {
+  kind: WheelKind, dx: number, dy: number, factor: number, undo?: Delta,
+};
 
 /** The device this burst of wheel events is being read as, and when it last spoke. */
 let wheelKind: WheelKind = 'zoom';
 let wheelAt = -Infinity;
+
+/**
+ * What the burst looks like to the hi-res detent rule - see detent().
+ *
+ * `step` is the one |dy| every event so far has carried, or NaN once two have
+ * differed or anything else ruled the burst out. `panX` / `panY` are what the
+ * plain events of the burst actually panned, which is what `undo` hands back.
+ */
+let burstAt = -Infinity;
+let burstDy = 0;
+let burstCount = 0;
+let burstStep = NaN;
+let panX = 0;
+let panY = 0;
 
 /** How much each axis has been moving, over this burst alone. */
 let axisX = 0;
@@ -461,6 +500,9 @@ export function resetWheelKind(): void {
   wheelAt = -Infinity;
   axisX = axisY = 0;
   seenX = seenY = 1;
+  burstAt = -Infinity;
+  burstDy = burstCount = panX = panY = 0;
+  burstStep = NaN;
 }
 
 /**
@@ -514,9 +556,40 @@ function unrail(dx: number, dy: number): Delta {
 /** Which device a single event looks like it came from, read cold. */
 function classifyWheel(e: WheelSample, dx: number, dy: number): WheelKind {
   if (e.deltaMode !== 0) return 'zoom';
-  // Sideways at all, or in fractions: a wheel can do neither.
+  // Sideways at all, or in fractions: a wheel can do neither - except a hi-res
+  // one on Linux, which detent() catches on the way past.
   if (dx !== 0 || !Number.isInteger(dy)) return 'pan';
   return Math.abs(dy) < WHEEL_NOTCH ? 'pan' : 'zoom';
+}
+
+/**
+ * Whether this event completes a hi-res wheel detent in a burst read as a pad.
+ *
+ * All four at once: the burst is fresh (HIRES_BURST_MS), it has never moved
+ * sideways or carried a modifier, it is two or more events of exactly the same
+ * fractional size, and together they are past a notch. A finger does not repeat a
+ * fractional delta to the bit and a swipe starts slow, so a touchpad never
+ * satisfies all four - which is what makes this safe to ship unmeasured. If
+ * Chromium delivers a detent some other way the rule simply never fires, and
+ * the 'zoom-all' preference is what carries the fix.
+ */
+function detent(e: WheelSample, dx: number, dy: number, at: number): boolean {
+  // Fractional too: 53 * v/120 is whole only at a full detent, which
+  // classifyWheel() already reads as a notch, and a pad at a steady speed can
+  // repeat a whole number of pixels.
+  const plain = e.deltaMode === 0 && !e.shiftKey && !e.ctrlKey && dx === 0
+    && !Number.isInteger(dy);
+  const first = burstCount === 0;
+  burstCount += 1;
+  // NaN compares unequal to everything, and the count has moved past the first
+  // event, so a burst ruled out stays ruled out.
+  if (!plain || (!first && Math.abs(dy) !== burstStep)) {
+    burstStep = NaN;
+    return false;
+  }
+  if (first) burstStep = Math.abs(dy);
+  burstDy += dy;
+  return burstCount >= 2 && at - burstAt <= HIRES_BURST_MS && Math.abs(burstDy) >= WHEEL_NOTCH;
 }
 
 /**
@@ -550,8 +623,10 @@ function classifyWheel(e: WheelSample, dx: number, dy: number): WheelKind {
  * `prefs` is the person's answer to what the wheel is *for* (controls.ts), and
  * it is read as late as possible - after the device, after the modifiers. The
  * device question has one right answer and the preference cannot change it: a
- * pad two-finger swipe pans in both modes, because a swipe that zoomed would be
- * a setting that broke a gesture nobody asked about. Defaulted, so every caller
+ * pad two-finger swipe pans in `zoom` and `scroll`, because a swipe that zoomed
+ * would be a setting that broke a gesture nobody asked about. `zoom-all` is the
+ * one that asks: it exists for a wheel that cannot be told from a pad, and it is
+ * the person saying which it is. Defaulted, so every caller
  * that does not care, tests included, gets the board's own convention.
  */
 export function readWheel(
@@ -564,14 +639,23 @@ export function readWheel(
   // convention somebody disagrees with, and which way fingers move apart is a
   // fact about the hand. Reversing both would make the preference unusable on a
   // laptop that has each.
-  const zoom = (rate: number, reverse = false) =>
-    Math.exp(-clamp(dy, -WHEEL_MAX_STEP, WHEEL_MAX_STEP) * (reverse ? -rate : rate));
+  const zoom = (rate: number, reverse = false, d = dy) =>
+    Math.exp(-clamp(d, -WHEEL_MAX_STEP, WHEEL_MAX_STEP) * (reverse ? -rate : rate));
 
   if (e.ctrlKey && !ctrlHeld) return { kind: 'zoom', dx, dy, factor: zoom(PINCH_ZOOM_RATE) };
 
   const at = e.timeStamp || 0;
   const fresh = at - wheelAt > WHEEL_STREAM_MS;
-  const kind = fresh ? classifyWheel(e, dx, dy) : wheelKind;
+  if (fresh) {
+    burstAt = at;
+    burstDy = burstCount = panX = panY = 0;
+    burstStep = NaN;
+  }
+  let kind = fresh ? classifyWheel(e, dx, dy) : wheelKind;
+  // The one way a burst changes device after it has started, and only towards
+  // the wheel - see detent().
+  const relatched = kind === 'pan' && detent(e, dx, dy, at);
+  if (relatched) kind = 'zoom';
   // Both pairs, not just the magnitudes. seenX/seenY are the presence measures
   // the unrail gain reads, and they are the half that persists: a burst the
   // platform railed drives the gated axis down to near zero, and leaving it
@@ -598,15 +682,24 @@ export function readWheel(
   }
 
   // `kind` is the device; what it is taken to mean is the preference. In
-  // `scroll` mode a notch pans the board instead, which is the one place the
-  // two come apart - a pad was already panning and keeps doing exactly that,
-  // unrail and all.
-  if (kind === 'zoom') {
-    return prefs.mode === 'scroll'
-      ? { kind: 'pan', dx, dy, factor: 1 }
-      : { kind, dx, dy, factor: zoom(WHEEL_ZOOM_RATE, prefs.reverse) };
+  // `scroll` mode a notch pans the board instead - a pad was already panning
+  // and keeps doing exactly that, unrail and all. `zoom-all` is the other place
+  // the two come apart: it overrides the device, which is all it is for.
+  if (prefs.mode === 'zoom-all') {
+    return { kind: 'zoom', dx, dy, factor: zoom(WHEEL_ZOOM_RATE, prefs.reverse) };
   }
-  return { kind, ...unrail(dx, dy), factor: 1 };
+  if (kind === 'zoom') {
+    if (prefs.mode === 'scroll') return { kind: 'pan', dx, dy, factor: 1 };
+    if (!relatched) return { kind, dx, dy, factor: zoom(WHEEL_ZOOM_RATE, prefs.reverse) };
+    // The whole detent so far is the zoom, and what it already panned goes back.
+    const undo = { dx: panX, dy: panY };
+    panX = panY = 0;
+    return { kind, dx, dy, factor: zoom(WHEEL_ZOOM_RATE, prefs.reverse, burstDy), undo };
+  }
+  const moved = unrail(dx, dy);
+  panX += moved.dx;
+  panY += moved.dy;
+  return { kind, ...moved, factor: 1 };
 }
 
 /**
@@ -2972,6 +3065,9 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       vp.panByScreen(-w.dx, -w.dy);
       return;
     }
+    // A hi-res wheel that panned for a moment before it was recognised - see
+    // detent(). Undone in the same frame as the zoom, so it is never painted.
+    if (w.undo) vp.panByScreen(w.undo.dx, w.undo.dy);
     vp.zoomAt(e.clientX, e.clientY, w.factor);
   }, { passive: false });
 

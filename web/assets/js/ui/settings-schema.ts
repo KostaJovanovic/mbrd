@@ -1112,10 +1112,14 @@ export const SECTIONS: Section[] = [
         options: () => [
           { value: 'zoom', label: 'Zooms the board' },
           { value: 'scroll', label: 'Pans the board, Ctrl zooms' },
+          // For a wheel the app keeps taking for a touchpad - a hi-res one on
+          // Linux, where the two send the same numbers (readWheel()).
+          { value: 'zoom-all', label: 'Always zooms, touchpad too' },
         ],
         get: () => wheelMode(), set: v => setWheelMode(v) },
       // No line under these about the trackpad, though both rows leave it
-      // alone: two fingers pan and a pinch zooms whatever the wheel is set to,
+      // alone bar the third option, which names it: two fingers pan and a
+      // pinch zooms whatever else the wheel is set to,
       // and somebody holding a trackpad finds that out by using it. The rule
       // is written where it is enforced - readWheel(), in canvas/input.ts.
       { id: 'opt-wheel-reverse', type: 'check', label: 'Reverse zoom direction',

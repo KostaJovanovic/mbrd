@@ -511,6 +511,77 @@ test('the two preferences compose, and a pad zoom under Control is not read at t
   assert.ok(pad.factor > 1.05, `a pad pinch-by-Control moved by ${pad.factor}`);
 });
 
+test('always-zoom makes every plain scroll a zoom, and leaves the explicit gestures alone', () => {
+  const ALL = { mode: 'zoom-all', reverse: false };
+  // A swipe that would have panned, fractions and sideways and all.
+  const swipe = prefWheel(ALL, { deltaX: -8, deltaY: 6.625 });
+  assert.equal(swipe.kind, 'zoom');
+  assert.ok(swipe.factor < 1, 'down the page is still out');
+
+  // Shift still pans across, Control held still pans down, a pinch still zooms.
+  resetWheelKind();
+  assert.equal(prefWheel(ALL, { deltaY: 12, shiftKey: true, timeStamp: 5_000 }).kind, 'pan');
+  resetWheelKind();
+  assert.equal(prefWheel(ALL, { deltaY: 100, ctrlKey: true, timeStamp: 9_000 }, true).kind, 'pan');
+  resetWheelKind();
+  assert.ok(prefWheel(ALL, { deltaY: -6, ctrlKey: true, timeStamp: 13_000 }).factor > 1);
+});
+
+// ---------------------------------------------------------------------------
+// The hi-res wheel on Linux: one detent as several identical fractional deltas
+// (research/linux-wheel-2026-09-20.md). The shape is reasoned, not recorded.
+// ---------------------------------------------------------------------------
+
+function burst(deltas, gap = 2) {
+  resetWheelKind();
+  return deltas.map((deltaY, i) => wheel({ deltaY, timeStamp: 1_000 + i * gap }));
+}
+
+test('a hi-res detent is taken back from the pad and zoomed', () => {
+  // 53px a detent, in eighths: 6.625 each.
+  const out = burst(times(8, 6.625));
+  const first = out.findIndex(w => w.kind === 'zoom');
+  assert.equal(first, 6, 'it turns on the event that carries it past a notch');
+  assert.ok(out.slice(0, first).every(w => w.kind === 'pan'), 'a pad until then');
+  assert.deepEqual(out[first].undo, { dx: 0, dy: 6.625 * 6 },
+    'and exactly what it panned is handed back');
+  assert.ok(Math.abs(out[first].factor - Math.exp(-6.625 * 7 * 0.0016)) < 1e-12,
+    'the zoom is the whole detent so far, not the last eighth');
+  assert.equal(out[7].kind, 'zoom', 'the rest of the burst stays a wheel');
+  assert.equal(out[7].undo, undefined, 'and hands nothing back twice');
+});
+
+test('a swipe summing to the same distance in varying steps still pans', () => {
+  // The guard doing its job: a finger never repeats a fractional delta exactly.
+  const out = burst([5.5, 6.25, 6.75, 7, 6.5, 7.25, 7.5, 6.25]);
+  assert.ok(out.every(w => w.kind === 'pan'));
+  assert.ok(out.every(w => w.undo === undefined));
+});
+
+test('a detent is not read into a slow burst, a sideways one, or a single event', () => {
+  assert.ok(burst(times(8, 6.625), 8).every(w => w.kind === 'pan'), 'too slow to be one detent');
+  resetWheelKind();
+  wheel({ deltaX: 1, deltaY: 6.625, timeStamp: 1_000 });
+  for (let i = 1; i < 8; i++) {
+    assert.equal(wheel({ deltaY: 6.625, timeStamp: 1_000 + i * 2 }).kind, 'pan', 'moved sideways once');
+  }
+  assert.ok(burst([WHEEL_NOTCH - 0.5]).every(w => w.kind === 'pan'), 'one event proves nothing');
+});
+
+test('in scroll mode a recognised detent keeps panning, with nothing to undo', () => {
+  resetWheelKind();
+  const SCROLL = { mode: 'scroll', reverse: false };
+  const out = times(8, 6.625).map((deltaY, i) => prefWheel(SCROLL, { deltaY, timeStamp: 1_000 + i * 2 }));
+  assert.ok(out.every(w => w.kind === 'pan' && w.undo === undefined));
+});
+
+test('one enormous delta zooms no more than a notch and a little', () => {
+  // An unfocused window's notches, coalesced into one event.
+  const w = wheel({ deltaY: -1_000 });
+  assert.equal(w.kind, 'zoom');
+  assert.ok(w.factor <= 1.25, `zoomed ${w.factor}x in one event`);
+});
+
 // A swipe, as a burst of events a few milliseconds apart - the lean is
 // measured over a gesture, not one event. Returns the last event's result.
 function swipe(steps) {

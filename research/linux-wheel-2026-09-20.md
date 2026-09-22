@@ -4,6 +4,15 @@ Reported from the maintainer's Linux machine: Chromium, Wayland session, a
 mouse with a wheel. **Scrolling pans the board instead of zooming it.** Click
 outside the window first and the same wheel zooms, and zooms very fast.
 
+**Built on 2026-09-23, still unmeasured.** All three parts below are in
+`canvas/input.ts`. Part 1 took a different shape because a `Mouse wheel` picker
+already existed (`controls.ts`): it gained a third answer, `zoom-all`
+("Always zooms, touchpad too"), and did not become `auto | zoom | pan`. The
+detent rule also requires the repeated step to be fractional, because a pad
+moving at a steady speed can repeat a whole number of pixels, and the swipe
+fixtures in `tests/input.test.js` do. What is still owed is the console line
+below, run on the Linux machine, to confirm that the rule fires at all.
+
 **Nothing here is measured.** No deltas were recorded from that machine, so
 everything below is reasoning from `canvas/input.ts` and from what Chromium is
 known to do on Linux. That is the first thing to fix if this is picked up: one

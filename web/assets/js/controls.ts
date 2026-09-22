@@ -13,8 +13,15 @@ import { readPref, writePref } from './prefs.ts';
  * over an infinite canvas is a zoom, the way it is in every drawing tool.
  * 'scroll' is the other convention - the one a browser, a document and a map
  * all use - where a notch moves the board and Control is what zooms.
+ * 'zoom-all' is the way out when the wheel is taken for a touchpad, which
+ * Chromium on Linux makes impossible to rule out (a hi-res wheel and a pad
+ * send the same numbers): every plain scroll zooms, a two-finger swipe too.
  */
-export type WheelMode = 'zoom' | 'scroll';
+export type WheelMode = 'zoom' | 'scroll' | 'zoom-all';
+
+const MODES: readonly WheelMode[] = ['zoom', 'scroll', 'zoom-all'];
+const asMode = (v: unknown): WheelMode =>
+  MODES.find(m => m === v) ?? 'zoom';
 
 /** Both answers together, as readWheel() takes them. */
 export type WheelPrefs = { mode: WheelMode, reverse: boolean };
@@ -26,11 +33,11 @@ const MODE_PREF = 'mbrd.wheelMode';
 const REVERSE_PREF = 'mbrd.wheelReverse';
 
 export function wheelMode(): WheelMode {
-  return readPref(MODE_PREF) === 'scroll' ? 'scroll' : 'zoom';
+  return asMode(readPref(MODE_PREF));
 }
 
 export function setWheelMode(mode: string): void {
-  writePref(MODE_PREF, mode === 'scroll' ? 'scroll' : 'zoom');
+  writePref(MODE_PREF, asMode(mode));
 }
 
 export function zoomReversed(): boolean {
