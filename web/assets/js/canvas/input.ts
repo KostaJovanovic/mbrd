@@ -383,7 +383,7 @@ const WHEEL_MAX_STEP = 120;
  * detent into several fractional deltas of the same size, 53 * v/120 px each,
  * which classifyWheel() cannot tell from a pad. The run of identical deltas is
  * the tell, and it has to arrive quickly. **Reasoned, not measured** - see
- * research/linux-wheel-2026-09-20.md.
+ * research/old/linux-wheel-2026-09-20.md.
  */
 const HIRES_BURST_MS = 24;
 
