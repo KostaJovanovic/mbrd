@@ -22,15 +22,16 @@ export function renderMarkdown(src: unknown): DocumentFragment {
 // Blocks
 // ---------------------------------------------------------------------------
 
-const RULE = /^ {0,3}((\*\s*){3,}|(-\s*){3,}|(_\s*){3,})$/;
-const ATX = /^ {0,3}(#{1,6})\s+(.*?)\s*#*\s*$/;
-const FENCE = /^ {0,3}(```+|~~~+)\s*(\S*)/;
-const QUOTE = /^ {0,3}> ?(.*)$/;
-const BULLET = /^( *)([-*+])\s+(.*)$/;
-const ORDERED = /^( *)(\d{1,9})[.)]\s+(.*)$/;
-const TASK = /^\[([ xX])\]\s+(.*)$/;
-const SETEXT = /^ {0,3}(=+|-+)\s*$/;
-const TABLE_RULE = /^ *\|?[ :|-]+\|[ :|-]*$/;
+export const RULE = /^ {0,3}((\*\s*){3,}|(-\s*){3,}|(_\s*){3,})$/;
+// A closing run of #s needs a space before it, so `# C#` keeps its sharp.
+export const ATX = /^ {0,3}(#{1,6})\s+(.*?)(?:\s+#+)?\s*$/;
+export const FENCE = /^ {0,3}(```+|~~~+)\s*(\S*)/;
+export const QUOTE = /^ {0,3}> ?(.*)$/;
+export const BULLET = /^( *)([-*+])\s+(.*)$/;
+export const ORDERED = /^( *)(\d{1,9})[.)]\s+(.*)$/;
+export const TASK = /^\[([ xX])\]\s+(.*)$/;
+export const SETEXT = /^ {0,3}(=+|-+)\s*$/;
+export const TABLE_RULE = /^ *\|?[ :|-]+\|[ :|-]*$/;
 
 /**
  * The deepest a blockquote may nest.
@@ -146,7 +147,7 @@ function blocks(lines: string[], depth = 0): HTMLElement[] {
 }
 
 /** Does this line start a block, so a paragraph above it has to stop? */
-function opensBlock(line: string) {
+export function opensBlock(line: string) {
   return RULE.test(line) || ATX.test(line) || FENCE.test(line) || QUOTE.test(line)
       || BULLET.test(line) || ORDERED.test(line);
 }
@@ -331,7 +332,7 @@ function runsCanPair(text: string): boolean {
 }
 
 // A *source* string, not a RegExp: a global regex carries `lastIndex` on the
-// object, and inline() recurses, so one shared instance would let an inner
+// object, and the callers recurse, so one shared instance would let an inner
 // call reset the outer loop's cursor and never finish. A fresh instance per
 // call is cheap and cannot do that.
 // `%CODE%` is a guard the caller fills in: empty when a code span is
@@ -348,56 +349,118 @@ const INLINE_SRC = [
   // their own alternative - \8 and \10, not \1 twice. Written as \1 they
   // pointed at the code fence's (undefined) group, and an undefined
   // backreference matches empty: **bold** rendered as one letter.
-  '(\\*\\*|__)(?=\\S)([\\s\\S]*?\\S)\\8',      // 8,9  strong
+  // Not closed by the first two of a longer run: `**a *b***` is bold round
+  // italic, and the lazy match alone would stop one star early.
+  '(\\*\\*|__)(?=\\S)([\\s\\S]*?\\S)\\8(?!\\*)', // 8,9  strong
   '(\\*|_)(?=\\S)([\\s\\S]*?\\S)\\10',         // 10,11 emphasis
   '~~(?=\\S)([\\s\\S]*?\\S)~~',                // 12   strikethrough
+  '\\\\([!-/:-@[-`{-~])',                      // 13   backslash escape
 ].join('|');
 
 /**
- * A run of text with its inline markup, as a DocumentFragment. Everything not
- * a match lands as a text node; every match's content recurses through this
- * same function, so nested constructs work without knowing about each other.
+ * One piece of a line of inline Markdown. `src` is the exact source a token
+ * came from, for a reader that has to write it back unchanged (ui/editor/).
  */
-function inline(src: unknown) {
-  const frag = document.createDocumentFragment();
+export type InlineToken =
+  | { kind: 'text', text: string }
+  | { kind: 'code', text: string, src: string }
+  | { kind: 'image', alt: string, url: string, src: string }
+  | { kind: 'link', label: string, url: string, src: string }
+  | { kind: 'autolink', url: string, src: string }
+  | { kind: 'strong' | 'em' | 'strike', inner: string, src: string };
+
+const WORD_CHAR = /[\p{L}\p{N}]/u;
+
+/**
+ * The tokens of one run of inline Markdown, shared by this renderer and the
+ * editor (ui/editor/markdown.ts) so the two can never read a file two ways.
+ * Nested constructs come back as `inner` source for the caller to recurse on.
+ *
+ * Two CommonMark rules the regex cannot say without lookbehind (see cells()
+ * for why there is none): an underscore inside a word is a character, not
+ * emphasis - `snake_case_name` - and an escaped character is itself.
+ */
+export function inlineTokens(src: unknown): InlineToken[] {
+  const out: InlineToken[] = [];
   const text = String(src ?? '');
   const re = new RegExp(INLINE_SRC.replace('%CODE%', runsCanPair(text) ? '' : '(?!)'), 'g');
   let last = 0;
   let m: RegExpExecArray | null;
+  const push = (s: string) => {
+    if (!s) return;
+    const prev = out[out.length - 1];
+    if (prev?.kind === 'text') prev.text += s;
+    else out.push({ kind: 'text', text: s });
+  };
   while ((m = re.exec(text))) {
-    if (m.index > last) frag.append(plain(text.slice(last, m.index)));
-    last = m.index + m[0].length;
-    frag.append(inlineNode(m));
+    const delim = m[8] || m[10] || '';
+    const end = m.index + m[0].length;
+    if (delim[0] === '_'
+        && (WORD_CHAR.test(text[m.index - 1] || '') || WORD_CHAR.test(text[end] || ''))) {
+      // Intraword: the underscores are letters of the word. Resume just past
+      // them, so a real emphasis later in the run is still found.
+      re.lastIndex = m.index + delim.length;
+      continue;
+    }
+    push(text.slice(last, m.index));
+    last = end;
+    if (m[1]) {
+      // One space each side is padding when both are there, as CommonMark says.
+      const body = m[2];
+      const trimmed = body.length > 2 && body.startsWith(' ') && body.endsWith(' ') && body.trim()
+        ? body.slice(1, -1) : body;
+      out.push({ kind: 'code', text: trimmed, src: m[0] });
+    } else if (m[4] !== undefined) out.push({ kind: 'image', alt: m[3], url: m[4], src: m[0] });
+    else if (m[6] !== undefined) out.push({ kind: 'link', label: m[5], url: m[6], src: m[0] });
+    else if (m[7]) out.push({ kind: 'autolink', url: m[7], src: m[0] });
+    else if (m[9] !== undefined) out.push({ kind: 'strong', inner: m[9], src: m[0] });
+    else if (m[11] !== undefined) out.push({ kind: 'em', inner: m[11], src: m[0] });
+    else if (m[12] !== undefined) out.push({ kind: 'strike', inner: m[12], src: m[0] });
+    else if (m[13] !== undefined) push(m[13]);
+    else push(m[0]);
     // A zero-length match would leave the cursor in place and loop forever.
     // None of the alternatives above can match empty today; this guards a
-    // future seventh that does.
+    // future one that does.
     if (!m[0].length) re.lastIndex++;
   }
-  if (last < text.length) frag.append(plain(text.slice(last)));
+  push(text.slice(last));
+  return out;
+}
+
+/**
+ * A run of text with its inline markup, as a DocumentFragment. Everything not
+ * a construct lands as a text node; every construct's content recurses through
+ * this same function, so nested constructs work without knowing about each other.
+ */
+function inline(src: unknown) {
+  const frag = document.createDocumentFragment();
+  for (const t of inlineTokens(src)) frag.append(inlineNode(t));
   return frag;
 }
 
-function inlineNode(m: RegExpExecArray) {
-  if (m[1]) {
-    const code = document.createElement('code');
-    code.textContent = m[2].trim();
-    return code;
+function inlineNode(t: InlineToken) {
+  switch (t.kind) {
+    case 'text': return plain(t.text);
+    case 'code': {
+      const code = document.createElement('code');
+      code.textContent = t.text.trim();
+      return code;
+    }
+    case 'image': {
+      // An image points at a path on somebody else's disk, or a URL - neither
+      // resolves here, since fetching it would be this app making a network
+      // request about a file somebody opened. Drawn as its own alt text instead.
+      const span = document.createElement('span');
+      span.className = 'md-image';
+      span.textContent = t.alt || t.url;
+      return span;
+    }
+    case 'link': return anchor(t.url, t.label || t.url);
+    case 'autolink': return anchor(t.url, t.url);
+    case 'strong': return wrap('strong', t.inner);
+    case 'em': return wrap('em', t.inner);
+    case 'strike': return wrap('s', t.inner);
   }
-  if (m[4] !== undefined) {
-    // An image points at a path on somebody else's disk, or a URL - neither
-    // resolves here, since fetching it would be this app making a network
-    // request about a file somebody opened. Drawn as its own alt text instead.
-    const span = document.createElement('span');
-    span.className = 'md-image';
-    span.textContent = m[3] || m[4];
-    return span;
-  }
-  if (m[6] !== undefined) return anchor(m[6], m[5] || m[6]);
-  if (m[7]) return anchor(m[7], m[7]);
-  if (m[9] !== undefined) return wrap('strong', m[9]);
-  if (m[11] !== undefined) return wrap('em', m[11]);
-  if (m[12] !== undefined) return wrap('s', m[12]);
-  return plain(m[0]);
 }
 
 function wrap(tag: string, content: string) {

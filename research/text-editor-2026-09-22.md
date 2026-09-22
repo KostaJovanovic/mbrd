@@ -26,6 +26,8 @@ beyond what the maintainer answered; the open questions are at the end.
 | phone autocorrect | the correction a keyboard makes on space **is part of that space** and locks with it |
 | screenplay storage | its own file type, `.fountain` |
 | Theatre mode | not in v1 |
+| sticky → document (2026-09-23) | **at the 121st character**, while typing, not on close |
+| idle autosave and undo (2026-09-23) | **one step per opening** of the editor; every save in it coalesces |
 
 "Stored versions", which the first draft of this plan leaned on, were withdrawn in
 v0.198 (`board-model.ts:125`, `board-schema.ts:110`); the timeline replaced them,

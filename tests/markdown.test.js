@@ -186,6 +186,31 @@ test('underscores are the other spelling of both', async () => {
   assert.match(html, /<em>em<\/em>/);
 });
 
+// The editor (ui/editor/) writes Markdown this renderer then reads, so the
+// spellings it relies on are held here, on the reader.
+test('an underscore inside a word is a letter, not emphasis', async () => {
+  const { html } = await render('snake_case_name and _em_\n');
+  assert.match(html, /snake_case_name/);
+  assert.match(html, /<em>em<\/em>/);
+});
+
+test('a backslash escapes the character after it', async () => {
+  const { html } = await render('\\*not em\\* and \\\\ one slash\n');
+  assert.doesNotMatch(html, /<em>/);
+  assert.match(html, /\*not em\* and \\ one slash/);
+});
+
+test('bold closes on the last two stars of a run, not the first', async () => {
+  const { html } = await render('**a *b***\n');
+  assert.match(html, /<strong>a <em>b<\/em><\/strong>/);
+});
+
+test('a heading keeps a # that has no space before it', async () => {
+  const { html } = await render('# C#\n## Closed ##\n');
+  assert.match(html, /<h1>C#<\/h1>/);
+  assert.match(html, /<h2>Closed<\/h2>/);
+});
+
 test('code spans suspend everything inside them', async () => {
   const { html } = await render('`**not bold**`\n');
   assert.match(html, /<code>\*\*not bold\*\*<\/code>/);
