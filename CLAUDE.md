@@ -42,11 +42,12 @@ never does:
 
 ```bash
 npm run dev         # esbuild watch → web/assets/app.js; edit, then refresh
-npm run build       # minified bundle + both lab bundles — this is what ships
+npm run build       # minified bundle + the three lab bundles — this is what ships
 npm run lint        # oxlint, correctness only — adding a formatter is a regression
 npm run typecheck   # tsc --noEmit, strict, every .ts under web/assets/js
 npm run dev:lab     # watch build for web/lab.html, the pigment lab
 npm run dev:sound   # watch build for web/lab-sound.html, the sound lab
+npm run dev:grime   # watch build for web/lab-grime.html, the grime bench
 save.bat            # version stamps → build → commit → optionally push
 save.bat release    # the same, pushed, then GitHub builds Windows + Android and publishes
 save.bat release all # the same, with macOS and Linux too — four systems, ten times the minutes
@@ -454,9 +455,10 @@ What matters when touching it:
 - No `<base>` tag, unlike `index.html` — a base makes every fragment resolve
   against it and load a board.
 
-## `web/lab.html` and `web/lab-sound.html` are benches, not pages of the site
+## `web/lab.html`, `web/lab-sound.html` and `web/lab-grime.html` are benches, not pages of the site
 
-Each has its own bundle (`npm run dev:lab`, `npm run dev:sound`), its own
+Each has its own bundle (`npm run dev:lab`, `npm run dev:sound`,
+`npm run dev:grime`), its own
 colours, none of `tokens.css` — a bench rendering at the current whimsy tier
 makes a wrong colour and a warmly displayed one look identical. `noindex` rather
 than a `robots.txt` Disallow (a Disallow stops the fetch, which stops the
