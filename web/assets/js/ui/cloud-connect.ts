@@ -29,7 +29,7 @@ export async function connectCloud(id: string): Promise<boolean> {
     body: `Boards you choose are copied into your own ${provider.label} and kept up to `
       + 'date while this tab is open — never onto a server of ours. Photographs are '
       + 'uploaded once each, so only what changes is sent again. A sign-in window opens '
-      + 'next, and the connection lasts until you reload.',
+      + 'next, and the connection lasts about an hour, or until this tab or window closes.',
     go: 'Sign in',
     cancel: 'Cancel',
     danger: false,
