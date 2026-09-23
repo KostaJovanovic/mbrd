@@ -859,7 +859,7 @@ export function stopClean(): boolean {
   pending = [];
   messHidden = false;
   cull = null;
-  document.documentElement.classList.remove('is-cleaning', 'is-clean-done', 'is-clean-holding', 'is-clean-culled');
+  document.documentElement.classList.remove('is-cleaning', 'is-clean-done', 'is-clean-holding', 'is-clean-culled', 'is-clean-asking');
   setCleanPlay(null);
   // The lock as it was found. Only ever true here if startClean() saw it on, and
   // nothing inside the mode can have changed it - the button is not drawn.
@@ -4232,6 +4232,10 @@ function askLeave(want: boolean) {
   const fromAsk = !!ask && !!focused && ask.contains(focused);
   ask?.toggleAttribute('hidden', !want);
   x?.toggleAttribute('hidden', want);
+  // For the zoom pill, which stands down while the question is up (clean.css).
+  // A class and not a :has() on :root: that made every DOM change anywhere in
+  // the mode a restyle of the whole page, 45ms a time on a Galaxy S10.
+  document.documentElement.classList.toggle('is-clean-asking', want);
   if (want && fromX) ask?.querySelector<HTMLElement>('[data-clean="stay"]')?.focus();
   if (!want && fromAsk) x?.focus();
 }

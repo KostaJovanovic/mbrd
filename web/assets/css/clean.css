@@ -1435,11 +1435,14 @@
    an invitation to do something else with the same hand. Faded rather than
    removed, over the 200ms the question arrives in, and on #zoom-ctl rather than
    on #corner: the corner's own opacity belongs to clean-top-in, which holds it
-   under the animation for as long as the mode is open. */
+   under the animation for as long as the mode is open. The class is askLeave()'s
+   in clean.ts. It was a :has(#clean-confirm:not([hidden])) on :root, and a :has()
+   on the root is re-asked on every DOM change in the page: each one restyled the
+   whole document, 45ms a time on a phone, for as long as the mode was up. */
 :root.is-cleaning.is-clean-chrome #zoom-ctl {
   transition: opacity 200ms var(--clean-ease);
 }
-:root.is-cleaning.is-clean-chrome:has(#clean-confirm:not([hidden])) #zoom-ctl {
+:root.is-cleaning.is-clean-chrome.is-clean-asking #zoom-ctl {
   opacity: 0;
   pointer-events: none;
 }

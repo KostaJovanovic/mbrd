@@ -7,7 +7,8 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -280,8 +281,29 @@ test('the top row is one line of one height, and stands down to be asked', () =>
   // Both insets on one axis stretch a fixed box the width of the screen, and
   // #corner takes presses - it would stand over the board along the whole top.
   assert.doesNotMatch(corner, /right:/, 'the cluster is pinned left and right at once');
-  assert.match(css, /:has\(#clean-confirm:not\(\[hidden\]\)\) #zoom-ctl \{[^}]*opacity: 0/,
+  assert.match(css, /\.is-clean-asking #zoom-ctl \{[^}]*opacity: 0/,
     'the camera no longer stands down while the ✕ is asking');
+  const js = readFileSync(
+    fileURLToPath(new URL('../web/assets/js/ui/clean/clean.ts', import.meta.url)), 'utf8');
+  assert.match(js, /classList\.toggle\('is-clean-asking', want\)/,
+    'askLeave() no longer sets the class the pill stands down on');
+});
+
+test('no :has() on the root asks a question every DOM change could answer', () => {
+  // A :has() on :root is asked again whenever the page's DOM changes, and when
+  // the change might have altered the answer the whole document is restyled.
+  // An id or a class in the argument lets Chromium skip changes that touch
+  // neither; a :not() inside it cannot be skipped for anything. The cleaning
+  // game carried :has(#clean-confirm:not([hidden])), and every mote and fleck
+  // it added cost 45ms on a Galaxy S10. A class the script sets is free.
+  const dir = fileURLToPath(new URL('../web/assets/css/', import.meta.url));
+  const found = [];
+  for (const name of readdirSync(dir).filter(n => n.endsWith('.css'))) {
+    const css = readFileSync(join(dir, name), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    for (const m of css.matchAll(/(?::root|\bhtml)[^\s,{>+~]*:has\(([^{]*?)\)(?=[\s,{])/g))
+      if (m[1].includes(':not(')) found.push(`${name}: ${m[0]}`);
+  }
+  assert.deepEqual(found, [], 'a root :has() with a :not() in it restyles the page on every DOM change');
 });
 
 // ---------------------------------------------------------------------------
