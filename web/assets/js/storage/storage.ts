@@ -943,7 +943,7 @@ async function askBeforeLeaving() {
  * one case the old dialog was built for is the one case nothing now guards -
  * and it would fail silently, which is worse than the dialog ever was.
  */
-async function shelveCurrent() {
+async function shelveCurrent(opening = '') {
   if (!(await askBeforeLeaving())) return false;
   suspendCache();
   await drainSave();
@@ -953,7 +953,8 @@ async function shelveCurrent() {
     // must not turn a board that *is* on the shelf into one the caller thinks
     // is not. The sweep is here rather than at boot because this is the only
     // place that adds to the shelf, so it is the only place it can grow.
-    await trimLibrary().catch(err => console.warn('[mbrd] shelf not trimmed:', err));
+    // `opening` is spared: a switch to the oldest row would evict its target.
+    await trimLibrary(undefined, opening).catch(err => console.warn('[mbrd] shelf not trimmed:', err));
     await sweepLibrary().catch(() => {});
     return true;
   } catch (err) {
@@ -1017,7 +1018,7 @@ export async function switchBoard(id: string) {
   if (id.startsWith(FILE_ID)) return openBoardFile(id.slice(FILE_ID.length));
   const job = busy('Switching boards');
   try {
-    if (!(await shelveCurrent())) return false;
+    if (!(await shelveCurrent(id))) return false;
     // Which kind of row this is decides where the bytes come from, and it is the
     // only place in this function that the desktop differs. A path row has no
     // blob on the shelf by construction - see stashCurrent() - so the file *is*
