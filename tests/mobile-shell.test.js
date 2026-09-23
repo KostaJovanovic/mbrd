@@ -39,6 +39,15 @@ test('the FileProvider hands out only the share folder', { skip }, () => {
   assert.match(shell, /new File\(ctx\.getCacheDir\(\), "mbrd-share"\)/, 'share() stages where the provider looks');
 });
 
+test('an import names its files off the UI thread', { skip }, () => {
+  // Up to 500 provider queries on the UI thread were an ANR on a slow provider.
+  const files = read(join(JAVA, 'MbrdFiles.java'));
+  const done = /private void importDone\([\s\S]*?\n {4}\}/.exec(files)[0];
+  const off = done.indexOf('IO.execute(');
+  assert.ok(off > 0, 'importDone() hands the work to IO');
+  assert.ok(done.indexOf('displayName(') > off, 'every name is read on IO');
+});
+
 test('an incoming file on the app\'s own provider is refused', { skip }, () => {
   const shell = read(join(JAVA, 'MbrdShell.java'));
   const deliver = /boolean deliver\(Intent intent\) \{[\s\S]*?\n {4}\}/.exec(shell)[0];
