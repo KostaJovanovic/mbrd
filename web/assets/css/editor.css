@@ -1,12 +1,29 @@
 /* =========================================================
    mbrd - the text editor (ui/editor/view.ts), inside the viewer.
-   A fixed bar, then the page scrolling under it. The page wears
-   the viewer's Markdown measure and faces (viewer.css .viewer-md),
-   so a document reads the same being written as being read.
+   A word processor's room: the whole window, a fixed bar, and a
+   sheet of paper on a desk scrolling under it. The sheet wears the
+   viewer's Markdown faces (viewer.css .viewer-md), so a document
+   reads the same being written as being read.
    ========================================================= */
 
+/* The whole window, not a card over the board: writing wants the room. It ends
+   above a phone's keyboard, whose height ui/viewer.ts writes into --kb. */
+#viewer[data-edit] {
+  width: 100%;
+  height: calc(100dvh - var(--kb, 0px));
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: var(--paper-2);
+}
+#viewer[data-edit] #viewer-head {
+  padding-top: max(10px, env(safe-area-inset-top));
+  padding-bottom: 8px;
+  border-bottom: 0;
+}
 /* The viewer's body gives up its centring grid and its padding to the editor,
-   which scrolls its own page so the bar can stay put. */
+   which scrolls its own desk so the bar can stay put. */
 #viewer[data-edit] #viewer-body {
   display: flex;
   /* Stretched, not the body's centring: centred, a page taller than the
@@ -14,13 +31,7 @@
   place-items: stretch;
   padding: 0;
   overflow: hidden;
-  background: var(--paper-card);
-}
-/* On a phone the dialog sits at the top and ends above the keyboard, whose
-   height ui/viewer.ts writes into --kb. Centred, the caret would be under it. */
-#viewer[data-edit] { height: min(860px, calc(100dvh - 32px - var(--kb, 0px))); }
-@media (pointer: coarse) {
-  #viewer[data-edit] { margin-top: max(16px, env(safe-area-inset-top)); margin-bottom: auto; }
+  background: none;
 }
 
 .ed {
@@ -33,14 +44,19 @@
 
 /* ── The bar ───────────────────────────────────────────────────────────── */
 
+/* A strip of its own across the desk, as a word processor's is, rather than a
+   rule under the title. */
 .ed-bar {
   flex: none;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 12px;
-  padding: 6px 12px;
-  border-bottom: var(--hairline) solid var(--rule-2);
+  margin: 0 12px;
+  padding: 4px 8px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--radius);
+  background: var(--paper-card);
 }
 .ed-group { display: flex; gap: 2px; }
 .ed-btn {
@@ -87,9 +103,11 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
-  border-bottom: var(--hairline) solid var(--rule-2);
-  background: var(--paper-2);
+  margin: 6px 12px 0;
+  padding: 6px 8px;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--radius);
+  background: var(--paper-card);
 }
 .ed-find[hidden] { display: none; }
 .ed-find input {
@@ -115,20 +133,28 @@
 
 /* ── The page ──────────────────────────────────────────────────────────── */
 
+/* The desk: the sheet sits on it with a margin all round, and the room below
+   the sheet keeps the last line off the window's bottom edge. */
 .ed-scroll {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
+  padding: 20px 16px 30vh;
 }
+/* The sheet: a US Letter page at 96 dpi with inch margins, one page tall at
+   least and growing with the text (one long sheet, no page breaks). The
+   margins shrink with the window, so a narrow one still has a measure. */
 .ed-page {
   box-sizing: border-box;
-  max-width: calc(74ch + 64px);
-  min-height: 100%;
+  width: 100%;
+  max-width: 816px;
+  min-height: 1056px;
   margin: 0 auto;
-  /* Room below the last line: the end of a document is where writing happens,
-     and it should not be pinned to the window's bottom edge. */
-  padding: 28px 32px 40vh;
+  padding: clamp(24px, 9vw, 96px);
+  border: var(--hairline) solid var(--rule-2);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-1);
   outline: none;
   color: var(--ink);
   caret-color: var(--accent-deep);
@@ -139,10 +165,22 @@
   overflow-wrap: break-word;
 }
 .is-plain .ed-page {
-  max-width: calc(88ch + 64px);
   font-family: var(--font-mono);
   font-size: var(--t-small);
   line-height: 1.6;
+}
+/* A phone is too narrow for a desk: the sheet is the screen, and it reaches
+   the keyboard (--kb) rather than a page's height. */
+@media (max-width: 600px) {
+  .ed-bar { margin: 0 8px; }
+  .ed-find { margin: 6px 8px 0; }
+  .ed-scroll { padding: 8px 0 0; }
+  .ed-page {
+    min-height: 100%;
+    padding: 20px 20px 40vh;
+    border: 0;
+    box-shadow: none;
+  }
 }
 .ed-page > .ed-b { margin: 0 0 0.9em; }
 .is-plain .ed-page > .ed-b { margin: 0; }

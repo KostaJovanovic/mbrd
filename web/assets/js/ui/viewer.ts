@@ -761,6 +761,13 @@ function readOnlyText(item: Item, host: HTMLElement, why = '') {
 async function editDocument(item: Item, host: HTMLElement, open: OpenOptions = {}) {
   const asset = getAsset(item.asset?.hash);
   if (!asset) return void host.append(nothing('That file is not in this board'));
+  // Full-window before the first await: growFrom() measures the dialog as soon
+  // as it opens, and it should grow into the room the page will have.
+  dlg!.dataset.edit = '';
+  const readOnly = (why: string) => {
+    delete dlg!.dataset.edit;
+    readOnlyText(item, host, why);
+  };
   const waiting = nothing('Opening it…');
   host.append(waiting);
   const name = asset.name || item.name || 'document.md';
@@ -771,7 +778,7 @@ async function editDocument(item: Item, host: HTMLElement, open: OpenOptions = {
     if (!waiting.isConnected) return;
     if (!go) {
       waiting.remove();
-      return void readOnlyText(item, host, 'Opened to read. Too large to edit here without asking.');
+      return void readOnly('Opened to read. Too large to edit here without asking.');
     }
   }
   const bytes = new Uint8Array(await asset.blob.arrayBuffer());
@@ -781,7 +788,7 @@ async function editDocument(item: Item, host: HTMLElement, open: OpenOptions = {
   const again = new TextEncoder().encode(text);
   if (again.length !== bytes.length || again.some((b, n) => b !== bytes[n])) {
     waiting.remove();
-    return void readOnlyText(item, host, 'Opened to read. This file is not UTF-8 text, and saving it would change it.');
+    return void readOnly('Opened to read. This file is not UTF-8 text, and saving it would change it.');
   }
   const ext = str(item.meta?.ext);
   let session: EditSession | null = null;
@@ -816,7 +823,6 @@ async function editDocument(item: Item, host: HTMLElement, open: OpenOptions = {
   };
   editing = session;
   waiting.replaceWith(editor.el);
-  dlg!.dataset.edit = '';
   editor.focus();
   const held = (open.typed ?? '') + (open.held?.take() ?? '');
   if (held) editor.type(held);
