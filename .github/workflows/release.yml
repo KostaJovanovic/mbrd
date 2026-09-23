@@ -378,6 +378,13 @@ jobs:
           npm ci
           npm run sync
 
+      # tests/csp.test.js skips its staged-policy check where nothing is
+      # staged, which is every run but this one.
+      - name: Check the staged policy
+        env:
+          MBRD_STAGED: "1"
+        run: node --test tests/csp.test.js
+
       - name: Write the keystore
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
