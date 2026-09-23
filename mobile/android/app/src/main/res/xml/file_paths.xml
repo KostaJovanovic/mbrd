@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- What the FileProvider may hand out: only the folder MbrdShell.share()
+     stages a shared file in. Wider paths would let the provider name any
+     file on shared storage or in the cache. -->
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <external-path name="my_images" path="." />
-    <cache-path name="my_cache_images" path="." />
+    <cache-path name="share" path="mbrd-share/" />
 </paths>

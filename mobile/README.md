@@ -199,7 +199,8 @@ bridge:
 - `/_capacitor_file_/` and `/_capacitor_content_/` answer 404, on every host and
   scheme, the live-reload server included. Nothing here uses them, and they
   would give any page script a reader for every file the app can reach.
-- Incoming intents: `content://` only.
+- Incoming intents: `content://` only, and never a URI on the app's own
+  providers. The FileProvider hands out only the share folder in the cache.
 - No general-purpose Capacitor plugin is installed: `package.json` has
   `@capacitor/android` and `@capacitor/core` and nothing else.
 
