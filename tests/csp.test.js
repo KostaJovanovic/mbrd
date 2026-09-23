@@ -241,7 +241,6 @@ test('no module names a remote host the policy does not allow', () => {
   /** Hosts in code that are never fetched — each must have a stated reason. */
   const NOT_FETCHED = new Map([
     ['http://www.w3.org', 'XML/SVG namespace, not an address'],
-    ['https://www.youtube.com', 'matched on paste, rewritten to nocookie host'],
     ['https://example.com', 'placeholder text'],
     // Navigated in a popup, not fetched — no CSP directive governs navigation.
     ['https://accounts.google.com', 'sign-in page, navigated to in a popup'],
@@ -272,6 +271,21 @@ test('connect-src carries the host the converter is fetched from', () => {
   const sources = directives.get('connect-src') ?? [];
   assert.ok(sources.includes(`https://${core[1]}`),
     `optimize/media.ts fetches ${core[1]} and connect-src does not allow it`);
+});
+
+test('connect-src carries every host canvas/embed-meta.ts fetches', () => {
+  // Checked against connect-src alone: the sweep above takes a host from any
+  // directive, and open.spotify.com is also in frame-src, so a fetch with no
+  // connect-src entry passed it and failed on the deploy.
+  const code = read(join(JS, 'canvas', 'embed-meta.ts'))
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^[ \t]*\/\/.*$/gm, '');
+  const fetched = [...new Set([...code.matchAll(/['"`](https:\/\/[^/'"`]+)/g)].map(m => m[1]))];
+  assert.ok(fetched.length >= 3,
+    `only ${fetched.length} hosts found in embed-meta.ts - have the oEmbed addresses moved?`);
+  const sources = directives.get('connect-src') ?? [];
+  const missing = fetched.filter(h => !sources.includes(h));
+  assert.deepEqual(missing, [],
+    `canvas/embed-meta.ts fetches ${missing.join(' ')} and connect-src does not allow it`);
 });
 
 test('connect-src carries the host a board is shared through', () => {
