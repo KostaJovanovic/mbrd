@@ -40,6 +40,10 @@ export interface SessionDeps {
   saveFile?: () => Promise<boolean>;
   /** Boot: open the board file the last run was on. */
   reopen?: (path: string) => Promise<boolean>;
+  /** The shelf id of the board on screen, stored with each snapshot. */
+  boardId?: () => Promise<string>;
+  /** Boot: make the restored snapshot's id the current one. */
+  adoptBoardId?: (id: string) => Promise<void>;
 }
 
 /** The one dialog this module asks for - see ask() in ui/dialog.ts. */
@@ -231,6 +235,8 @@ async function writeSnapshot() {
   await d!.settled?.();
   if (d!.fileBacked?.()) return writeToFile();
   try {
+    // Read before the serialise, so no await falls between the id and the board.
+    const boardId = await d!.boardId?.();
     // Serialise once — snapshot and asset set must describe the same board.
     const data = serializeBoard();
     const referenced = referencedHashes(data);
@@ -255,6 +261,7 @@ async function writeSnapshot() {
     // returned as failure so the board stays dirty.
     await idbSet('kv', SESSION_KEY, {
       board: data,
+      boardId: boardId ?? null,
       created: d!.created(),
       fileName: d!.fileName() || null,
       dirty: isDirty() || missing.length > 0,
@@ -379,6 +386,11 @@ export async function restoreSession() {
       job.end();
     }
     d!.setCreated(str(session.created) || null);
+    // A switch names the next board at once, and the slot keeps the last one
+    // until the next write. The snapshot's own id wins, or a later shelving
+    // files this board over the other board's only copy.
+    const id = str(session.boardId);
+    if (id) await d!.adoptBoardId?.(id);
     loadBoard(stored);
     // Mark dirty if any assets were lost — the user needs to know before
     // they try to export.

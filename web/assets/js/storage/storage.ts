@@ -1637,6 +1637,8 @@ export function initStorage() {
     settled: () => adopted,
     saveFile: () => saveDocument(),
     reopen: reopenFile,
+    boardId: ensureBoardId,
+    adoptBoardId: async id => { if (id !== boardId) await setCurrentBoardId(id); },
   });
   initSessionStorage();
 }
