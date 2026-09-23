@@ -9,7 +9,7 @@ import {
 } from './shared.ts';
 import {
   type Curve, type Facet, type Frame, type Loop, type Surface, type Vec,
-  circleCurve, coneSurface, cylinderSurface, ellipseCurve, expandKnots,
+  circleCurve, compositeShare, coneSurface, cylinderSurface, ellipseCurve, expandKnots, saneDegree,
   extrusionSurface, faceFacets, flatFacets, frame, length, lineCurve, planeSurface,
   polylineCurve, revolutionSurface, splineCurve, splineDomain, splineSurface,
   sphereSurface, sub, torusSurface, unit,
@@ -157,7 +157,7 @@ function readEntity(src: string): Entity | null {
   return one ? { type: one.value.type, args: one.value.args, parts: null } : null;
 }
 
-function readTyped(src: string, from: number): { value: Typed; next: number } | null {
+function readTyped(src: string, from: number, depth = 0): { value: Typed; next: number } | null {
   let i = skipSpace(src, from);
   const start = i;
   while (i < src.length && /[A-Za-z0-9_]/.test(src[i])) i++;
@@ -165,12 +165,17 @@ function readTyped(src: string, from: number): { value: Typed; next: number } | 
   const type = src.slice(start, i).toUpperCase();
   i = skipSpace(src, i);
   if (src[i] !== '(') return { value: { type, args: [] }, next: i };
-  const list = readList(src, i);
+  const list = readList(src, i, depth + 1);
   return { value: { type, args: list.value }, next: list.next };
 }
 
+/** How deep parentheses may nest in one record. Real records nest three or
+ *  four deep; the parser recurses once per level, so this is the stack guard. */
+const MAX_NESTING = 256;
+
 /** A parenthesised, comma-separated argument list. */
-function readList(src: string, from: number): { value: Val[]; next: number } {
+function readList(src: string, from: number, depth: number): { value: Val[]; next: number } {
+  if (depth > MAX_NESTING) throw new MeshError('This STEP file nests a record too deeply');
   const out: Val[] = [];
   let i = from + 1;
   for (;;) {
@@ -178,18 +183,18 @@ function readList(src: string, from: number): { value: Val[]; next: number } {
     if (i >= src.length) break;
     if (src[i] === ')') { i++; break; }
     if (src[i] === ',') { i++; continue; }
-    const v = readValue(src, i);
+    const v = readValue(src, i, depth);
     out.push(v.value);
     i = v.next;
   }
   return { value: out, next: i };
 }
 
-function readValue(src: string, from: number): { value: Val; next: number } {
+function readValue(src: string, from: number, depth: number): { value: Val; next: number } {
   const i = skipSpace(src, from);
   const c = src[i];
   if (c === '(') {
-    const list = readList(src, i);
+    const list = readList(src, i, depth + 1);
     return { value: list.value, next: list.next };
   }
   if (c === "'") {
@@ -225,14 +230,17 @@ function readValue(src: string, from: number): { value: Val; next: number } {
     return { value: word, next };
   }
   if (c === '$' || c === '*') return { value: null, next: i + 1 };
-  // A number, or a typed value like `LENGTH_MEASURE(1.)` inside a select.
+  // A typed value like `LENGTH_MEASURE(1.)` inside a select. Decided on the
+  // first character, before any scan: scanning to the next `,` first made a
+  // list of bare words cost its length once per word.
+  if (c !== undefined && /[A-Za-z_]/.test(c)) {
+    const typed = readTyped(src, i, depth);
+    if (typed) return { value: typed.value, next: typed.next };
+  }
+  // A number.
   let j = i;
   while (j < src.length && !',)'.includes(src[j])) j++;
   const raw = src.slice(i, j).trim();
-  if (/^[A-Za-z_]/.test(raw)) {
-    const typed = readTyped(src, i);
-    if (typed) return { value: typed.value, next: typed.next };
-  }
   const n = Number(raw);
   return { value: Number.isFinite(n) ? n : raw, next: j };
 }
@@ -266,12 +274,13 @@ function build(db: Db): Mesh {
   const colours = styleColours(db);
 
   const build = new MeshBuild();
+  const memo = new Map<string, Facet[]>();
   let faces = 0;
 
   for (const [id, entity] of db) {
     if (!isType(entity, 'ADVANCED_FACE') && !isType(entity, 'FACE_SURFACE')) continue;
     if (++faces > MAX_FACES) throw new MeshError('This STEP file has more faces than a drawing has');
-    const facets = readFace(db, entity, scaleHint);
+    const facets = readFace(db, entity, scaleHint, memo);
     if (!facets.length) continue;
     const m = placement.get(id) || null;
     const rgb = colours.get(id) || null;
@@ -332,10 +341,10 @@ function points(db: Db, v: Val): Vec[] {
   return out;
 }
 
-function direction(db: Db, v: Val): Vec | null {
+function direction(db: Db, v: Val, depth = 0): Vec | null {
   const e = at(db, v);
-  if (!e || (e.type !== 'DIRECTION' && e.type !== 'VECTOR')) return null;
-  if (e.type === 'VECTOR') return direction(db, e.args[1]);
+  if (!e || (e.type !== 'DIRECTION' && e.type !== 'VECTOR') || depth > MAX_FOLLOW) return null;
+  if (e.type === 'VECTOR') return direction(db, e.args[1], depth + 1);
   const c = e.args[1];
   if (!isList(c) || c.length < 2) return null;
   return [num(c[0]), num(c[1]), num(c[2])];
@@ -352,9 +361,9 @@ function placementFrame(db: Db, v: Val): Frame | null {
   return frame(o, direction(db, args[2]), direction(db, args[3]));
 }
 
-function surfaceOf(db: Db, v: Val, scaleHint: number): Surface | null {
+function surfaceOf(db: Db, v: Val, scaleHint: number, depth = 0): Surface | null {
   const e = at(db, v);
-  if (!e) return null;
+  if (!e || depth > MAX_FOLLOW) return null;
 
   const spline = splineSurfaceOf(db, e);
   if (spline) return spline;
@@ -397,9 +406,9 @@ function surfaceOf(db: Db, v: Val, scaleHint: number): Surface | null {
     case 'RECTANGULAR_TRIMMED_SURFACE':
     case 'CURVE_BOUNDED_SURFACE':
     case 'RECTANGULAR_COMPOSITE_SURFACE':
-      return surfaceOf(db, e.args[1], scaleHint);
+      return surfaceOf(db, e.args[1], scaleHint, depth + 1);
     case 'OFFSET_SURFACE':
-      return surfaceOf(db, e.args[1], scaleHint);
+      return surfaceOf(db, e.args[1], scaleHint, depth + 1);
     default:
       return null;
   }
@@ -429,11 +438,13 @@ function splineSurfaceOf(db: Db, e: Entity): Surface | null {
 
   // The knot data sits on the WITH_KNOTS branch: multiplicities then knots, in
   // that order, for u and then v.
+  const uDegree = splineDegree(base[1]);
+  const vDegree = splineDegree(base[2]);
   const uMults = numbers(args[8]);
   const vMults = numbers(args[9]);
   const uKnots = expandKnots(numbers(args[10]), uMults);
   const vKnots = expandKnots(numbers(args[11]), vMults);
-  if (uKnots.length < uCount || vKnots.length < vCount) return null;
+  if (uKnots.length < uCount + uDegree + 1 || vKnots.length < vCount + vDegree + 1) return null;
 
   // A rational surface carries its weights on a second branch of the same
   // complex instance, in the same row-major order as the control points.
@@ -448,18 +459,45 @@ function splineSurfaceOf(db: Db, e: Entity): Surface | null {
     if (weights && weights.length !== ctrl.length) weights = null;
   }
 
-  return splineSurface({
-    uDegree: Math.max(1, num(base[1], 1)),
-    vDegree: Math.max(1, num(base[2], 1)),
-    uKnots, vKnots, ctrl, weights, uCount, vCount,
-  });
+  return splineSurface({ uDegree, vDegree, uKnots, vKnots, ctrl, weights, uCount, vCount });
+}
+
+/** A declared B-spline degree, at least one. A degree no kernel writes is a
+ *  corrupt record, and evaluating it would cost its square per point. */
+function splineDegree(v: Val) {
+  const d = num(v, 1);
+  if (!saneDegree(d)) throw new MeshError('This STEP file has a B-spline of an impossible degree');
+  return Math.max(1, d);
 }
 
 const numbers = (v: Val): number[] => (isList(v) ? v.map(x => num(x)) : []);
 
 type CurveInfo = { curve: Curve; domain: [number, number] };
 
-function curveOf(db: Db, v: Val, scaleHint: number): CurveInfo | null {
+/** How deep one curve may be built out of others. A composite of trimmed
+ *  curves is three or four in a real file; the build recurses once a level. */
+const MAX_CURVE_DEPTH = 64;
+
+/** Every curve built in this parse, by record number. A curve is a function of
+ *  its record alone, and without this a composite whose segments share a
+ *  composite was rebuilt once per path to it: twice the work per level. */
+const curves = new WeakMap<Db, Map<number, CurveInfo | null>>();
+
+function curveOf(db: Db, v: Val, scaleHint: number, depth = 0): CurveInfo | null {
+  if (!isRef(v)) return null;
+  let memo = curves.get(db);
+  if (!memo) { memo = new Map(); curves.set(db, memo); }
+  // Also the cycle guard: a curve that reaches itself finds the null placed
+  // here and stops.
+  if (memo.has(v.ref)) return memo.get(v.ref) ?? null;
+  if (depth > MAX_CURVE_DEPTH) throw new MeshError('This STEP file builds a curve out of too many others');
+  memo.set(v.ref, null);
+  const info = buildCurve(db, v, scaleHint, depth);
+  memo.set(v.ref, info);
+  return info;
+}
+
+function buildCurve(db: Db, v: Val, scaleHint: number, depth: number): CurveInfo | null {
   const e = at(db, v);
   if (!e) return null;
 
@@ -491,17 +529,18 @@ function curveOf(db: Db, v: Val, scaleHint: number): CurveInfo | null {
     // trimming is redundant here: the edge already says which two points it runs
     // between, and those are what the sampling uses.
     case 'TRIMMED_CURVE':
-      return curveOf(db, e.args[1], scaleHint);
+      return curveOf(db, e.args[1], scaleHint, depth + 1);
     case 'COMPOSITE_CURVE': {
       const points: Vec[] = [];
       if (isList(e.args[1])) {
+        const share = compositeShare(e.args[1].length);
         for (const seg of e.args[1]) {
           const s = at(db, seg);
           if (!s) continue;
-          const inner = curveOf(db, s.args[2], scaleHint);
+          const inner = curveOf(db, s.args[2], scaleHint, depth + 1);
           if (!inner) continue;
           const [lo, hi] = inner.domain;
-          const n = inner.curve.segments(lo, hi);
+          const n = Math.min(share, inner.curve.segments(lo, hi));
           for (let k = 0; k <= n; k++) points.push(inner.curve.at(lo + (hi - lo) * k / n));
         }
       }
@@ -512,7 +551,7 @@ function curveOf(db: Db, v: Val, scaleHint: number): CurveInfo | null {
     case 'INTERSECTION_CURVE':
       // The first argument is the curve in 3D space; the rest are its two
       // representations on the surfaces it lies on, which this does not need.
-      return curveOf(db, e.args[1], scaleHint);
+      return curveOf(db, e.args[1], scaleHint, depth + 1);
     default:
       return null;
   }
@@ -540,8 +579,10 @@ function splineCurveOf(db: Db, e: Entity): CurveInfo | null {
     if (!p) return null;
     ctrl.push(p);
   }
+  const degree = splineDegree(base[1]);
   const knots = expandKnots(numbers(args[7]), numbers(args[6]));
-  if (knots.length < ctrl.length) return null;
+  // de Boor reads `degree` knots past the last control point.
+  if (knots.length < ctrl.length + degree + 1) return null;
 
   const rational = partArgs(e, 'RATIONAL_B_SPLINE_CURVE');
   let weights: number[] | null = null;
@@ -550,7 +591,7 @@ function splineCurveOf(db: Db, e: Entity): CurveInfo | null {
     if (weights.length !== ctrl.length) weights = null;
   }
 
-  const s = { degree: Math.max(1, num(base[1], 1)), knots, ctrl, weights };
+  const s = { degree, knots, ctrl, weights };
   return { curve: splineCurve(s), domain: splineDomain(s) };
 }
 
@@ -558,10 +599,28 @@ function splineCurveOf(db: Db, e: Entity): CurveInfo | null {
 // Topology
 // ---------------------------------------------------------------------------
 
-function readFace(db: Db, face: Entity, scaleHint: number): Facet[] {
+function readFace(db: Db, face: Entity, scaleHint: number, memo: Map<string, Facet[]>): Facet[] {
   const args = partArgs(face, 'ADVANCED_FACE') || partArgs(face, 'FACE_SURFACE') || face.args;
   const boundList = args[1];
   if (!isList(boundList) || !boundList.length) return [];
+  // Two faces over the same bounds and surface are the same triangles, and
+  // triangulating is the expensive part - a file that points a thousand faces
+  // at one long loop is otherwise a thousand long triangulations.
+  // Keyed by what each bound says rather than by the bound's own record, which
+  // is a cheap thing for a file to write once per face.
+  const id = (v: Val) => (isRef(v) ? `#${v.ref}` : String(v));
+  const key = [id(args[2]), id(args[3]), ...boundList.map(b => {
+    const bound = at(db, b);
+    return bound ? `${isType(bound, 'FACE_OUTER_BOUND')}${id(bound.args[1])}${id(bound.args[2])}` : '-';
+  })].join(',');
+  const had = memo.get(key);
+  if (had) return had;
+  const facets = triangulateFace(db, args, boundList, scaleHint);
+  memo.set(key, facets);
+  return facets;
+}
+
+function triangulateFace(db: Db, args: Val[], boundList: Val[], scaleHint: number): Facet[] {
   const surface = surfaceOf(db, args[2], scaleHint);
   // `same_sense` false means the face's normal is the surface's reversed.
   const sameSense = args[3] !== false;

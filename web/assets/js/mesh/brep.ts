@@ -141,6 +141,24 @@ export type Spline = {
   weights: number[] | null;
 };
 
+/** The highest B-spline degree a file may declare. CAD kernels stop at 25; an
+ *  evaluation costs the degree squared, and a knot vector is sized by it, so a
+ *  degree past this is a corrupt record and never a large model. */
+export const MAX_DEGREE = 32;
+
+/** Whether a declared degree can be evaluated. The readers throw MeshError on
+ *  false, never Oversize: no file needs more. */
+export const saneDegree = (d: number) => Number.isSafeInteger(d) && d >= 0 && d <= MAX_DEGREE;
+
+/** The most points one composite curve is sampled into. Every segment is
+ *  already capped at 256, so a curve of a few hundred segments is untouched;
+ *  past that each segment gets a smaller share instead of the total growing
+ *  with the segment count. */
+export const MAX_CURVE_POINTS = 16_384;
+
+/** Samples per segment for a composite of `count` segments. */
+export const compositeShare = (count: number) => Math.max(1, Math.floor(MAX_CURVE_POINTS / Math.max(1, count)));
+
 export function expandKnots(knots: number[], mults: number[]) {
   const out: number[] = [];
   for (let i = 0; i < knots.length; i++) {
@@ -471,8 +489,35 @@ const MAX_PER_FACE = 4_000;
 // Below this, the loop is a degenerate seam (fully closed surface).
 const DEGENERATE = 1e-9;
 
+/** The most boundary points one face is triangulated from, holes included.
+ *  Ear clipping costs about the square of this, and a face stops at
+ *  MAX_PER_FACE triangles, so a longer boundary never drew whole anyway. */
+export const MAX_LOOP_POINTS = 4_096;
+
+/** Loops with more points than a face can use, sampled evenly down to the
+ *  limit. Outer loops are placed first so a face never loses its outline to
+ *  its holes; a hole that no longer fits is left out. */
+export function thin(loops: Loop[]): Loop[] {
+  let total = 0;
+  for (const l of loops) total += l.points.length;
+  if (total <= MAX_LOOP_POINTS) return loops;
+  const out: Loop[] = [];
+  let left = MAX_LOOP_POINTS;
+  for (const l of [...loops.filter(l => l.outer), ...loops.filter(l => !l.outer)]) {
+    const len = l.points.length;
+    const keep = Math.min(len, Math.max(3, Math.floor(len * MAX_LOOP_POINTS / total)));
+    if (keep > left) continue;
+    left -= keep;
+    const points: Vec[] = [];
+    for (let k = 0; k < keep; k++) points.push(l.points[Math.floor(k * len / keep)]);
+    out.push({ points, outer: l.outer });
+  }
+  return out;
+}
+
 // Triangulate one trimmed face. scaleHint converts relative sag to absolute.
-export function faceFacets(surface: Surface, loops: Loop[], scaleHint: number): Facet[] {
+export function faceFacets(surface: Surface, given: Loop[], scaleHint: number): Facet[] {
+  const loops = thin(given);
   const outer = loops.find(l => l.outer) || loops[0];
   if (!outer || outer.points.length < 3) return [];
 
@@ -673,39 +718,59 @@ function earClip(uv: number[][]): number[][] {
   const index = Array.from({ length: n }, (_, i) => i);
   if (!ccw(uv)) index.reverse();
 
+  // Turn and cost per corner, kept in step with `index`. A clip changes only
+  // the two corners either side of it, so recomputing every corner on every
+  // clip made a long loop cost its length squared in hypot calls - seconds for
+  // a few thousand points.
+  const turn: number[] = [];
+  const cost: number[] = [];
+  const corner = (i: number) => {
+    const m = index.length;
+    const a = uv[index[(i + m - 1) % m]], b = uv[index[i]], c = uv[index[(i + 1) % m]];
+    turn[i] = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+    cost[i] = turn[i] > 0 ? squat(uv, index, i, turn[i]) : 0;
+  };
+  for (let i = 0; i < n; i++) corner(i);
+
   const out: number[][] = [];
   let guard = n + 16;
   while (index.length > 3 && guard-- > 0) {
     const m = index.length;
-    const turn: number[] = [];
-    const reflex: number[] = [];
-    for (let i = 0; i < m; i++) {
-      const a = uv[index[(i + m - 1) % m]], b = uv[index[i]], c = uv[index[(i + 1) % m]];
-      turn.push((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]));
-      if (turn[i] < 0) reflex.push(index[i]);
-    }
+    const ear = (i: number) => [index[(i + m - 1) % m], index[i], index[(i + 1) % m]];
 
     // Prefer the most compact (squarest) ear — avoids strip-spanning slivers.
-    const order: { at: number; cost: number }[] = [];
-    for (let i = 0; i < m; i++) if (turn[i] > 0) order.push({ at: i, cost: squat(uv, index, i, turn[i]) });
-    order.sort((p, q) => p.cost - q.cost);
+    // The cheapest is tried first and is almost always free; the sorted walk
+    // is the rare case, and is stable, so both take the same ear.
+    let best = -1;
+    for (let i = 0; i < m; i++) if (turn[i] > 0 && (best < 0 || cost[i] < cost[best])) best = i;
+    if (best < 0) break;
 
     let clipped = -1;
-    for (const { at: i } of order) {
-      const a = index[(i + m - 1) % m], b = index[i], c = index[(i + 1) % m];
-      if (blocked(uv, reflex, a, b, c)) continue;
-      out.push([a, b, c]);
-      clipped = i;
-      break;
+    const first = ear(best);
+    if (!blocked(uv, index, turn, first[0], first[1], first[2])) { out.push(first); clipped = best; }
+    if (clipped < 0) {
+      const order: number[] = [];
+      for (let i = 0; i < m; i++) if (turn[i] > 0) order.push(i);
+      order.sort((p, q) => cost[p] - cost[q]);
+      for (const i of order) {
+        const t = ear(i);
+        if (blocked(uv, index, turn, t[0], t[1], t[2])) continue;
+        out.push(t);
+        clipped = i;
+        break;
+      }
     }
     // Self-touching polygon — take the most compact convex corner to keep progress.
     if (clipped < 0) {
-      if (!order.length) break;
-      const i = order[0].at;
-      out.push([index[(i + m - 1) % m], index[i], index[(i + 1) % m]]);
-      clipped = i;
+      out.push(first);
+      clipped = best;
     }
     index.splice(clipped, 1);
+    turn.splice(clipped, 1);
+    cost.splice(clipped, 1);
+    const left = index.length;
+    corner((clipped + left - 1) % left);
+    corner(clipped % left);
   }
   if (index.length === 3) out.push([index[0], index[1], index[2]]);
   return out;
@@ -724,9 +789,11 @@ function squat(uv: number[][], index: number[], i: number, turn: number) {
 }
 
 // Skip bridge duplicates (same position, different index) in containment test.
-function blocked(uv: number[][], reflex: number[], a: number, b: number, c: number) {
+function blocked(uv: number[][], index: number[], turn: number[], a: number, b: number, c: number) {
   const A = uv[a], B = uv[b], C = uv[c];
-  for (const i of reflex) {
+  for (let k = 0; k < index.length; k++) {
+    if (!(turn[k] < 0)) continue;
+    const i = index[k];
     if (i === a || i === b || i === c) continue;
     const p = uv[i];
     if (samePoint(p, A) || samePoint(p, B) || samePoint(p, C)) continue;
@@ -936,7 +1003,8 @@ export function gridFacets(
  * and for a strongly curved one is visibly wrong but present. A hole in a solid
  * reads as a broken model; a slightly flat panel does not.
  */
-export function flatFacets(loops: Loop[]): Facet[] {
+export function flatFacets(given: Loop[]): Facet[] {
+  const loops = thin(given);
   const outer = loops.find(l => l.outer) || loops[0];
   if (!outer || outer.points.length < 3) return [];
   const f = fitPlane(outer.points);
