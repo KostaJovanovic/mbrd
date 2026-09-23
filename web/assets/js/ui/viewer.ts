@@ -109,7 +109,7 @@ export function holdTyping(): HeldTyping {
  */
 type EditSession = {
   editor: Editor, id: string, name: string, mime: string,
-  saved: string, step: Command | null, gen: number, timer: number, chain: Promise<void>,
+  saved: string | null, step: Command | null, gen: number, timer: number, chain: Promise<void>,
   /** Stops following the phone keyboard. */
   release: () => void,
 };
@@ -129,8 +129,9 @@ function saveEdit(s: EditSession): Promise<void> {
       if (s.gen !== boardGen) return;
       s.step = setItemText(s.id, hash, s.step);
     } catch (err) {
-      // Left for the next save, which tries the whole text again.
-      s.saved = '';
+      // Left for the next save, which tries the whole text again - null, since
+      // any text, the empty one too, could be what failed.
+      s.saved = null;
       console.error('[mbrd] the document could not be saved', err);
     }
   });
