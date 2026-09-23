@@ -151,6 +151,19 @@ test('and lets an ordinary photograph through', async () => {
   assert.equal(await overPixelBudget(new Blob([bmp(4000, 3000)])), false);
 });
 
+test('fill bytes before a JPEG marker do not hide the size behind them', async () => {
+  // T.81 lets any marker be preceded by 0xFF fill. Read as a marker, the fill
+  // took `FF C0` as a length and skipped the SOF, answering null - "fits" -
+  // for a 65535 x 65535 picture.
+  const plain = jpeg(65535, 65535);
+  const filled = new Uint8Array(plain.length + 3);
+  filled.set(plain.subarray(0, 2));
+  filled.set([0xff, 0xff, 0xff], 2);
+  filled.set(plain.subarray(2), 5);
+  assert.deepEqual(imageDimensions(filled), { w: 65535, h: 65535 });
+  assert.equal(await overPixelBudget(new Blob([filled])), true);
+});
+
 test('bytes it cannot read are still not refused', () => {
   // A false positive here costs somebody their photograph; a false negative
   // costs a check the byte caps and the decoder still make.
