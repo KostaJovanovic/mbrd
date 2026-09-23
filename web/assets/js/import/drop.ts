@@ -368,12 +368,17 @@ export function pickCover(id: string) {
   input.click();
 }
 
-/** Attach a chosen picture. Checks decodability — accept="image/*" lets through HEIC/RAW. */
-async function applyCover(id: string, file: File) {
+/** Attach a chosen picture. Checks decodability — accept="image/*" lets through HEIC/RAW.
+ *  Exported for tests/cover-budget.test.js. */
+export async function applyCover(id: string, file: File) {
   if (classify(file) !== 'image') {
     toast(`${file.name} is not a picture`, 'error');
     return;
   }
+  // measureSize() decodes, so the header is asked first, as importFiles()
+  // does: a small file that declares 65535 x 65535 is a question, not a draw.
+  const px = await pixelCrossing(file).catch(() => null);
+  if (px && !(await allow(fileKey(file), `${file.name} - ${consentMb(file.size)}`, [px], 'Use it'))) return;
   const { decodable } = await measureSize('image', file);
   if (!decodable) {
     toast(`This browser cannot draw ${file.name}`, 'error');
