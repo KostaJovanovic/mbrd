@@ -2,7 +2,7 @@
 // All paths funnel into importFiles() — hash, classify, arrange, add.
 
 import { extOf } from '../util.ts';
-import { platform } from '../platform/platform.ts';
+import { platform, isDesktop } from '../platform/platform.ts';
 import { toast, busy } from '../notify.ts';
 import { cue } from '../cuelume/engine.ts';
 import {
@@ -1540,7 +1540,18 @@ async function spreadFolder(dir: FileSystemDirectoryEntry, files: File[], folder
  * native port in this app takes: the caller has a path behind this one.
  */
 async function nativePreview(file: File): Promise<File | null> {
-  const bitmap = await platform.native.decode(await file.arrayBuffer(), file.name);
+  // Only where a shell is wired: the port wants the whole file as one buffer,
+  // and in a browser it answers null after that read. A file past about 2 GB
+  // throws from arrayBuffer(), which is also a null, so the paths behind this
+  // one still run.
+  if (!isDesktop()) return null;
+  let bytes: ArrayBuffer;
+  try {
+    bytes = await file.arrayBuffer();
+  } catch {
+    return null;
+  }
+  const bitmap = await platform.native.decode(bytes, file.name);
   if (!bitmap) return null;
   try {
     // Back to bytes, because everything downstream measures and stores a File.
