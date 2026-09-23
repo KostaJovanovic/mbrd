@@ -49,6 +49,9 @@ The changelog source is `patch-notes.md` at the repository root, not in here.
   owed, needs the maintainer (with the phone design calls P6 to P11), and
   ideas. What was done, decided or skipped, with the fix list R1 to R38, is in
   `old/done-2026-09-15.md`.
+- `bug-hunt-2026-09-23.md` — **the findings of a bug hunt at v0.519**, by
+  severity, each with a location, a failure and a fix. The todo list points to
+  it and does not copy it.
 - `patch-notes-full.md` — **an archive, not open work.** It holds every release
   at the length it was first written, internal work included. Nothing generates
   anything from it.
