@@ -251,8 +251,11 @@ export function mountEditor(opts: EditorOptions): Editor {
   page.setAttribute('aria-label', opts.label);
   // The sheet is the paper: the document's name at its head, as a title, and the page under it.
   const sheet = h('div', 'ed-sheet');
-  const nameField = h('input', 'ed-name');
-  nameField.type = 'text';
+  // A textarea rather than an input: a long name wraps onto a second line, as
+  // a title does. It is still one line of text - Enter keeps it, a pasted
+  // break becomes a space - and it grows to fit what it holds (fitName).
+  const nameField = h('textarea', 'ed-name');
+  nameField.rows = 1;
   nameField.value = opts.name ?? '';
   nameField.placeholder = 'Untitled';
   nameField.spellcheck = false;
@@ -264,7 +267,19 @@ export function mountEditor(opts: EditorOptions): Editor {
     if (!opts.onRename || nameField.value.trim() === named) return;
     named = opts.onRename(nameField.value.trim());
     nameField.value = named;
+    fitName();
   };
+  /** The field as tall as its lines, measured again whenever its width or its words change. */
+  const fitName = () => {
+    nameField.style.height = 'auto';
+    nameField.style.height = `${nameField.scrollHeight}px`;
+  };
+  nameField.addEventListener('input', () => {
+    if (/[\r\n]/.test(nameField.value)) nameField.value = nameField.value.replace(/\s*[\r\n]+\s*/g, ' ');
+    fitName();
+  });
+  const nameSize = typeof ResizeObserver === 'function' ? new ResizeObserver(fitName) : null;
+  nameSize?.observe(sheet);
   nameField.addEventListener('change', commitName);
   nameField.addEventListener('keydown', e => {
     if (e.key === 'Enter') {
@@ -278,6 +293,7 @@ export function mountEditor(opts: EditorOptions): Editor {
       e.stopPropagation();
       markClosed(e);
       nameField.value = named;
+      fitName();
     }
   });
   sheet.append(nameField, page);
@@ -1001,24 +1017,18 @@ export function mountEditor(opts: EditorOptions): Editor {
   const showBtns = [...(!opts.plain || screen ? [outlineBtn] : []), ...(opts.onAscii ? [asciiBtn] : [])];
   if (showBtns.length) panel.append(group('Show', ...showBtns));
 
-  // A phone's dock is one row that fits the screen: undo, the commonest marks
-  // and lists, the style of the line, and Tools, which drops the whole ribbon
-  // down as a sheet over the page - every group the desk has, each under its
-  // name. All at the top, clear of the keyboard. Closed, the ribbon's rarer
-  // commands step back (editor.css).
+  // A phone's toolbar is every command in two rows of glyphs, at the top,
+  // clear of the keyboard: the galleries become one Style button that names
+  // the line and opens its list, and Replace is left to the find bar, which
+  // has its own. The rest of the ribbon's furniture steps back (editor.css).
   const styleBtn = button(screen ? 'Element' : 'Style', () => {}, { icon: 'assets/icons.svg#i-chevron-right', word: screen ? 'Action' : 'Normal', cls: 'ed-more ed-style' });
   styleBtn.setAttribute('aria-haspopup', 'menu');
   menuButton(styleBtn, () => openAnchored(styleBtn.getBoundingClientRect(), screen ? elementMenu() : styleMenu(), { label: screen ? 'Element' : 'Style', owner: styleBtn, focus: true }));
   styleBtn.hidden = plain && !screen;
-  const moreBtn = button('Tools', () => showTools(!bar.classList.contains('is-open')), { icon: 'assets/icons.svg#i-chevron-right', word: 'Tools', cls: 'ed-tools' });
-  moreBtn.setAttribute('aria-expanded', 'false');
-  /** The ribbon's sheet open or shut. Only a phone draws it as one; on a desk the class changes nothing. */
-  function showTools(open: boolean) {
-    bar.classList.toggle('is-open', open);
-    moreBtn.setAttribute('aria-expanded', String(open));
-  }
-  for (const b of [marks[2][1], lists[2][1], findBtn, replaceBtn, vomitBtn, superBtn, infoBtn, outlineBtn, asciiBtn, elBtn, ...elTiles, ...styleTiles.map(s => s[1])]) b.classList.add('ed-desk');
-  const phoneGroup = group('More', styleBtn, moreBtn);
+  for (const b of [replaceBtn, elBtn, ...elTiles, ...styleTiles.map(s => s[1])]) b.classList.add('ed-desk');
+  // The second row, in the order a phone lays it out: the line's style, then find, a session, the view.
+  for (const b of [findBtn, vomitBtn, superBtn, infoBtn, outlineBtn, asciiBtn]) b.classList.add('ed-row2');
+  const phoneGroup = group('Style', styleBtn);
   phoneGroup.classList.add('ed-phone');
   panel.append(phoneGroup);
   ribbon.append(panel);
@@ -1093,8 +1103,6 @@ export function mountEditor(opts: EditorOptions): Editor {
   };
 
   function toggleOutline() {
-    // A phone's tools sheet gives way to what was asked of it, as it does for find and a session.
-    showTools(false);
     aside.hidden = !aside.hidden;
     root.classList.toggle('has-outline', !aside.hidden);
     outlineBtn.classList.toggle('is-active', !aside.hidden);
@@ -1208,7 +1216,6 @@ export function mountEditor(opts: EditorOptions): Editor {
   /** A session begun: the caret to the end and everything before it locked, the typewriter way. */
   const startVomit = (minutes: number) => {
     if (vomit) return;
-    showTools(false);
     closeFind();
     const lock = lockAtEnd(doc);
     vomit = { lock, ends: Date.now() + minutes * 60_000, tick: window.setInterval(paintTimer, 1000), superTimer: 0 };
@@ -1243,9 +1250,7 @@ export function mountEditor(opts: EditorOptions): Editor {
   /** What Vomit Mode is, and what it locks, in the app's own dialog. Its button leads to the times. */
   const explainVomit = async () => {
     const answer = await ask({ title: 'Vomit Mode', body: VOMIT_INFO, go: 'Choose a time', cancel: 'Close', danger: false });
-    // From the ribbon's button, or from Tools when a phone has its sheet shut.
-    const from = vomitBtn.offsetParent ? vomitBtn : moreBtn;
-    if (answer === 'go' && !vomit) openAnchored(from.getBoundingClientRect(), timeMenu(), { label: 'Vomit Mode', owner: from, focus: true });
+    if (answer === 'go' && !vomit) openAnchored(vomitBtn.getBoundingClientRect(), timeMenu(), { label: 'Vomit Mode', owner: vomitBtn, focus: true });
   };
 
   // -------------------------------------------------------------------------
@@ -1355,7 +1360,6 @@ export function mountEditor(opts: EditorOptions): Editor {
   function openFind() {
     // Replace would rewrite locked text, and a session has nothing to look back for.
     if (vomit) return;
-    showTools(false);
     find.hidden = false;
     root.classList.add('is-finding');
     const [a, z] = range();
@@ -1486,7 +1490,7 @@ export function mountEditor(opts: EditorOptions): Editor {
   // menu, spelling suggestions and all, and a finger keeps the phone's own
   // selection handles; the find fields keep theirs.
   root.addEventListener('contextmenu', e => {
-    if (e.shiftKey || e.target instanceof HTMLInputElement) return;
+    if (e.shiftKey || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
     if (typeof PointerEvent === 'function' && e instanceof PointerEvent && e.pointerType === 'touch') return;
     e.preventDefault();
     e.stopPropagation();
@@ -1537,6 +1541,7 @@ export function mountEditor(opts: EditorOptions): Editor {
     destroy: () => {
       // A name typed and not yet committed - the document closed with the field still focused.
       commitName();
+      nameSize?.disconnect();
       endVomit();
       clearTimeout(countTimer);
       document.removeEventListener('selectionchange', onSelect);
