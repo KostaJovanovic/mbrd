@@ -168,7 +168,7 @@ export function initViewer(commands?: ViewerCommands) {
   // copying words out of a document is the browser's job, not this menu's.
   dlg.addEventListener('contextmenu', e => {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-    // A document being written keeps the browser's menu, spelling suggestions and all.
+    // A document being written has its own menu (ui/editor/view.ts).
     if (e.target instanceof Element && e.target.closest('.ed')) return;
     if (getSelection()?.isCollapsed === false) return;
     e.preventDefault();
@@ -195,8 +195,7 @@ export function initViewer(commands?: ViewerCommands) {
   dlg.addEventListener('close', teardown);
   // In a document, Escape (and Android's Back, which sends this) closes the
   // find bar before it closes the document.
-  dlg.addEventListener('cancel', e => { if (editing?.editor.closeFind()) e.preventDefault(); });
-  // Counted before the close below, so a save the close starts knows the board is gone.
+  dlg.addEventListener('cancel', e => { if (editing?.editor.closeFind()) e.preventDefault(); });  // Counted before the close below, so a save the close starts knows the board is gone.
   bus.on('board:load', () => { boardGen++; });
   // A board swap takes the viewing with it, as it takes the sticker window: the
   // item it shows, and the blob URLs behind it, belonged to the board that left.
