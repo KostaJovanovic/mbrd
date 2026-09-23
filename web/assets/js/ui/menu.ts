@@ -309,8 +309,11 @@ export function initMenu(viewport: Viewport, commands: MenuCommands) {
   addEventListener('blur', close);
   addEventListener('keydown', e => {
     if (!node) return;
-    // Escape closes regardless of focus.
-    if (e.key === 'Escape') { e.stopPropagation(); markClosed(e); close(); return; }
+    // Escape closes regardless of focus - the menu alone. Prevented too, or the
+    // browser turns the same press into a cancel for a <dialog> under the menu
+    // (the viewer, the editor) and closes that as well. Nothing below sees it
+    // anyway: propagation stops here.
+    if (e.key === 'Escape') { e.stopPropagation(); e.preventDefault(); markClosed(e); close(); return; }
     // Navigation keys only when the menu owns the keyboard — otherwise typing
     // in a field behind a hover flyout would be swallowed by typeAhead().
     if (!ownsKeyboard()) return;

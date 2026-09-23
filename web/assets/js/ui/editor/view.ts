@@ -20,6 +20,7 @@ import {
 } from './fountain.ts';
 import { keepsLocked, advance, superLock, lockAtEnd, clampToLock, clock, SUPER_MS, VOMIT_MINUTES } from './vomit.ts';
 import { makeEditable, markClosed } from '../../util.ts';
+import { toast } from '../../notify.ts';
 import { menuButton, openAnchored } from '../menu.ts';
 import type { MenuEntry } from '../menu.ts';
 
@@ -716,23 +717,32 @@ export function mountEditor(opts: EditorOptions): Editor {
     if (done) { e.preventDefault(); e.stopPropagation(); }
   };
 
-  const onPaste = (e: ClipboardEvent) => {
-    e.preventDefault();
-    const text = e.clipboardData?.getData('text/plain')?.replace(/\r\n?/g, '\n');
+  /** Text from the clipboard at the selection: as Markdown, unless the page is plain or the caret is in code. */
+  const pasteText = (raw: string | undefined) => {
+    const text = raw?.replace(/\r\n?/g, '\n');
     if (!text) return;
     const [a, z] = range();
     if (plain || doc.blocks[a.b]?.kind === 'code') apply(insertText(doc, a, z, text), 'paste');
     else apply(insertBlocks(doc, a, z, parseMarkdown(text).blocks), 'paste');
     settle();
   };
+  const onPaste = (e: ClipboardEvent) => {
+    e.preventDefault();
+    pasteText(e.clipboardData?.getData('text/plain'));
+  };
 
+  /** The selection as the file will say it, or '' when nothing is selected. */
+  const selected = () => {
+    const [a, z] = range();
+    return samePos(a, z) ? '' : write(sliceDoc(doc, a, z));
+  };
   /** The clipboard gets the selection's Markdown, which is what the file will say. */
   const copyOut = (e: ClipboardEvent, cut: boolean) => {
-    const [a, z] = range();
-    if (samePos(a, z) || !e.clipboardData) return;
+    const text = selected();
+    if (!text || !e.clipboardData) return;
     e.preventDefault();
-    e.clipboardData.setData('text/plain', write(sliceDoc(doc, a, z)));
-    if (cut) apply(deleteRange(doc, a, z), 'delete');
+    e.clipboardData.setData('text/plain', text);
+    if (cut) apply(deleteRange(doc, ...range()), 'delete');
   };
   const onCopy = (e: ClipboardEvent) => copyOut(e, false);
   const onCut = (e: ClipboardEvent) => copyOut(e, true);
@@ -903,13 +913,11 @@ export function mountEditor(opts: EditorOptions): Editor {
     const now = elementAt();
     const b = doc.blocks[clampPos(doc, lastSel[0]).b];
     return [
-      ...ELEMENTS.map((x): MenuEntry => {
-        const row: MenuEntry = { label: x.label, check: now === x.el, action: () => element(x.el) };
-        if (x.key) row.accel = `Ctrl+Alt+${x.key}`;
-        return row;
-      }),
+      // Ticked rather than keyed: the tick and the keys share the row's trailing
+      // edge. Each tile's tooltip carries its keys.
+      ...ELEMENTS.map((x): MenuEntry => ({ label: x.label, check: now === x.el, action: () => element(x.el) })),
       { sep: true },
-      { label: 'Dual dialogue', accel: 'Ctrl+D', check: b?.kind === 'sp' && b.dual, action: dual },
+      { label: 'Dual dialogue', check: b?.kind === 'sp' && b.dual, action: dual },
     ];
   };
   menuButton(elBtn, () => openAnchored(elBtn.getBoundingClientRect(), elementMenu(), { label: 'Element', owner: elBtn, focus: true }));
@@ -1025,6 +1033,15 @@ export function mountEditor(opts: EditorOptions): Editor {
     paintOutline();
   }
 
+  /** Is `key` on across the selection, or for what is typed next at the caret? */
+  const markOn = (key: MarkKey): boolean => {
+    const [a, z] = [clampPos(doc, lastSel[0]), clampPos(doc, lastSel[1])];
+    if (!samePos(a, z)) return hasMark(doc, a, z, key);
+    const b = doc.blocks[a.b];
+    const at: Marks = pending && pendingAt && samePos(pendingAt, a) ? pending : isText(b) ? marksAt(b.runs, a.o) : {};
+    return !!at[key];
+  };
+
   let reflectQueued = false;
   const scheduleReflect = () => {
     if (reflectQueued) return;
@@ -1040,13 +1057,9 @@ export function mountEditor(opts: EditorOptions): Editor {
       return;
     }
     if (plain) return;
-    const [a, z] = [clampPos(doc, lastSel[0]), clampPos(doc, lastSel[1])];
-    const b = doc.blocks[z.b];
-    const at: Marks = samePos(a, z)
-      ? (pending && pendingAt && samePos(pendingAt, a) ? pending : isText(b) ? marksAt(b.runs, a.o) : {})
-      : {};
+    const b = doc.blocks[clampPos(doc, lastSel[1]).b];
     for (const [key, btn] of marks) {
-      const on = samePos(a, z) ? !!at[key] : hasMark(doc, a, z, key);
+      const on = markOn(key);
       btn.classList.toggle('is-active', on);
       btn.setAttribute('aria-pressed', String(on));
     }
@@ -1304,6 +1317,92 @@ export function mountEditor(opts: EditorOptions): Editor {
       e.stopPropagation();
       opts.onSave?.();
     }
+  });
+
+  // -------------------------------------------------------------------------
+  // The right-click menu: the app's own, over the whole editor
+  // -------------------------------------------------------------------------
+
+  /** The selection to the clipboard through the async API - a menu row has no clipboard event to write into. */
+  const clip = (cut: boolean) => {
+    const text = selected();
+    if (!text) return;
+    const [a, z] = range();
+    const wrote = navigator.clipboard?.writeText(text);
+    if (!wrote) return void toast('The browser would not take the clipboard. Ctrl+C copies.');
+    wrote.then(() => { if (cut) apply(deleteRange(doc, a, z), 'delete'); },
+      () => toast('The browser would not take the clipboard. Ctrl+C copies.'));
+  };
+  const pasteFromMenu = () => {
+    const [a, z] = range();
+    page.focus({ preventScroll: true });
+    setSel(a, z);
+    const read = navigator.clipboard?.readText?.();
+    if (!read) return void toast('The browser keeps the clipboard to itself here. Ctrl+V pastes.');
+    read.then(pasteText, () => toast('The browser keeps the clipboard to itself here. Ctrl+V pastes.'));
+  };
+  const selectAll = () => {
+    const last = doc.blocks.length - 1;
+    page.focus({ preventScroll: true });
+    setSel({ b: 0, o: 0 }, { b: last, o: blockLen(doc.blocks[last]) });
+  };
+
+  const contextEntries = (): MenuEntry[] => {
+    const [a, z] = range();
+    const some = !samePos(a, z);
+    const b = doc.blocks[a.b];
+    const styled = !plain && !screen;
+    return [
+      { label: 'Undo', icon: 'i-undo', accel: 'Ctrl Z', hidden: !!vomit || !undos.length, action: () => travel(undos, redos) },
+      { label: 'Redo', icon: 'i-redo', accel: 'Ctrl Y', hidden: !!vomit || !redos.length, action: () => travel(redos, undos) },
+      { sep: true, hidden: !!vomit || (!undos.length && !redos.length) },
+      { label: 'Cut', accel: 'Ctrl X', hidden: !some, action: () => clip(true) },
+      { label: 'Copy', icon: 'i-duplicate', accel: 'Ctrl C', hidden: !some, action: () => clip(false) },
+      { label: 'Paste', icon: 'i-paste', accel: 'Ctrl V', action: pasteFromMenu },
+      { label: 'Select all', icon: 'i-select-all', accel: 'Ctrl A', action: selectAll },
+      { sep: true, hidden: !styled && !screen },
+      // A row carries its keys or its tick, never both: the two share the trailing edge.
+      // The marks keep their keys, since the ribbon already lights which are on;
+      // a style or a list is a choice of several, and the tick says which.
+      { label: 'Bold', accel: 'Ctrl B', hidden: !styled, action: () => mark('b') },
+      { label: 'Italic', accel: 'Ctrl I', hidden: !styled, action: () => mark('i') },
+      { label: 'Strikethrough', accel: 'Ctrl Shift X', hidden: !styled, action: () => mark('s') },
+      {
+        label: 'Style', hidden: !styled,
+        sub: [
+          { label: 'Normal', check: b?.kind === 'p', action: normal },
+          ...levels.map((level): MenuEntry => ({
+            label: `Heading ${level}`, check: b?.kind === 'h' && b.level === level, action: () => setLevel(level),
+          })),
+        ],
+      },
+      {
+        label: 'List', hidden: !styled,
+        sub: [
+          { label: 'Bulleted list', icon: 'i-ed-bullets', check: b?.kind === 'li' && b.list === 'bullet', action: () => list('bullet') },
+          { label: 'Numbered list', icon: 'i-ed-numbers', check: b?.kind === 'li' && b.list === 'number', action: () => list('number') },
+          { label: 'Checklist', icon: 'i-ed-tasks', check: b?.kind === 'li' && b.list === 'task', action: () => list('task') },
+        ],
+      },
+      { label: 'Element', hidden: !screen, sub: screen ? elementMenu() : undefined },
+      { sep: true, hidden: !!vomit },
+      { label: 'Find', icon: 'i-find', accel: 'Ctrl F', hidden: !!vomit, action: () => openFind() },
+      { label: 'Replace', accel: 'Ctrl H', hidden: !!vomit, action: () => { openFind(); if (!find.hidden) rep.focus(); } },
+      { sep: true, hidden: (opts.plain && !screen) && !opts.onAscii },
+      { label: 'Outline', icon: 'i-ed-outline', check: !aside.hidden, hidden: opts.plain && !screen, action: () => toggleOutline() },
+      { label: 'ASCII art', icon: 'i-ed-ascii', check: ascii, hidden: !opts.onAscii, action: () => asciiBtn.click() },
+    ];
+  };
+
+  // Anywhere in the editor - page, ribbon or desk. Shift keeps the browser's
+  // menu, spelling suggestions and all, and a finger keeps the phone's own
+  // selection handles; the find fields keep theirs.
+  root.addEventListener('contextmenu', e => {
+    if (e.shiftKey || e.target instanceof HTMLInputElement) return;
+    if (typeof PointerEvent === 'function' && e instanceof PointerEvent && e.pointerType === 'touch') return;
+    e.preventDefault();
+    e.stopPropagation();
+    openAnchored({ left: e.clientX, right: e.clientX, top: e.clientY, bottom: e.clientY }, contextEntries(), { label: 'Editor' });
   });
 
   // The board's own paper grain under the desk, and the controls floating over it as the board's do.
