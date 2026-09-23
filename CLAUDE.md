@@ -176,9 +176,12 @@ Generators, run when their source changes:
 `node tools/gen-formats.mjs` (→ `import/formats.ts`), `tools/gen-stickers.mjs`
 (→ `stickers.svg`), `node tools/gen-patch-page.mjs` (→ `web/patch.html`),
 `node tools/gen-desktop-icons.mjs` (`icon.svg` → `desktop/icons/`, the `.ico`,
-`.icns` and PNG the three installers want). That last one is the only generator
-that needs an install, and it is `desktop/`'s: it renders SVG through the sharp
-the shell already depends on. Its output is committed so nobody else runs it.
+`.icns` and PNG the three installers want), `node tools/gen-og.mjs`
+(`tools/og.html` → `web/assets/img/og.png`, the link-preview card). Those last
+two are the only generators that need an install, and it is `desktop/`'s: they
+go through the sharp the shell already depends on, and the preview also needs a
+local Edge or Chrome to draw the page. Their output is committed so nobody else
+runs them.
 
 Two more `.mjs` under `tools/` are one-shot printers and not build steps:
 `preset-oklch.mjs` and `gen-tier-palettes.mjs` print numbers that were pasted

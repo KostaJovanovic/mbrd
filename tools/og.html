@@ -1,0 +1,247 @@
+<!doctype html>
+<!--
+  Source of web/assets/img/og.png, the 1200x630 card every link preview shows.
+  Rendered by tools/gen-og.mjs in headless Edge, which inlines the app's own
+  fonts where the FONTS marker sits - open this file directly and the text falls
+  back to system faces. Everything is drawn here: no photograph, no third-party
+  art, nothing to license.
+
+  The wordmark sits in the middle on purpose. Some apps crop the card to a
+  centred square (x 285-915), and the name has to survive that; the board
+  around it is free to be cut, since running off every edge is the point.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+/*FONTS*/
+:root {
+  --paper: #faf8f3;
+  --card: #fdfdfa;
+  --ink: #31261b;
+  --ink-2: #615141;
+  --ink-3: #968371;
+  --accent: #b94900;
+  --amber: #e89100;
+  --rose: #f4c2c2;
+  --absinthe: #76b583;
+  --shadow: 0 1px 2px rgba(49, 38, 27, .10), 0 10px 28px rgba(49, 38, 27, .13);
+}
+* { box-sizing: border-box; margin: 0; }
+html, body { width: 1200px; height: 630px; overflow: hidden; }
+body {
+  position: relative;
+  background:
+    radial-gradient(circle, rgba(49, 38, 27, .15) 1.5px, transparent 1.8px) 14px 14px / 28px 28px,
+    var(--paper);
+  font-family: 'Geist', sans-serif;
+  color: var(--ink);
+}
+.card {
+  position: absolute;
+  background: var(--card);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+}
+.art { display: block; width: 100%; height: 100%; border-radius: 4px; }
+.mono { font-family: 'Geist Mono', monospace; }
+
+/* The threads run under every card, from dot to dot. */
+#threads { position: absolute; inset: 0; }
+
+/* The name card. Straight, where everything else is askew. */
+#name {
+  left: 330px; top: 150px; width: 540px; height: 318px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgba(49, 38, 27, .10), 0 18px 48px rgba(49, 38, 27, .16);
+}
+#name h1 {
+  font-family: 'Fraunces', serif;
+  font-weight: 300;
+  font-size: 150px;
+  line-height: 1;
+  letter-spacing: -.01em;
+  margin-top: -10px;
+}
+#name h1 b { color: var(--accent); font-weight: 300; }
+#name p {
+  margin-top: 16px;
+  font-size: 30px;
+  color: var(--ink-2);
+  letter-spacing: -.005em;
+}
+#name small {
+  margin-top: 22px;
+  font-size: 14.5px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+#dusk { left: -34px; top: -44px; width: 336px; height: 232px; transform: rotate(-5deg); padding: 9px; }
+
+#note {
+  left: 46px; top: 236px; width: 226px; height: 176px; transform: rotate(3.5deg);
+  padding: 22px 22px 18px;
+  display: flex; flex-direction: column; justify-content: space-between;
+}
+#note q {
+  font-family: 'Fraunces', serif; font-style: italic; font-weight: 400;
+  font-size: 27px; line-height: 1.12; quotes: none;
+}
+#note span { font-size: 13px; color: var(--ink-3); letter-spacing: .08em; text-transform: uppercase; }
+
+#sound {
+  left: -26px; top: 468px; width: 318px; height: 112px; transform: rotate(-2.5deg);
+  display: flex; align-items: center; gap: 16px; padding: 0 22px 0 46px;
+}
+#sound .play {
+  flex: none; width: 46px; height: 46px; border-radius: 50%; background: var(--accent);
+  display: grid; place-items: center;
+}
+#sound .wave { flex: 1; min-width: 0; }
+#sound .wave div { font-size: 14px; color: var(--ink-2); white-space: nowrap; margin-bottom: 8px; }
+#sound .wave svg { display: block; width: 100%; height: 28px; }
+
+#file {
+  left: 596px; top: 34px; width: 206px; height: 64px; transform: rotate(2deg);
+  display: flex; align-items: center; gap: 12px; padding: 0 16px;
+}
+#file div { font-size: 15px; line-height: 1.3; }
+#file span { display: block; font-size: 12.5px; color: var(--ink-3); }
+
+#swatch { left: 942px; top: -46px; width: 178px; height: 256px; transform: rotate(5deg); padding: 9px 9px 0; }
+#swatch i { display: block; height: 196px; background: var(--accent); border-radius: 4px; }
+#swatch div { padding: 12px 4px; font-size: 14px; color: var(--ink-2); letter-spacing: .04em; }
+
+#clip { left: 1000px; top: 250px; width: 240px; height: 310px; transform: rotate(-4deg); padding: 9px; }
+
+#palette {
+  left: 752px; top: 528px; width: 262px; height: 84px; transform: rotate(-3deg);
+  display: flex; gap: 7px; padding: 12px;
+}
+#palette i { flex: 1; border-radius: 5px; }
+
+#star { position: absolute; left: 818px; top: 104px; width: 92px; height: 92px; transform: rotate(14deg); filter: drop-shadow(0 4px 6px rgba(49, 38, 27, .18)); }
+</style>
+</head>
+<body>
+
+<svg id="threads" viewBox="0 0 1200 630" fill="none" stroke="#968371" stroke-width="2" stroke-linecap="round">
+  <path d="M190 180 C 200 205, 170 225, 160 246"/>
+  <path d="M130 410 C 128 440, 150 455, 150 478"/>
+  <path d="M1030 205 C 1060 230, 1080 240, 1100 262"/>
+  <path d="M1004 470 C 990 500, 960 515, 944 536"/>
+  <g fill="#968371" stroke="none">
+    <circle cx="190" cy="180" r="4.5"/><circle cx="160" cy="246" r="4.5"/>
+    <circle cx="130" cy="410" r="4.5"/><circle cx="150" cy="478" r="4.5"/>
+    <circle cx="1030" cy="205" r="4.5"/><circle cx="1100" cy="262" r="4.5"/>
+    <circle cx="1004" cy="470" r="4.5"/><circle cx="944" cy="536" r="4.5"/>
+  </g>
+</svg>
+
+<!-- A photograph: dusk over hills. -->
+<div class="card" id="dusk">
+  <svg class="art" viewBox="0 0 318 214" preserveAspectRatio="none">
+    <defs>
+      <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#6d4a6e"/>
+        <stop offset=".45" stop-color="#d9745a"/>
+        <stop offset=".8" stop-color="#f4b77c"/>
+      </linearGradient>
+    </defs>
+    <rect width="318" height="214" fill="url(#sky)"/>
+    <circle cx="206" cy="132" r="30" fill="#ffe0a8"/>
+    <path d="M0 150 C 60 118, 110 128, 160 146 S 260 120, 318 136 V214 H0Z" fill="#8a4b56"/>
+    <path d="M0 176 C 70 150, 130 160, 190 176 S 280 156, 318 166 V214 H0Z" fill="#4e3040"/>
+    <path d="M0 198 C 90 182, 170 190, 318 186 V214 H0Z" fill="#2d1f29"/>
+  </svg>
+</div>
+
+<div class="card" id="note">
+  <q>less chrome, more of this light</q>
+  <span>tuesday</span>
+</div>
+
+<div class="card" id="sound">
+  <div class="play">
+    <svg width="18" height="20" viewBox="0 0 18 20"><path d="M3 1.5 L16 10 L3 18.5Z" fill="#fff"/></svg>
+  </div>
+  <div class="wave">
+    <div>rain on a tin roof <span class="mono" style="color:#968371">0:42</span></div>
+    <svg viewBox="0 0 180 28" preserveAspectRatio="none">
+      <g fill="#b94900">
+        <rect x="0" y="11" width="3" height="6" rx="1.5"/><rect x="6" y="8" width="3" height="12" rx="1.5"/>
+        <rect x="12" y="4" width="3" height="20" rx="1.5"/><rect x="18" y="9" width="3" height="10" rx="1.5"/>
+        <rect x="24" y="2" width="3" height="24" rx="1.5"/><rect x="30" y="7" width="3" height="14" rx="1.5"/>
+        <rect x="36" y="10" width="3" height="8" rx="1.5"/><rect x="42" y="5" width="3" height="18" rx="1.5"/>
+        <rect x="48" y="1" width="3" height="26" rx="1.5"/><rect x="54" y="8" width="3" height="12" rx="1.5"/>
+        <rect x="60" y="6" width="3" height="16" rx="1.5"/>
+      </g>
+      <g fill="#d9cfc3">
+        <rect x="66" y="10" width="3" height="8" rx="1.5"/><rect x="72" y="4" width="3" height="20" rx="1.5"/>
+        <rect x="78" y="8" width="3" height="12" rx="1.5"/><rect x="84" y="2" width="3" height="24" rx="1.5"/>
+        <rect x="90" y="9" width="3" height="10" rx="1.5"/><rect x="96" y="6" width="3" height="16" rx="1.5"/>
+        <rect x="102" y="11" width="3" height="6" rx="1.5"/><rect x="108" y="5" width="3" height="18" rx="1.5"/>
+        <rect x="114" y="8" width="3" height="12" rx="1.5"/><rect x="120" y="3" width="3" height="22" rx="1.5"/>
+        <rect x="126" y="9" width="3" height="10" rx="1.5"/><rect x="132" y="6" width="3" height="16" rx="1.5"/>
+        <rect x="138" y="10" width="3" height="8" rx="1.5"/><rect x="144" y="4" width="3" height="20" rx="1.5"/>
+        <rect x="150" y="8" width="3" height="12" rx="1.5"/><rect x="156" y="11" width="3" height="6" rx="1.5"/>
+        <rect x="162" y="7" width="3" height="14" rx="1.5"/><rect x="168" y="10" width="3" height="8" rx="1.5"/>
+        <rect x="174" y="12" width="3" height="4" rx="1.5"/>
+      </g>
+    </svg>
+  </div>
+</div>
+
+<div class="card" id="file">
+  <svg width="28" height="34" viewBox="0 0 28 34" fill="none" stroke="#615141" stroke-width="2" stroke-linejoin="round">
+    <path d="M3 2h14l8 8v22H3Z"/><path d="M17 2v8h8"/><path d="M8 18h12M8 23h12M8 28h7" stroke-linecap="round"/>
+  </svg>
+  <div>brief.pdf<span>4 pages</span></div>
+</div>
+
+<div class="card" id="swatch">
+  <i></i>
+  <div class="mono">#B94900</div>
+</div>
+
+<!-- A video: leaves, with the play mark over them. -->
+<div class="card" id="clip">
+  <svg class="art" viewBox="0 0 222 292" preserveAspectRatio="none">
+    <rect width="222" height="292" fill="#2f4a36"/>
+    <g fill="#76b583">
+      <ellipse cx="60" cy="70" rx="22" ry="62" transform="rotate(-28 60 70)"/>
+      <ellipse cx="170" cy="210" rx="24" ry="70" transform="rotate(34 170 210)"/>
+    </g>
+    <g fill="#9fcf9f">
+      <ellipse cx="150" cy="60" rx="18" ry="54" transform="rotate(22 150 60)"/>
+      <ellipse cx="50" cy="230" rx="20" ry="58" transform="rotate(-40 50 230)"/>
+    </g>
+    <g fill="#4f7d5a">
+      <ellipse cx="110" cy="150" rx="26" ry="76" transform="rotate(8 110 150)"/>
+    </g>
+    <circle cx="111" cy="146" r="30" fill="rgba(253,253,250,.92)"/>
+    <path d="M102 131 L126 146 L102 161Z" fill="#2f4a36"/>
+    <rect x="12" y="262" width="50" height="22" rx="11" fill="rgba(20,20,16,.55)"/>
+    <text x="37" y="277.5" text-anchor="middle" font-family="Geist Mono, monospace" font-size="12.5" fill="#fff">0:14</text>
+  </svg>
+</div>
+
+<div class="card" id="palette">
+  <i style="background:#f4c2c2"></i><i style="background:#76b583"></i><i style="background:#e89100"></i><i style="background:#b94900"></i><i style="background:#31261b"></i>
+</div>
+
+<div class="card" id="name">
+  <h1>mbrd<b>.</b></h1>
+  <p>A free, infinite moodboard.</p>
+  <small>In your browser &middot; no account &middot; works offline</small>
+</div>
+
+<svg id="star" viewBox="0 0 100 100">
+  <path d="M50 4 L62 36 L96 38 L70 60 L79 94 L50 75 L21 94 L30 60 L4 38 L38 36Z" fill="#e89100" stroke="#fdfdfa" stroke-width="5" stroke-linejoin="round"/>
+</svg>
+
+</body>
+</html>
