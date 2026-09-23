@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import { join } from 'node:path';
 
 import { WEB, JS, read } from './helpers.js';
-import { FLYOUTS, arrangeEntries, noteEntries, colourEntries } from '../web/assets/js/ui/flyout.ts';
+import { FLYOUTS, arrangeEntries, noteEntries, colourEntries, computedHex } from '../web/assets/js/ui/flyout.ts';
 import { ARRANGEMENTS } from '../web/assets/js/arrange/arrangements.ts';
 import { NOTE_TINTS, addNote } from '../web/assets/js/import/drop.ts';
 import { fresh } from './state-fixtures.js';
@@ -62,6 +62,15 @@ const stub = (over = {}) => ({
   addSwatch: () => {},
   addSwatchOf: () => {},
   ...over,
+});
+
+test('a pigment swatch reads a computed colour in either spelling', () => {
+  assert.equal(computedHex('rgb(23, 10, 0)'), '#170a00');
+  assert.equal(computedHex('rgba(255, 128, 0, 0.5)'), '#ff8000');
+  // A token mixed `in srgb` computes to channels 0-1, which read as 0-255
+  // made the Harsh "Ink" swatch #000000.
+  assert.equal(computedHex('color(srgb 0.09 0.04 0)'), '#170a00');
+  assert.equal(computedHex('color(srgb 1 .5 0 / 0.5)'), '#ff8000');
 });
 
 test('the layouts are the arrangement catalogue, in its order', () => {
