@@ -329,6 +329,21 @@ test('every truncation of a working file is refused, none of them throw', async 
   }
 });
 
+test('a directory whose entries all point back at itself ends quickly, and is not a ceiling', async () => {
+  // The crafted file from the 2026-09-23 hunt: one directory of N RT_ICON
+  // subdirectory entries, every one at offset 0 - the directory itself. The
+  // two-level walk under each member read N x N entries: N³ in all, 15 s at
+  // N = 1024 and about 15 minutes at 4096. It is a loop, so the answer is
+  // null (a plain Error inside), never an Oversize that `lift` could pass.
+  const n = 4096;
+  const section = new Uint8Array(resDir(Array.from({ length: n }, () => ({ id: 3, off: 0, dir: true }))));
+  const file = wrapPe(section);
+  const t0 = performance.now();
+  assert.equal(await exeIcon(file), null);
+  assert.equal(await exeIcon(file, true), null, 'lifted, it is still a loop');
+  assert.ok(performance.now() - t0 < 2000, 'the tree walk did not stop');
+});
+
 // ---------------------------------------------------------------------------
 // The two headers, on their own
 // ---------------------------------------------------------------------------
