@@ -16,7 +16,9 @@ import type { Item } from '../board-model.ts';
 import { TITLE_ID, shownName } from '../board-model.ts';
 import type { Viewport } from './viewport.ts';
 import { cullMargin } from './viewport.ts';
-import { buildContent, fontFamilyOf, paintStyleTileFaces, retitleContent } from './renderers.ts';
+import {
+  buildContent, fontFamilyOf, paintStyleTileFaces, releaseImages, retitleContent,
+} from './renderers.ts';
 import {
   buildItem, buildShadow, buildTitleControls, farKind, itemAccessibleName,
   resetTilt, restingTilt, retilt, setGrips, wantsHead, writeFit, writeAdjust, writeFenceLook,
@@ -767,7 +769,7 @@ export function releaseCardContent(el: Element) {
   // memory-tight phone that difference is a full-resolution decode held until the
   // next GC, and a board panned across hundreds of photos discards that many at
   // once. Clearing the src (and the still twin's) hands the decode back now.
-  for (const im of el.querySelectorAll('img')) im.removeAttribute('src');
+  releaseImages(el);
   // And the frozen-GIF frames, which are object URLs this app made rather than
   // ones the asset store owns. Clearing the src above drops the *reference*;
   // the blob stays in the document's URL store until it is revoked by name. See
