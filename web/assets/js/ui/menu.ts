@@ -108,6 +108,8 @@ export interface MenuCommands {
   canDemosaic: (id: string) => boolean;
   canTintSticker: (id: string) => boolean;
   canViewItem: (id: string) => boolean;
+  canEditDocument: (id: string) => boolean;
+  editDocument: (id: string) => void;
   // Link cards: the address is the whole point, so its Properties row (edit the
   // name, edit or copy the address) sits at the top of the menu. linkURLOf
   // returns the address, or null for a non-link.
@@ -597,6 +599,7 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
   const rolled = fenceItem && cmds!.isRolledFence(id);
   // Single-item — viewer shows one thing at a time. A track plays in its row.
   const viewable = !track && !many && cmds!.canViewItem(id);
+  const writable = viewable && cmds!.canEditDocument(id);
   // Single-item, not on Feed — "the current frame" is per-clip.
   const freezable = !many && !mobile && cmds!.canKeepFrame(id);
   // ── Picture edits fold ──
@@ -647,6 +650,9 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     { label: 'Open', icon: 'i-expand', accel: editable ? '' : 'dbl-click',
       hidden: !viewable && !linkURL,
       action: () => linkURL ? cmds!.openLink(id) : cmds!.openViewer(id) },
+    // Open reads a document; this writes in it.
+    { label: 'Edit', icon: 'i-edit-text', hidden: !writable,
+      action: () => cmds!.editDocument(id) },
     // Copy/Paste instead of Duplicate — paste lands where the cursor is, on any
     // board. Ctrl+D still duplicates. i-duplicate icon on Copy deliberately.
     // Hidden when nothing picked may be copied - the cleaned board's card.

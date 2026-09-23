@@ -347,8 +347,10 @@ and walked against an allow-list before anything of it reaches the page.
 The Feed opens it on a tap and the canvas on a double-click; both also reach it
 from the **Open** row that now leads the item menu.
 
-A `.md` or `.txt` does not open to be read but to be written in: the `text` view
-hands it to the **text editor** under `ui/editor/`, in three layers. `model.ts`
+A `.md`, `.txt` or `.fountain` opens to be read like any other document, and
+the item menu's **Edit** row (and the viewer's own, while reading one) opens it
+to be written in: asked with `edit`, the `text` view hands it to the **text
+editor** under `ui/editor/`, in three layers. `model.ts`
 is the document — blocks of runs, and every edit a pure `(doc, …) → doc`.
 `markdown.ts` reads a file into it and writes it back, and **round trip is the
 contract**: each block remembers the lines it was read from, a block no edit has

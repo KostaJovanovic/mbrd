@@ -23,7 +23,7 @@ import { isTurning, rotateModel } from '../canvas/model.ts';
 // an element that is already on screen. Both for keepFrame() below.
 import { nodeFor } from '../canvas/items.ts';
 import { frameOnScreen } from '../canvas/poster.ts';
-import { canView, openViewer } from '../ui/viewer.ts';
+import { canEdit, canView, openViewer } from '../ui/viewer.ts';
 import { canEditPicture, openDarkroom } from '../ui/darkroom.ts';
 import { resetSize } from '../ui/board-actions.ts';
 
@@ -82,6 +82,9 @@ export function itemMetaCommands() {
      */
     openViewer: (id: string) => { if (canView(id)) openViewer(id); },
     canViewItem: (id: string) => canView(id),
+    /** A text document in the editor. Open and a double-click only read it; writing is asked for. */
+    editDocument: (id: string) => { if (canEdit(id)) openViewer(id, { edit: true }); },
+    canEditDocument: (id: string) => canEdit(id),
     canEditNote: (id: string) => byId(id)?.type === 'note',
     /**
      * Is there anything in the selection that is stuck to a host?
