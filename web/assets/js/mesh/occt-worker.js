@@ -33,7 +33,15 @@ self.onmessage = async ev => {
     const read = READERS[kind];
     if (!read) throw new Error(`${kind} is not a kernel format`);
 
-    const result = read(occt, new Uint8Array(bytes));
+    let result;
+    try {
+      result = read(occt, new Uint8Array(bytes));
+    } catch (err) {
+      // A throw out of the kernel is usually an Emscripten abort, which leaves
+      // the instance unusable. Kept, it would fail every later file too.
+      ready = null;
+      throw err;
+    }
     if (!result || !result.success || !result.meshes || !result.meshes.length) {
       throw new Error('The kernel read this file and found no geometry in it');
     }
