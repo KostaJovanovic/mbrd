@@ -1,20 +1,25 @@
 /* =========================================================
    mbrd - the text editor (ui/editor/view.ts), inside the viewer.
-   The board with one card picked up: the room is the board's own
-   paper and grain, the page lies on it as a card does, and the
-   controls float over it as the board's glass does - one segmented
-   pill of tools, a close square, a readout in the corner. Nothing
-   here the board does not already have (chrome.css, items.css).
+   Laid out as Microsoft Word is: the document's name across the
+   top, tabs, a ribbon of labelled groups with a gallery of styles,
+   the page on a desk, and a status bar along the foot. Made of the
+   board's materials - its paper and grain, its glass and corners
+   (chrome.css, items.css) - so it is Word's plan in this app's hand.
    ========================================================= */
 
 /* The whole window: writing wants the room. It ends above a phone's keyboard,
    whose height ui/viewer.ts writes into --kb. */
 #viewer[data-edit] {
-  /* Where the floating controls sit, and so where the desk starts under them. */
-  --ed-inset: max(var(--panel-inset), env(safe-area-inset-top));
-  --ed-bar-top: calc(var(--ed-inset) + var(--chrome-button-h) + 6px);
-  --ed-bar-h: 42px;
-  --ed-top: calc(var(--ed-bar-top) + var(--ed-bar-h) + 22px);
+  --ed-inset: env(safe-area-inset-top, 0px);
+  /* The tabs and the ribbon, one band flush with the window's edges; the
+     document's name shares the tabs' row, so nothing stands empty above it. */
+  --ed-title-h: 38px;
+  --ed-tabs-h: 38px;
+  --ed-ribbon-h: 96px;
+  --ed-bar-top: var(--ed-inset);
+  --ed-bar-bottom: calc(var(--ed-bar-top) + var(--ed-tabs-h) + var(--ed-ribbon-h));
+  --ed-top: calc(var(--ed-bar-bottom) + 24px);
+  --ed-status-h: 28px;
   width: 100%;
   height: calc(100dvh - var(--kb, 0px));
   margin: 0;
@@ -23,32 +28,35 @@
   box-shadow: none;
   background: var(--paper);
 }
-/* The name and the close square float at the top corners, the way the board's
-   menu buttons do, rather than sitting in a strip across the room. */
+/* The document's name centred over the tabs' row, and the close at its right.
+   It lets the pointer through to the tabs beneath. */
 #viewer[data-edit] #viewer-head {
   position: absolute;
-  z-index: 3;
+  z-index: 4;
   top: var(--ed-inset);
-  left: max(16px, env(safe-area-inset-left));
-  right: max(16px, env(safe-area-inset-right));
-  height: var(--chrome-button-h);
+  left: max(8px, env(safe-area-inset-left));
+  right: max(4px, env(safe-area-inset-right));
+  height: var(--ed-title-h);
+  justify-content: center;
   padding: 0;
   border: 0;
   background: none;
   pointer-events: none;
 }
-#viewer[data-edit] #viewer-names { max-width: calc(100% - var(--chrome-button-w) - 24px); }
-#viewer[data-edit] #viewer-title { font-size: var(--t-body); }
+#viewer[data-edit] #viewer-names {
+  flex: 0 1 auto;
+  /* Centred, so kept as clear of the right edge as of the tabs at the left. */
+  max-width: calc(100% - 2 * 260px);
+  text-align: center;
+}
+#viewer[data-edit] #viewer-title { font-size: var(--t-small); font-weight: 600; }
 #viewer[data-edit] #viewer-meta { display: none; }
 #viewer[data-edit] #viewer-close {
-  width: var(--chrome-button-w);
-  height: var(--chrome-button-h);
-  margin-left: auto;
-  outline: var(--hairline) solid var(--rule-2);
-  outline-offset: calc(-1 * var(--hairline));
-  border-radius: var(--leaf);
-  background: var(--paper-card);
-  box-shadow: var(--shadow-1);
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: var(--ed-title-h);
+  height: var(--ed-title-h);
   pointer-events: auto;
 }
 /* The viewer's body gives up its grid and its padding: the editor lays out its own room. */
@@ -78,43 +86,94 @@
   pointer-events: none;
 }
 
-/* ── The bar: a word processor's formatting strip ───────────────────────────
-   Across the room under the name, as Docs and Word have it: small square
-   buttons with no seams, a thin rule between groups, glyphs in the ink's grey
-   until they are on. The strip itself is the board's glass - its paper, its
-   ring, its corner - so it still belongs to this app. */
+/* ── The ribbon ─────────────────────────────────────────────────────────────
+   Word's: tabs, and under them one panel of groups, each group its commands
+   and its name beneath them, a rule between groups. One band across the top of
+   the window, edge to edge, in the board's card paper. */
 
 .ed-bar {
   position: absolute;
   z-index: 3;
   top: var(--ed-bar-top);
-  left: max(16px, env(safe-area-inset-left));
-  right: max(16px, env(safe-area-inset-right));
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  height: var(--ed-bar-h);
-  padding: 0 6px;
-  outline: var(--hairline) solid var(--rule-2);
-  outline-offset: calc(-1 * var(--hairline));
-  border-radius: var(--radius);
-  overflow-x: auto;
-  scrollbar-width: none;
+  left: 0;
+  right: 0;
+  padding: 0 env(safe-area-inset-right) 0 env(safe-area-inset-left);
+  border-bottom: var(--hairline) solid var(--rule-2);
   background: var(--paper-card);
   box-shadow: var(--shadow-1);
   -webkit-user-select: none;
   user-select: none;
 }
-.ed-group { flex: none; display: flex; align-items: center; gap: 2px; }
-/* The rule between groups, short of the strip's edges as a word processor draws it. */
-.ed-group + .ed-group::before {
-  content: '';
-  flex: none;
-  width: 1px;
-  height: 20px;
-  margin: 0 6px;
-  background: var(--rule);
+.ed-tabs {
+  display: flex;
+  align-items: stretch;
+  height: var(--ed-tabs-h);
+  padding-left: 8px;
 }
+.ed-tab {
+  position: relative;
+  padding: 0 14px 2px;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: var(--t-small);
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .ed-tab:hover { color: var(--ink); }
+}
+.ed-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -4px; border-radius: var(--leaf); }
+/* The tab that is open: its word in the accent and underlined, as Word marks it. */
+.ed-tab[aria-selected="true"] { color: var(--accent-deep); font-weight: 600; }
+.ed-tab[aria-selected="true"]::after {
+  content: '';
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 3px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.ed-ribbon {
+  height: var(--ed-ribbon-h);
+  border-top: var(--hairline) solid var(--rule);
+  overflow: hidden;
+}
+.ed-panel {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  padding: 6px 4px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ed-panel[hidden] { display: none; }
+.ed-group {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  padding: 0 10px;
+}
+.ed-group + .ed-group { border-left: 1px solid var(--rule); }
+.ed-group-body {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ed-group-label {
+  flex: none;
+  padding: 3px 0 6px;
+  color: var(--ink-3);
+  font-size: var(--t-tiny);
+  text-align: center;
+  white-space: nowrap;
+}
+/* Small commands stacked, as Word stacks Find over Replace. */
+.ed-stack { display: flex; flex-direction: column; gap: 2px; }
+.ed-stack .ed-btn { justify-content: flex-start; height: 28px; }
 .ed-btn {
   flex: none;
   display: flex;
@@ -151,21 +210,60 @@
 .ed-bold { font-weight: 700; }
 .ed-italic { font-family: var(--font-display); font-style: italic; }
 .ed-strike { text-decoration: line-through; }
-/* A menu in the strip - the paragraph style, a screenplay's element: its word
-   and a chevron turned down, wide enough that the word does not jolt the
-   strip as the caret moves between kinds of line. */
-.ed-el { min-width: 9.5em; justify-content: space-between; color: var(--ink); }
-.ed-style { min-width: 8.5em; }
-.ed-el .ico { width: 11px; height: 11px; rotate: 90deg; color: var(--ink-3); }
+/* A large command, its glyph over its word, as Word draws the ones a group leads with. */
+.ed-big {
+  flex-direction: column;
+  gap: 6px;
+  min-width: 54px;
+  height: 62px;
+  padding: 6px 8px;
+  font-size: var(--t-tiny);
+}
+.ed-big .ico { width: 22px; height: 22px; color: var(--accent-text); }
+.ed-big:disabled .ico { color: var(--ink-3); }
+/* More, in a gallery: a chevron turned down, since it opens a list. */
+.ed-more .ico { order: 2; width: 11px; height: 11px; rotate: 90deg; }
 
-/* The Vomit Mode countdown, beside its button, in figures that do not jitter. */
-.ed-timer {
+/* A gallery: Word's Styles, each tile a sample of the line it makes. */
+.ed-tile {
+  flex: none;
   display: flex;
   align-items: center;
-  padding: 0 6px 1px;
+  justify-content: center;
+  width: 92px;
+  height: 58px;
+  padding: 0 8px;
+  overflow: hidden;
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: calc(var(--leaf) * 0.7);
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.ed-tile-sample { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (hover: hover) {
+  .ed-tile:hover { border-color: var(--accent); }
+}
+.ed-tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ed-tile.is-active {
+  border-color: var(--accent-deep);
+  box-shadow: inset 0 0 0 1px var(--accent-deep);
+  background: color-mix(in srgb, var(--accent) 8%, var(--paper-card));
+}
+.ed-tile[data-style="p"] { font-size: var(--t-small); }
+.ed-tile[data-style^="h"] { font-family: var(--font-display); font-weight: 600; }
+.ed-tile[data-style="h1"] { font-size: var(--t-body); }
+.ed-tile[data-style="h2"] { font-size: var(--t-small); }
+.ed-tile[data-style="h3"] { font-size: var(--t-small); color: var(--ink-2); }
+.ed-tile[data-el] { width: 84px; font-family: 'Courier Prime', 'Courier New', Courier, var(--font-mono); font-size: var(--t-tiny); }
+.ed-tile[data-el="scene"] { font-weight: 700; }
+
+/* The Vomit Mode countdown, in the status bar, in figures that do not jitter. */
+.ed-timer {
   color: var(--accent-deep);
-  font-family: var(--font-mono);
-  font-size: var(--t-tiny);
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 .ed-timer:empty { display: none; }
@@ -178,7 +276,7 @@
 .ed-find {
   position: absolute;
   z-index: 3;
-  top: calc(var(--ed-bar-top) + var(--ed-bar-h) + 8px);
+  top: calc(var(--ed-bar-bottom) + 8px);
   right: max(16px, env(safe-area-inset-right));
   max-width: calc(100% - 32px);
   display: flex;
@@ -227,7 +325,7 @@
   z-index: 2;
   top: var(--ed-top);
   left: max(16px, env(safe-area-inset-left));
-  bottom: max(16px, env(safe-area-inset-bottom));
+  bottom: calc(var(--ed-status-h) + 16px);
   width: 250px;
   padding: 8px;
   overflow: auto;
@@ -263,37 +361,29 @@
 .ed-ol-item.is-here { color: var(--accent-deep); background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .ed-ol-empty { margin: 0; padding: 7px 10px; color: var(--ink-3); font-size: var(--t-small); }
 
-/* ── The readout: words, and a screenplay's pages and scenes ────────────── */
+/* ── The status bar: along the foot, as Word's ───────────────────────────── */
 
 .ed-status {
   position: absolute;
   z-index: 3;
-  right: max(16px, env(safe-area-inset-right));
-  bottom: max(14px, env(safe-area-inset-bottom));
+  left: 0;
+  right: 0;
+  bottom: 0;
   display: flex;
-  align-items: stretch;
-  height: var(--chrome-button-h);
-  outline: var(--hairline) solid var(--rule-2);
-  outline-offset: calc(-1 * var(--hairline));
-  border-radius: var(--leaf);
-  overflow: hidden;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: calc(var(--ed-status-h) + env(safe-area-inset-bottom));
+  padding: 0 max(18px, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(18px, env(safe-area-inset-left));
+  border-top: var(--hairline) solid var(--rule-2);
   background: var(--paper-card);
-  box-shadow: var(--shadow-1);
+  color: var(--ink-2);
+  font-size: var(--t-tiny);
   -webkit-user-select: none;
   user-select: none;
 }
-.ed-status:empty { display: none; }
-.ed-count {
-  display: flex;
-  align-items: center;
-  padding: 0 14px 1px;
-  color: var(--ink);
-  font-family: var(--font-mono);
-  font-size: var(--t-tiny);
-  letter-spacing: calc(0.02em * var(--ls-scale));
-  white-space: nowrap;
-}
-.ed-count + .ed-count { border-left: 1px solid var(--rule); }
+.ed-counts { display: flex; gap: 12px; }
+.ed-count { white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 /* ── The desk and the page ──────────────────────────────────────────────── */
 
@@ -301,7 +391,7 @@
    glass; the room below the page keeps the last line off the bottom edge. */
 .ed-scroll {
   position: absolute;
-  inset: 0;
+  inset: 0 0 var(--ed-status-h);
   overflow: auto;
   overscroll-behavior: contain;
   padding: var(--ed-top) 24px 30vh;
@@ -339,23 +429,38 @@
 }
 
 
-/* A phone: the page is the screen, the tools sit on its foot just above the
-   keyboard as the board's do on a phone, and the readout gives them the room. */
+/* A phone: the page is the screen, and the ribbon sits at its foot just above
+   the keyboard, as Word's does on a phone - one compact row a tab, scrolling
+   sideways, the group names left off for the room. */
 @media (max-width: 700px) {
   #viewer[data-edit] {
-    --ed-top: calc(var(--ed-inset) + var(--chrome-button-h) + 12px);
+    --ed-ribbon-h: 52px;
+    --ed-dock: calc(env(safe-area-inset-bottom, 0px) + var(--ed-tabs-h) + var(--ed-ribbon-h));
+    --ed-top: calc(var(--ed-inset) + var(--ed-title-h) + 8px);
     background: var(--paper-card);
   }
   .ed-grain, .ed-status { display: none; }
+  /* The band moves to the foot, flush with the keyboard or the screen's edge. */
   .ed-bar {
     top: auto;
-    bottom: max(8px, env(safe-area-inset-bottom));
-    left: 8px;
-    right: 8px;
+    bottom: 0;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    border-top: var(--hairline) solid var(--rule-2);
+    border-bottom: 0;
   }
+  /* The name has its own row here: the tabs are at the foot. */
+  #viewer[data-edit] #viewer-names { max-width: calc(100% - 2 * var(--ed-title-h)); }
+  .ed-panel { padding: 0 2px; }
+  .ed-group { padding: 0 6px; }
+  .ed-group-label { display: none; }
+  .ed-big { flex-direction: row; height: 40px; min-width: 0; font-size: var(--t-small); }
+  .ed-big .ico { width: 17px; height: 17px; }
+  .ed-stack { flex-direction: row; }
+  .ed-stack .ed-btn { height: 40px; }
+  .ed-tile { width: auto; min-width: 64px; height: 38px; }
   .ed-find {
     top: auto;
-    bottom: calc(max(8px, env(safe-area-inset-bottom)) + var(--ed-bar-h) + 8px);
+    bottom: calc(var(--ed-dock) + 8px);
     left: 8px;
     right: 8px;
     max-width: none;
@@ -365,10 +470,13 @@
     left: 8px;
     right: 8px;
     width: auto;
-    bottom: calc(max(8px, env(safe-area-inset-bottom)) + var(--chrome-button-h) + 8px);
+    bottom: calc(var(--ed-dock) + 8px);
     z-index: 4;
   }
-  .ed-scroll, .is-finding .ed-scroll, .has-outline .ed-scroll { padding: var(--ed-top) 0 calc(var(--chrome-button-h) + 24px); }
+  .ed-scroll, .is-finding .ed-scroll, .has-outline .ed-scroll {
+    inset: 0;
+    padding: var(--ed-top) 0 calc(var(--ed-dock) + 16px);
+  }
   .ed-page {
     min-height: 100%;
     padding: 4px 20px 40vh;

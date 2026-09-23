@@ -801,51 +801,62 @@ export function mountEditor(opts: EditorOptions): Editor {
     b.addEventListener('click', run);
     return b;
   };
-  const group = (...kids: HTMLElement[]) => {
+  /** A group of the ribbon: its commands, and its name under them as Word labels one. */
+  const group = (label: string, ...kids: HTMLElement[]) => {
     const g = h('div', 'ed-group');
-    g.append(...kids);
+    g.setAttribute('role', 'group');
+    g.setAttribute('aria-label', label);
+    const body = h('div', 'ed-group-body');
+    body.append(...kids);
+    g.append(body, h('div', 'ed-group-label', label));
     return g;
   };
+  /** Small commands stacked one over another, as Word stacks Find and Replace. */
+  const stack = (...kids: HTMLElement[]) => {
+    const s = h('div', 'ed-stack');
+    s.append(...kids);
+    return s;
+  };
+  /** A tile of a gallery: a sample of what the line will look like, which is what pressing it makes it. */
+  const tile = (label: string, sample: string, run: () => void) => {
+    const t = h('button', 'ed-tile');
+    t.type = 'button';
+    t.title = label;
+    t.setAttribute('aria-label', label);
+    t.append(h('span', 'ed-tile-sample', sample));
+    t.addEventListener('click', run);
+    return t;
+  };
 
-  const undoBtn = button('Undo (Ctrl+Z)', () => travel(undos, redos), { icon: 'assets/icons.svg#i-undo' });
-  const redoBtn = button('Redo (Ctrl+Y)', () => travel(redos, undos), { icon: 'assets/icons.svg#i-redo' });
+  const undoBtn = button('Undo (Ctrl+Z)', () => travel(undos, redos), { icon: 'assets/icons.svg#i-undo', word: 'Undo' });
+  const redoBtn = button('Redo (Ctrl+Y)', () => travel(redos, undos), { icon: 'assets/icons.svg#i-redo', word: 'Redo' });
   /** Undo and Redo greyed when there is nothing to take back, and for the whole of a Vomit Mode session. */
   const paintHistory = () => {
     undoBtn.disabled = !!vomit || !undos.length;
     redoBtn.disabled = !!vomit || !redos.length;
   };
 
-  // The paragraph style, one menu as a word processor has it rather than a button a level.
+  // The Styles gallery: Word's row of samples, each one what a line becomes when it is pressed.
   const levels: Level[] = [1, 2, 3];
-  const styleBtn = button('Paragraph style', () => {}, { icon: 'assets/icons.svg#i-chevron-right', cls: 'ed-el ed-style' });
-  const styleWord = h('span', 'ed-el-word', 'Normal text');
-  styleBtn.prepend(styleWord);
-  styleBtn.setAttribute('aria-haspopup', 'menu');
   /** Back to a paragraph from a heading. Lists and quotes have their own ways out. */
   const normal = () => {
     const [a, z] = range();
     const b = doc.blocks[a.b];
     if (b?.kind === 'h') apply(setHeading(doc, a, z, b.level), 'format');
   };
-  const styleMenu = (): MenuEntry[] => {
+  /** A heading of `level`. A style is set, not toggled: pressing the one already on does nothing. */
+  const setLevel = (level: Level) => {
     const b = doc.blocks[clampPos(doc, lastSel[0]).b];
-    return [
-      { label: 'Normal text', accel: 'Ctrl+Alt+0', check: b?.kind === 'p', action: normal },
-      ...levels.map((level): MenuEntry => ({
-        label: `Heading ${level}`, accel: `Ctrl+Alt+${level}`, font: 'var(--font-display)',
-        check: b?.kind === 'h' && b.level === level, action: () => heading(level),
-      })),
-    ];
+    if (b?.kind !== 'h' || b.level !== level) heading(level);
   };
-  menuButton(styleBtn, () => openAnchored(styleBtn.getBoundingClientRect(), styleMenu(), { label: 'Paragraph style', owner: styleBtn, focus: true }));
-  /** What the style menu's word says for the block the caret is in. */
-  const styleName = (b: Block | undefined): string => {
-    if (b?.kind === 'h') return `Heading ${b.level}`;
-    if (b?.kind === 'li') return 'List';
-    if (b?.kind === 'quote') return 'Quote';
-    if (b?.kind === 'code') return 'Code';
-    return 'Normal text';
-  };
+  const styleTiles: [string, HTMLButtonElement][] = [
+    ['p', tile('Normal text (Ctrl+Alt+0)', 'Normal', normal)],
+    ...levels.map((level): [string, HTMLButtonElement] =>
+      [`h${level}`, tile(`Heading ${level} (Ctrl+Alt+${level})`, `Heading ${level}`, () => setLevel(level))]),
+  ];
+  for (const [key, t] of styleTiles) t.dataset.style = key;
+  /** The tile the block under the caret wears: its heading level, or Normal for a paragraph. */
+  const styleKey = (b: Block | undefined) => (b?.kind === 'h' ? `h${b.level}` : b?.kind === 'p' ? 'p' : '');
   const marks: [MarkKey, HTMLButtonElement][] = [
     ['b', button('Bold (Ctrl+B)', () => mark('b'), { text: 'B', cls: 'ed-bold' })],
     ['i', button('Italic (Ctrl+I)', () => mark('i'), { text: 'I', cls: 'ed-italic' })],
@@ -856,18 +867,33 @@ export function mountEditor(opts: EditorOptions): Editor {
     ['number', button('Numbered list (Ctrl+Shift+7)', () => list('number'), { icon: 'assets/icons.svg#i-ed-numbers' })],
     ['task', button('Checklist (Ctrl+Shift+9)', () => list('task'), { icon: 'assets/icons.svg#i-ed-tasks' })],
   ];
-  const findBtn = button('Find and replace (Ctrl+F)', () => openFind(), { icon: 'assets/icons.svg#i-find' });
-  const vomitBtn = button('Vomit Mode: write for a set time with no going back', () => {}, { icon: 'assets/icons.svg#i-ed-timer', word: 'Vomit', cls: 'ed-vomit' });
-  vomitBtn.setAttribute('aria-pressed', 'false');
-  vomitBtn.setAttribute('aria-haspopup', 'menu');
-  menuButton(vomitBtn, () => openAnchored(vomitBtn.getBoundingClientRect(), vomitMenu(), { label: 'Vomit Mode', owner: vomitBtn, focus: true }));
+  const findBtn = button('Find (Ctrl+F)', () => openFind(), { icon: 'assets/icons.svg#i-find', word: 'Find' });
+  const replaceBtn = button('Replace (Ctrl+H)', () => { openFind(); if (!find.hidden) rep.focus(); }, { icon: 'assets/icons.svg#i-find', word: 'Replace' });
+
+  // Vomit Mode, on its own tab: a big button a duration, the way Word puts a command a size.
+  const sessionBtns = VOMIT_MINUTES.map(m =>
+    button(`Write for ${m} minutes with no going back`, () => startVomit(m), { icon: 'assets/icons.svg#i-ed-timer', word: `${m} min`, cls: 'ed-big' }));
+  const customBtn = button('Write for a time of your own', () => {}, { icon: 'assets/icons.svg#i-ed-timer', word: 'Custom', cls: 'ed-big' });
+  customBtn.setAttribute('aria-haspopup', 'menu');
+  menuButton(customBtn, () => openAnchored(customBtn.getBoundingClientRect(), customMenu(), { label: 'Custom time', owner: customBtn, focus: true }));
+  const superBtn = button('Super: each word locks 10 seconds after its last keystroke', () => {
+    superOn = !superOn;
+    superBtn.setAttribute('aria-pressed', String(superOn));
+    armSuper();
+  }, { icon: 'assets/icons.svg#i-lock-shut', word: 'Super', cls: 'ed-big' });
+  superBtn.setAttribute('aria-pressed', 'false');
   const timer = h('span', 'ed-timer');
   timer.setAttribute('role', 'timer');
 
-  // A screenplay's one control: which element the line is, the menu listing them all with their keys.
-  const elBtn = button('Element (Tab changes it)', () => {}, { icon: 'assets/icons.svg#i-chevron-right', cls: 'ed-el' });
-  const elWord = h('span', 'ed-el-word', 'Action');
-  elBtn.prepend(elWord);
+  // A screenplay's gallery: its six common elements as samples, and the rest behind More.
+  const elTiles = (['scene', 'action', 'character', 'paren', 'dialogue', 'transition'] as const).map(el => {
+    const x = ELEMENTS.find(e => e.el === el);
+    const sample = el === 'scene' ? 'INT. SCENE' : el === 'character' ? 'NAME' : el === 'paren' ? '(beat)' : el === 'transition' ? 'CUT TO:' : x?.label ?? el;
+    const t = tile(`${x?.label ?? el}${x?.key ? ` (Ctrl+Alt+${x.key})` : ''}`, sample, () => element(el));
+    t.dataset.el = el;
+    return t;
+  });
+  const elBtn = button('More elements, and dual dialogue', () => {}, { icon: 'assets/icons.svg#i-chevron-right', word: 'More', cls: 'ed-more' });
   elBtn.setAttribute('aria-haspopup', 'menu');
   const elementMenu = (): MenuEntry[] => {
     const now = elementAt();
@@ -884,30 +910,68 @@ export function mountEditor(opts: EditorOptions): Editor {
   };
   menuButton(elBtn, () => openAnchored(elBtn.getBoundingClientRect(), elementMenu(), { label: 'Element', owner: elBtn, focus: true }));
 
-  const outlineBtn = button('Outline', () => toggleOutline(), { icon: 'assets/icons.svg#i-ed-outline' });
+  const outlineBtn = button('Outline', () => toggleOutline(), { icon: 'assets/icons.svg#i-ed-outline', word: 'Outline', cls: 'ed-big' });
   outlineBtn.setAttribute('aria-pressed', 'false');
 
-  bar.append(group(undoBtn, redoBtn));
-  if (screen) bar.append(group(elBtn));
-  else if (!plain) bar.append(group(styleBtn), group(...marks.map(m => m[1])), group(...lists.map(l => l[1])));
-  bar.append(group(findBtn), group(vomitBtn, timer));
-  if (!opts.plain || screen) bar.append(group(outlineBtn));
+  // The tabs, and under each its ribbon. Word's names where Word has the thing; Write for what it has not.
+  const tabs = h('div', 'ed-tabs');
+  tabs.setAttribute('role', 'tablist');
+  tabs.setAttribute('aria-label', 'Ribbon');
+  const ribbon = h('div', 'ed-ribbon');
+  const tabBtns: HTMLButtonElement[] = [];
+  const panels: HTMLElement[] = [];
+  const showTab = (n: number) => tabBtns.forEach((t, i) => {
+    t.setAttribute('aria-selected', String(i === n));
+    panels[i].hidden = i !== n;
+  });
+  const addTab = (name: string, ...groups: HTMLElement[]) => {
+    const n = tabBtns.length;
+    const t = h('button', 'ed-tab', name);
+    t.type = 'button';
+    t.setAttribute('role', 'tab');
+    t.addEventListener('click', () => showTab(n));
+    const p = h('div', 'ed-panel');
+    p.setAttribute('role', 'tabpanel');
+    p.setAttribute('aria-label', name);
+    p.append(...groups);
+    tabBtns.push(t);
+    panels.push(p);
+    tabs.append(t);
+    ribbon.append(p);
+  };
+  const home = [group('Undo', stack(undoBtn, redoBtn))];
+  if (screen) home.push(group('Script', ...elTiles, elBtn));
+  else if (!plain) {
+    home.push(
+      group('Font', ...marks.map(m => m[1])),
+      group('Paragraph', ...lists.map(l => l[1])),
+      group('Styles', ...styleTiles.map(s => s[1])),
+    );
+  }
+  home.push(group('Editing', stack(findBtn, replaceBtn)));
+  addTab('Home', ...home);
+  addTab('Write', group('Vomit Mode', ...sessionBtns, customBtn), group('Super', superBtn));
+  if (!opts.plain || screen) addTab('View', group('Show', outlineBtn));
+  showTab(0);
+  bar.append(tabs, ribbon);
 
-  // The counts, a small pill in the corner as the board's zoom readout is: one segment each.
+  // The status bar along the foot, as Word's: the counts at the left, a running session at the right.
   const status = h('div', 'ed-status');
-  status.setAttribute('aria-live', 'polite');
-  if (screen) status.title = 'Pages are an estimate from the standard layout: Courier 12, about 55 lines a page.';
+  const counts = h('div', 'ed-counts');
+  counts.setAttribute('aria-live', 'polite');
+  if (screen) counts.title = 'Pages are an estimate from the standard layout: Courier 12, about 55 lines a page.';
+  status.append(counts, timer);
   const plural = (n: number, one: string) => `${n.toLocaleString()} ${n === 1 ? one : one + 's'}`;
 
   const paintCount = () => {
     const parts = [plural(wordCount(doc), 'word')];
     if (screen) {
       const { pages, scenes } = screenStats(doc);
-      parts.unshift(`about ${plural(pages, 'page')}`, plural(scenes, 'scene'));
+      parts.unshift(`About ${plural(pages, 'page')}`, plural(scenes, 'scene'));
     }
-    const was = [...status.children].map(el => el.textContent);
+    const was = [...counts.children].map(el => el.textContent);
     if (was.length !== parts.length || was.some((t, n) => t !== parts[n])) {
-      status.replaceChildren(...parts.map(t => h('span', 'ed-count', t)));
+      counts.replaceChildren(...parts.map(t => h('span', 'ed-count', t)));
     }
     paintOutline();
   };
@@ -978,7 +1042,7 @@ export function mountEditor(opts: EditorOptions): Editor {
     markHere();
     if (screen) {
       const now = elementAt();
-      elWord.textContent = ELEMENTS.find(x => x.el === now)?.label ?? 'Action';
+      for (const t of elTiles) t.classList.toggle('is-active', t.dataset.el === now);
       return;
     }
     if (plain) return;
@@ -992,7 +1056,8 @@ export function mountEditor(opts: EditorOptions): Editor {
       btn.classList.toggle('is-active', on);
       btn.setAttribute('aria-pressed', String(on));
     }
-    styleWord.textContent = styleName(b);
+    const on = styleKey(b);
+    for (const [key, t] of styleTiles) t.classList.toggle('is-active', key === on);
     for (const [kind, btn] of lists) btn.classList.toggle('is-active', b.kind === 'li' && b.list === kind);
   };
 
@@ -1042,7 +1107,15 @@ export function mountEditor(opts: EditorOptions): Editor {
     if (!vomit) return;
     const left = vomit.ends - Date.now();
     if (left <= 0) endVomit();
-    else timer.textContent = clock(left);
+    else timer.textContent = `Vomit Mode: ${clock(left)} left`;
+  };
+
+  /** The ribbon while a session runs: no second session, no finding, no taking back. */
+  const paintVomit = () => {
+    const on = !!vomit;
+    root.classList.toggle('is-vomit', on);
+    for (const b of [...sessionBtns, customBtn, findBtn, replaceBtn]) b.disabled = on;
+    paintHistory();
   };
 
   /** The caret brought into view if it is off the page's visible part. */
@@ -1059,11 +1132,7 @@ export function mountEditor(opts: EditorOptions): Editor {
     closeFind();
     const lock = lockAtEnd(doc);
     vomit = { lock, ends: Date.now() + minutes * 60_000, tick: window.setInterval(paintTimer, 1000), superTimer: 0 };
-    root.classList.add('is-vomit');
-    findBtn.disabled = true;
-    vomitBtn.classList.add('is-active');
-    vomitBtn.setAttribute('aria-pressed', 'true');
-    paintHistory();
+    paintVomit();
     page.focus({ preventScroll: true });
     setSel(lock);
     reveal();
@@ -1079,31 +1148,15 @@ export function mountEditor(opts: EditorOptions): Editor {
     clearTimeout(vomit.superTimer);
     vomit = null;
     highlights?.delete('ed-locked');
-    root.classList.remove('is-vomit');
-    findBtn.disabled = false;
-    vomitBtn.classList.remove('is-active');
-    vomitBtn.setAttribute('aria-pressed', 'false');
     timer.textContent = '';
-    paintHistory();
+    paintVomit();
   };
 
-  /** The durations, or while a session runs, how long is left. There is no way to end one early. */
-  const vomitMenu = (): MenuEntry[] => {
-    const superRow: MenuEntry = {
-      label: 'Super: lock each word after 10 seconds',
-      check: superOn,
-      action: () => { superOn = !superOn; armSuper(); },
-    };
-    if (vomit) return [{ label: `Unlocks in ${clock(vomit.ends - Date.now())}`, disabled: true }, { sep: true }, superRow];
-    return [
-      ...VOMIT_MINUTES.map((m): MenuEntry => ({ label: `${m} minutes`, action: () => startVomit(m) })),
-      { sep: true },
-      { label: 'Custom', range: { min: 1, max: 180, step: 1, unit: ' min', get: () => custom, set: v => { custom = v; } } },
-      { label: 'Start for the custom time', action: () => startVomit(custom) },
-      { sep: true },
-      superRow,
-    ];
-  };
+  /** Custom: a slider for the minutes and a row that starts them. There is no way to end a session early. */
+  const customMenu = (): MenuEntry[] => [
+    { label: 'Minutes', range: { min: 1, max: 180, step: 1, unit: ' min', get: () => custom, set: v => { custom = v; } } },
+    { label: 'Start writing', action: () => startVomit(custom) },
+  ];
 
   // -------------------------------------------------------------------------
   // Find and replace
