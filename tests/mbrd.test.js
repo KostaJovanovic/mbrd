@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { boardAssetHashes, packBoard, unpackBoard, MIME } from '../web/assets/js/storage/mbrd.ts';
+import { boardAssetHashes, packBoard, packBoardFile, unpackBoard, MIME } from '../web/assets/js/storage/mbrd.ts';
 import { putAsset, clearAssets } from '../web/assets/js/storage/assets.ts';
 import { readZip, writeZip } from '../web/assets/js/storage/zip.ts';
 import { item, hash, realHash } from './helpers.js';
@@ -258,6 +258,25 @@ test('a slugged archive round-trips', async () => {
   clearAssets();
   const { board } = await unpackBoard(blob);
   assert.equal(board.items[0].asset.hash, id, 'the hash survives the decoration');
+});
+
+test('a board opened from its file and saved again points at its pictures', async () => {
+  // Unpacking drops the slug, so a card with no name of its own comes back
+  // with nothing to be filed under and would be saved as a bare hash. The
+  // append matched by name, took that for a new picture and wrote it again:
+  // a 388 MB board opened on a phone grew to 653 MB on its first save.
+  clearAssets();
+  const id = await stubAsset('holiday', { ext: 'jpg', mime: 'image/jpeg', body: 'x'.repeat(20000) });
+  const first = await packBoardFile(boardOf([withAsset(id, { id: 'i1' })]));
+  assert.ok((await readZip(first.blob)).has(`assets/holiday--${id}.jpg`));
+
+  clearAssets();
+  const { board } = await unpackBoard(first.blob);
+  const again = await packBoardFile(board, { prior: first.layout });
+  assert.equal(again.appended, true);
+  assert.ok(again.blob.size < 5000, `the picture was written again: the tail is ${again.blob.size} bytes`);
+  const files = await readZip(new Blob([first.blob, again.blob]));
+  assert.deepEqual([...files.keys()].filter(n => n.startsWith('assets/')), [`assets/holiday--${id}.jpg`]);
 });
 
 test('a bare-hash archive still reads', async () => {
