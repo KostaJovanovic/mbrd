@@ -1783,10 +1783,21 @@ export function removeTourCards(ids: Iterable<string>) {
  * The cards stay on the board.
  */
 export function removeTourStop(index: number): boolean {
-  if (!board.tour[index]) return false;
-  const before = board.tour;
-  const after = board.tour.filter((_, i) => i !== index);
-  commit('Remove stop', () => setTour(after), () => setTour(before));
+  const stop = board.tour[index];
+  if (!stop) return false;
+  // Only this stop moves, never a captured whole tour: the other tour edits are
+  // off the stack, and writing a copy back would undo them with it. A card is at
+  // one stop, so its cards find the stop again wherever the list has moved it.
+  const cards = new Set(stop.cards);
+  commit('Remove stop',
+    () => setTour(dropFromTour(board.tour, cards)),
+    () => {
+      const held = tourCards();
+      const back = { ...stop, cards: stop.cards.filter(id => !held.has(id)) };
+      if (!back.cards.length) return;
+      const at = Math.min(index, board.tour.length);
+      setTour([...board.tour.slice(0, at), back, ...board.tour.slice(at)]);
+    });
   return true;
 }
 
