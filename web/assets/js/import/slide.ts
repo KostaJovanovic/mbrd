@@ -268,7 +268,9 @@ function paragraphs(body: Element): Line[] {
   const out: Line[] = [];
   let chars = 0;
   for (const p of byLocal(body, 'p')) {
-    const text = byLocal(p, 't').map(t => t.textContent || '').join('');
+    // Cut to what is left of MAX_CHARS: the check below runs between
+    // paragraphs, and one enormous paragraph would reach the wrap whole.
+    const text = byLocal(p, 't').map(t => t.textContent || '').join('').slice(0, MAX_CHARS - chars + 1);
     if (!text.trim()) continue;
     const run = byLocal(p, 'rPr')[0];
     const size = Number(run?.getAttribute('sz')) || 1800;
@@ -356,9 +358,12 @@ function drawText(
   for (const line of lines) {
     // Points → pixels via EMU, reusing draw()'s single scale factor.
     const size = Math.max(6, line.size * EMU_PER_POINT * scale);
+    if (cursor > y + h) break;
     ctx.font = `${line.bold ? 'bold ' : ''}${size}px system-ui, sans-serif`;
     ctx.fillStyle = line.colour || '#1a1a1a';
-    for (const piece of wrap(ctx, line.text, w)) {
+    // Only the rows the box has room for are wrapped, as in page-one.ts.
+    const room = Math.floor((y + h - cursor) / (size * 1.2)) + 1;
+    for (const piece of wrap(ctx, line.text, w, room)) {
       if (cursor > y + h) break;
       const at = line.align === 'ctr' ? x + (w - ctx.measureText(piece).width) / 2
         : line.align === 'r' ? x + w - ctx.measureText(piece).width
@@ -370,8 +375,9 @@ function drawText(
   ctx.restore();
 }
 
-/** A line broken to fit `w`, on spaces. A word longer than the box is left long. */
-function wrap(ctx: Surface['ctx'], text: string, w: number): string[] {
+/** A line broken to fit `w`, on spaces, into at most `rows` lines. A word
+ * longer than the box is left long. */
+function wrap(ctx: Surface['ctx'], text: string, w: number, rows = Infinity): string[] {
   const out: string[] = [];
   let line = '';
   for (const word of text.split(/\s+/)) {
@@ -379,6 +385,7 @@ function wrap(ctx: Surface['ctx'], text: string, w: number): string[] {
     const next = line ? line + ' ' + word : word;
     if (line && ctx.measureText(next).width > w) {
       out.push(line);
+      if (out.length >= rows) return out;
       line = word;
     } else {
       line = next;

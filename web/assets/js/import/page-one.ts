@@ -149,12 +149,19 @@ function readBlocks(body: Element, entries: Entries, rels: Rels): Block[] {
   const out: Block[] = [];
   let chars = 0;
   let images = 0;
+  // Each text is cut to what is left of MAX_CHARS, so one enormous paragraph
+  // is not handed whole to the wrap: the check between children cannot see
+  // inside one.
+  const cut = (text: string) => text.slice(0, Math.max(0, MAX_CHARS - chars));
   for (const node of body.children) {
-    if (out.length >= MAX_BLOCKS || chars > MAX_CHARS) break;
+    if (out.length >= MAX_BLOCKS || chars >= MAX_CHARS) break;
     if (node.localName === 'p') {
       for (const block of paragraph(node, entries, rels, images < MAX_IMAGES)) {
         if (block.kind === 'image') images++;
-        else chars += block.text.length;
+        else {
+          block.text = cut(block.text);
+          chars += block.text.length;
+        }
         out.push(block);
       }
     } else if (node.localName === 'tbl') {
@@ -164,11 +171,11 @@ function readBlocks(body: Element, entries: Entries, rels: Rels): Block[] {
           .map(cell => tidy(textOf(cell)))
           .filter(Boolean);
         if (!cells.length) continue;
-        const text = cells.join('   ');
+        const text = cut(cells.join('   '));
         out.push({ kind: 'text', text, size: 10, bold: false, colour: null,
           align: 'left', after: 60, indent: 0 });
         chars += text.length;
-        if (out.length >= MAX_BLOCKS) break;
+        if (out.length >= MAX_BLOCKS || chars >= MAX_CHARS) break;
       }
     }
   }
@@ -282,7 +289,10 @@ export function flow(blocks: Block[], page: Page, measure: Measure): Placed[] {
     }
     const line = block.size * LEADING * TWIPS_PER_POINT;
     const inner = width - block.indent;
-    const rows = block.text ? wrap(block.text, inner, t => measure(t, block.size, block.bold)) : [''];
+    // Only the rows the page has room for are wrapped: a paragraph of a
+    // million words is forty lines of page, not a million measures.
+    const room = Math.max(1, Math.floor((bottom - y) / line));
+    const rows = block.text ? wrap(block.text, inner, t => measure(t, block.size, block.bold), room) : [''];
     for (const row of rows) {
       if (y + line > bottom) return out;
       if (row) {
@@ -303,8 +313,9 @@ function offset(align: Align, left: number, width: number, w: number): number {
   return left;
 }
 
-/** A paragraph broken to fit `width`, on spaces. A word longer than the line is left long. */
-function wrap(text: string, width: number, measure: (text: string) => number): string[] {
+/** A paragraph broken to fit `width`, on spaces, into at most `rows` lines.
+ * A word longer than the line is left long. */
+function wrap(text: string, width: number, measure: (text: string) => number, rows = Infinity): string[] {
   const out: string[] = [];
   let line = '';
   for (const word of text.split(' ')) {
@@ -312,6 +323,7 @@ function wrap(text: string, width: number, measure: (text: string) => number): s
     const next = line ? line + ' ' + word : word;
     if (line && measure(next) > width) {
       out.push(line);
+      if (out.length >= rows) return out;
       line = word;
     } else {
       line = next;
