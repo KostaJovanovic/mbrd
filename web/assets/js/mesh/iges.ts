@@ -9,7 +9,7 @@ import {
 import {
   type Curve, type Facet, type Frame, type Loop, type Surface, type Vec,
   circleCurve, coneSurface, cylinderSurface, extrusionSurface,
-  faceFacets, flatFacets, frame, gridFacets, length, lineCurve, planeSurface,
+  compositeShare, faceFacets, flatFacets, frame, gridFacets, length, lineCurve, planeSurface, saneDegree,
   polylineCurve, revolutionSurface, splineCurve, splineDomain, splineSurface,
   sphereSurface, sub, torusSurface, unit,
 } from './brep.ts';
@@ -337,8 +337,12 @@ function splineSurfaceOf(e: Entity): SurfaceInfo | null {
   // makes this format what it is.
   const k1 = numAt(e, 0), k2 = numAt(e, 1), m1 = numAt(e, 2), m2 = numAt(e, 3);
   if (![k1, k2, m1, m2].every(n => Number.isSafeInteger(n) && n >= 0)) return null;
+  if (!saneDegree(m1) || !saneDegree(m2)) throw new MeshError('This IGES file has a B-spline of an impossible degree');
   const uCount = k1 + 1, vCount = k2 + 1;
   if (uCount < 1 || vCount < 1 || uCount * vCount > 1_000_000) return null;
+  // Every count below is sized by these, so they are held against the record
+  // before anything is allocated: knots, weights, three per point, four bounds.
+  if (e.data.length < 9 + uCount + m1 + 1 + vCount + m2 + 1 + uCount * vCount * 4 + 4) return null;
   const polynomial = numAt(e, 6) === 1;   // PROP3: 1 = polynomial, 0 = rational
 
   let at = 9;
@@ -404,13 +408,25 @@ const directionOf = (db: Db, id: number) => (id ? pointOf(db, id) : null);
 
 type CurveInfo = { curve: Curve; domain: [number, number] };
 
+/** Every curve built in this parse, by entity. Without it a composite whose
+ *  segments share a composite was rebuilt once per path to it - twice the
+ *  work for every level, under a depth limit that allows sixteen. */
+const curves = new WeakMap<Db, Map<number, CurveInfo | null>>();
+
 function curveOf(db: Db, id: number, scaleHint: number, depth = 0): CurveInfo | null {
   if (depth > MAX_FOLLOW) return null;
+  let memo = curves.get(db);
+  if (!memo) { memo = new Map(); curves.set(db, memo); }
+  // The null placed first is also the cycle guard.
+  if (memo.has(id)) return memo.get(id) ?? null;
+  memo.set(id, null);
   const e = db.get(id);
   if (!e) return null;
   const place = matrixOf(db, e, depth);
-  const info = rawCurve(db, e, scaleHint, depth);
-  return info && place ? { curve: moved(info.curve, place), domain: info.domain } : info;
+  const raw = rawCurve(db, e, scaleHint, depth);
+  const info = raw && place ? { curve: moved(raw.curve, place), domain: raw.domain } : raw;
+  memo.set(id, info);
+  return info;
 }
 
 function rawCurve(db: Db, e: Entity, scaleHint: number, depth: number): CurveInfo | null {
@@ -441,6 +457,9 @@ function rawCurve(db: Db, e: Entity, scaleHint: number, depth: number): CurveInf
       const base = form === 1 ? 3 : 2;
       const z = form === 1 ? numAt(e, 2) : 0;
       if (!Number.isSafeInteger(count) || count < 2 || count > 1_000_000) return null;
+      // Held against the record before a point is made: a short one would be
+      // read as zeros, a million of them.
+      if (e.data.length < base + count * stride) return null;
       const pts: Vec[] = [];
       for (let i = 0; i < count; i++) {
         const o = base + i * stride;
@@ -455,11 +474,12 @@ function rawCurve(db: Db, e: Entity, scaleHint: number, depth: number): CurveInf
       const count = numAt(e, 0);
       if (!Number.isSafeInteger(count) || count < 1 || count > 100_000) return null;
       const pts: Vec[] = [];
+      const share = compositeShare(count);
       for (let i = 0; i < count; i++) {
         const inner = curveOf(db, pointer(e, 1 + i), scaleHint, depth + 1);
         if (!inner) continue;
         const [lo, hi] = inner.domain;
-        const n = inner.curve.segments(lo, hi);
+        const n = Math.min(share, inner.curve.segments(lo, hi));
         for (let k = 0; k <= n; k++) pts.push(inner.curve.at(lo + (hi - lo) * k / n));
       }
       return pts.length >= 2 ? { curve: polylineCurve(pts), domain: [0, pts.length - 1] } : null;
@@ -477,8 +497,12 @@ function splineCurveOf(e: Entity): CurveInfo | null {
   // 126: K M PROP1..4, then knots, weights, control points, and the two bounds.
   const k = numAt(e, 0), m = numAt(e, 1);
   if (!Number.isSafeInteger(k) || !Number.isSafeInteger(m) || k < 0 || m < 1) return null;
+  if (!saneDegree(m)) throw new MeshError('This IGES file has a B-spline of an impossible degree');
   const count = k + 1;
   if (count < 2 || count > 1_000_000) return null;
+  // Knots, weights and three per point, held against the record before any of
+  // them is allocated. The two bounds after them are optional.
+  if (e.data.length < 6 + count + m + 1 + count * 4) return null;
   const polynomial = numAt(e, 4) === 1;
   let at = 6;
   const knots: number[] = [];
