@@ -173,3 +173,14 @@ test('a dangling fence, connection, tour stop and track are dropped the same way
   assert.deepEqual(plan.tour, []);
   assert.deepEqual(plan.audioOrder, []);
 });
+
+test('the incoming title card and hints stay behind: the host has its own', () => {
+  const plan = planMerge(incoming([
+    { id: '__title__', type: 'title', w: 256, h: 171 },
+    { id: 'hint', type: 'ghost', w: 200, h: 100 },
+    { id: 'a', type: 'note' },
+  ], { connections: [['__title__', 'a']], tour: tourOf('__title__', 'a') }), ['__title__']);
+  assert.deepEqual(plan.items.map(i => i.id), ['a']);
+  assert.deepEqual(plan.connections, []);
+  assert.deepEqual(plan.tour, tourOf('a'));
+});
