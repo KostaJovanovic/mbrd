@@ -50,6 +50,8 @@ let portableCopy = false;
 // Whether userData really moved beside the exe. False on read-only media,
 // where a portable copy falls back to the ordinary folder.
 let portableData = false;
+// A portable copy whose folder refused a write, so the fallback above ran.
+let portableRefused = false;
 
 // Move userData beside the exe when the `portable` marker exists.
 // Falls back on read-only media and toasts the actual path.
@@ -68,8 +70,8 @@ function claimPortableData(): void {
     app.setPath('userData', data);
     portableData = true;
   } catch (err) {
-    startupNote = 'This folder cannot be written to, so mbrd is keeping your '
-      + 'boards in ' + app.getPath('userData') + ' for this run.';
+    // The note waits for chooseFolder(), which decides where the boards go.
+    portableRefused = true;
     // log() has no file yet; initLog() runs after `ready`.
     console.warn('[mbrd] portable data folder refused:', err);
   }
@@ -108,12 +110,16 @@ function main(): void {
     if (isMac && !app.isPackaged) {
       app.dock?.setIcon(join(__dirname, '..', 'icons', 'icon.png'));
     }
-    // Repeat the portable warning now that the log file exists.
-    if (startupNote) log('warn', 'portable fallback', { note: startupNote });
     // In the data folder for a portable copy, and for a run given its own data
     // folder (the smoke test), so neither writes into Documents.
     const inData = portableData || app.commandLine.hasSwitch('user-data-dir');
-    log('info', 'boards folder', { path: boards.chooseFolder(inData) });
+    const boardsFolder = boards.chooseFolder(inData);
+    log('info', 'boards folder', { path: boardsFolder });
+    if (portableRefused) {
+      startupNote = 'This folder cannot be written to, so for this run mbrd is keeping '
+        + 'your boards in ' + boardsFolder + ' and its settings in ' + app.getPath('userData') + '.';
+      log('warn', 'portable fallback', { note: startupNote });
+    }
     serveWeb();
     wireStore();
     wireFiles();
