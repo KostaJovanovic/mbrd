@@ -364,11 +364,14 @@
 /* An open outline takes its side, and the page centres in what is left. */
 .has-outline .ed-scroll { padding-left: calc(max(16px, env(safe-area-inset-left)) + 250px + 24px); }
 
-/* The page: a card of the board's, picked up - its paper, its hairline ring,
+/* The sheet: a card of the board's, picked up - its paper, its hairline ring,
    and the lifted shadow every raised thing here wears. Letter's proportions,
-   smaller than 96 dpi, one page tall at least and growing with the text. */
-.ed-page {
+   smaller than 96 dpi, one page tall at least and growing with the text. It
+   holds the document's name at its head and the page under it. */
+.ed-sheet {
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
   width: 100%;
   max-width: 680px;
   min-height: 880px;
@@ -378,6 +381,31 @@
   border-radius: 0;
   background: var(--paper-card);
   box-shadow: inset 0 0 0 var(--hairline) var(--rule-2), var(--shadow-2);
+  cursor: text;
+}
+/* The name, as the title of the sheet: the display face, a rule under it, no box. */
+.ed-name {
+  flex: none;
+  width: 100%;
+  margin: 0 0 1.2em;
+  padding: 0 0 0.35em;
+  border: 0;
+  border-bottom: var(--hairline) solid var(--rule-2);
+  border-radius: 0;
+  background: none;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: calc(var(--t-body) * 1.9);
+  font-weight: 600;
+  line-height: 1.2;
+  outline: none;
+}
+.ed-name::placeholder { color: var(--ink-3); }
+.ed-name:focus { border-bottom-color: var(--accent); }
+.ed-name[hidden] { display: none; }
+/* The page: the writing, filling the sheet under the name. */
+.ed-page {
+  flex: 1 0 auto;
   outline: none;
   color: var(--ink);
   caret-color: var(--accent-deep);
@@ -442,10 +470,9 @@
     inset: 0;
     padding: var(--ed-top) 0 calc(var(--ed-dock) + 16px);
   }
-  .ed-page {
+  .ed-sheet {
     min-height: 100%;
     padding: 4px 20px 40vh;
-    border-radius: 0;
     box-shadow: none;
   }
 }
@@ -504,8 +531,8 @@
    The standard page: Courier, single-spaced, a wider left margin for the
    binding, and each element at its place across a line of sixty characters -
    which is why the indents are in ch. A blank line above is data-gap. */
+.is-screen .ed-sheet { padding-left: clamp(24px, 10vw, 104px); }
 .is-screen .ed-page {
-  padding-left: clamp(24px, 10vw, 104px);
   font-family: 'Courier Prime', 'Courier New', Courier, var(--font-mono);
   line-height: 1.25;
 }

@@ -11,6 +11,18 @@ export const SUPER_MS = 10_000;
 /** The durations the bar offers, in minutes. */
 export const VOMIT_MINUTES = [5, 10, 15, 25, 60] as const;
 
+/**
+ * What the info button says. Written in ASD-STE100 Simplified Technical English
+ * (strict): short sentences, one meaning a word. Each claim is a rule above -
+ * lockAtEnd, advance, superLock - so a change to one is a change here too.
+ */
+export const VOMIT_INFO = [
+  'Vomit Mode is a timed session for a first draft. You write forward, and you do not go back to correct the text.',
+  'When the session starts, the caret moves to the end of the document. All text before the caret locks. When you type a space or start a new line, the word before it locks too. You cannot delete or change locked text, and you cannot put the caret in it. Undo, Find and Replace are off until the session ends.',
+  `When Super is on, a word also locks ${SUPER_MS / 1000} seconds after your last keystroke in it.`,
+  'You cannot stop a session early. When the time ends, all the text unlocks.',
+].join('\n\n');
+
 /** Where the lock sits when a session starts: the end, everything before it locked, the typewriter way. */
 export function lockAtEnd(doc: Doc): Pos {
   const b = doc.blocks.length - 1;
