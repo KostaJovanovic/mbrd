@@ -74,8 +74,11 @@ export function initStills(world: HTMLElement, vp: ZoomSource): void {
       // to one rAF sweep per frame — childElementCount cannot detect set changes.
       sweep = requestAnimationFrame(() => { sweep = 0; capture(false); });
     }
-    // Forced toggles, so a frame on the same side of both writes nothing.
-    world.classList.toggle('is-stilled', far);
+    // Forced toggles, so a frame on the same side of both writes nothing. The
+    // rung waits for the view to stop, as the viewport's own rungs do: it swaps
+    // every photograph on the board to its thumbnail, a whole-board restyle (95ms
+    // on a Galaxy S10) landing on whichever frame of a pinch crossed it.
+    if (still) world.classList.toggle('is-stilled', far);
     world.classList.toggle('is-held', held);
   };
 

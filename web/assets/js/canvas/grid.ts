@@ -1,8 +1,10 @@
 // Background grid. Painted in screen space on #viewport so marks stay crisp
 // at any zoom. Spacing quantises in powers of two to avoid crowding.
 // Softish/Middle: CSS radial gradients (cheap restyle). Harsh: <canvas> crosses.
+// While the view moves below Full quality, a screen-space stand-in (holdGrid).
 
 import { board } from '../state.ts';
+import { qualityLevel } from '../quality.ts';
 import { deviceRatio, onTouch, mobilePerfFlags } from './viewport.ts';
 import type { Viewport } from './viewport.ts';
 import { MM_PER_INCH, PX_PER_INCH } from '../measure.ts';
@@ -150,6 +152,11 @@ let lastView:
  * precision wheel delivering a zoom in fractions too small to show.
  */
 export function paintGridOnView(vp: Viewport) {
+  // Moving below Full quality, the canvases are not painted at all - a stand-in
+  // carries the grid (holdGrid). The first still frame takes it back and paints
+  // the real one at wherever the view ended up. Full keeps the real grid moving.
+  if (vp.moving && (held || qualityLevel() !== 'full')) { holdGrid(vp); paintHeld(vp); return; }
+  if (held) { releaseGrid(vp); paintGrid(vp); return; }
   if (viewSettledForGrid(vp)) return;
   paintGrid(vp);
 }
@@ -172,6 +179,9 @@ function viewSettledForGrid(vp: Viewport): boolean {
 }
 
 export function paintGrid(vp: Viewport) {
+  // Its canvases are hidden while the stand-in is up, and releaseGrid() paints
+  // them fresh - a settings change or a tier fade mid-gesture has nothing to show.
+  if (held) return;
   const el = vp.el;
   const s = board.settings;
   lastView = { pan: { x: vp.pan.x, y: vp.pan.y }, zoom: vp.zoom,
@@ -293,6 +303,128 @@ function punchHole(canvas: HTMLCanvasElement, o: { x: number; y: number }, vp: V
   lastMask = mask;
   canvas.style.maskImage = mask;
   canvas.style.webkitMaskImage = mask;
+}
+
+// ---------------------------------------------------------------------------
+// The held grid
+// ---------------------------------------------------------------------------
+//
+// The lattice and the axes are drawn in screen space on two full-window
+// canvases under #world, and a canvas with a context is a composited layer of
+// its own. Anything painted over a composited layer has to be one too, so while
+// the board is moving - when _pin() in viewport.ts makes it a single layer that
+// the compositor slides and scales - the canvases alone were enough to split it
+// back into a layer per card and per shadow twin: on a Galaxy S10, seventy-five
+// layers, a blink from running out of tile memory, and a pinch near twenty
+// frames a second. Repainting them each frame cost a full-window raster besides.
+//
+// So for the length of a gesture they are taken off the page, and a plain
+// <div> in the same place carries the grid: the two lattices as SVG tiles made
+// once, at the step and zoom the gesture started from, and the axes as two bars.
+// Each frame writes only the tiles' size and offset and the bars' positions -
+// an image-pattern repaint of one screen, in the page's own layer, under the
+// board. The marks move and scale with the cards, so a pinch visibly grows or
+// shrinks them until the fingers lift and the real lattice is painted again.
+//
+// Screen-sized and not board-sized on purpose. A copy inside #world was tried
+// first: free to move, but it filled every tile of the pinned layer with marks,
+// the prepaint around the screen stopped being empty tiles the compositor skips,
+// and a pan ran out of tile memory.
+//
+// Only below Full quality. Full keeps the real grid painting every frame, at
+// the cost of the layer split above - the maintainer's call, 2026-09-23.
+
+/** The stand-in while a gesture is on, with what it was made for; null when none is up. */
+let held: {
+  node: HTMLElement;
+  bars: HTMLElement[];
+  /** Zoom and board step the tiles were drawn for. */
+  zoom: number;
+  step: number;
+} | null = null;
+
+function holdGrid(vp: Viewport) {
+  if (held) return;
+  const grid = ensureCanvas(vp.el), axis = ensureAxisCanvas(vp.el);
+  const node = document.createElement('div');
+  node.id = 'grid-hold';
+  node.setAttribute('aria-hidden', 'true');
+  const z = vp.zoom;
+  const s = board.settings;
+  const step = boardGridStep(s.gridStep, vp);
+  if (s.grid && z > 0) {
+    // Majors first, so they paint on top - as paintGrid() lists them. Drawn in
+    // CSS pixels at this zoom; background-size stretches them from here.
+    const ink = gridInk();
+    const minor = step * z, major = minor * MAJOR;
+    node.style.backgroundImage = harshGrid()
+      ? `${crossTile(major, ink.major, ink.dot, 1.5)}, ${crossTile(minor, ink.minor, ink.dot, 1)}`
+      : `${dotTile(major, ink.major, ink.dot, 1.5)}, ${dotTile(minor, ink.minor, ink.dot, 1)}`;
+  }
+  const bars: HTMLElement[] = [];
+  if (axesVisible()) {
+    for (const across of [true, false]) {
+      const bar = document.createElement('i');
+      bar.style.width = across ? '100%' : `${AXIS_PX}px`;
+      bar.style.height = across ? `${AXIS_PX}px` : '100%';
+      bar.style.background = gridInk().axis;
+      node.append(bar);
+      bars.push(bar);
+    }
+  }
+  grid.after(node);
+  grid.style.display = axis.style.display = 'none';
+  held = { node, bars, zoom: z, step };
+}
+
+/** Lay the stand-in on this frame's view: its box, its tiles' size and offset, the two bars. */
+function paintHeld(vp: Viewport) {
+  if (!held) return;
+  const box = inkBox(vp);
+  const { node } = held;
+  node.style.left = `${box.x}px`;
+  node.style.top = `${box.y}px`;
+  node.style.width = `${box.w}px`;
+  node.style.height = `${box.h}px`;
+  const o = vp.toScreen(0, 0);
+  const ox = o.x - box.x, oy = o.y - box.y;
+  if (node.style.backgroundImage) {
+    const minor = held.step * vp.zoom, major = minor * MAJOR;
+    const at = (size: number) => `${wrap(ox - size / 2, size).toFixed(1)}px ${wrap(oy - size / 2, size).toFixed(1)}px`;
+    node.style.backgroundSize = `${major}px ${major}px, ${minor}px ${minor}px`;
+    node.style.backgroundPosition = `${at(major)}, ${at(minor)}`;
+  }
+  const [across, down] = held.bars;
+  if (across) across.style.transform = `translateY(${(oy - AXIS_PX / 2).toFixed(2)}px)`;
+  if (down) down.style.transform = `translateX(${(ox - AXIS_PX / 2).toFixed(2)}px)`;
+}
+
+/** The gesture is over: the stand-in goes and the canvases come back, for the caller to paint. */
+function releaseGrid(vp: Viewport) {
+  held?.node.remove();
+  held = null;
+  ensureCanvas(vp.el).style.display = ensureAxisCanvas(vp.el).style.display = '';
+  // The canvases still hold the frame the gesture started from.
+  lastView = null;
+}
+
+/** An SVG tile as a CSS image. */
+const svgTile = (tile: number, body: string) =>
+  `url("data:image/svg+xml,${encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${tile}" height="${tile}" viewBox="0 0 ${tile} ${tile}">${body}</svg>`)}")`;
+
+/** One dot centred in a tile, `tile` CSS px across - dot(), as an image, with the colour resolved. */
+const dotTile = (tile: number, color: string, dotPx: number, scale: number) =>
+  svgTile(tile, `<circle cx="${tile / 2}" cy="${tile / 2}" r="${dotPx * scale}" fill="${color}"/>`);
+
+/** One cross centred in a tile, `tile` CSS px across - the Harsh mark, as an image. */
+function crossTile(tile: number, color: string, dotPx: number, scale: number): string {
+  const arm = Math.min(dotPx * ARM_LONG * scale, ARM_LONG_MAX * scale);
+  const thick = dotPx * ARM_THICK * 2 * scale;
+  const c = tile / 2;
+  // One path, both bars wound the same way, so the crossing is filled once.
+  return svgTile(tile, `<path fill="${color}" d="M${c - arm} ${c - thick / 2}h${arm * 2}v${thick}h${-arm * 2}z` +
+    `M${c - thick / 2} ${c - arm}h${thick}v${arm * 2}h${-thick}z"/>`);
 }
 
 // ---------------------------------------------------------------------------

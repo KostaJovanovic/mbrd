@@ -31,6 +31,7 @@ const JS_BUILT = {
   'exit-layer': 'the overlay an exit animation is drawn on, above everything',
   'far-lands': 'the card at the edge of the board, placed once if anybody gets there',
   'fence-prompt': 'the name-this-fence prompt',
+  'grid-hold': 'the lattice and axes while the view moves, in place of their two canvases',
   // Off the table on purpose: it was one hardcoded id on a node
   // canvas/renderers.ts builds for both canvas and Feed, so two could exist
   // at once and the Feed slider's aria-describedby resolved to the wrong

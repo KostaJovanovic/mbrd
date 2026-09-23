@@ -54,16 +54,11 @@
   width: 0;
   height: 0;
   transform-origin: 0 0;
-  /* Permanently promoted - but by the translateZ(0) canvas/viewport.ts writes
-     into the transform, not by `will-change: transform`, which is what used to
-     be here. The promotion is the part that matters and both give it; the hint
-     also pins the layer's raster scale to whatever it was first rastered at,
-     and a board at 30% was still being rastered at 1:1. That is ten screenfuls
-     of texture for one screen, past what Chromium on a phone will hold, and
-     past it the compositor stops drawing - the cards blink out and back. See
-     the note at the transform write. Toggling promotion on and off is still
-     wrong (two full re-rasters per interaction, every hairline flickering),
-     which is why this is permanent and lives in the transform itself. */
+  /* No promotion here, and none written into the transform either. It is
+     `will-change: transform`, set inline by _pin() in canvas/viewport.ts for
+     the length of a gesture and re-set as the zoom travels - see there. A
+     permanent translateZ(0) split the board into a layer per card, and a
+     permanent hint pins the raster scale, which is the blink on a zoom-out. */
   --iz: 1;
   /* A hairline in world space scales with zoom, so 1px at 0.5x paints half a
      device pixel and edges vanish unevenly. * --iz makes it one *screen* pixel.
@@ -132,6 +127,16 @@
   height: 100%;
   pointer-events: none;
 }
+
+/* The lattice and axes while the view moves, in #grid-ink's place, placed and
+   painted by holdGrid() in canvas/grid.ts while #grid-ink and #axis-ink are off
+   the page. Not composited, which is the point of it - see there. */
+#grid-hold {
+  position: absolute;
+  pointer-events: none;
+  overflow: hidden;
+}
+#grid-hold > i { position: absolute; left: 0; top: 0; }
 
 /* Paper outline in screen space (canvas/paper.ts) — a border inside the
    transform would scale with zoom and stop reading as a drawn edge. */
