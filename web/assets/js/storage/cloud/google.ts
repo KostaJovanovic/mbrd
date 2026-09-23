@@ -346,19 +346,30 @@ const FOLDER_MIME = 'application/vnd.google-apps.folder';
 /** Escape a value for Drive's q-string language (no parameter binding). */
 const quoted = (value: string) => `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
 
-/** One page of a listing, asking for the three fields anything here reads. */
+/**
+ * A whole listing, asking for the three fields anything here reads. Paged: a
+ * board folder past 1000 files would otherwise lose board.json off page one.
+ */
 async function query(q: string): Promise<CloudFile[]> {
-  const params = new URLSearchParams({
-    q,
-    fields: 'files(id,name,modifiedTime)',
-    pageSize: '1000',
-    spaces: 'drive',
-  });
-  const res = await fetch(`${API}/drive/v3/files?${params}`, { headers: { Authorization: auth() } });
-  if (!res.ok) throw await failure(res, 'Google Drive would not list your files');
-  // SAFETY: Drive's documented files.list shape, trimmed by `fields`; a missing `files` becomes [].
-  const body = await res.json() as { files?: CloudFile[] };
-  return body.files ?? [];
+  const out: CloudFile[] = [];
+  let page: string | undefined;
+  do {
+    const params = new URLSearchParams({
+      q,
+      fields: 'nextPageToken, files(id,name,modifiedTime)',
+      pageSize: '1000',
+      spaces: 'drive',
+    });
+    if (page) params.set('pageToken', page);
+    const res = await fetch(`${API}/drive/v3/files?${params}`, { headers: { Authorization: auth() } });
+    if (!res.ok) throw await failure(res, 'Google Drive would not list your files');
+    // SAFETY: Drive's documented files.list shape, trimmed by `fields`. Both keys are optional:
+    // `files` defaults to [] and a missing token ends the loop.
+    const body = await res.json() as { files?: CloudFile[], nextPageToken?: string };
+    out.push(...(body.files ?? []));
+    page = body.nextPageToken;
+  } while (page);
+  return out;
 }
 
 /**
