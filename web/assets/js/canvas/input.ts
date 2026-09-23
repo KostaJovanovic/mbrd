@@ -106,6 +106,16 @@ export function shortcutsSuppressed(
   return !!(defaultPrevented || overlayOwnsKeyboard);
 }
 
+/** A mouse or pen pointerup that leaves a button down ends nothing - see
+ *  endPointer. Asks `buttons` only, never `button`: the last release of a chord
+ *  can be the right or an aux button. Out of the handler so a test can state it. */
+export function liftWithButtonsHeld(
+  e: { type: string, pointerType: string, buttons: number },
+): boolean {
+  return e.type === 'pointerup' && (e.pointerType === 'mouse' || e.pointerType === 'pen')
+    && e.buttons !== 0;
+}
+
 /** The keys that still work while the Timeline plays: they move the view or
  *  close something. See the keydown handler. */
 const VIEW_KEYS = new Set(['0', 'f', 'F', '+', '=', '-', '_', 'Escape']);
@@ -2746,11 +2756,11 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // `!pointers.has()` guard, so the card stopped dead under the hand and the
     // undo entry recorded where it happened to be.
     //
-    // `buttons` covers the same ground from the other side, for a chorded press
-    // this branch does not name: a pointerup while any button is still down is
-    // not the end of anything.
-    if (e.type === 'pointerup' && (e.pointerType === 'mouse' || e.pointerType === 'pen')
-      && (e.button > 1 || e.buttons !== 0)) return;
+    // `buttons` is the whole test: a pointerup while any button is still down is
+    // not the end of anything. `button` is not asked, because a chord that ends
+    // on the right or an aux button reports that button on the last release, and
+    // skipping it left the card following a cursor with no button held.
+    if (liftWithButtonsHeld(e)) return;
     // Whether this pointer is one the pipeline was tracking. Read before the
     // delete below, because that is what the answer is about.
     //
