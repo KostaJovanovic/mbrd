@@ -345,10 +345,19 @@ if "%BRANCH%"=="" goto nobranch
 rem --force-with-lease, not --force: it refuses when the remote has moved since
 rem the last fetch, which is the one case a force push is actually destructive.
 git push %REMOTE% %BRANCH% --force-with-lease
-if errorlevel 1 set SAVE_ERROR=1
+rem A refused lease is the normal failure here, and it used to fall through to
+rem "force pushed" all the same. Say what happened instead.
+if errorlevel 1 (
+  echo.
+  echo [err]  force push refused - %REMOTE%/%BRANCH% moved since the last fetch, or the push failed
+  echo        nothing on the remote was overwritten. The commit is saved locally.
+  if "%RELEASE_MODE%"=="1" echo [warn] nothing was pushed, so no release was started
+  set SAVE_ERROR=1
+  goto end
+)
 echo.
 echo [git]  force pushed %REMOTE%/%BRANCH%
-if "%RELEASE_MODE%"=="1" if "%SAVE_ERROR%"=="0" call :runrelease
+if "%RELEASE_MODE%"=="1" call :runrelease
 goto end
 
 :pushed
