@@ -74,6 +74,11 @@ let queue: Promise<unknown> = Promise.resolve();
 // Bumped by clearDisplay(); stale jobs check this and decline to publish.
 let epoch = 0;
 
+// A job's right to publish: the epoch it started in, and whether
+// forgetDisplay() has since purged its hash.
+type Ticket = { epoch: number, forgotten: boolean };
+const tickets = new Map<string, Ticket>();
+
 // Synchronous: returns the URL if the copy exists, else null.
 export function displayURLReady(
   hash: string, crop: Crop = null, rot: Turn = null, matte: Matte = false,
@@ -98,19 +103,21 @@ export function ensureDisplay(
   if (done) return Promise.resolve(done.url);
   const inFlight = pending.get(key);
   if (inFlight) return inFlight;
-  const mine = epoch;
+  const mine: Ticket = { epoch, forgotten: false };
   const job = start(hash, crop, rot, matte, mine, derived(crop, rot, matte) ? '' : baked);
   // Deleted by identity so a post-clear settle does not remove a newer job's entry.
   const tracked: Promise<string | null> = job.finally(() => {
     if (pending.get(key) === tracked) pending.delete(key);
+    if (tickets.get(key) === mine) tickets.delete(key);
   });
   pending.set(key, tracked);
+  tickets.set(key, mine);
   return tracked;
 }
 
 // Cached cut-outs bypass the queue (already card-sized). Everything else queues.
 async function start(
-  hash: string, crop: Crop, rot: Turn, matte: Matte, mine: number, baked: string,
+  hash: string, crop: Crop, rot: Turn, matte: Matte, mine: Ticket, baked: string,
 ): Promise<string | null> {
   if (matte) {
     const kept = await loadMatte(hash, matteVariant(hash, crop, rot));
@@ -131,7 +138,7 @@ async function start(
 }
 
 async function derive(
-  hash: string, crop: Crop, rot: Turn, matte: Matte, mine: number,
+  hash: string, crop: Crop, rot: Turn, matte: Matte, mine: Ticket,
 ): Promise<string | null> {
   const key = keyFor(hash, crop, rot, matte);
   const existing = cache.get(key);
@@ -141,16 +148,16 @@ async function derive(
   const variant = matte ? matteVariant(hash, crop, rot) : '';
   const made = await shrink(a.blob, crop, rot, matte);
   // Only persist when the model actually ran; a failed cutout must not be pinned to disk.
-  if (matte && made.knocked && made.blob) void saveMatte(hash, variant, made.blob);
+  if (matte && made.knocked && made.blob && !mine.forgotten) void saveMatte(hash, variant, made.blob);
   return publish(hash, crop, rot, matte, made.blob, mine);
 }
 
 // `small` is a copy made here, the hash of the board's baked copy, or null for
 // the source itself.
 function publish(
-  hash: string, crop: Crop, rot: Turn, matte: Matte, small: Blob | string | null, mine: number,
+  hash: string, crop: Crop, rot: Turn, matte: Matte, small: Blob | string | null, mine: Ticket,
 ): string | null {
-  if (mine !== epoch) return null;
+  if (mine.epoch !== epoch || mine.forgotten) return null;
   const key = keyFor(hash, crop, rot, matte);
   const won = cache.get(key);
   if (won) return won.url;
@@ -234,6 +241,10 @@ export function forgetDisplay(hashes: Iterable<string>) {
     cache.delete(key);
   }
   for (const key of Array.from(pending.keys()).filter(mine)) pending.delete(key);
+  // A job still running would publish a new copy of a purged hash.
+  for (const [key, ticket] of tickets) {
+    if (mine(key)) { ticket.forgotten = true; tickets.delete(key); }
+  }
   void forgetMatte(doomed);
 }
 
@@ -241,6 +252,7 @@ export function clearDisplay() {
   for (const e of cache.values()) if (e.own) URL.revokeObjectURL(e.url);
   cache.clear();
   pending.clear();
+  tickets.clear();
   // Queue stays alive — a fresh chain would allow two full decodes at once.
   epoch++;
 }
