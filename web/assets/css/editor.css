@@ -187,6 +187,8 @@
 .ed-big:disabled .ico { color: var(--ink-3); }
 /* More, in a gallery: a chevron turned down, since it opens a list. */
 .ed-more .ico { order: 2; width: 11px; height: 11px; rotate: 90deg; }
+/* The phone's own dock controls (Style, More): not on a desk, where the ribbon has room for all. */
+.ed-phone { display: none; }
 
 /* A gallery: Word's Styles, each tile a sample of the line it makes. */
 .ed-tile {
@@ -443,22 +445,58 @@
     border-bottom: 0;
   }
   .ed-ribbon { border-top: 0; }
-  .ed-panel { padding: 0 2px; }
-  .ed-group { padding: 0 6px; }
-  .ed-group-label { display: none; }
-  .ed-big { flex-direction: row; height: 40px; min-width: 0; font-size: var(--t-small); }
-  .ed-big .ico { width: 17px; height: 17px; }
-  .ed-stack { flex-direction: row; }
-  .ed-stack .ed-btn { height: 40px; }
-  .ed-tile { width: auto; min-width: 64px; height: 38px; }
+  /* One row that fits the screen, with no sideways scroll: the groups give up
+     their boxes, the rarer commands step back into More (ui/editor/view.ts),
+     and what is left shares the width, each a thumb's target. */
+  .ed-panel { gap: 2px; padding: 4px 6px; overflow: visible; }
+  .ed-group, .ed-group-body, .ed-stack, .ed-phone { display: contents; }
+  .ed-group-label, .ed-desk, .ed-btn[hidden] { display: none; }
+  .ed-panel .ed-btn { flex: 1 1 0; min-width: 0; height: 44px; padding: 0 4px; }
+  .ed-panel .ed-btn .ico { width: 19px; height: 19px; }
+  /* Undo and Redo by their glyphs alone; the Style button keeps its word, which names the line. */
+  .ed-panel .ed-btn:not(.ed-style) .ed-btn-word { display: none; }
+  .ed-panel .ed-style { flex-grow: 3; gap: 4px; color: var(--ink); }
+  .ed-panel .ed-style .ico { width: 11px; height: 11px; }
+  .ed-panel .ed-style .ed-btn-word { overflow: hidden; text-overflow: ellipsis; }
+  /* Find: two rows - what to find and the way through it, then what to put
+     in its place - each field wide enough to read what is in it. */
   .ed-find {
     top: auto;
     bottom: calc(var(--ed-dock) + 8px);
     left: 8px;
     right: 8px;
     max-width: none;
+    display: grid;
+    grid-template-columns: 1fr auto 44px 44px 44px;
+    grid-template-areas: "q n p x s" "r r o o a";
+    height: auto;
   }
-  .ed-find input { flex: 1 1 0; }
+  .ed-find > * + * { border-left: 0; }
+  .ed-find > * { height: 44px; }
+  .ed-find-q { grid-area: q; }
+  .ed-find-n { grid-area: n; }
+  .ed-find-prev { grid-area: p; }
+  .ed-find-next { grid-area: x; }
+  .ed-find-shut { grid-area: s; }
+  .ed-find-r { grid-area: r; border-top: 1px solid var(--rule); }
+  .ed-find-one { grid-area: o; border-top: 1px solid var(--rule); }
+  .ed-find-all { grid-area: a; border-top: 1px solid var(--rule); }
+  /* The name is on the sheet: the head keeps only the close. */
+  #viewer[data-edit] #viewer-names { visibility: hidden; }
+  /* A running session's countdown, which the hidden status bar would take with
+     it: a line under the head, the page moved down to clear it. */
+  .ed.is-vomit { --ed-top: calc(var(--ed-inset) + var(--ed-title-h) + var(--ed-status-h) + 8px); }
+  .is-vomit .ed-status {
+    display: flex;
+    top: calc(var(--ed-inset) + var(--ed-title-h));
+    bottom: auto;
+    height: var(--ed-status-h);
+    justify-content: center;
+    padding-bottom: 0;
+    border-top: 0;
+    border-bottom: var(--hairline) solid var(--rule-2);
+  }
+  .is-vomit .ed-counts { display: none; }
   .ed-outline {
     left: 8px;
     right: 8px;

@@ -915,6 +915,9 @@ export function mountEditor(opts: EditorOptions): Editor {
   for (const [key, t] of styleTiles) t.dataset.style = key;
   /** The tile the block under the caret wears: its heading level, or Normal for a paragraph. */
   const styleKey = (b: Block | undefined) => (b?.kind === 'h' ? `h${b.level}` : b?.kind === 'p' ? 'p' : '');
+  /** The line's style in a word, for the phone's Style button. */
+  const styleName = (b: Block | undefined) =>
+    b?.kind === 'h' ? `Heading ${b.level}` : b?.kind === 'li' ? 'List' : b?.kind === 'quote' ? 'Quote' : b?.kind === 'code' ? 'Code' : 'Normal';
   const marks: [MarkKey, HTMLButtonElement][] = [
     ['b', button('Bold (Ctrl+B)', () => mark('b'), { text: 'B', cls: 'ed-bold' })],
     ['i', button('Italic (Ctrl+I)', () => mark('i'), { text: 'I', cls: 'ed-italic' })],
@@ -933,11 +936,12 @@ export function mountEditor(opts: EditorOptions): Editor {
   vomitBtn.setAttribute('aria-haspopup', 'menu');
   menuButton(vomitBtn, () => openAnchored(vomitBtn.getBoundingClientRect(), timeMenu(), { label: 'Vomit Mode', owner: vomitBtn, focus: true }));
   const infoBtn = button('What is Vomit Mode?', () => void explainVomit(), { icon: 'assets/icons.svg#i-info' });
-  const superBtn = button('Super: each word locks 10 seconds after its last keystroke', () => {
+  const toggleSuper = () => {
     superOn = !superOn;
     superBtn.setAttribute('aria-pressed', String(superOn));
     armSuper();
-  }, { icon: 'assets/icons.svg#i-lock-shut', word: 'Super', cls: 'ed-big' });
+  };
+  const superBtn = button('Super: each word locks 10 seconds after its last keystroke', toggleSuper, { icon: 'assets/icons.svg#i-lock-shut', word: 'Super', cls: 'ed-big' });
   superBtn.setAttribute('aria-pressed', 'false');
   const timer = h('span', 'ed-timer');
   timer.setAttribute('role', 'timer');
@@ -996,6 +1000,21 @@ export function mountEditor(opts: EditorOptions): Editor {
   );
   const showBtns = [...(!opts.plain || screen ? [outlineBtn] : []), ...(opts.onAscii ? [asciiBtn] : [])];
   if (showBtns.length) panel.append(group('Show', ...showBtns));
+
+  // A phone's dock is one row that fits the screen: undo, the commonest marks
+  // and lists, the style of the line, and More for everything else. These two
+  // are the phone's own; the ribbon's rarer commands step back (editor.css).
+  const styleBtn = button(screen ? 'Element' : 'Style', () => {}, { icon: 'assets/icons.svg#i-chevron-right', word: screen ? 'Action' : 'Normal', cls: 'ed-more ed-style' });
+  styleBtn.setAttribute('aria-haspopup', 'menu');
+  menuButton(styleBtn, () => openAnchored(styleBtn.getBoundingClientRect(), screen ? elementMenu() : styleMenu(), { label: screen ? 'Element' : 'Style', owner: styleBtn, focus: true }));
+  styleBtn.hidden = plain && !screen;
+  const moreBtn = button('More', () => {}, { icon: 'assets/icons.svg#i-more' });
+  moreBtn.setAttribute('aria-haspopup', 'menu');
+  menuButton(moreBtn, () => openAnchored(moreBtn.getBoundingClientRect(), phoneMenu(), { label: 'More', owner: moreBtn, focus: true }));
+  for (const b of [marks[2][1], lists[2][1], findBtn, replaceBtn, vomitBtn, superBtn, infoBtn, outlineBtn, asciiBtn, elBtn, ...elTiles, ...styleTiles.map(s => s[1])]) b.classList.add('ed-desk');
+  const phoneGroup = group('More', styleBtn, moreBtn);
+  phoneGroup.classList.add('ed-phone');
+  panel.append(phoneGroup);
   ribbon.append(panel);
   bar.append(ribbon);
 
@@ -1093,13 +1112,16 @@ export function mountEditor(opts: EditorOptions): Editor {
   /** The bar lit to match the selection: its marks, and the kind of block the caret is in. */
   const reflect = () => {
     markHere();
+    const b = doc.blocks[clampPos(doc, lastSel[1]).b];
+    // The phone's Style button names the line the caret is on.
+    const word = styleBtn.querySelector('.ed-btn-word');
+    if (word) word.textContent = screen ? ELEMENTS.find(x => x.el === elementAt())?.label ?? 'Element' : styleName(b);
     if (screen) {
       const now = elementAt();
       for (const t of elTiles) t.classList.toggle('is-active', t.dataset.el === now);
       return;
     }
     if (plain) return;
-    const b = doc.blocks[clampPos(doc, lastSel[1]).b];
     for (const [key, btn] of marks) {
       const on = markOn(key);
       btn.classList.toggle('is-active', on);
@@ -1212,7 +1234,9 @@ export function mountEditor(opts: EditorOptions): Editor {
   /** What Vomit Mode is, and what it locks, in the app's own dialog. Its button leads to the times. */
   const explainVomit = async () => {
     const answer = await ask({ title: 'Vomit Mode', body: VOMIT_INFO, go: 'Choose a time', cancel: 'Close', danger: false });
-    if (answer === 'go' && !vomit) openAnchored(vomitBtn.getBoundingClientRect(), timeMenu(), { label: 'Vomit Mode', owner: vomitBtn, focus: true });
+    // From the ribbon's button, or from More where a phone keeps it.
+    const from = vomitBtn.offsetParent ? vomitBtn : moreBtn;
+    if (answer === 'go' && !vomit) openAnchored(from.getBoundingClientRect(), timeMenu(), { label: 'Vomit Mode', owner: from, focus: true });
   };
 
   // -------------------------------------------------------------------------
@@ -1231,11 +1255,12 @@ export function mountEditor(opts: EditorOptions): Editor {
   rep.setAttribute('aria-label', 'Replace with');
   const tally = h('span', 'ed-find-n');
   tally.setAttribute('aria-live', 'polite');
-  const prevBtn = button('Previous (Shift+Enter)', () => step(-1), { icon: 'assets/icons.svg#i-chevron-left' });
-  const nextBtn = button('Next (Enter)', () => step(1), { icon: 'assets/icons.svg#i-chevron-right' });
-  const oneBtn = button('Replace this one', () => replaceOne(), { text: 'Replace', cls: 'ed-word' });
-  const allBtn = button('Replace every one', () => replaceEvery(), { text: 'All', cls: 'ed-word' });
-  const shutBtn = button('Close find (Esc)', () => closeFind(), { icon: 'assets/icons.svg#i-close' });
+  // Classed one by one: a phone lays the bar out as a grid of two rows (editor.css).
+  const prevBtn = button('Previous (Shift+Enter)', () => step(-1), { icon: 'assets/icons.svg#i-chevron-left', cls: 'ed-find-prev' });
+  const nextBtn = button('Next (Enter)', () => step(1), { icon: 'assets/icons.svg#i-chevron-right', cls: 'ed-find-next' });
+  const oneBtn = button('Replace this one', () => replaceOne(), { text: 'Replace', cls: 'ed-word ed-find-one' });
+  const allBtn = button('Replace every one', () => replaceEvery(), { text: 'All', cls: 'ed-word ed-find-all' });
+  const shutBtn = button('Close find (Esc)', () => closeFind(), { icon: 'assets/icons.svg#i-close', cls: 'ed-find-shut' });
   find.append(q, tally, prevBtn, nextBtn, rep, oneBtn, allBtn, shutBtn);
 
   let matches: Match[] = [];
@@ -1397,6 +1422,47 @@ export function mountEditor(opts: EditorOptions): Editor {
     setSel({ b: 0, o: 0 }, { b: last, o: blockLen(doc.blocks[last]) });
   };
 
+  /** The line's style: Normal or a heading, the one it wears ticked. */
+  const styleMenu = (): MenuEntry[] => {
+    const b = doc.blocks[range()[0].b];
+    return [
+      { label: 'Normal', check: b?.kind === 'p', action: normal },
+      ...levels.map((level): MenuEntry => ({
+        label: `Heading ${level}`, check: b?.kind === 'h' && b.level === level, action: () => setLevel(level),
+      })),
+    ];
+  };
+
+  /**
+   * A phone's More: what the dock leaves out - the clipboard, the rarer marks,
+   * find, Vomit Mode and the view. No keys: a phone has no keyboard to press them on.
+   */
+  const phoneMenu = (): MenuEntry[] => {
+    const [a, z] = range();
+    const some = !samePos(a, z);
+    const b = doc.blocks[a.b];
+    const styled = !plain && !screen;
+    return [
+      { label: 'Cut', hidden: !some, action: () => clip(true) },
+      { label: 'Copy', icon: 'i-duplicate', hidden: !some, action: () => clip(false) },
+      { label: 'Paste', icon: 'i-paste', action: pasteFromMenu },
+      { label: 'Select all', icon: 'i-select-all', action: selectAll },
+      { sep: true, hidden: !styled },
+      { label: 'Strikethrough', check: styled && markOn('s'), hidden: !styled, action: () => mark('s') },
+      { label: 'Checklist', icon: 'i-ed-tasks', check: b?.kind === 'li' && b.list === 'task', hidden: !styled, action: () => list('task') },
+      { sep: true, hidden: !!vomit },
+      { label: 'Find', icon: 'i-find', hidden: !!vomit, action: () => openFind() },
+      { label: 'Replace', hidden: !!vomit, action: () => { openFind(); if (!find.hidden) rep.focus(); } },
+      { sep: true },
+      { label: 'Vomit Mode', icon: 'i-ed-timer', hidden: !!vomit, sub: vomit ? undefined : timeMenu() },
+      { label: 'Super', icon: 'i-lock-shut', check: superOn, action: toggleSuper },
+      { label: 'What is Vomit Mode?', icon: 'i-info', action: () => void explainVomit() },
+      { sep: true, hidden: (opts.plain && !screen) && !opts.onAscii },
+      { label: 'Outline', icon: 'i-ed-outline', check: !aside.hidden, hidden: opts.plain && !screen, action: () => toggleOutline() },
+      { label: 'ASCII art', icon: 'i-ed-ascii', check: ascii, hidden: !opts.onAscii, action: () => asciiBtn.click() },
+    ];
+  };
+
   const contextEntries = (): MenuEntry[] => {
     const [a, z] = range();
     const some = !samePos(a, z);
@@ -1417,15 +1483,7 @@ export function mountEditor(opts: EditorOptions): Editor {
       { label: 'Bold', accel: 'Ctrl B', hidden: !styled, action: () => mark('b') },
       { label: 'Italic', accel: 'Ctrl I', hidden: !styled, action: () => mark('i') },
       { label: 'Strikethrough', accel: 'Ctrl Shift X', hidden: !styled, action: () => mark('s') },
-      {
-        label: 'Style', hidden: !styled,
-        sub: [
-          { label: 'Normal', check: b?.kind === 'p', action: normal },
-          ...levels.map((level): MenuEntry => ({
-            label: `Heading ${level}`, check: b?.kind === 'h' && b.level === level, action: () => setLevel(level),
-          })),
-        ],
-      },
+      { label: 'Style', hidden: !styled, sub: styled ? styleMenu() : undefined },
       {
         label: 'List', hidden: !styled,
         sub: [
