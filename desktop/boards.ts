@@ -109,7 +109,9 @@ export function rename(path: unknown, suggested: unknown): Promise<Ref | null> {
   if (!inFolder(from)) return Promise.resolve(null);
   return inTurn(async () => {
     const to = await freePath(plainName(suggested), from);
-    if (same(to, from)) return refOf(from);
+    if (to === from) return refOf(from);
+    // A change of case only is still a rename: NTFS and APFS keep the case they
+    // are given, and a rename to the same name in other letters takes.
     await move(from, to);
     vouch(to);
     log('info', 'board renamed', { from, to });
