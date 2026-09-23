@@ -44,6 +44,10 @@ export function imageDimensions(b: Uint8Array): Dimensions | null {
     while (o + 9 < n) {
       if (b[o] !== 0xff) { o++; continue; }
       const marker = b[o + 1];
+      // Any marker may be preceded by 0xFF fill bytes (T.81 B.1.1.2). Read as
+      // a marker, a fill byte takes the next two bytes as a length and skips
+      // the SOF, so the size was never seen and the pixel budget let it by.
+      if (marker === 0xff) { o++; continue; }
       // SOI, EOI, RSTn have no length.
       if (marker === 0xd8 || marker === 0xd9 || (marker >= 0xd0 && marker <= 0xd7)) { o += 2; continue; }
       const len = u16be(b, o + 2);
