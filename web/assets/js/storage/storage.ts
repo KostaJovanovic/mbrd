@@ -241,12 +241,15 @@ export async function exportBoard({ pickNew = false, history = true } = {}) {
       doc = await platform.files.pickSave(fileNameFor(board.title), PICK_SPEC);
       reportDocument();
     }
-    // Non-null: either had a doc or the branch above just set one.
-    if (picking) setTitle(titleFromFileName(doc!.name));
+    // Only a name chosen now renames the board: a rename made since the last
+    // pick must survive the next export to the same file.
+    if (picked) setTitle(titleFromFileName(doc!.name));
 
     // Busy strip after the picker — packing is the slow half, and showing
     // "working" over a file browser would be a lie.
     const job = busy('Packing the board');
+    // An edit made while the pack runs is not in the file.
+    const gen = edits;
     try {
       const data = serializeBoard();
       // Drop the key — a file without a timeline is already a valid older-build shape.
@@ -268,8 +271,8 @@ export async function exportBoard({ pickNew = false, history = true } = {}) {
     }
 
     // Exporting is also a save — bytes are on disk.
-    markDirty(false);
-    toast('Exported ' + fileNameFor(board.title));
+    if (edits === gen) markDirty(false);
+    toast('Exported ' + (picking && doc ? doc.name : fileNameFor(board.title)));
     return true;
   } catch (err) {
     if (isAbort(err)) return false;   // user closed the picker
