@@ -40,6 +40,11 @@
      coarser and heavier is the same paper held closer. */
   background-size: 717px 717px;
   mix-blend-mode: multiply;
+  /* The board grain's fade, full at 40% zoom and gone at 30% (FADE_FULL and
+     FADE_GONE in canvas/grain.ts), worked out from --iz rather than inherited
+     from the root: a property written on the root restyles the whole page, and
+     grain.ts wrote this one every frame of a zoom through the band. */
+  --grain-fade: clamp(0, (1 / var(--iz, 1) - 0.3) * 10, 1);
   opacity: calc(var(--grain) * var(--grain-fade, 1));
 }
 

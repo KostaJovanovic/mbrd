@@ -151,24 +151,6 @@ export const mobilePerfFlags = { legacyVars: false, chrome: true, gridPos: true 
 const VIEW_SETTLE_MS = 140;
 
 /**
- * How coarsely --iz moves when the board is changed by something other than a
- * gesture - a zoom button, a fit - rather than being held still.
- *
- * --iz is 1/zoom, published to #world so that item chrome can multiply by it and
- * stay a constant size on screen. It is inherited, which is what makes it
- * convenient and also what makes it expensive: changing it means the browser has
- * to reconsider every card on the board and everything inside it. While the view
- * is moving it is not written at all - the chrome scales with the board until the
- * gesture ends, and the exact value lands then (see _moving). A traced pinch on a
- * phone used to spend 28ms of each 55ms frame restyling for it; a grip that grows
- * with the board under a finger is not something anyone aims at.
- */
-const IZ_STEP = 0.08;
-
-/** `v` snapped to the nearest rung of a ladder that steps by `step`. */
-const izRung = (v: number, step = IZ_STEP) => Math.exp(Math.round(Math.log(v) / step) * step);
-
-/**
  * How far the zoom may travel from the scale #world was last rastered at before
  * it is rastered again, mid-gesture - see _pin().
  *
@@ -1136,7 +1118,7 @@ export class Viewport {
       this._unpin();
       // And the board is still, so what was held for the gesture lands: the
       // chrome goes back to exactly the size it claims to be, and the zoom
-      // rungs catch up with where the zoom ended - see IZ_STEP and _rungs().
+      // rungs catch up with where the zoom ended - see _setIz() and _rungs().
       this._setIz(1 / this.zoom);
       this._rungs(this.zoom);
       this._shadowsOut(false);
@@ -1259,7 +1241,18 @@ export class Viewport {
     this.world.style.setProperty('--dpr', String(dpr));
   }
 
-  /** Publish 1/zoom to the world layer, if it is not already what is there. */
+  /**
+   * Publish 1/zoom to the world layer, if it is not already what is there.
+   *
+   * Item chrome multiplies by --iz to stay one size on screen. It is inherited,
+   * which is what makes it convenient and also what makes it expensive: a new
+   * value restyles every card on the board and everything inside it - 30 to 70ms
+   * on a Galaxy S10. So it is written once per view change, on the settling
+   * frame (_moving), and never while the board moves: the chrome scales with the
+   * board until the gesture ends. A rounded copy used to be written on a
+   * gesture's first frame as well, and since it never matched the exact value
+   * the last settle wrote, every pinch opened on a whole-board restyle.
+   */
   _setIz(iz: number) {
     if (iz === this._iz) return;
     this._iz = iz;
@@ -1305,13 +1298,14 @@ export class Viewport {
     // and _pin() is what makes it one - see there for why not translateZ(0).
     this.world.style.transform =
       `translate(${(-this.pan.x * z).toFixed(3)}px, ${(this.pan.y * z).toFixed(3)}px) scale(${z})`;
-    // Item chrome multiplies by --iz, and the rungs restyle every card: both are
-    // held while the board moves and caught up when it stops (_moving). `moving`
-    // is still last frame's answer here, since _moving() runs below; that is
-    // right, because the frame that starts a gesture is the one whose value is
-    // already on the page, and a zoom button's single step lands at once.
+    // The rungs restyle every card, so they are held while the board moves and
+    // caught up when it stops (_moving). `moving` is still last frame's answer
+    // here, since _moving() runs below; that is right, because the frame that
+    // starts a gesture is the one whose value is already on the page, and a zoom
+    // button's single step lands at once. --iz waits for the settle either way
+    // (see _setIz), except the very first paint, which has none on the page yet.
     if (!this.moving) {
-      this._setIz(izRung(1 / z));
+      if (!this._iz) this._setIz(1 / z);
       this._rungs(z);
     } else {
       this._shadowsOut(z < farZoom());

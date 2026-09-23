@@ -61,18 +61,28 @@ test('a nonsense zoom does not produce a nonsense opacity', () => {
   assert.equal(fadeFor(-1), 0);
 });
 
-test('everything wearing the stock reads one fade, from the root', async () => {
-  // The fade is a fact about the zoom, not the layer. #grain sits outside
-  // #viewport on purpose (a blend inside a stacking context has nothing
-  // behind it), and a fence's face is inside it, so the write goes to the
-  // root - miss this and a zoomed-out board keeps texture only in regions.
+test('everything wearing the stock fades on one band, and nothing writes it on the root', async () => {
+  // The fade is a fact about the zoom, not the layer, and #grain and a fence's
+  // face both have to follow it - miss one and a zoomed-out board keeps
+  // texture only in regions. It used to reach both by being written on the
+  // root, and a custom property there restyles the whole page: every frame
+  // of a zoom through the band, 50 to 90ms on a phone. So the surface gets it
+  // with its tile and position, and a fence works it out from --iz.
   const src = await readFile(new URL('../web/assets/js/canvas/grain.ts', import.meta.url), 'utf8');
-  assert.match(src, /document\.documentElement\.style\.setProperty\('--grain-fade', f\)/);
-  // The screen-space pair stays on the layer wearing it; only the fade moved
+  assert.match(src, /surface\.style\.setProperty\('--grain-fade', f\)/);
+  assert.doesNotMatch(src, /documentElement\.style\.setProperty/);
   assert.match(src, /surface\.style\.setProperty\('--grain-tile', size\)/);
   assert.match(src, /surface\.style\.setProperty\('--grain-pos', pos\)/);
 
   const css = appCss();
+  // The fence's copy of the band, in CSS: gone at FADE_GONE and full at
+  // FADE_FULL, as 1/--iz is the zoom.
+  const band = /--grain-fade:\s*clamp\(0, \(1 \/ var\(--iz, 1\) - ([\d.]+)\) \* ([\d.]+), 1\);/.exec(
+    css.slice(css.indexOf('.fence-card::after')));
+  assert.ok(band, 'a fence no longer works its fade out from --iz');
+  assert.equal(Number(band[1]), FADE_GONE, 'the fence fades from a different zoom than the board');
+  assert.ok(Math.abs(Number(band[2]) - 1 / (FADE_FULL - FADE_GONE)) < 1e-9,
+    'the fence fades over a different band than the board');
   // Both dials, on both surfaces. The board wears the tooth at 0.8, a
   // region at full weight - a region's face is looked at, the board is the
   // space behind everything - but both share the same two variables.
