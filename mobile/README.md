@@ -196,9 +196,9 @@ bridge:
 - `MbrdStore`: the four stores, and names through `MbrdNames`.
 - The byte channel: registered for the app origin and the dev server only, and
   every field of a begin message is checked.
-- `/_capacitor_file_/` and `/_capacitor_content_/` answer 404. Nothing here uses
-  them, and they would give any page script a reader for every file the app can
-  reach.
+- `/_capacitor_file_/` and `/_capacitor_content_/` answer 404, on every host and
+  scheme, the live-reload server included. Nothing here uses them, and they
+  would give any page script a reader for every file the app can reach.
 - Incoming intents: `content://` only.
 - No general-purpose Capacitor plugin is installed: `package.json` has
   `@capacitor/android` and `@capacitor/core` and nothing else.

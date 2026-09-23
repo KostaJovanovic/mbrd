@@ -29,8 +29,9 @@ import org.json.JSONObject;
  *
  *   /__mbrd/store/<store>/<key>   a store value (MbrdStore.serve)
  *   /__mbrd/file/<token>          a file MbrdFiles handed out (MbrdFiles.serve)
- *   /_capacitor_*    404: Capacitor's file and content routes would hand an XSS
- *                    a reader for any file the app can reach, and nothing uses them
+ *   /_capacitor_*    404 on every host and scheme: Capacitor's file and content
+ *                    routes would hand an XSS a reader for any file the app can
+ *                    reach, and nothing uses them
  *   everything else  MbrdRouter picks the file, Capacitor's server reads it, and
  *                    the CSP from mbrd-csp.json goes on it unless the path is exempt
  */
@@ -73,6 +74,11 @@ final class MbrdWebViewClient extends BridgeWebViewClient {
         Uri url = request.getUrl();
         String path = url.getPath() == null ? "/" : url.getPath();
 
+        // Before any origin branch: Capacitor's server answers these on every
+        // host it serves (http://app as well as https://app, and the live
+        // reload server), and a page script can fetch any of them.
+        if (path.startsWith("/_capacitor_")) return status(404);
+
         // Live reload: the page comes from serve.py on the LAN, which routes
         // everything itself and sends no CSP. Only the shell's namespace is ours.
         String serverUrl = bridge.getServerUrl();
@@ -86,7 +92,6 @@ final class MbrdWebViewClient extends BridgeWebViewClient {
         if (!appOrigin) return bridge.getLocalServer().shouldInterceptRequest(request);
 
         if (path.startsWith("/__mbrd/")) return serveShell(url);
-        if (path.startsWith("/_capacitor_")) return status(404);
 
         String file = router.route(path);
         // The desktop answers a plain 404 too, with no page and no policy.
