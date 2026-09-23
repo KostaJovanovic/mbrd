@@ -524,11 +524,12 @@ async function odfText(blob: Blob, urls: string[]) {
   const frag = document.createDocumentFragment();
 
   if (pages.length) {
+    const drawn: Drawn = { blocks: 0, images: 0 };
     pages.slice(0, MAX_PAGES).forEach((page, n) => {
       const section = el('section', 'doc-slide');
       section.append(partHead(page.getAttribute('draw:name') || `Slide ${n + 1}`));
       const body = el('div', 'doc-flow');
-      odfBlocks(page, body, entries, urls);
+      odfBlocks(page, body, entries, urls, drawn);
       section.append(body);
       frag.append(section);
     });
@@ -544,12 +545,14 @@ async function odfText(blob: Blob, urls: string[]) {
   return frag;
 }
 
-function odfBlocks(root: Element, host: HTMLElement, entries: Entries, urls: string[]) {
-  let n = 0;
-  let images = 0;
+/** How much of one document has been drawn, kept across its slides so the ceilings hold per document. */
+type Drawn = { blocks: number, images: number };
+
+function odfBlocks(root: Element, host: HTMLElement, entries: Entries, urls: string[],
+  drawn: Drawn = { blocks: 0, images: 0 }) {
   const walk = (node: Element, into: Element) => {
     for (const child of node.children) {
-      if (n++ > MAX_BLOCKS) return;
+      if (drawn.blocks++ > MAX_BLOCKS) return;
       switch (child.localName) {
         case 'h': {
           const level = Number(child.getAttribute('text:outline-level') || 1);
@@ -565,7 +568,7 @@ function odfBlocks(root: Element, host: HTMLElement, entries: Entries, urls: str
           p.textContent = child.textContent;
           // A paragraph can hold a frame with a picture inside it.
           for (const image of byLocal(child, 'image')) {
-            if (images++ >= MAX_IMAGES) break;
+            if (drawn.images++ >= MAX_IMAGES) break;
             const href = image.getAttribute('xlink:href') || image.getAttribute('href');
             const url = href && urlFor(entries, href.replace(/^\.?\/+/, ''), urls);
             if (!url) continue;
