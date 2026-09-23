@@ -245,7 +245,9 @@ platform 36. `mobile/README.md` is how it fits together. What breaks silently:
   `main.ts` wires the phone through the branch it already has. A key added to
   `Bridge` in `platform/electron.ts` needs the same key there.
   `tests/mobile-bridge.test.js` holds the two in step as text, and
-  `npm run typecheck` in `mobile/` checks the types.
+  `npm run typecheck` in `mobile/` checks the types. CI runs that check with
+  the root's tsc (`npx tsc -p mobile/tsconfig.json`, no install in `mobile/`),
+  and `npm run lint` covers `mobile/bridge` and `mobile/tools`.
 - **`/_capacitor_file_/` and `/_capacitor_content_/` answer 404**
   (`MbrdWebViewClient.java`), because they would hand any page script a reader
   for every file the app can reach. Do not route them back in, and do not
