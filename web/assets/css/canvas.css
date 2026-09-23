@@ -44,6 +44,12 @@
 #viewport.is-moving  { cursor: grabbing; }
 /* Over a connection line. After can-pan so it wins the tie. */
 #viewport.over-connection { cursor: pointer; }
+/* ...and no further than #viewport while it holds the pointer, since capture
+   shows its cursor whatever is under it. `cursor` is inherited, so without this
+   the change reached every card on the board: a restyle of the lot as each pan
+   or drag began, 32 ms on a Galaxy S22+ that has no cursor to show. `default`
+   is what #world inherits the rest of the time, so its style never changes. */
+#viewport:is(.is-panning, .is-moving) > #world { cursor: default; }
 
 /* The one transformed layer. (0,0) at viewport centre; viewport.ts writes the
    transform and --iz (= 1/zoom) for constant-screen-size item chrome. */
