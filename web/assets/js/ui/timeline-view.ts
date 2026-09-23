@@ -192,7 +192,8 @@ export function initTimeline(commands: TimelineCommands) {
   });
   const gear = strip.querySelector<HTMLButtonElement>('.tl-gear');
   if (gear) {
-    menuButton(gear, () => openAnchored(gear.getBoundingClientRect(), gearEntries(), { label: 'Timeline' }));
+    menuButton(gear, () => openAnchored(gear.getBoundingClientRect(), gearEntries(),
+      { label: 'Timeline', owner: gear, focus: true }));
   }
   // Delegated: the marks are rebuilt on every change.
   track?.addEventListener('click', event => {
