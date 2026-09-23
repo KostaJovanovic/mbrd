@@ -214,7 +214,7 @@ test('the Mobile masthead is written only while it is on screen', () => {
 test('no view frame writes an inherited custom property onto #viewport', async () => {
   // #viewport is an ancestor of #world; a custom property written there on
   // a pan frame invalidates every mounted card's computed style. --iz is
-  // published to #world and quantised for this reason (IZ_STEP); the five
+  // published to #world and only when the view settles for this reason; the five
   // Mobile board properties used to be published here unguarded, on a
   // layout with no zoom at all. They now live on the elements that read them.
   const viewport = await readFile(

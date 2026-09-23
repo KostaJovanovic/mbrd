@@ -65,13 +65,16 @@ export function paintGrain(vp: Viewport): void {
   }
   if (!hasGrain()) return;
 
-  // Fade written on :root so fences (inside #viewport) and the grain layer
-  // (outside it) both inherit it.
+  // Fade written on the surface, like its tile and position. It used to go on
+  // :root so fences could inherit it too, and a custom property on the root
+  // restyles the whole page: every frame of a zoom through the band did, 50 to
+  // 90ms a time on a Galaxy S10. Fences work the same fade out from --iz in
+  // fences.css, which lands when the view settles.
   const fade = fadeFor(vp.zoom);
   const f = fade.toFixed(3);
   if (f !== lastFade) {
     lastFade = f;
-    document.documentElement.style.setProperty('--grain-fade', f);
+    surface.style.setProperty('--grain-fade', f);
   }
   // Faded out — skip positioning (also avoids costly resample at small tile).
   if (fade === 0) return;
