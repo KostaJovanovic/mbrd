@@ -273,12 +273,12 @@ function buildPage(shell, releases, entries) {
 <meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="The mbrd wordmark on a paper board, with cards and threads laid across it.">
+<meta property="og:image:alt" content="The mbrd wordmark on a card in the middle of a board of photos, a video, a note, a sound clip and colour swatches, joined by threads.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Patch notes - mbrd">
 <meta name="twitter:description" content="${SHORT}">
 <meta name="twitter:image" content="${SITE}/assets/img/og.png">
-<meta name="twitter:image:alt" content="The mbrd wordmark on a paper board, with cards and threads laid across it.">
+<meta name="twitter:image:alt" content="The mbrd wordmark on a card in the middle of a board of photos, a video, a note, a sound clip and colour swatches, joined by threads.">
 
 <!-- The crumb says where this page sits relative to the app; without it a
      crawler reads /patch as a second, unrelated root. -->
