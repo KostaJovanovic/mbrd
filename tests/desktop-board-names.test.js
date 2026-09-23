@@ -1,12 +1,13 @@
 // The names desktop/boards.ts gives board files in the boards folder. Main's
 // own check on a name the page sends, and the free-name rule, whose "_(2)" has
 // to survive the trip through a title and back (naming.ts), or a board would
-// rename itself on every save.
+// rename itself on every save. And the one rule by which the page may name a
+// path in the folder that main has not handed it in this run.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { plainName, nthName } from '../desktop/board-names.mts';
+import { plainName, nthName, isFolderBoard } from '../desktop/board-names.mts';
 import { fileNameFor, titleFromFileName } from '../web/assets/js/storage/naming.ts';
 
 test('a name is a plain file name that ends in .mbrd', () => {
@@ -45,4 +46,29 @@ test('a free name reads back as a title that names the same file', () => {
     const name = nthName('New_board_Sep_14.mbrd', n);
     assert.equal(fileNameFor(titleFromFileName(name)), name);
   }
+});
+
+test('the page may name a board directly in the folder, and nothing else there', () => {
+  const root = '/home/a/Documents/mbrd';
+  const yes = p => assert.ok(isFolderBoard(p, root, 'linux'), p);
+  const no = p => assert.ok(!isFolderBoard(p, root, 'linux'), p);
+  yes('/home/a/Documents/mbrd/Summer.mbrd');
+  yes('/home/a/Documents/mbrd/SUMMER.MBRD');
+  no('/home/a/Documents/mbrd/.store/kv/x.mbrd');
+  no('/home/a/Documents/mbrd/sub/x.mbrd');
+  no('/home/a/Documents/mbrd/../x.mbrd');
+  no('/home/a/Documents/mbrd/x.mbrd/');
+  no('/home/a/Documents/mbrd/.hidden.mbrd');
+  no('/home/a/Documents/mbrd/x.mbrd-tmp');
+  no('/home/a/Documents/mbrd/run.sh');
+  no('/home/a/Documents/MBRD/x.mbrd');
+  no('Summer.mbrd');
+  assert.ok(!isFolderBoard('/home/a/Documents/mbrd/x.mbrd', '', 'linux'), 'no folder chosen yet');
+
+  const wroot = 'C:\\Users\\a\\Documents\\mbrd';
+  assert.ok(isFolderBoard('C:\\Users\\a\\Documents\\mbrd\\x.mbrd', wroot, 'win32'));
+  assert.ok(isFolderBoard('C:\\Users\\a\\documents\\MBRD\\x.mbrd', wroot, 'win32'), 'Windows folds case');
+  assert.ok(!isFolderBoard('C:/Users/a/Documents/mbrd/x.mbrd', wroot, 'win32'), 'not as main wrote it');
+  assert.ok(!isFolderBoard('C:\\Users\\a\\Documents\\mbrd\\a.mbrd:evil.mbrd', wroot, 'win32'));
+  assert.ok(!isFolderBoard('C:\\Users\\a\\Documents\\mbrd\\sub\\..\\..\\x.mbrd', wroot, 'win32'));
 });
