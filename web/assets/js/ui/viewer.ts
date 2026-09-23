@@ -7,6 +7,7 @@
 
 import {
   board, bus, byId, select, itemAdjust, itemCrop, itemRotate, itemMatte, flipTransform, setItemText,
+  setItemAscii,
 } from '../state.ts';
 import type { Command } from '../state.ts';
 import { copyItems } from '../clipboard.ts';
@@ -257,6 +258,8 @@ export function openViewer(id: string, open: OpenOptions = {}) {
   // answered this; this just writes it down.
   if (view === VIEWS.image || view === VIEWS.video) dlg.dataset.media = '';
   else delete dlg.dataset.media;
+  // A text read is a page: readOnlyText() says so. Every other viewing keeps its own shape.
+  delete dlg.dataset.page;
   shownId = id;
   view(item, bodyEl!, open);
   // The picture, once mounted - a clip is left out deliberately: wheel/drag
@@ -790,6 +793,9 @@ function readOnlyText(item: Item, host: HTMLElement, why = '') {
   const md = MARKDOWN.has(str(item.meta?.ext));
   const holder = document.createElement(md ? 'div' : 'pre');
   holder.className = md ? 'viewer-md' : 'viewer-text';
+  // Wrapped to the page, unless the editor was told this is ASCII art, whose lines are the picture.
+  holder.classList.toggle('is-ascii', item.meta?.ascii === true);
+  dlg!.dataset.page = '';
   host.append(holder);
   if (why) holder.before(nothing(why));
   const hash = item.asset?.hash;
@@ -858,6 +864,8 @@ async function editDocument(item: Item, host: HTMLElement, open: OpenOptions = {
       session.timer = window.setTimeout(() => { if (session) void saveEdit(session); }, IDLE_SAVE_MS);
     },
     onSave: () => { if (session) void saveEdit(session); },
+    ascii: item.meta?.ascii === true,
+    onAscii: on => setItemAscii(item.id, on),
   });
   // A phone keyboard covers the bottom of the window without resizing it, so
   // its height is followed and the dialog ends above it (editor.css, --kb).

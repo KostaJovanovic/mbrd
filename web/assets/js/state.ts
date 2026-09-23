@@ -1013,6 +1013,18 @@ export function setItemFaded(id: string, faded: unknown) {
     v => (v === true ? true : null));
 }
 
+/**
+ * A text document that is ASCII art, which the viewer shows unwrapped - set in
+ * the editor. Any item with a file may carry it; only text reads it. Stored
+ * only when true, like `bare`.
+ */
+export function setItemAscii(id: string, ascii: unknown) {
+  if (!byId(id)?.asset?.hash) return;
+  patchMeta(id, 'ascii', ascii ? true : null,
+    (next: unknown) => (next ? 'ASCII art' : 'Not ASCII art'),
+    v => (v === true ? true : null));
+}
+
 /** Sticker colour override. Clamped to the palette that exists. */
 export function setStickerTint(id: string, tint: unknown) {
   const it = byId(id);

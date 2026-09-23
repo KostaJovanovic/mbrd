@@ -290,6 +290,13 @@
   <path d="M5.6 2.3v11.4M8 5.5h4M8 8h3M8 10.5h4"/>
 </symbol>
 
+<!-- ASCII art in the editor: lines kept at their length, the long one running
+     on past the edge rather than turning back. -->
+<symbol id="i-ed-ascii" viewBox="0 0 16 16">
+  <path d="M2 4h7M2 12h5M2 8h11.5"/>
+  <path d="M11.6 5.9L13.7 8l-2.1 2.1"/>
+</symbol>
+
 <!-- A highlighter, leaning right with its chisel tip at the lower left. Drawn
      in the top of the box: the button puts the colour it marks in as a bar
      underneath, so the pen leaves the bottom rows free. -->
