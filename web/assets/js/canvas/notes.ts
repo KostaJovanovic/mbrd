@@ -5,7 +5,8 @@
 // look of what is typed next. Lines of runs live in meta.rich; meta.text is the
 // plaintext kept for search. The box grows to fit (never hides text). A note
 // whose content is just a URL becomes a link item on close — see linkify() —
-// and one written past NOTE_SHEET_MAX becomes a .md document — see setNoteOverflow().
+// and one written past NOTE_SHEET_MAX becomes a .md document — see setNoteOverflow() —
+// and a sticky again if written back down to fit in that editing (unfileNote()).
 
 import {
   byId, bus, markDirty, setNoteContent, retypeItem, board, NOTE_SHEET_MAX,
@@ -17,9 +18,9 @@ import { linkURL, linkDraft } from './renderers.ts';
 import {
   flattenNoteRich, buildNoteLine, normalizeRun, tidyRuns, styleOf, styleAt, locate, cutRuns,
   sliceLines, deleteRange, insertLines, restyle, withPending, linesLength, linesRich, linesMarkdown,
-  NOTE_ALIGNS, NOTE_FONT_KEYS, NOTE_WASHES, NOTE_BLANK,
+  normalizeNoteRich, NOTE_ALIGNS, NOTE_FONT_KEYS, NOTE_WASHES, NOTE_BLANK,
 } from './note-model.ts';
-import type { NoteAlign, NoteFont, NoteWash, NoteStyle, NoteLines } from './note-model.ts';
+import type { NoteAlign, NoteFont, NoteWash, NoteStyle, NoteLines, NoteRichInput } from './note-model.ts';
 import type { Item } from '../board-model.ts';
 
 /**
@@ -488,7 +489,7 @@ function editableNote(id: string): { found: HTMLElement; rich: HTMLElement } | n
  * the composer dialog). `onDone(text|null, becameFile)`: called on commit or
  * discard. `finish(true)` tears down without committing.
  */
-export type NoteEdit = { finish: (discard?: boolean) => void; caretToEnd: () => void };
+export type NoteEdit = { finish: (discard?: boolean) => void; caretToEnd: () => void; caretTo: (pos?: number) => void };
 
 export function editNote(
   id: string,
@@ -498,7 +499,7 @@ export function editNote(
   } = {},
 ): NoteEdit {
   const parts = editableNote(id);
-  if (!parts) return { finish: () => {}, caretToEnd: () => {} };
+  if (!parts) return { finish: () => {}, caretToEnd: () => {}, caretTo: () => {} };
   // Bound again now they are known present. finish() below is a hoisted
   // declaration and the handlers close over both, and TypeScript will not carry
   // a guard into a function it cannot order against - so the guard is spent here
@@ -988,20 +989,83 @@ export function editNote(
   const openedAs = linesMarkdown(opened);
   lastStyle = styleAt(opened, linesLength(opened));
   /** Caret at the end of the last line, ready to keep writing. */
-  const caretToEnd = () => {
+  /** The caret to `pos` (a model position), or the end; clamped to the note. */
+  const caretTo = (pos = Infinity) => {
     wrap.focus();
-    place(linesLength(read().lines));
+    place(Math.min(pos, linesLength(read().lines)));
   };
+  const caretToEnd = () => caretTo();
   caretToEnd();
   refreshCount();
   reflectNow();
-  return { finish, caretToEnd };
+  return { finish, caretToEnd, caretTo };
 }
 
 /** Open the composer dialog on an existing board note. No `added` entry — the
- * note already exists, so there is nothing to take back on cancel. */
-export function editNoteInComposer(id: string) {
-  openComposer(id, null);
+ * note already exists, so there is nothing to take back on cancel. `caret` is
+ * a model position; absent, the caret goes to the end. */
+export function editNoteInComposer(id: string, caret?: number) {
+  openComposer(id, null, caret);
+}
+
+/**
+ * A document's Markdown as a sticky's lines: a heading line is a title, the
+ * rest plain, both in the note's own face and size. Other Markdown stays as
+ * the characters it is written in, as the note had it before it outgrew itself.
+ */
+function markdownLines(markdown: string, base: Omit<NoteStyle, 'wash' | 'title'>): NoteLines {
+  return markdown.split('\n').map(line => {
+    const head = /^#{1,6} /.exec(line);
+    return [{ text: head ? line.slice(head[0].length) : line, title: !!head, font: base.font, size: base.size }];
+  });
+}
+
+/** Whether a document's Markdown fits on a sticky again. */
+export function fitsNote(markdown: string): boolean {
+  // Cheap first: headings' marks only make the source longer than the note.
+  if (markdown.length > NOTE_SHEET_MAX + 7 * (markdown.split('\n').length)) return false;
+  return linesLength(markdownLines(markdown, { font: 'sheet', size: 1 })) <= NOTE_SHEET_MAX;
+}
+
+/**
+ * The document a sticky outgrew into, a sticky again, written down to fit, and
+ * open for writing with the caret where the change was. The conversion is taken
+ * back when nothing has been committed since (`turned`, the step that made the
+ * document), so the undo history reads as if the note never left; otherwise
+ * the document is swapped back as a step of its own. `note` is the sticky as
+ * it was replaced, for its colour, size and face. `was` is the Markdown before
+ * the change, which finds the caret.
+ */
+export function unfileNote(
+  docId: string, note: Item, turned: ReturnType<typeof lastCommand>, markdown: string, was: string,
+): boolean {
+  const raw = note.meta?.rich;
+  // SAFETY: the typeof is the check; normalizeNoteRich() validates what is inside block by block.
+  const rich0 = normalizeNoteRich(raw && typeof raw === 'object' ? raw as NoteRichInput : null, note.meta?.text);
+  const lines = markdownLines(markdown, { font: rich0.font, size: rich0.size });
+  const rich = linesRich(lines, rich0.blocks[0]?.align ?? 'left');
+  const text = flattenNoteRich(rich);
+  let id = note.id;
+  if (!takeBack(turned)) {
+    const { id: _id, ...rest } = note;
+    const back = retypeItem(docId, rest, 'Turn file back into note');
+    if (!back) return false;
+    id = back.id;
+  }
+  setNoteContent(id, rich, text);
+  growNote(id);
+  // The first character that differs is where the change was; each heading's
+  // mark before it is not a character of the note.
+  let at = 0;
+  while (at < markdown.length && markdown[at] === was[at]) at++;
+  let pos = 0;
+  for (const line of markdown.slice(0, at).split('\n').map((l, i, all) => (i < all.length - 1 ? l + '\n' : l))) {
+    const mark = /^#{1,6} /.exec(line)?.[0].length ?? 0;
+    pos += Math.max(0, line.length - mark);
+  }
+  // A frame, so the canvas has built the card before the composer asks for it.
+  requestAnimationFrame(() => editNoteInComposer(id, pos));
+  return true;
 }
 
 /**
@@ -1021,7 +1085,7 @@ export function composeNote(make: () => Item | null | undefined) {
 }
 
 /** `added` is whatever lastCommand() answered - the entry composeNote() made. */
-function openComposer(id: string, added: ReturnType<typeof lastCommand>) {
+function openComposer(id: string, added: ReturnType<typeof lastCommand>, caret?: number) {
   // SAFETY: #compose is a <dialog> in index.html. If not, the showModal test below falls back
   // to inline editNote().
   const dlg = document.getElementById('compose') as HTMLDialogElement | null;
@@ -1125,7 +1189,7 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>) {
   requestAnimationFrame(() => {
     // Guard: dialog may have already closed (double-press, Escape in same frame).
     if (!dlg.open || !mount.contains(sheet)) return;
-    handle.caretToEnd();
+    handle.caretTo(caret);
   });
 
   const onGo = () => handle.finish();

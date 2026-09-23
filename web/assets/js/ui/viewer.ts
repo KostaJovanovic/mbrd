@@ -7,7 +7,7 @@
 
 import {
   board, bus, byId, select, itemAdjust, itemCrop, itemRotate, itemMatte, flipTransform, setItemText,
-  setItemAscii, renameItem,
+  setItemAscii, renameItem, takeBack,
 } from '../state.ts';
 import type { Command } from '../state.ts';
 import { copyItems } from '../clipboard.ts';
@@ -63,6 +63,13 @@ export type OpenOptions = {
   caret?: EditorOptions['caret'], from?: DOMRect | null, paper?: string, held?: HeldTyping | null,
   /** Typed at the caret once the editor opens, before anything held. */
   typed?: string,
+  /**
+   * The sticky this document grew out of, for as long as this editing lasts:
+   * `fits` is asked after each change, and once the text fits a sticky again
+   * the editor closes and `back` turns it into one (`was` is the text before
+   * the change). Wired by main.ts, since the note is canvas/'s.
+   */
+  note?: { fits: (markdown: string) => boolean, back: (markdown: string, was: string) => void },
 };
 
 /** Typing caught between a sticky closing and its document opening. `into` moves the catcher inside a modal. */
@@ -957,6 +964,30 @@ async function editDocument(item: Item, host: HTMLElement, open: OpenOptions = {
   }
   const ext = str(item.meta?.ext);
   let session: EditSession | null = null;
+  // The text as of the last change, which says where the next one was (OpenOptions.note).
+  let before = text;
+  /**
+   * A sticky's document written back down to fit: nothing of this editing is
+   * written - a save still hashing lands nowhere and a save made is taken back -
+   * and once the editor is out of its own input handler, it closes on a sticky.
+   */
+  const unfile = (s: EditSession, note: NonNullable<OpenOptions['note']>) => {
+    if (s.gen < 0) return true;
+    const now = s.editor.text();
+    const was = before;
+    before = now;
+    if (!note.fits(now)) return false;
+    clearTimeout(s.timer);
+    s.saved = now;
+    s.gen = -1;
+    takeBack(s.step);
+    s.step = null;
+    queueMicrotask(() => {
+      closeViewer(true);
+      note.back(now, was);
+    });
+    return true;
+  };
   const editor = mountEditor({
     text,
     plain: !MARKDOWN.has(ext),
@@ -965,6 +996,7 @@ async function editDocument(item: Item, host: HTMLElement, open: OpenOptions = {
     caret: open.caret ?? 'start',
     onChange: () => {
       if (!session) return;
+      if (open.note && unfile(session, open.note)) return;
       clearTimeout(session.timer);
       session.timer = window.setTimeout(() => { if (session) void saveEdit(session); }, IDLE_SAVE_MS);
     },
@@ -974,11 +1006,12 @@ async function editDocument(item: Item, host: HTMLElement, open: OpenOptions = {
     name: shownName(item),
     onRename: typed => {
       // The extension stays on, as the card's name had it: the title is what is typed.
+      // Cleared, the document is untitled - its kind is in meta.ext, not the name.
       const was = byId(item.id);
       const tail = ext && was?.name.toLowerCase().endsWith(`.${ext}`) ? was.name.slice(-(ext.length + 1)) : '';
-      renameItem(item.id, typed ? typed + tail : '');
+      renameItem(item.id, typed ? typed + tail : '', { blank: true });
       const now = byId(item.id);
-      if (now) titleEl!.textContent = shownName(now);
+      if (now) titleEl!.textContent = shownName(now) || 'Untitled';
       return now ? shownName(now) : typed;
     },
   });
