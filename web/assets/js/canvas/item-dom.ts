@@ -40,7 +40,7 @@ export type ItemLike = Item;
 export interface ItemFragment {
   type?: string;
   name?: string;
-  meta?: { ext?: string } | null;
+  meta?: { ext?: unknown } | null;
 }
 
 /**
@@ -137,9 +137,14 @@ const KIND_WORD: Record<string, string> = {
   link: 'link', audio: 'audio', text: 'text', model: 'model',
 };
 
+/** meta.ext as a string, or '' - a hand-edited .mbrd can hold any value, and a
+ *  throw in buildItem() stops sync() before the cards after it mount. */
+const extMeta = (item: ItemFragment): string =>
+  (typeof item.meta?.ext === 'string' ? item.meta.ext : '');
+
 export function farKind(item: ItemFragment): string {
   if (item.type === 'note') return '';
-  const ext = (item.meta?.ext || extOf(item.name) || '').replace(/^\./, '');
+  const ext = (extMeta(item) || extOf(item.name) || '').replace(/^\./, '');
   return ext || KIND_WORD[item.type ?? ''] || 'file';
 }
 
@@ -168,7 +173,7 @@ export function farKind(item: ItemFragment): string {
 export function kindName(item: ItemFragment): string {
   const type = item.type ?? '';
   if (type && type !== 'generic') return type;
-  return formatName(item.meta?.ext || extOf(item.name)) || 'file';
+  return formatName(extMeta(item) || extOf(item.name)) || 'file';
 }
 
 /**
