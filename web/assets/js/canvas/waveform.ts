@@ -1,7 +1,8 @@
 // Audio waveform extraction: decode once, cache RMS-per-bucket readings on the
 // item (and in .mbrd sidecars). Falls back to a hash-derived pseudo-shape when
-// decoding fails. Pure arithmetic — no DOM, no playback. Measurable is a
-// structural subset of Item so tests need only a plain object.
+// decoding fails, which is never stored. Pure arithmetic — no DOM, no
+// playback. Measurable is a structural subset of Item so tests need only a
+// plain object.
 
 import { getAsset } from '../storage/assets.ts';
 import { markDirty } from '../state.ts';
@@ -42,21 +43,30 @@ export async function peaks(item: Measurable): Promise<Readings> {
   const hash = item.asset?.hash;
   const asset: { blob: Blob } | undefined = hash ? getAsset(hash) : undefined;
   let measured: Readings | null = null;
-  if (hash && asset) {
+  if (hash && asset && !refused.has(hash)) {
     let run = measuring.get(hash);
     if (!run) {
       run = measure(asset.blob).finally(() => measuring.delete(hash));
       measuring.set(hash, run);
     }
     measured = await run;
+    if (!measured) refused.add(hash);
   }
-  const result = measured || pseudo(hash || item.id);
+  if (!measured) return pseudo(hash || item.id);
 
   // Written directly — a measurement, not an edit, so no undo entry.
-  if (item.meta) item.meta.peaks = result;
-  if (measured) markDirty();
-  return result;
+  if (item.meta) item.meta.peaks = measured;
+  markDirty();
+  return measured;
 }
+
+/**
+ * Hashes this session could not decode, so each mount does not decode again.
+ * Kept here and not on the item: stored, a stand-in shape was saved into the
+ * .mbrd and read back as measured for good, even after a timeout that a later
+ * session would have got past.
+ */
+const refused = new Set<string>();
 
 /** Valid readings: right length, all numbers in [0, 1]. Guards against
  * changed PEAK_RES and corrupt .mbrd sidecars. */
