@@ -2,18 +2,22 @@
 // contenteditable page, a fixed bar of formatting above it, and a find bar.
 // Typing is done on the model and patched into the page; only an IME or a
 // phone keyboard mid-word types into the page itself, and that is read back
-// when the word ends. Built from createElement and createTextNode alone - the
+// when the word ends. Vomit Mode's lock (vomit.ts) is asked of every change
+// however it arrived. Built from createElement and createTextNode alone - the
 // file is foreign - and nothing touches the document at import time.
 
 import {
   insertText, deleteRange, splitBlock, joinBackward, joinForward, toggleMark, hasMark, setHeading,
   toggleList, indent, toggleTask, blockShortcut, fenceShortcut, inlineShortcut, insertBlocks, sliceDoc,
   findAll, replaceMatch, replaceAll, wordCount, marksAt, sameMarks, tidy, isText, blockLen,
-  blockText, ordered, samePos, clampPos, para, withRoom, MATCH_MAX,
+  blockText, ordered, samePos, cmpPos, clampPos, para, withRoom, MATCH_MAX,
 } from './model.ts';
 import type { Block, Doc, Edit, ListKind, Level, MarkKey, Marks, Match, Pos, Run } from './model.ts';
 import { parseDoc, parseMarkdown, serializeDoc, posAtSource } from './markdown.ts';
+import { keepsLocked, advance, superLock, lockAtEnd, clampToLock, clock, SUPER_MS, VOMIT_MINUTES } from './vomit.ts';
 import { makeEditable, markClosed } from '../../util.ts';
+import { menuButton, openAnchored } from '../menu.ts';
+import type { MenuEntry } from '../menu.ts';
 
 export type EditorOptions = {
   text: string,
@@ -386,6 +390,8 @@ export function mountEditor(opts: EditorOptions): Editor {
   };
 
   const travel = (from: Snap[], to: Snap[]) => {
+    // Undo would reach behind the lock, which is the one thing Vomit Mode forbids.
+    if (vomit) return;
     const snap = from.pop();
     if (!snap) return;
     to.push({ doc, sel: range() });
@@ -404,8 +410,13 @@ export function mountEditor(opts: EditorOptions): Editor {
   let pending: Marks | null = null;
   let pendingAt: Pos | null = null;
 
-  const apply = (e: Edit | null, kind: string, before?: [Pos, Pos]) => {
-    if (!e) return;
+  /** An edit made, or refused when it would change locked text. True if it was made. */
+  const apply = (e: Edit | null, kind: string, before?: [Pos, Pos]): boolean => {
+    if (!e) return false;
+    if (vomit && !keepsLocked(doc, e.doc, vomit.lock)) {
+      setSel(...range());
+      return false;
+    }
     if (e.doc !== doc) {
       remember(kind, before ?? range());
       doc = e.doc;
@@ -413,6 +424,7 @@ export function mountEditor(opts: EditorOptions): Editor {
     render();
     setSel(e.from, e.to);
     changed();
+    return true;
   };
 
   let countTimer = 0;
@@ -422,15 +434,20 @@ export function mountEditor(opts: EditorOptions): Editor {
     countTimer = window.setTimeout(paintCount, 250);
     if (!find.hidden) runFind(true);
     scheduleReflect();
+    if (vomit) {
+      paintLock();
+      armSuper();
+    }
   };
 
   /** A character or a word typed over the selection, then asked whether it was a shortcut. */
   const typeText = (text: string, a: Pos, z: Pos) => {
     const marks = pending && pendingAt && samePos(pendingAt, a) ? pending : undefined;
     const typed = insertText(doc, a, z, text, marks);
-    apply(typed, text === ' ' ? 'space' : 'type', [a, z]);
+    if (!apply(typed, text === ' ' ? 'space' : 'type', [a, z])) return;
     if (marks) pendingAt = typed.from;
     afterTyping(text);
+    settle();
   };
 
   /** Markdown typed out becomes what it means, as its own undo step so Ctrl+Z gives the characters back. */
@@ -441,8 +458,7 @@ export function mountEditor(opts: EditorOptions): Editor {
       if (block) { apply(block, 'shortcut'); return; }
     }
     const inline = inlineShortcut(doc, at);
-    if (inline) {
-      apply(inline, 'shortcut');
+    if (inline && apply(inline, 'shortcut')) {
       const b = doc.blocks[inline.from.b];
       const next = isText(b) ? marksAt(b.runs, inline.from.o) : {};
       delete next[inline.exit];
@@ -454,11 +470,9 @@ export function mountEditor(opts: EditorOptions): Editor {
   const enter = (soft: boolean) => {
     const [a, z] = range();
     const b = doc.blocks[a.b];
-    if (soft && !plain && (b.kind === 'p' || b.kind === 'li' || b.kind === 'quote')) {
-      apply(insertText(doc, a, z, '\n'), 'enter');
-      return;
-    }
-    apply((samePos(a, z) && fenceShortcut(doc, a)) || splitBlock(doc, a, z), 'enter');
+    if (soft && !plain && (b.kind === 'p' || b.kind === 'li' || b.kind === 'quote')) apply(insertText(doc, a, z, '\n'), 'enter');
+    else apply((samePos(a, z) && fenceShortcut(doc, a)) || splitBlock(doc, a, z), 'enter');
+    settle();
   };
 
   /** The length of the character before or after `o`, a whole emoji or accented letter. */
@@ -546,6 +560,16 @@ export function mountEditor(opts: EditorOptions): Editor {
       }
       next = blocks.every((b, n) => b === doc.blocks[n]) ? doc : { ...doc, blocks };
     }
+    if (vomit && !keepsLocked(doc, next, vomit.lock)) {
+      // A keyboard reached behind the lock - a correction undone, a word
+      // replaced whole. The page is put back as the document still has it.
+      const back = clampToLock(vomit.lock, typedFrom?.[0] ?? lastSel[0]);
+      typedFrom = null;
+      page.replaceChildren();
+      render();
+      setSel(back);
+      return;
+    }
     if (next !== doc) {
       remember('type', typedFrom ?? lastSel);
       doc = next;
@@ -557,6 +581,7 @@ export function mountEditor(opts: EditorOptions): Editor {
     else if (sel) lastSel = ordered(sel.anchor, sel.focus);
     if (lastInput.startsWith('insert')) afterTyping(lastInput === 'insertText' ? ' ' : '');
     changed();
+    settle();
   };
 
   // -------------------------------------------------------------------------
@@ -651,6 +676,7 @@ export function mountEditor(opts: EditorOptions): Editor {
     const [a, z] = range();
     if (plain || doc.blocks[a.b]?.kind === 'code') apply(insertText(doc, a, z, text), 'paste');
     else apply(insertBlocks(doc, a, z, parseMarkdown(text).blocks), 'paste');
+    settle();
   };
 
   /** The clipboard gets the selection's Markdown, which is what the file will say. */
@@ -679,6 +705,11 @@ export function mountEditor(opts: EditorOptions): Editor {
     const s = readSel();
     if (!s) return;
     lastSel = ordered(s.anchor, s.focus);
+    // The caret cannot go behind the lock: a click, an arrow or a drag there lands on it.
+    if (vomit && cmpPos(lastSel[0], vomit.lock) < 0) {
+      setSel(clampToLock(vomit.lock, lastSel[0]), clampToLock(vomit.lock, lastSel[1]));
+      return;
+    }
     if (pendingAt && !(samePos(lastSel[0], pendingAt) && samePos(lastSel[1], pendingAt))) {
       pending = null;
       pendingAt = null;
@@ -745,10 +776,16 @@ export function mountEditor(opts: EditorOptions): Editor {
     ['task', button('Checklist (Ctrl+Shift+9)', () => list('task'), { icon: 'assets/icons.svg#i-ed-tasks' })],
   ];
   const findBtn = button('Find and replace (Ctrl+F)', () => openFind(), { icon: 'assets/icons.svg#i-find' });
+  const vomitBtn = button('Vomit Mode: write for a set time with no going back', () => {}, { text: 'Vomit', cls: 'ed-word ed-vomit' });
+  vomitBtn.setAttribute('aria-pressed', 'false');
+  vomitBtn.setAttribute('aria-haspopup', 'menu');
+  menuButton(vomitBtn, () => openAnchored(vomitBtn.getBoundingClientRect(), vomitMenu(), { label: 'Vomit Mode', owner: vomitBtn, focus: true }));
+  const timer = h('span', 'ed-timer');
+  timer.setAttribute('role', 'timer');
   const count = h('span', 'ed-count');
   count.setAttribute('aria-live', 'polite');
   if (!plain) bar.append(group(...heads), group(...marks.map(m => m[1])), group(...lists.map(l => l[1])));
-  bar.append(group(findBtn), count);
+  bar.append(group(findBtn), group(vomitBtn, timer), count);
 
   const paintCount = () => {
     const n = wordCount(doc);
@@ -776,6 +813,113 @@ export function mountEditor(opts: EditorOptions): Editor {
     }
     heads.forEach((btn, n) => btn.classList.toggle('is-active', b.kind === 'h' && b.level === n + 1));
     for (const [kind, btn] of lists) btn.classList.toggle('is-active', b.kind === 'li' && b.list === kind);
+  };
+
+  // -------------------------------------------------------------------------
+  // Vomit Mode: a timed session in which nothing written can be taken back
+  // -------------------------------------------------------------------------
+
+  type Session = { lock: Pos, ends: number, tick: number, superTimer: number };
+  let vomit: Session | null = null;
+  /** Super as last chosen, kept for the next session in this opening. */
+  let superOn = false;
+  /** The menu slider's duration, in minutes. */
+  let custom = 20;
+
+  /** The lock moved up to the caret if a word has just been finished. */
+  const settle = () => {
+    if (!vomit) return;
+    vomit.lock = advance(doc, vomit.lock, range()[1]);
+    paintLock();
+  };
+
+  /** Everything behind the lock faded - a highlight, so the page itself is not touched. */
+  const paintLock = () => {
+    if (!highlights) return;
+    const first = blockEl(0);
+    const at = vomit ? blockEl(vomit.lock.b) : undefined;
+    if (!vomit || !first || !at) { highlights.delete('ed-locked'); return; }
+    const r = document.createRange();
+    r.setStart(first, 0);
+    r.setEnd(...pointAt(at, vomit.lock.o));
+    highlights.set('ed-locked', new Highlight(r));
+  };
+
+  /** Super: each keystroke starts the wait again, and at its end the word so far locks. */
+  const armSuper = () => {
+    if (!vomit) return;
+    clearTimeout(vomit.superTimer);
+    if (!superOn) return;
+    vomit.superTimer = window.setTimeout(() => {
+      if (!vomit) return;
+      vomit.lock = superLock(vomit.lock, clampPos(doc, lastSel[1]));
+      paintLock();
+    }, SUPER_MS);
+  };
+
+  const paintTimer = () => {
+    if (!vomit) return;
+    const left = vomit.ends - Date.now();
+    if (left <= 0) endVomit();
+    else timer.textContent = clock(left);
+  };
+
+  /** The caret brought into view if it is off the page's visible part. */
+  const reveal = () => {
+    const r = rangeOf({ b: lastSel[0].b, from: lastSel[0].o, to: lastSel[0].o });
+    const box = r?.getClientRects()[0] ?? blockEl(lastSel[0].b)?.getBoundingClientRect();
+    const view = scroller.getBoundingClientRect();
+    if (box && (box.bottom > view.bottom || box.top < view.top)) scroller.scrollTop += box.top - view.top - view.height / 2;
+  };
+
+  /** A session begun: the caret to the end and everything before it locked, the typewriter way. */
+  const startVomit = (minutes: number) => {
+    if (vomit) return;
+    closeFind();
+    const lock = lockAtEnd(doc);
+    vomit = { lock, ends: Date.now() + minutes * 60_000, tick: window.setInterval(paintTimer, 1000), superTimer: 0 };
+    root.classList.add('is-vomit');
+    findBtn.disabled = true;
+    vomitBtn.classList.add('is-active');
+    vomitBtn.setAttribute('aria-pressed', 'true');
+    page.focus({ preventScroll: true });
+    setSel(lock);
+    reveal();
+    paintTimer();
+    paintLock();
+    armSuper();
+  };
+
+  /** The time is up, or the editor closed: everything unlocks, with no cue and no summary. */
+  const endVomit = () => {
+    if (!vomit) return;
+    clearInterval(vomit.tick);
+    clearTimeout(vomit.superTimer);
+    vomit = null;
+    highlights?.delete('ed-locked');
+    root.classList.remove('is-vomit');
+    findBtn.disabled = false;
+    vomitBtn.classList.remove('is-active');
+    vomitBtn.setAttribute('aria-pressed', 'false');
+    timer.textContent = '';
+  };
+
+  /** The durations, or while a session runs, how long is left. There is no way to end one early. */
+  const vomitMenu = (): MenuEntry[] => {
+    const superRow: MenuEntry = {
+      label: 'Super: lock each word after 10 seconds',
+      check: superOn,
+      action: () => { superOn = !superOn; armSuper(); },
+    };
+    if (vomit) return [{ label: `Unlocks in ${clock(vomit.ends - Date.now())}`, disabled: true }, { sep: true }, superRow];
+    return [
+      ...VOMIT_MINUTES.map((m): MenuEntry => ({ label: `${m} minutes`, action: () => startVomit(m) })),
+      { sep: true },
+      { label: 'Custom', range: { min: 1, max: 180, step: 1, unit: ' min', get: () => custom, set: v => { custom = v; } } },
+      { label: 'Start for the custom time', action: () => startVomit(custom) },
+      { sep: true },
+      superRow,
+    ];
   };
 
   // -------------------------------------------------------------------------
@@ -882,6 +1026,8 @@ export function mountEditor(opts: EditorOptions): Editor {
   };
 
   function openFind() {
+    // Replace would rewrite locked text, and a session has nothing to look back for.
+    if (vomit) return;
     find.hidden = false;
     root.classList.add('is-finding');
     const [a, z] = range();
@@ -953,10 +1099,7 @@ export function mountEditor(opts: EditorOptions): Editor {
     focus: () => {
       page.focus({ preventScroll: true });
       setSel(...lastSel);
-      const r = rangeOf({ b: lastSel[0].b, from: lastSel[0].o, to: lastSel[0].o });
-      const box = r?.getClientRects()[0] ?? blockEl(lastSel[0].b)?.getBoundingClientRect();
-      const view = scroller.getBoundingClientRect();
-      if (box && (box.bottom > view.bottom || box.top < view.top)) scroller.scrollTop += box.top - view.top - view.height / 2;
+      reveal();
     },
     type: (text: string) => {
       for (const ch of text.replace(/\r\n?/g, '\n')) {
@@ -969,6 +1112,7 @@ export function mountEditor(opts: EditorOptions): Editor {
     },
     closeFind,
     destroy: () => {
+      endVomit();
       clearTimeout(countTimer);
       document.removeEventListener('selectionchange', onSelect);
       highlights?.delete('ed-find');
