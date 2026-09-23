@@ -7,6 +7,7 @@ import { toast, busy } from '../notify.ts';
 import { discardOriginals, originalsHeld } from '../state.ts';
 import { forgetFileLayout } from '../storage/storage.ts';
 import { planOptimize, runOptimize, describeSaving, clipsWantingStills } from './optimize.ts';
+import type { Plan } from './optimize.ts';
 import { opusAvailable, OPUS_KBPS } from './opus.ts';
 
 /** Phase labels for the progress strip. Unlisted phases are the main encode. */
@@ -16,13 +17,24 @@ const PHASE: Record<string, [string, string]> = {
 };
 const MAIN: [string, string] = ['Optimizing', 'Optimizing'];
 
+/**
+ * The files a run rewrites, by bucket, with the empty ones left out. Every
+ * bucket runOptimize() encodes must be here: a board of nothing but clips on
+ * the desktop was told there was nothing to optimize.
+ */
+export function workCounts(plan: Plan): [number, string][] {
+  const counts: [number, string][] = [
+    [plan.pictures.length, 'picture'],
+    [plan.sounds.length, 'sound file'],
+    [plan.clips.length, 'video'],
+  ];
+  return counts.filter(([n]) => n);
+}
+
 /** Ask, run, and report. Dialog text is built from the plan, not a fixed sentence. */
 export async function optimizeBoard() {
   const plan = planOptimize();
-  const counts = [
-    [plan.pictures.length, 'picture'],
-    [plan.sounds.length, 'sound file'],
-  ].filter(([n]) => n);
+  const counts = workCounts(plan);
 
   // The plan's own poster count is a hash test - a clip with no cover at all -
   // and it misses the case that matters most here: a cover that is there and
@@ -77,6 +89,7 @@ export async function optimizeBoard() {
       ? `Sound becomes Opus at ${OPUS_KBPS}k, keeping its tags and its album art.`
       : 'Sound is left alone - this browser has no Opus encoder.');
   }
+  if (plan.clips.length) lines.push('Videos are capped at 1600px and rewritten as MP4.');
   // Video is not optimised: shrinking a clip needs ffmpeg, and that is not worth
   // waking for a moodboard (see optimize.ts). Say how many are being left alone,
   // so a count smaller than the board holds does not read as a bug.
