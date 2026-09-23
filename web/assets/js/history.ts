@@ -92,6 +92,25 @@ export function commit(
   return cmd;
 }
 
+/**
+ * commit(), folded into `prev` when `prev` is the entry just below and the
+ * timeline merged the two into one step: the entry keeps `prev`'s undo and
+ * takes the new redo, so one Ctrl+Z goes back past both. The text editor's
+ * saves use it - every save in one opening of a document is one step.
+ */
+export function commitFolded(
+  prev: Command | null, label: string, redo: () => void, undo: () => void,
+): Command {
+  const cmd: Command = commit(label, redo, undo);
+  const at = undoStack.length - 1;
+  if (prev && undoStack[at] === cmd && undoStack[at - 1] === prev && prev.step && prev.step === cmd.step) {
+    undoStack.splice(at - 1, 1);
+    heldWeight -= prev.weight;
+    cmd.undo = prev.undo;
+  }
+  return cmd;
+}
+
 /** Opaque token for the current stack top. Compare before/after to detect whether a commit happened; takeBack() is its consumer. */
 export const lastCommand = () => top(undoStack) || null;
 

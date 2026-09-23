@@ -22,7 +22,8 @@ export type CeilingId =
   | 'cover-art'
   | 'mesh-triangles'
   | 'mesh-buffer'
-  | 'font-bytes';
+  | 'font-bytes'
+  | 'text-edit';
 
 /** One crossed ceiling. `what` is the measurement; the risk sentence comes from RISKS. */
 export type Crossed = { ceiling: CeilingId, what: string };
@@ -89,6 +90,10 @@ const RISKS: Record<CeilingId, string> = {
   'font-bytes':
     'A face is packed into every copy of the board and re-sent with every share, so this is a cost the file '
     + 'pays for as long as it exists rather than once at import.',
+  'text-edit':
+    'The editor holds the whole file in the page as editable text and reads it back as you type, so past '
+    + 'this size typing can lag and a long session can stall the tab. Left alone the file opens to read, '
+    + 'with its first part shown.',
 };
 
 /** The sentence for one crossed ceiling: what was measured, then what it costs. */

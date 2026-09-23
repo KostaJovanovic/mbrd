@@ -260,6 +260,24 @@
   <path d="M8 7.6v5.2"/>
 </symbol>
 
+<!-- The text editor's three lists (ui/editor/view.ts): a mark and a line per
+     item, the mark being what tells the three apart. -->
+<symbol id="i-ed-bullets" viewBox="0 0 16 16">
+  <circle cx="3.2" cy="4.5" r="0.9"/>
+  <circle cx="3.2" cy="11.5" r="0.9"/>
+  <path d="M6.5 4.5h7M6.5 11.5h7"/>
+</symbol>
+<symbol id="i-ed-numbers" viewBox="0 0 16 16">
+  <path d="M2.4 3.3l1.1-.7v3.6"/>
+  <path d="M2.2 9.8c.3-.6 1.9-.7 1.9.3 0 .8-1.9 1.5-1.9 2.6h2"/>
+  <path d="M6.5 4.5h7M6.5 11.5h7"/>
+</symbol>
+<symbol id="i-ed-tasks" viewBox="0 0 16 16">
+  <rect x="1.8" y="2.6" width="3.4" height="3.4" rx="0.6"/>
+  <path d="M2.3 11.3l1 1 1.7-2.2"/>
+  <path d="M6.5 4.3h7M6.5 11.3h7"/>
+</symbol>
+
 <!-- A highlighter, leaning right with its chisel tip at the lower left. Drawn
      in the top of the box: the button puts the colour it marks in as a bar
      underneath, so the pen leaves the bottom rows free. -->

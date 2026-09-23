@@ -279,11 +279,13 @@ export function initDrop(vp: DropViewport) {
  * Pasted text as an .md file. Lands as a document (hashed, archived, viewable),
  * not a sticky note — pasted text is something brought, not something written.
  * Always .md: markdown is plain text, and the extension only decides rendering
- * when markers are present.
+ * when markers are present. `asTyped` keeps the text's ends: a sticky that
+ * outgrew itself on a space is still being written, and the space is its.
  */
-function pastedFile(text: string): File {
+function pastedFile(text: string, asTyped = false): File {
   // Normalise CRLF on the way in, same as renderMarkdown().
-  const body = text.replace(/\r\n?/g, '\n').trim();
+  const lf = text.replace(/\r\n?/g, '\n');
+  const body = asTyped ? lf : lf.trim();
   return new File([body], `${pastedName(body)}.md`, { type: 'text/markdown' });
 }
 
@@ -317,19 +319,23 @@ const PASTE_NAME_SKIP = /^ {0,3}(```|~~~|((\*\s*){3,}|(-\s*){3,}|(_\s*){3,})$)/;
  * A note written past NOTE_SHEET_MAX, replaced in place by the .md document
  * pasted text would have made - one undo step back to the note. Wired into
  * canvas/notes.ts by main.ts (setNoteOverflow). The document's own x/y are
- * dropped so it lands where the note was.
+ * dropped so it lands where the note was. `opening` when the document is
+ * about to open in the editor mid-sentence: no toast, since the editor says
+ * what happened better, and the words kept exactly as typed so far.
+ * Resolves to the document's id, or null.
  */
-export async function noteToFile(id: string, markdown: string): Promise<boolean> {
+export async function noteToFile(id: string, markdown: string, opening = false): Promise<string | null> {
   try {
-    const { x: _x, y: _y, ...draft } = await prepareFile(pastedFile(markdown));
+    const { x: _x, y: _y, ...draft } = await prepareFile(pastedFile(markdown, opening));
     // The note may have been deleted while the file was hashed.
-    if (!retypeItem(id, draft, 'Turn note into file')) return false;
-    toast(`Too long for a sticky - saved as ${draft.name}`);
-    return true;
+    const made = retypeItem(id, draft, 'Turn note into file');
+    if (!made) return null;
+    if (!opening) toast(`Too long for a sticky - saved as ${draft.name}`);
+    return made.id;
   } catch (err) {
     console.error('[mbrd] note to file failed', err);
     toast('Could not save the note as a file', 'error');
-    return false;
+    return null;
   }
 }
 
