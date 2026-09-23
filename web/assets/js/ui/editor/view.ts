@@ -37,6 +37,10 @@ export type EditorOptions = {
   onChange?: () => void,
   /** Ctrl+S. */
   onSave?: () => void,
+  /** Whether the document is ASCII art, which the viewer shows unwrapped. Absent, there is no toggle. */
+  ascii?: boolean,
+  /** The ASCII art toggle was pressed; `on` is its new state. */
+  onAscii?: (on: boolean) => void,
 };
 
 export type Editor = {
@@ -912,6 +916,14 @@ export function mountEditor(opts: EditorOptions): Editor {
 
   const outlineBtn = button('Outline', () => toggleOutline(), { icon: 'assets/icons.svg#i-ed-outline', word: 'Outline', cls: 'ed-big' });
   outlineBtn.setAttribute('aria-pressed', 'false');
+  // Kept by the item rather than the file, so it is asked for rather than read out of the text.
+  let ascii = !!opts.ascii;
+  const asciiBtn = button('ASCII art: shown unwrapped when the document is opened to read', () => {
+    ascii = !ascii;
+    asciiBtn.setAttribute('aria-pressed', String(ascii));
+    opts.onAscii?.(ascii);
+  }, { icon: 'assets/icons.svg#i-ed-ascii', word: 'ASCII art', cls: 'ed-big' });
+  asciiBtn.setAttribute('aria-pressed', String(ascii));
 
   // One ribbon and no tabs: every group in a single row, which scrolls sideways when the window is narrow.
   const ribbon = h('div', 'ed-ribbon');
@@ -932,7 +944,8 @@ export function mountEditor(opts: EditorOptions): Editor {
     group('Vomit Mode', ...sessionBtns, customBtn),
     group('Super', superBtn),
   );
-  if (!opts.plain || screen) panel.append(group('Show', outlineBtn));
+  const showBtns = [...(!opts.plain || screen ? [outlineBtn] : []), ...(opts.onAscii ? [asciiBtn] : [])];
+  if (showBtns.length) panel.append(group('Show', ...showBtns));
   ribbon.append(panel);
   bar.append(ribbon);
 

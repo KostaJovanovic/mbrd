@@ -175,24 +175,40 @@
 /* A clip keeps its controls — no zoom cursor, no drag claim. */
 #viewer[data-media] video.viewer-media { cursor: default; }
 
+/* A text read is a page: as tall as the window allows and no wider than A4
+   for that height, narrower still where the window is (a phone). The text
+   wraps to it. ui/viewer.ts readOnlyText() sets data-page. */
+#viewer[data-page] {
+  --page-h: min(1000px, calc(100dvh - 32px));
+  width: min(calc(100vw - 32px), calc(var(--page-h) * 210 / 297));
+  height: var(--page-h);
+}
+#viewer[data-page] #viewer-body { background: var(--paper-card); }
+
 /* Plain text: top-left, monospaced. */
 #viewer-body:has(> .viewer-text),
 #viewer-body:has(> .viewer-md) { place-items: start stretch; }
 .viewer-text {
   margin: 0;
-  max-width: 88ch;
+  min-width: 0;
   color: var(--ink);
   font-family: var(--font-mono);
   font-size: var(--t-small);
   line-height: 1.6;
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: anywhere;
 }
+/* ASCII art (set in the editor): a line is a row of the picture, so none
+   wraps; the page scrolls sideways instead. */
+.viewer-text.is-ascii { white-space: pre; overflow-wrap: normal; }
+.viewer-md.is-ascii pre code { white-space: pre; }
 
 /* Rendered Markdown. Board's body face, comfortable measure. One selector per
    construct — the parser emits ordinary elements. */
 .viewer-md {
+  min-width: 0;
   max-width: 74ch;
+  overflow-wrap: anywhere;
   color: var(--ink);
   font-size: var(--t-body);
   line-height: 1.65;
@@ -245,10 +261,10 @@
   padding: 12px 14px;
   border-radius: var(--leaf);
   background: var(--paper-3);
-  /* Code must not wrap — scrolls inside its own box. */
+  /* Wraps to the page like the prose; scrolls in its own box when it is ASCII art. */
   overflow-x: auto;
 }
-.viewer-md pre code { padding: 0; border-radius: 0; background: none; }
+.viewer-md pre code { padding: 0; border-radius: 0; background: none; white-space: pre-wrap; }
 .viewer-md a { color: var(--accent-deep); }
 .viewer-md table {
   margin: 0 0 1em;
