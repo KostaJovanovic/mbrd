@@ -41,11 +41,15 @@ async function pass(): Promise<void> {
   if (!item) {
     // Nothing to grab; audit one existing cover for blank frames instead.
     busy = true;
+    let again = false;
     try {
       await idleWindow();
-      if (await auditOne()) arm(GAP_MS);
+      again = await auditOne();
     } catch { /* a cover that will not decode is not this module's business */ }
     finally { busy = false; }
+    // After busy clears: arm() refuses while busy, which stopped the chain
+    // after one cover.
+    if (again) arm(GAP_MS);
     return;
   }
 
