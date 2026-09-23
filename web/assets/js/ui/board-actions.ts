@@ -24,6 +24,7 @@ import { barHeight, resetItems } from '../canvas/items.ts';
 import { resetWeb } from '../canvas/web.ts';
 import { resetModels } from '../canvas/model.ts';
 import { flushNoteEdit, noteFloor } from '../canvas/notes.ts';
+import { flushEditor } from './viewer.ts';
 import { getAsset } from '../storage/assets.ts';
 import { saveBoard, exportBoard, autosave, clearAllData } from '../storage/storage.ts';
 import { defaultSize, measureSize } from '../canvas/renderers.ts';
@@ -334,6 +335,7 @@ export function reloadBoard() {
  */
 export async function restartApp(): Promise<boolean> {
   flushNoteEdit();
+  await flushEditor();
   // A rejection is a failed autosave, and a failed autosave is exactly the case
   // the dialog below exists for - so it is caught rather than allowed to walk
   // out of the function. It used to walk out, which made Restart do nothing at

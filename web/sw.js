@@ -41,6 +41,7 @@ const SHELL = [
   './assets/css/status.css',
   './assets/css/dialog.css',
   './assets/css/viewer.css',
+  './assets/css/editor.css',
   './assets/css/color-picker.css',
   './assets/css/sticker-pad.css',
   './assets/css/mobile.css',

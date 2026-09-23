@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import {
   insertText, deleteRange, splitBlock, joinBackward, joinForward, toggleMark, setHeading,
   toggleList, indent, toggleTask, blockShortcut, fenceShortcut, inlineShortcut, findAll,
-  replaceAll, replaceMatch, wordCount, blockText, marksAt, emptyDoc,
+  replaceAll, replaceMatch, wordCount, blockText, marksAt, emptyDoc, insertBlocks, sliceDoc, withRoom,
 } from '../web/assets/js/ui/editor/model.ts';
 import {
   parseMarkdown, parsePlain, serializeDoc, serializeRuns, inlineRuns, posAtSource,
@@ -53,6 +53,12 @@ const CORPUS = [
 
 test('every document in the corpus writes back byte for byte', () => {
   for (const text of CORPUS) assert.equal(out(md(text)), text, JSON.stringify(text));
+});
+
+test('the room the editor adds around raw blocks writes as nothing', () => {
+  for (const text of CORPUS) assert.equal(out(withRoom(md(text))), text, JSON.stringify(text));
+  const doc = withRoom(md('| a | b |\n|---|---|\n'));
+  assert.deepEqual(doc.blocks.map(b => b.kind), ['p', 'raw', 'p']);
 });
 
 test('a .txt writes back byte for byte, line endings and all', () => {
@@ -265,6 +271,27 @@ test('inline markers typed out become the look', () => {
 test('a .txt takes no shortcuts and no marks', () => {
   const e = type('# x **y**', parsePlain(''));
   assert.equal(out(e.doc), '# x **y**');
+});
+
+// ---------------------------------------------------------------------------
+// Paste and copy
+// ---------------------------------------------------------------------------
+
+test('one pasted paragraph goes in as words, keeping the block it lands in', () => {
+  const doc = md('# Head line\n');
+  const e = insertBlocks(doc, at(0, 5), at(0, 5), md('**big** ').blocks);
+  assert.equal(out(e.doc), '# Head **big** line\n');
+});
+
+test('several pasted blocks split the block and join its halves', () => {
+  const e = insertBlocks(md('start end\n'), at(0, 6), at(0, 6), md('one\n\n- two\n\nthree').blocks);
+  assert.equal(out(e.doc), 'start one\n\n- two\n\nthreeend\n');
+  assert.deepEqual(e.from, at(2, 5));
+});
+
+test('a copy is the selection as Markdown, whole blocks as written', () => {
+  const doc = md('a **bold** word\n\n| t | u |\n|---|---|\n\nlast line\n');
+  assert.equal(out(sliceDoc(doc, at(0, 2), at(2, 4))), '**bold** word\n\n| t | u |\n|---|---|\n\nlast');
 });
 
 // ---------------------------------------------------------------------------

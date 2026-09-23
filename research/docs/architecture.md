@@ -347,6 +347,32 @@ and walked against an allow-list before anything of it reaches the page.
 The Feed opens it on a tap and the canvas on a double-click; both also reach it
 from the **Open** row that now leads the item menu.
 
+A `.md` or `.txt` does not open to be read but to be written in: the `text` view
+hands it to the **text editor** under `ui/editor/`, in three layers. `model.ts`
+is the document — blocks of runs, and every edit a pure `(doc, …) → doc`.
+`markdown.ts` reads a file into it and writes it back, and **round trip is the
+contract**: each block remembers the lines it was read from, a block no edit has
+replaced is written back as exactly those lines, and whatever the editor does not
+model (tables, HTML, footnotes, front matter, an image) is a raw block shown as
+its source and never edited. So a file opened and closed untouched keeps its
+bytes, and nothing is written unless the text changed. Inline Markdown is read by
+`inlineTokens()` in `ui/markdown.ts`, the same tokenizer the card renders with,
+so the two never read one file two ways. Those two layers are DOM-free and
+`npm test` reaches them; `view.ts` is the contenteditable page, which does typing
+on the model and patches the page, and reads back only what an IME or a phone
+keyboard typed into it itself.
+
+A save is an asset swap, not a new kind of anything: the text is hashed into the
+store and `setItemText()` points the same item at it, so there is **no `.mbrd`
+schema change** and the old bytes stay reachable through the timeline. Every save
+in one opening of the editor folds into one undo step (`commitFolded()` in
+`history.ts`). Past `EDIT_MAX` a file is a ceiling (`text-edit` in `consent.ts`),
+and a file that is not clean UTF-8 opens to read, since writing it back would
+change bytes nobody touched. A sticky written past `NOTE_SHEET_MAX` becomes a
+`.md` at the character that tips it over and opens here, growing out of the note;
+see `NoteOverflow` in `canvas/notes.ts`. The plan, with what is still to come, is
+`research/text-editor-2026-09-22.md`.
+
 #### One menu, drawn in three places
 
 `ui/menu.ts` is the right-click menu, and it is also the renderer every other
@@ -1803,13 +1829,14 @@ specificity:
 | `status.css` | what the app says while it works — the drop target, the waiting strip, the toast slips — plus the global `prefers-reduced-motion` stop, which is here because its one exception is the indeterminate bar |
 | `dialog.css` | the sheets — the question dialog, the note composer, the credits roll |
 | `viewer.css` | the viewer (`ui/viewer.ts`) and documents read inside it (`ui/documents.ts`) |
+| `editor.css` | the text editor inside the viewer (`ui/editor/`) — its bar, its find, its page |
 | `color-picker.css` | the saturation square and the hue (`ui/color-picker.ts`) |
 | `sticker-pad.css` | the drawer of shapes (`ui/sticker-window.ts`) |
 | `mobile.css` | touch, small screens, and the mobile-only rules |
 | `timeline.css` | the Timeline in both its faces — the foot strip and the sheet |
 | `quality.css` | the `[data-whimsy]` and `[data-quality]` tails — **must stay last**, because both have the same specificity as what they override and win on document order alone |
 
-Twenty-three, and that is the whole of `index.html`'s list. Two more sheets
+Twenty-four, and that is the whole of `index.html`'s list. Two more sheets
 exist and are not in it, which is why they are not in the table: `patch.css`,
 loaded by `web/patch.html` alone to hide the board behind the changelog, and
 `privacy.css`. `SHELL` in `web/sw.js` caches all twenty-five, since an installed

@@ -1,15 +1,24 @@
 // Viewer: one item at full size in a showModal() <dialog>. VIEWS table keyed
 // by item type (same shape as RENDERERS). Teardown is load-bearing: mounted
 // videos keep their decoder, blob URLs must be revoked, parsed PDFs hold the
-// whole file. No document reach at import time (tests/imports.test.js).
+// whole file, and an open document is saved. A .md or .txt opens in the text
+// editor (ui/editor/). No document reach at import time (tests/imports.test.js).
 
-import { board, bus, byId, select, itemAdjust, itemCrop, itemRotate, itemMatte, flipTransform } from '../state.ts';
+import {
+  board, bus, byId, select, itemAdjust, itemCrop, itemRotate, itemMatte, flipTransform, setItemText,
+} from '../state.ts';
+import type { Command } from '../state.ts';
 import { copyItems } from '../clipboard.ts';
 import { openAnchored } from './menu.ts';
 import type { MenuEntry } from './menu.ts';
 import { openExternal } from './leaving.ts';
 import { displayURLReady, ensureDisplay } from '../canvas/display.ts';
-import { assetURL, getAsset, readText } from '../storage/assets.ts';
+import { travelMs } from '../canvas/viewport.ts';
+import { addFile, assetURL, getAsset, readText } from '../storage/assets.ts';
+import { fileKey, lift } from '../consent.ts';
+import { mountEditor } from './editor/view.ts';
+import type { Editor, EditorOptions } from './editor/view.ts';
+import { measureForEdit } from './editor/markdown.ts';
 import { baseName, formatBytes } from '../util.ts';
 import { linkURL, MARKDOWN } from '../canvas/renderers.ts';
 import { embedFor, frameFor } from '../canvas/embed.ts';
@@ -35,6 +44,92 @@ const urlOf = (hash: unknown): string | null => (typeof hash === 'string' ? asse
  * Still capped: a 40MB log dropped on a board should not lock the tab.
  */
 const TEXT_MAX = 200000;
+
+/** The text files that open in the editor. Every other text file is read, as before. */
+const EDITABLE = new Set([...MARKDOWN, 'txt', 'text']);
+
+/** A pause in typing this long saves the document. */
+const IDLE_SAVE_MS = 1500;
+
+/**
+ * Where to put the caret, and where a sticky that became this document was on
+ * screen and in what colour. `held` is the typing done while it became one.
+ */
+export type OpenOptions = {
+  caret?: EditorOptions['caret'], from?: DOMRect | null, paper?: string, held?: HeldTyping | null,
+  /** Typed at the caret once the editor opens, before anything held. */
+  typed?: string,
+};
+
+/** Typing caught between a sticky closing and its document opening. `into` moves the catcher inside a modal. */
+export type HeldTyping = { take: () => string, into: (host: HTMLElement) => void };
+
+/**
+ * Catch what is typed while a sticky becomes a document: the note has closed
+ * and the editor is not open yet, since the file is hashed in between. A
+ * hidden field takes focus meanwhile, so the keys land somewhere - and on a
+ * phone, so the keyboard stays up rather than dropping and coming back.
+ */
+export function holdTyping(): HeldTyping {
+  const box = document.createElement('textarea');
+  box.className = 'viewer-hold';
+  box.tabIndex = -1;
+  box.setAttribute('aria-hidden', 'true');
+  document.body.append(box);
+  box.focus({ preventScroll: true });
+  return {
+    take: () => {
+      const typed = box.value;
+      box.remove();
+      return typed;
+    },
+    into: host => {
+      host.append(box);
+      box.focus({ preventScroll: true });
+    },
+  };
+}
+
+/**
+ * The document open in the editor. `saved` is the text last written, so a
+ * close with nothing changed writes nothing; `step` is the undo entry this
+ * opening made, which every later save folds into; `gen` is the board it was
+ * opened on, so a save that lands after a board swap goes nowhere.
+ */
+type EditSession = {
+  editor: Editor, id: string, name: string, mime: string,
+  saved: string, step: Command | null, gen: number, timer: number, chain: Promise<void>,
+  /** Stops following the phone keyboard. */
+  release: () => void,
+};
+let editing: EditSession | null = null;
+/** Counts board swaps. See EditSession. */
+let boardGen = 0;
+
+/** Write the document if it changed. Saves run one after another, so the last word is the last written. */
+function saveEdit(s: EditSession): Promise<void> {
+  clearTimeout(s.timer);
+  s.chain = s.chain.then(async () => {
+    const text = s.editor.text();
+    if (text === s.saved) return;
+    s.saved = text;
+    try {
+      const hash = await addFile(new File([text], s.name, { type: s.mime }));
+      if (s.gen !== boardGen) return;
+      s.step = setItemText(s.id, hash, s.step);
+    } catch (err) {
+      // Left for the next save, which tries the whole text again.
+      s.saved = '';
+      console.error('[mbrd] the document could not be saved', err);
+    }
+  });
+  return s.chain;
+}
+
+/** Save the open document now. Called before the page goes, as notes are flushed. */
+export function flushEditor(): Promise<void> {
+  return editing ? saveEdit(editing) : Promise.resolve();
+}
 
 // The dialog and its three slots, taken once in initViewer(). Read past that
 // guard with `!`: initViewer() returns early without the dialog, and
@@ -69,6 +164,8 @@ export function initViewer(commands?: ViewerCommands) {
   // copying words out of a document is the browser's job, not this menu's.
   dlg.addEventListener('contextmenu', e => {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+    // A document being written keeps the browser's menu, spelling suggestions and all.
+    if (e.target instanceof Element && e.target.closest('.ed')) return;
     if (getSelection()?.isCollapsed === false) return;
     e.preventDefault();
     if (!shownId) return;
@@ -92,6 +189,11 @@ export function initViewer(commands?: ViewerCommands) {
   // Escape reaches the dialog as a close request whatever had focus; the
   // teardown must run too, or the next viewing inherits a video still playing.
   dlg.addEventListener('close', teardown);
+  // In a document, Escape (and Android's Back, which sends this) closes the
+  // find bar before it closes the document.
+  dlg.addEventListener('cancel', e => { if (editing?.editor.closeFind()) e.preventDefault(); });
+  // Counted before the close below, so a save the close starts knows the board is gone.
+  bus.on('board:load', () => { boardGen++; });
   // A board swap takes the viewing with it, as it takes the sticker window: the
   // item it shows, and the blob URLs behind it, belonged to the board that left.
   bus.on('board:load', closeViewer);
@@ -125,11 +227,13 @@ function viewFor(item: Item): View | null {
 /** The two extensions the PDF renderer opens. See isPdf() in import/drop.ts. */
 const PDF_EXTS = new Set(['pdf', 'ai']);
 
-export function openViewer(id: string) {
+export function openViewer(id: string, open: OpenOptions = {}) {
   const item = byId(id);
   if (!dlg || typeof dlg.showModal !== 'function' || !item) return;
   const view = viewFor(item);
   if (!view) return;
+  // A document already open is saved and put down before another replaces it.
+  if (editing) teardown();
 
   // A document with no name opens under what it is - e.g. "Word document" -
   // rather than its import type, which for the unrecognized is `generic`.
@@ -145,15 +249,49 @@ export function openViewer(id: string) {
   if (view === VIEWS.image || view === VIEWS.video) dlg.dataset.media = '';
   else delete dlg.dataset.media;
   shownId = id;
-  view(item, bodyEl!);
+  view(item, bodyEl!, open);
   // The picture, once mounted - a clip is left out deliberately: wheel/drag
   // over its controls should press them, not zoom.
   const pic = bodyEl!.querySelector<HTMLImageElement>('img.viewer-media');
   if (pic) detachZoom = attachZoomPan(pic, bodyEl!);
   dlg.showModal();
+  if (open.from) growFrom(dlg, open.from, open.paper);
   // The body, not the close button - scrolling with the keyboard is the
-  // first thing anybody does, and a focused button swallows Space.
-  bodyEl!.focus?.();
+  // first thing anybody does, and a focused button swallows Space. Unless
+  // typing is being held for a document still opening: the catcher keeps it.
+  if (open.held) open.held.into(dlg);
+  else bodyEl!.focus?.();
+}
+
+/**
+ * A sticky that has just become a document, growing into the page: the dialog
+ * scaled up from where the note was, the note's colour over it fading to the
+ * paper underneath, then the bar and the name. Transform and opacity only, at
+ * the whimsy dial's travel speed; with motion reduced, a plain cross-fade.
+ */
+function growFrom(dlg: HTMLDialogElement, from: DOMRect, paper?: string) {
+  if (typeof dlg.animate !== 'function') return;
+  const ms = travelMs();
+  const ease = getComputedStyle(document.documentElement).getPropertyValue('--ease').trim() || 'ease-out';
+  if (!(ms > 0) || !from.width || !from.height) {
+    dlg.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180, easing: 'ease-out' });
+    return;
+  }
+  const to = dlg.getBoundingClientRect();
+  if (!to.width || !to.height) return;
+  const wash = document.createElement('div');
+  wash.className = 'viewer-grow';
+  if (paper) wash.style.background = paper;
+  dlg.append(wash);
+  dlg.animate([
+    { transformOrigin: '0 0', transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width}, ${from.height / to.height})` },
+    { transformOrigin: '0 0', transform: 'none' },
+  ], { duration: ms, easing: ease });
+  wash.animate([{ opacity: 1 }, { opacity: 1, offset: 0.55 }, { opacity: 0 }], { duration: ms * 1.4, easing: 'linear' })
+    .finished.then(() => wash.remove(), () => wash.remove());
+  for (const part of dlg.querySelectorAll<HTMLElement>('#viewer-head, .ed-bar')) {
+    part.animate([{ opacity: 0 }, { opacity: 0, offset: 0.6 }, { opacity: 1 }], { duration: ms * 1.5, easing: 'ease-out' });
+  }
 }
 
 function closeViewer() {
@@ -222,10 +360,22 @@ function teardown() {
   detachZoom?.();
   detachZoom = null;
   zoomReset = null;
+  // The document is saved on the way out. Its text lives in the editor's model,
+  // not in the page, so emptying the body below does not take it with it.
+  if (editing) {
+    const s = editing;
+    editing = null;
+    s.editor.destroy();
+    s.release();
+    void saveEdit(s);
+  }
   shownId = null;
   bodyEl?.replaceChildren();
+  // Typing held for a document that never opened goes with the viewing.
+  dlg!.querySelector('.viewer-hold')?.remove();
   delete dlg!.dataset.type;
   delete dlg!.dataset.media;
+  delete dlg!.dataset.edit;
 }
 
 // ---------------------------------------------------------------------------
@@ -411,7 +561,7 @@ function describe(item: Item) {
 // ---------------------------------------------------------------------------
 
 /** One entry of the table below: an item, and the body it fills. */
-type View = (item: Item, host: HTMLElement) => void;
+type View = (item: Item, host: HTMLElement, open?: OpenOptions) => void;
 
 const VIEWS: Record<string, View> = {
   /**
@@ -526,25 +676,12 @@ const VIEWS: Record<string, View> = {
    * Markdown, ui/markdown.ts builds DOM without innerHTML, so raw HTML in
    * the file shows as characters rather than running. Not a nicety: these
    * are files the app did not write.
+   *
+   * A .md or .txt opens in the editor instead - see editDocument().
    */
-  text(item, host) {
-    const md = MARKDOWN.has(str(item.meta?.ext));
-    const holder = document.createElement(md ? 'div' : 'pre');
-    holder.className = md ? 'viewer-md' : 'viewer-text';
-    host.append(holder);
-    const hash = item.asset?.hash;
-    if (!hash) return;
-    readText(hash, TEXT_MAX).then(text => {
-      if (!holder.isConnected) return;
-      if (md) holder.append(renderMarkdown(text));
-      else holder.textContent = text;
-      if (text.length >= TEXT_MAX) {
-        const more = document.createElement('p');
-        more.className = 'viewer-note';
-        more.textContent = `first ${formatBytes(TEXT_MAX)} shown`;
-        holder.after(more);
-      }
-    }).catch(() => { holder.textContent = ''; });
+  text(item, host, open) {
+    if (EDITABLE.has(str(item.meta?.ext)) && item.asset?.hash) return void editDocument(item, host, open);
+    readOnlyText(item, host);
   },
 
   /** A sticky, at reading size rather than at whatever the board shrank it to. */
@@ -593,6 +730,97 @@ const VIEWS: Record<string, View> = {
     host.append(a);
   },
 };
+
+/** A text file to read: rendered if Markdown, as source otherwise. `why` says why it is not editable. */
+function readOnlyText(item: Item, host: HTMLElement, why = '') {
+  const md = MARKDOWN.has(str(item.meta?.ext));
+  const holder = document.createElement(md ? 'div' : 'pre');
+  holder.className = md ? 'viewer-md' : 'viewer-text';
+  host.append(holder);
+  if (why) holder.before(nothing(why));
+  const hash = item.asset?.hash;
+  if (!hash) return;
+  readText(hash, TEXT_MAX).then(text => {
+    if (!holder.isConnected) return;
+    if (md) holder.append(renderMarkdown(text));
+    else holder.textContent = text;
+    if (text.length >= TEXT_MAX) {
+      const more = document.createElement('p');
+      more.className = 'viewer-note';
+      more.textContent = `first ${formatBytes(TEXT_MAX)} shown`;
+      holder.after(more);
+    }
+  }).catch(() => { holder.textContent = ''; });
+}
+
+/**
+ * A .md or .txt, open to write in. The whole file or nothing: past EDIT_MAX
+ * it asks first (a ceiling, consent.ts), and a file that is not clean UTF-8
+ * opens to read, since writing it back would change bytes nobody touched.
+ */
+async function editDocument(item: Item, host: HTMLElement, open: OpenOptions = {}) {
+  const asset = getAsset(item.asset?.hash);
+  if (!asset) return void host.append(nothing('That file is not in this board'));
+  const waiting = nothing('Opening it…');
+  host.append(waiting);
+  const name = asset.name || item.name || 'document.md';
+  try {
+    measureForEdit(asset.size);
+  } catch (err) {
+    const go = await lift(err, fileKey({ name, size: asset.size }), `“${baseName(name) || name}” is large to edit.`, 'Edit');
+    if (!waiting.isConnected) return;
+    if (!go) {
+      waiting.remove();
+      return void readOnlyText(item, host, 'Opened to read. Too large to edit here without asking.');
+    }
+  }
+  const bytes = new Uint8Array(await asset.blob.arrayBuffer());
+  if (!waiting.isConnected) return;
+  // BOM kept as a character, so it goes back on - see parseMarkdown().
+  const text = new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes);
+  const again = new TextEncoder().encode(text);
+  if (again.length !== bytes.length || again.some((b, n) => b !== bytes[n])) {
+    waiting.remove();
+    return void readOnlyText(item, host, 'Opened to read. This file is not UTF-8 text, and saving it would change it.');
+  }
+  const ext = str(item.meta?.ext);
+  let session: EditSession | null = null;
+  const editor = mountEditor({
+    text,
+    plain: !MARKDOWN.has(ext),
+    label: baseName(item.name) || item.name || 'Document',
+    caret: open.caret ?? 'start',
+    onChange: () => {
+      if (!session) return;
+      clearTimeout(session.timer);
+      session.timer = window.setTimeout(() => { if (session) void saveEdit(session); }, IDLE_SAVE_MS);
+    },
+    onSave: () => { if (session) void saveEdit(session); },
+  });
+  // A phone keyboard covers the bottom of the window without resizing it, so
+  // its height is followed and the dialog ends above it (editor.css, --kb).
+  const vv = globalThis.visualViewport;
+  const fit = () => {
+    if (vv) dlg!.style.setProperty('--kb', `${Math.max(0, Math.round(innerHeight - vv.height - vv.offsetTop))}px`);
+  };
+  vv?.addEventListener('resize', fit);
+  fit();
+  session = {
+    editor, id: item.id, name,
+    mime: asset.mime || (MARKDOWN.has(ext) ? 'text/markdown' : 'text/plain'),
+    saved: text, step: null, gen: boardGen, timer: 0, chain: Promise.resolve(),
+    release: () => {
+      vv?.removeEventListener('resize', fit);
+      dlg!.style.removeProperty('--kb');
+    },
+  };
+  editing = session;
+  waiting.replaceWith(editor.el);
+  dlg!.dataset.edit = '';
+  editor.focus();
+  const held = (open.typed ?? '') + (open.held?.take() ?? '');
+  if (held) editor.type(held);
+}
 
 /**
  * A document, read out of its own container. Asynchronous and slow enough

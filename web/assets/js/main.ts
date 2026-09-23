@@ -79,7 +79,7 @@ import { initMobileHeaderEditor, isPanelOpen as isHeaderPanelOpen, closePanel as
 import { initAudio } from './canvas/audio.ts';
 import { cue, initCuelume, setCueLog, cueLog, dumpCueLog, soundLevel, setSoundLevel } from './cuelume/engine.ts';
 import { initFeed, revealInFeed } from './ui/feed.ts';
-import { initViewer } from './ui/viewer.ts';
+import { initViewer, openViewer, flushEditor, holdTyping } from './ui/viewer.ts';
 import { initDarkroom } from './ui/darkroom.ts';
 import { initInventory } from './ui/inventory.ts';
 import { initPlaylist } from './ui/playlist.ts';
@@ -170,8 +170,15 @@ setAssetPurge((hashes: Set<string>) => {
   return forgetAssets(hashes);
 });
 // A note written past the sheet limit becomes a .md document — injected
-// because making one hashes a file, and canvas/ may not import import/.
-setNoteOverflow(noteToFile);
+// because making one hashes a file, and canvas/ may not import import/. One
+// that outgrew itself mid-sentence opens in the editor, growing out of the note.
+setNoteOverflow(async (id, markdown, open) => {
+  const held = open ? holdTyping() : null;
+  const made = await noteToFile(id, markdown, !!open);
+  if (made && open) openViewer(made, { ...open, held });
+  else held?.take();
+  return !!made;
+});
 // Note toolbar menu — injected because canvas/ may not import ui/.
 setNoteMenu((anchor, rows, current, pick) => {
   // Second press closes instead of reopening — menu already shut by outside-press.
@@ -475,6 +482,8 @@ const markSessionReady = () => { sessionReady = true; };
 const flushEdits = async () => {
   if (!sessionReady) return;
   flushNoteEdit();
+  // A document open in the editor, written into the board before the board is.
+  await flushEditor();
   await autosave().catch(() => {});
   // The board's file too, on a desktop with a boards folder. A no-op elsewhere.
   await saveDocument().catch(() => {});

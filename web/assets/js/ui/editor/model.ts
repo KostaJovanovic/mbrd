@@ -91,6 +91,20 @@ function splice(doc: Doc, at: number, count: number, ...put: Block[]): Doc {
 
 export const para = (runs: Run[] = [], before: string[] = ['']): Para => ({ kind: 'p', before, runs });
 
+/**
+ * Somewhere to put the caret before a document that opens with a block it
+ * cannot enter, and after one that ends with one - a table, a rule, code. An
+ * empty paragraph is written as nothing (markdown.ts), so the file is unchanged.
+ */
+export function withRoom(doc: Doc): Doc {
+  if (doc.plain) return doc;
+  const first = doc.blocks[0], last = doc.blocks[doc.blocks.length - 1];
+  const blocks = doc.blocks.slice();
+  if (isAtom(first)) blocks.unshift(para([], []));
+  if (isAtom(last) || last?.kind === 'code') blocks.push(para());
+  return blocks.length === doc.blocks.length ? doc : withBlocks(doc, blocks);
+}
+
 /** A document with nothing in it, as a new file starts. */
 export const emptyDoc = (plain = false): Doc =>
   ({ blocks: [para([], [])], tail: [''], eol: '\n', bom: false, plain });
@@ -375,6 +389,60 @@ export function joinForward(doc: Doc, at: Pos): Edit | null {
   return caret(splice(doc, at.b, 2, merged), at);
 }
 
+/**
+ * Blocks pasted over the selection. One paragraph goes in at the caret as
+ * words; several split the block there and go between its halves, the first
+ * and last joining the halves when they are paragraphs, as a paste of prose
+ * into the middle of a line should read.
+ */
+export function insertBlocks(doc: Doc, from: Pos, to: Pos, piece: Block[]): Edit {
+  const cut = deleteRange(doc, from, to);
+  const at = cut.from;
+  const d = cut.doc;
+  const b = d.blocks[at.b];
+  if (!piece.length || !b) return cut;
+  if (b.kind === 'code') return insertText(d, at, at, piece.map(blockText).join('\n'));
+  const first = piece[0];
+  if (piece.length === 1 && first.kind === 'p' && isText(b)) {
+    const [l, r] = cutRuns(b.runs, at.o);
+    return caret(splice(d, at.b, 1, withRuns(b, [...l, ...first.runs, ...r])), { b: at.b, o: at.o + runsLen(first.runs) });
+  }
+  const [l, r] = isText(b) ? cutRuns(b.runs, at.o) : [[], []];
+  const mid = piece.slice();
+  const out: Block[] = [];
+  const lead = mid[0];
+  if (isAtom(b)) out.push(b);
+  else if (l.length && lead.kind === 'p') {
+    out.push(withRuns(b, [...l, ...lead.runs]));
+    mid.shift();
+  } else if (l.length) out.push(withRuns(b, l));
+  out.push(...mid);
+  const last = out[out.length - 1];
+  const end = { b: at.b + out.length - 1, o: blockLen(last) };
+  if (r.length && isText(b)) {
+    if (last.kind === 'p' && !isAtom(b)) out[out.length - 1] = withRuns(last, [...last.runs, ...r]);
+    else out.push({ ...b, before: [''], runs: tidy(r) });
+  }
+  return caret(splice(d, at.b, 1, ...out), end);
+}
+
+/**
+ * The selection as a document of its own, for the clipboard. Blocks taken
+ * whole keep their source lines, so copying a table copies the table as written.
+ */
+export function sliceDoc(doc: Doc, from: Pos, to: Pos): Doc {
+  const [a, z] = ordered(from, to);
+  const blocks: Block[] = [];
+  for (const n of blocksIn(a, z)) {
+    const b = doc.blocks[n];
+    const start = n === a.b ? a.o : 0;
+    const end = n === z.b ? z.o : blockLen(b);
+    if (isAtom(b) || (start === 0 && end === blockLen(b))) blocks.push(b);
+    else blocks.push(withContent(b, sliceRuns(contentOf(b), start, end)));
+  }
+  return { ...doc, blocks, tail: [], bom: false };
+}
+
 // ---------------------------------------------------------------------------
 // Formatting
 // ---------------------------------------------------------------------------
@@ -521,7 +589,7 @@ export function blockShortcut(doc: Doc, at: Pos): Edit | null {
   }
   if (b.kind !== 'p') return null;
   const h = /^(#{1,3}) $/.exec(head);
-  if (h) return to({ kind: 'h', level: h[1].length as Level });
+  if (h) return to({ kind: 'h', level: h[1].length === 1 ? 1 : h[1].length === 2 ? 2 : 3 });
   if (/^[-*+] $/.test(head)) return to({ kind: 'li', list: 'bullet' });
   const num = /^(\d{1,9})[.)] $/.exec(head);
   if (num) return to({ kind: 'li', list: 'number', start: Number(num[1]) });

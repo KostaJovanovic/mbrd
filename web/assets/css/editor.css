@@ -1,0 +1,296 @@
+/* =========================================================
+   mbrd - the text editor (ui/editor/view.ts), inside the viewer.
+   A fixed bar, then the page scrolling under it. The page wears
+   the viewer's Markdown measure and faces (viewer.css .viewer-md),
+   so a document reads the same being written as being read.
+   ========================================================= */
+
+/* The viewer's body gives up its centring grid and its padding to the editor,
+   which scrolls its own page so the bar can stay put. */
+#viewer[data-edit] #viewer-body {
+  display: flex;
+  /* Stretched, not the body's centring: centred, a page taller than the
+     window would ride up past the top edge and take the bar with it. */
+  place-items: stretch;
+  padding: 0;
+  overflow: hidden;
+  background: var(--paper-card);
+}
+/* On a phone the dialog sits at the top and ends above the keyboard, whose
+   height ui/viewer.ts writes into --kb. Centred, the caret would be under it. */
+#viewer[data-edit] { height: min(860px, calc(100dvh - 32px - var(--kb, 0px))); }
+@media (pointer: coarse) {
+  #viewer[data-edit] { margin-top: max(16px, env(safe-area-inset-top)); margin-bottom: auto; }
+}
+
+.ed {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── The bar ───────────────────────────────────────────────────────────── */
+
+.ed-bar {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 6px 12px;
+  border-bottom: var(--hairline) solid var(--rule-2);
+}
+.ed-group { display: flex; gap: 2px; }
+.ed-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  height: 34px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--leaf);
+  background: none;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: var(--t-body);
+  line-height: 1;
+  cursor: pointer;
+}
+.ed-btn .ico { width: 18px; height: 18px; }
+@media (hover: hover) {
+  .ed-btn:hover { background: var(--paper-2); color: var(--ink); }
+}
+.ed-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.ed-btn.is-active { background: var(--accent); color: var(--accent-fg); }
+.ed-btn:disabled { background: none; color: var(--ink-3); cursor: default; }
+.ed-h { font-family: var(--font-display); font-size: var(--t-small); font-weight: 600; }
+.ed-bold { font-weight: 700; }
+.ed-italic { font-style: italic; }
+.ed-strike { text-decoration: line-through; }
+.ed-word { font-size: var(--t-small); }
+.ed-count {
+  margin-left: auto;
+  color: var(--ink-3);
+  font-size: var(--t-tiny);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+/* ── Find and replace ──────────────────────────────────────────────────── */
+
+.ed-find {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-bottom: var(--hairline) solid var(--rule-2);
+  background: var(--paper-2);
+}
+.ed-find[hidden] { display: none; }
+.ed-find input {
+  flex: 1 1 140px;
+  min-width: 0;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 10px;
+  border: var(--hairline) solid var(--rule);
+  border-radius: var(--leaf);
+  background: var(--paper-card);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--t-small);
+}
+.ed-find input:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+.ed-find-n { min-width: 5.5em; color: var(--ink-3); font-size: var(--t-tiny); }
+
+/* The Custom Highlight API: painted over the page without a node added to it.
+   An engine without it still finds - it scrolls to each match - and paints nothing. */
+::highlight(ed-find) { background-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+::highlight(ed-find-now) { background-color: var(--accent); color: var(--accent-fg); }
+
+/* ── The page ──────────────────────────────────────────────────────────── */
+
+.ed-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.ed-page {
+  box-sizing: border-box;
+  max-width: calc(74ch + 64px);
+  min-height: 100%;
+  margin: 0 auto;
+  /* Room below the last line: the end of a document is where writing happens,
+     and it should not be pinned to the window's bottom edge. */
+  padding: 28px 32px 40vh;
+  outline: none;
+  color: var(--ink);
+  caret-color: var(--accent-deep);
+  font-size: var(--t-body);
+  line-height: 1.65;
+  /* A soft line break is a newline in a run, and spaces are the writer's. */
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+.is-plain .ed-page {
+  max-width: calc(88ch + 64px);
+  font-family: var(--font-mono);
+  font-size: var(--t-small);
+  line-height: 1.6;
+}
+.ed-page > .ed-b { margin: 0 0 0.9em; }
+.is-plain .ed-page > .ed-b { margin: 0; }
+
+.ed-page > h1, .ed-page > h2, .ed-page > h3 {
+  margin: 1.4em 0 0.5em;
+  font-family: var(--font-display);
+  font-weight: 600;
+  line-height: 1.25;
+}
+.ed-page > :first-child { margin-top: 0; }
+.ed-page > h1 { font-size: 1.7em; }
+.ed-page > h2 { font-size: 1.35em; }
+.ed-page > h3 { font-size: 1.15em; }
+.ed-page > h1, .ed-page > h2 {
+  padding-bottom: 0.25em;
+  border-bottom: var(--hairline) solid var(--rule-2);
+}
+.ed-page > blockquote {
+  padding: 0.1em 0 0.1em 1em;
+  border-left: 3px solid var(--rule);
+  color: var(--ink-2);
+}
+.ed-page code {
+  padding: 0.12em 0.35em;
+  border-radius: var(--radius-xs);
+  background: var(--paper-3);
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+.ed-page .ed-link {
+  color: var(--accent-deep);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.15em;
+}
+.ed-page > .ed-code {
+  padding: 12px 14px;
+  border-radius: var(--leaf);
+  background: var(--paper-3);
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  line-height: 1.55;
+  /* Code does not wrap; it scrolls in its own box. */
+  white-space: pre;
+  overflow-x: auto;
+}
+.ed-page > .ed-rule hr {
+  margin: 0.4em 0;
+  border: 0;
+  border-top: var(--hairline) solid var(--rule-2);
+}
+
+/* What the editor does not model, shown as the source it is and kept as it
+   was written: muted, monospaced, and not editable. */
+.ed-page > .ed-raw {
+  padding: 10px 12px;
+  border: var(--hairline) dashed var(--rule);
+  border-radius: var(--leaf);
+  background: var(--paper-2);
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 0.82em;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  cursor: default;
+}
+.ed-page .ed-raw-run {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+}
+
+/* Lists: one element per item, its level in --depth, its mark drawn beside it. */
+.ed-page > .ed-li {
+  position: relative;
+  margin: 0 0 0.25em;
+  padding-left: calc(1.7em * (var(--depth, 0) + 1));
+}
+.ed-page > .ed-li + :not(.ed-li) { margin-top: 0.9em; }
+.ed-page > .ed-li::before {
+  position: absolute;
+  left: calc(1.7em * var(--depth, 0));
+  width: 1.4em;
+  color: var(--ink-3);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.ed-page > .ed-li[data-list="bullet"]::before { content: '•'; text-align: center; }
+.ed-page > .ed-li[data-list="number"]::before { content: attr(data-n); }
+.ed-page > .ed-li[data-checked] { color: var(--ink-3); }
+.ed-box {
+  position: absolute;
+  top: 0.38em;
+  left: calc(1.7em * var(--depth, 0) + 0.2em);
+  width: 0.95em;
+  height: 0.95em;
+  box-sizing: border-box;
+  border: 1.5px solid var(--ink-3);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+}
+.ed-li[data-checked] .ed-box {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+/* The tick, drawn with two borders so it needs no icon and no text in the box. */
+.ed-li[data-checked] .ed-box::after {
+  content: '';
+  position: absolute;
+  left: 28%;
+  top: 8%;
+  width: 30%;
+  height: 58%;
+  border: solid var(--accent-fg);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+/* ── A sticky growing into a document ──────────────────────────────────── */
+
+/* The note's colour laid over the dialog while it grows, fading to the paper
+   underneath. ui/viewer.ts growFrom() animates it and takes it away. */
+.viewer-grow {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  background: var(--note-1);
+  pointer-events: none;
+}
+
+/* The field that holds typing while a sticky becomes its document (ui/viewer.ts
+   holdTyping). Focusable, so it is not display:none, and seen by nobody. */
+.viewer-hold {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+  resize: none;
+}
+
+/* color-mix() fallback for WebKit < 16.2 — see tokens.css section 7. */
+@supports not (color: color-mix(in srgb, red, blue)) {
+  ::highlight(ed-find) { background-color: rgb(var(--accent-c) / 30%); }
+}

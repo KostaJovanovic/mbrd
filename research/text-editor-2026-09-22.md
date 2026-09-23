@@ -29,6 +29,22 @@ beyond what the maintainer answered; the open questions are at the end.
 | sticky → document (2026-09-23) | **at the 121st character**, while typing, not on close |
 | idle autosave and undo (2026-09-23) | **one step per opening** of the editor; every save in it coalesces |
 
+**Status, 2026-09-23: phase 1 is built.** Where it departs from what follows:
+
+- **A file that is not clean UTF-8 opens read-only.** Writing it back would
+  change bytes nobody touched, which breaks the round-trip rule.
+- **A save that lands after the board was swapped is dropped** (a board
+  generation guard in `ui/viewer.ts`). At most the last 1.5 s of typing can go
+  that way; the flush on close, restart and leaving the page covers the rest.
+- **No separate session-store draft.** The idle save plus that flush does its job.
+- **The sticky handoff holds keystrokes in a hidden textarea** (`holdTyping()`)
+  while the note is hashed into a file, then types them into the editor, so
+  nothing typed across the 121st character is lost. Whitespace an ATX title
+  line would swallow is carried over as typed.
+- **The card renderer's tokenizer changed with it**, since both share
+  `inlineTokens()`: backslash escapes, no emphasis on an intraword `_`, and
+  `# C#` keeping its sharp.
+
 "Stored versions", which the first draft of this plan leaned on, were withdrawn in
 v0.198 (`board-model.ts:125`, `board-schema.ts:110`); the timeline replaced them,
 and it is enough here.

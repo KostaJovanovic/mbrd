@@ -8,8 +8,9 @@
 import {
   inlineTokens, ATX, RULE, FENCE, QUOTE, BULLET, SETEXT, TABLE_RULE, TASK, opensBlock,
 } from '../markdown.ts';
+import { oversize } from '../../consent.ts';
 import { para, runsLen, runsText, blockText, tidy } from './model.ts';
-import type { Block, Doc, ListItem, ListKind, Marks, Pos, Run, TextBlock } from './model.ts';
+import type { Block, Doc, ListItem, ListKind, Marks, Pos, Run } from './model.ts';
 
 /** The lines each block was read from. Absent for a block an edit made. */
 const SOURCE = new WeakMap<Block, string[]>();
@@ -17,6 +18,22 @@ const SOURCE = new WeakMap<Block, string[]>();
 const PREV = new WeakMap<Block, Block | null>();
 /** The first line of each block in its file, for putting a caret at a place in the source. */
 const LINE = new WeakMap<Block, number>();
+
+/**
+ * The largest file the editor opens without asking, in bytes: the viewer's
+ * own read limit (TEXT_MAX in ui/viewer.ts). Editing a part of a file would
+ * throw the rest away on save, so past this the choice is the whole file or
+ * reading only - see measureForEdit().
+ */
+export const EDIT_MAX = 200_000;
+
+/** A file of `bytes` checked against EDIT_MAX. Throws Oversize, never a plain Error. */
+export function measureForEdit(bytes: number, lifted = false) {
+  if (!lifted && bytes > EDIT_MAX) {
+    throw oversize('text-edit', `This file is ${Math.round(bytes / 1024)} KB, and the editor opens `
+      + `${Math.round(EDIT_MAX / 1024)} KB without asking.`);
+  }
+}
 
 /** ORDERED from ui/markdown.ts, with the delimiter captured, which a writer needs and a renderer does not. */
 const NUMBERED = /^( *)(\d{1,9})([.)])\s+(.*)$/;
@@ -110,8 +127,9 @@ export function parseMarkdown(src: string): Doc {
         end = n;
       }
     } else if (atx) {
-      const level = atx[1].length;
-      block = level <= 3 ? { kind: 'h', before, level: level as 1 | 2 | 3, runs: inlineRuns(atx[2]) } : raw(i, i + 1);
+      const n = atx[1].length;
+      const level = n === 1 ? 1 : n === 2 ? 2 : 3;
+      block = n <= 3 ? { kind: 'h', before, level, runs: inlineRuns(atx[2]) } : raw(i, i + 1);
     } else if (QUOTE.test(line)) {
       const inner: string[] = [];
       let j = i;
@@ -471,12 +489,12 @@ export function posAtSource(doc: Doc, line: number, col: number): Pos {
     const src = SOURCE.get(b);
     if (start === undefined || !src || start > line) continue;
     if (line >= start + src.length || (b.kind !== 'p' && b.kind !== 'h')) return end;
-    const words = runsText((b as TextBlock).runs).split('\n');
+    const words = runsText(b.runs).split('\n');
     const row = b.kind === 'h' ? 0 : line - start;
     const lead = b.kind === 'h' ? src[0].length - src[0].replace(/^ {0,3}#{1,6}\s+/, '').length : src[row].length - src[row].trimStart().length;
     let o = 0;
     for (let r = 0; r < row && r < words.length; r++) o += words[r].length + 1;
-    return { b: n, o: Math.min(runsLen((b as TextBlock).runs), o + Math.max(0, col - lead)) };
+    return { b: n, o: Math.min(runsLen(b.runs), o + Math.max(0, col - lead)) };
   }
   return end;
 }

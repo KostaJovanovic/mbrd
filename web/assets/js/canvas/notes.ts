@@ -43,8 +43,17 @@ export function setNoteMenu(fn: NoteMenu | null) { openMenu = fn; }
  * undoable step. Resolves false if it could not. Injected because making a
  * document means hashing a file, which is import/'s job (layering). Unwired, a
  * note over the limit is cut to what a stored note may hold instead.
+ *
+ * `open` is given when the note outgrew itself mid-sentence: the document then
+ * opens in the editor, the caret at `caret` (a line and column of `markdown`),
+ * growing out of the note's box on screen, `from`.
  */
-export type NoteOverflow = (id: string, markdown: string) => Promise<boolean>;
+export type NoteOpen = {
+  caret: { line: number, col: number }, from: DOMRect | null, paper?: string,
+  /** Typed again in the editor: space ending a title, which a Markdown heading does not keep. */
+  typed?: string,
+};
+export type NoteOverflow = (id: string, markdown: string, open?: NoteOpen) => Promise<boolean>;
 
 let overflow: NoteOverflow | null = null;
 export function setNoteOverflow(fn: NoteOverflow | null) { overflow = fn; }
@@ -625,7 +634,35 @@ export function editNote(
     }
   };
 
-  const afterEdit = () => { syncKinds(); growNote(id); refreshCount(); reflectNow(); placeToolbar(); };
+  const afterEdit = () => {
+    syncKinds(); growNote(id); refreshCount(); reflectNow(); placeToolbar();
+    outgrown();
+  };
+
+  /**
+   * The character that takes a note past NOTE_SHEET_MAX turns it into a
+   * document there and then, and the editor takes over with the caret where
+   * it was - writing never stops, the note grows into a page under it. Not
+   * mid-word in an IME, and not for an old note merely opened over the limit.
+   */
+  const outgrown = () => {
+    if (!overflow || composing || done) return;
+    const { lines, sel } = read();
+    if (linesLength(lines) <= NOTE_SHEET_MAX || linesMarkdown(lines) === openedAs) return;
+    const { li, off } = locate(lines, sel?.end ?? linesLength(lines));
+    // linesMarkdown() writes a line all in title as `# ` and the line.
+    const said = lines[li].map(r => r.text).join('');
+    const title = lines[li].every(r => r.title) && !!said;
+    // The space that tipped a title over: gone from the heading, so typed again.
+    const lost = title && off === said.length ? (/\s*$/.exec(said)?.[0] ?? '') : '';
+    const sheet = node.querySelector('.card') ?? node;
+    finish(false, {
+      caret: { line: li, col: off - lost.length + (title ? 2 : 0) },
+      from: node.getBoundingClientRect(),
+      paper: getComputedStyle(sheet).backgroundColor,
+      typed: ' '.repeat(lost.length),
+    });
+  };
 
   const api: NoteToolbarApi = {
     setTitle(on) { applyStyle(s => ({ ...s, title: on })); },
@@ -887,7 +924,7 @@ export function editNote(
   };
 
   let done = false;
-  function finish(discard = false) {
+  function finish(discard = false, open?: NoteOpen) {
     if (done) return;
     done = true;
     if (editing?.finish === finish) editing = null;
@@ -917,12 +954,14 @@ export function editNote(
     if (linkify(id, text)) { onDone?.(text); return; }
     const markdown = linesMarkdown(lines);
     if (overflow && linesLength(lines) > NOTE_SHEET_MAX && markdown !== openedAs) {
+      // The composer closes first: whatever holds the typing while the
+      // document is made (NoteOverflow) cannot take focus under a modal.
+      onDone?.(markdown, true);
       // Asynchronous (the file is hashed). The note keeps its old words until
       // the document replaces it; if that fails, the note keeps what fits.
-      void overflow(id, markdown).then(ok => {
+      void overflow(id, markdown, open).then(ok => {
         if (!ok) { setNoteContent(id, rich, text); growNote(id); }
       });
-      onDone?.(markdown, true);
       return;
     }
     setNoteContent(id, rich, text);

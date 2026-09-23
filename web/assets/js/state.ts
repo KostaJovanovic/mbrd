@@ -52,9 +52,10 @@ import {
   isMultiSelect, setMultiSelect, resetMultiSelect,
 } from './board-store.ts';
 import {
-  commit, undo, redo, historyState, historyDepth, historyWeight,
+  commit, commitFolded, undo, redo, historyState, historyDepth, historyWeight,
   clearHistory, dropStacks, lastCommand, takeBack,
 } from './history.ts';
+import type { Command } from './history.ts';
 import {
   adoptTimeline, timelineSteps, timelineAt, timelineStale, timelineHashes, goTo,
   nameStep, declareOp, registerOp, editStep, rebuildFrom, stepEditable,
@@ -75,6 +76,7 @@ export { bus, selection, isDirty, markDirty, select, clearSelection, deselect };
 export { tagFilter, setTagFilter };
 export { isMultiSelect, setMultiSelect };
 export { commit, undo, redo, historyState, historyDepth, historyWeight, lastCommand, takeBack };
+export type { Command };
 
 /**
  * Forget the whole history: the board as it stands becomes the start of a new
@@ -593,6 +595,29 @@ export function setNoteContent(id: string, rich: unknown, text: unknown) {
   commit('Edit note',
     () => write(next, rich, noteName(next)),
     () => write(wasText, prevRich, wasName));
+}
+
+/**
+ * Point a text item at new bytes - the text editor's save (ui/editor/). Same
+ * id, so the card rebuilds in place rather than being replaced. The old bytes
+ * stay reachable through the timeline, which keeps every hash a past step
+ * refers to; not meta.was, which is the optimizer's "original" and would be
+ * offered for deletion. `session` is what the previous save of this editing
+ * session returned: while it is still the top of the undo stack this save
+ * folds into it, so one opening of the editor is one step.
+ */
+export function setItemText(id: string, hash: unknown, session: Command | null = null): Command | null {
+  const it = byId(id);
+  if (!it || !isHash(hash) || !it.asset?.hash || it.asset.hash === hash) return session;
+  const was = { ...it.asset };
+  const now = { ...it.asset, hash };
+  const write = (asset: typeof was) => {
+    const x = byId(id);
+    if (!x) return;
+    x.asset = { ...asset };
+    bus.emit('item', id);
+  };
+  return commitFolded(session, 'Edit document', () => write(now), () => write(was));
 }
 
 /**
