@@ -190,6 +190,13 @@ export function planOptimize(): Plan {
     if (item.type === 'video' && item.asset?.hash && !(item.meta?.cover && getAsset(item.meta.cover))) {
       plan.posters++;
     }
+  }
+
+  // Every card's own file first, then the covers. Jobs are keyed by hash and
+  // the first card to reach a hash decides its size ceiling, name and kind, so
+  // a picture that is one card's file and another card's cover must be met as
+  // the file - met as a cover it came back at the 600px cover ceiling.
+  for (const onCover of [false, true]) for (const item of cards()) {
     // What this item held the last time the optimiser looked at it. Matching
     // bytes are done with - see swapAssets() in state.ts. Skipping them is not
     // only about the wasted minute: re-encoding a WebP or an Opus stream from
@@ -218,51 +225,48 @@ export function planOptimize(): Plan {
     // counted as saved, marked done in meta.opt, and then never applied. That
     // also leaves out the thumbnail (derived, already minimal) and meta.source
     // (never kept - the swap drops it).
-    const swappable = [item.asset?.hash, item.meta?.cover]
-      .filter((h): h is string => typeof h === 'string' && h.length > 0);
-    for (const hash of swappable) {
-      if (seen.has(hash)) continue;
-      const ownRaw = raw && hash === item.asset?.hash;
-      const ownHeif = heif && hash === item.asset?.hash;
-      const own = ownRaw || ownHeif;
-      const asset = getAsset(hash);
-      if (!asset) continue;
-      seen.add(hash);
-      // Bucketed above, as a removal. Not counted here as well: an encoder
-      // would be handed nothing, and a dialog promising to shrink a file whose
-      // size is already zero is a promise it cannot keep.
-      if (!asset.size) continue;
-      // Not for a RAW or a HEIC: a build that could not develop or decode one
-      // marked it as looked at, and that answer was about the build rather than
-      // the file. For a HEIC it can be about the *origin* - WebCodecs is absent
-      // outside a secure context - so a board marked on one address must be
-      // offered again on another.
-      if (marked.has(hash) && !own) { plan.done++; continue; }
-      plan.total += asset.size;
-      const isCover = hash !== item.asset?.hash;
-      const name = asset.name || item.name || '';
-      const kind = own ? 'image' : mediaKind({
-        mime: asset.mime || '',
-        ext: extOf(name) || item.meta?.ext || extOf(item.name) || '',
-        type: item.type,
-        isCover,
-      });
-      const entry: Job = { hash, size: asset.size, name, isCover, kind };
-      if (ownRaw) {
-        entry.raw = true;
-        if (item.meta?.demosaiced && item.meta.preview) entry.developed = item.meta.preview;
-      }
-      if (ownHeif) entry.heif = true;
-      if (kind === 'image') plan.pictures.push(entry);
-      else if (kind === 'audio') plan.sounds.push(entry);
-      // Video is bucketed with the skips on the web - counted so a dialog can
-      // say how many clips it is leaving alone, but never encoded. See the
-      // module note. On a shell with a native encoder it goes in a bucket that
-      // is encoded, and the dialog counts it among the work rather than among
-      // the exemptions.
-      else if (kind === 'video' && platform.native.canTranscode()) plan.clips.push(entry);
-      else plan.skipped.push(entry);
+    const hash = onCover ? item.meta?.cover : item.asset?.hash;
+    if (!hash || seen.has(hash)) continue;
+    const ownRaw = raw && !onCover;
+    const ownHeif = heif && !onCover;
+    const own = ownRaw || ownHeif;
+    const asset = getAsset(hash);
+    if (!asset) continue;
+    seen.add(hash);
+    // Bucketed above, as a removal. Not counted here as well: an encoder
+    // would be handed nothing, and a dialog promising to shrink a file whose
+    // size is already zero is a promise it cannot keep.
+    if (!asset.size) continue;
+    // Not for a RAW or a HEIC: a build that could not develop or decode one
+    // marked it as looked at, and that answer was about the build rather than
+    // the file. For a HEIC it can be about the *origin* - WebCodecs is absent
+    // outside a secure context - so a board marked on one address must be
+    // offered again on another.
+    if (marked.has(hash) && !own) { plan.done++; continue; }
+    plan.total += asset.size;
+    const isCover = onCover;
+    const name = asset.name || item.name || '';
+    const kind = own ? 'image' : mediaKind({
+      mime: asset.mime || '',
+      ext: extOf(name) || item.meta?.ext || extOf(item.name) || '',
+      type: item.type,
+      isCover,
+    });
+    const entry: Job = { hash, size: asset.size, name, isCover, kind };
+    if (ownRaw) {
+      entry.raw = true;
+      if (item.meta?.demosaiced && item.meta.preview) entry.developed = item.meta.preview;
     }
+    if (ownHeif) entry.heif = true;
+    if (kind === 'image') plan.pictures.push(entry);
+    else if (kind === 'audio') plan.sounds.push(entry);
+    // Video is bucketed with the skips on the web - counted so a dialog can
+    // say how many clips it is leaving alone, but never encoded. See the
+    // module note. On a shell with a native encoder it goes in a bucket that
+    // is encoded, and the dialog counts it among the work rather than among
+    // the exemptions.
+    else if (kind === 'video' && platform.native.canTranscode()) plan.clips.push(entry);
+    else plan.skipped.push(entry);
   }
   return plan;
 }
