@@ -488,7 +488,8 @@ const sessionKey = (folderId: string, name: string) => `${folderId}/${name}`;
 
 /**
  * Query a resumable session: 308 = alive (Range says how far), 200/201 = already
- * finished, else dead. Range header readable only because Drive exposes it.
+ * finished, a TRANSIENT status throws, else dead. Range header readable only
+ * because Drive exposes it.
  */
 type SessionState =
   /** Alive, and this many bytes have landed. */
@@ -504,6 +505,8 @@ async function sessionProgress(uri: string, size: number): Promise<SessionState>
   });
   // No Range at all: the session is alive and holds nothing yet.
   if (res.status === 308) return { sent: landed(res) ?? 0 };
+  // "Try again", not "gone": a throw is one more try in recover(), where null ends the upload.
+  if (TRANSIENT.has(res.status)) throw await failure(res, 'Google Drive could not say how far the upload got');
   if (res.ok) {
     // Upload already completed — last chunk's response was lost. Read id here
     // to avoid creating a duplicate file.
