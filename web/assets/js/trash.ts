@@ -8,7 +8,7 @@
 // BASE layer — does not import state.ts.
 
 import { bus, selection } from './board-store.ts';
-import { commit } from './history.ts';
+import { commit, dropStacks } from './history.ts';
 import { cue } from './cuelume/engine.ts';
 import { board, byId, topZ, makeItem, TRASH_LIMIT } from './board-model.ts';
 import type { Item, TrashEntry } from './board-model.ts';
@@ -18,6 +18,7 @@ import { fitBoardMode } from './layout.ts';
 import { itemHashes, isRecord, extOf } from './util.ts';
 // emptyTrash() rewrites the ledger's copies via this.
 import { rewriteRecorded } from './timeline.ts';
+import { clippedItems } from './clipboard.ts';
 
 /**
  * **The two things the drawer keeps for good.** A cleaning card (type `card`,
@@ -432,6 +433,8 @@ export function emptyTrash() {
   const kept = new Set<string>();
   for (const it of board.items) for (const hash of allHashes(it)) kept.add(hash);
   for (const entry of keeping) for (const hash of allHashes(entry.item)) kept.add(hash);
+  // A cut card waits here to be pasted, and would paste with no bytes.
+  for (const it of clippedItems()) for (const hash of allHashes(it)) kept.add(hash);
   const doomed = new Set<string>();
   for (const entry of going) {
     for (const hash of allHashes(entry.item)) if (!kept.has(hash)) doomed.add(hash);
@@ -464,6 +467,10 @@ export function emptyTrash() {
     // around them, which is what `stones` already is.
     () => { board.trash = board.trash.filter(entry => isKeepsake(entry.item)); bus.emit('trash'); },
     () => { board.trash = stones; bus.emit('trash'); });
+  // The closures below this one hold the cards with their purged hashes: two
+  // undos would put an empty card back. The ledger was rewritten to tombstones
+  // above, and undo falls through to it once the stacks are gone.
+  if (freed.size) dropStacks();
   // Outside the closure: undo/redo re-run closures, this fires once.
   if (entombed) bus.emit('trash:purged', { items: entombed, bytes });
 }

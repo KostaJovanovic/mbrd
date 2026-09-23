@@ -11,7 +11,7 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  board, addItems, removeItems, emptyTrash, setAssetPurge, undo,
+  board, addItems, removeItems, emptyTrash, setAssetPurge, undo, cutItems, pasteItems,
 } from '../web/assets/js/state.ts';
 import { serializeTimeline, timelineHashes } from '../web/assets/js/timeline.ts';
 import { fresh } from './state-fixtures.js';
@@ -132,6 +132,34 @@ test('the optimiser memo goes too, since nothing can revert to it', () => {
 
   assert.deepEqual(asked, [[HASH, OTHER].sort()]);
   assert.equal(store.size, 0);
+});
+
+test('undo past the emptying brings back the tombstone, never the purged card', () => {
+  // The delete's undo closure holds the card as it was, hash and all. Run
+  // after the purge, it put a card on the board that names no bytes.
+  fakeRegistry();
+  const [a] = addItems([pic()]);
+  removeItems([a.id]);
+  emptyTrash();
+  undo();
+  undo();
+
+  const back = board.items.find(i => i.id === a.id);
+  assert.ok(back, 'the delete is undone');
+  assert.equal(back.type, 'gone');
+  assert.equal(back.asset, null, 'the card came back naming the purged file');
+});
+
+test('a cut card waiting in the clipboard keeps its file', () => {
+  const { store } = fakeRegistry();
+  const [a] = addItems([pic()]);
+  // A cut sends the card to the bin, which is what the emptying sees.
+  cutItems([a.id]);
+  emptyTrash();
+
+  assert.equal(store.has(HASH), true, 'the paste would name bytes that are gone');
+  const [pasted] = pasteItems();
+  assert.equal(pasted.asset.hash, HASH);
 });
 
 test('with no registry wired, the bin empties the way it always did', () => {
