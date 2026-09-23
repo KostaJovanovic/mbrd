@@ -827,12 +827,20 @@ function disposable(el: HTMLElement) {
  * is only ever one thing playing on a board, so this exempts exactly one card
  * from the cull - and it is off screen, so it is a card's worth of style and
  * layout with nothing to paint.
+ *
+ * An embedded player counts too. Its `paused` cannot be read across origins,
+ * and taking an iframe out of the document destroys it, so a detach stopped
+ * the song and a pan back loaded the player again from the start. It only
+ * exists because somebody pressed Watch, so these are few.
+ *
+ * rebuild() asks the same question of a card's body: what this protects from a
+ * detach, it protects from a body replaced under it.
  */
-function sounding(el: HTMLElement) {
+function sounding(el: Element) {
   for (const m of el.querySelectorAll<HTMLMediaElement>('video, audio')) {
     if (!m.paused) return true;
   }
-  return false;
+  return !!el.querySelector('iframe');
 }
 
 /** Let go of one item's node and shadow, mounted or merely cached. */
@@ -1062,8 +1070,8 @@ export function sync(restack = true, viewPath = false) {
   // Detach pass. Walk what is mounted - bounded by the screen, not the board -
   // and let go of everything no longer on it. Three answers, not two: thrown
   // away, detached and kept for its media state, or - for the one clip actually
-  // playing - left where it is, because detaching it would stop it. See
-  // sounding().
+  // playing, and any embedded player - left where it is, because detaching it
+  // would stop it. See sounding().
   //
   // Keeping every one of them made memory proportional to the board a person had
   // *visited* rather than to what was on screen, which is the opposite of what
