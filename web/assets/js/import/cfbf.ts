@@ -77,17 +77,25 @@ function parse(b: Bytes): Compound | null {
   const valid = (s: number) => s >= 0 && s < sectors;
 
   // Build FAT from header (109 entries) + DIFAT chain.
+  //
+  // A FAT never needs more sectors than the file has, so the list stops there:
+  // a DIFAT sector that names sector 0 a hundred times, or a DIFAT chain that
+  // points back at itself, otherwise grows this list (and the Uint32Array
+  // below) without bound. `seenDifat` is the same guard chain() carries.
   const fatSectors: number[] = [];
-  for (let i = 0; i < 109; i++) {
+  for (let i = 0; i < 109 && fatSectors.length < sectors; i++) {
     const s = le32(b, 76 + i * 4);
     if (valid(s)) fatSectors.push(s);
   }
   let difat = le32(b, 68);
   const difatCount = le32(b, 72);
-  for (let n = 0; n < Math.min(difatCount, MAX_CHAIN) && valid(difat); n++) {
+  const seenDifat = new Set<number>();
+  for (let n = 0; n < Math.min(difatCount, MAX_CHAIN) && valid(difat) && !seenDifat.has(difat)
+    && fatSectors.length < sectors; n++) {
+    seenDifat.add(difat);
     const base = at(difat);
     const perSector = sectorSize / 4 - 1;
-    for (let i = 0; i < perSector; i++) {
+    for (let i = 0; i < perSector && fatSectors.length < sectors; i++) {
       const s = le32(b, base + i * 4);
       if (valid(s)) fatSectors.push(s);
     }
