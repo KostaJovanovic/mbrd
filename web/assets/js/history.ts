@@ -8,6 +8,7 @@ import {
   snapshot, recordStep, markerBack, markerForward, dropLastStep, resetTimeline,
   stepBack, stepForward, stepBackLabel, stepForwardLabel, isReplaying,
   setStackDropper, settleDrift, ledgerMoved, timelinePlaying, stepBehind, stepAhead, runMoved,
+  dropOp,
 } from './timeline.ts';
 
 /** One undo entry. `step` links to the timeline ledger; `weight` drives eviction. */
@@ -63,6 +64,8 @@ export function commit(
   // board back so the snapshot captures the before-state.
   // During a replay, pass through without touching either stack.
   if (isReplaying()) {
+    // Both branches record nothing, so a declared rule dies with the change.
+    dropOp();
     if (rewind) rewind();
     redo();
     return { label, redo, undo, weight: 1 };
@@ -71,6 +74,7 @@ export function commit(
   // is recorded, and a caller that already mutated gets its board put back.
   // The last net under the gates in the canvas and the chrome.
   if (timelinePlaying()) {
+    dropOp();
     if (rewind) rewind();
     bus.emit('readonly');
     return { label, redo, undo, weight: 1 };
