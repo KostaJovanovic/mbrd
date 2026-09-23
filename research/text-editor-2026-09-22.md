@@ -28,6 +28,9 @@ beyond what the maintainer answered; the open questions are at the end.
 | Theatre mode | not in v1 |
 | sticky → document (2026-09-23) | **at the 121st character**, while typing, not on close |
 | idle autosave and undo (2026-09-23) | **one step per opening** of the editor; every save in it coalesces |
+| Vomit Mode mid-document (2026-09-23) | **the caret jumps to the end** and everything before it locks |
+| Super's 10 seconds (2026-09-23) | **from the word's last keystroke**, fixed; not a setting |
+| a `.fountain` card (2026-09-23) | **plain text**, as any text card |
 
 **Status, 2026-09-23: phase 1 is built.** Where it departs from what follows:
 
@@ -44,6 +47,23 @@ beyond what the maintainer answered; the open questions are at the end.
 - **The card renderer's tokenizer changed with it**, since both share
   `inlineTokens()`: backslash escapes, no emphasis on an intraword `_`, and
   `# C#` keeping its sharp.
+
+**Status, 2026-09-23: phase 2 is built.** The rules are `ui/editor/vomit.ts`;
+one question, `keepsLocked(prev, next, lock)`, is asked of every change the
+editor makes and of everything a keyboard typed into the page itself, so a key,
+a paste, a toolbar press and an autocorrection all meet the same rule. Where it
+departs from what follows:
+
+- **The lock moves when the character before the caret is a space or a line
+  break, or the caret is at a block's start** — one rule for Space, Enter, a
+  paste ending in either, and a phone's correction arriving with its space.
+- **A session cannot be ended early.** The menu shows what is left and the
+  Super toggle; closing the viewer ends it.
+- **The custom duration is a slider in the menu** (1 to 180 minutes) and a row
+  that starts it, since a menu row cannot take typing.
+- **Locked text fades through a highlight** (`::highlight(ed-locked)`), so the
+  page is not touched; an engine without the Custom Highlight API locks
+  without fading.
 
 "Stored versions", which the first draft of this plan leaned on, were withdrawn in
 v0.198 (`board-model.ts:125`, `board-schema.ts:110`); the timeline replaced them,

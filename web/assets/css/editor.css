@@ -134,6 +134,22 @@
 ::highlight(ed-find) { background-color: color-mix(in srgb, var(--accent) 30%, transparent); }
 ::highlight(ed-find-now) { background-color: var(--accent); color: var(--accent-fg); }
 
+/* ── Vomit Mode ────────────────────────────────────────────────────────── */
+
+/* The countdown beside the button, in figures that do not jitter as they tick. */
+.ed-timer {
+  align-self: center;
+  min-width: 0;
+  padding: 0 4px;
+  color: var(--accent-deep);
+  font-size: var(--t-small);
+  font-variant-numeric: tabular-nums;
+}
+.ed-timer:empty { display: none; }
+/* Locked text fades back: still there to read, plainly not there to change.
+   A highlight, painted over the page without a node added to it. */
+::highlight(ed-locked) { color: var(--ink-3); }
+
 /* ── The page ──────────────────────────────────────────────────────────── */
 
 /* The desk: the sheet sits on it with a margin all round, and the room below
