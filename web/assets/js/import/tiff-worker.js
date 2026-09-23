@@ -53,7 +53,7 @@ const MAX_DEPTH = 16;
 let guard = null;
 
 const readIFD = self.UTIF._readIFD;
-self.UTIF._readIFD = function (bin, data, offset, ifds, depth, debug) {
+self.UTIF._readIFD = function (bin, data, offset, _ifds, depth, _debug) {
   if (guard) {
     if (depth > MAX_DEPTH) throw new Error('image directories nest too deep');
     // Depth 0 is a page chain: the main one, or a Nikon note's. A chain that
