@@ -132,6 +132,12 @@ export function faceNormal(
 
 export function finish(positions: Float32Array, normals: Float32Array, box: MeshBounds): Mesh {
   if (!Number.isFinite(box.min[0])) throw new MeshError('This model has no geometry in it');
+  // All six, not the first: one vertex at infinity on any axis leaves a box
+  // no camera can frame, and the card draws blank with nothing to say why.
+  // Rounded to float first, since that is what the positions are stored as.
+  if (![...box.min, ...box.max].every(v => Number.isFinite(Math.fround(v)))) {
+    throw new MeshError('This model has a vertex at an impossible position');
+  }
   // Normalize once so the shader never has to.
   for (let i = 0; i < normals.length; i += 3) {
     const len = Math.hypot(normals[i], normals[i + 1], normals[i + 2]);
@@ -163,7 +169,8 @@ export function fromIndexed(
     for (let c = 0; c < 3; c++) {
       const vi = tris[t * 3 + c];
       // Out-of-range index = corrupt file, not oversize — throw Error, not Oversize.
-      if (!(vi >= 0 && vi < vertN)) {
+      // So is 1.5, which is in range and reads half a vertex: NaN.
+      if (!(Number.isInteger(vi) && vi >= 0 && vi < vertN)) {
         throw new MeshError('This model refers to vertices it does not contain');
       }
       const o = base + c * 3, s = vi * 3;
