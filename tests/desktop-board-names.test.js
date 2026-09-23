@@ -6,6 +6,8 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { plainName, nthName, isFolderBoard } from '../desktop/board-names.mts';
 import { fileNameFor, titleFromFileName } from '../web/assets/js/storage/naming.ts';
@@ -46,6 +48,15 @@ test('a free name reads back as a title that names the same file', () => {
     const name = nthName('New_board_Sep_14.mbrd', n);
     assert.equal(fileNameFor(titleFromFileName(name)), name);
   }
+});
+
+test('a rename that changes only the case still renames', () => {
+  // Read as text: boards.ts needs Electron. freePath() gives the board its own
+  // name back in the new case, and a case-blind compare took that for no change.
+  const boards = readFileSync(join(import.meta.dirname, '..', 'desktop', 'boards.ts'), 'utf8');
+  const rename = /export function rename\([\s\S]*?\n\}/.exec(boards)[0];
+  assert.match(rename, /if \(to === from\) return refOf\(from\);/);
+  assert.doesNotMatch(rename, /same\(to, from\)/);
 });
 
 test('the page may name a board directly in the folder, and nothing else there', () => {
