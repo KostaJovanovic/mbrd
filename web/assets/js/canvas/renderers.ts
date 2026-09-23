@@ -1132,7 +1132,7 @@ const RENDERERS = {
       // every pointer over the frame (embed.ts keeps this element on open).
       const title = document.createElement('div');
       title.className = 'embed-title';
-      title.textContent = metaStr(item.meta.title) || item.name || linkName(u) || spec.provider;
+      title.textContent = embedTitle(item, u, spec.provider);
       card.append(title, embedOffer(item, spec, card));
       // On load if missing: fetch the title and cover and store them
       // (embed-meta.ts, wired in main.ts). A no-op until wired, so a test that
@@ -1997,6 +1997,27 @@ function redditSub(u: URL): string | null {
   if (host !== 'reddit.com') return null;
   const m = /^\/r\/([^/]+)/i.exec(u.pathname);
   return m ? `r/${m[1]}` : null;
+}
+
+/** A player card's top line: the fetched title, then the name, then the site. */
+function embedTitle(item: Item, u: URL, provider: string): string {
+  return metaStr(item.meta?.title) || item.name || linkName(u) || provider;
+}
+
+/**
+ * Rewrite the names inside a card's content without building it again.
+ *
+ * For the one card rebuild() (canvas/items.ts) will not replace: a clip that
+ * plays or an embedded player, where a new body would stop the sound or load
+ * the player again. The rest of such a body waits for the next rebuild.
+ */
+export function retitleContent(root: Element, item: Item): void {
+  const name = root.querySelector(':scope > .card-audio > .card-name');
+  if (name) name.textContent = titleOf(item);
+  const top = root.querySelector(':scope > .card-embed > .embed-title');
+  const u = top ? linkURL(item.meta?.url) : null;
+  const spec = u && embedFor(u);
+  if (top && u && spec) top.textContent = embedTitle(item, u, spec.provider);
 }
 
 /** What a link is called before anybody renames it: the site it points at. */
