@@ -7,10 +7,10 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  addItems, renameItem, undo, redo, byId, setBoardMode, snapshotGeom, commitGeom,
+  board, addItems, renameItem, undo, redo, byId, setBoardMode, snapshotGeom, commitGeom,
 } from '../web/assets/js/state.ts';
 import {
-  timelineSteps, timelineAt, replayTo, fingerprint,
+  timelineSteps, timelineAt, replayTo, fingerprint, declareOp, registerOp, stepEditable, editStep,
 } from '../web/assets/js/timeline.ts';
 import { fresh, photo } from './state-fixtures.js';
 
@@ -122,4 +122,43 @@ test('H7: a redo inside a run grows the run again', () => {
   undo();
   assert.equal(byId(a.id).x, 0);
   assert.equal(timelineAt(), 1);
+});
+
+test('H8: an op declared for a change that moved nothing does not reach the next step', () => {
+  registerOp('h8-align', () => {});
+  const [a] = addItems([photo({ x: 0, y: 0 })]);
+  const [b] = addItems([photo({ x: 0, y: 300 })]);
+  // Align on cards already aligned: the op is declared, nothing moves, nothing commits.
+  const before = snapshotGeom([a.id, b.id]);
+  declareOp('h8-align', { ids: [a.id, b.id], edge: 'left' });
+  commitGeom('Align', before, [a.id, b.id]);
+  const count = timelineSteps().length;
+  renameItem(b.id, 'B');
+  const steps = timelineSteps();
+  assert.equal(steps.length, count + 1);
+  const rename = steps[steps.length - 1];
+  assert.equal(rename.op, undefined);
+  assert.equal(stepEditable(rename), false);
+  assert.equal(board.items.find(i => i.id === b.id).name, 'B');
+});
+
+/** A rule that declares itself and commits, as alignIds() does; a rebuild runs it in a replay. */
+function shiftTo(id, to) {
+  const before = snapshotGeom([id]);
+  declareOp('h8-shift', { id, to });
+  byId(id).x = to;
+  commitGeom('Shift', before, [id]);
+}
+registerOp('h8-shift', params => shiftTo(String(params.id), Number(params.to)));
+
+test('H8: a rule re-run by a rebuild does not reach the next step', () => {
+  const [a] = addItems([photo({ x: 0, y: 0 })]);
+  const [b] = addItems([photo({ x: 0, y: 300 })]);
+  shiftTo(a.id, 100);
+  const index = timelineSteps().length - 1;
+  assert.equal(editStep(index, { to: 200 }), true);
+  assert.equal(byId(a.id).x, 200);
+  renameItem(b.id, 'B');
+  const steps = timelineSteps();
+  assert.equal(steps[steps.length - 1].op, undefined);
 });

@@ -494,6 +494,12 @@ export function declareOp(name: string, params: Record<string, unknown>) {
   pendingOp = { name, params };
 }
 
+/** Withdraw a declaration whose change recorded nothing, or the next step
+ *  takes a rule it did not run. */
+export function dropOp() {
+  pendingOp = null;
+}
+
 /** True during rebuild — suppresses recording steps about replaying steps. */
 let replaying = false;
 
@@ -1080,6 +1086,8 @@ export function rebuildFrom(index: number) {
   } finally {
     // Finally: leaving `replaying` latched silently stops all future recording.
     replaying = false;
+    // A runner declares its rule, and a commit in a replay records nothing.
+    pendingOp = null;
   }
   at = steps.length;
   undone = 0;
