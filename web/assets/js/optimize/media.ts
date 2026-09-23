@@ -4,7 +4,7 @@
 // embeds), run in a worker. Degrades to null (no poster) on any failure.
 
 import { extOf } from '../util.ts';
-import { platform } from '../platform/platform.ts';
+import { platform, isDesktop } from '../platform/platform.ts';
 
 // Where the core lives. The single-threaded UMD build - the one that exposes a
 // `createFFmpegCore` factory and loads through importScripts, which is what
@@ -186,6 +186,18 @@ const WHOLE_FILE_MAX = 256 * 1024 ** 2;
  */
 const HEAD_BYTES = 64 * 1024 ** 2;
 
+/** The shell's own first frame, or null - also when the file is too large to
+ *  read into one buffer, so the wasm path's head slice still gets its turn. */
+async function nativeFirstFrame(file: File): Promise<Blob | null> {
+  let bytes: ArrayBuffer;
+  try {
+    bytes = await file.arrayBuffer();
+  } catch {
+    return null;
+  }
+  return platform.native.firstFrame(bytes, file.name);
+}
+
 /**
  * The first frame of a clip this browser cannot open, as a picture it can.
  *
@@ -234,7 +246,12 @@ export async function firstFrame(file: File, say: (msg: string) => void = () => 
   // Ahead of mediaAvailable(), deliberately: that call probes a CDN, and a
   // desktop with a bundled binary should not be reaching for the network to
   // find out whether it needs to.
-  const native = await platform.native.firstFrame(await file.arrayBuffer(), file.name);
+  //
+  // Asked only where a shell is wired. The port needs the whole file as one
+  // buffer, and reading it is the cost: in a browser the answer is always
+  // null, and a clip past about 2 GB throws from arrayBuffer() before the
+  // head-slice path below is ever reached.
+  const native = isDesktop() ? await nativeFirstFrame(file) : null;
   if (native) return native;
 
   if (!(await mediaAvailable())) {
