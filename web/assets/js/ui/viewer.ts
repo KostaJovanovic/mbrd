@@ -21,7 +21,7 @@ import { fileKey, lift } from '../consent.ts';
 import { mountEditor } from './editor/view.ts';
 import type { Editor, EditorOptions } from './editor/view.ts';
 import { measureForEdit } from './editor/markdown.ts';
-import { baseName, formatBytes } from '../util.ts';
+import { baseName, formatBytes, markClosed, wasClosed } from '../util.ts';
 import { linkURL, MARKDOWN } from '../canvas/renderers.ts';
 import { embedFor, frameFor } from '../canvas/embed.ts';
 import { noteTint } from '../canvas/note-model.ts';
@@ -195,11 +195,26 @@ export function initViewer(commands?: ViewerCommands) {
   dlg.addEventListener('close', teardown);
   // In a document, Escape (and Android's Back, which sends this) closes the
   // find bar before it closes the document.
-  dlg.addEventListener('cancel', e => { if (editing?.editor.closeFind()) e.preventDefault(); });  // Counted before the close below, so a save the close starts knows the board is gone.
+  // A document otherwise goes the way it came, the paper dropping away (leave()).
+  // Taken at the keydown, in the bubble phase so the find bar and the name
+  // field have had their Escape first: a cancel event may only be refused
+  // after a user activation, so refusing it there is not enough on its own.
+  dlg.addEventListener('keydown', e => {
+    if (e.key !== 'Escape' || !editing || e.defaultPrevented || wasClosed(e)) return;
+    e.preventDefault();
+    markClosed(e);
+    closeViewer();
+  });
+  dlg.addEventListener('cancel', e => {
+    if (editing?.editor.closeFind()) { e.preventDefault(); return; }
+    if (editing) { e.preventDefault(); closeViewer(); }
+  });
+  // Counted before the close below, so a save the close starts knows the board is gone.
   bus.on('board:load', () => { boardGen++; });
   // A board swap takes the viewing with it, as it takes the sticker window: the
   // item it shows, and the blob URLs behind it, belonged to the board that left.
-  bus.on('board:load', closeViewer);
+  // At once - no paper drops away over a board that has already changed.
+  bus.on('board:load', () => closeViewer(true));
 }
 
 /**
@@ -241,6 +256,8 @@ export function openViewer(id: string, open: OpenOptions = {}) {
   if (!dlg || typeof dlg.showModal !== 'function' || !item) return;
   const view = viewFor(item);
   if (!view) return;
+  // A close still animating is finished first: this viewing replaces it.
+  if (closing) finishClose();
   // A document already open is saved and put down before another replaces it.
   if (editing) teardown();
 
@@ -266,10 +283,11 @@ export function openViewer(id: string, open: OpenOptions = {}) {
   const pic = bodyEl!.querySelector<HTMLImageElement>('img.viewer-media');
   if (pic) detachZoom = attachZoomPan(pic, bodyEl!);
   dlg.showModal();
-  // A sticky grows into the sheet, which exists only once the editor has
-  // mounted: till then the viewing waits unseen, and editDocument() calls arrive().
-  if (open.from) {
-    arriving = { from: open.from, paper: open.paper };
+  // A sticky grows into the sheet, and a document opened to edit rises into
+  // it; the sheet exists only once the editor has mounted, so till then the
+  // viewing waits unseen, and editDocument() calls arrive().
+  if (open.from || open.edit) {
+    arriving = { from: open.from ?? null, paper: open.paper };
     if ('edit' in dlg.dataset) dlg.classList.add('is-arriving');
     else arrive();
   }
@@ -280,16 +298,99 @@ export function openViewer(id: string, open: OpenOptions = {}) {
   else bodyEl!.focus?.();
 }
 
-/** The grow a sticky's document is waiting on. See openViewer() and arrive(). */
-let arriving: { from: DOMRect, paper?: string } | null = null;
+/** The entrance a document is waiting on: from a sticky, or (no `from`) up from below. See openViewer() and arrive(). */
+let arriving: { from: DOMRect | null, paper?: string } | null = null;
 
-/** Shows the waiting viewing: grown into `page`, or plainly faded in when there is no sheet. Once. */
+/** Shows the waiting viewing: grown or risen into `page`, or plainly faded in when there is no sheet. Once. */
 function arrive(page: HTMLElement | null = null) {
   const a = arriving;
   arriving = null;
   if (!a || !dlg) return;
   dlg.classList.remove('is-arriving');
-  growFrom(dlg, a.from, a.paper, page);
+  if (a.from) growFrom(dlg, a.from, a.paper, page);
+  else riseIn(dlg, page);
+}
+
+/** What stands around the sheet and fades with it: the head, the ribbon, the grain and the status bar. */
+const EDITOR_PARTS = '#viewer-head, .ed-bar, .ed-grain, .ed-status';
+/** The paper's curve: quick off the mark, a long settle - a sheet slid onto a desk. */
+const SETTLE = 'cubic-bezier(0.16, 1, 0.3, 1)';
+
+/**
+ * The page slid up onto the desk from below the window, turning straight as
+ * it settles, while the desk, the ribbon and the name fade in around it. The
+ * scroller is held still for it: a sheet moved by a transform is scrollable
+ * overflow, and a scrollbar would flicker in for the length of the rise.
+ */
+function riseIn(dlg: HTMLDialogElement, sheet: HTMLElement | null) {
+  if (typeof dlg.animate !== 'function') return;
+  const ms = travelMs();
+  if (!sheet || !(ms > 0)) return void dlg.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180, easing: 'ease-out' });
+  for (const a of dlg.getAnimations()) a.cancel();
+  const box = dlg.getBoundingClientRect();
+  const r = sheet.getBoundingClientRect();
+  const long = ms * 1.6;
+  const hold = holdScroll(sheet);
+  sheet.animate([
+    { transform: `translateY(${box.bottom - r.top + 24}px) rotate(-2deg)` },
+    { transform: 'none' },
+  ], { duration: long, easing: SETTLE }).finished.then(hold, hold);
+  dlg.animate([{ backgroundColor: 'transparent' }, { backgroundColor: getComputedStyle(dlg).backgroundColor }], { duration: long * 0.6, easing: 'ease-out' });
+  for (const part of dlg.querySelectorAll<HTMLElement>(EDITOR_PARTS)) {
+    // Each part comes in from the edge it lives on, a few pixels, as it fades.
+    const low = part.getBoundingClientRect().top > box.top + box.height / 2;
+    part.animate([
+      { opacity: 0, transform: `translateY(${low ? 10 : -10}px)` },
+      { opacity: 0, transform: `translateY(${low ? 10 : -10}px)`, offset: 0.2 },
+      { opacity: 1, transform: 'none' },
+    ], { duration: long * 0.8, easing: 'ease-out' });
+  }
+}
+
+/** The sheet's scroller held from scrolling while the sheet moves. Returns the release. */
+function holdScroll(sheet: HTMLElement): () => void {
+  const scroller = sheet.parentElement;
+  if (!scroller) return () => {};
+  scroller.style.overflow = 'hidden';
+  return () => { scroller.style.overflow = ''; };
+}
+
+/** A close under way: its animations, and the close they end in. */
+let closing: { anims: Animation[], done: () => void } | null = null;
+
+/**
+ * The editor going the way it came: the page dropping away off the bottom of
+ * the window, tipping as it goes, the rest fading ahead of it, and the board
+ * showing through the desk. `done` closes the dialog when it has gone.
+ */
+function leave(done: () => void) {
+  const sheet = dlg?.querySelector<HTMLElement>('.ed-sheet');
+  const ms = travelMs();
+  if (!dlg || !sheet || typeof dlg.animate !== 'function' || !(ms > 0)) return done();
+  const box = dlg.getBoundingClientRect();
+  const r = sheet.getBoundingClientRect();
+  const long = ms * 1.1;
+  const opts = { duration: long, easing: 'cubic-bezier(0.55, 0, 0.8, 0.2)', fill: 'forwards' as const };
+  holdScroll(sheet);
+  dlg.style.pointerEvents = 'none';
+  const anims = [
+    sheet.animate([{ transform: 'none' }, { transform: `translateY(${box.bottom - r.top + 24}px) rotate(1.5deg)` }], opts),
+    dlg.animate([{ backgroundColor: getComputedStyle(dlg).backgroundColor }, { backgroundColor: 'transparent' }], { ...opts, easing: 'ease-in' }),
+    ...[...dlg.querySelectorAll<HTMLElement>(EDITOR_PARTS)].map(part =>
+      part.animate([{ opacity: 1 }, { opacity: 0 }], { ...opts, duration: long * 0.6, easing: 'ease-in' })),
+  ];
+  closing = { anims, done };
+  anims[0].finished.then(() => { if (closing?.anims === anims) finishClose(); }, () => {});
+}
+
+/** The close brought to its end now: the dialog shut, then every held animation let go, the dialog's own last. */
+function finishClose() {
+  const c = closing;
+  closing = null;
+  if (!c) return;
+  c.done();
+  for (const a of c.anims) a.cancel();
+  if (dlg) dlg.style.pointerEvents = '';
 }
 
 /**
@@ -339,13 +440,18 @@ function growFrom(dlg: HTMLDialogElement, from: DOMRect, paper: string | undefin
     .finished.then(() => card.remove(), () => card.remove());
   page.animate([{ opacity: 0 }, { opacity: 0, offset: landed * 0.85 }, { opacity: 1 }], { duration: long, easing: 'ease-out' });
   dlg.animate([{ backgroundColor: 'transparent' }, { backgroundColor: 'transparent', offset: 0.25 }, { backgroundColor: desk }], { duration: long, easing: 'ease-out' });
-  for (const part of dlg.querySelectorAll<HTMLElement>('#viewer-head, .ed-bar, .ed-grain, .ed-status')) {
+  for (const part of dlg.querySelectorAll<HTMLElement>(EDITOR_PARTS)) {
     part.animate([{ opacity: 0 }, { opacity: 0, offset: 0.35 }, { opacity: 1 }], { duration: long, easing: 'ease-out' });
   }
 }
 
-function closeViewer() {
-  if (dlg?.open) dlg.close();   // 'close' runs teardown
+/** Close the viewing - a document with its paper dropping away first, unless `now`. */
+function closeViewer(now = false) {
+  if (!dlg?.open) return;
+  if (closing) { if (now) finishClose(); return; }
+  const shut = () => { if (dlg?.open) dlg.close(); };   // 'close' runs teardown
+  if (editing && !now) leave(shut);
+  else shut();
 }
 
 /**
