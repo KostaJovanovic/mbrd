@@ -39,6 +39,16 @@ test('a write into a missing folder fails and keeps nothing', async () => {
   }
 });
 
+test('an append counts what the disk took, and a short write is not a save', () => {
+  // Read as text: files.ts needs Electron. A short write that counted as done
+  // would leave a tail with no directory, and the page would think it saved.
+  const files = readFileSync(join(DESKTOP, 'files.ts'), 'utf8');
+  const append = /export async function append\([\s\S]*?\n\}/.exec(files)[0];
+  assert.match(append, /const \{ bytesWritten \} = await handle\.write\(/);
+  assert.match(append, /while \(done < bytes\.byteLength\)/);
+  assert.match(append, /if \(bytesWritten <= 0\) throw/);
+});
+
 test('every board and store write goes through writeAtomic', () => {
   for (const file of ['files.ts', 'boards.ts', 'store.ts']) {
     const src = readFileSync(join(DESKTOP, file), 'utf8');

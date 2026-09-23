@@ -200,7 +200,14 @@ export async function append(path: unknown, data: unknown, at: unknown): Promise
     const { size } = await handle.stat();
     if (size !== at) throw new Error('the file changed on disk since it was last written');
     try {
-      await handle.write(Buffer.from(data), 0, data.byteLength, at);
+      // A write may take fewer bytes than asked, on a full disk for one.
+      const bytes = Buffer.from(data);
+      let done = 0;
+      while (done < bytes.byteLength) {
+        const { bytesWritten } = await handle.write(bytes, done, bytes.byteLength - done, at + done);
+        if (bytesWritten <= 0) throw new Error('the disk took no more of the save');
+        done += bytesWritten;
+      }
       await handle.sync();
     } catch (err) {
       await handle.truncate(at).catch(() => {});
