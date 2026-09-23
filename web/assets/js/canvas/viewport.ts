@@ -142,8 +142,9 @@ export function mobileZoom(viewWidth: number, worldWidth: number, pad = MOBILE_S
  *   bought, on the device it was taken away for.
  * - `chrome` false hides the Mobile sheet and masthead and skips their writes
  *   entirely: the upper bound on what the chrome can still be costing.
- * - `gridPos` false skips the background-position write in canvas/grid.ts,
- *   which is the lattice layer's per-frame re-raster.
+ * - `gridPos` false leaves the lattice in canvas/grid.ts as it was drawn for
+ *   the length of a move, which is its per-frame repaint. The name is from
+ *   when that repaint was a background-position write.
  */
 export const mobilePerfFlags = { legacyVars: false, chrome: true, gridPos: true };
 

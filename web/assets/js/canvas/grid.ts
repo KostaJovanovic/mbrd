@@ -1,6 +1,6 @@
 // Background grid. Painted in screen space on #viewport so marks stay crisp
 // at any zoom. Spacing quantises in powers of two to avoid crowding.
-// Softish/Middle: CSS radial gradients (cheap restyle). Harsh: <canvas> crosses.
+// Drawn on a <canvas>: dots at Softish/Middle, registration crosses at Harsh.
 // While the view moves below Full quality, a screen-space stand-in (holdGrid).
 
 import { board } from '../state.ts';
@@ -196,10 +196,12 @@ export function paintGrid(vp: Viewport) {
   placeInk(canvas, box);
 
   if (!s.grid || !(box.w > 0 && box.h > 0)) {
-    clearTiles(canvas);
     clearCanvas(canvas);
     return;
   }
+  // A profiling switch (mobilePerfFlags): the lattice stays as it was drawn for
+  // the length of a move, so a run can measure what repainting it costs.
+  if (!mobilePerfFlags.gridPos && vp.moving) return;
 
   const { coarse, alpha } = tierFade(boardGridStep(s.gridStep, vp), vp);
   const minor = coarse * vp.zoom;
@@ -208,101 +210,7 @@ export function paintGrid(vp: Viewport) {
   // Translate into ink layer coordinates
   const o = { x: screenOrigin.x - box.x, y: screenOrigin.y - box.y };
   // Attribute read, not getComputedStyle — this runs every frame
-  const harsh = harshGrid();
-
-  if (harsh) {
-    clearTiles(canvas); // gradients and canvas are exclusive painters
-    drawCrosses(canvas, box, o, minor, major, alpha);
-    return;
-  }
-
-  clearCanvas(canvas);
-
-  const images: string[] = [], sizes: string[] = [], positions: string[] = [];
-  // Offsets wrapped into tile size — large background-position values lose precision
-  const push = (layers: string[], size: number, px: number, py: number) => {
-    const x = wrap(px, size), y = wrap(py, size);
-    for (const img of layers) {
-      images.push(img);
-      sizes.push(`${size}px ${size}px`);
-      positions.push(`${x.toFixed(1)}px ${y.toFixed(1)}px`);
-    }
-  };
-
-  // The three marks between existing coarse marks. Three separate layers, not
-  // a half-tile lattice, because translucent marks overlap and double up.
-  const between = (layers: string[], size: number, ox: number, oy: number) => {
-    const h = size / 2;
-    for (const [dx, dy] of [[h, 0], [0, h], [h, h]]) push(layers, size, ox + dx, oy + dy);
-  };
-
-  // Marks not lines — lines moire at fractional zoom. Majors listed first (paint on top).
-  push(dot('var(--grid-major)', 1.5), major, o.x - major / 2, o.y - major / 2);
-  if (alpha > 0.002) {
-    between(dot(faded('var(--grid-major)', alpha), 1.5), major, o.x - major / 2, o.y - major / 2);
-  }
-  push(dot('var(--grid-minor)', 1), minor, o.x - minor / 2, o.y - minor / 2);
-  if (alpha > 0.002) {
-    between(dot(faded('var(--grid-minor)', alpha), 1), minor, o.x - minor / 2, o.y - minor / 2);
-  }
-
-  // Drawn on #grid-ink not #viewport — a mask cuts the origin hole, and a mask
-  // on #viewport would clip its children (axes, items). #grid-ink is childless.
-  // Image/size strings are compared to skip redundant writes on the hot path.
-  const image = images.join(', ');
-  const size = sizes.join(', ');
-  if (image !== lastImage) { canvas.style.backgroundImage = image; lastImage = image; }
-  if (size !== lastSize) { canvas.style.backgroundSize = size; lastSize = size; }
-  // Position must track the board, so this is the write that cannot be cached
-  // away on a moving board - but it can be on a still one, and "still" is not
-  // only a board nobody is touching. paintGridOnView() lets through any frame
-  // that moved as much as one device pixel, and a slow drift, the settling
-  // frame and a repaint asked for by something other than the view all arrive
-  // here with the same string as last time. Writing background-position on a
-  // window-sized element is a full-viewport repaint, so it is worth a compare.
-  // mobilePerfFlags can disable it for profiling.
-  const position = positions.join(', ');
-  if (mobilePerfFlags.gridPos && position !== lastPosition) {
-    canvas.style.backgroundPosition = position;
-    lastPosition = position;
-  }
-  punchHole(canvas, o, vp, box);
-}
-
-// Cache of last written values — clearTiles must keep these in sync or the grid never reappears
-let lastImage = '', lastSize = '', lastMask = '', lastPosition = '';
-
-
-function clearTiles(canvas: HTMLCanvasElement) {
-  canvas.style.backgroundImage = 'none';
-  canvas.style.maskImage = '';
-  canvas.style.webkitMaskImage = '';
-  lastImage = 'none';
-  lastSize = '';
-  lastMask = '';
-  lastPosition = '';
-}
-
-// Cut the origin out of the tiled lattice. Hole size comes from --grid-dot in CSS.
-// Dropped when off screen (no compositor work) or while moving (mask rewrite per
-// frame kills pinch perf on phones — the dot under the origin ring is invisible anyway).
-function punchHole(canvas: HTMLCanvasElement, o: { x: number; y: number }, vp: Viewport, box: InkBox) {
-  const near = originHole() && !vp.moving
-    && o.x > -20 && o.y > -20 && o.x < box.w + 20 && o.y < box.h + 20;
-  const mask = near
-    ? `radial-gradient(circle at ${o.x.toFixed(1)}px ${o.y.toFixed(1)}px,`
-      + ' transparent 0 calc(var(--grid-dot) * 1.5 + 1px),'
-      + ' #000 calc(var(--grid-dot) * 1.5 + 2px))'
-    : '';
-  // Skipped when it has not moved, which is nearly always: the origin is one
-  // point on an infinite board, so on the overwhelming majority of frames this
-  // is writing the same empty string over the same empty string - and a mask is
-  // one of the more expensive properties to hand a browser, because changing it
-  // invalidates the layer it applies to.
-  if (mask === lastMask) return;
-  lastMask = mask;
-  canvas.style.maskImage = mask;
-  canvas.style.webkitMaskImage = mask;
+  drawMarks(canvas, box, o, minor, major, alpha, harshGrid() ? 'cross' : 'dot');
 }
 
 // ---------------------------------------------------------------------------
@@ -519,10 +427,6 @@ function ensureAxisCanvas(el: HTMLElement): InkCanvas {
   return canvas;
 }
 
-/** A grid colour at a fraction of itself. Takes a var() as happily as a hex. */
-const faded = (color: string, a: number) =>
-  `color-mix(in srgb, ${color} ${(a * 100).toFixed(1)}%, transparent)`;
-
 // ---------------------------------------------------------------------------
 // Re-tiering
 // ---------------------------------------------------------------------------
@@ -590,14 +494,8 @@ export const HARSH = '2';
 /** Whether the board is at the tier that draws registration crosses. */
 export const harshGrid = () => document.documentElement.dataset.whimsy === HARSH;
 
-/** Both marks are sized from --grid-dot, the user's grid-weight slider. */
-const scaled = (scale: number) => `calc(var(--grid-dot) * ${scale})`;
-
-const dot = (color: string, scale: number) => {
-  const r = scaled(scale);
-  return [`radial-gradient(circle at center, ${color} 0, ${color} ${r}, transparent calc(${r} + 0.7px))`];
-};
-
+// Both marks are sized from --grid-dot, the user's grid-weight slider.
+//
 // Cross mark: half arm-length capped, half thickness follows the slider.
 // Length is capped because past a certain size a bigger cross floods the
 // board — "grid weight" means press harder, not draw a bigger cross.
@@ -606,14 +504,25 @@ const ARM_LONG_MAX = 4.2;   // CSS px, before the lattice's own scale factor
 const ARM_THICK = 0.5;
 
 // ---------------------------------------------------------------------------
-// The Harsh lattice
+// The lattice
 // ---------------------------------------------------------------------------
 
-// Canvas, not CSS tiled images. CSS gradients cannot draw a bounded rectangle
-// (ellipses taper), and tiled SVGs blink at fractional DPR because the rasteriser
-// drops sub-pixel arms. Canvas snaps every mark to whole device pixels.
-function drawCrosses(canvas: InkCanvas, box: InkBox, o: { x: number; y: number },
-                     minor: number, major: number, alpha: number) {
+/** The two marks: a dot at Softish and Middle, a registration cross at Harsh. */
+type Mark = 'dot' | 'cross';
+
+// Canvas, not CSS tiled images, for both marks. CSS gradients cannot draw a
+// bounded rectangle (ellipses taper), and tiled SVGs blink at fractional DPR
+// because the rasteriser drops sub-pixel arms. Canvas snaps every cross to
+// whole device pixels.
+//
+// The dots were CSS radial gradients until 2026-09-23: up to eight tiled layers
+// on a window-sized element, their background-position rewritten on every frame
+// of a move, and every such write a repaint of every gradient over the whole
+// window. On a Galaxy S22+ at 120 Hz that alone cost two frames in three missed
+// through a zoom at Full quality. Drawn here, a screen of dots is a hundred-odd
+// arcs in one path - the crosses measured the same as no grid at all.
+function drawMarks(canvas: InkCanvas, box: InkBox, o: { x: number; y: number },
+                   minor: number, major: number, alpha: number, mark: Mark) {
   const ctx = sizeCanvas(canvas, box);
   if (!ctx) return;
   const dpr = canvas._dpr;
@@ -622,12 +531,12 @@ function drawCrosses(canvas: InkCanvas, box: InkBox, o: { x: number; y: number }
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   // Minor first, major over it. Fading uses globalAlpha, not weaker colours
   // (these are already low-alpha mixes — re-mixing would double-multiply).
-  lattice(ctx, minor, o, dpr, canvas, ink.minor, ink.dot, 1);
-  lattice(ctx, major, o, dpr, canvas, ink.major, ink.dot, 1.5);
+  lattice(ctx, minor, o, dpr, canvas, ink.minor, ink.dot, 1, false, mark);
+  lattice(ctx, major, o, dpr, canvas, ink.major, ink.dot, 1.5, false, mark);
   if (alpha > 0.002) {
     ctx.globalAlpha = alpha;
-    lattice(ctx, minor, o, dpr, canvas, ink.minor, ink.dot, 1, true);
-    lattice(ctx, major, o, dpr, canvas, ink.major, ink.dot, 1.5, true);
+    lattice(ctx, minor, o, dpr, canvas, ink.minor, ink.dot, 1, true, mark);
+    lattice(ctx, major, o, dpr, canvas, ink.major, ink.dot, 1.5, true, mark);
     ctx.globalAlpha = 1;
   }
 }
@@ -647,7 +556,7 @@ function drawCrosses(canvas: InkCanvas, box: InkBox, o: { x: number; y: number }
 const originHole = () => axesVisible();
 
 /**
- * One lattice of crosses, as a single filled path.
+ * One lattice of marks, as a single filled path.
  *
  * One path and one fill() rather than a fill per mark, for two reasons. It is
  * the fast shape - a couple of thousand rectangles composited once instead of a
@@ -659,11 +568,11 @@ const originHole = () => axesVisible();
  */
 function lattice(ctx: CanvasRenderingContext2D, tileCss: number, o: { x: number; y: number },
                  dpr: number, canvas: HTMLCanvasElement, color: string, dotPx: number,
-                 scale: number, between = false) {
+                 scale: number, between = false, mark: Mark = 'cross') {
   // `between` halves the tile and skips every mark the full-strength pass has
-  // already drawn, which is the pair of even indices. Same reason the gradient
-  // painter lists three offset layers instead of one denser lattice: these
-  // colours are translucent and a mark drawn twice is twice as dark.
+  // already drawn, which is the pair of even indices, rather than drawing one
+  // denser lattice: these colours are translucent and a mark drawn twice is
+  // twice as dark.
   const tile = tileCss * dpr / (between ? 2 : 1);
   if (!(tile > 3)) return;         // gridStep() should never allow this
 
@@ -679,6 +588,13 @@ function lattice(ctx: CanvasRenderingContext2D, tileCss: number, o: { x: number;
   const bias = half - thick / 2;
   // Arms take the bar's parity so the two strokes actually intersect at centre.
   const span = arm * 2 + (thick % 2);
+  // A dot's radius. The gradient it replaced was solid to the radius and gone
+  // 0.7 CSS px past it; a disc half that much wider, antialiased, is the same
+  // weight. Not snapped: a round mark has no edge to blink, and a dot left on
+  // its true centre glides with the board where a snapped one would step.
+  const dotR = (dotPx * scale + 0.35) * dpr;
+  const dots = mark === 'dot';
+  const reach = dots ? dotR : arm;
 
   const W = canvas.width, H = canvas.height;
   const path = new Path2D();
@@ -686,26 +602,32 @@ function lattice(ctx: CanvasRenderingContext2D, tileCss: number, o: { x: number;
   // Index from origin, not accumulated — carries the parity `between` needs
   // and avoids the rounding drift a repeated += tile compounds at the far edge.
   const ox = o.x * dpr, oy = o.y * dpr;
-  const i0 = Math.ceil((-arm - ox) / tile), i1 = Math.floor((W + arm - ox) / tile);
-  const j0 = Math.ceil((-arm - oy) / tile), j1 = Math.floor((H + arm - oy) / tile);
+  const i0 = Math.ceil((-reach - ox) / tile), i1 = Math.floor((W + reach - ox) / tile);
+  const j0 = Math.ceil((-reach - oy) / tile), j1 = Math.floor((H + reach - oy) / tile);
 
   const hole = originHole();
 
   // Column x positions precomputed — a mark's x is row-independent, so the
   // inner loop was re-rounding the same values thousands of times per frame.
-  const cols = new Int32Array(Math.max(0, i1 - i0 + 1));
-  for (let i = i0; i <= i1; i++) cols[i - i0] = Math.round(ox + i * tile + bias);
+  const cols = new Float64Array(Math.max(0, i1 - i0 + 1));
+  for (let i = i0; i <= i1; i++) cols[i - i0] = dots ? ox + i * tile : Math.round(ox + i * tile + bias);
 
   for (let j = j0; j <= j1; j++) {
-    const cy = Math.round(oy + j * tile + bias);
+    const cy = dots ? oy + j * tile : Math.round(oy + j * tile + bias);
     const rowEven = !(j & 1);
     for (let i = i0; i <= i1; i++) {
       if (between && rowEven && !(i & 1)) continue;
       // Indexed from the origin, so the middle of the board is simply 0,0.
       if (hole && i === 0 && j === 0) continue;
       const cx = cols[i - i0];
-      path.rect(cx - arm, cy - half, span, thick);
-      path.rect(cx - half, cy - arm, thick, span);
+      if (dots) {
+        // A subpath of its own, or arc() joins it to the last dot with a line.
+        path.moveTo(cx + dotR, cy);
+        path.arc(cx, cy, dotR, 0, Math.PI * 2);
+      } else {
+        path.rect(cx - arm, cy - half, span, thick);
+        path.rect(cx - half, cy - arm, thick, span);
+      }
     }
   }
 
@@ -719,9 +641,8 @@ function ensureCanvas(el: HTMLElement): InkCanvas {
   if (!canvas) {
     canvas = makeInkCanvas('grid-ink');
     el.prepend(canvas);
-    // Fresh canvas has none of the cached state — invalidate so the first
-    // paint does not skip its writes.
-    lastImage = lastSize = lastMask = lastBox = lastPosition = '';
+    // Fresh canvas has no box yet — invalidate so the first paint places it.
+    lastBox = '';
   }
   return canvas;
 }
