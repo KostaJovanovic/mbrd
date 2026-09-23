@@ -18,7 +18,8 @@ import {
   parseFountain, serializeFountain, screenEnter, screenShortcut, setElement, toggleDual, cycleElement,
   screenStats, ELEMENTS, CAPS,
 } from './fountain.ts';
-import { keepsLocked, advance, superLock, lockAtEnd, clampToLock, clock, SUPER_MS, VOMIT_MINUTES } from './vomit.ts';
+import { keepsLocked, advance, superLock, lockAtEnd, clampToLock, clock, SUPER_MS, VOMIT_MINUTES, VOMIT_INFO } from './vomit.ts';
+import { ask } from '../dialog.ts';
 import { makeEditable, markClosed } from '../../util.ts';
 import { toast } from '../../notify.ts';
 import { menuButton, openAnchored } from '../menu.ts';
@@ -42,6 +43,10 @@ export type EditorOptions = {
   ascii?: boolean,
   /** The ASCII art toggle was pressed; `on` is its new state. */
   onAscii?: (on: boolean) => void,
+  /** The document's name, shown as the title at the head of the sheet. */
+  name?: string,
+  /** The name was changed on the sheet. Returns the name kept, which the field then shows. Absent, the field is not shown. */
+  onRename?: (name: string) => string,
 };
 
 export type Editor = {
@@ -244,7 +249,46 @@ export function mountEditor(opts: EditorOptions): Editor {
   page.setAttribute('role', 'textbox');
   page.setAttribute('aria-multiline', 'true');
   page.setAttribute('aria-label', opts.label);
-  scroller.append(page);
+  // The sheet is the paper: the document's name at its head, as a title, and the page under it.
+  const sheet = h('div', 'ed-sheet');
+  const nameField = h('input', 'ed-name');
+  nameField.type = 'text';
+  nameField.value = opts.name ?? '';
+  nameField.placeholder = 'Untitled';
+  nameField.spellcheck = false;
+  nameField.setAttribute('aria-label', 'Document name');
+  nameField.hidden = !opts.onRename;
+  let named = nameField.value;
+  /** The name as typed, handed over once it changed; the field then shows what the board kept. */
+  const commitName = () => {
+    if (!opts.onRename || nameField.value.trim() === named) return;
+    named = opts.onRename(nameField.value.trim());
+    nameField.value = named;
+  };
+  nameField.addEventListener('change', commitName);
+  nameField.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      commitName();
+      page.focus({ preventScroll: true });
+      setSel(...lastSel);
+    } else if (e.key === 'Escape' && nameField.value.trim() !== named) {
+      // Escape takes back an unsaved name first, and closes the document only after.
+      e.preventDefault();
+      e.stopPropagation();
+      markClosed(e);
+      nameField.value = named;
+    }
+  });
+  sheet.append(nameField, page);
+  scroller.append(sheet);
+  // The sheet's margins are paper too: a press there writes where the caret last was.
+  sheet.addEventListener('pointerdown', e => {
+    if (e.target !== sheet) return;
+    e.preventDefault();
+    page.focus({ preventScroll: true });
+    setSel(...lastSel);
+  });
 
   /** The block each child of the page was built for. */
   const shown = new WeakMap<Element, Block>();
@@ -884,12 +928,11 @@ export function mountEditor(opts: EditorOptions): Editor {
   const findBtn = button('Find (Ctrl+F)', () => openFind(), { icon: 'assets/icons.svg#i-find', word: 'Find' });
   const replaceBtn = button('Replace (Ctrl+H)', () => { openFind(); if (!find.hidden) rep.focus(); }, { icon: 'assets/icons.svg#i-find', word: 'Replace' });
 
-  // Vomit Mode: a big button a duration, the way Word puts a command a size.
-  const sessionBtns = VOMIT_MINUTES.map(m =>
-    button(`Write for ${m} minutes with no going back`, () => startVomit(m), { icon: 'assets/icons.svg#i-ed-timer', word: `${m} min`, cls: 'ed-big' }));
-  const customBtn = button('Write for a time of your own', () => {}, { icon: 'assets/icons.svg#i-ed-timer', word: 'Custom', cls: 'ed-big' });
-  customBtn.setAttribute('aria-haspopup', 'menu');
-  menuButton(customBtn, () => openAnchored(customBtn.getBoundingClientRect(), customMenu(), { label: 'Custom time', owner: customBtn, focus: true }));
+  // Vomit Mode: one big button that opens the times, and a small one that says what it is.
+  const vomitBtn = button('Vomit Mode: write for a set time with no going back', () => {}, { icon: 'assets/icons.svg#i-ed-timer', word: 'Vomit Mode', cls: 'ed-big' });
+  vomitBtn.setAttribute('aria-haspopup', 'menu');
+  menuButton(vomitBtn, () => openAnchored(vomitBtn.getBoundingClientRect(), timeMenu(), { label: 'Vomit Mode', owner: vomitBtn, focus: true }));
+  const infoBtn = button('What is Vomit Mode?', () => void explainVomit(), { icon: 'assets/icons.svg#i-info' });
   const superBtn = button('Super: each word locks 10 seconds after its last keystroke', () => {
     superOn = !superOn;
     superBtn.setAttribute('aria-pressed', String(superOn));
@@ -949,8 +992,7 @@ export function mountEditor(opts: EditorOptions): Editor {
   }
   panel.append(
     group('Editing', stack(findBtn, replaceBtn)),
-    group('Vomit Mode', ...sessionBtns, customBtn),
-    group('Super', superBtn),
+    group('Vomit Mode', vomitBtn, superBtn, infoBtn),
   );
   const showBtns = [...(!opts.plain || screen ? [outlineBtn] : []), ...(opts.onAscii ? [asciiBtn] : [])];
   if (showBtns.length) panel.append(group('Show', ...showBtns));
@@ -1121,7 +1163,7 @@ export function mountEditor(opts: EditorOptions): Editor {
   const paintVomit = () => {
     const on = !!vomit;
     root.classList.toggle('is-vomit', on);
-    for (const b of [...sessionBtns, customBtn, findBtn, replaceBtn]) b.disabled = on;
+    for (const b of [vomitBtn, findBtn, replaceBtn]) b.disabled = on;
     paintHistory();
   };
 
@@ -1159,11 +1201,19 @@ export function mountEditor(opts: EditorOptions): Editor {
     paintVomit();
   };
 
-  /** Custom: a slider for the minutes and a row that starts them. There is no way to end a session early. */
-  const customMenu = (): MenuEntry[] => [
-    { label: 'Minutes', range: { min: 1, max: 180, step: 1, unit: ' min', get: () => custom, set: v => { custom = v; } } },
-    { label: 'Start writing', action: () => startVomit(custom) },
+  /** The times: each row starts a session, and the slider sets a time of your own. There is no way to end a session early. */
+  const timeMenu = (): MenuEntry[] => [
+    ...VOMIT_MINUTES.map((m): MenuEntry => ({ label: `${m} minutes`, icon: 'i-ed-timer', action: () => startVomit(m) })),
+    { sep: true },
+    { label: 'Custom', range: { min: 1, max: 180, step: 1, unit: ' min', get: () => custom, set: v => { custom = v; } } },
+    { label: 'Start custom time', action: () => startVomit(custom) },
   ];
+
+  /** What Vomit Mode is, and what it locks, in the app's own dialog. Its button leads to the times. */
+  const explainVomit = async () => {
+    const answer = await ask({ title: 'Vomit Mode', body: VOMIT_INFO, go: 'Choose a time', cancel: 'Close', danger: false });
+    if (answer === 'go' && !vomit) openAnchored(vomitBtn.getBoundingClientRect(), timeMenu(), { label: 'Vomit Mode', owner: vomitBtn, focus: true });
+  };
 
   // -------------------------------------------------------------------------
   // Find and replace
@@ -1447,6 +1497,8 @@ export function mountEditor(opts: EditorOptions): Editor {
     },
     closeFind,
     destroy: () => {
+      // A name typed and not yet committed - the document closed with the field still focused.
+      commitName();
       endVomit();
       clearTimeout(countTimer);
       document.removeEventListener('selectionchange', onSelect);

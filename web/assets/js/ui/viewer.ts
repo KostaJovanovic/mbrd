@@ -7,7 +7,7 @@
 
 import {
   board, bus, byId, select, itemAdjust, itemCrop, itemRotate, itemMatte, flipTransform, setItemText,
-  setItemAscii,
+  setItemAscii, renameItem,
 } from '../state.ts';
 import type { Command } from '../state.ts';
 import { copyItems } from '../clipboard.ts';
@@ -865,6 +865,16 @@ async function editDocument(item: Item, host: HTMLElement, open: OpenOptions = {
     onSave: () => { if (session) void saveEdit(session); },
     ascii: item.meta?.ascii === true,
     onAscii: on => setItemAscii(item.id, on),
+    name: shownName(item),
+    onRename: typed => {
+      // The extension stays on, as the card's name had it: the title is what is typed.
+      const was = byId(item.id);
+      const tail = ext && was?.name.toLowerCase().endsWith(`.${ext}`) ? was.name.slice(-(ext.length + 1)) : '';
+      renameItem(item.id, typed ? typed + tail : '');
+      const now = byId(item.id);
+      if (now) titleEl!.textContent = shownName(now);
+      return now ? shownName(now) : typed;
+    },
   });
   // A phone keyboard covers the bottom of the window without resizing it, so
   // its height is followed and the dialog ends above it (editor.css, --kb).
@@ -889,8 +899,11 @@ async function editDocument(item: Item, host: HTMLElement, open: OpenOptions = {
   const held = (open.typed ?? '') + (open.held?.take() ?? '');
   if (held) editor.type(held);
   // Measured last: focusing and typing can scroll the page.
-  arrive(editor.el.querySelector<HTMLElement>('.ed-page'));
+  arrive(editor.el.querySelector<HTMLElement>('.ed-sheet'));
 }
+
+/** An item's name as its title: without the extension, as the viewer's head shows it. */
+const shownName = (item: Item) => baseName(item.name) || item.name || '';
 
 /**
  * A document, read out of its own container. Asynchronous and slow enough
