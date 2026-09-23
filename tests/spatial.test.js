@@ -64,6 +64,25 @@ test('remove drops a box from the index and is safe on an unknown id', () => {
   assert.ok(!queryRect({ x0: -5, y0: -5, x1: 5, y1: 5 }).has('a'));
 });
 
+test('a box past the cell cap is found at its middle, not only its corner', () => {
+  // A 12000 card circumscribed is ~17000 across: 34 x 34 cells of 512, past 1024.
+  rebuild([box('big', 0, 0, 16974, 16974), box('small', 9000, 9000, 10, 10)], 512);
+  assert.ok(queryRect({ x0: -5, y0: -5, x1: 5, y1: 5 }).has('big'));
+  update('big', box('big', 0, 0, 16974, 16974));
+  assert.ok(queryRect({ x0: 100, y0: 100, x1: 105, y1: 105 }).has('big'));
+  remove('big');
+  assert.ok(!queryRect({ x0: -5, y0: -5, x1: 5, y1: 5 }).has('big'));
+  // Shrunk under the cap, it leaves the every-query set for its cells.
+  update('small', box('small', 9000, 9000, 20000, 20000));
+  update('small', box('small', 9000, 9000, 10, 10));
+  assert.ok(!queryRect({ x0: -5, y0: -5, x1: 5, y1: 5 }).has('small'));
+});
+
+test('a box with a NaN size is still returned rather than lost', () => {
+  rebuild([box('nan', 0, 0, NaN, 10)], 512);
+  assert.ok(queryRect({ x0: -5, y0: -5, x1: 5, y1: 5 }).has('nan'));
+});
+
 test('the query never drops a box that truly overlaps (no false negatives)', () => {
   const rand = lcg(20260727);
   const span = 8000;
