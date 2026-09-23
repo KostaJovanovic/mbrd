@@ -21,6 +21,7 @@ export const VOMIT_INFO = [
   'When the session starts, the caret moves to the end of the document. All text before the caret locks. When you type a space or start a new line, the word before it locks too. You cannot delete or change locked text, and you cannot put the caret in it. Undo, Find and Replace are off until the session ends.',
   `When Super is on, a word also locks ${SUPER_MS / 1000} seconds after your last keystroke in it.`,
   'You cannot stop a session early. When the time ends, all the text unlocks.',
+  'The idea for Vomit Mode comes from vomitdraft.com.',
 ].join('\n\n');
 
 /** Where the lock sits when a session starts: the end, everything before it locked, the typewriter way. */
