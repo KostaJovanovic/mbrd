@@ -20,6 +20,25 @@ up to date, and no work starts from it. A finished document moves down to
 `old/`, and nobody edits it after that. A path into it is only a pointer to
 history.
 
+**Every plan or investigation says, under its title, whether it was done.** A
+reader must not have to reconstruct that from `git log`: a plan is written
+before its work, so its prose goes on saying "not yet built" long after it was.
+The line comes directly under the `#` heading, bold, and starts with one of four
+words:
+
+```markdown
+**Status: open.** Nothing built yet.
+**Status: partly done, 2026-09-23.** The blink is fixed; the shadow redesign waits on the maintainer.
+**Status: done, 2026-09-23.** All three phases built.
+**Status: abandoned, 2026-09-23.** Superseded by the DOM export.
+```
+
+Update it in the same commit as the work that changes it, not later. A document
+gets its final line (done or abandoned) as its last edit, in the commit that
+moves it to `old/`. The rule covers every document at the top level and every
+one on its way down. It does not cover `docs/`, which is current by definition,
+the todo list, the archive, or anything already in `old/`, which nobody edits.
+
 The changelog source is `patch-notes.md` at the repository root, not in here.
 `tools/gen-patch-page.mjs` reads it, and `/patch` is generated from it.
 
