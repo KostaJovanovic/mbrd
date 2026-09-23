@@ -3,8 +3,9 @@
 // open-file, the store, or the boards folder (boards.ts). Anything else is refused.
 
 import { dialog, BrowserWindow } from 'electron';
-import { readFile, writeFile, rename, access, open as openFile } from 'node:fs/promises';
+import { readFile, access, open as openFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
+import { writeAtomic } from './atomic.mts';
 import {
   CATEGORIES, FAMILIES, EXT_FAMILY,
   PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, DOC_EXTS, SVG_EXTS,
@@ -146,9 +147,7 @@ export async function pickImport(win: BrowserWindow | null): Promise<Handed[]> {
 export async function write(path: unknown, data: unknown): Promise<void> {
   const target = checked(path);
   if (!(data instanceof ArrayBuffer)) throw new Error('expected bytes to write');
-  const tmp = target + '.mbrd-tmp';
-  await writeFile(tmp, Buffer.from(data));
-  await rename(tmp, target);
+  await writeAtomic(target, Buffer.from(data), target + '.mbrd-tmp', true);
 }
 
 /**
