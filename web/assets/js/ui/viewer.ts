@@ -328,7 +328,7 @@ function growFrom(dlg: HTMLDialogElement, from: DOMRect, paper: string | undefin
     .finished.then(() => card.remove(), () => card.remove());
   page.animate([{ opacity: 0 }, { opacity: 0, offset: landed * 0.85 }, { opacity: 1 }], { duration: long, easing: 'ease-out' });
   dlg.animate([{ backgroundColor: 'transparent' }, { backgroundColor: 'transparent', offset: 0.25 }, { backgroundColor: desk }], { duration: long, easing: 'ease-out' });
-  for (const part of dlg.querySelectorAll<HTMLElement>('#viewer-head, .ed-bar')) {
+  for (const part of dlg.querySelectorAll<HTMLElement>('#viewer-head, .ed-bar, .ed-grain, .ed-status')) {
     part.animate([{ opacity: 0 }, { opacity: 0, offset: 0.35 }, { opacity: 1 }], { duration: long, easing: 'ease-out' });
   }
 }

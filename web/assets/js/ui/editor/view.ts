@@ -452,6 +452,7 @@ export function mountEditor(opts: EditorOptions): Editor {
     countTimer = window.setTimeout(paintCount, 250);
     if (!find.hidden) runFind(true);
     scheduleReflect();
+    paintHistory();
     if (vomit) {
       paintLock();
       armSuper();
@@ -781,7 +782,8 @@ export function mountEditor(opts: EditorOptions): Editor {
   bar.addEventListener('mousedown', e => { if (!(e.target instanceof HTMLInputElement)) e.preventDefault(); });
 
   const NS = 'http://www.w3.org/2000/svg';
-  const button = (label: string, run: () => void, face: { text?: string, icon?: string, cls?: string }) => {
+  /** A segment of the bar: a glyph, a word, or a glyph with its word as the board's toolbar has them. */
+  const button = (label: string, run: () => void, face: { text?: string, icon?: string, word?: string, cls?: string }) => {
     const b = h('button', 'ed-btn' + (face.cls ? ' ' + face.cls : ''));
     b.type = 'button';
     b.title = label;
@@ -794,6 +796,7 @@ export function mountEditor(opts: EditorOptions): Editor {
       use.setAttribute('href', face.icon);
       svg.append(use);
       b.append(svg);
+      if (face.word) b.append(h('span', 'ed-btn-word', face.word));
     } else b.textContent = face.text ?? '';
     b.addEventListener('click', run);
     return b;
@@ -804,9 +807,45 @@ export function mountEditor(opts: EditorOptions): Editor {
     return g;
   };
 
+  const undoBtn = button('Undo (Ctrl+Z)', () => travel(undos, redos), { icon: 'assets/icons.svg#i-undo' });
+  const redoBtn = button('Redo (Ctrl+Y)', () => travel(redos, undos), { icon: 'assets/icons.svg#i-redo' });
+  /** Undo and Redo greyed when there is nothing to take back, and for the whole of a Vomit Mode session. */
+  const paintHistory = () => {
+    undoBtn.disabled = !!vomit || !undos.length;
+    redoBtn.disabled = !!vomit || !redos.length;
+  };
+
+  // The paragraph style, one menu as a word processor has it rather than a button a level.
   const levels: Level[] = [1, 2, 3];
-  const heads = levels.map(level =>
-    button(`Heading ${level} (Ctrl+Alt+${level})`, () => heading(level), { text: `H${level}`, cls: 'ed-h' }));
+  const styleBtn = button('Paragraph style', () => {}, { icon: 'assets/icons.svg#i-chevron-right', cls: 'ed-el ed-style' });
+  const styleWord = h('span', 'ed-el-word', 'Normal text');
+  styleBtn.prepend(styleWord);
+  styleBtn.setAttribute('aria-haspopup', 'menu');
+  /** Back to a paragraph from a heading. Lists and quotes have their own ways out. */
+  const normal = () => {
+    const [a, z] = range();
+    const b = doc.blocks[a.b];
+    if (b?.kind === 'h') apply(setHeading(doc, a, z, b.level), 'format');
+  };
+  const styleMenu = (): MenuEntry[] => {
+    const b = doc.blocks[clampPos(doc, lastSel[0]).b];
+    return [
+      { label: 'Normal text', accel: 'Ctrl+Alt+0', check: b?.kind === 'p', action: normal },
+      ...levels.map((level): MenuEntry => ({
+        label: `Heading ${level}`, accel: `Ctrl+Alt+${level}`, font: 'var(--font-display)',
+        check: b?.kind === 'h' && b.level === level, action: () => heading(level),
+      })),
+    ];
+  };
+  menuButton(styleBtn, () => openAnchored(styleBtn.getBoundingClientRect(), styleMenu(), { label: 'Paragraph style', owner: styleBtn, focus: true }));
+  /** What the style menu's word says for the block the caret is in. */
+  const styleName = (b: Block | undefined): string => {
+    if (b?.kind === 'h') return `Heading ${b.level}`;
+    if (b?.kind === 'li') return 'List';
+    if (b?.kind === 'quote') return 'Quote';
+    if (b?.kind === 'code') return 'Code';
+    return 'Normal text';
+  };
   const marks: [MarkKey, HTMLButtonElement][] = [
     ['b', button('Bold (Ctrl+B)', () => mark('b'), { text: 'B', cls: 'ed-bold' })],
     ['i', button('Italic (Ctrl+I)', () => mark('i'), { text: 'I', cls: 'ed-italic' })],
@@ -818,7 +857,7 @@ export function mountEditor(opts: EditorOptions): Editor {
     ['task', button('Checklist (Ctrl+Shift+9)', () => list('task'), { icon: 'assets/icons.svg#i-ed-tasks' })],
   ];
   const findBtn = button('Find and replace (Ctrl+F)', () => openFind(), { icon: 'assets/icons.svg#i-find' });
-  const vomitBtn = button('Vomit Mode: write for a set time with no going back', () => {}, { text: 'Vomit', cls: 'ed-word ed-vomit' });
+  const vomitBtn = button('Vomit Mode: write for a set time with no going back', () => {}, { icon: 'assets/icons.svg#i-ed-timer', word: 'Vomit', cls: 'ed-vomit' });
   vomitBtn.setAttribute('aria-pressed', 'false');
   vomitBtn.setAttribute('aria-haspopup', 'menu');
   menuButton(vomitBtn, () => openAnchored(vomitBtn.getBoundingClientRect(), vomitMenu(), { label: 'Vomit Mode', owner: vomitBtn, focus: true }));
@@ -826,7 +865,9 @@ export function mountEditor(opts: EditorOptions): Editor {
   timer.setAttribute('role', 'timer');
 
   // A screenplay's one control: which element the line is, the menu listing them all with their keys.
-  const elBtn = button('Element (Tab changes it)', () => {}, { text: 'Action', cls: 'ed-word ed-el' });
+  const elBtn = button('Element (Tab changes it)', () => {}, { icon: 'assets/icons.svg#i-chevron-right', cls: 'ed-el' });
+  const elWord = h('span', 'ed-el-word', 'Action');
+  elBtn.prepend(elWord);
   elBtn.setAttribute('aria-haspopup', 'menu');
   const elementMenu = (): MenuEntry[] => {
     const now = elementAt();
@@ -846,25 +887,28 @@ export function mountEditor(opts: EditorOptions): Editor {
   const outlineBtn = button('Outline', () => toggleOutline(), { icon: 'assets/icons.svg#i-ed-outline' });
   outlineBtn.setAttribute('aria-pressed', 'false');
 
+  bar.append(group(undoBtn, redoBtn));
   if (screen) bar.append(group(elBtn));
-  else if (!plain) bar.append(group(...heads), group(...marks.map(m => m[1])), group(...lists.map(l => l[1])));
+  else if (!plain) bar.append(group(styleBtn), group(...marks.map(m => m[1])), group(...lists.map(l => l[1])));
   bar.append(group(findBtn), group(vomitBtn, timer));
   if (!opts.plain || screen) bar.append(group(outlineBtn));
 
-  // The foot of the room: words, and for a screenplay its pages and scenes.
+  // The counts, a small pill in the corner as the board's zoom readout is: one segment each.
   const status = h('div', 'ed-status');
-  const count = h('span', 'ed-count');
-  count.setAttribute('aria-live', 'polite');
-  if (screen) count.title = 'Pages are an estimate from the standard layout: Courier 12, about 55 lines a page.';
-  status.append(count);
+  status.setAttribute('aria-live', 'polite');
+  if (screen) status.title = 'Pages are an estimate from the standard layout: Courier 12, about 55 lines a page.';
+  const plural = (n: number, one: string) => `${n.toLocaleString()} ${n === 1 ? one : one + 's'}`;
 
   const paintCount = () => {
-    const n = wordCount(doc);
-    const words = `${n.toLocaleString()} ${n === 1 ? 'word' : 'words'}`;
+    const parts = [plural(wordCount(doc), 'word')];
     if (screen) {
       const { pages, scenes } = screenStats(doc);
-      count.textContent = `≈ ${pages} ${pages === 1 ? 'page' : 'pages'} · ${scenes} ${scenes === 1 ? 'scene' : 'scenes'} · ${words}`;
-    } else count.textContent = words;
+      parts.unshift(`about ${plural(pages, 'page')}`, plural(scenes, 'scene'));
+    }
+    const was = [...status.children].map(el => el.textContent);
+    if (was.length !== parts.length || was.some((t, n) => t !== parts[n])) {
+      status.replaceChildren(...parts.map(t => h('span', 'ed-count', t)));
+    }
     paintOutline();
   };
 
@@ -888,6 +932,7 @@ export function mountEditor(opts: EditorOptions): Editor {
       const item = h('button', 'ed-ol-item', o.text || 'Untitled');
       item.type = 'button';
       item.dataset.kind = o.kind;
+      item.dataset.level = String(o.level);
       item.style.setProperty('--level', String(o.level));
       item.addEventListener('click', () => jump(o.b));
       return item;
@@ -916,6 +961,7 @@ export function mountEditor(opts: EditorOptions): Editor {
 
   function toggleOutline() {
     aside.hidden = !aside.hidden;
+    root.classList.toggle('has-outline', !aside.hidden);
     outlineBtn.classList.toggle('is-active', !aside.hidden);
     outlineBtn.setAttribute('aria-pressed', String(!aside.hidden));
     paintOutline();
@@ -932,7 +978,7 @@ export function mountEditor(opts: EditorOptions): Editor {
     markHere();
     if (screen) {
       const now = elementAt();
-      elBtn.textContent = ELEMENTS.find(x => x.el === now)?.label ?? 'Action';
+      elWord.textContent = ELEMENTS.find(x => x.el === now)?.label ?? 'Action';
       return;
     }
     if (plain) return;
@@ -946,7 +992,7 @@ export function mountEditor(opts: EditorOptions): Editor {
       btn.classList.toggle('is-active', on);
       btn.setAttribute('aria-pressed', String(on));
     }
-    heads.forEach((btn, n) => btn.classList.toggle('is-active', b.kind === 'h' && b.level === n + 1));
+    styleWord.textContent = styleName(b);
     for (const [kind, btn] of lists) btn.classList.toggle('is-active', b.kind === 'li' && b.list === kind);
   };
 
@@ -1017,6 +1063,7 @@ export function mountEditor(opts: EditorOptions): Editor {
     findBtn.disabled = true;
     vomitBtn.classList.add('is-active');
     vomitBtn.setAttribute('aria-pressed', 'true');
+    paintHistory();
     page.focus({ preventScroll: true });
     setSel(lock);
     reveal();
@@ -1037,6 +1084,7 @@ export function mountEditor(opts: EditorOptions): Editor {
     vomitBtn.classList.remove('is-active');
     vomitBtn.setAttribute('aria-pressed', 'false');
     timer.textContent = '';
+    paintHistory();
   };
 
   /** The durations, or while a session runs, how long is left. There is no way to end one early. */
@@ -1211,9 +1259,10 @@ export function mountEditor(opts: EditorOptions): Editor {
     }
   });
 
-  const body = h('div', 'ed-body');
-  body.append(aside, scroller);
-  root.append(bar, find, body, status);
+  // The board's own paper grain under the desk, and the controls floating over it as the board's do.
+  const grain = h('div', 'ed-grain');
+  grain.setAttribute('aria-hidden', 'true');
+  root.append(grain, scroller, aside, bar, find, status);
 
   // -------------------------------------------------------------------------
   // Start
@@ -1231,6 +1280,7 @@ export function mountEditor(opts: EditorOptions): Editor {
   };
   lastSel = [start(), start()];
   scheduleReflect();
+  paintHistory();
 
   return {
     el: root,
