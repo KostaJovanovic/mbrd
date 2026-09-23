@@ -123,6 +123,14 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # The Android bridge, under mobile/tsconfig.json. It imports only
+      # relative paths (the web's Bridge type, desktop/format.mts), so the
+      # root's tsc checks it and mobile/ needs no install of its own here -
+      # the Capacitor, sharp and asset tooling that install would fetch is for
+      # building the APK, not for these types. Its lint is in the Lint step.
+      - name: Typecheck the Android bridge
+        run: npx tsc -p mobile/tsconfig.json
+
       # The bundle has to build, and nothing else in this job would notice if it
       # stopped. `npm test` runs the modules through Node, which strips types and
       # resolves the same specifiers - but the browser gets the esbuild output,
@@ -151,7 +159,7 @@ jobs:
       # xargs -n1 keeps going after a failure and reports every broken file in
       # one run, and exits 123 - non-zero - so the step still fails.
       - name: Parse every committed module
-        run: git ls-files 'web/**/*.js' 'web/*.js' 'tools/*.mjs' | xargs -r -n1 node --check
+        run: git ls-files 'web/**/*.js' 'web/*.js' 'tools/*.mjs' 'mobile/tools/*.mjs' | xargs -r -n1 node --check
 
       # python3, not python. Locally these are run as `python tools/serve.py`
       # on Windows; on the runner python3 is the name that is guaranteed to be
