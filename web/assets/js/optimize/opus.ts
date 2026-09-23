@@ -56,6 +56,17 @@ const WORTH_IT = 0.1;
  */
 const MAX_INPUT = 300 * 1024 * 1024;
 
+/**
+ * The longest sound this will decode, in seconds. MAX_INPUT counts compressed
+ * bytes, and those say little about length: at 6 kbps, 10 MB is nearly four
+ * hours, and its decode asks for about 5 GB. An hour of stereo at 48 kHz in
+ * float is 1.4 GB, which is where this stops.
+ */
+const MAX_SECONDS = 60 * 60;
+
+/** How long the length probe may take before it is taken as "cannot say". */
+const PROBE_MS = 10_000;
+
 /** Whether this browser can do any of it, checked before anything is promised. */
 export const opusAvailable = () =>
   typeof AudioEncoder === 'function' &&
@@ -84,6 +95,10 @@ export async function toOpus(
   // Read the tags before the bytes are decoded, so that a file that turns out
   // to be undecodable costs one header read rather than a decode.
   const pairs = tags || await audioTags(blob).catch(() => []);
+
+  // The length before the decode, since the decode is what holds it all.
+  const length = await probeSeconds(blob);
+  if (length !== null && length > MAX_SECONDS) return null;
 
   let buf;
   try {
@@ -118,6 +133,35 @@ export async function toOpus(
   const out = new Blob([ogg], { type: 'audio/ogg' });
   if (out.size >= blob.size * (1 - WORTH_IT)) return null;
   return { blob: out, from: blob.size, to: out.size, seconds: buf.length / RATE };
+}
+
+/**
+ * How long this sound is, by the browser's own demuxer, which reads the header
+ * and not the whole file. Null when it cannot say - no document, a format the
+ * element will not open, a stream with no stated length - and then the decode
+ * goes ahead as it did before this check existed.
+ */
+async function probeSeconds(blob: Blob): Promise<number | null> {
+  if (typeof document === 'undefined') return null;
+  const el = document.createElement('audio');
+  el.preload = 'metadata';
+  const url = URL.createObjectURL(blob);
+  try {
+    return await new Promise<number | null>(resolve => {
+      const timer = setTimeout(() => resolve(null), PROBE_MS);
+      el.addEventListener('loadedmetadata', () => {
+        clearTimeout(timer);
+        resolve(Number.isFinite(el.duration) ? el.duration : null);
+      }, { once: true });
+      el.addEventListener('error', () => { clearTimeout(timer); resolve(null); }, { once: true });
+      el.src = url;
+    });
+  } finally {
+    // Detached from the blob so the element lets go of its decoder at once.
+    el.removeAttribute('src');
+    el.load();
+    URL.revokeObjectURL(url);
+  }
 }
 
 // ---------------------------------------------------------------------------
