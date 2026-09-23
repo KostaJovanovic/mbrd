@@ -730,10 +730,27 @@ export function setItemCover(id: string, hash: unknown) {
 /** Change where a link card points. Undoable - the address is a choice, unlike
  *  a fetched title. Validated as a non-empty string here; the caller (commands.ts
  *  editLink) has already run it through linkTyped/linkURL, so what arrives is a
- *  parsed href. The card re-renders off the new URL: watermark, mark and chip. */
+ *  parsed href. The card re-renders off the new URL: watermark, mark and chip.
+ *  The fetched title and cover were the old address's, and setEmbedMeta() only
+ *  fills a card that lacks a title, so they go in the same step and come back
+ *  with its undo. */
 export function setLinkURL(id: string, url: unknown) {
-  patchMeta(id, 'url', url, 'Edit link',
-    value => (typeof value === 'string' && value ? value : null));
+  const it = byId(id);
+  if (!it) return;
+  const valid = (value: unknown) => (typeof value === 'string' && value ? value : null);
+  const next = valid(url);
+  const prev = valid(it.meta?.url);
+  if (next === prev) return;
+  const was = { url: prev, title: it.meta?.title, art: it.meta?.art };
+  const write = (fields: Record<string, unknown>) => {
+    const item = byId(id);
+    if (!item) return;
+    const { url: _url, title: _title, art: _art, ...rest } = item.meta || {};
+    item.meta = rest;
+    for (const [key, value] of Object.entries(fields)) if (value != null) item.meta[key] = value;
+    bus.emit('item', id);
+  };
+  commit('Edit link', () => write({ url: next }), () => write(was));
 }
 
 /** Set the custom specimen text on a font card, or clear it back to the face's

@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 
 import {
   board, loadBoard, retypeItem, undo, redo, setBoardMode, removeTourStop, addTourStop,
+  setLinkURL,
 } from '../web/assets/js/state.ts';
 
 beforeEach(() => {
@@ -70,6 +71,26 @@ test('L3: an undone stop does not take a card another stop holds now', () => {
   addTourStop(['b']);
   undo();
   assert.deepEqual(cards(), [['a'], ['c'], ['b']]);
+});
+
+test('M16: a new link address drops the old title and cover, in one undoable step', () => {
+  const art = 'a'.repeat(64);
+  loadBoard({
+    title: 'T',
+    items: [card('l', 'link', { meta: { url: 'https://a.example/', title: 'Song A', art } })],
+  });
+  setLinkURL('l', 'https://b.example/');
+  const link = () => board.items.find(i => i.id === 'l');
+  assert.equal(link().meta.url, 'https://b.example/');
+  assert.equal(link().meta.title, undefined);
+  assert.equal(link().meta.art, undefined);
+  undo();
+  assert.equal(link().meta.url, 'https://a.example/');
+  assert.equal(link().meta.title, 'Song A');
+  assert.equal(link().meta.art, art);
+  redo();
+  assert.equal(link().meta.title, undefined);
+  assert.equal(link().meta.art, undefined);
 });
 
 test('M6: a retype carries a sticky stuck to the card', () => {
