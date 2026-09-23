@@ -5,8 +5,9 @@
 // handed back is vouched (files.ts). The names come from board-names.mts.
 
 import { app, shell } from 'electron';
-import { access, mkdir, readdir, rename as move, stat, writeFile } from 'node:fs/promises';
+import { access, mkdir, readdir, rename as move, stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
+import { writeAtomic } from './atomic.mts';
 import { nthName, plainName } from './board-names.mts';
 import { checked, vouch } from './files.ts';
 import type { Ref } from './files.ts';
@@ -90,9 +91,7 @@ export function create(suggested: unknown, data: unknown): Promise<Ref> {
     await mkdir(root, { recursive: true });
     const path = await freePath(plainName(suggested));
     // The temp file and the rename of files.ts's write: a board is whole or absent.
-    const tmp = path + '.mbrd-tmp';
-    await writeFile(tmp, Buffer.from(data));
-    await move(tmp, path);
+    await writeAtomic(path, Buffer.from(data), path + '.mbrd-tmp', true);
     vouch(path);
     log('info', 'board made in the folder', { path });
     return refOf(path);
