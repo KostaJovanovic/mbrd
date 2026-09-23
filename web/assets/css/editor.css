@@ -393,7 +393,15 @@
 /* The name, as the title of the sheet: the display face, a rule under it, no box. */
 .ed-name {
   flex: none;
+  display: block;
+  box-sizing: border-box;
   width: 100%;
+  /* A long name wraps; the field grows to it (ui/editor/view.ts fitName). */
+  field-sizing: content;
+  resize: none;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   margin: 0 0 1.2em;
   padding: 0 0 0.35em;
   border: 0;
@@ -431,13 +439,12 @@
 
 /* A phone: the same editor, laid out for a thumb, and all of it at the top -
    the foot is where the keyboard comes up. A bar with the close and the
-   counts; under it a row of the commonest commands, whose Tools button drops
-   the whole ribbon down as a sheet, every group under its name; then the page
-   on the desk, as on a desk. */
+   counts; under it every command in two rows of glyphs; then the page on the
+   desk, as on a desk. */
 @media (max-width: 700px) {
   #viewer[data-edit] {
     --ed-title-h: 48px;
-    --ed-ribbon-h: 52px;
+    --ed-ribbon-h: 96px;
     --ed-bar-top: calc(var(--ed-inset) + var(--ed-title-h));
     --ed-bar-bottom: calc(var(--ed-bar-top) + var(--ed-ribbon-h));
     --ed-top: calc(var(--ed-bar-bottom) + 16px);
@@ -458,67 +465,39 @@
   /* The band under the top bar, edge to edge, carrying the pair's shadow. */
   .ed-bar { padding-top: 0; }
   .ed-ribbon { height: auto; border-top: 0; }
-  /* Shut: one row that fits the screen, with no sideways scroll. The groups
-     give up their boxes, the rarer commands step back into the sheet, and
-     what is left shares the width, each a thumb's target. */
-  .ed-bar:not(.is-open) .ed-panel { height: var(--ed-ribbon-h); gap: 2px; padding: 4px 6px; overflow: visible; }
-  .ed-bar:not(.is-open) :is(.ed-group, .ed-group-body, .ed-stack) { display: contents; }
-  .ed-bar:not(.is-open) :is(.ed-group-label, .ed-desk) { display: none; }
-  .ed-phone { display: contents; }
-  .ed-btn[hidden] { display: none; }
-  .ed-bar:not(.is-open) .ed-panel .ed-btn { flex: 1 1 0; min-width: 0; height: 44px; padding: 0 4px; }
+  /* Every command in two rows of eight, with no sideways scroll: the groups
+     give up their boxes, so each button is a cell of one grid, each a thumb's
+     target. The first row is the writing - undo, the marks, the lists; the
+     second the line's style (two cells, for its word), find, a session and
+     the view. A screenplay or plain text has fewer, and they close up. */
+  .ed-panel {
+    display: grid;
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    grid-auto-rows: 44px;
+    gap: 0 2px;
+    height: var(--ed-ribbon-h);
+    padding: 4px 6px;
+    overflow: visible;
+  }
+  :is(.ed-group, .ed-group-body, .ed-stack), .ed-phone { display: contents; }
+  :is(.ed-group-label, .ed-desk), .ed-btn[hidden] { display: none; }
+  .ed-panel .ed-btn { min-width: 0; height: 44px; padding: 0 4px; }
+  .ed-panel .ed-big { flex-direction: row; min-width: 0; height: 44px; padding: 0 4px; }
   .ed-panel .ed-btn .ico { width: 19px; height: 19px; }
-  /* Undo and Redo by their glyphs alone; Style keeps its word, which names the line. */
-  .ed-bar:not(.is-open) .ed-panel .ed-btn:not(.ed-style) .ed-btn-word { display: none; }
-  .ed-bar:not(.is-open) .ed-panel .ed-style { flex-grow: 3; gap: 4px; color: var(--ink); }
+  .ed-panel .ed-row2 { order: 2; }
+  /* Glyphs alone; Style keeps its word, which names the line. */
+  .ed-panel .ed-btn:not(.ed-style) .ed-btn-word { display: none; }
+  .ed-panel .ed-style { order: 1; grid-column: span 2; gap: 4px; color: var(--ink); }
   .ed-panel .ed-style .ico { width: 11px; height: 11px; }
   .ed-panel .ed-style .ed-btn-word { overflow: hidden; text-overflow: ellipsis; }
-  /* Tools: a chevron that points to where the sheet will go. */
-  .ed-tools .ico { rotate: 90deg; transition: rotate var(--dur-fast) var(--ease); }
-  .is-open .ed-tools .ico { rotate: -90deg; }
-
-  /* Open: the ribbon as a sheet dropped down over the page, each group a row
-     under its name, the Tools row heading it to shut it again. It scrolls
-     when it is taller than the room the keyboard leaves. */
-  .ed-bar.is-open {
-    border-radius: 0 0 var(--radius) var(--radius);
-    box-shadow: var(--shadow-2);
+  /* A screenplay has no marks or lists: its ten cells make two rows of five. */
+  .is-screen .ed-panel { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  /* Plain text has seven, which is one row: the bar and the page close up to it. */
+  .ed.is-plain {
+    --ed-ribbon-h: 52px;
+    --ed-bar-bottom: calc(var(--ed-bar-top) + var(--ed-ribbon-h));
+    --ed-top: calc(var(--ed-bar-bottom) + 16px);
   }
-  .is-open .ed-panel {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    max-height: calc(100dvh - var(--kb, 0px) - var(--ed-bar-top) - 24px);
-    padding: 6px 14px 14px;
-    overflow: hidden auto;
-    overscroll-behavior: contain;
-  }
-  .is-open .ed-group { flex-direction: column-reverse; gap: 6px; padding: 0; }
-  .is-open .ed-group + .ed-group { border-left: 0; }
-  .is-open .ed-group-label { padding: 0; text-align: left; font-size: var(--t-tiny); }
-  .is-open .ed-group-body { flex-wrap: wrap; gap: 6px; }
-  .is-open .ed-stack { flex-direction: row; gap: 6px; }
-  .is-open .ed-panel .ed-btn {
-    height: 44px;
-    padding: 0 14px;
-    outline: var(--hairline) solid var(--rule-2);
-    outline-offset: calc(-1 * var(--hairline));
-    background: var(--paper);
-  }
-  .is-open .ed-panel .ed-btn.is-active, .is-open .ed-panel .ed-btn[aria-pressed="true"] {
-    outline-color: var(--accent);
-    background: color-mix(in srgb, var(--accent) 12%, var(--paper-card));
-  }
-  .is-open .ed-big { flex-direction: row; gap: 8px; min-width: 0; font-size: var(--t-small); }
-  .is-open .ed-big .ico { width: 18px; height: 18px; }
-  /* The galleries keep one row and scroll sideways, as a phone's carousels do. */
-  .is-open :is([aria-label="Styles"], [aria-label="Script"]) .ed-group-body { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -14px; padding: 0 14px; }
-  .is-open .ed-tile { width: auto; min-width: 104px; height: 52px; }
-  /* The dock's own row heads the sheet: Style gives way to the gallery below. */
-  .is-open .ed-phone { display: flex; order: -1; justify-content: flex-end; border-bottom: var(--hairline) solid var(--rule-2); margin: 0 -14px; padding: 0 8px 6px; }
-  .is-open .ed-phone .ed-group-body { justify-content: flex-end; }
-  .is-open .ed-phone .ed-group-label, .is-open .ed-style { display: none; }
-  .is-open .ed-panel .ed-tools { outline: 0; background: none; font-weight: 600; }
   /* Find: two rows - what to find and the way through it, then what to put
      in its place - each field wide enough to read what is in it. */
   .ed-find {
