@@ -382,7 +382,7 @@ key. `fountain.ts` reads and writes `.fountain` screenplays: each line one
 block of kind `sp` holding its element, forcing marks written only where an
 element would not be recognised without one, and the same round-trip contract
 as Markdown. Both are DOM-free. The plan and what each phase changed from it is
-`research/text-editor-2026-09-22.md`.
+`research/old/text-editor-2026-09-22.md`.
 
 #### One menu, drawn in three places
 
