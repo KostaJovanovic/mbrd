@@ -1,8 +1,9 @@
 // Viewer: one item at full size in a showModal() <dialog>. VIEWS table keyed
 // by item type (same shape as RENDERERS). Teardown is load-bearing: mounted
 // videos keep their decoder, blob URLs must be revoked, parsed PDFs hold the
-// whole file, and an open document is saved. A .md or .txt opens in the text
-// editor (ui/editor/). No document reach at import time (tests/imports.test.js).
+// whole file, and an open document is saved. A .md, .txt or .fountain opened
+// to edit goes to the text editor (ui/editor/); opened plainly, it is read.
+// No document reach at import time (tests/imports.test.js).
 
 import {
   board, bus, byId, select, itemAdjust, itemCrop, itemRotate, itemMatte, flipTransform, setItemText,
@@ -56,6 +57,8 @@ const IDLE_SAVE_MS = 1500;
  * screen and in what colour. `held` is the typing done while it became one.
  */
 export type OpenOptions = {
+  /** Open a text file in the editor. Without it every file is opened to read. */
+  edit?: boolean,
   caret?: EditorOptions['caret'], from?: DOMRect | null, paper?: string, held?: HeldTyping | null,
   /** Typed at the caret once the editor opens, before anything held. */
   typed?: string,
@@ -210,6 +213,12 @@ export function canView(id: string) {
   return !!viewFor(item);
 }
 
+/** Does this item open in the text editor? A text file of a kind it writes, with its bytes in the board. */
+export function canEdit(id: string) {
+  const item = byId(id);
+  return !!item?.asset?.hash && viewFor(item) === VIEWS.text && EDITABLE.has(str(item.meta?.ext));
+}
+
 /**
  * Which view opens this item. Documents are asked about *first*, by
  * extension rather than type, since a document has no type of its own on
@@ -357,6 +366,8 @@ function viewerEntries(id: string): MenuEntry[] {
         cmds?.zoomToSelection();
       },
     },
+    // A document being read turns to writing where it is: the same viewing, reopened to edit.
+    { label: 'Edit', icon: 'i-edit-text', hidden: !canEdit(id) || !!editing, action: () => openViewer(id, { edit: true }) },
     { label: 'Fit to the window', hidden: !zoomed, action: () => zoomReset?.() },
     { label: 'Open in the browser', icon: 'i-link', hidden: !url, action: () => { if (url) void openExternal(url.href); } },
     {
@@ -718,11 +729,12 @@ const VIEWS: Record<string, View> = {
    * the file shows as characters rather than running. Not a nicety: these
    * are files the app did not write.
    *
-   * A .md or .txt opens in the editor instead - see editDocument().
+   * Asked to edit, a .md, .txt or .fountain opens in the editor instead - see
+   * editDocument(). Opening is reading; editing is its own row in the menu.
    */
   text(item, host, open) {
     // Every way out of it ends a grow still waiting, the plain way if no page was made.
-    if (EDITABLE.has(str(item.meta?.ext)) && item.asset?.hash) return void editDocument(item, host, open).finally(() => arrive());
+    if (open?.edit && EDITABLE.has(str(item.meta?.ext)) && item.asset?.hash) return void editDocument(item, host, open).finally(() => arrive());
     readOnlyText(item, host);
   },
 

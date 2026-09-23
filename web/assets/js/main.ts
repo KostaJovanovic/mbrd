@@ -175,7 +175,7 @@ setAssetPurge((hashes: Set<string>) => {
 setNoteOverflow(async (id, markdown, open) => {
   const held = open ? holdTyping() : null;
   const made = await noteToFile(id, markdown, !!open);
-  if (made && open) openViewer(made, { ...open, held });
+  if (made && open) openViewer(made, { ...open, held, edit: true });
   else held?.take();
   return !!made;
 });
