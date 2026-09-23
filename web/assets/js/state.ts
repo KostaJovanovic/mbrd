@@ -1892,7 +1892,10 @@ function dropFromTour(tour: TourStop[], ids: Set<string>): TourStop[] {
  * and dropped every relation that named something it is not bringing.
  */
 export function mergeBoard(plan: MergePlan, label = 'Merge board') {
-  const { items, connections, audioOrder, tour } = plan;
+  const { connections, audioOrder, tour } = plan;
+  // planMerge() places the block beside the host in Canvas terms, which on the
+  // Feed is outside the column: there the arrivals are packed below, as a drop is.
+  const items = board.layoutMode === 'mobile' ? placeMobileItems(plan.items) : plan.items;
   if (!items.length) return 0;
   const ids = new Set(items.map(i => i.id));
   const keys = new Set(connections.map(c => pairKey(c[0], c[1])));
