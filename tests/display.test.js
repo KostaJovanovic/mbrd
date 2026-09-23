@@ -175,6 +175,18 @@ test('a JPEG source retries as JPEG where WebP is refused, a PNG one does not', 
     'the JPEG source asks twice and the PNG source keeps what came out');
 });
 
+// A copy is a decode, a resize and an encode at every start. A board optimised
+// to 1200px under Balanced's 1152 made one of every photograph to shave 4% off
+// it, and the queue ran for the first minute of every session.
+test('a copy barely smaller than its source is not made', async () => {
+  const { copyScale } = await freshDisplay();
+  assert.equal(copyScale(1200, 1152), 1, 'a 4% shave shows the source');
+  assert.equal(copyScale(1260, 1152), 1, 'so does a tenth');
+  assert.ok(Math.abs(copyScale(1200, 1024) - 1024 / 1200) < 1e-9, 'Soft on the same picture still copies');
+  assert.ok(Math.abs(copyScale(4000, 1280) - 0.32) < 1e-9, 'and a camera original always does');
+  assert.equal(copyScale(800, 1280), 1, 'a picture under the ceiling was never copied');
+});
+
 // The queue holds one full-resolution decode at a time; a cached cut-out
 // (already decoded and written to IndexedDB on an earlier load) isn't one.
 // Queuing it anyway is what the first persisted-cache version did - a
