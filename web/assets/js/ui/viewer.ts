@@ -46,7 +46,7 @@ const urlOf = (hash: unknown): string | null => (typeof hash === 'string' ? asse
 const TEXT_MAX = 200000;
 
 /** The text files that open in the editor. Every other text file is read, as before. */
-const EDITABLE = new Set([...MARKDOWN, 'txt', 'text']);
+const EDITABLE = new Set([...MARKDOWN, 'txt', 'text', 'fountain']);
 
 /** A pause in typing this long saves the document. */
 const IDLE_SAVE_MS = 1500;
@@ -837,6 +837,7 @@ async function editDocument(item: Item, host: HTMLElement, open: OpenOptions = {
   const editor = mountEditor({
     text,
     plain: !MARKDOWN.has(ext),
+    screen: ext === 'fountain',
     label: baseName(item.name) || item.name || 'Document',
     caret: open.caret ?? 'start',
     onChange: () => {

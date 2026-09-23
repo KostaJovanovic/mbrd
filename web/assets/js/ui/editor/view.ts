@@ -9,11 +9,15 @@
 import {
   insertText, deleteRange, splitBlock, joinBackward, joinForward, toggleMark, hasMark, setHeading,
   toggleList, indent, toggleTask, blockShortcut, fenceShortcut, inlineShortcut, insertBlocks, sliceDoc,
-  findAll, replaceMatch, replaceAll, wordCount, marksAt, sameMarks, tidy, isText, blockLen,
-  blockText, ordered, samePos, cmpPos, clampPos, para, withRoom, MATCH_MAX,
+  findAll, replaceMatch, replaceAll, wordCount, marksAt, sameMarks, tidy, isText, isAtom, blockLen,
+  blockText, ordered, samePos, cmpPos, clampPos, para, withRoom, outlineOf, MATCH_MAX,
 } from './model.ts';
-import type { Block, Doc, Edit, ListKind, Level, MarkKey, Marks, Match, Pos, Run } from './model.ts';
+import type { Block, Doc, Edit, ListKind, Level, MarkKey, Marks, Match, OutlineEntry, Pos, Run, SceneEl } from './model.ts';
 import { parseDoc, parseMarkdown, serializeDoc, posAtSource } from './markdown.ts';
+import {
+  parseFountain, serializeFountain, screenEnter, screenShortcut, setElement, toggleDual, cycleElement,
+  screenStats, ELEMENTS, CAPS,
+} from './fountain.ts';
 import { keepsLocked, advance, superLock, lockAtEnd, clampToLock, clock, SUPER_MS, VOMIT_MINUTES } from './vomit.ts';
 import { makeEditable, markClosed } from '../../util.ts';
 import { menuButton, openAnchored } from '../menu.ts';
@@ -23,6 +27,8 @@ export type EditorOptions = {
   text: string,
   /** A .txt: lines, no formatting. */
   plain: boolean,
+  /** A .fountain screenplay: its elements, and the keys that type them. */
+  screen?: boolean,
   /** What the page is called, for a screen reader. */
   label: string,
   /** Where the caret starts: a place in the source, or an end. */
@@ -122,6 +128,14 @@ function buildBlock(b: Block, plain: boolean): HTMLElement {
       el.contentEditable = 'false';
       el.title = 'Kept as written';
       break;
+    case 'sp':
+      // A screenplay's line: its element sets where it sits on the page (editor.css).
+      el = h('div', 'ed-sp');
+      el.dataset.el = b.el;
+      if (b.before.length) el.dataset.gap = '';
+      if (b.dual) el.dataset.dual = '';
+      if (b.el === 'section') el.dataset.level = String(b.level);
+      break;
   }
   el.classList.add('ed-b');
   if (isText(b)) el.append(...b.runs.map(runNode));
@@ -209,11 +223,15 @@ function readBlock(el: HTMLElement, was: Block | undefined): Block {
 // ---------------------------------------------------------------------------
 
 export function mountEditor(opts: EditorOptions): Editor {
-  let doc: Doc = withRoom(parseDoc(opts.text, opts.plain));
-  const plain = opts.plain;
+  const screen = !!opts.screen;
+  let doc: Doc = screen ? parseFountain(opts.text) : withRoom(parseDoc(opts.text, opts.plain));
+  const plain = opts.plain || screen;
+  /** The document as its file says it. */
+  const write = (d: Doc) => (screen ? serializeFountain(d) : serializeDoc(d));
 
   const root = h('div', 'ed');
-  if (plain) root.classList.add('is-plain');
+  if (screen) root.classList.add('is-screen');
+  else if (plain) root.classList.add('is-plain');
   const scroller = h('div', 'ed-scroll');
   const page = h('div', 'ed-page');
   makeEditable(page);
@@ -442,6 +460,9 @@ export function mountEditor(opts: EditorOptions): Editor {
 
   /** A character or a word typed over the selection, then asked whether it was a shortcut. */
   const typeText = (text: string, a: Pos, z: Pos) => {
+    // A scene heading, a name and a transition are written in capitals, whatever the keyboard sends.
+    const line = doc.blocks[a.b];
+    if (line?.kind === 'sp' && CAPS.has(line.el)) text = text.toUpperCase();
     const marks = pending && pendingAt && samePos(pendingAt, a) ? pending : undefined;
     const typed = insertText(doc, a, z, text, marks);
     if (!apply(typed, text === ' ' ? 'space' : 'type', [a, z])) return;
@@ -453,6 +474,11 @@ export function mountEditor(opts: EditorOptions): Editor {
   /** Markdown typed out becomes what it means, as its own undo step so Ctrl+Z gives the characters back. */
   const afterTyping = (text: string) => {
     const at = range()[0];
+    if (screen) {
+      const made = screenShortcut(doc, at);
+      if (made) apply(made, 'shortcut');
+      return;
+    }
     if (text.endsWith(' ')) {
       const block = blockShortcut(doc, at);
       if (block) { apply(block, 'shortcut'); return; }
@@ -470,7 +496,8 @@ export function mountEditor(opts: EditorOptions): Editor {
   const enter = (soft: boolean) => {
     const [a, z] = range();
     const b = doc.blocks[a.b];
-    if (soft && !plain && (b.kind === 'p' || b.kind === 'li' || b.kind === 'quote')) apply(insertText(doc, a, z, '\n'), 'enter');
+    if (screen) apply(screenEnter(doc, a, z, soft), 'enter');
+    else if (soft && !plain && (b.kind === 'p' || b.kind === 'li' || b.kind === 'quote')) apply(insertText(doc, a, z, '\n'), 'enter');
     else apply((samePos(a, z) && fenceShortcut(doc, a)) || splitBlock(doc, a, z), 'enter');
     settle();
   };
@@ -534,6 +561,13 @@ export function mountEditor(opts: EditorOptions): Editor {
 
   const heading = (level: Level) => { const [a, z] = range(); apply(setHeading(doc, a, z, level), 'format'); };
   const list = (kind: ListKind) => { const [a, z] = range(); apply(toggleList(doc, a, z, kind), 'format'); };
+  const element = (el: SceneEl) => { const [a, z] = range(); apply(setElement(doc, a, z, el), 'format'); };
+  const dual = () => { const [a, z] = range(); apply({ doc: toggleDual(doc, a), from: a, to: z }, 'format'); };
+  /** The element the caret is in, in a screenplay. */
+  const elementAt = (): SceneEl | null => {
+    const b = doc.blocks[clampPos(doc, lastSel[0]).b];
+    return b?.kind === 'sp' ? b.el : null;
+  };
 
   // -------------------------------------------------------------------------
   // Reading back an IME's or a phone keyboard's typing
@@ -648,6 +682,14 @@ export function mountEditor(opts: EditorOptions): Editor {
     const key = e.key.toLowerCase();
     let done = true;
     if (e.key === 'Enter' && !mod) enter(e.shiftKey);
+    else if (screen && e.key === 'Tab' && !mod && !e.altKey) {
+      const now = elementAt();
+      if (now) element(cycleElement(now, e.shiftKey));
+    } else if (screen && mod && e.altKey && /^Digit[1-8]$/.test(e.code)) {
+      // Ctrl+Alt, not Ctrl alone: a browser keeps Ctrl+1 to 8 for its tabs.
+      const pick = ELEMENTS.find(x => x.key === e.code.slice(5));
+      if (pick) element(pick.el);
+    } else if (screen && mod && !e.altKey && !e.shiftKey && key === 'd') dual();
     else if (e.key === 'Tab' && !mod && !e.altKey && doc.blocks[range()[0].b]?.kind === 'li') {
       const [a, z] = range();
       apply(indent(doc, a, z, e.shiftKey ? -1 : 1) ?? { doc, from: a, to: z }, 'format');
@@ -684,7 +726,7 @@ export function mountEditor(opts: EditorOptions): Editor {
     const [a, z] = range();
     if (samePos(a, z) || !e.clipboardData) return;
     e.preventDefault();
-    e.clipboardData.setData('text/plain', serializeDoc(sliceDoc(doc, a, z)));
+    e.clipboardData.setData('text/plain', write(sliceDoc(doc, a, z)));
     if (cut) apply(deleteRange(doc, a, z), 'delete');
   };
   const onCopy = (e: ClipboardEvent) => copyOut(e, false);
@@ -782,15 +824,102 @@ export function mountEditor(opts: EditorOptions): Editor {
   menuButton(vomitBtn, () => openAnchored(vomitBtn.getBoundingClientRect(), vomitMenu(), { label: 'Vomit Mode', owner: vomitBtn, focus: true }));
   const timer = h('span', 'ed-timer');
   timer.setAttribute('role', 'timer');
+
+  // A screenplay's one control: which element the line is, the menu listing them all with their keys.
+  const elBtn = button('Element (Tab changes it)', () => {}, { text: 'Action', cls: 'ed-word ed-el' });
+  elBtn.setAttribute('aria-haspopup', 'menu');
+  const elementMenu = (): MenuEntry[] => {
+    const now = elementAt();
+    const b = doc.blocks[clampPos(doc, lastSel[0]).b];
+    return [
+      ...ELEMENTS.map((x): MenuEntry => {
+        const row: MenuEntry = { label: x.label, check: now === x.el, action: () => element(x.el) };
+        if (x.key) row.accel = `Ctrl+Alt+${x.key}`;
+        return row;
+      }),
+      { sep: true },
+      { label: 'Dual dialogue', accel: 'Ctrl+D', check: b?.kind === 'sp' && b.dual, action: dual },
+    ];
+  };
+  menuButton(elBtn, () => openAnchored(elBtn.getBoundingClientRect(), elementMenu(), { label: 'Element', owner: elBtn, focus: true }));
+
+  const outlineBtn = button('Outline', () => toggleOutline(), { icon: 'assets/icons.svg#i-ed-outline' });
+  outlineBtn.setAttribute('aria-pressed', 'false');
+
+  if (screen) bar.append(group(elBtn));
+  else if (!plain) bar.append(group(...heads), group(...marks.map(m => m[1])), group(...lists.map(l => l[1])));
+  bar.append(group(findBtn), group(vomitBtn, timer));
+  if (!opts.plain || screen) bar.append(group(outlineBtn));
+
+  // The foot of the room: words, and for a screenplay its pages and scenes.
+  const status = h('div', 'ed-status');
   const count = h('span', 'ed-count');
   count.setAttribute('aria-live', 'polite');
-  if (!plain) bar.append(group(...heads), group(...marks.map(m => m[1])), group(...lists.map(l => l[1])));
-  bar.append(group(findBtn), group(vomitBtn, timer), count);
+  if (screen) count.title = 'Pages are an estimate from the standard layout: Courier 12, about 55 lines a page.';
+  status.append(count);
 
   const paintCount = () => {
     const n = wordCount(doc);
-    count.textContent = `${n.toLocaleString()} ${n === 1 ? 'word' : 'words'}`;
+    const words = `${n.toLocaleString()} ${n === 1 ? 'word' : 'words'}`;
+    if (screen) {
+      const { pages, scenes } = screenStats(doc);
+      count.textContent = `≈ ${pages} ${pages === 1 ? 'page' : 'pages'} · ${scenes} ${scenes === 1 ? 'scene' : 'scenes'} · ${words}`;
+    } else count.textContent = words;
+    paintOutline();
   };
+
+  // -------------------------------------------------------------------------
+  // The outline: headings, or a screenplay's sections and scenes, to jump to
+  // -------------------------------------------------------------------------
+
+  const aside = h('nav', 'ed-outline');
+  aside.hidden = true;
+  aside.setAttribute('aria-label', 'Outline');
+  let entries: OutlineEntry[] = [];
+
+  const paintOutline = () => {
+    if (aside.hidden) return;
+    entries = outlineOf(doc);
+    if (!entries.length) {
+      aside.replaceChildren(h('p', 'ed-ol-empty', screen ? 'Scenes and sections show here.' : 'Headings show here.'));
+      return;
+    }
+    aside.replaceChildren(...entries.map(o => {
+      const item = h('button', 'ed-ol-item', o.text || 'Untitled');
+      item.type = 'button';
+      item.dataset.kind = o.kind;
+      item.style.setProperty('--level', String(o.level));
+      item.addEventListener('click', () => jump(o.b));
+      return item;
+    }));
+    markHere();
+  };
+
+  /** The entry the caret is under, lit. */
+  const markHere = () => {
+    if (aside.hidden) return;
+    const b = clampPos(doc, lastSel[0]).b;
+    let here = -1;
+    entries.forEach((o, n) => { if (o.b <= b) here = n; });
+    [...aside.children].forEach((el, n) => el.classList.toggle('is-here', n === here));
+  };
+
+  /** To an entry: its line at the top of the view, the caret at its start. On a phone the outline gives way. */
+  const jump = (n: number) => {
+    const el = blockEl(n);
+    if (!el) return;
+    page.focus({ preventScroll: true });
+    setSel({ b: n, o: 0 });
+    scroller.scrollTop += el.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 24;
+    if (matchMedia('(max-width: 600px)').matches) toggleOutline();
+  };
+
+  function toggleOutline() {
+    aside.hidden = !aside.hidden;
+    outlineBtn.classList.toggle('is-active', !aside.hidden);
+    outlineBtn.setAttribute('aria-pressed', String(!aside.hidden));
+    paintOutline();
+  }
 
   let reflectQueued = false;
   const scheduleReflect = () => {
@@ -800,6 +929,12 @@ export function mountEditor(opts: EditorOptions): Editor {
   };
   /** The bar lit to match the selection: its marks, and the kind of block the caret is in. */
   const reflect = () => {
+    markHere();
+    if (screen) {
+      const now = elementAt();
+      elBtn.textContent = ELEMENTS.find(x => x.el === now)?.label ?? 'Action';
+      return;
+    }
     if (plain) return;
     const [a, z] = [clampPos(doc, lastSel[0]), clampPos(doc, lastSel[1])];
     const b = doc.blocks[z.b];
@@ -1076,7 +1211,9 @@ export function mountEditor(opts: EditorOptions): Editor {
     }
   });
 
-  root.append(bar, find, scroller);
+  const body = h('div', 'ed-body');
+  body.append(aside, scroller);
+  root.append(bar, find, body, status);
 
   // -------------------------------------------------------------------------
   // Start
@@ -1087,15 +1224,17 @@ export function mountEditor(opts: EditorOptions): Editor {
   const start = (): Pos => {
     const c = opts.caret ?? 'start';
     const last = doc.blocks.length - 1;
-    if (c === 'start') return { b: 0, o: 0 };
+    // The first line that takes a caret: a screenplay can open on its title page, which does not.
+    if (c === 'start') return { b: Math.max(0, doc.blocks.findIndex(b => !isAtom(b))), o: 0 };
     if (c === 'end') return { b: last, o: blockLen(doc.blocks[last]) };
     return posAtSource(doc, c.line, c.col);
   };
   lastSel = [start(), start()];
+  scheduleReflect();
 
   return {
     el: root,
-    text: () => serializeDoc(doc),
+    text: () => write(doc),
     focus: () => {
       page.focus({ preventScroll: true });
       setSel(...lastSel);

@@ -42,8 +42,8 @@ const FRONT_END = /^(---|\.\.\.)\s*$/;
 const HTML_BLOCK = /^ {0,3}<[A-Za-z!?/]/;
 const DEFINITION = /^ {0,3}\[[^\]]+\]:/;
 
-/** A byte-order mark and one consistent line ending, taken off and noted so they go back on. */
-function unwrap(src: string) {
+/** A byte-order mark and one consistent line ending, taken off and noted so they go back on. Shared with fountain.ts. */
+export function unwrap(src: string) {
   const bom = src.startsWith('﻿');
   let text = bom ? src.slice(1) : src;
   const lf = text.split('\n').length - 1;
@@ -271,6 +271,8 @@ function blockLines(b: Exclude<Block, ListItem>): string[] {
     }
     case 'rule': return ['---'];
     case 'raw': return b.text.split('\n');
+    // A screenplay's line pasted into Markdown is only its words; fountain.ts writes screenplays.
+    case 'sp': return serializeRuns(b.runs).split('\n').map(escapeLineStart);
   }
 }
 

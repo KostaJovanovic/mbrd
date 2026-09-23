@@ -29,6 +29,7 @@ function sameShape(a: Block, z: Block): boolean {
   if (a.kind === 'h' && z.kind === 'h') return a.level === z.level;
   if (a.kind === 'li' && z.kind === 'li') return a.list === z.list && a.depth === z.depth && a.checked === z.checked;
   if (a.kind === 'code' && z.kind === 'code') return a.lang === z.lang;
+  if (a.kind === 'sp' && z.kind === 'sp') return a.el === z.el && a.dual === z.dual && a.level === z.level;
   return true;
 }
 

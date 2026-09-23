@@ -31,8 +31,8 @@ The changelog source is `patch-notes.md` at the repository root, not in here.
   ideas. What was done, decided or skipped, with the fix list R1 to R38, is in
   `old/done-2026-09-15.md`.
 - `text-editor-2026-09-22.md` — the plan for a markdown editor in the viewer,
-  in three phases: the editor, Vomit Mode, and `.fountain` screenplays. Phase 1
-  built on 2026-09-23; phases 2 and 3 not started.
+  in three phases: the editor, Vomit Mode, and `.fountain` screenplays. All
+  three built on 2026-09-23.
 - `patch-notes-full.md` — **an archive, not open work.** It holds every release
   at the length it was first written, internal work included. Nothing generates
   anything from it.
