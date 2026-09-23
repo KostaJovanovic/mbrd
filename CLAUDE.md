@@ -210,10 +210,12 @@ the push, so `node --check` and `python -m py_compile` locally are faster.
 **The typecheck leg does not reach everything, and the parse leg is why that is
 survivable.** `include` is `web/assets/js/**/*.ts` and nothing else, so
 `tools/` — the generators, and the vendored `anti-slop` plugin, which
-`.oxlintrc.json` also ignores — is outside it, as are the three `.js` files left
-under `web/assets/js`: `import/tiff-worker.js` and `optimize/media-worker.js`,
-which are classic workers and need `importScripts`, and `version.js`, which
-`save.bat` stamps. Every one of those is *parsed* by the fifth leg. Nothing is
+`.oxlintrc.json` also ignores — is outside it, as are the six `.js` files left
+under `web/assets/js`: the four classic workers, which need `importScripts`
+(`import/tiff-worker.js`, `import/heif-worker.js`, `mesh/occt-worker.js`,
+`optimize/media-worker.js`), the module worker `canvas/matte-worker.js`, and
+`version.js`, which `save.bat` stamps. Every one of those is *parsed* by the
+fifth leg, and the five workers by `tests/imports.test.js` too. Nothing is
 typechecked twice and nothing is silently excused — but "green typecheck" means
 the app's TypeScript, not the repository.
 
@@ -377,8 +379,9 @@ Two traps in that list, both found the hard way:
   `setOverlays()` (`notify.ts`), `setAssetNameLookup()`, `setNoteMenu()`
   (`canvas/notes.ts`). Unwired, each is a no-op, which is what keeps those
   modules loadable in a test with no browser.
-- **No module touches `document` at import time** — export an `init*()`. Three
-  are exempt and `tests/imports.test.js` names them.
+- **No module touches `document` at import time** — export an `init*()`. Seven
+  are exempt and `tests/imports.test.js` names them: `main.ts`,
+  `ui/appearance.ts` and the five workers.
 - **No module carries `@ts-nocheck`.** `tests/ts-debt.test.js` counted the
   migration to zero and is now a plain guard.
 - **Import paths are case-sensitive on the deployed host and not on Windows.**
