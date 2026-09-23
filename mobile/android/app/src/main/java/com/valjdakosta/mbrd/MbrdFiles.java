@@ -371,14 +371,19 @@ public class MbrdFiles extends Plugin {
             if (clip != null) for (int i = 0; i < clip.getItemCount(); i++) uris.add(clip.getItemAt(i).getUri());
             else if (data.getData() != null) uris.add(data.getData());
         }
-        JSArray files = new JSArray();
-        for (Uri uri : uris) {
-            if (uri == null) continue;
-            files.put(described(displayName(getContext(), uri), "", token(new Handed(null, uri))));
-        }
-        JSObject r = new JSObject();
-        r.put("files", files);
-        call.resolve(r);
+        // Off the UI thread: each name is a query to the provider, which may be
+        // slow or remote, and a share can hold 500 files.
+        Context ctx = getContext();
+        IO.execute(() -> {
+            JSArray files = new JSArray();
+            for (Uri uri : uris) {
+                if (uri == null) continue;
+                files.put(described(displayName(ctx, uri), "", token(new Handed(null, uri))));
+            }
+            JSObject r = new JSObject();
+            r.put("files", files);
+            call.resolve(r);
+        });
     }
 
     // ---- Read and exists ------------------------------------------------------
