@@ -23,7 +23,7 @@ import {
   ensureGhostCards, reseedGhostCards, hasContent, dismissGhosts,
   leaveNotFoundBoard, isContent,
   defaultBoardTitle,
-  goTo, timelineSteps, timelineStale,
+  goTo, timelineSteps, timelineStale, lastCommand,
 } from './state.ts';
 import { freezePrefs } from './prefs.ts';
 import { homePath, isPatchPage, isNotFoundPage, openingFace, openingShare } from './page.ts';
@@ -52,7 +52,7 @@ import {
 } from './storage/storage.ts';
 import { looksLikeMbrd } from './storage/mbrd.ts';
 import { boardThumb } from './ui/snapshot.ts';
-import { flushNoteEdit, growNote, setNoteMenu, setNoteOverflow } from './canvas/notes.ts';
+import { flushNoteEdit, growNote, setNoteMenu, setNoteOverflow, fitsNote, unfileNote } from './canvas/notes.ts';
 import { setMarkdownRenderer, setEmbedEnrich } from './canvas/renderers.ts';
 import { enrichEmbed } from './canvas/embed-meta.ts';
 import { renderMarkdown } from './ui/markdown.ts';
@@ -171,11 +171,19 @@ setAssetPurge((hashes: Set<string>) => {
 });
 // A note written past the sheet limit becomes a .md document — injected
 // because making one hashes a file, and canvas/ may not import import/. One
-// that outgrew itself mid-sentence opens in the editor, growing out of the note.
+// that outgrew itself mid-sentence opens in the editor, growing out of the note,
+// and turns back into it if written back down to fit before the editor closes.
 setNoteOverflow(async (id, markdown, open) => {
   const held = open ? holdTyping() : null;
+  const note = byId(id);
+  const was = lastCommand();
   const made = await noteToFile(id, markdown, !!open);
-  if (made && open) openViewer(made, { ...open, held, edit: true });
+  // The step that made the document, which turning back takes back.
+  const turned = lastCommand() === was ? null : lastCommand();
+  const back = note && made
+    ? { fits: fitsNote, back: (md: string, before: string) => void unfileNote(made, note, turned, md, before) }
+    : undefined;
+  if (made && open) openViewer(made, { ...open, held, edit: true, note: back });
   else held?.take();
   return !!made;
 });

@@ -646,14 +646,15 @@ export function retypeItem(
 /**
  * Rename an item. Empty name falls back to meta.origName, then the asset
  * registry, then the current name — so clearing restores the original filename.
+ * `blank` keeps an empty name empty instead: the text editor's untitled document.
  */
-export function renameItem(id: string, name: unknown) {
+export function renameItem(id: string, name: unknown, { blank = false } = {}) {
   const it = byId(id);
   if (!it) return;
   const orig = typeof it.meta?.origName === 'string' ? it.meta.origName : '';
-  const next = String(name ?? '').trim() ||
+  const next = String(name ?? '').trim() || (blank ? '' :
                orig ||
-               (it.asset?.hash ? assetName(it.asset.hash) : '') || it.name;
+               (it.asset?.hash ? assetName(it.asset.hash) : '') || it.name);
   if (it.name === next) return;
   const prev = it.name;
   commit('Rename',
