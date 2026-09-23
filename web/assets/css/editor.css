@@ -145,16 +145,17 @@
   overscroll-behavior: contain;
   padding: 28px 24px 30vh;
 }
-/* The sheet: a US Letter page at 96 dpi with inch margins, one page tall at
+/* The sheet: a US Letter page's proportions, drawn smaller than 96 dpi (a
+   full-size one crowded the window), with margins in step. One page tall at
    least and growing with the text (one long sheet, no page breaks). The
    margins shrink with the window, so a narrow one still has a measure. */
 .ed-page {
   box-sizing: border-box;
   width: 100%;
-  max-width: 816px;
-  min-height: 1056px;
+  max-width: 680px;
+  min-height: 880px;
   margin: 0 auto;
-  padding: clamp(24px, 9vw, 96px);
+  padding: clamp(24px, 8vw, 72px);
   background: var(--paper-card);
   /* Its own shadow, not a tier's: a sheet lifts off the desk at every whimsy
      setting, the flat ones included, or it is only a lighter rectangle. */
