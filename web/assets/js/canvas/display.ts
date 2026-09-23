@@ -23,6 +23,24 @@ export const bakedServes = () => displayMax() <= DISPLAY_SIDE;
 
 /** The long edge of the copy a plain photo shows, for canvas/hires.ts. */
 export const copyEdge = () => Math.max(DISPLAY_SIDE, displayMax());
+
+/**
+ * How far a copy has to shrink its source to be worth making.
+ *
+ * A copy is a decode, a resize and a WebP encode, redone at every start (only
+ * cut-outs are kept), and it loses a little to the encode. Pictures optimised
+ * to MAX_SIDE (1200) under Balanced's 1152 were the case that found this: a
+ * copy of every photograph on the board to take 4% off its width, the queue
+ * busy for the first minute of every session, and each card re-rastered as its
+ * copy landed. Under a tenth smaller, the source is shown as it is.
+ */
+const WORTH = 0.9;
+
+/** The scale a copy of a picture `long` px on its long edge is drawn at; 1 for none. */
+export function copyScale(long: number, max = displayMax()) {
+  const scale = Math.min(1, max / long);
+  return scale > WORTH ? 1 : scale;
+}
 const QUALITY = 0.82;
 
 // Crop is baked into the copy so object-fit keeps working without knowing crops exist.
@@ -142,7 +160,7 @@ async function shrink(
     const sy = crop ? Math.round(crop.y * bmp.height) : 0;
     const sw = Math.max(1, crop ? Math.round(crop.w * bmp.width) : bmp.width);
     const sh = Math.max(1, crop ? Math.round(crop.h * bmp.height) : bmp.height);
-    const scale = Math.min(1, displayMax() / Math.max(sw, sh));
+    const scale = copyScale(Math.max(sw, sh));
     if (scale === 1 && !derived(crop, rot, matte)) return NOTHING;
     const w = Math.max(1, Math.round(sw * scale));
     const h = Math.max(1, Math.round(sh * scale));
