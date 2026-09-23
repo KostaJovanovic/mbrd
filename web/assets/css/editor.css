@@ -15,7 +15,9 @@
   border: 0;
   border-radius: 0;
   box-shadow: none;
-  background: var(--paper-2);
+  /* The desk: a shade under the board's paper, so the sheet on it is plainly
+     the brightest thing in the room, as a word processor's page is. */
+  background: color-mix(in srgb, var(--ink) 7%, var(--paper-2));
 }
 #viewer[data-edit] #viewer-head {
   padding-top: max(10px, env(safe-area-inset-top));
@@ -44,8 +46,8 @@
 
 /* ── The bar ───────────────────────────────────────────────────────────── */
 
-/* A strip of its own across the desk, as a word processor's is, rather than a
-   rule under the title. */
+/* A tinted pill across the desk, as Docs' is: no outline, so the room reads as
+   one open space rather than a stack of boxes. */
 .ed-bar {
   flex: none;
   display: flex;
@@ -53,10 +55,12 @@
   align-items: center;
   gap: 4px 12px;
   margin: 0 12px;
-  padding: 4px 8px;
-  border: var(--hairline) solid var(--rule-2);
-  border-radius: var(--radius);
-  background: var(--paper-card);
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+@media (hover: hover) {
+  .ed-bar .ed-btn:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 }
 .ed-group { display: flex; gap: 2px; }
 .ed-btn {
@@ -104,10 +108,9 @@
   align-items: center;
   gap: 6px;
   margin: 6px 12px 0;
-  padding: 6px 8px;
-  border: var(--hairline) solid var(--rule-2);
-  border-radius: var(--radius);
-  background: var(--paper-card);
+  padding: 4px 8px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 .ed-find[hidden] { display: none; }
 .ed-find input {
@@ -140,7 +143,7 @@
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  padding: 20px 16px 30vh;
+  padding: 28px 24px 30vh;
 }
 /* The sheet: a US Letter page at 96 dpi with inch margins, one page tall at
    least and growing with the text (one long sheet, no page breaks). The
@@ -152,9 +155,12 @@
   min-height: 1056px;
   margin: 0 auto;
   padding: clamp(24px, 9vw, 96px);
-  border: var(--hairline) solid var(--rule-2);
   background: var(--paper-card);
-  box-shadow: var(--shadow-1);
+  /* Its own shadow, not a tier's: a sheet lifts off the desk at every whimsy
+     setting, the flat ones included, or it is only a lighter rectangle. */
+  box-shadow:
+    0 1px 3px color-mix(in srgb, var(--ink) 14%, transparent),
+    0 8px 28px -8px color-mix(in srgb, var(--ink) 22%, transparent);
   outline: none;
   color: var(--ink);
   caret-color: var(--accent-deep);
@@ -172,13 +178,13 @@
 /* A phone is too narrow for a desk: the sheet is the screen, and it reaches
    the keyboard (--kb) rather than a page's height. */
 @media (max-width: 600px) {
-  .ed-bar { margin: 0 8px; }
+  /* Two rows here, and a pill two rows tall is a blob. */
+  .ed-bar { margin: 0 8px; border-radius: var(--radius); }
   .ed-find { margin: 6px 8px 0; }
   .ed-scroll { padding: 8px 0 0; }
   .ed-page {
     min-height: 100%;
     padding: 20px 20px 40vh;
-    border: 0;
     box-shadow: none;
   }
 }
@@ -195,10 +201,6 @@
 .ed-page > h1 { font-size: 1.7em; }
 .ed-page > h2 { font-size: 1.35em; }
 .ed-page > h3 { font-size: 1.15em; }
-.ed-page > h1, .ed-page > h2 {
-  padding-bottom: 0.25em;
-  border-bottom: var(--hairline) solid var(--rule-2);
-}
 .ed-page > blockquote {
   padding: 0.1em 0 0.1em 1em;
   border-left: 3px solid var(--rule);
@@ -338,5 +340,11 @@
 
 /* color-mix() fallback for WebKit < 16.2 — see tokens.css section 7. */
 @supports not (color: color-mix(in srgb, red, blue)) {
+  #viewer[data-edit] { background: var(--paper-3); }
+  .ed-bar, .ed-find { background: rgb(var(--accent-c) / 8%); }
+  .ed-bar .ed-btn:hover { background: rgb(var(--accent-c) / 14%); }
+  @media not all and (max-width: 600px) {
+    .ed-page { box-shadow: 0 1px 3px rgb(var(--ink-c) / 14%), 0 8px 28px -8px rgb(var(--ink-c) / 22%); }
+  }
   ::highlight(ed-find) { background-color: rgb(var(--accent-c) / 30%); }
 }
