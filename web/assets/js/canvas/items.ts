@@ -16,7 +16,7 @@ import type { Item } from '../board-model.ts';
 import { TITLE_ID, shownName } from '../board-model.ts';
 import type { Viewport } from './viewport.ts';
 import { cullMargin } from './viewport.ts';
-import { buildContent, fontFamilyOf, paintStyleTileFaces } from './renderers.ts';
+import { buildContent, fontFamilyOf, paintStyleTileFaces, retitleContent } from './renderers.ts';
 import {
   buildItem, buildShadow, buildTitleControls, farKind, itemAccessibleName,
   resetTilt, restingTilt, retilt, setGrips, wantsHead, writeFit, writeAdjust, writeFenceLook,
@@ -1219,6 +1219,7 @@ function build(item: Item) {
 
   nodes.set(item.id, el);
   drawnFrom.set(el, item);
+  drawnSource.set(el, sourceOf(item));
   // The title card carries its own drop shadow in CSS (box-shadow on
   // .title-card), because the 3:2 card is smaller than its snapped item box and
   // a twin placed at the box would sit taller than the card it shadows.
@@ -1368,6 +1369,14 @@ function syncTwin(el: HTMLElement, item: Item) {
  */
 const drawnFrom = new WeakMap<HTMLElement, Item>();
 
+/**
+ * What a card's body plays, by node: the asset and a player's address. The
+ * item is changed in place, so this is the one record of what was built.
+ */
+const drawnSource = new WeakMap<HTMLElement, string>();
+export const sourceOf = (item: Pick<Item, 'asset' | 'meta'>) =>
+  `${item.asset?.hash ?? ''}\n${typeof item.meta?.url === 'string' ? item.meta.url : ''}`;
+
 /** The parts of an item a card draws. Geometry is placeNode()'s. */
 const sameFace = (a: Item, b: Item) => a.type === b.type && a.name === b.name
   && a.asset === b.asset && JSON.stringify(a.meta ?? null) === JSON.stringify(b.meta ?? null);
@@ -1393,13 +1402,21 @@ function rebuild(id: string) {
   // this map is a card it made. The two below are the same argument - farHead()
   // appends both of its lines before it returns the head they are in.
   const body = el.querySelector('.item-body')!;
-  // The old content is being thrown away, not detached, so it has to be let go
-  // of properly first - replaceChildren would otherwise leave the card's former
-  // <audio> registered under the volume control and holding its stream, once
-  // per rename, and its <img> holding a full-resolution decode. The same
-  // teardown discard() does, because this is the same act on a smaller scale.
-  releaseCardContent(body);
-  body.replaceChildren(buildContent(item));
+  // A playing clip or an open player keeps its body unless what it plays has
+  // changed: a rename, a tag or a backfilled poster stopped the sound, and a
+  // fetched title swapped the player back for its offer. See sounding().
+  if (sounding(body) && drawnSource.get(el) === sourceOf(item)) {
+    retitleContent(body, item);
+  } else {
+    // The old content is being thrown away, not detached, so it has to be let
+    // go of properly first - replaceChildren would otherwise leave the card's
+    // former <audio> registered under the volume control and holding its
+    // stream, once per rename, and its <img> holding a full-resolution decode.
+    // The same teardown discard() does: the same act on a smaller scale.
+    releaseCardContent(body);
+    body.replaceChildren(buildContent(item));
+    drawnSource.set(el, sourceOf(item));
+  }
   // data-fit lives on the outer .item and is otherwise only written in build(),
   // so a per-item fit change (which arrives as 'item' → rebuild) would rebuild
   // the picture but leave the old object-fit. Re-read it here.

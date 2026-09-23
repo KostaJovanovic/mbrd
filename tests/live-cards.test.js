@@ -26,3 +26,27 @@ test('an embedded player is never detached by the cull', () => {
   assert.match(fn('sync'), /if \(sounding\(el\)\) continue;/,
     'the detach pass no longer skips a sounding card');
 });
+
+test('a rebuild keeps a sounding body unless what it plays has changed', () => {
+  // Every 'item' event rebuilds: a rename, a tag, a poster or a title filled
+  // in by the idle backfill. Each used to stop the clip or swap the player back
+  // for its offer.
+  const rebuild = fn('rebuild');
+  const guard = rebuild.indexOf('if (sounding(body) && drawnSource.get(el) === sourceOf(item))');
+  const replace = rebuild.indexOf('body.replaceChildren(');
+  assert.ok(guard >= 0, 'rebuild() replaces a sounding body again');
+  assert.ok(guard < replace, 'the guard comes after the body is already replaced');
+  assert.match(rebuild.slice(guard, replace), /retitleContent\(body, item\)/,
+    'a kept body no longer takes the new name');
+  assert.match(fn('build'), /drawnSource\.set\(el, sourceOf\(item\)\)/,
+    'build() no longer records what the body plays');
+});
+
+test('what a body plays is its asset and its address, nothing else', async () => {
+  const { sourceOf } = await import('../web/assets/js/canvas/items.ts');
+  const clip = { asset: { hash: 'a1' }, meta: { cover: 'p1', title: 'x' } };
+  assert.equal(sourceOf(clip), sourceOf({ ...clip, name: 'renamed', meta: { tags: ['t'] } }));
+  assert.notEqual(sourceOf(clip), sourceOf({ ...clip, asset: { hash: 'a2' } }));
+  const link = { asset: null, meta: { url: 'https://open.spotify.com/track/a' } };
+  assert.notEqual(sourceOf(link), sourceOf({ ...link, meta: { url: 'https://open.spotify.com/track/b' } }));
+});
