@@ -40,6 +40,8 @@ let quitting = false;
 
 // Files the OS asked for before a window existed (macOS open-file can precede ready).
 const pending: string[] = [];
+// The start has made its window, so a later one is open-file's to make.
+let started = false;
 
 // Read once at boot by the renderer; empty on ordinary runs.
 let startupNote = '';
@@ -92,6 +94,9 @@ function main(): void {
   app.on('open-file', (event, path) => {
     event.preventDefault();
     handOver([path]);
+    // macOS keeps running with no window, and the file waits for one. Until
+    // the start has made its window, the start makes it.
+    if (started && !quitting && !current()) createWindow();
   });
 
   // Windows/Linux: a second launch hands its argv over and quits.
@@ -138,6 +143,7 @@ function main(): void {
     // First launch's own argv (double-click when app was not running).
     handOver(boardsIn(process.argv, process.cwd()));
     createWindow();
+    started = true;
 
     // macOS dock-click reopens the board window.
     app.on('activate', () => {
