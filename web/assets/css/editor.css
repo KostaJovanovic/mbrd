@@ -107,8 +107,9 @@
   height: 100%;
   /* The right end is the head's close (#viewer-head above). */
   padding: 6px var(--ed-close-w) 0 4px;
-  overflow-x: auto;
-  scrollbar-width: none;
+  /* Never scrolled: the ribbon folds to fit (below). What still does not fit
+     at a text size far past the default is clipped rather than scrolled. */
+  overflow: hidden;
 }
 .ed-group {
   flex: none;
@@ -183,8 +184,39 @@
 .ed-big:disabled .ico { color: var(--ink-3); }
 /* More, in a gallery: a chevron turned down, since it opens a list. */
 .ed-more .ico { order: 2; width: 11px; height: 11px; rotate: 90deg; }
-/* The phone's own dock controls (Style, More): not on a desk, where the ribbon has room for all. */
-.ed-phone { display: none; }
+/* The Style button that stands in for the gallery: a folded ribbon's and a phone's, not a wide desk's. */
+.ed-compact { display: none; }
+
+/* ── The ribbon folding (ui/editor/view.ts fold) ─────────────────────────────
+   Each step adds its class to the ones before, until the ribbon fits. */
+
+/* One: the gallery becomes a Style button - a field naming the line, whose chevron opens the list. */
+.is-fold-1 .ed-gallery { display: none; }
+.is-fold-1 .ed-compact { display: flex; }
+.is-fold-1 .ed-style {
+  justify-content: space-between;
+  width: 112px;
+  height: 36px;
+  padding: 0 12px;
+  border: var(--hairline) solid var(--rule-2);
+  background: var(--paper);
+  color: var(--ink);
+}
+.is-fold-1 .ed-style .ed-btn-word { overflow: hidden; text-overflow: ellipsis; }
+/* Two: Vomit Mode is its one button - what it is moves into its list - and Super a glyph. */
+.is-fold-2 .ed-info { display: none; }
+.is-fold-2 .ed-super { flex-direction: row; min-width: 32px; height: 32px; padding: 0 8px; }
+.is-fold-2 .ed-super .ed-btn-word { display: none; }
+.is-fold-2 .ed-super .ico { width: 17px; height: 17px; }
+/* Three: the small commands lose their words, and the view's two stack as Find and Replace do.
+   Each keeps its name in its tooltip. */
+.is-fold-3 :is(.ed-stack, .ed-show) .ed-btn-word { display: none; }
+/* And the groups close up, so the narrowest desk still takes the lot (a phone's toolbar begins below it). */
+.is-fold-3 .ed-group { padding: 0 6px; }
+.is-fold-3 .ed-stack .ed-btn { justify-content: center; }
+.is-fold-3 .ed-show .ed-group-body { flex-direction: column; justify-content: center; gap: 2px; }
+.is-fold-3 .ed-show .ed-btn { flex-direction: row; min-width: 32px; height: 28px; padding: 0 8px; }
+.is-fold-3 .ed-show .ico { width: 17px; height: 17px; color: inherit; }
 
 /* A gallery: Word's Styles, each tile a sample of the line it makes. */
 .ed-tile {
@@ -484,7 +516,7 @@
     padding: 4px 6px;
     overflow: visible;
   }
-  :is(.ed-group, .ed-group-body, .ed-stack), .ed-phone { display: contents; }
+  :is(.ed-group, .ed-group-body, .ed-stack), .ed-compact { display: contents; }
   :is(.ed-group-label, .ed-desk), .ed-btn[hidden] { display: none; }
   .ed-panel .ed-btn { min-width: 0; height: 44px; padding: 0 4px; }
   .ed-panel .ed-big { flex-direction: row; min-width: 0; height: 44px; padding: 0 4px; }
