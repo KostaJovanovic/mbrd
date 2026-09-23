@@ -122,6 +122,49 @@ test('runs written as Markdown read back as the same runs', () => {
   }
 });
 
+/** A file opened, typed into at the end of its first block, written and read again. */
+const typedAtEnd = (src, words) => {
+  const doc = md(src);
+  const end = blockText(doc.blocks[0]).length;
+  return md(out(insertText(doc, at(0, end), at(0, end), words).doc));
+};
+
+test('italic holding an underscore reads back as italic after an edit', () => {
+  const back = typedAtEnd('*config_file.yaml* here\n', '!');
+  assert.deepEqual(back.blocks[0].runs, [{ text: 'config_file.yaml', i: true }, { text: ' here!' }]);
+  for (const words of ['__init__', 'x_', '_x', 'a_b_c']) {
+    const runs = [{ text: 'a ' }, { text: words, i: true }, { text: ' b' }];
+    assert.deepEqual(inlineRuns(serializeRuns(runs)), runs, words);
+  }
+});
+
+test('an escaped delimiter inside a mark does not close it', () => {
+  assert.deepEqual(inlineRuns('_x\\__ b'), [{ text: 'x_', i: true }, { text: ' b' }]);
+  assert.deepEqual(inlineRuns('*a\\*b*'), [{ text: 'a*b', i: true }]);
+  assert.deepEqual(inlineRuns('~~a\\~~b~~'), [{ text: 'a~~b', s: true }]);
+});
+
+test('brackets in a link label, and a bracket before a link, read back as written', () => {
+  for (const runs of [
+    [{ text: '[1]', href: 'https://u' }],
+    [{ text: 'a]b', href: 'https://u' }],
+    [{ text: '[x ' }, { text: 'y', href: 'https://u' }],
+    [{ text: 'a [b] ' }, { text: 'c', href: 'https://u' }],
+  ]) assert.deepEqual(inlineRuns(serializeRuns(runs)), runs, JSON.stringify(runs));
+  const back = typedAtEnd('[\\[1\\]](https://u)\n', '!');
+  assert.deepEqual(back.blocks[0].runs, [{ text: '[1]', href: 'https://u' }, { text: '!' }]);
+});
+
+test('a paragraph that starts like HTML or a link definition stays a paragraph', () => {
+  for (const src of ['\\<b> x\n', '\\<https://a.b> x\n', '\\[x]: y\n']) {
+    const back = typedAtEnd(src, '!');
+    assert.deepEqual(back.blocks.map(b => b.kind), ['p'], src);
+    assert.equal(blockText(back.blocks[0]), src.slice(1, -1) + '!', src);
+  }
+  // Only the first line can open such a block, so a later one is left alone.
+  assert.equal(out(typedAtEnd('a\n<b> c\n', '!')), 'a\n<b> c!\n');
+});
+
 test('space at the edge of a mark moves outside it', () => {
   assert.equal(serializeRuns([{ text: 'a' }, { text: ' bold ', b: true }, { text: 'b' }]), 'a **bold** b');
 });

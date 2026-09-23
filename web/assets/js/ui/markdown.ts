@@ -340,10 +340,14 @@ function runsCanPair(text: string): boolean {
 // out - written as a guard rather than by deleting the alternative, because
 // the backreferences below are absolute across the whole pattern and
 // removing groups would silently repoint them.
+// The words inside a mark: an escaped character is one unit, so `\*` or `\_`
+// can never be the closing delimiter, and the last unit is not a space.
+const BODY = '((?:\\\\[\\s\\S]|[^\\\\])*?(?:\\\\[\\s\\S]|[^\\s\\\\]))';
 const INLINE_SRC = [
   '%CODE%(`+)([\\s\\S]{0,' + CODE_SPAN_MAX + '}?)\\1',  // 1,2  code
   '!\\[([^\\]]*)\\]\\(([^()\\s]+)[^)]*\\)',    // 3,4  image
-  '\\[([^\\]]*)\\]\\(([^()\\s]+)[^)]*\\)',     // 5,6  link
+  // A label holds brackets only escaped, as CommonMark asks of unbalanced ones.
+  '\\[((?:\\\\[\\s\\S]|[^\\\\\\[\\]])*)\\]\\(([^()\\s]+)[^)]*\\)', // 5,6  link
   '<((?:https?|mailto):[^>\\s]+)>',            // 7    autolink
   // The backreferences are absolute across the whole pattern, not relative to
   // their own alternative - \8 and \10, not \1 twice. Written as \1 they
@@ -351,9 +355,9 @@ const INLINE_SRC = [
   // backreference matches empty: **bold** rendered as one letter.
   // Not closed by the first two of a longer run: `**a *b***` is bold round
   // italic, and the lazy match alone would stop one star early.
-  '(\\*\\*|__)(?=\\S)([\\s\\S]*?\\S)\\8(?!\\*)', // 8,9  strong
-  '(\\*|_)(?=\\S)([\\s\\S]*?\\S)\\10',         // 10,11 emphasis
-  '~~(?=\\S)([\\s\\S]*?\\S)~~',                // 12   strikethrough
+  '(\\*\\*|__)(?=\\S)' + BODY + '\\8(?!\\*)',  // 8,9  strong
+  '(\\*|_)(?=\\S)' + BODY + '\\10',            // 10,11 emphasis
+  '~~(?=\\S)' + BODY + '~~',                   // 12   strikethrough
   '\\\\([!-/:-@[-`{-~])',                      // 13   backslash escape
 ].join('|');
 
