@@ -28,6 +28,19 @@ const MAX_ENTRIES = 4096;
 const MAX_GROUPS = 64;
 const MAX_MEMBERS = 64;
 
+/**
+ * Directory entries one exeIcon() run may read, across the whole tree. The
+ * offsets are the file's own, so N entries that all point back at their own
+ * directory make the two-level walk under each member read N x N entries -
+ * N³ in all, a quarter of an hour at N = 4096. An honest tree reads each
+ * entry about once: MAX_ENTRIES icons, each over a one-entry language level,
+ * is under a tenth of this.
+ */
+const MAX_WORK = 1 << 17;
+
+/** What is left of MAX_WORK for this run. */
+type Walk = { left: number };
+
 /** Resource type ids, from the format. */
 const RT_ICON = 3;
 const RT_GROUP_ICON = 14;
@@ -58,7 +71,8 @@ export async function exeIcon(
     if (!rsrc) return null;
 
     const { bytes, rva } = rsrc;
-    const root = readDirectory(bytes, 0);
+    const walk: Walk = { left: MAX_WORK };
+    const root = readDirectory(bytes, 0, walk);
     if (!root) return null;
 
     const groupsAt = root.find(e => e.id === RT_GROUP_ICON && e.isDir)?.off;
@@ -67,9 +81,9 @@ export async function exeIcon(
 
     // Every RT_ICON leaf by its id, which is the key the group records name.
     const members = new Map<number, Leaf>();
-    for (const entry of readDirectory(bytes, iconsAt) || []) {
+    for (const entry of readDirectory(bytes, iconsAt, walk) || []) {
       if (!entry.isDir || members.size >= MAX_ENTRIES) continue;
-      const leaf = firstLeaf(bytes, entry.off, 1);
+      const leaf = firstLeaf(bytes, entry.off, 1, walk);
       if (leaf) members.set(entry.id, leaf);
     }
     if (!members.size) return null;
@@ -77,7 +91,7 @@ export async function exeIcon(
     const picked = groupsAt === undefined
       // No group — fall back to biggest lone PNG member (e.g. icon-only DLLs).
       ? bestLoose(bytes, rva, members)
-      : bestFromGroups(bytes, rva, groupsAt, members);
+      : bestFromGroups(bytes, rva, groupsAt, members, walk);
     return picked;
   } catch (err) {
     if (isOversize(err)) throw err;
@@ -155,13 +169,16 @@ type Entry = { id: number, named: boolean, isDir: boolean, off: number };
 
 /** Directory entries at `at`. Both named and id entries walked (skipping named
  * entries would misalign the subsequent reads). */
-function readDirectory(b: Bytes, at: number): Entry[] | null {
+function readDirectory(b: Bytes, at: number, walk: Walk): Entry[] | null {
   if (at < 0 || at + 16 > b.length) return null;
   const named = le16(b, at + 12);
   const ids = le16(b, at + 14);
   const total = named + ids;
   if (!total || total > MAX_ENTRIES) return null;
   if (at + 16 + total * 8 > b.length) return null;
+  // A plain Error, not an Oversize: past this the tree loops, it is not large.
+  walk.left -= total;
+  if (walk.left < 0) throw new Error('the resource tree points back into itself');
 
   const out: Entry[] = [];
   for (let i = 0; i < total; i++) {
@@ -182,9 +199,9 @@ function readDirectory(b: Bytes, at: number): Entry[] | null {
 
 /** First leaf under `at`, descending up to `depth` levels. Walks the left edge
  * — language level is irrelevant (same icon in every locale). */
-function firstLeaf(b: Bytes, at: number, depth: number): Leaf | null {
+function firstLeaf(b: Bytes, at: number, depth: number, walk: Walk): Leaf | null {
   if (depth < 0) return null;
-  const entries = readDirectory(b, at);
+  const entries = readDirectory(b, at, walk);
   if (!entries) {
     // Leaf: IMAGE_RESOURCE_DATA_ENTRY (RVA + size).
     if (at + 8 > b.length) return null;
@@ -194,7 +211,7 @@ function firstLeaf(b: Bytes, at: number, depth: number): Leaf | null {
   }
   for (const entry of entries) {
     const found = entry.isDir
-      ? firstLeaf(b, entry.off, depth - 1)
+      ? firstLeaf(b, entry.off, depth - 1, walk)
       : leafAt(b, entry.off);
     if (found) return found;
   }
@@ -227,14 +244,15 @@ function bestFromGroups(
   rva: number,
   groupsAt: number,
   members: Map<number, Leaf>,
+  walk: Walk,
 ): { blob: Blob, ext: string } | null {
-  const groups = (readDirectory(b, groupsAt) || [])
+  const groups = (readDirectory(b, groupsAt, walk) || [])
     .filter(e => !e.named)
     .sort((x, y) => x.id - y.id)
     .slice(0, MAX_GROUPS);
 
   for (const group of groups) {
-    const leaf = group.isDir ? firstLeaf(b, group.off, 1) : leafAt(b, group.off);
+    const leaf = group.isDir ? firstLeaf(b, group.off, 1, walk) : leafAt(b, group.off);
     const dir = leaf && payload(b, rva, leaf);
     if (!dir) continue;
     const picked = pick(b, rva, readGroup(dir), members);
