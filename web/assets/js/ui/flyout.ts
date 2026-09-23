@@ -75,7 +75,11 @@ export function initFlyouts(commands: FlyoutCommands) {
   // One window-level pointerover (bubbles, unlike pointerenter) — checks both bar and panel.
   addEventListener('pointerover', onOver);
   // Pointer leaving the window entirely — no over fires, so close on leave.
-  addEventListener('pointerleave', () => { if (openFor) later(); });
+  // An out with nowhere to go is that leave: pointerleave does not bubble and
+  // never reaches window. Not touch, whose every lift is an out to nowhere.
+  document.addEventListener('pointerout', e => {
+    if (!e.relatedTarget && e.pointerType !== 'touch' && openFor) later();
+  });
 }
 
 function onOver(e: PointerEvent) {
