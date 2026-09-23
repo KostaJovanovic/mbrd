@@ -203,7 +203,7 @@ import {
   itemTags, boardTags, cleanTag,
   normalizeTour, TAGS_PER_ITEM, TAG_MAX, MIN_CROP,
 } from './board-model.ts';
-import type { Item, MobileHeader, TourStop } from './board-model.ts';
+import type { Connection, Item, MobileHeader, TourStop } from './board-model.ts';
 import type { MergePlan } from './merge.ts';
 
 export { MAX_CONNECTIONS, pairKey, CONN_DIRECTIONS, CONN_STYLES };
@@ -636,11 +636,35 @@ export function retypeItem(
     if (at < 0) return;
     board.items.splice(at, 1, into);
     if (selection.delete(out.id)) selection.add(into.id);
+    carryRelations(out.id, into.id);
     bus.emit('items', { added: [into.id], removed: [out.id] });
     bus.emit('selection');
   };
   commit(label, () => swap(old, item), () => swap(item, old));
   return item;
+}
+
+/**
+ * Point every relation that names `from` at `to`: the connections, the tour,
+ * the playlist and a sticky stuck to it. A retype is the same card under a
+ * fresh id, and the save prunes a relation whose id is gone.
+ */
+function carryRelations(from: string, to: string) {
+  const swap = (id: string) => (id === from ? to : id);
+  board.connections = board.connections.map(c => {
+    if (c[0] !== from && c[1] !== from) return c;
+    // SAFETY: each branch rebuilds the arm c has - length > 2 means c[2] is its ConnMeta.
+    return (c.length > 2 ? [swap(c[0]), swap(c[1]), c[2]] : [swap(c[0]), swap(c[1])]) as Connection;
+  });
+  board.tour = board.tour.map(stop =>
+    (stop.cards.includes(from) ? { ...stop, cards: stop.cards.map(swap) } : stop));
+  board.audioOrder = board.audioOrder.map(swap);
+  for (const it of board.items) {
+    if (it.meta?.stuckTo === from) it.meta = { ...it.meta, stuckTo: to };
+  }
+  bus.emit('connections');
+  bus.emit('audioOrder', board.audioOrder);
+  bus.emit('tour', board.tour);
 }
 
 /**
