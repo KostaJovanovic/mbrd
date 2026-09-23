@@ -14,6 +14,7 @@ import {
   setSwatchHex, baseStep, noteDisplay,
 } from '../state.ts';
 import { bakeDisplayFor } from '../optimize/picture.ts';
+import { blobDimensions } from '../image-header.ts';
 import { latticeBox } from '../geometry.ts';
 import {
   describeExt, formatName, PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, SVG_EXTS,
@@ -451,8 +452,11 @@ export async function pictureRatio(item: Item): Promise<number | null> {
   const video = item.type === 'video';
   const stills = video ? [metaStr(item.meta?.cover)] : [metaStr(item.meta?.display), shownHash(item)];
   let size: Size | null = null;
-  for (const hash of stills) {
-    size = await naturalSize('image', hash);
+  for (const [i, hash] of stills.entries()) {
+    // The display copy is this app's own encode, which carries no EXIF turn, so
+    // its header is its size - every board load asked of every photo, and a full
+    // decode apiece used to answer it. An original's header can be sideways.
+    size = await naturalSize('image', hash, !video && i === 0);
     if (size) break;
   }
   if (!size && video) size = await naturalSize('video', item.asset?.hash);
@@ -466,14 +470,17 @@ export async function pictureRatio(item: Item): Promise<number | null> {
 /** Pixel sizes by content id. A hash names its bytes, so an answer never goes stale. */
 const naturalSizes = new Map<string, Size | null>();
 
-async function naturalSize(type: string, hash: string | null | undefined): Promise<Size | null> {
+async function naturalSize(
+  type: string, hash: string | null | undefined, upright = false,
+): Promise<Size | null> {
   if (!hash) return null;
   if (naturalSizes.has(hash)) return naturalSizes.get(hash) ?? null;
   const blob = getAsset(hash)?.blob;
   if (!blob) return null;
   // SAFETY: measureSize() reads the type and the bytes. Its one name read, in isSvgImage(), goes
   // through extOf(), which takes the absent name of a Blob as ''. resetSize() passes a Blob the same way.
-  const size = (await measureSize(type, blob as File).catch(() => null))?.natural ?? null;
+  const size = (upright ? await blobDimensions(blob) : null)
+    ?? (await measureSize(type, blob as File).catch(() => null))?.natural ?? null;
   naturalSizes.set(hash, size);
   return size;
 }
@@ -784,9 +791,11 @@ const RENDERERS = {
           if (src && (img.isConnected || !img.src)) img.src = src;
         };
         if (!useBaked) {
-          // The exact edit state, or a plain copy sharper than the baked one,
-          // from the runtime cache - never baked.
-          ensureDisplay(hash, crop, rot, matte).then(u => done(u || assetURL(hash)));
+          // The exact edit state from the runtime cache. A plain card hands over
+          // its baked copy, which display.ts shows rather than make a sharper one
+          // every session.
+          const spare = edited ? '' : metaStr(item.meta?.display);
+          ensureDisplay(hash, crop, rot, matte, spare).then(u => done(u || assetURL(hash)));
         } else {
           // A plain card on a board with nothing baked (an old board). One decode
           // both shows the 1024 copy and stores it as meta.display, so a later

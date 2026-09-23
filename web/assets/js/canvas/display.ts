@@ -6,6 +6,7 @@ import { getAsset, assetURL } from '../storage/assets.ts';
 import { loadMatte, saveMatte, forgetMatte } from '../storage/matte-cache.ts';
 import { quality } from '../quality.ts';
 import { DISPLAY_SIDE } from '../optimize/picture.ts';
+import { blobDimensions } from '../image-header.ts';
 import { cutout, MODEL_NAME, ORT_VERSION } from './matte.ts';
 import { surface, surfaceToBlob, type Surface } from './surface.ts';
 
@@ -80,9 +81,17 @@ export function displayURLReady(
   return cache.get(keyFor(hash, crop, rot, matte))?.url || null;
 }
 
-// Idempotent: repeated calls share one job. Null if the asset is gone.
+/**
+ * Idempotent: repeated calls share one job. Null if the asset is gone.
+ *
+ * `baked` is the board's own DISPLAY_SIDE copy of a plain picture
+ * (meta.display). Above Soft a copy the dial asks for is made fresh every
+ * session, so where one would be made at all, the baked copy is shown in its
+ * place: a little softer than the dial's edge until the swap to the original
+ * (canvas/hires.ts), and no decode, resize and encode per photo per start.
+ */
 export function ensureDisplay(
-  hash: string, crop: Crop = null, rot: Turn = null, matte: Matte = false,
+  hash: string, crop: Crop = null, rot: Turn = null, matte: Matte = false, baked = '',
 ): Promise<string | null> {
   const key = keyFor(hash, crop, rot, matte);
   const done = cache.get(key);
@@ -90,7 +99,7 @@ export function ensureDisplay(
   const inFlight = pending.get(key);
   if (inFlight) return inFlight;
   const mine = epoch;
-  const job = start(hash, crop, rot, matte, mine);
+  const job = start(hash, crop, rot, matte, mine, derived(crop, rot, matte) ? '' : baked);
   // Deleted by identity so a post-clear settle does not remove a newer job's entry.
   const tracked: Promise<string | null> = job.finally(() => {
     if (pending.get(key) === tracked) pending.delete(key);
@@ -101,11 +110,20 @@ export function ensureDisplay(
 
 // Cached cut-outs bypass the queue (already card-sized). Everything else queues.
 async function start(
-  hash: string, crop: Crop, rot: Turn, matte: Matte, mine: number,
+  hash: string, crop: Crop, rot: Turn, matte: Matte, mine: number, baked: string,
 ): Promise<string | null> {
   if (matte) {
     const kept = await loadMatte(hash, matteVariant(hash, crop, rot));
     if (kept) return publish(hash, crop, rot, matte, kept, mine);
+  }
+  // A plain picture needs only its header to learn whether a copy is due, and
+  // the answer never waits behind somebody else's decode.
+  if (!derived(crop, rot, matte)) {
+    const a = getAsset(hash);
+    if (!a) return null;
+    const dims = a.blob ? await blobDimensions(a.blob) : null;
+    if (dims && copyScale(Math.max(dims.w, dims.h)) === 1) return publish(hash, crop, rot, matte, null, mine);
+    if (dims && baked && getAsset(baked)) return publish(hash, crop, rot, matte, baked, mine);
   }
   const decode = queue.then(() => derive(hash, crop, rot, matte, mine));
   queue = decode.catch(() => {});
@@ -127,17 +145,19 @@ async function derive(
   return publish(hash, crop, rot, matte, made.blob, mine);
 }
 
+// `small` is a copy made here, the hash of the board's baked copy, or null for
+// the source itself.
 function publish(
-  hash: string, crop: Crop, rot: Turn, matte: Matte, small: Blob | null, mine: number,
+  hash: string, crop: Crop, rot: Turn, matte: Matte, small: Blob | string | null, mine: number,
 ): string | null {
   if (mine !== epoch) return null;
   const key = keyFor(hash, crop, rot, matte);
   const won = cache.get(key);
   if (won) return won.url;
   // own=true: this module revokes it. own=false: asset store's URL, not ours.
-  const entry = small
+  const entry = small && typeof small !== 'string'
     ? { url: URL.createObjectURL(small), own: true }
-    : { url: assetURL(hash)!, own: false };
+    : { url: assetURL(small || hash)!, own: false };
   cache.set(key, entry);
   return entry.url;
 }
