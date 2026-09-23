@@ -73,6 +73,8 @@ let pending: { version: string, asset: Asset } | null = null;
 let ready: { version: string, file: string } | null = null;
 /** The installer was started, so quitting must not start it twice. */
 let launched = false;
+/** The press on Update asked for this quit, so the new version starts after it. */
+let restartAfter = false;
 /** What the title bar's button says for good, or null for no button. */
 let offered: UpdateOffer | null = null;
 /** A passing answer's timer. When it runs out the button goes back to `offered`. */
@@ -161,9 +163,11 @@ export function startUpdates(opts: UpdateOptions): void {
   if (kind === 'dev') return;
   if (kind === 'installer') {
     tidy(downloadDir(), true);
-    // A download that finished as the window was closing still installs,
-    // silently, without starting the app again.
-    app.on('will-quit', () => runInstaller(false));
+    // Only now, after the close has written the board: the installer kills a
+    // copy that is still running within about three seconds, and the flush may
+    // take ten. A download that finished as the window was closing installs
+    // too, silently, without starting the app again.
+    app.on('will-quit', () => runInstaller(restartAfter));
   }
   const image = process.env.APPIMAGE;
   if (kind === 'appimage' && image) {
@@ -344,9 +348,9 @@ async function downloadAndInstall(want: { version: string, asset: Asset }): Prom
 /** Put the downloaded update in place and restart into it. */
 function install(): void {
   if (kind === 'installer') {
-    // The installer waits for this copy to close, installs, then starts the
-    // new version (--force-run).
-    runInstaller(true);
+    // The quit runs the installer from will-quit (startUpdates), which then
+    // starts the new version (--force-run).
+    restartAfter = true;
   } else {
     // relaunch starts the new file once this process has gone, so the two
     // never meet at the single-instance lock.
