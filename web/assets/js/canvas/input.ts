@@ -2322,8 +2322,10 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         taps.lastEmpty = null;
         taps.arm = null;
         taps.card = null;
-        // The press that opens the menu is not the tap that clears the board.
+        // The press that opens the menu is not the tap that clears the board,
+        // nor the click that walks a tour on.
         clearOnLift = null;
+        tourClick = null;
         // Whatever the finger had started - a move, a pan, a marquee - it was
         // not that. Dropped rather than committed, since nothing moved.
         abortGesture();
@@ -3492,6 +3494,8 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // marquee.
     taps.empty = null;
     taps.lastEmpty = null;
+    // The press that opened the tour's menu is not also a step - see tourClick.
+    tourClick = null;
     abortGesture();
     if (repeatsLongPressContextMenu(hold.menu, {
       x: e.clientX,
