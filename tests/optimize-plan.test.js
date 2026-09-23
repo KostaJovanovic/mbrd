@@ -42,3 +42,29 @@ test('only the file and the cover are planned, because only they are swapped', (
   assert.deepEqual(plan.pictures.map(j => j.hash).sort(), [COVER, FILE].sort());
   assert.equal(plan.total, 8192, 'the dialog weighs only what the run can rewrite');
 });
+
+test('a picture that is one card file and another card cover is sized as the file', () => {
+  // The audio card comes first on the board, so it used to reach the shared
+  // hash first and plan it at the cover ceiling for both cards.
+  loadBoard({
+    title: 'T',
+    items: [
+      { id: 's', type: 'audio', w: 200, h: 60, asset: { hash: hash('song') }, meta: { cover: FILE } },
+      photo({ id: 'a', asset: { hash: FILE } }),
+    ],
+  });
+  const [job, ...rest] = planOptimize().pictures;
+  assert.equal(rest.length, 0, 'one job for one set of bytes');
+  assert.equal(job.hash, FILE);
+  assert.equal(job.isCover, false);
+});
+
+test('a cover that no card holds as its file is still sized as a cover', () => {
+  loadBoard({
+    title: 'T',
+    items: [{ id: 's', type: 'audio', w: 200, h: 60, asset: { hash: hash('song') }, meta: { cover: COVER } }],
+  });
+  const [job] = planOptimize().pictures;
+  assert.equal(job.hash, COVER);
+  assert.equal(job.isCover, true);
+});
