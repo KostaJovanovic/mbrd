@@ -278,6 +278,14 @@
   <path d="M6.5 4.3h7M6.5 11.3h7"/>
 </symbol>
 
+<!-- Replace: one arrow out and one back, since a word goes and another takes
+     its place. Its own glyph because a folded ribbon shows Find and Replace
+     with no words, one over the other. -->
+<symbol id="i-ed-replace" viewBox="0 0 16 16">
+  <path d="M2.5 5.2h9.5M10 3.2l2 2-2 2"/>
+  <path d="M13.5 10.8H4M6 8.8l-2 2 2 2"/>
+</symbol>
+
 <!-- Vomit Mode: a stopwatch, since a session is a timed run. -->
 <symbol id="i-ed-timer" viewBox="0 0 16 16">
   <circle cx="8" cy="9.2" r="5"/>

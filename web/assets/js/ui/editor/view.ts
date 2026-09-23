@@ -945,19 +945,19 @@ export function mountEditor(opts: EditorOptions): Editor {
     ['task', button('Checklist (Ctrl+Shift+9)', () => list('task'), { icon: 'assets/icons.svg#i-ed-tasks' })],
   ];
   const findBtn = button('Find (Ctrl+F)', () => openFind(), { icon: 'assets/icons.svg#i-find', word: 'Find' });
-  const replaceBtn = button('Replace (Ctrl+H)', () => { openFind(); if (!find.hidden) rep.focus(); }, { icon: 'assets/icons.svg#i-find', word: 'Replace' });
+  const replaceBtn = button('Replace (Ctrl+H)', () => { openFind(); if (!find.hidden) rep.focus(); }, { icon: 'assets/icons.svg#i-ed-replace', word: 'Replace' });
 
   // Vomit Mode: one big button that opens the times, and a small one that says what it is.
   const vomitBtn = button('Vomit Mode: write for a set time with no going back', () => {}, { icon: 'assets/icons.svg#i-ed-timer', word: 'Vomit Mode', cls: 'ed-big' });
   vomitBtn.setAttribute('aria-haspopup', 'menu');
   menuButton(vomitBtn, () => openAnchored(vomitBtn.getBoundingClientRect(), timeMenu(), { label: 'Vomit Mode', owner: vomitBtn, focus: true }));
-  const infoBtn = button('What is Vomit Mode?', () => void explainVomit(), { icon: 'assets/icons.svg#i-info' });
+  const infoBtn = button('What is Vomit Mode?', () => void explainVomit(), { icon: 'assets/icons.svg#i-info', cls: 'ed-info' });
   const toggleSuper = () => {
     superOn = !superOn;
     superBtn.setAttribute('aria-pressed', String(superOn));
     armSuper();
   };
-  const superBtn = button('Super: each word locks 10 seconds after its last keystroke', toggleSuper, { icon: 'assets/icons.svg#i-lock-shut', word: 'Super', cls: 'ed-big' });
+  const superBtn = button('Super: each word locks 10 seconds after its last keystroke', toggleSuper, { icon: 'assets/icons.svg#i-lock-shut', word: 'Super', cls: 'ed-big ed-super' });
   superBtn.setAttribute('aria-pressed', 'false');
   const timer = h('span', 'ed-timer');
   timer.setAttribute('role', 'timer');
@@ -996,18 +996,33 @@ export function mountEditor(opts: EditorOptions): Editor {
   }, { icon: 'assets/icons.svg#i-ed-ascii', word: 'ASCII art', cls: 'ed-big' });
   asciiBtn.setAttribute('aria-pressed', String(ascii));
 
-  // One ribbon and no tabs: every group in a single row, which scrolls sideways when the window is narrow.
+  // A narrow ribbon and a phone's toolbar both trade the gallery for one
+  // Style button that names the line and opens its list.
+  const styleBtn = button(screen ? 'Element' : 'Style', () => {}, { icon: 'assets/icons.svg#i-chevron-right', word: screen ? 'Action' : 'Normal', cls: 'ed-more ed-style' });
+  styleBtn.setAttribute('aria-haspopup', 'menu');
+  menuButton(styleBtn, () => openAnchored(styleBtn.getBoundingClientRect(), screen ? elementMenu() : styleMenu(), { label: screen ? 'Element' : 'Style', owner: styleBtn, focus: true }));
+  const styleGroup = group(screen ? 'Script' : 'Styles', styleBtn);
+  styleGroup.classList.add('ed-compact');
+
+  // One ribbon and no tabs: every group in a single row, which folds rather
+  // than scrolls when the window is too narrow for it (fold, below).
   const ribbon = h('div', 'ed-ribbon');
   ribbon.setAttribute('role', 'toolbar');
   ribbon.setAttribute('aria-label', 'Editor');
   const panel = h('div', 'ed-panel');
   panel.append(group('Undo', stack(undoBtn, redoBtn)));
-  if (screen) panel.append(group('Script', ...elTiles, elBtn));
-  else if (!plain) {
+  if (screen) {
+    const gallery = group('Script', ...elTiles, elBtn);
+    gallery.classList.add('ed-gallery');
+    panel.append(gallery, styleGroup);
+  } else if (!plain) {
+    const gallery = group('Styles', ...styleTiles.map(s => s[1]));
+    gallery.classList.add('ed-gallery');
     panel.append(
       group('Font', ...marks.map(m => m[1])),
       group('Paragraph', ...lists.map(l => l[1])),
-      group('Styles', ...styleTiles.map(s => s[1])),
+      gallery,
+      styleGroup,
     );
   }
   panel.append(
@@ -1015,24 +1030,40 @@ export function mountEditor(opts: EditorOptions): Editor {
     group('Vomit Mode', vomitBtn, superBtn, infoBtn),
   );
   const showBtns = [...(!opts.plain || screen ? [outlineBtn] : []), ...(opts.onAscii ? [asciiBtn] : [])];
-  if (showBtns.length) panel.append(group('Show', ...showBtns));
+  if (showBtns.length) {
+    const show = group('Show', ...showBtns);
+    show.classList.add('ed-show');
+    panel.append(show);
+  }
+  ribbon.append(panel);
+  bar.append(ribbon);
 
   // A phone's toolbar is every command in two rows of glyphs, at the top,
-  // clear of the keyboard: the galleries become one Style button that names
-  // the line and opens its list, and Replace is left to the find bar, which
-  // has its own. The rest of the ribbon's furniture steps back (editor.css).
-  const styleBtn = button(screen ? 'Element' : 'Style', () => {}, { icon: 'assets/icons.svg#i-chevron-right', word: screen ? 'Action' : 'Normal', cls: 'ed-more ed-style' });
-  styleBtn.setAttribute('aria-haspopup', 'menu');
-  menuButton(styleBtn, () => openAnchored(styleBtn.getBoundingClientRect(), screen ? elementMenu() : styleMenu(), { label: screen ? 'Element' : 'Style', owner: styleBtn, focus: true }));
-  styleBtn.hidden = plain && !screen;
+  // clear of the keyboard, and Replace is left to the find bar, which has its
+  // own. The rest of the ribbon's furniture steps back (editor.css).
   for (const b of [replaceBtn, elBtn, ...elTiles, ...styleTiles.map(s => s[1])]) b.classList.add('ed-desk');
   // The second row, in the order a phone lays it out: the line's style, then find, a session, the view.
   for (const b of [findBtn, vomitBtn, superBtn, infoBtn, outlineBtn, asciiBtn]) b.classList.add('ed-row2');
-  const phoneGroup = group('Style', styleBtn);
-  phoneGroup.classList.add('ed-phone');
-  panel.append(phoneGroup);
-  ribbon.append(panel);
-  bar.append(ribbon);
+
+  // Too narrow a window folds the ribbon a step at a time, never scrolls it:
+  // the gallery to its Style button, then Vomit Mode to one button and a small
+  // Super, then Find, Replace and the view to glyphs in pairs (editor.css).
+  // Measured, not set at widths, since the room a ribbon needs changes with
+  // the kind of document, the look and the text size.
+  const FOLDS = ['is-fold-1', 'is-fold-2', 'is-fold-3'];
+  const phone = matchMedia('(max-width: 700px)');
+  const fold = () => {
+    root.classList.remove(...FOLDS);
+    if (phone.matches) return;
+    for (const step of FOLDS) {
+      if (panel.scrollWidth <= panel.clientWidth) break;
+      root.classList.add(step);
+    }
+  };
+  const barSize = typeof ResizeObserver === 'function' ? new ResizeObserver(fold) : null;
+  barSize?.observe(bar);
+  // The ribbon's words are measured in the display face, which can arrive after the first fold.
+  void document.fonts?.ready.then(fold);
 
   // The status bar along the foot, as Word's: the counts at the left, a running session at the right.
   const status = h('div', 'ed-status');
@@ -1245,6 +1276,9 @@ export function mountEditor(opts: EditorOptions): Editor {
     { sep: true },
     { label: 'Custom', range: { min: 1, max: 180, step: 1, unit: ' min', get: () => custom, set: v => { custom = v; } } },
     { label: 'Start custom time', action: () => startVomit(custom) },
+    // Here as well as on its button, which a folded ribbon puts away.
+    { sep: true },
+    { label: 'What is Vomit Mode?', icon: 'i-info', action: () => void explainVomit() },
   ];
 
   /** What Vomit Mode is, and what it locks, in the app's own dialog. Its button leads to the times. */
@@ -1542,6 +1576,7 @@ export function mountEditor(opts: EditorOptions): Editor {
       // A name typed and not yet committed - the document closed with the field still focused.
       commitName();
       nameSize?.disconnect();
+      barSize?.disconnect();
       endVomit();
       clearTimeout(countTimer);
       document.removeEventListener('selectionchange', onSelect);
