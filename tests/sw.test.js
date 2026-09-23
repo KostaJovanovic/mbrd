@@ -85,6 +85,7 @@ test('SHELL has no entries pointing at files that are gone', () => {
 function runWorker({ fails = [], existing = [], seed = {},
   net = async () => ({ ok: true, type: 'basic', body: 'network', clone() { return { body: 'network' }; } }),
 } = {}) {
+  const fetch = async x => (fails.includes(x) ? { ok: false, status: 404 } : net(x));
   const store = new Map(existing.map(name => [name, new Map([['seed', 'seed']])]));
   // Preload named caches with url->response entries, for the runtime-fetch
   // tests: sets up an *unrelated* origin cache holding the same URL.
@@ -119,7 +120,7 @@ function runWorker({ fails = [], existing = [], seed = {},
     skipped: false,
   };
 
-  const sandbox = { self, caches, console, URL, fetch: net };
+  const sandbox = { self, caches, console, URL, Response, TypeError, fetch };
   sandbox.addEventListener = self.addEventListener;
   vm.createContext(sandbox);
   vm.runInContext(sw, sandbox, { filename: 'sw.js' });
@@ -199,6 +200,26 @@ test('a failed install leaves the previous shell alone', async () => {
   const worker = runWorker({ fails: ['./index.html'], existing: ['mbrd-v1'] });
   assert.equal(await update(worker), false, 'a shell entry that 404s must fail the install');
   assert.ok(worker.store.has('mbrd-v1'), 'the last known-good shell was destroyed');
+});
+
+test('an offline navigation gets a shell page that forgets its redirect', async () => {
+  // The deploy answers index.html with a 307 to /. A navigation refuses a
+  // response whose redirected flag is set, so a stored copy of that fetch
+  // made the offline start an error page.
+  let online = true;
+  const worker = runWorker({
+    net: async url => {
+      if (!online) throw new TypeError('offline');
+      return { ok: true, status: 200, statusText: 'OK', headers: { 'content-type': 'text/html' },
+        type: 'basic', redirected: url === './index.html', body: `page ${url}` };
+    },
+  });
+  await worker.fire('install');
+  online = false;
+  const res = await worker.fireFetch({ url: 'https://mbrd.example/', mode: 'navigate' });
+  assert.equal(res.redirected, false, 'a redirected response cannot answer a navigation');
+  assert.equal(res.status, 200);
+  assert.equal(await res.text(), 'page ./index.html');
 });
 
 test('a complete update does replace the previous shell', async () => {
