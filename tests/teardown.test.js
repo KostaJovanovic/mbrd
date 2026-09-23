@@ -24,6 +24,22 @@ test('discard() calls every release hook there is', () => {
   }
 });
 
+test('a card lets go of its contents before it leaves the document, never after', () => {
+  // Chromium keeps an <img> alive for good when its src is removed after it was
+  // detached, so remove-then-release leaked every culled card. Measured on a
+  // phone as DOM nodes that no garbage collection would free.
+  const items = src('canvas/items.ts');
+  const discard = items.slice(items.indexOf('function discard('), items.indexOf('export function releaseCardContent('));
+  const release = discard.indexOf('releaseCardContent(el)');
+  const remove = discard.indexOf('el.remove()');
+  assert.ok(release >= 0 && remove >= 0, 'discard() no longer releases and removes the card');
+  assert.ok(release < remove, 'discard() removes the card before releasing it again');
+  const drawer = src('ui/drawer.ts');
+  const drop = drawer.slice(drawer.indexOf('function drop('));
+  assert.ok(drop.indexOf('releaseCardContent(') < drop.indexOf('replaceChildren('),
+    'the drawer empties a slot before releasing what was in it');
+});
+
 test('a rebuild tears its old body down the way a discard does', () => {
   // rebuild() replaces a card's whole body on a rename, Fit toggle, crop,
   // adjust or cover change, but used to call only releasePlayers(). The old
