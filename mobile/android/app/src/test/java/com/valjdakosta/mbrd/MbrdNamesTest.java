@@ -1,8 +1,10 @@
 package com.valjdakosta.mbrd;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThrows;
+import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
@@ -80,6 +82,26 @@ public class MbrdNamesTest {
         assertEquals("_COM1.notes.mbrd", MbrdNames.plainName("COM1.notes"));
         assertEquals("b.mbrd", MbrdNames.nthName("b.mbrd", 1));
         assertEquals("b_(2).mbrd", MbrdNames.nthName("b.mbrd", 2));
+    }
+
+    /** MbrdFiles.checked(): only a board directly in the folder, as on the
+     *  desktop. A picture there, a subfolder, the bin and the store are the
+     *  person's own or the app's, and never the page's to read or write. */
+    @Test
+    public void thePageMayNameOnlyABoardDirectlyInTheFolder() {
+        File root = new File("/storage/emulated/0/Documents/mbrd");
+        assertTrue(MbrdNames.isFolderBoard(root, new File(root, "Summer.mbrd")));
+        assertTrue(MbrdNames.isFolderBoard(root, new File(root, "SUMMER.MBRD")));
+        assertFalse(MbrdNames.isFolderBoard(root, new File(root, "Personal/passport.jpg")));
+        assertFalse(MbrdNames.isFolderBoard(root, new File(root, "Personal/x.mbrd")));
+        assertFalse(MbrdNames.isFolderBoard(root, new File(root, "passport.jpg")));
+        assertFalse(MbrdNames.isFolderBoard(root, new File(root, "Personal")));
+        assertFalse(MbrdNames.isFolderBoard(root, new File(root, ".trash/x.mbrd")));
+        assertFalse(MbrdNames.isFolderBoard(root, new File(root, ".store/kv/x.mbrd")));
+        assertFalse(MbrdNames.isFolderBoard(root, new File(root, ".hidden.mbrd")));
+        assertFalse(MbrdNames.isFolderBoard(root, new File(root, "x.mbrd.mbrd-tmp")));
+        assertFalse(MbrdNames.isFolderBoard(root, root));
+        assertFalse(MbrdNames.isFolderBoard(root, new File("/storage/emulated/0/Documents/x.mbrd")));
     }
 
     @Test

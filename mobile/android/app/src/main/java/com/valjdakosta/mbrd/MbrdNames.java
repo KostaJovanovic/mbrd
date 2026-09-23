@@ -123,6 +123,19 @@ final class MbrdNames {
         return name.substring(0, name.length() - BOARD_EXT.length()) + "_(" + n + ")" + BOARD_EXT;
     }
 
+    /**
+     * Whether `file` is a board directly in `root`, not hidden, ending in
+     * .mbrd: the only kind of path in a board folder the page may name without
+     * this process handing it out. Both canonical. desktop/board-names.mts's
+     * isFolderBoard() is the same rule.
+     */
+    static boolean isFolderBoard(File root, File file) {
+        File parent = file.getParentFile();
+        if (parent == null || !parent.getPath().equals(root.getPath())) return false;
+        String name = file.getName();
+        return !name.startsWith(".") && name.toLowerCase(Locale.ROOT).endsWith(BOARD_EXT);
+    }
+
     /** `name`, or "name (2).ext" and on, whichever `dir` does not hold yet. */
     static String freeName(File dir, String name) {
         if (!new File(dir, name).exists()) return name;
