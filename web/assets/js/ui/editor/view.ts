@@ -936,7 +936,7 @@ export function mountEditor(opts: EditorOptions): Editor {
     b?.kind === 'h' ? `Heading ${b.level}` : b?.kind === 'li' ? 'List' : b?.kind === 'quote' ? 'Quote' : b?.kind === 'code' ? 'Code' : 'Normal';
   const marks: [MarkKey, HTMLButtonElement][] = [
     ['b', button('Bold (Ctrl+B)', () => mark('b'), { text: 'B', cls: 'ed-bold' })],
-    ['i', button('Italic (Ctrl+I)', () => mark('i'), { text: 'I', cls: 'ed-italic' })],
+    ['i', button('Italic (Ctrl+I)', () => mark('i'), { text: 'i', cls: 'ed-italic' })],
     ['s', button('Strikethrough (Ctrl+Shift+X)', () => mark('s'), { text: 'S', cls: 'ed-strike' })],
   ];
   const lists: [ListKind, HTMLButtonElement][] = [
