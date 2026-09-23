@@ -169,7 +169,8 @@
 }
 .ed-btn:disabled { color: var(--ink-3); opacity: 0.6; cursor: default; }
 .ed-bold { font-weight: 700; }
-.ed-italic { font-family: var(--font-display); font-style: italic; }
+/* A serif at every whimsy, where --font-display can be the sans: an italic reads as one only in a serif. */
+.ed-italic { font-family: var(--font-serif); font-style: italic; font-size: var(--t-body); }
 .ed-strike { text-decoration: line-through; }
 /* A large command, its glyph over its word, as Word draws the ones a group leads with. */
 .ed-big {
