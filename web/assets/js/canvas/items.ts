@@ -720,8 +720,13 @@ function discard(el: HTMLElement) {
   // Taken out already, remove() does nothing.
   const focused = document.activeElement;
   if (focused instanceof HTMLElement && el.contains(focused)) focused.blur();
-  el.remove();
+  // Released while still in the document, then removed. The other way round,
+  // Chromium never frees an <img> whose src was taken off after it left: every
+  // culled card stayed alive, and a Galaxy S22+ panning one board kept 600 more
+  // per few seconds of it (2026-09-23). rebuild() and the drawer already did it
+  // in this order.
   releaseCardContent(el);
+  el.remove();
 }
 
 /**
