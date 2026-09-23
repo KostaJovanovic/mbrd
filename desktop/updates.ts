@@ -398,6 +398,10 @@ async function check(manual: boolean): Promise<void> {
     const rel = await latestRelease();
     stamp();
     if (!newer(rel.version, app.getVersion())) {
+      // A failed check before this one, or a release since withdrawn, must
+      // not stay on the button for the rest of the run.
+      pending = null;
+      if (offered) publish(null);
       if (asked) say({ state: 'current', version: '', note: `Version ${label(app.getVersion())} is the latest release.` }, PASSING_MS);
       return;
     }

@@ -38,6 +38,16 @@ test('only a press on Update downloads', () => {
   assert.doesNotMatch(body('check'), /fetchUpdate\(|downloadAndInstall\(/);
 });
 
+test('a check that finds nothing newer clears a failure from before', () => {
+  // Otherwise "Could not check" stayed on the button for the whole run, and a
+  // passing "Up to date" went back to it after five seconds.
+  const current = /if \(!newer\(rel\.version, app\.getVersion\(\)\)\) \{([\s\S]*?)\n {4}\}/.exec(body('check'));
+  assert.ok(current, 'no not-newer branch in check()');
+  assert.match(current[1], /pending = null;/);
+  assert.match(current[1], /if \(offered\) publish\(null\);/);
+  assert.ok(current[1].indexOf('publish(null)') < current[1].indexOf('say('), 'cleared before the passing answer');
+});
+
 test('every state the updater can say has a word on the button', () => {
   const union = /export type UpdateState =([^;]+);/.exec(bridge);
   assert.ok(union, 'no UpdateState in desktop/chrome/bridge.ts');
