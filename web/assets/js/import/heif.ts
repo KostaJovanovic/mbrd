@@ -156,6 +156,9 @@ function run(bytes: ArrayBuffer): Promise<Reply> {
     const timer = setTimeout(() => {
       waiting.delete(id);
       reject(new Error('the decoder did not answer'));
+      // The worker is stuck, not slow, and every later job queues behind it:
+      // end it, and let the next file spawn a fresh one.
+      stop(w);
     }, DECODE_MS);
     waiting.set(id, msg => {
       clearTimeout(timer);
@@ -178,13 +181,16 @@ function ensureWorker(): Worker {
     waiting.delete(e.data.id);
     done(e.data);
   };
-  w.onerror = () => {
-    for (const [id, done] of waiting) { waiting.delete(id); done({ id, error: 'the decoder stopped' }); }
-    if (worker === w) worker = null;
-    w.terminate();
-  };
+  w.onerror = () => stop(w);
   worker = w;
   return w;
+}
+
+/** End a worker that died or hung, and fail every job that was waiting on it. */
+function stop(w: Worker) {
+  for (const [id, done] of waiting) { waiting.delete(id); done({ id, error: 'the decoder stopped' }); }
+  if (worker === w) worker = null;
+  w.terminate();
 }
 
 /**
