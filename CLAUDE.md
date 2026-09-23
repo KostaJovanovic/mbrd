@@ -177,10 +177,13 @@ Generators, run when their source changes:
 (→ `stickers.svg`), `node tools/gen-patch-page.mjs` (→ `web/patch.html`),
 `node tools/gen-desktop-icons.mjs` (`icon.svg` → `desktop/icons/`, the `.ico`,
 `.icns` and PNG the three installers want), `node tools/gen-og.mjs`
-(`tools/og.html` → `web/assets/img/og.png`, the link-preview card). Those last
-two are the only generators that need an install, and it is `desktop/`'s: they
-go through the sharp the shell already depends on, and the preview also needs a
-local Edge or Chrome to draw the page. Their output is committed so nobody else
+(`tools/og.html` → `web/assets/img/og.png`, the link-preview card), `node
+tools/gen-screenshots.mjs` (a demo board it packs itself → the two
+`screenshot-*.png` that `manifest.json` and the JSON-LD name). Those last three
+are the only generators that need an install, and it is `desktop/`'s: they go
+through the sharp the shell already depends on, and the last two also need a
+local Edge or Chrome. The screenshots are of the real app, so they need the dev
+server up and a fresh `npm run build`. Their output is committed so nobody else
 runs them.
 
 Two more `.mjs` under `tools/` are one-shot printers and not build steps:
