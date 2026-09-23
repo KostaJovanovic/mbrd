@@ -464,11 +464,37 @@ export async function boardSyncState() {
  *
  * `force` is what a caller passes once a person has been asked and said
  * overwrite. Nothing in the automatic path may pass it.
+ *
+ * One push at a time (cloudTurn()): two that overlap both pass the conflict
+ * check against the same row, and whichever lands last wins silently.
  */
-export async function pushBoardToCloud(
+export function pushBoardToCloud(
   { force = false, onProgress }:
     { force?: boolean, onProgress?: (done: number, total: number) => void } = {},
 ) {
+  // A plain push that is still waiting will serialise the board when it
+  // starts, so a second one behind it would only upload the same board again.
+  if (!force && !onProgress && waitingPush) return waitingPush;
+  const run: ReturnType<typeof pushOnce> = cloudTurn(() => {
+    if (waitingPush === run) waitingPush = null;
+    return pushOnce(force, onProgress);
+  });
+  if (!force && !onProgress) waitingPush = run;
+  return run;
+}
+
+/** Cloud pushes, one after another. Never rejects. */
+let cloudWork: Promise<unknown> = Promise.resolve();
+/** A plain push queued behind another and not started yet, for sharing. */
+let waitingPush: ReturnType<typeof pushOnce> | null = null;
+
+function cloudTurn<T>(work: () => Promise<T>): Promise<T> {
+  const run = cloudWork.then(work);
+  cloudWork = run.catch(() => {});
+  return run;
+}
+
+async function pushOnce(force: boolean, onProgress?: (done: number, total: number) => void) {
   const { shareProvider } = await import('./cloud/cloud.ts');
   const { pushBoard, syncFor, writeSyncRow, noteCurrentSync } = await import('./cloud/sync.ts');
   const id = await ensureBoardId();
@@ -506,13 +532,15 @@ export async function startSyncingBoard(providerId: string) {
   const { pushBoard, writeSyncRow, noteCurrentSync } = await import('./cloud/sync.ts');
   const provider = shareProvider(providerId);
   if (!provider) throw new Error('that cloud account is not available in this build');
-  const id = await ensureBoardId();
-  const out = await pushBoard(provider, id, serializeBoard(), { known: null });
-  if (out.ok) {
-    await writeSyncRow(id, out.row);
-    noteCurrentSync(out.row);
-  }
-  return out;
+  return cloudTurn(async () => {
+    const id = await ensureBoardId();
+    const out = await pushBoard(provider, id, serializeBoard(), { known: null });
+    if (out.ok) {
+      await writeSyncRow(id, out.row);
+      noteCurrentSync(out.row);
+    }
+    return out;
+  });
 }
 
 /**
@@ -550,7 +578,9 @@ export async function openCloudBoard(remote: { boardId: string, folder: string, 
           reuse: stash,
         });
         seen = pulled.seen;
-        loadBoard(normalizeBoard(pulled.board));
+        // Raw: loadBoard() normalises, and a second pass reads a normalised
+        // board as a file with no settings, look or timeline.
+        loadBoard(pulled.board);
       });
     } finally {
       job.end();
