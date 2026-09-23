@@ -115,7 +115,7 @@ export function buildControls() {
       name.className = 'field-picker-name';
       btn.append(name);
       menuButton(btn, () => openAnchored(btn.getBoundingClientRect(),
-        faceEntries(c, btn.dataset.value ?? ''), { label: c.label, owner: btn, focus: true }));
+        faceEntries(c, btn), { label: c.label, owner: btn, focus: true }));
       input = btn;
     } else if (c.type === 'color') {
       input = document.createElement('button');
@@ -160,14 +160,19 @@ const faceOf = (value: string) => value || undefined;
  * dropped faces sorted in with the rest - each row set in its own face so the
  * list is the comparison. Typing jumps to a name (ui/menu.ts's type-ahead).
  */
-function faceEntries(c: FontControl, now: string): MenuEntry[] {
+function faceEntries(c: FontControl, btn: HTMLButtonElement): MenuEntry[] {
+  const now = btn.dataset.value ?? '';
   const [first, ...rest] = c.options;
   const faces = [...rest, ...customFaces()].sort((a, b) => a.label.localeCompare(b.label));
   return [first, ...faces].map(f => ({
     label: f.label,
     font: faceOf(f.value),
     check: f.value === now,
-    action: () => d.setVar(c.var, f.value),
+    action: () => {
+      d.setVar(c.var, f.value);
+      // setVar() repaints no control, so the button and the next menu's tick would keep the old face.
+      paintFace(btn, c, f.value);
+    },
   }));
 }
 
