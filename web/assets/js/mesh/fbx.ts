@@ -5,7 +5,7 @@
 // cameras, lights, textures, GeometricTranslation pivots.
 
 import {
-  CAPS, MeshError, MeshBuild, type Mesh, clamp01, tooBig,
+  CAPS, MAX_ELEMENTS, MAX_TRIANGLES, MeshError, MeshBuild, type Mesh, clamp01, tooBig,
 } from './shared.ts';
 import { inflateZlib } from './zip.ts';
 import { oversize } from '../consent.ts';
@@ -14,6 +14,9 @@ const BIN_MAGIC = 'Kaydara FBX Binary';
 
 // Cycle guard for the model parent chain.
 const MAX_CHAIN = 256;
+
+// How deep records may nest.
+const MAX_DEPTH = 256;
 
 export function parseFBX(bytes: ArrayBuffer): Mesh {
   const u8 = new Uint8Array(bytes);
@@ -86,7 +89,10 @@ function binary(u8: Uint8Array): Mesh {
     }
   };
 
-  const node = (at: number): { node: Node; next: number } | null => {
+  const node = (at: number, depth: number): { node: Node; next: number } | null => {
+    // Records nest a handful deep in any exporter's file. This recurses once a
+    // level, so past this it is a stack overflow rather than a model.
+    if (depth > MAX_DEPTH) throw new MeshError('This FBX nests its records too deeply');
     if (at + nullRec > u8.length) return null;
     const end = word(at);
     if (!end) return null;                       // the null record ends a sibling list
@@ -108,7 +114,7 @@ function binary(u8: Uint8Array): Mesh {
     const kids: Node[] = [];
     while (p + nullRec <= end && p + nullRec <= u8.length) {
       if (word(p) === 0) { p += nullRec; break; }
-      const child = node(p);
+      const child = node(p, depth + 1);
       if (!child) break;
       kids.push(child.node);
       p = child.next;
@@ -120,7 +126,7 @@ function binary(u8: Uint8Array): Mesh {
   let at = 27;                                   // 23-byte magic block, 4-byte version
   while (at + nullRec <= u8.length) {
     if (word(at) === 0) break;
-    const r = node(at);
+    const r = node(at, 0);
     if (!r) break;
     roots.push(r.node);
     at = r.next;
@@ -131,9 +137,22 @@ function binary(u8: Uint8Array): Mesh {
 
 const latin1 = (b: Uint8Array) => new TextDecoder('latin1').decode(b);
 
+/** How many times the per-array ceiling one parse may unpack in total. A model
+ *  at the triangle ceiling with normals and colours, each indexed, needs about
+ *  six. */
+const PARSE_ELEMENTS = 8;
+
+/** Elements still allowed to be unpacked in this parse. The per-array check
+ *  in prop() let a hundred geometries of six million each through, one at a
+ *  time, until the tab ran out of memory. */
+type Budget = { left: number };
+
 // Inflate and widen one packed array property to number[].
-function unpack(p: Prop | undefined): number[] | null {
+function unpack(p: Prop | undefined, budget: Budget): number[] | null {
   if (!p || typeof p !== 'object' || p.kind !== 'array') return null;
+  // Before the inflate, which is where the memory goes.
+  if (p.length > budget.left) throw oversize('mesh-triangles', tooManyInTotal());
+  budget.left -= p.length;
   const bytes = p.encoding === 1 ? inflateZlib(p.data) : p.data;
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const width = p.type === 'd' || p.type === 'l' ? 8 : p.type === 'b' ? 1 : 4;
@@ -174,10 +193,11 @@ function assemble(roots: Node[]): Mesh {
   // child id -> parent id
   const parent = new Map<number, number>();
   let up: 'y' | 'z' | null = null;
+  const budget: Budget = { left: CAPS.elem * PARSE_ELEMENTS };
 
   const walk = (node: Node) => {
     if (node.name === 'Geometry') {
-      const g = readGeometry(node);
+      const g = readGeometry(node, budget);
       if (g) geoms.set(idOf(node), g);
     } else if (node.name === 'Model') {
       models.set(idOf(node), readModel(node));
@@ -217,7 +237,11 @@ function chain(id: number, parent: Map<number, number>, models: Map<number, Xfor
   return out;
 }
 
-function readGeometry(node: Node): Geom | null {
+const tooManyInTotal = () =>
+  `This model's arrays add up to more than ${(MAX_ELEMENTS * PARSE_ELEMENTS).toLocaleString()} values, `
+  + `more than the ${MAX_TRIANGLES.toLocaleString()}-triangle ceiling leaves room for.`;
+
+function readGeometry(node: Node, budget: Budget): Geom | null {
   let verts: number[] | null = null;
   let polys: number[] | null = null;
   let normals: number[] | null = null;
@@ -228,18 +252,18 @@ function readGeometry(node: Node): Geom | null {
   let colourMapping = '';
 
   for (const kid of node.kids) {
-    if (kid.name === 'Vertices') verts = unpack(kid.props[0]);
-    else if (kid.name === 'PolygonVertexIndex') polys = unpack(kid.props[0]);
+    if (kid.name === 'Vertices') verts = unpack(kid.props[0], budget);
+    else if (kid.name === 'PolygonVertexIndex') polys = unpack(kid.props[0], budget);
     else if (kid.name === 'LayerElementNormal') {
       for (const c of kid.kids) {
-        if (c.name === 'Normals') normals = unpack(c.props[0]);
-        else if (c.name === 'NormalsIndex') normalsIndexed = unpack(c.props[0]);
+        if (c.name === 'Normals') normals = unpack(c.props[0], budget);
+        else if (c.name === 'NormalsIndex') normalsIndexed = unpack(c.props[0], budget);
         else if (c.name === 'MappingInformationType') normalMapping = String(c.props[0] || '');
       }
     } else if (kid.name === 'LayerElementColor') {
       for (const c of kid.kids) {
-        if (c.name === 'Colors') colours = unpack(c.props[0]);
-        else if (c.name === 'ColorIndex') coloursIndexed = unpack(c.props[0]);
+        if (c.name === 'Colors') colours = unpack(c.props[0], budget);
+        else if (c.name === 'ColorIndex') coloursIndexed = unpack(c.props[0], budget);
         else if (c.name === 'MappingInformationType') colourMapping = String(c.props[0] || '');
       }
     }
@@ -406,14 +430,21 @@ function layer(data: number[] | null, index: number[] | null, mapping: string, w
 // ASCII FBX — regex-extracted arrays, no connection graph.
 // Multi-object scenes land at the origin (binary path handles transforms).
 function ascii(text: string): Mesh {
+  // The opening matched by regex, the body found by indexOf. One regex for
+  // both ran `[^}]*` to the end of the file for every opening with no `}`
+  // after it, which is quadratic - forty thousand openings took half a minute.
   const grab = (re: RegExp) => {
     const out: string[] = [];
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(text))) out.push(m[1]);
+    while (re.exec(text)) {
+      const close = text.indexOf('}', re.lastIndex);
+      if (close < 0) break;                      // and so has every later opening
+      out.push(text.slice(re.lastIndex, close));
+      re.lastIndex = close + 1;
+    }
     return out;
   };
-  const vertLists = grab(/Vertices:\s*\*\d+\s*\{\s*a:\s*([^}]*)\}/g);
-  const polyLists = grab(/PolygonVertexIndex:\s*\*\d+\s*\{\s*a:\s*([^}]*)\}/g);
+  const vertLists = grab(/Vertices:\s*\*\d+\s*\{\s*a:\s*/g);
+  const polyLists = grab(/PolygonVertexIndex:\s*\*\d+\s*\{\s*a:\s*/g);
   if (!vertLists.length || !polyLists.length) throw new MeshError('This FBX has no geometry in it');
 
   const build = new MeshBuild();
