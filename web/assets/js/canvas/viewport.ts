@@ -164,6 +164,13 @@ const VIEW_SETTLE_MS = 140;
 const PIN_OUT = 2;
 const PIN_IN = 4;
 
+/**
+ * How far below the scale it was rastered at a gesture may zoom before the
+ * shadow twins leave - see _shadowsOut(). Enough that a pinch's own wobble
+ * does not pull them, well short of where they would cost anything.
+ */
+const SHADOWS_OUT = 0.9;
+
 // How a thrown board comes to rest - see glide().
 //
 // The time constant is the whole feel of it. A flick travels its speed times
@@ -1192,14 +1199,20 @@ export class Viewport {
   }
 
   /**
-   * The one part of the far rung a gesture cannot wait for: the shadow twins,
-   * which zoom-far hides (item-chrome.css). Their blur spreads every card's
-   * paint well past its edges, and a zoom-out held at the scale it started from
-   * rasters all of it - on a Galaxy S10, a hundred `tile memory limits exceeded`
-   * per zoom-out from 100% to 25%, which is the blink, and none without them.
-   * So while the view moves past the rung, their whole container goes; that
-   * restyles the twins and not the cards, where flipping zoom-far would do both.
-   * The settling frame hands the job back to the class.
+   * The shadow twins, off the page for a gesture that zooms out.
+   *
+   * Pinned, the board keeps the raster scale the gesture started at, so a
+   * zoom-out asks for more texture with every frame, and the shadow twins are
+   * most of it: their blur spreads every card's paint well past its edges. On a
+   * Galaxy S10 they are what runs out of tile memory. From 100% to 25% that was
+   * a hundred `tile memory limits exceeded` per zoom-out, the blink. From 500% it
+   * was a board with no room left to re-pin into (_pin), so the frame after each
+   * re-pin drew with most of its tiles missing: every card gone for a moment,
+   * around 90%. Without the twins there are none of either.
+   *
+   * So their whole container goes, which restyles the twins and not the cards,
+   * where flipping zoom-far would do both. They come back on the settling
+   * frame, where zoom-far (item-chrome.css) decides as it always has.
    */
   _shadowsOut(out: boolean) {
     if (out === this._shadowsHidden) return;
@@ -1308,7 +1321,10 @@ export class Viewport {
       if (!this._iz) this._setIz(1 / z);
       this._rungs(z);
     } else {
-      this._shadowsOut(z < farZoom());
+      // Out once the gesture zooms out, and out until it ends: bringing them
+      // back mid-gesture would be one more raster of the board for a pinch that
+      // is about to settle anyway.
+      this._shadowsOut(this._shadowsHidden || z < farZoom() || z < this._pinned * SHADOWS_OUT);
     }
     this._moving();
 
