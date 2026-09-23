@@ -1,5 +1,8 @@
 # A text editor in the viewer — 22 September 2026
 
+**Status: done, 2026-09-23.** All three phases built: the editor, Vomit Mode
+and `.fountain` screenplays.
+
 A plan, written before any of it exists. The brief from the maintainer: a very
 simplified Word / Google Docs / Obsidian, **a quick note-taking thing and not a
 standalone app**, plus the writing modes of [Vomdraft](https://vomdraft.com/)
