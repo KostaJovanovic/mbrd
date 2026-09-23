@@ -3,7 +3,7 @@
 // Id refs live in connections, audioOrder, tour, stuckTo, fence — all remapped.
 // meta.cover/shot/thumb/preview are content hashes, not ids — left alone.
 
-import { dedupeIds } from './board-model.ts';
+import { dedupeIds, isFurniture } from './board-model.ts';
 import type { Board, Connection, Item, TourStop } from './board-model.ts';
 import { itemBounds } from './geometry.ts';
 import { isRecord } from './util.ts';
@@ -24,7 +24,9 @@ export function planMerge(
   hostItems: Iterable<{ x: number, y: number, w: number, h: number, rot: number }> = [],
   at: { x: number, y: number } | null = null,
 ): MergePlan {
-  const items = incoming.items;
+  // The host keeps its own title card, and the file's hints are for its own
+  // first opening: carried over, a title would come in renamed as a second one.
+  const items = incoming.items.filter(it => !isFurniture(it));
   const was = items.map(i => i.id);
   dedupeIds(items, new Set(taken));
 
