@@ -1,7 +1,7 @@
 /* =========================================================
    mbrd - the text editor (ui/editor/view.ts), inside the viewer.
-   Laid out as Microsoft Word is: the document's name across the
-   top, one ribbon of labelled groups with a gallery of styles,
+   Laid out as Microsoft Word is: one ribbon of labelled groups
+   across the top, with a gallery of styles and the close at its end,
    the page on a desk, and a status bar along the foot. Made of the
    board's materials - its paper and grain, its glass and corners
    (chrome.css, items.css) - so it is Word's plan in this app's hand.
@@ -11,8 +11,10 @@
    whose height ui/viewer.ts writes into --kb. */
 #viewer[data-edit] {
   --ed-inset: env(safe-area-inset-top, 0px);
-  /* The title row and the ribbon, one band flush with the window's edges. */
-  --ed-title-h: 34px;
+  /* The ribbon, one band flush with the window's edges. A desk has no title
+     row - the name is on the sheet - and a phone gives it one for its top bar. */
+  --ed-title-h: 0px;
+  --ed-close-w: 56px;
   --ed-ribbon-h: 96px;
   --ed-bar-top: var(--ed-inset);
   --ed-bar-bottom: calc(var(--ed-bar-top) + var(--ed-title-h) + var(--ed-ribbon-h));
@@ -26,34 +28,28 @@
   box-shadow: none;
   background: var(--paper);
 }
-/* The title row, over the band's top: the document's name centred, as Word's
-   title bar has it, and the close at the right. */
+/* The head keeps only its close, as the ribbon's last cell: the right end of
+   the band, a rule before it as between groups. The name is the sheet's. */
 #viewer[data-edit] #viewer-head {
   position: absolute;
   z-index: 4;
-  top: var(--ed-inset);
-  left: max(8px, env(safe-area-inset-left));
-  right: max(4px, env(safe-area-inset-right));
-  height: var(--ed-title-h);
+  top: calc(var(--ed-inset) + 6px);
+  right: env(safe-area-inset-right);
+  width: var(--ed-close-w);
+  height: calc(var(--ed-ribbon-h) - 6px);
   justify-content: center;
-  padding: 0;
+  /* Level with the groups' commands, which sit above their labels. */
+  align-items: flex-start;
+  padding: 14px 0 0;
   border: 0;
-  background: none;
+  border-left: 1px solid var(--rule);
+  background: var(--paper-card);
   pointer-events: none;
 }
-#viewer[data-edit] #viewer-names {
-  flex: 0 1 auto;
-  max-width: calc(100% - 2 * var(--ed-title-h));
-  text-align: center;
-}
-#viewer[data-edit] #viewer-title { font-size: var(--t-small); font-weight: 600; }
-#viewer[data-edit] #viewer-meta { display: none; }
+#viewer[data-edit] #viewer-names { display: none; }
 #viewer[data-edit] #viewer-close {
-  position: absolute;
-  right: 0;
-  top: 0;
-  width: var(--ed-title-h);
-  height: var(--ed-title-h);
+  width: 40px;
+  height: 40px;
   pointer-events: auto;
 }
 /* The viewer's body gives up its grid and its padding: the editor lays out its own room. */
@@ -86,7 +82,7 @@
 /* ── The ribbon ─────────────────────────────────────────────────────────────
    Word's, without its tabs: every group in one row, each its commands and its
    name beneath them, a rule between groups. One band across the top of the
-   window, edge to edge, in the board's card paper, under the title row. */
+   window, edge to edge, in the board's card paper, the close at its end. */
 
 .ed-bar {
   position: absolute;
@@ -103,14 +99,14 @@
 }
 .ed-ribbon {
   height: var(--ed-ribbon-h);
-  border-top: var(--hairline) solid var(--rule);
   overflow: hidden;
 }
 .ed-panel {
   display: flex;
   align-items: stretch;
   height: 100%;
-  padding: 6px 4px 0;
+  /* The right end is the head's close (#viewer-head above). */
+  padding: 6px var(--ed-close-w) 0 4px;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -451,8 +447,17 @@
   }
   /* The top bar: the status bar moved up - the counts, and a session's time -
      with the head's close over its right end, a thumb's size. */
-  #viewer[data-edit] #viewer-names { visibility: hidden; }
-  #viewer[data-edit] #viewer-close { width: 48px; height: 48px; right: -4px; }
+  #viewer[data-edit] #viewer-head {
+    top: var(--ed-inset);
+    right: max(0px, calc(env(safe-area-inset-right) - 4px));
+    width: 52px;
+    height: var(--ed-title-h);
+    align-items: center;
+    padding: 0;
+    border-left: 0;
+    background: none;
+  }
+  #viewer[data-edit] #viewer-close { width: 48px; height: 48px; }
   .ed-status {
     top: 0;
     bottom: auto;
@@ -464,7 +469,7 @@
   .ed-counts { gap: 12px; }
   /* The band under the top bar, edge to edge, carrying the pair's shadow. */
   .ed-bar { padding-top: 0; }
-  .ed-ribbon { height: auto; border-top: 0; }
+  .ed-ribbon { height: auto; }
   /* Every command in two rows of eight, with no sideways scroll: the groups
      give up their boxes, so each button is a cell of one grid, each a thumb's
      target. The first row is the writing - undo, the marks, the lists; the
