@@ -429,17 +429,31 @@
 }
 
 
-/* A phone: the page is the screen, and the ribbon sits at its foot just above
-   the keyboard, as Word's does on a phone - one compact row, scrolling
-   sideways, the group names left off for the room. */
+/* A phone: the same editor, laid out for a thumb. A bar across the top with
+   the close and the counts; the page on the desk, as on a desk; and at the
+   foot, just above the keyboard, a row of the commonest commands whose Tools
+   button opens the whole ribbon as a sheet - every group, under its name. */
 @media (max-width: 700px) {
   #viewer[data-edit] {
+    --ed-title-h: 48px;
     --ed-ribbon-h: 52px;
     --ed-dock: calc(env(safe-area-inset-bottom, 0px) + var(--ed-ribbon-h));
-    --ed-top: calc(var(--ed-inset) + var(--ed-title-h) + 8px);
-    background: var(--paper-card);
+    --ed-top: calc(var(--ed-inset) + var(--ed-title-h) + 12px);
   }
-  .ed-grain, .ed-status { display: none; }
+  /* The top bar: the status bar moved up - the counts, and a session's time -
+     with the head's close over its right end, a thumb's size. */
+  #viewer[data-edit] #viewer-names { visibility: hidden; }
+  #viewer[data-edit] #viewer-close { width: 48px; height: 48px; right: -4px; }
+  .ed-status {
+    top: 0;
+    bottom: auto;
+    height: calc(var(--ed-inset) + var(--ed-title-h));
+    padding: var(--ed-inset) 56px 0 max(16px, env(safe-area-inset-left));
+    border-top: 0;
+    border-bottom: var(--hairline) solid var(--rule-2);
+    box-shadow: var(--shadow-1);
+  }
+  .ed-counts { gap: 12px; }
   /* The band moves to the foot, flush with the keyboard or the screen's edge. */
   .ed-bar {
     top: auto;
@@ -449,20 +463,68 @@
     border-top: var(--hairline) solid var(--rule-2);
     border-bottom: 0;
   }
-  .ed-ribbon { border-top: 0; }
-  /* One row that fits the screen, with no sideways scroll: the groups give up
-     their boxes, the rarer commands step back into More (ui/editor/view.ts),
-     and what is left shares the width, each a thumb's target. */
-  .ed-panel { gap: 2px; padding: 4px 6px; overflow: visible; }
-  .ed-group, .ed-group-body, .ed-stack, .ed-phone { display: contents; }
-  .ed-group-label, .ed-desk, .ed-btn[hidden] { display: none; }
-  .ed-panel .ed-btn { flex: 1 1 0; min-width: 0; height: 44px; padding: 0 4px; }
+  .ed-ribbon { height: auto; border-top: 0; }
+  /* Shut: one row that fits the screen, with no sideways scroll. The groups
+     give up their boxes, the rarer commands step back into the sheet, and
+     what is left shares the width, each a thumb's target. */
+  .ed-bar:not(.is-open) .ed-panel { height: var(--ed-ribbon-h); gap: 2px; padding: 4px 6px; overflow: visible; }
+  .ed-bar:not(.is-open) :is(.ed-group, .ed-group-body, .ed-stack) { display: contents; }
+  .ed-bar:not(.is-open) :is(.ed-group-label, .ed-desk) { display: none; }
+  .ed-phone { display: contents; }
+  .ed-btn[hidden] { display: none; }
+  .ed-bar:not(.is-open) .ed-panel .ed-btn { flex: 1 1 0; min-width: 0; height: 44px; padding: 0 4px; }
   .ed-panel .ed-btn .ico { width: 19px; height: 19px; }
-  /* Undo and Redo by their glyphs alone; the Style button keeps its word, which names the line. */
-  .ed-panel .ed-btn:not(.ed-style) .ed-btn-word { display: none; }
-  .ed-panel .ed-style { flex-grow: 3; gap: 4px; color: var(--ink); }
+  /* Undo and Redo by their glyphs alone; Style keeps its word, which names the line. */
+  .ed-bar:not(.is-open) .ed-panel .ed-btn:not(.ed-style) .ed-btn-word { display: none; }
+  .ed-bar:not(.is-open) .ed-panel .ed-style { flex-grow: 3; gap: 4px; color: var(--ink); }
   .ed-panel .ed-style .ico { width: 11px; height: 11px; }
   .ed-panel .ed-style .ed-btn-word { overflow: hidden; text-overflow: ellipsis; }
+  /* Tools: a chevron that points to where the sheet will go. */
+  .ed-tools .ico { rotate: -90deg; transition: rotate var(--dur-fast) var(--ease); }
+  .is-open .ed-tools .ico { rotate: 90deg; }
+
+  /* Open: the ribbon as a sheet up from the foot, each group a row under its
+     name, the Tools row at the top to shut it again. It scrolls when it is
+     taller than the room the keyboard leaves. */
+  .ed-bar.is-open {
+    border-radius: var(--radius) var(--radius) 0 0;
+    box-shadow: var(--shadow-2);
+  }
+  .is-open .ed-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: min(62dvh, calc(100dvh - var(--kb, 0px) - var(--ed-title-h) - 40px));
+    padding: 6px 14px 14px;
+    overflow: hidden auto;
+    overscroll-behavior: contain;
+  }
+  .is-open .ed-group { flex-direction: column-reverse; gap: 6px; padding: 0; }
+  .is-open .ed-group + .ed-group { border-left: 0; }
+  .is-open .ed-group-label { padding: 0; text-align: left; font-size: var(--t-tiny); }
+  .is-open .ed-group-body { flex-wrap: wrap; gap: 6px; }
+  .is-open .ed-stack { flex-direction: row; gap: 6px; }
+  .is-open .ed-panel .ed-btn {
+    height: 44px;
+    padding: 0 14px;
+    outline: var(--hairline) solid var(--rule-2);
+    outline-offset: calc(-1 * var(--hairline));
+    background: var(--paper);
+  }
+  .is-open .ed-panel .ed-btn.is-active, .is-open .ed-panel .ed-btn[aria-pressed="true"] {
+    outline-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, var(--paper-card));
+  }
+  .is-open .ed-big { flex-direction: row; gap: 8px; min-width: 0; font-size: var(--t-small); }
+  .is-open .ed-big .ico { width: 18px; height: 18px; }
+  /* The galleries keep one row and scroll sideways, as a phone's carousels do. */
+  .is-open :is([aria-label="Styles"], [aria-label="Script"]) .ed-group-body { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: 0 -14px; padding: 0 14px; }
+  .is-open .ed-tile { width: auto; min-width: 104px; height: 52px; }
+  /* The dock's own row heads the sheet: Style gives way to the gallery below. */
+  .is-open .ed-phone { display: flex; order: -1; justify-content: flex-end; border-bottom: var(--hairline) solid var(--rule-2); margin: 0 -14px; padding: 0 8px 6px; }
+  .is-open .ed-phone .ed-group-body { justify-content: flex-end; }
+  .is-open .ed-phone .ed-group-label, .is-open .ed-style { display: none; }
+  .is-open .ed-panel .ed-tools { outline: 0; background: none; font-weight: 600; }
   /* Find: two rows - what to find and the way through it, then what to put
      in its place - each field wide enough to read what is in it. */
   .ed-find {
@@ -486,22 +548,6 @@
   .ed-find-r { grid-area: r; border-top: 1px solid var(--rule); }
   .ed-find-one { grid-area: o; border-top: 1px solid var(--rule); }
   .ed-find-all { grid-area: a; border-top: 1px solid var(--rule); }
-  /* The name is on the sheet: the head keeps only the close. */
-  #viewer[data-edit] #viewer-names { visibility: hidden; }
-  /* A running session's countdown, which the hidden status bar would take with
-     it: a line under the head, the page moved down to clear it. */
-  .ed.is-vomit { --ed-top: calc(var(--ed-inset) + var(--ed-title-h) + var(--ed-status-h) + 8px); }
-  .is-vomit .ed-status {
-    display: flex;
-    top: calc(var(--ed-inset) + var(--ed-title-h));
-    bottom: auto;
-    height: var(--ed-status-h);
-    justify-content: center;
-    padding-bottom: 0;
-    border-top: 0;
-    border-bottom: var(--hairline) solid var(--rule-2);
-  }
-  .is-vomit .ed-counts { display: none; }
   .ed-outline {
     left: 8px;
     right: 8px;
@@ -509,15 +555,20 @@
     bottom: calc(var(--ed-dock) + 8px);
     z-index: 4;
   }
+  /* The page on the desk as on a desk: the paper inset by a margin of the
+     desk's grain, its ring and its shadow, and room under it to write the
+     last line above the dock. */
   .ed-scroll, .is-finding .ed-scroll, .has-outline .ed-scroll {
     inset: 0;
-    padding: var(--ed-top) 0 calc(var(--ed-dock) + 16px);
+    padding: var(--ed-top) 10px calc(var(--ed-dock) + 30vh);
+    scrollbar-gutter: auto;
   }
   .ed-sheet {
-    min-height: 100%;
-    padding: 4px 20px 40vh;
-    box-shadow: none;
+    /* At least down to the dock: a short note still reads as a page. */
+    min-height: calc(100dvh - var(--kb, 0px) - var(--ed-top) - var(--ed-dock) - 12px);
+    padding: 22px 20px 48px;
   }
+  .ed-name { font-size: calc(var(--t-body) * 1.55); }
 }
 
 /* ── What is on the page ────────────────────────────────────────────────── */
