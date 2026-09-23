@@ -218,10 +218,8 @@ async function boardEntries(
     { name: 'board.json', data: json(doc), compress: true },
   ];
   if (ledger) {
-    entries.push(
-      { name: TIMELINE_BASE, data: ledger.base, compress: true },
-      { name: TIMELINE_STEPS, data: ledger.steps, compress: true },
-    );
+    entries.push({ name: TIMELINE_BASE, data: ledger.base, compress: true });
+    for (const [name, data] of ledger.pieces) entries.push({ name, data, compress: true });
   }
 
   // Gather all referenced assets before writing. Fatal on missing — a board
@@ -494,21 +492,43 @@ function isReadings(v: unknown): v is number[] {
 // ---------------------------------------------------------------------------
 // The timeline in its own files. timeline/base.json holds everything but the
 // steps - the board before step 0, the marker, the fingerprint - plus how many
-// steps there are. timeline/steps.jsonl holds the steps, one to a line, oldest
-// first. The files outrank a `timeline` in board.json, which is where a file
-// from before them keeps it. Unreadable → the board opens without a past.
+// steps there are. The steps are in pieces, timeline/steps-<k>.jsonl, one step
+// to a line, oldest first. The files outrank a `timeline` in board.json, which
+// is where a file from before them keeps it. Unreadable → no past.
 // ---------------------------------------------------------------------------
 
 const TIMELINE_BASE = 'timeline/base.json';
+/** The one file the steps were in before the pieces (v0.464 and older). Still read. */
 const TIMELINE_STEPS = 'timeline/steps.jsonl';
+const TIMELINE_PIECE = /^timeline\/steps-(\d{1,7})\.jsonl$/;
 
-/** The ledger as the two files, or null when there is none to write. */
+/**
+ * Steps to a piece.
+ *
+ * A save appends only the entries that changed (packBoardFile()), and the
+ * history in one file was one entry that changed on every save: the whole of it
+ * written again each time, a third of a megabyte near the step cap, and the
+ * copy before left dead in the file. Piece k holds steps k*500 to k*500+499,
+ * counted over the ledger's whole life (`first` is how many were folded away),
+ * so a new step rewrites the last piece only, and a fold the first.
+ */
+const STEPS_PER_PIECE = 500;
+
+/** The ledger as its files - base.json and the pieces - or null when there is none to write. */
 function timelineFiles(timeline: unknown) {
   if (!isRecord(timeline) || !Array.isArray(timeline.steps)) return null;
   const { steps, ...head } = timeline;
+  const first = Number.isSafeInteger(head.first) && Number(head.first) > 0 ? Number(head.first) : 0;
+  const pieces = new Map<string, string[]>();
+  steps.forEach((step, i) => {
+    const name = `timeline/steps-${Math.floor((first + i) / STEPS_PER_PIECE)}.jsonl`;
+    let lines = pieces.get(name);
+    if (!lines) pieces.set(name, lines = []);
+    lines.push(JSON.stringify(step) + '\n');
+  });
   return {
     base: json({ ...head, count: steps.length }),
-    steps: enc.encode(steps.map(step => JSON.stringify(step) + '\n').join('')),
+    pieces: [...pieces].map(([name, lines]) => [name, enc.encode(lines.join(''))] as const),
   };
 }
 
@@ -527,10 +547,19 @@ function readTimelineFiles(files: Map<string, Uint8Array>) {
   if (!isRecord(parsed)) return null;
   const { count, ...rest } = parsed;
   const steps: unknown[] = [];
-  const body = files.get(TIMELINE_STEPS);
-  for (const line of body ? dec.decode(body).split('\n') : []) {
-    if (!line.trim()) continue;
-    try { steps.push(JSON.parse(line)); } catch { steps.push(null); }
+  // The pieces in their order, or the one file an older save wrote. A piece
+  // missing from the middle leaves fewer steps than `count`, which is stale.
+  const pieces = [...files.keys()]
+    .map(name => [name, TIMELINE_PIECE.exec(name)?.[1]] as const)
+    .filter((p): p is readonly [string, string] => p[1] !== undefined)
+    .sort((a, b) => Number(a[1]) - Number(b[1]))
+    .map(([name]) => files.get(name));
+  const bodies = pieces.length ? pieces : [files.get(TIMELINE_STEPS)];
+  for (const body of bodies) {
+    for (const line of body ? dec.decode(body).split('\n') : []) {
+      if (!line.trim()) continue;
+      try { steps.push(JSON.parse(line)); } catch { steps.push(null); }
+    }
   }
   if (typeof count === 'number' && count > steps.length) steps.push(null);
   return { ...rest, steps };

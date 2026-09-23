@@ -423,8 +423,8 @@ test('a history survives a .mbrd, in its own files, and a torn one is stale', as
   // The last step's line lost: the head still says two.
   const { readZip, writeZip } = await import('../web/assets/js/storage/zip.ts');
   const files = await readZip(blob);
-  const body = new TextDecoder().decode(files.get('timeline/steps.jsonl'));
-  files.set('timeline/steps.jsonl', new TextEncoder().encode(body.split('\n')[0] + '\n'));
+  const body = new TextDecoder().decode(files.get('timeline/steps-0.jsonl'));
+  files.set('timeline/steps-0.jsonl', new TextEncoder().encode(body.split('\n')[0] + '\n'));
   const torn = await writeZip([...files].map(([name, data]) => ({ name, data, compress: false })));
   loadBoard((await unpackBoard(torn)).board);
   assert.equal(timelineStale(), true);
@@ -716,6 +716,24 @@ test('old steps fold into the starting state and the board does not move', () =>
   // The folded work is still there, since it went into the starting state
   // rather than being thrown away.
   assert.equal(byId(a.id).x, 40);
+});
+
+test('a fold is counted, and the count survives the file', () => {
+  // A file keeps the steps in pieces numbered over the ledger's whole life
+  // (storage/mbrd.ts), so what was folded away has to be remembered: lose it
+  // and every piece is renumbered, and a save writes all of them again.
+  const [a] = addItems([photo({ x: 0, y: 0 })]);
+  move(a.id, 40, 0);
+  renameItem(a.id, 'Kept');
+  assert.equal('first' in serializeTimeline(), false, 'nothing folded, nothing said');
+  const steps = timelineSteps();
+  steps[0].at = Date.now() - 60 * DAY;
+  steps[1].at = Date.now() - 45 * DAY;
+  trimTimeline();
+  const saved = serializeTimeline();
+  assert.equal(saved.first, 2);
+  adoptTimeline(JSON.parse(JSON.stringify(saved)));
+  assert.equal(serializeTimeline().first, 2);
 });
 
 test('a trim never crosses a step somebody named', () => {

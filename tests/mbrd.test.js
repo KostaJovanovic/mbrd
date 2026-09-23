@@ -393,8 +393,63 @@ test('the history is written beside board.json, a step to a line', async () => {
   assert.equal('timeline' in doc, false, 'board.json no longer carries the history');
   const head = JSON.parse(new TextDecoder().decode(files.get('timeline/base.json')));
   assert.deepEqual(head, { base: ledger().base, at: 2, fingerprint: 'abc123', count: 2 });
-  const lines = new TextDecoder().decode(files.get('timeline/steps.jsonl')).trim().split('\n');
+  const lines = new TextDecoder().decode(files.get('timeline/steps-0.jsonl')).trim().split('\n');
   assert.deepEqual(lines.map(line => JSON.parse(line)), ledger().steps);
+});
+
+/** A ledger `n` steps long, with `first` steps already folded away. */
+function longLedger(n, first = 0) {
+  const out = {
+    ...ledger(),
+    at: n,
+    steps: Array.from({ length: n }, (_, i) => ({
+      id: `s${first + i}`, at: first + i, label: 'Move', run: 'desktop:i1|x',
+      delta: { desktop: { changed: { i1: ['{"x":0}', `{"x":${first + i}}`] } } },
+    })),
+  };
+  if (first) out.first = first;
+  return out;
+}
+
+/** The history's pieces in a packed board: name -> text. */
+async function piecesOf(timeline) {
+  const files = await readZip((await packBoard(boardOf([], { timeline }))).blob);
+  return new Map([...files].filter(([name]) => /^timeline\/steps-/.test(name))
+    .map(([name, data]) => [name, new TextDecoder().decode(data)]));
+}
+
+test('a long history is kept in pieces of 500, numbered over its whole life', async () => {
+  // Numbered by where a step stands among every step the ledger ever had, so
+  // folding the oldest away leaves the later pieces where they are.
+  clearAssets();
+  const pieces = await piecesOf(longLedger(1200, 300));
+  assert.deepEqual([...pieces.keys()], ['timeline/steps-0.jsonl', 'timeline/steps-1.jsonl', 'timeline/steps-2.jsonl']);
+  assert.deepEqual([...pieces.values()].map(text => text.trim().split('\n').length), [200, 500, 500]);
+  assert.deepEqual((await roundTrip(boardOf([], { timeline: longLedger(1200, 300) }))).timeline, longLedger(1200, 300));
+});
+
+test('a new step rewrites the last piece and a fold the first, and nothing else', async () => {
+  // What the pieces are for: a save appends only the entries that changed, and
+  // the whole history in one file changed on every save.
+  clearAssets();
+  const before = await piecesOf(longLedger(1500));
+  const grown = await piecesOf(longLedger(1501));
+  const changed = (a, b) => [...b.keys()].filter(name => a.get(name) !== b.get(name));
+  assert.deepEqual(changed(before, grown), ['timeline/steps-3.jsonl']);
+  const trimmed = longLedger(1500);
+  const folded = { ...trimmed, first: 1, steps: trimmed.steps.slice(1), at: 1499 };
+  assert.deepEqual(changed(before, await piecesOf(folded)), ['timeline/steps-0.jsonl']);
+});
+
+test('a history in the one file older saves wrote still opens', async () => {
+  clearAssets();
+  const { steps, ...head } = ledger();
+  const old = await writeZip([
+    { name: 'board.json', data: enc.encode(JSON.stringify(boardOf([]))) },
+    { name: 'timeline/base.json', data: enc.encode(JSON.stringify({ ...head, count: steps.length })) },
+    { name: 'timeline/steps.jsonl', data: enc.encode(steps.map(s => JSON.stringify(s) + '\n').join('')) },
+  ], { mime: MIME });
+  assert.deepEqual((await unpackBoard(old)).board.timeline, ledger());
 });
 
 test('the history comes back whole from its own files', async () => {
@@ -417,11 +472,11 @@ test('a history with a torn line or a lost tail reads as shorter than it says', 
   const files = await readZip((await packBoard(boardOf([], { timeline: ledger() }))).blob);
   const redo = async body => {
     const entries = [...files].map(([name, data]) => ({
-      name, data: name === 'timeline/steps.jsonl' ? new TextEncoder().encode(body) : data, compress: false,
+      name, data: name === 'timeline/steps-0.jsonl' ? new TextEncoder().encode(body) : data, compress: false,
     }));
     return (await unpackBoard(await writeZip(entries, { mime: MIME }))).board.timeline.steps;
   };
-  const [first, second] = new TextDecoder().decode(files.get('timeline/steps.jsonl')).trim().split('\n');
+  const [first, second] = new TextDecoder().decode(files.get('timeline/steps-0.jsonl')).trim().split('\n');
   assert.deepEqual(await redo(`${first}\n{torn\n`), [ledger().steps[0], null]);
   assert.deepEqual(await redo(`${first}\n`), [ledger().steps[0], null], 'two claimed, one there');
   assert.equal((await redo(`${first}\n${second}\n`)).length, 2);
