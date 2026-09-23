@@ -103,6 +103,28 @@ test('a copy generated across a clear is discarded, not published', async (t) =>
   assert.equal(api.urls(), 0, 'a refused job must not create an object URL');
 });
 
+test('a copy of a hash purged while it was being made is not published', async (t) => {
+  // The bin purge calls forgetDisplay(). It dropped the pending entry but not
+  // the job, which then cached a new object URL for bytes that were gone.
+  const api = stubImageAPIs();
+  t.after(api.restore);
+  const { ensureDisplay, displayURLReady, forgetDisplay } = await freshDisplay();
+
+  putAsset('p1', imageBlob());
+  const job = ensureDisplay('p1');
+  forgetDisplay(['p1']);
+  api.release();
+
+  assert.equal(await job, null, 'a job outlived by a purge must resolve to null');
+  assert.equal(displayURLReady('p1'), null, 'the purged hash must stay out of the cache');
+  assert.equal(api.urls(), 0, 'a refused job must not create an object URL');
+
+  // The same bytes brought back later are made again as usual.
+  const again = ensureDisplay('p1');
+  api.release();
+  assert.match(await again, /^blob:copy-/);
+});
+
 test('a clear does not reset the queue, so decodes stay serialized', async (t) => {
   const api = stubImageAPIs();
   t.after(api.restore);
