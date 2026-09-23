@@ -506,8 +506,8 @@
   .ed-bar { padding-top: 0; }
   .ed-ribbon { height: auto; }
   /* Every command in two rows, with no sideways scroll, each a thumb's target.
-     The ribbon's groups stay together, each on a tray of its own, with its
-     name left to the desk: the first row is the writing - undo, the marks,
+     The ribbon's groups stay together, ruled apart as on the desk, their
+     names left to the desk: the first row is the writing - undo, the marks,
      the lists; the second the line's style, find, a session and the view
      (ui/editor/view.ts puts in the break). A screenplay breaks before its
      session, and plain text, with less, keeps to one row. */
@@ -515,8 +515,6 @@
     display: flex;
     flex-wrap: wrap;
     align-content: flex-start;
-    justify-content: space-between;
-    gap: 0 8px;
     height: var(--ed-ribbon-h);
     padding: 2px 6px;
     overflow: visible;
@@ -524,23 +522,23 @@
   .ed-panel .ed-break { display: block; flex-basis: 100%; height: 4px; }
   .ed-panel .ed-group {
     display: flex;
-    flex: 0 1 auto;
+    flex: 1 1 auto;
     flex-direction: row;
     min-width: 0;
-    padding: 0;
-    border-left: 0;
-    border-radius: var(--leaf);
-    background: var(--paper-2);
+    padding: 0 4px;
+    border-left: 1px solid var(--rule);
   }
+  /* A rule between groups, as the desk's ribbon has, and none at a row's start. */
+  .ed-panel .ed-group:first-child, .ed-panel .ed-break + .ed-group { border-left: 0; }
   :is(.ed-group-body, .ed-stack) { display: contents; }
   :is(.ed-group-label, .ed-desk), .ed-btn[hidden], .ed-panel .ed-gallery { display: none; }
-  .ed-panel .ed-btn { flex: 0 1 44px; min-width: 34px; height: 44px; padding: 0 4px; }
+  .ed-panel .ed-btn { flex: 1 1 0; justify-content: center; min-width: 34px; height: 44px; padding: 0 4px; }
   .ed-panel .ed-big { flex-direction: row; min-width: 34px; height: 44px; padding: 0 4px; }
   .ed-panel .ed-btn .ico { width: 19px; height: 19px; }
   /* Glyphs alone; Style keeps its word, which names the line. */
   .ed-panel .ed-btn:not(.ed-style) .ed-btn-word { display: none; }
   /* The style takes what its row leaves, so its word is read whole. */
-  .ed-panel .ed-compact { flex-grow: 1; }
+  .ed-panel .ed-compact { flex-grow: 3; }
   .ed-panel .ed-style { flex: 1 1 104px; justify-content: space-between; gap: 4px; padding: 0 10px 0 12px; color: var(--ink); }
   .ed-panel .ed-style .ico { width: 11px; height: 11px; }
   .ed-panel .ed-style .ed-btn-word { overflow: hidden; text-overflow: ellipsis; }
