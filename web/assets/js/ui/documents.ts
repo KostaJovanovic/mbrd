@@ -327,7 +327,7 @@ function wordImage(node: Element, entries: Entries, rels: Rels, urls: string[],
   const id = blip?.getAttribute('r:embed') || blip?.getAttribute('embed');
   const target = id && rels.get(id);
   if (!target) return null;
-  const url = urlFor(entries, 'word/' + target.replace(/^\/+/, ''), urls);
+  const url = urlFor(entries, resolveFrom('word/', target), urls);
   if (!url) return null;
   const img = el('img', 'doc-image');
   img.src = url;

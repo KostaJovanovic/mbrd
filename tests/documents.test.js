@@ -61,6 +61,12 @@ test('single dots and empty segments are dropped', () => {
   assert.equal(resolveFrom('word/', 'media//pic.png'), 'word/media/pic.png');
 });
 
+test('a target that starts with a slash names a part from the package root', () => {
+  // It used to get the base in front: word/word/media/image1.png, no such entry.
+  assert.equal(resolveFrom('word/', '/word/media/image1.png'), 'word/media/image1.png');
+  assert.equal(resolveFrom('ppt/slides/', '/ppt/media/image2.png'), 'ppt/media/image2.png');
+});
+
 // ---------------------------------------------------------------------------
 // Spreadsheet cell references
 // ---------------------------------------------------------------------------

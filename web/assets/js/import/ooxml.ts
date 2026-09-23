@@ -53,9 +53,10 @@ export function relationships(entries: Entries, path: string): Rels {
 export const slideNo = (path: string) => Number(/(\d+)\.xml$/.exec(path)?.[1] || 0);
 
 /** Resolve a relationship target relative to its base part. Only `../` is
- * handled — climbing out of the package just finds nothing in the archive. */
+ * handled — climbing out of the package just finds nothing in the archive.
+ * A target that starts with `/` names a part from the package root, as OPC says. */
 export function resolveFrom(base: string, target: string) {
-  const parts = base.replace(/\/$/, '').split('/');
+  const parts = target.startsWith('/') ? [] : base.replace(/\/$/, '').split('/');
   for (const seg of target.replace(/^\/+/, '').split('/')) {
     if (seg === '.' || seg === '') continue;
     if (seg === '..') parts.pop();
