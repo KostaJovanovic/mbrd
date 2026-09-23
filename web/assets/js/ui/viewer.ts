@@ -255,7 +255,13 @@ export function openViewer(id: string, open: OpenOptions = {}) {
   const pic = bodyEl!.querySelector<HTMLImageElement>('img.viewer-media');
   if (pic) detachZoom = attachZoomPan(pic, bodyEl!);
   dlg.showModal();
-  if (open.from) growFrom(dlg, open.from, open.paper);
+  // A sticky grows into the sheet, which exists only once the editor has
+  // mounted: till then the viewing waits unseen, and editDocument() calls arrive().
+  if (open.from) {
+    arriving = { from: open.from, paper: open.paper };
+    if ('edit' in dlg.dataset) dlg.classList.add('is-arriving');
+    else arrive();
+  }
   // The body, not the close button - scrolling with the keyboard is the
   // first thing anybody does, and a focused button swallows Space. Unless
   // typing is being held for a document still opening: the catcher keeps it.
@@ -263,34 +269,67 @@ export function openViewer(id: string, open: OpenOptions = {}) {
   else bodyEl!.focus?.();
 }
 
+/** The grow a sticky's document is waiting on. See openViewer() and arrive(). */
+let arriving: { from: DOMRect, paper?: string } | null = null;
+
+/** Shows the waiting viewing: grown into `page`, or plainly faded in when there is no sheet. Once. */
+function arrive(page: HTMLElement | null = null) {
+  const a = arriving;
+  arriving = null;
+  if (!a || !dlg) return;
+  dlg.classList.remove('is-arriving');
+  growFrom(dlg, a.from, a.paper, page);
+}
+
 /**
- * A sticky that has just become a document, growing into the page: the dialog
- * scaled up from where the note was, the note's colour over it fading to the
- * paper underneath, then the bar and the name. Transform and opacity only, at
- * the whimsy dial's travel speed; with motion reduced, a plain cross-fade.
+ * A sticky that has just become a document, growing into the sheet: a card in
+ * the note's colour flies from where the note was to where the page is and
+ * turns to paper, the text shows through as it lands, and the desk, the name
+ * and the bar fade in around it. Transform, opacity and colour only, at the
+ * whimsy dial's travel speed; with motion reduced, a plain fade.
  */
-function growFrom(dlg: HTMLDialogElement, from: DOMRect, paper?: string) {
+function growFrom(dlg: HTMLDialogElement, from: DOMRect, paper: string | undefined, page: HTMLElement | null) {
   if (typeof dlg.animate !== 'function') return;
   const ms = travelMs();
+  const fade = () => void dlg.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180, easing: 'ease-out' });
+  if (!page || !(ms > 0) || !from.width || !from.height) return fade();
+  // The grow is the entrance: viewer.css's own (ask-in) would still be scaling
+  // the dialog as the sheet is measured, and the card would land short of it.
+  for (const a of dlg.getAnimations()) a.cancel();
+  // The part of the sheet on screen - a page is taller than the window.
+  const box = dlg.getBoundingClientRect();
+  const sheet = page.getBoundingClientRect();
+  const seen = (page.parentElement ?? page).getBoundingClientRect();
+  const top = Math.max(sheet.top, seen.top);
+  const to = { left: sheet.left, top, width: sheet.width, height: Math.min(sheet.bottom, seen.bottom) - top };
+  if (!(to.width > 0 && to.height > 0)) return fade();
   const ease = getComputedStyle(document.documentElement).getPropertyValue('--ease').trim() || 'ease-out';
-  if (!(ms > 0) || !from.width || !from.height) {
-    dlg.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180, easing: 'ease-out' });
-    return;
-  }
-  const to = dlg.getBoundingClientRect();
-  if (!to.width || !to.height) return;
-  const wash = document.createElement('div');
-  wash.className = 'viewer-grow';
-  if (paper) wash.style.background = paper;
-  dlg.append(wash);
-  dlg.animate([
+  const white = getComputedStyle(page).backgroundColor;
+  const desk = getComputedStyle(dlg).backgroundColor;
+  const long = ms * 1.35;
+  const landed = ms / long;
+
+  const card = document.createElement('div');
+  card.className = 'viewer-grow';
+  // Paper at rest: the colour animation ends before the card has faded out.
+  Object.assign(card.style, {
+    background: white,
+    left: `${to.left - box.left}px`, top: `${to.top - box.top}px`,
+    width: `${to.width}px`, height: `${to.height}px`,
+  });
+  dlg.append(card);
+  card.animate([
     { transformOrigin: '0 0', transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width}, ${from.height / to.height})` },
     { transformOrigin: '0 0', transform: 'none' },
   ], { duration: ms, easing: ease });
-  wash.animate([{ opacity: 1 }, { opacity: 1, offset: 0.55 }, { opacity: 0 }], { duration: ms * 1.4, easing: 'linear' })
-    .finished.then(() => wash.remove(), () => wash.remove());
+  // The note's colour held for the first stretch of the flight, so it reads as the note.
+  card.animate([{ backgroundColor: paper || white }, { backgroundColor: paper || white, offset: 0.3 }, { backgroundColor: white }], { duration: ms, easing: 'linear' });
+  card.animate([{ opacity: 1 }, { opacity: 1, offset: landed }, { opacity: 0 }], { duration: long, easing: 'linear' })
+    .finished.then(() => card.remove(), () => card.remove());
+  page.animate([{ opacity: 0 }, { opacity: 0, offset: landed * 0.85 }, { opacity: 1 }], { duration: long, easing: 'ease-out' });
+  dlg.animate([{ backgroundColor: 'transparent' }, { backgroundColor: 'transparent', offset: 0.25 }, { backgroundColor: desk }], { duration: long, easing: 'ease-out' });
   for (const part of dlg.querySelectorAll<HTMLElement>('#viewer-head, .ed-bar')) {
-    part.animate([{ opacity: 0 }, { opacity: 0, offset: 0.6 }, { opacity: 1 }], { duration: ms * 1.5, easing: 'ease-out' });
+    part.animate([{ opacity: 0 }, { opacity: 0, offset: 0.35 }, { opacity: 1 }], { duration: long, easing: 'ease-out' });
   }
 }
 
@@ -373,6 +412,8 @@ function teardown() {
   bodyEl?.replaceChildren();
   // Typing held for a document that never opened goes with the viewing.
   dlg!.querySelector('.viewer-hold')?.remove();
+  arriving = null;
+  dlg!.classList.remove('is-arriving');
   delete dlg!.dataset.type;
   delete dlg!.dataset.media;
   delete dlg!.dataset.edit;
@@ -680,7 +721,8 @@ const VIEWS: Record<string, View> = {
    * A .md or .txt opens in the editor instead - see editDocument().
    */
   text(item, host, open) {
-    if (EDITABLE.has(str(item.meta?.ext)) && item.asset?.hash) return void editDocument(item, host, open);
+    // Every way out of it ends a grow still waiting, the plain way if no page was made.
+    if (EDITABLE.has(str(item.meta?.ext)) && item.asset?.hash) return void editDocument(item, host, open).finally(() => arrive());
     readOnlyText(item, host);
   },
 
@@ -826,6 +868,8 @@ async function editDocument(item: Item, host: HTMLElement, open: OpenOptions = {
   editor.focus();
   const held = (open.typed ?? '') + (open.held?.take() ?? '');
   if (held) editor.type(held);
+  // Measured last: focusing and typing can scroll the page.
+  arrive(editor.el.querySelector<HTMLElement>('.ed-page'));
 }
 
 /**

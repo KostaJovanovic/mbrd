@@ -302,15 +302,23 @@
 
 /* ── A sticky growing into a document ──────────────────────────────────── */
 
-/* The note's colour laid over the dialog while it grows, fading to the paper
-   underneath. ui/viewer.ts growFrom() animates it and takes it away. */
+/* The note, flying to the sheet and turning to paper on the way; ui/viewer.ts
+   growFrom() places it over the sheet, animates it and takes it away. */
 .viewer-grow {
   position: absolute;
-  inset: 0;
   z-index: 2;
-  border-radius: inherit;
   background: var(--note-1);
+  box-shadow: var(--shadow-1);
   pointer-events: none;
+}
+/* Unseen while it waits for the sheet to grow into (viewer.ts arrive()). */
+#viewer.is-arriving { opacity: 0; }
+/* No dimmed board behind a viewing that fills the window: the board shows
+   only while a sticky grows, and there it should be seen as it is. */
+#viewer[data-edit]::backdrop {
+  background: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 /* The field that holds typing while a sticky becomes its document (ui/viewer.ts
