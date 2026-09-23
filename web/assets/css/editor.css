@@ -429,16 +429,18 @@
 }
 
 
-/* A phone: the same editor, laid out for a thumb. A bar across the top with
-   the close and the counts; the page on the desk, as on a desk; and at the
-   foot, just above the keyboard, a row of the commonest commands whose Tools
-   button opens the whole ribbon as a sheet - every group, under its name. */
+/* A phone: the same editor, laid out for a thumb, and all of it at the top -
+   the foot is where the keyboard comes up. A bar with the close and the
+   counts; under it a row of the commonest commands, whose Tools button drops
+   the whole ribbon down as a sheet, every group under its name; then the page
+   on the desk, as on a desk. */
 @media (max-width: 700px) {
   #viewer[data-edit] {
     --ed-title-h: 48px;
     --ed-ribbon-h: 52px;
-    --ed-dock: calc(env(safe-area-inset-bottom, 0px) + var(--ed-ribbon-h));
-    --ed-top: calc(var(--ed-inset) + var(--ed-title-h) + 12px);
+    --ed-bar-top: calc(var(--ed-inset) + var(--ed-title-h));
+    --ed-bar-bottom: calc(var(--ed-bar-top) + var(--ed-ribbon-h));
+    --ed-top: calc(var(--ed-bar-bottom) + 12px);
   }
   /* The top bar: the status bar moved up - the counts, and a session's time -
      with the head's close over its right end, a thumb's size. */
@@ -450,19 +452,11 @@
     height: calc(var(--ed-inset) + var(--ed-title-h));
     padding: var(--ed-inset) 56px 0 max(16px, env(safe-area-inset-left));
     border-top: 0;
-    border-bottom: var(--hairline) solid var(--rule-2);
-    box-shadow: var(--shadow-1);
+    border-bottom: var(--hairline) solid var(--rule);
   }
   .ed-counts { gap: 12px; }
-  /* The band moves to the foot, flush with the keyboard or the screen's edge. */
-  .ed-bar {
-    top: auto;
-    bottom: 0;
-    padding-top: 0;
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-    border-top: var(--hairline) solid var(--rule-2);
-    border-bottom: 0;
-  }
+  /* The band under the top bar, edge to edge, carrying the pair's shadow. */
+  .ed-bar { padding-top: 0; }
   .ed-ribbon { height: auto; border-top: 0; }
   /* Shut: one row that fits the screen, with no sideways scroll. The groups
      give up their boxes, the rarer commands step back into the sheet, and
@@ -480,21 +474,21 @@
   .ed-panel .ed-style .ico { width: 11px; height: 11px; }
   .ed-panel .ed-style .ed-btn-word { overflow: hidden; text-overflow: ellipsis; }
   /* Tools: a chevron that points to where the sheet will go. */
-  .ed-tools .ico { rotate: -90deg; transition: rotate var(--dur-fast) var(--ease); }
-  .is-open .ed-tools .ico { rotate: 90deg; }
+  .ed-tools .ico { rotate: 90deg; transition: rotate var(--dur-fast) var(--ease); }
+  .is-open .ed-tools .ico { rotate: -90deg; }
 
-  /* Open: the ribbon as a sheet up from the foot, each group a row under its
-     name, the Tools row at the top to shut it again. It scrolls when it is
-     taller than the room the keyboard leaves. */
+  /* Open: the ribbon as a sheet dropped down over the page, each group a row
+     under its name, the Tools row heading it to shut it again. It scrolls
+     when it is taller than the room the keyboard leaves. */
   .ed-bar.is-open {
-    border-radius: var(--radius) var(--radius) 0 0;
+    border-radius: 0 0 var(--radius) var(--radius);
     box-shadow: var(--shadow-2);
   }
   .is-open .ed-panel {
     display: flex;
     flex-direction: column;
     gap: 12px;
-    max-height: min(62dvh, calc(100dvh - var(--kb, 0px) - var(--ed-title-h) - 40px));
+    max-height: calc(100dvh - var(--kb, 0px) - var(--ed-bar-top) - 24px);
     padding: 6px 14px 14px;
     overflow: hidden auto;
     overscroll-behavior: contain;
@@ -528,8 +522,6 @@
   /* Find: two rows - what to find and the way through it, then what to put
      in its place - each field wide enough to read what is in it. */
   .ed-find {
-    top: auto;
-    bottom: calc(var(--ed-dock) + 8px);
     left: 8px;
     right: 8px;
     max-width: none;
@@ -552,20 +544,21 @@
     left: 8px;
     right: 8px;
     width: auto;
-    bottom: calc(var(--ed-dock) + 8px);
+    bottom: 8px;
     z-index: 4;
   }
   /* The page on the desk as on a desk: the paper inset by a margin of the
      desk's grain, its ring and its shadow, and room under it to write the
-     last line above the dock. */
-  .ed-scroll, .is-finding .ed-scroll, .has-outline .ed-scroll {
+     last line clear of the keyboard. Find, open, pushes the page down under it. */
+  .ed-scroll, .has-outline .ed-scroll {
     inset: 0;
-    padding: var(--ed-top) 10px calc(var(--ed-dock) + 30vh);
+    padding: var(--ed-top) 10px 30vh;
     scrollbar-gutter: auto;
   }
+  .is-finding .ed-scroll { inset: 0; padding: calc(var(--ed-top) + 88px + 8px) 10px 30vh; scrollbar-gutter: auto; }
   .ed-sheet {
-    /* At least down to the dock: a short note still reads as a page. */
-    min-height: calc(100dvh - var(--kb, 0px) - var(--ed-top) - var(--ed-dock) - 12px);
+    /* At least to the foot of the window: a short note still reads as a page. */
+    min-height: calc(100dvh - var(--kb, 0px) - var(--ed-top) - 12px);
     padding: 22px 20px 48px;
   }
   .ed-name { font-size: calc(var(--t-body) * 1.55); }

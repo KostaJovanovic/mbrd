@@ -1002,9 +1002,10 @@ export function mountEditor(opts: EditorOptions): Editor {
   if (showBtns.length) panel.append(group('Show', ...showBtns));
 
   // A phone's dock is one row that fits the screen: undo, the commonest marks
-  // and lists, the style of the line, and Tools, which opens the whole ribbon
-  // as a sheet over the foot of the page - every group the desk has, each
-  // under its name. Closed, the ribbon's rarer commands step back (editor.css).
+  // and lists, the style of the line, and Tools, which drops the whole ribbon
+  // down as a sheet over the page - every group the desk has, each under its
+  // name. All at the top, clear of the keyboard. Closed, the ribbon's rarer
+  // commands step back (editor.css).
   const styleBtn = button(screen ? 'Element' : 'Style', () => {}, { icon: 'assets/icons.svg#i-chevron-right', word: screen ? 'Action' : 'Normal', cls: 'ed-more ed-style' });
   styleBtn.setAttribute('aria-haspopup', 'menu');
   menuButton(styleBtn, () => openAnchored(styleBtn.getBoundingClientRect(), screen ? elementMenu() : styleMenu(), { label: screen ? 'Element' : 'Style', owner: styleBtn, focus: true }));
