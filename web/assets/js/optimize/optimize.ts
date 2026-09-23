@@ -882,9 +882,17 @@ async function carried(asset: AssetEntry) {
   };
 }
 
-/** The old name with the new extension - `holiday.png` becomes `holiday.webp`. */
-function renameFor(name: string, mime: string) {
-  const exts: Record<string, string> = { 'image/webp': 'webp', 'audio/ogg': 'opus', 'video/webm': 'webm' };
+/**
+ * The old name with the new extension - `holiday.png` becomes `holiday.webp`.
+ * Every type an encoder here can hand back needs an entry: addFile() takes the
+ * asset's ext from this name, and a `.bin` asset has no type after a reopen.
+ * Safari writes JPEG or PNG where WebP was asked for, and the desktop writes MP4.
+ */
+export function renameFor(name: string, mime: string) {
+  const exts: Record<string, string> = {
+    'image/webp': 'webp', 'image/jpeg': 'jpg', 'image/png': 'png',
+    'audio/ogg': 'opus', 'video/webm': 'webm', 'video/mp4': 'mp4',
+  };
   const ext = exts[mime] || 'bin';
   const stem = String(name || 'file').replace(/\.[^.]*$/, '') || 'file';
   return `${stem}.${ext}`;
