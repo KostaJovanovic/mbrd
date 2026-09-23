@@ -304,8 +304,9 @@ included — `tests/sw.test.js` reads that list by pulling out single-quoted run
   (`web/sw.js`), and the same place in `APP_CSS_ORDER` (`tests/helpers.js`) —
   one list written three times, because **document order is the cascade** and
   `quality.css` wins on it rather than on specificity. Miss the third and
-  nothing fails: every CSS test simply stops reading that sheet. `patch.html`
-  is generated and needs no edit.
+  every CSS test stops reading that sheet, which is why
+  `tests/css-order.test.js` compares the three lists name for name and in
+  order. `patch.html` is generated and needs no edit.
 - **An id** — written in `index.html` or handed to a node at runtime by a
   module — is how the sheets address the furniture. A rename fails *silently*:
   the selector stays valid CSS and matches nothing. `tests/element-ids.test.js`
