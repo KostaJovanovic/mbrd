@@ -9,7 +9,7 @@ import { oklch, parseHex } from '../color.ts';
 import { toast } from '../notify.ts';
 import { assetURL, getAsset } from '../storage/assets.ts';
 import { shownHash } from '../board-model.ts';
-import { extractPalette, samplePixels, MAX_SOURCES, PALETTE_TOKENS } from './pigments.ts';
+import { extractPalette, samplePixels, MAX_SOURCES, ALL_SOURCES_MAX, PALETTE_TOKENS } from './pigments.ts';
 import { autoOn } from './look.ts';
 import type { Look } from './appearance-controls.ts';
 
@@ -46,8 +46,8 @@ function pictureHashes() {
   return hashes;
 }
 
-// Hard cap on "all photos" — beyond ~120 the hues converge and the cost grows.
-export const ALL_SOURCES_MAX = 120;
+// The cap on "all photos" lives with the sampler, which has to hold it too.
+export { ALL_SOURCES_MAX };
 
 // Slider stop for "all photos" — one past MAX_SOURCES; stored as 0.
 export const ALL_SOURCES_STOP = MAX_SOURCES + 1;
@@ -91,7 +91,7 @@ export async function recolourFromBoard(
   { silent = false, hashes = pictureHashes() }: { silent?: boolean, hashes?: string[] } = {},
 ) {
   // Slice before resolving URLs — only the sampled pictures get blob URLs.
-  const urls = hashes.slice(0, Math.min(sourceCount(), MAX_SOURCES)).map(assetURL)
+  const urls = hashes.slice(0, sourceCount()).map(assetURL)
     .filter((u): u is string => !!u);
   // Record before reading — avoids re-running on boards with colourless pictures.
   lastSources = sourceKey(hashes);

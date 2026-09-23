@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 
 import {
   contrast, extractPalette, hex, huesOf, oklch, paletteFor, paletteFromAccent,
-  PALETTE_TOKENS,
+  PALETTE_TOKENS, samplePixels, MAX_SOURCES, ALL_SOURCES_MAX,
 } from '../web/assets/js/ui/pigments.ts';
 // Direct import: maxChroma is not re-exported by pigments.ts.
 import { maxChroma } from '../web/assets/js/color.ts';
@@ -787,4 +787,26 @@ test('a pick that is not a colour is refused rather than guessed at', () => {
 test('everything a pick produces survives the token filter', () => {
   const vars = paletteFromAccent('#c2410c');
   assert.deepEqual(Object.keys(safeVars(vars)).sort(), Object.keys(vars).sort());
+});
+
+test('"Every photo" reads past the default count, up to its own cap', async () => {
+  // samplePixels() clamped every limit to MAX_SOURCES, so "Every photo" read 24.
+  // The one canvas, decode and fetch it needs, stubbed for the length of the test.
+  const saved = { OffscreenCanvas: globalThis.OffscreenCanvas, createImageBitmap: globalThis.createImageBitmap };
+  globalThis.OffscreenCanvas = class {
+    getContext() {
+      return { clearRect() {}, drawImage() {}, getImageData: () => ({ data: new Uint8ClampedArray(4) }) };
+    }
+  };
+  globalThis.createImageBitmap = async () => ({ close() {} });
+  const fetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(new Blob());
+  try {
+    const urls = Array.from({ length: ALL_SOURCES_MAX + 10 }, (_, n) => `blob:${n}`);
+    assert.equal((await samplePixels(urls, ALL_SOURCES_MAX)).length, ALL_SOURCES_MAX);
+    assert.equal((await samplePixels(urls, 1e9)).length, ALL_SOURCES_MAX, 'and never past it');
+    assert.equal((await samplePixels(urls)).length, MAX_SOURCES, 'no limit is the default count');
+  } finally {
+    Object.assign(globalThis, saved, { fetch });
+  }
 });
