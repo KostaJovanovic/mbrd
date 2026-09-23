@@ -370,7 +370,16 @@ in one opening of the editor folds into one undo step (`commitFolded()` in
 and a file that is not clean UTF-8 opens to read, since writing it back would
 change bytes nobody touched. A sticky written past `NOTE_SHEET_MAX` becomes a
 `.md` at the character that tips it over and opens here, growing out of the note;
-see `NoteOverflow` in `canvas/notes.ts`. The plan, with what is still to come, is
+see `NoteOverflow` in `canvas/notes.ts`.
+
+Two more modules sit beside those three. `vomit.ts` is Vomit Mode's lock as a
+rule over the document rather than over keys: `keepsLocked(prev, next, lock)`
+is asked of every edit the view makes and of whatever a keyboard typed into the
+page itself, so a paste or a phone's autocorrection meets the same rule as a
+key. `fountain.ts` reads and writes `.fountain` screenplays: each line one
+block of kind `sp` holding its element, forcing marks written only where an
+element would not be recognised without one, and the same round-trip contract
+as Markdown. Both are DOM-free. The plan and what each phase changed from it is
 `research/text-editor-2026-09-22.md`.
 
 #### One menu, drawn in three places

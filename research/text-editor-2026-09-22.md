@@ -65,6 +65,27 @@ departs from what follows:
   page is not touched; an engine without the Custom Highlight API locks
   without fading.
 
+**Status, 2026-09-23: phase 3 is built**, and with it the whole plan. A
+`.fountain` file opens in screen mode (`ui/editor/fountain.ts`): each line of
+the file is one block of kind `sp` holding its element, so typing, find, the
+editor's undo and the Vomit Mode lock all work on it unchanged. Where it
+departs from what follows:
+
+- **Ctrl+Alt+1–8, not Ctrl+1–8.** A browser keeps Ctrl+1 to 8 for its tabs and
+  never hands them to the page. The element menu in the bar lists every
+  element with its keys.
+- **A line becomes a character's name on Enter only if it is in capitals**, as
+  the plan says; a name typed in lower case is made one with Tab, which
+  capitalises it. What is typed into a scene heading, a name or a transition is
+  capitalised as it goes.
+- **Emphasis, inline notes and scene numbers stay in the words** as the
+  characters Fountain writes them. The title page and a boneyard are raw
+  blocks: shown as written, never edited, written back byte for byte.
+- **The outline and the status bar serve Markdown too**: headings in the
+  outline, and the word count moved from the bar to the status bar under the page.
+- **No generated-catalogue change.** `fountain` joins `TEXT_EXT` alone;
+  `import/formats.ts` holds no text formats.
+
 "Stored versions", which the first draft of this plan leaned on, were withdrawn in
 v0.198 (`board-model.ts:125`, `board-schema.ts:110`); the timeline replaced them,
 and it is enough here.
@@ -234,7 +255,7 @@ custom) and a small countdown in the bar.
 
 - `.mbrd` schema: **none** — a text edit is an asset swap.
 - Service-worker cache: **yes**, phase 1 (a new stylesheet in `SHELL`).
-- Generated catalogue: **maybe**, phase 3 (`.fountain`).
+- Generated catalogue: **none** — checked in phase 3; `.fountain` needed only `TEXT_EXT`.
 
 ## Open questions
 

@@ -35,7 +35,12 @@ export type ListItem = Base & {
   bullet: string, delim: string, start: number, runs: Run[],
 };
 export type Quote = Base & { kind: 'quote', runs: Run[] };
-export type TextBlock = Para | Heading | ListItem | Quote;
+/** A screenplay's elements (fountain.ts). A page break is a rule. */
+export type SceneEl = 'scene' | 'action' | 'character' | 'paren' | 'dialogue' | 'transition'
+  | 'centered' | 'lyric' | 'section' | 'synopsis' | 'note';
+/** One line of a screenplay. `dual` is a character speaking beside the one before; `level` a section's depth. */
+export type Screen = Base & { kind: 'sp', el: SceneEl, dual: boolean, level: number, runs: Run[] };
+export type TextBlock = Para | Heading | ListItem | Quote | Screen;
 export type CodeBlock = Base & { kind: 'code', fence: string, lang: string, text: string };
 export type Rule = Base & { kind: 'rule' };
 export type Raw = Base & { kind: 'raw', text: string };
@@ -702,6 +707,27 @@ export function replaceAll(doc: Doc, query: string, text: string, matchCase = fa
 
 /** A word: letters and digits, with an apostrophe or hyphen allowed between them. */
 const WORD = /[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu;
+
+/** One entry of the outline: a heading, a screenplay's scene, or its section. */
+export type OutlineEntry = { b: number, kind: 'h' | 'scene' | 'section', level: number, text: string };
+
+/**
+ * The document's outline: headings in Markdown; sections and scenes in a
+ * screenplay, a scene one level under the section it sits in.
+ */
+export function outlineOf(doc: Doc): OutlineEntry[] {
+  const out: OutlineEntry[] = [];
+  let depth = 0;
+  doc.blocks.forEach((b, n) => {
+    const text = isText(b) ? runsText(b.runs).trim() : '';
+    if (b.kind === 'h') out.push({ b: n, kind: 'h', level: b.level, text });
+    else if (b.kind === 'sp' && b.el === 'section') {
+      depth = Math.max(1, b.level);
+      out.push({ b: n, kind: 'section', level: depth, text });
+    } else if (b.kind === 'sp' && b.el === 'scene') out.push({ b: n, kind: 'scene', level: depth + 1, text });
+  });
+  return out;
+}
 
 /** How many words the document holds, raw source included - a table's words are words. */
 export function wordCount(doc: Doc): number {

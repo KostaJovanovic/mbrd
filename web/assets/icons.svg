@@ -278,6 +278,12 @@
   <path d="M6.5 4.3h7M6.5 11.3h7"/>
 </symbol>
 
+<!-- The editor's outline: a panel down the left beside lines of text. -->
+<symbol id="i-ed-outline" viewBox="0 0 16 16">
+  <rect x="1.8" y="2.3" width="12.4" height="11.4" rx="1.2"/>
+  <path d="M5.6 2.3v11.4M8 5.5h4M8 8h3M8 10.5h4"/>
+</symbol>
+
 <!-- A highlighter, leaning right with its chisel tip at the lower left. Drawn
      in the top of the box: the button puts the colour it marks in as a bar
      underneath, so the pen leaves the bottom rows free. -->
