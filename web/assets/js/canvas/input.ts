@@ -1927,7 +1927,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // to Home or to Fit alike: catching a moving board has to work the first
     // time, not on the first frame it is dragged - a finger put down to stop
     // something is often a finger that then does not move at all.
-    vp.stopAnim();
+    vp.onPress();
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
     // Two fingers during a tour are not a pinch, for the reason pressIntent()
