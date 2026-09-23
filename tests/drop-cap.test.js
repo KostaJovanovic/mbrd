@@ -19,11 +19,12 @@ const fileEntry = name => ({
 
 /** A directory entry whose reader hands back `count` files, in batches of 100. */
 function dirEntry(count) {
-  let served = 0;
   return {
     isFile: false,
     isDirectory: true,
-    createReader: () => ({
+    // A fresh reader starts from the top, as the real one does - which is
+    // what lets "Take all of them" walk the same entry again.
+    createReader: (served = 0) => ({
       readEntries(cb) {
         // The real API returns at most ~100 per call, empty at the end -
         // the loop condition walkEntry() drains on.
@@ -71,6 +72,35 @@ test('a folder walked past the cap says so', async () => {
   assert.equal(got.files.length, MAX_FILES, 'the cap is applied');
   assert.equal(got.fromFolder, true);
   assert.equal(got.truncated, true, 'and the caller is told, rather than left to infer it');
+});
+
+test('a folder of exactly the cap is not reported as cut', async () => {
+  // The walk used to stop *at* the cap and call that truncated, so five
+  // hundred files asked about a limit nothing had crossed.
+  const got = await filesFrom(drop([dirEntry(MAX_FILES)]));
+  assert.equal(got.files.length, MAX_FILES);
+  assert.equal(got.truncated, false);
+  const over = await filesFrom(drop([dirEntry(MAX_FILES + 1)]));
+  assert.equal(over.files.length, MAX_FILES, 'the file past the cap is seen, not read');
+  assert.equal(over.truncated, true);
+});
+
+test('"Take all of them" walks the same drop again with no cap', async () => {
+  const got = await filesFrom(drop([dirEntry(MAX_FILES + 250)]));
+  assert.equal(got.files.length, MAX_FILES);
+  const all = await got.all();
+  assert.equal(all.files.length, MAX_FILES + 250);
+  assert.equal(all.more, false);
+});
+
+test('a folder card past the cap is walked whole the second time too', async () => {
+  const got = await filesFrom(drop([folder('trip', [dirEntry(0), folder('many', [
+    ...Array.from({ length: MAX_FILES + 10 }, (_, i) => fileEntry(`m${i}.jpg`)),
+  ])])]));
+  assert.equal(got.truncated, true);
+  assert.equal(got.folders[0].entries.length, MAX_FILES);
+  const all = await got.all();
+  assert.equal(all.folders[0].entries.length, MAX_FILES + 10);
 });
 
 test('a folder that fits reports nothing cut', async () => {
