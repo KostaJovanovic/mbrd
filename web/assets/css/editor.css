@@ -547,15 +547,17 @@
     bottom: 8px;
     z-index: 4;
   }
-  /* The page on the desk as on a desk: the paper inset by a margin of the
-     desk's grain, its ring and its shadow, and room under it to write the
-     last line clear of the keyboard. Find, open, pushes the page down under it. */
+  /* The page on the desk: the paper runs to both edges of the screen, the
+     desk showing above it, with room under it to write the last line clear
+     of the keyboard. Find, open, pushes the page down under it. */
   .ed-scroll, .has-outline .ed-scroll {
     inset: 0;
-    padding: var(--ed-top) 10px 30vh;
+    padding: var(--ed-top) 0 30vh;
     scrollbar-gutter: auto;
   }
-  .is-finding .ed-scroll { inset: 0; padding: calc(var(--ed-top) + 88px + 8px) 10px 30vh; scrollbar-gutter: auto; }
+  .is-finding .ed-scroll { inset: 0; padding: calc(var(--ed-top) + 88px + 8px) 0 30vh; scrollbar-gutter: auto; }
+  /* Edge to edge, a ring on the sides would be a line down each edge of the screen. */
+  .ed-sheet { box-shadow: 0 var(--hairline) 0 var(--rule-2), 0 calc(-1 * var(--hairline)) 0 var(--rule-2), var(--shadow-1); }
   .ed-sheet {
     /* At least to the foot of the window: a short note still reads as a page. */
     min-height: calc(100dvh - var(--kb, 0px) - var(--ed-top) - 12px);
