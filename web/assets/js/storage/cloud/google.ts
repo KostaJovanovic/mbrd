@@ -30,7 +30,7 @@ const API = 'https://www.googleapis.com';
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
 
 // ---------------------------------------------------------------------------
-// The token, held in memory and nowhere else
+// The token, held in memory, with a copy in sessionStorage (oauth.ts)
 // ---------------------------------------------------------------------------
 
 let grant: TokenGrant | null = null;
