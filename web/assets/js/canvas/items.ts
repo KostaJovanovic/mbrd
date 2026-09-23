@@ -1377,9 +1377,11 @@ const drawnSource = new WeakMap<HTMLElement, string>();
 export const sourceOf = (item: Pick<Item, 'asset' | 'meta'>) =>
   `${item.asset?.hash ?? ''}\n${typeof item.meta?.url === 'string' ? item.meta.url : ''}`;
 
-/** The parts of an item a card draws. Geometry is placeNode()'s. */
-const sameFace = (a: Item, b: Item) => a.type === b.type && a.name === b.name
-  && a.asset === b.asset && JSON.stringify(a.meta ?? null) === JSON.stringify(b.meta ?? null);
+/** The parts of an item a card draws. Geometry is placeNode()'s. By value,
+ *  since a replay hands back copies and every card with a file was rebuilt. */
+export const sameFace = (a: Item, b: Item) => a.type === b.type && a.name === b.name
+  && JSON.stringify(a.asset ?? null) === JSON.stringify(b.asset ?? null)
+  && JSON.stringify(a.meta ?? null) === JSON.stringify(b.meta ?? null);
 
 /** Rebuild every card whose item is a new object with a different face. */
 function redrawChanged() {
