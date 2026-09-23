@@ -50,3 +50,15 @@ test('what a body plays is its asset and its address, nothing else', async () =>
   const link = { asset: null, meta: { url: 'https://open.spotify.com/track/a' } };
   assert.notEqual(sourceOf(link), sourceOf({ ...link, meta: { url: 'https://open.spotify.com/track/b' } }));
 });
+
+test('a replayed item with a copied asset draws the same face', async () => {
+  // A Timeline replay parses every item back out of JSON, so asset is a new
+  // object each time. Compared by identity, every card with a file was
+  // rebuilt on every replay: a flicker, a decode, and its media stopped.
+  const { sameFace } = await import('../web/assets/js/canvas/items.ts');
+  const was = { type: 'audio', name: 'a.mp3', asset: { hash: 'h1' }, meta: { ext: 'mp3' } };
+  const now = JSON.parse(JSON.stringify(was));
+  assert.notEqual(was.asset, now.asset);
+  assert.equal(sameFace(was, now), true);
+  assert.equal(sameFace(was, { ...now, asset: { hash: 'h2' } }), false);
+});
