@@ -1016,7 +1016,10 @@ export function editNoteInComposer(id: string, caret?: number) {
 function markdownLines(markdown: string, base: Omit<NoteStyle, 'wash' | 'title'>): NoteLines {
   return markdown.split('\n').map(line => {
     const head = /^#{1,6} /.exec(line);
-    return [{ text: head ? line.slice(head[0].length) : line, title: !!head, font: base.font, size: base.size }];
+    // The editor escapes punctuation that would read as markup - `\*`, `\_`, `1\.` -
+    // which the note never had and does not count.
+    const words = (head ? line.slice(head[0].length) : line).replace(/\\([!-/:-@[-`{-~])/g, '$1');
+    return [{ text: words, title: !!head, font: base.font, size: base.size }];
   });
 }
 
