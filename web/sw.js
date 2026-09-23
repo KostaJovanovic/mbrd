@@ -96,6 +96,15 @@ const SHELL = [
   './assets/fonts/geist-mono-latin.woff2',
 ];
 
+// cache.add(), minus the redirect flag. The host answers index.html, patch.html
+// and privacy.html with a 307 to the bare path, and a navigation refuses a
+// redirected response, so the offline fallback would serve an error page.
+async function precache(cache, url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new TypeError(`precache ${url}: ${res.status}`);
+  await cache.put(url, res.redirected ? new Response(res.body, res) : res);
+}
+
 // All-or-nothing: a failed fetch fails the install, so a partial cache never
 // replaces a working one. The previous worker stays live until the next attempt.
 self.addEventListener('install', event => {
@@ -103,7 +112,7 @@ self.addEventListener('install', event => {
   event.waitUntil((async () => {
     const cache = await caches.open(VERSION);
     try {
-      await Promise.all(SHELL.map(url => cache.add(url)));
+      await Promise.all(SHELL.map(url => precache(cache, url)));
     } catch (err) {
       await caches.delete(VERSION);
       throw err;

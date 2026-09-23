@@ -63,10 +63,14 @@ export function parse3DS(bytes: ArrayBuffer): Mesh {
         case OBJECT: {
           // The object's name, then whatever it is - a mesh, a light or a camera.
           const after = skipName(view, body, end);
-          object = { verts: [], faces: [], groups: [] };
+          // Held locally and the outer one put back after: an OBJECT nested in
+          // this one would otherwise leave `object` null under the check below.
+          const outer = object;
+          const mine: Object3D = { verts: [], faces: [], groups: [] };
+          object = mine;
           walk(after, end, depth + 1);
-          if (object.verts.length && object.faces.length) objects.push(object);
-          object = null;
+          if (mine.verts.length && mine.faces.length) objects.push(mine);
+          object = outer;
           break;
         }
         case MESH:

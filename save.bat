@@ -169,6 +169,18 @@ set RELEASES=
 for /f %%v in ('powershell -NoProfile -Command "$n=%NEXT_COUNT%; $major=0; $base=0; foreach($r in @(%RELEASES%)){ if($n -ge $r){ $major++; $base=$r } else { break } }; if($major -eq 0){ '0.{0:D2}' -f $n } elseif(($n-$base) -eq 0){ '{0}.0' -f $major } else { '{0}.{1:D2}' -f $major,($n-$base) }"') do set VERLABEL=%%v
 echo bump: v%VERLABEL% (commit %NEXT_COUNT%)
 
+rem Keep the two files as they are before the stamps, so that every error exit
+rem between here and the commit puts them back (:unstamp). A stamp left behind
+rem is read as the committed count on the next run, so each failed save used to
+rem skip a version number. A copy and not `git checkout --`: an edit to sw.js
+rem that is not committed yet must survive a failed build.
+set "STAMP_VERSION=%TEMP%\mbrd-save-version.js"
+set "STAMP_SW=%TEMP%\mbrd-save-sw.js"
+copy /y "web\assets\js\version.js" "%STAMP_VERSION%" >nul
+if errorlevel 1 goto stampkeepfail
+copy /y "web\sw.js" "%STAMP_SW%" >nul
+if errorlevel 1 goto stampkeepfail
+
 rem -Encoding UTF8 on BOTH ends is required: without it Get-Content reads these
 rem UTF-8 files as the ANSI code page and mangles every non-ASCII character a
 rem little more on each commit. \d* (not \d+) so a previously-blanked value still
@@ -204,6 +216,7 @@ if errorlevel 1 (
   echo.
   echo [err]  the bundle did not build - nothing has been committed.
   echo        run "npm install" if esbuild is missing, then fix the error above.
+  call :unstamp
   set SAVE_ERROR=1
   goto end
 )
@@ -220,6 +233,7 @@ copy /y "web\index.html" "web\404.html" >nul
 if errorlevel 1 (
   echo.
   echo [err]  could not refresh web/404.html from web/index.html
+  call :unstamp
   set SAVE_ERROR=1
   goto end
 )
@@ -237,6 +251,7 @@ node tools\gen-patch-page.mjs
 if errorlevel 1 (
   echo.
   echo [err]  could not rebuild web/patch.html
+  call :unstamp
   set SAVE_ERROR=1
   goto end
 )
@@ -246,16 +261,34 @@ git add .
 git status
 
 echo.
-set /p MSG=commit message [v%VERLABEL%]:
-if "%MSG%"=="" set MSG=v%VERLABEL%
-
-git commit -m "%MSG%"
+rem The message never goes through a command line. This script runs with
+rem delayed expansion on, so `git commit -m "%MSG%"` lost every "!" in the
+rem message, and a double quote in it broke the `if` that read it. set /p stores
+rem the text as typed, PowerShell reads it from the environment and writes it
+rem as UTF-8, and git reads that file. Cleared first, because set /p leaves the
+rem old value in place when the answer is empty.
+set "MSG="
+set /p "MSG=commit message [v%VERLABEL%]: "
+if not defined MSG set "MSG=v%VERLABEL%"
+set "MSGFILE=%TEMP%\mbrd-save-message.txt"
+powershell -NoProfile -Command "[IO.File]::WriteAllText($env:MSGFILE, $env:MSG)"
 if errorlevel 1 (
   echo.
-  echo [err]  git commit failed
+  echo [err]  could not write the commit message to %MSGFILE%
+  call :unstamp
   set SAVE_ERROR=1
   goto end
 )
+
+git commit -F "%MSGFILE%"
+if errorlevel 1 (
+  echo.
+  echo [err]  git commit failed
+  call :unstamp
+  set SAVE_ERROR=1
+  goto end
+)
+del "%STAMP_VERSION%" "%STAMP_SW%" "%MSGFILE%" >nul 2>nul
 
 rem Re-resolved: in a repo whose first commit has just been made, HEAD did not
 rem name a branch when this script started.
@@ -328,10 +361,19 @@ if "%BRANCH%"=="" goto nobranch
 rem --force-with-lease, not --force: it refuses when the remote has moved since
 rem the last fetch, which is the one case a force push is actually destructive.
 git push %REMOTE% %BRANCH% --force-with-lease
-if errorlevel 1 set SAVE_ERROR=1
+rem A refused lease is the normal failure here, and it used to fall through to
+rem "force pushed" all the same. Say what happened instead.
+if errorlevel 1 (
+  echo.
+  echo [err]  force push refused - %REMOTE%/%BRANCH% moved since the last fetch, or the push failed
+  echo        nothing on the remote was overwritten. The commit is saved locally.
+  if "%RELEASE_MODE%"=="1" echo [warn] nothing was pushed, so no release was started
+  set SAVE_ERROR=1
+  goto end
+)
 echo.
 echo [git]  force pushed %REMOTE%/%BRANCH%
-if "%RELEASE_MODE%"=="1" if "%SAVE_ERROR%"=="0" call :runrelease
+if "%RELEASE_MODE%"=="1" call :runrelease
 goto end
 
 :pushed
@@ -460,6 +502,29 @@ echo        refusing to guess: a wrong count sends the version backwards, and a
 echo        falling Android versionCode strands every installed copy.
 set SAVE_ERROR=1
 goto end
+
+:stampkeepfail
+echo.
+echo [err]  could not copy version.js and sw.js to %TEMP% - not saving
+echo        nothing has been stamped, so the tree is as it was.
+set SAVE_ERROR=1
+goto end
+
+rem Put back the two files the stamps rewrote, from the copies made before the
+rem stamps. Called on every error exit after them, so the next save reads the
+rem same count and uses the same version number again.
+:unstamp
+copy /y "%STAMP_VERSION%" "web\assets\js\version.js" >nul
+if errorlevel 1 goto unstampfail
+copy /y "%STAMP_SW%" "web\sw.js" >nul
+if errorlevel 1 goto unstampfail
+del "%STAMP_VERSION%" "%STAMP_SW%" >nul 2>nul
+echo        the version stamps are put back - the next save is v%VERLABEL% again.
+exit /b 0
+:unstampfail
+echo [warn] could not put the version stamps back - restore web\assets\js\version.js
+echo        and web\sw.js from %STAMP_VERSION% and %STAMP_SW%
+exit /b 0
 
 
 rem Option 6 (`portable`): the portable copy in desktop\portable\, from the

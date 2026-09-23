@@ -12,6 +12,10 @@ import { MeshError } from './shared.ts';
  *  it the document is not a model but a way of spending a minute. */
 const MAX_ELEMENTS = 8_000_000;
 
+/** How deep a tree from parseXML() may nest. A Collada scene graph is tens of
+ *  levels in a real file. */
+const MAX_DEPTH = 1024;
+
 export type XmlAttrs = Record<string, string>;
 
 export type XmlHandlers = {
@@ -129,14 +133,45 @@ function skipDeclaration(text: string, lt: number) {
   return text.length;
 }
 
-const ATTR = /([^\s=/>]+)\s*=\s*("([^"]*)"|'([^']*)'|([^\s"'>]+))/g;
+const isSpace = (c: string) => c === ' ' || c === '\t' || c === '\n' || c === '\r' || c === '\f' || c === '\v';
 
+/**
+ * `name = "value"`, `name='value'` and `name=value`, in one forward pass.
+ *
+ * Not a regex: `([^\s=/>]+)\s*=` over a long run of name characters with no
+ * `=` after it backtracks through every shorter name at every start, which
+ * is quadratic - 160 KB of one attribute name was fifteen seconds. Here a name
+ * with no `=` after it is stepped over whole, once.
+ */
 function readAttrs(body: string, from: number, into: XmlAttrs) {
-  ATTR.lastIndex = from;
-  let m: RegExpExecArray | null;
-  while ((m = ATTR.exec(body))) {
-    const value = m[3] ?? m[4] ?? m[5] ?? '';
-    into[localName(m[1])] = decodeEntities(value);
+  const n = body.length;
+  let i = from;
+  while (i < n) {
+    const c = body[i];
+    if (isSpace(c) || c === '=' || c === '/' || c === '>') { i++; continue; }
+    const start = i;
+    while (i < n && !isSpace(body[i]) && body[i] !== '=' && body[i] !== '/' && body[i] !== '>') i++;
+    const name = body.slice(start, i);
+    let j = i;
+    while (j < n && isSpace(body[j])) j++;
+    if (body[j] !== '=') continue;              // a bare word; the next one starts at `i`
+    j++;
+    while (j < n && isSpace(body[j])) j++;
+    const q = body[j];
+    let value: string;
+    if (q === '"' || q === "'") {
+      const end = body.indexOf(q, j + 1);
+      if (end < 0) { i = j + 1; continue; }     // unterminated: not an attribute
+      value = body.slice(j + 1, end);
+      i = end + 1;
+    } else {
+      const s = j;
+      while (j < n && !isSpace(body[j]) && body[j] !== '"' && body[j] !== "'" && body[j] !== '>') j++;
+      if (j === s) { i = s; continue; }         // `name=` and nothing
+      value = body.slice(s, j);
+      i = j;
+    }
+    into[localName(name)] = decodeEntities(value);
   }
 }
 
@@ -207,6 +242,9 @@ export function parseXML(text: string): XmlNode {
   const stack: XmlNode[] = [root];
   scanXML(text, {
     open(name, attrs) {
+      // find(), findAll() and the Collada walks recurse once per level, so a
+      // document nested past this would end in a stack overflow instead.
+      if (stack.length > MAX_DEPTH) throw new MeshError('This document nests its elements too deeply');
       const node: XmlNode = { name, attrs: { ...attrs }, kids: [], text: '' };
       stack[stack.length - 1].kids.push(node);
       stack.push(node);

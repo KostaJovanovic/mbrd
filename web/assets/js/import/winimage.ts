@@ -79,7 +79,12 @@ export function dibToBmp(dib: Bytes): Bytes | null {
   // Palette only at ≤8bpp; above 8 the field is a hint and would misplace pixels.
   const entries = bits <= 8 ? (clrUsed || (1 << bits)) : 0;
   if (entries > 256) return null;
-  const pixelOffset = BITMAPFILEHEADER + headerSize + entries * 4;
+  // BI_BITFIELDS (3) and BI_ALPHABITFIELDS (6) after a 40-byte header put
+  // three or four DWORD masks between it and the pixels. The V4 and V5
+  // headers carry the masks inside themselves.
+  const compression = dv.getUint32(16, true);
+  const masks = headerSize === 40 ? (compression === 3 ? 12 : compression === 6 ? 16 : 0) : 0;
+  const pixelOffset = BITMAPFILEHEADER + headerSize + masks + entries * 4;
   if (pixelOffset >= BITMAPFILEHEADER + dib.length) return null;
 
   const out = new Uint8Array(BITMAPFILEHEADER + dib.length);

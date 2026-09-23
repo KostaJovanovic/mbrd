@@ -241,12 +241,15 @@ export async function exportBoard({ pickNew = false, history = true } = {}) {
       doc = await platform.files.pickSave(fileNameFor(board.title), PICK_SPEC);
       reportDocument();
     }
-    // Non-null: either had a doc or the branch above just set one.
-    if (picking) setTitle(titleFromFileName(doc!.name));
+    // Only a name chosen now renames the board: a rename made since the last
+    // pick must survive the next export to the same file.
+    if (picked) setTitle(titleFromFileName(doc!.name));
 
     // Busy strip after the picker — packing is the slow half, and showing
     // "working" over a file browser would be a lie.
     const job = busy('Packing the board');
+    // An edit made while the pack runs is not in the file.
+    const gen = edits;
     try {
       const data = serializeBoard();
       // Drop the key — a file without a timeline is already a valid older-build shape.
@@ -268,8 +271,8 @@ export async function exportBoard({ pickNew = false, history = true } = {}) {
     }
 
     // Exporting is also a save — bytes are on disk.
-    markDirty(false);
-    toast('Exported ' + fileNameFor(board.title));
+    if (edits === gen) markDirty(false);
+    toast('Exported ' + (picking && doc ? doc.name : fileNameFor(board.title)));
     return true;
   } catch (err) {
     if (isAbort(err)) return false;   // user closed the picker
@@ -464,11 +467,37 @@ export async function boardSyncState() {
  *
  * `force` is what a caller passes once a person has been asked and said
  * overwrite. Nothing in the automatic path may pass it.
+ *
+ * One push at a time (cloudTurn()): two that overlap both pass the conflict
+ * check against the same row, and whichever lands last wins silently.
  */
-export async function pushBoardToCloud(
+export function pushBoardToCloud(
   { force = false, onProgress }:
     { force?: boolean, onProgress?: (done: number, total: number) => void } = {},
 ) {
+  // A plain push that is still waiting will serialise the board when it
+  // starts, so a second one behind it would only upload the same board again.
+  if (!force && !onProgress && waitingPush) return waitingPush;
+  const run: ReturnType<typeof pushOnce> = cloudTurn(() => {
+    if (waitingPush === run) waitingPush = null;
+    return pushOnce(force, onProgress);
+  });
+  if (!force && !onProgress) waitingPush = run;
+  return run;
+}
+
+/** Cloud pushes, one after another. Never rejects. */
+let cloudWork: Promise<unknown> = Promise.resolve();
+/** A plain push queued behind another and not started yet, for sharing. */
+let waitingPush: ReturnType<typeof pushOnce> | null = null;
+
+function cloudTurn<T>(work: () => Promise<T>): Promise<T> {
+  const run = cloudWork.then(work);
+  cloudWork = run.catch(() => {});
+  return run;
+}
+
+async function pushOnce(force: boolean, onProgress?: (done: number, total: number) => void) {
   const { shareProvider } = await import('./cloud/cloud.ts');
   const { pushBoard, syncFor, writeSyncRow, noteCurrentSync } = await import('./cloud/sync.ts');
   const id = await ensureBoardId();
@@ -506,13 +535,15 @@ export async function startSyncingBoard(providerId: string) {
   const { pushBoard, writeSyncRow, noteCurrentSync } = await import('./cloud/sync.ts');
   const provider = shareProvider(providerId);
   if (!provider) throw new Error('that cloud account is not available in this build');
-  const id = await ensureBoardId();
-  const out = await pushBoard(provider, id, serializeBoard(), { known: null });
-  if (out.ok) {
-    await writeSyncRow(id, out.row);
-    noteCurrentSync(out.row);
-  }
-  return out;
+  return cloudTurn(async () => {
+    const id = await ensureBoardId();
+    const out = await pushBoard(provider, id, serializeBoard(), { known: null });
+    if (out.ok) {
+      await writeSyncRow(id, out.row);
+      noteCurrentSync(out.row);
+    }
+    return out;
+  });
 }
 
 /**
@@ -550,7 +581,9 @@ export async function openCloudBoard(remote: { boardId: string, folder: string, 
           reuse: stash,
         });
         seen = pulled.seen;
-        loadBoard(normalizeBoard(pulled.board));
+        // Raw: loadBoard() normalises, and a second pass reads a normalised
+        // board as a file with no settings, look or timeline.
+        loadBoard(pulled.board);
       });
     } finally {
       job.end();
@@ -943,7 +976,7 @@ async function askBeforeLeaving() {
  * one case the old dialog was built for is the one case nothing now guards -
  * and it would fail silently, which is worse than the dialog ever was.
  */
-async function shelveCurrent() {
+async function shelveCurrent(opening = '') {
   if (!(await askBeforeLeaving())) return false;
   suspendCache();
   await drainSave();
@@ -953,7 +986,8 @@ async function shelveCurrent() {
     // must not turn a board that *is* on the shelf into one the caller thinks
     // is not. The sweep is here rather than at boot because this is the only
     // place that adds to the shelf, so it is the only place it can grow.
-    await trimLibrary().catch(err => console.warn('[mbrd] shelf not trimmed:', err));
+    // `opening` is spared: a switch to the oldest row would evict its target.
+    await trimLibrary(undefined, opening).catch(err => console.warn('[mbrd] shelf not trimmed:', err));
     await sweepLibrary().catch(() => {});
     return true;
   } catch (err) {
@@ -1017,7 +1051,7 @@ export async function switchBoard(id: string) {
   if (id.startsWith(FILE_ID)) return openBoardFile(id.slice(FILE_ID.length));
   const job = busy('Switching boards');
   try {
-    if (!(await shelveCurrent())) return false;
+    if (!(await shelveCurrent(id))) return false;
     // Which kind of row this is decides where the bytes come from, and it is the
     // only place in this function that the desktop differs. A path row has no
     // blob on the shelf by construction - see stashCurrent() - so the file *is*
@@ -1606,6 +1640,8 @@ export function initStorage() {
     settled: () => adopted,
     saveFile: () => saveDocument(),
     reopen: reopenFile,
+    boardId: ensureBoardId,
+    adoptBoardId: async id => { if (id !== boardId) await setCurrentBoardId(id); },
   });
   initSessionStorage();
 }

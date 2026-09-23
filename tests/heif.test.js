@@ -306,6 +306,52 @@ test('a box claiming more than its parent holds ends the walk', () => {
   assert.equal(readPlan(broken), null);
 });
 
+/**
+ * A grid of `cols` x `rows` cells that are all item 1, whose bytes are
+ * `extents` copies of the same `len`-byte range of mdat. What the 2026-09-23
+ * hunt built: each cell used to be gathered again, 1.16 GB out of 19 KB.
+ */
+function oneTileGrid({ cols, rows, extents, len }) {
+  const ftyp = box('ftyp', ascii('heic'), u32(0), ascii('mif1'), ascii('heic'));
+  const mdat = box('mdat', tile(1, len));
+  const mdatAt = ftyp.length + 8;
+  const grid = cat(u8(0, 0, rows - 1, cols - 1), u16(cols * 64), u16(rows * 64));
+  const n = cols * rows;
+  const iinf = full('iinf', 0, 0, u16(2),
+    full('infe', 2, 0, u16(1), u16(0), ascii('hvc1'), u8(0)),
+    full('infe', 2, 0, u16(5), u16(0), ascii('grid'), u8(0)));
+  const iref = full('iref', 0, 0, box('dimg', u16(5), u16(n), ...Array.from({ length: n }, () => u16(1))));
+  const ipco = box('ipco', box('hvcC', HVCC), full('ispe', 0, 0, u32(64), u32(64)));
+  const ipma = full('ipma', 0, 0, u32(1), cat(u16(1), u8(2), u8(0x81), u8(0x82)));
+  const iloc = full('iloc', 1, 0, u8((4 << 4) | 4), u8(0), u16(2),
+    cat(u16(1), u16(0), u16(0), u16(extents),
+      ...Array.from({ length: extents }, () => cat(u32(mdatAt), u32(len)))),
+    cat(u16(5), u16(1), u16(0), u16(1), u32(0), u32(grid.length)));
+  const meta = full('meta', 0, 0,
+    full('hdlr', 0, 0, u32(0), ascii('pict'), u32(0), u32(0), u32(0), u8(0)),
+    full('pitm', 0, 0, u16(5)),
+    iinf, iref, box('iprp', ipco, ipma), iloc, box('idat', grid));
+  return cat(ftyp, mdat, meta);
+}
+
+test('one tile named by every cell cannot gather more bytes than the file holds', () => {
+  // The honest shape first: a 2x2 grid of one small tile still fits the file.
+  const small = readPlan(oneTileGrid({ cols: 2, rows: 2, extents: 1, len: 64 }));
+  assert.ok(small, 'a grid that repeats one small tile should read');
+  assert.equal(small.tiles.length, 4);
+
+  // 1024 cells, each 64 overlapping copies of an 18 KB range.
+  const file = oneTileGrid({ cols: 32, rows: 32, extents: 64, len: 18 * 1024 });
+  const t0 = performance.now();
+  assert.equal(readPlan(file), null);
+  assert.ok(performance.now() - t0 < 1000, 'the grid was gathered anyway');
+
+  // One extent, no copy - but 1024 decodes of it are still 1024 x the file.
+  assert.equal(readPlan(oneTileGrid({ cols: 32, rows: 32, extents: 1, len: 18 * 1024 })), null);
+  // A single cell whose extents overlap asks for 64 x the file on its own.
+  assert.equal(readPlan(oneTileGrid({ cols: 1, rows: 1, extents: 64, len: 1024 })), null);
+});
+
 /** Where the meta box starts in a fixture - the only offset a test needs. */
 function findMeta(file) {
   for (let o = 0; o + 8 <= file.length;) {

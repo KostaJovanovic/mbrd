@@ -16,7 +16,9 @@ import type { Item } from '../board-model.ts';
 import { TITLE_ID, shownName } from '../board-model.ts';
 import type { Viewport } from './viewport.ts';
 import { cullMargin } from './viewport.ts';
-import { buildContent, fontFamilyOf, paintStyleTileFaces } from './renderers.ts';
+import {
+  buildContent, fontFamilyOf, paintStyleTileFaces, releaseImages, retitleContent,
+} from './renderers.ts';
 import {
   buildItem, buildShadow, buildTitleControls, farKind, itemAccessibleName,
   resetTilt, restingTilt, retilt, setGrips, wantsHead, writeFit, writeAdjust, writeFenceLook,
@@ -767,7 +769,7 @@ export function releaseCardContent(el: Element) {
   // memory-tight phone that difference is a full-resolution decode held until the
   // next GC, and a board panned across hundreds of photos discards that many at
   // once. Clearing the src (and the still twin's) hands the decode back now.
-  for (const im of el.querySelectorAll('img')) im.removeAttribute('src');
+  releaseImages(el);
   // And the frozen-GIF frames, which are object URLs this app made rather than
   // ones the asset store owns. Clearing the src above drops the *reference*;
   // the blob stays in the document's URL store until it is revoked by name. See
@@ -827,12 +829,20 @@ function disposable(el: HTMLElement) {
  * is only ever one thing playing on a board, so this exempts exactly one card
  * from the cull - and it is off screen, so it is a card's worth of style and
  * layout with nothing to paint.
+ *
+ * An embedded player counts too. Its `paused` cannot be read across origins,
+ * and taking an iframe out of the document destroys it, so a detach stopped
+ * the song and a pan back loaded the player again from the start. It only
+ * exists because somebody pressed Watch, so these are few.
+ *
+ * rebuild() asks the same question of a card's body: what this protects from a
+ * detach, it protects from a body replaced under it.
  */
-function sounding(el: HTMLElement) {
+function sounding(el: Element) {
   for (const m of el.querySelectorAll<HTMLMediaElement>('video, audio')) {
     if (!m.paused) return true;
   }
-  return false;
+  return !!el.querySelector('iframe');
 }
 
 /** Let go of one item's node and shadow, mounted or merely cached. */
@@ -1062,8 +1072,8 @@ export function sync(restack = true, viewPath = false) {
   // Detach pass. Walk what is mounted - bounded by the screen, not the board -
   // and let go of everything no longer on it. Three answers, not two: thrown
   // away, detached and kept for its media state, or - for the one clip actually
-  // playing - left where it is, because detaching it would stop it. See
-  // sounding().
+  // playing, and any embedded player - left where it is, because detaching it
+  // would stop it. See sounding().
   //
   // Keeping every one of them made memory proportional to the board a person had
   // *visited* rather than to what was on screen, which is the opposite of what
@@ -1211,6 +1221,7 @@ function build(item: Item) {
 
   nodes.set(item.id, el);
   drawnFrom.set(el, item);
+  drawnSource.set(el, sourceOf(item));
   // The title card carries its own drop shadow in CSS (box-shadow on
   // .title-card), because the 3:2 card is smaller than its snapped item box and
   // a twin placed at the box would sit taller than the card it shadows.
@@ -1360,9 +1371,19 @@ function syncTwin(el: HTMLElement, item: Item) {
  */
 const drawnFrom = new WeakMap<HTMLElement, Item>();
 
-/** The parts of an item a card draws. Geometry is placeNode()'s. */
-const sameFace = (a: Item, b: Item) => a.type === b.type && a.name === b.name
-  && a.asset === b.asset && JSON.stringify(a.meta ?? null) === JSON.stringify(b.meta ?? null);
+/**
+ * What a card's body plays, by node: the asset and a player's address. The
+ * item is changed in place, so this is the one record of what was built.
+ */
+const drawnSource = new WeakMap<HTMLElement, string>();
+export const sourceOf = (item: Pick<Item, 'asset' | 'meta'>) =>
+  `${item.asset?.hash ?? ''}\n${typeof item.meta?.url === 'string' ? item.meta.url : ''}`;
+
+/** The parts of an item a card draws. Geometry is placeNode()'s. By value,
+ *  since a replay hands back copies and every card with a file was rebuilt. */
+export const sameFace = (a: Item, b: Item) => a.type === b.type && a.name === b.name
+  && JSON.stringify(a.asset ?? null) === JSON.stringify(b.asset ?? null)
+  && JSON.stringify(a.meta ?? null) === JSON.stringify(b.meta ?? null);
 
 /** Rebuild every card whose item is a new object with a different face. */
 function redrawChanged() {
@@ -1385,13 +1406,21 @@ function rebuild(id: string) {
   // this map is a card it made. The two below are the same argument - farHead()
   // appends both of its lines before it returns the head they are in.
   const body = el.querySelector('.item-body')!;
-  // The old content is being thrown away, not detached, so it has to be let go
-  // of properly first - replaceChildren would otherwise leave the card's former
-  // <audio> registered under the volume control and holding its stream, once
-  // per rename, and its <img> holding a full-resolution decode. The same
-  // teardown discard() does, because this is the same act on a smaller scale.
-  releaseCardContent(body);
-  body.replaceChildren(buildContent(item));
+  // A playing clip or an open player keeps its body unless what it plays has
+  // changed: a rename, a tag or a backfilled poster stopped the sound, and a
+  // fetched title swapped the player back for its offer. See sounding().
+  if (sounding(body) && drawnSource.get(el) === sourceOf(item)) {
+    retitleContent(body, item);
+  } else {
+    // The old content is being thrown away, not detached, so it has to be let
+    // go of properly first - replaceChildren would otherwise leave the card's
+    // former <audio> registered under the volume control and holding its
+    // stream, once per rename, and its <img> holding a full-resolution decode.
+    // The same teardown discard() does: the same act on a smaller scale.
+    releaseCardContent(body);
+    body.replaceChildren(buildContent(item));
+    drawnSource.set(el, sourceOf(item));
+  }
   // data-fit lives on the outer .item and is otherwise only written in build(),
   // so a per-item fit change (which arrives as 'item' → rebuild) would rebuild
   // the picture but leave the old object-fit. Re-read it here.

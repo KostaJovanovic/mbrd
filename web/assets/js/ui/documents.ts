@@ -327,7 +327,7 @@ function wordImage(node: Element, entries: Entries, rels: Rels, urls: string[],
   const id = blip?.getAttribute('r:embed') || blip?.getAttribute('embed');
   const target = id && rels.get(id);
   if (!target) return null;
-  const url = urlFor(entries, 'word/' + target.replace(/^\/+/, ''), urls);
+  const url = urlFor(entries, resolveFrom('word/', target), urls);
   if (!url) return null;
   const img = el('img', 'doc-image');
   img.src = url;
@@ -524,11 +524,12 @@ async function odfText(blob: Blob, urls: string[]) {
   const frag = document.createDocumentFragment();
 
   if (pages.length) {
+    const drawn: Drawn = { blocks: 0, images: 0 };
     pages.slice(0, MAX_PAGES).forEach((page, n) => {
       const section = el('section', 'doc-slide');
       section.append(partHead(page.getAttribute('draw:name') || `Slide ${n + 1}`));
       const body = el('div', 'doc-flow');
-      odfBlocks(page, body, entries, urls);
+      odfBlocks(page, body, entries, urls, drawn);
       section.append(body);
       frag.append(section);
     });
@@ -544,12 +545,14 @@ async function odfText(blob: Blob, urls: string[]) {
   return frag;
 }
 
-function odfBlocks(root: Element, host: HTMLElement, entries: Entries, urls: string[]) {
-  let n = 0;
-  let images = 0;
+/** How much of one document has been drawn, kept across its slides so the ceilings hold per document. */
+type Drawn = { blocks: number, images: number };
+
+function odfBlocks(root: Element, host: HTMLElement, entries: Entries, urls: string[],
+  drawn: Drawn = { blocks: 0, images: 0 }) {
   const walk = (node: Element, into: Element) => {
     for (const child of node.children) {
-      if (n++ > MAX_BLOCKS) return;
+      if (drawn.blocks++ > MAX_BLOCKS) return;
       switch (child.localName) {
         case 'h': {
           const level = Number(child.getAttribute('text:outline-level') || 1);
@@ -565,7 +568,7 @@ function odfBlocks(root: Element, host: HTMLElement, entries: Entries, urls: str
           p.textContent = child.textContent;
           // A paragraph can hold a frame with a picture inside it.
           for (const image of byLocal(child, 'image')) {
-            if (images++ >= MAX_IMAGES) break;
+            if (drawn.images++ >= MAX_IMAGES) break;
             const href = image.getAttribute('xlink:href') || image.getAttribute('href');
             const url = href && urlFor(entries, href.replace(/^\.?\/+/, ''), urls);
             if (!url) continue;
@@ -756,10 +759,14 @@ function scrubAttrs(node: Element) {
     // it. Matched on the *local* name: `xl:href` under a custom namespace
     // prefix used to slip past a test naming `xlink:href` literally. `style`
     // is on this list because it's a reference too:
-    // `style="fill:url(//attacker/track.svg#a)"` made the request.
+    // `style="fill:url(//attacker/track.svg#a)"` made the request. So does a
+    // presentation attribute - `fill`, `filter`, `mask`, `marker-end` - holding
+    // a url() that is not `#id`, or one spelt with a CSS escape.
     const away = name.startsWith('on')
       || local === 'style'
       || (/^(href|src|from|to|values|begin|end)$/.test(local) && !value.startsWith('#'))
+      || /url\s*\((?!\s*['"]?\s*#)/.test(value)
+      || (value.includes('\\') && value.includes('('))
       || value.includes('javascript:')
       || value.includes('data:text/html');
     if (away) node.removeAttribute(attr.name);

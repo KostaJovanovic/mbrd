@@ -163,9 +163,9 @@ const inflateCap = () => (CAPS.buf === Infinity ? Infinity : Math.min(CAPS.buf, 
 
 /** Raw DEFLATE (RFC 1951). `hint` sizes the first allocation only — never
  * trusted as a limit; CAPS.buf checked as the output grows. */
-export function inflateRaw(src: Uint8Array, hint = 0): Uint8Array {
+export function inflateRaw(src: Uint8Array, hint = 0, cap = inflateCap()): Uint8Array {
   const d = new Bits(src);
-  const out = new Out(hint, inflateCap());
+  const out = new Out(hint, cap);
   const lengths = new Uint8Array(288 + 32);
 
   for (;;) {
@@ -301,6 +301,10 @@ export function readZip(bytes: Uint8Array): Map<string, ZipFile> {
   if (count > MAX_ENTRIES) throw new MeshError('This archive declares more entries than a model has');
 
   const out = new Map<string, ZipFile>();
+  // The inflate ceiling is for the archive, not for each entry in it: two
+  // thousand parts each just under it are a terabyte. Shared by every read().
+  const budget = { left: inflateCap() };
+  const locals = new Set<number>();
   let at = cdOff;
   for (let i = 0; i < count; i++) {
     if (at + 46 > bytes.length || view.getUint32(at, true) !== CEN) {
@@ -342,10 +346,14 @@ export function readZip(bytes: Uint8Array): Map<string, ZipFile> {
     // two entries under one name is the oldest trick in the archive book and
     // CLAUDE.md names it among the things that are corruption rather than size.
     if (out.has(name)) throw new MeshError('This archive has two entries under one name');
+    // So is two names over one set of bytes: it is how one small deflate
+    // stream is made to be inflated once per name.
+    if (locals.has(local)) throw new MeshError('This archive has two entries over the same data');
+    locals.add(local);
     out.set(name, {
       name,
       size,
-      read: () => entryBytes(bytes, view, local, method, comp, size),
+      read: () => entryBytes(bytes, view, local, method, comp, size, budget),
     });
   }
   return out;
@@ -353,7 +361,7 @@ export function readZip(bytes: Uint8Array): Map<string, ZipFile> {
 
 function entryBytes(
   bytes: Uint8Array, view: DataView,
-  local: number, method: number, comp: number, size: number,
+  local: number, method: number, comp: number, size: number, budget: { left: number },
 ): Uint8Array {
   if (local + 30 > bytes.length || view.getUint32(local, true) !== LOC) {
     throw new MeshError('This archive entry is not where its directory says');
@@ -366,7 +374,13 @@ function entryBytes(
   const raw = bytes.subarray(start, start + comp);
   if (method === 0) return raw;
   if (method !== 8) throw new MeshError('This archive entry uses a compression this cannot read');
-  return inflateRaw(raw, size);
+  // What is left of the archive's allowance: held against the size the
+  // directory claims first, then against the bytes that actually come out,
+  // since the claim is the file's own word.
+  if (size > budget.left) throw oversize('inflated-bytes', tooMuch(inflateCap() - budget.left + size));
+  const done = inflateRaw(raw, size, Math.min(inflateCap(), budget.left));
+  budget.left -= done.length;
+  return done;
 }
 
 /** The end-of-central-directory record, found by scanning back for its

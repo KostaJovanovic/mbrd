@@ -415,3 +415,43 @@ test('a summary property whose offsets point outside the stream is refused', () 
   assert.ok(doc);
   assert.equal(compoundPicture(doc), null);
 });
+
+/** A header whose DIFAT starts at sector 0 and claims 0xFFFFFFFF sectors. */
+function loopingDifat(sectorCount) {
+  const b = new Uint8Array(512 + sectorCount * SECTOR);
+  const hv = new DataView(b.buffer);
+  b.set([0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]);
+  hv.setUint16(30, 9, true);
+  hv.setUint16(32, 6, true);
+  hv.setUint32(48, END, true);
+  hv.setUint32(68, 0, true);
+  hv.setUint32(72, 0xFFFFFFFF, true);
+  for (let i = 0; i < 109; i++) hv.setUint32(76 + i * 4, FREE, true);
+  return b;
+}
+
+test('a DIFAT chain that points at itself ends at once', () => {
+  // The crafted file from the 2026-09-23 hunt: 1024 bytes, sector 0 all zeros.
+  // Sector 0 names sector 0 in every slot and its next pointer is 0 again, so
+  // the walk used to push 127 entries a turn for a million turns - 27 GB.
+  const b = loopingDifat(1);
+  const t0 = performance.now();
+  assert.equal(readCompound(b), null);
+  assert.ok(performance.now() - t0 < 1000, 'the DIFAT walk did not stop');
+});
+
+test('a DIFAT full of valid sector numbers cannot grow the FAT past the file', () => {
+  // Every DIFAT sector points at the next and the last back at the first, and
+  // every slot names a real sector. The FAT list stops at the sector count.
+  const n = 64;
+  const b = loopingDifat(n);
+  const hv = new DataView(b.buffer);
+  for (let s = 0; s < n; s++) {
+    const base = 512 + s * SECTOR;
+    for (let i = 0; i < 127; i++) hv.setUint32(base + i * 4, i % n, true);
+    hv.setUint32(base + 127 * 4, (s + 1) % n, true);
+  }
+  const t0 = performance.now();
+  assert.equal(readCompound(b), null);
+  assert.ok(performance.now() - t0 < 1000, 'the DIFAT walk did not stop');
+});

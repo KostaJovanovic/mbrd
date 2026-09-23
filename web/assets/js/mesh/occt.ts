@@ -56,11 +56,7 @@ function spawn(): Worker | null {
     // A dead worker takes its instance with it: tell everything outstanding so
     // it falls back rather than hangs. Next request spawns fresh - usually a
     // heap exhausted by one huge file, not a kernel that's broken for good.
-    made.onerror = () => {
-      worker = null;
-      for (const [id, settle] of waiting) settle({ id, error: 'The kernel stopped' });
-      waiting.clear();
-    };
+    made.onerror = () => stop(made);
     worker = made;
     return made;
   } catch {
@@ -70,6 +66,20 @@ function spawn(): Worker | null {
     return null;
   }
 }
+
+/** Ended, not just forgotten: an error event does not stop a worker, and one
+ *  left running keeps its heap. Everything outstanding falls back. */
+function stop(w: Worker) {
+  if (worker === w) worker = null;
+  w.terminate();
+  for (const [id, settle] of waiting) settle({ id, error: 'The kernel stopped' });
+  waiting.clear();
+}
+
+/** How long one file may hold the kernel. A large assembly takes tens of
+ *  seconds; a call that has not returned by this will not, and every CAD file
+ *  after it is queued behind it with no fallback until it does. */
+export const KERNEL_TIMEOUT = 120_000;
 
 /** One file through the kernel. `null` means "read it the old way" - wrong
  *  kind, no worker, missing vendor dir, or OpenCASCADE refused it. Never
@@ -96,7 +106,8 @@ function attempt(kind: string, bytes: ArrayBuffer, maxTriangles: number): Promis
   if (!w) return Promise.resolve(null);
   const id = next++;
   return new Promise<Reply>(resolve => {
-    waiting.set(id, resolve);
+    const timer = setTimeout(() => { if (waiting.has(id)) stop(w); }, KERNEL_TIMEOUT);
+    waiting.set(id, reply => { clearTimeout(timer); resolve(reply); });
     // Copied not transferred: caller still needs the bytes for the fallback
     // reader and for a lifted-ceiling retry. The mesh coming back is the
     // bigger payload, so that's the direction worth transferring.

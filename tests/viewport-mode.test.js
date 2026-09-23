@@ -383,6 +383,42 @@ test('letting go past the edge brings the board back', () => {
   assert.equal(vp.pan.y, top, 'and it settles on the edge itself, not near it');
 });
 
+test('a press that is no pan does not leave the board past its edge', () => {
+  const vp = new Viewport(element(), element());
+  vp.setBoardMode('mobile', 384, 384, -1216);
+  vp.fit([]);
+  const top = vp.pan.y;
+  vp.dragging = true;
+  vp.panByScreen(0, 300);
+  vp.dragging = false;   // the settle starts; the stub rAF never runs it
+  assert.ok(vp.pan.y > top);
+
+  // A tap on a widget or a selected card mid-settle: the press stops the
+  // animation, and the board must still come home.
+  const rAF = globalThis.requestAnimationFrame;
+  globalThis.requestAnimationFrame = cb => { cb(performance.now() + 2000); return 1; };
+  try {
+    vp.onPress();
+  } finally {
+    globalThis.requestAnimationFrame = rAF;
+  }
+  assert.equal(vp.pan.y, top);
+});
+
+test('a finger taking hold stops the settle a press let run', () => {
+  const vp = new Viewport(element(), element());
+  vp.setBoardMode('mobile', 384, 384, -1216);
+  vp.fit([]);
+  vp.dragging = true;
+  vp.panByScreen(0, 300);
+  vp.dragging = false;
+  vp.onPress();
+  assert.notEqual(vp._anim, null, 'the settle runs on after the press');
+  vp.dragging = true;
+  assert.equal(vp._anim, null, 'and a pan that begins takes the board from it');
+  vp.dragging = false;
+});
+
 test('the Mobile masthead keeps a 3:2 ratio with the board, above its top edge', () => {
   assert.equal(mobileHeaderHeight(330), 220);
 

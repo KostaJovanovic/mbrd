@@ -307,9 +307,10 @@ test('the palette compares pictures by hash, without minting an object URL', () 
     'and from the source dial - a key over every picture is a key that never settles');
   assert.ok(!body.includes('assetURL('), 'the key must not mint an object URL either');
 
-  // The resolve that does happen is of the slice, capped at MAX_SOURCES - all
-  // samplePixels() will ever read.
-  assert.match(source, /hashes\.slice\(0, Math\.min\(sourceCount\(\), MAX_SOURCES\)\)\.map\(assetURL\)/);
+  // The resolve that does happen is of the slice, which sourceCount() caps at
+  // ALL_SOURCES_MAX - all samplePixels() will ever read. Not at MAX_SOURCES:
+  // that clamp is what made "Every photo" read 24.
+  assert.match(source, /hashes\.slice\(0, sourceCount\(\)\)\.map\(assetURL\)/);
 });
 
 // ---------------------------------------------------------------------------

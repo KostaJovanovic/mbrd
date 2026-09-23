@@ -203,7 +203,7 @@ import {
   itemTags, boardTags, cleanTag,
   normalizeTour, TAGS_PER_ITEM, TAG_MAX, MIN_CROP,
 } from './board-model.ts';
-import type { Item, MobileHeader, TourStop } from './board-model.ts';
+import type { Connection, Item, MobileHeader, TourStop } from './board-model.ts';
 import type { MergePlan } from './merge.ts';
 
 export { MAX_CONNECTIONS, pairKey, CONN_DIRECTIONS, CONN_STYLES };
@@ -636,11 +636,35 @@ export function retypeItem(
     if (at < 0) return;
     board.items.splice(at, 1, into);
     if (selection.delete(out.id)) selection.add(into.id);
+    carryRelations(out.id, into.id);
     bus.emit('items', { added: [into.id], removed: [out.id] });
     bus.emit('selection');
   };
   commit(label, () => swap(old, item), () => swap(item, old));
   return item;
+}
+
+/**
+ * Point every relation that names `from` at `to`: the connections, the tour,
+ * the playlist and a sticky stuck to it. A retype is the same card under a
+ * fresh id, and the save prunes a relation whose id is gone.
+ */
+function carryRelations(from: string, to: string) {
+  const swap = (id: string) => (id === from ? to : id);
+  board.connections = board.connections.map(c => {
+    if (c[0] !== from && c[1] !== from) return c;
+    // SAFETY: each branch rebuilds the arm c has - length > 2 means c[2] is its ConnMeta.
+    return (c.length > 2 ? [swap(c[0]), swap(c[1]), c[2]] : [swap(c[0]), swap(c[1])]) as Connection;
+  });
+  board.tour = board.tour.map(stop =>
+    (stop.cards.includes(from) ? { ...stop, cards: stop.cards.map(swap) } : stop));
+  board.audioOrder = board.audioOrder.map(swap);
+  for (const it of board.items) {
+    if (it.meta?.stuckTo === from) it.meta = { ...it.meta, stuckTo: to };
+  }
+  bus.emit('connections');
+  bus.emit('audioOrder', board.audioOrder);
+  bus.emit('tour', board.tour);
 }
 
 /**
@@ -706,10 +730,27 @@ export function setItemCover(id: string, hash: unknown) {
 /** Change where a link card points. Undoable - the address is a choice, unlike
  *  a fetched title. Validated as a non-empty string here; the caller (commands.ts
  *  editLink) has already run it through linkTyped/linkURL, so what arrives is a
- *  parsed href. The card re-renders off the new URL: watermark, mark and chip. */
+ *  parsed href. The card re-renders off the new URL: watermark, mark and chip.
+ *  The fetched title and cover were the old address's, and setEmbedMeta() only
+ *  fills a card that lacks a title, so they go in the same step and come back
+ *  with its undo. */
 export function setLinkURL(id: string, url: unknown) {
-  patchMeta(id, 'url', url, 'Edit link',
-    value => (typeof value === 'string' && value ? value : null));
+  const it = byId(id);
+  if (!it) return;
+  const valid = (value: unknown) => (typeof value === 'string' && value ? value : null);
+  const next = valid(url);
+  const prev = valid(it.meta?.url);
+  if (next === prev) return;
+  const was = { url: prev, title: it.meta?.title, art: it.meta?.art };
+  const write = (fields: Record<string, unknown>) => {
+    const item = byId(id);
+    if (!item) return;
+    const { url: _url, title: _title, art: _art, ...rest } = item.meta || {};
+    item.meta = rest;
+    for (const [key, value] of Object.entries(fields)) if (value != null) item.meta[key] = value;
+    bus.emit('item', id);
+  };
+  commit('Edit link', () => write({ url: next }), () => write(was));
 }
 
 /** Set the custom specimen text on a font card, or clear it back to the face's
@@ -1759,10 +1800,21 @@ export function removeTourCards(ids: Iterable<string>) {
  * The cards stay on the board.
  */
 export function removeTourStop(index: number): boolean {
-  if (!board.tour[index]) return false;
-  const before = board.tour;
-  const after = board.tour.filter((_, i) => i !== index);
-  commit('Remove stop', () => setTour(after), () => setTour(before));
+  const stop = board.tour[index];
+  if (!stop) return false;
+  // Only this stop moves, never a captured whole tour: the other tour edits are
+  // off the stack, and writing a copy back would undo them with it. A card is at
+  // one stop, so its cards find the stop again wherever the list has moved it.
+  const cards = new Set(stop.cards);
+  commit('Remove stop',
+    () => setTour(dropFromTour(board.tour, cards)),
+    () => {
+      const held = tourCards();
+      const back = { ...stop, cards: stop.cards.filter(id => !held.has(id)) };
+      if (!back.cards.length) return;
+      const at = Math.min(index, board.tour.length);
+      setTour([...board.tour.slice(0, at), back, ...board.tour.slice(at)]);
+    });
   return true;
 }
 
@@ -1892,7 +1944,10 @@ function dropFromTour(tour: TourStop[], ids: Set<string>): TourStop[] {
  * and dropped every relation that named something it is not bringing.
  */
 export function mergeBoard(plan: MergePlan, label = 'Merge board') {
-  const { items, connections, audioOrder, tour } = plan;
+  const { connections, audioOrder, tour } = plan;
+  // planMerge() places the block beside the host in Canvas terms, which on the
+  // Feed is outside the column: there the arrivals are packed below, as a drop is.
+  const items = board.layoutMode === 'mobile' ? placeMobileItems(plan.items) : plan.items;
   if (!items.length) return 0;
   const ids = new Set(items.map(i => i.id));
   const keys = new Set(connections.map(c => pairKey(c[0], c[1])));

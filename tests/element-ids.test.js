@@ -84,8 +84,12 @@ const inHtml = new Set(declared);
  * Every id some module under web/assets/js/ hands to a node, with the module.
  *
  * Four forms, and only four, since a fifth would have to guess: `node.id =`
- * and `setAttribute('id', …)` assign one, `getElementById` finds one built
- * elsewhere, and the settings schema declares two by data (`slot`, `stopsId`).
+ * and `setAttribute('id', …)` assign one, and the settings schema declares two
+ * by data (`slot`, `stopsId`).
+ *
+ * `getElementById('x')` is not one of them. It finds a node, it does not make
+ * one, and a lookup left behind after the builder went would keep an entry
+ * on JS_BUILT green with nothing on the page to match its selector.
  *
  * An id assembled from pieces (`'exit-' + kind`) is invisible to all four -
  * fine here, since no id in the CSS is built that way (interpolated names
@@ -94,7 +98,6 @@ const inHtml = new Set(declared);
 const BUILD_FORMS = [
   /\.id\s*=\s*'([\w-]+)'/g,
   /setAttribute\('id',\s*'([\w-]+)'\)/g,
-  /getElementById\('([\w-]+)'\)/g,
   /\bid:\s*'([\w-]+)',\s*type:\s*'slot'/g,
   /\bstopsId:\s*'([\w-]+)'/g,
 ];
@@ -125,7 +128,9 @@ test('every id the CSS styles is an element that exists', () => {
 });
 
 test('every id on the JS_BUILT table is really built by a module', () => {
-  assert.ok(built.length > 40, `only ${built.length} built ids found under ${JS} - has the sweep broken?`);
+  // 27 assignments when the lookups stopped counting; the floor guards the
+  // sweep, not the app.
+  assert.ok(built.length > 20, `only ${built.length} built ids found under ${JS} - has the sweep broken?`);
 
   const makes = new Set(built.map(([id]) => id));
   const stale = Object.keys(JS_BUILT).filter(id => !makes.has(id));

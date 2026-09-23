@@ -1,14 +1,16 @@
 // The boards folder. Every board on this computer is a .mbrd file, and the page
 // lists this folder, makes a board in it, renames one and moves one to the bin.
 // Documents/mbrd, or boards/ in the data folder of a portable copy or of a run
-// given --user-data-dir, so neither writes outside its own folder. Every path
-// handed back is vouched (files.ts). The names come from board-names.mts.
+// given --user-data-dir, so neither writes outside its own folder. A board
+// directly in the folder is one the page may name (isFolderBoard). The names
+// and that rule come from board-names.mts.
 
 import { app, shell } from 'electron';
-import { access, mkdir, readdir, rename as move, stat, writeFile } from 'node:fs/promises';
+import { access, mkdir, readdir, rename as move, stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
-import { nthName, plainName } from './board-names.mts';
-import { checked, vouch } from './files.ts';
+import { writeAtomic } from './atomic.mts';
+import { isFolderBoard, nthName, plainName } from './board-names.mts';
+import { checked, trustFolder, vouch } from './files.ts';
 import type { Ref } from './files.ts';
 import { log } from './log.ts';
 
@@ -25,6 +27,9 @@ export function chooseFolder(inData: boolean): string {
       log('warn', 'no Documents folder, so the boards stay in the data folder', { err: String(err) });
     }
   }
+  // The page may name a board here before it lists the folder: a start
+  // reopens the board it closed on.
+  trustFolder(path => isFolderBoard(path, root));
   return root;
 }
 
@@ -90,9 +95,7 @@ export function create(suggested: unknown, data: unknown): Promise<Ref> {
     await mkdir(root, { recursive: true });
     const path = await freePath(plainName(suggested));
     // The temp file and the rename of files.ts's write: a board is whole or absent.
-    const tmp = path + '.mbrd-tmp';
-    await writeFile(tmp, Buffer.from(data));
-    await move(tmp, path);
+    await writeAtomic(path, Buffer.from(data), path + '.mbrd-tmp', true);
     vouch(path);
     log('info', 'board made in the folder', { path });
     return refOf(path);
@@ -106,7 +109,9 @@ export function rename(path: unknown, suggested: unknown): Promise<Ref | null> {
   if (!inFolder(from)) return Promise.resolve(null);
   return inTurn(async () => {
     const to = await freePath(plainName(suggested), from);
-    if (same(to, from)) return refOf(from);
+    if (to === from) return refOf(from);
+    // A change of case only is still a rename: NTFS and APFS keep the case they
+    // are given, and a rename to the same name in other letters takes.
     await move(from, to);
     vouch(to);
     log('info', 'board renamed', { from, to });

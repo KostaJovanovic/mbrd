@@ -24,10 +24,10 @@ const defined = new Set(
     .filter(Boolean));
 
 /**
- * Every icon the app asks for, with where it asked. Four shapes: markup in
- * index.html, the name handed to icon() or an `icon:` field, a <use href>
- * built into a string, and a sprite URL held whole in a single-quoted string
- * for a script to hand to setAttribute() (the cleaning glove's open and shut).
+ * Every icon the app asks for, with where it asked. Three shapes: markup in
+ * index.html, a <use href> built into a string, and a sprite URL held whole in
+ * a single-quoted string for a script to hand to setAttribute() (the cleaning
+ * glove's open and shut).
  *
  * Swept over every module rather than listed by hand - a hand-kept list of
  * files went stale twice already, reporting a real reference as an orphan.
@@ -36,14 +36,39 @@ const defined = new Set(
  */
 const iconNames = (text, where) => [
   ...[...text.matchAll(/href="assets\/icons\.svg#([^"]+)"/g)],
-  ...[...text.matchAll(/icon: '(i-[a-z0-9-]+)'/g)],
-  ...[...text.matchAll(/icon\('(i-[a-z0-9-]+)'/g)],
   ...[...text.matchAll(/'assets\/icons\.svg#(i-[a-z0-9-]+)'/g)],
 ].map(m => [m[1], where]);
 
+/**
+ * True when `at` in `src` sits in a comment: a line that opens with `//`, `/*`
+ * or the `*` of a block comment, or a line whose `//` comes before `at`. A `//`
+ * right after `:` is a URL and does not count.
+ */
+function inComment(src, at) {
+  const start = src.lastIndexOf('\n', at - 1) + 1;
+  const before = src.slice(start, at);
+  return /^\s*(\/\/|\/\*|\*)/.test(before) || /(^|[^:])\/\//.test(before);
+}
+
+/**
+ * Every quoted `i-…` literal in a module, outside comments. A module names an
+ * icon in more ways than a few regexes can list - a lookup table
+ * (conn-chip.ts's `fwd: 'i-arrow-fwd'`), a constant (drawer.ts's
+ * `DRAWER_FACE`), an argument to a local helper (tour-edit.ts's
+ * `iconButton(…, 'i-close', …)`) - and each shape the sweep did not know was a
+ * name no test read. So every whole quoted literal counts, whatever holds it.
+ */
+const quotedIconNames = (src, where) =>
+  [...src.matchAll(/(['"`])(i-[a-z0-9-]+)\1/g)]
+    .filter(m => !inComment(src, m.index))
+    .map(m => [m[2], where]);
+
 const referenced = [
   ...iconNames(html, 'index.html'),
-  ...walk(JS, ['.js', '.ts']).flatMap(rel => iconNames(read(join(WEB, rel)), rel)),
+  ...walk(JS, ['.js', '.ts']).flatMap(rel => {
+    const src = read(join(WEB, rel));
+    return [...iconNames(src, rel), ...quotedIconNames(src, rel)];
+  }),
 ];
 
 test('the sprite defines something for every icon the app asks for', () => {

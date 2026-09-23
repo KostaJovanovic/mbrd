@@ -68,6 +68,20 @@ test('the flow stops at the foot of page one', () => {
   for (const p of placed) assert.ok(p.y + LINE <= 2000 - 500, `${p.text} runs past the foot`);
 });
 
+test('one enormous paragraph is measured only as far as the page has room', () => {
+  // The 2026-09-23 hunt: MAX_CHARS is checked between body children, so one
+  // <w:p> of a million words went whole to wrap(), a measure per word, for
+  // about forty visible lines.
+  const page = pageBox({});
+  let calls = 0;
+  const counted = (t, size) => { calls++; return measure(t, size); };
+  const huge = Array.from({ length: 200_000 }, () => 'word').join(' ');
+  const placed = flow([text(huge)], page, counted);
+  const fits = Math.floor((page.h - page.top - page.bottom) / LINE);
+  assert.equal(placed.length, fits, 'the page is still filled');
+  assert.ok(calls < fits * 100, `${calls} measures for ${fits} lines`);
+});
+
 test('centred text sits in the middle of the measure', () => {
   const page = pageBox({ w: 4000, h: 20000, left: 500, right: 500, top: 500, bottom: 500 });
   const [line] = flow([text('abcd', { align: 'center' })], page, measure);

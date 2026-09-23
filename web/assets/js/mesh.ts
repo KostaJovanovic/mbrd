@@ -434,7 +434,8 @@ export function parseGLB(bytes: ArrayBuffer): Mesh {
   const roots = json.scenes?.length
     ? (json.scenes[json.scene ?? 0]?.nodes ?? [])
     : (json.nodes || []).map((_, i) => i);
-  for (const root of roots) walkNode(json, buffers, root, outP, outN, box);
+  const walk: Walk = { visits: 0, accessors: new Map(), elements: 0 };
+  for (const root of roots) walkNode(json, buffers, root, outP, outN, box, walk);
 
   if (!outP.length) throw new MeshError('This model has no geometry in it');
   return finish(new Float32Array(outP), new Float32Array(outN), box);
@@ -451,13 +452,26 @@ type Frame = {
   ci: number;
 };
 
+/** State for one parse, across every root. A node reached by two paths is
+ *  drawn twice, which is what instancing means, so visits are counted rather
+ *  than refused - and counted for the whole scene, since a scene may list one
+ *  root any number of times. */
+type Walk = {
+  visits: number;
+  /** Accessors already read, by index. A shared child is visited once per
+   *  path, and reading its arrays again on each visit made a chain of shared
+   *  children with an empty index list cost hours while drawing nothing. */
+  accessors: Map<number, ReturnType<typeof readAccessor>>;
+  /** Elements allocated by those reads, held against the parse ceiling. */
+  elements: number;
+};
+
 // Iterative scene-graph walk with cycle detection and depth/visit ceilings.
 function walkNode(
   json: GLTF, buffers: (Uint8Array | null)[], root: number,
-  outP: number[], outN: number[], box: MeshBounds,
+  outP: number[], outN: number[], box: MeshBounds, walk: Walk,
 ) {
   const seen = new Set<number>();
-  let visits = 0;
   const stack: Frame[] = [{ index: root, parent: IDENTITY, phase: 0, world: IDENTITY, children: [], ci: 0 }];
   while (stack.length) {
     if (stack.length > MAX_NODE_DEPTH) throw new MeshError('This model is nested too deeply');
@@ -465,7 +479,7 @@ function walkNode(
     if (frame.phase === 0) {
       const node = json.nodes?.[frame.index];
       if (!node || seen.has(frame.index)) { stack.pop(); continue; }
-      if (++visits > MAX_NODE_VISITS) throw new MeshError('This model has too many nodes in it');
+      if (++walk.visits > MAX_NODE_VISITS) throw new MeshError('This model has too many nodes in it');
       seen.add(frame.index);
 
       const local = isMatrix(node.matrix) ? node.matrix : trs(node);
@@ -474,7 +488,7 @@ function walkNode(
       if (node.mesh !== undefined) {
         for (const prim of json.meshes?.[node.mesh]?.primitives || []) {
           if (prim.mode !== undefined && prim.mode !== 4) continue; // TRIANGLES only
-          addPrimitive(json, buffers, prim, frame.world, outP, outN, box);
+          addPrimitive(json, buffers, prim, frame.world, outP, outN, box, walk);
         }
       }
       frame.children = node.children || [];
@@ -493,14 +507,28 @@ function walkNode(
   }
 }
 
+/** How many times the per-array ceiling one parse may allocate in total. A
+ *  model at the triangle ceiling with positions, normals and indices in
+ *  separate primitives reaches about seven. */
+const PARSE_ELEMENTS = 8;
+
+function accessorOnce(json: GLTF, buffers: (Uint8Array | null)[], index: number | undefined, walk: Walk) {
+  if (index === undefined) return null;
+  if (walk.accessors.has(index)) return walk.accessors.get(index) ?? null;
+  const out = readAccessor(json, buffers, index, CAPS.elem * PARSE_ELEMENTS - walk.elements);
+  walk.accessors.set(index, out);
+  if (out) walk.elements += out.length;
+  return out;
+}
+
 function addPrimitive(
   json: GLTF, buffers: (Uint8Array | null)[], prim: GLTFPrimitive, m: Matrix,
-  outP: number[], outN: number[], box: MeshBounds,
+  outP: number[], outN: number[], box: MeshBounds, walk: Walk,
 ) {
-  const pos = readAccessor(json, buffers, prim.attributes?.POSITION);
+  const pos = accessorOnce(json, buffers, prim.attributes?.POSITION, walk);
   if (!pos) return;
-  const nrm = readAccessor(json, buffers, prim.attributes?.NORMAL);
-  const idx = prim.indices !== undefined ? readAccessor(json, buffers, prim.indices) : null;
+  const nrm = accessorOnce(json, buffers, prim.attributes?.NORMAL, walk);
+  const idx = prim.indices !== undefined ? accessorOnce(json, buffers, prim.indices, walk) : null;
   const n = idx ? idx.length : pos.length / 3;
   if (n % 3) return;
   if (outP.length / 9 + n / 3 > CAPS.tri) throw oversize('mesh-triangles', tooBig(CAPS.tri));
@@ -543,7 +571,9 @@ const READERS: Record<number, {
 };
 
 // Element-by-element copy — handles strides and unaligned offsets.
-function readAccessor(json: GLTF, buffers: (Uint8Array | null)[], index: number | undefined) {
+function readAccessor(
+  json: GLTF, buffers: (Uint8Array | null)[], index: number | undefined, room = Infinity,
+) {
   if (index === undefined) return null;
   const acc = json.accessors?.[index];
   if (!acc) return null;
@@ -558,6 +588,8 @@ function readAccessor(json: GLTF, buffers: (Uint8Array | null)[], index: number 
   if (count > CAPS.elem) throw oversize('mesh-triangles', manyElements(count));
   // Also check count*comps — MAT4 multiplies the allocation by 16.
   if (count * comps > CAPS.elem) throw oversize('mesh-triangles', manyElements(count * comps));
+  // And the parse as a whole: many arrays each under the line above still add up.
+  if (count * comps > room) throw oversize('mesh-triangles', manyInTotal());
 
   const bv = json.bufferViews?.[acc.bufferView ?? -1];
   const Arr = acc.componentType === 5126 ? Float32Array
@@ -662,6 +694,10 @@ function normalMatrix(m: Matrix): Matrix {
     (a[1] * a[5] - a[4] * a[2]) * inv, (a[3] * a[2] - a[0] * a[5]) * inv, (a[0] * a[4] - a[3] * a[1]) * inv,
   ];
 }
+
+const manyInTotal = () =>
+  `This model's arrays add up to more than ${(MAX_ELEMENTS * PARSE_ELEMENTS).toLocaleString()} vertex values, `
+  + `more than the ${MAX_TRIANGLES.toLocaleString()}-triangle ceiling leaves room for.`;
 
 const manyElements = (n: number) =>
   `This model declares ${n.toLocaleString()} vertex values in one array, more than the `

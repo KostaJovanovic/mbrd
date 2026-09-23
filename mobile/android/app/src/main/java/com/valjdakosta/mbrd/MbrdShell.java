@@ -6,6 +6,7 @@ import android.content.ContentResolver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ApplicationInfo;
+import android.content.pm.ProviderInfo;
 import android.net.Uri;
 import android.webkit.ServiceWorkerClient;
 import android.webkit.ServiceWorkerController;
@@ -211,12 +212,14 @@ public class MbrdShell extends Plugin {
         }
         // content:// only. A file:// URI names another app's private path, and
         // Android 7 stopped those crossing between apps.
+        Context ctx = getContext();
         List<Uri> content = new ArrayList<>();
-        for (Uri u : uris) if (u != null && ContentResolver.SCHEME_CONTENT.equals(u.getScheme())) content.add(u);
+        for (Uri u : uris) {
+            if (u != null && ContentResolver.SCHEME_CONTENT.equals(u.getScheme()) && !isOwn(ctx, u)) content.add(u);
+        }
         String shared = text != null && !text.trim().isEmpty() ? text : null;
         if (content.isEmpty() && shared == null) return false;
 
-        Context ctx = getContext();
         String type = intent.getType();
         INCOMING.execute(() -> {
             JSArray files = new JSArray();
@@ -234,6 +237,20 @@ public class MbrdShell extends Plugin {
             notifyListeners("open", payload, true);
         });
         return true;
+    }
+
+    /**
+     * A URI on one of this app's own providers. Another app cannot read those
+     * itself, and must not make this app read one for it and hand the bytes to
+     * the page. A URI with no authority names no provider at all.
+     */
+    @SuppressWarnings("deprecation")
+    private static boolean isOwn(Context ctx, Uri uri) {
+        String authority = uri.getAuthority();
+        if (authority == null) return true;
+        if (authority.equals(ctx.getPackageName() + ".fileprovider")) return true;
+        ProviderInfo info = ctx.getPackageManager().resolveContentProvider(authority, 0);
+        return info != null && ctx.getPackageName().equals(info.packageName);
     }
 
     /** A phone pauses where the desktop closes, and may be killed after, so the

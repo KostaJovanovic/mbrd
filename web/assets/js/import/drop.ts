@@ -2,7 +2,7 @@
 // All paths funnel into importFiles() — hash, classify, arrange, add.
 
 import { extOf } from '../util.ts';
-import { platform } from '../platform/platform.ts';
+import { platform, isDesktop } from '../platform/platform.ts';
 import { toast, busy } from '../notify.ts';
 import { cue } from '../cuelume/engine.ts';
 import {
@@ -215,6 +215,10 @@ export function initDrop(vp: DropViewport) {
       await importFiles([...incoming.files, ...incoming.folders], at, {
         avoidOverlap: incoming.fromFolder,
         truncated: incoming.truncated,
+        whole: async () => {
+          const all = await incoming.all();
+          return [...all.files, ...all.folders];
+        },
       });
       return;
     }
@@ -364,12 +368,17 @@ export function pickCover(id: string) {
   input.click();
 }
 
-/** Attach a chosen picture. Checks decodability — accept="image/*" lets through HEIC/RAW. */
-async function applyCover(id: string, file: File) {
+/** Attach a chosen picture. Checks decodability — accept="image/*" lets through HEIC/RAW.
+ *  Exported for tests/cover-budget.test.js. */
+export async function applyCover(id: string, file: File) {
   if (classify(file) !== 'image') {
     toast(`${file.name} is not a picture`, 'error');
     return;
   }
+  // measureSize() decodes, so the header is asked first, as importFiles()
+  // does: a small file that declares 65535 x 65535 is a question, not a draw.
+  const px = await pixelCrossing(file).catch(() => null);
+  if (px && !(await allow(fileKey(file), `${file.name} - ${consentMb(file.size)}`, [px], 'Use it'))) return;
   const { decodable } = await measureSize('image', file);
   if (!decodable) {
     toast(`This browser cannot draw ${file.name}`, 'error');
@@ -386,8 +395,12 @@ async function applyCover(id: string, file: File) {
 export async function importFiles(
   incoming: Incoming[],
   centre: Point,
-  { avoidOverlap = false, truncated = false, replace = null }:
-    { avoidOverlap?: boolean, truncated?: boolean, replace?: Replace | null } = {},
+  { avoidOverlap = false, truncated = false, replace = null, whole = null }:
+    {
+      avoidOverlap?: boolean, truncated?: boolean, replace?: Replace | null,
+      /** The whole of a `truncated` drop, walked again with no cap. */
+      whole?: (() => Promise<Incoming[]>) | null,
+    } = {},
 ) {
   let files = incoming.filter(f => f && (!isFile(f) || f.size > 0 || f.type));
   if (!files.length) return [];
@@ -399,6 +412,30 @@ export async function importFiles(
   if (!replace && sole && isFile(sole) && looksLikeMbrd(sole)) {
     await openOrMergeFile(sole);
     return [];
+  }
+
+  // filesFrom() already capped at MAX_FILES; `truncated` reports whether it did.
+  // The user can override and take all of them, and for a cut walk that means
+  // walking again: the files past the cap were never read. Asked before fonts
+  // and large files are sorted out, so the walked-again list goes through both.
+  let trimmed = truncated || files.length > MAX_FILES;
+  if (trimmed) {
+    const wanted = files.length;
+    const keepAll = await allow(
+      `count:${wanted}`,
+      `${wanted > MAX_FILES ? wanted : 'More than ' + MAX_FILES} files at once.`,
+      [{
+        ceiling: 'file-count',
+        what: `This is ${wanted > MAX_FILES ? wanted : 'more than ' + MAX_FILES} files, past the `
+          + `${MAX_FILES} taken at once. Declining brings in the first ${MAX_FILES}.`,
+      }],
+      'Take all of them',
+    );
+    if (!keepAll && files.length > MAX_FILES) files = files.slice(0, MAX_FILES);
+    if (keepAll) {
+      trimmed = false;
+      if (truncated && whole) files = (await whole()).filter(f => f && (!isFile(f) || f.size > 0 || f.type));
+    }
   }
 
   // Fonts are board settings, not content. Announced via bus — ui/fonts.ts handles registration.
@@ -438,25 +475,6 @@ export async function importFiles(
       files = files.filter(f => !skip.has(f));
       overBudget += big.length;
     }
-  }
-
-  // filesFrom() already capped at MAX_FILES; `truncated` reports whether it did.
-  // The user can override and take all of them.
-  let trimmed = truncated || files.length > MAX_FILES;
-  if (trimmed) {
-    const wanted = files.length;
-    const keepAll = await allow(
-      `count:${wanted}`,
-      `${wanted > MAX_FILES ? wanted : 'More than ' + MAX_FILES} files at once.`,
-      [{
-        ceiling: 'file-count',
-        what: `This is ${wanted > MAX_FILES ? wanted : 'more than ' + MAX_FILES} files, past the `
-          + `${MAX_FILES} taken at once. Declining brings in the first ${MAX_FILES}.`,
-      }],
-      'Take all of them',
-    );
-    if (!keepAll && files.length > MAX_FILES) files = files.slice(0, MAX_FILES);
-    if (keepAll) trimmed = false;
   }
 
   // Byte budget: the memory boundary (the 500-file cap is UX only). Sequential —
@@ -1428,34 +1446,54 @@ export async function filesFrom(dt: DataTransfer) {
   const folders: DiskFolder[] = [];
   const canWalk = items.length && typeof items[0].webkitGetAsEntry === 'function';
   if (!canWalk) {
-    return { files: flat, folders, fromFolder: flat.some(file => !!file.webkitRelativePath), truncated: false };
+    return {
+      files: flat, folders, fromFolder: flat.some(file => !!file.webkitRelativePath), truncated: false,
+      all: async () => ({ files: flat, folders, more: false }),
+    };
   }
 
+  // Taken now, while the drop still hands them out: a DataTransfer is empty
+  // once the event returns, and `all` below walks these same entries again.
   const entries = items.map(i => i.webkitGetAsEntry())
     .filter((entry): entry is FileSystemEntry => !!entry);
   const fromFolder = entries.some(entry => entry.isDirectory);
-  const out: File[] = [];
-  const walk: Walk = { count: 0, dirs: 0 };
-  for (const entry of entries) {
-    // A dropped folder spreads its own files over the board, and each folder
-    // inside it lands as one folder card holding everything under it.
-    if (isDirEntry(entry)) {
-      await spreadFolder(entry, out, folders, walk);
-    } else {
-      const got: DiskFile[] = [];
-      await walkEntry(entry, '', got, walk);
-      out.push(...got.map(g => g.file));
-    }
-    if (walk.count >= MAX_FILES) break;
-  }
+  const first = await walkEntries(entries, MAX_FILES);
   // Reported rather than left to be inferred. The walk stops *at* MAX_FILES, so
   // importFiles()'s `files.length > MAX_FILES` was unreachable from a drop and a
   // folder of a thousand photographs brought in five hundred while saying it had
   // brought in everything. Inferring it there with >= would be one character and
   // wrong for the picker, where five hundred chosen files really are five hundred
-  // files and nothing was cut.
-  const walked = out.length || folders.length;
-  return { files: walked ? out : flat, folders, fromFolder, truncated: walk.count >= MAX_FILES };
+  // files and nothing was cut. And it means a file past the cap was *seen*, not
+  // that the cap was reached: a folder of exactly five hundred is not cut.
+  const walked = first.files.length || first.folders.length;
+  return {
+    files: walked ? first.files : flat,
+    folders: first.folders,
+    fromFolder,
+    truncated: first.more,
+    /** The same drop walked with no file cap, for "Take all of them". */
+    all: () => walkEntries(entries, Infinity),
+  };
+}
+
+/** Every file under these entries, up to `cap`. `more` says a file past it was found. */
+async function walkEntries(entries: FileSystemEntry[], cap: number) {
+  const files: File[] = [];
+  const folders: DiskFolder[] = [];
+  const walk: Walk = { count: 0, dirs: 0, cap, more: false };
+  for (const entry of entries) {
+    // A dropped folder spreads its own files over the board, and each folder
+    // inside it lands as one folder card holding everything under it.
+    if (isDirEntry(entry)) {
+      await spreadFolder(entry, files, folders, walk);
+    } else {
+      const got: DiskFile[] = [];
+      await walkEntry(entry, '', got, walk);
+      files.push(...got.map(g => g.file));
+    }
+    if (walk.more) break;
+  }
+  return { files, folders, more: walk.more };
 }
 
 /**
@@ -1474,10 +1512,15 @@ export async function filesFrom(dt: DataTransfer) {
 const MAX_DEPTH = 32;
 const MAX_DIRS = 8192;
 
-/** One drop's walk: files found, across every folder and card, and directories visited. */
-type Walk = { count: number, dirs: number };
+/**
+ * One drop's walk: files found, across every folder and card, and directories
+ * visited. `more` is set by the first file entry met once `cap` are in hand -
+ * found and not read, which is how a folder of exactly `cap` files is told
+ * apart from a larger one.
+ */
+type Walk = { count: number, dirs: number, cap: number, more: boolean };
 
-/** Each child of a directory, in turn, until the walk reaches MAX_FILES. */
+/** Each child of a directory, in turn, until the walk finds a file past its cap. */
 async function eachChild(dir: FileSystemDirectoryEntry, walk: Walk, visit: (child: FileSystemEntry) => Promise<void>) {
   const reader = dir.createReader();
   // readEntries returns at most ~100 per call and must be drained in a loop.
@@ -1485,14 +1528,15 @@ async function eachChild(dir: FileSystemDirectoryEntry, walk: Walk, visit: (chil
     const batch = await new Promise<FileSystemEntry[]>(res => reader.readEntries(res, () => res([])));
     if (!batch.length) break;
     for (const child of batch) await visit(child);
-    if (walk.count >= MAX_FILES) break;
+    if (walk.more) break;
   }
 }
 
 /** Every file under an entry, each with its path below `prefix`. */
 async function walkEntry(entry: FileSystemEntry, prefix: string, out: DiskFile[], walk: Walk, depth = 0) {
-  if (walk.count >= MAX_FILES) return;
+  if (walk.more) return;
   if (isFileEntry(entry)) {
+    if (walk.count >= walk.cap) { walk.more = true; return; }
     const file = await new Promise<File | null>(res => entry.file(res, () => res(null)));
     if (file) {
       out.push({ path: prefix + file.name, file });
@@ -1540,7 +1584,18 @@ async function spreadFolder(dir: FileSystemDirectoryEntry, files: File[], folder
  * native port in this app takes: the caller has a path behind this one.
  */
 async function nativePreview(file: File): Promise<File | null> {
-  const bitmap = await platform.native.decode(await file.arrayBuffer(), file.name);
+  // Only where a shell is wired: the port wants the whole file as one buffer,
+  // and in a browser it answers null after that read. A file past about 2 GB
+  // throws from arrayBuffer(), which is also a null, so the paths behind this
+  // one still run.
+  if (!isDesktop()) return null;
+  let bytes: ArrayBuffer;
+  try {
+    bytes = await file.arrayBuffer();
+  } catch {
+    return null;
+  }
+  const bitmap = await platform.native.decode(bytes, file.name);
   if (!bitmap) return null;
   try {
     // Back to bytes, because everything downstream measures and stores a File.

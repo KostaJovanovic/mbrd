@@ -250,3 +250,52 @@ test('base64 of a cover-sized buffer does not overflow the stack', () => {
   // call, throwing on every engine - the size the chunking exists for.
   assert.doesNotThrow(() => base64(bytes(200 * 1024)));
 });
+
+/**
+ * Just enough browser for toOpus() to reach its decode: an audio element that
+ * reports `duration` from its header, and a decoder that counts its calls and
+ * then fails, so nothing past the decode has to be faked.
+ */
+function fakeBrowser(t, duration) {
+  const calls = { decode: 0 };
+  const g = globalThis;
+  const saved = ['document', 'AudioEncoder', 'AudioData', 'OfflineAudioContext']
+    .map(k => [k, Object.getOwnPropertyDescriptor(g, k)]);
+  t.after(() => {
+    for (const [k, d] of saved) { if (d) Object.defineProperty(g, k, d); else delete g[k]; }
+  });
+  g.AudioEncoder = function () {};
+  g.AudioData = function () {};
+  g.OfflineAudioContext = class {
+    decodeAudioData() { calls.decode++; return Promise.reject(new Error('not here')); }
+  };
+  g.document = {
+    createElement() {
+      const el = new EventTarget();
+      el.duration = NaN;
+      el.removeAttribute = () => {};
+      el.load = () => {};
+      Object.defineProperty(el, 'src', {
+        set() { queueMicrotask(() => { el.duration = duration; el.dispatchEvent(new Event('loadedmetadata')); }); },
+      });
+      return el;
+    },
+  };
+  return calls;
+}
+
+test('a small file that plays for hours is left alone before it is decoded', async t => {
+  // MAX_INPUT counts compressed bytes. At 6 kbps, 10 MB is 3.7 hours, and the
+  // decode to 48 kHz float asks for about 5 GB, so the length is asked first.
+  const { toOpus } = await import('../web/assets/js/optimize/opus.ts');
+  const calls = fakeBrowser(t, 3.7 * 3600);
+  assert.equal(await toOpus(new Blob([new Uint8Array(1024)]), { tags: [] }), null);
+  assert.equal(calls.decode, 0, 'the decode ran on a sound past the length ceiling');
+});
+
+test('a song of ordinary length still goes to the decoder', async t => {
+  const { toOpus } = await import('../web/assets/js/optimize/opus.ts');
+  const calls = fakeBrowser(t, 240);
+  assert.equal(await toOpus(new Blob([new Uint8Array(1024)]), { tags: [] }), null);
+  assert.equal(calls.decode, 1, 'the length check refused an ordinary song');
+});

@@ -30,6 +30,7 @@ import type { Brand } from './brands.ts';
 import { buildModelCard } from './model.ts';
 import { hintFor, hintKey, tapeStyle, bindDial, STOPS, DIAL } from './ghosts.ts';
 import { ensureDisplay, displayURLReady, bakedServes } from './display.ts';
+import { landCopy } from './hires.ts';
 import { meshKind } from '../mesh.ts';
 import { faceName, pixelHash, TILE_SWATCHES } from '../style-tile.ts';
 import { buildSpotlessCard, SPOTLESS_SIZE } from './spotless.ts';
@@ -684,6 +685,33 @@ function markUnplayable(media: HTMLMediaElement, item: Item) {
   body.append(note);
 }
 
+/** Pictures whose card was thrown away. See releaseImages(). */
+const released = new WeakSet<HTMLImageElement>();
+
+/**
+ * Take the pictures under `root` off their sources for good, for a card that is
+ * discarded (canvas/items.ts releaseCardContent). Remembered, so a display copy
+ * that lands afterwards does not load into an <img> nothing shows: Chromium
+ * never frees one whose src is set after it left the document.
+ */
+export function releaseImages(root: Element): void {
+  for (const im of root.querySelectorAll('img')) {
+    im.removeAttribute('src');
+    released.add(im);
+  }
+}
+
+/**
+ * A display copy (or the original, when no copy could be made) arriving for a
+ * card built before it was ready. `!img.src` lets a card that is not mounted
+ * yet take it; a released one never does. A card zoomed past its copy keeps
+ * the original - see landCopy().
+ */
+export function landDisplay(img: HTMLImageElement, src: string | null): void {
+  if (!src || released.has(img)) return;
+  if (img.isConnected || !img.src) landCopy(img, src);
+}
+
 /**
  * What sits behind a picture letterboxed on the grid: a blurred, dimmed copy
  * of it where the quality dial allows blur, and nothing - the card's paper -
@@ -785,11 +813,8 @@ const RENDERERS = {
         if (thumb && !edited) img.src = thumb;   // crisp-enough stand-in while the copy renders
         // **A copy that could not be made falls back to the original.** Without
         // it this card ends with no `src` at all, which is an `<img>` drawing its
-        // own alt text. `!img.src` alongside isConnected saves work on a
-        // discarded card without leaving a live one blank.
-        const done = (src: string | null) => {
-          if (src && (img.isConnected || !img.src)) img.src = src;
-        };
+        // own alt text. See landDisplay().
+        const done = (src: string | null) => landDisplay(img, src);
         if (!useBaked) {
           // The exact edit state from the runtime cache. A plain card hands over
           // its baked copy, which display.ts shows rather than make a sharper one
@@ -1132,7 +1157,7 @@ const RENDERERS = {
       // every pointer over the frame (embed.ts keeps this element on open).
       const title = document.createElement('div');
       title.className = 'embed-title';
-      title.textContent = metaStr(item.meta.title) || item.name || linkName(u) || spec.provider;
+      title.textContent = embedTitle(item, u, spec.provider);
       card.append(title, embedOffer(item, spec, card));
       // On load if missing: fetch the title and cover and store them
       // (embed-meta.ts, wired in main.ts). A no-op until wired, so a test that
@@ -1997,6 +2022,27 @@ function redditSub(u: URL): string | null {
   if (host !== 'reddit.com') return null;
   const m = /^\/r\/([^/]+)/i.exec(u.pathname);
   return m ? `r/${m[1]}` : null;
+}
+
+/** A player card's top line: the fetched title, then the name, then the site. */
+function embedTitle(item: Item, u: URL, provider: string): string {
+  return metaStr(item.meta?.title) || item.name || linkName(u) || provider;
+}
+
+/**
+ * Rewrite the names inside a card's content without building it again.
+ *
+ * For the one card rebuild() (canvas/items.ts) will not replace: a clip that
+ * plays or an embedded player, where a new body would stop the sound or load
+ * the player again. The rest of such a body waits for the next rebuild.
+ */
+export function retitleContent(root: Element, item: Item): void {
+  const name = root.querySelector(':scope > .card-audio > .card-name');
+  if (name) name.textContent = titleOf(item);
+  const top = root.querySelector(':scope > .card-embed > .embed-title');
+  const u = top ? linkURL(item.meta?.url) : null;
+  const spec = u && embedFor(u);
+  if (top && u && spec) top.textContent = embedTitle(item, u, spec.provider);
 }
 
 /** What a link is called before anybody renames it: the site it points at. */

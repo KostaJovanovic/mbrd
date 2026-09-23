@@ -7,7 +7,7 @@ import {
   board, bus, selection, removeItems, restoreItems, emptyTrash, select,
   restoreTitleCard, isTitleHidden, titleCardShape, clipHomeId, stuckHostId, isKeepsake,
 } from '../state.ts';
-import { formatBytes, div, el, markClosed } from '../util.ts';
+import { formatBytes, div, el, markClosed, wasClosed } from '../util.ts';
 import { buildItem, restingTilt, kindName } from '../canvas/item-dom.ts';
 import { releaseCardContent } from '../canvas/items.ts';
 import { startEdgePan } from '../canvas/edge-pan.ts';
@@ -178,8 +178,11 @@ export function initDrawer(viewport: Viewport) {
 
   // Escape closes it, not in the capture phase (unlike the sticker pad's
   // disarm) - no mode to get out of, so a dialog on top gets the key first.
+  // A modal <dialog> closes itself only after this listener has run, so it is
+  // asked for here: its Escape is its own, and the drawer stays.
   addEventListener('keydown', e => {
-    if (e.key !== 'Escape' || !win) return;
+    if (e.key !== 'Escape' || !win || e.defaultPrevented || wasClosed(e)) return;
+    if (document.querySelector('dialog[open]')) return;
     markClosed(e);
     closeDrawer();
   });

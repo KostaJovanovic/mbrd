@@ -10,6 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { firstFrame, BOOT_TIMEOUT_MS } from '../web/assets/js/optimize/media.ts';
+import { setPlatform } from '../web/assets/js/platform/platform.ts';
 
 /** A file that never gets read: the boot fails long before the bytes matter. */
 const clip = { name: 'clip.mov', async arrayBuffer() { return new ArrayBuffer(0); } };
@@ -78,4 +79,57 @@ test('a worker that boots and then goes silent is given up on, and respawns', as
     if (realWorker === undefined) delete globalThis.Worker;
     else globalThis.Worker = realWorker;
   }
+});
+
+/**
+ * A clip too large for one ArrayBuffer: reading it whole throws, the way a
+ * 2 GB+ File does in a browser. Its head can still be sliced.
+ */
+function hugeClip() {
+  const reads = { whole: 0 };
+  return {
+    reads,
+    file: {
+      name: 'film.mov',
+      size: 3 * 1024 ** 3,
+      async arrayBuffer() { reads.whole++; throw new RangeError('Array buffer allocation failed'); },
+      slice() { return { async arrayBuffer() { return new ArrayBuffer(16); } }; },
+    },
+  };
+}
+
+/** Run firstFrame() with a Worker that cannot be built, so the call ends at
+ *  the boot and what it did before the boot is what is asserted. */
+async function upToTheBoot(file) {
+  const realFetch = globalThis.fetch;
+  const realWorker = globalThis.Worker;
+  globalThis.fetch = async () => ({ ok: true, status: 206 });
+  globalThis.Worker = class { constructor() { throw new Error('no worker here'); } };
+  try {
+    await assert.rejects(firstFrame(file), /no worker here/,
+      'the call must reach the wasm path, not stop at the whole-file read');
+  } finally {
+    globalThis.fetch = realFetch;
+    if (realWorker === undefined) delete globalThis.Worker;
+    else globalThis.Worker = realWorker;
+  }
+}
+
+test('in a browser a huge clip is not read whole for a shell that is not there', async () => {
+  const { reads, file } = hugeClip();
+  await upToTheBoot(file);
+  assert.equal(reads.whole, 0, 'the whole file was read for the native port');
+});
+
+test('with a shell, a clip too large to read whole falls through to the head slice', async () => {
+  const { reads, file } = hugeClip();
+  let asked = 0;
+  setPlatform({ native: { firstFrame: async () => { asked++; return null; } } });
+  try {
+    await upToTheBoot(file);
+  } finally {
+    setPlatform(null);
+  }
+  assert.equal(reads.whole, 1, 'a wired shell is still offered the file');
+  assert.equal(asked, 0, 'the port was called with no bytes');
 });

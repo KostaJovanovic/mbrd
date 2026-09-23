@@ -92,11 +92,12 @@ genuinely lacks, and it is no longer answered with JSDoc: the app is TypeScript,
 
 What that does not cover, and why none of it is a hole. `tools/` is outside
 `include` - the generators are `.mjs` and the vendored lint plugin is TypeScript
-that `.oxlintrc.json` ignores as well. So are the three `.js` files still under
-`web/assets/js`: the two classic workers, `import/tiff-worker.js` and
-`optimize/media-worker.js`, which reach for `importScripts` and are staying JS
-for that reason, and `version.js`, which `save.bat` stamps by regex. `checkJs`
-is off, so those three are carried rather than checked - they were not checked
+that `.oxlintrc.json` ignores as well. So are the six `.js` files still under
+`web/assets/js`: the four classic workers, `import/tiff-worker.js`,
+`import/heif-worker.js`, `mesh/occt-worker.js` and `optimize/media-worker.js`,
+which reach for `importScripts` and are staying JS for that reason, the module
+worker `canvas/matte-worker.js`, and `version.js`, which `save.bat` stamps by
+regex. `checkJs` is off, so those six are carried rather than checked - they were not checked
 before either. CI's fifth leg parses every one of them, which is the floor under
 the part tsc does not read.
 

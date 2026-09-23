@@ -253,7 +253,7 @@ const needsBlank = (prev: Block, next: Block) =>
 
 function blockLines(b: Exclude<Block, ListItem>): string[] {
   switch (b.kind) {
-    case 'p': return serializeRuns(b.runs).split('\n').map(escapeLineStart);
+    case 'p': return serializeRuns(b.runs).split('\n').map((l, n) => escapeLineStart(l, !n));
     case 'h': {
       // A trailing # would be read as the heading's closing sequence.
       const words = serializeRuns(b.runs).replaceAll('\n', ' ').replace(/#$/, '\\#');
@@ -272,7 +272,7 @@ function blockLines(b: Exclude<Block, ListItem>): string[] {
     case 'rule': return ['---'];
     case 'raw': return b.text.split('\n');
     // A screenplay's line pasted into Markdown is only its words; fountain.ts writes screenplays.
-    case 'sp': return serializeRuns(b.runs).split('\n').map(escapeLineStart);
+    case 'sp': return serializeRuns(b.runs).split('\n').map((l, n) => escapeLineStart(l, !n));
   }
 }
 
@@ -304,13 +304,18 @@ function itemLines(b: ListItem, src: string[] | undefined, lists: Level[]): stri
   return [' '.repeat(indent) + marker + ' ' + task + lead, ...rest.map(l => pad + escapeLineStart(l))];
 }
 
-/** A line of words that would otherwise read as the start of a block, made to read as words. */
-function escapeLineStart(line: string): string {
+/**
+ * A line of words that would otherwise read as the start of a block, made to
+ * read as words. HTML and a link definition open a block only on a paragraph's
+ * `first` line, so only there is `<` or `[` escaped.
+ */
+function escapeLineStart(line: string, first = false): string {
   const cut = line.replace(/^ {4,}/, '   ');
   const lead = /^ */.exec(cut)![0];
   const rest = cut.slice(lead.length);
   if (/^\d{1,9}[.)](\s|$)/.test(rest)) return lead + rest.replace(/^(\d+)/, '$1\\');
   if (/^(#{1,6}(\s|$)|>|[-+*](\s|$)|```|~~~|=+\s*$)/.test(rest) || RULE.test(rest)) return lead + '\\' + rest;
+  if (first && (HTML_BLOCK.test(rest) || DEFINITION.test(rest))) return lead + '\\' + rest;
   return cut;
 }
 
@@ -344,8 +349,8 @@ function codeSpan(text: string): string {
  * Runs as inline Markdown. Marks nest, the longest-lasting outermost, so a
  * bold sentence with one italic word is one bold span around one italic one.
  * Space at the edge of a mark moves outside it, where Markdown needs it, and
- * italic is `_` between words and `*` inside one, the one spelling each place
- * reads back as italic.
+ * italic is `_` between words and `*` inside one or around an `_`, the one
+ * spelling each place reads back as italic.
  */
 export function serializeRuns(input: Run[]): string {
   const runs = tidy(input);
@@ -427,7 +432,9 @@ export function serializeRuns(input: Run[]): string {
       else {
         const before = clean.slice(0, at).map((t, j) => text(j) || t.s).join('').slice(-1);
         const after = firstChar(k + 1);
-        const d = isWord(before) || isWord(after) ? '*' : '_';
+        // An `_` inside is written bare between letters, and a bare one ends an `_` pair.
+        const under = clean.slice(at + 1, k).some((_t, j) => text(at + 1 + j).includes('_'));
+        const d = under || isWord(before) || isWord(after) ? '*' : '_';
         clean[at].s = d;
         tk.s = d;
       }
@@ -436,10 +443,15 @@ export function serializeRuns(input: Run[]): string {
 
   // Words, escaped against the characters actually around them.
   let out = '';
+  let links = 0;
   clean.forEach((tk, k) => {
+    if (tk.t === 'open' && tk.m[0] === 'a') links++;
+    if (tk.t === 'close' && tk.m[0] === 'a') links--;
     if (tk.t !== 'text') { out += tk.s; return; }
     const next = clean[k + 1];
-    let s = escapeText(tk.s, out.slice(-1) || undefined, next?.s[0]);
+    // What follows, as far as a `[` here needs to know whether a `](` closes it.
+    const rest = links ? null : clean.slice(k + 1).map(t => t.s).join('');
+    let s = escapeText(tk.s, out.slice(-1) || undefined, next?.s[0], rest);
     // `!` before a link would make it an image.
     if (s.endsWith('!') && next?.t === 'open' && next.m[0] === 'a') s = s.slice(0, -1) + '\\!';
     out += s;
@@ -447,8 +459,12 @@ export function serializeRuns(input: Run[]): string {
   return out;
 }
 
-/** Plain words made safe to write as Markdown, escaping only what would otherwise be read as markup. */
-function escapeText(s: string, prev: string | undefined, next: string | undefined): string {
+/**
+ * Plain words made safe to write as Markdown, escaping only what would otherwise
+ * be read as markup. `rest` is the source written after them, or null inside a
+ * link's label, where a bracket is always escaped.
+ */
+function escapeText(s: string, prev: string | undefined, next: string | undefined, rest: string | null): string {
   let out = '';
   for (let k = 0; k < s.length; k++) {
     const c = s[k];
@@ -460,7 +476,8 @@ function escapeText(s: string, prev: string | undefined, next: string | undefine
       case '_': out += isWord(p) && isWord(n) ? '_' : '\\_'; break;
       case '`': out += '\\`'; break;
       case '~': out += p === '~' || n === '~' ? '\\~' : '~'; break;
-      case '[': out += /^[^\]]*\]\(/.test(s.slice(k + 1)) ? '\\[' : '['; break;
+      case '[': out += rest === null || /^[^[\]]*\]\(/.test(s.slice(k + 1) + rest) ? '\\[' : '['; break;
+      case ']': out += rest === null ? '\\]' : ']'; break;
       default: out += c;
     }
   }

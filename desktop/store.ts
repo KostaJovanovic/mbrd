@@ -3,8 +3,9 @@
 // clear() is atomic (rename, not recursive delete). Keys lowercase/short.
 
 import { app } from 'electron';
-import { mkdir, readdir, readFile, rename, rm, writeFile, unlink, stat } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, unlink, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import { writeAtomic } from './atomic.mts';
 import { log } from './log.ts';
 // Pure envelope format, split out for testing without Electron.
 import { encode, decode } from './format.mts';
@@ -44,11 +45,11 @@ function fileFor(store: string, key: unknown): string {
 const keyOf = (file: string) => decodeURIComponent(file);
 
 /** Write to .tmp then rename — atomic within a directory. A truncated file is
- * worse than a missing one (missing = last snapshot; truncated = corruption). */
-async function writeAtomic(file: string, data: Uint8Array | string): Promise<void> {
-  const tmp = file + '.tmp';
-  await writeFile(tmp, data);
-  await rename(tmp, file);
+ * worse than a missing one (missing = last snapshot; truncated = corruption).
+ * No folder flush: a lost rename leaves the last value, and a batch of assets
+ * would pay one flush a file. */
+function writeFileAtomic(file: string, data: Uint8Array | string): Promise<void> {
+  return writeAtomic(file, data, file + '.tmp');
 }
 
 async function readValue(file: string): Promise<unknown> {
@@ -70,7 +71,7 @@ async function readValue(file: string): Promise<unknown> {
 }
 
 async function writeValue(file: string, value: unknown): Promise<void> {
-  await writeAtomic(file, encode(value));
+  await writeFileAtomic(file, encode(value));
 }
 
 async function ensure(store: string): Promise<string> {

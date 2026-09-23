@@ -30,7 +30,7 @@ const API = 'https://www.googleapis.com';
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
 
 // ---------------------------------------------------------------------------
-// The token, held in memory and nowhere else
+// The token, held in memory, with a copy in sessionStorage (oauth.ts)
 // ---------------------------------------------------------------------------
 
 let grant: TokenGrant | null = null;
@@ -346,19 +346,30 @@ const FOLDER_MIME = 'application/vnd.google-apps.folder';
 /** Escape a value for Drive's q-string language (no parameter binding). */
 const quoted = (value: string) => `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
 
-/** One page of a listing, asking for the three fields anything here reads. */
+/**
+ * A whole listing, asking for the three fields anything here reads. Paged: a
+ * board folder past 1000 files would otherwise lose board.json off page one.
+ */
 async function query(q: string): Promise<CloudFile[]> {
-  const params = new URLSearchParams({
-    q,
-    fields: 'files(id,name,modifiedTime)',
-    pageSize: '1000',
-    spaces: 'drive',
-  });
-  const res = await fetch(`${API}/drive/v3/files?${params}`, { headers: { Authorization: auth() } });
-  if (!res.ok) throw await failure(res, 'Google Drive would not list your files');
-  // SAFETY: Drive's documented files.list shape, trimmed by `fields`; a missing `files` becomes [].
-  const body = await res.json() as { files?: CloudFile[] };
-  return body.files ?? [];
+  const out: CloudFile[] = [];
+  let page: string | undefined;
+  do {
+    const params = new URLSearchParams({
+      q,
+      fields: 'nextPageToken, files(id,name,modifiedTime)',
+      pageSize: '1000',
+      spaces: 'drive',
+    });
+    if (page) params.set('pageToken', page);
+    const res = await fetch(`${API}/drive/v3/files?${params}`, { headers: { Authorization: auth() } });
+    if (!res.ok) throw await failure(res, 'Google Drive would not list your files');
+    // SAFETY: Drive's documented files.list shape, trimmed by `fields`. Both keys are optional:
+    // `files` defaults to [] and a missing token ends the loop.
+    const body = await res.json() as { files?: CloudFile[], nextPageToken?: string };
+    out.push(...(body.files ?? []));
+    page = body.nextPageToken;
+  } while (page);
+  return out;
 }
 
 /**
@@ -477,7 +488,8 @@ const sessionKey = (folderId: string, name: string) => `${folderId}/${name}`;
 
 /**
  * Query a resumable session: 308 = alive (Range says how far), 200/201 = already
- * finished, else dead. Range header readable only because Drive exposes it.
+ * finished, a TRANSIENT status throws, else dead. Range header readable only
+ * because Drive exposes it.
  */
 type SessionState =
   /** Alive, and this many bytes have landed. */
@@ -493,6 +505,8 @@ async function sessionProgress(uri: string, size: number): Promise<SessionState>
   });
   // No Range at all: the session is alive and holds nothing yet.
   if (res.status === 308) return { sent: landed(res) ?? 0 };
+  // "Try again", not "gone": a throw is one more try in recover(), where null ends the upload.
+  if (TRANSIENT.has(res.status)) throw await failure(res, 'Google Drive could not say how far the upload got');
   if (res.ok) {
     // Upload already completed — last chunk's response was lost. Read id here
     // to avoid creating a duplicate file.

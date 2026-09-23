@@ -119,8 +119,11 @@ flow with PKCE and it is right advice for an app that has anywhere to keep a
 refresh token; this one does not, because there is no server. A refresh token
 would live in the browser as a long-lived credential any script on the origin can
 read. The implicit grant answers with a token that expires in about an hour and
-cannot be renewed silently, which is strictly less to lose. The token is held in
-memory by the provider module and written nowhere.
+cannot be renewed silently, which is strictly less to lose. The provider module
+holds the token in memory and keeps a copy in `sessionStorage`
+(`rememberGrant()` / `recallGrant()` in `oauth.ts`), so a reload in the same tab
+keeps the sign-in until the token expires, about an hour. Nothing writes it to
+`localStorage`, and it goes when the tab closes.
 
 That expiry is also why **sharing was the right first cloud feature** and sync
 was not: an expired token at share time is a sign-in prompt on a button somebody
@@ -139,7 +142,10 @@ when a browser blocks script in a popup. It exists at all because every path thi
 site does not have is answered with `index.html`, so a redirect to a
 non-existent address would boot a whole second board inside a window that is
 about to close. **Its address is registered with each provider, so the file may
-not be renamed** without editing every registered redirect URI to match.
+not be renamed** without editing every registered redirect URI to match. The
+deploy answers `/oauth.html` with a 307 to `/oauth` and the fragment goes along,
+so the poll (`isRedirectPage()` in `oauth.ts`) accepts the path with or without
+`.html`.
 
 ## Turning it on
 
@@ -256,7 +262,7 @@ against the very `Blob` it sends, so when the tries run out the dialog's
 **Try again** hands the same pack back and the upload goes on where it stopped.
 A sync keeps its sessions by folder and name, beside the `Blob` they began
 with, and the next push resumes them. Both are held in memory only: a session
-belongs to a token, and the token dies with the tab.
+belongs to a token, and a reload starts the upload again from byte zero.
 
 **Resume only the bytes the session began with.** Equal size is not equal
 bytes. `board.json` is a new file on every push, and bytes spliced from two
@@ -317,7 +323,9 @@ Picker is needed to find a board again on a second machine.
   from unattended. It hangs off the `autosaved` signal instead — which already
   answers *did a person actually change something* — and when it cannot proceed
   it **stops, latches, and says so once**. The row in the panel is how somebody
-  comes back, and pressing it is the gesture a sign-in needs anyway.
+  comes back, and pressing it is the gesture a sign-in needs anyway. The latch
+  lifts on the next autosave after a push lands (Sync now) or after a sign-in
+  that the stop did not have (`syncResumes()` in `cloud/sync.ts`).
 - **Not a delete.** Stopping a sync leaves the Drive folder exactly where it is.
   "Stop keeping this in sync" and "delete my board out of my Drive" are two
   different sentences, and a button that quietly meant both would be the worst

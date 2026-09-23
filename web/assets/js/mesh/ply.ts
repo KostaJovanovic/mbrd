@@ -114,6 +114,11 @@ function readHeader(u8: Uint8Array): Header {
   }
 
   if (!format) throw new MeshError('This PLY does not say which format it is in');
+  // An element with nothing in it takes no bytes and no tokens, so stepping
+  // over a count of them is a loop that reads nothing and never ends.
+  for (const el of elements) {
+    if (el.count > 0 && !el.props.length) throw new MeshError('This PLY has an element with no properties');
+  }
   return { format, elements, start };
 }
 

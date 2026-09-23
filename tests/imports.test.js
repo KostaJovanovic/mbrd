@@ -109,3 +109,15 @@ test('the workers parse, though nothing can import them', async () => {
     assert.doesNotThrow(() => new Script(src, { filename: rel }), rel);
   }
 });
+
+test('the module workers parse, though the import loop skips them', async () => {
+  // A module worker is exempt from the loop above, so it was in no parse test
+  // at all. `node --check` parses without running: importing one would load
+  // its wasm runtime. package.json's "type": "module" makes it a module parse.
+  const { spawnSync } = await import('node:child_process');
+  assert.ok(MODULE_WORKERS.length > 0, 'no module workers listed');
+  for (const rel of MODULE_WORKERS) {
+    const run = spawnSync(process.execPath, ['--check', join(JS, ...rel.split('/'))], { encoding: 'utf8' });
+    assert.equal(run.status, 0, `${rel} does not parse:\n${run.stderr}`);
+  }
+});

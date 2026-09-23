@@ -708,6 +708,9 @@ export class Viewport {
 
   set dragging(on: boolean) {
     if (on === (this._rawY !== null)) return;
+    // A settle that onPress() let run must not keep moving pan.y under a finger
+    // whose `_rawY` is read from the frame it took hold.
+    if (on) this.stopAnim();
     this._rawY = on ? this.pan.y : null;
     if (!on) this._settleMobile();
   }
@@ -948,6 +951,17 @@ export class Viewport {
     if (this._anim == null) return;
     cancelAnimationFrame(this._anim);
     this._anim = null;
+  }
+
+  /**
+   * What a press does to the view: it stops whatever is moving it, but a Mobile
+   * board past its edge still comes home. A press that became no pan (a widget,
+   * a selected card) used to leave it hanging there, since only the end of a pan
+   * asks for the settle.
+   */
+  onPress() {
+    this.stopAnim();
+    this._settleMobile();
   }
 
   /** Drive `step(progress)` from 0 to 1 over `ms`, eased. */

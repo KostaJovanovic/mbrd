@@ -683,12 +683,13 @@ function dominantColors(chunk, n = 5) {
   return out;
 }
 var MAX_SOURCES = 24;
+var ALL_SOURCES_MAX = 120;
 var SAMPLE = 48;
 async function samplePixels(urls, limit = MAX_SOURCES) {
   const ctx = sampler();
   if (!ctx) return [];
   const asked = limit || MAX_SOURCES;
-  const n = Math.max(1, Math.min(asked, MAX_SOURCES));
+  const n = Math.max(1, Math.min(asked, ALL_SOURCES_MAX));
   const out = [];
   for (const url of urls.slice(0, n)) {
     try {
@@ -728,6 +729,7 @@ async function frameFor(url) {
   return img;
 }
 export {
+  ALL_SOURCES_MAX,
   MAX_SOURCES,
   NEUTRAL_C,
   PALETTE_TOKENS,

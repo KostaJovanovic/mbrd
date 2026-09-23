@@ -171,8 +171,9 @@ asks again. The first run with the grant moves the private store across.
   already there, which opens in place. **Import** copies nothing: each picture,
   clip or document is a token, and its bytes go into the store.
 - The page never names a path the plugins did not produce (`checked()` in
-  `MbrdFiles`): a path under the board folders with no hidden segment, so never
-  the store, or one this process handed out.
+  `MbrdFiles`): a `.mbrd` file directly in a board folder and not hidden, so
+  never the store, the bin, a subfolder or a picture kept there, or one this
+  process handed out.
 - **"Open with" and "Share to mbrd"** are in the manifest for boards, pictures,
   clips, sound, PDF and text, `content://` only. A board opens, every other file
   lands as a card at the centre of the view, and a shared link becomes a link
@@ -195,10 +196,11 @@ bridge:
 - `MbrdStore`: the four stores, and names through `MbrdNames`.
 - The byte channel: registered for the app origin and the dev server only, and
   every field of a begin message is checked.
-- `/_capacitor_file_/` and `/_capacitor_content_/` answer 404. Nothing here uses
-  them, and they would give any page script a reader for every file the app can
-  reach.
-- Incoming intents: `content://` only.
+- `/_capacitor_file_/` and `/_capacitor_content_/` answer 404, on every host and
+  scheme, the live-reload server included. Nothing here uses them, and they
+  would give any page script a reader for every file the app can reach.
+- Incoming intents: `content://` only, and never a URI on the app's own
+  providers. The FileProvider hands out only the share folder in the cache.
 - No general-purpose Capacitor plugin is installed: `package.json` has
   `@capacitor/android` and `@capacitor/core` and nothing else.
 

@@ -48,8 +48,9 @@ export function cloudProviders(): ShareProvider[] {
  * imports this module statically. Reads the provider's own grant rather than a
  * mirrored flag, so it can never claim connected after the token has expired.
  *
- * False after every reload, truthfully: a browser-only token cannot persist, so
- * a fresh page has no account attached however many boards are filed as synced.
+ * A reload in the same tab keeps the answer until the token expires (about an
+ * hour, held in sessionStorage by oauth.ts). A new tab has no account attached,
+ * however many boards are filed as synced.
  */
 export function anyConnected(): boolean {
   return cloudProviders().some(p => p.signedIn());

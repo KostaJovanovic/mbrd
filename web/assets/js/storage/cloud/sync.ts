@@ -76,6 +76,21 @@ export async function writeSyncRow(boardId: string, row: BoardSync | null): Prom
   await idbSet('kv', SYNC_KEY, table);
 }
 
+/** What the automatic push saw when it stopped: the row's push stamp and the sign-in. */
+export interface SyncStop {
+  at: number | null;
+  signedIn: boolean;
+}
+
+/**
+ * Whether the automatic push may start again after `stop`. It waits for a
+ * gesture: a push that landed since (Sync now, or Sync off and on) moves the
+ * row's `at`, and a sign-in that the stop did not have is a reconnect.
+ */
+export function syncResumes(stop: SyncStop, at: number, signedIn: boolean): boolean {
+  return at !== stop.at || (signedIn && !stop.signedIn);
+}
+
 /** Stop syncing — clears the row but leaves the remote folder. Purge is a separate action. */
 export async function forgetSync(boardId: string): Promise<void> {
   await writeSyncRow(boardId, null);

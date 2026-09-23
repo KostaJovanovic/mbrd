@@ -31,6 +31,9 @@ export function parseCollada(bytes: string | ArrayBuffer): Mesh {
       if (++visits > MAX_NODE_VISITS) throw new MeshError('This Collada document has more nodes than a scene has');
       const here = mul(m, localMatrix(node));
       for (const inst of children(node, 'instance_geometry')) {
+        // Counted as a visit: an instance of a geometry with no triangles in it
+        // never reaches the triangle ceiling, and costs its primitives anyway.
+        if (++visits > MAX_NODE_VISITS) throw new MeshError('This Collada document has more nodes than a scene has');
         const geom = byId.get(ref(inst.attrs.url));
         if (geom) addGeometry(build, geom, byId, here, bound(inst, materials));
       }
@@ -77,6 +80,18 @@ const ref = (url: string | undefined) => (url || '').replace(/^#/, '');
 
 type Source = { data: number[]; stride: number };
 
+/** Each element's text as numbers, parsed once for the whole parse. A source
+ *  or a `<p>` read again for every instance of its geometry made two thousand
+ *  instances of one half-million-number array forty seconds of parsing the
+ *  same text. Keyed by node, so it dies with the tree. */
+const parsed = new WeakMap<XmlNode, number[]>();
+
+function numbersOf(node: XmlNode) {
+  let out = parsed.get(node);
+  if (!out) { out = floats(node.text); parsed.set(node, out); }
+  return out;
+}
+
 /** A <source> reduced to numbers + stride. Falls back to `fallbackStride` when <accessor> is missing. */
 function source(node: XmlNode | undefined, fallbackStride: number): Source | null {
   if (!node) return null;
@@ -84,7 +99,7 @@ function source(node: XmlNode | undefined, fallbackStride: number): Source | nul
   if (!array) return null;
   const accessor = find(node, 'accessor');
   const stride = Number(accessor?.attrs.stride) || fallbackStride;
-  return { data: floats(array.text), stride: stride > 0 ? stride : fallbackStride };
+  return { data: numbersOf(array), stride: stride > 0 ? stride : fallbackStride };
 }
 
 /** Resolve an <input> to its source, following the VERTEX→<vertices> indirection. */
@@ -143,11 +158,11 @@ function addGeometry(
     // <polygons> = one <p> per polygon; polylist uses <vcount> to split one <p>.
     const lists = children(prim, 'p');
     const vcount = find(prim, 'vcount');
-    const counts = vcount ? floats(vcount.text) : null;
+    const counts = vcount ? numbersOf(vcount) : null;
     const flat = bindings?.get(prim.attrs.material || '') || null;
 
     for (const list of lists) {
-      const p = floats(list.text);
+      const p = numbersOf(list);
       const corners = (p.length / stride) | 0;
       let at = 0;
       let poly = 0;

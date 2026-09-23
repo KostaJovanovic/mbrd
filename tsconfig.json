@@ -9,7 +9,7 @@
   // `npm test` needs no install (Node resolves as written), esbuild needs no
   // plugin.
   //
-  // allowJs + checkJs false: three .js files remain (two workers + version.js).
+  // allowJs + checkJs false: six .js files remain (five workers + version.js).
   // When the last .js is gone, both flags come out.
   //
   // types: [] is deliberate. Without it tsc walks @types/* upwards and a stray
