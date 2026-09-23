@@ -43,10 +43,10 @@ import java.util.concurrent.Executors;
 
 /**
  * Save, Open and Import. Desktop twin: desktop/files.ts, and its rule: the page
- * never names a path this side did not produce. Here that is a path under
- * MbrdRoot's folders (never a hidden one, so never the store), or one this
- * plugin handed out. checked() is that rule, for MbrdBytes' "file" and "append"
- * targets and for MbrdBoards too.
+ * never names a path this side did not produce. Here that is a .mbrd file
+ * directly in one of MbrdRoot's folders (never a hidden one, so never the
+ * store or the bin), or one this plugin handed out. checked() is that rule, for
+ * MbrdBytes' "file" and "append" targets and for MbrdBoards too.
  *
  * A file goes to the page as a token, which the bridge fetches from
  * /__mbrd/file/<token>. pickOpen copies a board from anywhere into this run's
@@ -102,24 +102,12 @@ public class MbrdFiles extends Plugin {
         if (path == null || path.isEmpty()) throw new IOException("that file was not opened by this app");
         File file = new File(path).getCanonicalFile();
         if (KNOWN.contains(file.getPath())) return file;
+        // Only a board directly in a board folder: a picture, a folder, or a
+        // file in a subfolder there is somebody's own, and not the page's.
         for (File root : MbrdRoot.boardRoots()) {
-            if (isPlainChild(root, file)) return file;
+            if (MbrdNames.isFolderBoard(root, file)) return file;
         }
         throw new IOException("that file was not opened by this app");
-    }
-
-    /** Under `root`, and no folder or name on the way starts with a dot. */
-    private static boolean isPlainChild(File root, File file) {
-        String rel = relative(root, file);
-        if (rel == null || rel.isEmpty()) return false;
-        for (String seg : rel.split("/")) if (seg.isEmpty() || seg.startsWith(".")) return false;
-        return true;
-    }
-
-    private static String relative(File root, File file) {
-        String r = root.getPath();
-        String f = file.getPath();
-        return f.startsWith(r + File.separator) ? f.substring(r.length() + 1).replace(File.separatorChar, '/') : null;
     }
 
     private static String token(Handed handed) {
@@ -304,7 +292,7 @@ public class MbrdFiles extends Plugin {
         try {
             File file = new File(Environment.getExternalStorageDirectory(), id.substring("primary:".length())).getCanonicalFile();
             File root = MbrdRoot.boards().getCanonicalFile();
-            return file.isFile() && isPlainChild(root, file) ? file : null;
+            return file.isFile() && MbrdNames.isFolderBoard(root, file) ? file : null;
         } catch (IOException e) {
             return null;
         }
