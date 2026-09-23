@@ -48,7 +48,7 @@ import { unpackItem } from './import/unpack.ts';
 import {
   initStorage, restoreSession, openFile, autosave, setPrompt, setBoardThumb,
   suspendCache, resetSessionLatches, failHandover, boardSafety, openSharedBoard,
-  boardSyncState, pushBoardToCloud, adoptFolder, saveDocument,
+  boardSyncState, pushBoardToCloud, adoptFolder, saveDocument, compactDocument,
 } from './storage/storage.ts';
 import { looksLikeMbrd } from './storage/mbrd.ts';
 import { boardThumb } from './ui/snapshot.ts';
@@ -487,8 +487,21 @@ const flushEdits = async () => {
   await autosave().catch(() => {});
   // The board's file too, on a desktop with a boards folder. A no-op elsewhere.
   await saveDocument().catch(() => {});
+  // Going away is the quietest moment there is: see compactDocument().
+  await compactDocument().catch(() => {});
 };
 platform.lifecycle.onCloseRequested(flushEdits);
+
+// A minute with no edit is the other quiet moment. Armed by a load too, so a
+// board opened only to look at still gets its dead bytes dropped.
+const QUIET_MS = 60_000;
+let quietTimer = 0;
+for (const evt of ['items', 'geom', 'item', 'settings', 'board', 'trash', 'board:load'] as const) {
+  bus.on(evt, () => {
+    clearTimeout(quietTimer);
+    quietTimer = window.setTimeout(() => void compactDocument().catch(() => {}), QUIET_MS);
+  });
+}
 
 /**
  * Hand a not-found board over to a real one when the user drops content.

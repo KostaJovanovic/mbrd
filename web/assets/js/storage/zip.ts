@@ -262,6 +262,21 @@ export type ZipRecord = {
 export type ZipLayout = { size: number, records: Map<string, ZipRecord> };
 
 /**
+ * How much of a file its directory does not point at: what appends left
+ * behind. Counted as build() counts `waste`, every header as this module
+ * writes one, so a file from another writer with extra fields reads a little
+ * deader than it is - which errs towards compacting it.
+ */
+export function deadBytes(layout: ZipLayout): number {
+  let live = 22;
+  for (const [name, rec] of layout.records) {
+    const len = enc.encode(name).length;
+    live += 30 + len + rec.csize + 46 + len;
+  }
+  return Math.max(0, layout.size - live);
+}
+
+/**
  * A file's layout from its last bytes alone: the end record and the central
  * directory, never the entries in front of them, so a 400 MB board is read for
  * a few hundred KB. `tail` is the file's last tail.length bytes, `size` its

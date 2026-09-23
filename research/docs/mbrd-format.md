@@ -62,7 +62,7 @@ myboard.mbrd                    ZIP, renamed
 ├── manifest.json               what this file is
 ├── board.json                  the board itself
 ├── timeline/base.json          the board before its history, and the marker
-├── timeline/steps.jsonl        the history, one step to a line
+├── timeline/steps-<k>.jsonl    the history in pieces of 500, one step to a line
 ├── assets/<slug>--<hash>.<ext> embedded bytes, deduped by content hash
 ├── notes/<slug>--<id>.md       one sticky note, as Markdown
 └── waveforms/<hash>.json       one audio file's measured readings
@@ -596,6 +596,7 @@ build, an unedited board, or a share somebody trimmed.
             "desktop": { "…": "id -> place" }, "mobile": { "…": "id -> place" },
             "rest": { "…": "…" } },
   "at": 42,
+  "first": 120,
   "fingerprint": "3f9a21c4",
   "steps": [
     { "id": "s8k2m", "at": 1755180000000, "label": "Move", "run": "desktop:k3f|x,y",
@@ -606,7 +607,9 @@ build, an unedited board, or a share somebody trimmed.
 
 `base` is the board before step 0, as text. `steps` are in order, oldest first.
 `at` is how many of them are on the board — the marker — so a file can be saved
-with the history rolled back and comes back that way.
+with the history rolled back and comes back that way. `first`, absent until a
+trim or the step cap folds something, is how many steps have been folded into
+`base` over the ledger's life; the file uses it to number its pieces (below).
 
 **A card's place is kept apart from the card** (`version` 2). `items` holds each
 card without `x`, `y`, `w`, `h`, `rot`, `z` and `meta.presnap`. `desktop` and
@@ -627,13 +630,30 @@ board stays readable at a glance however long its past is:
 
 - `timeline/base.json` holds every key but `steps`, plus `count`, how many steps
   there are.
-- `timeline/steps.jsonl` holds the steps, one JSON object to a line, oldest first.
+- `timeline/steps-<k>.jsonl` hold the steps, one JSON object to a line, oldest
+  first, in pieces. Piece `k` holds the steps numbered `k*500` to `k*500+499`,
+  where a step's number is its place in `steps` plus `first`, how many steps
+  have been folded into `base` over the ledger's life (absent is 0). A reader
+  takes the pieces in order of `k` and reads them as one list.
 
-The two files outrank a `timeline` key in `board.json`, which is where a file
+**Why pieces.** A save to a board's own file appends only the entries that
+changed, and leaves what they replace as dead bytes until the file is next
+written whole. One file of steps changed on every save, so every save wrote the
+whole history again: near the step cap, a third of a megabyte a save. Numbered
+over the ledger's life rather than by place in the list, a new step changes the
+last piece and a fold the first, and the rest are pointed at where they are.
+
+A file written before the pieces (v0.316 to v0.464) has one `timeline/steps.jsonl`
+holding every step, and a reader must still take it. A build from before the
+pieces opening a newer file finds no `steps.jsonl`, reads fewer steps than
+`count`, and opens the board with its history stale.
+
+These files outrank a `timeline` key in `board.json`, which is where a file
 written before them (up to v0.316) keeps it, and a reader must still take it from
-there. A line that will not parse, or fewer lines than `count`, makes the history
-stale, for the same reason a fingerprint that does not match does. An unreadable
-`base.json` opens the board with no past.
+there. A line that will not parse, or fewer lines than `count` - a piece missing
+from the middle among them - makes the history stale, for the same reason a
+fingerprint that does not match does. An unreadable `base.json` opens the board
+with no past.
 
 **Most steps are a difference; some also carry a rule.** Each `delta` holds the
 state on both sides of what one action touched, keyed by item id, which is what

@@ -24,7 +24,7 @@ import { normalizeBoard } from '../board-schema.ts';
 import { planMerge } from '../merge.ts';
 import { packBoard, packBoardFile, unpackBoard, MIME } from './mbrd.ts';
 import type { PackedBoard } from './mbrd.ts';
-import { layoutFromTail } from './zip.ts';
+import { layoutFromTail, deadBytes } from './zip.ts';
 import type { ZipLayout } from './zip.ts';
 import { allAssets, clearAssets, getAsset } from './assets.ts';
 import { viewingCopy } from './viewing-copy.ts';
@@ -260,6 +260,7 @@ export async function exportBoard({ pickNew = false, history = true } = {}) {
       await inTurn(() => writeBoardFile(target, data, {
         allowMissing: false,
         whole: picked,
+        compact: true,
         writing: () => { if (picking) job.label('Writing the file'); },
       }));
     } finally {
@@ -1247,15 +1248,19 @@ export async function saveDocument(): Promise<boolean> {
  * file's layout is known (priorLayout()) and the shell can append, only what
  * changed goes: a Save that moved one card on a 400 MB board writes that card's
  * worth. Whole otherwise - `whole` for a file just picked, which may be another
- * board being replaced - and whole again if the append is refused. Either way
+ * board being replaced, `compact` for a file appends have left too dead
+ * (worthCompacting()) - and whole again if the append is refused. Either way
  * fileLayout then describes the file.
  */
 async function writeBoardFile(
   ref: DocumentRef, data: PackedBoard,
-  { allowMissing, whole = false, writing }: { allowMissing: boolean, whole?: boolean, writing?: () => void },
+  { allowMissing, whole = false, compact = false, writing }:
+    { allowMissing: boolean, whole?: boolean, compact?: boolean, writing?: () => void },
 ) {
   const append = platform.files.append;
-  const prior = append && !whole ? await priorLayout(ref) : null;
+  let prior = append && !whole ? await priorLayout(ref) : null;
+  // A Save somebody waits for anyway: the moment to drop what appends left.
+  if (prior && compact && worthCompacting(deadBytes(prior), prior.size)) prior = null;
   let packed = await packBoardFile(data, { created, allowMissing, prior });
   created = packed.manifest.created;
   writing?.();
@@ -1272,6 +1277,46 @@ async function writeBoardFile(
   }
   fileLayout = ref.path ? { path: ref.path, layout: packed.layout } : null;
   writeWhole = false;
+}
+
+/**
+ * Dead bytes worth a whole write at a quiet moment: a fifth of the file once
+ * that is 4 MB, or 64 MB whatever its size. An append by itself writes whole
+ * only past half (packBoardFile()), which let a 388 MB board sit at 650 MB;
+ * a quiet moment is the cheaper time to do the same sooner.
+ */
+const COMPACT_MIN = 4 * 1024 * 1024;
+const COMPACT_ANY = 64 * 1024 * 1024;
+export function worthCompacting(dead: number, size: number) {
+  return dead >= COMPACT_ANY || (dead >= COMPACT_MIN && dead * 5 >= size);
+}
+
+/**
+ * Write the board's file whole when appends have left enough of it dead, and
+ * answer whether that happened. For quiet moments - a minute with no edit, the
+ * app going to the background - since a whole write of a 400 MB board takes
+ * seconds. The rename over the old file is atomic in both shells, so one cut
+ * short leaves the file as it was.
+ */
+export async function compactDocument(): Promise<boolean> {
+  await adopted;
+  if (!folder || !platform.files.append || isNotFoundBoard()) return false;
+  return inTurn(async () => {
+    const ref = doc;
+    if (!ref?.path) return false;
+    const prior = await priorLayout(ref);
+    if (!prior || !worthCompacting(deadBytes(prior), prior.size)) return false;
+    const gen = edits;
+    try {
+      await writeBoardFile(ref, serializeBoard(), { allowMissing: true, whole: true });
+      if (edits === gen) markDirty(false);
+      return true;
+    } catch (err) {
+      // The appends go on as before; the next quiet moment tries again.
+      console.warn('[mbrd] could not compact the board file:', err);
+      return false;
+    }
+  });
 }
 
 /** saveDocument() without the wait, for adoptFolder(), which is what it waits for. */

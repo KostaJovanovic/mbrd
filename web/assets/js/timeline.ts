@@ -332,6 +332,13 @@ let steps: Step[] = [];
 let at = 0;
 /** The board before step 0. Every replay starts here. */
 let base: Snap = snapshot();
+/**
+ * How many steps have been folded into `base` over the ledger's life, so
+ * steps[0] is step number `folded` of all it ever had. A file keeps the steps
+ * in pieces by that number (timelineFiles() in storage/mbrd.ts), and a fold
+ * then moves the first piece and leaves the rest where they are.
+ */
+let folded = 0;
 /** Full snapshots at intervals for bounded backward travel. In-memory only (too large to store). */
 const CHECKPOINT_EVERY = 50;
 let checkpoints = new Map<number, Snap>();
@@ -518,6 +525,7 @@ export function resetTimeline() {
   steps = [];
   at = 0;
   base = snapshot();
+  folded = 0;
   synced = base;
   checkpoints = new Map();
   stale = false;
@@ -890,6 +898,7 @@ function foldOldest(count: number) {
   }
   base = snap;
   steps = steps.slice(take);
+  folded += take;
   at -= take;
   checkpoints = new Map();
   forgetBytes();
@@ -1143,7 +1152,10 @@ export function serializeTimeline(fingerprintOf = '') {
   if (!steps.length) return null;
   // The stored `base` must carry the drift too, or a reopened board loses it.
   absorbDrift();
-  return {
+  const out: {
+    version: number, base: typeof base, at: number, first?: number,
+    fingerprint: string, steps: SerializedStep[],
+  } = {
     version: LEDGER_VERSION,
     base,
     at,
@@ -1157,6 +1169,9 @@ export function serializeTimeline(fingerprintOf = '') {
       return out;
     }),
   };
+  // Only once something has been folded: absent reads as 0.
+  if (folded) out.first = folded;
+  return out;
 }
 
 /** A map of id to serialised text, as a file claims one, or null. */
@@ -1216,6 +1231,7 @@ export function adoptTimeline(raw: unknown, doc?: unknown) {
   const truncated = Array.isArray(raw.steps) && raw.steps.length > parsed.length;
   base = readBase;
   steps = parsed;
+  folded = Number.isSafeInteger(raw.first) && Number(raw.first) > 0 ? Number(raw.first) : 0;
   forgetBytes();
   at = Number.isFinite(raw.at)
     ? Math.max(0, Math.min(Number(raw.at), steps.length))
