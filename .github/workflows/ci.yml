@@ -105,9 +105,10 @@ jobs:
       # bundle, tsc only checks.
       #
       # Outside it: tools/ (the generators are .mjs, and the vendored anti-slop
-      # plugin is TypeScript the lint config ignores too), and the three .js
-      # files left under web/assets/js - the two classic workers, which need
-      # importScripts, and version.js, which save.bat stamps. The parse leg
+      # plugin is TypeScript the lint config ignores too), and the six .js
+      # files left under web/assets/js - the four classic workers, which need
+      # importScripts, the module worker canvas/matte-worker.js, and
+      # version.js, which save.bat stamps. The parse leg
       # below reads all of them, so nothing here is unread, only untyped.
       #
       # No module carries // @ts-nocheck: the migration counted to zero and
