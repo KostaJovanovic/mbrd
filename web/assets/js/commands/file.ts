@@ -239,7 +239,7 @@ export function fileCommands() {
       const { bytes, count } = assetBytes();
       const { planOptimize, describeSaving } = await import('../optimize/optimize.ts');
       const plan = planOptimize();
-      const jobs = [...plan.pictures, ...plan.sounds];
+      const jobs = [...plan.pictures, ...plan.sounds, ...plan.clips];
       const shrinkable = jobs.reduce((n, job) => n + job.size, 0);
       const verdict = jobs.length
         ? `${jobs.length} could be made smaller - ${formatBytes(shrinkable)} as they stand.`
