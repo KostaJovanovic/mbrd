@@ -361,6 +361,11 @@
   overflow: auto;
   overscroll-behavior: contain;
   padding: var(--ed-top) 24px 30vh;
+  /* The scrollbar's room kept from the start, on both sides so the sheet stays
+     centred: a bar that arrives - as the document grows, or when the opening
+     rise lets go of the scroll (ui/viewer.ts) - would narrow the desk and jolt
+     the sheet sideways. */
+  scrollbar-gutter: stable both-edges;
 }
 .is-finding .ed-scroll { padding-top: calc(var(--ed-top) + var(--chrome-button-h) + 8px); }
 /* An open outline takes its side, and the page centres in what is left. */
