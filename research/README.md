@@ -33,6 +33,10 @@ The changelog source is `patch-notes.md` at the repository root, not in here.
 - `text-editor-2026-09-22.md` — the plan for a markdown editor in the viewer,
   in three phases: the editor, Vomit Mode, and `.fountain` screenplays. All
   three built on 2026-09-23.
+- `bench-2026-09-23.md` — the plan for a benchmark built into the app: preset
+  moves, zooms and animations on a generated standard board (`#bench`) or the
+  board on screen, saved as a JSON file, with real frame timings on Android.
+  Planned, not built.
 - `patch-notes-full.md` — **an archive, not open work.** It holds every release
   at the length it was first written, internal work included. Nothing generates
   anything from it.
