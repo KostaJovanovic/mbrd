@@ -312,6 +312,13 @@ test('replace all keeps the look of what it replaces', () => {
   assert.equal(out(one.doc), 'x y z\n');
 });
 
+test('a case-blind find keeps its offsets where lower case is longer', () => {
+  // 'İ'.toLowerCase() is two units, which moved every match after it by one.
+  const doc = md('İstanbul foo bar\n');
+  assert.deepEqual(findAll(doc, 'FOO'), [{ b: 0, from: 9, to: 12 }]);
+  assert.equal(out(replaceAll(doc, 'foo', 'X').doc), 'İstanbul X bar\n');
+});
+
 test('words are counted', () => {
   assert.equal(wordCount(md('# One two\n\nthree-four, five’s\n\n| six |\n')), 5);
 });

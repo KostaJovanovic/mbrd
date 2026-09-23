@@ -673,14 +673,23 @@ function touches(runs: Run[], from: number, to: number, is: (r: Run) => boolean 
   return false;
 }
 
+/**
+ * Lower case that keeps every offset: a character whose lower case is longer
+ * (`İ` is two units) stays as it is, since a match's offsets index the text.
+ */
+const fold = (s: string) => Array.from(s, ch => {
+  const l = ch.toLowerCase();
+  return l.length === ch.length ? l : ch;
+}).join('');
+
 /** Every place `query` occurs, in reading order. Never inside a raw run. */
 export function findAll(doc: Doc, query: string, matchCase = false): Match[] {
   const out: Match[] = [];
   if (!query) return out;
-  const needle = matchCase ? query : query.toLowerCase();
+  const needle = matchCase ? query : fold(query);
   doc.blocks.forEach((b, n) => {
     if (isAtom(b) || out.length >= MATCH_MAX) return;
-    const hay = matchCase ? blockText(b) : blockText(b).toLowerCase();
+    const hay = matchCase ? blockText(b) : fold(blockText(b));
     let at = hay.indexOf(needle);
     while (at >= 0 && out.length < MATCH_MAX) {
       if (!isText(b) || !touches(b.runs, at, at + needle.length)) out.push({ b: n, from: at, to: at + needle.length });
