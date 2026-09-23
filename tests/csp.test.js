@@ -393,7 +393,12 @@ test('csp.mts, which the desktop and Android enforce from, reads what this file 
 });
 
 test('the policy staged for Android is the one in _headers', t => {
-  if (!existsSync(STAGED)) return t.skip('nothing staged - run `npm run stage` in mobile/');
+  // MBRD_STAGED is set by the release job, where the staged policy ships: a
+  // skip there would be a check that never runs.
+  if (!existsSync(STAGED)) {
+    assert.ok(!process.env.MBRD_STAGED, `MBRD_STAGED is set and ${STAGED} is missing`);
+    return t.skip('nothing staged - run `npm run stage` in mobile/');
+  }
   // A stale mbrd-csp.json ships the policy of the last staging, not this one.
   assert.deepEqual(JSON.parse(read(STAGED)), parsePolicy(read(HEADERS)),
     'mbrd-csp.json is stale - run `npm run stage` in mobile/');
