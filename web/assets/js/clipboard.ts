@@ -56,6 +56,9 @@ const clipboard: Clipboard = { items: [], text: '', pastes: 0 };
 
 export const clipboardSize = () => clipboard.items.length;
 
+/** What is held, read-only. emptyTrash() keeps the bytes these name. */
+export const clippedItems = (): readonly ItemDraft[] => clipboard.items;
+
 /** The box the clipboard's contents were copied from, or null when it is empty. */
 export const clipboardBounds = () => itemBounds(clipboard.items);
 
