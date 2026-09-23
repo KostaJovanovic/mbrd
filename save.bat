@@ -261,10 +261,26 @@ git add .
 git status
 
 echo.
-set /p MSG=commit message [v%VERLABEL%]:
-if "%MSG%"=="" set MSG=v%VERLABEL%
+rem The message never goes through a command line. This script runs with
+rem delayed expansion on, so `git commit -m "%MSG%"` lost every "!" in the
+rem message, and a double quote in it broke the `if` that read it. set /p stores
+rem the text as typed, PowerShell reads it from the environment and writes it
+rem as UTF-8, and git reads that file. Cleared first, because set /p leaves the
+rem old value in place when the answer is empty.
+set "MSG="
+set /p "MSG=commit message [v%VERLABEL%]: "
+if not defined MSG set "MSG=v%VERLABEL%"
+set "MSGFILE=%TEMP%\mbrd-save-message.txt"
+powershell -NoProfile -Command "[IO.File]::WriteAllText($env:MSGFILE, $env:MSG)"
+if errorlevel 1 (
+  echo.
+  echo [err]  could not write the commit message to %MSGFILE%
+  call :unstamp
+  set SAVE_ERROR=1
+  goto end
+)
 
-git commit -m "%MSG%"
+git commit -F "%MSGFILE%"
 if errorlevel 1 (
   echo.
   echo [err]  git commit failed
@@ -272,7 +288,7 @@ if errorlevel 1 (
   set SAVE_ERROR=1
   goto end
 )
-del "%STAMP_VERSION%" "%STAMP_SW%" >nul 2>nul
+del "%STAMP_VERSION%" "%STAMP_SW%" "%MSGFILE%" >nul 2>nul
 
 rem Re-resolved: in a repo whose first commit has just been made, HEAD did not
 rem name a branch when this script started.
