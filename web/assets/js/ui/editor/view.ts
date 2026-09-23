@@ -870,7 +870,7 @@ export function mountEditor(opts: EditorOptions): Editor {
   const findBtn = button('Find (Ctrl+F)', () => openFind(), { icon: 'assets/icons.svg#i-find', word: 'Find' });
   const replaceBtn = button('Replace (Ctrl+H)', () => { openFind(); if (!find.hidden) rep.focus(); }, { icon: 'assets/icons.svg#i-find', word: 'Replace' });
 
-  // Vomit Mode, on its own tab: a big button a duration, the way Word puts a command a size.
+  // Vomit Mode: a big button a duration, the way Word puts a command a size.
   const sessionBtns = VOMIT_MINUTES.map(m =>
     button(`Write for ${m} minutes with no going back`, () => startVomit(m), { icon: 'assets/icons.svg#i-ed-timer', word: `${m} min`, cls: 'ed-big' }));
   const customBtn = button('Write for a time of your own', () => {}, { icon: 'assets/icons.svg#i-ed-timer', word: 'Custom', cls: 'ed-big' });
@@ -913,47 +913,28 @@ export function mountEditor(opts: EditorOptions): Editor {
   const outlineBtn = button('Outline', () => toggleOutline(), { icon: 'assets/icons.svg#i-ed-outline', word: 'Outline', cls: 'ed-big' });
   outlineBtn.setAttribute('aria-pressed', 'false');
 
-  // The tabs, and under each its ribbon. Word's names where Word has the thing; Write for what it has not.
-  const tabs = h('div', 'ed-tabs');
-  tabs.setAttribute('role', 'tablist');
-  tabs.setAttribute('aria-label', 'Ribbon');
+  // One ribbon and no tabs: every group in a single row, which scrolls sideways when the window is narrow.
   const ribbon = h('div', 'ed-ribbon');
-  const tabBtns: HTMLButtonElement[] = [];
-  const panels: HTMLElement[] = [];
-  const showTab = (n: number) => tabBtns.forEach((t, i) => {
-    t.setAttribute('aria-selected', String(i === n));
-    panels[i].hidden = i !== n;
-  });
-  const addTab = (name: string, ...groups: HTMLElement[]) => {
-    const n = tabBtns.length;
-    const t = h('button', 'ed-tab', name);
-    t.type = 'button';
-    t.setAttribute('role', 'tab');
-    t.addEventListener('click', () => showTab(n));
-    const p = h('div', 'ed-panel');
-    p.setAttribute('role', 'tabpanel');
-    p.setAttribute('aria-label', name);
-    p.append(...groups);
-    tabBtns.push(t);
-    panels.push(p);
-    tabs.append(t);
-    ribbon.append(p);
-  };
-  const home = [group('Undo', stack(undoBtn, redoBtn))];
-  if (screen) home.push(group('Script', ...elTiles, elBtn));
+  ribbon.setAttribute('role', 'toolbar');
+  ribbon.setAttribute('aria-label', 'Editor');
+  const panel = h('div', 'ed-panel');
+  panel.append(group('Undo', stack(undoBtn, redoBtn)));
+  if (screen) panel.append(group('Script', ...elTiles, elBtn));
   else if (!plain) {
-    home.push(
+    panel.append(
       group('Font', ...marks.map(m => m[1])),
       group('Paragraph', ...lists.map(l => l[1])),
       group('Styles', ...styleTiles.map(s => s[1])),
     );
   }
-  home.push(group('Editing', stack(findBtn, replaceBtn)));
-  addTab('Home', ...home);
-  addTab('Write', group('Vomit Mode', ...sessionBtns, customBtn), group('Super', superBtn));
-  if (!opts.plain || screen) addTab('View', group('Show', outlineBtn));
-  showTab(0);
-  bar.append(tabs, ribbon);
+  panel.append(
+    group('Editing', stack(findBtn, replaceBtn)),
+    group('Vomit Mode', ...sessionBtns, customBtn),
+    group('Super', superBtn),
+  );
+  if (!opts.plain || screen) panel.append(group('Show', outlineBtn));
+  ribbon.append(panel);
+  bar.append(ribbon);
 
   // The status bar along the foot, as Word's: the counts at the left, a running session at the right.
   const status = h('div', 'ed-status');
