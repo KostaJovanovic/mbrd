@@ -3406,8 +3406,11 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   // initInput() before initDrop(), and stops the event dead the moment it
   // claims it - so exactly one of the two ever acts on a given paste.
 
-  /** A clipboard gesture is ours only when the canvas, not a field, has focus. */
-  const canClip = (e: ClipboardEvent) => !typingInto(e.target) && !!selection.size;
+  /** A clipboard gesture is ours only when the canvas, not a field, has focus.
+   *  An open dialog is not the canvas either: behind the viewer, Ctrl+C took the
+   *  card instead of the text selected in it, and Ctrl+X deleted the card. */
+  const canClip = (e: ClipboardEvent) =>
+    !typingInto(e.target) && !overlayOwnsKeyboard() && !!selection.size;
 
   addEventListener('copy', e => {
     if (!canClip(e)) return;
