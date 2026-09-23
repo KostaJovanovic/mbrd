@@ -1002,15 +1002,20 @@ export function mountEditor(opts: EditorOptions): Editor {
   if (showBtns.length) panel.append(group('Show', ...showBtns));
 
   // A phone's dock is one row that fits the screen: undo, the commonest marks
-  // and lists, the style of the line, and More for everything else. These two
-  // are the phone's own; the ribbon's rarer commands step back (editor.css).
+  // and lists, the style of the line, and Tools, which opens the whole ribbon
+  // as a sheet over the foot of the page - every group the desk has, each
+  // under its name. Closed, the ribbon's rarer commands step back (editor.css).
   const styleBtn = button(screen ? 'Element' : 'Style', () => {}, { icon: 'assets/icons.svg#i-chevron-right', word: screen ? 'Action' : 'Normal', cls: 'ed-more ed-style' });
   styleBtn.setAttribute('aria-haspopup', 'menu');
   menuButton(styleBtn, () => openAnchored(styleBtn.getBoundingClientRect(), screen ? elementMenu() : styleMenu(), { label: screen ? 'Element' : 'Style', owner: styleBtn, focus: true }));
   styleBtn.hidden = plain && !screen;
-  const moreBtn = button('More', () => {}, { icon: 'assets/icons.svg#i-more' });
-  moreBtn.setAttribute('aria-haspopup', 'menu');
-  menuButton(moreBtn, () => openAnchored(moreBtn.getBoundingClientRect(), phoneMenu(), { label: 'More', owner: moreBtn, focus: true }));
+  const moreBtn = button('Tools', () => showTools(!bar.classList.contains('is-open')), { icon: 'assets/icons.svg#i-chevron-right', word: 'Tools', cls: 'ed-tools' });
+  moreBtn.setAttribute('aria-expanded', 'false');
+  /** The ribbon's sheet open or shut. Only a phone draws it as one; on a desk the class changes nothing. */
+  function showTools(open: boolean) {
+    bar.classList.toggle('is-open', open);
+    moreBtn.setAttribute('aria-expanded', String(open));
+  }
   for (const b of [marks[2][1], lists[2][1], findBtn, replaceBtn, vomitBtn, superBtn, infoBtn, outlineBtn, asciiBtn, elBtn, ...elTiles, ...styleTiles.map(s => s[1])]) b.classList.add('ed-desk');
   const phoneGroup = group('More', styleBtn, moreBtn);
   phoneGroup.classList.add('ed-phone');
@@ -1087,6 +1092,8 @@ export function mountEditor(opts: EditorOptions): Editor {
   };
 
   function toggleOutline() {
+    // A phone's tools sheet gives way to what was asked of it, as it does for find and a session.
+    showTools(false);
     aside.hidden = !aside.hidden;
     root.classList.toggle('has-outline', !aside.hidden);
     outlineBtn.classList.toggle('is-active', !aside.hidden);
@@ -1200,6 +1207,7 @@ export function mountEditor(opts: EditorOptions): Editor {
   /** A session begun: the caret to the end and everything before it locked, the typewriter way. */
   const startVomit = (minutes: number) => {
     if (vomit) return;
+    showTools(false);
     closeFind();
     const lock = lockAtEnd(doc);
     vomit = { lock, ends: Date.now() + minutes * 60_000, tick: window.setInterval(paintTimer, 1000), superTimer: 0 };
@@ -1234,7 +1242,7 @@ export function mountEditor(opts: EditorOptions): Editor {
   /** What Vomit Mode is, and what it locks, in the app's own dialog. Its button leads to the times. */
   const explainVomit = async () => {
     const answer = await ask({ title: 'Vomit Mode', body: VOMIT_INFO, go: 'Choose a time', cancel: 'Close', danger: false });
-    // From the ribbon's button, or from More where a phone keeps it.
+    // From the ribbon's button, or from Tools when a phone has its sheet shut.
     const from = vomitBtn.offsetParent ? vomitBtn : moreBtn;
     if (answer === 'go' && !vomit) openAnchored(from.getBoundingClientRect(), timeMenu(), { label: 'Vomit Mode', owner: from, focus: true });
   };
@@ -1346,6 +1354,7 @@ export function mountEditor(opts: EditorOptions): Editor {
   function openFind() {
     // Replace would rewrite locked text, and a session has nothing to look back for.
     if (vomit) return;
+    showTools(false);
     find.hidden = false;
     root.classList.add('is-finding');
     const [a, z] = range();
@@ -1430,36 +1439,6 @@ export function mountEditor(opts: EditorOptions): Editor {
       ...levels.map((level): MenuEntry => ({
         label: `Heading ${level}`, check: b?.kind === 'h' && b.level === level, action: () => setLevel(level),
       })),
-    ];
-  };
-
-  /**
-   * A phone's More: what the dock leaves out - the clipboard, the rarer marks,
-   * find, Vomit Mode and the view. No keys: a phone has no keyboard to press them on.
-   */
-  const phoneMenu = (): MenuEntry[] => {
-    const [a, z] = range();
-    const some = !samePos(a, z);
-    const b = doc.blocks[a.b];
-    const styled = !plain && !screen;
-    return [
-      { label: 'Cut', hidden: !some, action: () => clip(true) },
-      { label: 'Copy', icon: 'i-duplicate', hidden: !some, action: () => clip(false) },
-      { label: 'Paste', icon: 'i-paste', action: pasteFromMenu },
-      { label: 'Select all', icon: 'i-select-all', action: selectAll },
-      { sep: true, hidden: !styled },
-      { label: 'Strikethrough', check: styled && markOn('s'), hidden: !styled, action: () => mark('s') },
-      { label: 'Checklist', icon: 'i-ed-tasks', check: b?.kind === 'li' && b.list === 'task', hidden: !styled, action: () => list('task') },
-      { sep: true, hidden: !!vomit },
-      { label: 'Find', icon: 'i-find', hidden: !!vomit, action: () => openFind() },
-      { label: 'Replace', hidden: !!vomit, action: () => { openFind(); if (!find.hidden) rep.focus(); } },
-      { sep: true },
-      { label: 'Vomit Mode', icon: 'i-ed-timer', hidden: !!vomit, sub: vomit ? undefined : timeMenu() },
-      { label: 'Super', icon: 'i-lock-shut', check: superOn, action: toggleSuper },
-      { label: 'What is Vomit Mode?', icon: 'i-info', action: () => void explainVomit() },
-      { sep: true, hidden: (opts.plain && !screen) && !opts.onAscii },
-      { label: 'Outline', icon: 'i-ed-outline', check: !aside.hidden, hidden: opts.plain && !screen, action: () => toggleOutline() },
-      { label: 'ASCII art', icon: 'i-ed-ascii', check: ascii, hidden: !opts.onAscii, action: () => asciiBtn.click() },
     ];
   };
 
