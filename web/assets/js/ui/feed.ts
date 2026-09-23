@@ -53,6 +53,7 @@ import type { Viewport } from '../canvas/viewport.ts';
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 /** The object URL for a hash out of `meta`, or null for anything that is not one. */
 const urlOf = (hash: unknown): string | null => (typeof hash === 'string' ? assetURL(hash) : null);
+const bakedHash = (item: Item): string => (typeof item.meta?.display === 'string' ? item.meta.display : '');
 
 /** Which shape a tile is drawn as, and which filler builds it - see kindOf(). */
 type TileKind =
@@ -867,8 +868,10 @@ function wantCopy(t: Tile, img: HTMLImageElement,
   const run = edited || !bakedServes()
     // An edited tile shows the crop/turn/cut-out, which is not the baked plain
     // copy, and a sharper dial wants more than it - so both use the runtime
-    // display cache, and nothing is baked.
-    ? () => ensureDisplay(shown, crop, rot, matte).then(show).catch(() => {})
+    // display cache, and nothing is baked. A plain tile hands over its baked
+    // copy, shown in place of a sharper one remade every session.
+    ? () => ensureDisplay(shown, crop, rot, matte, edited ? '' : bakedHash(t.item))
+      .then(show).catch(() => {})
     // A plain tile on a board with nothing baked (an old board). One decode both
     // shows the 1024 copy and stores it as meta.display, so a save persists it.
     // Null means the original already serves - fall back to it.

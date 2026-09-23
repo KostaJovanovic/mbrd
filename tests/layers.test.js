@@ -207,6 +207,9 @@ const BASE = new Set([
   //   media/transport.ts     the scrubber's wave, built as SVG with no
   //                          `document` access, shared by three ui/canvas players
   'crypto.ts', 'prefs.ts', 'notify.ts', 'media/transport.ts',
+  // A picture's dimensions from its header, importing nothing: import/ asks
+  // before a decode, canvas/display.ts before deciding a copy is worth it.
+  'image-header.ts',
   // The interface's own sounds: read from four tiers, so must sit under all
   // of them. recipes.ts imports nothing; the engine touches `document` only
   // inside a function. ui/sound-lab.ts, the bench, stays in ui/.

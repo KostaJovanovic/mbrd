@@ -10,12 +10,33 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 import {
-  classify, defaultSize, hasRenderer, measureSize,
+  classify, defaultSize, hasRenderer, measureSize, pictureRatio,
   parseNoteText, normalizeNoteRich, flattenNoteRich,
 } from '../web/assets/js/canvas/renderers.ts';
+import { putAsset } from '../web/assets/js/storage/assets.ts';
 
 const file = (name, type = '') => ({ name, type });
 const svgBlob = markup => new Blob([markup], { type: 'image/svg+xml' });
+
+// Every board load asks every photo its shape, and it used to be a full decode
+// of the display copy apiece - seventy on a phone at every start. That copy is
+// the app's own encode, with no EXIF turn, so its header is the answer.
+test('a photo\'s shape is read off its display copy\'s header, never a decode', async (t) => {
+  const had = Object.getOwnPropertyDescriptor(globalThis, 'createImageBitmap');
+  let decodes = 0;
+  globalThis.createImageBitmap = async () => { decodes++; throw new Error('no decoder here'); };
+  t.after(() => { if (had) Object.defineProperty(globalThis, 'createImageBitmap', had); else delete globalThis.createImageBitmap; });
+
+  const png = new Uint8Array(33);
+  png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+  new DataView(png.buffer).setUint32(16, 1024);
+  new DataView(png.buffer).setUint32(20, 768);
+  putAsset('shape-copy', new Blob([png], { type: 'image/png' }));
+  const photo = { id: 'p', type: 'image', asset: { hash: 'shape-original' }, meta: { display: 'shape-copy' } };
+
+  assert.equal(await pictureRatio(photo), 1024 / 768);
+  assert.equal(decodes, 0, 'the display copy was not decoded to learn it');
+});
 
 // ---------------------------------------------------------------------------
 // Every route ends somewhere real
