@@ -1,7 +1,7 @@
 // Coordinate + viewport model. World coords are floats at (0,0) centre,
-// +y up (screen y inverted here and in items.ts/place() only). #world is
-// one GPU-composited translate+scale layer. Items lay out at cssY = -worldY,
-// so the vertical translate is +panY*zoom.
+// +y up (screen y inverted here and in items.ts/place() only). #world is a
+// translate+scale, and one GPU layer only while the view moves (see _pin).
+// Items lay out at cssY = -worldY, so the vertical translate is +panY*zoom.
 
 import { clamp, rafThrottle, emitter, readToken } from '../util.ts';
 import type { Emitter } from '../util.ts';
@@ -151,48 +151,36 @@ export const mobilePerfFlags = { legacyVars: false, chrome: true, gridPos: true 
 const VIEW_SETTLE_MS = 140;
 
 /**
- * How coarsely --iz is allowed to move while the board is in motion.
+ * How coarsely --iz moves when the board is changed by something other than a
+ * gesture - a zoom button, a fit - rather than being held still.
  *
  * --iz is 1/zoom, published to #world so that item chrome can multiply by it and
  * stay a constant size on screen. It is inherited, which is what makes it
  * convenient and also what makes it expensive: changing it means the browser has
- * to reconsider every card on the board and everything inside it, and re-lay out
- * every part whose size is written in terms of it. On a zoom that is the whole
- * screen's worth of cards, sixty times a second - and it is the single largest
- * reason zooming a full board feels heavy.
- *
- * So during a gesture it moves in steps rather than continuously: 8% of itself,
- * geometric like the zoom it comes from. A grip drawn four per cent off its
- * proper size in the middle of a pinch is not something anyone can see - and the
- * exact value is written the moment the board comes to rest (see _moving), which
- * is when chrome is being aimed at rather than watched going past.
- *
- * Roughly two thirds of the recalculations go, and the ones that remain are
- * spread evenly through the gesture instead of one per frame.
+ * to reconsider every card on the board and everything inside it. While the view
+ * is moving it is not written at all - the chrome scales with the board until the
+ * gesture ends, and the exact value lands then (see _moving). A traced pinch on a
+ * phone used to spend 28ms of each 55ms frame restyling for it; a grip that grows
+ * with the board under a finger is not something anyone aims at.
  */
 const IZ_STEP = 0.08;
 
-/**
- * And the ladder a *zoom* climbs, which is three times coarser again.
- *
- * The rung above was measured against a pan, where --iz does not change at all
- * and the occasional write costs nothing. A pinch changes it on every frame, and
- * on a phone one of those writes is the most expensive thing in the frame: a
- * traced pinch on an Android phone spent 28ms of each 55ms frame inside
- * recalcStyle, invalidated by this one property. Coarsening it to 0.25 halves
- * the main frame - the same trade IZ_STEP already makes, taken as far as it goes
- * before the chrome's error becomes visible.
- *
- * 0.25 is about twelve per cent at worst, against four for IZ_STEP. Nobody can
- * see a grip an eighth too big *while the board is still growing under their
- * fingers*, which is the only time this ladder is in use: the exact value is
- * written the moment the pinch ends (see _moving), and a pan never leaves the
- * fine ladder at all.
- */
-const IZ_STEP_MOVING = 0.25;
-
 /** `v` snapped to the nearest rung of a ladder that steps by `step`. */
 const izRung = (v: number, step = IZ_STEP) => Math.exp(Math.round(Math.log(v) / step) * step);
+
+/**
+ * How far the zoom may travel from the scale #world was last rastered at before
+ * it is rastered again, mid-gesture - see _pin().
+ *
+ * Out is the one that matters: a layer pinned at 100% and zoomed out to 25% asks
+ * for sixteen screens of texture, past what Chromium on a phone will hold, and
+ * the compositor stops drawing cards (`tile memory limits exceeded`) - the blink.
+ * Measured on a Galaxy S10: pinned 1 -> 0.25 gave a hundred of those warnings per
+ * zoom, re-pinned at every halving about fifteen. In only costs sharpness, which
+ * the release restores, so it is allowed to go further before paying a raster.
+ */
+const PIN_OUT = 2;
+const PIN_IN = 4;
 
 // How a thrown board comes to rest - see glide().
 //
@@ -516,7 +504,10 @@ export class Viewport {
   // _constrainMobile() for why the raw value has to be the one kept.
   _rawY: number | null;
   _still: number;                   // timer that ends the cheap mode - see _moving()
-  _iz: number;                      // what --iz was last written as
+  _pinned: number;                  // the zoom #world's layer was rastered at, 0 unpinned - see _pin()
+  _repin: number;                   // rAF id of a re-pin in flight - see _pin()
+  _shadowsHidden: boolean;          // #item-shadows taken off for a far gesture - see _shadowsOut()
+  _iz: number;                     // what --iz was last written as
   _dpr: number;                     // what --dpr was last written as - see _setDpr()
   moving: boolean;                  // is the view mid-gesture? - see _moving()
   // How far an open panel reaches in from the window's left edge, in client px.
@@ -547,6 +538,9 @@ export class Viewport {
     this._flush = rafThrottle(() => this._paint());
     this._anim = null;
     this._still = 0;
+    this._pinned = 0;
+    this._repin = 0;
+    this._shadowsHidden = false;
     this._iz = 0;
     this._dpr = 0;
     this.moving = false;
@@ -1133,20 +1127,103 @@ export class Viewport {
     // classList test there would be a style read per frame to learn something
     // this object already knows.
     this.moving = true;
+    this._pin();
     clearTimeout(this._still);
     this._still = setTimeout(() => {
       this._still = 0;
       this.moving = false;
       this.world.classList.remove('is-viewing');
-      // And the board is still, so chrome goes back to being exactly the size
-      // it claims to be rather than within a rung of it - see IZ_STEP.
+      this._unpin();
+      // And the board is still, so what was held for the gesture lands: the
+      // chrome goes back to exactly the size it claims to be, and the zoom
+      // rungs catch up with where the zoom ended - see IZ_STEP and _rungs().
       this._setIz(1 / this.zoom);
+      this._rungs(this.zoom);
+      this._shadowsOut(false);
       // One more pass over everything that draws the view, now that it has
       // stopped: this is the frame where the cheap versions are exchanged for
       // the proper ones. Announced directly rather than through apply(), which
       // would call this method again and restart the timer it is ending.
       this.bus.emit('change', this);
     }, VIEW_SETTLE_MS);
+  }
+
+  /**
+   * Make #world one GPU layer for the length of a gesture, rastered once and then
+   * only moved and scaled by the compositor.
+   *
+   * `will-change: transform` is the one promotion that keeps the board a single
+   * layer. `translateZ(0)`, which used to be written into the transform for good,
+   * promotes too, but Chromium will not merge cards that far apart into it: a
+   * board of ninety photographs came out as a hundred and thirty layers, every
+   * card and every shadow twin its own, and on a phone that alone held a pinch
+   * near twenty frames a second. The hint also pins the raster scale, which is
+   * the point while fingers are down - nothing is re-rastered per frame - and the
+   * danger if it is left on: a zoom-out asks for texture at the old scale. So it
+   * is set only while the view moves, and re-set whenever the zoom has travelled
+   * out of PIN_OUT / PIN_IN of the scale it was rastered at: dropped for a frame,
+   * which makes the next pin raster at the scale the zoom has reached.
+   */
+  _pin() {
+    const z = this.zoom;
+    if (!this._pinned) {
+      this._pinned = z;
+      this.world.style.willChange = 'transform';
+      return;
+    }
+    if (this._repin || (z > this._pinned / PIN_OUT && z < this._pinned * PIN_IN)) return;
+    if (typeof requestAnimationFrame !== 'function') return;
+    this.world.style.willChange = 'auto';
+    this._repin = requestAnimationFrame(() => {
+      this._repin = 0;
+      if (!this.moving) return;
+      this._pinned = this.zoom;
+      this.world.style.willChange = 'transform';
+    });
+  }
+
+  /** The view has stopped: back into the page, rastered sharp at the zoom it ended on. */
+  _unpin() {
+    if (this._repin) cancelAnimationFrame(this._repin);
+    this._repin = 0;
+    this._pinned = 0;
+    this.world.style.willChange = '';
+  }
+
+  /**
+   * The zoom rungs, as classes on #world. Each one restyles every card on the
+   * board when it flips, so a gesture never flips one - they are written on a
+   * frame that is not moving, and again when the view settles.
+   */
+  _rungs(z: number) {
+    this.world.classList.toggle('zoom-far', z < farZoom());
+    // A second, lower rung just for the resize grips. Labels and the item bar
+    // become noise once a card is a swatch (zoom-far, 40%), but the corners stay
+    // worth grabbing further out. From 15% down a card moves and does not resize.
+    this.world.classList.toggle('zoom-no-resize', z < RESIZE_MIN_ZOOM);
+    this.world.classList.toggle('zoom-tiny', z < SWATCH_ZOOM);
+    // Below this a corner grip clips to its outside half and the whole card face
+    // becomes a move target - see the zoom-grab rules in the CSS. Its own rung
+    // (25%), lower than the chrome one, because it is about the card being too
+    // small to grab, not too small to read.
+    this.world.classList.toggle('zoom-grab', z < GRAB_ZOOM);
+  }
+
+  /**
+   * The one part of the far rung a gesture cannot wait for: the shadow twins,
+   * which zoom-far hides (item-chrome.css). Their blur spreads every card's
+   * paint well past its edges, and a zoom-out held at the scale it started from
+   * rasters all of it - on a Galaxy S10, a hundred `tile memory limits exceeded`
+   * per zoom-out from 100% to 25%, which is the blink, and none without them.
+   * So while the view moves past the rung, their whole container goes; that
+   * restyles the twins and not the cards, where flipping zoom-far would do both.
+   * The settling frame hands the job back to the class.
+   */
+  _shadowsOut(out: boolean) {
+    if (out === this._shadowsHidden) return;
+    this._shadowsHidden = out;
+    const layer = this.world.querySelector<HTMLElement>('#item-shadows');
+    if (layer) layer.style.display = out ? 'none' : '';
   }
 
   /**
@@ -1224,39 +1301,21 @@ export class Viewport {
     //
     // +panY (not -panY): items are laid out at cssY = -worldY, so the vertical
     // translate has to undo that flip as well as apply the pan.
-    // translateZ(0) is what promotes this layer, and it is here rather than as a
-    // `will-change: transform` in the CSS for a reason that only shows on a
-    // phone. Both promote; only the hint *pins the raster scale*. Chromium
-    // rasters a will-change layer once, at the scale it first saw, and keeps
-    // that scale through every zoom - so at 30% the board was still being
-    // rastered at 1:1 and the tiles for one screenful covered ten screenfuls of
-    // texture. Past the compositor's budget it stops drawing: `tile memory
-    // limits exceeded, some content may not draw`, and a frame arrives with the
-    // cards missing. That is the blink, and it is why it came on when the board
-    // was zoomed out and never at 100%. A 3D transform carries no hint, so the
-    // raster scale follows the zoom and a screenful costs a screenful.
+    // No promotion written here: #world is a layer only while the view moves,
+    // and _pin() is what makes it one - see there for why not translateZ(0).
     this.world.style.transform =
-      `translate(${(-this.pan.x * z).toFixed(3)}px, ${(this.pan.y * z).toFixed(3)}px) scale(${z}) translateZ(0)`;
-    // Item chrome multiplies by --iz to stay a constant size on screen. On a
-    // rung of its own ladder while the board is moving, and exact again as soon
-    // as it stops - see IZ_STEP, and _moving() below, which is what puts it
-    // back.
-    // The coarse ladder only while a gesture is in flight - see IZ_STEP_MOVING.
-    // `moving` is still last frame's answer here, since _moving() runs below;
-    // that is right, because the frame that starts a gesture is the one frame
-    // whose exact value is already on the page.
-    this._setIz(izRung(1 / z, this.moving ? IZ_STEP_MOVING : IZ_STEP));
-    this.world.classList.toggle('zoom-far', z < farZoom());
-    // A second, lower rung just for the resize grips. Labels and the item bar
-    // become noise once a card is a swatch (zoom-far, 40%), but the corners stay
-    // worth grabbing further out. From 15% down a card moves and does not resize.
-    this.world.classList.toggle('zoom-no-resize', z < RESIZE_MIN_ZOOM);
-    this.world.classList.toggle('zoom-tiny', z < SWATCH_ZOOM);
-    // Below this a corner grip clips to its outside half and the whole card face
-    // becomes a move target - see the zoom-grab rules in the CSS. Its own rung
-    // (25%), lower than the chrome one, because it is about the card being too
-    // small to grab, not too small to read.
-    this.world.classList.toggle('zoom-grab', z < GRAB_ZOOM);
+      `translate(${(-this.pan.x * z).toFixed(3)}px, ${(this.pan.y * z).toFixed(3)}px) scale(${z})`;
+    // Item chrome multiplies by --iz, and the rungs restyle every card: both are
+    // held while the board moves and caught up when it stops (_moving). `moving`
+    // is still last frame's answer here, since _moving() runs below; that is
+    // right, because the frame that starts a gesture is the one whose value is
+    // already on the page, and a zoom button's single step lands at once.
+    if (!this.moving) {
+      this._setIz(izRung(1 / z));
+      this._rungs(z);
+    } else {
+      this._shadowsOut(z < farZoom());
+    }
     this._moving();
 
     // The origin mark, centred on the point the axes cross.
