@@ -1,15 +1,16 @@
 // The boards folder. Every board on this computer is a .mbrd file, and the page
 // lists this folder, makes a board in it, renames one and moves one to the bin.
 // Documents/mbrd, or boards/ in the data folder of a portable copy or of a run
-// given --user-data-dir, so neither writes outside its own folder. Every path
-// handed back is vouched (files.ts). The names come from board-names.mts.
+// given --user-data-dir, so neither writes outside its own folder. A board
+// directly in the folder is one the page may name (isFolderBoard). The names
+// and that rule come from board-names.mts.
 
 import { app, shell } from 'electron';
 import { access, mkdir, readdir, rename as move, stat } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
 import { writeAtomic } from './atomic.mts';
-import { nthName, plainName } from './board-names.mts';
-import { checked, vouch } from './files.ts';
+import { isFolderBoard, nthName, plainName } from './board-names.mts';
+import { checked, trustFolder, vouch } from './files.ts';
 import type { Ref } from './files.ts';
 import { log } from './log.ts';
 
@@ -26,6 +27,9 @@ export function chooseFolder(inData: boolean): string {
       log('warn', 'no Documents folder, so the boards stay in the data folder', { err: String(err) });
     }
   }
+  // The page may name a board here before it lists the folder: a start
+  // reopens the board it closed on.
+  trustFolder(path => isFolderBoard(path, root));
   return root;
 }
 

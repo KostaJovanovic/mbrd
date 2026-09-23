@@ -1,11 +1,15 @@
 // File dialogs and read/write for .mbrd boards.
 // A renderer cannot name a path. Every path here comes from a dialog, argv,
-// open-file, the store, or the boards folder (boards.ts). Anything else is refused.
+// open-file, trust.mts's file, or the boards folder (boards.ts). Anything else,
+// a path the page stored included, is refused. An imported picture is read once
+// and never becomes a path the page can write.
 
 import { dialog, BrowserWindow } from 'electron';
 import { readFile, access, open as openFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { writeAtomic } from './atomic.mts';
+import { openTrust } from './trust.mts';
+import type { Trust } from './trust.mts';
 import {
   CATEGORIES, FAMILIES, EXT_FAMILY,
   PHOTO_EXTS, AUDIO_EXTS, VIDEO_EXTS, DOC_EXTS, SVG_EXTS,
@@ -23,12 +27,36 @@ export interface Handed {
   data: ArrayBuffer;
 }
 
-// Paths this process produced (dialog, argv, store). Grows forever; never shrinks.
+// Paths this process produced. Grows forever; never shrinks.
 const known = new Set<string>();
+/** The boards picked in earlier runs. Null until loadTrust(). */
+let kept: Trust | null = null;
+/** Whether a path is a board directly in the boards folder (boards.ts). */
+let inBoardsFolder: (path: string) => boolean = () => false;
 
+/** For this run only: a path main produced for its own reasons. */
 export function vouch(path: unknown): void {
   if (typeof path === 'string' && path) known.add(path);
 }
+
+/** A path the person picked: a dialog, argv or open-file. A board stays
+ *  trusted in later runs, which is what lets a shelf row outside the boards
+ *  folder open after a restart. */
+export function vouchPicked(path: unknown): void {
+  vouch(path);
+  if (typeof path === 'string') kept?.add(path);
+}
+
+/** Read the paths picked in earlier runs. Once, at boot, before the page asks. */
+export async function loadTrust(file: string, legacyShelf: () => Promise<string[]>): Promise<void> {
+  kept = await openTrust(file, legacyShelf, (message, detail) => log('warn', message, detail));
+}
+
+export function trustFolder(rule: (path: string) => boolean): void {
+  inBoardsFolder = rule;
+}
+
+const trusted = (path: string) => known.has(path) || !!kept?.has(path) || inBoardsFolder(path);
 
 function refuse(path: string): never {
   log('error', 'refused a path this process did not produce', { path });
@@ -36,7 +64,7 @@ function refuse(path: string): never {
 }
 
 export const checked = (path: unknown): string => {
-  if (typeof path !== 'string' || !known.has(path)) refuse(String(path));
+  if (typeof path !== 'string' || !trusted(path)) refuse(String(path));
   return path;
 };
 
@@ -82,7 +110,6 @@ function importFilters() {
 
 /** Read a file into what the renderer can make a File out of. */
 async function hand(path: string): Promise<Handed> {
-  vouch(path);
   const raw = await readFile(path);
   // A copy, not a view onto Node's shared buffer pool - see the same note in
   // store.ts. Handing over `.buffer` would hand over whatever else was pooled
@@ -110,6 +137,7 @@ export async function pickOpen(win: BrowserWindow | null, home = ''): Promise<Ha
   const { canceled, filePaths } = await open(win, options);
   const path = filePaths[0];
   if (canceled || !path) return null;
+  vouchPicked(path);
   return hand(path);
 }
 
@@ -123,7 +151,7 @@ export async function pickSave(win: BrowserWindow | null, suggested: unknown, ho
     ? await dialog.showSaveDialog(win, options)
     : await dialog.showSaveDialog(options);
   if (canceled || !filePath) return null;
-  vouch(filePath);
+  vouchPicked(filePath);
   return { name: basename(filePath), path: filePath };
 }
 
@@ -216,7 +244,7 @@ export async function read(path: unknown): Promise<Handed> {
 
 /** Whether the file is still there. A shelf row that is not shows as missing. */
 export async function exists(path: unknown): Promise<boolean> {
-  if (typeof path !== 'string' || !known.has(path)) return false;
+  if (typeof path !== 'string' || !trusted(path)) return false;
   try {
     await access(path);
     return true;
