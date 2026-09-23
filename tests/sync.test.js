@@ -14,7 +14,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  adoptedRow, pullBoard, pushBoard, remoteBoards,
+  adoptedRow, pullBoard, pushBoard, remoteBoards, syncResumes,
 } from '../web/assets/js/storage/cloud/sync.ts';
 import { getAsset, putAsset, clearAssets } from '../web/assets/js/storage/assets.ts';
 import { item, realHash } from './helpers.js';
@@ -477,4 +477,20 @@ test('a provider that cannot sync says so rather than throwing a TypeError', asy
     () => pushBoard(shareOnly, 'brd1', boardWith([])),
     /Google Drive cannot keep boards in sync/,
   );
+});
+
+// The automatic push stops on a failure and waits for a gesture. It used to
+// wait for a board load alone, so a reconnect or a Sync now left every later
+// autosave silent, and the other machine opened a stale copy.
+test('a stopped automatic push resumes after a sign-in it did not have', () => {
+  const stop = { at: 100, signedIn: false };
+  assert.equal(syncResumes(stop, 100, false), false, 'still signed out: stay stopped, and quiet');
+  assert.equal(syncResumes(stop, 100, true), true, 'a reconnect is the gesture');
+});
+
+test('a stopped automatic push resumes after a push that landed', () => {
+  const stop = { at: 100, signedIn: true };
+  assert.equal(syncResumes(stop, 100, true), false, 'a conflict waits for a decision');
+  assert.equal(syncResumes(stop, 200, true), true, 'Sync now wrote the row again');
+  assert.equal(syncResumes({ at: null, signedIn: true }, 100, true), true);
 });
