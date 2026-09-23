@@ -278,6 +278,12 @@
   <path d="M6.5 4.3h7M6.5 11.3h7"/>
 </symbol>
 
+<!-- Vomit Mode: a stopwatch, since a session is a timed run. -->
+<symbol id="i-ed-timer" viewBox="0 0 16 16">
+  <circle cx="8" cy="9.2" r="5"/>
+  <path d="M6.6 2.2h2.8M8 2.2v2M8 9.2V6.6M12.3 4.6l1-1"/>
+</symbol>
+
 <!-- The editor's outline: a panel down the left beside lines of text. -->
 <symbol id="i-ed-outline" viewBox="0 0 16 16">
   <rect x="1.8" y="2.3" width="12.4" height="11.4" rx="1.2"/>

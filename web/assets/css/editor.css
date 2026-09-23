@@ -1,35 +1,59 @@
 /* =========================================================
    mbrd - the text editor (ui/editor/view.ts), inside the viewer.
-   A word processor's room: the whole window, a fixed bar, and a
-   sheet of paper on a desk scrolling under it. The sheet wears the
-   viewer's Markdown faces (viewer.css .viewer-md), so a document
-   reads the same being written as being read.
+   The board with one card picked up: the room is the board's own
+   paper and grain, the page lies on it as a card does, and the
+   controls float over it as the board's glass does - one segmented
+   pill of tools, a close square, a readout in the corner. Nothing
+   here the board does not already have (chrome.css, items.css).
    ========================================================= */
 
-/* The whole window, not a card over the board: writing wants the room. It ends
-   above a phone's keyboard, whose height ui/viewer.ts writes into --kb. */
+/* The whole window: writing wants the room. It ends above a phone's keyboard,
+   whose height ui/viewer.ts writes into --kb. */
 #viewer[data-edit] {
+  /* Where the floating controls sit, and so where the desk starts under them. */
+  --ed-inset: max(var(--panel-inset), env(safe-area-inset-top));
+  --ed-bar-top: calc(var(--ed-inset) + var(--chrome-button-h) + 6px);
+  --ed-bar-h: 42px;
+  --ed-top: calc(var(--ed-bar-top) + var(--ed-bar-h) + 22px);
   width: 100%;
   height: calc(100dvh - var(--kb, 0px));
   margin: 0;
   border: 0;
   border-radius: 0;
   box-shadow: none;
-  /* The desk: a shade under the board's paper, so the sheet on it is plainly
-     the brightest thing in the room, as a word processor's page is. */
-  background: color-mix(in srgb, var(--ink) 7%, var(--paper-2));
+  background: var(--paper);
 }
+/* The name and the close square float at the top corners, the way the board's
+   menu buttons do, rather than sitting in a strip across the room. */
 #viewer[data-edit] #viewer-head {
-  padding-top: max(10px, env(safe-area-inset-top));
-  padding-bottom: 8px;
-  border-bottom: 0;
+  position: absolute;
+  z-index: 3;
+  top: var(--ed-inset);
+  left: max(16px, env(safe-area-inset-left));
+  right: max(16px, env(safe-area-inset-right));
+  height: var(--chrome-button-h);
+  padding: 0;
+  border: 0;
+  background: none;
+  pointer-events: none;
 }
-/* The viewer's body gives up its centring grid and its padding to the editor,
-   which scrolls its own desk so the bar can stay put. */
+#viewer[data-edit] #viewer-names { max-width: calc(100% - var(--chrome-button-w) - 24px); }
+#viewer[data-edit] #viewer-title { font-size: var(--t-body); }
+#viewer[data-edit] #viewer-meta { display: none; }
+#viewer[data-edit] #viewer-close {
+  width: var(--chrome-button-w);
+  height: var(--chrome-button-h);
+  margin-left: auto;
+  outline: var(--hairline) solid var(--rule-2);
+  outline-offset: calc(-1 * var(--hairline));
+  border-radius: var(--leaf);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-1);
+  pointer-events: auto;
+}
+/* The viewer's body gives up its grid and its padding: the editor lays out its own room. */
 #viewer[data-edit] #viewer-body {
   display: flex;
-  /* Stretched, not the body's centring: centred, a page taller than the
-     window would ride up past the top edge and take the bar with it. */
   place-items: stretch;
   padding: 0;
   overflow: hidden;
@@ -37,89 +61,188 @@
 }
 
 .ed {
+  position: relative;
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
 }
 
-/* ── The bar ───────────────────────────────────────────────────────────── */
+/* The board's paper grain: the same tile, blend and dial as #grain (base.css). */
+.ed-grain {
+  position: absolute;
+  inset: 0;
+  background-image: url("../img/paper-grain.webp");
+  background-size: var(--grain-tile, 512px 512px);
+  mix-blend-mode: multiply;
+  opacity: calc(0.8 * var(--grain));
+  pointer-events: none;
+}
 
-/* A tinted pill across the desk, as Docs' is: no outline, so the room reads as
-   one open space rather than a stack of boxes. */
+/* ── The bar: a word processor's formatting strip ───────────────────────────
+   Across the room under the name, as Docs and Word have it: small square
+   buttons with no seams, a thin rule between groups, glyphs in the ink's grey
+   until they are on. The strip itself is the board's glass - its paper, its
+   ring, its corner - so it still belongs to this app. */
+
 .ed-bar {
+  position: absolute;
+  z-index: 3;
+  top: var(--ed-bar-top);
+  left: max(16px, env(safe-area-inset-left));
+  right: max(16px, env(safe-area-inset-right));
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: var(--ed-bar-h);
+  padding: 0 6px;
+  outline: var(--hairline) solid var(--rule-2);
+  outline-offset: calc(-1 * var(--hairline));
+  border-radius: var(--radius);
+  overflow-x: auto;
+  scrollbar-width: none;
+  background: var(--paper-card);
+  box-shadow: var(--shadow-1);
+  -webkit-user-select: none;
+  user-select: none;
+}
+.ed-group { flex: none; display: flex; align-items: center; gap: 2px; }
+/* The rule between groups, short of the strip's edges as a word processor draws it. */
+.ed-group + .ed-group::before {
+  content: '';
+  flex: none;
+  width: 1px;
+  height: 20px;
+  margin: 0 6px;
+  background: var(--rule);
+}
+.ed-btn {
   flex: none;
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 12px;
-  margin: 0 12px;
-  padding: 3px 8px;
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-}
-@media (hover: hover) {
-  .ed-bar .ed-btn:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
-}
-.ed-group { display: flex; gap: 2px; }
-.ed-btn {
-  display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 34px;
-  height: 34px;
+  gap: 6px;
+  min-width: 32px;
+  height: 32px;
   padding: 0 8px;
   border: 0;
-  border-radius: var(--leaf);
+  border-radius: calc(var(--leaf) * 0.7);
   background: none;
   color: var(--ink-2);
   font: inherit;
-  font-size: var(--t-body);
+  font-size: var(--t-small);
   line-height: 1;
-  cursor: pointer;
-}
-.ed-btn .ico { width: 18px; height: 18px; }
-@media (hover: hover) {
-  .ed-btn:hover { background: var(--paper-2); color: var(--ink); }
-}
-.ed-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.ed-btn.is-active { background: var(--accent); color: var(--accent-fg); }
-.ed-btn:disabled { background: none; color: var(--ink-3); cursor: default; }
-.ed-h { font-family: var(--font-display); font-size: var(--t-small); font-weight: 600; }
-.ed-bold { font-weight: 700; }
-.ed-italic { font-style: italic; }
-.ed-strike { text-decoration: line-through; }
-.ed-word { font-size: var(--t-small); }
-.ed-count {
-  color: var(--ink-3);
-  font-size: var(--t-tiny);
-  letter-spacing: 0.04em;
   white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
 }
-/* The screenplay's element menu: wide enough that its label does not jump as the caret moves. */
-.ed-el { min-width: 9.5em; justify-content: flex-start; }
+.ed-find > * + * { border-left: 1px solid var(--rule); }
+.ed-btn .ico { width: 17px; height: 17px; }
+@media (hover: hover) {
+  .ed-btn:hover:not(:disabled) { background: var(--paper-2); color: var(--ink); }
+}
+.ed-btn:active:not(:disabled) { background: var(--paper-3); }
+.ed-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* On: the accent's ink on a tint of it, as the board marks an armed tool - never a filled block. */
+.ed-btn.is-active, .ed-btn[aria-pressed="true"] {
+  color: var(--accent-deep);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.ed-btn:disabled { color: var(--ink-3); opacity: 0.6; cursor: default; }
+.ed-bold { font-weight: 700; }
+.ed-italic { font-family: var(--font-display); font-style: italic; }
+.ed-strike { text-decoration: line-through; }
+/* A menu in the strip - the paragraph style, a screenplay's element: its word
+   and a chevron turned down, wide enough that the word does not jolt the
+   strip as the caret moves between kinds of line. */
+.ed-el { min-width: 9.5em; justify-content: space-between; color: var(--ink); }
+.ed-style { min-width: 8.5em; }
+.ed-el .ico { width: 11px; height: 11px; rotate: 90deg; color: var(--ink-3); }
 
-/* ── The body: the outline beside the desk, and the status bar under both ── */
-
-.ed-body {
-  flex: 1 1 auto;
-  min-height: 0;
+/* The Vomit Mode countdown, beside its button, in figures that do not jitter. */
+.ed-timer {
   display: flex;
+  align-items: center;
+  padding: 0 6px 1px;
+  color: var(--accent-deep);
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  font-variant-numeric: tabular-nums;
 }
-.ed-body > .ed-scroll { flex: 1 1 auto; min-width: 0; }
+.ed-timer:empty { display: none; }
+/* Locked text fades back: still there to read, plainly not there to change.
+   A highlight, painted over the page without a node added to it. */
+::highlight(ed-locked) { color: var(--ink-3); }
+
+/* ── Find and replace: a second pill, hung under the first ───────────────── */
+
+.ed-find {
+  position: absolute;
+  z-index: 3;
+  top: calc(var(--ed-bar-top) + var(--ed-bar-h) + 8px);
+  right: max(16px, env(safe-area-inset-right));
+  max-width: calc(100% - 32px);
+  display: flex;
+  align-items: stretch;
+  height: var(--chrome-button-h);
+  outline: var(--hairline) solid var(--rule-2);
+  outline-offset: calc(-1 * var(--hairline));
+  border-radius: var(--leaf);
+  overflow: hidden;
+  background: var(--paper-card);
+  box-shadow: var(--shadow-1);
+}
+.ed-find[hidden] { display: none; }
+.ed-find input {
+  flex: 0 1 200px;
+  min-width: 0;
+  padding: 0 14px 1px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--t-small);
+  outline: none;
+}
+.ed-find input:focus { background: var(--paper-2); }
+.ed-find-n {
+  display: flex;
+  align-items: center;
+  min-width: 6.5em;
+  padding: 0 12px 1px;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+}
+.ed-find-n:empty { min-width: 0; padding: 0; }
+
+/* The Custom Highlight API: painted over the page without a node added to it.
+   An engine without it still finds - it scrolls to each match - and paints nothing. */
+::highlight(ed-find) { background-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+::highlight(ed-find-now) { background-color: var(--accent); color: var(--accent-fg); }
+
+/* ── The outline: a glass panel down the left, as the board's sidebar is ─── */
+
 .ed-outline {
-  flex: none;
-  width: 240px;
+  position: absolute;
+  z-index: 2;
+  top: var(--ed-top);
+  left: max(16px, env(safe-area-inset-left));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  width: 250px;
+  padding: 8px;
   overflow: auto;
   overscroll-behavior: contain;
-  padding: 24px 8px 24px 16px;
+  outline: var(--hairline) solid var(--rule-2);
+  outline-offset: calc(-1 * var(--hairline));
+  border-radius: var(--radius);
+  background: var(--paper-card);
+  box-shadow: var(--shadow-2);
 }
 .ed-outline[hidden] { display: none; }
 .ed-ol-item {
   display: block;
   width: 100%;
-  padding: 5px 8px 5px calc(8px + (var(--level, 1) - 1) * 14px);
+  padding: 7px 10px 8px calc(10px + (var(--level, 1) - 1) * 14px);
   border: 0;
   border-radius: var(--leaf);
   background: none;
@@ -132,94 +255,64 @@
   white-space: nowrap;
   cursor: pointer;
 }
-.ed-ol-item[data-kind="scene"] { font-family: var(--font-mono); font-size: var(--t-tiny); text-transform: uppercase; }
-.ed-ol-item[data-kind="section"] { font-weight: 600; }
+.ed-ol-item[data-kind="section"], .ed-ol-item[data-kind="h"][data-level="1"] { font-family: var(--font-display); font-weight: 600; color: var(--ink); }
 @media (hover: hover) {
-  .ed-ol-item:hover { background: var(--paper-2); color: var(--ink); }
+  .ed-ol-item:hover { background: var(--paper-2); color: var(--accent-deep); }
 }
-.ed-ol-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.ed-ol-item.is-here { color: var(--accent-deep); }
-.ed-ol-empty { margin: 0; padding: 5px 8px; color: var(--ink-3); font-size: var(--t-small); }
-/* A phone has no room beside the page: the outline takes the page's place while it is open. */
-@media (max-width: 600px) {
-  .ed-outline { flex: 1 1 auto; width: auto; }
-  .ed-outline:not([hidden]) + .ed-scroll { display: none; }
-}
+.ed-ol-item:focus-visible { outline: none; background: var(--paper-2); color: var(--accent-deep); }
+.ed-ol-item.is-here { color: var(--accent-deep); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.ed-ol-empty { margin: 0; padding: 7px 10px; color: var(--ink-3); font-size: var(--t-small); }
+
+/* ── The readout: words, and a screenplay's pages and scenes ────────────── */
 
 .ed-status {
-  flex: none;
+  position: absolute;
+  z-index: 3;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(14px, env(safe-area-inset-bottom));
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 4px 16px max(4px, env(safe-area-inset-bottom));
-}
-
-/* ── Find and replace ──────────────────────────────────────────────────── */
-
-.ed-find {
-  flex: none;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin: 6px 12px 0;
-  padding: 4px 8px;
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-}
-.ed-find[hidden] { display: none; }
-.ed-find input {
-  flex: 1 1 140px;
-  min-width: 0;
-  height: 32px;
-  box-sizing: border-box;
-  padding: 0 10px;
-  border: var(--hairline) solid var(--rule);
+  align-items: stretch;
+  height: var(--chrome-button-h);
+  outline: var(--hairline) solid var(--rule-2);
+  outline-offset: calc(-1 * var(--hairline));
   border-radius: var(--leaf);
+  overflow: hidden;
   background: var(--paper-card);
+  box-shadow: var(--shadow-1);
+  -webkit-user-select: none;
+  user-select: none;
+}
+.ed-status:empty { display: none; }
+.ed-count {
+  display: flex;
+  align-items: center;
+  padding: 0 14px 1px;
   color: var(--ink);
-  font: inherit;
-  font-size: var(--t-small);
+  font-family: var(--font-mono);
+  font-size: var(--t-tiny);
+  letter-spacing: calc(0.02em * var(--ls-scale));
+  white-space: nowrap;
 }
-.ed-find input:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
-.ed-find-n { min-width: 5.5em; color: var(--ink-3); font-size: var(--t-tiny); }
+.ed-count + .ed-count { border-left: 1px solid var(--rule); }
 
-/* The Custom Highlight API: painted over the page without a node added to it.
-   An engine without it still finds - it scrolls to each match - and paints nothing. */
-::highlight(ed-find) { background-color: color-mix(in srgb, var(--accent) 30%, transparent); }
-::highlight(ed-find-now) { background-color: var(--accent); color: var(--accent-fg); }
+/* ── The desk and the page ──────────────────────────────────────────────── */
 
-/* ── Vomit Mode ────────────────────────────────────────────────────────── */
-
-/* The countdown beside the button, in figures that do not jitter as they tick. */
-.ed-timer {
-  align-self: center;
-  min-width: 0;
-  padding: 0 4px;
-  color: var(--accent-deep);
-  font-size: var(--t-small);
-  font-variant-numeric: tabular-nums;
-}
-.ed-timer:empty { display: none; }
-/* Locked text fades back: still there to read, plainly not there to change.
-   A highlight, painted over the page without a node added to it. */
-::highlight(ed-locked) { color: var(--ink-3); }
-
-/* ── The page ──────────────────────────────────────────────────────────── */
-
-/* The desk: the sheet sits on it with a margin all round, and the room below
-   the sheet keeps the last line off the window's bottom edge. */
+/* The desk scrolls under the floating controls, as the board moves under its
+   glass; the room below the page keeps the last line off the bottom edge. */
 .ed-scroll {
-  flex: 1 1 auto;
-  min-height: 0;
+  position: absolute;
+  inset: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  padding: 28px 24px 30vh;
+  padding: var(--ed-top) 24px 30vh;
 }
-/* The sheet: a US Letter page's proportions, drawn smaller than 96 dpi (a
-   full-size one crowded the window), with margins in step. One page tall at
-   least and growing with the text (one long sheet, no page breaks). The
-   margins shrink with the window, so a narrow one still has a measure. */
+.is-finding .ed-scroll { padding-top: calc(var(--ed-top) + var(--chrome-button-h) + 8px); }
+/* An open outline takes its side, and the page centres in what is left. */
+.has-outline .ed-scroll { padding-left: calc(max(16px, env(safe-area-inset-left)) + 250px + 24px); }
+
+/* The page: a card of the board's, picked up - its paper, its hairline ring,
+   and the lifted shadow every raised thing here wears. Letter's proportions,
+   smaller than 96 dpi, one page tall at least and growing with the text. */
 .ed-page {
   box-sizing: border-box;
   width: 100%;
@@ -227,12 +320,9 @@
   min-height: 880px;
   margin: 0 auto;
   padding: clamp(24px, 8vw, 72px);
+  border-radius: calc(var(--radius) * 0.5);
   background: var(--paper-card);
-  /* Its own shadow, not a tier's: a sheet lifts off the desk at every whimsy
-     setting, the flat ones included, or it is only a lighter rectangle. */
-  box-shadow:
-    0 1px 3px color-mix(in srgb, var(--ink) 14%, transparent),
-    0 8px 28px -8px color-mix(in srgb, var(--ink) 22%, transparent);
+  box-shadow: inset 0 0 0 var(--hairline) var(--rule-2), var(--shadow-2);
   outline: none;
   color: var(--ink);
   caret-color: var(--accent-deep);
@@ -247,19 +337,48 @@
   font-size: var(--t-small);
   line-height: 1.6;
 }
-/* A phone is too narrow for a desk: the sheet is the screen, and it reaches
-   the keyboard (--kb) rather than a page's height. */
-@media (max-width: 600px) {
-  /* Two rows here, and a pill two rows tall is a blob. */
-  .ed-bar { margin: 0 8px; border-radius: var(--radius); }
-  .ed-find { margin: 6px 8px 0; }
-  .ed-scroll { padding: 8px 0 0; }
+
+
+/* A phone: the page is the screen, the tools sit on its foot just above the
+   keyboard as the board's do on a phone, and the readout gives them the room. */
+@media (max-width: 700px) {
+  #viewer[data-edit] {
+    --ed-top: calc(var(--ed-inset) + var(--chrome-button-h) + 12px);
+    background: var(--paper-card);
+  }
+  .ed-grain, .ed-status { display: none; }
+  .ed-bar {
+    top: auto;
+    bottom: max(8px, env(safe-area-inset-bottom));
+    left: 8px;
+    right: 8px;
+  }
+  .ed-find {
+    top: auto;
+    bottom: calc(max(8px, env(safe-area-inset-bottom)) + var(--ed-bar-h) + 8px);
+    left: 8px;
+    right: 8px;
+    max-width: none;
+  }
+  .ed-find input { flex: 1 1 0; }
+  .ed-outline {
+    left: 8px;
+    right: 8px;
+    width: auto;
+    bottom: calc(max(8px, env(safe-area-inset-bottom)) + var(--chrome-button-h) + 8px);
+    z-index: 4;
+  }
+  .ed-scroll, .is-finding .ed-scroll, .has-outline .ed-scroll { padding: var(--ed-top) 0 calc(var(--chrome-button-h) + 24px); }
   .ed-page {
     min-height: 100%;
-    padding: 20px 20px 40vh;
+    padding: 4px 20px 40vh;
+    border-radius: 0;
     box-shadow: none;
   }
 }
+
+/* ── What is on the page ────────────────────────────────────────────────── */
+
 .ed-page > .ed-b { margin: 0 0 0.9em; }
 .is-plain .ed-page > .ed-b { margin: 0; }
 
@@ -449,11 +568,7 @@
 
 /* color-mix() fallback for WebKit < 16.2 — see tokens.css section 7. */
 @supports not (color: color-mix(in srgb, red, blue)) {
-  #viewer[data-edit] { background: var(--paper-3); }
-  .ed-bar, .ed-find { background: rgb(var(--accent-c) / 8%); }
-  .ed-bar .ed-btn:hover { background: rgb(var(--accent-c) / 14%); }
-  @media not all and (max-width: 600px) {
-    .ed-page { box-shadow: 0 1px 3px rgb(var(--ink-c) / 14%), 0 8px 28px -8px rgb(var(--ink-c) / 22%); }
-  }
+  .ed-btn.is-active, .ed-btn[aria-pressed="true"] { background: rgb(var(--accent-c) / 12%); }
+  .ed-ol-item.is-here { background: rgb(var(--accent-c) / 10%); }
   ::highlight(ed-find) { background-color: rgb(var(--accent-c) / 30%); }
 }
