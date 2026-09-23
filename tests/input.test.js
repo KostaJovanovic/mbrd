@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   isDoubleTap, needsSelectionBeforeMove, repeatsLongPressContextMenu,
   releasePointerSafely, capturePointerSafely, resizeHandleAction, shortcutsSuppressed,
-  readWheel, resetWheelKind, WHEEL_NOTCH, WHEEL_STREAM_MS,
+  liftWithButtonsHeld, readWheel, resetWheelKind, WHEEL_NOTCH, WHEEL_STREAM_MS,
   carryFloor, drewRectangle, marqueeHit,
   GESTURE_MOVES, gestureTransition, pressIntent,
   resizeAxisOn, nudgeDelta,
@@ -37,6 +37,19 @@ test('canvas shortcuts stand down when handled or an overlay owns the keyboard',
   assert.equal(shortcutsSuppressed(true, false), true);
   // A modal dialog or the open menu owns the keyboard.
   assert.equal(shortcutsSuppressed(false, true), true);
+});
+
+test('a mouse lift ends the press only when no button is left down', () => {
+  const up = (buttons, pointerType = 'mouse') => ({ type: 'pointerup', pointerType, buttons });
+  // A right button let go while the left one still drags: not an end.
+  assert.equal(liftWithButtonsHeld(up(1)), true);
+  // A chord whose last release is the right or an aux button: nothing is held,
+  // so this lift ends the drag, whatever `button` it reports.
+  assert.equal(liftWithButtonsHeld(up(0)), false);
+  assert.equal(liftWithButtonsHeld(up(4, 'pen')), true);
+  // A finger and a cancel always end what they had.
+  assert.equal(liftWithButtonsHeld(up(1, 'touch')), false);
+  assert.equal(liftWithButtonsHeld({ type: 'pointercancel', pointerType: 'mouse', buttons: 1 }), false);
 });
 
 test('a native context menu does not reopen a freshly opened touch menu', () => {
