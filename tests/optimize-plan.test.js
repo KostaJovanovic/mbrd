@@ -9,7 +9,8 @@ import assert from 'node:assert/strict';
 
 import { loadBoard, setBoardMode } from '../web/assets/js/state.ts';
 import { putAsset, clearAssets } from '../web/assets/js/storage/assets.ts';
-import { planOptimize } from '../web/assets/js/optimize/optimize.ts';
+import { planOptimize, renameFor } from '../web/assets/js/optimize/optimize.ts';
+import { PHOTO_EXTS, VIDEO_EXTS } from '../web/assets/js/import/formats.ts';
 import { hash } from './helpers.js';
 import { photo, clip } from './state-fixtures.js';
 
@@ -57,6 +58,18 @@ test('a picture that is one card file and another card cover is sized as the fil
   assert.equal(rest.length, 0, 'one job for one set of bytes');
   assert.equal(job.hash, FILE);
   assert.equal(job.isCover, false);
+});
+
+test('every type an encoder can hand back is named with an extension the app reads', () => {
+  // Safari answers a WebP request with JPEG or PNG, and the desktop transcode
+  // writes MP4. A `.bin` name gives the new asset no type after a reopen.
+  assert.equal(renameFor('holiday.png', 'image/webp'), 'holiday.webp');
+  assert.equal(renameFor('holiday.heic', 'image/jpeg'), 'holiday.jpg');
+  assert.equal(renameFor('logo.tiff', 'image/png'), 'logo.png');
+  assert.equal(renameFor('song.flac', 'audio/ogg'), 'song.opus');
+  assert.equal(renameFor('clip.mov', 'video/mp4'), 'clip.mp4');
+  for (const ext of ['jpg', 'png', 'webp']) assert.ok(PHOTO_EXTS.has(ext), ext);
+  assert.ok(VIDEO_EXTS.has('mp4'));
 });
 
 test('a cover that no card holds as its file is still sized as a cover', () => {
