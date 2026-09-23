@@ -440,7 +440,7 @@
     --ed-ribbon-h: 52px;
     --ed-bar-top: calc(var(--ed-inset) + var(--ed-title-h));
     --ed-bar-bottom: calc(var(--ed-bar-top) + var(--ed-ribbon-h));
-    --ed-top: calc(var(--ed-bar-bottom) + 12px);
+    --ed-top: calc(var(--ed-bar-bottom) + 16px);
   }
   /* The top bar: the status bar moved up - the counts, and a session's time -
      with the head's close over its right end, a thumb's size. */
@@ -557,10 +557,10 @@
   }
   .is-finding .ed-scroll { inset: 0; padding: calc(var(--ed-top) + 88px + 8px) 0 30vh; scrollbar-gutter: auto; }
   /* Edge to edge, a ring on the sides would be a line down each edge of the screen. */
-  .ed-sheet { box-shadow: 0 var(--hairline) 0 var(--rule-2), 0 calc(-1 * var(--hairline)) 0 var(--rule-2), var(--shadow-1); }
+  .ed-sheet { box-shadow: 0 var(--hairline) 0 var(--rule-2), 0 calc(-1 * var(--hairline)) 0 var(--rule-2), var(--shadow-2); }
   .ed-sheet {
     /* At least to the foot of the window: a short note still reads as a page. */
-    min-height: calc(100dvh - var(--kb, 0px) - var(--ed-top) - 12px);
+    min-height: calc(100dvh - var(--kb, 0px) - var(--ed-top) - 16px);
     padding: 22px 20px 48px;
   }
   .ed-name { font-size: calc(var(--t-body) * 1.55); }
