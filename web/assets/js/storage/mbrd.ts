@@ -118,6 +118,8 @@ export async function packBoard(boardData: PackedBoard, opts: PackOptions = {}) 
  * is never read to be compared. The rest are small and compared by checksum.
  * The file is written whole again when more than half of it would be dead
  * bytes: that save costs a whole write, and gives the space back.
+ *
+ * An asset the file already holds keeps the name it is held under (heldNames).
  */
 export async function packBoardFile(
   boardData: PackedBoard, { prior = null, ...opts }: PackOptions & { prior?: ZipLayout | null } = {},
@@ -125,11 +127,50 @@ export async function packBoardFile(
   const { entries, manifest, now } = await boardEntries(boardData, opts);
   const zip = { date: now, mime: MIME };
   if (prior) {
-    const { tail, layout, waste } = await appendZip(entries, prior, name => name.startsWith(ASSETS_DIR), zip);
+    const { tail, layout, waste } = await appendZip(heldNames(entries, prior), prior, name => name.startsWith(ASSETS_DIR), zip);
     if (waste * 2 <= layout.size) return { blob: tail, manifest, layout, appended: true };
   }
   const { blob, layout } = await writeZipLayout(entries, zip);
   return { blob, manifest, layout, appended: false };
+}
+
+/**
+ * Asset entries renamed to the name the file already holds their bytes under.
+ *
+ * An asset's name is a readable slug and its hash, and only the hash is read
+ * back: unpackBoard() drops the slug. So a card with no name of its own, saved
+ * from a board that was opened from its file, comes out under a bare hash
+ * where the file says `20250702-152212--<hash>`. appendZip() matches by name,
+ * saw a new entry, and wrote the picture again. A 388 MB board opened on a
+ * phone and saved once grew to 653 MB: 140 pictures written twice, every byte
+ * of them identical, and the first copy left dead.
+ *
+ * The bytes are the hash's, so the name they are already under is as good as
+ * any. A slug gone stale by a rename stays until the file is next written
+ * whole, which is cosmetic - the slug is for a person unzipping the file.
+ */
+function heldNames(entries: ZipEntry[], prior: ZipLayout): ZipEntry[] {
+  const held = new Map<string, string>();
+  for (const name of prior.records.keys()) {
+    const id = assetId(name);
+    if (id) held.set(id, name);
+  }
+  return entries.map(entry => {
+    const id = assetId(entry.name);
+    const was = id && held.get(id);
+    return was && was !== entry.name ? { ...entry, name: was } : entry;
+  });
+}
+
+/** An asset entry's identity: its hash and extension, without the slug. Null for anything else. */
+function assetId(name: string): string | null {
+  if (!name.startsWith(ASSETS_DIR)) return null;
+  const file = name.slice(ASSETS_DIR.length);
+  const sep = file.lastIndexOf('--');
+  const tail = sep >= 0 ? file.slice(sep + 2) : file;
+  const dot = tail.lastIndexOf('.');
+  const hash = dot > 0 ? tail.slice(0, dot) : tail;
+  return isHash(hash) ? tail.toLowerCase() : null;
 }
 
 type PackOptions = { created?: string | null, allowMissing?: boolean };
