@@ -222,6 +222,22 @@ test('a style attribute is a reference to somewhere else', () => {
   assert.equal(root.children[0].has('style'), false);
 });
 
+test('a presentation attribute may point only inside the drawing', () => {
+  // Only `style` was checked, so fill="url(//x)" and its siblings kept the
+  // request; the deploy's CSP was the one thing left in the way.
+  const away = ['url(//x/a.svg#p)', 'URL( "https://x/a#p" )', "url('//x')", 'u\\72l(//x)'];
+  const root = new El('svg', {}, [
+    ...away.map(v => new El('rect', { fill: v, filter: v, mask: v, 'clip-path': v, 'marker-end': v })),
+    new El('rect', { fill: 'url(#grad)', filter: "url('#blur')", mask: 'url( "#m" )', stroke: 'red' }),
+  ]);
+  scrub(root);
+  for (const rect of root.children.slice(0, -1)) {
+    assert.deepEqual(rect.attributes, [], `${JSON.stringify(rect.attributes)} survived`);
+  }
+  assert.deepEqual(root.children.at(-1).attributes.map(a => a.name), ['fill', 'filter', 'mask', 'stroke'],
+    'a reference to the drawing itself is kept');
+});
+
 test('a style element is emptied, because its CSS is not scoped to the drawing', () => {
   // An inline <style> in an SVG subtree is a document stylesheet - nothing
   // filtered text content, so an opened drawing could restyle the whole app.

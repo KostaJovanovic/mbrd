@@ -759,10 +759,14 @@ function scrubAttrs(node: Element) {
     // it. Matched on the *local* name: `xl:href` under a custom namespace
     // prefix used to slip past a test naming `xlink:href` literally. `style`
     // is on this list because it's a reference too:
-    // `style="fill:url(//attacker/track.svg#a)"` made the request.
+    // `style="fill:url(//attacker/track.svg#a)"` made the request. So does a
+    // presentation attribute - `fill`, `filter`, `mask`, `marker-end` - holding
+    // a url() that is not `#id`, or one spelt with a CSS escape.
     const away = name.startsWith('on')
       || local === 'style'
       || (/^(href|src|from|to|values|begin|end)$/.test(local) && !value.startsWith('#'))
+      || /url\s*\((?!\s*['"]?\s*#)/.test(value)
+      || (value.includes('\\') && value.includes('('))
       || value.includes('javascript:')
       || value.includes('data:text/html');
     if (away) node.removeAttribute(attr.name);
