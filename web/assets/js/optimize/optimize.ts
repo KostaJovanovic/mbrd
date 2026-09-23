@@ -213,26 +213,18 @@ export function planOptimize(): Plan {
     // "leave it alone". The largest file on a phone's board, promised in the
     // dialog and never shrunk. See encodeOne().
     const heif = stale && !raw && isHeic(item) && !!getAsset(item.asset?.hash);
-    const decoded = raw || heif;
-    for (const hash of itemHashes(item)) {
+    // Only the two references the swap in runOptimize() can rewrite. A job for
+    // a preview, display copy, shot, poster, art or folder entry was encoded,
+    // counted as saved, marked done in meta.opt, and then never applied. That
+    // also leaves out the thumbnail (derived, already minimal) and meta.source
+    // (never kept - the swap drops it).
+    const swappable = [item.asset?.hash, item.meta?.cover]
+      .filter((h): h is string => typeof h === 'string' && h.length > 0);
+    for (const hash of swappable) {
       if (seen.has(hash)) continue;
       const ownRaw = raw && hash === item.asset?.hash;
       const ownHeif = heif && hash === item.asset?.hash;
       const own = ownRaw || ownHeif;
-      if (decoded && !own && (hash === item.meta?.preview || hash === item.meta?.display)) continue;
-      // The .heic or the sensor a card's picture was decoded from. Never a job:
-      // no encoder here can read it, and it is not kept either - optimising is
-      // what throws it away. Counted in neither the promise nor the work; the
-      // saving it gives back is the whole of its own weight, and it comes off
-      // the next save rather than out of an encoder. See the swap below.
-      if (hash === item.meta?.source) continue;
-      // A thumbnail is already the smallest this app knows how to make: a
-      // hundred pixels of WebP at quality 0.5, cut by makeThumb(). Counting it
-      // here would put a second entry on the dialog for every photograph on the
-      // board, promise to shrink two hundred files, and then shrink none of
-      // them - shrinkPicture() refuses a WebP already inside the ceiling. It is
-      // derived output, not content, and the optimiser's business is content.
-      if (hash === item.meta?.thumb) continue;
       const asset = getAsset(hash);
       if (!asset) continue;
       seen.add(hash);
