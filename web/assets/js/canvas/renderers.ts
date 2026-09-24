@@ -1842,8 +1842,14 @@ const UNPACK = { icon: 'i-arrow-up' };
 
 function packCard(item: Item, kind: string, verb: string, foot: string | null) {
   const card = cardShell(item, kind);
-  // Drawn as a folder, the archive's tab as a zip (cards.css).
+  // Drawn as a folder, the archive's tab as a zip (cards.css): the back with
+  // its tab and the front, under the lettering.
   card.classList.add('pack-card', `pack-${kind}`);
+  const back = document.createElement('div');
+  back.className = 'pack-back';
+  const front = document.createElement('div');
+  front.className = 'pack-front';
+  card.prepend(back, front);
   if (foot !== null) {
     const meta = card.querySelector('.card-meta');
     if (meta) meta.textContent = foot;
