@@ -33,14 +33,16 @@
 #viewer[data-edit] #viewer-head {
   position: absolute;
   z-index: 4;
-  top: calc(var(--ed-inset) + 6px);
+  /* The whole band's height, so its rule runs from the window's top edge as
+     the groups' do. */
+  top: var(--ed-inset);
   right: env(safe-area-inset-right);
   width: var(--ed-close-w);
-  height: calc(var(--ed-ribbon-h) - 6px);
+  height: var(--ed-ribbon-h);
   justify-content: center;
   /* Level with the groups' commands, which sit above their labels. */
   align-items: flex-start;
-  padding: 14px 0 0;
+  padding: 20px 0 0;
   border: 0;
   border-left: 1px solid var(--rule);
   background: var(--paper-card);
@@ -105,8 +107,10 @@
   display: flex;
   align-items: stretch;
   height: 100%;
-  /* The right end is the head's close (#viewer-head above). */
-  padding: 6px var(--ed-close-w) 0 4px;
+  /* The right end is the head's close (#viewer-head above). No room above:
+     that is the groups' own (.ed-group), so the rules between them run from
+     the window's top edge rather than stopping short of it. */
+  padding: 0 var(--ed-close-w) 0 4px;
   /* Never scrolled: the ribbon folds to fit (below). What still does not fit
      at a text size far past the default is clipped rather than scrolled. */
   overflow: hidden;
@@ -115,7 +119,7 @@
   flex: none;
   display: flex;
   flex-direction: column;
-  padding: 0 10px;
+  padding: 6px 10px 0;
 }
 .ed-group + .ed-group { border-left: 1px solid var(--rule); }
 .ed-group-body {
@@ -215,7 +219,7 @@
    Each keeps its name in its tooltip. */
 .is-fold-3 :is(.ed-stack, .ed-show) .ed-btn-word { display: none; }
 /* And the groups close up, so the narrowest desk still takes the lot (a phone's toolbar begins below it). */
-.is-fold-3 .ed-group { padding: 0 6px; }
+.is-fold-3 .ed-group { padding: 6px 6px 0; }
 .is-fold-3 .ed-stack .ed-btn { justify-content: center; }
 .is-fold-3 .ed-show .ed-group-body { flex-direction: column; justify-content: center; gap: 2px; }
 .is-fold-3 .ed-show .ed-btn { flex-direction: row; min-width: 32px; height: 28px; padding: 0 8px; }
