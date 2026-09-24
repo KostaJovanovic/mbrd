@@ -1252,13 +1252,15 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>, caret?:
   // Refocus the sheet after showModal()'s own focus flush — otherwise the first
   // keystroke hits Cancel. rAF runs after the flush in the same frame.
   const sheet = node.querySelector<HTMLElement>('.note-rich')!;
+  // Unseen till what was on screen has turned into it. Before showModal(),
+  // which computes the backdrop: after, the dim is drawn at full and then
+  // fades out under its own transition, only to fade back in.
+  if (into) dlg.classList.add('is-arriving');
   dlg.showModal();
   // Open, the sheet can be measured: a note longer than a square is that tall from its first frame.
   fit();
   if (into) {
-    // Unseen till what was on screen has turned into it, and without its own
-    // pop-in, which would be scaling the sheet as it is measured.
-    dlg.classList.add('is-arriving');
+    // Without its own pop-in, which would be scaling the sheet as it is measured.
     for (const a of dlg.getAnimations()) a.cancel();
     into({
       sheet: node.getBoundingClientRect(),
