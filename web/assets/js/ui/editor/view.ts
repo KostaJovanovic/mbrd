@@ -936,7 +936,7 @@ export function mountEditor(opts: EditorOptions): Editor {
     b?.kind === 'h' ? `Heading ${b.level}` : b?.kind === 'li' ? 'List' : b?.kind === 'quote' ? 'Quote' : b?.kind === 'code' ? 'Code' : 'Normal';
   const marks: [MarkKey, HTMLButtonElement][] = [
     ['b', button('Bold (Ctrl+B)', () => mark('b'), { text: 'B', cls: 'ed-bold' })],
-    ['i', button('Italic (Ctrl+I)', () => mark('i'), { text: 'I', cls: 'ed-italic' })],
+    ['i', button('Italic (Ctrl+I)', () => mark('i'), { text: 'i', cls: 'ed-italic' })],
     ['s', button('Strikethrough (Ctrl+Shift+X)', () => mark('s'), { text: 'S', cls: 'ed-strike' })],
   ];
   const lists: [ListKind, HTMLButtonElement][] = [
@@ -1010,6 +1010,9 @@ export function mountEditor(opts: EditorOptions): Editor {
   ribbon.setAttribute('role', 'toolbar');
   ribbon.setAttribute('aria-label', 'Editor');
   const panel = h('div', 'ed-panel');
+  // A phone's second row: after the writing in a document with marks, and
+  // before the session in a screenplay, whose first row is shorter.
+  const rowBreak = h('div', 'ed-break');
   panel.append(group('Undo', stack(undoBtn, redoBtn)));
   if (screen) {
     const gallery = group('Script', ...elTiles, elBtn);
@@ -1022,13 +1025,13 @@ export function mountEditor(opts: EditorOptions): Editor {
       group('Font', ...marks.map(m => m[1])),
       group('Paragraph', ...lists.map(l => l[1])),
       gallery,
+      rowBreak,
       styleGroup,
     );
   }
-  panel.append(
-    group('Editing', stack(findBtn, replaceBtn)),
-    group('Vomit Mode', vomitBtn, superBtn, infoBtn),
-  );
+  panel.append(group('Editing', stack(findBtn, replaceBtn)));
+  if (screen) panel.append(rowBreak);
+  panel.append(group('Vomit Mode', vomitBtn, superBtn, infoBtn));
   const showBtns = [...(!opts.plain || screen ? [outlineBtn] : []), ...(opts.onAscii ? [asciiBtn] : [])];
   if (showBtns.length) {
     const show = group('Show', ...showBtns);
@@ -1042,8 +1045,6 @@ export function mountEditor(opts: EditorOptions): Editor {
   // clear of the keyboard, and Replace is left to the find bar, which has its
   // own. The rest of the ribbon's furniture steps back (editor.css).
   for (const b of [replaceBtn, elBtn, ...elTiles, ...styleTiles.map(s => s[1])]) b.classList.add('ed-desk');
-  // The second row, in the order a phone lays it out: the line's style, then find, a session, the view.
-  for (const b of [findBtn, vomitBtn, superBtn, infoBtn, outlineBtn, asciiBtn]) b.classList.add('ed-row2');
 
   // Too narrow a window folds the ribbon a step at a time, never scrolls it:
   // the gallery to its Style button, then Vomit Mode to one button and a small

@@ -1186,12 +1186,15 @@ export function dominantColors(chunk: Chunk, n = 5) {
  * How many pictures a palette is read from when nobody says, newest first.
  *
  * Was a hard ceiling, now a default: `paletteSources: 0` means every picture
- * and arrives here as an infinite limit. The ceiling was never about
+ * and arrives here as ALL_SOURCES_MAX. The ceiling was never about
  * correctness (a palette from forty photos is fine) but about decode cost -
  * asking for all of them means paying it. Each picture counts the same
  * whatever its size or vividness - see huesOf().
  */
 export const MAX_SOURCES = 24;
+
+/** The hard cap on "Every photo": past about 120 the hues converge and only the cost grows. */
+export const ALL_SOURCES_MAX = 120;
 
 /** Each one drawn this big. 48x48 is 2304 pixels, and enough to vote with. */
 const SAMPLE = 48;
@@ -1212,7 +1215,7 @@ export async function samplePixels(urls: string[], limit = MAX_SOURCES) {
   // A falsy limit is the default, not none: 0 reaching here means a caller
   // that hasn't looked the setting up, not "read nothing".
   const asked = limit || MAX_SOURCES;
-  const n = Math.max(1, Math.min(asked, MAX_SOURCES));
+  const n = Math.max(1, Math.min(asked, ALL_SOURCES_MAX));
   const out = [];
   for (const url of urls.slice(0, n)) {
     try {

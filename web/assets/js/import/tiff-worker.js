@@ -26,6 +26,74 @@
 
 importScripts('../../vendor/pako/pako_inflate.min.js', '../../vendor/utif/UTIF.js');
 
+// ---------------------------------------------------------------------------
+// A guard around UTIF's directory reader
+// ---------------------------------------------------------------------------
+//
+// UTIF.decode follows the file's own offsets with no memory of where it has
+// been: 16 bytes whose one directory names itself as the next one push an
+// object per turn until the tab dies, and an entry claiming four billion
+// SHORTs pushes four billion zeros (UTIF reads past the end as 0). Every
+// directory - the page chain, SubIFDs, Exif, maker notes, a Nikon note's own
+// TIFF - goes through UTIF._readIFD, so the checks sit in front of that one
+// function and read with UTIF's own byte order. The vendored file stays as it
+// was published.
+//
+// All three are plain Errors, never the `pixels` question: a loop is not a
+// large picture, and there is nothing to lift.
+
+/** Bytes per value of each TIFF type UTIF expands into an array. */
+const TYPE_BYTES = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 7: 1, 8: 2, 9: 4, 10: 8, 11: 4, 12: 8 };
+
+/** Nesting deeper than any writer uses. A SubIFD that names an ancestor
+ *  recurses until the stack gives out; this stops it well before. */
+const MAX_DEPTH = 16;
+
+/** One decode's state. Set by decode() around the synchronous UTIF.decode. */
+let guard = null;
+
+const readIFD = self.UTIF._readIFD;
+self.UTIF._readIFD = function (bin, data, offset, _ifds, depth, _debug) {
+  if (guard) {
+    if (depth > MAX_DEPTH) throw new Error('image directories nest too deep');
+    // Depth 0 is a page chain: the main one, or a Nikon note's. A chain that
+    // comes back to a directory it has read loops for ever.
+    if (depth === 0) {
+      let seen = guard.chains.get(data);
+      if (!seen) guard.chains.set(data, seen = new Set());
+      if (seen.has(offset)) throw new Error('the image directories point back into themselves');
+      seen.add(offset);
+    }
+    // Each value UTIF will expand is work, and an honest file stores each
+    // array once, so the whole decode reads about as many values as the file
+    // has bytes. The per-entry test catches one lying count; the total
+    // catches many directories that all point at the same big array.
+    const count = bin.readUshort(data, offset);
+    let work = 1;
+    for (let i = 0; i < count; i++) {
+      const at = offset + 2 + i * 12;
+      const size = TYPE_BYTES[bin.readUshort(data, at + 2)];
+      if (!size) continue;
+      const num = bin.readUint(data, at + 4);
+      if (num * size > data.length) throw new Error('an image directory entry is longer than the file');
+      work += num;
+    }
+    guard.left -= work;
+    if (guard.left < 0) throw new Error('the image directories ask for more than the file holds');
+  }
+  return readIFD.apply(this, arguments);
+};
+
+/** UTIF.decode with the guard above on. */
+function directories(bytes) {
+  guard = { chains: new WeakMap(), left: 2 * bytes.byteLength + 65536 };
+  try {
+    return self.UTIF.decode(bytes);
+  } finally {
+    guard = null;
+  }
+}
+
 /**
  * Pixels one page may decode before this stops to ask.
  *
@@ -59,7 +127,7 @@ self.onmessage = async e => {
 };
 
 async function decode(bytes, lift) {
-  const ifds = self.UTIF.decode(bytes);
+  const ifds = directories(bytes);
   if (!ifds || !ifds.length) throw new Error('no image directory');
 
   // The largest page, not the first. A TIFF is a *container* of images and the

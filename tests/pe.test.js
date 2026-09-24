@@ -329,6 +329,21 @@ test('every truncation of a working file is refused, none of them throw', async 
   }
 });
 
+test('a directory whose entries all point back at itself ends quickly, and is not a ceiling', async () => {
+  // The crafted file from the 2026-09-23 hunt: one directory of N RT_ICON
+  // subdirectory entries, every one at offset 0 - the directory itself. The
+  // two-level walk under each member read N x N entries: N³ in all, 15 s at
+  // N = 1024 and about 15 minutes at 4096. It is a loop, so the answer is
+  // null (a plain Error inside), never an Oversize that `lift` could pass.
+  const n = 4096;
+  const section = new Uint8Array(resDir(Array.from({ length: n }, () => ({ id: 3, off: 0, dir: true }))));
+  const file = wrapPe(section);
+  const t0 = performance.now();
+  assert.equal(await exeIcon(file), null);
+  assert.equal(await exeIcon(file, true), null, 'lifted, it is still a loop');
+  assert.ok(performance.now() - t0 < 2000, 'the tree walk did not stop');
+});
+
 // ---------------------------------------------------------------------------
 // The two headers, on their own
 // ---------------------------------------------------------------------------
@@ -363,6 +378,31 @@ test('dibToBmp counts the palette, which is where the pixels actually start', ()
   const full = dibToBmp(dib(8, 8, 8, 0));
   assert.ok(full);
   assert.equal(new DataView(full.buffer).getUint32(10, true), 14 + 40 + 256 * 4);
+});
+
+test('dibToBmp steps over the colour masks that follow a 40-byte header', () => {
+  // BI_BITFIELDS puts three DWORD masks between the header and the pixels,
+  // BI_ALPHABITFIELDS four. Left out, the picture is drawn 12 or 16 bytes
+  // early and every row is shifted.
+  const at = (compression, size = 40) => {
+    const body = dib(8, 8, 32);
+    const dv = new DataView(body.buffer);
+    dv.setUint32(0, size, true);
+    dv.setUint32(16, compression, true);
+    const bmp = dibToBmp(body);
+    assert.ok(bmp);
+    return new DataView(bmp.buffer).getUint32(10, true);
+  };
+  assert.equal(at(0), 14 + 40, 'BI_RGB has no masks');
+  assert.equal(at(3), 14 + 40 + 12);
+  assert.equal(at(6), 14 + 40 + 16);
+  // A V4 header holds its masks inside its own 108 bytes.
+  const v4 = new Uint8Array(108 + 64);
+  v4.set(dib(8, 8, 32).subarray(0, 40));
+  const dv = new DataView(v4.buffer);
+  dv.setUint32(0, 108, true);
+  dv.setUint32(16, 3, true);
+  assert.equal(new DataView(dibToBmp(v4).buffer).getUint32(10, true), 14 + 108);
 });
 
 test('dibToBmp declines the headers whose fields are somewhere else', () => {

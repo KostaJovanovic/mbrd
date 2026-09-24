@@ -162,8 +162,156 @@ back to the board.
 
 ## Releases
 
+## No Dead Weight
+version: 0.487 - 0.519
+date: 23 September 2026
+
+- **A board file stops growing on every save, and a phone keeps up with a
+  zoom.** The rest of the day went on the text editor, most of it on a phone.
+
+### Board files
+- [fix] **Saving a board opened from its file no longer writes its pictures
+  twice.** A 388 MB board opened on a phone grew to 653 MB on its first save.
+  The same save now adds 53 KB.
+- [fix] **The history stops leaving a dead copy of itself in the file.** It is
+  kept in pieces of 500 steps, and a save rewrites only the last piece. Once
+  enough of the file is dead, it is written whole again at a quiet moment:
+  after a minute with no edit, as the app closes, or on `Save`.
+- A board saved now opens in an older copy of the app with its history marked
+  out of date. The board itself opens whole.
+
+### On a phone
+- [faster] **A zoom in on a phone runs at three times the frame rate,** 56
+  frames a second where it was 17, and a zoom out no longer blinks the board.
+- [fix] **Cards stop vanishing for a moment as you zoom out from far in.**
+- [faster] **A zoom out through 25% no longer stutters,** and a zoom near 35%
+  no longer stalls. The photographs change to their small copies on the frame
+  the zoom crosses, not after it stops.
+- [fix] **A long pan no longer fills the phone's memory.** Every card the board
+  put away as it left the screen stayed in memory, and a few minutes of panning
+  held thousands of them.
+- [faster] **The grid's dots cost a fraction of what they did** at `Softish` and
+  `Middle`, so a zoom on a fast phone drops about a third fewer frames.
+- [faster] **A board opens faster at `Full` and `Balanced`.** A photograph is no
+  longer copied again at every start, and one only a little larger than the
+  sharpness limit is shown as it is. A board of 70 photographs spent 4.2 seconds
+  on decoding as it opened, and now spends half a second.
+- [faster] **A pan or a card drag starts without a hitch,** where the first
+  press restyled every card on the board.
+
+### The text editor
+- [new] **The page rises in from below as the editor opens,** and tips and drops
+  away as it closes.
+- [new] **On a phone, every tool sits in two rows at the top of the screen,**
+  clear of the keyboard, with the word count and a running session's time above
+  them. The page runs from one edge of the screen to the other.
+- [new] **A narrow window folds the ribbon rather than scrolling it.** The
+  styles become one button, Vomit Mode another, and the small commands lose
+  their words.
+- [new] **A document may be untitled.** Clear its name on the sheet, and the
+  card reads `untitled`.
+- [new] **A sticky that grew into a document turns back into a sticky** if you
+  cut the text back down to fit while the editor is still open. The note opens
+  with the caret where you deleted.
+- [fix] **The sheet no longer jumps sideways** as a scrollbar arrives.
+
+### Around the app
+- [new] **The version at the foot of the sidebar links to these notes,** beside
+  a new `Privacy` link.
+- [new] **The browser's install prompt shows two pictures of the app,** where it
+  had none.
+
+## The Blank Page
+version: 0.465 - 0.486
+date: 22 September 2026
+
+- **mbrd writes documents now.** A text file opens in a word processor of its
+  own, and a sticky that runs long grows into one.
+
+### The text editor
+- [new] **`Edit` opens a `.md`, `.txt` or `.fountain` in the text editor,** a
+  sheet of paper on a desk across the whole window. The ribbon holds undo, the
+  marks, the paragraph styles, the lists, find and replace, and an outline down
+  the left. The foot counts the words. A file you open and close unchanged is
+  never rewritten.
+- [new] **The name at the head of the sheet is the document's name,** and a
+  change there renames the card.
+- [new] **A sticky typed past 120 characters becomes a `.md` document** and
+  grows open into the editor at the caret. Not a keystroke is lost on the way.
+- [new] **_Vomit Mode_ keeps you writing forward.** Pick a time from 5 to 60
+  minutes, and everything before the word you are typing is locked until the
+  time runs out. Backspace works inside the current word and no further.
+  `Super` locks that word too, 10 seconds after your last key.
+- [new] **A `.fountain` screenplay opens in screen mode,** on the standard page
+  in Courier. It types like a screenwriting tool: `int. ` starts a scene
+  heading, a name in capitals is followed by dialogue, and Tab changes the
+  element. The foot estimates the pages and the scenes.
+- [new] **The editor has its own right-click menu.** Shift and right-click still
+  gives the browser's, with its spelling suggestions.
+- [new] **A double-click still opens a document to read.** The text sits on a
+  page as tall as the window and wraps to it. Turn on `ASCII art` in the editor,
+  and its lines keep their length.
+- **Credit where it is due:** Vomit Mode is after vomitdraft.com.
+
+### Around the board
+- [fix] **A mouse wheel on Linux zooms again,** where Chromium's finer steps
+  read as a touchpad and panned the board. `Mouse wheel` gains
+  `Always zooms, touchpad too`, and a window coming back into focus no longer
+  jumps its zoom.
+- [new] **A link to mbrd shows a new preview picture** in chat apps. It is a
+  tenth of the old size, small enough for WhatsApp to show it.
+
+## Print Ready
+version: 0.439 - 0.464
+date: 21 September 2026
+
+- **An exported picture is sharp enough to print, and a sticky styles its words
+  one at a time.**
+
+### Exporting
+- [new] **`Save image` and `Save PDF` ask first.** Set the detail in ppi and see
+  the pixel size it comes to, the JPEG quality, a margin in millimetres, and
+  which of the joining lines, the sheet outline, the grid and the paper texture
+  go in. A preview beside the options redraws as you change them.
+- [new] **An export is drawn at 300 ppi by default,** so an A4 sheet comes out
+  2480 x 3508, and a PDF page is the board's real size. The JPEG keeps its full
+  colour detail, where the browser's own encoder blurs the colour at every
+  quality.
+- [fix] **An export carries the board's own paper texture and its shadows,**
+  where it had a speckle like static and no shadows at all. `Shadows` and
+  `Card tilt` switch them, and a tilted card has clean edges.
+- [fix] **The title card exports with its name on it,** where it was an empty
+  box.
+
+### Sticky notes
+- [new] **A sticky styles its words, not its lines.** Title, font and highlight
+  apply to the words you select, or to what you type next. The highlight is a
+  pen, with the colour at the caret under it. Copy and paste between notes
+  keeps the styles.
+- [new] **The composer shows the note exactly as it lands on the board,**
+  magnified, with the words wrapping where they will. A new note starts larger,
+  at 160px square, and its type is a step smaller.
+- [new] **A sticky holds 120 characters.** The counter sits in the note's corner
+  and goes red at twenty left. Past the limit it says the note becomes a `.md`
+  file, and closing the editor makes it one, as one undo step.
+- [fix] **Select all and then paste in a sticky keeps the paste,** where the
+  text went and nothing replaced it.
+- [fix] **Switching to another window no longer closes the note you are
+  writing.**
+
+### On a phone
+- [fix] **The Android app saves its board files again.** A save failed on every
+  board from 0.404 on.
+- [fix] **`Check for updates` on the phone always answers.** It says it is
+  checking the moment you press it, says so if the check fails, and answers
+  when the update is already downloaded.
+
+### Around the board
+- [fix] **The corner marks of a selection stay visible past about 160% zoom,**
+  where they thinned down to the ring and vanished.
+
 ## From the Camera
-version: 0.415 - 0.428
+version: 0.415 - 0.438
 date: 20 September 2026
 
 - **A photograph draws on the board whatever the camera saved it as.** iPhone

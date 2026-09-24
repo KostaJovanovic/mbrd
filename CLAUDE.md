@@ -177,10 +177,13 @@ Generators, run when their source changes:
 (→ `stickers.svg`), `node tools/gen-patch-page.mjs` (→ `web/patch.html`),
 `node tools/gen-desktop-icons.mjs` (`icon.svg` → `desktop/icons/`, the `.ico`,
 `.icns` and PNG the three installers want), `node tools/gen-og.mjs`
-(`tools/og.html` → `web/assets/img/og.png`, the link-preview card). Those last
-two are the only generators that need an install, and it is `desktop/`'s: they
-go through the sharp the shell already depends on, and the preview also needs a
-local Edge or Chrome to draw the page. Their output is committed so nobody else
+(`tools/og.html` → `web/assets/img/og.png`, the link-preview card), `node
+tools/gen-screenshots.mjs` (a demo board it packs itself → the two
+`screenshot-*.png` that `manifest.json` and the JSON-LD name). Those last three
+are the only generators that need an install, and it is `desktop/`'s: they go
+through the sharp the shell already depends on, and the last two also need a
+local Edge or Chrome. The screenshots are of the real app, so they need the dev
+server up and a fresh `npm run build`. Their output is committed so nobody else
 runs them.
 
 Two more `.mjs` under `tools/` are one-shot printers and not build steps:
@@ -207,10 +210,12 @@ the push, so `node --check` and `python -m py_compile` locally are faster.
 **The typecheck leg does not reach everything, and the parse leg is why that is
 survivable.** `include` is `web/assets/js/**/*.ts` and nothing else, so
 `tools/` — the generators, and the vendored `anti-slop` plugin, which
-`.oxlintrc.json` also ignores — is outside it, as are the three `.js` files left
-under `web/assets/js`: `import/tiff-worker.js` and `optimize/media-worker.js`,
-which are classic workers and need `importScripts`, and `version.js`, which
-`save.bat` stamps. Every one of those is *parsed* by the fifth leg. Nothing is
+`.oxlintrc.json` also ignores — is outside it, as are the six `.js` files left
+under `web/assets/js`: the four classic workers, which need `importScripts`
+(`import/tiff-worker.js`, `import/heif-worker.js`, `mesh/occt-worker.js`,
+`optimize/media-worker.js`), the module worker `canvas/matte-worker.js`, and
+`version.js`, which `save.bat` stamps. Every one of those is *parsed* by the
+fifth leg, and the five workers by `tests/imports.test.js` too. Nothing is
 typechecked twice and nothing is silently excused — but "green typecheck" means
 the app's TypeScript, not the repository.
 
@@ -242,7 +247,9 @@ platform 36. `mobile/README.md` is how it fits together. What breaks silently:
   `main.ts` wires the phone through the branch it already has. A key added to
   `Bridge` in `platform/electron.ts` needs the same key there.
   `tests/mobile-bridge.test.js` holds the two in step as text, and
-  `npm run typecheck` in `mobile/` checks the types.
+  `npm run typecheck` in `mobile/` checks the types. CI runs that check with
+  the root's tsc (`npx tsc -p mobile/tsconfig.json`, no install in `mobile/`),
+  and `npm run lint` covers `mobile/bridge` and `mobile/tools`.
 - **`/_capacitor_file_/` and `/_capacitor_content_/` answer 404**
   (`MbrdWebViewClient.java`), because they would hand any page script a reader
   for every file the app can reach. Do not route them back in, and do not
@@ -301,8 +308,9 @@ included — `tests/sw.test.js` reads that list by pulling out single-quoted run
   (`web/sw.js`), and the same place in `APP_CSS_ORDER` (`tests/helpers.js`) —
   one list written three times, because **document order is the cascade** and
   `quality.css` wins on it rather than on specificity. Miss the third and
-  nothing fails: every CSS test simply stops reading that sheet. `patch.html`
-  is generated and needs no edit.
+  every CSS test stops reading that sheet, which is why
+  `tests/css-order.test.js` compares the three lists name for name and in
+  order. `patch.html` is generated and needs no edit.
 - **An id** — written in `index.html` or handed to a node at runtime by a
   module — is how the sheets address the furniture. A rename fails *silently*:
   the selector stays valid CSS and matches nothing. `tests/element-ids.test.js`
@@ -371,8 +379,9 @@ Two traps in that list, both found the hard way:
   `setOverlays()` (`notify.ts`), `setAssetNameLookup()`, `setNoteMenu()`
   (`canvas/notes.ts`). Unwired, each is a no-op, which is what keeps those
   modules loadable in a test with no browser.
-- **No module touches `document` at import time** — export an `init*()`. Three
-  are exempt and `tests/imports.test.js` names them.
+- **No module touches `document` at import time** — export an `init*()`. Seven
+  are exempt and `tests/imports.test.js` names them: `main.ts`,
+  `ui/appearance.ts` and the five workers.
 - **No module carries `@ts-nocheck`.** `tests/ts-debt.test.js` counted the
   migration to zero and is now a plain guard.
 - **Import paths are case-sensitive on the deployed host and not on Windows.**

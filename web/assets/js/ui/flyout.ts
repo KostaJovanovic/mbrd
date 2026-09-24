@@ -75,7 +75,11 @@ export function initFlyouts(commands: FlyoutCommands) {
   // One window-level pointerover (bubbles, unlike pointerenter) — checks both bar and panel.
   addEventListener('pointerover', onOver);
   // Pointer leaving the window entirely — no over fires, so close on leave.
-  addEventListener('pointerleave', () => { if (openFor) later(); });
+  // An out with nowhere to go is that leave: pointerleave does not bubble and
+  // never reaches window. Not touch, whose every lift is an out to nowhere.
+  document.addEventListener('pointerout', e => {
+    if (!e.relatedTarget && e.pointerType !== 'touch' && openFor) later();
+  });
 }
 
 function onOver(e: PointerEvent) {
@@ -91,8 +95,8 @@ function onOver(e: PointerEvent) {
   if (btn && FLYOUTS[btn.dataset.cmd!]) {
     hold();
     if (btn === openFor) return;
-    // Already open bar → swap at once (no dwell).
-    open(btn, false, openFor ? 0 : DWELL);
+    // Already open bar → swap at once (no dwell, no entrance).
+    open(btn, false, openFor ? 0 : DWELL, !!openFor);
     return;
   }
 
@@ -125,8 +129,9 @@ export function openFlyout(btn: HTMLElement): boolean {
   return true;
 }
 
-/** Open a flyout. delay=0 for keyboard/swap, DWELL for first hover. */
-function open(btn: HTMLElement, focus: boolean, delay = 0) {
+/** Open a flyout. delay=0 for keyboard/swap, DWELL for first hover; instant
+ *  for a swap, since one panel replacing another has nothing to arrive from. */
+function open(btn: HTMLElement, focus: boolean, delay = 0, instant = false) {
   clearTimeout(openTimer);
   if (delay) {
     openTimer = setTimeout(() => open(btn, focus), delay);
@@ -147,7 +152,7 @@ function open(btn: HTMLElement, focus: boolean, delay = 0) {
     bounds: { left: barBox.left, right: barBox.right },
   };
   const label = btn.querySelector('span')?.textContent?.trim() || 'Menu';
-  openAnchored(rect, FLYOUTS[btn.dataset.cmd!](cmds!), { label, focus });
+  openAnchored(rect, FLYOUTS[btn.dataset.cmd!](cmds!), { label, focus, instant });
   openFor = btn;
   btn.setAttribute('aria-expanded', 'true');
 }
@@ -252,12 +257,25 @@ function tokenHex(token: string) {
   probe.style.cssText = 'position:fixed;left:-9999px;width:0;height:0';
   probe.style.color = `var(${token})`;
   document.body.append(probe);
-  const rgb = getComputedStyle(probe).color;
+  const color = getComputedStyle(probe).color;
   probe.remove();
-  const m = rgb.match(/(\d+(?:\.\d+)?)/g);
-  if (!m || m.length < 3) return swatchHex(rgb);
+  return computedHex(color);
+}
+
+/**
+ * A computed `color` as `#rrggbb`. `rgb()` channels run 0-255, but a token
+ * mixed `in srgb` computes to `color(srgb r g b)` with channels 0-1, which
+ * read as 0-255 made the Harsh "Ink" swatch black. Any other space is left to
+ * swatchHex(), which answers SWATCH_DEFAULT.
+ */
+export function computedHex(color: string) {
+  const srgb = /^color\(\s*srgb\s/i.test(color);
+  if (!srgb && !/^rgba?\(/i.test(color)) return swatchHex(color);
+  const m = color.match(/-?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?/gi);
+  if (!m || m.length < 3) return swatchHex(color);
+  const scale = srgb ? 255 : 1;
   const hex = m.slice(0, 3)
-    .map(n => Math.max(0, Math.min(255, Math.round(Number(n)))).toString(16).padStart(2, '0'))
+    .map(n => Math.max(0, Math.min(255, Math.round(Number(n) * scale))).toString(16).padStart(2, '0'))
     .join('');
   return swatchHex('#' + hex);
 }

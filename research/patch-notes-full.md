@@ -27,8 +27,298 @@ stated at the top of that file.
 
 ## Releases
 
+## No Dead Weight
+version: 0.487 - 0.519
+date: 23 September 2026
+
+- **A day on the size of a board file and on a phone's frames.** Two faults made
+  a saved board grow without end, and six made a zoom or a pan on a phone cost
+  more than it had to. The text editor got its phone layout, its entrance and
+  its narrow-window fold.
+
+### Board files
+
+- [fix] **An append no longer writes a held picture a second time.** An asset is
+  filed as `<slug>--<hash>.<ext>`, and `unpackBoard()` drops the slug, so a card
+  with no name of its own came back with nothing to be filed under and was
+  saved as a bare hash. The append matched entries by name, took it for a new
+  picture and wrote it again: a 388 MB board opened on a phone grew to 653 MB on
+  its first save, 140 pictures twice. `heldNames` files an asset under the name
+  the file already holds it by. The same save is now a 53 KB tail.
+- [fix] **The history is kept in pieces.** `timeline/steps.jsonl` was rewritten
+  whole on every save, and each save left the previous copy as dead bytes. It
+  is now `timeline/steps-<k>.jsonl`, 500 steps a piece, numbered over the
+  ledger's whole life, and `base.json`'s new `first` counts the folded steps. A
+  new step rewrites the last piece, a fold the first. **This is a `.mbrd` schema
+  change.** Files with the single `steps.jsonl` (v0.316 to v0.464) still open.
+  A v0.464 or older build opening a newer file finds no `steps.jsonl` and shows
+  the history as stale, and the board itself opens intact.
+- [fix] **`compactDocument()` writes the file whole at quiet moments** - after a
+  minute with no edit, as the app closes or goes to the background, and on an
+  explicit Save - once a fifth of the file (4 MB or more) or 64 MB is dead.
+  Before, an append wrote whole only past half the file.
+
+### On a phone
+
+- [faster] **`#world` is a layer only for the length of a gesture.** A permanent
+  `translateZ(0)` split the board into a layer per card and per shadow twin.
+  `will-change: transform` goes on at the gesture's start, is re-pinned as the
+  zoom travels, and comes off at the settle. The shadow twins go while a
+  gesture is past the far rung, and below Full a screen-space stand-in carries
+  the grid while the view moves. Galaxy S10: zoom in 17 to 56 fps, tile-memory
+  warnings on a zoom out about 110 to under 10.
+- [fix] **A zoom out takes the shadow twins off under 90% of the raster scale,**
+  not only past the far rung. From 500% on the S10 the twins' blur left no tile
+  memory to re-pin into, and every card went for a frame around 90%. 7-14
+  frames with up to 44 tiles missing became 1-3 with 1-2, and 40-46 fps
+  became 47-54.
+- [faster] **The grain fade is written on the grain surface, not on `:root`.**
+  Every frame of a zoom through 30% to 40% restyled the page, 50-90ms a time on
+  the S10. `--iz` was also written as a rounded rung on a gesture's first
+  frame, which never matched the settle's exact value, so every pinch opened on
+  a whole-board restyle. It is written on the settling frame only. Zooming
+  around 35%: 41-46 fps to 49-55.
+- [faster] **The swap to thumbnails lands on the frame that crosses the far
+  rung,** gesture or not, and the way back still waits for the settle. Before,
+  a zoom out rastered everything from the 1280px display copies until it
+  stopped. Galaxy S22+, 100% to 25% and back: 41-61 fps with 133-175ms frames
+  became 92-99 fps with 42-58ms at worst.
+- [fix] **`discard()` releases a card before it removes it.** Chromium never
+  frees an `<img>` whose `src` is taken off after it was detached, so every
+  culled card stayed alive: on the S22+ each pan kept about 600 more DOM nodes,
+  6k to 25k in a few minutes. The order `rebuild()` and the drawer already used.
+- [faster] **The grid's dots are drawn on its canvas,** through the same
+  `lattice()` as Harsh's crosses. At Softish and Middle the lattice was up to
+  eight tiled radial gradients with `background-position` rewritten every
+  frame. Each dot matches the gradient's ink within 2%. S22+ at 120 Hz: missed
+  vsyncs a second at 100% 30-36 to 19-23, at 35% 26 to 14-16.
+- [faster] **`is-panning` no longer sets a cursor.** `cursor` is inherited, so
+  the class restyled 754 elements, 32ms, forced by the hit test of the
+  pointerdown that started the gesture. `#viewport` holds the pointer, and
+  capture shows its cursor whatever is under it.
+- [faster] **No display copy of a picture within a tenth of the ceiling.** A
+  board optimised to 1200px, at Balanced's 1152, made a copy of every
+  photograph to take 4% off its width, each session. Cropped, turned and
+  cut-out pictures are still drawn, at full size when that close.
+- [faster] **Full and Balanced show `meta.display`** until the hires swap, where
+  they made a fresh copy of every large photograph each session. Whether a copy
+  is due is read off the picture's header, and the shape pass reads the display
+  copy's header rather than decoding it. S22+, the 70-photo board at Full: 163
+  full decodes (4.2 s) at start became 12 (0.56 s), all of them the pigment
+  sampler's. The header reader moved from `import/budget.ts` to
+  `image-header.ts` in the base layer, and `budget.ts` re-exports it.
+
+### The text editor
+
+- [new] **The paper rises in from below and drops away on close,** with the
+  desk, the ribbon and the name fading round it. A board swap still closes at
+  once, and reduced motion gets a plain fade. Escape is taken at the keydown,
+  since a dialog's cancel can be refused only after a user activation.
+- [new] **The phone layout, in six passes.** The top bar carries the counts
+  and a running session's time, and a 48px close. The toolbar sits under it,
+  clear of the keyboard: every command in two rows of glyphs, a screenplay's
+  ten as two rows of five, plain text's seven as one, each group ruled off from
+  the next. The paper runs edge to edge with the desk 16px above and below. The
+  dock, its Tools sheet and the More menu came and went on the way there.
+- [new] **A narrow window folds the ribbon,** in three measured steps: the
+  gallery becomes a Style button, Vomit Mode one button with Super a glyph,
+  then the small commands lose their words and stack in pairs. Replace gets its
+  own glyph.
+- [new] **On a desk the close is the ribbon's last cell,** and the title row
+  goes. The name at the head of the sheet is a textarea and wraps.
+- [new] **A document may be untitled.** The name is empty and the kind stays in
+  `meta.ext`, so the card reads "untitled".
+- [new] **A sticky's document turns back into the sticky** once written back
+  down to fit while that editor is open. The conversion and that opening's
+  saves are taken back when nothing else was committed since, so the undo
+  history holds no document. Otherwise the swap back is a step of its own. The
+  editor's `\*` and `\_` escapes are read past when counting.
+- [fix] **The desk reserves the scrollbar's gutter** from the start, so a bar
+  arriving no longer shifts the sheet sideways.
+- The italic button is a serif lowercase i at every whimsy.
+- Vomit Mode's explanation drops its paragraph on what locks.
+
+### Around the app
+
+- [new] **The sidebar foot's version is an `<a href="patch">`,** beside a new
+  Privacy link: the home page's only hrefs to either page, since a crawler
+  follows an href and never a click handler. The title and description say
+  "free", "mood board" and where it runs. The JSON-LD names the five systems,
+  the download, the public repository and a screenshot, and its CSP hash moved
+  with it. `/privacy` carries the link-preview tags.
+- [new] **The install prompt's two screenshots exist.** `manifest.json` named
+  them and neither was ever made, so the live site answered both with a 404.
+  `tools/gen-screenshots.mjs` packs a demo board, opens it in headless Edge
+  against the dev server, and shoots the canvas and the phone Feed.
+- Internal: the cleaning simulator's leave question set a root `:has()` with a
+  `:not()` inside it, which is asked again on every DOM change. Each change
+  restyled the document, 45ms on the S10 for as long as the mode was up. A
+  class replaces it, and a test fails on a root `:has()` carrying a `:not()`.
+- Internal: every plan under `research/` carries a Status line under its title,
+  and the text editor plan moved to `old/` with all three phases built.
+- Not stamped yet, and so outside this span: 0.520 to 0.522 finish a web
+  sign-in when the host drops `.html` from the redirect page, keep a failed
+  shelf write from skipping the next one, and make STEP and IGES refuse a
+  B-spline degree past 32.
+
+## The Blank Page
+version: 0.465 - 0.486
+date: 22 September 2026
+
+- **A day on a word processor inside the viewer.** Markdown, plain text and
+  Fountain screenplays open to edit, a sticky grows into one, and Vomit Mode
+  locks what is already written.
+
+### The text editor
+
+- [new] **Phase 1, the model.** `ui/editor/model.ts` is the document as blocks
+  of runs, every edit a pure function. `ui/editor/markdown.ts` reads a file into
+  it and writes it back: a block no edit replaced goes back as the lines it
+  came from, so an untouched file keeps its bytes, and anything not modelled is
+  a raw block. The inline reading is one tokenizer, `inlineTokens()` in
+  `ui/markdown.ts`, shared with the card renderer. It learned four CommonMark
+  rules: backslash escapes, an underscore inside a word is a letter, bold
+  closes on the last two stars of a run, and a closing `#` needs a space before
+  it, so `# C#` keeps its sharp.
+- [new] **Phase 1, the view.** `ui/editor/view.ts` is a contenteditable page
+  over the model, with find and replace and a word count. A save hashes the
+  text and swaps the item's asset in place (`setItemText`), and the idle save
+  every 1.5 s and the flush on close fold into one undo step per opening
+  (`commitFolded`). Past `EDIT_MAX` the file is a text-edit ceiling, and a file
+  that is not clean UTF-8 opens read-only. **Service-worker cache:**
+  `editor.css` joins `SHELL`.
+- [new] **A sticky typed past its 120th character becomes a `.md`** and grows
+  open into the editor at the caret. A card in the note's colour flies onto
+  the sheet and turns to paper, and a hidden textarea holds the keystrokes
+  across the handoff.
+- [new] **Phase 2, Vomit Mode and Super** (`ui/editor/vomit.ts`). A session
+  moves the caret to the end and locks everything before it, and there is no
+  ending one early. `keepsLocked()` is asked of every edit the editor makes and
+  of whatever a keyboard typed, so a key, a paste, a shortcut and a phone's
+  autocorrection meet one test. The lock moves to the caret once a word is
+  finished, and Super locks the word so far 10 seconds after its last key.
+  Undo and find are off for the session.
+- [new] **Phase 3, `.fountain` screenplays** (`ui/editor/fountain.ts`). Each
+  line is one block of kind `sp` holding its element, so typing, find, undo and
+  the lock work on it unchanged. Forcing marks are taken off on reading and
+  written back only where the element needs one. A title page or a boneyard is
+  kept raw. `int. `, a name in capitals, `(`, Tab, Ctrl+Alt+1 to 8 and Ctrl+D
+  type it as a screenwriting tool does. An outline lists headings, or sections
+  and scenes, and a status bar estimates pages and scenes. `.fountain` joins
+  `TEXT_EXT` only, and the generated format catalogue does not change.
+- [new] **The look, in seven passes.** The editor took the whole window, on the
+  board's own paper and grain, with a card's ring and lifted shadow on the
+  sheet, 680 by 880 with 72px margins. The toolbar went from pills, to a Docs
+  strip, to Word's tabbed ribbon, and settled on one ribbon with no tabs and a
+  square-cornered sheet. The name on the sheet is editable and renames the
+  item, extension kept. Vomit Mode is one button with a times menu, Super and
+  an info dialog written in ASD-STE100.
+- [new] **Documents open to read, and `Edit` opens them to write.** A text read
+  in the viewer sits on a page no wider than A4 for the window's height and
+  wraps. The `ASCII art` toggle, stored as `meta.ascii`, leaves every line
+  unwrapped.
+- [new] **The editor's own right-click menu,** over the page, the ribbon and the
+  desk. Shift and right-click keeps the browser's, and a finger keeps the
+  phone's. Escape on any menu closes only the menu, not the dialog under it.
+- **Credit where it is due:** vomitdraft.com, as the inspiration for Vomit
+  Mode, in the credits fold with no licence chip, since nothing was taken
+  from it.
+- No `.mbrd` schema change and no generated-catalogue change in the editor.
+
+### Elsewhere
+
+- [fix] **A hi-res Linux wheel reads as a wheel.** Chromium on Linux splits one
+  detent into identical fractional deltas, which read as a touchpad and panned.
+  A fast run of identical fractional steps with no sideways movement turns back
+  into a zoom and gives back what it panned. `Mouse wheel` gains
+  `Always zooms, touchpad too`, and `WHEEL_MAX_STEP` drops from 400 to 120, so
+  an unfocused window's coalesced notches no longer zoom 1.9x at once.
+- [new] **`og.png` is generated** from `tools/og.html` by `tools/gen-og.mjs`,
+  in headless Edge with the app's fonts, packed to a palette PNG: 548 KB to
+  56 KB, under the size WhatsApp drops a preview at.
+- Internal: CLAUDE.md names the grime lab as a third bench, the Linux wheel plan
+  moved to `old/`, and a note says the Android storage screen needs designing.
+
+## Print Ready
+version: 0.439 - 0.464
+date: 21 September 2026
+
+- **A day on the export and on the sticky.** Save image and Save PDF ask how
+  before they draw, and a sticky styles runs of characters rather than lines.
+
+### Exporting
+
+- [new] **An options box before either export draws:** ppi with the pixel size
+  it comes to, JPEG quality 0 to 100, a margin in millimetres, and connections,
+  sheet outline, board grid and paper texture. Defaults are 300 ppi, quality
+  97, 10 mm, grid and texture off, kept for the session, apart for image and
+  PDF. A preview sits beside it, on top on a narrow screen.
+- [new] **The size is set by ppi through the board's scale,** so A4 is 2480 x
+  3508, and the PDF page is the board's real size rather than its pixel count
+  in points. Image export is JPEG from a new baseline encoder, `ui/jpeg.ts`,
+  because Blink's canvas writes 4:2:0 at every quality. It writes the ppi into
+  the JFIF header.
+- [fix] **The paper texture is the board's own tile,** laid as `base.css` lays
+  it, where the export drew a random speckle over everything.
+- [fix] **Shadows are exported.** The painter parsed only `rgba()`, and Chromium
+  computes the shadow colour as `color(srgb ...)`, so every shadow was dropped.
+  It reads `--item-shadow` and `--note-shadow` and draws them in one pass under
+  the cards. Tilted cards are painted upright at twice the size and set down
+  turned, so a photo and its caption plate share one edge. `Card tilt` and
+  `Shadows` join the box, each shown only where the look has one.
+- [fix] **The title card gets its own painter,** where it fell through to the
+  generic one and exported as an empty box.
+- Internal: a plan for an export drawn from the board's own cards, since the
+  painted export has fallen too far behind the card stylesheets.
+
+### Sticky notes
+
+- [new] **Title, face, size and highlight belong to runs of characters.** **This
+  is a `.mbrd` schema addition:** blocks in `meta.rich` may carry `runs`. The old
+  block fields are still written from them, so older builds show every word.
+  Every change to the shape of the lines goes through the model, which fixes
+  Ctrl+A then Ctrl+V losing the paste. The size buttons went again the same
+  night, the highlight button became a pen, and the face button reads
+  "Font: Sheet".
+- [new] **The composer lays the note out at its board width and magnifies it,**
+  2x for a default note and at most 2.25x. New notes start at 160px. Board
+  type stepped down twice, to a title of 0.76 of `--t-title` and a 13px body.
+  The composer tilts at Softish only.
+- [new] **A sticky holds 120 characters,** down from 240 earlier the same night.
+  Past it the counter says the note becomes a `.md`, and closing the editor
+  swaps it for that document in place, as one undo step. Stored notes keep the
+  512 ceiling, so older ones load whole. The counter sits in the sheet's
+  bottom-right padding.
+- [fix] Switching to another window no longer closes the editor.
+
+### On a phone
+
+- [fix] **Board files write on Android again.** `MbrdNames.plainName()` used the
+  `(?U)` flag, which the desktop JVM accepts and Android's ICU engine refuses,
+  so every board write since v0.404 threw. The JVM unit tests passed for the
+  same reason. `tests/android-regex.test.js` fails on that syntax now.
+- [fix] **`Check for updates` answers.** `main.ts` dropped every repeat of a
+  state and version, meant only for a download's progress, so a press when the
+  update was already ready closed the panel and said nothing. Only
+  "downloading" is deduplicated now, and the page says it is checking at the
+  press and says a failed check as an error.
+- Internal: the phone build installs into the current profile only. A debug APK
+  left in a secondary profile blocked the release APK everywhere.
+
+### Elsewhere
+
+- [fix] **Selection corners stay heavier than the ring when zoomed in.** A border
+  width floors to whole device pixels before the zoom transform, so past about
+  160% both floored to 1px and the corners vanished.
+- [fix] Settings folds keep a hovered row whole while they slide, and scroll with
+  the Paper rows as they open.
+- Internal: the desktop build retries a failed download three times, after a 504
+  on the NSIS kit failed v0.448's Windows job. The cleaning simulator's card
+  keeps its second line while selected.
+- Internal: a plan for a Markdown editor in the viewer, built the next night.
+
 ## From the Camera
-version: 0.415 - 0.428
+version: 0.415 - 0.438
 date: 20 September 2026
 
 - **A day on the photographs the browser will not draw, and on how a release is
@@ -123,6 +413,15 @@ date: 20 September 2026
   capture harness taken back out of the tree.
 - Internal: the cleaning simulator gained its sustained loops
   (`web/assets/audio/loop-at-*.opus`) and another pass over its card's face.
+  Late that night it learned a finger: the spa track loops on its own 105.70 s
+  period, the tray lights the tool in hand rather than drawing it over the
+  board, the washer's gauge lies above the point and fades once the tank is
+  full, a card finishes under a standing jet, and the top row is one height.
+  Firefox's refused pointer release and Chrome's second pinch finger landing on
+  `#viewport` both stopped leaving the mode mid-pan.
+- Internal: the anti-slop lint refused an empty-object spread in
+  `remapRecorded()` and failed CI on v0.437, and the recorded item is built in
+  statements.
 
 ## Steady Hands
 version: 0.413 - 0.414

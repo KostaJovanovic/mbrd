@@ -1,7 +1,10 @@
 {
   "name": "mbrd - infinite moodboard",
   "short_name": "mbrd",
-  "description": "An infinite freeform board. Drop in images, video, audio, text or anything else and place it anywhere. Runs entirely in your browser; boards save as a single .mbrd file.",
+  "description": "A free infinite mood board. Drop in images, video, audio, text or anything else and place it anywhere. No account and no server: boards save as a single .mbrd file, and it works offline.",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["design", "productivity", "graphics"],
   "id": "/",
   "start_url": "./",
   "scope": "./",

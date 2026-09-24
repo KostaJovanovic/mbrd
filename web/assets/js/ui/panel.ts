@@ -276,23 +276,29 @@ function openAndShut(details: HTMLDetailsElement, summary: HTMLElement) {
     if (body === details) return;
     e.preventDefault();
 
-    running?.cancel();
     const opening = !(target ?? details.open);
     target = opening;
+    details.classList.toggle('is-closing', !opening);
+    // A press mid-flight turns the movement round from where it has got to.
+    // Cancelling it snapped the box to its natural height and the new one then
+    // started from an end, so the fold jumped before it moved. `open` is still
+    // set during a close, so a close turned into an open needs nothing else.
+    if (running) { running.reverse(); return; }
     if (opening) details.open = true;
 
     const anim = slideBox(body, opening);
     running = anim;
 
     anim.finished.then(() => {
-      if (running !== anim) return;   // a newer press owns the fold now
+      if (running !== anim) return;
       running = null;
+      // Where it ended up, which a reverse may have changed since it started.
+      const opened = target;
       target = null;
       settleBox(body, anim);
       details.classList.remove('is-closing');
-      if (!opening) details.open = false;
-    }, () => {});   // cancelled mid-flight by the press that replaced it
-    details.classList.toggle('is-closing', !opening);
+      if (!opened) details.open = false;
+    }, () => {});
   });
 }
 
@@ -396,6 +402,9 @@ function paintReveal(r: Reveal, shown: boolean) {
   if (r.shown === shown) return;
   const first = r.shown === null;
   r.shown = shown;
+  // Turned round mid-flight from where it has got to, as a fold is - see
+  // openAndShut(). The box is still unhidden during a close.
+  if (r.running && r.box.isConnected) { r.running.reverse(); return; }
   r.running?.cancel();
   r.running = null;
   // The first paint is the panel arriving, not a change to watch.
@@ -408,7 +417,8 @@ function paintReveal(r: Reveal, shown: boolean) {
     if (r.running !== anim) return;   // a newer turn owns the box now
     r.running = null;
     settleBox(r.box, anim);
-    if (!shown) r.box.hidden = true;
+    // r.shown, not `shown`: a reverse may have changed where it was going.
+    if (!r.shown) r.box.hidden = true;
   }, () => {});   // cancelled mid-flight by the change that replaced it
 }
 

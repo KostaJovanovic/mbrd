@@ -17,17 +17,24 @@ const MAX_STILL = 640;
  *  is the behaviour this module had before it asked. */
 type ZoomSource = Pick<Viewport, 'zoom' | 'onChange'> & Partial<Pick<Viewport, 'moving'>>;
 
-/** Twin <img> with its current blob URL. URL tracked on the node so
- * releaseStills() can revoke it — blob URLs outlive the element otherwise. */
-type StillImage = HTMLImageElement & { _stillUrl?: string };
+/** Twin <img> with its current blob URL, and the one still loading. Tracked on
+ * the node so releaseStills() can revoke them — blob URLs outlive the element
+ * otherwise. */
+type StillImage = HTMLImageElement & { _stillUrl?: string, _nextUrl?: string };
+
+/** Twins whose card was thrown away while a frame was being encoded. */
+const released = new WeakSet<StillImage>();
 
 /** Revoke blob URLs and reset all frozen twins inside `el`. Called on discard,
  * not on cull (culled nodes keep their frame for remount). */
 export function releaseStills(el: Element): void {
   for (const twin of el.querySelectorAll<StillImage>('img.still')) {
     if (twin._stillUrl) URL.revokeObjectURL(twin._stillUrl);
+    if (twin._nextUrl) URL.revokeObjectURL(twin._nextUrl);
     twin._stillUrl = undefined;
+    twin._nextUrl = undefined;
     twin.classList.remove('is-ready');
+    released.add(twin);
   }
 }
 
@@ -74,11 +81,19 @@ export function initStills(world: HTMLElement, vp: ZoomSource): void {
       // to one rAF sweep per frame — childElementCount cannot detect set changes.
       sweep = requestAnimationFrame(() => { sweep = 0; capture(false); });
     }
-    // Forced toggles, so a frame on the same side of both writes nothing. The
-    // rung waits for the view to stop, as the viewport's own rungs do: it swaps
-    // every photograph on the board to its thumbnail, a whole-board restyle (95ms
-    // on a Galaxy S10) landing on whichever frame of a pinch crossed it.
-    if (still) world.classList.toggle('is-stilled', far);
+    // Forced toggles, so a frame on the same side of both writes nothing.
+    //
+    // Towards the thumbnails at once, even mid-gesture; back to the display
+    // copies only once the view stops. A zoom-out is what crosses the rung
+    // going far, and everything it brings into view - and all of it again at
+    // each re-pin (viewport.ts's _pin) - is rastered from whatever the cards
+    // show: every card's 1280px display copy, decoded and shrunk, if the swap
+    // waits. On a Galaxy S22+ that was three to five frames of 60-175ms around
+    // 25%, and swapping on the crossing frame leaves 25-50ms at worst. The swap
+    // itself restyles the board, about 14ms there (95ms on a Galaxy S10 once,
+    // under a :has() rule since removed). The other way stays held: the display
+    // copies are the expensive raster, and landing them mid-gesture is that hitch.
+    if (still || far) world.classList.toggle('is-stilled', far);
     world.classList.toggle('is-held', held);
   };
 
@@ -135,14 +150,20 @@ function shoot(img: HTMLImageElement, twin: StillImage) {
     return;
   }
   surfaceToBlob(face, 'image/webp', 0.8).then(blob => {
-    if (!blob) return;
+    // A card discarded during the encode already ran releaseStills(), so a URL
+    // made now would be revoked by nothing.
+    if (!blob || released.has(twin)) return;
     const url = URL.createObjectURL(blob);
     // Wait for load before showing — avoids a blank flash. Revoke old URL after.
     twin.addEventListener('load', () => {
       twin.classList.add('is-ready');
       if (twin._stillUrl) URL.revokeObjectURL(twin._stillUrl);
       twin._stillUrl = url;
+      if (twin._nextUrl === url) twin._nextUrl = undefined;
     }, { once: true });
+    // Until it loads, the only record of it: a release in that window takes
+    // the src away, so no load comes to file it as _stillUrl.
+    twin._nextUrl = url;
     twin.src = url;
   }).catch(() => {
     // Tainted canvas — let the GIF keep playing rather than show blank.

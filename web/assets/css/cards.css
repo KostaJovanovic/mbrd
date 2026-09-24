@@ -457,7 +457,8 @@
 .note-toolbar .ntb-ico-va-middle { background-position: center 6px, center 10px; }
 .note-toolbar .ntb-ico-va-bottom { background-position: center 11px, center 15px; }
 
-/* How much room is left, while a note is being written. On the sheet, in the
+/* How much room is left, in the last ten characters of a note being written
+   (refreshCount() in canvas/notes.ts hides it before that). On the sheet, in the
    bottom-right corner of its padding: the text column ends where the padding
    starts (growNote() keeps it so), so the two never overlap, and absolute
    positioning keeps it out of noteHeight()'s measurement. Sized off the pad
@@ -486,7 +487,7 @@
 /* Running out. The colour carries it and the weight backs the colour up, which
    matters on a board wearing a palette where --danger is not far from --ink-2.
    Weight rather than size: this sits under a sheet that grows as it is written,
-   and a counter that changed size at twenty characters left would move the sheet
+   and a counter that changed size as it went red would move the sheet
    under the caret. */
 .note-count.is-low { color: var(--danger); font-weight: 600; }
 
@@ -636,6 +637,224 @@
   translate: -50% -50%;
   pointer-events: none;
   z-index: 2;
+}
+
+/* ---- An archive or a folder (packCard() in canvas/renderers.ts) ----------
+   Drawn as a folder: a tab standing up off the top-left of a front panel, the
+   name and the button on the panel. The item keeps its rectangle for hitting,
+   marquee and the ring - a sticker's bargain - and gives up everything that
+   paints that rectangle: its paper, the hover hairline, the plate, and the
+   shadow twin (NO_TWIN in canvas/items.ts). The shadow is a drop-shadow on the
+   panel instead, so it follows the tab.
+
+   Stylised rather than a card with a tab stuck on: two flat panels and no
+   hairline anywhere, the way a folder icon is drawn. The back, with its tab, is
+   the darker; the front stands a little lower and carries the lettering. Both
+   are the paper leaned toward the accent rather than a manila of their own, so
+   the folder is in the board's pigments. An archive's tab is a zip.
+
+   The panels are elements (packCard() builds them) rather than pseudos, because
+   the lettering has to paint over both and a pseudo behind it would have to
+   escape the card's own background to get there. */
+:is(.item[data-type="archive"], .item[data-type="folder"], .pack-card) {
+  --pack-tab: 20px;
+  /* How far the front stands below the back's shoulder. */
+  --pack-lip: 9px;
+}
+.item:is([data-type="archive"], [data-type="folder"]) {
+  background: transparent;
+  --item-shadow: none;
+  box-shadow: none;
+}
+.item:is([data-type="archive"], [data-type="folder"]) .item-body { overflow: visible; }
+.item:is([data-type="archive"], [data-type="folder"]):not(.is-editing) .item-bar { display: none; }
+
+.pack-card {
+  --pack-front: color-mix(in srgb, var(--accent) 16%, var(--paper-card));
+  --pack-back: color-mix(in srgb, var(--accent) 42%, var(--paper-card));
+  --pack-zip: color-mix(in srgb, var(--ink) 40%, var(--pack-back));
+  /* A folder's corners, not the card's: soft at every whimsy tier, since a
+     square-cornered folder stops reading as one. */
+  --pack-r: 10px;
+  --card-pad-y: 14px;
+  padding-top: calc(var(--pack-tab) + var(--pack-lip) + var(--card-pad-y));
+  background: none;
+  box-shadow: none;
+  /* Visible, so the drop-shadow is not cut off at the box. The name is clamped
+     below instead, and .item-body still clips at the item. */
+  overflow: visible;
+  filter: drop-shadow(0 1px 1px color-mix(in srgb, var(--ink) 14%, transparent))
+          drop-shadow(0 4px 8px color-mix(in srgb, var(--ink) 12%, transparent));
+}
+/* No bookplate rule: it is what made this a card. */
+.pack-card::after { content: none; }
+.pack-card > * { position: relative; }
+.pack-card > :is(.pack-back, .pack-front) {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: var(--pack-r);
+  pointer-events: none;
+}
+/* The back, and the tab standing up off its left shoulder: the tab overlaps
+   the panel by its radius so the two are one shape, and its right edge is
+   cut on a slope, as a folder's is. */
+.pack-back {
+  top: var(--pack-tab);
+  background: var(--pack-back);
+}
+.pack-back::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: calc(-1 * var(--pack-tab));
+  width: 44%;
+  height: calc(var(--pack-tab) + var(--pack-r));
+  border-radius: var(--pack-r) 0 0 0;
+  clip-path: polygon(0 0, calc(100% - var(--pack-tab)) 0, 100% var(--pack-tab), 100% 100%, 0 100%);
+  background: var(--pack-back);
+}
+/* The zip: teeth along the tab, alternating either side of its middle. */
+.pack-archive .pack-back::before {
+  --teeth: calc(100% - var(--pack-tab) - 20px);
+  /* Held in a property so Harsh can lay its edges over the same zip. */
+  --zip:
+    repeating-linear-gradient(90deg,
+      var(--pack-zip) 0 3px, transparent 3px 6px) 12px 6px / var(--teeth) 4px no-repeat,
+    repeating-linear-gradient(90deg,
+      transparent 0 3px, var(--pack-zip) 3px 6px) 12px 10px / var(--teeth) 4px no-repeat;
+  background: var(--zip), var(--pack-back);
+}
+/* The front, lower than the back's shoulder, parted from it by a shadow
+   alone. A highlight along its top edge read as a white line. */
+.pack-front {
+  top: calc(var(--pack-tab) + var(--pack-lip));
+  background: var(--pack-front);
+  box-shadow: 0 -1px 2px color-mix(in srgb, var(--ink) 10%, transparent);
+}
+.pack-card .card-name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+.pack-card .card-unpack {
+  border-color: transparent;
+  background: var(--paper-card);
+}
+/* At the index rung the folder stays and its lettering goes: the body is not
+   hidden for these (item-chrome.css), and the head is set on the front. */
+#world.zoom-far .pack-card > :not(.pack-back, .pack-front) { visibility: hidden; }
+#world.zoom-far .item:is([data-type="archive"], [data-type="folder"]) > .far-head {
+  top: calc(var(--pack-tab) + var(--pack-lip));
+}
+/* The far rung's edge rule does not reach these, but the front's own lip
+   is detail the rung takes off everything else. */
+#world.zoom-far .pack-front { box-shadow: none; }
+
+/* The folder along the whimsy axis. Middle is the flat icon above. Softish
+   is the one on a desk: rounder, a tab with no cut, and a sheet of paper
+   standing up out of it. Harsh is drawn, not shaded - ink hairlines round
+   both panels, square corners, no shadow, the back in the accent. */
+:root[data-whimsy="0"] .pack-card {
+  --pack-r: 16px;
+  --pack-lip: 11px;
+  filter: drop-shadow(0 2px 2px color-mix(in srgb, var(--ink) 12%, transparent))
+          drop-shadow(0 8px 14px color-mix(in srgb, var(--ink) 10%, transparent));
+}
+:root[data-whimsy="0"] .pack-card {
+  /* The tab's rounded shoulder and the fillet under it share its 20px. */
+  --pack-tab-r: 10px;
+  --pack-fillet: 8px;
+}
+:root[data-whimsy="0"] .pack-back::before {
+  width: 40%;
+  border-radius: var(--pack-r) var(--pack-tab-r) 0 0;
+  clip-path: none;
+}
+/* The fillet: the inside corner where the tab's edge meets the back's top,
+   rounded like every other corner of it. Drawn on the card's own ::before,
+   the one free pseudo, in the back's colour just right of the tab. */
+:root[data-whimsy="0"] .pack-card::before {
+  content: '';
+  position: absolute;
+  left: 40%;
+  top: calc(var(--pack-tab) - var(--pack-fillet));
+  width: var(--pack-fillet);
+  height: var(--pack-fillet);
+  background: radial-gradient(circle at 100% 0,
+    transparent calc(var(--pack-fillet) - 0.5px), var(--pack-back) var(--pack-fillet));
+  pointer-events: none;
+}
+/* The sheet: between the panels, so it is drawn on the back and the front
+   covers its foot. Right of the tab, so an archive's zip stays in view. */
+:root[data-whimsy="0"] .pack-back::after {
+  content: '';
+  position: absolute;
+  left: 44%;
+  right: 7%;
+  top: -8px;
+  height: 40%;
+  border-radius: 3px 3px 0 0;
+  background: var(--paper-card);
+  box-shadow: 0 0 0 var(--board-hairline) color-mix(in srgb, var(--ink) 12%, transparent);
+  rotate: 3deg;
+}
+:root[data-whimsy="0"] .pack-front {
+  box-shadow: 0 -2px 5px color-mix(in srgb, var(--ink) 12%, transparent);
+}
+
+:root[data-whimsy="2"] .pack-card {
+  --pack-r: 0px;
+  --pack-back: color-mix(in srgb, var(--accent) 70%, var(--paper-card));
+  --pack-front: var(--paper-card);
+  --pack-zip: var(--paper-card);
+  filter: none;
+}
+/* Every line here is an inset shadow or a gradient, never a border: Firefox
+   rounds a border up to whole device pixels under the board's zoom, and a
+   bordered tab came out heavier than the lines it meets. The tab's are
+   gradients: an offset inset shadow left a faint line along its open foot.
+
+   No line is hidden under anything, either. The back's top edge starts where
+   the tab ends rather than running under it: a tab laid over a line to hide
+   it left a sub-pixel seam where the line showed through. With nothing under
+   it, the tab reaches two hairlines into the back, fill over the same fill,
+   because two fills that only abut leave a seam of their own. */
+:root[data-whimsy="2"] .pack-card {
+  --h: var(--board-hairline);
+}
+:root[data-whimsy="2"] .pack-front {
+  box-shadow: inset 0 0 0 var(--h) var(--ink);
+}
+:root[data-whimsy="2"] .pack-back {
+  background:
+    linear-gradient(var(--ink), var(--ink)) right top / calc(60% + var(--h)) var(--h) no-repeat,
+    var(--pack-back);
+  box-shadow: inset var(--h) 0 0 var(--ink),
+              inset calc(-1 * var(--h)) 0 0 var(--ink),
+              inset 0 calc(-1 * var(--h)) 0 var(--ink);
+}
+/* A plain box of a tab, open at its foot. The left edge runs the tab's
+   whole depth, over the back's own left edge; the right one stops a hairline
+   short, level with the back's top edge, so it does not poke through it. */
+:root[data-whimsy="2"] .pack-back::before {
+  --edges:
+    linear-gradient(var(--ink), var(--ink)) left top / 100% var(--h) no-repeat,
+    linear-gradient(var(--ink), var(--ink)) left top / var(--h) 100% no-repeat,
+    linear-gradient(var(--ink), var(--ink)) right top / var(--h) calc(100% - var(--h)) no-repeat;
+  width: 40%;
+  height: calc(var(--pack-tab) + var(--h) * 2);
+  clip-path: none;
+  background: var(--edges), var(--pack-back);
+}
+:root[data-whimsy="2"] .pack-archive .pack-back::before {
+  background: var(--edges), var(--zip), var(--pack-back);
+}
+:root[data-whimsy="2"] .pack-card .card-unpack {
+  border-color: var(--ink);
+  border-radius: 0;
 }
 
 /* ---- A model on a card (canvas/model.ts) ---------------------------------

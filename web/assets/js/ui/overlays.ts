@@ -4,6 +4,7 @@
 // IDs are read lazily — nothing touches document at import time.
 
 import { setOverlays } from '../notify.ts';
+import { fastMs, reducedMotion } from '../canvas/viewport.ts';
 import type { BusyJob, BusyOptions, ToastAction, ToastKind } from '../notify.ts';
 
 // ---------------------------------------------------------------------------
@@ -28,16 +29,44 @@ export function toast(msg: string, kind: ToastKind = '', action?: ToastAction): 
     btn.type = 'button';
     btn.className = 'toast-act';
     btn.textContent = action.label;
-    btn.addEventListener('click', () => { line.remove(); action.run(); });
+    btn.addEventListener('click', () => { restack(host, () => line.remove()); action.run(); });
     line.append(btn);
   }
-  host.append(line);
-  while (host.children.length > TOAST_MAX && host.firstChild) host.firstChild.remove();
+  restack(host, () => host.append(line));
+  // Past the cap the oldest fade as an expiring line does, rather than vanish.
+  const live = host.querySelectorAll<HTMLElement>('.toast-line:not(.is-going)');
+  for (let i = 0; i < live.length - TOAST_MAX; i++) retire(host, live[i]);
   // A toast with a way back stays as long as an error, to leave time to press it.
-  setTimeout(() => {
-    line.classList.add('is-going');
-    setTimeout(() => line.remove(), TOAST_FADE_MS);
-  }, kind === 'error' || action ? 6000 : 2600);
+  setTimeout(() => retire(host, line), kind === 'error' || action ? 6000 : 2600);
+}
+
+/** Fade a line out, then take it away with the stack closing over it. */
+function retire(host: HTMLElement, line: HTMLElement): void {
+  if (line.classList.contains('is-going')) return;
+  line.classList.add('is-going');
+  setTimeout(() => restack(host, () => line.remove()), TOAST_FADE_MS);
+}
+
+/**
+ * Change the stack and let the lines that stay move to their new places
+ * rather than jump there. The column is anchored at the foot, so every
+ * arrival shoved the others up by a line in one frame. Measured before and
+ * after, then played back as a `translate` - the property, so it composes with
+ * the line's own tilt and its `rise` entrance, both on `transform`.
+ */
+function restack(host: HTMLElement, change: () => void): void {
+  // SAFETY: #toast holds only the .toast-line divs toast() appends.
+  const lines = [...host.children] as HTMLElement[];
+  const before = lines.map(el => el.getBoundingClientRect().top);
+  change();
+  if (reducedMotion() || typeof host.animate !== 'function') return;
+  const easing = getComputedStyle(document.documentElement).getPropertyValue('--ease').trim() || 'ease-out';
+  lines.forEach((el, i) => {
+    if (!el.isConnected) return;
+    const dy = before[i] - el.getBoundingClientRect().top;
+    if (Math.abs(dy) < 0.5) return;
+    el.animate([{ translate: `0 ${dy}px` }, { translate: '0 0' }], { duration: fastMs(), easing });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -122,7 +151,8 @@ function busyClose(): void {
   const node = document.getElementById('busy');
   if (!node) return;
   node.classList.remove('is-up');
-  // Hidden after exit animation finishes, not just made transparent.
+  // Hidden after exit animation finishes, not just made transparent. The exit
+  // is --dur-fast (status.css), 190ms at the slowest tier.
   busyHideTimer = setTimeout(() => { if (!busyOpen) node.hidden = true; }, 260);
 }
 

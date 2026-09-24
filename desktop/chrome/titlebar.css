@@ -193,20 +193,43 @@ body {
 /* ---- the menu panel, when it is the whole window (panel.html) ---- */
 
 :root.panel-window body { color: var(--ink); }
+/* The window is transparent and larger than the panel by this much, so the
+   shadow is drawn here: the one Windows casts round a window is an app window's,
+   far too heavy for a menu. No room above, where the panel meets the bar. */
+:root.panel-window {
+  --panel-side: 12px;
+  --panel-foot: 20px;
+}
+:root.panel-window,
+:root.panel-window body { background: transparent; }
 /* Its natural size, always, never stretched to the window: main sizes the
    window from this box, so a box sized from the window would report the window
-   back. A frameless window casts no shadow outside itself, so the rule carries
-   the edge alone. */
+   back. */
 #panel {
   position: absolute;
   top: 0;
-  left: 0;
+  left: var(--panel-side);
   box-sizing: border-box;
   width: max-content;
   min-width: 200px;
   padding: 4px 0;
   background: var(--paper-card);
   border: var(--hairline) solid var(--rule-2);
+  box-shadow: 0 6px 16px -8px color-mix(in srgb, var(--ink) 30%, transparent);
+}
+/* It drops out from under the bar, eased a few pixels into place, so it reads
+   as coming from its title: the window's top edge cuts off what is still above
+   it. Never a scale - the list must keep the size it reported. */
+#panel.is-opening { animation: panel-drop var(--dur-fast) var(--ease); }
+@keyframes panel-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  #panel.is-opening { animation-name: panel-fade; }
+  @keyframes panel-fade { from { opacity: 0; } }
 }
 .panel-item {
   appearance: none;

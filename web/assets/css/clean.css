@@ -1165,7 +1165,7 @@
   transform: scale(var(--btn-press));
   background: var(--paper-3);
   /* Faster curve on press - the hover's spring is too slow for a click. */
-  transition: transform var(--dur-fast) var(--ease-in), background var(--dur-fast) var(--ease);
+  transition: transform var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
 }
 
 /* The close glyph is one of the app's own icons and is drawn as they are. */
@@ -1367,7 +1367,7 @@
   background: var(--accent-deep);
   color: var(--accent-fg);
   transform: scale(var(--btn-press));
-  transition: transform var(--dur-fast) var(--ease-in), background var(--dur-fast) var(--ease);
+  transition: transform var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
 }
 
 /* The bin, gone for good at the end. Hidden it is still a zero-width slot a

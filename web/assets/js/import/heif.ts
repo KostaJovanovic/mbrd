@@ -156,6 +156,9 @@ function run(bytes: ArrayBuffer): Promise<Reply> {
     const timer = setTimeout(() => {
       waiting.delete(id);
       reject(new Error('the decoder did not answer'));
+      // The worker is stuck, not slow, and every later job queues behind it:
+      // end it, and let the next file spawn a fresh one.
+      stop(w);
     }, DECODE_MS);
     waiting.set(id, msg => {
       clearTimeout(timer);
@@ -178,13 +181,16 @@ function ensureWorker(): Worker {
     waiting.delete(e.data.id);
     done(e.data);
   };
-  w.onerror = () => {
-    for (const [id, done] of waiting) { waiting.delete(id); done({ id, error: 'the decoder stopped' }); }
-    if (worker === w) worker = null;
-    w.terminate();
-  };
+  w.onerror = () => stop(w);
   worker = w;
   return w;
+}
+
+/** End a worker that died or hung, and fail every job that was waiting on it. */
+function stop(w: Worker) {
+  for (const [id, done] of waiting) { waiting.delete(id); done({ id, error: 'the decoder stopped' }); }
+  if (worker === w) worker = null;
+  w.terminate();
 }
 
 /**
@@ -354,11 +360,17 @@ export function readPlan(b: Uint8Array): Plan | null {
   // is. See layout(): the frame's is not one.
   let cellW = 0;
   let cellH = 0;
+  // Bytes the whole grid may gather, and every one of them is decoded. Honest
+  // cells are distinct ranges of this file, so together they fit in it. A grid
+  // that names one tile a thousand times, or a tile whose extents overlap, asks
+  // for far more - 1.16 GB out of a 19 KB file - and is left to libheif.
+  let room = b.length;
   for (const id of cells) {
     const tile = items.get(id);
     if (!tile || tile.type !== 'hvc1') return null;
-    const data = payload(b, tile, idat);
+    const data = payload(b, tile, idat, room);
     if (!data) return null;
+    room -= data.length;
     if (!hvcC) {
       const cfg = props(tile, 'hvcC');
       if (!cfg) return null;
@@ -396,18 +408,20 @@ function transform(
  * Every extent is turned into an absolute range and checked against the pool it
  * names before a single byte is copied - an item pointing into an idat box that
  * is not there, or past the end of either pool, is an item this has none of.
+ * `room` is what is left of the caller's own total, checked before the copy.
  */
-function payload(b: Uint8Array, it: Item, idat: Box | null): Uint8Array | null {
+function payload(b: Uint8Array, it: Item, idat: Box | null, room = MAX_ITEM_BYTES): Uint8Array | null {
   if (!it.extents.length) return null;
   const ranges: { at: number, len: number }[] = [];
   let total = 0;
+  const most = Math.min(MAX_ITEM_BYTES, room);
   for (const e of it.extents) {
     const base = e.idat ? idat?.body : 0;
     const limit = e.idat ? idat?.end : b.length;
     if (base === undefined || limit === undefined) return null;
     if (e.off < 0 || e.len <= 0 || base + e.off + e.len > limit) return null;
     total += e.len;
-    if (total > MAX_ITEM_BYTES) return null;
+    if (total > most) return null;
     ranges.push({ at: base + e.off, len: e.len });
   }
   // The common case is one extent, which needs no copy at all.

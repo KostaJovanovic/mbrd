@@ -47,8 +47,10 @@ function channel(): ByteChannel {
       let ack: Ack = {};
       try {
         const parsed: unknown = JSON.parse(event.data);
-        // SAFETY: a non-null object, whose fields every reader checks.
-        if (parsed && typeof parsed === 'object') ack = parsed as Ack;
+        if (parsed && typeof parsed === 'object') {
+          // SAFETY: a non-null object, whose fields every reader checks.
+          ack = parsed as Ack;
+        }
       } catch {
         // A garbled ack is a failed message, which the reject below reports.
       }

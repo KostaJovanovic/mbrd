@@ -6,6 +6,7 @@ import { getAsset, assetURL } from '../storage/assets.ts';
 import { loadMatte, saveMatte, forgetMatte } from '../storage/matte-cache.ts';
 import { quality } from '../quality.ts';
 import { DISPLAY_SIDE } from '../optimize/picture.ts';
+import { blobDimensions } from '../image-header.ts';
 import { cutout, MODEL_NAME, ORT_VERSION } from './matte.ts';
 import { surface, surfaceToBlob, type Surface } from './surface.ts';
 
@@ -23,6 +24,24 @@ export const bakedServes = () => displayMax() <= DISPLAY_SIDE;
 
 /** The long edge of the copy a plain photo shows, for canvas/hires.ts. */
 export const copyEdge = () => Math.max(DISPLAY_SIDE, displayMax());
+
+/**
+ * How far a copy has to shrink its source to be worth making.
+ *
+ * A copy is a decode, a resize and a WebP encode, redone at every start (only
+ * cut-outs are kept), and it loses a little to the encode. Pictures optimised
+ * to MAX_SIDE (1200) under Balanced's 1152 were the case that found this: a
+ * copy of every photograph on the board to take 4% off its width, the queue
+ * busy for the first minute of every session, and each card re-rastered as its
+ * copy landed. Under a tenth smaller, the source is shown as it is.
+ */
+const WORTH = 0.9;
+
+/** The scale a copy of a picture `long` px on its long edge is drawn at; 1 for none. */
+export function copyScale(long: number, max = displayMax()) {
+  const scale = Math.min(1, max / long);
+  return scale > WORTH ? 1 : scale;
+}
 const QUALITY = 0.82;
 
 // Crop is baked into the copy so object-fit keeps working without knowing crops exist.
@@ -55,6 +74,11 @@ let queue: Promise<unknown> = Promise.resolve();
 // Bumped by clearDisplay(); stale jobs check this and decline to publish.
 let epoch = 0;
 
+// A job's right to publish: the epoch it started in, and whether
+// forgetDisplay() has since purged its hash.
+type Ticket = { epoch: number, forgotten: boolean };
+const tickets = new Map<string, Ticket>();
+
 // Synchronous: returns the URL if the copy exists, else null.
 export function displayURLReady(
   hash: string, crop: Crop = null, rot: Turn = null, matte: Matte = false,
@@ -62,32 +86,51 @@ export function displayURLReady(
   return cache.get(keyFor(hash, crop, rot, matte))?.url || null;
 }
 
-// Idempotent: repeated calls share one job. Null if the asset is gone.
+/**
+ * Idempotent: repeated calls share one job. Null if the asset is gone.
+ *
+ * `baked` is the board's own DISPLAY_SIDE copy of a plain picture
+ * (meta.display). Above Soft a copy the dial asks for is made fresh every
+ * session, so where one would be made at all, the baked copy is shown in its
+ * place: a little softer than the dial's edge until the swap to the original
+ * (canvas/hires.ts), and no decode, resize and encode per photo per start.
+ */
 export function ensureDisplay(
-  hash: string, crop: Crop = null, rot: Turn = null, matte: Matte = false,
+  hash: string, crop: Crop = null, rot: Turn = null, matte: Matte = false, baked = '',
 ): Promise<string | null> {
   const key = keyFor(hash, crop, rot, matte);
   const done = cache.get(key);
   if (done) return Promise.resolve(done.url);
   const inFlight = pending.get(key);
   if (inFlight) return inFlight;
-  const mine = epoch;
-  const job = start(hash, crop, rot, matte, mine);
+  const mine: Ticket = { epoch, forgotten: false };
+  const job = start(hash, crop, rot, matte, mine, derived(crop, rot, matte) ? '' : baked);
   // Deleted by identity so a post-clear settle does not remove a newer job's entry.
   const tracked: Promise<string | null> = job.finally(() => {
     if (pending.get(key) === tracked) pending.delete(key);
+    if (tickets.get(key) === mine) tickets.delete(key);
   });
   pending.set(key, tracked);
+  tickets.set(key, mine);
   return tracked;
 }
 
 // Cached cut-outs bypass the queue (already card-sized). Everything else queues.
 async function start(
-  hash: string, crop: Crop, rot: Turn, matte: Matte, mine: number,
+  hash: string, crop: Crop, rot: Turn, matte: Matte, mine: Ticket, baked: string,
 ): Promise<string | null> {
   if (matte) {
     const kept = await loadMatte(hash, matteVariant(hash, crop, rot));
     if (kept) return publish(hash, crop, rot, matte, kept, mine);
+  }
+  // A plain picture needs only its header to learn whether a copy is due, and
+  // the answer never waits behind somebody else's decode.
+  if (!derived(crop, rot, matte)) {
+    const a = getAsset(hash);
+    if (!a) return null;
+    const dims = a.blob ? await blobDimensions(a.blob) : null;
+    if (dims && copyScale(Math.max(dims.w, dims.h)) === 1) return publish(hash, crop, rot, matte, null, mine);
+    if (dims && baked && getAsset(baked)) return publish(hash, crop, rot, matte, baked, mine);
   }
   const decode = queue.then(() => derive(hash, crop, rot, matte, mine));
   queue = decode.catch(() => {});
@@ -95,7 +138,7 @@ async function start(
 }
 
 async function derive(
-  hash: string, crop: Crop, rot: Turn, matte: Matte, mine: number,
+  hash: string, crop: Crop, rot: Turn, matte: Matte, mine: Ticket,
 ): Promise<string | null> {
   const key = keyFor(hash, crop, rot, matte);
   const existing = cache.get(key);
@@ -105,21 +148,23 @@ async function derive(
   const variant = matte ? matteVariant(hash, crop, rot) : '';
   const made = await shrink(a.blob, crop, rot, matte);
   // Only persist when the model actually ran; a failed cutout must not be pinned to disk.
-  if (matte && made.knocked && made.blob) void saveMatte(hash, variant, made.blob);
+  if (matte && made.knocked && made.blob && !mine.forgotten) void saveMatte(hash, variant, made.blob);
   return publish(hash, crop, rot, matte, made.blob, mine);
 }
 
+// `small` is a copy made here, the hash of the board's baked copy, or null for
+// the source itself.
 function publish(
-  hash: string, crop: Crop, rot: Turn, matte: Matte, small: Blob | null, mine: number,
+  hash: string, crop: Crop, rot: Turn, matte: Matte, small: Blob | string | null, mine: Ticket,
 ): string | null {
-  if (mine !== epoch) return null;
+  if (mine.epoch !== epoch || mine.forgotten) return null;
   const key = keyFor(hash, crop, rot, matte);
   const won = cache.get(key);
   if (won) return won.url;
   // own=true: this module revokes it. own=false: asset store's URL, not ours.
-  const entry = small
+  const entry = small && typeof small !== 'string'
     ? { url: URL.createObjectURL(small), own: true }
-    : { url: assetURL(hash)!, own: false };
+    : { url: assetURL(small || hash)!, own: false };
   cache.set(key, entry);
   return entry.url;
 }
@@ -142,7 +187,7 @@ async function shrink(
     const sy = crop ? Math.round(crop.y * bmp.height) : 0;
     const sw = Math.max(1, crop ? Math.round(crop.w * bmp.width) : bmp.width);
     const sh = Math.max(1, crop ? Math.round(crop.h * bmp.height) : bmp.height);
-    const scale = Math.min(1, displayMax() / Math.max(sw, sh));
+    const scale = copyScale(Math.max(sw, sh));
     if (scale === 1 && !derived(crop, rot, matte)) return NOTHING;
     const w = Math.max(1, Math.round(sw * scale));
     const h = Math.max(1, Math.round(sh * scale));
@@ -196,6 +241,10 @@ export function forgetDisplay(hashes: Iterable<string>) {
     cache.delete(key);
   }
   for (const key of Array.from(pending.keys()).filter(mine)) pending.delete(key);
+  // A job still running would publish a new copy of a purged hash.
+  for (const [key, ticket] of tickets) {
+    if (mine(key)) { ticket.forgotten = true; tickets.delete(key); }
+  }
   void forgetMatte(doomed);
 }
 
@@ -203,6 +252,7 @@ export function clearDisplay() {
   for (const e of cache.values()) if (e.own) URL.revokeObjectURL(e.url);
   cache.clear();
   pending.clear();
+  tickets.clear();
   // Queue stays alive — a fresh chain would allow two full decodes at once.
   epoch++;
 }

@@ -75,6 +75,24 @@ export function redirectUri(): string {
   return new URL(REDIRECT_PATH, document.baseURI).href;
 }
 
+/**
+ * Whether the popup at `href` has come back to the redirect page at `home`.
+ * The deploy answers `/oauth.html` with a 307 to `/oauth` and the fragment
+ * rides along, so both spellings of the path count. Same origin only.
+ */
+export function isRedirectPage(href: string, home: string): boolean {
+  let at: URL;
+  let want: URL;
+  try {
+    at = new URL(href);
+    want = new URL(home);
+  } catch {
+    return false;
+  }
+  if (at.origin !== want.origin) return false;
+  return at.pathname === want.pathname || at.pathname === want.pathname.replace(/\.html$/, '');
+}
+
 /** CSRF nonce — response must echo it. Uses crypto.getRandomValues, not Math.random. */
 export function nonce(): string {
   const bytes = new Uint8Array(16);
@@ -118,7 +136,7 @@ export async function fragmentViaPopup(authUrl: string, windowName: string): Pro
         continue;
       }
       // Some engines return 'about:blank' or '' between navigations.
-      if (!href || !href.startsWith(home)) continue;
+      if (!href || !isRedirectPage(href, home)) continue;
 
       // Fragment (never sent to a server) carries the token.
       const fragment = popup.location.hash.replace(/^#/, '');

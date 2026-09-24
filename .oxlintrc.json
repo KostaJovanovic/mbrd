@@ -12,9 +12,13 @@
 //
 // no-unknown-returns is on except for idb.ts, errors.ts, desktop/store.ts,
 // desktop/format.mts, platform/electron.ts — those return genuinely unknown
-// bytes from older builds or Proxy traps.
+// bytes from older builds or Proxy traps — and mobile/bridge/store.ts and
+// native.ts, which are desktop/store.ts's twin and the declared shape of
+// Capacitor's JSON bridge.
 //
 // desktop/ is linted (same rules) but not in the root tsconfig (needs Node types).
+// mobile/ is linted too; its bridge has its own tsconfig, run in CI by the
+// root's tsc.
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "env": {
@@ -105,7 +109,8 @@
       "files": [
         "tests/**",
         "tools/**",
-        "desktop/**"
+        "desktop/**",
+        "mobile/tools/**"
       ],
       "env": {
         "node": true
@@ -117,7 +122,9 @@
         "web/assets/js/errors.ts",
         "web/assets/js/platform/electron.ts",
         "desktop/store.ts",
-        "desktop/format.mts"
+        "desktop/format.mts",
+        "mobile/bridge/store.ts",
+        "mobile/bridge/native.ts"
       ],
       "rules": {
         "anti-slop/no-unknown-returns": "off"

@@ -107,7 +107,8 @@ function starPath(): string {
 }
 
 /**
- * Play it. `motion` false - the quality dial's animation off - keeps the words
+ * Play it. `motion` false - the quality dial's animation off, or the OS asking
+ * for reduced motion - keeps the words
  * and drops the movement: the date goes straight to lost, a line arrives
  * whole, and the black fades rather than opening.
  *

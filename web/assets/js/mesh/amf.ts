@@ -10,6 +10,7 @@ import { readZip } from './zip.ts';
 import { scanXML } from './xml.ts';
 
 const MAX_INSTANCE_DEPTH = 32;
+const MAX_INSTANCE_VISITS = 1_000_000;
 
 type Volume = { tris: number[]; material: string };
 type Obj = { verts: number[]; colours: number[] | null; volumes: Volume[]; material: string };
@@ -20,8 +21,13 @@ export function parseAMF(bytes: ArrayBuffer): Mesh {
   const doc = read(text);
 
   const build = new MeshBuild();
+  let visits = 0;
   const emit = (id: string, delta: number[], rot: number[], depth: number) => {
     if (depth > MAX_INSTANCE_DEPTH) throw new MeshError('This AMF nests its constellations too deeply');
+    // The depth limit bounds a chain, not a tree: two instances a level is
+    // four billion visits at depth 32, and an instance of an empty object
+    // adds no triangle for the triangle ceiling to count.
+    if (++visits > MAX_INSTANCE_VISITS) throw new MeshError('This AMF places more instances than a model has');
     const obj = doc.objects.get(id);
     if (obj) { addObject(build, obj, doc, delta, rot); return; }
     // Constellations can nest (assemblies).
@@ -211,6 +217,7 @@ function read(text: string): Doc {
 
 function addObject(build: MeshBuild, obj: Obj, doc: Doc, delta: number[], rot: number[]) {
   const vertN = (obj.verts.length / 3) | 0;
+  const held = (i: number) => Number.isInteger(i) && i >= 0 && i < vertN;
   const at = (i: number) => {
     const p = rotate([obj.verts[i * 3], obj.verts[i * 3 + 1], obj.verts[i * 3 + 2]], rot);
     return [p[0] + delta[0], p[1] + delta[1], p[2] + delta[2]];
@@ -219,7 +226,8 @@ function addObject(build: MeshBuild, obj: Obj, doc: Doc, delta: number[], rot: n
     const flat = doc.materials.get(volume.material || obj.material) || null;
     for (let t = 0; t + 3 <= volume.tris.length; t += 3) {
       const a = volume.tris[t], b = volume.tris[t + 1], c = volume.tris[t + 2];
-      if (!(a >= 0 && a < vertN && b >= 0 && b < vertN && c >= 0 && c < vertN)) {
+      // An index of 1.5 is in range and reads half a vertex, which is NaN.
+      if (!(held(a) && held(b) && held(c))) {
         throw new MeshError('This AMF refers to vertices it does not contain');
       }
       const p = at(a), q = at(b), r = at(c);

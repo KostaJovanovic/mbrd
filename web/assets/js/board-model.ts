@@ -695,9 +695,10 @@ export function makeItem(partial: Record<string, unknown>): Item {
   };
 }
 
-// Must match itemHashes() in util.ts.
+// Must match itemHashes() in util.ts; tests/meta-hashes.test.js holds the two
+// in step. A key missing here lets a bad value reach packBoard(), which throws.
 // `archive` is the file a folder card points into (import/unpack.ts).
-const META_HASHES = ['cover', 'shot', 'thumb', 'preview', 'poster', 'archive', 'source'];
+const META_HASHES = ['cover', 'shot', 'thumb', 'preview', 'art', 'display', 'poster', 'archive', 'source'];
 
 // For PDFs, RAWs, PSDs, etc. the displayed picture is meta.preview, not asset.hash.
 export function shownHash(item: Item): string | null {

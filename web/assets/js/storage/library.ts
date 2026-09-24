@@ -48,7 +48,7 @@ export async function putLibraryBoard(
   // the loser's blob becomes an orphan holding quota forever. A promise chain
   // (not IDB transaction) because blob and index live in different stores.
   // Tab-close between the two writes → orphan cleaned by sweepLibrary().
-  return (writes = writes.then(async () => {
+  return inTurn(async () => {
     // null blob = path row (file-backed). Delete the old blob — leaving it
     // would create the two-copy divergence this design exists to avoid.
     if (blob) await idbSet(STORE, id, blob);
@@ -69,12 +69,21 @@ export async function putLibraryBoard(
       await idbDel(STORE, id).catch(() => {});
       throw err;
     }
-  }, () => {}).then(() => {}));
+  });
 }
 
 /** Write chain — serialises index writes. Never rejects, so one failed stash
  *  does not wedge the shelf for the session. */
 let writes: Promise<void> = Promise.resolve();
+
+/** Run `work` after every earlier write, and hand its outcome to the caller.
+ *  `then(work, () => {})` would skip `work` after a rejection and resolve,
+ *  so the write after a failed one would report success and store nothing. */
+function inTurn<T>(work: () => Promise<T>): Promise<T> {
+  const run = writes.then(work);
+  writes = run.then(() => {}, () => {});
+  return run;
+}
 
 /** Remove orphaned blobs (tab closed between blob write and index write).
  *  Cheap — key walk only, no blob reads. */
@@ -99,10 +108,10 @@ export async function getLibraryBoard(id: string): Promise<Blob | null> {
 /** Take a board off the shelf - both its blob and its index row. */
 export async function removeLibraryBoard(id: string) {
   // Same write chain as put — avoids racing the index read-modify-write.
-  return (writes = writes.then(async () => {
+  return inTurn(async () => {
     await idbDel(STORE, id);
     await writeIndex((await libraryIndex()).filter(e => e.id !== id));
-  }, () => {}).then(() => {}));
+  });
 }
 
 /** Max boards on the shelf. Without eviction, every Open/New/Switch accumulates
@@ -111,19 +120,17 @@ export async function removeLibraryBoard(id: string) {
 const SHELF_MAX = 24;
 
 /** Drop oldest boards past the ceiling. Separate from put so filing and
- *  eviction are distinct operations. */
-export async function trimLibrary(keep = SHELF_MAX) {
+ *  eviction are distinct operations. `spare` is the board about to be opened:
+ *  it is often the oldest row, and evicting it would lose its only copy. */
+export async function trimLibrary(keep = SHELF_MAX, spare = '') {
   // One index read/write instead of removeLibraryBoard() per row.
-  let dropped = 0;
-  writes = writes.then(async () => {
+  return inTurn(async () => {
     const index = await libraryIndex();          // newest first
-    const drop = index.slice(Math.max(0, keep));
-    if (!drop.length) return;
+    const drop = index.slice(Math.max(0, keep)).filter(e => e.id !== spare);
+    if (!drop.length) return 0;
     const gone = new Set(drop.map(e => e.id));
     await idbDelMany(STORE, drop.map(e => e.id));
     await writeIndex(index.filter(e => !gone.has(e.id)));
-    dropped = drop.length;
-  }, () => {}).then(() => {});
-  await writes;
-  return dropped;
+    return drop.length;
+  });
 }

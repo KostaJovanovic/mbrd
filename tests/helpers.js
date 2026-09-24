@@ -32,7 +32,8 @@ export function walk(dir, exts, from = WEB) {
 export const read = path => readFileSync(path, 'utf8');
 
 /** App stylesheets in cascade order (index.html's order). Excludes tokens.css
- * and fonts.css — those are the property table and @font-face set. */
+ * and fonts.css — those are the property table and @font-face set.
+ * tests/css-order.test.js holds this list, index.html and SHELL in step. */
 export const APP_CSS_ORDER = [
   'base.css', 'canvas.css',
   'items.css', 'ghosts.css', 'fences.css', 'media.css', 'cards.css',

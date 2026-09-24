@@ -76,6 +76,45 @@ test('a path row is on the shelf, and comes off it whole', async () => {
   assert.equal((await libraryIndex()).length, 0);
 });
 
+test('a shelf write after a failed one still writes', async () => {
+  // The chain once ran each write as `then(work, () => {})`: after a rejection
+  // only the empty handler ran, so the next board filed nothing and said it had.
+  const set = store.set;
+  let fail = true;
+  store.set = async (s, k, v) => {
+    if (fail && s === 'library') { fail = false; throw new Error('QuotaExceededError'); }
+    return set(s, k, v);
+  };
+  await assert.rejects(putLibraryBoard('brd-a', blobOf('a'), { title: 'a', at: 1 }));
+  await putLibraryBoard('brd-b', blobOf('b'), { title: 'b', at: 2 });
+  assert.ok(await getLibraryBoard('brd-b'), 'the second board is on the shelf');
+  assert.ok(await row('brd-b'));
+  await removeLibraryBoard('brd-b');
+  assert.equal(await hasLibraryBoard('brd-b'), false, 'a removal after the failure also runs');
+});
+
+test('a failed trim does not stop the next write', async () => {
+  const delMany = store.delMany;
+  store.delMany = async () => { throw new Error('broken'); };
+  await putLibraryBoard('old', blobOf('a'), { title: 'a', at: 1 });
+  await putLibraryBoard('new', blobOf('b'), { title: 'b', at: 2 });
+  await assert.rejects(trimLibrary(1));
+  store.delMany = delMany;
+  await putLibraryBoard('newer', blobOf('c'), { title: 'c', at: 3 });
+  assert.ok(await row('newer'));
+});
+
+test('the trim spares the board about to be opened', async () => {
+  // A switch to the oldest row shelves the current board first, and that
+  // trims. Without the spare the trim deletes the only copy of the target.
+  await putLibraryBoard('oldest', blobOf('a'), { title: 'a', at: 1 });
+  await putLibraryBoard('middle', blobOf('b'), { title: 'b', at: 2 });
+  await putLibraryBoard('newest', blobOf('c'), { title: 'c', at: 3 });
+  assert.equal(await trimLibrary(1, 'oldest'), 1);
+  assert.deepEqual((await libraryIndex()).map(e => e.id), ['newest', 'oldest']);
+  assert.ok(await getLibraryBoard('oldest'));
+});
+
 test('trimming the shelf drops path rows by age like any other', async () => {
   await putLibraryBoard('old-blob', blobOf('a'), { title: 'a', at: 1 });
   await putLibraryBoard('old-path', null, { title: 'b', at: 2, path: '/tmp/b.mbrd' });

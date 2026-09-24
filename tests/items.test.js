@@ -83,6 +83,15 @@ test('the kind is the extension, because that is the informative part', () => {
   assert.equal(farKind({ type: 'audio', name: 'take 3', meta: { ext: '.flac' } }), 'flac');
 });
 
+test('an ext that is not a string is ignored, not thrown on', () => {
+  // A hand-edited .mbrd can hold anything there. farKind() runs in
+  // buildItem(), and a throw stopped sync() before the later cards mounted.
+  for (const ext of [5, true, {}, ['pdf']]) {
+    assert.equal(farKind({ type: 'generic', name: 'report.pdf', meta: { ext } }), 'pdf');
+    assert.equal(farKind({ type: 'link', meta: { ext } }), 'link');
+  }
+});
+
 test('the type word is the fallback for the things that were never files', () => {
   assert.equal(farKind({ type: 'link', name: 'Anthropic', meta: {} }), 'link');
   assert.equal(farKind({ type: 'text', name: 'pasted', meta: {} }), 'text');

@@ -80,9 +80,16 @@ export interface ChromeBridge {
   ready(): void;
 }
 
+/** A menu to draw. `opening`: the panel was hidden, so it drops in. */
+export interface MenuOpen {
+  menu: MenuModel;
+  at: Point;
+  opening: boolean;
+}
+
 export interface PanelBridge {
   platform: string;
-  onMenu(fn: (open: { menu: MenuModel, at: Point }) => void): void;
+  onMenu(fn: (open: MenuOpen) => void): void;
   size(w: number, h: number, at: Point): void;
   run(id: string): void;
   close(): void;

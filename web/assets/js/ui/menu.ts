@@ -70,6 +70,8 @@ type MenuOpts = {
   focus?: boolean;
   /** hung off a button rather than dropped at a cursor - see render() */
   anchor?: MenuAnchor;
+  /** no entrance or exit - see .is-instant in menu.css */
+  instant?: boolean;
 };
 
 /** Commands this menu needs. Declared here (not imported from commands.ts)
@@ -218,6 +220,8 @@ function flushLeaving() {
 }
 
 function dismiss(el: HTMLElement) {
+  // Nothing to play out, and no animationend would come - see .is-instant.
+  if (el.classList.contains('is-instant')) { el.remove(); return; }
   leaving.add(el);
   el.classList.add('is-leaving');
   // `inert` blocks keyboard, hit-testing and screen reader during exit anim.
@@ -302,6 +306,10 @@ export function initMenu(viewport: Viewport, commands: MenuCommands) {
   }, true);
   // Press, drag, release - see followPress().
   addEventListener('pointerdown', e => { down = { id: e.pointerId, x: e.clientX, y: e.clientY }; }, true);
+  // Which hand the next menu comes from - see byKeys.
+  addEventListener('keydown', () => { byKeys = true; }, true);
+  addEventListener('pointerdown', () => { byKeys = false; }, true);
+  addEventListener('pointermove', () => { byKeys = false; }, true);
   addEventListener('pointermove', followPress, true);
   addEventListener('pointerup', releasePress, true);
   addEventListener('pointercancel', () => { down = null; press = null; }, true);
@@ -341,6 +349,8 @@ export function initMenu(viewport: Viewport, commands: MenuCommands) {
 
 /** The pointer that is down now, so a menu opened under a press can follow it. */
 let down: { id: number, x: number, y: number } | null = null;
+/** The last input was a key, not a pointer: a menu it opens has nothing to animate from. */
+let byKeys = false;
 /** The press a menu was opened under, and whether it has become a drag. */
 let press: { id: number, x: number, y: number, at: number, moved: boolean } | null = null;
 /** Travel that makes a press a drag rather than a click. */
@@ -479,13 +489,13 @@ export function close() {
 /** Open a menu hung under an anchor element. `focus` false for hover (must not
  * steal keyboard from whatever is being typed). */
 export function openAnchored(rect: MenuAnchor, entries: MenuEntry[],
-  { label = 'Menu', focus = false, owner = null }:
-    { label?: string, focus?: boolean, owner?: Element | null } = {}) {
+  { label = 'Menu', focus = false, owner = null, instant = false }:
+    { label?: string, focus?: boolean, owner?: Element | null, instant?: boolean } = {}) {
   close();
   opener = focusedNow();
   // Set after close() which clears it — see menuOwner.
   menuOwner = owner;
-  render(entries, rect.left, rect.bottom, { anchor: rect, label, focus });
+  render(entries, rect.left, rect.bottom, { anchor: rect, label, focus, instant });
 }
 
 /** Open the context menu. `mobile` = Feed (drops spatial rows, no canvas menu).
@@ -996,7 +1006,7 @@ function swap(entries: MenuEntry[]) {
   closeChild(false);
   // Removed outright (no exit animation) — a page turn must not flinch.
   if (node) { node.remove(); node = null; }
-  render(entries, lastX, lastY, { ...lastOpts, focus: lastOpts.focus || held });
+  render(entries, lastX, lastY, { ...lastOpts, focus: lastOpts.focus || held, instant: true });
 }
 
 /** A child menu, fronted by the row that walks back to its parent. */
@@ -1025,6 +1035,7 @@ function render(entries: MenuEntry[], clientX: number, clientY: number, opts: Me
   lastOpts = opts;
   node = document.createElement('div');
   node.id = 'ctx-menu';
+  if (opts.instant || byKeys) node.classList.add('is-instant');
   node.setAttribute('role', 'menu');
   node.setAttribute('aria-label', opts.label || 'Board actions');
   // Focusable but not tabbable — screen reader announces it, Escape has a target.
@@ -1115,9 +1126,13 @@ function fillPanel(panel: HTMLElement, entries: MenuEntry[]) {
         });
       }
     } else {
-      // Hovering past a fold's row closes its child (only from the parent panel).
+      // Hovering past a fold's row closes its child (only from the parent
+      // panel) - unless the pointer is crossing it on the way to the child,
+      // where the row's grace decides instead.
       btn.addEventListener('pointerenter', e => {
-        if (e.pointerType === 'mouse' && childFrom === panel) closeChild();
+        if (e.pointerType !== 'mouse' || childFrom !== panel) return;
+        if (aimingAtChild(e.clientX, e.clientY)) return;
+        closeChild();
       });
       btn.addEventListener('click', () => {
         close();
@@ -1146,6 +1161,8 @@ let childFrom: HTMLElement | null = null;
 /** The row it belongs to, so a re-hover of the same row is not a re-open. */
 let childRow: HTMLElement | null = null;
 let childTimer = 0;
+/** Where the pointer left the open child's row: the apex of the aim triangle. */
+let leftAt: { x: number, y: number } | null = null;
 
 /** How long the pointer may be over neither panel before the child gives up. */
 const CHILD_GRACE_MS = 220;
@@ -1161,6 +1178,7 @@ function closeChild(animate = true) {
   childFrom = null;
   childRow?.classList.remove('is-open');
   childRow = null;
+  leftAt = null;
 }
 
 /** Let go of the child after the grace period, unless something asks again. */
@@ -1168,6 +1186,31 @@ function fadeChild() {
   clearTimeout(childTimer);
   // Wrapped — closeChild has a defaulted arg; bare ref would break if setTimeout changed.
   childTimer = setTimeout(() => closeChild(), CHILD_GRACE_MS);
+}
+
+/** The pointer left the child's row: remember where, then start the grace. */
+function onRowLeave(e: PointerEvent) {
+  leftAt = { x: e.clientX, y: e.clientY };
+  fadeChild();
+}
+
+/**
+ * Whether a point lies between where the pointer left the row and the near
+ * edge of the child - the pointer on its way there, as macOS reads it. The
+ * child is top-aligned with its row, so reaching its lower rows means crossing
+ * the siblings below the fold, and each used to close it on contact.
+ */
+function aimingAtChild(x: number, y: number): boolean {
+  if (!child || !leftAt) return false;
+  const c = child.getBoundingClientRect();
+  const nearX = c.left >= leftAt.x ? c.left : c.right;
+  const a = leftAt;
+  const b = { x: nearX, y: c.top - 8 };
+  const d = { x: nearX, y: c.bottom + 8 };
+  const side = (p: { x: number, y: number }, q: { x: number, y: number }) =>
+    (q.x - p.x) * (y - p.y) - (q.y - p.y) * (x - p.x);
+  const s1 = side(a, b), s2 = side(b, d), s3 = side(d, a);
+  return !((s1 < 0 || s2 < 0 || s3 < 0) && (s1 > 0 || s2 > 0 || s3 > 0));
 }
 
 function openChild(row: HTMLElement, entries: MenuEntry[], from: HTMLElement, label?: string) {
@@ -1200,6 +1243,8 @@ function openChild(row: HTMLElement, entries: MenuEntry[], from: HTMLElement, la
   const y = Math.max(pad, Math.min(r.top - 5, innerHeight - box.height - pad));
   child.style.left = `${Math.round(x)}px`;
   child.style.top = `${Math.round(y)}px`;
+  // Flipped to the parent's left: it slides out leftwards, away from its row.
+  child.classList.toggle('is-left', x !== right);
   // Grow from the edge nearest the parent, vertically from the row's centre.
   child.style.transformOrigin =
     originPercent((x === right ? 0 : box.width) , box.width) + ' ' +
@@ -1209,7 +1254,7 @@ function openChild(row: HTMLElement, entries: MenuEntry[], from: HTMLElement, la
   childRow = row;
   childFrom = from;
   row.classList.add('is-open');
-  row.addEventListener('pointerleave', fadeChild);
+  row.addEventListener('pointerleave', onRowLeave);
   child.addEventListener('pointerenter', () => { clearTimeout(childTimer); childTimer = 0; });
   child.addEventListener('pointerleave', fadeChild);
 }
@@ -1251,6 +1296,9 @@ function placeRoot(node: HTMLElement, clientX: number, clientY: number, opts: Me
   }
   node.style.left = Math.round(x) + 'px';
   node.style.top = Math.round(y) + 'px';
+  // Above its anchor, the entrance's few pixels of travel run the other way,
+  // so the panel still comes out of its button rather than into it.
+  node.classList.toggle('is-above', y < (opts.anchor ? opts.anchor.top : clientY));
   // Grow from the anchor (centre x, attached edge). Computed after the flip.
   // Set via script, not style=, because style-src has no unsafe-inline.
   const srcX = opts.anchor ? (opts.anchor.left + opts.anchor.right) / 2 : clientX;

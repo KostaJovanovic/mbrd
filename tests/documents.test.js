@@ -61,6 +61,12 @@ test('single dots and empty segments are dropped', () => {
   assert.equal(resolveFrom('word/', 'media//pic.png'), 'word/media/pic.png');
 });
 
+test('a target that starts with a slash names a part from the package root', () => {
+  // It used to get the base in front: word/word/media/image1.png, no such entry.
+  assert.equal(resolveFrom('word/', '/word/media/image1.png'), 'word/media/image1.png');
+  assert.equal(resolveFrom('ppt/slides/', '/ppt/media/image2.png'), 'ppt/media/image2.png');
+});
+
 // ---------------------------------------------------------------------------
 // Spreadsheet cell references
 // ---------------------------------------------------------------------------
@@ -220,6 +226,22 @@ test('a style attribute is a reference to somewhere else', () => {
   const root = new El('svg', {}, [new El('rect', { style: 'fill:url(//attacker/track.svg#a)' })]);
   scrub(root);
   assert.equal(root.children[0].has('style'), false);
+});
+
+test('a presentation attribute may point only inside the drawing', () => {
+  // Only `style` was checked, so fill="url(//x)" and its siblings kept the
+  // request; the deploy's CSP was the one thing left in the way.
+  const away = ['url(//x/a.svg#p)', 'URL( "https://x/a#p" )', "url('//x')", 'u\\72l(//x)'];
+  const root = new El('svg', {}, [
+    ...away.map(v => new El('rect', { fill: v, filter: v, mask: v, 'clip-path': v, 'marker-end': v })),
+    new El('rect', { fill: 'url(#grad)', filter: "url('#blur')", mask: 'url( "#m" )', stroke: 'red' }),
+  ]);
+  scrub(root);
+  for (const rect of root.children.slice(0, -1)) {
+    assert.deepEqual(rect.attributes, [], `${JSON.stringify(rect.attributes)} survived`);
+  }
+  assert.deepEqual(root.children.at(-1).attributes.map(a => a.name), ['fill', 'filter', 'mask', 'stroke'],
+    'a reference to the drawing itself is kept');
 });
 
 test('a style element is emptied, because its CSS is not scoped to the drawing', () => {

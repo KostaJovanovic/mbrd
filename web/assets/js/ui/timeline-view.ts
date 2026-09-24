@@ -9,6 +9,7 @@ import { bus } from '../board-store.ts';
 import { toast } from '../notify.ts';
 import { formatBytes } from '../util.ts';
 import { readPref, writePref } from '../prefs.ts';
+import { baseMs, reducedMotion } from '../canvas/viewport.ts';
 import { ARRANGEMENTS, MOBILE_ARRANGEMENTS } from '../arrange/arrangements.ts';
 import { openAnchored, menuButton, icon } from './menu.ts';
 import type { MenuEntry } from './menu.ts';
@@ -192,7 +193,8 @@ export function initTimeline(commands: TimelineCommands) {
   });
   const gear = strip.querySelector<HTMLButtonElement>('.tl-gear');
   if (gear) {
-    menuButton(gear, () => openAnchored(gear.getBoundingClientRect(), gearEntries(), { label: 'Timeline' }));
+    menuButton(gear, () => openAnchored(gear.getBoundingClientRect(), gearEntries(),
+      { label: 'Timeline', owner: gear, focus: true }));
   }
   // Delegated: the marks are rebuilt on every change.
   track?.addEventListener('click', event => {
@@ -240,27 +242,60 @@ export function toggleTimeline() {
     toast('Pause the timeline before you hide it');
     return;
   }
-  if (open) closeBar();
-  else openBar();
+  if (open) closeBar(true);
+  else openBar(true);
   writePref(PREF, open ? '1' : '0');
 }
 
-function openBar() {
+/** `slide` for a press of the toggle; the bar restored at boot just appears. */
+function openBar(slide = false) {
   if (!strip || open) return;
   open = true;
   strip.hidden = false;
   render();
   writeDock();
   paintToggle();
+  if (slide) slideDock(true, strip.getBoundingClientRect().height);
 }
 
-function closeBar() {
+function closeBar(slide = false) {
   if (!strip || !open) return;
   pause();
   open = false;
-  strip.hidden = true;
+  // Measured before the dock is let go: the slide goes from here to nothing.
+  const h = strip.getBoundingClientRect().height;
   writeDock();
   paintToggle();
+  // The slide hides the strip when it has gone; with none, it goes now.
+  if (!(slide && slideDock(false, h))) strip.hidden = true;
+}
+
+/** The strip's slide in flight, so a press mid-way can take it over. */
+let sliding: Animation[] = [];
+
+/**
+ * Slide the strip in or out along the foot, with --dock riding the same curve
+ * so everything standing on the bar (the drawer, the player, the panels' feet,
+ * the toasts, the board's own edge) moves with it instead of jumping a bar's
+ * height in one frame. --dock is registered in tokens.css so it can travel.
+ * False when there is to be no movement, and the caller does it at once.
+ */
+function slideDock(opening: boolean, h: number): boolean {
+  const root = document.documentElement;
+  const s = strip;
+  if (!s || !(h > 0) || reducedMotion() || typeof root.animate !== 'function') return false;
+  for (const a of sliding) a.cancel();
+  const easing = getComputedStyle(root).getPropertyValue('--ease').trim() || 'ease-out';
+  const opts = { duration: baseMs(), easing };
+  const [shut, up] = [{ translate: '0 100%' }, { translate: '0 0' }];
+  sliding = [
+    root.animate([{ '--dock': opening ? '0px' : `${h}px` }, { '--dock': opening ? `${h}px` : '0px' }], opts),
+    s.animate(opening ? [shut, up] : [up, shut], opts),
+  ];
+  // Hidden only if it is still meant to be shut when the slide lands - a
+  // press mid-way cancels this and the promise never resolves.
+  if (!opening) sliding[1].finished.then(() => { if (!open) s.hidden = true; }, () => {});
+  return true;
 }
 
 /** The bar's height as --dock, or nothing when it is down. */

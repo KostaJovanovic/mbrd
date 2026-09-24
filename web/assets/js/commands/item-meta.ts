@@ -80,7 +80,10 @@ export function itemMetaCommands() {
      * turn around. The Feed calls openViewer() directly - it is a ui/ module
      * itself and a tile tap is not a command anybody would bind.
      */
-    openViewer: (id: string) => { if (canView(id)) openViewer(id); },
+    // The card's box goes along, so a picture can grow out of it.
+    openViewer: (id: string) => {
+      if (canView(id)) openViewer(id, { thumb: nodeFor(id)?.getBoundingClientRect() ?? null });
+    },
     canViewItem: (id: string) => canView(id),
     /** A text document in the editor. Open and a double-click only read it; writing is asked for. */
     editDocument: (id: string) => { if (canEdit(id)) openViewer(id, { edit: true }); },

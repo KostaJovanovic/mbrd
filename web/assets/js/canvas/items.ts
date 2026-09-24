@@ -16,7 +16,9 @@ import type { Item } from '../board-model.ts';
 import { TITLE_ID, shownName } from '../board-model.ts';
 import type { Viewport } from './viewport.ts';
 import { cullMargin } from './viewport.ts';
-import { buildContent, fontFamilyOf, paintStyleTileFaces } from './renderers.ts';
+import {
+  buildContent, fontFamilyOf, paintStyleTileFaces, releaseImages, retitleContent,
+} from './renderers.ts';
 import {
   buildItem, buildShadow, buildTitleControls, farKind, itemAccessibleName,
   resetTilt, restingTilt, retilt, setGrips, wantsHead, writeFit, writeAdjust, writeFenceLook,
@@ -24,7 +26,7 @@ import {
 import { POSTER_TIME } from './video.ts';
 import { clearDisplay } from './display.ts';
 import { releasePlayers } from './audio.ts';
-import { flyOut } from './exit-anim.ts';
+import { flyOut, cancelExit } from './exit-anim.ts';
 import { releaseStills } from './stills.ts';
 import { releaseTransports } from './transport.ts';
 import { releaseModels } from './model.ts';
@@ -70,6 +72,68 @@ let hoverGroup = new Set<string>();
 function setHoverLift(id: string, on: boolean) {
   nodes.get(id)?.classList.toggle('is-hover', on);
   shadows.get(id)?.classList.toggle('is-hover', on);
+}
+
+/** Most cards a rearrangement slides; past it the board simply changes. */
+const SLIDE_CAP = 80;
+
+/**
+ * Where the cards that are on screen now stand, for slideFrom() to play from
+ * once a rearrangement has moved them. Read before the move. Empty past
+ * SLIDE_CAP: a hundred cards crossing each other is noise, not explanation.
+ */
+export function seenPlaces(ids: readonly string[]): Map<string, { x: number, y: number }> {
+  const out = new Map<string, { x: number, y: number }>();
+  if (typeof innerWidth !== 'number') return out;
+  for (const id of ids) {
+    const el = nodes.get(id);
+    const item = byId(id);
+    if (!el?.isConnected || !item) continue;
+    const r = el.getBoundingClientRect();
+    if (r.right < 0 || r.bottom < 0 || r.left > innerWidth || r.top > innerHeight) continue;
+    out.set(id, { x: item.x, y: item.y });
+    if (out.size > SLIDE_CAP) return new Map();
+  }
+  return out;
+}
+
+/**
+ * Slide the cards seenPlaces() found from where they were to where the model
+ * now has them, so a rearrangement shows where each card went instead of
+ * teleporting the board. `transform` only - position is left/top and the
+ * lift, lean and grow are the individual properties, so this composes with
+ * all of them - on the card and its shadow twin together. The in-and-out
+ * curve on-screen movement wants, with a short stagger that never holds
+ * anything up: the positions are already committed.
+ */
+export function slideFrom(was: ReadonlyMap<string, { x: number, y: number }>, ms: number) {
+  if (!(ms > 0) || !was.size) return;
+  const step = Math.min(30, 240 / was.size);
+  let i = 0;
+  for (const [id, from] of was) {
+    const item = byId(id);
+    const el = nodes.get(id);
+    if (!item || !el || typeof el.animate !== 'function') continue;
+    // World y runs up and the page's runs down - see place().
+    const dx = from.x - item.x, dy = item.y - from.y;
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) continue;
+    const frames = [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }];
+    const opts = { duration: ms, delay: i++ * step, easing: 'cubic-bezier(0.77, 0, 0.175, 1)', fill: 'backwards' as const };
+    el.animate(frames, opts);
+    shadows.get(id)?.animate(frames, opts);
+  }
+}
+
+/**
+ * Mark cards as carried, for the length of a drag: the pickup (lift, lean,
+ * grow) that items.css and canvas.css style under .is-dragging. Called by
+ * canvas/input.ts when a press becomes a move and again when it ends.
+ */
+export function setDragging(ids: readonly string[], on: boolean) {
+  for (const id of ids) {
+    nodes.get(id)?.classList.toggle('is-dragging', on);
+    shadows.get(id)?.classList.toggle('is-dragging', on);
+  }
 }
 /**
  * Told which cards the pointer is on, whenever that changes.
@@ -342,7 +406,12 @@ export function initItems(world: HTMLElement, viewport: Viewport) {
   // reach it. Mirror the hover onto it here: one delegated pair on the world,
   // tracking which item the pointer is over, so the twin lifts with the card
   // instead of being left behind as a second card (see .item-shadow.is-hover).
-  world.addEventListener('pointerover', e => setHoverGroup(itemIdFromEvent(e.target)));
+  world.addEventListener('pointerover', e => {
+    // A finger's pointerover is the press itself, not a hover - see flyout.ts's
+    // per-event touch rule. Lifting on it read as the card jumping under the finger.
+    if (e.pointerType === 'touch') return;
+    setHoverGroup(itemIdFromEvent(e.target));
+  });
   world.addEventListener('pointerout', e => {
     if (!itemIdFromEvent(e.relatedTarget)) setHoverGroup(null);
   });
@@ -778,7 +847,7 @@ export function releaseCardContent(el: Element) {
   // memory-tight phone that difference is a full-resolution decode held until the
   // next GC, and a board panned across hundreds of photos discards that many at
   // once. Clearing the src (and the still twin's) hands the decode back now.
-  for (const im of el.querySelectorAll('img')) im.removeAttribute('src');
+  releaseImages(el);
   // And the frozen-GIF frames, which are object URLs this app made rather than
   // ones the asset store owns. Clearing the src above drops the *reference*;
   // the blob stays in the document's URL store until it is revoked by name. See
@@ -838,12 +907,20 @@ function disposable(el: HTMLElement) {
  * is only ever one thing playing on a board, so this exempts exactly one card
  * from the cull - and it is off screen, so it is a card's worth of style and
  * layout with nothing to paint.
+ *
+ * An embedded player counts too. Its `paused` cannot be read across origins,
+ * and taking an iframe out of the document destroys it, so a detach stopped
+ * the song and a pan back loaded the player again from the start. It only
+ * exists because somebody pressed Watch, so these are few.
+ *
+ * rebuild() asks the same question of a card's body: what this protects from a
+ * detach, it protects from a body replaced under it.
  */
-function sounding(el: HTMLElement) {
+function sounding(el: Element) {
   for (const m of el.querySelectorAll<HTMLMediaElement>('video, audio')) {
     if (!m.paused) return true;
   }
-  return false;
+  return !!el.querySelector('iframe');
 }
 
 /** Let go of one item's node and shadow, mounted or merely cached. */
@@ -864,6 +941,9 @@ function dropNode(id: string, el = nodes.get(id)) {
  * against the live board, which needs no payload to be correct.
  */
 function reconcile(delta?: ItemsDelta) {
+  // A card back inside its own exit (an undo straight after a delete) takes
+  // its ghost with it, or the ghost falls on top of it.
+  for (const id of delta?.added || []) cancelExit(id);
   if (delta && delta.removed) {
     // A user delete (or redo of one) is the only path that names removed ids;
     // a load or clear reconciles by diff and reaches the else branch, so a
@@ -1073,8 +1153,8 @@ export function sync(restack = true, viewPath = false) {
   // Detach pass. Walk what is mounted - bounded by the screen, not the board -
   // and let go of everything no longer on it. Three answers, not two: thrown
   // away, detached and kept for its media state, or - for the one clip actually
-  // playing - left where it is, because detaching it would stop it. See
-  // sounding().
+  // playing, and any embedded player - left where it is, because detaching it
+  // would stop it. See sounding().
   //
   // Keeping every one of them made memory proportional to the board a person had
   // *visited* rather than to what was on screen, which is the opposite of what
@@ -1222,6 +1302,7 @@ function build(item: Item) {
 
   nodes.set(item.id, el);
   drawnFrom.set(el, item);
+  drawnSource.set(el, sourceOf(item));
   // The title card carries its own drop shadow in CSS (box-shadow on
   // .title-card), because the 3:2 card is smaller than its snapped item box and
   // a twin placed at the box would sit taller than the card it shadows.
@@ -1295,10 +1376,12 @@ function build(item: Item) {
  * Every one of them for the same underlying reason: the twin is a rounded
  * rectangle at the item box, so it is only ever right for a type whose
  * silhouette *is* that box. Where it is not, the twin lays a card's shadow
- * under something that is not a card. The four cases are argued one by one at
+ * under something that is not a card. The first four are argued one by one at
  * the call site, which is where the shadow is decided; this is only the list.
+ * Archives and folders are drawn as folders, tab and all, and cast their own
+ * drop-shadow in cards.css.
  */
-const NO_TWIN = new Set(['title', 'ghost', 'fence', 'sticker']);
+const NO_TWIN = new Set(['title', 'ghost', 'fence', 'sticker', 'archive', 'folder']);
 
 /**
  * The same question, asked of an item rather than of a type.
@@ -1371,9 +1454,19 @@ function syncTwin(el: HTMLElement, item: Item) {
  */
 const drawnFrom = new WeakMap<HTMLElement, Item>();
 
-/** The parts of an item a card draws. Geometry is placeNode()'s. */
-const sameFace = (a: Item, b: Item) => a.type === b.type && a.name === b.name
-  && a.asset === b.asset && JSON.stringify(a.meta ?? null) === JSON.stringify(b.meta ?? null);
+/**
+ * What a card's body plays, by node: the asset and a player's address. The
+ * item is changed in place, so this is the one record of what was built.
+ */
+const drawnSource = new WeakMap<HTMLElement, string>();
+export const sourceOf = (item: Pick<Item, 'asset' | 'meta'>) =>
+  `${item.asset?.hash ?? ''}\n${typeof item.meta?.url === 'string' ? item.meta.url : ''}`;
+
+/** The parts of an item a card draws. Geometry is placeNode()'s. By value,
+ *  since a replay hands back copies and every card with a file was rebuilt. */
+export const sameFace = (a: Item, b: Item) => a.type === b.type && a.name === b.name
+  && JSON.stringify(a.asset ?? null) === JSON.stringify(b.asset ?? null)
+  && JSON.stringify(a.meta ?? null) === JSON.stringify(b.meta ?? null);
 
 /** Rebuild every card whose item is a new object with a different face. */
 function redrawChanged() {
@@ -1396,13 +1489,21 @@ function rebuild(id: string) {
   // this map is a card it made. The two below are the same argument - farHead()
   // appends both of its lines before it returns the head they are in.
   const body = el.querySelector('.item-body')!;
-  // The old content is being thrown away, not detached, so it has to be let go
-  // of properly first - replaceChildren would otherwise leave the card's former
-  // <audio> registered under the volume control and holding its stream, once
-  // per rename, and its <img> holding a full-resolution decode. The same
-  // teardown discard() does, because this is the same act on a smaller scale.
-  releaseCardContent(body);
-  body.replaceChildren(buildContent(item));
+  // A playing clip or an open player keeps its body unless what it plays has
+  // changed: a rename, a tag or a backfilled poster stopped the sound, and a
+  // fetched title swapped the player back for its offer. See sounding().
+  if (sounding(body) && drawnSource.get(el) === sourceOf(item)) {
+    retitleContent(body, item);
+  } else {
+    // The old content is being thrown away, not detached, so it has to be let
+    // go of properly first - replaceChildren would otherwise leave the card's
+    // former <audio> registered under the volume control and holding its
+    // stream, once per rename, and its <img> holding a full-resolution decode.
+    // The same teardown discard() does: the same act on a smaller scale.
+    releaseCardContent(body);
+    body.replaceChildren(buildContent(item));
+    drawnSource.set(el, sourceOf(item));
+  }
   // data-fit lives on the outer .item and is otherwise only written in build(),
   // so a per-item fit change (which arrives as 'item' → rebuild) would rebuild
   // the picture but leave the old object-fit. Re-read it here.

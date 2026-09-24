@@ -33,6 +33,17 @@ export const swapEdge = () => Math.max(copyEdge(), qualityPreset('full').sharpne
 /** The main <img> of a plain photo card, with the copy URL to return to. */
 type HiresImage = HTMLImageElement & { _copyUrl?: string };
 
+/**
+ * Put a display copy that finished late on its card. A card the sweep already
+ * swapped to its original keeps the original, and the copy becomes what it
+ * returns to - else the copy replaced the original, and a zoom-out went back
+ * to the thumbnail the sweep had recorded instead.
+ */
+export function landCopy(img: HiresImage, url: string): void {
+  if (img.dataset.hires === 'on') img._copyUrl = url;
+  else img.src = url;
+}
+
 let worldEl: HTMLElement | null = null;
 
 /**

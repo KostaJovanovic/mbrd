@@ -1,5 +1,7 @@
 # Export the board's own cards — 21 September 2026
 
+**Status: open.** Nothing built yet.
+
 A plan, not yet started. The image and PDF export (`ui/snapshot.ts`) draws
 every card with a painter of its own, restating the card stylesheets in canvas
 calls. It has fallen too far behind them to be caught up, and this replaces the

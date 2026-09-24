@@ -37,6 +37,18 @@ function sweepOnEnd(node: Element): void {
   });
 }
 
+/** Take back an exit still playing: its card has come back (an undo inside
+ *  the exit's few hundred ms), and the ghost would fall over the card itself.
+ *  The clone keeps the card's data-id - see canvas/item-dom.ts. */
+export function cancelExit(id: string): void {
+  if (typeof document === 'undefined') return;
+  const layer = document.getElementById('exit-layer');
+  if (!layer) return;
+  for (const g of layer.querySelectorAll<HTMLElement>('.exit-anim')) {
+    if (g.dataset.id === id) g.remove();
+  }
+}
+
 function dropChip() {
   const dock = document.getElementById('drawer-btn')?.getBoundingClientRect();
   if (!dock) return;

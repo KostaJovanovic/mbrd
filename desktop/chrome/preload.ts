@@ -4,7 +4,7 @@
 // checks the sender of every message. CommonJS, as a sandboxed preload must be.
 
 import { contextBridge, ipcRenderer } from 'electron';
-import type { ChromeBridge, MenuModel, PanelBridge, Point, Subject, UpdateOffer, WinState } from './bridge.ts';
+import type { ChromeBridge, MenuOpen, PanelBridge, Subject, UpdateOffer, WinState } from './bridge.ts';
 
 // Kept here, so a handler registered late still gets the last value and the bar
 // paints the right glyph and title on its first frame. One handler each: one
@@ -14,7 +14,7 @@ let subject: Subject = { title: '', dirty: false };
 let onState: ((state: WinState) => void) | null = null;
 let onSubject: ((subject: Subject) => void) | null = null;
 let onMenuClosed: (() => void) | null = null;
-let onMenu: ((open: { menu: MenuModel, at: Point }) => void) | null = null;
+let onMenu: ((open: MenuOpen) => void) | null = null;
 let offer: UpdateOffer | null = null;
 let onUpdate: ((offer: UpdateOffer | null) => void) | null = null;
 
@@ -31,7 +31,7 @@ ipcRenderer.on('chrome:update', (_event, next: UpdateOffer | null) => {
   onUpdate?.(next);
 });
 ipcRenderer.on('chrome:menu-closed', () => onMenuClosed?.());
-ipcRenderer.on('panel:menu', (_event, open: { menu: MenuModel, at: Point }) => onMenu?.(open));
+ipcRenderer.on('panel:menu', (_event, open: MenuOpen) => onMenu?.(open));
 
 const chrome: ChromeBridge = {
   platform: process.platform,

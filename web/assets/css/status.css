@@ -54,10 +54,18 @@
   /* .is-up moves to rest; removing the class slides it back offscreen. */
   translate: -50% -14px;
   opacity: 0;
+  /* The way out: quick and flat. A strip that bounced as it left would be
+     asking to be watched (the #nowplaying argument, chrome.css), and --dur-fast
+     at every tier lands inside ui/overlays.ts's 260ms hide. */
+  transition: translate var(--dur-fast) var(--ease),
+              opacity var(--dur-fast) var(--ease);
+}
+#busy.is-up {
+  translate: -50% 0;
+  opacity: 1;
   transition: translate var(--dur-base) var(--ease-back),
               opacity var(--dur-base) var(--ease);
 }
-#busy.is-up { translate: -50% 0; opacity: 1; }
 #busy[hidden] { display: none; }
 
 .busy-head {

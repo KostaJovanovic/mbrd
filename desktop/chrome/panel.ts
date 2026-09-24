@@ -42,19 +42,36 @@ function draw(list: HTMLElement, menu: MenuModel, run: (id: string) => void): vo
 
 /* The list keeps its natural size whatever the window is (#panel in
    titlebar.css), so it can be measured straight after drawing. Main sizes the
-   window to the answer and only then shows it. */
+   window to the answer, plus the room its shadow is drawn in, and only then
+   shows it. */
 function report(bridge: PanelBridge, list: HTMLElement, at: Point): void {
   const box = list.getBoundingClientRect();
-  bridge.size(Math.ceil(box.width), Math.ceil(box.height), at);
+  const css = getComputedStyle(document.documentElement);
+  const side = parseFloat(css.getPropertyValue('--panel-side')) || 0;
+  const foot = parseFloat(css.getPropertyValue('--panel-foot')) || 0;
+  bridge.size(Math.ceil(box.width + 2 * side), Math.ceil(box.height + foot), { x: at.x - side, y: at.y });
 }
 
 if (api && root) {
-  api.onMenu(({ menu, at }) => {
+  api.onMenu(({ menu, at, opening }) => {
     draw(root, menu, id => api.run(id));
+    // Restarted while the window is still hidden, so its first frame on screen
+    // is the animation's first.
+    root.classList.remove('is-opening');
+    if (opening) {
+      void root.offsetWidth;
+      root.classList.add('is-opening');
+    }
     report(api, root, at);
     // Again once the fonts are in. A hidden window paints no frames, so this
     // cannot wait on requestAnimationFrame.
     document.fonts.ready.then(() => report(api, root, at)).catch(() => {});
+  });
+
+  // The shadow's margin is still this window, so a press there would land
+  // nowhere. It closes the menu, as a press anywhere else outside it does.
+  document.addEventListener('pointerdown', e => {
+    if (!(e.target instanceof Node) || !root.contains(e.target)) api.close();
   });
 
   document.addEventListener('keydown', e => {

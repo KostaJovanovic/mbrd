@@ -1,5 +1,8 @@
 # The phone blink, and what a zoom costs — 20 September 2026
 
+**Status: partly done, 2026-09-23.** The blink and the slow zoom are fixed. The
+tight-shadow redesign is still open and waits on the maintainer.
+
 Measured on the maintainer's Android phone (1224x2720, dpr 3, 90Hz panel,
 Android 16) over USB, against `test.mbrd`: 106 items, mostly photographs.
 The harness is `research/phone-trace/cdp.mjs` — a dependency-free CDP client

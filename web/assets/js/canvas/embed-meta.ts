@@ -15,14 +15,18 @@
 
 import { embedFor } from './embed.ts';
 import { linkURL } from './renderers.ts';
-import { setEmbedMeta } from '../state.ts';
+import { byId, setEmbedMeta } from '../state.ts';
 import { addFile, derivedFile } from '../storage/assets.ts';
 import { isRecord } from '../util.ts';
 import type { Item } from '../board-model.ts';
 
-// Ids being fetched right now, so a second render of the same card mid-flight
-// does not open a second request. Cleared in the finally.
+// Card and page pairs being fetched right now, so a second render of the same
+// card mid-flight does not open a second request. Cleared in the finally.
 const inFlight = new Set<string>();
+
+// Pages whose oembed failed this session. A card mounts again on every pan
+// back, and each mount asked again; the next load still tries once more.
+const failed = new Set<string>();
 
 // The cover host in the oembed reply. Checked before it is fetched so a reply
 // naming some other origin cannot make this app request it - connect-src allows
@@ -32,10 +36,16 @@ const ART_HOST = 'https://i.scdn.co/';
 export async function enrichEmbed(item: Item): Promise<void> {
   // A stored title is the whole definition of "not missing"; leave it be.
   if (typeof item.meta?.title === 'string' && item.meta.title) return;
-  const spec = embedFor(linkURL(item.meta?.url));
+  const asked = item.meta?.url;
+  const spec = embedFor(linkURL(asked));
   if (!spec || (spec.provider !== 'spotify' && spec.provider !== 'youtube')) return;
-  if (inFlight.has(item.id)) return;
-  inFlight.add(item.id);
+  if (failed.has(spec.page)) return;
+  const key = `${item.id}\n${spec.page}`;
+  if (inFlight.has(key)) return;
+  inFlight.add(key);
+  // The reply is for the address that was asked about. An edit of the link
+  // while it was on the way would put this page's title on the next one.
+  const still = () => byId(item.id)?.meta?.url === asked;
   try {
     // YouTube: the video title, and nothing else - its oembed carries no cover
     // on a host of ours to store.
@@ -43,15 +53,15 @@ export async function enrichEmbed(item: Item): Promise<void> {
       const res = await fetch(
         `https://www.youtube.com/oembed?url=${encodeURIComponent(spec.page)}&format=json`,
         { referrerPolicy: 'no-referrer' });
-      if (!res.ok) return;
+      if (!res.ok) { failed.add(spec.page); return; }
       const title = pick(await res.json(), 'title');
-      if (title) setEmbedMeta(item.id, { title });
+      if (title && still()) setEmbedMeta(item.id, { title });
       return;
     }
     // Spotify: the title, and the cover if the reply names one on i.scdn.co.
     const url = `https://open.spotify.com/oembed?url=${encodeURIComponent(spec.page)}`;
     const res = await fetch(url, { referrerPolicy: 'no-referrer' });
-    if (!res.ok) return;
+    if (!res.ok) { failed.add(spec.page); return; }
     const data: unknown = await res.json();
     const title = pick(data, 'title');
     const thumb = pick(data, 'thumbnail_url');
@@ -64,12 +74,13 @@ export async function enrichEmbed(item: Item): Promise<void> {
         // The cover is a bonus; a title with no art is still worth storing.
       }
     }
-    if (title || art) setEmbedMeta(item.id, { title, art });
+    if ((title || art) && still()) setEmbedMeta(item.id, { title, art });
   } catch {
     // Offline, blocked, or malformed. The card stays exactly as it was, which
     // is the local-first default, and the next load tries again - by design.
+    failed.add(spec.page);
   } finally {
-    inFlight.delete(item.id);
+    inFlight.delete(key);
   }
 }
 

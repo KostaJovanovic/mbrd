@@ -494,6 +494,12 @@ export function declareOp(name: string, params: Record<string, unknown>) {
   pendingOp = { name, params };
 }
 
+/** Withdraw a declaration whose change recorded nothing, or the next step
+ *  takes a rule it did not run. */
+export function dropOp() {
+  pendingOp = null;
+}
+
 /** True during rebuild — suppresses recording steps about replaying steps. */
 let replaying = false;
 
@@ -773,6 +779,48 @@ export function markerForward() {
   lastPlaced = null;
 }
 
+/** Whether `id` is the step just behind the marker, which an undo takes back. */
+export const stepBehind = (id: string | null | undefined) =>
+  !!id && at > 0 && steps[at - 1].id === id;
+
+/** Whether `id` is the step just ahead of the marker, which a redo puts back. */
+export const stepAhead = (id: string | null | undefined) =>
+  !!id && at < steps.length && steps[at].id === id;
+
+/**
+ * For history.ts, after an undo or redo that stays inside a run: the step
+ * behind the marker now ends where the board does. Only the cards and fields
+ * the run touched are rewritten, since a run never adds or removes a card.
+ */
+export function runMoved() {
+  if (replaying || !at) return;
+  const step = steps[at - 1];
+  const live = snapshot();
+  for (const section of KEYED_SECTIONS) {
+    const part = step.delta[section];
+    if (!part) continue;
+    for (const [id, [from]] of Object.entries(part.changed)) {
+      const now = entryOf(live[section], id);
+      if (now === from) delete part.changed[id];
+      else part.changed[id] = [from, now];
+    }
+    if (!Object.keys(part.changed).length && !part.order) delete step.delta[section];
+  }
+  const rest = step.delta.rest;
+  for (const field of Object.keys(rest || {})) {
+    const from = rest![field][0];
+    const now = live.rest[field];
+    if (now === from) delete rest![field];
+    else rest![field] = [from, now];
+  }
+  if (rest && !Object.keys(rest).length) delete step.delta.rest;
+  // The rule's params made the run's last change, which this one no longer
+  // ends on: sealed, the step replays what the board shows.
+  delete step.op;
+  for (const key of checkpoints.keys()) if (key >= at) checkpoints.delete(key);
+  forgetBytes();
+}
+
 /**
  * Drop the step behind the marker, for a caller withdrawing something it did
  * itself. `id` is the step the caller's command wrote, so a command that
@@ -1038,6 +1086,8 @@ export function rebuildFrom(index: number) {
   } finally {
     // Finally: leaving `replaying` latched silently stops all future recording.
     replaying = false;
+    // A runner declares its rule, and a commit in a replay records nothing.
+    pendingOp = null;
   }
   at = steps.length;
   undone = 0;

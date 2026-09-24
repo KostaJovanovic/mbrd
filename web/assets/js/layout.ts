@@ -12,7 +12,7 @@ import { splitAppearance } from './layout-settings.ts';
 import { arrange, mobileArrangement, mobileOrder } from './arrange/arrangements.ts';
 import { bus, markDirty } from './board-store.ts';
 import { commit, dropStacks } from './history.ts';
-import { setSettle } from './timeline.ts';
+import { setSettle, dropOp } from './timeline.ts';
 import {
   board, byId, BOARD_MODES, DEFAULT_SETTINGS, MOBILE_TOP_ROWS,
   MOBILE_MIN_ROWS, MOBILE_BOTTOM_ROWS, mobileColumnCount,
@@ -950,7 +950,11 @@ export function commitGeom(
   // with no entry to reverse it.
   const changed = after.some(a =>
     a.loose !== was(a).loose || GEOM_KEYS.some(k => a[k] !== was(a)[k]));
-  if (!changed) return;
+  if (!changed) {
+    // Align on cards already aligned declared its rule and commits nothing.
+    dropOp();
+    return;
+  }
   // Placed by hand while snapping was on: this *is* where the item belongs
   // now, so it gives up its memory of where it sat before the board was laid
   // on the lattice. Turning snapping off later leaves it exactly here.

@@ -7,7 +7,7 @@
 
 import {
   board, bus, byId, select, itemAdjust, itemCrop, itemRotate, itemMatte, flipTransform, setItemText,
-  setItemAscii, renameItem,
+  setItemAscii, renameItem, takeBack,
 } from '../state.ts';
 import type { Command } from '../state.ts';
 import { copyItems } from '../clipboard.ts';
@@ -15,7 +15,7 @@ import { openAnchored } from './menu.ts';
 import type { MenuEntry } from './menu.ts';
 import { openExternal } from './leaving.ts';
 import { displayURLReady, ensureDisplay } from '../canvas/display.ts';
-import { travelMs } from '../canvas/viewport.ts';
+import { travelMs, fastMs } from '../canvas/viewport.ts';
 import { addFile, assetURL, getAsset, readText } from '../storage/assets.ts';
 import { fileKey, lift } from '../consent.ts';
 import { mountEditor } from './editor/view.ts';
@@ -25,6 +25,7 @@ import { baseName, formatBytes, markClosed, wasClosed } from '../util.ts';
 import { linkURL, MARKDOWN } from '../canvas/renderers.ts';
 import { embedFor, frameFor } from '../canvas/embed.ts';
 import { noteTint } from '../canvas/note-model.ts';
+import type { NoteEntrance } from '../canvas/notes.ts';
 import { kindName } from '../canvas/item-dom.ts';
 import { renderMarkdown } from './markdown.ts';
 // Statically: the only import the reader needs is storage/zip.ts, already in
@@ -63,6 +64,17 @@ export type OpenOptions = {
   caret?: EditorOptions['caret'], from?: DOMRect | null, paper?: string, held?: HeldTyping | null,
   /** Typed at the caret once the editor opens, before anything held. */
   typed?: string,
+  /** The card or tile a picture was opened from, on screen, for it to grow out of. */
+  thumb?: DOMRect | null,
+  /**
+   * The sticky this document grew out of, for as long as this editing lasts:
+   * `fits` is asked after each change, and once the text fits a sticky again
+   * `back` turns it into one (`was` is the text before the change), and the
+   * editor goes into it by `into`. Wired by main.ts, since the note is canvas/'s.
+   */
+  note?: { fits: (markdown: string) => boolean, back: (markdown: string, was: string, into: NoteEntrance) => void },
+  /** What is on screen under the viewing until it arrives - the composer the sticky was written in - and its taking away. */
+  over?: () => void,
 };
 
 /** Typing caught between a sticky closing and its document opening. `into` moves the catcher inside a modal. */
@@ -73,13 +85,14 @@ export type HeldTyping = { take: () => string, into: (host: HTMLElement) => void
  * and the editor is not open yet, since the file is hashed in between. A
  * hidden field takes focus meanwhile, so the keys land somewhere - and on a
  * phone, so the keyboard stays up rather than dropping and coming back.
+ * `host` is a modal still open, the one place a field can take focus.
  */
-export function holdTyping(): HeldTyping {
+export function holdTyping(host: HTMLElement = document.body): HeldTyping {
   const box = document.createElement('textarea');
   box.className = 'viewer-hold';
   box.tabIndex = -1;
   box.setAttribute('aria-hidden', 'true');
-  document.body.append(box);
+  host.append(box);
   box.focus({ preventScroll: true });
   return {
     take: () => {
@@ -102,7 +115,7 @@ export function holdTyping(): HeldTyping {
  */
 type EditSession = {
   editor: Editor, id: string, name: string, mime: string,
-  saved: string, step: Command | null, gen: number, timer: number, chain: Promise<void>,
+  saved: string | null, step: Command | null, gen: number, timer: number, chain: Promise<void>,
   /** Stops following the phone keyboard. */
   release: () => void,
 };
@@ -122,8 +135,9 @@ function saveEdit(s: EditSession): Promise<void> {
       if (s.gen !== boardGen) return;
       s.step = setItemText(s.id, hash, s.step);
     } catch (err) {
-      // Left for the next save, which tries the whole text again.
-      s.saved = '';
+      // Left for the next save, which tries the whole text again - null, since
+      // any text, the empty one too, could be what failed.
+      s.saved = null;
       console.error('[mbrd] the document could not be saved', err);
     }
   });
@@ -253,9 +267,8 @@ const PDF_EXTS = new Set(['pdf', 'ai']);
 
 export function openViewer(id: string, open: OpenOptions = {}) {
   const item = byId(id);
-  if (!dlg || typeof dlg.showModal !== 'function' || !item) return;
-  const view = viewFor(item);
-  if (!view) return;
+  const view = item && viewFor(item);
+  if (!dlg || typeof dlg.showModal !== 'function' || !item || !view) return void open.over?.();
   // A close still animating is finished first: this viewing replaces it.
   if (closing) finishClose();
   // A document already open is saved and put down before another replaces it.
@@ -287,9 +300,13 @@ export function openViewer(id: string, open: OpenOptions = {}) {
   // it; the sheet exists only once the editor has mounted, so till then the
   // viewing waits unseen, and editDocument() calls arrive().
   if (open.from || open.edit) {
-    arriving = { from: open.from ?? null, paper: open.paper };
+    arriving?.over?.();
+    arriving = { from: open.from ?? null, paper: open.paper, over: open.over };
     if ('edit' in dlg.dataset) dlg.classList.add('is-arriving');
     else arrive();
+  } else {
+    open.over?.();
+    if (pic && open.thumb) growPicture(dlg, pic, open.thumb);
   }
   // The body, not the close button - scrolling with the keyboard is the
   // first thing anybody does, and a focused button swallows Space. Unless
@@ -298,8 +315,37 @@ export function openViewer(id: string, open: OpenOptions = {}) {
   else bodyEl!.focus?.();
 }
 
+/**
+ * A picture opened from its card or tile grows out of it, rather than the
+ * lightbox swelling from the middle of the window: the photograph flies from
+ * the thumbnail's box to its own, while the dark ground and the head fade in
+ * around it. Only when the picture already has a size - a file still loading
+ * has none to fly to, and keeps the plain entrance (viewer.css's ask-in).
+ * Uniform scale about matching centres, so a cropped tile does not stretch it.
+ */
+function growPicture(dlg: HTMLDialogElement, pic: HTMLImageElement, from: DOMRect) {
+  const ms = travelMs();
+  if (!(ms > 0) || typeof pic.animate !== 'function' || !from.width || !from.height) return;
+  const to = pic.getBoundingClientRect();
+  if (!to.width || !to.height) return;
+  for (const a of dlg.getAnimations()) a.cancel();
+  const s = Math.max(from.width / to.width, from.height / to.height);
+  const dx = (from.left + from.width / 2) - (to.left + to.width / 2);
+  const dy = (from.top + from.height / 2) - (to.top + to.height / 2);
+  const long = ms * 0.8;
+  pic.animate([
+    { transform: `translate(${dx}px, ${dy}px) scale(${s})` },
+    { transform: 'none' },
+  ], { duration: long, easing: cssEase() });
+  dlg.animate([{ backgroundColor: 'transparent' }, { backgroundColor: getComputedStyle(dlg).backgroundColor }],
+    { duration: long, easing: 'ease-out' });
+  for (const part of dlg.querySelectorAll<HTMLElement>('#viewer-head')) {
+    part.animate([{ opacity: 0 }, { opacity: 0, offset: 0.4 }, { opacity: 1 }], { duration: long, easing: 'ease-out' });
+  }
+}
+
 /** The entrance a document is waiting on: from a sticky, or (no `from`) up from below. See openViewer() and arrive(). */
-let arriving: { from: DOMRect | null, paper?: string } | null = null;
+let arriving: { from: DOMRect | null, paper?: string, over?: () => void } | null = null;
 
 /** Shows the waiting viewing: grown or risen into `page`, or plainly faded in when there is no sheet. Once. */
 function arrive(page: HTMLElement | null = null) {
@@ -309,6 +355,7 @@ function arrive(page: HTMLElement | null = null) {
   dlg.classList.remove('is-arriving');
   if (a.from) growFrom(dlg, a.from, a.paper, page);
   else riseIn(dlg, page);
+  a.over?.();
 }
 
 /** What stands around the sheet and fades with it: the head, the ribbon, the grain and the status bar. */
@@ -325,11 +372,11 @@ const SETTLE = 'cubic-bezier(0.16, 1, 0.3, 1)';
 function riseIn(dlg: HTMLDialogElement, sheet: HTMLElement | null) {
   if (typeof dlg.animate !== 'function') return;
   const ms = travelMs();
-  if (!sheet || !(ms > 0)) return void dlg.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180, easing: 'ease-out' });
+  if (!sheet || !(ms > 0)) return void dlg.animate([{ opacity: 0 }, { opacity: 1 }], { duration: fastMs(), easing: 'ease-out' });
   for (const a of dlg.getAnimations()) a.cancel();
   const box = dlg.getBoundingClientRect();
   const r = sheet.getBoundingClientRect();
-  const long = ms * 1.6;
+  const long = ms * 1.1;
   const hold = holdScroll(sheet);
   sheet.animate([
     { transform: `translateY(${box.bottom - r.top + 24}px) rotate(-2deg)` },
@@ -361,7 +408,9 @@ let closing: { anims: Animation[], done: () => void } | null = null;
 /**
  * The editor going the way it came: the page dropping away off the bottom of
  * the window, tipping as it goes, the rest fading ahead of it, and the board
- * showing through the desk. `done` closes the dialog when it has gone.
+ * showing through the desk. Off the mark at once and quick - the user asked
+ * to be back on the board, so the first frames are the ones that must move.
+ * `done` closes the dialog when it has gone.
  */
 function leave(done: () => void) {
   const sheet = dlg?.querySelector<HTMLElement>('.ed-sheet');
@@ -369,15 +418,15 @@ function leave(done: () => void) {
   if (!dlg || !sheet || typeof dlg.animate !== 'function' || !(ms > 0)) return done();
   const box = dlg.getBoundingClientRect();
   const r = sheet.getBoundingClientRect();
-  const long = ms * 1.1;
-  const opts = { duration: long, easing: 'cubic-bezier(0.55, 0, 0.8, 0.2)', fill: 'forwards' as const };
+  const long = ms * 0.7;
+  const opts = { duration: long, easing: cssEase(), fill: 'forwards' as const };
   holdScroll(sheet);
   dlg.style.pointerEvents = 'none';
   const anims = [
     sheet.animate([{ transform: 'none' }, { transform: `translateY(${box.bottom - r.top + 24}px) rotate(1.5deg)` }], opts),
-    dlg.animate([{ backgroundColor: getComputedStyle(dlg).backgroundColor }, { backgroundColor: 'transparent' }], { ...opts, easing: 'ease-in' }),
+    dlg.animate([{ backgroundColor: getComputedStyle(dlg).backgroundColor }, { backgroundColor: 'transparent' }], { ...opts, easing: 'ease-out' }),
     ...[...dlg.querySelectorAll<HTMLElement>(EDITOR_PARTS)].map(part =>
-      part.animate([{ opacity: 1 }, { opacity: 0 }], { ...opts, duration: long * 0.6, easing: 'ease-in' })),
+      part.animate([{ opacity: 1 }, { opacity: 0 }], { ...opts, duration: long * 0.6, easing: 'ease-out' })),
   ];
   closing = { anims, done };
   anims[0].finished.then(() => { if (closing?.anims === anims) finishClose(); }, () => {});
@@ -403,33 +452,21 @@ function finishClose() {
 function growFrom(dlg: HTMLDialogElement, from: DOMRect, paper: string | undefined, page: HTMLElement | null) {
   if (typeof dlg.animate !== 'function') return;
   const ms = travelMs();
-  const fade = () => void dlg.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180, easing: 'ease-out' });
+  const fade = () => void dlg.animate([{ opacity: 0 }, { opacity: 1 }], { duration: fastMs(), easing: 'ease-out' });
   if (!page || !(ms > 0) || !from.width || !from.height) return fade();
   // The grow is the entrance: viewer.css's own (ask-in) would still be scaling
   // the dialog as the sheet is measured, and the card would land short of it.
   for (const a of dlg.getAnimations()) a.cancel();
-  // The part of the sheet on screen - a page is taller than the window.
+  const to = seenOf(page);
+  if (!to) return fade();
   const box = dlg.getBoundingClientRect();
-  const sheet = page.getBoundingClientRect();
-  const seen = (page.parentElement ?? page).getBoundingClientRect();
-  const top = Math.max(sheet.top, seen.top);
-  const to = { left: sheet.left, top, width: sheet.width, height: Math.min(sheet.bottom, seen.bottom) - top };
-  if (!(to.width > 0 && to.height > 0)) return fade();
-  const ease = getComputedStyle(document.documentElement).getPropertyValue('--ease').trim() || 'ease-out';
+  const ease = cssEase();
   const white = getComputedStyle(page).backgroundColor;
   const desk = getComputedStyle(dlg).backgroundColor;
   const long = ms * 1.35;
   const landed = ms / long;
 
-  const card = document.createElement('div');
-  card.className = 'viewer-grow';
-  // Paper at rest: the colour animation ends before the card has faded out.
-  Object.assign(card.style, {
-    background: white,
-    left: `${to.left - box.left}px`, top: `${to.top - box.top}px`,
-    width: `${to.width}px`, height: `${to.height}px`,
-  });
-  dlg.append(card);
+  const card = paperCard(dlg, box, to, white);
   card.animate([
     { transformOrigin: '0 0', transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width}, ${from.height / to.height})` },
     { transformOrigin: '0 0', transform: 'none' },
@@ -444,6 +481,80 @@ function growFrom(dlg: HTMLDialogElement, from: DOMRect, paper: string | undefin
     part.animate([{ opacity: 0 }, { opacity: 0, offset: 0.35 }, { opacity: 1 }], { duration: long, easing: 'ease-out' });
   }
 }
+
+/** The part of the sheet on screen - a page is taller than the window - or null if none of it is. */
+function seenOf(page: HTMLElement) {
+  const sheet = page.getBoundingClientRect();
+  const seen = (page.parentElement ?? page).getBoundingClientRect();
+  const top = Math.max(sheet.top, seen.top);
+  const r = { left: sheet.left, top, width: sheet.width, height: Math.min(sheet.bottom, seen.bottom) - top };
+  return r.width > 0 && r.height > 0 ? r : null;
+}
+
+/** The app's own curve, read off the tokens. */
+const cssEase = () => getComputedStyle(document.documentElement).getPropertyValue('--ease').trim() || 'ease-out';
+
+/** The blank card a sticky and its page turn into each other as, laid over `at` in the dialog. */
+function paperCard(dlg: HTMLDialogElement, box: DOMRect, at: { left: number, top: number, width: number, height: number }, colour: string) {
+  const card = document.createElement('div');
+  card.className = 'viewer-grow';
+  Object.assign(card.style, {
+    background: colour,
+    left: `${at.left - box.left}px`, top: `${at.top - box.top}px`,
+    width: `${at.width}px`, height: `${at.height}px`,
+  });
+  dlg.append(card);
+  return card;
+}
+
+/**
+ * A document written back down to fit, going back into its sticky. Not the
+ * grow played backwards, which starts on a long still crossfade and lands at
+ * full speed: the page lifts off as a blank card at once, flies to where the
+ * composer has put the note on the same settling curve as the grow, turning
+ * to the note's colour on the way while the desk, the name and the bar go,
+ * and the composer fades in over it as it lands. This viewing closes under
+ * the composer after. With nowhere to go, or motion reduced, straight over.
+ */
+const shrinkInto: NoteEntrance = into => {
+  const end = (anims: Animation[] = []) => {
+    closeViewer(true);
+    for (const a of anims) a.cancel();
+  };
+  if (!into) return end();
+  const page = dlg?.querySelector<HTMLElement>('.ed-sheet');
+  const ms = travelMs();
+  const from = page && seenOf(page);
+  const to = into.sheet;
+  if (!dlg || typeof dlg.animate !== 'function' || !page || !from || !(ms > 0) || !to.width || !to.height) {
+    return void into.show().then(() => end(), () => end());
+  }
+  const box = dlg.getBoundingClientRect();
+  const white = getComputedStyle(page).backgroundColor;
+  const desk = getComputedStyle(dlg).backgroundColor;
+  // The lift: long enough that the words fade rather than blink, short enough to read as one move.
+  const lift = ms * 0.2;
+  const hold = { fill: 'both' as const };
+  const card = paperCard(dlg, box, from, white);
+  const anims = [
+    card.animate([{ opacity: 0 }, { opacity: 1 }], { ...hold, duration: lift, easing: 'ease-out' }),
+    // Gone from under the card once it is opaque, or the page would be left behind as it flies.
+    page.animate([{ opacity: 1 }, { opacity: 1, offset: 0.99 }, { opacity: 0 }], { ...hold, duration: lift }),
+    card.animate([
+      { transformOrigin: '0 0', transform: 'none' },
+      { transformOrigin: '0 0', transform: `translate(${to.left - from.left}px, ${to.top - from.top}px) scale(${to.width / from.width}, ${to.height / from.height})` },
+    ], { ...hold, duration: ms, delay: lift, easing: cssEase() }),
+    // The note's colour arrives mid-flight, so it lands as the note rather than turning into one there.
+    card.animate([{ backgroundColor: white }, { backgroundColor: white, offset: 0.15 }, { backgroundColor: into.paper || white, offset: 0.7 }, { backgroundColor: into.paper || white }],
+      { ...hold, duration: ms, delay: lift, easing: 'linear' }),
+    dlg.animate([{ backgroundColor: desk }, { backgroundColor: 'transparent' }], { ...hold, duration: lift + ms * 0.6, easing: 'ease-out' }),
+    ...[...dlg.querySelectorAll<HTMLElement>(EDITOR_PARTS)].map(part =>
+      part.animate([{ opacity: 1 }, { opacity: 0 }], { ...hold, duration: lift + ms * 0.3, easing: 'ease-out' })),
+  ];
+  // The composer over the card for the last stretch of the flight, the words coming back as it settles.
+  const shown = new Promise<void>(res => setTimeout(res, lift + ms * 0.7)).then(into.show);
+  void Promise.all([shown, ...anims.map(a => a.finished.catch(() => {}))]).then(() => end(anims), () => end(anims));
+};
 
 /** Close the viewing - a document with its paper dropping away first, unless `now`. */
 function closeViewer(now = false) {
@@ -531,6 +642,8 @@ function teardown() {
   bodyEl?.replaceChildren();
   // Typing held for a document that never opened goes with the viewing.
   dlg!.querySelector('.viewer-hold')?.remove();
+  dlg!.querySelector('.viewer-grow')?.remove();
+  arriving?.over?.();
   arriving = null;
   dlg!.classList.remove('is-arriving');
   delete dlg!.dataset.type;
@@ -932,6 +1045,8 @@ async function editDocument(item: Item, host: HTMLElement, open: OpenOptions = {
   const readOnly = (why: string) => {
     delete dlg!.dataset.edit;
     readOnlyText(item, host, why);
+    // No sheet to grow into: a plain fade, rather than a viewing waiting unseen.
+    arrive();
   };
   const waiting = nothing('Opening it…');
   host.append(waiting);
@@ -957,6 +1072,28 @@ async function editDocument(item: Item, host: HTMLElement, open: OpenOptions = {
   }
   const ext = str(item.meta?.ext);
   let session: EditSession | null = null;
+  // The text as of the last change, which says where the next one was (OpenOptions.note).
+  let before = text;
+  /**
+   * A sticky's document written back down to fit: nothing of this editing is
+   * written - a save still hashing lands nowhere and a save made is taken back -
+   * and once the editor is out of its own input handler, it closes on a sticky.
+   */
+  const unfile = (s: EditSession, note: NonNullable<OpenOptions['note']>) => {
+    if (s.gen < 0) return true;
+    const now = s.editor.text();
+    const was = before;
+    before = now;
+    if (!note.fits(now)) return false;
+    clearTimeout(s.timer);
+    s.saved = now;
+    s.gen = -1;
+    takeBack(s.step);
+    s.step = null;
+    // The viewing stays up to go back into the sticky, and shrinkInto() closes it.
+    queueMicrotask(() => note.back(now, was, shrinkInto));
+    return true;
+  };
   const editor = mountEditor({
     text,
     plain: !MARKDOWN.has(ext),
@@ -965,6 +1102,7 @@ async function editDocument(item: Item, host: HTMLElement, open: OpenOptions = {
     caret: open.caret ?? 'start',
     onChange: () => {
       if (!session) return;
+      if (open.note && unfile(session, open.note)) return;
       clearTimeout(session.timer);
       session.timer = window.setTimeout(() => { if (session) void saveEdit(session); }, IDLE_SAVE_MS);
     },
@@ -974,11 +1112,12 @@ async function editDocument(item: Item, host: HTMLElement, open: OpenOptions = {
     name: shownName(item),
     onRename: typed => {
       // The extension stays on, as the card's name had it: the title is what is typed.
+      // Cleared, the document is untitled - its kind is in meta.ext, not the name.
       const was = byId(item.id);
       const tail = ext && was?.name.toLowerCase().endsWith(`.${ext}`) ? was.name.slice(-(ext.length + 1)) : '';
-      renameItem(item.id, typed ? typed + tail : '');
+      renameItem(item.id, typed ? typed + tail : '', { blank: true });
       const now = byId(item.id);
-      if (now) titleEl!.textContent = shownName(now);
+      if (now) titleEl!.textContent = shownName(now) || 'Untitled';
       return now ? shownName(now) : typed;
     },
   });

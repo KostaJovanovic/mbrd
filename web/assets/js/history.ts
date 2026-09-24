@@ -7,7 +7,8 @@ import { cue } from './cuelume/engine.ts';
 import {
   snapshot, recordStep, markerBack, markerForward, dropLastStep, resetTimeline,
   stepBack, stepForward, stepBackLabel, stepForwardLabel, isReplaying,
-  setStackDropper, settleDrift, ledgerMoved, timelinePlaying,
+  setStackDropper, settleDrift, ledgerMoved, timelinePlaying, stepBehind, stepAhead, runMoved,
+  dropOp,
 } from './timeline.ts';
 
 /** One undo entry. `step` links to the timeline ledger; `weight` drives eviction. */
@@ -63,6 +64,8 @@ export function commit(
   // board back so the snapshot captures the before-state.
   // During a replay, pass through without touching either stack.
   if (isReplaying()) {
+    // Both branches record nothing, so a declared rule dies with the change.
+    dropOp();
     if (rewind) rewind();
     redo();
     return { label, redo, undo, weight: 1 };
@@ -71,6 +74,7 @@ export function commit(
   // is recorded, and a caller that already mutated gets its board put back.
   // The last net under the gates in the canvas and the chrome.
   if (timelinePlaying()) {
+    dropOp();
     if (rewind) rewind();
     bus.emit('readonly');
     return { label, redo, undo, weight: 1 };
@@ -138,6 +142,34 @@ function clearRedo() {
   redoStack.length = 0;
 }
 
+/**
+ * Run one side of `cmd` and keep the ledger on the board it leaves. `known`
+ * says the ledger still holds the entry's step where this move meets it.
+ *
+ * The marker follows the ledger's count, not the stack's: a run of small
+ * changes is several entries here and one step there. Beside another entry of
+ * its step (`next`), the step is rewritten to end where the board now is; only
+ * the last entry of a run moves the marker, or a three-nudge undo walks it
+ * three steps back. An entry whose step is gone (its run folded back to
+ * nothing, or the step was folded into the base) is a change the ledger has
+ * not seen, so it is recorded as one.
+ */
+function moveAlong(
+  cmd: Command, run: () => void, known: boolean,
+  next: Command | undefined, marker: () => void,
+) {
+  if (known) {
+    run();
+    if (next?.step === cmd.step) runMoved();
+    else marker();
+  } else {
+    const before = snapshot();
+    run();
+    cmd.step = recordStep(cmd.label, before)?.id ?? null;
+  }
+  ledgerMoved();
+}
+
 export function undo() {
   const cmd = undoStack.pop();
   // Stack empty — fall through to the persistent timeline record. Stack is
@@ -153,14 +185,7 @@ export function undo() {
   // Drift is written down before the closure runs and the ledger is resynced
   // after it, so what the closure undoes is never mistaken for drift.
   settleDrift();
-  cmd.undo();
-  // Marker follows the ledger's count, not the stack's. A run of small changes
-  // is several entries here but one step there. Move the marker only when this
-  // entry is the last of its step — otherwise a three-nudge undo walks the
-  // marker three steps back and replays rebuild the wrong board.
-  const below = undoStack[undoStack.length - 1];
-  if (cmd.step && below?.step !== cmd.step) markerBack();
-  ledgerMoved();
+  moveAlong(cmd, cmd.undo, stepBehind(cmd.step), top(undoStack), markerBack);
   heldWeight -= cmd.weight;
   redoStack.push(cmd);
   markDirty();
@@ -181,11 +206,10 @@ export function redo() {
     return true;
   }
   settleDrift();
-  cmd.redo();
-  // Mirror of undo()'s marker rule — move forward once as a run is entered.
-  const resuming = undoStack[undoStack.length - 1];
-  if (cmd.step && resuming?.step !== cmd.step) markerForward();
-  ledgerMoved();
+  const resuming = top(undoStack);
+  // Inside a run the step is behind the marker; entering one, it is ahead.
+  const inRun = !!cmd.step && resuming?.step === cmd.step;
+  moveAlong(cmd, cmd.redo, inRun ? stepBehind(cmd.step) : stepAhead(cmd.step), resuming, markerForward);
   undoStack.push(cmd);
   heldWeight += cmd.weight;
   markDirty();

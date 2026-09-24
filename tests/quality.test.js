@@ -216,7 +216,8 @@ test('the wired sites read the dial rather than a constant', async () => {
   // buildShadow(); the list moved behind noTwin(), a predicate over an
   // item rather than a set of type names.
   assert.match(items, /quality\.shadows && !noTwin\(/, 'no twin is built when shadows are off');
-  assert.match(display, /displayMax\(\) \/ Math\.max/, 'the display copy takes the dial’s long edge');
+  assert.match(display, /max = displayMax\(\)/, 'the display copy takes the dial’s long edge');
+  assert.match(display, /copyScale\(Math\.max\(sw, sh\)\)/, 'and the copy is sized through it');
   // canvas/web.ts is *not* in this list any more, the one site that
   // stopped reading the dial since what it draws is a stored list rather
   // than work to decide whether to afford. Asserted in reverse so the

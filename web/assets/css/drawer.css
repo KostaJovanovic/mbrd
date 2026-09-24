@@ -54,7 +54,9 @@
   width: 17px; height: 17px;
   transition: transform var(--dur-base) var(--ease-back);
 }
-#drawer-btn:hover svg { transform: scale(var(--btn-grow)) translateY(var(--btn-lift)); }
+@media (hover: hover) {
+  #drawer-btn:hover svg { transform: scale(var(--btn-grow)) translateY(var(--btn-lift)); }
+}
 /* Something is in there -- full strength. */
 #drawer-btn.has-things { color: var(--accent-deep); border-color: var(--accent-text); }
 /* Wearing the bin: the press deletes what is selected, and the colour says so
@@ -162,8 +164,14 @@
   /* Scale the glyph, not the button -- scaling the button drags the seam. */
   transition: transform var(--dur-base) var(--ease-back);
 }
-#history-ctl button:hover:not(:disabled) svg { transform: scale(var(--btn-grow)) translateY(var(--btn-lift)); }
-#history-ctl button:active:not(:disabled) svg { transform: scale(calc(var(--btn-press) - 0.08)); }
+@media (hover: hover) {
+  #history-ctl button:hover:not(:disabled) svg { transform: scale(var(--btn-grow)) translateY(var(--btn-lift)); }
+}
+#history-ctl button:active:not(:disabled) svg {
+  /* The glyph press and its curve, argued at #zoom-ctl's copy (chrome.css). */
+  transform: scale(max(0.85, calc(1 - (1 - var(--btn-press)) * 6.33)));
+  transition: transform var(--dur-fast) var(--ease);
+}
 
 /* ----------------------------------------------------------
    The drawer window (ui/drawer.ts)
@@ -465,10 +473,11 @@
 @keyframes exit-fall {
   to { transform: translateY(90px) rotate(7deg); opacity: 0; }
 }
+/* Harsh's delete: no pop first (the tier where nothing bounces) and not to
+   scale(0) - nothing real shrinks to a point. */
 @keyframes exit-shatter {
   0%   { transform: scale(1); filter: blur(0); }
-  20%  { transform: scale(1.06); filter: blur(0); }
-  100% { transform: scale(0); filter: blur(6px); opacity: 0; }
+  100% { transform: scale(0.9); filter: blur(6px); opacity: 0; }
 }
 
 /* Fallback without color-mix() -- see tokens.css section 7. */

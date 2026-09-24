@@ -42,12 +42,13 @@ afterEach(() => {
 
 /**
  * Drive, as far as an upload sees it. `drops` is the set of chunk PUTs (by
- * count, from 1) that reject without an answer, and `offline` how many status
- * queries after a drop reject too.
+ * count, from 1) that reject without an answer, `offline` how many status
+ * queries after a drop reject too, and `busy` how many answer 503 after that.
  */
-function fakeDrive({ drops = [], offline = 0, size }) {
+function fakeDrive({ drops = [], offline = 0, busy = 0, size }) {
   const got = { bytes: 0, begun: 0, chunks: 0, queries: 0, starts: [], published: 0 };
   let down = 0;
+  let jammed = 0;
   globalThis.fetch = async (url, init = {}) => {
     const range = init.headers?.['Content-Range'] || '';
     if (/uploadType=resumable/.test(url)) {
@@ -62,6 +63,7 @@ function fakeDrive({ drops = [], offline = 0, size }) {
     if (range.startsWith('bytes */')) {
       got.queries++;
       if (down > 0) { down--; throw new TypeError('Failed to fetch'); }
+      if (jammed > 0) { jammed--; return new Response('', { status: 503 }); }
       if (got.bytes === size) return new Response(JSON.stringify({ id: 'file1' }), { status: 200 });
       const headers = got.bytes ? { range: `bytes=0-${got.bytes - 1}` } : {};
       return new Response(null, { status: 308, headers });
@@ -73,6 +75,7 @@ function fakeDrive({ drops = [], offline = 0, size }) {
       // Half the chunk landed before the line went.
       got.bytes = from + Math.floor((to + 1 - from) / 2);
       down = offline;
+      jammed = busy;
       throw new TypeError('Failed to fetch');
     }
     assert.equal(from, got.bytes, 'a chunk starts where the session ends');
@@ -107,6 +110,17 @@ test('a status query that finds the line still down waits and asks again', async
   assert.equal(id, 'file1');
   assert.equal(got.begun, 1);
   assert.equal(got.queries, 2);
+});
+
+test('a status query that Drive answers with a fault waits and asks again', async () => {
+  // A 503 or 429 says "later", not "the session is gone". It used to end
+  // the upload at once, and the five tries with backoff never ran.
+  const size = 10 * MB;
+  const got = fakeDrive({ drops: [1], busy: 2, size });
+  const id = await googleDrive.upload(blobOf(size), 'board.mbrd', () => {});
+  assert.equal(id, 'file1');
+  assert.equal(got.begun, 1, 'the same session, not a new upload');
+  assert.equal(got.queries, 3);
 });
 
 test('a second try with the same pack resumes the first one\'s session', async () => {

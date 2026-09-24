@@ -9,9 +9,11 @@
      root, not the missing path. Must come before anything that resolves a URL.
      main.js reads it back for the notFound check. -->
 <base href="/">
-<!-- "mbrd" leads because people who know it search exactly that. -->
-<title>mbrd - an infinite freeform moodboard in your browser</title>
-<meta name="description" content="An infinite freeform moodboard in your browser. Drop in images, video, audio or text and place them anywhere. No account, works offline, saves as one file.">
+<!-- "mbrd" leads because people who know it search exactly that. The rest is
+     the words the others search: "free", "moodboard", and where it runs. The
+     description spells it "mood board", the two-word form half of them type. -->
+<title>mbrd - free infinite moodboard for web, desktop and Android</title>
+<meta name="description" content="A free infinite mood board in your browser, or as an app for Windows, Mac, Linux and Android. Drop in images, video, audio or text and place them anywhere.">
 <meta name="author" content="valjdakosta">
 <!-- max-image-preview:large gets a full card in Google Discover/images.
      index,follow is the default; stated so the pair reads as a decision. -->
@@ -31,8 +33,8 @@
      og:image:alt doubles as screen-reader text and caption on image failure. -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="mbrd">
-<meta property="og:title" content="mbrd - an infinite freeform moodboard in your browser">
-<meta property="og:description" content="Drop in images, video, audio or text and place them anywhere on an infinite board. No account, works offline, saves as one file.">
+<meta property="og:title" content="mbrd - free infinite moodboard for web, desktop and Android">
+<meta property="og:description" content="A free infinite mood board. Drop in images, video, audio or text and place them anywhere. In your browser or as an app, no account, saves as one file.">
 <meta property="og:url" content="https://mbrd.valjdakosta.com/">
 <meta property="og:locale" content="en_US">
 <meta property="og:image" content="https://mbrd.valjdakosta.com/assets/img/og.png">
@@ -41,14 +43,17 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="The mbrd wordmark on a card in the middle of a board of photos, a video, a note, a sound clip and colour swatches, joined by threads.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="mbrd - an infinite freeform moodboard in your browser">
-<meta name="twitter:description" content="Drop in images, video, audio or text and place them anywhere on an infinite board. No account, works offline, saves as one file.">
+<meta name="twitter:title" content="mbrd - free infinite moodboard for web, desktop and Android">
+<meta name="twitter:description" content="A free infinite mood board. Drop in images, video, audio or text and place them anywhere. In your browser or as an app, no account, saves as one file.">
 <meta name="twitter:image" content="https://mbrd.valjdakosta.com/assets/img/og.png">
 <meta name="twitter:image:alt" content="The mbrd wordmark on a card in the middle of a board of photos, a video, a note, a sound clip and colour swatches, joined by threads.">
 
 <!-- JSON-LD structured data. Keep in sync with the <noscript> prose below.
      SoftwareApplication (not WebSite) — carries `offers`, and price:0 puts
-     the page in free-tools listings. -->
+     the page in free-tools listings. No aggregateRating: Google's rich result
+     wants one, and there is no honest one to give. downloadUrl is RELEASES in
+     commands/view.ts; sameAs is that public repository, the one the updaters
+     read (this one is private). -->
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -56,21 +61,24 @@
   "name": "mbrd",
   "alternateName": "mbrd - infinite moodboard",
   "url": "https://mbrd.valjdakosta.com/",
-  "description": "An infinite freeform moodboard that runs entirely in the browser. Drop in images, video, audio, text or arbitrary files and place them anywhere on an unbounded canvas. No account and no server: boards save to a single .mbrd file, and the app works offline once loaded.",
+  "description": "A free, infinite freeform moodboard. It runs in the browser, and as an app for Windows, macOS, Linux and Android. Drop in images, video, audio, text or arbitrary files and place them anywhere on an unbounded canvas. No account and no server: boards save to a single .mbrd file, and the app works offline.",
   "applicationCategory": "DesignApplication",
   "applicationSubCategory": "Moodboard",
-  "operatingSystem": "Any",
+  "operatingSystem": "Web, Windows, macOS, Linux, Android",
   "browserRequirements": "Requires JavaScript and a browser released since 2023.",
   "image": "https://mbrd.valjdakosta.com/assets/img/og.png",
-  "screenshot": "https://mbrd.valjdakosta.com/assets/img/og.png",
+  "screenshot": "https://mbrd.valjdakosta.com/assets/img/screenshot-wide.png",
+  "downloadUrl": "https://github.com/KostaJovanovic/mbrd-release/releases/latest",
   "softwareHelp": "https://github.com/KostaJovanovic/mbrd-release#readme",
+  "sameAs": ["https://github.com/KostaJovanovic/mbrd-release"],
   "isAccessibleForFree": true,
   "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-  "author": { "@type": "Person", "name": "valjdakosta" },
+  "author": { "@type": "Person", "name": "valjdakosta", "url": "https://valjdakosta.com" },
   "featureList": [
     "Infinite freeform canvas",
     "Images, video, audio, text notes and arbitrary files",
     "Works offline as an installable PWA",
+    "Desktop apps for Windows, macOS and Linux, and an Android app",
     "Boards save as a single .mbrd file",
     "No account and no server"
   ]
@@ -190,8 +198,9 @@
        unfurl, crawlers). Must stay in sync with the JSON-LD in <head>. -->
   <div id="nojs">
     <div>
-      <h1><span class="wm">mbrd</span> - an infinite freeform moodboard</h1>
-      <p><span class="wm">mbrd</span> is an infinite freeform board that runs entirely in your browser.
+      <h1><span class="wm">mbrd</span> - a free, infinite freeform moodboard</h1>
+      <p><span class="wm">mbrd</span> is a free, infinite freeform mood board that runs in your browser,
+        and as an app for Windows, macOS, Linux and Android.
         Drop in images, video, audio, text notes, links, colours or arbitrary
         files, and place them anywhere on an unbounded canvas - no grid, no
         columns, no slots to fill.</p>
@@ -296,7 +305,7 @@
     <!-- The page's one h1. Tail is .vh (visually hidden) so the eye reads "mbrd."
          while screen readers and crawlers get the full sentence. -->
     <div class="wordmark">
-      <h1>mbrd.<span class="vh"> An infinite freeform moodboard in your browser.</span></h1>
+      <h1>mbrd.<span class="vh"> A free, infinite freeform moodboard in your browser.</span></h1>
       <span class="sub">Plan it, see it. Sorted.</span>
     </div>
     <!-- Tooltip and aria-label both name what closes — matches every other close
@@ -315,11 +324,14 @@
   <div class="side-tabs"></div>
   <div class="side-body"></div>
 
-  <!-- Footer: version and credits, both via data-cmd. Styled as anchors (not
-       buttons) so the version row stays quiet. -->
+  <!-- Footer: version, privacy and credits, all dressed as quiet text. The first
+       two are real links, not data-cmd buttons: they are this page's only
+       <a href> to /patch and /privacy, and a crawler follows an href and never a
+       click handler. The version link goes where patchNotes (commands/view.ts)
+       does, since both resolve "patch" against the <base>. -->
   <footer class="side-foot">
-    <button type="button" id="version" class="by" data-cmd="patch-notes"
-            title="What changed"></button>
+    <a id="version" class="by" href="patch" title="What changed"></a>
+    <a class="by" href="privacy">Privacy</a>
     <button type="button" class="by" data-cmd="credits">Credits</button>
   </footer>
 </aside>

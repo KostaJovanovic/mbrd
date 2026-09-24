@@ -23,6 +23,7 @@ import {
 import type { Box, Bounds, Point } from '../geometry.ts';
 import {
   itemIdFromEvent, ensureMounted, nodeFor, sync as syncItems, editItemName, showStickTarget,
+  setDragging,
 } from './items.ts';
 import { noteFloor } from './notes.ts';
 import { linkURL } from './renderers.ts';
@@ -104,6 +105,16 @@ export function shortcutsSuppressed(
   overlayOwnsKeyboard: boolean,
 ): boolean {
   return !!(defaultPrevented || overlayOwnsKeyboard);
+}
+
+/** A mouse or pen pointerup that leaves a button down ends nothing - see
+ *  endPointer. Asks `buttons` only, never `button`: the last release of a chord
+ *  can be the right or an aux button. Out of the handler so a test can state it. */
+export function liftWithButtonsHeld(
+  e: { type: string, pointerType: string, buttons: number },
+): boolean {
+  return e.type === 'pointerup' && (e.pointerType === 'mouse' || e.pointerType === 'pen')
+    && e.buttons !== 0;
 }
 
 /** The keys that still work while the Timeline plays: they move the view or
@@ -1927,7 +1938,9 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // to Home or to Fit alike: catching a moving board has to work the first
     // time, not on the first frame it is dragged - a finger put down to stop
     // something is often a finger that then does not move at all.
-    vp.stopAnim();
+    // Not in a tour: the view is the tour's there (see pressIntent), and a tap
+    // on a card left the camera stopped between two stops.
+    if (!cmds.inTour?.()) vp.onPress();
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
     // Two fingers during a tour are not a pinch, for the reason pressIntent()
@@ -2322,8 +2335,10 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         taps.lastEmpty = null;
         taps.arm = null;
         taps.card = null;
-        // The press that opens the menu is not the tap that clears the board.
+        // The press that opens the menu is not the tap that clears the board,
+        // nor the click that walks a tour on.
         clearOnLift = null;
+        tourClick = null;
         // Whatever the finger had started - a move, a pan, a marquee - it was
         // not that. Dropped rather than committed, since nothing moved.
         abortGesture();
@@ -2475,6 +2490,9 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         // however far the card under it wants a grabbing hand. Mark the viewport
         // for the length of the drag - see #viewport.is-moving in the CSS.
         el.classList.add('is-moving');
+        // And the cards themselves are picked up - the lift and lean items.css
+        // gives .is-dragging, which nothing used to set.
+        setDragging(drag.moving, true);
       }
       drag.moved = true;
       // Snap the dragged item; everything else keeps its offset from it, so a
@@ -2742,11 +2760,11 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // `!pointers.has()` guard, so the card stopped dead under the hand and the
     // undo entry recorded where it happened to be.
     //
-    // `buttons` covers the same ground from the other side, for a chorded press
-    // this branch does not name: a pointerup while any button is still down is
-    // not the end of anything.
-    if (e.type === 'pointerup' && (e.pointerType === 'mouse' || e.pointerType === 'pen')
-      && (e.button > 1 || e.buttons !== 0)) return;
+    // `buttons` is the whole test: a pointerup while any button is still down is
+    // not the end of anything. `button` is not asked, because a chord that ends
+    // on the right or an aux button reports that button on the last release, and
+    // skipping it left the card following a cursor with no button held.
+    if (liftWithButtonsHeld(e)) return;
     // Whether this pointer is one the pipeline was tracking. Read before the
     // delete below, because that is what the answer is about.
     //
@@ -2979,6 +2997,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // said so that the typechecker reads it too, rather than a mode list here
     // that would have to be kept level with the two declarations.
     if ('node' in gesture) gesture.node?.classList.remove('is-resizing');
+    if (gesture.mode === 'move' && gesture.moved) setDragging(gesture.moving, false);
     el.classList.remove('is-panning', 'is-moving');
     showStickTarget(null);
     enter('idle');
@@ -3406,8 +3425,11 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   // initInput() before initDrop(), and stops the event dead the moment it
   // claims it - so exactly one of the two ever acts on a given paste.
 
-  /** A clipboard gesture is ours only when the canvas, not a field, has focus. */
-  const canClip = (e: ClipboardEvent) => !typingInto(e.target) && !!selection.size;
+  /** A clipboard gesture is ours only when the canvas, not a field, has focus.
+   *  An open dialog is not the canvas either: behind the viewer, Ctrl+C took the
+   *  card instead of the text selected in it, and Ctrl+X deleted the card. */
+  const canClip = (e: ClipboardEvent) =>
+    !typingInto(e.target) && !overlayOwnsKeyboard() && !!selection.size;
 
   addEventListener('copy', e => {
     if (!canClip(e)) return;
@@ -3427,6 +3449,8 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
 
   addEventListener('paste', e => {
     if (typingInto(e.target) || !clipboardSize()) return;
+    // A paste aimed into a dialog is not the board's, or copied cards land behind it unseen.
+    if (e.target instanceof Element && e.target.closest('dialog')) return;
     const text = e.clipboardData?.getData('text/plain') || '';
     const files = e.clipboardData?.files;
     // Ours wins in two cases and no others. Either the system clipboard still
@@ -3489,6 +3513,8 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // marquee.
     taps.empty = null;
     taps.lastEmpty = null;
+    // The press that opened the tour's menu is not also a step - see tourClick.
+    tourClick = null;
     abortGesture();
     if (repeatsLongPressContextMenu(hold.menu, {
       x: e.clientX,

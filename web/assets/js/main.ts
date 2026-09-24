@@ -11,6 +11,8 @@ import { setRiskPrompt } from './consent.ts';
 import { platform, isDesktop, refForHandle, setPlatform, setUpdateOffer } from './platform/platform.ts';
 import { electronPlatform, electronStore } from './platform/electron.ts';
 import type { Bridge } from './platform/electron.ts';
+import type { ShareProvider } from './storage/cloud/provider.ts';
+import type { SyncStop } from './storage/cloud/sync.ts';
 import { setStoreBackend } from './storage/idb.ts';
 import { initOverlays } from './ui/overlays.ts';
 import { initLeaveGuard } from './ui/leaving.ts';
@@ -23,7 +25,7 @@ import {
   ensureGhostCards, reseedGhostCards, hasContent, dismissGhosts,
   leaveNotFoundBoard, isContent, markBenchBoard,
   defaultBoardTitle,
-  goTo, timelineSteps, timelineStale,
+  goTo, timelineSteps, timelineStale, lastCommand,
 } from './state.ts';
 import { freezePrefs } from './prefs.ts';
 import { homePath, isPatchPage, isNotFoundPage, isBenchPage, openingFace, openingShare } from './page.ts';
@@ -52,7 +54,8 @@ import {
 } from './storage/storage.ts';
 import { looksLikeMbrd } from './storage/mbrd.ts';
 import { boardThumb } from './ui/snapshot.ts';
-import { flushNoteEdit, growNote, setNoteMenu, setNoteOverflow } from './canvas/notes.ts';
+import { flushNoteEdit, growNote, setNoteMenu, setNoteOverflow, fitsNote, unfileNote } from './canvas/notes.ts';
+import type { NoteEntrance } from './canvas/notes.ts';
 import { setMarkdownRenderer, setEmbedEnrich } from './canvas/renderers.ts';
 import { enrichEmbed } from './canvas/embed-meta.ts';
 import { renderMarkdown } from './ui/markdown.ts';
@@ -199,11 +202,19 @@ setAssetPurge((hashes: Set<string>) => {
 });
 // A note written past the sheet limit becomes a .md document — injected
 // because making one hashes a file, and canvas/ may not import import/. One
-// that outgrew itself mid-sentence opens in the editor, growing out of the note.
+// that outgrew itself mid-sentence opens in the editor, growing out of the note,
+// and turns back into it if written back down to fit before the editor closes.
 setNoteOverflow(async (id, markdown, open) => {
-  const held = open ? holdTyping() : null;
+  const held = open ? holdTyping(open.stay?.host) : null;
+  const note = byId(id);
+  const was = lastCommand();
   const made = await noteToFile(id, markdown, !!open);
-  if (made && open) openViewer(made, { ...open, held, edit: true });
+  // The step that made the document, which turning back takes back.
+  const turned = lastCommand() === was ? null : lastCommand();
+  const back = note && made
+    ? { fits: fitsNote, back: (md: string, before: string, into: NoteEntrance) => void unfileNote(made, note, turned, md, before, into) }
+    : undefined;
+  if (made && open) openViewer(made, { ...open, held, edit: true, note: back, over: open.stay?.go });
   else held?.take();
   return !!made;
 });
@@ -642,39 +653,48 @@ const started = (async function start() {
 /**
  * Push to cloud on autosave. Stops on any failure (expired token, network,
  * conflict) and tells the user once — retry needs a gesture anyway.
- * Latch is per-board, cleared on board:load / board:new.
+ * Latch is per-board, cleared on board:load / board:new, and by the gesture:
+ * a push that lands (Sync now) or a sign-in (syncResumes() in cloud/sync.ts).
  */
-let syncStopped = false;
+let syncStopped: SyncStop | null = null;
 
 function initCloudSync() {
   // Reset latch when a different board arrives.
   for (const arrival of ['board:load', 'board:new'] as const) {
     bus.on(arrival, () => {
-      syncStopped = false;
+      syncStopped = null;
       // Re-read sync state for the new board and repaint the panel.
       void boardSyncState().then(() => paintPanel()).catch(() => {});
     });
   }
   bus.on('autosaved', () => {
-    if (syncStopped) return;
+    let at: number | null = null;
+    let provider: ShareProvider | null = null;
+    const stop = () => { syncStopped = { at, signedIn: !!provider?.signedIn() }; };
     void (async () => {
       const state = await boardSyncState();
       if (!state) return;
+      at = state.at;
       const { shareProvider } = await import('./storage/cloud/cloud.ts');
-      const provider = shareProvider(state.provider);
-      // Token is gone on every reload — stop quietly, don't nag.
+      provider = shareProvider(state.provider);
+      if (syncStopped) {
+        const { syncResumes } = await import('./storage/cloud/sync.ts');
+        if (!syncResumes(syncStopped, at, !!provider?.signedIn())) return;
+        syncStopped = null;
+      }
+      // No token: expired, or never given in this tab. Stop and say so once.
       if (!provider?.signedIn()) {
-        syncStopped = true;
+        stop();
         toast('Signed out of Drive — this board is not syncing. Board → Sync to connect again');
         return;
       }
       const out = await pushBoardToCloud();
       if (!out.ok) {
-        syncStopped = true;
+        stop();
         toast('This board changed somewhere else — press Sync now to sort it out', 'error');
       }
     })().catch(err => {
-      syncStopped = true;
+      stop();
       console.warn('[mbrd] cloud sync stopped:', err);
       toast('Cloud sync stopped — press Sync now to try again', 'error');
     });

@@ -42,9 +42,12 @@
    the room the panel leaves, as the toolbar does (chrome.css). Padding and not
    `left`, so the column moves and the background stays under the panel.
    #mobile-playlist sits before #sidebar in index.html, so a sibling rule
-   cannot reach it. Above 600 px only: narrower, the panel covers the screen. */
+   cannot reach it. Above 600 px only: narrower, the panel covers the screen.
+   Padding rather than a translate because it also narrows the column to the
+   room, which a transform cannot do. On --ease and not --ease-back: an
+   overshooting padding lays the whole column out past its place and back. */
 @media not all and (max-width: 600px) {
-  #mobile-playlist { transition: padding-left var(--dur-base) var(--ease-back); }
+  #mobile-playlist { transition: padding-left var(--dur-base) var(--ease); }
   :root:has(#sidebar.is-open) #mobile-playlist {
     padding-left: calc(max(var(--panel-inset), env(safe-area-inset-left)) + min(var(--sidebar-w), 100vw - 28px));
   }

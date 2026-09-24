@@ -588,7 +588,7 @@
   transform: scale(var(--btn-press));
   background: var(--paper-3);
   /* Faster curve on press — the hover's spring is too slow for a click. */
-  transition: transform var(--dur-fast) var(--ease-in),
+  transition: transform var(--dur-fast) var(--ease),
               background var(--dur-fast) var(--ease);
 }
 .btn-row button.primary {

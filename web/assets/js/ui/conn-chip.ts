@@ -1,8 +1,8 @@
 // Quick-edit chip that floats over the marked connection line. Carries the two
 // cycled settings (arrows, dash), label, remove, and a "More" button to the
 // full right-click menu. Anchored to the line's midpoint; dismissed when the
-// mark clears. Repositioned on every paint/view change, rebuilt only when the
-// line or its settings actually change.
+// mark clears. Repositioned on every paint/view change, rebuilt only when a
+// different line is marked; its settings repaint in place.
 
 import { icon } from './menu.ts';
 import { activeConnectionAnchor, onActiveConnectionMove } from '../canvas/web.ts';
@@ -63,8 +63,14 @@ let vp: Viewport | null = null;
 let node: HTMLDivElement | null = null;
 /** The chip's own size, measured once per build - see place(). */
 let size = { w: 0, h: 0 };
-/** What the chip is currently drawn for: the pair and the two settings it shows. */
-let sig = '';
+/** The line the chip is built for: its two card ids. */
+let pair = '';
+/** The two cycling buttons and the label button, repainted in place. Built
+ *  once per line: a rebuild replays the entrance and drops keyboard focus,
+ *  which made every press of a cycle blink the chip. */
+let dirBtn: HTMLButtonElement | null = null;
+let styleBtn: HTMLButtonElement | null = null;
+let labelBtn: HTMLButtonElement | null = null;
 /** Where the line's midpoint last landed on screen, for the menu this opens. */
 let anchor = { x: 0, y: 0 };
 
@@ -94,10 +100,9 @@ export function syncConnChip(): void {
   if (!conn || !at) { closeConnChip(); return; }
 
   const meta: ConnMeta = cmds.connectionStyle(conn.a, conn.b) || {};
-  const dir = meta.dir || 'none';
-  const style = meta.style || 'solid';
-  const next = `${conn.a}\0${conn.b}\0${dir}\0${style}\0${meta.label || ''}`;
-  if (next !== sig) { build(conn, dir, style, !!meta.label); sig = next; }
+  const next = `${conn.a}\0${conn.b}`;
+  if (next !== pair) { build(conn); pair = next; }
+  paint(meta.dir || 'none', meta.style || 'solid', !!meta.label);
   place(at);
 }
 
@@ -105,10 +110,11 @@ export function syncConnChip(): void {
 function closeConnChip(): void {
   node?.remove();
   node = null;
-  sig = '';
+  pair = '';
+  dirBtn = styleBtn = labelBtn = null;
 }
 
-function build(conn: Conn, dir: ConnDir, style: ConnStyle, labelled: boolean): void {
+function build(conn: Conn): void {
   node?.remove();
   node = document.createElement('div');
   node.id = 'conn-chip';
@@ -118,17 +124,22 @@ function build(conn: Conn, dir: ConnDir, style: ConnStyle, labelled: boolean): v
   node.setAttribute('aria-label', 'Connection');
 
   const set = (patch: ConnMeta) => cmds!.setConnectionStyle(conn.a, conn.b, patch);
+  // Read at the press, not at the build: the chip outlives a change now.
+  const now = () => cmds!.connectionStyle(conn.a, conn.b) || {};
   // Cycled rather than chosen. Four arrow states and three dashes are short
   // enough rings to walk by pressing, and pressing the thing you are looking at
   // to see the next state is the whole reason a chip beats a menu for these
   // two. The icon is the current state, so the button is also the readout.
   const nextIn = <T>(ring: readonly T[], now: T): T => ring[(ring.indexOf(now) + 1) % ring.length];
 
+  // Placeholder faces: paint() runs straight after, before the frame is drawn.
+  dirBtn = button(DIR_ICON.none, DIR_TITLE.none, () => set({ dir: nextIn(DIRS, now().dir || 'none') }));
+  styleBtn = button(STYLE_ICON.solid, STYLE_TITLE.solid, () => set({ style: nextIn(STYLES, now().style || 'solid') }));
+  labelBtn = button('i-style', 'Add a label', () => cmds!.editConnectionLabel(conn.a, conn.b));
   node.append(
-    button(DIR_ICON[dir], DIR_TITLE[dir], () => set({ dir: nextIn(DIRS, dir) })),
-    button(STYLE_ICON[style], STYLE_TITLE[style], () => set({ style: nextIn(STYLES, style) })),
-    button('i-style', labelled ? 'Change label' : 'Add a label',
-      () => cmds!.editConnectionLabel(conn.a, conn.b)),
+    dirBtn,
+    styleBtn,
+    labelBtn,
     // Everything this does not carry, in the place that does carry it. Opened at
     // the *line* rather than at the chip, because the menu finds what a
     // right-click is about by hit-testing the point it was opened at - and the
@@ -160,6 +171,22 @@ function button(name: string, title: string, action: () => void, danger = false)
   return b;
 }
 
+/** Show the line's current settings on the chip, without rebuilding it. */
+function paint(dir: ConnDir, style: ConnStyle, labelled: boolean): void {
+  relabel(dirBtn, DIR_ICON[dir], DIR_TITLE[dir]);
+  relabel(styleBtn, STYLE_ICON[style], STYLE_TITLE[style]);
+  relabel(labelBtn, 'i-style', labelled ? 'Change label' : 'Add a label');
+}
+
+/** One button's icon and name, rewritten only when they changed. */
+function relabel(b: HTMLButtonElement | null, name: string, title: string): void {
+  if (!b || (b.dataset.icon === name && b.title === title)) return;
+  b.dataset.icon = name;
+  b.title = title;
+  b.setAttribute('aria-label', title);
+  b.replaceChildren(icon(name));
+}
+
 /**
  * Put the chip over the middle of the line.
  *
@@ -185,8 +212,10 @@ function place(at: { x: number; y: number }): void {
   // the line is visible and wrong the moment it is not: panning the marked line
   // off to the left parked the chip against the screen edge, editing a
   // connection nobody could see. The chip is a label on a thing, so it goes
-  // where the thing is or it goes away.
+  // where the thing is or it goes away. Visibility rather than `hidden`:
+  // display:none and back restarts the entrance, so a line panned back into
+  // view popped its chip again.
   const off = p.x < -pad || p.y < -pad
     || p.x > innerWidth + pad || p.y > innerHeight + pad;
-  node.hidden = off;
+  node.style.visibility = off ? 'hidden' : '';
 }
