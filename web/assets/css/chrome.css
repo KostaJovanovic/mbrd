@@ -67,8 +67,10 @@
 }
 #zoom-ctl button:active:not(:disabled) svg {
   transform: scale(calc(var(--btn-press) - 0.08));
-  /* Press: fast ease-in, no overshoot — feedback, not decoration. */
-  transition: transform var(--dur-fast) var(--ease-in);
+  /* Press: fast, no overshoot — feedback, not decoration. --ease rather than
+     --ease-in: an ease-in spends its first frames barely moving, and those are
+     the frames the finger is waiting on. */
+  transition: transform var(--dur-fast) var(--ease);
 }
 /* A segment like the others: 12%–1600% fits in it, so the +/- buttons never shift. */
 #zoom-level {
@@ -226,7 +228,7 @@
 #toolbar button:active svg {
   transform: scale(calc(var(--btn-press) - 0.08));
   /* The press curve, argued at #zoom-ctl's copy of this line. */
-  transition: transform var(--dur-fast) var(--ease-in);
+  transition: transform var(--dur-fast) var(--ease);
 }
 
 /* An armed tool, marked the way #zoom-lock marks a held zoom: the accent at
@@ -438,7 +440,7 @@
    wants neither. */
 #nowplaying .np-play:active {
   scale: var(--btn-press);
-  transition: scale var(--dur-fast) var(--ease-in);
+  transition: scale var(--dur-fast) var(--ease);
 }
 /* Next is a passenger: it is only there some of the time, so it is one of the
    quiet round buttons (.np-qbtn, below) rather than a second accent disc. Its
