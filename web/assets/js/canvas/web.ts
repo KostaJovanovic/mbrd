@@ -20,7 +20,7 @@ import {
   itemIdFromEvent, setConnectAim, setBoardLift, tiltOf, onHoverItem,
 } from './items.ts';
 import type { Viewport } from './viewport.ts';
-import { cullMargin } from './viewport.ts';
+import { cullMargin, baseMs, fastMs } from './viewport.ts';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -71,9 +71,11 @@ type RouteLook = { shape: string, step?: number, clearance: number, radius: numb
 export const webVisible = (mode = board.layoutMode) =>
   mode !== 'mobile' && board.settings.web !== false;
 
-/** Fade durations. Lines get their own element only while fading, then return to bulk path. */
-const FADE_IN_MS = 400;
-const FADE_OUT_MS = 300;
+/** Fade durations, read off the whimsy axis (--dur-base in, --dur-fast out) for
+ *  the reason viewport.ts gives for its own: a JS constant ignores the tier.
+ *  Lines get their own element only while fading, then return to bulk path. */
+const fadeInMs = baseMs;
+const fadeOutMs = fastMs;
 
 // All elements below are null until initWeb(), non-null for the page lifetime.
 let svg: SVGSVGElement | null = null;
@@ -322,7 +324,7 @@ export function initWeb(worldEl: HTMLElement, viewport?: Viewport | null) {
 function fadeTo(key: string, entry: Fade, dir: FadeDir) {
   clearTimeout(entry.timer);
   entry.dir = dir;
-  const ms = dir === 'in' ? FADE_IN_MS : FADE_OUT_MS;
+  const ms = dir === 'in' ? fadeInMs() : fadeOutMs();
   entry.el.style.transitionDuration = ms + 'ms';
   entry.el.style.opacity = dir === 'in' ? '1' : '0';
   entry.timer = setTimeout(() => land(key), ms + 40);

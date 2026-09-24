@@ -563,8 +563,8 @@ function setVar(name: string, value: string) {
   }
   // The embed watermark's viewBox is measured from the display face in JS; a
   // bare CSS var change here does not go through apply(), so refit it by hand.
-  // Guarded to the one token that matters — setVar runs every frame of a colour
-  // drag, and the marks read no pigment.
+  // Guarded to the one token that matters — setVar runs on every input of a
+  // slider, and the marks read no pigment.
   const refitFace = name === '--font-display';
   if (value === '') {
     delete current.vars[name];
@@ -573,6 +573,7 @@ function setVar(name: string, value: string) {
     persist();
     if (pigment) syncPaletteMode();
     if (refitFace) refitEmbedMarks();
+    if (pigment) followFade();
     return;
   }
   // The pigment carries the whole sheet with it. Paper, its three shades, the
@@ -597,13 +598,18 @@ function setVar(name: string, value: string) {
   root.style.setProperty(name, value);
   applied.add(name);
   // The paper moved, so the installed-PWA title bar did too. No syncControls()
-  // to go with it, deliberately: this runs on every frame of a colour drag, and
-  // the only control whose value changed is the one under the pointer. Nothing
+  // to go with it, deliberately: a slider calls this on every input, and the
+  // only control whose value changed is the one under the pointer. Nothing
   // else in the panel reads a pigment.
   if (sheet) paintThemeColour();
   if (pigment) syncPaletteMode();
   if (refitFace) refitEmbedMarks();
   persist({ soon: true });
+  // A pigment moves the whole sheet, so it fades as a palette change does:
+  // the other transitions held still (.is-fading), the canvas repainted every
+  // frame. Without it the buttons chased the sheet and the grid kept its old
+  // colour until something else redrew it.
+  if (pigment) followFade();
 }
 
 function readStored() {

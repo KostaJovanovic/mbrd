@@ -437,6 +437,8 @@ export const travelMs = () => (reducedMotion() ? 0 : cssMs('--dur-travel', 400))
 /** --dur-fast in ms: a fade standing in for a flight. Not zeroed for reduced
  *  motion - a fade is what reduced motion keeps - but Quality's flatten reaches it. */
 export const fastMs = () => cssMs('--dur-fast', 130);
+/** --dur-base in ms, for a JS-timed fade that should keep the interface's pace. */
+export const baseMs = () => cssMs('--dur-base', 240);
 
 function cssMs(name: string, fallback: number): number {
   const raw = readToken(name);
@@ -495,6 +497,7 @@ export class Viewport {
   bus: Emitter<{ change: Viewport }>;
   _flush: () => void;
   _anim: number | null;             // rAF id of a view animation in flight
+  _zoomTo: number | null;           // where a running zoom step is heading - see zoomAnimAt()
   // Where the finger has dragged to, before the edges take anything off it, and
   // null whenever no finger is down - which is what `dragging` reads. See
   // _constrainMobile() for why the raw value has to be the one kept.
@@ -533,6 +536,7 @@ export class Viewport {
     this.bus = emitter();
     this._flush = rafThrottle(() => this._paint());
     this._anim = null;
+    this._zoomTo = null;
     this._still = 0;
     this._pinned = 0;
     this._repin = 0;
@@ -954,6 +958,7 @@ export class Viewport {
 
   /** Halt any running view animation, leaving the view where it got to. */
   stopAnim() {
+    this._zoomTo = null;
     if (this._anim == null) return;
     cancelAnimationFrame(this._anim);
     this._anim = null;
@@ -991,7 +996,12 @@ export class Viewport {
   zoomAnimAt(clientX: number, clientY: number, factor: number, ms = 200) {
     if (this.zoomLocked || this.isMobile) return;
     const z0 = this.zoom;
-    const z1 = clamp(z0 * factor, MIN_ZOOM, MAX_ZOOM);
+    // A step pressed while one is still flying builds on where that one was
+    // going, not where it had got to - so a held key or fast clicks zoom by the
+    // same amount whatever the repeat rate. _animate() below calls stopAnim(),
+    // which clears it.
+    const from = this._anim != null && this._zoomTo != null ? this._zoomTo : z0;
+    const z1 = clamp(from * factor, MIN_ZOOM, MAX_ZOOM);
     if (z1 === z0) return;
     const w = this.toWorld(clientX, clientY);
     const sx = clientX - this.left - this.cx;
@@ -1004,7 +1014,10 @@ export class Viewport {
       this.pan.x = w.x - sx / this.zoom;
       this.pan.y = w.y + sy / this.zoom;
       this.apply();
+      if (e === 1) this._zoomTo = null;
     });
+    // Only while a flight is actually running: a snap has already landed.
+    this._zoomTo = this._anim != null ? z1 : null;
   }
 
   /** Zoom about the middle of the room an open panel leaves - see _shift(). */
@@ -1039,10 +1052,27 @@ export class Viewport {
     if (!(ms > 0)) return this.setView({ x: x1, y: y1 }, z1);
     const x0 = this.pan.x, y0 = this.pan.y, z0 = this.zoom;
     if (x1 === x0 && y1 === y0 && z1 === z0) return;
+    // Zoom and pan together as one zoom about the point that stays put on
+    // screen from start to end: (f - p0) z0 = (f - p1) z1. Walking the pan
+    // linearly while the zoom went geometrically swung the destination out
+    // from the centre before bringing it in, so the eye lost the very thing it
+    // was being taken to. Barely any zoom change puts f far away, so that case
+    // keeps the plain pan.
+    const pivot = !this.isMobile && Math.abs(Math.log(z1 / z0)) > 1e-3;
+    const fx = pivot ? (x1 * z1 - x0 * z0) / (z1 - z0) : 0;
+    const fy = pivot ? (y1 * z1 - y0 * z0) / (z1 - z0) : 0;
     this._animate(ms, e => {
       this.zoom = e === 1 ? z1 : z0 * Math.pow(z1 / z0, e);
-      this.pan.x = this.isMobile ? 0 : x0 + (x1 - x0) * e;
-      this.pan.y = y0 + (y1 - y0) * e;
+      if (e === 1) {
+        this.pan.x = this.isMobile ? 0 : x1;
+        this.pan.y = y1;
+      } else if (pivot) {
+        this.pan.x = fx - (fx - x0) * z0 / this.zoom;
+        this.pan.y = fy - (fy - y0) * z0 / this.zoom;
+      } else {
+        this.pan.x = this.isMobile ? 0 : x0 + (x1 - x0) * e;
+        this.pan.y = y0 + (y1 - y0) * e;
+      }
       this.apply();
     });
   }

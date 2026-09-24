@@ -77,7 +77,10 @@ body.is-patch::before {
 .pn-back:hover {
   color: var(--accent-deep);
   border-color: var(--accent-text);
-  transform: translateX(-2px);
+}
+/* The nudge only where hover is real - a tap would leave it stuck. */
+@media (hover: hover) {
+  .pn-back:hover { transform: translateX(-2px); }
 }
 .pn-back .ico { width: 14px; height: 14px; }
 

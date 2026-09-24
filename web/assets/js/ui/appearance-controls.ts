@@ -127,8 +127,8 @@ export function buildControls() {
         const picked = await pickColor({ title: 'Pigment', value: toHex(raw) || '#000000' });
         if (!picked) return;
         d.setVar(c.var, picked);
-        // setVar() deliberately repaints nothing - it runs on every frame of a
-        // colour drag - and this is the one control whose own face is the value
+        // setVar() deliberately repaints nothing - a slider calls it on every
+        // input - and this is the one control whose own face is the value
         // it just wrote. Without this the swatch kept the old colour until
         // something else called syncControls(), which on a quiet board is the
         // next reload.

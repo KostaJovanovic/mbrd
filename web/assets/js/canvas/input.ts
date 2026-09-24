@@ -23,6 +23,7 @@ import {
 import type { Box, Bounds, Point } from '../geometry.ts';
 import {
   itemIdFromEvent, ensureMounted, nodeFor, sync as syncItems, editItemName, showStickTarget,
+  setDragging,
 } from './items.ts';
 import { noteFloor } from './notes.ts';
 import { linkURL } from './renderers.ts';
@@ -2489,6 +2490,9 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         // however far the card under it wants a grabbing hand. Mark the viewport
         // for the length of the drag - see #viewport.is-moving in the CSS.
         el.classList.add('is-moving');
+        // And the cards themselves are picked up - the lift and lean items.css
+        // gives .is-dragging, which nothing used to set.
+        setDragging(drag.moving, true);
       }
       drag.moved = true;
       // Snap the dragged item; everything else keeps its offset from it, so a
@@ -2993,6 +2997,7 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     // said so that the typechecker reads it too, rather than a mode list here
     // that would have to be kept level with the two declarations.
     if ('node' in gesture) gesture.node?.classList.remove('is-resizing');
+    if (gesture.mode === 'move' && gesture.moved) setDragging(gesture.moving, false);
     el.classList.remove('is-panning', 'is-moving');
     showStickTarget(null);
     enter('idle');

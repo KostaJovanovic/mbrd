@@ -122,7 +122,8 @@ function busyClose(): void {
   const node = document.getElementById('busy');
   if (!node) return;
   node.classList.remove('is-up');
-  // Hidden after exit animation finishes, not just made transparent.
+  // Hidden after exit animation finishes, not just made transparent. The exit
+  // is --dur-fast (status.css), 190ms at the slowest tier.
   busyHideTimer = setTimeout(() => { if (!busyOpen) node.hidden = true; }, 260);
 }
 

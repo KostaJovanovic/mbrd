@@ -1243,6 +1243,8 @@ function openChild(row: HTMLElement, entries: MenuEntry[], from: HTMLElement, la
   const y = Math.max(pad, Math.min(r.top - 5, innerHeight - box.height - pad));
   child.style.left = `${Math.round(x)}px`;
   child.style.top = `${Math.round(y)}px`;
+  // Flipped to the parent's left: it slides out leftwards, away from its row.
+  child.classList.toggle('is-left', x !== right);
   // Grow from the edge nearest the parent, vertically from the row's centre.
   child.style.transformOrigin =
     originPercent((x === right ? 0 : box.width) , box.width) + ' ' +
@@ -1294,6 +1296,9 @@ function placeRoot(node: HTMLElement, clientX: number, clientY: number, opts: Me
   }
   node.style.left = Math.round(x) + 'px';
   node.style.top = Math.round(y) + 'px';
+  // Above its anchor, the entrance's few pixels of travel run the other way,
+  // so the panel still comes out of its button rather than into it.
+  node.classList.toggle('is-above', y < (opts.anchor ? opts.anchor.top : clientY));
   // Grow from the anchor (centre x, attached edge). Computed after the flip.
   // Set via script, not style=, because style-src has no unsafe-inline.
   const srcX = opts.anchor ? (opts.anchor.left + opts.anchor.right) / 2 : clientX;

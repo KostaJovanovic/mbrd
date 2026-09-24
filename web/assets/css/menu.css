@@ -138,10 +138,6 @@
    Less would re-hint the text mid-animation. */
 @keyframes ctx-in { from { opacity: 0; transform: translateY(-3px) scale(0.97); } }
 @keyframes ctx-in-side { from { opacity: 0; transform: translateX(-4px) scale(0.97); } }
-/* Opened from the keyboard, turned to as a drill-down page, or swapped in for
-   a flyout already open: nothing spatial to explain, so no entrance.
-   ui/menu.ts removes these at once on close as well. */
-:is(#ctx-menu, #ctx-child).is-instant { animation: none; }
 /* Exit reverses the spatial entrance. `forwards` holds the last frame
    until ui/menu.ts removes the node. Id-qualified so it beats the
    `animation: ctx-in` rule above. */
@@ -154,6 +150,21 @@
 #ctx-child.is-leaving { animation-name: ctx-out-side; }
 @keyframes ctx-out { to { opacity: 0; transform: translateY(-3px) scale(0.97); } }
 @keyframes ctx-out-side { to { opacity: 0; transform: translateX(-4px) scale(0.97); } }
+/* Flipped panels travel the other way, so they still leave their trigger
+   rather than moving into it (ui/menu.ts sets both classes after placing). */
+#ctx-menu.is-above { animation-name: ctx-in-up; }
+#ctx-menu.is-above.is-leaving { animation-name: ctx-out-up; }
+#ctx-child.is-left { animation-name: ctx-in-left; }
+#ctx-child.is-left.is-leaving { animation-name: ctx-out-left; }
+@keyframes ctx-in-up { from { opacity: 0; transform: translateY(3px) scale(0.97); } }
+@keyframes ctx-out-up { to { opacity: 0; transform: translateY(3px) scale(0.97); } }
+@keyframes ctx-in-left { from { opacity: 0; transform: translateX(4px) scale(0.97); } }
+@keyframes ctx-out-left { to { opacity: 0; transform: translateX(4px) scale(0.97); } }
+/* Opened from the keyboard, turned to as a drill-down page, or swapped in for
+   a flyout already open: nothing spatial to explain, so no entrance.
+   ui/menu.ts removes these at once on close as well. Last, so it beats the
+   flipped names above at the same weight. */
+:is(#ctx-menu, #ctx-child).is-instant { animation: none; }
 /* The parent row stays lit while its child is open. */
 .ctx-item.is-open { background: var(--paper-3); }
 

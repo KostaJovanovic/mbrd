@@ -108,6 +108,9 @@ export function openFencePrompt(
     ? Math.max(pad, clientY - gap - height) : clientY + gap;
   node.style.left = Math.round(x) + 'px';
   node.style.top = Math.round(y) + 'px';
+  // Grow from the corner nearest the pointer, after the flip - as menu.ts's
+  // placeRoot() does. Left at its centre, the offer swelled out of nowhere.
+  node.style.transformOrigin = `${x > clientX ? 0 : 100}% ${y > clientY ? 0 : 100}%`;
   node.style.visibility = '';
   box = node.getBoundingClientRect();
 

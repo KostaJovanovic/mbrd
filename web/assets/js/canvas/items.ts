@@ -26,7 +26,7 @@ import {
 import { POSTER_TIME } from './video.ts';
 import { clearDisplay } from './display.ts';
 import { releasePlayers } from './audio.ts';
-import { flyOut } from './exit-anim.ts';
+import { flyOut, cancelExit } from './exit-anim.ts';
 import { releaseStills } from './stills.ts';
 import { releaseTransports } from './transport.ts';
 import { releaseModels } from './model.ts';
@@ -72,6 +72,18 @@ let hoverGroup = new Set<string>();
 function setHoverLift(id: string, on: boolean) {
   nodes.get(id)?.classList.toggle('is-hover', on);
   shadows.get(id)?.classList.toggle('is-hover', on);
+}
+
+/**
+ * Mark cards as carried, for the length of a drag: the pickup (lift, lean,
+ * grow) that items.css and canvas.css style under .is-dragging. Called by
+ * canvas/input.ts when a press becomes a move and again when it ends.
+ */
+export function setDragging(ids: readonly string[], on: boolean) {
+  for (const id of ids) {
+    nodes.get(id)?.classList.toggle('is-dragging', on);
+    shadows.get(id)?.classList.toggle('is-dragging', on);
+  }
 }
 /**
  * Told which cards the pointer is on, whenever that changes.
@@ -344,7 +356,12 @@ export function initItems(world: HTMLElement, viewport: Viewport) {
   // reach it. Mirror the hover onto it here: one delegated pair on the world,
   // tracking which item the pointer is over, so the twin lifts with the card
   // instead of being left behind as a second card (see .item-shadow.is-hover).
-  world.addEventListener('pointerover', e => setHoverGroup(itemIdFromEvent(e.target)));
+  world.addEventListener('pointerover', e => {
+    // A finger's pointerover is the press itself, not a hover - see flyout.ts's
+    // per-event touch rule. Lifting on it read as the card jumping under the finger.
+    if (e.pointerType === 'touch') return;
+    setHoverGroup(itemIdFromEvent(e.target));
+  });
   world.addEventListener('pointerout', e => {
     if (!itemIdFromEvent(e.relatedTarget)) setHoverGroup(null);
   });
@@ -863,6 +880,9 @@ function dropNode(id: string, el = nodes.get(id)) {
  * against the live board, which needs no payload to be correct.
  */
 function reconcile(delta?: ItemsDelta) {
+  // A card back inside its own exit (an undo straight after a delete) takes
+  // its ghost with it, or the ghost falls on top of it.
+  for (const id of delta?.added || []) cancelExit(id);
   if (delta && delta.removed) {
     // A user delete (or redo of one) is the only path that names removed ids;
     // a load or clear reconciles by diff and reaches the else branch, so a

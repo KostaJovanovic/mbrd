@@ -23,12 +23,18 @@ export function hideSheet(el: HTMLElement): void {
   el.setAttribute('aria-hidden', 'true');
   el.classList.remove('is-open');
   clearTimeout(exits.get(el));
+  // Its own slide, not the fade that ends first or a child's bubbling up. Not
+  // `{ once: true }`: that spent the listener on the fade, the transform never
+  // got through, and every sheet waited out the timer below.
+  const onEnd = (e: TransitionEvent) => {
+    if (e.target === el && e.propertyName === 'transform') done();
+  };
   const done = () => {
     clearTimeout(exits.get(el));
     exits.delete(el);
+    el.removeEventListener('transitionend', onEnd);
     el.remove();
   };
-  el.addEventListener('transitionend',
-    e => { if (e.propertyName === 'transform') done(); }, { once: true });
+  el.addEventListener('transitionend', onEnd);
   exits.set(el, setTimeout(done, EXIT_MS));
 }

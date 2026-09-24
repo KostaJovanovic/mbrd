@@ -80,8 +80,10 @@ body::before {
 .pv-back:hover {
   color: var(--accent-deep);
   border-color: var(--accent-text);
-  /* Towards the board. */
-  translate: -2px 0;
+}
+/* Towards the board - only where hover is real, or a tap leaves it stuck. */
+@media (hover: hover) {
+  .pv-back:hover { translate: -2px 0; }
 }
 /* Body face: the display italic leans the arrow the wrong way. */
 .pv-arrow {
