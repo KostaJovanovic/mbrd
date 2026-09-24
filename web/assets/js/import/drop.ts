@@ -231,6 +231,9 @@ export function initDrop(vp: DropViewport) {
   addEventListener('paste', async e => {
     const target = e.target;
     if (target instanceof HTMLElement && (target.isContentEditable || /INPUT|TEXTAREA/.test(target.tagName))) return;
+    // Nor a paste aimed into a dialog: with a ribbon button or a dialog's Cancel
+    // focused, the text landed on the board behind it as a .md card, unseen.
+    if (target instanceof Element && target.closest('dialog')) return;
     // Under cursor if known, otherwise centre of view (touch device or no prior pointer).
     const centre = vp.cursor
       ? vp.toWorld(vp.cursor.x, vp.cursor.y)

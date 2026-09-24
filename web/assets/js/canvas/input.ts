@@ -3444,6 +3444,8 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
 
   addEventListener('paste', e => {
     if (typingInto(e.target) || !clipboardSize()) return;
+    // A paste aimed into a dialog is not the board's, or copied cards land behind it unseen.
+    if (e.target instanceof Element && e.target.closest('dialog')) return;
     const text = e.clipboardData?.getData('text/plain') || '';
     const files = e.clipboardData?.files;
     // Ours wins in two cases and no others. Either the system clipboard still
