@@ -1295,10 +1295,12 @@ function build(item: Item) {
  * Every one of them for the same underlying reason: the twin is a rounded
  * rectangle at the item box, so it is only ever right for a type whose
  * silhouette *is* that box. Where it is not, the twin lays a card's shadow
- * under something that is not a card. The four cases are argued one by one at
+ * under something that is not a card. The first four are argued one by one at
  * the call site, which is where the shadow is decided; this is only the list.
+ * Archives and folders are drawn as folders, tab and all, and cast their own
+ * drop-shadow in cards.css.
  */
-const NO_TWIN = new Set(['title', 'ghost', 'fence', 'sticker']);
+const NO_TWIN = new Set(['title', 'ghost', 'fence', 'sticker', 'archive', 'folder']);
 
 /**
  * The same question, asked of an item rather than of a type.

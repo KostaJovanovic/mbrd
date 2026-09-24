@@ -639,6 +639,78 @@
   z-index: 2;
 }
 
+/* ---- An archive or a folder (packCard() in canvas/renderers.ts) ----------
+   Drawn as a folder: a tab standing up off the top-left of a front panel, the
+   name and the button on the panel. The item keeps its rectangle for hitting,
+   marquee and the ring - a sticker's bargain - and gives up everything that
+   paints that rectangle: its paper, the hover hairline, the plate, and the
+   shadow twin (NO_TWIN in canvas/items.ts). The shadow is a drop-shadow on the
+   panel instead, so it follows the tab.
+
+   The tab is the back panel showing, a shade darker than the front, and the
+   front panel's top edge runs across its foot the way a real one does. Both
+   are the paper leaned toward the accent rather than a manila of their own, so
+   the folder is in the board's pigments. An archive's tab is a zip. */
+:is(.item[data-type="archive"], .item[data-type="folder"], .pack-card) {
+  --pack-tab: 22px;
+}
+.item:is([data-type="archive"], [data-type="folder"]) {
+  background: transparent;
+  --item-shadow: none;
+  box-shadow: none;
+}
+.item:is([data-type="archive"], [data-type="folder"]) .item-body { overflow: visible; }
+.item:is([data-type="archive"], [data-type="folder"]):not(.is-editing) .item-bar { display: none; }
+
+.pack-card {
+  --pack-front: color-mix(in srgb, var(--accent) 10%, var(--paper-card));
+  --pack-back: color-mix(in srgb, var(--accent) 34%, var(--paper-card));
+  --pack-zip: color-mix(in srgb, var(--ink) 45%, var(--pack-back));
+  height: calc(100% - var(--pack-tab));
+  margin-top: var(--pack-tab);
+  /* The top-left corner is where the tab stands, so it is square. */
+  border-radius: 0 var(--own-radius, var(--radius)) var(--own-radius, var(--radius)) var(--own-radius, var(--radius));
+  background: var(--pack-front);
+  /* Visible, so the tab above the panel is not cut off by the panel itself. The
+     name is clamped below instead, and .item-body still clips at the item. */
+  overflow: visible;
+  filter: drop-shadow(0 1px 1px color-mix(in srgb, var(--ink) 14%, transparent))
+          drop-shadow(0 3px 6px color-mix(in srgb, var(--ink) 12%, transparent));
+}
+.pack-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 100%;
+  width: 42%;
+  height: var(--pack-tab);
+  /* Slanted off at the right, as a folder's tab is cut. */
+  clip-path: polygon(0 0, calc(100% - var(--pack-tab)) 0, 100% 100%, 0 100%);
+  border-radius: min(6px, var(--own-radius, var(--radius))) 0 0 0;
+  background: var(--pack-back);
+}
+.pack-card::after { border-top-left-radius: 0; }
+.pack-archive::before {
+  /* The zip: teeth down the tab, alternating either side of its middle. */
+  background:
+    repeating-linear-gradient(90deg,
+      var(--pack-zip) 0 3px, transparent 3px 6px) 10px 7px / calc(100% - var(--pack-tab) - 14px) 4px no-repeat,
+    repeating-linear-gradient(90deg,
+      transparent 0 3px, var(--pack-zip) 3px 6px) 10px 11px / calc(100% - var(--pack-tab) - 14px) 4px no-repeat,
+    var(--pack-back);
+}
+.pack-card .card-name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+/* At the index rung the folder stays and its lettering goes: the body is not
+   hidden for these (item-chrome.css), and the head is set on the panel, below
+   the tab. */
+#world.zoom-far .pack-card > * { visibility: hidden; }
+#world.zoom-far .item:is([data-type="archive"], [data-type="folder"]) > .far-head { top: var(--pack-tab); }
+
 /* ---- A model on a card (canvas/model.ts) ---------------------------------
    The canvas fills the card above the filename and takes the pointer, because
    dragging it turns the model rather than moving the item. Everything around

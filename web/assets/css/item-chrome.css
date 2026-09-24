@@ -180,9 +180,10 @@
 #world.zoom-far .card:not(.fence-card)::after { content: none; }
 /* The card's edge moves to .item while the body is down. ::after rather than
    box-shadow so it paints over children. Ghosts, fences and title cards are
-   excluded — each draws its own edge already. */
+   excluded — each draws its own edge already. So are archives and folders,
+   whose body stays and whose edge is a folder's, not the box's (cards.css). */
 #world.zoom-far .item:not([data-type="ghost"]) .card { box-shadow: none; }
-#world.zoom-far .item:not([data-type="ghost"]):not([data-type="fence"]):not([data-type="title"])::after {
+#world.zoom-far .item:not([data-type="ghost"]):not([data-type="fence"]):not([data-type="title"]):not([data-type="archive"]):not([data-type="folder"])::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -199,8 +200,9 @@
    is a model's - it is why a part photographed onto its card stays a picture
    all the way out, the same as a photograph beside it, rather than becoming a
    blank card wearing the word "obj". Same test as the rule above, and they have
-   to stay the same test. */
-#world.zoom-far .item:not(.is-editing):not([data-type="audio"]):not(:has(.card-cover, .model-still)):has(> .far-head:not([hidden])) .item-body { display: none; }
+   to stay the same test. Archives and folders keep theirs as well: the folder
+   is the picture, and cards.css empties it of lettering for the head. */
+#world.zoom-far .item:not(.is-editing):not([data-type="audio"]):not([data-type="archive"]):not([data-type="folder"]):not(:has(.card-cover, .model-still)):has(> .far-head:not([hidden])) .item-body { display: none; }
 /* ---------------------------------------------------------------------------
    Cheap mode: what the board stops paying for while it is being moved.
    Set by canvas/viewport.ts for the duration of a gesture plus 140ms.

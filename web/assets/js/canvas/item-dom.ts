@@ -144,6 +144,8 @@ const extMeta = (item: ItemFragment): string =>
 
 export function farKind(item: ItemFragment): string {
   if (item.type === 'note') return '';
+  // A folder has no extension, and a dot in its name is not one.
+  if (item.type === 'folder') return 'folder';
   const ext = (extMeta(item) || extOf(item.name) || '').replace(/^\./, '');
   return ext || KIND_WORD[item.type ?? ''] || 'file';
 }
