@@ -412,79 +412,112 @@ function finishClose() {
  * turns to paper, the text shows through as it lands, and the desk, the name
  * and the bar fade in around it. Transform, opacity and colour only, at the
  * whimsy dial's travel speed; with motion reduced, a plain fade.
- *
- * `back` plays all of it backwards, as the document goes back into its sticky
- * (shrinkInto()): each animation reversed, easing and all, and held at its end
- * until the caller has closed the viewing and cancels what this returns.
  */
-function growFrom(dlg: HTMLDialogElement, from: DOMRect, paper: string | undefined, page: HTMLElement | null, back = false): Animation[] {
-  if (typeof dlg.animate !== 'function') return [];
+function growFrom(dlg: HTMLDialogElement, from: DOMRect, paper: string | undefined, page: HTMLElement | null) {
+  if (typeof dlg.animate !== 'function') return;
   const ms = travelMs();
-  const fade = () => back ? [] : [dlg.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180, easing: 'ease-out' })];
+  const fade = () => void dlg.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180, easing: 'ease-out' });
   if (!page || !(ms > 0) || !from.width || !from.height) return fade();
   // The grow is the entrance: viewer.css's own (ask-in) would still be scaling
   // the dialog as the sheet is measured, and the card would land short of it.
   for (const a of dlg.getAnimations()) a.cancel();
-  // The part of the sheet on screen - a page is taller than the window.
+  const to = seenOf(page);
+  if (!to) return fade();
   const box = dlg.getBoundingClientRect();
-  const sheet = page.getBoundingClientRect();
-  const seen = (page.parentElement ?? page).getBoundingClientRect();
-  const top = Math.max(sheet.top, seen.top);
-  const to = { left: sheet.left, top, width: sheet.width, height: Math.min(sheet.bottom, seen.bottom) - top };
-  if (!(to.width > 0 && to.height > 0)) return fade();
-  const ease = getComputedStyle(document.documentElement).getPropertyValue('--ease').trim() || 'ease-out';
+  const ease = cssEase();
   const white = getComputedStyle(page).backgroundColor;
   const desk = getComputedStyle(dlg).backgroundColor;
   const long = ms * 1.35;
   const landed = ms / long;
-  // Backwards, the flight - the first `ms` of `long` going forwards - is the
-  // last, so a shorter animation waits out the difference.
-  const run = (el: HTMLElement, frames: Keyframe[], duration: number, easing: string) => el.animate(frames, back
-    ? { duration, easing, direction: 'reverse', fill: 'both', delay: long - duration }
-    : { duration, easing });
 
+  const card = paperCard(dlg, box, to, white);
+  card.animate([
+    { transformOrigin: '0 0', transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width}, ${from.height / to.height})` },
+    { transformOrigin: '0 0', transform: 'none' },
+  ], { duration: ms, easing: ease });
+  // The note's colour held for the first stretch of the flight, so it reads as the note.
+  card.animate([{ backgroundColor: paper || white }, { backgroundColor: paper || white, offset: 0.3 }, { backgroundColor: white }], { duration: ms, easing: 'linear' });
+  card.animate([{ opacity: 1 }, { opacity: 1, offset: landed }, { opacity: 0 }], { duration: long, easing: 'linear' })
+    .finished.then(() => card.remove(), () => card.remove());
+  page.animate([{ opacity: 0 }, { opacity: 0, offset: landed * 0.85 }, { opacity: 1 }], { duration: long, easing: 'ease-out' });
+  dlg.animate([{ backgroundColor: 'transparent' }, { backgroundColor: 'transparent', offset: 0.25 }, { backgroundColor: desk }], { duration: long, easing: 'ease-out' });
+  for (const part of dlg.querySelectorAll<HTMLElement>(EDITOR_PARTS)) {
+    part.animate([{ opacity: 0 }, { opacity: 0, offset: 0.35 }, { opacity: 1 }], { duration: long, easing: 'ease-out' });
+  }
+}
+
+/** The part of the sheet on screen - a page is taller than the window - or null if none of it is. */
+function seenOf(page: HTMLElement) {
+  const sheet = page.getBoundingClientRect();
+  const seen = (page.parentElement ?? page).getBoundingClientRect();
+  const top = Math.max(sheet.top, seen.top);
+  const r = { left: sheet.left, top, width: sheet.width, height: Math.min(sheet.bottom, seen.bottom) - top };
+  return r.width > 0 && r.height > 0 ? r : null;
+}
+
+/** The app's own curve, read off the tokens. */
+const cssEase = () => getComputedStyle(document.documentElement).getPropertyValue('--ease').trim() || 'ease-out';
+
+/** The blank card a sticky and its page turn into each other as, laid over `at` in the dialog. */
+function paperCard(dlg: HTMLDialogElement, box: DOMRect, at: { left: number, top: number, width: number, height: number }, colour: string) {
   const card = document.createElement('div');
   card.className = 'viewer-grow';
-  // Paper at rest: the colour animation ends before the card has faded out.
   Object.assign(card.style, {
-    background: white,
-    left: `${to.left - box.left}px`, top: `${to.top - box.top}px`,
-    width: `${to.width}px`, height: `${to.height}px`,
+    background: colour,
+    left: `${at.left - box.left}px`, top: `${at.top - box.top}px`,
+    width: `${at.width}px`, height: `${at.height}px`,
   });
   dlg.append(card);
-  const anims = [
-    run(card, [
-      { transformOrigin: '0 0', transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width}, ${from.height / to.height})` },
-      { transformOrigin: '0 0', transform: 'none' },
-    ], ms, ease),
-    // The note's colour held for the first stretch of the flight, so it reads as the note.
-    run(card, [{ backgroundColor: paper || white }, { backgroundColor: paper || white, offset: 0.3 }, { backgroundColor: white }], ms, 'linear'),
-    run(card, [{ opacity: 1 }, { opacity: 1, offset: landed }, { opacity: 0 }], long, 'linear'),
-    run(page, [{ opacity: 0 }, { opacity: 0, offset: landed * 0.85 }, { opacity: 1 }], long, 'ease-out'),
-    run(dlg, [{ backgroundColor: 'transparent' }, { backgroundColor: 'transparent', offset: 0.25 }, { backgroundColor: desk }], long, 'ease-out'),
-    ...[...dlg.querySelectorAll<HTMLElement>(EDITOR_PARTS)].map(part =>
-      run(part, [{ opacity: 0 }, { opacity: 0, offset: 0.35 }, { opacity: 1 }], long, 'ease-out')),
-  ];
-  // Going back, the card is what is left where the note will be; teardown() takes it.
-  if (!back) anims[2].finished.then(() => card.remove(), () => card.remove());
-  return anims;
+  return card;
 }
 
 /**
- * A document written back down to fit, going back into its sticky: the grow
- * played backwards, the page shrinking to where the composer has put the note
- * and turning to its colour as the desk goes, then the composer showing over
- * the card and this viewing closing under it. With nowhere to go, closed now.
+ * A document written back down to fit, going back into its sticky. Not the
+ * grow played backwards, which starts on a long still crossfade and lands at
+ * full speed: the page lifts off as a blank card at once, flies to where the
+ * composer has put the note on the same settling curve as the grow, turning
+ * to the note's colour on the way while the desk, the name and the bar go,
+ * and the composer fades in over it as it lands. This viewing closes under
+ * the composer after. With nowhere to go, or motion reduced, straight over.
  */
 const shrinkInto: NoteEntrance = into => {
-  const page = dlg?.querySelector<HTMLElement>('.ed-sheet') ?? null;
-  const anims = into && dlg ? growFrom(dlg, into.sheet, into.paper, page, true) : [];
-  const end = () => {
+  const end = (anims: Animation[] = []) => {
     closeViewer(true);
     for (const a of anims) a.cancel();
   };
   if (!into) return end();
-  void Promise.all(anims.map(a => a.finished.catch(() => {}))).then(into.show).then(end, end);
+  const page = dlg?.querySelector<HTMLElement>('.ed-sheet');
+  const ms = travelMs();
+  const from = page && seenOf(page);
+  const to = into.sheet;
+  if (!dlg || typeof dlg.animate !== 'function' || !page || !from || !(ms > 0) || !to.width || !to.height) {
+    return void into.show().then(() => end(), () => end());
+  }
+  const box = dlg.getBoundingClientRect();
+  const white = getComputedStyle(page).backgroundColor;
+  const desk = getComputedStyle(dlg).backgroundColor;
+  // The lift: long enough that the words fade rather than blink, short enough to read as one move.
+  const lift = ms * 0.2;
+  const hold = { fill: 'both' as const };
+  const card = paperCard(dlg, box, from, white);
+  const anims = [
+    card.animate([{ opacity: 0 }, { opacity: 1 }], { ...hold, duration: lift, easing: 'ease-out' }),
+    // Gone from under the card once it is opaque, or the page would be left behind as it flies.
+    page.animate([{ opacity: 1 }, { opacity: 1, offset: 0.99 }, { opacity: 0 }], { ...hold, duration: lift }),
+    card.animate([
+      { transformOrigin: '0 0', transform: 'none' },
+      { transformOrigin: '0 0', transform: `translate(${to.left - from.left}px, ${to.top - from.top}px) scale(${to.width / from.width}, ${to.height / from.height})` },
+    ], { ...hold, duration: ms, delay: lift, easing: cssEase() }),
+    // The note's colour arrives mid-flight, so it lands as the note rather than turning into one there.
+    card.animate([{ backgroundColor: white }, { backgroundColor: white, offset: 0.15 }, { backgroundColor: into.paper || white, offset: 0.7 }, { backgroundColor: into.paper || white }],
+      { ...hold, duration: ms, delay: lift, easing: 'linear' }),
+    dlg.animate([{ backgroundColor: desk }, { backgroundColor: 'transparent' }], { ...hold, duration: lift + ms * 0.6, easing: 'ease-out' }),
+    ...[...dlg.querySelectorAll<HTMLElement>(EDITOR_PARTS)].map(part =>
+      part.animate([{ opacity: 1 }, { opacity: 0 }], { ...hold, duration: lift + ms * 0.3, easing: 'ease-out' })),
+  ];
+  // The composer over the card for the last stretch of the flight, the words coming back as it settles.
+  const shown = new Promise<void>(res => setTimeout(res, lift + ms * 0.7)).then(into.show);
+  void Promise.all([shown, ...anims.map(a => a.finished.catch(() => {}))]).then(() => end(anims), () => end(anims));
 };
 
 /** Close the viewing - a document with its paper dropping away first, unless `now`. */
