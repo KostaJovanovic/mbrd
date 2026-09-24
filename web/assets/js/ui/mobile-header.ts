@@ -11,7 +11,7 @@ import {
   headerFontWeights,
 } from './fonts.ts';
 import { createMobileSliderFocus } from './sidebar.ts';
-import { field, fieldStops, tickSlider } from './controls.ts';
+import { field, fieldStops, tickSlider, touchSliders } from './controls.ts';
 import { paintTitleField, wireTitleField } from './board-title.ts';
 import { registerPanel, panelShown, panelHidden } from './panel-stack.ts';
 import { open as openSearch } from './search.ts';
@@ -124,6 +124,7 @@ export function initMobileHeaderEditor(vp: Viewport | null) {
   sliderFocus = createMobileSliderFocus(panel);
   // SAFETY: target is always a child element of #header-panel.
   panel.addEventListener('pointerdown', e => sliderFocus.begin(e.target as Element | null, e.pointerId));
+  touchSliders(panel, (input, id) => sliderFocus.begin(input, id));
   const endSliderFocus = (e: PointerEvent) => sliderFocus.end(e.pointerId);
   globalThis.addEventListener('pointerup', endSliderFocus);
   globalThis.addEventListener('pointercancel', endSliderFocus);

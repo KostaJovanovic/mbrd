@@ -9,6 +9,7 @@ import { readPref, writePref } from '../prefs.ts';
 import { runCommand } from '../notify.ts';
 import { cue } from '../cuelume/engine.ts';
 import { buildPanel, paintPanel } from './panel.ts';
+import { touchSliders } from './controls.ts';
 import { travelMs } from '../canvas/viewport.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 import { paintTitleField, wireTitleField } from './board-title.ts';
@@ -108,6 +109,7 @@ export function initSidebar(cmds: SidebarCommands, viewport: Viewport | null = n
     // SAFETY: the listener is on #sidebar, so the target is a node in it. begin() calls matches?.() optionally.
     sliderFocus.begin(e.target as Element | null, e.pointerId);
   });
+  touchSliders(sidebar!, (input, id) => sliderFocus.begin(input, id));
   const endSliderFocus = (e: PointerEvent) => sliderFocus.end(e.pointerId);
   globalThis.addEventListener('pointerup', endSliderFocus);
   globalThis.addEventListener('pointercancel', endSliderFocus);

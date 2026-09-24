@@ -762,6 +762,14 @@
   outline-offset: 2px;
   border-radius: var(--radius-xs);
 }
+/* Where the pointer is coarse, a panel's slider is moved by touchSliders()
+   (ui/controls.ts) and not by the browser, which jumps the thumb to wherever a
+   finger lands - the first touch of a scroll included. The row takes the touch
+   and leaves a vertical one to scroll the panel. */
+@media (pointer: coarse) {
+  :is(#sidebar, #header-panel) .field:has(> input[type="range"]) { touch-action: pan-y; }
+  :is(#sidebar, #header-panel) .field > input[type="range"] { pointer-events: none; }
+}
 /* Pigment swatch button — opens the app's colour picker (ui/color-picker.ts).
    Fill is written inline by syncControls(). */
 .field .pigment-swatch {
