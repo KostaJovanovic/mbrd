@@ -758,6 +758,10 @@ function ensurePanelWindow(): BrowserWindow | null {
     // Without it Windows zooms the window open from its middle, the way it
     // opens an app. The panel draws its own drop from the bar (titlebar.css).
     thickFrame: false,
+    // The shadow the system casts is an app window's. The panel draws a
+    // lighter one into a transparent margin instead.
+    transparent: true,
+    hasShadow: false,
     resizable: false,
     movable: false,
     minimizable: false,
