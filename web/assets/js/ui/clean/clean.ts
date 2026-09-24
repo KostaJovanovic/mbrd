@@ -10,6 +10,7 @@ import { addFile } from '../../storage/assets.ts';
 import { toast } from '../../notify.ts';
 import type { Item } from '../../board-model.ts';
 import type { Viewport } from '../../canvas/viewport.ts';
+import { reducedMotion } from '../../canvas/viewport.ts';
 import { tiltOf, nodeFor, setCleanPlay } from '../../canvas/items.ts';
 import { capturePointerSafely, releasePointerSafely } from '../../canvas/input.ts';
 import { defaultSize } from '../../canvas/renderers.ts';
@@ -102,6 +103,9 @@ type Deck = { el: HTMLAudioElement, share: number };
 const EASE = 'cubic-bezier(0.22, 0.61, 0.36, 1)';
 const TRAVEL_MS = 320;
 const LEAVE_MS = 450;
+
+/** Motion allowed: Quality's animations on, and the OS not asking for less. */
+const moving = () => quality.anim && !reducedMotion();
 
 /** Above every card. Items carry their own z from board order; the dirt is not
  *  part of that order and sits over all of it. */
@@ -753,7 +757,7 @@ export function startClean(): boolean {
     // over more than a second behind it.
     cue('arrive');
     startMusic();
-  }, quality.anim, showMess);
+  }, moving(), showMess);
   return true;
 }
 
@@ -1053,7 +1057,7 @@ const PAINT_MS = 6;
 const PAINT_MS_STILL = 12;
 
 function drainPaint() {
-  const until = performance.now() + (quality.anim ? PAINT_MS : PAINT_MS_STILL);
+  const until = performance.now() + (moving() ? PAINT_MS : PAINT_MS_STILL);
   while (pending.length) {
     const live = pending[0]!;
     if (live.fading) { pending.shift(); continue; }
@@ -2414,7 +2418,7 @@ const RUN_OUT_MS = 600;
  * trail, so a card carrying six rivulets costs what a card carrying one does.
  */
 function startRun(card: LiveCard, u: number, v: number, kind: MessKind, took: number) {
-  if (!quality.anim || took < RUN_CELLS) return;
+  if (!moving() || took < RUN_CELLS) return;
   const now = performance.now();
   if (now - card.runAt < RUN_GAP_MS) return;
   // Halved on the low tier by letting every other one through, rather than by a
@@ -2501,7 +2505,7 @@ function drawRuns(card: LiveCard, dt: number, now: number) {
  * which is a coloured rectangle and reads as one.
  */
 function drip(card: LiveCard, r: Rivulet) {
-  if (!vp || !quality.anim) return;
+  if (!vp || !moving()) return;
   const world = fromCard(card, r.x, 1);
   const seat = vp.toScreen(world.x, world.y);
   // It has run the length of a card by now, so it is mostly water.
@@ -3031,7 +3035,7 @@ function buildSpider() {
   node.style.height = SPIDER_SIZE + 'px';
   // Still on the low tier, where nothing else in the mode moves either. It does
   // not scuttle and it does not drop - it goes with its web.
-  if (!quality.anim) node.classList.add('is-still');
+  if (!moving()) node.classList.add('is-still');
   layer.append(node);
   spider = {
     node, web: best, leg,
@@ -3061,7 +3065,7 @@ function stepSpider(dt: number, now: number) {
   if (!s || !vp) return;
 
   if (s.phase === 'idle') {
-    if (quality.anim) {
+    if (moving()) {
       const w = vp.toWorld(at.x, at.y);
       const px = w.x;
       const py = -w.y;
@@ -3119,7 +3123,7 @@ function dropSpider() {
   // On the low tier it goes with the web instead. The drop and the walk are the
   // one thing in this mode that is not a transition and cannot be turned into
   // one, so the tier that says "nothing moves on its own" gets nothing.
-  if (!quality.anim) { takeSpider(true); return; }
+  if (!moving()) { takeSpider(true); return; }
   s.phase = 'drop';
   s.anchorX = s.x;
   s.anchorY = s.y;

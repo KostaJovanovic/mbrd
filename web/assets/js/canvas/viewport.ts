@@ -427,8 +427,16 @@ export const thumbZoom = () => lodZoom();
 // no idea which way the board went, where the same step animated stays
 // legible. Fit, home and zoom-to-item can cross the whole board, so they get
 // longer - the point of animating those is to show you the journey.
-export const zoomMs = () => cssMs('--dur-zoom', 190);
-export const travelMs = () => cssMs('--dur-travel', 400);
+//
+// Both answer 0 under prefers-reduced-motion: the CSS flatten (status.css)
+// cannot reach a duration read here, so the reading itself has to.
+export const reducedMotion = () =>
+  typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+export const zoomMs = () => (reducedMotion() ? 0 : cssMs('--dur-zoom', 190));
+export const travelMs = () => (reducedMotion() ? 0 : cssMs('--dur-travel', 400));
+/** --dur-fast in ms: a fade standing in for a flight. Not zeroed for reduced
+ *  motion - a fade is what reduced motion keeps - but Quality's flatten reaches it. */
+export const fastMs = () => cssMs('--dur-fast', 130);
 
 function cssMs(name: string, fallback: number): number {
   const raw = readToken(name);
@@ -439,8 +447,6 @@ function cssMs(name: string, fallback: number): number {
 
 /** Decelerating: fast off the mark, settling at the end. */
 const ease = (t: number) => 1 - Math.pow(1 - t, 3);
-const reducedMotion = () =>
-  typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export class Viewport {
   el: HTMLElement;

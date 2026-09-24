@@ -191,7 +191,7 @@ export function goToStop(i: number) {
 function travel() {
   const stop = stops()[at];
   if (!stop) return;
-  // travelMs reads --dur-travel, which honours prefers-reduced-motion.
+  // travelMs() answers 0 under prefers-reduced-motion, so the flight is a cut.
   vp.fit(stop.items, TOUR_PAD, travelMs(), TOUR_MAX_ZOOM);
   arrive(stop);
 }

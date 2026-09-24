@@ -1,7 +1,8 @@
 /* =========================================================
    mbrd - Find, context menu, fence offer, and connection chip
    Split from overlays.css. Five panels sharing one set of clothes:
-   card paper, hairline, shadow, ctx-in entrance.
+   card paper, hairline, shadow; the four pointer-opened ones also share
+   the ctx-in entrance.
    ========================================================= */
 
 /* ---------------------------------------------------------
@@ -21,7 +22,8 @@
   border-radius: var(--radius);
   background: var(--paper-card);
   box-shadow: var(--shadow-2);
-  animation: ctx-in var(--dur-fast) var(--ease);
+  /* No entrance. A palette opened from the keyboard is read the moment it is
+     asked for; the close is instant too (ui/search.ts). */
 }
 #search-field {
   width: 100%;
@@ -136,6 +138,10 @@
    Less would re-hint the text mid-animation. */
 @keyframes ctx-in { from { opacity: 0; transform: translateY(-3px) scale(0.97); } }
 @keyframes ctx-in-side { from { opacity: 0; transform: translateX(-4px) scale(0.97); } }
+/* Opened from the keyboard, turned to as a drill-down page, or swapped in for
+   a flyout already open: nothing spatial to explain, so no entrance.
+   ui/menu.ts removes these at once on close as well. */
+:is(#ctx-menu, #ctx-child).is-instant { animation: none; }
 /* Exit reverses the spatial entrance. `forwards` holds the last frame
    until ui/menu.ts removes the node. Id-qualified so it beats the
    `animation: ctx-in` rule above. */

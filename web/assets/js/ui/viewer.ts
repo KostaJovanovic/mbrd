@@ -15,7 +15,7 @@ import { openAnchored } from './menu.ts';
 import type { MenuEntry } from './menu.ts';
 import { openExternal } from './leaving.ts';
 import { displayURLReady, ensureDisplay } from '../canvas/display.ts';
-import { travelMs } from '../canvas/viewport.ts';
+import { travelMs, fastMs } from '../canvas/viewport.ts';
 import { addFile, assetURL, getAsset, readText } from '../storage/assets.ts';
 import { fileKey, lift } from '../consent.ts';
 import { mountEditor } from './editor/view.ts';
@@ -338,11 +338,11 @@ const SETTLE = 'cubic-bezier(0.16, 1, 0.3, 1)';
 function riseIn(dlg: HTMLDialogElement, sheet: HTMLElement | null) {
   if (typeof dlg.animate !== 'function') return;
   const ms = travelMs();
-  if (!sheet || !(ms > 0)) return void dlg.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180, easing: 'ease-out' });
+  if (!sheet || !(ms > 0)) return void dlg.animate([{ opacity: 0 }, { opacity: 1 }], { duration: fastMs(), easing: 'ease-out' });
   for (const a of dlg.getAnimations()) a.cancel();
   const box = dlg.getBoundingClientRect();
   const r = sheet.getBoundingClientRect();
-  const long = ms * 1.6;
+  const long = ms * 1.1;
   const hold = holdScroll(sheet);
   sheet.animate([
     { transform: `translateY(${box.bottom - r.top + 24}px) rotate(-2deg)` },
@@ -374,7 +374,9 @@ let closing: { anims: Animation[], done: () => void } | null = null;
 /**
  * The editor going the way it came: the page dropping away off the bottom of
  * the window, tipping as it goes, the rest fading ahead of it, and the board
- * showing through the desk. `done` closes the dialog when it has gone.
+ * showing through the desk. Off the mark at once and quick - the user asked
+ * to be back on the board, so the first frames are the ones that must move.
+ * `done` closes the dialog when it has gone.
  */
 function leave(done: () => void) {
   const sheet = dlg?.querySelector<HTMLElement>('.ed-sheet');
@@ -382,15 +384,15 @@ function leave(done: () => void) {
   if (!dlg || !sheet || typeof dlg.animate !== 'function' || !(ms > 0)) return done();
   const box = dlg.getBoundingClientRect();
   const r = sheet.getBoundingClientRect();
-  const long = ms * 1.1;
-  const opts = { duration: long, easing: 'cubic-bezier(0.55, 0, 0.8, 0.2)', fill: 'forwards' as const };
+  const long = ms * 0.7;
+  const opts = { duration: long, easing: cssEase(), fill: 'forwards' as const };
   holdScroll(sheet);
   dlg.style.pointerEvents = 'none';
   const anims = [
     sheet.animate([{ transform: 'none' }, { transform: `translateY(${box.bottom - r.top + 24}px) rotate(1.5deg)` }], opts),
-    dlg.animate([{ backgroundColor: getComputedStyle(dlg).backgroundColor }, { backgroundColor: 'transparent' }], { ...opts, easing: 'ease-in' }),
+    dlg.animate([{ backgroundColor: getComputedStyle(dlg).backgroundColor }, { backgroundColor: 'transparent' }], { ...opts, easing: 'ease-out' }),
     ...[...dlg.querySelectorAll<HTMLElement>(EDITOR_PARTS)].map(part =>
-      part.animate([{ opacity: 1 }, { opacity: 0 }], { ...opts, duration: long * 0.6, easing: 'ease-in' })),
+      part.animate([{ opacity: 1 }, { opacity: 0 }], { ...opts, duration: long * 0.6, easing: 'ease-out' })),
   ];
   closing = { anims, done };
   anims[0].finished.then(() => { if (closing?.anims === anims) finishClose(); }, () => {});
@@ -416,7 +418,7 @@ function finishClose() {
 function growFrom(dlg: HTMLDialogElement, from: DOMRect, paper: string | undefined, page: HTMLElement | null) {
   if (typeof dlg.animate !== 'function') return;
   const ms = travelMs();
-  const fade = () => void dlg.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180, easing: 'ease-out' });
+  const fade = () => void dlg.animate([{ opacity: 0 }, { opacity: 1 }], { duration: fastMs(), easing: 'ease-out' });
   if (!page || !(ms > 0) || !from.width || !from.height) return fade();
   // The grow is the entrance: viewer.css's own (ask-in) would still be scaling
   // the dialog as the sheet is measured, and the card would land short of it.

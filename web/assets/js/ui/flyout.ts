@@ -95,8 +95,8 @@ function onOver(e: PointerEvent) {
   if (btn && FLYOUTS[btn.dataset.cmd!]) {
     hold();
     if (btn === openFor) return;
-    // Already open bar → swap at once (no dwell).
-    open(btn, false, openFor ? 0 : DWELL);
+    // Already open bar → swap at once (no dwell, no entrance).
+    open(btn, false, openFor ? 0 : DWELL, !!openFor);
     return;
   }
 
@@ -129,8 +129,9 @@ export function openFlyout(btn: HTMLElement): boolean {
   return true;
 }
 
-/** Open a flyout. delay=0 for keyboard/swap, DWELL for first hover. */
-function open(btn: HTMLElement, focus: boolean, delay = 0) {
+/** Open a flyout. delay=0 for keyboard/swap, DWELL for first hover; instant
+ *  for a swap, since one panel replacing another has nothing to arrive from. */
+function open(btn: HTMLElement, focus: boolean, delay = 0, instant = false) {
   clearTimeout(openTimer);
   if (delay) {
     openTimer = setTimeout(() => open(btn, focus), delay);
@@ -151,7 +152,7 @@ function open(btn: HTMLElement, focus: boolean, delay = 0) {
     bounds: { left: barBox.left, right: barBox.right },
   };
   const label = btn.querySelector('span')?.textContent?.trim() || 'Menu';
-  openAnchored(rect, FLYOUTS[btn.dataset.cmd!](cmds!), { label, focus });
+  openAnchored(rect, FLYOUTS[btn.dataset.cmd!](cmds!), { label, focus, instant });
   openFor = btn;
   btn.setAttribute('aria-expanded', 'true');
 }
