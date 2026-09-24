@@ -316,6 +316,12 @@ textarea.lp-url {
   -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
 }
+/* A note outgrown into a document: the dim goes with the composer as the page
+   grows out over it (fadeComposer() in canvas/notes.ts fades the rest). */
+#compose.is-leaving::backdrop {
+  opacity: 0;
+  transition: opacity calc(var(--dur-travel) / 2) ease-out;
+}
 #compose .note-toolbar { order: 1; }
 #compose-mount { order: 2; }
 #compose .ask-row { order: 3; align-self: stretch; }

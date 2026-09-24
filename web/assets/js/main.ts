@@ -176,7 +176,7 @@ setAssetPurge((hashes: Set<string>) => {
 // that outgrew itself mid-sentence opens in the editor, growing out of the note,
 // and turns back into it if written back down to fit before the editor closes.
 setNoteOverflow(async (id, markdown, open) => {
-  const held = open ? holdTyping() : null;
+  const held = open ? holdTyping(open.stay?.host) : null;
   const note = byId(id);
   const was = lastCommand();
   const made = await noteToFile(id, markdown, !!open);
@@ -185,7 +185,7 @@ setNoteOverflow(async (id, markdown, open) => {
   const back = note && made
     ? { fits: fitsNote, back: (md: string, before: string) => void unfileNote(made, note, turned, md, before) }
     : undefined;
-  if (made && open) openViewer(made, { ...open, held, edit: true, note: back });
+  if (made && open) openViewer(made, { ...open, held, edit: true, note: back, over: open.stay?.go });
   else held?.take();
   return !!made;
 });

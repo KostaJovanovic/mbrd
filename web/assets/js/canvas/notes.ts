@@ -13,6 +13,7 @@ import {
   lastCommand, takeBack, removeItems,
 } from '../state.ts';
 import { nodeFor, onViewChange, screenBoxOf, viewportClientRect } from './items.ts';
+import { travelMs } from './viewport.ts';
 import { makeEditable, markClosed } from '../util.ts';
 import { linkURL, linkDraft } from './renderers.ts';
 import {
@@ -53,7 +54,19 @@ export type NoteOpen = {
   caret: { line: number, col: number }, from: DOMRect | null, paper?: string,
   /** Typed again in the editor: space ending a title, which a Markdown heading does not keep. */
   typed?: string,
+  /** The composer the note was written in, when it was, still on screen. */
+  stay?: NoteStay,
 };
+
+/**
+ * The composer a note outgrew itself in, left up with a still copy of the
+ * sheet until the document is there to grow out of it. Closed at once, the
+ * board showed for the frames the file takes to hash - the note small, at its
+ * own place on the board - and the grow then started from somewhere else.
+ * `host` is where typing is held meanwhile, since nothing outside a modal can
+ * take focus; `go` takes the composer away, and only the first call counts.
+ */
+export type NoteStay = { host: HTMLElement, go: () => void };
 export type NoteOverflow = (id: string, markdown: string, open?: NoteOpen) => Promise<boolean>;
 
 let overflow: NoteOverflow | null = null;
@@ -495,7 +508,8 @@ export function editNote(
   id: string,
   { surface = null, onDone = null }: {
     surface?: HTMLElement | null;
-    onDone?: ((text: string | null, becameFile?: boolean) => void) | null;
+    /** `opening`: the document it became opens in the editor, and may be grown out of what is on screen. */
+    onDone?: ((text: string | null, becameFile?: boolean, opening?: boolean) => NoteStay | void) | null;
   } = {},
 ): NoteEdit {
   const parts = editableNote(id);
@@ -838,7 +852,9 @@ export function editNote(
   };
 
   const onInput = (e: Event) => {
-    if (composing || (e instanceof InputEvent && e.isComposing)) return;
+    // Mid-word in an IME the column is the IME's, but the sheet still grows
+    // under it: a word wrapping onto a new line would otherwise scroll it.
+    if (composing || (e instanceof InputEvent && e.isComposing)) { growNote(id); return; }
     settle();
   };
   const onCompStart = () => { composing = true; };
@@ -955,13 +971,13 @@ export function editNote(
     if (linkify(id, text)) { onDone?.(text); return; }
     const markdown = linesMarkdown(lines);
     if (overflow && linesLength(lines) > NOTE_SHEET_MAX && markdown !== openedAs) {
-      // The composer closes first: whatever holds the typing while the
-      // document is made (NoteOverflow) cannot take focus under a modal.
-      onDone?.(markdown, true);
+      // The composer is done with the note first. Going on into the editor it
+      // stays up until the document arrives (NoteStay); otherwise it closes.
+      const stay = onDone?.(markdown, true, !!open) ?? undefined;
       // Asynchronous (the file is hashed). The note keeps its old words until
       // the document replaces it; if that fails, the note keeps what fits.
-      void overflow(id, markdown, open).then(ok => {
-        if (!ok) { setNoteContent(id, rich, text); growNote(id); }
+      void overflow(id, markdown, open ? { ...open, stay } : undefined).then(ok => {
+        if (!ok) { stay?.go(); setNoteContent(id, rich, text); growNote(id); }
       });
       return;
     }
@@ -1145,22 +1161,39 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>, caret?:
   go.textContent = added ? 'Add' : 'Save';
   dlg.setAttribute('aria-label', added ? 'Write a note' : 'Edit note');
 
+  /** The note's toolbar, which editNote() puts in the dialog. */
+  let bar: HTMLElement | null = null;
   const handle = editNote(id, {
     surface: dlg,
-    onDone: (text, becameFile) => {
+    onDone: (text, becameFile, opening) => {
       go.removeEventListener('click', onGo);
       cancel.removeEventListener('click', onCancel);
       dlg.removeEventListener('cancel', onEscape);
+      // Going on into the editor, a still copy of the sheet as it is now stays
+      // in the mount (NoteStay) - taken before the styles below go back.
+      const still = becameFile && opening ? stillOf(node) : null;
       // Restore stashed styles before returning the card to the world layer.
       standIn = null;
       node.style.width = prevWidth;
       node.style.height = prevHeight;
       node.style.setProperty('--half-w', prevHalfW);
       node.style.transform = worldTransform;
-      mount.style.width = '';
-      mount.style.height = '';
-      mount.style.removeProperty('--iz');
-      dlg.close();
+      const close = () => {
+        mount.style.width = '';
+        mount.style.height = '';
+        mount.style.removeProperty('--iz');
+        dlg.close();
+      };
+      if (still) {
+        mount.append(still);
+        // The bar the edit took away goes back unseen, or the dialog would
+        // re-centre on what is left and the sheet jump up out of place.
+        if (bar) {
+          bar.style.visibility = 'hidden';
+          bar.inert = true;
+          dlg.append(bar);
+        }
+      } else close();
       // Sibling may have been detached by culling — append as fallback.
       if (home) {
         if (after && after.parentNode === home) home.insertBefore(node, after);
@@ -1168,7 +1201,7 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>, caret?:
       } else node.remove();
       // Outgrown: a document is replacing this note, so it is not grown or
       // landed - the document's own card arrives instead.
-      if (becameFile) return;
+      if (becameFile) return still ? { host: dlg, go: fadeComposer(dlg, () => { still.remove(); bar?.remove(); close(); }) } : undefined;
       if (text?.trim()) {
         // Re-grow at board width — dialog grows went to the stand-in.
         growNote(id);
@@ -1184,6 +1217,7 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>, caret?:
       if (!takeBack(added)) removeItems([id], 'Discard note');
     },
   });
+  bar = dlg.querySelector<HTMLElement>('.note-toolbar');
 
   // Refocus the sheet after showModal()'s own focus flush — otherwise the first
   // keystroke hits Cancel. rAF runs after the flush in the same frame.
@@ -1203,6 +1237,35 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>, caret?:
   go.addEventListener('click', onGo);
   cancel.addEventListener('click', onCancel);
   dlg.addEventListener('cancel', onEscape);
+}
+
+/** A still copy of a sheet in the composer: no id, so nothing takes it for the note. */
+function stillOf(node: HTMLElement): HTMLElement {
+  // SAFETY: a deep clone of an HTMLElement is an HTMLElement.
+  const copy = node.cloneNode(true) as HTMLElement;
+  copy.removeAttribute('data-id');
+  copy.inert = true;
+  return copy;
+}
+
+/**
+ * A NoteStay's `go`: the composer fading as the document grows out over it -
+ * the sheet's copy, the buttons and the dimmed board together - then closed.
+ * With motion reduced, closed at once.
+ */
+function fadeComposer(dlg: HTMLDialogElement, close: () => void): () => void {
+  let gone = false;
+  return () => {
+    if (gone) return;
+    gone = true;
+    const ms = travelMs() / 2;
+    if (!dlg.open || !(ms > 0) || typeof dlg.animate !== 'function') return close();
+    // The backdrop is a pseudo-element, which only the stylesheet reaches (dialog.css).
+    dlg.classList.add('is-leaving');
+    const fade = dlg.animate([{ opacity: 1 }, { opacity: 0 }], { duration: ms, easing: 'ease-out', fill: 'forwards' });
+    const end = () => { close(); fade.cancel(); dlg.classList.remove('is-leaving'); };
+    fade.finished.then(end, end);
+  };
 }
 
 /** Composer sheet width a note is magnified up to: a default note at 2x. */

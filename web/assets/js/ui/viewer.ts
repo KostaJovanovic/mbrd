@@ -70,6 +70,8 @@ export type OpenOptions = {
    * the change). Wired by main.ts, since the note is canvas/'s.
    */
   note?: { fits: (markdown: string) => boolean, back: (markdown: string, was: string) => void },
+  /** What is on screen under the viewing until it arrives - the composer the sticky was written in - and its taking away. */
+  over?: () => void,
 };
 
 /** Typing caught between a sticky closing and its document opening. `into` moves the catcher inside a modal. */
@@ -80,13 +82,14 @@ export type HeldTyping = { take: () => string, into: (host: HTMLElement) => void
  * and the editor is not open yet, since the file is hashed in between. A
  * hidden field takes focus meanwhile, so the keys land somewhere - and on a
  * phone, so the keyboard stays up rather than dropping and coming back.
+ * `host` is a modal still open, the one place a field can take focus.
  */
-export function holdTyping(): HeldTyping {
+export function holdTyping(host: HTMLElement = document.body): HeldTyping {
   const box = document.createElement('textarea');
   box.className = 'viewer-hold';
   box.tabIndex = -1;
   box.setAttribute('aria-hidden', 'true');
-  document.body.append(box);
+  host.append(box);
   box.focus({ preventScroll: true });
   return {
     take: () => {
@@ -261,9 +264,8 @@ const PDF_EXTS = new Set(['pdf', 'ai']);
 
 export function openViewer(id: string, open: OpenOptions = {}) {
   const item = byId(id);
-  if (!dlg || typeof dlg.showModal !== 'function' || !item) return;
-  const view = viewFor(item);
-  if (!view) return;
+  const view = item && viewFor(item);
+  if (!dlg || typeof dlg.showModal !== 'function' || !item || !view) return void open.over?.();
   // A close still animating is finished first: this viewing replaces it.
   if (closing) finishClose();
   // A document already open is saved and put down before another replaces it.
@@ -295,10 +297,11 @@ export function openViewer(id: string, open: OpenOptions = {}) {
   // it; the sheet exists only once the editor has mounted, so till then the
   // viewing waits unseen, and editDocument() calls arrive().
   if (open.from || open.edit) {
-    arriving = { from: open.from ?? null, paper: open.paper };
+    arriving?.over?.();
+    arriving = { from: open.from ?? null, paper: open.paper, over: open.over };
     if ('edit' in dlg.dataset) dlg.classList.add('is-arriving');
     else arrive();
-  }
+  } else open.over?.();
   // The body, not the close button - scrolling with the keyboard is the
   // first thing anybody does, and a focused button swallows Space. Unless
   // typing is being held for a document still opening: the catcher keeps it.
@@ -307,7 +310,7 @@ export function openViewer(id: string, open: OpenOptions = {}) {
 }
 
 /** The entrance a document is waiting on: from a sticky, or (no `from`) up from below. See openViewer() and arrive(). */
-let arriving: { from: DOMRect | null, paper?: string } | null = null;
+let arriving: { from: DOMRect | null, paper?: string, over?: () => void } | null = null;
 
 /** Shows the waiting viewing: grown or risen into `page`, or plainly faded in when there is no sheet. Once. */
 function arrive(page: HTMLElement | null = null) {
@@ -317,6 +320,7 @@ function arrive(page: HTMLElement | null = null) {
   dlg.classList.remove('is-arriving');
   if (a.from) growFrom(dlg, a.from, a.paper, page);
   else riseIn(dlg, page);
+  a.over?.();
 }
 
 /** What stands around the sheet and fades with it: the head, the ribbon, the grain and the status bar. */
@@ -539,6 +543,7 @@ function teardown() {
   bodyEl?.replaceChildren();
   // Typing held for a document that never opened goes with the viewing.
   dlg!.querySelector('.viewer-hold')?.remove();
+  arriving?.over?.();
   arriving = null;
   dlg!.classList.remove('is-arriving');
   delete dlg!.dataset.type;
@@ -940,6 +945,8 @@ async function editDocument(item: Item, host: HTMLElement, open: OpenOptions = {
   const readOnly = (why: string) => {
     delete dlg!.dataset.edit;
     readOnlyText(item, host, why);
+    // No sheet to grow into: a plain fade, rather than a viewing waiting unseen.
+    arrive();
   };
   const waiting = nothing('Opening it…');
   host.append(waiting);
