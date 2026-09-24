@@ -755,6 +755,9 @@ function ensurePanelWindow(): BrowserWindow | null {
     parent,
     show: false,
     frame: false,
+    // Without it Windows zooms the window open from its middle, the way it
+    // opens an app. The panel draws its own drop from the bar (titlebar.css).
+    thickFrame: false,
     resizable: false,
     movable: false,
     minimizable: false,
@@ -820,8 +823,10 @@ function wireChrome(): void {
     if (!panel) return;
     panelMenuId = id;
     const at: Point = { x: Math.round(Number(req?.x) || 0), y: Math.round(Number(req?.y) || 0) };
+    // A menu dropped fresh animates in; one slid to from the next title does not.
+    const opening = !panel.isVisible();
     const send = () => {
-      if (!panel.isDestroyed()) panel.webContents.send('panel:menu', { menu, at });
+      if (!panel.isDestroyed()) panel.webContents.send('panel:menu', { menu, at, opening });
     };
     if (panel.webContents.isLoading()) panel.webContents.once('did-finish-load', send);
     else send();

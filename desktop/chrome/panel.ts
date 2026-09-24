@@ -49,8 +49,15 @@ function report(bridge: PanelBridge, list: HTMLElement, at: Point): void {
 }
 
 if (api && root) {
-  api.onMenu(({ menu, at }) => {
+  api.onMenu(({ menu, at, opening }) => {
     draw(root, menu, id => api.run(id));
+    // Restarted while the window is still hidden, so its first frame on screen
+    // is the animation's first.
+    root.classList.remove('is-opening');
+    if (opening) {
+      void root.offsetWidth;
+      root.classList.add('is-opening');
+    }
     report(api, root, at);
     // Again once the fonts are in. A hidden window paints no frames, so this
     // cannot wait on requestAnimationFrame.
