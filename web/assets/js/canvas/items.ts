@@ -74,6 +74,56 @@ function setHoverLift(id: string, on: boolean) {
   shadows.get(id)?.classList.toggle('is-hover', on);
 }
 
+/** Most cards a rearrangement slides; past it the board simply changes. */
+const SLIDE_CAP = 80;
+
+/**
+ * Where the cards that are on screen now stand, for slideFrom() to play from
+ * once a rearrangement has moved them. Read before the move. Empty past
+ * SLIDE_CAP: a hundred cards crossing each other is noise, not explanation.
+ */
+export function seenPlaces(ids: readonly string[]): Map<string, { x: number, y: number }> {
+  const out = new Map<string, { x: number, y: number }>();
+  if (typeof innerWidth !== 'number') return out;
+  for (const id of ids) {
+    const el = nodes.get(id);
+    const item = byId(id);
+    if (!el?.isConnected || !item) continue;
+    const r = el.getBoundingClientRect();
+    if (r.right < 0 || r.bottom < 0 || r.left > innerWidth || r.top > innerHeight) continue;
+    out.set(id, { x: item.x, y: item.y });
+    if (out.size > SLIDE_CAP) return new Map();
+  }
+  return out;
+}
+
+/**
+ * Slide the cards seenPlaces() found from where they were to where the model
+ * now has them, so a rearrangement shows where each card went instead of
+ * teleporting the board. `transform` only - position is left/top and the
+ * lift, lean and grow are the individual properties, so this composes with
+ * all of them - on the card and its shadow twin together. The in-and-out
+ * curve on-screen movement wants, with a short stagger that never holds
+ * anything up: the positions are already committed.
+ */
+export function slideFrom(was: ReadonlyMap<string, { x: number, y: number }>, ms: number) {
+  if (!(ms > 0) || !was.size) return;
+  const step = Math.min(30, 240 / was.size);
+  let i = 0;
+  for (const [id, from] of was) {
+    const item = byId(id);
+    const el = nodes.get(id);
+    if (!item || !el || typeof el.animate !== 'function') continue;
+    // World y runs up and the page's runs down - see place().
+    const dx = from.x - item.x, dy = item.y - from.y;
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) continue;
+    const frames = [{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }];
+    const opts = { duration: ms, delay: i++ * step, easing: 'cubic-bezier(0.77, 0, 0.175, 1)', fill: 'backwards' as const };
+    el.animate(frames, opts);
+    shadows.get(id)?.animate(frames, opts);
+  }
+}
+
 /**
  * Mark cards as carried, for the length of a drag: the pickup (lift, lean,
  * grow) that items.css and canvas.css style under .is-dragging. Called by

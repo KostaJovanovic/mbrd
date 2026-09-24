@@ -539,6 +539,12 @@
 @property --accent-fg  { syntax: "<color>"; inherits: true; initial-value: #fdfcfa; }
 @property --accent-text{ syntax: "<color>"; inherits: true; initial-value: #b94900; }
 @property --leafy      { syntax: "<color>"; inherits: true; initial-value: #66842b; }
+/* Not a colour but the same trick: the docked Timeline's height (chrome.css,
+   ui/timeline-view.ts), registered so it can be animated: the strip's toggle
+   plays it (timeline-view.ts, not a transition here, so restoring an open strip
+   on load does not slide) and the furniture standing on it rides up and down
+   with the strip instead of jumping a bar's height in one frame. */
+@property --dock       { syntax: "<length>"; inherits: true; initial-value: 0px; }
 
 /* Not on the first paint: an element has no before-change style the first time
    it is rendered, so nothing fades in from the initial values above - the board

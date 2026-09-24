@@ -692,7 +692,7 @@ function buildTile(item: Item): Tile {
  */
 function wireOpen(t: Tile) {
   if (!OPENS.has(t.kind) || !canView(t.item.id)) return;
-  actAsButton(t.el, () => openViewer(t.item.id));
+  actAsButton(t.el, () => openViewer(t.item.id, { thumb: t.el.getBoundingClientRect() }));
 }
 
 /** The tile kinds whose tap means "open this". See wireOpen(). */

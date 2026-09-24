@@ -20,7 +20,7 @@ import { latticeBox, itemBounds, rotatedExtents, pictureBox } from '../geometry.
 import { conformAll, cardRatio, isPicture } from '../canvas/picture-shape.ts';
 import { travelMs } from '../canvas/viewport.ts';
 import { repaintGround, forgetLookInk } from '../canvas/ground.ts';
-import { barHeight, resetItems } from '../canvas/items.ts';
+import { barHeight, resetItems, seenPlaces, slideFrom } from '../canvas/items.ts';
 import { resetWeb } from '../canvas/web.ts';
 import { resetModels } from '../canvas/model.ts';
 import { flushNoteEdit, noteFloor } from '../canvas/notes.ts';
@@ -466,6 +466,9 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
   // SAFETY: as above - see GeomRow.
   const beforeAll = snapshotGeom(
     enclosing ? [...items.map(i => i.id), enclosing.id] : items.map(i => i.id)) as GeomRow[];
+  // Where the cards on screen stand now, so they can slide to their slots
+  // below rather than jump there. Read before anything moves.
+  const seen = seenPlaces(items.map(i => i.id));
   // Nothing to lay out - the whole set was followers. There is no arrangement of
   // riders alone; they stay on their hosts. A fence's contents cannot empty this
   // on their own: containment is a strict order, so the outermost fence in any
@@ -778,6 +781,7 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
   }
   commitGeom(options.label || (whole ? 'Rearrange' : `Rearrange ${items.length} items`),
     beforeAll, [...free.map(g => g.id), ...closing], mobile ? { preservePresnap: true } : {});
+  slideFrom(seen, travelMs());
   // A whole-board layout rebuilds around the origin, so the view has to follow
   // it there or the rearrangement happens off screen. Free is the exception:
   // it shakes each item where it stands, and flying to fit the whole board

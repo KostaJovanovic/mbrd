@@ -64,6 +64,8 @@ export type OpenOptions = {
   caret?: EditorOptions['caret'], from?: DOMRect | null, paper?: string, held?: HeldTyping | null,
   /** Typed at the caret once the editor opens, before anything held. */
   typed?: string,
+  /** The card or tile a picture was opened from, on screen, for it to grow out of. */
+  thumb?: DOMRect | null,
   /**
    * The sticky this document grew out of, for as long as this editing lasts:
    * `fits` is asked after each change, and once the text fits a sticky again
@@ -302,12 +304,44 @@ export function openViewer(id: string, open: OpenOptions = {}) {
     arriving = { from: open.from ?? null, paper: open.paper, over: open.over };
     if ('edit' in dlg.dataset) dlg.classList.add('is-arriving');
     else arrive();
-  } else open.over?.();
+  } else {
+    open.over?.();
+    if (pic && open.thumb) growPicture(dlg, pic, open.thumb);
+  }
   // The body, not the close button - scrolling with the keyboard is the
   // first thing anybody does, and a focused button swallows Space. Unless
   // typing is being held for a document still opening: the catcher keeps it.
   if (open.held) open.held.into(dlg);
   else bodyEl!.focus?.();
+}
+
+/**
+ * A picture opened from its card or tile grows out of it, rather than the
+ * lightbox swelling from the middle of the window: the photograph flies from
+ * the thumbnail's box to its own, while the dark ground and the head fade in
+ * around it. Only when the picture already has a size - a file still loading
+ * has none to fly to, and keeps the plain entrance (viewer.css's ask-in).
+ * Uniform scale about matching centres, so a cropped tile does not stretch it.
+ */
+function growPicture(dlg: HTMLDialogElement, pic: HTMLImageElement, from: DOMRect) {
+  const ms = travelMs();
+  if (!(ms > 0) || typeof pic.animate !== 'function' || !from.width || !from.height) return;
+  const to = pic.getBoundingClientRect();
+  if (!to.width || !to.height) return;
+  for (const a of dlg.getAnimations()) a.cancel();
+  const s = Math.max(from.width / to.width, from.height / to.height);
+  const dx = (from.left + from.width / 2) - (to.left + to.width / 2);
+  const dy = (from.top + from.height / 2) - (to.top + to.height / 2);
+  const long = ms * 0.8;
+  pic.animate([
+    { transform: `translate(${dx}px, ${dy}px) scale(${s})` },
+    { transform: 'none' },
+  ], { duration: long, easing: cssEase() });
+  dlg.animate([{ backgroundColor: 'transparent' }, { backgroundColor: getComputedStyle(dlg).backgroundColor }],
+    { duration: long, easing: 'ease-out' });
+  for (const part of dlg.querySelectorAll<HTMLElement>('#viewer-head')) {
+    part.animate([{ opacity: 0 }, { opacity: 0, offset: 0.4 }, { opacity: 1 }], { duration: long, easing: 'ease-out' });
+  }
 }
 
 /** The entrance a document is waiting on: from a sticky, or (no `from`) up from below. See openViewer() and arrive(). */
