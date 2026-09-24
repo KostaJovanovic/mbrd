@@ -624,8 +624,10 @@ export function editNote(
     const left = NOTE_SHEET_MAX - linesLength(read().lines);
     // Past the limit nothing is refused: the counter says what closing will do.
     counter.textContent = left < 0 ? 'becomes a .md file' : left + ' left';
-    // A sixth of the sheet: warns in time without going red a third of the way in.
-    counter.classList.toggle('is-low', left <= 20);
+    // Only near the end, and red when it is there: a count running the whole
+    // way down is a number watched instead of words written.
+    counter.hidden = left > 10;
+    counter.classList.toggle('is-low', left <= 10);
   };
 
   const reflectNow = () => {

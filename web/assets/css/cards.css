@@ -457,7 +457,8 @@
 .note-toolbar .ntb-ico-va-middle { background-position: center 6px, center 10px; }
 .note-toolbar .ntb-ico-va-bottom { background-position: center 11px, center 15px; }
 
-/* How much room is left, while a note is being written. On the sheet, in the
+/* How much room is left, in the last ten characters of a note being written
+   (refreshCount() in canvas/notes.ts hides it before that). On the sheet, in the
    bottom-right corner of its padding: the text column ends where the padding
    starts (growNote() keeps it so), so the two never overlap, and absolute
    positioning keeps it out of noteHeight()'s measurement. Sized off the pad
@@ -486,7 +487,7 @@
 /* Running out. The colour carries it and the weight backs the colour up, which
    matters on a board wearing a palette where --danger is not far from --ink-2.
    Weight rather than size: this sits under a sheet that grows as it is written,
-   and a counter that changed size at twenty characters left would move the sheet
+   and a counter that changed size as it went red would move the sheet
    under the caret. */
 .note-count.is-low { color: var(--danger); font-weight: 600; }
 
