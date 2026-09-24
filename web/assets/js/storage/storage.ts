@@ -18,7 +18,7 @@ import {
 import type { LibraryEntry } from './library.ts';
 import {
   board, serializeBoard, loadBoard, markDirty, isDirty, setTitle, bus, mergeBoard,
-  defaultBoardTitle, isNotFoundBoard, hasContent,
+  defaultBoardTitle, isNotFoundBoard, isBenchBoard, notUsersBoard, hasContent,
 } from '../state.ts';
 import { normalizeBoard } from '../board-schema.ts';
 import { planMerge } from '../merge.ts';
@@ -723,6 +723,12 @@ async function withFreshAssets<T>(commit: (stash: Map<string, Asset>) => Promise
  *
  * The library's New calls this; so does the Board panel's.
  */
+/** The one answer every board-replacing door gives on the benchmark's board. */
+function refuseOnBench() {
+  toast('This is the benchmark board - go back to your board first');
+  return false;
+}
+
 export async function newBoard() {
   // A not-found board is not the visitor's board. It was never loaded from the
   // session slot, so clearing that slot below would delete a board they cannot
@@ -737,6 +743,7 @@ export async function newBoard() {
     toast('This address has no board to start over - put something on it first');
     return false;
   }
+  if (isBenchBoard()) return refuseOnBench();
   // Stop the closing board's autosave from repopulating the store after it is
   // cleared, and put the board being left onto the shelf. See AUD-03 for the
   // latch, and shelveCurrent() for why nothing is asked any more.
@@ -837,6 +844,9 @@ export async function listLibrary() {
  */
 export async function stashCurrent() {
   const id = await ensureBoardId();
+  // The id is the user's board's, and the board on screen is not: filing it
+  // would put the benchmark's pictures over their row. Nothing to file.
+  if (isBenchBoard()) return id;
   const thumb = await makeThumb().catch(() => null);
   // With a boards folder the file is brought up to date first, and made if the
   // board has none, so the row below is always a pointer. A board that could
@@ -944,6 +954,11 @@ async function askBeforeLeaving() {
  * and it would fail silently, which is worse than the dialog ever was.
  */
 async function shelveCurrent() {
+  // Every door that replaces the board comes through here, and on the bench
+  // board each of them would end with the arriving board autosaving into the
+  // user's session slot with nothing of theirs filed first. Refused, all of
+  // them at once: the way to another board from here is Back to your board.
+  if (isBenchBoard()) return refuseOnBench();
   if (!(await askBeforeLeaving())) return false;
   suspendCache();
   await drainSave();
@@ -989,6 +1004,7 @@ async function shelveCurrent() {
  */
 export async function ensureCurrentOnShelf() {
   const id = await ensureBoardId();
+  if (isBenchBoard()) return id;
   if (await hasLibraryBoard(id).catch(() => true)) return id;
   await stashCurrent().catch(err => {
     console.warn('[mbrd] could not file the current board on the shelf:', err);
@@ -1300,7 +1316,7 @@ export function worthCompacting(dead: number, size: number) {
  */
 export async function compactDocument(): Promise<boolean> {
   await adopted;
-  if (!folder || !platform.files.append || isNotFoundBoard()) return false;
+  if (!folder || !platform.files.append || notUsersBoard()) return false;
   return inTurn(async () => {
     const ref = doc;
     if (!ref?.path) return false;
@@ -1322,7 +1338,7 @@ export async function compactDocument(): Promise<boolean> {
 /** saveDocument() without the wait, for adoptFolder(), which is what it waits for. */
 function writeDocument(): Promise<boolean> {
   const port = platform.files.folder;
-  if (!folder || !port || isNotFoundBoard()) return Promise.resolve(true);
+  if (!folder || !port || notUsersBoard()) return Promise.resolve(true);
   return inTurn(async () => {
     if (doc?.path && !isDirty()) return true;
     const gen = edits;

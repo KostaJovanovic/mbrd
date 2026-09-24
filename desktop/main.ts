@@ -959,6 +959,7 @@ function wireFiles(): void {
   ipcMain.handle('boards:rename', (_e, path: unknown, suggested: unknown) => boards.rename(path, suggested));
   ipcMain.handle('boards:trash', (_e, path: unknown) => boards.trash(path));
   ipcMain.handle('boards:reveal', () => boards.reveal());
+  ipcMain.handle('bench:save', (_e, name: unknown, json: unknown) => boards.saveBench(name, json));
 }
 
 function wireApp(): void {

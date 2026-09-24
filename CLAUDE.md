@@ -394,6 +394,11 @@ Two traps in that list, both found the hard way:
   an integer. **`lift` must never reach the second kind.** A ceiling that stops
   being liftable, or a corruption check that starts being one, both look like a
   one-word edit and neither is.
+- **Anything new that writes the user's board, their shelf or their session
+  asks `notUsersBoard()` first** (`onboarding.ts`). The not-found board and
+  the benchmark's `#bench` board are on screen with the user's id and folder
+  underneath, and a writer that does not ask files a generated board over
+  theirs. `tests/bench-guard.test.js` holds the writers that exist.
 - **`setRiskPrompt()` unwired allows everything**, unlike storage's `setPrompt()`.
   Argued at length in `consent.ts`; the short version is that a module with no
   interface attached must not invent a refusal, and this is what keeps `import/`,

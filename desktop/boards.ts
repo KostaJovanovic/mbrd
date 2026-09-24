@@ -122,6 +122,34 @@ export async function trash(path: unknown): Promise<void> {
   log('info', 'board moved to the bin', { path: file });
 }
 
+/** A benchmark result's name, as benchFileName() in perf/bench.ts makes it. */
+const BENCH_NAME = /^mbrd-bench-[a-z0-9.-]{1,160}\.json$/;
+
+/**
+ * A benchmark result into bench/ in the folder, under its own name or
+ * "name (2).json" and on. Answers the path. Only that shape of name, only that
+ * subfolder, and text only: this is the one write here the page names itself.
+ */
+export function saveBench(name: unknown, json: unknown): Promise<string> {
+  if (typeof name !== 'string' || !BENCH_NAME.test(name)) return Promise.reject(new Error('not a benchmark result\'s name'));
+  if (typeof json !== 'string') return Promise.reject(new Error('expected the result as text'));
+  return inTurn(async () => {
+    const dir = join(root, 'bench');
+    await mkdir(dir, { recursive: true });
+    const stem = name.slice(0, -'.json'.length);
+    let path = join(dir, name);
+    for (let n = 2; await there(path); n++) {
+      if (n > 999) throw new Error('bench/ has too many results with that name');
+      path = join(dir, `${stem} (${n}).json`);
+    }
+    const tmp = path + '.part';
+    await writeFile(tmp, json, 'utf8');
+    await move(tmp, path);
+    log('info', 'benchmark result saved', { path });
+    return path;
+  });
+}
+
 /** Open the folder in the file manager. */
 export async function reveal(): Promise<void> {
   await mkdir(root, { recursive: true });

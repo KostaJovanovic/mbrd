@@ -727,6 +727,17 @@ function discard(el: HTMLElement) {
   // in this order.
   releaseCardContent(el);
   el.remove();
+  discardProbe?.(el);
+}
+
+/**
+ * Told of every card thrown away, for the benchmark's leak check
+ * (perf/bench.ts), which registers each with a FinalizationRegistry and counts
+ * how many the collector has since taken. Unset, discard() pays one null test.
+ */
+let discardProbe: ((el: HTMLElement) => void) | null = null;
+export function setDiscardProbe(fn: ((el: HTMLElement) => void) | null) {
+  discardProbe = fn;
 }
 
 /**

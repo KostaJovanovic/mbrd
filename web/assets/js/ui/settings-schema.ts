@@ -1246,6 +1246,12 @@ export const SECTIONS: Section[] = [
         // the useful sequence is arm, drive the board, read, drive some more,
         // and turning it off to see the numbers would reset them.
         { cmd: 'debug-perf-report', label: 'Print the frame report' },
+        // The profiler's scripted twin: the same preset moves on every device,
+        // written out as a file (perf/bench.ts). It asks which board and then
+        // either reloads onto the standard one or runs where it stands, so the
+        // panel goes out of the way either way.
+        { cmd: 'run-benchmark', label: 'Run benchmark', closesPanel: true,
+          title: () => 'About two minutes of preset zooms and pans, then a file of the timings' },
         // The interface sounds, and the one row in this fold that is about
         // something you cannot see. Every cue that reaches cuelume/engine.ts,
         // with the reason where it made no sound - and the point of it is the

@@ -1,4 +1,4 @@
-// Which page this is (board, /patch, 404) and how to navigate back to a board.
+// Which page this is (board, /patch, 404, #bench) and how to navigate back to a board.
 // Shared by main.ts, ui/panel.ts (greys board-only actions), commands/view.ts
 // (View rows navigate home from /patch). No document access at import time.
 
@@ -26,6 +26,17 @@ export function isNotFoundPage(): boolean {
   if (isPatchPage()) return false;
   const at = location.pathname;
   return at !== homePath() && at !== homePath() + 'index.html';
+}
+
+/**
+ * Whether this is the benchmark's boot: the home page at `#bench`, or at
+ * `#bench:` followed by its options (perf/bench.ts, parseBenchHash()). The
+ * home page only - a missing path is the 404 board whatever its fragment -
+ * and anchored, for the reason initPerfHash() is: a heading anchor that merely
+ * contains the word must not throw away the board somebody opened.
+ */
+export function isBenchPage(): boolean {
+  return !isPatchPage() && !isNotFoundPage() && /^#bench(:[\w=,.-]*)?$/.test(location.hash);
 }
 
 /** The three faces of a board, as the View row names them. */

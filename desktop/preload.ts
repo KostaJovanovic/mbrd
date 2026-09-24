@@ -76,6 +76,13 @@ contextBridge.exposeInMainWorld('mbrdDesktop', {
     google: (req: unknown) => invoke('auth:google', req),
   },
 
+  // The benchmark (web/assets/js/perf/bench.ts): a result into bench/ in the
+  // boards folder. No frames: the desktop's rAF is paced by presented frames.
+  bench: {
+    save: (name: string, json: string) => invoke('bench:save', name, json),
+    frames: null,
+  },
+
   startupNotes: () => invoke('app:startupNotes'),
 
   setDocument: (state: unknown) => ipcRenderer.send('app:document', state),

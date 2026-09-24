@@ -26,6 +26,16 @@ type AndroidBridge = Bridge & { shell: 'capacitor', platform: 'android' };
 const notYet = (what: string) => (): Promise<never> =>
   Promise.reject(new Error(`the Android shell cannot ${what} yet`));
 
+/** One frame as MbrdBench.java builds it, with anything missing read as 0. */
+function frameOf(f: unknown) {
+  const fields = new Map<string, unknown>(typeof f === 'object' && f !== null ? Object.entries(f) : []);
+  const at = (k: string) => {
+    const v = fields.get(k);
+    return typeof v === 'number' && Number.isFinite(v) ? v : 0;
+  };
+  return { vsync: at('vsync'), total: at('total'), deadline: at('deadline') };
+}
+
 const api: AndroidBridge = {
   bridge: 3,
   shell: 'capacitor',
@@ -111,6 +121,18 @@ const api: AndroidBridge = {
   // The desktop's menu sends commands. A phone has no menu of its own.
   onCommand: () => {},
   onBack: lifecycle.onBack,
+  // The benchmark (web/assets/js/perf/bench.ts, MbrdBench.java): a result into
+  // bench/ in the boards folder, and the window's own frame timings.
+  bench: Object.freeze({
+    save: (name, json) => call<{ path?: string }>('MbrdBench', 'save', { name, json }).then(r => r.path ?? name),
+    frames: Object.freeze({
+      start: () => call<void>('MbrdBench', 'start'),
+      stop: () => call<{ refreshHz?: unknown, frames?: unknown }>('MbrdBench', 'stop').then(r => ({
+        refreshHz: typeof r.refreshHz === 'number' ? r.refreshHz : 0,
+        frames: Array.isArray(r.frames) ? r.frames.map(frameOf) : [],
+      })),
+    }),
+  }),
 };
 
 // Read once, so a debuggable build says so in the WebView console.

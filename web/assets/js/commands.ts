@@ -59,6 +59,7 @@ import { viewCommands } from './commands/view.ts';
 import { itemMetaCommands } from './commands/item-meta.ts';
 import type { CommandViewport } from './commands/view.ts';
 import type { ViewPerf } from './perf/view-perf.ts';
+import type { BenchOptions, BenchResult } from './perf/bench.ts';
 import type { Item, ItemMeta } from './board-model.ts';
 import type { Point } from './arrange/arrangements.ts';
 
@@ -107,6 +108,14 @@ export interface CommandDeps {
   setWhimsy: (level: number | string) => void;
   /** Frame profiler instance, injected because it closes over the live viewport. */
   perf: ViewPerf;
+  /**
+   * The benchmark's screen (ui/bench-view.ts), injected because it is built
+   * from these commands. Absent in a test, where both rows answer nothing.
+   */
+  bench?: {
+    open(): void,
+    run(opts?: BenchOptions): Promise<BenchResult | null>,
+  };
 }
 
 /**
@@ -155,7 +164,7 @@ function registerLayoutOps() {
 }
 
 /** Build the command surface. Deps injected to avoid importing ui/appearance.ts (touches DOM at import). */
-export function createCommands(vp: CommandsViewport, { resetAppearance, setWhimsy, perf }: CommandDeps) {
+export function createCommands(vp: CommandsViewport, { resetAppearance, setWhimsy, perf, bench }: CommandDeps) {
   registerLayoutOps();
   // Function, not binding — board.settings is replaced on layout switch.
   const settingsBag = (): Record<string, unknown> => board.settings;
@@ -350,6 +359,11 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
 
     // --- the lenses, the camera, the chrome resets ---
     ...viewCommands(vp, { resetAppearance, perf }),
+
+    // The benchmark (perf/bench.ts). The Debug row asks which board; the
+    // console form takes the options and answers the file's own object.
+    runBenchmark: () => bench?.open(),
+    bench: (opts?: BenchOptions) => (bench ? bench.run(opts) : Promise.resolve(null)),
 
     selectAll,
     // Touch multi-select toggle. Turning off keeps the selection intact.

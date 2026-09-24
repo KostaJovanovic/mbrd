@@ -5,6 +5,54 @@
 import { board } from '../state.ts';
 import { cullProfile, viewStats } from '../canvas/items.ts';
 import { mobilePerfFlags } from '../canvas/viewport.ts';
+import { frameStats, pct } from './frames.ts';
+
+/**
+ * Put a string on the clipboard on a device that has no console and,
+ * usually, no secure context either. The benchmark's Copy uses it too.
+ *
+ * navigator.clipboard is the right answer and is the one that will not be
+ * there: the phone reaches this board over the LAN at http://192.168.x.x, and
+ * the Clipboard API is gated on a secure context, so the whole namespace is
+ * undefined on exactly the device this button exists for. execCommand is
+ * deprecated and works there, which is the trade - and it is tried first, for
+ * the reason written against it below.
+ *
+ * And when neither lands, the text is put in a selectable box instead and the
+ * user copies it by hand. A dev tool that says "copied" without copying is
+ * worse than one that hands you the text.
+ */
+export function copyText(text: string): Promise<boolean> {
+  // execCommand first, and synchronously, which is the whole point of the
+  // order. Both paths need the tap that is still in progress, and awaiting
+  // the Clipboard API's rejection would spend it: by the time the promise
+  // settles the gesture is no longer the transient activation execCommand
+  // asks for, so the fallback would fail on precisely the device it exists
+  // for. Nothing is awaited before the attempt that has to work.
+  const box = document.createElement('textarea');
+  try {
+    box.value = text;
+    // Off-screen but focusable, and readOnly so a phone does not open its
+    // keyboard over the readout on the way past.
+    box.readOnly = true;
+    box.style.cssText = 'position:fixed;top:-1000px;left:0;opacity:0';
+    document.body.append(box);
+    box.select();
+    box.setSelectionRange(0, text.length);
+    if (document.execCommand('copy')) return Promise.resolve(true);
+  } catch { /* deprecated, and one day gone - the API below is the future */ }
+  // In a finally-shaped position rather than after the call, because an
+  // engine that has already removed execCommand throws there and left the
+  // <textarea> in document.body - one orphan per press of a button whose
+  // whole purpose is to be pressed until something works.
+  finally { box.remove(); }
+  try {
+    if (navigator.clipboard?.writeText) {
+      return navigator.clipboard.writeText(text).then(() => true, () => false);
+    }
+  } catch { /* no secure context: there is nothing left to try */ }
+  return Promise.resolve(false);
+}
 
 /** Inferred from the factory to avoid a hand-kept duplicate. */
 export type ViewPerf = ReturnType<typeof createViewPerf>;
@@ -21,58 +69,9 @@ export function createViewPerf(vp: { apply(): void }) {
     gridMs = restMs = frames = worstFrame = 0; gaps.length = 0; lastRaf = 0; moved = false;
     cullProfile.reset();
   };
-  const pct = (sorted: number[], p: number) => sorted.length
-    ? sorted[Math.min(sorted.length - 1, Math.floor(p * sorted.length))] : 0;
-  /**
-   * How far a gap is off the display's own beat, in frames.
-   *
-   * A gap is never a free quantity: the compositor hands over on a refresh or
-   * it does not, so every interval is a whole number of them and the whole
-   * distribution lands on multiples of one. Anything that is *not* near a
-   * multiple did not come from a missed refresh, which is why it is counted
-   * separately below.
-   */
-  const OFF_BEAT = 0.25;
-  /** Below this a gap is a normal frame and no question is being asked of it. */
-  const A_FRAME = 1.15;
-
-  const stats = () => {
-    const sorted = [...gaps].sort((a, b) => a - b);
-    const median = pct(sorted, 0.5) || 0;
-    const janks = median ? gaps.filter(g => g > median * 1.5).length : 0;
-    // The display's fastest interval, as this run actually saw it - not as the
-    // device claims and not as the median says.
-    //
-    // The median is the wrong number to measure jank against on a phone, and
-    // reading a run against it is what nearly cost a day. These panels change
-    // refresh rate on their own: 120Hz under the finger, 60 when the system
-    // decides otherwise. A run that spends part of itself at 60 has a median
-    // pulled towards 16.7ms, so genuinely dropped frames stop looking dropped -
-    // and, worse the other way, a clean stretch at 60Hz scores as jank against
-    // a 120Hz median while nothing was missed at all.
-    //
-    // So the beat is taken from the fast end of the run instead: the 5th
-    // percentile is the interval the panel manages when it is trying, robust
-    // against the one or two impossibly short gaps a timer can produce.
-    const base = pct(sorted, 0.05) || median;
-    // ...and the tail is expressed in that beat. Two beats is deliberately kept
-    // apart from three: a two-beat gap is exactly what a drop to 60Hz looks
-    // like on a 120Hz panel and cannot be told from one missed refresh by any
-    // arithmetic on this data, so it is reported and not accused. Three or more
-    // is past anything a refresh-rate change explains, and is the honest count
-    // of frames this app actually lost.
-    const twos = base ? gaps.filter(g => g >= base * 1.5 && g < base * 2.5).length : 0;
-    const overs = base ? gaps.filter(g => g >= base * 2.5).length : 0;
-    // Gaps that are not a whole number of beats at all. A panel that stepped to
-    // some third rate - 90Hz is 1.33 beats of 120 - lands here rather than in
-    // the two counts above, which is the point: it is the one shape in the data
-    // that says the beat itself moved. Overlaps `twos`/`overs` by design.
-    const off = base ? gaps.filter(g => {
-      const f = g / base;
-      return f > A_FRAME && Math.abs(f - Math.round(f)) > OFF_BEAT;
-    }).length : 0;
-    return { sorted, median, janks, base, twos, overs, off };
-  };
+  // The beat and the tail counted in it - argued in perf/frames.ts, which the
+  // benchmark reads its gaps through as well, so the two never disagree.
+  const stats = () => frameStats(gaps);
   /**
    * Which run this is, named as the address that produces it.
    *
@@ -126,52 +125,6 @@ export function createViewPerf(vp: { apply(): void }) {
     ].join('  ');
   };
 
-  /**
-   * Put a string on the clipboard on a device that has no console and,
-   * usually, no secure context either.
-   *
-   * navigator.clipboard is the right answer and is the one that will not be
-   * there: the phone reaches this board over the LAN at http://192.168.x.x, and
-   * the Clipboard API is gated on a secure context, so the whole namespace is
-   * undefined on exactly the device this button exists for. execCommand is
-   * deprecated and works there, which is the trade - and it is tried first, for
-   * the reason written against it below.
-   *
-   * And when neither lands, the text is put in a selectable box instead and the
-   * user copies it by hand. A dev tool that says "copied" without copying is
-   * worse than one that hands you the text.
-   */
-  const copyText = (text: string): Promise<boolean> => {
-    // execCommand first, and synchronously, which is the whole point of the
-    // order. Both paths need the tap that is still in progress, and awaiting
-    // the Clipboard API's rejection would spend it: by the time the promise
-    // settles the gesture is no longer the transient activation execCommand
-    // asks for, so the fallback would fail on precisely the device it exists
-    // for. Nothing is awaited before the attempt that has to work.
-    const box = document.createElement('textarea');
-    try {
-      box.value = text;
-      // Off-screen but focusable, and readOnly so a phone does not open its
-      // keyboard over the readout on the way past.
-      box.readOnly = true;
-      box.style.cssText = 'position:fixed;top:-1000px;left:0;opacity:0';
-      document.body.append(box);
-      box.select();
-      box.setSelectionRange(0, text.length);
-      if (document.execCommand('copy')) return Promise.resolve(true);
-    } catch { /* deprecated, and one day gone - the API below is the future */ }
-    // In a finally-shaped position rather than after the call, because an
-    // engine that has already removed execCommand throws there and left the
-    // <textarea> in document.body - one orphan per press of a button whose
-    // whole purpose is to be pressed until something works.
-    finally { box.remove(); }
-    try {
-      if (navigator.clipboard?.writeText) {
-        return navigator.clipboard.writeText(text).then(() => true, () => false);
-      }
-    } catch { /* no secure context: there is nothing left to try */ }
-    return Promise.resolve(false);
-  };
 
   const showHud = () => {
     if (hud) return;

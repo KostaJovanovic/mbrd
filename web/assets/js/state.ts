@@ -18,13 +18,13 @@ export { serializeBoard };
 import {
   GHOST_IDS, NOTFOUND_IDS, tapeFor, hasContent, hasGhosts, isNotFoundBoard,
   leaveNotFoundBoard, ensureGhostCards, dismissGhosts, resetGhostLatch,
-  reseedGhostCards,
+  reseedGhostCards, isBenchBoard, markBenchBoard, notUsersBoard,
 } from './onboarding.ts';
 
 export {
   GHOST_IDS, NOTFOUND_IDS, tapeFor, hasContent, hasGhosts, isNotFoundBoard,
   leaveNotFoundBoard, ensureGhostCards, dismissGhosts, resetGhostLatch,
-  reseedGhostCards,
+  reseedGhostCards, isBenchBoard, markBenchBoard, notUsersBoard,
 };
 
 import {

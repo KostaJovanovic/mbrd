@@ -67,6 +67,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(MbrdFiles.class);
         registerPlugin(MbrdBoards.class);
         registerPlugin(MbrdAuth.class);
+        registerPlugin(MbrdBench.class);
         super.onCreate(savedInstanceState);
         setUpInsets();
         applyFullscreen(getResources().getConfiguration(), true);

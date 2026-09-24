@@ -10,7 +10,8 @@ import { timelineHashes } from '../timeline.ts';
 import { toast, busy } from '../notify.ts';
 import { clearPrefs } from '../prefs.ts';
 import {
-  board, serializeBoard, loadBoard, markDirty, isDirty, bus, isNotFoundBoard,
+  board, serializeBoard, loadBoard, markDirty, isDirty, bus, isNotFoundBoard, notUsersBoard,
+  isBenchBoard,
 } from '../state.ts';
 import { allAssets, putAsset } from './assets.ts';
 import {
@@ -219,6 +220,12 @@ export async function drainSave() {
  *  A failure at any step leaves the previous snapshot intact. Survives torn
  *  batches (idb.ts file backend has no multi-store transactions). */
 async function writeSnapshot() {
+  // Suspended at boot as well (main.ts), but that latch has doors that lift it
+  // and this one has none: the benchmark's board is never the session.
+  if (isBenchBoard()) {
+    lastFailure = 'This is the benchmark board - nothing on it is saved';
+    return false;
+  }
   if (!cacheOk) {
     // Different message for suspended (deliberate) vs. broken (quota/block).
     lastFailure = suspended
@@ -437,8 +444,10 @@ async function clearAppCaches() {
 export async function clearAllData(): Promise<boolean> {
   // Not-found boards have nothing to clear — the dialog would ask about a
   // board the visitor was never shown.
-  if (isNotFoundBoard()) {
-    toast('This address has no board to clear - go to your board first');
+  if (notUsersBoard()) {
+    toast(isNotFoundBoard()
+      ? 'This address has no board to clear - go to your board first'
+      : 'This is the benchmark board - go back to your board first');
     return false;
   }
   const answer = await d!.prompt({

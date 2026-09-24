@@ -36,7 +36,8 @@ The changelog source is `patch-notes.md` at the repository root, not in here.
 - `bench-2026-09-23.md` — the plan for a benchmark built into the app: preset
   moves, zooms and animations on a generated standard board (`#bench`) or the
   board on screen, saved as a JSON file, with real frame timings on Android.
-  Planned, not built.
+  Built on 2026-09-24 except the lab page; not yet run on a phone. Its last
+  section is what was built and where it differs from the plan.
 - `patch-notes-full.md` — **an archive, not open work.** It holds every release
   at the length it was first written, internal work included. Nothing generates
   anything from it.

@@ -76,6 +76,20 @@ export interface Bridge {
   onCommand(fn: (cmd: string) => void): void;
   /** Set by the Android shell, whose Back button asks `fn` first. */
   onBack?(fn: () => boolean): void;
+  /**
+   * The benchmark's two needs from a shell (perf/bench.ts). `save` writes a
+   * result into `bench/` in the boards folder and answers where; `frames` is
+   * the window's own per-frame timings, Android's FrameMetrics - null on the
+   * desktop, whose rAF is already paced by presented frames. Optional, so an
+   * older shell leaves the page on its download and its rAF.
+   */
+  bench?: {
+    save(name: string, json: string): Promise<string>;
+    frames: {
+      start(): Promise<void>;
+      stop(): Promise<{ refreshHz: number, frames: { vsync: number, total: number, deadline: number }[] }>;
+    } | null;
+  };
 }
 
 /** A file the main process read: bytes, name, and path. */

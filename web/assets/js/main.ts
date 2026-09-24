@@ -21,12 +21,12 @@ import {
   board, bus, selection, byId, setAssetNameLookup, setAssetPurge, isMultiSelect,
   ensureTitleCard, isTitleHidden, TITLE_ID, setTitle,
   ensureGhostCards, reseedGhostCards, hasContent, dismissGhosts,
-  leaveNotFoundBoard, isContent,
+  leaveNotFoundBoard, isContent, markBenchBoard,
   defaultBoardTitle,
   goTo, timelineSteps, timelineStale,
 } from './state.ts';
 import { freezePrefs } from './prefs.ts';
-import { homePath, isPatchPage, isNotFoundPage, openingFace, openingShare } from './page.ts';
+import { homePath, isPatchPage, isNotFoundPage, isBenchPage, openingFace, openingShare } from './page.ts';
 import { Viewport } from './canvas/viewport.ts';
 import { paintGrid, paintGridOnView } from './canvas/grid.ts';
 import { initGrain, paintGrain } from './canvas/grain.ts';
@@ -88,6 +88,9 @@ import { initTourEdit } from './ui/tour-edit.ts';
 
 import { createCommands } from './commands.ts';
 import { createViewPerf, initPerfHash } from './perf/view-perf.ts';
+import { createBench } from './perf/bench.ts';
+import { buildStandardBoard } from './perf/bench-board.ts';
+import { initBenchView } from './ui/bench-view.ts';
 import { initBoardView, openingView, syncBoardMode, syncMobileBoardBounds } from './ui/board-view.ts';
 import { initHud, paintZoom, paintSnap, paintTilt, paintCount } from './ui/hud.ts';
 import { initBoardTitle } from './ui/board-title.ts';
@@ -118,9 +121,14 @@ if (bridge) {
 /** Page type, resolved once. Constants because a navigation replaces the document. */
 const isPatch = isPatchPage();
 const notFound = isNotFoundPage();
+// The benchmark's own boot (#bench): a generated board that belongs to nobody.
+const benchPage = isBenchPage();
 
-// Before initSidebar() — no preference writes on the changelog page.
-if (isPatch) freezePrefs();
+// Before initSidebar() — no preference writes on the changelog page, and none
+// from the benchmark, whose switches must not outlive it.
+if (isPatch || benchPage) freezePrefs();
+// Before anything can write: every writer asks this latch (onboarding.ts).
+if (benchPage) markBenchBoard();
 
 // After initOverlays() so error toasts have a channel. The probe lets errors.ts
 // report whether unsaved work exists without importing storage.
@@ -141,7 +149,27 @@ initBoardActions(vp);
 // Profiler created here so cmds can arm it from the Debug fold.
 const viewPerf = createViewPerf(vp);
 // The Look tab's Reset takes the picture count back with the look.
-const cmds = createCommands(vp, { resetAppearance: resetLook, setWhimsy, perf: viewPerf });
+// The benchmark's screen is built from cmds, so cmds reaches it late.
+const cmds = createCommands(vp, {
+  resetAppearance: resetLook, setWhimsy, perf: viewPerf,
+  bench: { open: () => benchView.open(), run: opts => benchView.run(opts) },
+});
+const benchView = initBenchView({
+  bench: createBench({
+    vp, cmds, perf: viewPerf,
+    glass: bridge?.bench?.frames ?? null,
+    platform: bridge ? (bridge.shell === 'capacitor' ? 'android' : 'desktop') : 'web',
+    buildBoard: buildStandardBoard,
+  }),
+  // Into bench/ in the boards folder where the shell can; a download (or, on
+  // an older shell, a save picker) where it cannot.
+  save: async (name, json) => {
+    if (bridge?.bench) return bridge.bench.save(name, json);
+    await platform.files.write({ name }, new Blob([json], { type: 'application/json' }));
+    return name;
+  },
+  standardPage: benchPage,
+});
 
 // Native menu maps command names to cmds. Optional chaining guards against an
 // older shell naming a command this build removed.
@@ -298,9 +326,11 @@ initMenu(vp, cmds);
 initFencePrompt(vp);
 initSearch(vp, revealInFeed);
 // Skipped on /patch: idle fade would hide the only controls on a prose page.
-if (!isPatch) initIdle(vp);
+// And on #bench, where a fade landing mid-scenario would be measured.
+if (!isPatch && !benchPage) initIdle(vp);
 // Skipped on /patch: backfill writes to the board, which the changelog must not.
-if (!isPatch) initBackfill();
+// And on #bench: its work in the background would be in every scenario's frames.
+if (!isPatch && !benchPage) initBackfill();
 initDrawer(vp);
 // After initAudio() so the slider shows the stored volume.
 initNowPlaying();
@@ -548,20 +578,25 @@ const onFirstContent = () => {
 };
 
 const started = (async function start() {
-  // Suspend writes for not-found and patch pages — a blank board must never
-  // autosave over the stored one.
-  if (notFound || isPatch) suspendCache();
-  const restored = (notFound || isPatch) ? false : await restoreSession();
+  // Suspend writes for not-found, patch and bench pages — a board that is not
+  // the user's must never autosave over the stored one.
+  const notTheirs = notFound || isPatch || benchPage;
+  if (notTheirs) suspendCache();
+  const restored = notTheirs ? false : await restoreSession();
   // Session restored — safe to autosave on close now.
   markSessionReady();
   // The desktop's boards folder: every board a file, moved there on the first
   // start. Not awaited, and every write and shelving waits for it. Before the
   // share link below, which shelves. Does nothing on the web.
-  if (!notFound && !isPatch) void adoptFolder();
+  if (!notTheirs) void adoptFolder();
   // First blank session never calls loadBoard(), so seed the title card here.
   if (isPatch) {
     // Named so the panel's Board tab has something to show.
     setTitle('Patch notes');
+  } else if (benchPage) {
+    // No hints: the board is generated a moment from now, and loadBoard()
+    // would only take them off again. See the benchmark's start below.
+    setTitle('Benchmark');
   } else if (!restored) {
     // Through setTitle() so both title card and masthead hear it.
     if (notFound) setTitle('Not found');
@@ -585,14 +620,14 @@ const started = (async function start() {
   if (restored && !timelineStale()) goTo(timelineSteps().length);
   // Restore the URL-requested lens (e.g. #timeline). After session, before
   // openingView() — mobile reframes the view and an earlier read would be lost.
-  const face = (notFound || isPatch) ? null : openingFace();
+  const face = notTheirs ? null : openingFace();
   if (face) cmds[face]();
   openingView();
   // Open a ?s= share link. Not awaited — the fetch is a network hop and must
   // not block first paint. A failed fetch leaves the local board intact.
-  if (!notFound && !isPatch) openIncomingShare();
-  // After session — needs a real board. Writer is suspended on not-found/patch.
-  if (!notFound && !isPatch) initCloudSync();
+  if (!notTheirs) openIncomingShare();
+  // After session — needs a real board. Writer is suspended on not-found/patch/bench.
+  if (!notTheirs) initCloudSync();
   if (restored) toast('Restored your last board');
   el('hud')!.hidden = !board.settings.hud;
   paintSnap();
@@ -714,6 +749,9 @@ function dismissSplash() {
 }
 // Both arms: a failed boot still has to dismiss the splash.
 started.then(dismissSplash, dismissSplash);
+// The #bench boot builds its board and runs, once the page is up and the
+// splash is on its way out - the splash's own fade must not be in a scenario.
+if (benchPage) void started.then(() => benchView.boot());
 
 // PWA file handler (manifest.json file_handlers). Waits for start() so the
 // session restore finishes before the file open — without that the two race.

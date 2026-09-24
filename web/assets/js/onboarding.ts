@@ -104,6 +104,26 @@ export function leaveNotFoundBoard() {
   notFoundBoard = false;
 }
 
+// The benchmark's standard board (perf/bench-board.ts, booted at #bench): made
+// up on the spot and thrown away, so it must never reach the user's file, their
+// shelf or their session slot. No way back to false - the way off it is a
+// navigation, which starts a new document.
+let benchBoard = false;
+
+export const isBenchBoard = () => benchBoard;
+
+export function markBenchBoard() {
+  benchBoard = true;
+}
+
+/**
+ * Whether the board on screen belongs to nobody, and so must not be written
+ * anywhere the user's board lives: the not-found board and the benchmark's.
+ * The writers ask this rather than either latch, so a third kind of board that
+ * is not the user's is one line here.
+ */
+export const notUsersBoard = () => notFoundBoard || benchBoard;
+
 // Seed ghost cards if the board is empty. Returns seeded ids ([] if none).
 export function ensureGhostCards({ notFound = false } = {}) {
   if (ghostsDismissed || hasContent() || hasGhosts()) return [];
