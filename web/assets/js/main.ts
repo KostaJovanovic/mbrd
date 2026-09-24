@@ -490,7 +490,7 @@ declare global {
   }
 }
 
-// Console handle: board, bus, vp, cmds, selection, perf, debugGrips, sound.
+// Console handle: board, bus, vp, cmds, selection, perf, debugGrips, joins, sound.
 // sound.log() transcripts every cue — its value is the lines that are missing.
 const handle = {
   board, bus, vp, cmds, selection, perf: viewPerf,
