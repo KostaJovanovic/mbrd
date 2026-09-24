@@ -1,7 +1,16 @@
 # The motion audit — 24 September 2026
 
-**Status: open.** Nothing built yet. Twenty fixes, written so each can be done
-on its own by someone who has not read the rest.
+**Status: partly done, 2026-09-24.** All twenty built (commits fac5245,
+3219a17, 7857c07) except two halves that want a browser first: the delete
+ghost's size away from 100% zoom (14) and `#viewport`'s `bottom` transition
+(15), neither touched. 15's Playlist kept its padding - a translate cannot
+narrow the column - and only lost the overshoot. 11 needed no new token: the
+glyph press is `max(0.85, 1 - (1 - --btn-press) * 6.33)`, which is 1 at Harsh.
+Nothing here has been felt by a person yet; the checks under each fix are
+still owed.
+
+Twenty fixes, written so each can be done on its own by someone who has not
+read the rest.
 
 Every animation, transition, WAAPI call and rAF loop under `web/assets` was
 read against one set of rules (Emil Kowalski's): animate only with a purpose
