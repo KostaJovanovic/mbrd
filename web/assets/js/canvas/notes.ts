@@ -684,7 +684,7 @@ export function editNote(
     const sheet = node.querySelector('.card') ?? node;
     finish(false, {
       caret: { line: li, col: off - lost.length + (title ? 2 : 0) },
-      from: node.getBoundingClientRect(),
+      from: shownBox(node),
       paper: getComputedStyle(sheet).backgroundColor,
       typed: ' '.repeat(lost.length),
     });
@@ -1166,8 +1166,15 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>, caret?:
   const fit = () => {
     const h = Math.max(boardW, noteHeight(id, null, node));
     node.style.height = h + 'px';
-    mount.style.width = boardW * zoom + 'px';
-    mount.style.height = h * zoom + 'px';
+    // As tall as the note, until that would run it off the window: then as
+    // tall as there is room for, and the mount scrolls it. The mount and not
+    // the sheet, so the scrollbar is outside the column and the words wrap
+    // where they will on the board, and is not magnified with it.
+    const room = composerRoom(dlg, mount);
+    const scrolls = room > 0 && h * zoom > room;
+    mount.classList.toggle('is-scrolling', scrolls);
+    mount.style.height = (scrolls ? room : h * zoom) + 'px';
+    mount.style.width = boardW * zoom + (scrolls ? mount.offsetWidth - mount.clientWidth : 0) + 'px';
   };
   // Registered before editNote(), whose growth comes here.
   standIn = { id, fit };
@@ -1194,6 +1201,8 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>, caret?:
   const handle = editNote(id, {
     surface: dlg,
     onDone: (text, becameFile, opening) => {
+      removeEventListener('resize', fit);
+      globalThis.visualViewport?.removeEventListener('resize', fit);
       go.removeEventListener('click', onGo);
       cancel.removeEventListener('click', onCancel);
       dlg.removeEventListener('cancel', onEscape);
@@ -1210,6 +1219,7 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>, caret?:
         mount.style.width = '';
         mount.style.height = '';
         mount.style.removeProperty('--iz');
+        mount.classList.remove('is-scrolling');
         // Closed before an entrance showed it: the next opening is seen.
         dlg.classList.remove('is-arriving');
         dlg.close();
@@ -1259,11 +1269,14 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>, caret?:
   dlg.showModal();
   // Open, the sheet can be measured: a note longer than a square is that tall from its first frame.
   fit();
+  // The room it has is the window's: a resize, or a phone keyboard, changes it.
+  addEventListener('resize', fit);
+  globalThis.visualViewport?.addEventListener('resize', fit);
   if (into) {
     // Without its own pop-in, which would be scaling the sheet as it is measured.
     for (const a of dlg.getAnimations()) a.cancel();
     into({
-      sheet: node.getBoundingClientRect(),
+      sheet: shownBox(node),
       paper: getComputedStyle(node.querySelector('.card') ?? node).backgroundColor,
       show: () => showComposer(dlg),
     });
@@ -1282,6 +1295,34 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>, caret?:
   go.addEventListener('click', onGo);
   cancel.addEventListener('click', onCancel);
   dlg.addEventListener('cancel', onEscape);
+}
+
+/**
+ * The most of the window the composer's sheet may take: the window, less the
+ * dialog's margin, its bar, its buttons and the gaps between. 0 while closed,
+ * when nothing in it can be measured.
+ */
+function composerRoom(dlg: HTMLDialogElement, mount: HTMLElement): number {
+  if (!dlg.open) return 0;
+  const win = globalThis.visualViewport?.height ?? innerHeight;
+  const gap = parseFloat(getComputedStyle(dlg).rowGap) || 0;
+  let rest = 0;
+  for (const el of dlg.children) {
+    if (el === mount || !(el instanceof HTMLElement) || !el.offsetHeight) continue;
+    if (getComputedStyle(el).position === 'fixed') continue;
+    rest += el.offsetHeight + gap;
+  }
+  return Math.floor(win - rest - 32);
+}
+
+/** A card's box on screen, less what the composer's mount scrolls out of view. */
+function shownBox(node: HTMLElement): DOMRect {
+  const r = node.getBoundingClientRect();
+  const clip = node.closest('#compose-mount.is-scrolling')?.getBoundingClientRect();
+  if (!clip) return r;
+  const top = Math.max(r.top, clip.top);
+  const bottom = Math.min(r.bottom, clip.bottom);
+  return new DOMRect(r.left, top, r.width, Math.max(0, bottom - top));
 }
 
 /** A still copy of a sheet in the composer: no id, so nothing takes it for the note. */
@@ -1313,13 +1354,21 @@ function fadeComposer(dlg: HTMLDialogElement, close: () => void): () => void {
   };
 }
 
-/** The composer brought in over an entrance that has landed (NoteEntrance): the sheet, its bar and the dimmed board together. */
+/**
+ * The composer brought in over an entrance that has landed (NoteEntrance).
+ * The sheet at once, since it lands exactly on the card it replaces; only its
+ * words, the bar, the buttons and the dim fade in. Faded as a whole, the dim
+ * came up over the card while the sheet was still half there, and the note
+ * went darker and then light again.
+ */
 function showComposer(dlg: HTMLDialogElement): Promise<void> {
   // The backdrop follows by its transition (dialog.css).
   dlg.classList.remove('is-arriving');
   const ms = travelMs() / 2;
   if (!dlg.open || !(ms > 0) || typeof dlg.animate !== 'function') return Promise.resolve();
-  return dlg.animate([{ opacity: 0 }, { opacity: 1 }], { duration: ms, easing: 'ease-out' }).finished.then(() => {}, () => {});
+  const parts = dlg.querySelectorAll<HTMLElement>('.note-toolbar, .ask-row, .note-rich, .note-count');
+  return Promise.all([...parts].map(el => el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: ms, easing: 'ease-out' })
+    .finished.catch(() => {}))).then(() => {});
 }
 
 /** Composer sheet width a note is magnified up to: a default note at 2x. */

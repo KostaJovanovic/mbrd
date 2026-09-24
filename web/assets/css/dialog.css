@@ -335,6 +335,15 @@ textarea.lp-url {
   position: relative;
   --iz: 1;
 }
+/* A note too tall for the window at the composer's magnification scrolls
+   here rather than running off it (fit() in canvas/notes.ts, openComposer).
+   Only then: short of the window's edge the mount is simply the note's height. */
+#compose-mount.is-scrolling {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
 #compose-mount .item {
   position: static;
   /* Clears the inline transform placeBox() writes (snap + rotation). */
