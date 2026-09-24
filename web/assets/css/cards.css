@@ -718,20 +718,20 @@
 /* The zip: teeth along the tab, alternating either side of its middle. */
 .pack-archive .pack-back::before {
   --teeth: calc(100% - var(--pack-tab) - 20px);
-  background:
+  /* Held in a property so Harsh can lay its edges over the same zip. */
+  --zip:
     repeating-linear-gradient(90deg,
       var(--pack-zip) 0 3px, transparent 3px 6px) 12px 6px / var(--teeth) 4px no-repeat,
     repeating-linear-gradient(90deg,
-      transparent 0 3px, var(--pack-zip) 3px 6px) 12px 10px / var(--teeth) 4px no-repeat,
-    var(--pack-back);
+      transparent 0 3px, var(--pack-zip) 3px 6px) 12px 10px / var(--teeth) 4px no-repeat;
+  background: var(--zip), var(--pack-back);
 }
-/* The front, lower than the back's shoulder, with the light catching its
-   top edge. */
+/* The front, lower than the back's shoulder, parted from it by a shadow
+   alone. A highlight along its top edge read as a white line. */
 .pack-front {
   top: calc(var(--pack-tab) + var(--pack-lip));
   background: var(--pack-front);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--paper-card) 70%, transparent),
-              0 -1px 2px color-mix(in srgb, var(--ink) 10%, transparent);
+  box-shadow: 0 -1px 2px color-mix(in srgb, var(--ink) 10%, transparent);
 }
 .pack-card .card-name {
   display: -webkit-box;
@@ -763,10 +763,29 @@
   filter: drop-shadow(0 2px 2px color-mix(in srgb, var(--ink) 12%, transparent))
           drop-shadow(0 8px 14px color-mix(in srgb, var(--ink) 10%, transparent));
 }
+:root[data-whimsy="0"] .pack-card {
+  /* The tab's rounded shoulder and the fillet under it share its 20px. */
+  --pack-tab-r: 10px;
+  --pack-fillet: 8px;
+}
 :root[data-whimsy="0"] .pack-back::before {
   width: 40%;
-  border-radius: var(--pack-r) var(--pack-r) 0 0;
+  border-radius: var(--pack-r) var(--pack-tab-r) 0 0;
   clip-path: none;
+}
+/* The fillet: the inside corner where the tab's edge meets the back's top,
+   rounded like every other corner of it. Drawn on the card's own ::before,
+   the one free pseudo, in the back's colour just right of the tab. */
+:root[data-whimsy="0"] .pack-card::before {
+  content: '';
+  position: absolute;
+  left: 40%;
+  top: calc(var(--pack-tab) - var(--pack-fillet));
+  width: var(--pack-fillet);
+  height: var(--pack-fillet);
+  background: radial-gradient(circle at 100% 0,
+    transparent calc(var(--pack-fillet) - 0.5px), var(--pack-back) var(--pack-fillet));
+  pointer-events: none;
 }
 /* The sheet: between the panels, so it is drawn on the back and the front
    covers its foot. Right of the tab, so an archive's zip stays in view. */
@@ -783,8 +802,7 @@
   rotate: 3deg;
 }
 :root[data-whimsy="0"] .pack-front {
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--paper-card) 80%, transparent),
-              0 -2px 5px color-mix(in srgb, var(--ink) 12%, transparent);
+  box-shadow: 0 -2px 5px color-mix(in srgb, var(--ink) 12%, transparent);
 }
 
 :root[data-whimsy="2"] .pack-card {
@@ -794,22 +812,45 @@
   --pack-zip: var(--paper-card);
   filter: none;
 }
-:root[data-whimsy="2"] .pack-card > :is(.pack-back, .pack-front) {
-  box-shadow: inset 0 0 0 var(--board-hairline) var(--ink);
-}
-/* A plain box of a tab, open at its foot and two hairlines deeper than it
-   stands, so it lies over the back's top edge - one hairline left a
-   sub-pixel seam where the edge showed through. The clip takes that second
-   hairline off its right edge, which would otherwise poke through the line. */
-:root[data-whimsy="2"] .pack-back::before {
+/* Every line here is an inset shadow or a gradient, never a border: Firefox
+   rounds a border up to whole device pixels under the board's zoom, and a
+   bordered tab came out heavier than the lines it meets. The tab's are
+   gradients: an offset inset shadow left a faint line along its open foot.
+
+   No line is hidden under anything, either. The back's top edge starts where
+   the tab ends rather than running under it: a tab laid over a line to hide
+   it left a sub-pixel seam where the line showed through. With nothing under
+   it, the tab reaches two hairlines into the back, fill over the same fill,
+   because two fills that only abut leave a seam of their own. */
+:root[data-whimsy="2"] .pack-card {
   --h: var(--board-hairline);
+}
+:root[data-whimsy="2"] .pack-front {
+  box-shadow: inset 0 0 0 var(--h) var(--ink);
+}
+:root[data-whimsy="2"] .pack-back {
+  background:
+    linear-gradient(var(--ink), var(--ink)) right top / calc(60% + var(--h)) var(--h) no-repeat,
+    var(--pack-back);
+  box-shadow: inset var(--h) 0 0 var(--ink),
+              inset calc(-1 * var(--h)) 0 0 var(--ink),
+              inset 0 calc(-1 * var(--h)) 0 var(--ink);
+}
+/* A plain box of a tab, open at its foot. The left edge runs the tab's
+   whole depth, over the back's own left edge; the right one stops a hairline
+   short, level with the back's top edge, so it does not poke through it. */
+:root[data-whimsy="2"] .pack-back::before {
+  --edges:
+    linear-gradient(var(--ink), var(--ink)) left top / 100% var(--h) no-repeat,
+    linear-gradient(var(--ink), var(--ink)) left top / var(--h) 100% no-repeat,
+    linear-gradient(var(--ink), var(--ink)) right top / var(--h) calc(100% - var(--h)) no-repeat;
   width: 40%;
   height: calc(var(--pack-tab) + var(--h) * 2);
-  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--h)),
-    calc(100% - var(--h)) calc(100% - var(--h)), calc(100% - var(--h)) 100%, 0 100%);
-  border: var(--board-hairline) solid var(--ink);
-  border-bottom: 0;
-  box-sizing: border-box;
+  clip-path: none;
+  background: var(--edges), var(--pack-back);
+}
+:root[data-whimsy="2"] .pack-archive .pack-back::before {
+  background: var(--edges), var(--zip), var(--pack-back);
 }
 :root[data-whimsy="2"] .pack-card .card-unpack {
   border-color: var(--ink);
