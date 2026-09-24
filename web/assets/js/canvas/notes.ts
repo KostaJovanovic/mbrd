@@ -75,10 +75,11 @@ export function setNoteOverflow(fn: NoteOverflow | null) { overflow = fn; }
 /**
  * Height this note needs, in world px, for its text at `width`. Briefly
  * releases the flex child to natural height for measurement. No iteration —
- * margins are width-based, so the measured height is stable.
+ * margins are width-based, so the measured height is stable. `el` is the card
+ * to measure, when the caller holds it - the composer's, which is out of the
+ * world layer and not necessarily the one the board's map would name.
  */
-function noteHeight(id: string, width?: number | null): number {
-  const el = nodeFor(id);
+function noteHeight(id: string, width?: number | null, el: HTMLElement | undefined = nodeFor(id)): number {
   const card = el?.querySelector<HTMLElement>('.card');
   const wrap = card?.querySelector<HTMLElement>('.note-rich');
   // If el is null, card is too — reached through it.
@@ -942,6 +943,8 @@ export function editNote(
     reflectNow();
   };
 
+  const regrow = () => { if (!done) growNote(id); };
+
   let done = false;
   function finish(discard = false, open?: NoteOpen) {
     if (done) return;
@@ -958,6 +961,7 @@ export function editNote(
     wrap.removeEventListener('focusout', onFocusOut);
     document.removeEventListener('pointerdown', onDocPointerDown, true);
     document.removeEventListener('selectionchange', onSelect);
+    document.fonts?.removeEventListener('loadingdone', regrow);
     document.documentElement.classList.remove('note-edit-mobile');
     offView?.();
     removeEventListener('resize', onResize);
@@ -1016,6 +1020,11 @@ export function editNote(
   caretToEnd();
   refreshCount();
   reflectNow();
+  // Measured again a frame on, once the sheet is laid out where it is being
+  // written, and whenever a face finishes loading: a first reading taken
+  // before either left the sheet short, with a scrollbar on the words.
+  requestAnimationFrame(regrow);
+  document.fonts?.addEventListener('loadingdone', regrow);
   return { finish, caretToEnd, caretTo };
 }
 
@@ -1138,7 +1147,7 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>, caret?:
   // Measured after mount — a culled card in the world layer answers 0. The
   // mount takes the magnified box, since a transform does not move layout.
   const fit = () => {
-    const h = Math.max(boardW, noteHeight(id));
+    const h = Math.max(boardW, noteHeight(id, null, node));
     node.style.height = h + 'px';
     mount.style.width = boardW * zoom + 'px';
     mount.style.height = h * zoom + 'px';
