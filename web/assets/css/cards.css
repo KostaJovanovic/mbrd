@@ -753,6 +753,69 @@
    is detail the rung takes off everything else. */
 #world.zoom-far .pack-front { box-shadow: none; }
 
+/* The folder along the whimsy axis. Middle is the flat icon above. Softish
+   is the one on a desk: rounder, a tab with no cut, and a sheet of paper
+   standing up out of it. Harsh is drawn, not shaded - ink hairlines round
+   both panels, square corners, no shadow, the back in the accent. */
+:root[data-whimsy="0"] .pack-card {
+  --pack-r: 16px;
+  --pack-lip: 11px;
+  filter: drop-shadow(0 2px 2px color-mix(in srgb, var(--ink) 12%, transparent))
+          drop-shadow(0 8px 14px color-mix(in srgb, var(--ink) 10%, transparent));
+}
+:root[data-whimsy="0"] .pack-back::before {
+  width: 40%;
+  border-radius: var(--pack-r) var(--pack-r) 0 0;
+  clip-path: none;
+}
+/* The sheet: between the panels, so it is drawn on the back and the front
+   covers its foot. Right of the tab, so an archive's zip stays in view. */
+:root[data-whimsy="0"] .pack-back::after {
+  content: '';
+  position: absolute;
+  left: 44%;
+  right: 7%;
+  top: -8px;
+  height: 40%;
+  border-radius: 3px 3px 0 0;
+  background: var(--paper-card);
+  box-shadow: 0 0 0 var(--board-hairline) color-mix(in srgb, var(--ink) 12%, transparent);
+  rotate: 3deg;
+}
+:root[data-whimsy="0"] .pack-front {
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--paper-card) 80%, transparent),
+              0 -2px 5px color-mix(in srgb, var(--ink) 12%, transparent);
+}
+
+:root[data-whimsy="2"] .pack-card {
+  --pack-r: 0px;
+  --pack-back: color-mix(in srgb, var(--accent) 70%, var(--paper-card));
+  --pack-front: var(--paper-card);
+  --pack-zip: var(--paper-card);
+  filter: none;
+}
+:root[data-whimsy="2"] .pack-card > :is(.pack-back, .pack-front) {
+  box-shadow: inset 0 0 0 var(--board-hairline) var(--ink);
+}
+/* A plain box of a tab, open at its foot and two hairlines deeper than it
+   stands, so it lies over the back's top edge - one hairline left a
+   sub-pixel seam where the edge showed through. The clip takes that second
+   hairline off its right edge, which would otherwise poke through the line. */
+:root[data-whimsy="2"] .pack-back::before {
+  --h: var(--board-hairline);
+  width: 40%;
+  height: calc(var(--pack-tab) + var(--h) * 2);
+  clip-path: polygon(0 0, 100% 0, 100% calc(100% - var(--h)),
+    calc(100% - var(--h)) calc(100% - var(--h)), calc(100% - var(--h)) 100%, 0 100%);
+  border: var(--board-hairline) solid var(--ink);
+  border-bottom: 0;
+  box-sizing: border-box;
+}
+:root[data-whimsy="2"] .pack-card .card-unpack {
+  border-color: var(--ink);
+  border-radius: 0;
+}
+
 /* ---- A model on a card (canvas/model.ts) ---------------------------------
    The canvas fills the card above the filename and takes the pointer, because
    dragging it turns the model rather than moving the item. Everything around
