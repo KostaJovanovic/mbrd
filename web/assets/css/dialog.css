@@ -315,13 +315,15 @@ textarea.lp-url {
   background: color-mix(in srgb, var(--ink) 42%, transparent);
   -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
-}
-/* A note outgrown into a document: the dim goes with the composer as the page
-   grows out over it (fadeComposer() in canvas/notes.ts fades the rest). */
-#compose.is-leaving::backdrop {
-  opacity: 0;
   transition: opacity calc(var(--dur-travel) / 2) ease-out;
 }
+/* A note outgrown into a document, and one going back: the dim goes with the
+   composer as the page grows out over it, and comes with it as the page lands
+   back as the note (fadeComposer() and showComposer() in canvas/notes.ts fade
+   the rest). Unseen while arriving, till the page is there. */
+#compose.is-leaving::backdrop,
+#compose.is-arriving::backdrop { opacity: 0; }
+#compose.is-arriving { opacity: 0; }
 #compose .note-toolbar { order: 1; }
 #compose-mount { order: 2; }
 #compose .ask-row { order: 3; align-self: stretch; }

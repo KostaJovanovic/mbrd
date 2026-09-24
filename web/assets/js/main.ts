@@ -55,6 +55,7 @@ import {
 import { looksLikeMbrd } from './storage/mbrd.ts';
 import { boardThumb } from './ui/snapshot.ts';
 import { flushNoteEdit, growNote, setNoteMenu, setNoteOverflow, fitsNote, unfileNote } from './canvas/notes.ts';
+import type { NoteEntrance } from './canvas/notes.ts';
 import { setMarkdownRenderer, setEmbedEnrich } from './canvas/renderers.ts';
 import { enrichEmbed } from './canvas/embed-meta.ts';
 import { renderMarkdown } from './ui/markdown.ts';
@@ -183,7 +184,7 @@ setNoteOverflow(async (id, markdown, open) => {
   // The step that made the document, which turning back takes back.
   const turned = lastCommand() === was ? null : lastCommand();
   const back = note && made
-    ? { fits: fitsNote, back: (md: string, before: string) => void unfileNote(made, note, turned, md, before) }
+    ? { fits: fitsNote, back: (md: string, before: string, into: NoteEntrance) => void unfileNote(made, note, turned, md, before, into) }
     : undefined;
   if (made && open) openViewer(made, { ...open, held, edit: true, note: back, over: open.stay?.go });
   else held?.take();

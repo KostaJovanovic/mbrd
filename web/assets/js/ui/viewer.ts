@@ -25,6 +25,7 @@ import { baseName, formatBytes, markClosed, wasClosed } from '../util.ts';
 import { linkURL, MARKDOWN } from '../canvas/renderers.ts';
 import { embedFor, frameFor } from '../canvas/embed.ts';
 import { noteTint } from '../canvas/note-model.ts';
+import type { NoteEntrance } from '../canvas/notes.ts';
 import { kindName } from '../canvas/item-dom.ts';
 import { renderMarkdown } from './markdown.ts';
 // Statically: the only import the reader needs is storage/zip.ts, already in
@@ -66,10 +67,10 @@ export type OpenOptions = {
   /**
    * The sticky this document grew out of, for as long as this editing lasts:
    * `fits` is asked after each change, and once the text fits a sticky again
-   * the editor closes and `back` turns it into one (`was` is the text before
-   * the change). Wired by main.ts, since the note is canvas/'s.
+   * `back` turns it into one (`was` is the text before the change), and the
+   * editor goes into it by `into`. Wired by main.ts, since the note is canvas/'s.
    */
-  note?: { fits: (markdown: string) => boolean, back: (markdown: string, was: string) => void },
+  note?: { fits: (markdown: string) => boolean, back: (markdown: string, was: string, into: NoteEntrance) => void },
   /** What is on screen under the viewing until it arrives - the composer the sticky was written in - and its taking away. */
   over?: () => void,
 };
@@ -411,11 +412,15 @@ function finishClose() {
  * turns to paper, the text shows through as it lands, and the desk, the name
  * and the bar fade in around it. Transform, opacity and colour only, at the
  * whimsy dial's travel speed; with motion reduced, a plain fade.
+ *
+ * `back` plays all of it backwards, as the document goes back into its sticky
+ * (shrinkInto()): each animation reversed, easing and all, and held at its end
+ * until the caller has closed the viewing and cancels what this returns.
  */
-function growFrom(dlg: HTMLDialogElement, from: DOMRect, paper: string | undefined, page: HTMLElement | null) {
-  if (typeof dlg.animate !== 'function') return;
+function growFrom(dlg: HTMLDialogElement, from: DOMRect, paper: string | undefined, page: HTMLElement | null, back = false): Animation[] {
+  if (typeof dlg.animate !== 'function') return [];
   const ms = travelMs();
-  const fade = () => void dlg.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180, easing: 'ease-out' });
+  const fade = () => back ? [] : [dlg.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180, easing: 'ease-out' })];
   if (!page || !(ms > 0) || !from.width || !from.height) return fade();
   // The grow is the entrance: viewer.css's own (ask-in) would still be scaling
   // the dialog as the sheet is measured, and the card would land short of it.
@@ -432,6 +437,11 @@ function growFrom(dlg: HTMLDialogElement, from: DOMRect, paper: string | undefin
   const desk = getComputedStyle(dlg).backgroundColor;
   const long = ms * 1.35;
   const landed = ms / long;
+  // Backwards, the flight - the first `ms` of `long` going forwards - is the
+  // last, so a shorter animation waits out the difference.
+  const run = (el: HTMLElement, frames: Keyframe[], duration: number, easing: string) => el.animate(frames, back
+    ? { duration, easing, direction: 'reverse', fill: 'both', delay: long - duration }
+    : { duration, easing });
 
   const card = document.createElement('div');
   card.className = 'viewer-grow';
@@ -442,20 +452,40 @@ function growFrom(dlg: HTMLDialogElement, from: DOMRect, paper: string | undefin
     width: `${to.width}px`, height: `${to.height}px`,
   });
   dlg.append(card);
-  card.animate([
-    { transformOrigin: '0 0', transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width}, ${from.height / to.height})` },
-    { transformOrigin: '0 0', transform: 'none' },
-  ], { duration: ms, easing: ease });
-  // The note's colour held for the first stretch of the flight, so it reads as the note.
-  card.animate([{ backgroundColor: paper || white }, { backgroundColor: paper || white, offset: 0.3 }, { backgroundColor: white }], { duration: ms, easing: 'linear' });
-  card.animate([{ opacity: 1 }, { opacity: 1, offset: landed }, { opacity: 0 }], { duration: long, easing: 'linear' })
-    .finished.then(() => card.remove(), () => card.remove());
-  page.animate([{ opacity: 0 }, { opacity: 0, offset: landed * 0.85 }, { opacity: 1 }], { duration: long, easing: 'ease-out' });
-  dlg.animate([{ backgroundColor: 'transparent' }, { backgroundColor: 'transparent', offset: 0.25 }, { backgroundColor: desk }], { duration: long, easing: 'ease-out' });
-  for (const part of dlg.querySelectorAll<HTMLElement>(EDITOR_PARTS)) {
-    part.animate([{ opacity: 0 }, { opacity: 0, offset: 0.35 }, { opacity: 1 }], { duration: long, easing: 'ease-out' });
-  }
+  const anims = [
+    run(card, [
+      { transformOrigin: '0 0', transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width}, ${from.height / to.height})` },
+      { transformOrigin: '0 0', transform: 'none' },
+    ], ms, ease),
+    // The note's colour held for the first stretch of the flight, so it reads as the note.
+    run(card, [{ backgroundColor: paper || white }, { backgroundColor: paper || white, offset: 0.3 }, { backgroundColor: white }], ms, 'linear'),
+    run(card, [{ opacity: 1 }, { opacity: 1, offset: landed }, { opacity: 0 }], long, 'linear'),
+    run(page, [{ opacity: 0 }, { opacity: 0, offset: landed * 0.85 }, { opacity: 1 }], long, 'ease-out'),
+    run(dlg, [{ backgroundColor: 'transparent' }, { backgroundColor: 'transparent', offset: 0.25 }, { backgroundColor: desk }], long, 'ease-out'),
+    ...[...dlg.querySelectorAll<HTMLElement>(EDITOR_PARTS)].map(part =>
+      run(part, [{ opacity: 0 }, { opacity: 0, offset: 0.35 }, { opacity: 1 }], long, 'ease-out')),
+  ];
+  // Going back, the card is what is left where the note will be; teardown() takes it.
+  if (!back) anims[2].finished.then(() => card.remove(), () => card.remove());
+  return anims;
 }
+
+/**
+ * A document written back down to fit, going back into its sticky: the grow
+ * played backwards, the page shrinking to where the composer has put the note
+ * and turning to its colour as the desk goes, then the composer showing over
+ * the card and this viewing closing under it. With nowhere to go, closed now.
+ */
+const shrinkInto: NoteEntrance = into => {
+  const page = dlg?.querySelector<HTMLElement>('.ed-sheet') ?? null;
+  const anims = into && dlg ? growFrom(dlg, into.sheet, into.paper, page, true) : [];
+  const end = () => {
+    closeViewer(true);
+    for (const a of anims) a.cancel();
+  };
+  if (!into) return end();
+  void Promise.all(anims.map(a => a.finished.catch(() => {}))).then(into.show).then(end, end);
+};
 
 /** Close the viewing - a document with its paper dropping away first, unless `now`. */
 function closeViewer(now = false) {
@@ -543,6 +573,7 @@ function teardown() {
   bodyEl?.replaceChildren();
   // Typing held for a document that never opened goes with the viewing.
   dlg!.querySelector('.viewer-hold')?.remove();
+  dlg!.querySelector('.viewer-grow')?.remove();
   arriving?.over?.();
   arriving = null;
   dlg!.classList.remove('is-arriving');
@@ -990,10 +1021,8 @@ async function editDocument(item: Item, host: HTMLElement, open: OpenOptions = {
     s.gen = -1;
     takeBack(s.step);
     s.step = null;
-    queueMicrotask(() => {
-      closeViewer(true);
-      note.back(now, was);
-    });
+    // The viewing stays up to go back into the sticky, and shrinkInto() closes it.
+    queueMicrotask(() => note.back(now, was, shrinkInto));
     return true;
   };
   const editor = mountEditor({

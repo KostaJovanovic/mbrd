@@ -67,6 +67,14 @@ export type NoteOpen = {
  * take focus; `go` takes the composer away, and only the first call counts.
  */
 export type NoteStay = { host: HTMLElement, go: () => void };
+
+/**
+ * How the composer comes up over what was on screen - a document going back
+ * into its sticky. Called once: with where the sheet is and its colour, the
+ * composer open and unseen until `show` brings it in; or with null, when there
+ * is no composer to go into.
+ */
+export type NoteEntrance = (into: { sheet: DOMRect, paper: string, show: () => Promise<void> } | null) => void;
 export type NoteOverflow = (id: string, markdown: string, open?: NoteOpen) => Promise<boolean>;
 
 let overflow: NoteOverflow | null = null;
@@ -1064,10 +1072,11 @@ export function fitsNote(markdown: string): boolean {
  * document), so the undo history reads as if the note never left; otherwise
  * the document is swapped back as a step of its own. `note` is the sticky as
  * it was replaced, for its colour, size and face. `was` is the Markdown before
- * the change, which finds the caret.
+ * the change, which finds the caret. `into` is how the composer comes up.
  */
 export function unfileNote(
   docId: string, note: Item, turned: ReturnType<typeof lastCommand>, markdown: string, was: string,
+  into?: NoteEntrance,
 ): boolean {
   const raw = note.meta?.rich;
   // SAFETY: the typeof is the check; normalizeNoteRich() validates what is inside block by block.
@@ -1079,7 +1088,10 @@ export function unfileNote(
   if (!takeBack(turned)) {
     const { id: _id, ...rest } = note;
     const back = retypeItem(docId, rest, 'Turn file back into note');
-    if (!back) return false;
+    if (!back) {
+      into?.(null);
+      return false;
+    }
     id = back.id;
   }
   setNoteContent(id, rich, text);
@@ -1094,7 +1106,7 @@ export function unfileNote(
     pos += Math.max(0, line.length - mark);
   }
   // A frame, so the canvas has built the card before the composer asks for it.
-  requestAnimationFrame(() => editNoteInComposer(id, pos));
+  requestAnimationFrame(() => openComposer(id, null, pos, into));
   return true;
 }
 
@@ -1114,16 +1126,19 @@ export function composeNote(make: () => Item | null | undefined) {
   requestAnimationFrame(() => openComposer(item.id, added));
 }
 
-/** `added` is whatever lastCommand() answered - the entry composeNote() made. */
-function openComposer(id: string, added: ReturnType<typeof lastCommand>, caret?: number) {
+/** `added` is whatever lastCommand() answered - the entry composeNote() made. `into`: see NoteEntrance. */
+function openComposer(id: string, added: ReturnType<typeof lastCommand>, caret?: number, into?: NoteEntrance) {
   // SAFETY: #compose is a <dialog> in index.html. If not, the showModal test below falls back
   // to inline editNote().
   const dlg = document.getElementById('compose') as HTMLDialogElement | null;
   const mount = document.getElementById('compose-mount');
   const node: HTMLElement | undefined = nodeFor(id);
-  if (!node || !mount || typeof dlg?.showModal !== 'function') { editNote(id); return; }
   // Must check editability before moving the card into the dialog.
-  if (!editableNote(id)) { editNote(id); return; }
+  if (!node || !mount || typeof dlg?.showModal !== 'function' || !editableNote(id)) {
+    into?.(null);
+    editNote(id);
+    return;
+  }
 
   // The note laid out at its own board width and magnified, not re-laid at a
   // dialog width: the words wrap in the composer exactly where they will wrap
@@ -1144,15 +1159,17 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>, caret?:
   // --half-w must match — margins are width-dependent (cards.css).
   node.style.setProperty('--half-w', (boardW / 2) + 'px');
   // Min height = the width so short notes are a square sheet, not a strip.
-  // Measured after mount — a culled card in the world layer answers 0. The
-  // mount takes the magnified box, since a transform does not move layout.
+  // Measured after mount — a culled card in the world layer answers 0 — and
+  // after showModal() below, since a closed dialog is display:none and answers
+  // 0 too: this first fit is only the square. The mount takes the magnified
+  // box, since a transform does not move layout.
   const fit = () => {
     const h = Math.max(boardW, noteHeight(id, null, node));
     node.style.height = h + 'px';
     mount.style.width = boardW * zoom + 'px';
     mount.style.height = h * zoom + 'px';
   };
-  // Registered before editNote(), which grows the note as part of starting.
+  // Registered before editNote(), whose growth comes here.
   standIn = { id, fit };
   fit();
 
@@ -1193,6 +1210,8 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>, caret?:
         mount.style.width = '';
         mount.style.height = '';
         mount.style.removeProperty('--iz');
+        // Closed before an entrance showed it: the next opening is seen.
+        dlg.classList.remove('is-arriving');
         dlg.close();
       };
       if (still) {
@@ -1234,6 +1253,19 @@ function openComposer(id: string, added: ReturnType<typeof lastCommand>, caret?:
   // keystroke hits Cancel. rAF runs after the flush in the same frame.
   const sheet = node.querySelector<HTMLElement>('.note-rich')!;
   dlg.showModal();
+  // Open, the sheet can be measured: a note longer than a square is that tall from its first frame.
+  fit();
+  if (into) {
+    // Unseen till what was on screen has turned into it, and without its own
+    // pop-in, which would be scaling the sheet as it is measured.
+    dlg.classList.add('is-arriving');
+    for (const a of dlg.getAnimations()) a.cancel();
+    into({
+      sheet: node.getBoundingClientRect(),
+      paper: getComputedStyle(node.querySelector('.card') ?? node).backgroundColor,
+      show: () => showComposer(dlg),
+    });
+  }
   requestAnimationFrame(() => {
     // Guard: dialog may have already closed (double-press, Escape in same frame).
     if (!dlg.open || !mount.contains(sheet)) return;
@@ -1277,6 +1309,15 @@ function fadeComposer(dlg: HTMLDialogElement, close: () => void): () => void {
     const end = () => { close(); fade.cancel(); dlg.classList.remove('is-leaving'); };
     fade.finished.then(end, end);
   };
+}
+
+/** The composer brought in over an entrance that has landed (NoteEntrance): the sheet, its bar and the dimmed board together. */
+function showComposer(dlg: HTMLDialogElement): Promise<void> {
+  // The backdrop follows by its transition (dialog.css).
+  dlg.classList.remove('is-arriving');
+  const ms = travelMs() / 2;
+  if (!dlg.open || !(ms > 0) || typeof dlg.animate !== 'function') return Promise.resolve();
+  return dlg.animate([{ opacity: 0 }, { opacity: 1 }], { duration: ms, easing: 'ease-out' }).finished.then(() => {}, () => {});
 }
 
 /** Composer sheet width a note is magnified up to: a default note at 2x. */
