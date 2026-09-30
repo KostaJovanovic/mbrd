@@ -563,7 +563,7 @@ passes after.
 +  resetGhostLatch(board.items.some(isContent));
 ```
 
-Drift from the fences commit (20e0331), which converted `hasContent()` and missed
+Drift from the fences commit (8df6f1b), which converted `hasContent()` and missed
 this one call. The comment above the line already frames the rule as *content*, so
 it needs no rewording.
 

@@ -8,7 +8,7 @@ Two sweeps of the whole tree on 2026-08-18, one for duplication and
 dead code and one for indirection, and the order in which the results are worth
 clearing.
 
-Written at `7661965` (v0.251), tree clean.
+Written at `1aba887` (v0.251), tree clean.
 
 **To carry this out, read
 [`simplification-tasks-2026-08-18.md`](simplification-tasks-2026-08-18.md)

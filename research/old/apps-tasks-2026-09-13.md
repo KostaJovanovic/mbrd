@@ -894,7 +894,7 @@ every decision a task left to you in the notes column.
 | task | status | notes |
 | --- | --- | --- |
 | A1 | DONE (v0.302) | tested the five new lines out of `save.bat` in `cmd`: an intact `version.js` gives 301 to 302, a blanked line goes to `:countfail`. `git rev-list --count HEAD` said 303 on 2026-09-13, so the old code would have stamped 304 |
-| A2 | DONE (v0.302) | the owner `valjdakosta` was made up by earlier sessions (3a9fb10, 7717c69, the 2026-09-09 checkpoints). `KostaJovanovic/Universal-File-Analyser` checked with `gh`. The two tests that read `web/404.html` fail until `save.bat` remakes it |
+| A2 | DONE (v0.302) | the owner `valjdakosta` was made up by earlier sessions (9b42d90, f3461fa, the 2026-09-09 checkpoints). `KostaJovanovic/Universal-File-Analyser` checked with `gh`. The two tests that read `web/404.html` fail until `save.bat` remakes it |
 | B1 | DONE (v0.302) | `startUpdates(opts: UpdateOptions)`, a named interface, so `no-object-parameters` (which bans only `object`) passes. Added over FileAnalyser: a guard so a second macOS window does not arm the checks twice, an `error` handler on the installer spawn, and an unref'd interval. The `sha256:` digest field checked with `gh api` on a real FileAnalyser release. The uninstaller name checked in app-builder-lib: `Uninstall ${PRODUCT_FILENAME}.exe` |
 | B2 | DONE (v0.302) | `portableCopy` is set when the marker exists, before the data-folder probe, so a read-only portable copy still counts as portable |
 | B3 | DONE (v0.302) | `bridge` stays 2 here. E7 bumps it to 3 and covers both removals: no release falls between B and E |
@@ -926,7 +926,7 @@ every decision a task left to you in the notes column.
 | I5 | DONE (v0.302) | 6 tests, the Android one skipped until O. Two more than the task: `files:` still lists `dist/**`, and each updater pattern matches no other release file (the other systems, the source zip) |
 | I6 | DONE (v0.302) | one button, four lines, the Android section, "for your computer or phone". macOS leads with Open Anyway, and the `xattr` line stays for the "damaged" case. `download.css`: `.dl-picks` and `.dl-note` gone, `.dl-pick` and `.dl-files` new. Seen in a browser at 1280 and 412 wide: no overflow, and the button fills a phone's width. The Android line names an `.apk` that no release carries until O |
 | I7 | DONE (v0.302) | `camel()` in `ui/sidebar.ts` turns `get-app` into `getApp` and `check-updates` into `checkUpdates`. In a browser on 2026-09-13: "Get the app" sits in the patch-notes section with its title, and the `check-updates` row is hidden. The desktop app needs a person |
-| I8 | DONE (v0.316) | four test runs with publish unticked found three faults, fixed in v0.310 to v0.313 (below). Run 34780659444 built all four. Then `save.bat release` published v0.316 (run 34792133730): the publish job first failed with HTTP 403, because the token had public read access and no repository permission, and passed on a re-run once the token had Contents read and write on mbrd-release. Checked signed out on 2026-09-14: `releases/latest` answers v0.316.0 with five files, each with a `sha256:` digest, and the source repo has the tag v0.316.0 on 848b6bd |
+| I8 | DONE (v0.316) | four test runs with publish unticked found three faults, fixed in v0.310 to v0.313 (below). Run 34780659444 built all four. Then `save.bat release` published v0.316 (run 34792133730): the publish job first failed with HTTP 403, because the token had public read access and no repository permission, and passed on a re-run once the token had Contents read and write on mbrd-release. Checked signed out on 2026-09-14: `releases/latest` answers v0.316.0 with five files, each with a `sha256:` digest, and the source repo has the tag v0.316.0 on e12ff90 |
 | J1 | DONE (v0.304) | `minWebViewVersion` 110. `browser-support.md` names no Chrome number, only "current and one prior major", so the floor comes from what the app needs: `deflate-raw` in Chrome 103 (MDN's compat data, WebView mirrors Chrome), `:has()` and `@container` 105, `dvh` and `svh` 108. 110 clears all of them and is FileAnalyser's. Above it: `round()` (125) in one custom property at whimsy 2, and `text-wrap`. Every option name checked in `@capacitor/cli` 8.5.2's `declarations.d.ts`. Capacitor 8.5.2 and `@capacitor/assets` 3.0.5 are npm's latest, esbuild and sharp are pinned as the root and `desktop/` pin them |
 | J2 | DONE (v0.304) | `cap add android` names the Java package from `appId`, so `MainActivity` was already `com.valjdakosta.mbrd`. The two example tests moved out of the template's `com.getcapacitor.myapp`, and the instrumented one now expects `com.valjdakosta.mbrd`: the template's `com.getcapacitor.app` fails on every device. `mobile/android/.gitignore` kept. `minSdkVersion` 24 is Android 7.0, as the download page says |
 | J3 | DONE (v0.304) | after the `desktop/portable/` block. `git check-ignore` agrees for `mobile/www/`, `assets/public/` and `mbrd-files.txt` |
@@ -1025,7 +1025,7 @@ The measurement, on the faster phone:
 1. Put 300 photographs on the phone.
 2. In mbrd (v0.306 or later), import all 300 onto one board, and time it.
 3. Close mbrd from the recent apps. Open it, and time until the photographs show.
-4. Build v0.304 (`git checkout f366e94`, then `mobile.bat`), which keeps the store in IndexedDB.
+4. Build v0.304 (`git checkout beefe39`, then `mobile.bat`), which keeps the store in IndexedDB.
 5. Do steps 2 and 3 again on that build.
 6. Send me the four times. They go into the header of `MbrdStore.java`.
 7. Run `git checkout main` to go back.
@@ -1122,8 +1122,8 @@ first release test run (34776527199) every smoke test on macOS hung at
 `app.close()` for 3 minutes, then 3 more in teardown. The fix: a `quitting`
 flag set in `before-quit`, and the flush quits again when it is set. The
 second test run (34777495499) seemed to say the fix failed, but it built
-9f698e8, the commit before the fix: `gh workflow run` right after the push
-took the old head. The third (34779433086, e836e35) quit cleanly on macOS, and
+2ca24fd, the commit before the fix: `gh workflow run` right after the push
+took the old head. The third (34779433086, 3907c05) quit cleanly on macOS, and
 its log shows "quit asked", then "quitting". It also found a race in the smoke
 test: the hidden menu panel is a window, built after the board's first load,
 so the changelog test's window count could change between its two reads. It
@@ -1145,7 +1145,7 @@ Intel Mac then cuts out pictures with the browser's worker, because
 `native/matte.ts` returns null when onnxruntime does not load.
 
 Changed at the maintainer's request on 2026-09-14, over A1: the label read 313
-at git commit 315. Two plain `git commit` commits (ad711fc and 2562ed1, 13
+at git commit 315. Two plain `git commit` commits (2bfe4f0 and 6b8c028, 13
 September) stamped nothing, and since A1 `save.bat` only added 1 to
 `version.js`, so nothing caught them up. `save.bat` now takes the larger of
 `version.js` + 1 and `git rev-list --count HEAD` + 1. The number still never

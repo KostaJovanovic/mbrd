@@ -1,6 +1,6 @@
 # Full Repository Bug Audit — 2026-07-31
 
-Status: **all six closed**, 2026-07-31 (`03c3b11`, and the reset before it).
+Status: **all six closed**, 2026-07-31 (`17a8337`, and the reset before it).
 
 - **P0, the unresolved merge.** Not resolved hunk by hunk: `MERGE_HEAD` turned
   out to be a strict superset of `HEAD`, the same 34 commits under fresh SHAs
@@ -11,7 +11,7 @@ Status: **all six closed**, 2026-07-31 (`03c3b11`, and the reset before it).
 - **P2, `cloudflared.exe`.** Closed by that reset — the incoming side had
   already untracked it and added the ignore rule. The binary stays on disk.
 - **P1 `save.bat`, P2 display race, P2 `serve.py`, P3 IndexedDB.** Fixed in
-  `03c3b11`, with `tests/display.test.js` and a `tests/idb.test.js` case, both
+  `17a8337`, with `tests/display.test.js` and a `tests/idb.test.js` case, both
   checked against the unfixed code rather than trusting a green run.
 
 The one recommendation not carried out is the browser smoke test (step 4), which
@@ -24,7 +24,7 @@ The audit found six concrete issues. The immediate release blocker is the unreso
 Both parent commits are internally green when tested in isolated clean clones:
 
 - `HEAD` (`1dd8d11`, `v0.64`): 577/577 tests passed.
-- `MERGE_HEAD` (`589b375`, `y`): 664/664 tests passed.
+- `MERGE_HEAD` (`4f25088`, `y`): 664/664 tests passed.
 
 This means the primary failure is in the unresolved integration rather than either clean parent snapshot. The combined application cannot be browser-smoke-tested until the merge is resolved.
 

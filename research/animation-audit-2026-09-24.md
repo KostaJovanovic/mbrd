@@ -1,7 +1,7 @@
 # The motion audit — 24 September 2026
 
-**Status: partly done, 2026-09-24.** All twenty built (commits fac5245,
-3219a17, 7857c07) except two halves that want a browser first: the delete
+**Status: partly done, 2026-09-24.** All twenty built (commits 17dbdac,
+dcc3400, bf5f7d1) except two halves that want a browser first: the delete
 ghost's size away from 100% zoom (14) and `#viewport`'s `bottom` transition
 (15), neither touched. 15's Playlist kept its padding - a translate cannot
 narrow the column - and only lost the overshoot. 11 needed no new token: the
@@ -19,7 +19,7 @@ and on-screen movement eases in and out; UI stays under 300ms, menus and
 popovers 150–250ms, modals and drawers 200–500ms; nothing grows from
 `scale(0)`; things that are re-triggered quickly must be interruptible;
 transform and opacity only; reduced motion means less movement, not no
-feedback. Line numbers are at commit `5aeaaca`. Where a fix says "**(P)**",
+feedback. Line numbers are at commit `1b01727`. Where a fix says "**(P)**",
 the code makes the case but it wants confirming in a browser first.
 
 ## What is already right, and what was left alone

@@ -57,24 +57,24 @@ asks for — the changelog source is now `patch-notes.md` at the repository root
 because it was never an argument and never a specification, and `research/` is
 for the two of those.
 
-**Item 1, CI — done** (`fea074a`). `.github/workflows/ci.yml`, on
+**Item 1, CI — done** (`372ed7b`). `.github/workflows/ci.yml`, on
 `ubuntu-latest`, which is the point rather than a default: it is the
 case-sensitivity leg the repository never had, and it runs the suite with
 nothing installed so that *"`npm test` needs no install"* goes on being asked
 rather than assumed. Finding 3's premise is therefore gone, and so is the
 sentence in `CLAUDE.md` it quotes.
 
-**Item 2, the bundler — done** (`c85cf85`, wired in `317d4e0`). `npm run build`
+**Item 2, the bundler — done** (`6316ede`, wired in `fa4e2d7`). `npm run build`
 is one esbuild line, `index.html` loads `assets/app.js`, and `SHELL` in
 `web/sw.js` precaches that one artifact in place of the ninety-six modules it
 used to name — `tests/sw.test.js` no longer walks the sources, because they are
 no longer shipped assets. Finding 1's trade landed on the side this document did
 not predict: **the sources still ship beside the bundle**, so view-source on the
 deployed app is still this repository. What was dropped instead is the source
-map (`3797da6`) — 2.9 MB rewritten and committed on every build, for a devtools
+map (`1b1ab5e`) — 2.9 MB rewritten and committed on every build, for a devtools
 convenience nobody reviews.
 
-**Item 3, TypeScript — done as the move, not as the types** (`317d4e0`). 104 of
+**Item 3, TypeScript — done as the move, not as the types** (`fa4e2d7`). 104 of
 106 modules are `.ts` under `strict`; `version.js` and `optimize/media-worker.js`
 stay `.js` for reasons that would break silently otherwise, and `jsconfig.json`
 is replaced by `tsconfig.json`, whose header is now the better statement of
@@ -86,7 +86,7 @@ the typecheck asserts today is that everything *not* on that list is clean.
 value Finding 2 was asking for — the large stateful modules it names are exactly
 the ones still carried unchecked.
 
-**Item 7, continue the `state.js` split — done** (`6e28f0e`). 2,607 lines to
+**Item 7, continue the `state.js` split — done** (`8e814fb`). 2,607 lines to
 1,260, onto five new base modules — `board-schema.js`, `onboarding.js`,
 `clipboard.js`, `connections.js`, `trash.js` — plus selection into
 `board-store.js` and board-wide snapping into `layout.js`. Every one is in
@@ -313,7 +313,7 @@ Not a style note. These are where the next real defect will be.
 | `state.js` | 2,607 | ten concerns, two lifted out so far |
 
 *The third row is settled: `state.js` is 1,260 lines and seven more concerns are
-out of it (`6e28f0e`). The first two are as measured, and `initInput` is now the
+out of it (`8e814fb`). The first two are as measured, and `initInput` is now the
 whole of this finding.*
 
 `initInput` is the one to act on. `spaceDown`, `midButtonDown`, `midDragged`,
@@ -464,13 +464,13 @@ that port cheap. If there is one budget, it should go there.
 
 ## The list, in order
 
-1. ~~**Add CI.**~~ **Done** — `fea074a`. ~20 lines. Everything below depended on
+1. ~~**Add CI.**~~ **Done** — `372ed7b`. ~20 lines. Everything below depended on
    it, and it went first for that reason.
-2. ~~**Add a bundler for the release artifact.**~~ **Done** — `c85cf85`, wired
-   in `317d4e0`. `sw.js`'s `SHELL` moved in step, and the sources ship beside
+2. ~~**Add a bundler for the release artifact.**~~ **Done** — `6316ede`, wired
+   in `fa4e2d7`. `sw.js`'s `SHELL` moved in step, and the sources ship beside
    the bundle rather than being replaced by it.
 3. ~~**`.ts` and `strict`.**~~ **Done, both halves.** The move went in at
-   `317d4e0` and the annotations followed; `CEILING` in `tests/ts-debt.test.js`
+   `fa4e2d7` and the annotations followed; `CEILING` in `tests/ts-debt.test.js`
    is `0` and no module carries `@ts-nocheck`. `jsconfig.json` is gone.
 4. ~~**Turn `initInput` into an explicit state machine.**~~ **Done.** One
    `gesture` object with a discriminated `mode`, one writer, the transitions in
@@ -480,7 +480,7 @@ that port cheap. If there is one budget, it should go there.
    standing in for the feedback nothing local can give.
 6. ~~**A global error handler that raises a toast and confirms the
    autosave.**~~ **Done** — `web/assets/js/errors.ts`.
-7. ~~**Continue the `state.js` split.**~~ **Done** — `6e28f0e`. 2,607 lines to
+7. ~~**Continue the `state.js` split.**~~ **Done** — `8e814fb`. 2,607 lines to
    1,260, onto five new base modules.
 8. **Decide what `old/` should look like to a stranger.** *Open.* Cosmetic, and
    last.

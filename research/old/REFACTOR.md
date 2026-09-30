@@ -4,12 +4,12 @@
 > the one door over `board-model.ts`, `layout.ts`, `fences.ts`, `sticky.ts` and
 > the rest. The `import/types.js` split was skipped on purpose.
 
-Written against `6ee8c4a` (v0.18), clean tree. Self-contained: assumes no
+Written against `3d13a17` (v0.18), clean tree. Self-contained: assumes no
 memory of the conversation that produced it.
 
 ---
 
-## STATUS — executed against `1b8bf4b`, alongside `CLAUDE_TASKS.md`
+## STATUS — executed against `0d6c516`, alongside `CLAUDE_TASKS.md`
 
 `npm test` → **167 passing**. `node --check` clean on every `.js`;
 `python -m py_compile serve.py qr.py` clean.

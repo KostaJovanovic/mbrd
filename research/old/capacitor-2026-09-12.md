@@ -10,7 +10,7 @@
 
 Open work. The argument for wrapping the web app as an installable iOS and
 Android build, and the record of every decision it rests on. Written against
-`299b768` (v0.293), after the Electron work (groups A–J) shipped — which is the
+`3b48bbd` (v0.293), after the Electron work (groups A–J) shipped — which is the
 fact that makes this document short.
 
 This is the *why* and *what*, in one file. It is not an executable task list

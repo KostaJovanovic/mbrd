@@ -293,7 +293,7 @@ Mobile-width load hides exactly the seven Desktop-only controls, and
   the transport button over an audio cover. The label now says what it turns
   off.
 - **The motion lever is GIFs.** There was no video autoplay left to take away —
-  `88dcde8` already holds video sources until the first play on touch.
+  `b8a847e` already holds video sources until the first play on touch.
 - **Build ahead got its row after all** (the plan's first open question). It is
   in the Quality fold as *Cards built per frame*, labelled with the trade rather
   than the number alone.

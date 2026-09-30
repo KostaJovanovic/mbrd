@@ -481,7 +481,7 @@ export function buildItem(item: ItemLike, tilt: string, picked: boolean): HTMLDi
   // tint an integer 1..4, cycled or picked off the Note flyout's pad. This read
   // `typeof tint === 'string'`, so data-tint was never written and
   // cards.css:87-89 never matched - **every note on every board rendered on
-  // sheet 1 and the four-colour pad did nothing.** Introduced by 7724374
+  // sheet 1 and the four-colour pad did nothing.** Introduced by b45d43e
   // ("Type most of the tree"), which replaced `if (item.meta.tint)
   // el.dataset.tint = item.meta.tint` - where dataset coerced the number - with
   // a string test. Sticker tints were unaffected because renderers.ts:1107

@@ -1,4 +1,12 @@
 @echo off
+rem The second argument is copied out before delayed expansion is switched on,
+rem and only ever read back as !ARG2!. It is the commit message in `quick` mode,
+rem and a message is free text: with delayed expansion on, the copy itself would
+rem eat every "!" in it, and a stray double quote in a message pasted straight
+rem into an `if "..."` line is a syntax error that kills the script mid-save.
+rem A delayed-expansion read is not re-parsed, so neither can happen after this.
+setlocal disabledelayedexpansion
+set "ARG2=%~2"
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
@@ -11,10 +19,33 @@ rem Three things are rebuilt before the commit, and each is argued where it
 rem happens: the bundle, web/404.html and web/patch.html. All three are
 rem committed, and a stale one ships. The portable copy in desktop\portable\ is
 rem not part of a save. It has its own menu option, `portable` (:portableonly).
+rem
+rem With no argument it shows the menu. The arguments it takes instead:
+rem
+rem   save.bat save                    add + commit, then ask before pushing
+rem   save.bat commit                  add + commit, no push
+rem   save.bat release [all]           add + commit + push, then start a release
+rem   save.bat push / pull / portable  what the menu options of the same name do
+rem   save.bat quick "message"         add + commit + push, and never ask anything
+rem   save.bat quick-commit "message"  add + commit, and never ask anything
+rem
+rem The two quick actions are the save above with nobody at the keyboard: an
+rem editor, an agent, a Git Bash one-liner (cmd //c "save.bat quick \"msg\"").
+rem They run every step a save runs - the stamps, the bundle, 404.html,
+rem patch.html - and the difference is only in who answers. There is no
+rem menu, no prompt and no closing pause, and every question on the way gets
+rem the answer that loses nothing: no `git init`, no pull, no force push. A
+rem refusal is a non-zero exit, and so is a push that did not happen, whether
+rem the remote refused it, could not be reached or does not exist. The commit
+rem is kept locally in every one of those cases. An empty message falls back to
+rem the prompt's own default, v<version>. QUICK is a flag on the one save
+rem routine rather than a second copy of it, because two copies of a routine
+rem this long disagree the first time only one of them is fixed.
 
 set FORCE_MODE=0
 set COMMIT_ONLY=0
 set RELEASE_MODE=0
+set "QUICK=0"
 rem Which systems a release builds, passed to the workflow as `systems`. Two by
 rem default, because those are the two this machine runs and a macOS minute
 rem bills at ten times a Linux one. `save.bat release all` and menu option 7
@@ -45,10 +76,14 @@ if /i "%ACTION%"=="--force"   (set "FORCE_MODE=1" & set "ACTION=save")
 if /i "%ACTION%"=="commit"    (set "COMMIT_ONLY=1" & set "ACTION=save")
 if /i "%ACTION%"=="--commit"  (set "COMMIT_ONLY=1" & set "ACTION=save")
 if /i "%ACTION%"=="--no-push" (set "COMMIT_ONLY=1" & set "ACTION=save")
+if /i "%ACTION%"=="quick"        (set "QUICK=1" & set "ACTION=save")
+if /i "%ACTION%"=="quick-commit" (set "QUICK=1" & set "COMMIT_ONLY=1" & set "ACTION=save")
 rem `save.bat release` builds the two; `save.bat release all` builds all four.
-rem %~2 is read here, at parse time, which is why it is safe inside the block.
+rem The second argument is read as !ARG2! (see the top of the file), because
+rem this line is parsed on every run, and in `quick` mode that argument is a
+rem commit message whose quotes would otherwise land inside this `if`.
 if /i "%ACTION%"=="release"   (set "RELEASE_MODE=1" & set "ACTION=save")
-if "%RELEASE_MODE%"=="1" if /i "%~2"=="all" (set "RELEASE_SYSTEMS=all")
+if "%RELEASE_MODE%"=="1" if /i "!ARG2!"=="all" (set "RELEASE_SYSTEMS=all")
 if /i "%ACTION%"=="save"   goto checkrepo
 if /i "%ACTION%"=="push"    goto push
 if /i "%ACTION%"=="pull"    goto pull
@@ -93,6 +128,12 @@ rem instead of failing with a wall of git errors.
 if exist ".git" goto save
 echo.
 echo [warn] no git repository here yet
+rem Creating a repository is not something to do on nobody's say-so.
+if "%QUICK%"=="1" (
+  echo [err]  quick mode does not run "git init" - run save.bat once by hand
+  set "SAVE_ERROR=1"
+  goto end
+)
 set /p DOINIT=run "git init" now? (y/n):
 if /i not "%DOINIT%"=="y" (
   echo [git]  skipped - nothing to commit into
@@ -266,9 +307,12 @@ rem delayed expansion on, so `git commit -m "%MSG%"` lost every "!" in the
 rem message, and a double quote in it broke the `if` that read it. set /p stores
 rem the text as typed, PowerShell reads it from the environment and writes it
 rem as UTF-8, and git reads that file. Cleared first, because set /p leaves the
-rem old value in place when the answer is empty.
+rem old value in place when the answer is empty. In quick mode the message is
+rem the second argument, read back by delayed expansion, which does not
+rem re-parse what it substitutes: its "!" and quotes arrive as typed.
 set "MSG="
-set /p "MSG=commit message [v%VERLABEL%]: "
+if "%QUICK%"=="1" set "MSG=!ARG2!"
+if not "%QUICK%"=="1" set /p "MSG=commit message [v%VERLABEL%]: "
 if not defined MSG set "MSG=v%VERLABEL%"
 set "MSGFILE=%TEMP%\mbrd-save-message.txt"
 powershell -NoProfile -Command "[IO.File]::WriteAllText($env:MSGFILE, $env:MSG)"
@@ -303,16 +347,21 @@ if "%REMOTE%"=="" (
   echo [git]  committed v%VERLABEL% - no remote configured, nothing pushed
   echo        add one with: git remote add origin ^<url^>
   if "%RELEASE_MODE%"=="1" echo [warn] nothing was pushed, so no release was started
+  rem Quick mode was asked to push, and did not.
+  if "%QUICK%"=="1" set "SAVE_ERROR=1"
   goto end
 )
 
 if "%FORCE_MODE%"=="1" goto forcepush
 
 if "%BRANCH%"=="" goto nobranch
+rem `quick` was the answer to this question.
+if "%QUICK%"=="1" goto dopush
 echo.
 set /p DOPUSH=push to %REMOTE%/%BRANCH%? (y/n):
 if /i not "%DOPUSH%"=="y" goto skipped
 
+:dopush
 git push -u %REMOTE% %BRANCH%
 if not errorlevel 1 goto pushed
 
@@ -335,6 +384,14 @@ if errorlevel 1 (
 
 echo.
 echo [warn] push rejected - remote is ahead of local
+rem Both remedies below rewrite something - the working tree or the remote -
+rem and quick mode answers no to each, so it stops here with the commit kept.
+if "%QUICK%"=="1" (
+  echo [err]  quick mode does not pull or force push - the commit is saved locally.
+  echo        pull, resolve, and push by hand.
+  set "SAVE_ERROR=1"
+  goto end
+)
 echo.
 set /p FETCH=pull + merge remote first? (y/n):
 if /i "%FETCH%"=="y" goto fetch
@@ -577,5 +634,8 @@ goto end
 
 :end
 echo.
-pause
+rem The pause keeps a double-clicked window open long enough to read. In quick
+rem mode there is no window of its own and nobody to press a key, so it would
+rem only hang the caller.
+if not "%QUICK%"=="1" pause
 exit /b %SAVE_ERROR%

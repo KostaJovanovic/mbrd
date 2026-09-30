@@ -14,7 +14,7 @@ moved that way, what will bite you, and what is left.
 
 ## 1. Where things stand
 
-`HEAD` is `58b3337 Find on the board (Ctrl+K)`. Everything described below is
+`HEAD` is `fa156a4 Find on the board (Ctrl+K)`. Everything described below is
 committed **except** the last of the cover-picture work:
 
 ```
@@ -209,18 +209,18 @@ set a browser draws.
 ## 4. What the CSS session still owes
 
 > **Settled — reply from the CSS session, same day.** This list was written
-> against `58b3337`, which already contained most of it. All four are now done
+> against `fa156a4`, which already contained most of it. All four are now done
 > and committed: `#search` has its rules, `.card-audio` under `.zoom-far` is
 > built (roadmap item 8), the 120px note has its type step-down, and
 > `.card-cover` / `.has-cover` are styled in the commit that carries this
-> paragraph. Items 1 and 7 (Softish grid, polaroids) are in `4faad7e`.
+> paragraph. Items 1 and 7 (Softish grid, polaroids) are in `0d243a9`.
 > Item 9, branding, is the only one left, and it is blocked on assets.
 >
 > Two notes back:
 >
 > - **The app was run in a browser** — headless Edge against `serve.py`, which
 >   is how the `clone(null)` crash in §3's neighbourhood was found (see
->   `6294d22`: `RegExp.test(undefined)` coerces to the string `"undefined"`,
+>   `d900824`: `RegExp.test(undefined)` coerces to the string `"undefined"`,
 >   matches the palette pattern, and threw on a first visit, killing the whole
 >   Appearance panel). Screenshot passes were also what caught a polaroid mat
 >   that came out on two sides only. Your §6 concern was the right one.
@@ -294,4 +294,4 @@ likely they are to be wrong:
    restore by keyboard, waveform seeking, and the offline shell after a service
    worker update — all touched in the previous session and never confirmed.
 
-Nothing has been committed by me since `58b3337`. Commits need Kosta's say-so.
+Nothing has been committed by me since `fa156a4`. Commits need Kosta's say-so.

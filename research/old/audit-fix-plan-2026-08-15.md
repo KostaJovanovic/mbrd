@@ -4,7 +4,7 @@ Open work. This is the plan for clearing
 [`audit-2026-08-15.md`](audit-2026-08-15.md) — all of it, including the
 findings marked *suspicion*.
 
-Written at `fd8bd45` (v0.205), tree clean apart from the audit and this file.
+Written at `85bcf6c` (v0.205), tree clean apart from the audit and this file.
 
 ## The shape of it
 

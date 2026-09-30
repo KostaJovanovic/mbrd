@@ -629,8 +629,8 @@ header says so in as many words: "a board holding nothing but fences is a board
 holding nothing, which is exactly the board that should still be showing its
 hints". `isContent` is already imported at `state.js:58`.
 
-Drift, dated: `git log -S` puts the latch line at dc355e4 (v0.88) and `isContent`
-at 20e0331 (v0.120) — the fences commit, which converted `hasContent()` and added
+Drift, dated: `git log -S` puts the latch line at 7cc1635 (v0.88) and `isContent`
+at 8df6f1b (v0.120) — the fences commit, which converted `hasContent()` and added
 `tests/fences.test.js:320` but touched `state.js` in eight other places and missed
 this one. The only types removed before the check are `'ghost'` (line 1851) and
 `'title'` (in the predicate), leaving `'fence'` as the sole divergence.
@@ -693,7 +693,7 @@ silently swallowing a drop.
 
 `tests/e2e/board.spec.js:366` and `:693` · correctness
 
-Reproduced on a clean `git worktree` checkout of HEAD (56f9df7), not just on the
+Reproduced on a clean `git worktree` checkout of HEAD (90cdc0e), not just on the
 dirty tree:
 
 1. `board.spec.js:366` fails `toHaveAttribute('type','color')` with Received

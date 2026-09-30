@@ -8,7 +8,7 @@ The executable half of
 argues *why*; this one says *what to type*. Read that one only when a task here
 tells you to.
 
-Written against `add013e` (v0.252), tree clean. Every line number below was
+Written against `f9dd613` (v0.252), tree clean. Every line number below was
 checked at that commit.
 
 **Who this is for.** An agent working through the list one task at a time. Each

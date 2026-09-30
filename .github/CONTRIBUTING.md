@@ -226,6 +226,13 @@ fourth needs a good argument in the pull request.
 Short, descriptive, imperative or outcome-focused subjects — `Drag a link in
 from another tab` is the house style. Keep each commit to one coherent change.
 
+Commit through `save.bat`, never with a plain `git commit`: it stamps the
+version and the service-worker epoch and rebuilds the bundle, `404.html` and
+`patch.html`, and a commit made around it ships all five stale. `save.bat
+quick-commit "message"` does it with no menu and no prompts, and `save.bat
+quick "message"` pushes as well. No `Co-Authored-By`, "Generated with …" or
+other AI-tool attribution in a commit message or a pull request description.
+
 A pull request should say what the **user-visible result** is, list the manual
 verification you actually performed, and include a screenshot or short recording
 for anything visual. Call out explicitly if you changed the `.mbrd` schema, the

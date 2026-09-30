@@ -28,6 +28,36 @@ as an opaque command whose effect has to be reconstructed from the file
 afterwards. The shell is for commands that are commands — `npm test`, the build,
 `git`, `tools/serve.py`.
 
+## Committing
+
+**`save.bat` is the only way to commit — never run `git commit` or `git push`
+directly.** A commit made around it stamps nothing: the version in `version.js`
+and the service-worker epoch fall behind, and the bundle, `404.html` and
+`patch.html` go out as whatever was last built. From a terminal:
+
+- `save.bat quick-commit "message"` commits, with no menu and no prompts.
+- `save.bat quick "message"` commits and pushes, with no menu and no prompts.
+- Run it from PowerShell: `.\save.bat quick "message"`. Not from Git Bash, which cannot start a .bat from a path with spaces and puts its Unix `find` ahead of the Windows one the script uses, and the same with
+  `quick-commit`.
+
+Both run every step an interactive save runs, answer every question with the
+choice that loses nothing (no `git init`, no pull, no force push), and exit
+non-zero on any failure, a push that did not happen included — the commit is
+then kept locally. An empty message becomes `v<version>`.
+
+**Never add `Co-Authored-By`, "Generated with Claude Code", or any other
+Claude/AI attribution** to a commit message or a PR description.
+
+**Commit freely; never push.** A commit on the current branch, `main` included,
+needs no permission and no branch of its own — that is `save.bat quick-commit`.
+Anything that leaves this machine — `save.bat quick`, `git push`, `save.bat
+release`, answering yes to `save.bat`'s push prompt, `gh workflow run`, `gh pr
+create` — is the maintainer's to run, every time, even when the work is
+finished and the push looks like the obvious last step. Say the commit is ready
+and stop there. The reason is that a push deploys: wrangler serves the
+committed bundle, and `save.bat release` publishes four installers that the
+updaters in every installed copy then read.
+
 ## Commands
 
 ```bash
@@ -49,19 +79,12 @@ npm run dev:lab     # watch build for web/lab.html, the pigment lab
 npm run dev:sound   # watch build for web/lab-sound.html, the sound lab
 npm run dev:grime   # watch build for web/lab-grime.html, the grime bench
 save.bat            # version stamps → build → commit → optionally push
+save.bat quick-commit "message"  # the same, commit only, no menu and no prompts
+save.bat quick "message"         # the same, commit and push, no menu and no prompts
 save.bat release    # the same, pushed, then GitHub builds Windows + Android and publishes
 save.bat release all # the same, with macOS and Linux too — four systems, ten times the minutes
 save.bat portable   # build the web bundle, then desktop/portable/ — no commit
 ```
-
-**Commit freely; never push.** A commit on the current branch, `main` included,
-needs no permission and no branch of its own. Anything that leaves this machine
-— `git push`, `save.bat release`, answering yes to `save.bat`'s push prompt,
-`gh workflow run`, `gh pr create` — is the maintainer's to run, every time, even
-when the work is finished and the push looks like the obvious last step. Say the
-commit is ready and stop there. The reason is that a push deploys: wrangler
-serves the committed bundle, and `save.bat release` publishes four installers
-that the updaters in every installed copy then read.
 
 `save.bat` does not rebuild `desktop/portable/`, the portable copy. That is
 option 6 in its menu, or `save.bat portable`. It builds the web bundle first,

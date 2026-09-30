@@ -18,7 +18,7 @@ the one the plan itself called the real work.*
 
 **`overlays.css` no longer exists.** Every `overlays.css:NNN` below is a
 reference into a file that was split into eight subsystem sheets the same week
-(`6e28f0e`) — `trash`, `menu`, `library`, `status`, `dialog`, `viewer`,
+(`8e814fb`) — `trash`, `menu`, `library`, `status`, `dialog`, `viewer`,
 `color-picker`, `sticker-pad` — as a pure move, 1,665 rules in and 1,665 out.
 The findings survive the move; the line numbers do not, so where one mattered it
 has been rewritten to name the sheet the rule is in now.

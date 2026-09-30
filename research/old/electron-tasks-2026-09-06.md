@@ -12,7 +12,7 @@ that one when a task here points at a section of it, and read its §1 table
 once before starting, because every choice in it was made by the maintainer and
 is not yours to reopen.
 
-Written against `9cf7cc6` (v0.272), tree clean apart from the two research
+Written against `5709ed4` (v0.272), tree clean apart from the two research
 documents.
 
 **Who this is for.** An agent — the maintainer intends an Opus 4.8 session —
