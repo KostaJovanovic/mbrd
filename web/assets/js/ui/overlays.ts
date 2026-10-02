@@ -37,7 +37,38 @@ export function toast(msg: string, kind: ToastKind = '', action?: ToastAction): 
   const live = host.querySelectorAll<HTMLElement>('.toast-line:not(.is-going)');
   for (let i = 0; i < live.length - TOAST_MAX; i++) retire(host, live[i]);
   // A toast with a way back stays as long as an error, to leave time to press it.
-  setTimeout(() => retire(host, line), kind === 'error' || action ? 6000 : 2600);
+  const ms = kind === 'error' || action ? 6000 : 2600;
+  if (action) holdWhileUsed(host, line, ms);
+  else setTimeout(() => retire(host, line), ms);
+}
+
+/** After the pointer or focus leaves a held toast, how long it stays. */
+const TOAST_LINGER_MS = 2000;
+
+/**
+ * Retire a toast with a button after `ms`, but never while the pointer is on
+ * it or focus is in it - a bare timer took the Undo away from under a hand
+ * that was reaching for it, or from a keyboard that had just tabbed to it.
+ * Leaving starts a short linger rather than the whole wait again.
+ */
+function holdWhileUsed(host: HTMLElement, line: HTMLElement, ms: number): void {
+  let timer = 0;
+  let over = false;
+  const arm = (wait: number) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => { if (!over && !line.contains(document.activeElement)) retire(host, line); }, wait);
+  };
+  const leave = () => {
+    // focusout fires before the next element has focus; wait a tick to read it.
+    setTimeout(() => {
+      if (!over && !line.contains(document.activeElement)) arm(TOAST_LINGER_MS);
+    });
+  };
+  line.addEventListener('pointerenter', () => { over = true; clearTimeout(timer); });
+  line.addEventListener('pointerleave', () => { over = false; leave(); });
+  line.addEventListener('focusin', () => clearTimeout(timer));
+  line.addEventListener('focusout', leave);
+  arm(ms);
 }
 
 /** Fade a line out, then take it away with the stack closing over it. */
