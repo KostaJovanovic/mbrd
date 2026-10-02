@@ -28,11 +28,11 @@ export {
 };
 
 import {
-  clearClipboard, clipboardBounds, clipboardHasOurs, clipboardSize, cloneItem,
-  copyItems, itemCount, itemsIn, pasteCopies, takeItems,
+  clipboardBounds, clipboardHasOurs, clipboardOnBoardLoad, clipboardSize, cloneItem,
+  copyItems, itemCount, itemsIn, pasteCopies, setClipboardCarry, takeItems,
 } from './clipboard.ts';
 
-export { clipboardBounds, clipboardHasOurs, clipboardSize, copyItems };
+export { clipboardBounds, clipboardHasOurs, clipboardSize, copyItems, setClipboardCarry };
 
 /** Whether any of these may be copied, cut or duplicated - see copyable(). */
 export const canCopyItems = (ids: Iterable<string>) => itemsIn(ids).length > 0;
@@ -2128,8 +2128,8 @@ export function loadBoard(data: unknown) {
   // now been built - so a timeline that does not describe this board is marked
   // stale here rather than believed.
   adoptTimeline(isRecord(data) ? data.timeline : null, data);
-  // The clipboard cannot cross a board - see clearClipboard() for why.
-  clearClipboard();
+  // The clipboard crosses a board only with its bytes - see clipboardOnBoardLoad().
+  clipboardOnBoardLoad();
   resetDirty();
   // 'board:load' is the "everything was replaced" signal - distinct from
   // 'board', which also fires for a title change or a dirty-flag flip and so

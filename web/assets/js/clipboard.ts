@@ -1,8 +1,9 @@
 // Internal clipboard: holds copied items in memory (not the system clipboard)
-// so assets share hashes for free. A readable summary goes to the system
-// clipboard. Everything here is non-undoable, non-saved module state — the
-// board-mutating half (paste, cut) stays behind the commit() door in state.ts.
-// Nothing here imports state.ts (BASE layer).
+// so assets share hashes for free, and - through an injected carry - the bytes
+// those hashes name, so a copy survives a board switch. A readable summary goes
+// to the system clipboard. Everything here is non-undoable, non-saved module
+// state — the board-mutating half (paste, cut) stays behind the commit() door
+// in state.ts. Nothing here imports state.ts (BASE layer).
 
 import { toast } from './notify.ts';
 import { itemBounds } from './geometry.ts';
@@ -49,10 +50,38 @@ export function cloneItem(i: ItemDraft, dx = 0, dy = 0): ItemDraft {
   };
 }
 
-/** Last copied items. `pastes` offsets each successive paste to fan them out. */
-type Clipboard = { items: ItemDraft[], text: string, pastes: number };
+/**
+ * What lets a copy outlive its board: the bytes the copied cards name, held
+ * beside them.
+ *
+ * The drafts hold hashes, and the registry they resolve in (storage/assets.ts)
+ * is emptied by every board load - so without this a copy on one board pasted
+ * nothing on the next, though the item menu's own comment had always said "on
+ * any board". `hold` takes the bytes when the copy is made; `restore` puts any
+ * the registry has lost back before a paste lands, so the cards arrive whole.
+ *
+ * Injected, because storage/ sits above this module (the same seam as
+ * setAssetNameLookup() in state.ts). **Unwired, the clipboard cannot cross a
+ * board** and onBoardLoad() empties it as it always did: a paste of hashes
+ * nothing can resolve is a board with holes in it.
+ *
+ * The cost is memory. Held Blobs stay alive until the next copy replaces them,
+ * which for a copied clip is the clip - the same bargain the bin makes for a
+ * deleted one, and released at the next Ctrl+C.
+ */
+export type ByteCarry = {
+  hold: (items: readonly ItemDraft[]) => unknown,
+  restore: (held: unknown) => void,
+};
 
-const clipboard: Clipboard = { items: [], text: '', pastes: 0 };
+let carry: ByteCarry | null = null;
+export function setClipboardCarry(c: ByteCarry | null) { carry = c; }
+
+/** Last copied items. `pastes` offsets each successive paste to fan them out;
+ *  `held` is the carry's answer for them, opaque here. */
+type Clipboard = { items: ItemDraft[], text: string, pastes: number, held: unknown };
+
+const clipboard: Clipboard = { items: [], text: '', pastes: 0, held: null };
 
 export const clipboardSize = () => clipboard.items.length;
 
@@ -62,11 +91,21 @@ export const clippedItems = (): readonly ItemDraft[] => clipboard.items;
 /** The box the clipboard's contents were copied from, or null when it is empty. */
 export const clipboardBounds = () => itemBounds(clipboard.items);
 
-/** Clear on board load — assets from the old board no longer resolve. */
+/** Empty it. */
 export function clearClipboard() {
   clipboard.items = [];
   clipboard.text = '';
   clipboard.pastes = 0;
+  clipboard.held = null;
+}
+
+/**
+ * A board arrived. With a carry the copy survives it, fanning out afresh from
+ * the first paste; without one its hashes resolve to nothing there, so it goes.
+ */
+export function clipboardOnBoardLoad() {
+  if (carry) clipboard.pastes = 0;
+  else clearClipboard();
 }
 
 /**
@@ -91,6 +130,7 @@ export function takeItems(src: Item[]) {
   clipboard.items = src.map(i => cloneItem(i));
   clipboard.pastes = 0;
   clipboard.text = summarise(src);
+  clipboard.held = carry ? carry.hold(clipboard.items) : null;
   return clipboard.text;
 }
 
@@ -128,5 +168,7 @@ export function pasteCopies(at: { x: number, y: number } | null = null) {
     dx = (n + 1) * PASTE_STEP.x;
     dy = (n + 1) * PASTE_STEP.y;
   }
+  // Before the copies exist, so a renderer that draws them finds their bytes.
+  if (carry && clipboard.held) carry.restore(clipboard.held);
   return clipboard.items.map(i => cloneItem(i, dx, dy));
 }

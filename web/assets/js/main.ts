@@ -3,7 +3,7 @@
 // tests/boot-order.test.js — moving or adding a call means updating that test.
 // One of three modules allowed to touch browser globals at import time.
 
-import { el, rafThrottle, wasClosed } from './util.ts';
+import { el, rafThrottle, wasClosed, itemHashes } from './util.ts';
 import { toast } from './notify.ts';
 import { initErrors, setBoardProbe, reportCaught } from './errors.ts';
 import { setRiskPrompt } from './consent.ts';
@@ -20,7 +20,7 @@ import { initTimeline } from './ui/timeline-view.ts';
 import { ask } from './ui/dialog.ts';
 import { VERSION } from './version.js';
 import {
-  board, bus, selection, byId, setAssetNameLookup, setAssetPurge, isMultiSelect,
+  board, bus, selection, byId, setAssetNameLookup, setAssetPurge, setClipboardCarry, isMultiSelect,
   ensureTitleCard, isTitleHidden, TITLE_ID, setTitle,
   ensureGhostCards, reseedGhostCards, hasContent, dismissGhosts,
   leaveNotFoundBoard, isContent, markBenchBoard,
@@ -59,7 +59,8 @@ import type { NoteEntrance } from './canvas/notes.ts';
 import { setMarkdownRenderer, setEmbedEnrich } from './canvas/renderers.ts';
 import { enrichEmbed } from './canvas/embed-meta.ts';
 import { renderMarkdown } from './ui/markdown.ts';
-import { initAssets, getAsset, forgetAssets } from './storage/assets.ts';
+import { initAssets, getAsset, forgetAssets, putAsset } from './storage/assets.ts';
+import type { Asset } from './storage/assets.ts';
 import { forgetDisplay } from './canvas/display.ts';
 import { initSidebar } from './ui/sidebar.ts';
 import { buildPanel, paintPanel } from './ui/panel.ts';
@@ -195,6 +196,28 @@ bridge?.onCommand(name => {
 initAssets();
 // Injected: storage sits above state. Fallback for renameItem() when a name is cleared.
 setAssetNameLookup((hash: string) => getAsset(hash)?.name);
+// Injected for the same reason: the clipboard's bytes, held from the copy so a
+// paste on the next board brings its pictures (clipboard.ts). itemHashes() is
+// the walk the packer uses, so no class of reference is left behind.
+setClipboardCarry({
+  hold: items => {
+    const held = new Map<string, Asset>();
+    for (const it of items) {
+      for (const hash of itemHashes(it)) {
+        const asset = getAsset(hash);
+        if (asset) held.set(hash, asset);
+      }
+    }
+    return held;
+  },
+  restore: held => {
+    if (!(held instanceof Map)) return;
+    // SAFETY: `hold` above is the one maker of this value, and it makes a Map<string, Asset>.
+    for (const [hash, a] of held as Map<string, Asset>) {
+      putAsset(hash, a.blob, { mime: a.mime, ext: a.ext, name: a.name });
+    }
+  },
+});
 // Purge seam for emptying the bin — clears both the asset registry and display cache.
 setAssetPurge((hashes: Set<string>) => {
   forgetDisplay(hashes);
