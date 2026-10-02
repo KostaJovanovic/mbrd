@@ -4,6 +4,7 @@
 import { extOf } from '../util.ts';
 import { platform, isDesktop } from '../platform/platform.ts';
 import { toast, busy } from '../notify.ts';
+import type { ToastAction } from '../notify.ts';
 import { cue } from '../cuelume/engine.ts';
 import {
   board, bus, addItems, replaceItem, select, setItemCover, NOTE_MAX, baseStep, startSettling,
@@ -117,6 +118,45 @@ export type ImportPrompt =
 let confirmImport: ImportPrompt | null = null;
 export function setImportPrompt(fn: ImportPrompt | null | undefined) {
   confirmImport = typeof fn === 'function' ? fn : null;
+}
+
+/**
+ * The camera, as the import summary needs it: whether what landed is out of
+ * sight, and a way to bring it in. Injected because import/ sits below the
+ * viewport; unwired, the summary offers no "Show them".
+ */
+export type ImportRevealer = {
+  offScreen: (items: readonly Item[]) => boolean,
+  show: (ids: readonly string[]) => void,
+};
+
+let revealer: ImportRevealer | null = null;
+export function setImportRevealer(r: ImportRevealer | null) { revealer = r; }
+
+/** How many failed names the "Which?" answer spells out before counting the rest. */
+const WHICH_NAMES = 6;
+
+/**
+ * The summary's one action. With failures, "Which?" names them - they reached
+ * only the console before. Without, "Show them" when the cards landed where
+ * the screen is not, since a drop flowed round a crowded board can put them
+ * there and the summary then counts things nobody can see.
+ */
+function summaryAction(failed: readonly string[], added: readonly Item[]): ToastAction | undefined {
+  if (failed.length) {
+    return {
+      label: 'Which?',
+      run: () => {
+        const named = failed.slice(0, WHICH_NAMES).join(', ');
+        const more = failed.length - WHICH_NAMES;
+        toast(`Could not read ${named}${more > 0 ? ` and ${more} more` : ''}`, 'error');
+      },
+    };
+  }
+  if (!revealer || !added.length || board.layoutMode === 'mobile' || !revealer.offScreen(added)) return undefined;
+  const ids = added.map(i => i.id);
+  const show = revealer.show;
+  return { label: 'Show them', run: () => show(ids) };
 }
 
 /** Whole megabytes, for a sentence. Nothing here needs the decimal. */
@@ -635,7 +675,7 @@ export async function importFiles(
   }
   // One cue for the whole import, not per card.
   cue(failed.length ? 'fail' : 'done');
-  toast(msg, failed.length ? 'error' : '');
+  toast(msg, failed.length ? 'error' : '', summaryAction(failed, added));
 
   // Layering: import/ cannot touch document, so it announces and ui/ acts.
   bus.emit('imported', added);

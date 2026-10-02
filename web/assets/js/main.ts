@@ -29,7 +29,7 @@ import {
 } from './state.ts';
 import { freezePrefs } from './prefs.ts';
 import { homePath, isPatchPage, isNotFoundPage, isBenchPage, openingFace, openingShare } from './page.ts';
-import { Viewport } from './canvas/viewport.ts';
+import { Viewport, travelMs } from './canvas/viewport.ts';
 import { paintGrid, paintGridOnView } from './canvas/grid.ts';
 import { initGrain, paintGrain } from './canvas/grain.ts';
 import { initFarLands } from './canvas/farlands.ts';
@@ -45,7 +45,7 @@ import { initStills } from './canvas/stills.ts';
 import { initHires } from './canvas/hires.ts';
 import { initInput } from './canvas/input.ts';
 import { initPictureShapes } from './canvas/picture-shape.ts';
-import { initDrop, importFiles, setImportPrompt, noteToFile } from './import/drop.ts';
+import { initDrop, importFiles, setImportPrompt, setImportRevealer, noteToFile } from './import/drop.ts';
 import { unpackItem } from './import/unpack.ts';
 import {
   initStorage, restoreSession, openFile, autosave, setPrompt, setBoardThumb,
@@ -392,6 +392,18 @@ initBoardTitle();
 setPrompt(ask);
 // Import confirmation. danger: false — opening a file is not destructive.
 setImportPrompt(opts => ask({ ...opts, danger: false }));
+// The import summary's "Show them": wholly outside the view, then framed.
+setImportRevealer({
+  offScreen: items => {
+    const r = vp.visibleRect();
+    return items.every(i => i.x + i.w / 2 < r.x0 || i.x - i.w / 2 > r.x1
+      || i.y + i.h / 2 < r.y0 || i.y - i.h / 2 > r.y1);
+  },
+  show: ids => {
+    const items = board.items.filter(i => ids.includes(i.id));
+    if (items.length) vp.fit(items, 120, travelMs());
+  },
+});
 // Size ceiling prompt (consent.ts). Three answers: yes / yes-to-all / no.
 // Unwired default is allow (deliberate — see consent.ts).
 setRiskPrompt(async opts => {
