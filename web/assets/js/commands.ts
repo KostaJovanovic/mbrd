@@ -21,7 +21,8 @@ import {
   isContent, rolledAway, rolledFences, fenceFollowers, connectedTo,
 } from './state.ts';
 import { kindName } from './canvas/item-dom.ts';
-import { alignTargets, distributeTargets, separateOverlaps } from './geometry.ts';
+import { alignTargets, distributeTargets, matchSizeTargets, separateOverlaps } from './geometry.ts';
+import { isPicture } from './canvas/picture-shape.ts';
 // Needed here for zoomToSelection; the rest of the camera is in commands/view.ts.
 import { travelMs } from './canvas/viewport.ts';
 import { pickFiles, addNote, addSwatch, addLink, addSticker, addStyleTile } from './import/drop.ts';
@@ -143,6 +144,17 @@ function alignIds(ids: string[], edge: string, label = 'Align') {
   commitGeom(label, before, ids);
 }
 
+/** Same width / Same height: every card but `ref` takes its size on one axis.
+ *  A declared op, like align, so the step stays editable on the timeline. */
+function matchSizeIds(ids: string[], ref: string, axis: 'w' | 'h') {
+  const items = layoutItems(ids);
+  if (items.length < 2) return;
+  const before = snapshotGeom(ids);
+  declareOp('matchSize', { ids, ref, axis });
+  applyGeom(matchSizeTargets(items, ref, axis, it => isPicture(byId(it.id))));
+  commitGeom(axis === 'w' ? 'Same width' : 'Same height', before, ids);
+}
+
 function distributeIds(ids: string[], axis: 'x' | 'y') {
   const items = layoutItems(ids);
   if (items.length < 3) return;
@@ -159,6 +171,8 @@ function registerLayoutOps() {
   registerOp('align', params => alignIds(asIds(params.ids), String(params.edge || 'left')));
   registerOp('distribute', params =>
     distributeIds(asIds(params.ids), params.axis === 'y' ? 'y' : 'x'));
+  registerOp('matchSize', params =>
+    matchSizeIds(asIds(params.ids), String(params.ref || ''), params.axis === 'h' ? 'h' : 'w'));
   // Arrangements are pure and reproducible — re-running one yields the same positions.
   registerOp('arrange', params => {
     const items = layoutItems(asIds(params.ids));
@@ -340,6 +354,17 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
         selection.has(i.id) && !isFurniture(i) && !isFence(i) && !isRider(i) && !isLocked(i));
       if (items.length < 3) { toast('Pick three or more cards to space out'); return; }
       distributeIds(items.map(i => i.id), axis);
+    },
+    /** The card the menu was opened on is the measure; the same exclusions. */
+    matchSizeSelection: (ref: string, axis: 'w' | 'h') => {
+      if (board.layoutMode === 'mobile') { toast('Sizing is a canvas thing'); return; }
+      const items = board.items.filter(i =>
+        selection.has(i.id) && !isFurniture(i) && !isFence(i) && !isRider(i) && !isLocked(i));
+      if (items.length < 2 || !items.some(i => i.id === ref)) {
+        toast('Pick two or more cards, then open the menu on the one to match');
+        return;
+      }
+      matchSizeIds(items.map(i => i.id), ref, axis);
     },
 
     // Routed through cmds so canvas/input.ts can open it without importing ui/.

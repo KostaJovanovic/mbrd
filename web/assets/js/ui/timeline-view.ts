@@ -115,6 +115,8 @@ const KINDS: Record<string, { icon: string, said: string }> = {
   'Rearrange': { icon: 'i-rearrange', said: 'Rearranged' },
   'Align': { icon: 'i-align-left', said: 'Aligned' },
   'Distribute': { icon: 'i-distribute-h', said: 'Distributed' },
+  // matchSizeIds() in commands.ts, from Align & distribute.
+  'Same': { icon: 'i-reset-size', said: 'Matched the size of' },
   'Connect': { icon: 'i-connect', said: 'Joined' },
   'Edit note': { icon: 'i-edit-text', said: 'Wrote in' },
   'Edit connection': { icon: 'i-connect', said: 'Changed the join on' },
@@ -805,6 +807,13 @@ const CHOICES: Record<string, { key: string, rows: { value: string, label: strin
     rows: [
       { value: 'x', label: 'Space out across' },
       { value: 'y', label: 'Space out down' },
+    ],
+  },
+  matchSize: {
+    key: 'axis',
+    rows: [
+      { value: 'w', label: 'Same width' },
+      { value: 'h', label: 'Same height' },
     ],
   },
   arrange: {

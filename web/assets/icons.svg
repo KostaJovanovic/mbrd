@@ -528,6 +528,19 @@
   <rect x="3" y="6.8" width="10" height="2.4" rx="1"/>
   <rect x="3" y="11.2" width="10" height="2.4" rx="1"/>
 </symbol>
+<!-- Same width / Same height: two bars of one length, against a guide. -->
+<symbol id="i-same-width" viewBox="0 0 16 16">
+  <rect x="3" y="3" width="10" height="3.6" rx="1"/>
+  <rect x="3" y="9.4" width="10" height="3.6" rx="1"/>
+  <rect x="2" y="1" width="1" height="14" rx=".5"/>
+  <rect x="13" y="1" width="1" height="14" rx=".5"/>
+</symbol>
+<symbol id="i-same-height" viewBox="0 0 16 16">
+  <rect x="3" y="3" width="3.6" height="10" rx="1"/>
+  <rect x="9.4" y="3" width="3.6" height="10" rx="1"/>
+  <rect x="1" y="2" width="14" height="1" rx=".5"/>
+  <rect x="1" y="13" width="14" height="1" rx=".5"/>
+</symbol>
 
 <!-- Chevrons for the menu's drill-down: a row that opens a submenu points right,
      the row that goes back points left. -->

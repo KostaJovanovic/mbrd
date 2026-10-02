@@ -191,6 +191,7 @@ export interface MenuCommands {
   fenceSelection: () => void;
   alignSelection: (edge: string) => void;
   distributeSelection: (axis: 'x' | 'y') => void;
+  matchSizeSelection: (ref: string, axis: 'w' | 'h') => void;
   copy: () => void;
   paste: (at: Point | null) => void;
   canPaste: () => boolean;
@@ -773,7 +774,7 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
       action: () => cmds!.rearrangeSelection() },
     // Group only — eight alignment options stay in a fold to keep the menu short.
     { label: 'Align & distribute', icon: 'i-align-center', hidden: !many,
-      sub: alignDistributeEntries() },
+      sub: alignDistributeEntries(id) },
     // Group only. Also reachable via rubber-band prompt — this covers shift-click
     // selections where there is no band.
     { label: `Fence these ${count}`, icon: 'i-fence', accel: 'Ctrl G', hidden: !many,
@@ -839,7 +840,7 @@ function selectEntries(id: string, mobile: boolean): MenuEntry[] {
   ];
 }
 
-function alignDistributeEntries(): MenuEntry[] {
+function alignDistributeEntries(id: string): MenuEntry[] {
   return [
     { label: 'Align left', icon: 'i-align-left', action: () => cmds!.alignSelection('left') },
     { label: 'Align centre', icon: 'i-align-center', action: () => cmds!.alignSelection('hcenter') },
@@ -851,6 +852,11 @@ function alignDistributeEntries(): MenuEntry[] {
     { sep: true },
     { label: 'Distribute across', icon: 'i-distribute-h', action: () => cmds!.distributeSelection('x') },
     { label: 'Distribute down', icon: 'i-distribute-v', action: () => cmds!.distributeSelection('y') },
+    { sep: true },
+    // The card the menu was opened on is the measure - "make these like this one".
+    // Pictures keep their proportion (matchSizeTargets in geometry.ts).
+    { label: 'Same width', icon: 'i-same-width', action: () => cmds!.matchSizeSelection(id, 'w') },
+    { label: 'Same height', icon: 'i-same-height', action: () => cmds!.matchSizeSelection(id, 'h') },
   ];
 }
 

@@ -374,6 +374,38 @@ export function alignTargets(items: (Box & { id: string })[], edge: string): Tar
   });
 }
 
+/**
+ * Every item but `ref` given `ref`'s width (`axis` 'w') or height ('h') - Align
+ * & distribute's Same width and Same height. Those `keepRatio` answers for
+ * keep their proportion, so a row of photographs comes out one height and no
+ * picture is squashed; the rest change in that one dimension.
+ *
+ * Each card keeps its top-left corner, which is where a row is read from: a
+ * row brought to one height keeps its top line and grows downward. World y
+ * points up, so the top edge is y + h/2. Sizes are held to MIN_SIZE..MAX_SIZE.
+ */
+export function matchSizeTargets(
+  items: (Box & { id: string })[], refId: string, axis: 'w' | 'h',
+  keepRatio: (it: Box & { id: string }) => boolean = () => false,
+): (Target & { w: number, h: number })[] {
+  const ref = items.find(i => i.id === refId);
+  if (!ref) return [];
+  const size = axis === 'w' ? ref.w : ref.h;
+  const fit = (v: number) => Math.min(MAX_SIZE, Math.max(MIN_SIZE, v));
+  return items.filter(it => it.id !== ref.id && it.w > 0 && it.h > 0).map(it => {
+    const k = axis === 'w' ? size / it.w : size / it.h;
+    const keep = keepRatio(it);
+    const w = fit(axis === 'w' ? size : keep ? it.w * k : it.w);
+    const h = fit(axis === 'h' ? size : keep ? it.h * k : it.h);
+    return {
+      id: it.id,
+      x: it.x - it.w / 2 + w / 2,
+      y: it.y + it.h / 2 - h / 2,
+      w, h,
+    };
+  });
+}
+
 /** Distribute items evenly along an axis (equal visible gaps). Rotation-aware. */
 export function distributeTargets(items: (Box & { id: string })[], axis: string): Target[] {
   if (items.length < 3) return [];
