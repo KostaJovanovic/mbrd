@@ -27,6 +27,8 @@ import { frameOnScreen } from '../canvas/poster.ts';
 import { canEdit, canView, openViewer } from '../ui/viewer.ts';
 import { canEditPicture, openDarkroom } from '../ui/darkroom.ts';
 import { resetSize } from '../ui/board-actions.ts';
+import { saveBlob } from '../storage/storage.ts';
+import { isDesktop } from '../platform/platform.ts';
 
 /**
  * The members of the selection an anchor can be put on.
@@ -473,6 +475,40 @@ export function itemMetaCommands() {
      * Several seconds of work in a worker, so a second press on the same card
      * while it runs does nothing.
      */
+    /**
+     * Give a card's own file back: written to disk, or handed to the share
+     * sheet where the engine has one that takes files. The only way out for a
+     * file that was dropped on the board short of exporting the whole .mbrd and
+     * unzipping it, which on a phone cannot be done at all.
+     */
+    canSaveItemFile: (id: string) => !!ownFile(id),
+    canSendItemFile: (id: string) => {
+      const own = ownFile(id);
+      return !!own && canSendFile(asFile(own));
+    },
+    saveItemFile: async (id: string) => {
+      const own = ownFile(id);
+      if (!own) return;
+      try {
+        await saveBlob(own.blob, own.name);
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') return;
+        toast(`Could not save ${own.name}: ${err instanceof Error ? err.message : String(err)}`, 'error');
+      }
+    },
+    sendItemFile: async (id: string) => {
+      const own = ownFile(id);
+      if (!own) return;
+      const file = asFile(own);
+      if (!canSendFile(file)) return;
+      try {
+        await navigator.share({ files: [file], title: own.name });
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') return;
+        toast(`Could not send ${own.name}: ${err instanceof Error ? err.message : String(err)}`, 'error');
+      }
+    },
+
     canDemosaic: (id: string) => {
       const it = byId(id);
       return isRaw(it) && it?.meta?.demosaiced !== true && !!rawBytes(it);
@@ -529,3 +565,40 @@ function rawBytes(it: { asset?: { hash?: string } | null, meta?: { source?: unkn
 
 /** RAW cards being developed now - see demosaic() above. */
 const developing = new Set<string>();
+
+/**
+ * A card's own file, as it arrived, and the name to hand it back under - or
+ * null for a card that holds none.
+ *
+ * The bytes are rawBytes()'s answer, which is the right one for every card and
+ * not only a RAW: a HEIC keeps its original at meta.source beside the WebP
+ * drawn from it, and everything else holds its file at asset.hash. A folder
+ * card holds a list of files rather than one, so it has nothing to save here.
+ *
+ * The name goes to the operating system, so it is cleaned of the characters a
+ * file system refuses, and it gets the extension of the bytes it names - an
+ * optimised picture's stored name can still say .png over a WebP.
+ */
+function ownFile(id: string) {
+  const it = byId(id);
+  if (!it || it.type === 'folder') return null;
+  const asset = rawBytes(it);
+  if (!asset) return null;
+  const fromSource = typeof it.meta?.source === 'string' && !!it.meta.source;
+  const given = typeof it.meta?.origName === 'string' && it.meta.origName ? it.meta.origName : '';
+  const named = given || asset.name || it.name || 'file';
+  const ext = fromSource ? extOf(named) : asset.ext || extOf(named);
+  const bare = ext && extOf(named) === ext ? named.slice(0, -(ext.length + 1)) : named;
+  // What Windows, macOS and Linux refuse between them, control characters included.
+  const stem = [...bare].map(ch => (ch < ' ' || '\\/:*?"<>|'.includes(ch) ? ' ' : ch)).join('')
+    .replace(/\s+/g, ' ').trim().slice(0, 120) || 'file';
+  return { blob: asset.blob, name: ext ? `${stem}.${ext}` : stem, mime: asset.mime };
+}
+
+/** Whether the engine's share sheet takes a file, asked of a real one. Never in
+ *  the apps, where Save already is the native dialog. */
+const canSendFile = (file: File) =>
+  !isDesktop() && typeof navigator !== 'undefined' && !!navigator.canShare?.({ files: [file] });
+
+const asFile = (own: { blob: Blob, name: string, mime: string }) =>
+  new File([own.blob], own.name, { type: own.mime || own.blob.type });

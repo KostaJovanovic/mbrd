@@ -765,6 +765,22 @@
   <rect x="6.2" y="2.2" width="3.6" height="3" rx="1"/>
 </symbol>
 
+<!-- Save the file, on a card and in the viewer: the card's own bytes given back.
+     The arrow from i-arrow-down, landing in a tray. -->
+<symbol id="i-download" viewBox="0 0 16 16">
+  <path d="M8 2.5v7.5"/>
+  <path d="M5.5 7.5 8 10.5l2.5-3"/>
+  <path d="M3 10.5v1.8A1.2 1.2 0 0 0 4.2 13.5h7.6a1.2 1.2 0 0 0 1.2-1.2v-1.8"/>
+</symbol>
+
+<!-- Send the file: the same tray, the arrow leaving it. The share sheet's own
+     picture on every phone that has one. -->
+<symbol id="i-share" viewBox="0 0 16 16">
+  <path d="M8 10.5V2.8"/>
+  <path d="M5.5 5.3 8 2.5l2.5 2.8"/>
+  <path d="M3 8.5v3.8A1.2 1.2 0 0 0 4.2 13.5h7.6a1.2 1.2 0 0 0 1.2-1.2V8.5"/>
+</symbol>
+
 <!-- ═════ The cleaning tools (ui/clean/) ═════
 
      The one place in this file drawn to a 48 box and in colour, and the reason

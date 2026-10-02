@@ -168,6 +168,10 @@ let shownId: string | null = null;
 /** The one camera command the right-click needs. Injected: commands.ts imports this module. */
 export interface ViewerCommands {
   zoomToSelection: () => void;
+  canSaveItemFile: (id: string) => boolean;
+  saveItemFile: (id: string) => void;
+  canSendItemFile: (id: string) => boolean;
+  sendItemFile: (id: string) => void;
 }
 let cmds: ViewerCommands | null = null;
 
@@ -589,6 +593,11 @@ function viewerEntries(id: string): MenuEntry[] {
     { label: 'Edit', icon: 'i-edit-text', hidden: !canEdit(id) || !!editing, action: () => openViewer(id, { edit: true }) },
     { label: 'Fit to the window', hidden: !zoomed, action: () => zoomReset?.() },
     { label: 'Open in the browser', icon: 'i-link', hidden: !url, action: () => { if (url) void openExternal(url.href); } },
+    // The file on show, as it arrived - the card menu's two rows, here too.
+    { label: 'Save the file', icon: 'i-download', hidden: !cmds?.canSaveItemFile(id),
+      action: () => cmds?.saveItemFile(id) },
+    { label: 'Send the file', icon: 'i-share', hidden: !cmds?.canSendItemFile(id),
+      action: () => cmds?.sendItemFile(id) },
     {
       label: 'Copy',
       action: () => {

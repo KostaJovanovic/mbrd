@@ -115,6 +115,10 @@ export interface MenuCommands {
   canViewItem: (id: string) => boolean;
   canEditDocument: (id: string) => boolean;
   editDocument: (id: string) => void;
+  canSaveItemFile: (id: string) => boolean;
+  saveItemFile: (id: string) => void;
+  canSendItemFile: (id: string) => boolean;
+  sendItemFile: (id: string) => void;
   // Link cards: the address is the whole point, so its Properties row (edit the
   // name, edit or copy the address) sits at the top of the menu. linkURLOf
   // returns the address, or null for a non-link.
@@ -671,6 +675,12 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // Open reads a document; this writes in it.
     { label: 'Edit', icon: 'i-edit-text', hidden: !writable,
       action: () => cmds!.editDocument(id) },
+    // The card's own file, given back - beside Open, the other thing done to a
+    // file as a file. Single-item: a group is the board's export.
+    { label: 'Save the file', icon: 'i-download', hidden: many || !cmds!.canSaveItemFile(id),
+      action: () => cmds!.saveItemFile(id) },
+    { label: 'Send the file', icon: 'i-share', hidden: many || !cmds!.canSendItemFile(id),
+      action: () => cmds!.sendItemFile(id) },
     // Copy/Paste instead of Duplicate — paste lands where the cursor is, on any
     // board. Ctrl+D still duplicates. i-duplicate icon on Copy deliberately.
     // Hidden when nothing picked may be copied - the cleaned board's card.
