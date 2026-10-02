@@ -15,7 +15,7 @@ import { DEFAULT_SCALE } from '../measure.ts';
 import { platform } from '../platform/platform.ts';
 import { clearQualityOverrides } from '../quality.ts';
 import { cueLogOn, dumpCueLog, setCueLog } from '../cuelume/engine.ts';
-import { onNarrowScreen, travelMs } from '../canvas/viewport.ts';
+import { BASE_ZOOM, onNarrowScreen, travelMs } from '../canvas/viewport.ts';
 import type { Viewport } from '../canvas/viewport.ts';
 import type { ViewPerf } from '../perf/view-perf.ts';
 
@@ -154,6 +154,13 @@ export function viewCommands(vp: CommandViewport, { resetAppearance, perf }: Vie
         board.layoutMode !== 'mobile' || i.type !== 'title'),
       80, travelMs()),
     recenter: () => vp.recenter(travelMs()),
+    // 100% without moving the view: the 1 key, and the same call a click on the
+    // zoom readout makes (ui/hud.ts). Nothing under a lock, as the readout is
+    // dead there, and nothing on Mobile, whose zoom is the column width.
+    zoomActual: () => {
+      if (vp.zoomLocked || vp.isMobile) return;
+      vp.viewTo(vp.pan, BASE_ZOOM, travelMs());
+    },
     // Dev: paint resize grab zones (no ink of their own). Also on mbrd.debugGrips() and #grips URL.
     debugGrips: () => {
       const on = document.documentElement.toggleAttribute('data-debug-grips');

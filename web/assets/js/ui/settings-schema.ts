@@ -274,8 +274,11 @@ const KEYS: readonly KeyRow[] = [
   [['dbl-click'], 'label a line'],
   // While Join is out: the pair joins and the tool stays armed for the next.
   [['shift', '+', 'click'], 'join, and keep joining'],
+  [['drag', '+', 'shift'], 'move along one axis'],
   [['+', '-'], 'zoom in, out'],
   [['0', 'F'], 'recenter, fit'],
+  [['shift', '+', 'F'], 'zoom to the selection'],
+  [['1'], '100% where you are'],
   [['←↑→↓'], 'nudge (+shift a step)'],
   [['esc'], 'cancel a drag, deselect, close'],
   [['?'], 'this list'],

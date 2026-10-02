@@ -119,7 +119,7 @@ export function liftWithButtonsHeld(
 
 /** The keys that still work while the Timeline plays: they move the view or
  *  close something. See the keydown handler. */
-const VIEW_KEYS = new Set(['0', 'f', 'F', '+', '=', '-', '_', 'Escape']);
+const VIEW_KEYS = new Set(['0', '1', 'f', 'F', '+', '=', '-', '_', 'Escape']);
 
 // ---------------------------------------------------------------------------
 // What a press means — pure decision, handler does the doing. Branch order
@@ -1186,6 +1186,9 @@ type InputCommands = {
   playPause?(): boolean,
   /** Open the sidebar on the keyboard legend - the '?' key. */
   shortcuts?(): void,
+  /** Shift+F and 1: frame the selection, and 100% where the view is. */
+  zoomToSelection?(): void,
+  zoomActual?(): void,
   // The tour's two keys, in the shape the three above use: the command answers
   // whether it took the press. See the Escape and arrow cases below.
   tourStop?(): boolean,
@@ -2482,8 +2485,16 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // of them, and a name that is the move says the same thing in both.
       const drag = gesture;
       const p = vp.toWorld(clientX, clientY);
-      const dx = p.x - drag.start.x, dy = p.y - drag.start.y;
+      let dx = p.x - drag.start.x, dy = p.y - drag.start.y;
       if (!drag.moved && Math.hypot(dx * vp.zoom, dy * vp.zoom) < DRAG_SLOP) return;
+      // Shift held during the drag keeps it to one axis, whichever the hand has
+      // gone further along from the start - and lets go the moment Shift does.
+      // Read per move, never at the press: Shift *at the press* is the additive
+      // pick (pressIntent), and a drag that moved never peels on the lift, so
+      // the two meanings of one key cannot meet.
+      const axis = shiftKey ? (Math.abs(dx) >= Math.abs(dy) ? 'x' : 'y') : null;
+      if (axis === 'x') dy = 0;
+      if (axis === 'y') dx = 0;
       // The press has become a drag. Raise now, so the stack change belongs to
       // the move that is about to be committed - see raiseToFront.
       if (!drag.moved) {
@@ -2509,8 +2520,11 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // arrangement being kept rather than a second one being imposed.
       const lead = drag.leadOrigin;
       const low = { x: lead.x + dx - lead.w / 2, y: lead.y + dy - lead.h / 2 };
-      let sx = snapLowFor(low.x, drag.snap) - low.x;
-      let sy = snapLowFor(low.y, drag.snap) - low.y;
+      // The held axis does not snap either: a card that started off the lattice
+      // would otherwise step sideways onto it, which is the one move Shift says
+      // not to make.
+      let sx = axis === 'y' ? 0 : snapLowFor(low.x, drag.snap) - low.x;
+      let sy = axis === 'x' ? 0 : snapLowFor(low.y, drag.snap) - low.y;
       // A dragged note that would stick: show its would-be host wearing the
       // selection ring so the target is unmistakable before release, and - when
       // snapping is on - let the note land exactly where it was let go rather
@@ -3310,7 +3324,13 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         e.preventDefault();
       } break;
       case '0': cmds.recenter(); break;
-      case 'f': case 'F': cmds.fit(); break;
+      case '1': cmds.zoomActual?.(); break;
+      // Shift+F frames what is selected; F, and Shift+F with nothing selected,
+      // the whole board.
+      case 'f': case 'F':
+        if (e.shiftKey && selection.size) cmds.zoomToSelection?.();
+        else cmds.fit();
+        break;
       case '+': case '=': vp.zoomBy(1.25, zoomMs()); break;
       case '-': case '_': vp.zoomBy(1 / 1.25, zoomMs()); break;
       case 'Escape': {

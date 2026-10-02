@@ -689,10 +689,10 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // Hidden (not greyed) on empty clipboard.
     { label: 'Paste', icon: 'i-paste', accel: 'Ctrl V', hidden: !cmds!.canPaste(),
       action: () => cmds!.paste(at) },
-    // No dbl-click accel: double-click stopped zooming (canvas/input.ts).
-    { label: 'Zoom to it', icon: 'i-zoom-to',
+    // Shift+F, not dbl-click: double-click stopped zooming (canvas/input.ts).
+    { label: 'Zoom to it', icon: 'i-zoom-to', accel: 'Shift F',
       action: () => cmds!.zoomToSelection(), hidden: mobile || many },
-    { label: 'Zoom to them', icon: 'i-zoom-to',
+    { label: 'Zoom to them', icon: 'i-zoom-to', accel: 'Shift F',
       action: () => cmds!.zoomToSelection(), hidden: mobile || !many },
     // ── What the card is ──
     { sep: true, hidden: !coverable && !covered && !editable_picture && !demosaicable
