@@ -116,6 +116,28 @@
   transition: opacity var(--dur-fast) var(--ease), visibility 0s;
 }
 #saved svg { width: 12px; height: 12px; color: var(--accent-text); }
+#saved.is-off { display: none; }
+
+/* The browser stopped storing the board (storage/session.ts, `refused`): the
+   Saved mark's spot, standing, and a button - the one state in this corner
+   that needs a press. Built by ui/hud.ts only when it happens. */
+#not-saved {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: var(--leaf);
+  background: color-mix(in oklab, var(--paper-card) 90%, transparent);
+  color: var(--danger);
+  font: inherit;
+  font-size: var(--t-tiny);
+  letter-spacing: calc(0.02em * var(--ls-scale));
+  white-space: nowrap;
+  cursor: pointer;
+}
+#not-saved[hidden] { display: none; }
+#not-saved:hover { text-decoration: underline; }
 
 /* Drawer button and history pair on one line. */
 .drawer-row {

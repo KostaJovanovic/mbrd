@@ -29,6 +29,8 @@ export type BusEvents = {
   readonly: void,
   connections: void,
   autosaved: void,
+  /** The browser refused a write and stopped keeping the board, or resumed. */
+  'save:refused': boolean,
   filter: void,
   audioOrder: string[],
   // board-model.ts's TourStop, spelled out rather than imported: this module

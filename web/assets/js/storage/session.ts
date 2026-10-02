@@ -20,7 +20,7 @@ import {
 import { clearMatteCache } from './matte-cache.ts';
 // Type only — errors.ts sits in the base layer, reads through setBoardProbe().
 import type { BoardSafety } from '../errors.ts';
-import { platform } from '../platform/platform.ts';
+import { platform, isDesktop } from '../platform/platform.ts';
 
 /** What this engine borrows from the file half. Filled by initSession(). */
 export interface SessionDeps {
@@ -98,6 +98,45 @@ let suspended = false;
 let lastFailure = '';
 /** Whether the "some bytes are missing" toast has already been shown. */
 let warnedIncomplete = false;
+
+/**
+ * The browser refused a write, and the cache is off for the rest of the board.
+ *
+ * Its own flag rather than `!cacheOk`, because three deliberate doors turn the
+ * cache off too - suspendCache() for the not-found board, /patch and the bench,
+ * and the wipe in clearAllData() - and none of those is a board in danger. This
+ * is the one that is: every edit from here on lives only in the tab.
+ *
+ * While it holds, the HUD keeps a standing mark ('save:refused' on the bus) and
+ * the tab asks before it closes on unsaved edits. The guard comes and goes with
+ * the flag because a page with a beforeunload listener is kept out of the
+ * back-forward cache, and the ordinary board has no reason to pay for that -
+ * the autosave and the pagehide flush already cover it, which stops being true
+ * only here.
+ */
+let refused = false;
+
+function guardClose(e: BeforeUnloadEvent) {
+  if (!isDirty()) return;
+  e.preventDefault();
+  // The legacy half, which some engines still need to show the question.
+  e.returnValue = '';
+}
+
+function setRefused(on: boolean) {
+  if (refused === on) return;
+  refused = on;
+  // Not in the apps: there a beforeunload that answers closes nothing, and
+  // silently, and the board is a file with its own save anyway.
+  if (!isDesktop()) {
+    if (on) globalThis.addEventListener?.('beforeunload', guardClose);
+    else globalThis.removeEventListener?.('beforeunload', guardClose);
+  }
+  bus.emit('save:refused', on);
+}
+
+/** Whether the browser has stopped keeping this board - see `refused`. */
+export const saveRefused = () => refused;
 
 /** Suppresses the first autosave announcement per board load. Two gates:
  *  `isDirty` (pan is not an edit) and `quiet` (a restored session bumps the
@@ -299,6 +338,7 @@ async function writeSnapshot() {
     lastFailure = 'This browser will not store the board (full, or blocked) - export it to a file';
     const deps = d!;
     toast(lastFailure, 'error', { label: 'Export', run: () => { void deps.exportBoard(); } });
+    setRefused(true);
     return false;
   }
 }
@@ -516,7 +556,8 @@ export function initSessionStorage() {
   // A board load is not an edit — suppress the first autosave announcement.
   bus.on('board:load', hushNextSave);
   bus.on('board:new', hushNextSave);
-  // No beforeunload guard — autosave + pagehide flush already persist the board.
+  // No standing beforeunload guard — autosave + pagehide flush already persist
+  // the board. The one exception arms its own: see `refused`.
 }
 
 // ---------------------------------------------------------------------------
@@ -566,6 +607,7 @@ export function resetSessionLatches() {
   suspended = false;
   warnedIncomplete = false;
   lastFailure = '';
+  setRefused(false);
 }
 
 /** Clear `suspended` only (not `cacheOk`). After a failed handover the board

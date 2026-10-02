@@ -27,6 +27,7 @@ export interface HudCommands {
   lockZoom: () => void;
   undo: () => void;
   redo: () => void;
+  export: () => void;
 }
 
 const ZOOM_STEP = 1.3;
@@ -92,6 +93,32 @@ export function initHud(viewport: HudViewport, cmds: HudCommands) {
     mark.classList.add('is-on');
     clearTimeout(savedTimer);
     savedTimer = setTimeout(() => mark.classList.remove('is-on'), SAVED_MS);
+  });
+
+  /**
+   * The other half of that mark: the browser has stopped keeping the board, and
+   * says so for as long as it lasts. The Saved mark is aria-hidden because a
+   * reassurance is not worth interrupting anybody for; this is the opposite, so
+   * it is a real button with a status role around it, and it stays until the
+   * latch is reset (storage/session.ts, `refused`). Built here rather than in
+   * index.html because it exists only in this one state.
+   */
+  bus.on('save:refused', on => {
+    let mark = el('not-saved');
+    if (on && !mark) {
+      const btn = document.createElement('button');
+      btn.id = 'not-saved';
+      btn.type = 'button';
+      btn.setAttribute('role', 'status');
+      btn.title = 'This browser stopped storing the board. Export it to a file to keep it';
+      btn.textContent = 'Not saved — Export';
+      btn.addEventListener('click', () => { cue('pick'); cmds.export(); });
+      el('drawer-dock')!.append(btn);
+      mark = btn;
+    }
+    if (mark) mark.hidden = !on;
+    // The two marks share one spot, and the standing one is the true one.
+    el('saved')!.classList.toggle('is-off', on);
   });
 
   bus.on('history', paintHistory);

@@ -38,6 +38,7 @@ const JS_BUILT = {
   // one. Styled through .whimsy-stops now, with a per-item id no stylesheet
   // can be written against.
   'library': 'the board switcher',
+  'not-saved': 'the standing mark once the browser stops storing the board',
   'search': 'the Find panel',
   'search-field': 'the Find input',
   'search-hits': 'the Find results list',

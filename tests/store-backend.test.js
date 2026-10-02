@@ -14,9 +14,9 @@ import { memoryStore, hash } from './helpers.js';
 import { setStoreBackend } from '../web/assets/js/storage/idb.ts';
 import {
   initSession, initSessionStorage, autosave, restoreSession, clearSession,
-  resetSessionLatches, drainSave,
+  resetSessionLatches, drainSave, saveRefused, suspendCache,
 } from '../web/assets/js/storage/session.ts';
-import { loadBoard, addItems, board, setBoardMode } from '../web/assets/js/state.ts';
+import { loadBoard, addItems, board, setBoardMode, bus } from '../web/assets/js/state.ts';
 import { putAsset, clearAssets, getAsset } from '../web/assets/js/storage/assets.ts';
 
 const PHOTO = hash('photo');
@@ -138,6 +138,29 @@ test('a wipe that finishes empties every store', async () => {
   for (const [name, map] of store.stores) {
     assert.equal(map.size, 0, name + ' still holds something after a wipe');
   }
+});
+
+test('a refused write is announced and stays announced until the latches reset', async () => {
+  // The HUD's standing "Not saved" mark and the close guard both hang off this.
+  const heard = [];
+  const off = bus.on('save:refused', on => heard.push(on));
+  store.set = async () => { throw new Error('QuotaExceededError'); };
+  store.setMany = async () => { throw new Error('QuotaExceededError'); };
+  addItems([asItem()]);
+  assert.equal(await autosave(), false);
+  assert.equal(saveRefused(), true);
+  resetSessionLatches();
+  assert.equal(saveRefused(), false);
+  assert.deepEqual(heard, [true, false]);
+  off();
+});
+
+test('turning the cache off on purpose is not a refusal', () => {
+  // suspendCache() is the not-found board, /patch and the bench: nothing of
+  // the user's is at risk, so nothing may warn about it.
+  suspendCache();
+  assert.equal(saveRefused(), false);
+  resetSessionLatches();
 });
 
 test('the writer drains before a wipe, so nothing lands behind it', async () => {
