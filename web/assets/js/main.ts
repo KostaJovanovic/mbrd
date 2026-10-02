@@ -212,11 +212,7 @@ setClipboardCarry({
     return held;
   },
   restore: held => {
-    if (!(held instanceof Map)) return;
-    // SAFETY: `hold` above is the one maker of this value, and it makes a Map<string, Asset>.
-    for (const [hash, a] of held as Map<string, Asset>) {
-      putAsset(hash, a.blob, { mime: a.mime, ext: a.ext, name: a.name });
-    }
+    for (const [hash, a] of held) putAsset(hash, a.blob, { mime: a.mime, ext: a.ext, name: a.name });
   },
 });
 // Which cards name a file the registry does not hold, for the mark that says

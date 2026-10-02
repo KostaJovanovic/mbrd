@@ -117,19 +117,26 @@ export function relink(
  * deleted one, and released at the next Ctrl+C.
  */
 export type ByteCarry = {
-  hold: (items: readonly ItemDraft[]) => unknown,
-  restore: (held: unknown) => void,
+  hold: (items: readonly ItemDraft[]) => HeldBytes,
+  restore: (held: HeldBytes) => void,
 };
+
+/** One file's bytes as the carry keeps them - the registry's own fields,
+ *  restated here because storage/ is above this module. */
+export type HeldAsset = { blob: Blob, mime?: string, ext?: string, name?: string };
+
+/** What `hold` answers and `restore` takes: the bytes, by hash. */
+export type HeldBytes = ReadonlyMap<string, HeldAsset>;
 
 let carry: ByteCarry | null = null;
 export function setClipboardCarry(c: ByteCarry | null) { carry = c; }
 
 /** Last copied items. `from` is the id each was copied from and `links` the
  *  lines between them, in those ids; `pastes` offsets each successive paste to
- *  fan them out; `held` is the carry's answer for them, opaque here. */
+ *  fan them out; `held` is the carry's answer for them, their bytes. */
 type Clipboard = {
   items: ItemDraft[], from: string[], links: Connection[],
-  text: string, pastes: number, held: unknown,
+  text: string, pastes: number, held: HeldBytes | null,
 };
 
 const clipboard: Clipboard = { items: [], from: [], links: [], text: '', pastes: 0, held: null };
