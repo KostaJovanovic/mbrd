@@ -54,6 +54,12 @@ const top = <T>(stack: T[]): T | undefined => stack[stack.length - 1];
 // Own event — markDirty() only emits on change, so it goes quiet after the first edit.
 const historyChanged = () => bus.emit('history');
 
+/** An undo or redo ran - said beside the buttons, since the change it made may
+ *  be off screen. Its own event: 'history' also fires on every commit. */
+const moved = (undo: boolean, label: string | null) => {
+  if (label) bus.emit('history:moved', { undo, label });
+};
+
 /** Run `redo` now, push the inverse onto the undo stack. `weight` drives eviction. */
 export function commit(
   label: string, redo: () => void, undo: () => void, weight = 1,
@@ -179,9 +185,11 @@ export function undo() {
   // tried first because its entries are finer-grained than timeline steps
   // (one step = a whole run of small changes).
   if (!cmd) {
+    const label = stepBackLabel();
     if (!stepBack()) return false;
     markDirty();
     historyChanged();
+    moved(true, label);
     cue('fall');
     return true;
   }
@@ -193,6 +201,7 @@ export function undo() {
   redoStack.push(cmd);
   markDirty();
   historyChanged();
+  moved(true, cmd.label);
   // Stutter when held down is intentional — repeat guard in cuelume/engine.ts.
   cue('fall');
   return true;
@@ -202,9 +211,11 @@ export function redo() {
   const cmd = redoStack.pop();
   // Mirror of undo()'s fall-through: redo past a refresh uses the timeline too.
   if (!cmd) {
+    const label = stepForwardLabel();
     if (!stepForward()) return false;
     markDirty();
     historyChanged();
+    moved(false, label);
     cue('rise');
     return true;
   }
@@ -217,6 +228,7 @@ export function redo() {
   heldWeight += cmd.weight;
   markDirty();
   historyChanged();
+  moved(false, cmd.label);
   // `rise` is `fall` inverted — redo sounds like undo played backwards.
   cue('rise');
   return true;

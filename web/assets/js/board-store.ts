@@ -25,6 +25,8 @@ export type BusEvents = {
   'trash:full': void,
   'trash:purged': { items: number, bytes: number },
   history: void,
+  /** An undo or redo ran, and what it was (history.ts) - for ui/hud.ts to say. */
+  'history:moved': { undo: boolean, label: string },
   /** An edit refused because the Timeline is playing (history.ts commit()). */
   readonly: void,
   connections: void,

@@ -1,6 +1,6 @@
 // The corner readouts and three control clusters on the glass: zoom
-// percentage/buttons, undo/redo, the coordinate/size readout, autosave mark,
-// and the snap flag published to CSS. Routes clicks through `cmds` rather
+// percentage/buttons, undo/redo and what they just did, the coordinate/size
+// readout, autosave mark, and the snap flag published to CSS. Routes clicks through `cmds` rather
 // than state directly, so keyboard, menu and these buttons agree. `vp`/`cmds`
 // are injected by initHud() to avoid an import cycle with commands.ts.
 
@@ -44,6 +44,7 @@ let zoomShown = '';
 /** The same for the coordinate pair, which fires at the pointer's rate. */
 let xyShown = '';
 let savedTimer = 0;
+let undidTimer = 0;
 
 /** Wire the glass controls and subscribe the readouts. Called once from
  *  main.ts, after the viewport exists and the panel is built. */
@@ -89,6 +90,8 @@ export function initHud(viewport: HudViewport, cmds: HudCommands) {
    * edits holds the mark up instead of flickering once per save.
    */
   bus.on('autosaved', () => {
+    // An undo saves a moment later; its own mark is the one worth reading.
+    if (el('undid')?.classList.contains('is-on')) return;
     const mark = el('saved')!;
     mark.classList.add('is-on');
     clearTimeout(savedTimer);
@@ -119,6 +122,29 @@ export function initHud(viewport: HudViewport, cmds: HudCommands) {
     if (mark) mark.hidden = !on;
     // The two marks share one spot, and the standing one is the true one.
     el('saved')!.classList.toggle('is-off', on);
+  });
+
+  /**
+   * What an undo or redo just did, in the Saved mark's spot and on its timer -
+   * the change itself may be off screen, and then Ctrl+Z is a key that seems to
+   * do nothing. Not a toast: holding Ctrl+Z would stack one per step. Unlike
+   * the Saved mark this one is announced, politely, since it is the only sign.
+   */
+  bus.on('history:moved', ({ undo, label }) => {
+    let mark = el('undid');
+    if (!mark) {
+      mark = document.createElement('div');
+      mark.id = 'undid';
+      mark.setAttribute('role', 'status');
+      mark.setAttribute('aria-live', 'polite');
+      el('drawer-dock')!.append(mark);
+    }
+    mark.textContent = `${undo ? 'Undid' : 'Redid'} ${label}`;
+    mark.classList.add('is-on');
+    el('saved')!.classList.remove('is-on');
+    clearTimeout(undidTimer);
+    const shown = mark;
+    undidTimer = setTimeout(() => shown.classList.remove('is-on'), SAVED_MS);
   });
 
   bus.on('history', paintHistory);

@@ -88,8 +88,9 @@
 }
 
 /* Autosave mark. Quietest thing in the corner -- no card, no shadow.
-   Leaves slowly, arrives quickly. */
-#saved {
+   Leaves slowly, arrives quickly. #undid, "Undid Nudge", shares its spot and
+   its look (ui/hud.ts). */
+#saved, #undid {
   position: absolute;
   bottom: calc(100% + 8px);
   left: 0;
@@ -110,7 +111,7 @@
   transition: opacity calc(var(--dur-travel) * 1.6) var(--ease),
               visibility 0s calc(var(--dur-travel) * 1.6);
 }
-#saved.is-on {
+#saved.is-on, #undid.is-on {
   opacity: 1;
   visibility: visible;
   transition: opacity var(--dur-fast) var(--ease), visibility 0s;
@@ -504,5 +505,5 @@
 
 /* Fallback without color-mix() -- see tokens.css section 7. */
 @supports not (color: color-mix(in srgb, red, blue)) {
-  #saved { background: rgb(var(--paper-card-c) / 82%); }
+  #saved, #undid { background: rgb(var(--paper-card-c) / 82%); }
 }
