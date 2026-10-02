@@ -170,6 +170,15 @@ export function itemMetaCommands() {
       // it changed is written out beside that row in ui/menu.ts.
       toast(on ? 'Anchored. Drag it to pan the board.' : 'Unanchored');
     },
+    /** The L key: the menu's pair as one press, on the menu's rule - Anchor
+     *  until every lockable member is anchored, then Unanchor. */
+    toggleAnchor: () => {
+      const can = lockable();
+      if (!can.length) return;
+      const on = can.some(i => !isLocked(i));
+      setItemsLocked([...selection], on);
+      toast(on ? 'Anchored. Drag it to pan the board.' : 'Unanchored');
+    },
 
     /**
      * Tags: what this card carries, what the board knows about, and the two

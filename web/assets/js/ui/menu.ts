@@ -735,14 +735,14 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // ── How it sits on the board ──
     { sep: true, hidden: mobile && !lockable && !many },
     // Mirrored pair — front/back.
-    { label: 'Bring to front', icon: 'i-front', hidden: !stackable, action: () => cmds!.raise() },
-    { label: 'Send to back', icon: 'i-back', hidden: !stackable, action: () => cmds!.lower() },
+    { label: 'Bring to front', icon: 'i-front', accel: ']', hidden: !stackable, action: () => cmds!.raise() },
+    { label: 'Send to back', icon: 'i-back', accel: '[', hidden: !stackable, action: () => cmds!.lower() },
     // Mirrored pair — Anchor until all locked, then Unanchor. Two rows (not
     // conditional icon) so tests/icons.test.js can grep for every icon literal.
     // "Anchor" not "Lock" — only geometry is fixed; stored key stays isLocked().
-    { label: many ? 'Anchor these' : 'Anchor', icon: 'i-anchor',
+    { label: many ? 'Anchor these' : 'Anchor', icon: 'i-anchor', accel: 'L',
       hidden: !lockable || allLocked, action: () => cmds!.lockSelection(true) },
-    { label: many ? 'Unanchor these' : 'Unanchor', icon: 'i-anchor-off',
+    { label: many ? 'Unanchor these' : 'Unanchor', icon: 'i-anchor-off', accel: 'L',
       hidden: !lockable || !allLocked, action: () => cmds!.lockSelection(false) },
     // Works on groups. Not on Feed — tile sizes are the packer's.
     { label: many ? `Reset ${count} sizes` : 'Reset size', icon: 'i-reset-size',
@@ -764,12 +764,12 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
       sub: alignDistributeEntries() },
     // Group only. Also reachable via rubber-band prompt — this covers shift-click
     // selections where there is no band.
-    { label: `Fence these ${count}`, icon: 'i-fence', hidden: !many,
+    { label: `Fence these ${count}`, icon: 'i-fence', accel: 'Ctrl G', hidden: !many,
       action: () => cmds!.fenceSelection() },
     // ── The board, from here ──
     { sep: true, hidden: mobile },
     // Feed has no "here" — the packer decides placement.
-    { label: 'Add a note here', icon: 'i-pen', hidden: mobile,
+    { label: 'Add a note here', icon: 'i-pen', accel: 'N', hidden: mobile,
       action: () => cmds!.addNoteAt(at) },
     // Not on Feed — there the tile menu is the only menu, and a board action
     // on it reads as something done to the tile.

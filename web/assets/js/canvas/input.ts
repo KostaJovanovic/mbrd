@@ -1189,6 +1189,14 @@ type InputCommands = {
   /** Shift+F and 1: frame the selection, and 100% where the view is. */
   zoomToSelection?(): void,
   zoomActual?(): void,
+  // The single keys: N, J, L, ] and [, and Ctrl+G. Each is the command its
+  // menu row or toolbar button already runs.
+  addNoteAt?(at: Point | null): void,
+  connect?(): void,
+  toggleAnchor?(): void,
+  raise?(): void,
+  lower?(): void,
+  fenceSelection?(): void,
   // The tour's two keys, in the shape the three above use: the command answers
   // whether it took the press. See the Escape and arrow cases below.
   tourStop?(): boolean,
@@ -3209,6 +3217,10 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
   const overlayOwnsKeyboard = () =>
     !!document.querySelector('dialog[open]') || !!document.getElementById('ctx-menu');
 
+  /** A tour, or the editor that builds one: the board is being shown, and the
+   *  keys that would change it stand down. The arrows and Escape answer both. */
+  const onlyLooking = () => !!(cmds.inTour?.() || cmds.tourEditing?.());
+
   addEventListener('keydown', e => {
     // Before every early return: the wheel asks about the key wherever the focus is.
     if (e.key === 'Control') ctrlDown = true;
@@ -3290,6 +3302,14 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       return;
     }
     if (mod && e.key.toLowerCase() === 'o') { e.preventDefault(); cmds.open(); return; }
+    // Ctrl+G: group, in every editor that has groups - a fence round the
+    // selection, which is this board's word for one. The browser's own Ctrl+G
+    // (find next) has nothing to find on a board.
+    if (mod && e.key.toLowerCase() === 'g' && !onlyLooking()) {
+      e.preventDefault();
+      if (selection.size) cmds.fenceSelection?.();
+      return;
+    }
     if (mod) return;
 
     switch (e.key) {
@@ -3323,6 +3343,20 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         cmds.shortcuts?.();
         e.preventDefault();
       } break;
+      // The tools and rows that had no key. Each says so on its menu row and in
+      // the legend; none while a tour shows the board or its editor picks.
+      // Canvas only, as their menu rows are: the Feed has no "here" to write a
+      // note at, no anchor to hold and no stack to reorder.
+      case 'n': case 'N': if (!onlyLooking() && !vp.isMobile) {
+        // At the pointer, where "here" is, as the menu's Add a note here does.
+        const at = hover ? vp.toWorld(hover.x, hover.y) : vp.toWorld(vp.left + vp.cx, vp.top + vp.cy);
+        cmds.addNoteAt?.(at);
+        e.preventDefault();
+      } break;
+      case 'j': case 'J': if (!onlyLooking()) { cmds.connect?.(); e.preventDefault(); } break;
+      case 'l': case 'L': if (!onlyLooking() && !vp.isMobile && selection.size) { cmds.toggleAnchor?.(); e.preventDefault(); } break;
+      case ']': if (!onlyLooking() && !vp.isMobile && selection.size) { cmds.raise?.(); e.preventDefault(); } break;
+      case '[': if (!onlyLooking() && !vp.isMobile && selection.size) { cmds.lower?.(); e.preventDefault(); } break;
       case '0': cmds.recenter(); break;
       case '1': cmds.zoomActual?.(); break;
       // Shift+F frames what is selected; F, and Shift+F with nothing selected,
