@@ -126,6 +126,8 @@ export interface MenuCommands {
   saveItemFile: (id: string) => void;
   canSendItemFile: (id: string) => boolean;
   sendItemFile: (id: string) => void;
+  canReplaceItemFile: (id: string) => boolean;
+  replaceItemFile: (id: string) => void;
   // Link cards: the address is the whole point, so its Properties row (edit the
   // name, edit or copy the address) sits at the top of the menu. linkURLOf
   // returns the address, or null for a non-link.
@@ -694,6 +696,9 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
       action: () => cmds!.saveItemFile(id) },
     { label: 'Send the file', icon: 'i-share', hidden: many || !cmds!.canSendItemFile(id),
       action: () => cmds!.sendItemFile(id) },
+    // The card stays - its place, width, tags and lines - and holds another file.
+    { label: 'Replace file…', icon: 'i-swap', hidden: many || !cmds!.canReplaceItemFile(id),
+      action: () => cmds!.replaceItemFile(id) },
     // Copy/Paste instead of Duplicate — paste lands where the cursor is, on any
     // board. Ctrl+D still duplicates. i-duplicate icon on Copy deliberately.
     // Hidden when nothing picked may be copied - the cleaned board's card.

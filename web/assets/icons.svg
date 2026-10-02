@@ -528,6 +528,11 @@
   <rect x="3" y="6.8" width="10" height="2.4" rx="1"/>
   <rect x="3" y="11.2" width="10" height="2.4" rx="1"/>
 </symbol>
+<!-- Replace file: two arrows passing, one in and one out. -->
+<symbol id="i-swap" viewBox="0 0 16 16">
+  <path d="M10.6 1.6 13.8 4.6 10.6 7.6V5.4H3V3.8h7.6z"/>
+  <path d="M5.4 8.4 2.2 11.4 5.4 14.4v-2.2H13v-1.6H5.4z"/>
+</symbol>
 <!-- Same width / Same height: two bars of one length, against a guide. -->
 <symbol id="i-same-width" viewBox="0 0 16 16">
   <rect x="3" y="3" width="10" height="3.6" rx="1"/>

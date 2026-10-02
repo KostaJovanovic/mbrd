@@ -18,7 +18,7 @@ import { ask } from '../ui/dialog.ts';
 import { defaultUpAxis, meshKind, upAxisIsGuessed } from '../mesh.ts';
 import { stickerTint } from '../stickers/catalogue.ts';
 import { addFile, derivedFile, getAsset } from '../storage/assets.ts';
-import { displayFor, pickCover, thumbFor } from '../import/drop.ts';
+import { displayFor, pickCover, pickReplacement, thumbFor } from '../import/drop.ts';
 import { demosaic, isRaw } from '../optimize/demosaic.ts';
 import { isTurning, rotateModel } from '../canvas/model.ts';
 // The card's own <video>, and the one thing in the app that reads a frame off
@@ -511,6 +511,13 @@ export function itemMetaCommands() {
      * unzipping it, which on a phone cannot be done at all.
      */
     canSaveItemFile: (id: string) => !!ownFile(id),
+    // Any card that holds a file, whether or not its bytes are here: a card
+    // whose file went missing is the one most in need of another.
+    canReplaceItemFile: (id: string) => {
+      const it = byId(id);
+      return !!it?.asset?.hash && it.type !== 'folder';
+    },
+    replaceItemFile: (id: string) => pickReplacement(id),
     canSendItemFile: (id: string) => {
       const own = ownFile(id);
       return !!own && canSendFile(asFile(own));

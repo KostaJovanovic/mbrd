@@ -8,7 +8,7 @@ import type { ToastAction } from '../notify.ts';
 import { cue } from '../cuelume/engine.ts';
 import {
   board, bus, addItems, replaceItem, select, setItemCover, NOTE_MAX, baseStep, startSettling,
-  timelinePlaying, retypeItem,
+  timelinePlaying, retypeItem, byId,
 } from '../state.ts';
 import { cleanPath } from './archive.ts';
 import { addFile, derivedFile } from '../storage/assets.ts';
@@ -304,7 +304,7 @@ export function initDrop(vp: DropViewport) {
   input.addEventListener('change', async () => {
     const mode = input.dataset.mode;
     // Not ours — storage.ts uses the same input for .mbrd opens.
-    if (mode !== 'content' && mode !== 'cover') return;
+    if (mode !== 'content' && mode !== 'cover' && mode !== 'replace') return;
     const files = [...(input.files || [])];
     input.value = '';
     delete input.dataset.mode;
@@ -316,6 +316,12 @@ export function initDrop(vp: DropViewport) {
       coverFor = null;
       // coverFor is set by pickCover() at the same moment as mode.
       if (id && files[0]) await applyCover(id, files[0]);
+      return;
+    }
+    if (mode === 'replace') {
+      const id = replaceFor;
+      replaceFor = null;
+      if (id && files[0]) await replaceItemFile(id, files[0]);
       return;
     }
     if (files.length) await importFiles(files, vp.toWorld(vp.left + vp.cx, vp.top + vp.cy));
@@ -395,7 +401,60 @@ export function pickFiles() {
   // Also clear coverFor: a cancelled cover picker left it armed, causing the
   // next Add files to route its first file as a cover.
   coverFor = null;
+  replaceFor = null;
   input.click();
+}
+
+/** Item awaiting its replacement file. Cleared on read, and by the other pickers. */
+let replaceFor: string | null = null;
+
+/** Choose the file a card should hold instead of its own. See replaceItemFile(). */
+export function pickReplacement(id: string) {
+  const input = fileInput();
+  input.accept = '';
+  input.multiple = false;
+  input.dataset.mode = 'replace';
+  coverFor = null;
+  replaceFor = id;
+  input.click();
+}
+
+/** What a card keeps through a replace: its own say, not the file's. */
+const KEPT_META = ['tags', 'locked', 'fit'] as const;
+
+/**
+ * Swap the file a card holds for another, keeping the card: its place, its
+ * width, its tags, its anchor and its fit, and every line, tour stop and
+ * playlist slot that names it (retypeItem() carries those). The height
+ * follows the new file's shape. One undo step.
+ *
+ * retypeItem() builds the card from the new draft, so what is kept is merged
+ * in here on purpose, key by key - a card's rotation or crop belonged to the
+ * old picture and would be wrong on the new one.
+ */
+export async function replaceItemFile(id: string, file: File) {
+  if (!byId(id)) return;
+  // The header first, as applyCover() asks it: a small file that declares
+  // 65535 x 65535 is a question before it is a decode.
+  const px = await pixelCrossing(file).catch(() => null);
+  if (px && !(await allow(fileKey(file), `${file.name} - ${consentMb(file.size)}`, [px], 'Use it'))) return;
+  let draft: Draft;
+  try {
+    draft = await prepareFile(file);
+  } catch (err) {
+    console.error('[mbrd] replace failed for', file.name, err);
+    toast(`Could not read ${file.name}`, 'error');
+    return;
+  }
+  // The card may have gone while the file was read.
+  const card = byId(id);
+  if (!card) return;
+  const { x: _x, y: _y, ...rest } = draft;
+  const meta: ItemMeta = { ...rest.meta };
+  for (const key of KEPT_META) if (key in card.meta) meta[key] = structuredClone(card.meta[key]);
+  const w = card.w;
+  const h = rest.w > 0 && rest.h > 0 ? Math.round(w * rest.h / rest.w) : card.h;
+  if (retypeItem(id, { ...rest, w, h, rot: 0, meta }, 'Replace file')) toast(`Replaced with ${file.name}`);
 }
 
 /** Item awaiting a cover picture. Cleared on read and in pickFiles() (cancelled pickers fire no change). */
