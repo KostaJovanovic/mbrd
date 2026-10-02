@@ -75,6 +75,40 @@
 #viewer-close:focus-visible { background: var(--paper-2); color: var(--accent-deep); }
 #viewer-close svg { width: var(--icon-glyph); height: var(--icon-glyph); }
 
+/* The previous and next item (stepping, ui/viewer.ts). Quiet until the pointer
+   comes near: at the two side edges, halfway down, over whatever is shown. */
+.viewer-step {
+  position: absolute;
+  top: 50%;
+  translate: 0 -50%;
+  display: grid;
+  place-items: center;
+  width: var(--icon-button); height: var(--icon-button);
+  border: var(--hairline) solid var(--rule-2);
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklab, var(--paper-card) 82%, transparent);
+  color: var(--ink-2);
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.viewer-step[data-step="-1"] { left: 10px; }
+.viewer-step[data-step="1"] { right: 10px; }
+.viewer-step[hidden],
+#viewer[data-edit] .viewer-step { display: none; }
+.viewer-step:hover,
+.viewer-step:focus-visible { opacity: 1; background: var(--paper-2); color: var(--accent-deep); }
+.viewer-step svg { width: var(--icon-glyph); height: var(--icon-glyph); }
+#viewer[data-media] .viewer-step {
+  background: rgb(14 13 12 / 0.55);
+  border-color: rgb(255 255 255 / 0.32);
+  color: rgb(255 255 255 / 0.92);
+}
+/* A phone swipes; the buttons would only cover the picture. */
+@media (pointer: coarse) {
+  .viewer-step { display: none; }
+}
+
 /* Grid centres a picture without stretching it; media caps at 100% and keeps
    aspect. Text overrides the centring (starts top-left). */
 #viewer-body {

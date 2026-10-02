@@ -5,7 +5,8 @@
 
 import { toast } from '../notify.ts';
 import {
-  addTourStop, board, boardTags, byId, cleanTag, freezeClip, isContent, isLocked, isRider,
+  addTourStop, board, boardTags, byId, cleanTag, freezeClip, isContent, isFiltered, isLocked, isRider,
+  rolledAway, rolledFences,
   itemTags, selection, setItemBare, setItemCover, setItemDemosaiced, setItemFaded, setItemFit,
   setItemUpAxis,
   setItemsLocked, setItemsTagged, setNoteTint, setStickerTint, unstickItems, TAG_MAX, TAGS_PER_ITEM,
@@ -73,6 +74,9 @@ const lockable = () =>
  */
 const taggable = () => board.items.filter(i => selection.has(i.id) && isContent(i));
 
+/** How near two cards' tops must be, in world units, to read as one row. */
+const READING_ROW = 160;
+
 export function itemMetaCommands() {
   return {
     /**
@@ -88,6 +92,22 @@ export function itemMetaCommands() {
       if (canView(id)) openViewer(id, { thumb: nodeFor(id)?.getBoundingClientRect() ?? null });
     },
     canViewItem: (id: string) => canView(id),
+    /**
+     * The order the viewer steps through: reading order, rows from the top
+     * and left to right in each, over what is on show - not a card the tag
+     * filter has faded or a rolled fence has folded away. The same sort serves
+     * the Feed, whose column is laid out in exactly that order. The viewer
+     * skips what it cannot show.
+     */
+    viewOrder: () => {
+      const rolled = rolledFences();
+      const top = (i: { y: number, h: number }) => Math.round((i.y + i.h / 2) / READING_ROW);
+      return board.items
+        .filter(i => isContent(i) && !isFiltered(i) && !rolledAway(i, rolled))
+        // World y points up, so the higher row is the larger number.
+        .sort((a, b) => top(b) - top(a) || a.x - b.x)
+        .map(i => i.id);
+    },
     /** A text document in the editor. Open and a double-click only read it; writing is asked for. */
     editDocument: (id: string) => { if (canEdit(id)) openViewer(id, { edit: true }); },
     canEditDocument: (id: string) => canEdit(id),

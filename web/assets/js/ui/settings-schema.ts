@@ -270,7 +270,8 @@ const KEYS: readonly KeyRow[] = [
   [['ctrl', '+', 'scroll'], 'pan up and down'],
   [['shift', '+', 'click'], 'add to the selection'],
   // Not a zoom any more - see the dblclick listener in canvas/input.ts.
-  [['dbl-click'], 'open or edit an item'],
+  [['dbl-click', 'enter'], 'open or edit an item'],
+  [['←', '→'], 'previous, next, in the viewer'],
   [['dbl-click'], 'label a line'],
   // While Join is out: the pair joins and the tool stays armed for the next.
   [['shift', '+', 'click'], 'join, and keep joining'],

@@ -3362,6 +3362,18 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       case 'l': case 'L': if (!onlyLooking() && !vp.isMobile && selection.size) { cmds.toggleAnchor?.(); e.preventDefault(); } break;
       case ']': if (!onlyLooking() && !vp.isMobile && selection.size) { cmds.raise?.(); e.preventDefault(); } break;
       case '[': if (!onlyLooking() && !vp.isMobile && selection.size) { cmds.lower?.(); e.preventDefault(); } break;
+      // Enter opens a lone selected card the way a double-click does - the
+      // keyboard's way to the viewer, the note editor and the title's rename.
+      // A focused button took its own Enter above (nativeKeyTarget).
+      case 'Enter': if (selection.size === 1 && !onlyLooking()) {
+        const only = [...selection][0];
+        const type = byId(only)?.type;
+        if (type === 'note') cmds.editNote(only);
+        else if (type === 'title') cmds.editTitleText?.();
+        else if (type === 'font') cmds.editFontText?.(only);
+        else cmds.openViewer?.(only);
+        e.preventDefault();
+      } break;
       // The Menu key and Shift+F10, the keyboard's right-click. Without these
       // every card action was a mouse action: Find could select a card and
       // nothing could then reach its menu, though the menu itself is walked

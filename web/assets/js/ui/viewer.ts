@@ -168,6 +168,8 @@ let shownId: string | null = null;
 /** The one camera command the right-click needs. Injected: commands.ts imports this module. */
 export interface ViewerCommands {
   zoomToSelection: () => void;
+  /** The ids the arrows step through, in order - see step(). */
+  viewOrder: () => string[];
   canSaveItemFile: (id: string) => boolean;
   saveItemFile: (id: string) => void;
   canSendItemFile: (id: string) => boolean;
@@ -227,12 +229,109 @@ export function initViewer(commands?: ViewerCommands) {
     if (editing?.editor.closeFind()) { e.preventDefault(); return; }
     if (editing) { e.preventDefault(); closeViewer(); }
   });
+  wireSteps(dlg);
   // Counted before the close below, so a save the close starts knows the board is gone.
   bus.on('board:load', () => { boardGen++; });
   // A board swap takes the viewing with it, as it takes the sticker window: the
   // item it shows, and the blob URLs behind it, belonged to the board that left.
   // At once - no paper drops away over a board that has already changed.
   bus.on('board:load', () => closeViewer(true));
+}
+
+// ---------------------------------------------------------------------------
+// Stepping: the previous and next thing on the board, without closing
+// ---------------------------------------------------------------------------
+
+/** The two edge buttons, built by wireSteps(). */
+let stepBtns: HTMLButtonElement[] = [];
+
+/** How far a finger has to travel sideways, in screen pixels, to be a swipe. */
+const SWIPE_MIN = 60;
+
+/**
+ * Left and Right, two quiet buttons at the edges, and a sideways swipe on a
+ * picture that is not zoomed: the previous and the next viewable item, in the
+ * order cmds.viewOrder() gives. Looking through forty photographs was close,
+ * find, double-click, forty times.
+ *
+ * Never while a document is being written: there the arrows move the caret,
+ * and a step would tear down the editing under it. Nor from inside a field or a
+ * clip's own controls, where the arrows already mean something.
+ */
+function wireSteps(d: HTMLDialogElement) {
+  stepBtns = [-1, 1].map(dir => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'viewer-step';
+    b.dataset.step = String(dir);
+    const label = dir < 0 ? 'Previous' : 'Next';
+    b.setAttribute('aria-label', label);
+    b.title = `${label}  ${dir < 0 ? '←' : '→'}`;
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('class', 'ico');
+    svg.setAttribute('aria-hidden', 'true');
+    const use = document.createElementNS(NS, 'use');
+    use.setAttribute('href', `assets/icons.svg#${dir < 0 ? 'i-chevron-left' : 'i-chevron-right'}`);
+    svg.append(use);
+    b.append(svg);
+    b.addEventListener('click', () => step(dir));
+    d.append(b);
+    return b;
+  });
+  d.addEventListener('keydown', e => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    if (editing || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
+    const t = e.target;
+    if (t instanceof HTMLElement && (t.isContentEditable || t.closest('input, textarea, select, video, audio'))) return;
+    if (step(e.key === 'ArrowLeft' ? -1 : 1)) e.preventDefault();
+  });
+  let swipe: { id: number, x: number, y: number } | null = null;
+  d.addEventListener('pointerdown', e => {
+    swipe = e.pointerType === 'touch' && e.isPrimary ? { id: e.pointerId, x: e.clientX, y: e.clientY } : null;
+  });
+  d.addEventListener('pointerup', e => {
+    const s = swipe;
+    swipe = null;
+    if (!s || s.id !== e.pointerId || editing) return;
+    // A zoomed picture's drag is its pan (attachZoomPan), never a step.
+    if (bodyEl?.querySelector('.viewer-media.is-zoomed')) return;
+    const dx = e.clientX - s.x, dy = e.clientY - s.y;
+    if (Math.abs(dx) < SWIPE_MIN || Math.abs(dx) < 2 * Math.abs(dy)) return;
+    step(dx > 0 ? -1 : 1);
+  });
+}
+
+/** The nearest viewable item from the one on show, going `dir`, or null. */
+function neighbour(dir: number): string | null {
+  if (!shownId || !cmds) return null;
+  const order = cmds.viewOrder();
+  const at = order.indexOf(shownId);
+  if (at < 0) return null;
+  for (let i = at + dir; i >= 0 && i < order.length; i += dir) {
+    if (canView(order[i])) return order[i];
+  }
+  return null;
+}
+
+/**
+ * Show the next item in the same viewing. The one on show is put down
+ * properly first - teardown() is what stops a clip's decoder and lets a PDF go -
+ * and openViewer() then fills the dialog it finds open. Answers whether it
+ * stepped, so a key at either end falls through.
+ */
+function step(dir: number): boolean {
+  if (editing || closing) return false;
+  const next = neighbour(dir);
+  if (!next) return false;
+  teardown();
+  openViewer(next);
+  return true;
+}
+
+/** Each edge button only where there is somewhere to go. */
+function paintSteps() {
+  for (const b of stepBtns) b.hidden = !neighbour(Number(b.dataset.step));
 }
 
 /**
@@ -299,7 +398,9 @@ export function openViewer(id: string, open: OpenOptions = {}) {
   // over its controls should press them, not zoom.
   const pic = bodyEl!.querySelector<HTMLImageElement>('img.viewer-media');
   if (pic) detachZoom = attachZoomPan(pic, bodyEl!);
-  dlg.showModal();
+  // Open already when this is a step from the last item - see step().
+  if (!dlg.open) dlg.showModal();
+  paintSteps();
   // A sticky grows into the sheet, and a document opened to edit rises into
   // it; the sheet exists only once the editor has mounted, so till then the
   // viewing waits unseen, and editDocument() calls arrive().
