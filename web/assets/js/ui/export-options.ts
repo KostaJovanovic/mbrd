@@ -1,14 +1,14 @@
 // The export box: asked by Save image and Save PDF before either draws. How
 // much detail (dots per inch of board), how hard the JPEG squeezes, how much
-// clear board around the edge, and four marks that can be left out, with the
-// export drawn small beside them. Held for the session only - every load
+// clear board around the edge, whether only the selection, and the marks that
+// can be left out, with the export drawn small beside them. Held for the session only - every load
 // starts again from EXPORT_DEFAULTS.
 //
 // Its own <dialog> (#export-opts in index.html), for the reason link-props.ts
 // has one: ask() holds one field. Reaches document only inside
 // askExportOptions(), so nothing here runs at import.
 
-import { board } from '../state.ts';
+import { board, byId, isFence, selection, travelling } from '../state.ts';
 import { readToken } from '../util.ts';
 import { formatSize, MM_PER_INCH } from '../measure.ts';
 import { EXPORT_DEFAULTS, boardPreview, boardShadows, boardTilts, exportSize } from './snapshot.ts';
@@ -46,6 +46,10 @@ const kept: Record<ExportKind, ExportOpts> = {
   image: { ...EXPORT_DEFAULTS },
   pdf: { ...EXPORT_DEFAULTS },
 };
+
+/** Whether the last Save asked for only the selection, per button. Off to start:
+ *  a selection is often left standing, and the whole board is the usual ask. */
+const wantOnly: Record<ExportKind, boolean> = { image: false, pdf: false };
 
 // One at a time: a second call while the box is up is ignored, not stacked.
 let showing = false;
@@ -92,12 +96,25 @@ export async function askExportOptions(kind: ExportKind): Promise<ExportOpts | n
   const grain = input('xo-grain');
   const tilt = input('xo-tilt');
   const shadows = input('xo-shadows');
+  const only = input('xo-only');
+  const onlyRow = document.getElementById('xo-only-row');
+  const onlyLabel = document.getElementById('xo-only-label');
   if (!title || !size || !qualityOut || !include || !mount || !caption || !go || !cancel
-      || !ppi || !quality || !margin || !web || !sheet || !grid || !grain || !tilt || !shadows) return null;
+      || !ppi || !quality || !margin || !web || !sheet || !grid || !grain || !tilt || !shadows
+      || !only || !onlyRow || !onlyLabel) return null;
   const boxes: Record<Mark, HTMLInputElement> = { web, sheet, grid, grain, tilt, shadows };
 
   if (showing) return null;
   showing = true;
+
+  // What "only the selection" would draw: what is selected and what travels
+  // with it, so a selected fence comes out with what it holds, framed on it.
+  // Asked fresh each time the box opens - the selection is not the session's.
+  const picked = travelling(selection);
+  onlyRow.hidden = !picked.length;
+  onlyLabel.textContent = selection.size === 1 && isFence(byId([...selection][0]))
+    ? 'Only this fence' : 'Only the selection';
+  only.checked = !!picked.length && wantOnly[kind];
 
   // A mark the board is not wearing has nothing to leave out, so its box is
   // absent rather than offered and ignored - the sidebar's rule for controls
@@ -136,6 +153,7 @@ export async function askExportOptions(kind: ExportKind): Promise<ExportOpts | n
     grain: boxes.grain.checked,
     tilt: boxes.tilt.checked,
     shadows: boxes.shadows.checked,
+    only: only.checked && picked.length ? picked : null,
   });
 
   // The preview is the export drawn small. Only what changes the picture
@@ -147,7 +165,7 @@ export async function askExportOptions(kind: ExportKind): Promise<ExportOpts | n
   let generation = 0;
   let timer = 0;
   const redraw = (o: ExportOpts) => {
-    const key = JSON.stringify([o.margin, o.web, o.sheet, o.grid, o.grain, o.tilt, o.shadows]);
+    const key = JSON.stringify([o.margin, o.web, o.sheet, o.grid, o.grain, o.tilt, o.shadows, !!o.only]);
     if (key === drawn) return;
     drawn = key;
     const mine = ++generation;
@@ -186,7 +204,9 @@ export async function askExportOptions(kind: ExportKind): Promise<ExportOpts | n
     const close = () => { cue('pick'); el.close(); };
     const save = () => {
       answer = read();
-      kept[kind] = { ...answer };
+      // The ids are this selection's; only the wish carries to the next box.
+      kept[kind] = { ...answer, only: null };
+      if (picked.length) wantOnly[kind] = only.checked;
       close();
     };
 

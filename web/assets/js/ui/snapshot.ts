@@ -76,6 +76,13 @@ export interface ExportOpts {
   tilt: boolean;
   /** Draw the cards' shadows, as the board's underlay does. */
   shadows: boolean;
+  /**
+   * Draw only these items, framed on them - a selection, or a fence and what
+   * is in it. Absent or null is the whole board. Filtered in planRender(), the
+   * one place every export and the box's own readout ask, so a later renderer
+   * inherits it rather than restating it.
+   */
+  only?: readonly string[] | null;
 }
 
 /**
@@ -1439,7 +1446,9 @@ type Plan = {
  * it. Null when the board is empty, which is what both callers do nothing on.
  */
 function planRender(detail: Detail, opts: ExportOpts, maxEdge: number): Plan | null {
-  const items = drawable();
+  const only = opts.only ? new Set(opts.only) : null;
+  // The lines follow: paintWeb() draws a connection only between two of these.
+  const items = only ? drawable().filter(i => only.has(i.id)) : drawable();
   const b = itemBounds(items);
   if (!b) return null;
 

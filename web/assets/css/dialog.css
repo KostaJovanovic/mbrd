@@ -245,6 +245,8 @@ textarea.lp-url {
   cursor: pointer;
 }
 .xo-check[hidden] { display: none; }
+/* "Only the selection" stands alone above the marks, with their gap under it. */
+#xo-only-row { margin: 0 0 14px; }
 .xo-check input { margin: 0; accent-color: var(--accent-text); }
 
 .ask-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
