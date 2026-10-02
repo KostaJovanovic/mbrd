@@ -3362,6 +3362,15 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       case 'l': case 'L': if (!onlyLooking() && !vp.isMobile && selection.size) { cmds.toggleAnchor?.(); e.preventDefault(); } break;
       case ']': if (!onlyLooking() && !vp.isMobile && selection.size) { cmds.raise?.(); e.preventDefault(); } break;
       case '[': if (!onlyLooking() && !vp.isMobile && selection.size) { cmds.lower?.(); e.preventDefault(); } break;
+      // The Menu key and Shift+F10, the keyboard's right-click. Without these
+      // every card action was a mouse action: Find could select a card and
+      // nothing could then reach its menu, though the menu itself is walked
+      // with the arrows once it is open.
+      case 'ContextMenu': case 'F10':
+        if (e.key === 'F10' && !e.shiftKey) break;
+        e.preventDefault();
+        menuFromKeys();
+        break;
       case '0': cmds.recenter(); break;
       case '1': cmds.zoomActual?.(); break;
       // Shift+F frames what is selected; F, and Shift+F with nothing selected,
@@ -3497,6 +3506,33 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     const cmd = commitGeom('Nudge', before, [...selection], { fold: run });
     lastNudge = cmd ? { cmd, key, at: now } : null;
   }
+
+  /**
+   * The menu a right-click would open, opened from the keyboard: the card's
+   * menu over the selected card, or the board's at the middle of the view.
+   *
+   * The key also makes the engine send a native `contextmenu` at whatever has
+   * focus, which is usually <body> rather than the board - so the listener on
+   * #viewport never sees it, and the browser's own menu would come up over
+   * ours. The one that follows is swallowed at the window, once.
+   */
+  function menuFromKeys() {
+    if (cmds.tourEditing?.()) return;
+    const id = selection.size ? [...selection][selection.size - 1] : null;
+    const box = id ? nodeFor(id)?.getBoundingClientRect() : null;
+    const x = box ? box.left + box.width / 2 : vp.left + vp.cx;
+    const y = box ? box.top + Math.min(box.height / 2, 48) : vp.top + vp.cy;
+    swallowNativeMenu = true;
+    setTimeout(() => { swallowNativeMenu = false; }, 500);
+    cmds.contextMenu(x, y, box ? id : null, box ? selection.size : 0);
+  }
+  let swallowNativeMenu = false;
+  addEventListener('contextmenu', e => {
+    if (!swallowNativeMenu) return;
+    swallowNativeMenu = false;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+  }, true);
 
   /** The nudge the next press may fold into - see nudge(). */
   let lastNudge: { cmd: NonNullable<ReturnType<typeof lastCommand>>, key: string, at: number } | null = null;

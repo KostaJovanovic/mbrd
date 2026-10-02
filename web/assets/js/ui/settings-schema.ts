@@ -287,6 +287,8 @@ const KEYS: readonly KeyRow[] = [
   [['ctrl', '+', 'G'], 'fence the selection'],
   [['esc'], 'cancel a drag, deselect, close'],
   [['?'], 'this list'],
+  // The Menu key is the other way to the same thing, on keyboards that have one.
+  [['shift', '+', 'F10'], 'the right-click menu'],
   [['space'], 'play, pause a track'],
   // The desktop's Find (desktop/menu.ts) opens the same search.
   [['ctrl', '+', 'K'], 'search the board', inBrowser],
