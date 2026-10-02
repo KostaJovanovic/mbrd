@@ -61,13 +61,32 @@ export function youTubeId(u: URL | null | undefined): string | null {
   let id = null;
   if (host === 'youtu.be') {
     id = u.pathname.slice(1);
-  } else if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'youtube-nocookie.com') {
+  } else if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'music.youtube.com'
+             || host === 'youtube-nocookie.com') {
+    // music.youtube.com's watch page names the same video id the main site
+    // does, and the ordinary player plays it.
     if (u.pathname === '/watch') id = u.searchParams.get('v');
     else if (u.pathname.startsWith('/shorts/')) id = u.pathname.slice(8);
     else if (u.pathname.startsWith('/embed/')) id = u.pathname.slice(7);
   }
   if (id) id = id.split('/')[0];
   return id && YT_ID.test(id) ? id : null;
+}
+
+/** A day: past it a start time is a typo, not a place in a video. */
+const YT_START_MAX = 86400;
+
+/**
+ * Where a YouTube link starts, in whole seconds, or 0. Read from `t` or
+ * `start`, in the shapes YouTube writes: `90`, `90s`, `1m30s`, `1h2m3s`.
+ * Anything else is 0, since this number is written into the player's src.
+ */
+export function youTubeStart(u: URL | null | undefined): number {
+  const raw = u?.searchParams.get('t') ?? u?.searchParams.get('start') ?? '';
+  const m = /^(?:(\d{1,2})h)?(?:(\d{1,4})m)?(?:(\d{1,6})s?)?$/.exec(raw);
+  if (!raw || !m) return 0;
+  const s = Number(m[1] || 0) * 3600 + Number(m[2] || 0) * 60 + Number(m[3] || 0);
+  return s > 0 && s < YT_START_MAX ? s : 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -110,10 +129,13 @@ export function spotifyRef(u: URL | null | undefined): { kind: SpotifyKind; id: 
 export function embedFor(u: URL | null | undefined): EmbedSpec | null {
   const yt = youTubeId(u);
   if (yt) {
+    // The link's timestamp, carried into the player - it was the point of
+    // sharing the link at 1:30 rather than the whole video.
+    const start = youTubeStart(u);
     return {
       provider: 'youtube',
-      src: `https://www.youtube-nocookie.com/embed/${yt}`,
-      page: `https://www.youtube.com/watch?v=${yt}`,
+      src: `https://www.youtube-nocookie.com/embed/${yt}${start ? `?start=${start}` : ''}`,
+      page: `https://www.youtube.com/watch?v=${yt}${start ? `&t=${start}s` : ''}`,
       title: 'YouTube video player',
       label: 'Watch here',
       hint: 'Loads the player from YouTube. Nothing is requested until you press this.',

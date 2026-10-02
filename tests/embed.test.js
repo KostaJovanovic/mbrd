@@ -29,10 +29,23 @@ test('the host is matched exactly, not by containment', () => {
   assert.equal(id('https://evil.test/youtube.com/watch?v=dQw4w9WgXcQ'), null);
 });
 
-test('www and m are the same site; nothing else is', () => {
+test('www, m and music are the same site; nothing else is', () => {
   assert.equal(id('https://youtube.com/watch?v=dQw4w9WgXcQ'), 'dQw4w9WgXcQ');
   assert.equal(id('https://m.youtube.com/watch?v=dQw4w9WgXcQ'), 'dQw4w9WgXcQ');
-  assert.equal(id('https://music.youtube.com/watch?v=dQw4w9WgXcQ'), null);
+  assert.equal(id('https://music.youtube.com/watch?v=dQw4w9WgXcQ'), 'dQw4w9WgXcQ');
+  assert.equal(id('https://gaming.youtube.com/watch?v=dQw4w9WgXcQ'), null);
+});
+
+test('a timestamp on the link becomes the start of the player, bounded', () => {
+  const src = s => embedFor(new URL(s)).src;
+  assert.equal(src('https://youtu.be/dQw4w9WgXcQ?t=90'), 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?start=90');
+  assert.equal(src('https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=1m30s'), 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?start=90');
+  assert.equal(src('https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=1h0m5s'), 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?start=3605');
+  assert.equal(src('https://www.youtube.com/watch?v=dQw4w9WgXcQ'), 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ');
+  // Only digits reach the src, and nothing past a day.
+  assert.equal(src('https://youtu.be/dQw4w9WgXcQ?t=90%26autoplay%3D1'), 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ');
+  assert.equal(src('https://youtu.be/dQw4w9WgXcQ?t=999999'), 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ');
+  assert.equal(embedFor(new URL('https://youtu.be/dQw4w9WgXcQ?t=42')).page, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42s');
 });
 
 test('a page on the site that is not a video stays a link', () => {
