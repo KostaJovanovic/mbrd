@@ -214,12 +214,12 @@ export { TAGS_PER_ITEM, TAG_MAX, MIN_CROP };
 
 import {
   areConnected, connectedTo, toggleConnection, addConnections, clearConnections,
-  updateConnection, connectionMeta,
+  removeConnectionsOf, updateConnection, connectionMeta,
 } from './connections.ts';
 
 export {
   areConnected, connectedTo, toggleConnection, addConnections, clearConnections,
-  updateConnection, connectionMeta,
+  removeConnectionsOf, updateConnection, connectionMeta,
 };
 
 import {

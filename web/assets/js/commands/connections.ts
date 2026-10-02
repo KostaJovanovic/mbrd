@@ -8,7 +8,7 @@ import { toast } from '../notify.ts';
 import {
   addConnections, board, clearConnections, connectionMeta, isFence, isFurniture,
   areConnected, isJoinEnd, isRider, selection, setSetting, toggleConnection,
-  updateConnection,
+  updateConnection, removeConnectionsOf,
 } from '../state.ts';
 import { threads } from '../web-graph.ts';
 import {
@@ -136,6 +136,15 @@ export function connectionCommands() {
     clearConnectionLabel: (a: string, b: string) => {
       updateConnection(a, b, { label: '' });
       showConnections();
+    },
+    /** How many lines touch the selection - what the card menu's row counts. */
+    selectionLineCount: () =>
+      board.connections.filter(([a, b]) => selection.has(a) || selection.has(b)).length,
+    // Every line touching the selection, one undoable step: untangling a card
+    // was one marked line and one Delete at a time.
+    removeSelectionConnections: () => {
+      const gone = removeConnectionsOf(selection);
+      if (gone) toast(`Removed ${gone} connection${gone === 1 ? '' : 's'}`);
     },
     // Remove every connection on the board. Undoable.
     clearConnections: () => {

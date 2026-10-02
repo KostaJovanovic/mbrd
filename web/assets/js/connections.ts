@@ -96,6 +96,22 @@ export function clearConnections(label = 'Remove all connections') {
   return before.length;
 }
 
+/**
+ * Remove every line touching any of these cards, in one undoable step - the
+ * way to untangle a card without marking each of its lines in turn. Returns
+ * how many went.
+ */
+export function removeConnectionsOf(ids: Iterable<string>, label = 'Remove connections') {
+  const set = new Set(ids);
+  const before = board.connections;
+  const after = before.filter(([a, b]) => !set.has(a) && !set.has(b));
+  const gone = before.length - after.length;
+  if (!gone) return 0;
+  commit(label, () => write(after), () => write(before), gone);
+  cue('fall');
+  return gone;
+}
+
 /** Two connection metas, or two plain lines, are the same styling. */
 const sameConnMeta = (a: ConnMeta | null | undefined, b: ConnMeta | null | undefined) => {
   if (!a || !b) return !a && !b;

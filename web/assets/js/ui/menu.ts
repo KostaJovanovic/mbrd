@@ -115,6 +115,8 @@ export interface MenuCommands {
   canViewItem: (id: string) => boolean;
   canEditDocument: (id: string) => boolean;
   editDocument: (id: string) => void;
+  selectionLineCount: () => number;
+  removeSelectionConnections: () => void;
   selectLike: (id: string) => void;
   canSelectFenceContents: (id: string) => boolean;
   selectFenceContents: (id: string) => void;
@@ -776,6 +778,9 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // selections where there is no band.
     { label: `Fence these ${count}`, icon: 'i-fence', accel: 'Ctrl G', hidden: !many,
       action: () => cmds!.fenceSelection() },
+    // Every line touching the selection, gone in one step. Canvas only, where
+    // lines are drawn; hidden when there are none to take.
+    ...lineRemoval(mobile),
     // ── The board, from here ──
     { sep: true, hidden: mobile },
     // Feed has no "here" — the packer decides placement.
@@ -809,6 +814,17 @@ function multiSelectEntry(always = false): MenuEntry[] {
     icon: 'i-select-all',
     check: on,
     action: () => cmds!.toggleMultiSelect(),
+  }];
+}
+
+/** "Remove its connections" / "Remove their N connections", or nothing. */
+function lineRemoval(mobile: boolean): MenuEntry[] {
+  const n = mobile ? 0 : cmds!.selectionLineCount();
+  if (!n) return [];
+  return [{
+    label: n === 1 ? 'Remove its connection' : `Remove ${n} connections`,
+    icon: 'i-connect',
+    action: () => cmds!.removeSelectionConnections(),
   }];
 }
 
