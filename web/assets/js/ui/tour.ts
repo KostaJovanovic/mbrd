@@ -102,7 +102,12 @@ export function startTour() {
     return false;
   }
   if (!stops().length) {
-    toast('Nothing is on the tour yet - add cards from their menu');
+    // Cards join a tour in the editor now, not from their menu. Imported late:
+    // tour-edit.ts imports this module, and the press is long after both load.
+    toast('Nothing is on the tour yet', '', {
+      label: 'Create tour',
+      run: () => { void import('./tour-edit.ts').then(m => m.toggleTourEdit()); },
+    });
     return false;
   }
   at = 0;

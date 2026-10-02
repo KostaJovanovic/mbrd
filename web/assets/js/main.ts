@@ -685,7 +685,9 @@ function initCloudSync() {
       // No token: expired, or never given in this tab. Stop and say so once.
       if (!provider?.signedIn()) {
         stop();
-        toast('Signed out of Drive — this board is not syncing. Board → Sync to connect again');
+        // The press is the gesture a sign-in window needs.
+        toast('Signed out of Drive — this board is not syncing', '',
+          { label: 'Connect', run: () => { void cmds.connectGdrive(); } });
         return;
       }
       const out = await pushBoardToCloud();
@@ -826,7 +828,10 @@ if (!isDesktop() && 'serviceWorker' in navigator) {
     if (!fresh) return;
     const say = () => {
       if (fresh.state === 'installed' && navigator.serviceWorker.controller) {
-        toast('New version ready — reload to update');
+        // The button, because an installed copy has no address bar to reload
+        // from. restart() stores the board before it reloads.
+        toast('New version ready — reload to update', '',
+          { label: 'Reload', run: () => { void cmds.restart(); } });
       }
     };
     // Both: a worker already in `waiting` won't fire another statechange.

@@ -221,9 +221,11 @@ export async function saveBoard() {
   // Receipt reflects actual durability — non-persistent (common on Safari)
   // tells the user to export for a durable copy.
   const durable = await ensurePersistence();
-  toast(durable
-    ? 'Saved in this browser'
-    : 'Saved in this browser — export a file to keep a durable copy');
+  if (durable) toast('Saved in this browser');
+  else {
+    toast('Saved in this browser — export a file to keep a durable copy', '',
+      { label: 'Export', run: () => { void exportBoard(); } });
+  }
   return true;
 }
 

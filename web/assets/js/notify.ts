@@ -16,7 +16,8 @@ export interface BusyOptions {
   onCancel?: (() => void) | null;
 }
 
-/** The one button a toast can carry: Undo on a removal. */
+/** The one button a toast can carry: Undo on a removal, or the next step a
+ *  message asks for (Export, Reload, Connect) so it is a press and not an errand. */
 export type ToastAction = { label: string, run: () => void };
 
 export interface Overlays {

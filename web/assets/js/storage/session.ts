@@ -297,7 +297,8 @@ async function writeSnapshot() {
     cacheOk = false;
     console.warn('[mbrd] autosave disabled:', err);
     lastFailure = 'This browser will not store the board (full, or blocked) - export it to a file';
-    toast(lastFailure, 'error');
+    const deps = d!;
+    toast(lastFailure, 'error', { label: 'Export', run: () => { void deps.exportBoard(); } });
     return false;
   }
 }
