@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import {
   board, addItems, undo, byId, duplicateItems, copyItems,
   cutItems, pasteItems, clipboardSize, clipboardHasOurs, clipboardBounds,
-  stuckTo, stuckFollowers, setBoardMode,
+  stuckTo, stuckFollowers, setBoardMode, addConnections, areConnected,
 } from '../web/assets/js/state.ts';
 import { hash } from './helpers.js';
 import { fresh, note, photo } from './state-fixtures.js';
@@ -176,5 +176,49 @@ test('a duplicated note stays stuck to the photo it was duplicated with', () => 
   const copiedNote = copies.find(i => i.type === 'note');
   assert.equal(stuckTo(byId(copiedNote.id))?.id, copiedPic.id, 'the copy must be stuck to its own photo');
   assert.deepEqual(stuckFollowers([copiedPic.id]), [copiedNote.id], 'and must travel with it');
+});
+
+test('duplicating a photo brings the note stuck to it, the way a drag would', () => {
+  const [pic] = addItems([photo({ x: 0, y: 0, w: 300, h: 300 })]);
+  const [n] = addItems([note({ x: 0, y: 0, w: 80, h: 80 })]);
+  const copies = duplicateItems([pic.id]);
+  assert.equal(copies.length, 2);
+  const copiedNote = copies.find(i => i.type === 'note');
+  assert.notEqual(copiedNote.id, n.id);
+  assert.equal(stuckTo(byId(copiedNote.id))?.id, copies.find(i => i.type === 'image').id);
+});
+
+test('a saved stuckTo is re-pointed at the copy, or dropped when its host stayed', () => {
+  const [pic] = addItems([photo({ x: 0, y: 0, w: 300, h: 300 })]);
+  const [n] = addItems([note({ x: 0, y: 0, w: 80, h: 80, meta: { text: 'n', stuckTo: 'p' } })]);
+  byId(n.id).meta.stuckTo = pic.id;
+  const copies = duplicateItems([pic.id]);
+  const copiedPic = copies.find(i => i.type === 'image');
+  assert.equal(copies.find(i => i.type === 'note').meta.stuckTo, copiedPic.id);
+  const [far] = addItems([note({ x: 2000, y: 0, w: 80, h: 80, meta: { text: 'f', stuckTo: pic.id } })]);
+  const [lone] = duplicateItems([far.id]);
+  assert.equal('stuckTo' in lone.meta, false, 'a note copied alone is stuck to nothing it names');
+});
+
+test('the lines between copied cards are copied, in the same undo step', () => {
+  const [a, b, c] = addItems([0, 1, 2].map(i => photo({ x: i * 400, y: 0 })));
+  addConnections([[a.id, b.id], [b.id, c.id]]);
+  const copies = duplicateItems([a.id, b.id]);
+  assert.equal(board.connections.length, 3, 'only the line between the two copied');
+  assert.ok(areConnected(copies[0].id, copies[1].id));
+  undo();
+  assert.equal(board.items.length, 3);
+  assert.equal(board.connections.length, 2, 'one undo takes the cards and their line');
+});
+
+test('copy and paste brings the lines too, fresh ids on every paste', () => {
+  const [a, b] = addItems([0, 1].map(i => photo({ x: i * 400, y: 0 })));
+  addConnections([[a.id, b.id]]);
+  copyItems([a.id, b.id]);
+  const one = pasteItems();
+  const two = pasteItems();
+  assert.ok(areConnected(one[0].id, one[1].id));
+  assert.ok(areConnected(two[0].id, two[1].id));
+  assert.equal(new Set([...one, ...two].map(i => i.id)).size, 4);
 });
 

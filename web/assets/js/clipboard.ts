@@ -8,7 +8,8 @@
 import { toast } from './notify.ts';
 import { itemBounds } from './geometry.ts';
 import { board } from './board-model.ts';
-import type { Item } from './board-model.ts';
+import type { Connection, Item } from './board-model.ts';
+import { uid } from './util.ts';
 
 /** A colour to the system clipboard, said in a toast when it lands. */
 export function copyHex(hex: string) {
@@ -50,6 +51,52 @@ export function cloneItem(i: ItemDraft, dx = 0, dy = 0): ItemDraft {
   };
 }
 
+/** The lines that run between two of these cards, and none that leave the set. */
+export function linksAmong(ids: readonly string[]): Connection[] {
+  const set = new Set(ids);
+  return board.connections.filter(c => set.has(c[0]) && set.has(c[1]));
+}
+
+/** A draft that already has the id it will be added under. */
+export type IdDraft = ItemDraft & { id: string };
+
+/**
+ * Copies of a group with fresh ids, and its lines re-pointed at them - what
+ * Duplicate and Paste add, so a photo comes with its notes and their joins.
+ * `from[i]` is the id `drafts[i]` was copied from.
+ *
+ * The two meta references that name another card are re-pointed too, or
+ * dropped when that card stayed behind: a copied note whose `stuckTo` still
+ * named the original photo reloads stuck to it, across the board from itself.
+ * planMerge() in merge.ts does the same to a board folded in.
+ */
+export function relink(
+  drafts: readonly ItemDraft[], from: readonly string[], links: readonly Connection[],
+  dx = 0, dy = 0,
+): { items: IdDraft[], links: Connection[] } {
+  const now = new Map(from.map(id => [id, uid()]));
+  const items = drafts.map((d, i) => {
+    const copy: IdDraft = { ...cloneItem(d, dx, dy), id: now.get(from[i]) ?? uid() };
+    for (const key of ['stuckTo', 'fence']) {
+      const ref = copy.meta[key];
+      if (typeof ref !== 'string') continue;
+      const to = now.get(ref);
+      if (to) copy.meta[key] = to;
+      else delete copy.meta[key];
+    }
+    return copy;
+  });
+  return {
+    items,
+    links: links.flatMap((c): Connection[] => {
+      const a = now.get(c[0]), b = now.get(c[1]);
+      if (!a || !b) return [];
+      const meta = c[2];
+      return [meta ? [a, b, structuredClone(meta)] : [a, b]];
+    }),
+  };
+}
+
 /**
  * What lets a copy outlive its board: the bytes the copied cards name, held
  * beside them.
@@ -77,11 +124,15 @@ export type ByteCarry = {
 let carry: ByteCarry | null = null;
 export function setClipboardCarry(c: ByteCarry | null) { carry = c; }
 
-/** Last copied items. `pastes` offsets each successive paste to fan them out;
- *  `held` is the carry's answer for them, opaque here. */
-type Clipboard = { items: ItemDraft[], text: string, pastes: number, held: unknown };
+/** Last copied items. `from` is the id each was copied from and `links` the
+ *  lines between them, in those ids; `pastes` offsets each successive paste to
+ *  fan them out; `held` is the carry's answer for them, opaque here. */
+type Clipboard = {
+  items: ItemDraft[], from: string[], links: Connection[],
+  text: string, pastes: number, held: unknown,
+};
 
-const clipboard: Clipboard = { items: [], text: '', pastes: 0, held: null };
+const clipboard: Clipboard = { items: [], from: [], links: [], text: '', pastes: 0, held: null };
 
 export const clipboardSize = () => clipboard.items.length;
 
@@ -94,6 +145,8 @@ export const clipboardBounds = () => itemBounds(clipboard.items);
 /** Empty it. */
 export function clearClipboard() {
   clipboard.items = [];
+  clipboard.from = [];
+  clipboard.links = [];
   clipboard.text = '';
   clipboard.pastes = 0;
   clipboard.held = null;
@@ -128,6 +181,9 @@ export function copyItems(ids: Iterable<string>) {
 export function takeItems(src: Item[]) {
   if (!src.length) return '';
   clipboard.items = src.map(i => cloneItem(i));
+  clipboard.from = src.map(i => i.id);
+  // Copied now, not at paste: a line removed after the copy was in the copy.
+  clipboard.links = structuredClone(linksAmong(clipboard.from));
   clipboard.pastes = 0;
   clipboard.text = summarise(src);
   clipboard.held = carry ? carry.hold(clipboard.items) : null;
@@ -152,10 +208,11 @@ const PASTE_STEP = { x: 28, y: -28 };
 /**
  * Items for a paste, offset from the original (or centred on `at` if the
  * original is off screen). Step accumulates so successive pastes fan out.
- * Returns copies — the caller commits them to the board.
+ * Returns copies with fresh ids and the lines between them — the caller
+ * commits both to the board, as one step.
  */
 export function pasteCopies(at: { x: number, y: number } | null = null) {
-  if (!clipboard.items.length) return [];
+  if (!clipboard.items.length) return { items: [], links: [] };
   const n = clipboard.pastes++;
   let dx, dy;
   if (at) {
@@ -170,5 +227,5 @@ export function pasteCopies(at: { x: number, y: number } | null = null) {
   }
   // Before the copies exist, so a renderer that draws them finds their bytes.
   if (carry && clipboard.held) carry.restore(clipboard.held);
-  return clipboard.items.map(i => cloneItem(i, dx, dy));
+  return relink(clipboard.items, clipboard.from, clipboard.links, dx, dy);
 }

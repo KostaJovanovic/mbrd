@@ -28,11 +28,19 @@ export {
 };
 
 import {
-  clipboardBounds, clipboardHasOurs, clipboardOnBoardLoad, clipboardSize, cloneItem,
-  copyItems, itemCount, itemsIn, pasteCopies, setClipboardCarry, takeItems,
+  clipboardBounds, clipboardHasOurs, clipboardOnBoardLoad, clipboardSize,
+  copyItems as copyExactly, itemCount, itemsIn, linksAmong, pasteCopies, relink,
+  setClipboardCarry, takeItems,
 } from './clipboard.ts';
 
-export { clipboardBounds, clipboardHasOurs, clipboardSize, copyItems, setClipboardCarry };
+export { clipboardBounds, clipboardHasOurs, clipboardSize, setClipboardCarry };
+
+/**
+ * Copy these and everything that travels with them - the notes stuck on, a
+ * fence's contents - with the lines between them. The same set a drag carries,
+ * so Ctrl+C on a photo takes its notes the way picking it up would.
+ */
+export const copyItems = (ids: Iterable<string>) => copyExactly(travelling(ids));
 
 /** Whether any of these may be copied, cut or duplicated - see copyable(). */
 export const canCopyItems = (ids: Iterable<string>) => itemsIn(ids).length > 0;
@@ -288,8 +296,13 @@ export function setAssetNameLookup(fn: AssetNameLookup | null | undefined) {
 export function addItems(
   items: Record<string, unknown>[],
   label = 'Add',
-  options: { avoidOverlap?: boolean } = {},
+  options: { avoidOverlap?: boolean, links?: readonly Connection[] } = {},
 ) {
+  // Lines between the arrivals (Duplicate, Paste), in the same step: undo takes
+  // the cards, and a second commit for their lines would be a step that undid
+  // nothing visible once they were gone.
+  const room = Math.max(0, MAX_CONNECTIONS - board.connections.length);
+  const links = (options.links ?? []).slice(0, room);
   // Assign ascending z — a batch all reading topZ() would land flat.
   // Explicit z is honoured (loadBoard, bin restore need exact positions).
   let z = topZ();
@@ -305,12 +318,20 @@ export function addItems(
     () => { const fresh = added.filter(a => !byId(a.id));
             board.items.push(...fresh);
             refenceArrivals(added);
-            bus.emit('items', { added: fresh.map(a => a.id), removed: [] }); },
+            bus.emit('items', { added: fresh.map(a => a.id), removed: [] });
+            if (links.length) {
+              board.connections = [...board.connections, ...links];
+              bus.emit('connections');
+            } },
     () => { const ids = new Set(added.map(a => a.id));
             board.items = board.items.filter(i => !ids.has(i.id));
             ids.forEach(id => selection.delete(id));
-            bus.emit('items', { added: [], removed: [...ids] }); bus.emit('selection'); },
-    added.length);
+            bus.emit('items', { added: [], removed: [...ids] }); bus.emit('selection');
+            if (links.length) {
+              board.connections = board.connections.filter(c => !ids.has(c[0]) && !ids.has(c[1]));
+              bus.emit('connections');
+            } },
+    added.length + links.length);
   return added;
 }
 
@@ -430,12 +451,17 @@ export function restoreTitleCard(at: { x: number, y: number } | null = null) {
             bus.emit('selection'); bus.emit('trash'); });
 }
 
-/** Copy items, offset a little so the copy is visibly on top of the original. */
+/**
+ * Copy items, offset a little so the copy is visibly on top of the original.
+ * What travels with them comes too, and the lines between them - see copyItems().
+ */
 export function duplicateItems(ids: Iterable<string>, offset = { x: 28, y: -28 }) {
-  const src = itemsIn(ids);
+  const src = itemsIn(travelling(ids));
   if (!src.length) return [];
-  const copies = src.map(i => cloneItem(i, offset.x, offset.y));
-  return addItems(copies, copies.length > 1 ? `Duplicate ${copies.length} items` : 'Duplicate');
+  const from = src.map(i => i.id);
+  const { items, links } = relink(src, from, linksAmong(from), offset.x, offset.y);
+  return addItems(items, items.length > 1 ? `Duplicate ${items.length} items` : 'Duplicate',
+    { links });
 }
 
 // ---------------------------------------------------------------------------
@@ -444,8 +470,10 @@ export function duplicateItems(ids: Iterable<string>, offset = { x: 28, y: -28 }
 
 /** Copy then delete. Cut items go to the bin (recoverable). */
 export function cutItems(ids: Iterable<string>) {
-  // takeItems() instead of copyItems() to avoid a double-toast.
-  const src = itemsIn(ids);
+  // takeItems() instead of copyItems() to avoid a double-toast. travelling()
+  // for the same set a copy takes: a paste that brought the notes back while
+  // the cut left them on the board would be the notes twice.
+  const src = itemsIn(travelling(ids));
   const text = takeItems(src);
   if (!text) return '';
   const doomed = src.map(i => i.id);
@@ -456,9 +484,10 @@ export function cutItems(ids: Iterable<string>) {
 
 /** Paste the internal clipboard. `at` optionally centres the group. */
 export function pasteItems(at: { x: number, y: number } | null = null) {
-  const copies = pasteCopies(at);
+  const { items: copies, links } = pasteCopies(at);
   if (!copies.length) return [];
-  const added = addItems(copies, copies.length > 1 ? `Paste ${copies.length} items` : 'Paste');
+  const added = addItems(copies, copies.length > 1 ? `Paste ${copies.length} items` : 'Paste',
+    { links });
   // Said even though the copies are visible: a paste fanned out from an
   // original off the edge of the screen can put every copy somewhere you are
   // not looking, and then a working paste and a dead key look the same.
