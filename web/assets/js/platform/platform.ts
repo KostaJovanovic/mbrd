@@ -89,8 +89,9 @@ export interface LifecyclePort {
   /** A shell only: files opened via argv, double-click, a second launch, or
    *  Android's "Open with" and "Share to". */
   onOpenFiles(fn: (files: OpenedFile[]) => void): void;
-  /** Android only: the Back button. `fn` closes the top layer and answers
-   *  whether it closed anything. The web and the desktop have no Back to send. */
+  /** The phone's Back button. `fn` closes the top layer and answers whether
+   *  it closed anything. The Android shell sends its own; a phone's browser or
+   *  installed PWA gets webBack(); the desktop has no Back to send. */
   onBack(fn: () => boolean): void;
 }
 
@@ -377,8 +378,47 @@ const webLifecycle: LifecyclePort = {
     });
   },
   onOpenFiles: () => {},
-  onBack: () => {},
+  onBack: webBack,
 };
+
+/**
+ * Back on a phone's browser, or the PWA installed from it, closes the menu or
+ * dialog on top before it leaves the app - the Android shell's rule, which
+ * before this left the page on the first press with a menu still open.
+ *
+ * Only where a Back button is the way out: a coarse pointer, or the installed
+ * app. A desktop browser's Back is a navigation and is left alone.
+ *
+ * One history entry stands guard over the page, and popping it is the Back.
+ * A Back that found nothing to close is passed on with history.back(), so it
+ * still leaves. Re-armed on the next press or key: an entry pushed with no
+ * user activation behind it is one Chrome's Back skips, so arming from inside
+ * the Back itself would arm nothing.
+ *
+ * Not CloseWatcher, though it is the platform's own "Back closes this": it
+ * answers the Escape key as well, and an Escape with nothing open would then
+ * be passed on to history.back() and leave the app.
+ */
+function webBack(fn: () => boolean) {
+  if (!hasWindow() || typeof history === 'undefined' || typeof matchMedia !== 'function') return;
+  if (!matchMedia('(pointer: coarse)').matches && !matchMedia('(display-mode: standalone)').matches) return;
+  let armed = false;
+  const onUse = () => {
+    if (armed) return;
+    armed = true;
+    history.pushState({ mbrdBack: true }, '');
+  };
+  addEventListener('pointerdown', onUse, true);
+  addEventListener('keydown', onUse, true);
+  // Popped off the guard entry: the state under it is not ours. Landing *on*
+  // it (Forward, or Back from a #fragment) is a navigation, not the Back.
+  // SAFETY: history.state is any; only the one flag pushed above is read off it.
+  addEventListener('popstate', e => {
+    if (!armed || (e.state as { mbrdBack?: boolean } | null)?.mbrdBack) return;
+    armed = false;
+    if (!fn()) history.back();
+  });
+}
 
 const webNative: NativePort = {
   canTranscode: () => false,

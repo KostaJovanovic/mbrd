@@ -859,7 +859,8 @@ platform.lifecycle.onOpenFiles(files => {
   })();
 });
 
-// Android's Back: close the top layer as Escape would, and answer whether
+// The phone's Back - the Android shell's, or a phone browser's through webBack()
+// in platform.ts: close the top layer as Escape would, and answer whether
 // anything closed. A menu is above everything, a modal dialog above the rest.
 // A synthetic key does not close a <dialog>, so its cancel event is sent here,
 // as the browser sends it for Escape. The other layers answer the Escape itself
