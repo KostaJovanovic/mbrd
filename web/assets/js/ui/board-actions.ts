@@ -13,7 +13,7 @@ import {
   snapshotGeom, applyGeom, commitGeom, baseStep,
   recheckBoardGeometry, placeMobileItems,
   isRider, stuckTo, stuckPlacement, isFence, isLocked, fenceOf, fenceBox,
-  declareOp,
+  declareOp, undoAction,
   type GeomPatch,
 } from '../state.ts';
 import { latticeBox, itemBounds, rotatedExtents, pictureBox } from '../geometry.ts';
@@ -779,8 +779,11 @@ export function rearrange(items: Item[], options: RearrangeOptions = {}) {
       name: options.name || board.arrangement,
     });
   }
-  commitGeom(options.label || (whole ? 'Rearrange' : `Rearrange ${items.length} items`),
+  const done = commitGeom(options.label || (whole ? 'Rearrange' : `Rearrange ${items.length} items`),
     beforeAll, [...free.map(g => g.id), ...closing], mobile ? { preservePresnap: true } : {});
+  // A receipt with an Undo, since a whole board laid out anew is the change
+  // most worth taking back at once - and the view is about to fly off it.
+  if (done) toast(`Rearranged ${free.length} item${free.length === 1 ? '' : 's'}`, '', undoAction());
   slideFrom(seen, travelMs());
   // A whole-board layout rebuilds around the origin, so the view has to follow
   // it there or the rearrangement happens off screen. Free is the exception:

@@ -1,9 +1,12 @@
 // Undo/redo as command pairs (do, undo), not snapshot diffs — the board holds
 // Blobs and dual-layout geometry that would make diffs enormous. Callers write
-// their own inverse. Lifted from state.ts; touches only bus + dirty flag.
+// their own inverse. Lifted from state.ts; touches only bus + dirty flag, and
+// toasts only from undoAction().
 
 import { bus, markDirty } from './board-store.ts';
 import { cue } from './cuelume/engine.ts';
+import { toast } from './notify.ts';
+import type { ToastAction } from './notify.ts';
 import {
   snapshot, recordStep, markerBack, markerForward, dropLastStep, resetTimeline,
   stepBack, stepForward, stepBackLabel, stepForwardLabel, isReplaying,
@@ -126,6 +129,24 @@ export function commitFolded(
 
 /** Opaque token for the current stack top. Compare before/after to detect whether a commit happened; takeBack() is its consumer. */
 export const lastCommand = () => top(undoStack) || null;
+
+/**
+ * An Undo button for the receipt of a change just committed - "Cut 12 items
+ * to the bin", "Joined 30 pairs" - taken right after the commit. It undoes
+ * only while that change is still the top of the stack: a toast pressed after
+ * something else was done would otherwise undo the something else.
+ */
+export function undoAction(): ToastAction | undefined {
+  const cmd = lastCommand();
+  if (!cmd) return undefined;
+  return {
+    label: 'Undo',
+    run: () => {
+      if (top(undoStack) === cmd) undo();
+      else toast('Something else has changed since. Undo by the bin steps back one at a time');
+    },
+  };
+}
 
 /**
  * Silently withdraw `cmd` if it is still the stack top. Unlike undo(), leaves

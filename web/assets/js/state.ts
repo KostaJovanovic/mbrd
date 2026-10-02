@@ -61,7 +61,7 @@ import {
 } from './board-store.ts';
 import {
   commit, commitFolded, undo, redo, historyState, historyDepth, historyWeight,
-  clearHistory, dropStacks, lastCommand, takeBack,
+  clearHistory, dropStacks, lastCommand, takeBack, undoAction,
 } from './history.ts';
 import type { Command } from './history.ts';
 import {
@@ -83,7 +83,7 @@ export {
 export { bus, selection, isDirty, markDirty, select, clearSelection, deselect };
 export { tagFilter, setTagFilter };
 export { isMultiSelect, setMultiSelect };
-export { commit, undo, redo, historyState, historyDepth, historyWeight, lastCommand, takeBack };
+export { commit, undo, redo, historyState, historyDepth, historyWeight, lastCommand, takeBack, undoAction };
 export type { Command };
 
 /**
@@ -478,7 +478,7 @@ export function cutItems(ids: Iterable<string>) {
   if (!text) return '';
   const doomed = src.map(i => i.id);
   removeItems(doomed, doomed.length > 1 ? `Cut ${doomed.length} items` : 'Cut');
-  toast(`Cut ${itemCount(doomed.length)} to the bin`);
+  toast(`Cut ${itemCount(doomed.length)} to the bin`, '', undoAction());
   return text;
 }
 

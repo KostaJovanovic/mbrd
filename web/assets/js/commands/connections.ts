@@ -8,7 +8,7 @@ import { toast } from '../notify.ts';
 import {
   addConnections, board, clearConnections, connectionMeta, isFence, isFurniture,
   areConnected, isJoinEnd, isRider, selection, setSetting, toggleConnection,
-  updateConnection, removeConnectionsOf,
+  updateConnection, removeConnectionsOf, undoAction,
 } from '../state.ts';
 import { threads } from '../web-graph.ts';
 import {
@@ -56,9 +56,8 @@ function joinAll(pool: Joinable[], label = 'Join cards'): number {
   const made: number = addConnections(
     threads(pts).map(([a, b]) => [pts[a].id, pts[b].id]),
     label);
-  toast(made
-    ? `Joined ${made} pair${made === 1 ? '' : 's'}`
-    : 'Those are already joined');
+  if (made) toast(`Joined ${made} pair${made === 1 ? '' : 's'}`, '', undoAction());
+  else toast('Those are already joined');
   return made;
 }
 
@@ -144,14 +143,13 @@ export function connectionCommands() {
     // was one marked line and one Delete at a time.
     removeSelectionConnections: () => {
       const gone = removeConnectionsOf(selection);
-      if (gone) toast(`Removed ${gone} connection${gone === 1 ? '' : 's'}`);
+      if (gone) toast(`Removed ${gone} connection${gone === 1 ? '' : 's'}`, '', undoAction());
     },
     // Remove every connection on the board. Undoable.
     clearConnections: () => {
       const gone = clearConnections();
-      toast(gone
-        ? `Removed ${gone} connection${gone === 1 ? '' : 's'}`
-        : 'There are no connections on this board');
+      if (gone) toast(`Removed ${gone} connection${gone === 1 ? '' : 's'}`, '', undoAction());
+      else toast('There are no connections on this board');
     },
     // Run the spanning-tree generator over the selection, or the whole board.
     connectSelection: () => {
