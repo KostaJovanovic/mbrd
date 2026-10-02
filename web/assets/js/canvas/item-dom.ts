@@ -491,6 +491,7 @@ export function buildItem(item: ItemLike, tilt: string, picked: boolean): HTMLDi
   // build in between may carry either and neither is wrong.
   const tint = noteTint(item.meta.tint);
   if (tint) el.dataset.tint = String(tint);
+  writeMissing(el, item);
   if (isFence(item)) writeFenceLook(el, item);
   if (picked) el.dataset.pick = '';
   el.style.setProperty('--item-tilt', tilt);
@@ -648,6 +649,25 @@ export function buildTitleControls(el: HTMLElement): void {
  * with every other card's tint; this is the rewrite rebuild() needs once the
  * note's menu can change it, the same reason writeFenceLook() exists below.
  */
+/**
+ * Whether a card names a file that is not here - restored from a store that
+ * lost it, say. Injected by main.ts, since the asset registry is storage's and
+ * canvas/ does not reach into it; unwired, nothing is missing.
+ */
+let fileMissing: (item: ItemLike) => boolean = () => false;
+export function setMissingCheck(fn: ((item: ItemLike) => boolean) | null) {
+  fileMissing = fn ?? (() => false);
+}
+
+/**
+ * Mark a card whose file is missing, so it reads as broken rather than blank -
+ * cards.css draws the mark. At build and at every rebuild, which is when a
+ * file arriving with the same hash (import/drop.ts) takes the mark away.
+ */
+export function writeMissing(el: HTMLElement, item: ItemLike): void {
+  el.toggleAttribute('data-missing', fileMissing(item));
+}
+
 export function writeNoteTint(el: HTMLElement, item: ItemLike): void {
   const tint = noteTint(item.meta.tint);
   if (tint) el.dataset.tint = String(tint);

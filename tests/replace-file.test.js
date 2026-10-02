@@ -1,11 +1,13 @@
 // replaceItemFile() (import/drop.ts): Replace file… keeps the card - its
 // place, width, tags, anchor and lines - and the card holds the new file.
-// One undo puts the old card back.
+// One undo puts the old card back. And a card whose file was lost is healed,
+// not doubled, when that file comes back by either door.
 
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { replaceItemFile } from '../web/assets/js/import/drop.ts';
+import { replaceItemFile, importFiles } from '../web/assets/js/import/drop.ts';
+import { addFile, forgetAssets, getAsset } from '../web/assets/js/storage/assets.ts';
 import {
   addItems, addConnections, areConnected, board, undo, setBoardMode,
 } from '../web/assets/js/state.ts';
@@ -39,4 +41,29 @@ test('the card keeps its place, width, tags, anchor and lines, and holds the new
   undo();
   assert.ok(board.items.some(i => i.id === card.id), 'one undo brings the old card back');
   assert.ok(areConnected(card.id, other.id));
+});
+
+/** A card naming a file the registry has lost, and that file. */
+async function lostCard(name) {
+  const file = new File([`the words of ${name}`], name, { type: 'text/plain' });
+  const hash = await addFile(file);
+  forgetAssets([hash]);
+  const [card] = addItems([{ type: 'document', x: 0, y: 0, w: 200, h: 260, name, asset: { hash, embedded: true }, meta: {} }]);
+  return { card, file, hash };
+}
+
+test('dropping a lost file back heals its card and makes no second one', async () => {
+  const { card, file, hash } = await lostCard('lost.txt');
+  assert.equal(getAsset(hash), undefined);
+  await importFiles([file], { x: 500, y: 0 });
+  assert.equal(board.items.length, 1, 'no second card');
+  assert.equal(board.items[0].id, card.id);
+  assert.ok(getAsset(hash), 'the bytes are back');
+});
+
+test('Replace file… with the very file it lost heals the card in place', async () => {
+  const { card, file, hash } = await lostCard('again.txt');
+  await replaceItemFile(card.id, file);
+  assert.equal(board.items[0].id, card.id, 'healed, not retyped');
+  assert.ok(getAsset(hash));
 });

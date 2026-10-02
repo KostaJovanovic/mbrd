@@ -119,6 +119,28 @@
    The padlock (item-chrome.css) says why instead. */
 .item[data-locked].is-selected::before { border-width: 0; }
 
+/* A card whose file is not here (writeMissing() in canvas/item-dom.ts). It
+   drew blank, which reads as an empty card rather than a broken one; a dashed
+   edge and a word say which. Counter-scaled by --iz like the ring, so the word
+   stays readable at any zoom. */
+.item[data-missing] {
+  outline: calc(1.5px * var(--iz, 1)) dashed var(--danger);
+  outline-offset: calc(-1.5px * var(--iz, 1));
+}
+.item[data-missing]::after {
+  content: 'File missing';
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 2px 8px;
+  border-radius: var(--leaf);
+  background: var(--paper-card);
+  color: var(--danger);
+  font-size: calc(var(--t-tiny) * var(--iz, 1));
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 /* Ring geometry in two versions: collapsed (on .item) and expanded (here).
    The split is a performance one — unselected cards were re-deriving three
    --iz values they do not use, sixty times a second, for every card on

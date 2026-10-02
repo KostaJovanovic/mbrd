@@ -20,7 +20,7 @@ import { initTimeline } from './ui/timeline-view.ts';
 import { ask } from './ui/dialog.ts';
 import { VERSION } from './version.js';
 import {
-  board, bus, selection, byId, setAssetNameLookup, setAssetPurge, setClipboardCarry, isMultiSelect,
+  board, bus, selection, select, byId, setAssetNameLookup, setAssetPurge, setClipboardCarry, isMultiSelect,
   ensureTitleCard, isTitleHidden, TITLE_ID, setTitle,
   ensureGhostCards, reseedGhostCards, hasContent, dismissGhosts,
   leaveNotFoundBoard, isContent, markBenchBoard,
@@ -30,6 +30,7 @@ import {
 import { freezePrefs } from './prefs.ts';
 import { homePath, isPatchPage, isNotFoundPage, isBenchPage, openingFace, openingShare } from './page.ts';
 import { Viewport, travelMs } from './canvas/viewport.ts';
+import { setMissingCheck } from './canvas/item-dom.ts';
 import { paintGrid, paintGridOnView } from './canvas/grid.ts';
 import { initGrain, paintGrain } from './canvas/grain.ts';
 import { initFarLands } from './canvas/farlands.ts';
@@ -217,6 +218,16 @@ setClipboardCarry({
       putAsset(hash, a.blob, { mime: a.mime, ext: a.ext, name: a.name });
     }
   },
+});
+// Which cards name a file the registry does not hold, for the mark that says
+// so (canvas/item-dom.ts) - the same itemHashes() walk as the carry above.
+setMissingCheck(it => itemHashes(it).some(hash => !getAsset(hash)));
+// "Show them" from a layer below the viewport (storage/session.ts).
+bus.on('reveal', ids => {
+  const items = board.items.filter(i => ids.includes(i.id));
+  if (!items.length) return;
+  select(items.map(i => i.id));
+  if (!vp.isMobile) vp.fit(items, 120, travelMs());
 });
 // Purge seam for emptying the bin — clears both the asset registry and display cache.
 setAssetPurge((hashes: Set<string>) => {

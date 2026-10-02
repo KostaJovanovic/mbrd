@@ -8,12 +8,13 @@ import { itemHashes, isRecord } from '../util.ts';
 // Timeline references, read from the stored document like everything else.
 import { timelineHashes } from '../timeline.ts';
 import { toast, busy } from '../notify.ts';
+import type { ToastAction } from '../notify.ts';
 import { clearPrefs } from '../prefs.ts';
 import {
   board, serializeBoard, loadBoard, markDirty, isDirty, bus, isNotFoundBoard, notUsersBoard,
   isBenchBoard,
 } from '../state.ts';
-import { allAssets, putAsset } from './assets.ts';
+import { allAssets, getAsset, putAsset } from './assets.ts';
 import {
   idbGet, idbSet, idbDel, idbClear, idbKeys, idbGetMany, idbSetMany, idbDelMany,
 } from './idb.ts';
@@ -324,7 +325,7 @@ async function writeSnapshot() {
       // Once per run of trouble, not once per tick.
       if (!warnedIncomplete) {
         warnedIncomplete = true;
-        toast(lastFailure, 'error');
+        toast(lastFailure, 'error', showMissing());
       }
       return false;
     }
@@ -375,6 +376,21 @@ async function restoreFile(file: string, view: unknown) {
     board.view = { pan: { x: Number(pan.x) || 0, y: Number(pan.y) || 0 }, zoom: Number(view.zoom) || 1 };
   }
   return true;
+}
+
+/**
+ * "Show them", for a toast about files that are gone: the cards that name
+ * one, selected and framed - they are marked (canvas/item-dom.ts) but may be
+ * anywhere on the board. Each takes the file back through Replace file… or by
+ * dropping it in again (import/drop.ts heals it). None when no card names a
+ * missing file, which is a lost cover or font with nothing to point at.
+ */
+function showMissing(): ToastAction | undefined {
+  const ids = board.items
+    .filter(it => itemHashes(it).some(h => !getAsset(h)))
+    .map(it => it.id);
+  if (!ids.length) return undefined;
+  return { label: 'Show them', run: () => bus.emit('reveal', ids) };
 }
 
 /** "2 items (photo.jpg, note) have no stored data", for a message. */
@@ -445,7 +461,8 @@ export async function restoreSession() {
     markDirty(!!session.dirty || lost > 0);
     if (lost) {
       console.warn(`[mbrd] ${lost} asset(s) missing from the working cache`);
-      toast(`${lost} item${lost === 1 ? '' : 's'} came back without ${lost === 1 ? 'its' : 'their'} data`, 'error');
+      toast(`${lost} item${lost === 1 ? '' : 's'} came back without ${lost === 1 ? 'its' : 'their'} data`, 'error',
+        showMissing());
     }
     return true;
   } catch (err) {

@@ -27,6 +27,9 @@ export type BusEvents = {
   history: void,
   /** An undo or redo ran, and what it was (history.ts) - for ui/hud.ts to say. */
   'history:moved': { undo: boolean, label: string },
+  /** Select these cards and bring them into view - main.ts answers it, for a
+   *  layer below the viewport (storage/session.ts's missing files). */
+  reveal: string[],
   /** An edit refused because the Timeline is playing (history.ts commit()). */
   readonly: void,
   connections: void,

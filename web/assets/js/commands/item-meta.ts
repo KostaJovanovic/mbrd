@@ -518,6 +518,11 @@ export function itemMetaCommands() {
       return !!it?.asset?.hash && it.type !== 'folder';
     },
     replaceItemFile: (id: string) => pickReplacement(id),
+    /** Whether the card's own file is gone from here - the menu offers to find it. */
+    itemFileMissing: (id: string) => {
+      const hash = byId(id)?.asset?.hash;
+      return !!hash && !getAsset(hash);
+    },
     canSendItemFile: (id: string) => {
       const own = ownFile(id);
       return !!own && canSendFile(asFile(own));

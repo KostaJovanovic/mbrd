@@ -1,7 +1,7 @@
 // Getting things onto the board: drop, paste, picker, .mbrd open.
 // All paths funnel into importFiles() — hash, classify, arrange, add.
 
-import { extOf } from '../util.ts';
+import { extOf, itemHashes } from '../util.ts';
 import { platform, isDesktop } from '../platform/platform.ts';
 import { toast, busy } from '../notify.ts';
 import type { ToastAction } from '../notify.ts';
@@ -11,7 +11,7 @@ import {
   timelinePlaying, retypeItem, byId,
 } from '../state.ts';
 import { cleanPath } from './archive.ts';
-import { addFile, derivedFile } from '../storage/assets.ts';
+import { addFile, derivedFile, getAsset } from '../storage/assets.ts';
 import { makeByteBudget, overPixelBudget, pixelCrossing, IMPORT_LIMITS } from './budget.ts';
 import { allow, isAllowed, isOversize, lift, fileKey, mb as consentMb } from '../consent.ts';
 import {
@@ -419,6 +419,32 @@ export function pickReplacement(id: string) {
   input.click();
 }
 
+/**
+ * The hashes cards on the board name and the registry does not hold - a file
+ * lost from the store. Taken before an import reads anything, since reading a
+ * file registers it, and then nothing would look missing any more.
+ */
+function missingHashes(): Set<string> {
+  const out = new Set<string>();
+  for (const it of board.items) for (const h of itemHashes(it)) if (!getAsset(h)) out.add(h);
+  return out;
+}
+
+/**
+ * Cards whose missing file just arrived, redrawn whole: the bytes are in the
+ * registry now, so a rebuild finds them and takes the missing mark away.
+ * Answers how many cards that was.
+ */
+function heal(hashes: ReadonlySet<string>): number {
+  let n = 0;
+  for (const it of board.items) {
+    if (!itemHashes(it).some(h => hashes.has(h))) continue;
+    n++;
+    bus.emit('item', it.id);
+  }
+  return n;
+}
+
 /** What a card keeps through a replace: its own say, not the file's. */
 const KEPT_META = ['tags', 'locked', 'fit'] as const;
 
@@ -438,6 +464,7 @@ export async function replaceItemFile(id: string, file: File) {
   // 65535 x 65535 is a question before it is a decode.
   const px = await pixelCrossing(file).catch(() => null);
   if (px && !(await allow(fileKey(file), `${file.name} - ${consentMb(file.size)}`, [px], 'Use it'))) return;
+  const missing = missingHashes();
   let draft: Draft;
   try {
     draft = await prepareFile(file);
@@ -449,6 +476,14 @@ export async function replaceItemFile(id: string, file: File) {
   // The card may have gone while the file was read.
   const card = byId(id);
   if (!card) return;
+  // The very file the card lost: the card is whole again as it was, so it is
+  // healed rather than rebuilt - nothing about it changes but its bytes.
+  const same = draft.asset?.hash;
+  if (same && same === card.asset?.hash && missing.has(same)) {
+    heal(new Set([same]));
+    toast(`Found the file for ${card.name || 'this card'}`);
+    return;
+  }
   const { x: _x, y: _y, ...rest } = draft;
   const meta: ItemMeta = { ...rest.meta };
   for (const key of KEPT_META) if (key in card.meta) meta[key] = structuredClone(card.meta[key]);
@@ -626,6 +661,10 @@ export async function importFiles(
   job.label(files.length > 1 ? `Reading ${files.length} files` : 'Reading');
   job.step(0, files.length);
 
+  // Asked before anything is read - see missingHashes(). Not for Unzip and
+  // Open, whose files are a card's own contents rather than somebody's fix.
+  const lost = replace ? new Set<string>() : missingHashes();
+
   // Bounded work pool (IMPORT_WORKERS at a time). Results land by index
   // so the arrangement sees file order, not completion order.
   const prepared: (Draft | null)[] = new Array(files.length).fill(null);
@@ -661,12 +700,22 @@ export async function importFiles(
     // Release the byte budget so overlapping imports do not double-count.
     budget.release();
   }
-  const drafts = prepared.filter((d): d is Draft => !!d);
+  // A file a card on the board lost, dropped back: that card is healed and no
+  // second card is made for it - the person was putting it back, not adding it.
+  const found = new Set<string>();
+  const drafts = prepared.filter((d): d is Draft => {
+    const hash = d?.asset?.hash;
+    if (hash && lost.has(hash)) { found.add(hash); return false; }
+    return !!d;
+  });
+  const healed = found.size ? heal(found) : 0;
+  if (healed) toast(`Found the file for ${healed} card${healed === 1 ? '' : 's'}`);
 
   if (cancelled && !drafts.length) {
     toast('Import stopped');
     return [];
   }
+  if (!drafts.length && healed) return [];
   if (!drafts.length) {
     // Show the reason when every file failed the same way (e.g. crypto.subtle
     // missing on plain HTTP).
