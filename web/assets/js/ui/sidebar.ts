@@ -102,7 +102,18 @@ export function initSidebar(cmds: SidebarCommands, viewport: Viewport | null = n
   // panFor() pans by, and none where the panel is the whole screen.
   view?.setCover(() => (isOpen() && !panelFillsScreen() ? panelReach(sidebar!) : 0));
 
-  menuBtn!.addEventListener('click', () => (isOpen() ? close() : open()));
+  menuBtn!.addEventListener('click', e => {
+    if (isOpen()) { close(); return; }
+    open();
+    // From the keyboard (a click with no pointer behind it, detail 0), focus
+    // goes in with the panel, onto the tab it opened at - or the next Tab
+    // walks the toolbar while the panel it asked for waits off to the side.
+    // A pointer open leaves focus alone; nobody wants a ring on a tap.
+    if (e.detail === 0) {
+      sidebar!.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
+        ?.focus({ preventScroll: true });
+    }
+  });
   el('side-close')!.addEventListener('click', close);
 
   sidebar!.addEventListener('pointerdown', e => {
@@ -210,7 +221,12 @@ export function open(): void {
 export function close(): void {
   if (!sidebar) return;
   sliderFocus?.clear();
+  // Focus inside a panel about to be aria-hidden is focus on nothing, so it
+  // goes back to the button that opens it - only if the panel had it, the
+  // rule closeLibrary() keeps, since otherwise somebody else is placing it.
+  const held = sidebar.contains(document.activeElement);
   setOpen(false);
+  if (held) menuBtn?.focus({ preventScroll: true });
 }
 
 function setOpen(want: boolean, remember = true): void {
