@@ -101,6 +101,28 @@
 }
 .search-hit:focus-visible { outline: var(--sel-line) solid var(--select); outline-offset: -2px; }
 
+/* "Select all N matches", under the hits: an action, so set apart by a rule
+   and quieter than a hit until it is pointed at. */
+.search-all {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 7px 9px;
+  border: 0;
+  border-top: var(--hairline) solid var(--rule);
+  border-radius: 0;
+  background: none;
+  color: var(--ink-3);
+  font: inherit;
+  font-size: var(--t-small);
+  text-align: left;
+  cursor: pointer;
+}
+@media (hover: hover) {
+  .search-all:hover { background: var(--paper-2); color: var(--accent-deep); }
+}
+.search-all:focus-visible { outline: var(--sel-line) solid var(--select); outline-offset: -2px; }
+
 .search-note {
   margin: 0;
   padding: 9px 10px 10px;

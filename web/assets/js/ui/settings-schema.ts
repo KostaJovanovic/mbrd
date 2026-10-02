@@ -291,9 +291,10 @@ const KEYS: readonly KeyRow[] = [
   // The Menu key is the other way to the same thing, on keyboards that have one.
   [['shift', '+', 'F10'], 'the right-click menu'],
   [['space'], 'play, pause a track'],
-  // The desktop's Find (desktop/menu.ts) opens the same search.
-  [['ctrl', '+', 'K'], 'search the board', inBrowser],
-  [['ctrl', '+', 'K', 'F'], 'search the board', isDesktop],
+  // Ctrl+F opens the same search in both: the desktop's Find menu row, and the
+  // page's own key in the browser (ui/search.ts).
+  [['ctrl', '+', 'K', 'F'], 'search the board'],
+  [['shift', '+', 'enter'], 'in Find: select every match'],
   [['ctrl', '+', 'A'], 'select all'],
   [['ctrl', '+', 'C', 'X', 'V'], 'copy, cut, paste'],
   [['ctrl', '+', 'D'], 'duplicate selection'],

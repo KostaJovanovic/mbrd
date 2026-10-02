@@ -2,8 +2,10 @@
 // Built per query, no index. Items are renamed/edited constantly; rebuilding
 // a few hundred string reads per keystroke is cheaper than invalidation bugs.
 
-import { board, byId, itemTags, select, rolledAway, unrollFor } from '../state.ts';
+import { board, byId, isContent, itemTags, select, rolledAway, unrollFor } from '../state.ts';
 import { cue } from '../cuelume/engine.ts';
+import { toast } from '../notify.ts';
+import { isDesktop } from '../platform/platform.ts';
 import { travelMs } from '../canvas/viewport.ts';
 import { extOf, markClosed } from '../util.ts';
 import { describeExt, formatName } from '../import/formats.ts';
@@ -34,7 +36,12 @@ let node: HTMLElement | null = null;
 let field: HTMLInputElement | null = null;
 let list: HTMLElement | null = null;
 let hits: Hit[] = [];
+/** Every match, not only the MAX_HITS drawn - what "Select all" takes. */
+let matched: Hit[] = [];
 let at = 0;
+/** What was last searched for, put back when Find opens again: the next hit
+ *  for the same words was a retype away. */
+let lastQuery = '';
 
 export function initSearch(viewport: Viewport, reveal: ((id: string) => boolean) | null = null) {
   vp = viewport;
@@ -50,6 +57,18 @@ export function initSearch(viewport: Viewport, reveal: ((id: string) => boolean)
       node ? close() : open();
       return;
     }
+    // Ctrl+F too, on the board: the browser's find-in-page cannot see a card
+    // that is culled or named only by its file, and the desktop app has bound
+    // Ctrl+F to this from the start (desktop/menu.ts). Only where nothing else
+    // wants it - in a field, a dialog or the viewer the page's find is what is
+    // meant - and not in the app, where the menu's accelerator already opens it.
+    if (e.key.toLowerCase() === 'f' && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey
+        && !isDesktop() && boardHasKeys(e.target)) {
+      e.preventDefault();
+      e.stopPropagation();
+      open();
+      return;
+    }
     if (!node) return;
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); markClosed(e); close(); return; }
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -61,7 +80,9 @@ export function initSearch(viewport: Viewport, reveal: ((id: string) => boolean)
     if (e.key === 'Enter') {
       e.preventDefault();
       e.stopPropagation();
-      commit(hits[at]);
+      // Shift+Enter takes every match, not the one under the cursor.
+      if (e.shiftKey) commitAll();
+      else commit(hits[at]);
     }
   }, true);
 
@@ -76,6 +97,14 @@ export function initSearch(viewport: Viewport, reveal: ((id: string) => boolean)
   }, true);
   addEventListener('wheel', () => close(), { passive: true });
   addEventListener('blur', () => close());
+}
+
+/** Whether a key press is the board's to answer: nobody is typing, and no
+ *  dialog or menu sits over the board. */
+function boardHasKeys(target: EventTarget | null) {
+  if (target instanceof HTMLElement
+      && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))) return false;
+  return !document.querySelector('dialog[open]') && !document.getElementById('ctx-menu');
 }
 
 let dismissedBy: Node | null = null;
@@ -116,15 +145,20 @@ export function open(from: Element | null = null) {
   node.append(field, list);
   document.body.append(node);
   field.focus();
-  run('');
+  // The last words, selected, so typing replaces them and Enter repeats them.
+  field.value = lastQuery;
+  field.select();
+  run(lastQuery);
 }
 
 export function close() {
+  if (field) lastQuery = field.value.trim();
   node?.remove();
   node = null;
   field = null;
   list = null;
   hits = [];
+  matched = [];
   at = 0;
 }
 
@@ -175,18 +209,19 @@ function run(query: string) {
 
   if (!q) {
     hits = [];
+    matched = [];
     draw(q);
     return;
   }
 
-  hits = board.items
+  matched = board.items
     .map(item => {
       const f = fields(item);
       return { item, f, s: score(f, q) };
     })
     .filter(h => h.s > 0)
-    .sort((a, b) => b.s - a.s)
-    .slice(0, MAX_HITS);
+    .sort((a, b) => b.s - a.s);
+  hits = matched.slice(0, MAX_HITS);
 
   draw(q);
 }
@@ -233,6 +268,19 @@ function draw(q: string) {
     row.addEventListener('click', () => { cue('pick'); commit(h); });
     list!.append(row);
   });
+
+  // The rest of the matches, which the list stops short of: said, and taken
+  // whole by one press. Outside the arrow walk - it is an action, not a hit.
+  if (matched.length > 1) {
+    const all = document.createElement('button');
+    all.type = 'button';
+    all.className = 'search-all';
+    all.textContent = matched.length > hits.length
+      ? `Select all ${matched.length} matches (${matched.length - hits.length} more not shown)  Shift+Enter`
+      : `Select all ${matched.length} matches  Shift+Enter`;
+    all.addEventListener('click', () => { cue('pick'); commitAll(); });
+    list!.append(all);
+  }
 
   field!.setAttribute('aria-activedescendant', 'search-hit-' + at);
 }
@@ -281,4 +329,22 @@ function commit(hit: Hit | undefined) {
   // On the Feed the canvas is hidden, so flying it moves nothing anybody sees.
   if (board.layoutMode === 'mobile' && revealInFeed?.(id)) return;
   vp!.fit([item], 120, travelMs());
+}
+
+/**
+ * Every match selected, and the view fitted round them. A card folded away in
+ * a rolled fence is left out, as Select all leaves it out: a selection is what
+ * the next Delete takes, and it must not take what nobody can see. On the Feed
+ * the selection is made and nothing flies - reveal there is for one card.
+ */
+function commitAll() {
+  const ids = matched.map(h => h.item.id);
+  close();
+  // Content only: a match on the title card or a hint is a place to fly to,
+  // not a card to sweep up with forty others.
+  const items = ids.map(id => byId(id)).filter((i): i is Item => !!i && isContent(i) && !rolledAway(i));
+  if (!items.length) return;
+  select(items.map(i => i.id));
+  toast(`Selected ${items.length} matches`);
+  if (board.layoutMode !== 'mobile') vp!.fit(items, 120, travelMs());
 }
