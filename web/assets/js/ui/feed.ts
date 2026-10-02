@@ -439,6 +439,9 @@ export function initFeed(_viewport: Viewport | null, _commands: FeedCommands | n
   bus.on('item', id => {
     const t = tiles.get(id);
     if (t) writeTileFit(t);
+    // A note's sheet, which its menu can now change after the fact.
+    const sheet = t?.kind === 'note' ? t.el.querySelector<HTMLElement>('.feed-note') : null;
+    if (sheet) { sheet.style.background = ''; paintNoteSheet(sheet, t!.item); }
     relayoutIfReshaped(id);
   });
   bus.on('settings', key => {

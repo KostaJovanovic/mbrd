@@ -644,6 +644,17 @@ export function buildTitleControls(el: HTMLElement): void {
 }
 
 /**
+ * A note's sheet, on the outer element (cards.css reads it). build() writes it
+ * with every other card's tint; this is the rewrite rebuild() needs once the
+ * note's menu can change it, the same reason writeFenceLook() exists below.
+ */
+export function writeNoteTint(el: HTMLElement, item: ItemLike): void {
+  const tint = noteTint(item.meta.tint);
+  if (tint) el.dataset.tint = String(tint);
+  else delete el.dataset.tint;
+}
+
+/**
  * A fence's colour and its roll, on the outer element (fences.css reads both).
  * Written at build and again by rebuild() in canvas/items.ts, since both change
  * from the fence's menu as an 'item' event and a rebuild keeps the element.

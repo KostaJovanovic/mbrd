@@ -109,6 +109,9 @@ export interface MenuCommands {
   canKeepFrame: (id: string) => boolean;
   canDemosaic: (id: string) => boolean;
   canTintSticker: (id: string) => boolean;
+  canTintNote: (id: string) => boolean;
+  noteTintOf: (id: string) => number;
+  setNoteTint: (id: string, tint: number) => void;
   canViewItem: (id: string) => boolean;
   canEditDocument: (id: string) => boolean;
   editDocument: (id: string) => void;
@@ -607,6 +610,8 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
   const swatchable = !many && cmds!.canExtractSwatches(id);
   // Single-item — tint is an edit to one sticker.
   const tintable = !many && cmds!.canTintSticker(id);
+  // And a note's sheet, on the same terms. On the Feed too: colour is not spatial.
+  const noteTintable = !many && cmds!.canTintNote(id);
   // Single fence, canvas only — its colour and its roll-up.
   const fenceItem = !many && !mobile && cmds!.isFenceItem(id);
   const rolled = fenceItem && cmds!.isRolledFence(id);
@@ -681,7 +686,7 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
       action: () => cmds!.zoomToSelection(), hidden: mobile || !many },
     // ── What the card is ──
     { sep: true, hidden: !coverable && !covered && !editable_picture && !demosaicable
-      && !flippable && !turnable && !tintable && !fenceItem && !taggable },
+      && !flippable && !turnable && !tintable && !noteTintable && !fenceItem && !taggable },
     { label: covered ? 'Change picture' : 'Set a picture', icon: 'i-picture',
       hidden: !coverable, action: () => cmds!.setCover(id) },
     { label: 'Remove picture', icon: 'i-picture-off', hidden: !covered,
@@ -711,6 +716,9 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // A fence's colour, washed over the whole region.
     { label: 'Colour', icon: 'i-swatch', hidden: !fenceItem,
       sub: fenceItem ? fenceTintEntries(id) : undefined },
+    // A note's sheet, changed after the fact rather than retyped on another.
+    { label: 'Colour', icon: 'i-swatch', hidden: !noteTintable,
+      sub: noteTintable ? noteTintEntries(id) : undefined },
     // Tags fold — selection-wide, on Feed too (tags are about the card, not position).
     { label: 'Tags', icon: 'i-tag', hidden: !taggable,
       sub: taggable ? tagEntries() : undefined },
@@ -874,9 +882,11 @@ function filterEntries(): MenuEntry[] {
 
 /** Fence colour — None for the plain well, then the four note sheets under the
  *  names the Note flyout gives them (noteEntries() in ui/flyout.ts). */
+const SHEET_NAMES = ['Warm', 'Accent', 'Green', 'Pale'];
+
 function fenceTintEntries(id: string): MenuEntry[] {
   const now = cmds!.fenceTintOf(id);
-  const NAMES = ['Warm', 'Accent', 'Green', 'Pale'];
+  const NAMES = SHEET_NAMES;
   return [
     // The icon is for rows drawn without a chip; the chip takes its column.
     { label: 'None', icon: 'i-swatch', swatch: 'var(--paper-2)', check: now === 0,
@@ -889,6 +899,18 @@ function fenceTintEntries(id: string): MenuEntry[] {
       action: () => cmds!.setFenceTint(id, i + 1),
     })),
   ];
+}
+
+/** A note's sheet - the four the fence row offers, without its None. */
+function noteTintEntries(id: string): MenuEntry[] {
+  const now = cmds!.noteTintOf(id);
+  return SHEET_NAMES.map((label, i) => ({
+    label,
+    icon: 'i-swatch',
+    swatch: `var(--note-${i + 1})`,
+    check: now === i + 1,
+    action: () => cmds!.setNoteTint(id, i + 1),
+  }));
 }
 
 function stickerTintEntries(id: string): MenuEntry[] {

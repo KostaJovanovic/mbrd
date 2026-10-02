@@ -21,7 +21,7 @@ import {
 } from './renderers.ts';
 import {
   buildItem, buildShadow, buildTitleControls, farKind, itemAccessibleName,
-  resetTilt, restingTilt, retilt, setGrips, wantsHead, writeFit, writeAdjust, writeFenceLook,
+  resetTilt, restingTilt, retilt, setGrips, wantsHead, writeFit, writeAdjust, writeFenceLook, writeNoteTint,
 } from './item-dom.ts';
 import { POSTER_TIME } from './video.ts';
 import { clearDisplay } from './display.ts';
@@ -1514,6 +1514,8 @@ function rebuild(id: string) {
   writeAdjust(el, item);
   // And a fence's colour and roll, which its menu changes the same way.
   if (isFence(item)) writeFenceLook(el, item);
+  // And a note's sheet, which its menu's Colour row changes.
+  if (item.type === 'note') writeNoteTint(el, item);
   // And the shadow twin, which is not on this element at all - see syncTwin(),
   // and the reason a question build() asks once has to be asked again here.
   syncTwin(el, item);

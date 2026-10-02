@@ -1,5 +1,5 @@
 // Per-item commands: viewer, note, cover, fit, bare, faded, crop, model axis,
-// sticker tint, lock, tags, tour stops. Mostly can*/set* pairs for the
+// sticker and note tint, lock, tags, tour stops. Mostly can*/set* pairs for the
 // right-click menu. Predicates are deliberately narrower than the model:
 // widening a `can*` is a product decision, not a tidy-up.
 
@@ -8,8 +8,9 @@ import {
   addTourStop, board, boardTags, byId, cleanTag, freezeClip, isContent, isLocked, isRider,
   itemTags, selection, setItemBare, setItemCover, setItemDemosaiced, setItemFaded, setItemFit,
   setItemUpAxis,
-  setItemsLocked, setItemsTagged, setStickerTint, unstickItems, TAG_MAX, TAGS_PER_ITEM,
+  setItemsLocked, setItemsTagged, setNoteTint, setStickerTint, unstickItems, TAG_MAX, TAGS_PER_ITEM,
 } from '../state.ts';
+import { noteTint } from '../canvas/note-model.ts';
 import { extOf } from '../util.ts';
 import { fileKey, isOversize, lift } from '../consent.ts';
 import { ask } from '../ui/dialog.ts';
@@ -117,6 +118,14 @@ export function itemMetaCommands() {
       return it ? stickerTint(it.meta?.tint, it.meta?.shape) : 1;
     },
     setStickerTint: (id: string, tint: number) => setStickerTint(id, tint),
+    /**
+     * A note's sheet, on the same single-item terms as the sticker row above.
+     * A note with no stored tint draws on the first sheet, so that is the one
+     * ticked for it.
+     */
+    canTintNote: (id: string) => byId(id)?.type === 'note',
+    noteTintOf: (id: string) => noteTint(byId(id)?.meta?.tint) || 1,
+    setNoteTint: (id: string, tint: number) => setNoteTint(id, tint),
     /**
      * Take the selection off whatever it is stuck to and leave it where it is.
      *

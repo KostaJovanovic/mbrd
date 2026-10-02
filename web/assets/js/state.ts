@@ -1085,6 +1085,15 @@ export function setFenceTint(id: string, tint: unknown) {
       ? value : null));
 }
 
+/** A note's sheet, 1-4, after it was written - the same range setFenceTint()
+ *  takes, less the 0: a note always sits on one sheet or another. */
+export function setNoteTint(id: string, tint: unknown) {
+  if (byId(id)?.type !== 'note') return;
+  patchMeta(id, 'tint', tint, 'Note colour',
+    value => (typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 4
+      ? value : null));
+}
+
 /** Roll a fence up to its name bar, or down again. Stored only when rolled. */
 export function setFenceRolled(id: string, rolled: boolean) {
   if (!isFence(byId(id))) return;
