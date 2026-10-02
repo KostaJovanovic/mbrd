@@ -117,7 +117,19 @@ export async function removeLibraryBoard(id: string) {
 /** Max boards on the shelf. Without eviction, every Open/New/Switch accumulates
  *  packed archives until QuotaExceededError hits writeSnapshot() and stops
  *  autosave for the *live* board. 24 is generous; oldest first. */
-const SHELF_MAX = 24;
+export const SHELF_MAX = 24;
+
+/**
+ * The rows trimLibrary() would take once `filing` is filed as the newest -
+ * read, never written, so a caller can ask before the shelving rather than
+ * report after it. Only blob rows: a path row's board is its file, and dropping
+ * the row loses nothing.
+ */
+export async function wouldTrim(filing: string, spare = '', keep = SHELF_MAX) {
+  const rest = (await libraryIndex()).filter(e => e.id !== filing);
+  // `filing` takes the top slot, so one fewer of the rest stays.
+  return rest.slice(Math.max(0, keep - 1)).filter(e => e.id !== spare && !e.path);
+}
 
 /** Drop oldest boards past the ceiling. Separate from put so filing and
  *  eviction are distinct operations. `spare` is the board about to be opened:

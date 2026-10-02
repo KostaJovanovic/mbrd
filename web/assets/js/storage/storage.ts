@@ -13,7 +13,7 @@ import { idbGet, idbSet, idbKeys, idbGetMany } from './idb.ts';
 import type { StoreName } from './idb.ts';
 import {
   libraryIndex, putLibraryBoard, getLibraryBoard, removeLibraryBoard, hasLibraryBoard,
-  trimLibrary, sweepLibrary,
+  trimLibrary, sweepLibrary, wouldTrim, SHELF_MAX,
 } from './library.ts';
 import type { LibraryEntry } from './library.ts';
 import {
@@ -959,6 +959,62 @@ async function askBeforeLeaving() {
   return true;
 }
 
+/** "3 weeks ago", for a shelf row's last filing. Rough on purpose: it is there
+ *  to say which board is meant, not when. */
+function ago(at: number) {
+  const days = Math.floor((Date.now() - at) / 86_400_000);
+  if (days < 1) return 'today';
+  if (days < 14) return days === 1 ? 'yesterday' : `${days} days ago`;
+  if (days < 60) return `${Math.floor(days / 7)} weeks ago`;
+  return `${Math.floor(days / 30)} months ago`;
+}
+
+/**
+ * The one exception to "nothing asks": the shelf is full and filing this board
+ * would delete another one whose only copy is the shelf's.
+ *
+ * trimLibrary() keeps the shelf at its ceiling so the packed blobs cannot fill
+ * the quota under the live board's autosave, and it used to do that silently:
+ * the 25th board erased the oldest one, which on the web may never have been
+ * exported. This fires at most once per filing past the ceiling, and only when
+ * a board would really be lost - a path row's file stays. Asked before the
+ * writer comes down, so a Cancel leaves the board on screen still saving.
+ *
+ * "Save a copy first" writes the shelf's own packed blob, which is a .mbrd
+ * already - nothing is unpacked or repacked to save it.
+ */
+async function askBeforeEvicting(opening: string) {
+  const id = await ensureBoardId();
+  const doomed = await wouldTrim(id, opening).catch(() => []);
+  if (!doomed.length) return true;
+  const named = doomed.map(e => `"${e.title}" (last filed ${ago(e.at)})`).join(', ');
+  const one = doomed.length === 1;
+  const answer = await prompt({
+    title: 'Make room on the shelf?',
+    body: `This browser keeps the last ${SHELF_MAX} boards. Filing this one deletes ${named}, `
+      + `and the shelf holds ${one ? 'its' : 'their'} only copy.`,
+    go: one ? 'Delete it' : 'Delete them',
+    keep: 'Save a copy first',
+    cancel: 'Cancel',
+    danger: true,
+  });
+  if (answer === 'go') return true;
+  if (answer !== 'keep') return false;
+  for (const row of doomed) {
+    const blob = await getLibraryBoard(row.id).catch(() => null);
+    if (!blob) continue;
+    try {
+      await saveBlob(blob, fileNameFor(row.title));
+    } catch (err) {
+      // A dismissed picker is a "not yet", so nothing is deleted and the board
+      // on screen stays where it is.
+      if (!isAbort(err)) toast('Could not save ' + row.title + ': ' + detailOf(err), 'error');
+      return false;
+    }
+  }
+  return true;
+}
+
 /**
  * Put the board on screen on the shelf, and stop the writer that was serving it.
  *
@@ -995,6 +1051,7 @@ async function shelveCurrent(opening = '') {
   // them at once: the way to another board from here is Back to your board.
   if (isBenchBoard()) return refuseOnBench();
   if (!(await askBeforeLeaving())) return false;
+  if (!(await askBeforeEvicting(opening))) return false;
   suspendCache();
   await drainSave();
   try {

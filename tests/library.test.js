@@ -12,7 +12,7 @@ import { memoryStore } from './helpers.js';
 import { setStoreBackend } from '../web/assets/js/storage/idb.ts';
 import {
   libraryIndex, putLibraryBoard, getLibraryBoard, removeLibraryBoard,
-  hasLibraryBoard, sweepLibrary, trimLibrary,
+  hasLibraryBoard, sweepLibrary, trimLibrary, wouldTrim,
 } from '../web/assets/js/storage/library.ts';
 
 let store;
@@ -123,4 +123,26 @@ test('trimming the shelf drops path rows by age like any other', async () => {
   const left = await libraryIndex();
   assert.deepEqual(left.map(e => e.id), ['new-path']);
   assert.equal(await getLibraryBoard('old-blob'), null, 'the evicted blob went with its row');
+});
+
+test('the trim is told in advance which boards it would take', async () => {
+  // storage.ts asks before a filing evicts a board whose only copy is the
+  // shelf, so the forecast has to name exactly what trimLibrary() then drops.
+  await putLibraryBoard('old-blob', blobOf('a'), { title: 'a', at: 1 });
+  await putLibraryBoard('old-path', null, { title: 'b', at: 2, path: '/tmp/b.mbrd' });
+  await putLibraryBoard('mid-blob', blobOf('c'), { title: 'c', at: 3 });
+  await putLibraryBoard('current', blobOf('d'), { title: 'd', at: 4 });
+  // Filing `current` again keeps it on top; a ceiling of 2 leaves one more.
+  const doomed = await wouldTrim('current', '', 2);
+  assert.deepEqual(doomed.map(e => e.id), ['old-blob'], 'a path row is no loss, so it is not named');
+  assert.deepEqual((await wouldTrim('current', 'old-blob', 2)).map(e => e.id), [],
+    'the board about to be opened is spared here as it is in the trim');
+  assert.equal((await libraryIndex()).length, 4, 'the forecast wrote nothing');
+});
+
+test('a new board arriving at a full shelf pushes the oldest off', async () => {
+  await putLibraryBoard('a', blobOf('a'), { title: 'a', at: 1 });
+  await putLibraryBoard('b', blobOf('b'), { title: 'b', at: 2 });
+  assert.deepEqual((await wouldTrim('new', '', 2)).map(e => e.id), ['a']);
+  assert.deepEqual(await wouldTrim('new', '', 3), []);
 });
