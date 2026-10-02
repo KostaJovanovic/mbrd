@@ -142,6 +142,23 @@ function showTab(id: string) {
   }
 }
 
+/**
+ * Show one fold, open, on its tab: how a command points somebody at a part of
+ * the panel. The sidebar's opening is the caller's - this only arranges what
+ * the open panel shows.
+ *
+ * Straight to `open`, past openAndShut()'s animation: the panel is sliding in
+ * as this runs, and a fold growing inside a moving sheet is two motions where
+ * one says it.
+ */
+export function revealFold(tabId: string, foldId: string) {
+  showTab(tabId);
+  const fold = document.getElementById(foldId);
+  if (!(fold instanceof HTMLDetailsElement)) return;
+  fold.open = true;
+  fold.scrollIntoView({ block: 'start' });
+}
+
 // ---------------------------------------------------------------------------
 // Sections and controls
 // ---------------------------------------------------------------------------

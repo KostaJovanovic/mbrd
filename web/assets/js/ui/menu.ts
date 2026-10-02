@@ -674,8 +674,8 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // Hidden (not greyed) on empty clipboard.
     { label: 'Paste', icon: 'i-paste', accel: 'Ctrl V', hidden: !cmds!.canPaste(),
       action: () => cmds!.paste(at) },
-    // Accel only where double-click is not already claimed by Open or Edit text.
-    { label: 'Zoom to it', icon: 'i-zoom-to', accel: viewable || editable ? '' : 'dbl-click',
+    // No dbl-click accel: double-click stopped zooming (canvas/input.ts).
+    { label: 'Zoom to it', icon: 'i-zoom-to',
       action: () => cmds!.zoomToSelection(), hidden: mobile || many },
     { label: 'Zoom to them', icon: 'i-zoom-to',
       action: () => cmds!.zoomToSelection(), hidden: mobile || !many },

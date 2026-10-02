@@ -1184,6 +1184,8 @@ type InputCommands = {
   editFontText?(id: string): void,
   openViewer?(id: string): void,
   playPause?(): boolean,
+  /** Open the sidebar on the keyboard legend - the '?' key. */
+  shortcuts?(): void,
   // The tour's two keys, in the shape the three above use: the command answers
   // whether it took the press. See the Escape and arrow cases below.
   tourStop?(): boolean,
@@ -3027,6 +3029,28 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
     syncItems();
   }
 
+  /**
+   * Escape's half of the abort: a drag, a grip or a band taken back mid-air.
+   *
+   * Only the gestures that change the board. A pan and a pinch move the view,
+   * which has no "before" worth returning to, so Escape mid-pan falls through to
+   * its ordinary chain. A band selects as it grows, so its abort also hands back
+   * the selection it started from - an additive band froze that as `base`, and
+   * a plain one started from nothing.
+   *
+   * The pointer is still down and still captured. That is fine: once the
+   * gesture is idle, pointermove and pointerup both return at their idle guard,
+   * so the lift that follows finds nothing to finish.
+   */
+  function cancelGesture() {
+    const g = gesture;
+    if (g.mode !== 'move' && g.mode !== 'resize' && g.mode !== 'marquee' && g.mode !== 'press') return false;
+    const base = g.mode === 'marquee' ? g.base ?? [] : null;
+    abortGesture();
+    if (base) select(base);
+    return true;
+  }
+
   // The stick-target ring moved to canvas/items.ts, which owns the nodes it
   // marks. It was a closure in here while a note drag was the only thing that
   // could aim at a host; a shape dragged out of the sticker window aims at one
@@ -3279,11 +3303,20 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         else editItemName(only);
         e.preventDefault();
       } break;
+      // By e.key, not e.code: '?' is Shift+/ on most layouts and somewhere else
+      // on the rest, and the character is what the legend promises.
+      case '?': if (!cmds.inTour?.() && !cmds.tourEditing?.()) {
+        cmds.shortcuts?.();
+        e.preventDefault();
+      } break;
       case '0': cmds.recenter(); break;
       case 'f': case 'F': cmds.fit(); break;
       case '+': case '=': vp.zoomBy(1.25, zoomMs()); break;
       case '-': case '_': vp.zoomBy(1 / 1.25, zoomMs()); break;
       case 'Escape': {
+        // A gesture in progress is the innermost temporary state of all: the
+        // cards go back to where the hand picked them up, and nothing records.
+        if (cancelGesture()) { markClosed(e); break; }
         // The cleaning simulator is not in this chain: while it is up it owns
         // the keyboard outright and answers Escape above, before the switch.
         // A running tour first: Escape is the way out of every temporary state

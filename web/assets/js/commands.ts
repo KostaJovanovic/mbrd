@@ -32,7 +32,8 @@ import { arrange } from './arrange/arrangements.ts';
 import { ask } from './ui/dialog.ts';
 import { pickColor } from './ui/color-picker.ts';
 import { getAsset, assetURL } from './storage/assets.ts';
-import { close as closeSidebar, isOpen as isSidebarOpen } from './ui/sidebar.ts';
+import { close as closeSidebar, open as openSidebar, isOpen as isSidebarOpen } from './ui/sidebar.ts';
+import { revealFold } from './ui/panel.ts';
 import { closeToolbar, isOpen as isToolbarOpen, isArmed as isConnectorArmed } from './ui/toolbar.ts';
 import { openContextMenu, openAnchored, justDismissed, close as closeMenu } from './ui/menu.ts';
 import { tourEditing } from './ui/tour-edit.ts';
@@ -389,6 +390,12 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
       closeHeaderPanel();
       closeToolbar();
       return open;
+    },
+    // '?' and the desktop's Help row. The legend stays where it is, folded at
+    // the foot of the System tab; this is the way to it.
+    shortcuts: () => {
+      openSidebar();
+      revealFold('system', 'keys-fold');
     },
     // Open the note composer dialog (falls back to on-board editor without <dialog>).
     editNote: (id: string) => editNoteInComposer(id),

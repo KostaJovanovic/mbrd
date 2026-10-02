@@ -268,11 +268,17 @@ const KEYS: readonly KeyRow[] = [
   [['shift', '+', 'scroll'], 'pan sideways'],
   // Its vertical twin, and not a pinch, which readWheel() tells apart.
   [['ctrl', '+', 'scroll'], 'pan up and down'],
-  [['dbl-click'], 'zoom to an item'],
+  [['shift', '+', 'click'], 'add to the selection'],
+  // Not a zoom any more - see the dblclick listener in canvas/input.ts.
+  [['dbl-click'], 'open or edit an item'],
+  [['dbl-click'], 'label a line'],
+  // While Join is out: the pair joins and the tool stays armed for the next.
+  [['shift', '+', 'click'], 'join, and keep joining'],
   [['+', '-'], 'zoom in, out'],
   [['0', 'F'], 'recenter, fit'],
   [['←↑→↓'], 'nudge (+shift a step)'],
-  [['esc'], 'deselect, close'],
+  [['esc'], 'cancel a drag, deselect, close'],
+  [['?'], 'this list'],
   [['space'], 'play, pause a track'],
   // The desktop's Find (desktop/menu.ts) opens the same search.
   [['ctrl', '+', 'K'], 'search the board', inBrowser],
@@ -281,7 +287,7 @@ const KEYS: readonly KeyRow[] = [
   [['ctrl', '+', 'C', 'X', 'V'], 'copy, cut, paste'],
   [['ctrl', '+', 'D'], 'duplicate selection'],
   [['F2'], 'rename'],
-  [['del', 'backspace'], 'delete selection'],
+  [['del', 'backspace'], 'delete selection, or a marked line'],
   [['ctrl', '+', 'Z', 'Y'], 'undo, redo'],
   [['ctrl', '+', 'shift', '+', 'Z'], 'redo'],
   [['ctrl', '+', 'S', 'O'], 'save, open'],
