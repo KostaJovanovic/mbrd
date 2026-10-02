@@ -687,7 +687,8 @@ const started = (async function start() {
 
 /**
  * Push to cloud on autosave. Stops on any failure (expired token, network,
- * conflict) and tells the user once — retry needs a gesture anyway.
+ * conflict) and tells the user once — retry needs a gesture anyway. Being
+ * offline is the exception: it waits for the connection instead.
  * Latch is per-board, cleared on board:load / board:new, and by the gesture:
  * a push that lands (Sync now) or a sign-in (syncResumes() in cloud/sync.ts).
  */
@@ -702,13 +703,29 @@ function initCloudSync() {
       void boardSyncState().then(() => paintPanel()).catch(() => {});
     });
   }
-  bus.on('autosaved', () => {
+  /**
+   * Offline is a wait, not a failure. A push that cannot reach the network
+   * latched "Cloud sync stopped" in red, and nothing came back for it when the
+   * connection did. So: say it once, quietly, and push again on `online`. Only
+   * when the browser reports itself offline - a conflict, or a failure while
+   * online, still latches.
+   */
+  let waiting = false;
+  const offline = () => typeof navigator !== 'undefined' && navigator.onLine === false;
+  const waitForLine = () => {
+    if (waiting) return;
+    waiting = true;
+    toast('Offline — this board will sync when the connection is back');
+    addEventListener('online', () => { waiting = false; push(); }, { once: true });
+  };
+  const push = () => {
     let at: number | null = null;
     let provider: ShareProvider | null = null;
     const stop = () => { syncStopped = { at, signedIn: !!provider?.signedIn() }; };
     void (async () => {
       const state = await boardSyncState();
       if (!state) return;
+      if (offline()) { waitForLine(); return; }
       at = state.at;
       const { shareProvider } = await import('./storage/cloud/cloud.ts');
       provider = shareProvider(state.provider);
@@ -731,11 +748,14 @@ function initCloudSync() {
         toast('This board changed somewhere else — press Sync now to sort it out', 'error');
       }
     })().catch(err => {
+      // The line went down mid-push: the same wait as above, not a stop.
+      if (offline()) { waitForLine(); return; }
       stop();
       console.warn('[mbrd] cloud sync stopped:', err);
       toast('Cloud sync stopped — press Sync now to try again', 'error');
     });
-  });
+  };
+  bus.on('autosaved', push);
 }
 
 /**
