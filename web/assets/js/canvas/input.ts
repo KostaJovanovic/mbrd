@@ -12,7 +12,7 @@ import {
   rolledAway, rolledFences,
   travelling, isFence, isLocked, dragRoot, isPinned, isSticky, stuckTo, resettle,
   copyItems, cutItems, pasteItems, clipboardSize, clipboardBounds, clipboardHasOurs,
-  baseStep, timelinePlaying, fenceAt,
+  baseStep, timelinePlaying, fenceAt, lastCommand,
 } from '../state.ts';
 import { zoomMs } from './viewport.ts';
 import type { Viewport } from './viewport.ts';
@@ -120,6 +120,11 @@ export function liftWithButtonsHeld(
 /** The keys that still work while the Timeline plays: they move the view or
  *  close something. See the keydown handler. */
 const VIEW_KEYS = new Set(['0', '1', 'f', 'F', '+', '=', '-', '_', 'Escape']);
+
+/** How long a pause ends a run of nudges. A key held down repeats every 30-50
+ *  ms; somebody tapping an arrow to place a card exactly taps well inside a
+ *  second. A press later than this starts a step of its own. */
+const NUDGE_RUN_MS = 1000;
 
 // ---------------------------------------------------------------------------
 // What a press means — pure decision, handler does the doing. Branch order
@@ -3481,8 +3486,20 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // not been unstuck, the same way it has not been unstuck by a drag.
       loose: b.loose || (selection.has(b.id) && isPinned(byId(b.id))),
     })));
-    commitGeom('Nudge', before, [...selection]);
+    // A held arrow is one act, so it is one undo: each press folds into the
+    // last while nothing else has been committed, the selection is the same,
+    // and the presses keep coming. Two seconds held was forty entries before,
+    // and a long enough nudge pushed real work off the bottom of the stack.
+    const key = [...selection].sort().join(' ');
+    const now = e.timeStamp;
+    const run = lastNudge && lastNudge.cmd === lastCommand() && lastNudge.key === key
+      && now - lastNudge.at < NUDGE_RUN_MS ? lastNudge.cmd : null;
+    const cmd = commitGeom('Nudge', before, [...selection], { fold: run });
+    lastNudge = cmd ? { cmd, key, at: now } : null;
   }
+
+  /** The nudge the next press may fold into - see nudge(). */
+  let lastNudge: { cmd: NonNullable<ReturnType<typeof lastCommand>>, key: string, at: number } | null = null;
 
   /**
    * How far one press of an arrow key moves the selection, on this board.

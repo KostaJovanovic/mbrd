@@ -11,7 +11,8 @@ import { isRecord } from './util.ts';
 import { splitAppearance } from './layout-settings.ts';
 import { arrange, mobileArrangement, mobileOrder } from './arrange/arrangements.ts';
 import { bus, markDirty } from './board-store.ts';
-import { commit, dropStacks } from './history.ts';
+import { commit, commitFolded, dropStacks } from './history.ts';
+import type { Command } from './history.ts';
 import { setSettle, dropOp } from './timeline.ts';
 import {
   board, byId, BOARD_MODES, DEFAULT_SETTINGS, MOBILE_TOP_ROWS,
@@ -922,8 +923,8 @@ export function commitGeom(
   label: string,
   before: GeomSnap[],
   driven?: string[],
-  options: { preservePresnap?: boolean } = {},
-) {
+  options: { preservePresnap?: boolean, fold?: Command | null } = {},
+): Command | null {
   let after = snapshotGeom(before.map(b => b.id));
   // Paired by id, never by index.
   //
@@ -953,7 +954,7 @@ export function commitGeom(
   if (!changed) {
     // Align on cards already aligned declared its rule and commits nothing.
     dropOp();
-    return;
+    return null;
   }
   // Placed by hand while snapping was on: this *is* where the item belongs
   // now, so it gives up its memory of where it sat before the board was laid
@@ -1046,8 +1047,15 @@ export function commitGeom(
   // to look. applyGeom() rather than move(): the pre-image is wanted for
   // measuring, not for living in, so restick() and the settling window stay out
   // of it and run once, forward, where they belong.
-  commit(label, () => move(after), () => move(kept), kept.length * 2,
-         () => applyGeom(kept));
+  //
+  // `fold` is the entry this one continues, when the caller says it does - a
+  // held arrow key, whose presses are one act. commitFolded() keeps the first
+  // entry's undo and folds only when the ledger merged the two into one step.
+  const redo = () => move(after), undo = () => move(kept);
+  if (options.fold) {
+    return commitFolded(options.fold, label, redo, undo, kept.length * 2, () => applyGeom(kept));
+  }
+  return commit(label, redo, undo, kept.length * 2, () => applyGeom(kept));
 }
 
 /**

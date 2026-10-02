@@ -100,12 +100,15 @@ export function commit(
  * commit(), folded into `prev` when `prev` is the entry just below and the
  * timeline merged the two into one step: the entry keeps `prev`'s undo and
  * takes the new redo, so one Ctrl+Z goes back past both. The text editor's
- * saves use it - every save in one opening of a document is one step.
+ * saves use it - every save in one opening of a document is one step - and so
+ * does a held arrow key, through commitGeom(), so a run of nudges is one undo.
+ * `weight` and `rewind` are commit()'s own.
  */
 export function commitFolded(
   prev: Command | null, label: string, redo: () => void, undo: () => void,
+  weight = 1, rewind?: () => void,
 ): Command {
-  const cmd: Command = commit(label, redo, undo);
+  const cmd: Command = commit(label, redo, undo, weight, rewind);
   const at = undoStack.length - 1;
   if (prev && undoStack[at] === cmd && undoStack[at - 1] === prev && prev.step && prev.step === cmd.step) {
     undoStack.splice(at - 1, 1);
