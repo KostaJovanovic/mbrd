@@ -1,13 +1,15 @@
 // Now-playing bar along the foot — pins a transport to the glass so
 // whatever is making noise can always be stopped. Not a second player:
 // builds its strip over the card's own <audio>/<video> via bindScrub(),
-// so card and bar stay in step with no sync code.
+// so card and bar stay in step with no sync code. Publishes the same track
+// to navigator.mediaSession, for media keys and the lock screen.
 
 import {
   nowPlaying, onNowPlaying, clearNowPlaying,
   getVolume, onVolume, setVolume, sliderToVolume, volumeToSlider, volumeLocked,
 } from '../canvas/audio.ts';
-import { onQueue, queueNext, queueState, setAdvanceGate } from '../canvas/playlist-queue.ts';
+import { onQueue, queueNext, queuePrev, queueState, setAdvanceGate } from '../canvas/playlist-queue.ts';
+import { assetURL } from '../storage/assets.ts';
 import { bindScrub, clock, trackLength, PAUSE_ICON, PLAY_ICON } from '../media/transport.ts';
 import { board, setBoardMode } from '../state.ts';
 import { onNarrowScreen } from '../canvas/viewport.ts';
@@ -190,8 +192,74 @@ export function initNowPlaying() {
       menuEntries(), { label: 'Player' });
   });
 
+  wireMediaSession();
   onNowPlaying(show);
   show(nowPlaying());
+}
+
+/** Seconds a media key's skip back or forward moves, when it names none. */
+const SKIP_S = 10;
+
+const session = (): MediaSession | null =>
+  (typeof navigator !== 'undefined' && 'mediaSession' in navigator ? navigator.mediaSession : null);
+
+/**
+ * The keyboard's media keys, a headset's button and the lock screen, driving
+ * whatever the bar drives. Handlers read `boundEl` when pressed rather than
+ * closing over one element, since the element changes under a track (see
+ * show()). Set once; with nothing playing they find nothing and do nothing.
+ */
+function wireMediaSession() {
+  const ms = session();
+  if (!ms) return;
+  const set = (action: MediaSessionAction, fn: MediaSessionActionHandler) => {
+    // A browser that does not know an action throws rather than ignoring it.
+    try { ms.setActionHandler(action, fn); } catch { /* not offered here */ }
+  };
+  set('play', () => { boundEl?.play().catch(reportPlayError); });
+  set('pause', () => boundEl?.pause());
+  set('nexttrack', queueNext);
+  set('previoustrack', queuePrev);
+  set('seekto', d => { if (boundEl && d.seekTime != null) boundEl.currentTime = d.seekTime; });
+  set('seekbackward', d => {
+    if (boundEl) boundEl.currentTime = Math.max(0, boundEl.currentTime - (d.seekOffset || SKIP_S));
+  });
+  set('seekforward', d => {
+    if (boundEl) boundEl.currentTime += d.seekOffset || SKIP_S;
+  });
+}
+
+/** What the system's player shows: the track, its artist and album, its cover. */
+function publishTrack(item: Item | null) {
+  const ms = session();
+  if (!ms || typeof MediaMetadata === 'undefined') return;
+  if (!item) {
+    ms.metadata = null;
+    ms.playbackState = 'none';
+    return;
+  }
+  const text = (v: unknown) => (typeof v === 'string' ? v : '');
+  const cover = typeof item.meta?.cover === 'string' ? assetURL(item.meta.cover) : null;
+  ms.metadata = new MediaMetadata({
+    title: name(item),
+    artist: text(item.meta?.artist),
+    album: text(item.meta?.album),
+    artwork: cover ? [{ src: cover }] : [],
+  });
+}
+
+/** Play state and position, so the lock screen's line and button agree with the bar. */
+function publishState(sound: HTMLMediaElement, dur: number) {
+  const ms = session();
+  if (!ms) return;
+  ms.playbackState = sound.paused ? 'paused' : 'playing';
+  if (!dur || !Number.isFinite(dur) || typeof ms.setPositionState !== 'function') return;
+  try {
+    ms.setPositionState({
+      duration: dur, playbackRate: sound.playbackRate || 1,
+      position: clamp(sound.currentTime || 0, 0, dur),
+    });
+  } catch { /* a position past a guessed duration: the next event corrects it */ }
 }
 
 /**
@@ -219,6 +287,7 @@ function show(current: NowPlaying | null) {
   boundEl = current.el;
 
   bind(current.el);
+  publishTrack(current.item);
   caption!.textContent = name(current.item);
   caption!.title = current.item.name || '';
   // A video is not in the playlist, so a way there from its bar leads nowhere.
@@ -269,15 +338,17 @@ function bind(sound: HTMLMediaElement) {
     playBtn!.setAttribute('aria-label', playing ? 'Pause' : 'Play');
   };
 
+  // Not per frame: the system's line extrapolates between reports by itself.
+  const report = () => publishState(sound, length());
   const on = (type: string, fn: () => void) => sound.addEventListener(type, fn, { signal });
-  on('play', () => { setIcon(); if (!frame) frame = requestAnimationFrame(follow); });
-  on('pause', () => { setIcon(); paint(); });
-  on('loadedmetadata', paint);
+  on('play', () => { setIcon(); report(); if (!frame) frame = requestAnimationFrame(follow); });
+  on('pause', () => { setIcon(); paint(); report(); });
+  on('loadedmetadata', () => { paint(); report(); });
   // See canvas/transport.ts: a guessed duration is corrected by its own
   // event and nothing else while paused.
-  on('durationchange', paint);
+  on('durationchange', () => { paint(); report(); });
   on('timeupdate', paint);
-  on('seeked', paint);
+  on('seeked', () => { paint(); report(); });
 
   seekTo = (clientX: number) => {
     const dur = length();
@@ -290,6 +361,7 @@ function bind(sound: HTMLMediaElement) {
 
   setIcon();
   paint();
+  report();
   if (!sound.paused && !frame) frame = requestAnimationFrame(follow);
 }
 
@@ -470,6 +542,8 @@ function close() {
  * (going blank, then leaving) instead of one.
  */
 function hide() {
+  // Nothing playing: the lock screen lets go of the last track too.
+  publishTrack(null);
   if (!bar || bar.hidden) { teardown(); return; }
   if (leaving) return;                 // already on its way
 
