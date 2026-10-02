@@ -115,6 +115,11 @@ export interface MenuCommands {
   canViewItem: (id: string) => boolean;
   canEditDocument: (id: string) => boolean;
   editDocument: (id: string) => void;
+  selectLike: (id: string) => void;
+  canSelectFenceContents: (id: string) => boolean;
+  selectFenceContents: (id: string) => void;
+  canSelectJoined: (id: string) => boolean;
+  selectJoined: (id: string) => void;
   canSaveItemFile: (id: string) => boolean;
   saveItemFile: (id: string) => void;
   canSendItemFile: (id: string) => boolean;
@@ -666,6 +671,11 @@ function itemEntries(id: string, count: number, at: Point | null, mobile = false
     // Duplicated from canvas menu — a hold on a card is how touch starts collecting.
     // The Feed too, now that it draws the selection (ui/feed.ts).
     ...multiSelectEntry(),
+    // Sets the board can already name, from the card that names them. Single-
+    // card: "like this" needs one this. Only the kind row on the Feed, which
+    // has no fences to look inside and no lines drawn.
+    { label: 'Select', icon: 'i-select-all', hidden: many || track,
+      sub: !many && !track ? selectEntries(id, mobile) : undefined },
     // No accel on notes — double-click belongs to Edit text there.
     // A link opens its site (or, for YouTube, the viewer's player) - see
     // openLink. Every other viewable item opens in the viewer.
@@ -800,6 +810,17 @@ function multiSelectEntry(always = false): MenuEntry[] {
     check: on,
     action: () => cmds!.toggleMultiSelect(),
   }];
+}
+
+/** The card menu's Select fold - see selectLike in commands.ts. */
+function selectEntries(id: string, mobile: boolean): MenuEntry[] {
+  return [
+    { label: 'All like this', icon: 'i-select-all', action: () => cmds!.selectLike(id) },
+    { label: 'What is in it', icon: 'i-fence',
+      hidden: mobile || !cmds!.canSelectFenceContents(id), action: () => cmds!.selectFenceContents(id) },
+    { label: 'What it is joined to', icon: 'i-connect',
+      hidden: mobile || !cmds!.canSelectJoined(id), action: () => cmds!.selectJoined(id) },
+  ];
 }
 
 function alignDistributeEntries(): MenuEntry[] {

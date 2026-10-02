@@ -18,7 +18,9 @@ import {
   addItems,
   snapshotGeom, applyGeom, commitGeom,
   declareOp, registerOp,
+  isContent, rolledAway, rolledFences, fenceFollowers, connectedTo,
 } from './state.ts';
+import { kindName } from './canvas/item-dom.ts';
 import { alignTargets, distributeTargets, separateOverlaps } from './geometry.ts';
 // Needed here for zoomToSelection; the rest of the camera is in commands/view.ts.
 import { travelMs } from './canvas/viewport.ts';
@@ -367,6 +369,40 @@ export function createCommands(vp: CommandsViewport, { resetAppearance, setWhims
     bench: (opts?: BenchOptions) => (bench ? bench.run(opts) : Promise.resolve(null)),
 
     selectAll,
+    /**
+     * The card menu's Select fold: three sets the board already knows how to
+     * name, each replacing the selection. Out of sight is out of reach, as for
+     * Select all - a card a rolled fence has folded away is never swept up, or
+     * the next Delete would take what nobody can see.
+     *
+     * All of a kind: kindName(), so "all the PDFs" rather than all the
+     * `generic` cards a PDF happens to be stored as.
+     */
+    selectLike: (id: string) => {
+      const it = byId(id);
+      if (!it) return;
+      const kind = kindName(it);
+      const rolled = rolledFences();
+      select(board.items
+        .filter(i => isContent(i) && !rolledAway(i, rolled) && kindName(i) === kind)
+        .map(i => i.id));
+      toast(`Selected ${selection.size} ${kind}${selection.size === 1 ? '' : 's'}`);
+    },
+    /** What a fence holds, nested fences and their cards included. */
+    canSelectFenceContents: (id: string) => isFence(byId(id)) && fenceFollowers([id]).length > 0,
+    selectFenceContents: (id: string) => {
+      const inside = fenceFollowers([id]).filter(i => {
+        const it = byId(i);
+        return !!it && isContent(it);
+      });
+      if (inside.length) select(inside);
+    },
+    /** The cards a line runs to from this one. */
+    canSelectJoined: (id: string) => connectedTo(id).some(o => !!byId(o)),
+    selectJoined: (id: string) => {
+      const joined = connectedTo(id).filter(o => !!byId(o));
+      if (joined.length) select([id, ...joined]);
+    },
     // Touch multi-select toggle. Turning off keeps the selection intact.
     multiSelect: isMultiSelect,
     toggleMultiSelect: () => {
