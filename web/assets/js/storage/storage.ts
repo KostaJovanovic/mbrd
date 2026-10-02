@@ -18,7 +18,7 @@ import {
 import type { LibraryEntry } from './library.ts';
 import {
   board, serializeBoard, loadBoard, markDirty, isDirty, setTitle, bus, mergeBoard,
-  defaultBoardTitle, isNotFoundBoard, isBenchBoard, notUsersBoard, hasContent,
+  defaultBoardTitle, isNotFoundBoard, isBenchBoard, notUsersBoard, hasContent, isDefaultTitle,
 } from '../state.ts';
 import { normalizeBoard } from '../board-schema.ts';
 import { planMerge } from '../merge.ts';
@@ -75,14 +75,19 @@ let doc: DocumentRef | null = null;
 /** First-created timestamp, carried across saves of the same board. */
 let created: string | null = null;
 
-/** Sync the shell's title bar / proxy icon with the current document.
- *  Fired from `board` bus (title or dirty-flag change) and directly when
- *  `doc` itself moves. No-op on web. */
+/** Sync the shell's title bar / proxy icon with the current document, or on
+ *  the web the tab's title. Fired from `board` bus (title or dirty-flag
+ *  change), on items (a first card makes the board somebody's), and directly
+ *  when `doc` itself moves. */
 function reportDocument() {
-  platform.setDocument({ title: board.title, ref: doc, dirty: isDirty() });
+  platform.setDocument({
+    title: board.title, ref: doc, dirty: isDirty(),
+    owned: !notUsersBoard() && (!isDefaultTitle(board.title) || hasContent()),
+  });
 }
 bus.on('board', reportDocument);
 bus.on('board:load', reportDocument);
+bus.on('items', reportDocument);
 
 // ---------------------------------------------------------------------------
 // Save

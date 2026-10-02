@@ -306,8 +306,8 @@ test('openFile takes the document it was opened as', async () => {
 test('the shell is told which document is on screen, and whether it is dirty', async () => {
   // The window's title bar and, on macOS, its proxy icon and close-dot.
   // There's no way to say this from inside the page - document.title is
-  // the browser tab's, and this app never sets one - so a report is the
-  // only shape it can take.
+  // the browser tab's, which the web half sets from this same report - so a
+  // report is the only shape it can take.
   const shell = fakeShell();
   setPlatform(shell);
   shell.calls.documents.length = 0;
@@ -322,4 +322,15 @@ test('the shell is told which document is on screen, and whether it is dirty', a
   const last = shell.calls.documents.at(-1);
   assert.equal(last.ref.path, '/tmp/Reported.mbrd', 'and the document it was saved as');
   assert.equal(last.dirty, false, 'an export is a save, so the mark comes off');
+});
+
+test('the report says whether the board is somebody\'s, which the web tab is named from', () => {
+  const shell = fakeShell();
+  setPlatform(shell);
+  loadBoard({ title: 'Untitled board', items: [] });
+  assert.equal(shell.calls.documents.at(-1).owned, false, 'an empty board with a made-up name keeps the page title');
+  loadBoard({ title: 'Kitchen', items: [] });
+  assert.equal(shell.calls.documents.at(-1).owned, true, 'a name somebody gave is enough');
+  loadBoard({ title: 'Untitled board', items: [{ id: 'n', type: 'note', x: 0, y: 0, w: 100, h: 100, meta: { text: 'hi' } }] });
+  assert.equal(shell.calls.documents.at(-1).owned, true, 'and so is something on it');
 });

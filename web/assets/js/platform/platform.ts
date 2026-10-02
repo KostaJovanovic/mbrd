@@ -185,6 +185,9 @@ export interface DocumentState {
   title: string;
   ref: DocumentRef | null;
   dirty: boolean;
+  /** Whether the board is one somebody made - named, or with something on it.
+   *  The web tab names only such a board; see webSetDocument(). */
+  owned?: boolean;
 }
 
 /** The whole of what a shell answers. */
@@ -194,7 +197,7 @@ export interface Platform {
   native: NativePort;
   updates: UpdatesPort;
   auth: AuthPort;
-  /** Tell the shell what is on screen. No-op on web. */
+  /** Tell the shell what is on screen. On the web, the tab's title. */
   setDocument(state: DocumentState): void;
   /** Reload on web; relaunch the process on desktop. */
   relaunch(): void;
@@ -398,13 +401,28 @@ const webAuth: AuthPort = {
   google: () => Promise.reject(new Error('the page signs in through its own popup')),
 };
 
+/** The page's own title, kept for a board nobody has made anything of yet. */
+let staticTitle: string | null = null;
+
+/**
+ * The tab says which board it is, so two tabs or a long tab strip can be told
+ * apart. An empty board with a generated name keeps the page's own title: it
+ * is what a search engine and a first visit read, and "New board Oct 2" is
+ * not a name anybody gave.
+ */
+function webSetDocument(state: DocumentState) {
+  if (!hasWindow() || typeof document === 'undefined') return;
+  staticTitle ??= document.title;
+  document.title = state.owned && state.title ? `${state.title} — mbrd` : staticTitle;
+}
+
 const web: Platform = {
   files: webFiles,
   lifecycle: webLifecycle,
   native: webNative,
   updates: webUpdates,
   auth: webAuth,
-  setDocument: () => {},
+  setDocument: webSetDocument,
   relaunch: () => { location.reload(); },
 };
 
