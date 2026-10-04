@@ -1209,7 +1209,8 @@ type InputCommands = {
   holdToPick?(id: string): void,
   connectTap?(id: string | null, sticky?: boolean): boolean,
   connectionUnder?(at: Point): { a: string, b: string } | null,
-  pickConnection?(at: Point): void,
+  /** Whether there was a line under the point to mark. */
+  pickConnection?(at: Point): boolean | void,
   /** Whether a line was marked. */
   clearActiveConnection?(): boolean,
   deleteActiveConnection?(): boolean,
@@ -1387,6 +1388,16 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
    * card keeps the old rule: a pan still lands with nothing selected.
    */
   let clearIfStill: { x: number, y: number } | null = null;
+  /**
+   * A press on bare board inside a fence, with nothing picked, that may still
+   * turn out to be a click on the fence. Its body refuses the pointer
+   * (fences.css) so that a drag across it pans or draws a band, and that stays
+   * true: only a press that lifts where it went down picks the fence, and the
+   * body never moves it - the name bar does. With something picked the same
+   * tap only puts that down, as it always did, so a board covered by one big
+   * fence can still be cleared by tapping it.
+   */
+  let fenceIfStill: { pointerId: number, x: number, y: number } | null = null;
   /**
    * A press that may still turn out to be the click that walks a tour on.
    *
@@ -2385,6 +2396,12 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // the one thing it exists for. The way out is the row that turned it on,
       // Escape, or tapping the cards back off.
       clearIfStill = null;
+      // Read before the clears below: a tap that puts a selection down is
+      // spent on that. Not in the pick mode, where bare board does nothing,
+      // nor during a tour, where the click walks it on.
+      fenceIfStill = !selection.size && !isMultiSelect() && !tourClick && e.button === 0
+        ? { pointerId: e.pointerId, x: e.clientX, y: e.clientY }
+        : null;
       if (isMultiSelect()) clearOnLift = null;
       // A group survives a pan, from any pointer: only a tap puts it down.
       else if (selection.size > 1) {
@@ -2399,7 +2416,8 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // up under the pointer has been promising all along, and what gives Delete
       // something to remove that is not a card. It still pans: pointing at a
       // line is a click, and this press may yet become a drag.
-      cmds.pickConnection?.(vp.toWorld(e.clientX, e.clientY));
+      // A line is the nearer thing under the pointer than the fence it crosses.
+      if (cmds.pickConnection?.(vp.toWorld(e.clientX, e.clientY))) fenceIfStill = null;
       startPan(e);
     }
 
@@ -2418,8 +2436,9 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         taps.arm = null;
         taps.card = null;
         // The press that opens the menu is not the tap that clears the board,
-        // nor the click that walks a tour on.
+        // picks a fence, or walks a tour on.
         clearOnLift = null;
+        fenceIfStill = null;
         tourClick = null;
         // Whatever the finger had started - a move, a pan, a marquee - it was
         // not that. Dropped rather than committed, since nothing moved.
@@ -2450,6 +2469,11 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
         && Math.hypot(e.clientX - clearIfStill.x, e.clientY - clearIfStill.y) > TAP_MOVE_SLOP) {
       clearOnLift = null;
       clearIfStill = null;
+    }
+    // A press that travelled was a pan or a band, never a click on the fence.
+    if (fenceIfStill?.pointerId === e.pointerId
+        && Math.hypot(e.clientX - fenceIfStill.x, e.clientY - fenceIfStill.y) > TAP_MOVE_SLOP) {
+      fenceIfStill = null;
     }
     // And the same slop again for the tour's click: a pointer that has gone
     // this far was moving the board, not asking for the next stop.
@@ -2935,6 +2959,18 @@ export function initInput(vp: Viewport, cmds: InputCommands): void {
       // A tap that deselected did something, so a second tap after it is a
       // fresh first tap and not the start of a double-tap-drag selection.
       if (selection.size) { clearSelection(); tap = null; }
+    }
+    // The click on a fence's body - see fenceIfStill. pointerup only, and only
+    // while one finger is down: a lift that ends a pinch was not a click. The
+    // tap stays a first tap, so a double-tap-drag inside a fence still draws a
+    // band, which replaces the fence with the cards it catches.
+    if (fenceIfStill?.pointerId === e.pointerId) {
+      const at = fenceIfStill;
+      fenceIfStill = null;
+      if (e.type === 'pointerup' && pointers.size === 1 && !selection.size) {
+        const fence = fenceBodyAt(at.x, at.y);
+        if (fence) { select([fence]); cue('pick'); }
+      }
     }
     cancelPress();
     pointers.delete(e.pointerId);
